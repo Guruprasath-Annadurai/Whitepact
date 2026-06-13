@@ -5,11 +5,11 @@ build-backend = "hatchling.build"
 [project]
 name = "biasbuster"
 version = "0.3.0"
-description = "Open-source bias testing framework for LLMs — detect gender, racial, age, religious, occupational, and cultural bias in any language model"
+description = "Responsible AI toolkit: bias testing, privacy-preserving federated labeling, and deepfake detection for LLMs"
 readme = "README.md"
 license = { file = "LICENSE" }
 authors = [{ name = "Guruprasath Annadurai", email = "milchcreamfoods@gmail.com" }]
-keywords = ["llm", "bias", "fairness", "responsible-ai", "testing", "evaluation", "ai-safety"]
+keywords = ["llm", "bias", "fairness", "responsible-ai", "federated-learning", "differential-privacy", "deepfake-detection", "testing", "evaluation", "ai-safety"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -39,7 +39,11 @@ dependencies = [
 openai = ["openai>=1.30.0"]
 anthropic = ["anthropic>=0.28.0"]
 huggingface = ["transformers>=4.40.0", "torch>=2.0.0"]
-all = ["biasbuster[openai,anthropic,huggingface]"]
+# PrivacyLabel extras
+privacy = ["fastapi>=0.111.0", "uvicorn>=0.30.0"]
+deepfake = ["torch>=2.0.0", "torchvision>=0.15.0", "pillow>=10.0.0", "opencv-python>=4.8.0"]
+# Meta extras
+all = ["biasbuster[openai,anthropic,huggingface,privacy,deepfake]"]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
@@ -59,12 +63,12 @@ Repository = "https://github.com/Guruprasath-Annadurai/ResponsibleAi"
 Issues = "https://github.com/Guruprasath-Annadurai/ResponsibleAi/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/biasbuster"]
+packages = ["src/biasbuster", "src/privacylabel"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "--cov=src/biasbuster --cov-report=term-missing --cov-report=html"
+addopts = "--cov=src/biasbuster --cov=src/privacylabel --cov-report=term-missing --cov-report=html"
 
 [tool.ruff]
 target-version = "py310"
