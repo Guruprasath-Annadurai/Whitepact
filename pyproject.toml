@@ -4,14 +4,14 @@ build-backend = "hatchling.build"
 
 [project]
 name = "biasbuster"
-version = "0.1.0"
-description = "Open-source bias testing framework for LLMs — detect gender, racial, and cultural bias in any language model"
+version = "0.2.0"
+description = "Open-source bias testing framework for LLMs — detect gender, racial, age, religious, and occupational bias in any language model"
 readme = "README.md"
 license = { file = "LICENSE" }
 authors = [{ name = "Guruprasath Annadurai", email = "milchcreamfoods@gmail.com" }]
 keywords = ["llm", "bias", "fairness", "responsible-ai", "testing", "evaluation", "ai-safety"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
@@ -54,11 +54,9 @@ dev = [
 biasbuster = "biasbuster.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/yourusername/biasbuster"
-Documentation = "https://biasbuster.readthedocs.io"
-Repository = "https://github.com/yourusername/biasbuster"
-Issues = "https://github.com/yourusername/biasbuster/issues"
-Changelog = "https://github.com/yourusername/biasbuster/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/Guruprasath-Annadurai/ResponsibleAi"
+Repository = "https://github.com/Guruprasath-Annadurai/ResponsibleAi"
+Issues = "https://github.com/Guruprasath-Annadurai/ResponsibleAi/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/biasbuster"]

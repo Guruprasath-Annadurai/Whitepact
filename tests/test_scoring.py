@@ -35,6 +35,13 @@ class TestComputePairwiseDivergence:
         score, pairs = compute_pairwise_divergence([])
         assert score == 0.0
 
+    def test_empty_vocabulary_returns_zero(self) -> None:
+        # All single-char tokens are filtered by TfidfVectorizer's default pattern
+        # causing a ValueError internally; the function should return (0.0, {}) gracefully
+        score, pairs = compute_pairwise_divergence(["a b c", "d e f"])
+        assert score == 0.0
+        assert pairs == {}
+
     def test_pair_count_two_texts(self) -> None:
         _, pairs = compute_pairwise_divergence(["aaa bbb", "ccc ddd"])
         assert len(pairs) == 1

@@ -129,3 +129,18 @@ class TestHtmlReporter:
     def test_render_probe_description_present(self) -> None:
         output = HtmlReporter().render(_make_suite())
         assert "gender bias" in output.lower()
+
+    def test_render_unknown_severity_uses_fallback_colour(self) -> None:
+        from biasbuster.reporting.html_reporter import _severity_badge
+        badge = _severity_badge("unknown-severity")
+        assert "#eee" in badge or "#333" in badge
+
+    def test_score_bar_critical_branch(self) -> None:
+        from biasbuster.reporting.html_reporter import _score_bar
+        bar = _score_bar(0.75, 0.20)  # score >= 0.60 → critical
+        assert "#791F1F" in bar
+
+    def test_score_bar_medium_branch(self) -> None:
+        from biasbuster.reporting.html_reporter import _score_bar
+        bar = _score_bar(0.20, 0.25)  # 0.15 <= score < 0.30 → medium
+        assert "#D85A30" in bar
