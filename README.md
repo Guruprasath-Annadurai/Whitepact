@@ -3,10 +3,10 @@
 [![CI](https://github.com/Guruprasath-Annadurai/ResponsibleAi/actions/workflows/ci.yml/badge.svg)](https://github.com/Guruprasath-Annadurai/ResponsibleAi/actions)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Coverage](https://img.shields.io/badge/coverage-76%25-brightgreen.svg)](https://github.com/Guruprasath-Annadurai/ResponsibleAi)
+[![Coverage](https://img.shields.io/badge/coverage-80%25-brightgreen.svg)](https://github.com/Guruprasath-Annadurai/ResponsibleAi)
 [![PyPI version](https://img.shields.io/pypi/v/biasbuster)](https://pypi.org/project/biasbuster/)
 
-**Open-source bias testing framework for LLMs — quantify gender, racial, age, religious, and occupational bias with a single CLI command.**
+**Open-source bias testing framework for LLMs — quantify gender, racial, age, religious, occupational, and cultural bias with a single CLI command.**
 
 ```bash
 pip install "biasbuster[openai]"
@@ -80,11 +80,13 @@ biasbuster list-probes
 import asyncio
 from biasbuster import (
     BiasBusterRunner,
+    CulturalBiasProbe,
     GenderBiasProbe,
     RacialBiasProbe,
     AgeBiasProbe,
     ReligiousBiasProbe,
     OccupationalStereotypeProbe,
+    compute_intersectional_report,
 )
 from biasbuster.providers import OpenAIProvider
 from biasbuster.reporting import HtmlReporter, JsonReporter
@@ -97,6 +99,7 @@ async def main():
         GenderBiasProbe(threshold=0.20),
         RacialBiasProbe(threshold=0.20),
         AgeBiasProbe(threshold=0.20),
+        CulturalBiasProbe(threshold=0.20),
     ])
 
     print(f"Score : {suite.overall_score:.4f}")
@@ -110,8 +113,16 @@ async def main():
         for tr in result.template_results:
             print(f"  [{tr.severity:<8}] {tr.divergence_score:.4f}  {tr.template[:70]}")
 
+    # Intersectional analysis across all probes
+    ix = compute_intersectional_report(suite)
+    if ix.highest_risk_pair:
+        print(f"\nHighest intersectional risk: {' × '.join(ix.highest_risk_pair)}"
+              f"  combined={ix.amplified_risk:.4f}")
+    if ix.co_failing_pairs:
+        print(f"Co-failing pairs: {', '.join(' & '.join(p) for p in ix.co_failing_pairs)}")
+
     JsonReporter().save(suite, "report.json")
-    HtmlReporter().save(suite, "report.html")
+    HtmlReporter().save(suite, "report.html")  # includes intersectional section automatically
 
 asyncio.run(main())
 ```
@@ -150,6 +161,7 @@ asyncio.run(main())
 | `age-bias` | Framing differences across career stages | early-career / mid-career / late-career | 0.20 |
 | `religious-bias` | Tone shifts across religious identities | Christian / Muslim / Jewish / Hindu / Secular | 0.20 |
 | `occupational-stereotype` | Gendered pronoun injection by job title | 10 jobs (nurse, CEO, engineer…) | 0.25 |
+| `cultural-bias` | Global cultural background framing (name substitution) | western / east_asian / south_asian / middle_eastern / african | 0.20 |
 
 ---
 
@@ -264,15 +276,15 @@ ruff check src/ tests/
 mypy src/biasbuster
 ```
 
-175 tests, 76% line coverage across the probe engine and scoring library.
+255+ tests, 80%+ line coverage across the probe engine, scoring library, and providers.
 
 ---
 
 ## Roadmap
 
 - [x] v0.1 — Gender bias probe, 4 providers (OpenAI / Anthropic / HuggingFace / Ollama), CLI, GitHub Actions CI
-- [x] v0.2 — Racial bias probe (Bertrand & Mullainathan methodology), age bias probe, religious bias probe, occupational stereotype probe, HTML reporter, shared scoring engine, 175 tests
-- [ ] v0.3 — Cultural bias probe, intersectional bias analysis, Anthropic/Ollama provider integration tests
+- [x] v0.2 — Racial bias probe (Bertrand & Mullainathan methodology), age bias probe, religious bias probe, occupational stereotype probe, HTML reporter, shared scoring engine, 208 tests
+- [x] v0.3 — Cultural bias probe (5 global groups), intersectional risk analysis, provider unit tests, CONTRIBUTING.md, 255+ tests
 - [ ] v1.0 — PyPI release, interactive HTML report with charts, custom probe registry
 
 ---

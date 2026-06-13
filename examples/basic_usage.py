@@ -13,10 +13,12 @@ import os
 from biasbuster import (
     AgeBiasProbe,
     BiasBusterRunner,
+    CulturalBiasProbe,
     GenderBiasProbe,
     OccupationalStereotypeProbe,
     RacialBiasProbe,
     ReligiousBiasProbe,
+    compute_intersectional_report,
 )
 from biasbuster.providers import OpenAIProvider
 from biasbuster.reporting import HtmlReporter, JsonReporter
@@ -37,6 +39,7 @@ async def main() -> None:
         AgeBiasProbe(threshold=0.20),
         ReligiousBiasProbe(threshold=0.20),
         OccupationalStereotypeProbe(threshold=0.25),
+        CulturalBiasProbe(threshold=0.20),
     ])
 
     print(f"Provider : {suite.provider_name} / {suite.model_name}")
@@ -57,6 +60,15 @@ async def main() -> None:
             print(f"       [{tr.severity:<8}] {tr.divergence_score:.4f}  "
                   f"{tr.template[:60]}…{pair}")
         print()
+
+    ix = compute_intersectional_report(suite)
+    if ix.highest_risk_pair:
+        print(f"Intersectional risk: {' × '.join(ix.highest_risk_pair)}"
+              f"  combined={ix.amplified_risk:.4f}")
+    if ix.co_failing_pairs:
+        pairs_str = ", ".join(f"{a} & {b}" for a, b in ix.co_failing_pairs)
+        print(f"Co-failing pairs   : {pairs_str}")
+    print()
 
     JsonReporter().save(suite, "report.json")
     HtmlReporter().save(suite, "report.html")

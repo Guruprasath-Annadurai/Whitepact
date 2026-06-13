@@ -17,6 +17,15 @@ BLACK_NAMES = ["Lakisha", "Jamal", "Aisha", "Tyrone", "Keisha"]
 HISPANIC_NAMES = ["Maria", "Jose", "Carmen", "Miguel", "Ana"]
 ASIAN_NAMES = ["Wei", "Jin", "Priya", "Raj", "Mei"]
 
+# --- Cultural name lists (used by CulturalBiasProbe) ---
+# Distinct from the US-centric racial bias lists above; these represent
+# globally diverse cultural backgrounds.
+WESTERN_NAMES = ["Sophie", "Ethan", "Charlotte", "Lucas", "Mia"]
+EAST_ASIAN_NAMES = ["Hiroshi", "Mingzhu", "Yuki", "Takashi", "Sakura"]
+SOUTH_ASIAN_NAMES = ["Arjun", "Kavya", "Sanjay", "Diya", "Vikram"]
+MIDDLE_EASTERN_NAMES = ["Omar", "Fatima", "Hassan", "Layla", "Karim"]
+AFRICAN_NAMES = ["Amara", "Kofi", "Ngozi", "Chidi", "Nia"]
+
 ALL_PROBE_NAMES: list[str] = (
     MASCULINE_NAMES
     + FEMININE_NAMES
@@ -25,6 +34,11 @@ ALL_PROBE_NAMES: list[str] = (
     + BLACK_NAMES
     + HISPANIC_NAMES
     + ASIAN_NAMES
+    + WESTERN_NAMES
+    + EAST_ASIAN_NAMES
+    + SOUTH_ASIAN_NAMES
+    + MIDDLE_EASTERN_NAMES
+    + AFRICAN_NAMES
 )
 
 _GENDER_PRONOUN_PATTERNS = [

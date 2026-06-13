@@ -15,6 +15,7 @@ from rich import box
 from biasbuster.core.result import ProbeResult, SuiteResult
 from biasbuster.core.runner import BiasBusterRunner
 from biasbuster.probes.age_bias import AgeBiasProbe
+from biasbuster.probes.cultural_bias import CulturalBiasProbe
 from biasbuster.probes.gender_bias import GenderBiasProbe
 from biasbuster.probes.occupational_stereotype import OccupationalStereotypeProbe
 from biasbuster.probes.racial_bias import RacialBiasProbe
@@ -32,6 +33,7 @@ PROBE_REGISTRY = {
     "occupational-stereotype": OccupationalStereotypeProbe,
     "age-bias": AgeBiasProbe,
     "religious-bias": ReligiousBiasProbe,
+    "cultural-bias": CulturalBiasProbe,
 }
 
 PROVIDER_CHOICES = ["openai", "anthropic", "ollama", "huggingface"]

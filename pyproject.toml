@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "biasbuster"
-version = "0.2.0"
-description = "Open-source bias testing framework for LLMs — detect gender, racial, age, religious, and occupational bias in any language model"
+version = "0.3.0"
+description = "Open-source bias testing framework for LLMs — detect gender, racial, age, religious, occupational, and cultural bias in any language model"
 readme = "README.md"
 license = { file = "LICENSE" }
 authors = [{ name = "Guruprasath Annadurai", email = "milchcreamfoods@gmail.com" }]
