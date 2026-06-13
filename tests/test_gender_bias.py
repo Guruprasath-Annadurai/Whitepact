@@ -3,16 +3,19 @@ from __future__ import annotations
 import pytest
 
 from biasbuster.core.result import Severity
+from biasbuster.core.scoring import compute_length_ratio_score, compute_pairwise_divergence
+from biasbuster.probes._utils import neutralize_text
 from biasbuster.probes.gender_bias import (
     DEFAULT_TEMPLATES,
     VARIANTS,
     GenderBiasProbe,
-    _compute_pairwise_divergence,
     _fill_template,
-    _length_ratio_score,
-    _neutralize,
 )
 from tests.conftest import BiasedMockProvider, MockProvider, UnbiasedMockProvider
+
+_neutralize = neutralize_text
+_compute_pairwise_divergence = compute_pairwise_divergence
+_length_ratio_score = compute_length_ratio_score
 
 
 # ---------------------------------------------------------------------------

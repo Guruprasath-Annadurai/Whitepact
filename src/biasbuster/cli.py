@@ -15,6 +15,9 @@ from rich import box
 from biasbuster.core.result import ProbeResult, SuiteResult
 from biasbuster.core.runner import BiasBusterRunner
 from biasbuster.probes.gender_bias import GenderBiasProbe
+from biasbuster.probes.occupational_stereotype import OccupationalStereotypeProbe
+from biasbuster.probes.racial_bias import RacialBiasProbe
+from biasbuster.reporting.html_reporter import HtmlReporter
 from biasbuster.reporting.json_reporter import JsonReporter
 
 load_dotenv()
@@ -23,6 +26,8 @@ console = Console()
 
 PROBE_REGISTRY = {
     "gender-bias": GenderBiasProbe,
+    "racial-bias": RacialBiasProbe,
+    "occupational-stereotype": OccupationalStereotypeProbe,
 }
 
 PROVIDER_CHOICES = ["openai", "anthropic", "ollama", "huggingface"]
@@ -136,9 +141,16 @@ def main() -> None:
     default="gender-bias",
     help="Comma-separated probe names. Available: " + ", ".join(PROBE_REGISTRY),
 )
-@click.option("--output", "-o", default=None, help="Save JSON report to this path.")
+@click.option("--output", "-o", default=None, help="Save report to this path.")
 @click.option("--threshold", default=None, type=float, help="Override the pass/fail threshold.")
 @click.option("--quiet", "-q", is_flag=True, help="Suppress rich output, print JSON only.")
+@click.option(
+    "--format",
+    "fmt",
+    default="json",
+    type=click.Choice(["json", "html", "both"]),
+    help="Report format: json (default), html, or both.",
+)
 def run(
     provider: str,
     model: str | None,
@@ -146,6 +158,7 @@ def run(
     output: str | None,
     threshold: float | None,
     quiet: bool,
+    fmt: str,
 ) -> None:
     """Run bias probes against an LLM provider."""
     probe_names = [p.strip() for p in probes.split(",")]
@@ -175,9 +188,17 @@ def run(
         _print_suite_result(suite)
 
     if output:
-        path = Path(output)
-        JsonReporter().save(suite, path)
-        console.print(f"\n[dim]Report saved to {path}[/]")
+        base = Path(output)
+        if fmt in ("json", "both"):
+            json_path = base.with_suffix(".json") if base.suffix != ".json" else base
+            JsonReporter().save(suite, json_path)
+            if not quiet:
+                console.print(f"\n[dim]JSON report saved to {json_path}[/]")
+        if fmt in ("html", "both"):
+            html_path = base.with_suffix(".html")
+            HtmlReporter().save(suite, html_path)
+            if not quiet:
+                console.print(f"[dim]HTML report saved to {html_path}[/]")
 
     sys.exit(0 if suite.passed else 1)
 

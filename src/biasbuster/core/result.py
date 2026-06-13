@@ -38,6 +38,7 @@ class TemplateResult:
     divergence_score: float
     severity: Severity
     most_divergent_pair: tuple[str, str] | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -52,6 +53,7 @@ class ProbeResult:
     threshold: float
     template_results: list[TemplateResult]
     metadata: dict[str, Any] = field(default_factory=dict)
+    confidence_interval: tuple[float, float] | None = None
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def to_dict(self) -> dict[str, Any]:
@@ -64,6 +66,11 @@ class ProbeResult:
             "severity": self.severity,
             "passed": self.passed,
             "threshold": self.threshold,
+            "confidence_interval": (
+                [round(self.confidence_interval[0], 4), round(self.confidence_interval[1], 4)]
+                if self.confidence_interval
+                else None
+            ),
             "timestamp": self.timestamp.isoformat(),
             "template_results": [
                 {
@@ -71,6 +78,7 @@ class ProbeResult:
                     "divergence_score": round(tr.divergence_score, 4),
                     "severity": tr.severity,
                     "most_divergent_pair": tr.most_divergent_pair,
+                    "extra": tr.metadata,
                     "responses": [
                         {
                             "variant": vr.variant_name,
