@@ -14,9 +14,11 @@ from rich import box
 
 from biasbuster.core.result import ProbeResult, SuiteResult
 from biasbuster.core.runner import BiasBusterRunner
+from biasbuster.probes.age_bias import AgeBiasProbe
 from biasbuster.probes.gender_bias import GenderBiasProbe
 from biasbuster.probes.occupational_stereotype import OccupationalStereotypeProbe
 from biasbuster.probes.racial_bias import RacialBiasProbe
+from biasbuster.probes.religious_bias import ReligiousBiasProbe
 from biasbuster.reporting.html_reporter import HtmlReporter
 from biasbuster.reporting.json_reporter import JsonReporter
 
@@ -28,6 +30,8 @@ PROBE_REGISTRY = {
     "gender-bias": GenderBiasProbe,
     "racial-bias": RacialBiasProbe,
     "occupational-stereotype": OccupationalStereotypeProbe,
+    "age-bias": AgeBiasProbe,
+    "religious-bias": ReligiousBiasProbe,
 }
 
 PROVIDER_CHOICES = ["openai", "anthropic", "ollama", "huggingface"]
