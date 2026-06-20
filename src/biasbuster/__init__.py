@@ -27,7 +27,7 @@ from biasbuster.probes.occupational_stereotype import OccupationalStereotypeProb
 from biasbuster.probes.racial_bias import RacialBiasProbe
 from biasbuster.probes.religious_bias import ReligiousBiasProbe
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 __all__ = [
     "AgeBiasProbe",
     "BaseProbe",

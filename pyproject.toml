@@ -4,12 +4,17 @@ build-backend = "hatchling.build"
 
 [project]
 name = "biasbuster"
-version = "0.3.0"
-description = "Responsible AI toolkit: bias testing, privacy-preserving federated labeling, and deepfake detection for LLMs"
+version = "0.4.0"
+description = "ResponsibleAI — Enterprise AI Governance Platform: bias, hallucination, guardrails, compliance (NIST AI RMF/EU AI Act/ISO 42001), federated labeling with DP, deepfake detection"
 readme = "README.md"
 license = { file = "LICENSE" }
 authors = [{ name = "Guruprasath Annadurai", email = "milchcreamfoods@gmail.com" }]
-keywords = ["llm", "bias", "fairness", "responsible-ai", "federated-learning", "differential-privacy", "deepfake-detection", "testing", "evaluation", "ai-safety"]
+keywords = [
+    "llm", "bias", "fairness", "responsible-ai", "ai-governance",
+    "federated-learning", "differential-privacy", "deepfake-detection",
+    "hallucination", "guardrails", "compliance", "eu-ai-act", "nist-ai-rmf",
+    "ai-safety", "ai-trust", "red-teaming", "pii-detection",
+]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -56,6 +61,7 @@ dev = [
 
 [project.scripts]
 biasbuster = "biasbuster.cli:main"
+responsibleai = "biasbuster.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/Guruprasath-Annadurai/ResponsibleAi"
@@ -63,12 +69,12 @@ Repository = "https://github.com/Guruprasath-Annadurai/ResponsibleAi"
 Issues = "https://github.com/Guruprasath-Annadurai/ResponsibleAi/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/biasbuster", "src/privacylabel"]
+packages = ["src/biasbuster", "src/privacylabel", "src/responsibleai"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "--cov=src/biasbuster --cov=src/privacylabel --cov-report=term-missing --cov-report=html"
+addopts = "--cov=src/biasbuster --cov=src/privacylabel --cov=src/responsibleai --cov-report=term-missing --cov-report=html"
 
 [tool.ruff]
 target-version = "py310"
