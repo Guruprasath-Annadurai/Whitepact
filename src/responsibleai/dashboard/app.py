@@ -22,7 +22,6 @@ from responsibleai.compliance.engine import ComplianceEngine
 from responsibleai.cost.analyzer import CostAnalyzer
 from responsibleai.cost.models import BudgetPolicy, TokenUsage
 from responsibleai.cost.router import ModelRouter
-from responsibleai.cost.tracker import CostTracker
 from responsibleai.dashboard.config import Settings, get_settings
 from responsibleai.dashboard.logging_config import configure_logging, get_logger
 from responsibleai.dashboard.middleware import (
@@ -33,7 +32,14 @@ from responsibleai.dashboard.middleware import (
     global_exception_handler,
     http_exception_handler,
 )
-from responsibleai.drift.monitor import TrustDriftMonitor
+from responsibleai.dashboard.telemetry import (
+    record_cost,
+    record_evaluation,
+    record_guardrail_scan,
+    setup_telemetry,
+)
+from responsibleai.db import CostRepository, TrustRepository, create_engine
+from responsibleai.db.engine import DatabaseEngine
 from responsibleai.guardrails.engine import GuardrailsEngine
 from responsibleai.hallucination.detector import HallucinationDetector
 from responsibleai.trust.passport import PassportGenerator
@@ -46,8 +52,15 @@ settings = get_settings()
 configure_logging(level=settings.log_level, json_logs=settings.log_json)
 logger = get_logger("app")
 
-# ── Rate limiter ─────────────────────────────────────────────────────────────
-limiter = Limiter(key_func=get_remote_address, default_limits=[settings.rate_limit_default])
+# ── Rate limiter (Redis when RAI_REDIS_URL is set, in-memory otherwise) ───────
+_limiter_kwargs: dict[str, Any] = {
+    "key_func": get_remote_address,
+    "default_limits": [settings.rate_limit_default],
+}
+if settings.redis_url:
+    _limiter_kwargs["storage_uri"] = settings.redis_url
+
+limiter = Limiter(**_limiter_kwargs)
 
 # ── Module singletons (initialised once at startup) ──────────────────────────
 _trust_engine: TrustScoreEngine | None = None
@@ -55,46 +68,56 @@ _passport_gen: PassportGenerator | None = None
 _guardrails: GuardrailsEngine | None = None
 _hallucination: HallucinationDetector | None = None
 _compliance: ComplianceEngine | None = None
-_cost_tracker: CostTracker | None = None
+_cost_repo: CostRepository | None = None
 _cost_analyzer: CostAnalyzer | None = None
 _router: ModelRouter | None = None
-_drift_monitor: TrustDriftMonitor | None = None
+_trust_repo: TrustRepository | None = None
+_db_engine: DatabaseEngine | None = None
 
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     global _trust_engine, _passport_gen, _guardrails, _hallucination
-    global _compliance, _cost_tracker, _cost_analyzer, _router, _drift_monitor
+    global _compliance, _cost_repo, _cost_analyzer, _router, _trust_repo, _db_engine
 
-    policy = BudgetPolicy(monthly_limit_usd=settings.monthly_budget_usd)
-    _trust_engine = TrustScoreEngine()
-    _passport_gen = PassportGenerator()
-    _guardrails = GuardrailsEngine()
-    _hallucination = HallucinationDetector()
-    _compliance = ComplianceEngine()
-    _cost_tracker = CostTracker(db_path=settings.db_path, policy=policy)
-    _cost_analyzer = CostAnalyzer()
-    _router = ModelRouter()
-    _drift_monitor = TrustDriftMonitor(
-        db_path=settings.db_path,
-        alert_threshold=settings.alert_threshold,
+    # OpenTelemetry — no-op when endpoint is unset
+    setup_telemetry(
+        service_name=settings.otel_service_name,
+        otlp_endpoint=settings.otel_endpoint,
+        otlp_headers=settings.otel_headers_dict,
     )
 
+    # Async database engine (SQLite or PostgreSQL)
+    _db_engine = create_engine(settings.effective_db_url)
+    await _db_engine.init()
+
+    policy = BudgetPolicy(monthly_limit_usd=settings.monthly_budget_usd)
+    _cost_repo    = CostRepository(_db_engine, policy=policy)
+    _trust_repo   = TrustRepository(_db_engine, alert_threshold=settings.alert_threshold)
+    _trust_engine = TrustScoreEngine()
+    _passport_gen = PassportGenerator()
+    _guardrails   = GuardrailsEngine()
+    _hallucination = HallucinationDetector()
+    _compliance   = ComplianceEngine()
+    _cost_analyzer = CostAnalyzer()
+    _router       = ModelRouter()
+
     auth_status = "enabled" if (settings.auth_enabled and settings.api_keys) else "disabled"
+    db_backend   = "postgresql" if (settings.database_url or "").startswith("postgresql") else "sqlite"
+    rl_backend   = "redis" if settings.redis_url else "memory"
     logger.info(
         "startup_complete",
-        version="0.5.0",
-        db_path=settings.db_path,
+        version="0.6.0",
+        db_backend=db_backend,
+        rate_limit_backend=rl_backend,
+        otel=bool(settings.otel_endpoint),
         auth=auth_status,
-        rate_limit=settings.rate_limit_default,
     )
 
     yield
 
-    if _cost_tracker:
-        _cost_tracker.close()
-    if _drift_monitor:
-        _drift_monitor.close()
+    if _db_engine:
+        await _db_engine.close()
     logger.info("shutdown_complete")
 
 
@@ -105,7 +128,7 @@ app = FastAPI(
         "Enterprise AI Governance API — Trust Scoring, Compliance, Guardrails, "
         "Hallucination Detection, Red Team, Cost Intelligence, Drift Monitoring."
     ),
-    version="0.5.0",
+    version="0.6.0",
     lifespan=lifespan,
     docs_url="/api/docs",
     redoc_url="/api/redoc",
@@ -205,18 +228,24 @@ async def root() -> HTMLResponse:
 async def health() -> dict[str, Any]:
     db_ok = True
     try:
-        if _cost_tracker:
-            _cost_tracker.request_count()
+        if _cost_repo:
+            await _cost_repo.request_count()
     except Exception:
         db_ok = False
 
+    db_backend  = "postgresql" if (settings.database_url or "").startswith("postgresql") else "sqlite"
+    rl_backend  = "redis" if settings.redis_url else "memory"
+
     return {
         "status": "healthy" if db_ok else "degraded",
-        "version": "0.5.0",
+        "version": "0.6.0",
         "uptime_seconds": round(time.monotonic() - _START_TIME, 1),
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "checks": {
             "database": "ok" if db_ok else "error",
+            "db_backend": db_backend,
+            "rate_limit_backend": rl_backend,
+            "otel": "enabled" if settings.otel_endpoint else "disabled",
             "auth": "enabled" if (settings.auth_enabled and settings.api_keys) else "disabled",
         },
         "modules": [
@@ -232,15 +261,19 @@ async def health() -> dict[str, Any]:
 async def metrics(request: Request, _auth=Depends(_require_auth)) -> dict[str, Any]:
     total_requests = _REQUEST_COUNTER["total"]
     errors = _REQUEST_COUNTER["errors"]
+    total_cost = await _cost_repo.total_cost(30) if _cost_repo else 0.0
     return {
         "uptime_seconds": round(time.monotonic() - _START_TIME, 1),
         "total_requests": total_requests,
         "error_count": errors,
         "error_rate_pct": round(errors / max(total_requests, 1) * 100, 2),
-        "db_path": settings.db_path,
+        "db_backend": "postgresql" if (settings.database_url or "").startswith("postgresql") else "sqlite",
+        "rate_limit_backend": "redis" if settings.redis_url else "memory",
+        "otel_enabled": bool(settings.otel_endpoint),
         "auth_enabled": settings.auth_enabled and bool(settings.api_keys),
         "alert_threshold": settings.alert_threshold,
         "monthly_budget_usd": settings.monthly_budget_usd,
+        "monthly_spend_usd": round(total_cost, 4),
     }
 
 
@@ -266,15 +299,15 @@ async def evaluate_model(
         model_name=req.model_name, provider=req.provider, trust_score=score,
         compliance_summary={"overall": round(compliance_report.compliance_score * 100, 1)},
     )
-    alert = None
+    drift_alert = None
     if req.record_drift:
-        alert = _drift_monitor.record(req.model_name, req.provider, score)
+        drift_alert = await _trust_repo.record(req.model_name, req.provider, score)
 
+    record_evaluation(req.model_name, req.provider, score.overall, score.grade)
     logger.info(
         "evaluation",
         model=req.model_name, provider=req.provider,
         score=score.overall, grade=score.grade,
-        passport_id=passport.passport_id,
     )
     return {
         "trust_score": score.to_dict(),
@@ -286,7 +319,7 @@ async def evaluate_model(
         },
         "passport_id": passport.passport_id,
         "passport_hash": passport.verification_hash[:16] + "...",
-        "drift_alert": alert.to_dict() if alert else None,
+        "drift_alert": drift_alert,
     }
 
 
@@ -301,15 +334,15 @@ async def get_trust_history(
 ) -> dict[str, Any]:
     if limit < 1 or limit > 365:
         raise HTTPException(400, "limit must be between 1 and 365")
-    history = _drift_monitor.history(model_name, provider, limit=limit)
-    trend = _drift_monitor.trend(model_name, provider)
+    history = await _trust_repo.history(model_name, provider, limit=limit)
+    trend = await _trust_repo.trend(model_name, provider)
     return {"model": model_name, "provider": provider, "history": history, "trend": trend}
 
 
 @app.get("/api/models", tags=["trust"])
 @limiter.limit("120/minute")
 async def list_models(request: Request, _auth=Depends(_require_auth)) -> dict[str, Any]:
-    return {"models": _drift_monitor.all_models()}
+    return {"models": await _trust_repo.all_models()}
 
 
 # ── Guardrails ─────────────────────────────────────────────────────────────────
@@ -322,6 +355,7 @@ async def scan_text(
     _auth=Depends(_require_auth),
 ) -> dict[str, Any]:
     result = _guardrails.scan(req.text)
+    record_guardrail_scan(result.is_blocked, len(result.pii_findings))
     return {
         "is_blocked": result.is_blocked,
         "pii_count": len(result.pii_findings),
@@ -373,8 +407,9 @@ async def record_usage(
         input_tokens=req.input_tokens, output_tokens=req.output_tokens,
         team=req.team, application=req.application,
     )
-    record = _cost_tracker.record(usage)
-    return record.to_dict()
+    cost_record = await _cost_repo.record(usage)
+    record_cost(req.provider, req.model, cost_record.total_cost, req.input_tokens + req.output_tokens)
+    return cost_record.to_dict()
 
 
 @app.get("/api/cost/summary", tags=["cost"])
@@ -387,13 +422,13 @@ async def cost_summary(
     if days < 1 or days > 365:
         raise HTTPException(400, "days must be between 1 and 365")
     return {
-        "total_cost_usd": _cost_tracker.total_cost(days),
-        "total_tokens": _cost_tracker.total_tokens(days),
-        "model_breakdown": _cost_tracker.get_model_breakdown(days),
-        "team_breakdown": _cost_tracker.get_team_breakdown(days),
-        "daily_costs": _cost_tracker.get_daily_costs(days),
-        "budget_status": _cost_tracker.check_budget().to_dict(),
-        "request_count": _cost_tracker.request_count(days),
+        "total_cost_usd": await _cost_repo.total_cost(days),
+        "total_tokens": await _cost_repo.total_tokens(days),
+        "model_breakdown": await _cost_repo.get_model_breakdown(days),
+        "team_breakdown": await _cost_repo.get_team_breakdown(days),
+        "daily_costs": await _cost_repo.get_daily_costs(days),
+        "budget_status": (await _cost_repo.check_budget()).to_dict(),
+        "request_count": await _cost_repo.request_count(days),
     }
 
 
@@ -439,6 +474,6 @@ async def get_drift_trend(
     provider: str,
     _auth=Depends(_require_auth),
 ) -> dict[str, Any]:
-    trend = _drift_monitor.trend(model_name, provider)
-    history = _drift_monitor.history(model_name, provider, limit=10)
+    trend = await _trust_repo.trend(model_name, provider)
+    history = await _trust_repo.history(model_name, provider, limit=10)
     return {"trend": trend, "recent_history": history}

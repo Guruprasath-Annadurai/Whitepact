@@ -6,6 +6,49 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ---
 
+## [0.6.0] — 2026-06-20
+
+### Added
+- **Async database layer** (`responsibleai.db`)
+  - `DatabaseEngine` — SQLAlchemy async engine factory; auto-selects `sqlite+aiosqlite` (default)
+    or `postgresql+asyncpg` when `RAI_DATABASE_URL` is set
+  - `CostRepository` — async replacement for CostTracker's DB operations; identical surface area,
+    fully awaitable, connection-pooled (`pool_size=10`, `max_overflow=20`, `pool_pre_ping=True`)
+  - `TrustRepository` — async replacement for TrustDriftMonitor's DB operations; drift detection,
+    trend analysis, model listing
+  - WAL mode + `synchronous=NORMAL` applied automatically for SQLite
+- **Redis distributed rate limiting** — set `RAI_REDIS_URL=redis://host:6379/0` to switch slowapi
+  from in-memory to Redis storage; falls back to in-memory when unset
+- **OpenTelemetry APM** (`responsibleai.dashboard.telemetry`)
+  - Traces and metrics exported via OTLP HTTP (`RAI_OTEL_ENDPOINT`)
+  - FastAPI and HTTPX auto-instrumented via `opentelemetry-instrumentation-*`
+  - Custom spans/metrics: `evaluate_model`, `ai.trust_score` histogram, `ai.guardrail.scans`
+    counter, `ai.cost.usd` and `ai.tokens.total` counters
+  - Compatible with Datadog, Grafana Tempo, Jaeger, and any OTLP collector
+  - No-op fallback when `RAI_OTEL_ENDPOINT` is not set (zero overhead)
+- **Dashboard upgraded to v0.6.0**
+  - `/api/health` now reports `db_backend`, `rate_limit_backend`, `otel` status
+  - `/api/metrics` now includes `monthly_spend_usd`, `db_backend`, `otel_enabled`
+  - All DB operations in endpoints are now fully async
+- **New environment variables**: `RAI_DATABASE_URL`, `RAI_REDIS_URL`, `RAI_OTEL_ENDPOINT`,
+  `RAI_OTEL_SERVICE_NAME`, `RAI_OTEL_HEADERS`
+- **New optional dep groups**: `postgres` (`asyncpg`), `redis` (`limits[redis]`),
+  `telemetry` (full OTEL stack)
+- **LLM integration tests** (`tests/test_llm_integration.py`) — 17 tests covering the full
+  governance pipeline with mocked OpenAI and Anthropic API calls; no real keys required
+- **Async DB tests** (`tests/test_async_db.py`) — 29 tests for `CostRepository` and
+  `TrustRepository` using SQLite+aiosqlite; PostgreSQL path skipped when asyncpg absent
+
+### Changed
+- Version bumped `0.5.0 → 0.6.0`
+- Dashboard endpoints fully migrated from sync CostTracker/TrustDriftMonitor to async repositories
+- `pyproject.toml`: new optional groups, `all` updated to include `postgres`, `redis`, `telemetry`
+
+### Fixed
+- `app.py`: replaced deprecated `@app.on_event` with modern `asynccontextmanager` lifespan pattern
+
+---
+
 ## [0.5.0] — 2025-06-20
 
 ### Added

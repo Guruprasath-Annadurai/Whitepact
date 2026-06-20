@@ -77,6 +77,35 @@ class Settings(BaseSettings):
         description="Emit structured JSON logs (recommended for production).",
     )
 
+    # PostgreSQL (optional — defaults to SQLite via db_path)
+    database_url: str | None = Field(
+        default=None,
+        description=(
+            "Full database URL for async engine. "
+            "postgresql://user:pass@host/db or leave unset to use SQLite."
+        ),
+    )
+
+    # Redis (optional — falls back to in-memory rate limiting)
+    redis_url: str | None = Field(
+        default=None,
+        description="Redis URL for distributed rate limiting, e.g. redis://localhost:6379/0.",
+    )
+
+    # OpenTelemetry (optional)
+    otel_endpoint: str | None = Field(
+        default=None,
+        description="OTLP HTTP endpoint, e.g. http://otel-collector:4318. Unset = disabled.",
+    )
+    otel_service_name: str = Field(
+        default="responsibleai",
+        description="Service name reported to the OTLP collector.",
+    )
+    otel_headers: str = Field(
+        default="",
+        description="Comma-separated key=value pairs sent as OTLP headers (e.g. Datadog API key).",
+    )
+
     # Server
     host: str = Field(default="127.0.0.1")
     port: int = Field(default=8765, ge=1, le=65535)
@@ -95,6 +124,22 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return [o.strip() for o in v.split(",") if o.strip()]
         return list(v) if v else []
+
+    @property
+    def otel_headers_dict(self) -> dict[str, str]:
+        if not self.otel_headers:
+            return {}
+        result: dict[str, str] = {}
+        for pair in self.otel_headers.split(","):
+            if "=" in pair:
+                k, _, v = pair.strip().partition("=")
+                result[k.strip()] = v.strip()
+        return result
+
+    @property
+    def effective_db_url(self) -> str:
+        """Postgres URL if set, else derive SQLite URL from db_path."""
+        return self.database_url or self.db_path
 
     @property
     def db_dir(self) -> Path:

@@ -1,0 +1,118 @@
+"""Async SQLAlchemy engine factory — SQLite for dev/test, PostgreSQL for production."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from sqlalchemy import (
+    Column, Float, Index, Integer, MetaData, String, Table, Text,
+    event, text,
+)
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
+
+metadata = MetaData()
+
+token_usage = Table(
+    "token_usage",
+    metadata,
+    Column("id",            Integer, primary_key=True, autoincrement=True),
+    Column("request_id",    String(64),  nullable=False, unique=True),
+    Column("provider",      String(50),  nullable=False),
+    Column("model",         String(100), nullable=False),
+    Column("team",          String(100), nullable=False, default="default"),
+    Column("application",   String(100), nullable=False, default="default"),
+    Column("input_tokens",  Integer,     nullable=False),
+    Column("output_tokens", Integer,     nullable=False),
+    Column("cached_tokens", Integer,     nullable=False, default=0),
+    Column("input_cost",    Float,       nullable=False, default=0.0),
+    Column("output_cost",   Float,       nullable=False, default=0.0),
+    Column("total_cost",    Float,       nullable=False, default=0.0),
+    Column("prompt_hash",   String(64),  nullable=True),
+    Column("metadata",      Text,        nullable=True),
+    Column("recorded_at",   String(32),  nullable=False),
+    Index("idx_tu_provider",   "provider"),
+    Index("idx_tu_model",      "model"),
+    Index("idx_tu_team",       "team"),
+    Index("idx_tu_recorded",   "recorded_at"),
+)
+
+trust_scores = Table(
+    "trust_scores",
+    metadata,
+    Column("id",           Integer, primary_key=True, autoincrement=True),
+    Column("model_name",   String(100), nullable=False),
+    Column("provider",     String(100), nullable=False),
+    Column("overall",      Float,       nullable=False),
+    Column("grade",        String(2),   nullable=False),
+    Column("risk_level",   String(20),  nullable=False),
+    Column("fairness",     Float,       nullable=False),
+    Column("privacy",      Float,       nullable=False),
+    Column("security",     Float,       nullable=False),
+    Column("robustness",   Float,       nullable=False),
+    Column("compliance",   Float,       nullable=False),
+    Column("authenticity", Float,       nullable=False),
+    Column("metadata",     Text,        nullable=True),
+    Column("recorded_at",  String(32),  nullable=False),
+    Index("idx_ts_model",    "model_name"),
+    Index("idx_ts_provider", "provider"),
+    Index("idx_ts_recorded", "recorded_at"),
+)
+
+
+class DatabaseEngine:
+    """Async database engine wrapping SQLAlchemy — SQLite or PostgreSQL."""
+
+    def __init__(self, engine: AsyncEngine) -> None:
+        self._engine = engine
+
+    @property
+    def raw(self) -> AsyncEngine:
+        return self._engine
+
+    async def init(self) -> None:
+        """Create all tables if they don't exist."""
+        async with self._engine.begin() as conn:
+            if "sqlite" in str(self._engine.url):
+                await conn.execute(text("PRAGMA journal_mode=WAL"))
+                await conn.execute(text("PRAGMA synchronous=NORMAL"))
+            await conn.run_sync(metadata.create_all)
+
+    async def connect(self) -> AsyncConnection:
+        return await self._engine.connect()
+
+    async def close(self) -> None:
+        await self._engine.dispose()
+
+
+def create_engine(db_url: str) -> DatabaseEngine:
+    """
+    Build the right async engine from a URL string.
+
+    - ``":memory:"`` or SQLite path → ``sqlite+aiosqlite``
+    - ``"postgresql://..."``         → ``postgresql+asyncpg``
+    """
+    if db_url.startswith("postgresql"):
+        url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+        engine = create_async_engine(
+            url,
+            pool_size=10,
+            max_overflow=20,
+            pool_pre_ping=True,
+            pool_recycle=3600,
+            echo=False,
+        )
+    elif db_url == ":memory:":
+        engine = create_async_engine(
+            "sqlite+aiosqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            echo=False,
+        )
+    else:
+        engine = create_async_engine(
+            f"sqlite+aiosqlite:///{db_url}",
+            connect_args={"check_same_thread": False},
+            echo=False,
+        )
+
+    return DatabaseEngine(engine)
