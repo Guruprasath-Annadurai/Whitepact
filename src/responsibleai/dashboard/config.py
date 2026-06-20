@@ -1,0 +1,120 @@
+"""Runtime configuration — every value overridable via env var or .env file."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Annotated
+
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="RAI_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    # Database
+    db_path: str = Field(
+        default_factory=lambda: str(Path.home() / ".responsibleai" / "data.db"),
+        description="SQLite database path. Use ':memory:' for stateless/testing.",
+    )
+
+    # Authentication
+    api_keys: list[str] = Field(
+        default=[],
+        description="Comma-separated list of valid API keys. Empty = auth disabled (dev only).",
+    )
+    auth_enabled: bool = Field(
+        default=True,
+        description="Set to false to disable auth (development only).",
+    )
+
+    # Rate limiting
+    rate_limit_default: str = Field(
+        default="100/minute",
+        description="Default rate limit applied to all endpoints.",
+    )
+    rate_limit_evaluate: str = Field(
+        default="30/minute",
+        description="Rate limit for the /api/evaluate endpoint.",
+    )
+
+    # CORS
+    allowed_origins: list[str] = Field(
+        default=["http://localhost:8765", "http://127.0.0.1:8765"],
+        description="Allowed CORS origins.",
+    )
+    allow_all_origins: bool = Field(
+        default=False,
+        description="Set true to allow all origins (dev/demo only).",
+    )
+
+    # Governance
+    alert_threshold: float = Field(
+        default=5.0,
+        description="Trust score drop (points) that triggers a DriftAlert.",
+        ge=0.1,
+        le=50.0,
+    )
+    monthly_budget_usd: float = Field(
+        default=10_000.0,
+        description="Monthly AI spending budget for budget enforcement.",
+        ge=0.0,
+    )
+
+    # Logging
+    log_level: str = Field(
+        default="INFO",
+        description="Logging level: DEBUG, INFO, WARNING, ERROR.",
+    )
+    log_json: bool = Field(
+        default=True,
+        description="Emit structured JSON logs (recommended for production).",
+    )
+
+    # Server
+    host: str = Field(default="127.0.0.1")
+    port: int = Field(default=8765, ge=1, le=65535)
+    workers: int = Field(default=1, ge=1, le=32)
+
+    @field_validator("api_keys", mode="before")
+    @classmethod
+    def _parse_keys(cls, v: object) -> list[str]:
+        if isinstance(v, str):
+            return [k.strip() for k in v.split(",") if k.strip()]
+        return list(v) if v else []
+
+    @field_validator("allowed_origins", mode="before")
+    @classmethod
+    def _parse_origins(cls, v: object) -> list[str]:
+        if isinstance(v, str):
+            return [o.strip() for o in v.split(",") if o.strip()]
+        return list(v) if v else []
+
+    @property
+    def db_dir(self) -> Path:
+        p = Path(self.db_path)
+        if p.name == ":memory:":
+            return Path(".")
+        return p.parent
+
+
+_settings: Settings | None = None
+
+
+def get_settings() -> Settings:
+    global _settings
+    if _settings is None:
+        _settings = Settings()
+        _ensure_db_dir(_settings)
+    return _settings
+
+
+def _ensure_db_dir(s: Settings) -> None:
+    if s.db_path != ":memory:":
+        Path(s.db_path).parent.mkdir(parents=True, exist_ok=True)
