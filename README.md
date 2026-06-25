@@ -54,19 +54,19 @@ ResponsibleAI gives you one platform — a REST API, a Python SDK, and a live da
 
 ```bash
 # Governance platform + REST API
-pip install "biasbuster[dashboard]"
+pip install "responsible-ai-platform[dashboard]"
 
 # With PostgreSQL support
-pip install "biasbuster[dashboard,postgres]"
+pip install "responsible-ai-platform[dashboard,postgres]"
 
 # With Redis + OpenTelemetry
-pip install "biasbuster[dashboard,redis,telemetry]"
+pip install "responsible-ai-platform[dashboard,redis,telemetry]"
 
 # With LLM providers
-pip install "biasbuster[dashboard,openai,anthropic]"
+pip install "responsible-ai-platform[dashboard,openai,anthropic]"
 
 # Everything
-pip install "biasbuster[all]"
+pip install "responsible-ai-platform[all]"
 ```
 
 ---
@@ -75,7 +75,7 @@ pip install "biasbuster[all]"
 
 ```bash
 # Start the governance dashboard
-pip install "biasbuster[dashboard]"
+pip install "responsible-ai-platform[dashboard]"
 uvicorn responsibleai.dashboard.app:app --port 8765
 
 # Evaluate a model (no LLM key needed — supply your own scores)
@@ -324,7 +324,7 @@ RAI_DATABASE_URL=postgresql://rai:secret@db-host:5432/responsibleai
 RAI_REDIS_URL=redis://redis-host:6379/0
 RAI_OTEL_ENDPOINT=http://otel-collector:4318
 
-pip install "biasbuster[dashboard,postgres,redis,telemetry]"
+pip install "responsible-ai-platform[dashboard,postgres,redis,telemetry]"
 ```
 
 The async database layer uses SQLAlchemy with connection pooling (`pool_size=10`, `max_overflow=20`, `pool_pre_ping=True`). Rate limiting switches automatically to Redis-backed storage when `RAI_REDIS_URL` is set.
@@ -392,7 +392,7 @@ Implements Laplace, Gaussian, Exponential, and DP-SGD mechanisms. Byzantine-robu
 ```yaml
 - name: Bias evaluation
   run: |
-    pip install "biasbuster[openai]"
+    pip install "responsible-ai-platform[openai]"
     biasbuster run \
       --provider openai --model gpt-4o-mini \
       --probes gender-bias,racial-bias,cultural-bias \

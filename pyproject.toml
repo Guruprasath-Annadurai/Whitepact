@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "biasbuster"
+name = "responsible-ai-platform"
 version = "0.6.0"
 description = "ResponsibleAI — Enterprise AI Governance Platform: trust scoring, bias detection, hallucination detection, guardrails, compliance (NIST AI RMF / EU AI Act / ISO 42001), cost intelligence, drift monitoring"
 readme = "README.md"
