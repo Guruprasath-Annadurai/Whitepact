@@ -6,6 +6,46 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ---
 
+## [0.8.0] — 2026-06-25
+
+### Added
+- **Multi-tenant org management** (`responsibleai.rbac`, `responsibleai.db.OrgRepository`)
+  - `Organization` model — id, name, slug, per-org monthly budget cap
+  - `POST /api/orgs` (OWNER only), `GET /api/orgs`, `GET /api/orgs/{id}`, `DELETE /api/orgs/{id}`
+  - DB table: `organizations`
+- **DB-backed API keys with RBAC** (`responsibleai.db.OrgRepository`)
+  - Keys stored as SHA-256 hashes — raw key shown once on creation, never stored
+  - `POST /api/orgs/{id}/keys`, `GET /api/orgs/{id}/keys`, `DELETE /api/orgs/{id}/keys/{key_id}`
+  - Revoked keys retained in DB for audit trail
+  - `last_used_at` updated on every authenticated request
+  - DB table: `org_api_keys`
+- **Role-Based Access Control** (`responsibleai.rbac`)
+  - Four roles: `OWNER > ADMIN > ANALYST > VIEWER`
+  - `require_role(Role.X)` FastAPI dependency factory enforces minimum role on every endpoint
+  - `has_permission()` hierarchical comparison helper
+  - Backward compatible — flat `RAI_API_KEYS` entries treated as OWNER
+- **`OrgContext`** — injected into every authenticated request via `Depends(get_org_context)`; carries `org_id`, `role`, `key_id`, `is_legacy`
+- **Governance audit log** (`responsibleai.db.AuditRepository`)
+  - Every API request recorded: endpoint, method, status, duration, IP, request_id, org_id, key_id
+  - `GET /api/audit-log` (ADMIN+) — filterable by org, endpoint, date range; paginated
+  - `endpoint_summary()` — top-N endpoints by request count with avg latency
+  - `cleanup(retention_days)` — delete entries older than N days
+  - DB table: `audit_log`
+- **`AuditLogMiddleware`** — non-blocking async write via `asyncio.ensure_future`; skips `/static` and `/metrics`
+- **ContextVar** (`_audit_ctx`) — passes org/key context from auth dependency to audit middleware without coupling
+- **`/api/metrics`** now reports `audit_entries_30d`
+- **`/api/health`** now reports `orgs` count
+- **69 new tests**: `tests/test_rbac.py` (30) + `tests/test_org_api.py` (20) + `tests/test_audit_log.py` (19)
+
+### Changed
+- Version bumped `0.7.0 → 0.8.0`
+- All endpoints use `require_role(Role.X)` instead of legacy `_require_auth`; backward-compatible
+- CORS allows `PUT` and `DELETE` methods
+
+**752 tests passing · 88% coverage**
+
+---
+
 ## [0.7.0] — 2026-06-25
 
 ### Added

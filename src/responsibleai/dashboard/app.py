@@ -1,9 +1,11 @@
-"""Governance Dashboard — production FastAPI application (v0.7.0)."""
+"""Governance Dashboard — production FastAPI application (v0.8.0)."""
 
 from __future__ import annotations
 
+import asyncio
 import time
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -17,6 +19,7 @@ from pydantic import BaseModel, Field
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from responsibleai.compliance.engine import ComplianceEngine
 from responsibleai.cost.analyzer import CostAnalyzer
@@ -49,10 +52,11 @@ from responsibleai.dashboard.telemetry import (
     setup_telemetry,
 )
 from responsibleai.dashboard.websocket_manager import ConnectionManager
-from responsibleai.db import CostRepository, TrustRepository, create_engine
+from responsibleai.db import AuditRepository, CostRepository, OrgRepository, TrustRepository, create_engine
 from responsibleai.db.engine import DatabaseEngine
 from responsibleai.guardrails.engine import GuardrailsEngine
 from responsibleai.hallucination.detector import HallucinationDetector
+from responsibleai.rbac import AuditEntry, OrgContext, Role, has_permission, role_from_str
 from responsibleai.trust.passport import PassportGenerator
 from responsibleai.trust.score import TrustScoreEngine
 from responsibleai.webhooks import WebhookConfig, WebhookEvent, WebhookManager, WebhookProvider
@@ -74,6 +78,9 @@ if settings.redis_url:
 
 limiter = Limiter(**_limiter_kwargs)
 
+# ── ContextVar for audit log (scoped per-request in async) ────────────────────
+_audit_ctx: ContextVar[dict[str, Any]] = ContextVar("audit_ctx", default={})
+
 # ── Module singletons ──────────────────────────────────────────────────────────
 _trust_engine: TrustScoreEngine | None = None
 _passport_gen: PassportGenerator | None = None
@@ -84,6 +91,8 @@ _cost_repo: CostRepository | None = None
 _cost_analyzer: CostAnalyzer | None = None
 _router: ModelRouter | None = None
 _trust_repo: TrustRepository | None = None
+_org_repo: OrgRepository | None = None
+_audit_repo: AuditRepository | None = None
 _db_engine: DatabaseEngine | None = None
 _ws_manager: ConnectionManager = ConnectionManager()
 _webhook_manager: WebhookManager = WebhookManager()
@@ -92,7 +101,8 @@ _webhook_manager: WebhookManager = WebhookManager()
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     global _trust_engine, _passport_gen, _guardrails, _hallucination
-    global _compliance, _cost_repo, _cost_analyzer, _router, _trust_repo, _db_engine
+    global _compliance, _cost_repo, _cost_analyzer, _router, _trust_repo
+    global _org_repo, _audit_repo, _db_engine
 
     setup_telemetry(
         service_name=settings.otel_service_name,
@@ -106,6 +116,8 @@ async def lifespan(application: FastAPI):
     policy = BudgetPolicy(monthly_limit_usd=settings.monthly_budget_usd)
     _cost_repo    = CostRepository(_db_engine, policy=policy)
     _trust_repo   = TrustRepository(_db_engine, alert_threshold=settings.alert_threshold)
+    _org_repo     = OrgRepository(_db_engine)
+    _audit_repo   = AuditRepository(_db_engine)
     _trust_engine = TrustScoreEngine()
     _passport_gen = PassportGenerator()
     _guardrails   = GuardrailsEngine()
@@ -121,7 +133,7 @@ async def lifespan(application: FastAPI):
     rl_backend   = "redis" if settings.redis_url else "memory"
     logger.info(
         "startup_complete",
-        version="0.7.0",
+        version="0.8.0",
         db_backend=db_backend,
         rate_limit_backend=rl_backend,
         otel=bool(settings.otel_endpoint),
@@ -142,9 +154,10 @@ app = FastAPI(
     description=(
         "Enterprise AI Governance API — Trust Scoring, Compliance, Guardrails, "
         "Hallucination Detection, Red Team, Cost Intelligence, Drift Monitoring, "
-        "WebSocket live dashboard, Webhooks, Prometheus metrics."
+        "WebSocket live dashboard, Webhooks, Prometheus metrics, "
+        "Multi-tenant RBAC, Org management, Audit log."
     ),
-    version="0.7.0",
+    version="0.8.0",
     lifespan=lifespan,
     docs_url="/api/docs",
     redoc_url="/api/redoc",
@@ -152,6 +165,49 @@ app = FastAPI(
     contact={"name": "Guruprasath Annadurai", "email": "milchcreamfoods@gmail.com"},
     license_info={"name": "MIT"},
 )
+
+
+# ── Audit log middleware ───────────────────────────────────────────────────────
+
+class AuditLogMiddleware(BaseHTTPMiddleware):
+    """Capture every HTTP request as an audit log entry.
+
+    - Skips /metrics and /static (noise)
+    - Uses _audit_ctx ContextVar to get org/key context set by auth dep
+    - Writes to DB non-blockingly (asyncio.ensure_future)
+    """
+
+    async def dispatch(self, request: Request, call_next: Any) -> Any:
+        start = time.monotonic()
+        _audit_ctx.set({})
+
+        response = await call_next(request)
+
+        path = request.url.path
+        if path.startswith("/static") or path == "/metrics":
+            return response
+
+        duration_ms = round((time.monotonic() - start) * 1000, 2)
+        ctx_data = _audit_ctx.get()
+
+        if _audit_repo:
+            entry = AuditEntry(
+                endpoint=path,
+                method=request.method,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                org_id=ctx_data.get("org_id"),
+                key_id=ctx_data.get("key_id"),
+                status_code=response.status_code,
+                ip_address=request.client.host if request.client else None,
+                request_id=getattr(request.state, "request_id", None),
+                duration_ms=duration_ms,
+                user_agent=(request.headers.get("user-agent", "")[:512] or None),
+            )
+            # Non-blocking write — don't delay the response
+            asyncio.ensure_future(_audit_repo.write(entry))
+
+        return response
+
 
 # ── Exception handlers ─────────────────────────────────────────────────────────
 app.add_exception_handler(Exception, global_exception_handler)
@@ -167,7 +223,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
 
 
-# ── Middleware ─────────────────────────────────────────────────────────────────
+# ── Middleware (outermost first) ───────────────────────────────────────────────
 origins = ["*"] if settings.allow_all_origins else settings.allowed_origins
 app.add_middleware(
     CORSMiddleware,
@@ -177,6 +233,7 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
 )
 app.state.limiter = limiter
+app.add_middleware(AuditLogMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(RequestIDMiddleware)
@@ -185,8 +242,53 @@ app.add_middleware(RequestIDMiddleware)
 _static_dir = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
 
-# ── Auth dependency ────────────────────────────────────────────────────────────
-_require_auth = build_api_key_dependency(settings.api_keys, settings.auth_enabled)
+
+# ── Auth / RBAC dependencies ───────────────────────────────────────────────────
+
+async def get_org_context(request: Request) -> OrgContext:
+    """Resolve the API key to an OrgContext.
+
+    Resolution order:
+    1. Auth disabled → anonymous OWNER (dev mode)
+    2. Flat RAI_API_KEYS (legacy) → OWNER
+    3. DB-backed org key → role from DB
+    4. No match → 401
+    """
+    if not settings.auth_enabled:
+        ctx = OrgContext(key_id="anon", role=Role.OWNER, is_legacy=True)
+        _audit_ctx.set({"org_id": None, "key_id": "anon"})
+        return ctx
+
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(401, detail="Missing or invalid Authorization header")
+
+    token = auth_header[7:].strip()
+
+    if settings.api_keys and token in settings.api_keys:
+        ctx = OrgContext(key_id="legacy", role=Role.OWNER, is_legacy=True)
+        _audit_ctx.set({"org_id": None, "key_id": "legacy"})
+        return ctx
+
+    if _org_repo:
+        ctx = await _org_repo.authenticate(token)
+        if ctx:
+            _audit_ctx.set({"org_id": ctx.org_id, "key_id": ctx.key_id})
+            return ctx
+
+    raise HTTPException(401, detail="Invalid API key")
+
+
+def require_role(min_role: Role):
+    """FastAPI dependency factory — enforces minimum role level."""
+    async def _dep(ctx: OrgContext = Depends(get_org_context)) -> OrgContext:
+        if not has_permission(ctx.role, min_role):
+            raise HTTPException(
+                403,
+                detail=f"Requires {min_role.value} role or higher. Your role: {ctx.role.value}",
+            )
+        return ctx
+    return _dep
 
 
 # ── Request / Response models ──────────────────────────────────────────────────
@@ -239,6 +341,17 @@ class WebhookCreateRequest(BaseModel):
     max_retries: int = Field(3, ge=1, le=5)
 
 
+class CreateOrgRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    slug: str = Field(..., min_length=1, max_length=100, pattern=r"^[a-z0-9\-]+$")
+    monthly_budget_usd: float = Field(10_000.0, ge=0.0)
+
+
+class CreateKeyRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    role: str = Field("ANALYST", pattern="^(OWNER|ADMIN|ANALYST|VIEWER)$")
+
+
 # ── Root / HTML ────────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
@@ -260,10 +373,11 @@ async def health() -> dict[str, Any]:
 
     db_backend = "postgresql" if (settings.database_url or "").startswith("postgresql") else "sqlite"
     rl_backend = "redis" if settings.redis_url else "memory"
+    orgs_count = len(await _org_repo.list_orgs()) if _org_repo else 0
 
     return {
         "status": "healthy" if db_ok else "degraded",
-        "version": "0.7.0",
+        "version": "0.8.0",
         "uptime_seconds": round(time.monotonic() - _START_TIME, 1),
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "checks": {
@@ -274,21 +388,24 @@ async def health() -> dict[str, Any]:
             "auth": "enabled" if (settings.auth_enabled and settings.api_keys) else "disabled",
             "websocket_connections": _ws_manager.connection_count,
             "webhooks_registered": len(_webhook_manager.list()),
+            "orgs": orgs_count,
         },
         "modules": [
             "trust_score", "ai_passport", "guardrails", "hallucination",
             "compliance", "redteam", "cost_tracker", "cost_analyzer",
-            "model_router", "drift_monitor", "websockets", "webhooks", "prometheus",
+            "model_router", "drift_monitor", "websockets", "webhooks",
+            "prometheus", "rbac", "orgs", "audit_log",
         ],
     }
 
 
 @app.get("/api/metrics", tags=["ops"])
 @limiter.limit("60/minute")
-async def metrics(request: Request, _auth=Depends(_require_auth)) -> dict[str, Any]:
+async def metrics(request: Request, _auth: OrgContext = Depends(require_role(Role.ANALYST))) -> dict[str, Any]:
     total_requests = _REQUEST_COUNTER["total"]
     errors = _REQUEST_COUNTER["errors"]
     total_cost = await _cost_repo.total_cost(30) if _cost_repo else 0.0
+    audit_count = await _audit_repo.count(30) if _audit_repo else 0
     return {
         "uptime_seconds": round(time.monotonic() - _START_TIME, 1),
         "total_requests": total_requests,
@@ -305,15 +422,135 @@ async def metrics(request: Request, _auth=Depends(_require_auth)) -> dict[str, A
         "webhooks_registered": len(_webhook_manager.list()),
         "webhook_deliveries": _webhook_manager.total_deliveries,
         "webhook_failures": _webhook_manager.failed_deliveries,
+        "audit_entries_30d": audit_count,
     }
 
 
 @app.get("/metrics", tags=["ops"], include_in_schema=False)
 async def prometheus_metrics() -> Response:
-    """Prometheus-compatible scrape endpoint. Mount at port 9090 in production."""
     observe_websocket_connections(_ws_manager.connection_count)
     body, content_type = get_metrics_output()
     return Response(content=body, media_type=content_type)
+
+
+# ── Organizations & RBAC ───────────────────────────────────────────────────────
+
+@app.post("/api/orgs", tags=["rbac"], status_code=201)
+@limiter.limit("10/minute")
+async def create_org(
+    request: Request,
+    req: CreateOrgRequest,
+    _auth: OrgContext = Depends(require_role(Role.OWNER)),
+) -> dict[str, Any]:
+    existing = await _org_repo.get_org_by_slug(req.slug)
+    if existing:
+        raise HTTPException(409, f"Slug '{req.slug}' is already taken")
+    org = await _org_repo.create_org(req.name, req.slug, req.monthly_budget_usd)
+    return org.to_dict()
+
+
+@app.get("/api/orgs", tags=["rbac"])
+@limiter.limit("60/minute")
+async def list_orgs(
+    request: Request,
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, Any]:
+    orgs = await _org_repo.list_orgs()
+    return {"orgs": [o.to_dict() for o in orgs], "count": len(orgs)}
+
+
+@app.get("/api/orgs/{org_id}", tags=["rbac"])
+@limiter.limit("120/minute")
+async def get_org(
+    request: Request,
+    org_id: str,
+    _auth: OrgContext = Depends(require_role(Role.VIEWER)),
+) -> dict[str, Any]:
+    org = await _org_repo.get_org(org_id)
+    if not org:
+        raise HTTPException(404, "Organization not found")
+    return org.to_dict()
+
+
+@app.delete("/api/orgs/{org_id}", tags=["rbac"])
+@limiter.limit("10/minute")
+async def delete_org(
+    request: Request,
+    org_id: str,
+    _auth: OrgContext = Depends(require_role(Role.OWNER)),
+) -> dict[str, Any]:
+    deleted = await _org_repo.delete_org(org_id)
+    if not deleted:
+        raise HTTPException(404, "Organization not found")
+    return {"deleted": org_id}
+
+
+@app.post("/api/orgs/{org_id}/keys", tags=["rbac"], status_code=201)
+@limiter.limit("20/minute")
+async def create_api_key(
+    request: Request,
+    org_id: str,
+    req: CreateKeyRequest,
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, Any]:
+    org = await _org_repo.get_org(org_id)
+    if not org:
+        raise HTTPException(404, "Organization not found")
+    role = role_from_str(req.role)
+    key_rec, raw_key = await _org_repo.create_key(org_id, req.name, role)
+    return key_rec.to_dict(include_key=raw_key)
+
+
+@app.get("/api/orgs/{org_id}/keys", tags=["rbac"])
+@limiter.limit("60/minute")
+async def list_api_keys(
+    request: Request,
+    org_id: str,
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, Any]:
+    keys = await _org_repo.list_keys(org_id)
+    return {"keys": [k.to_dict() for k in keys]}
+
+
+@app.delete("/api/orgs/{org_id}/keys/{key_id}", tags=["rbac"])
+@limiter.limit("20/minute")
+async def revoke_api_key(
+    request: Request,
+    org_id: str,
+    key_id: str,
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, Any]:
+    revoked = await _org_repo.revoke_key(key_id)
+    if not revoked:
+        raise HTTPException(404, "Key not found")
+    return {"revoked": key_id}
+
+
+# ── Audit log ─────────────────────────────────────────────────────────────────
+
+@app.get("/api/audit-log", tags=["rbac"])
+@limiter.limit("30/minute")
+async def query_audit_log(
+    request: Request,
+    days: int = Query(default=7, ge=1, le=90),
+    org_id: str | None = Query(default=None),
+    endpoint: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, Any]:
+    entries = await _audit_repo.query(
+        org_id=org_id, endpoint=endpoint, days=days, limit=limit, offset=offset
+    )
+    total = await _audit_repo.count(days=days, org_id=org_id)
+    summary = await _audit_repo.endpoint_summary(days=days)
+    return {
+        "entries": entries,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "endpoint_summary": summary,
+    }
 
 
 # ── WebSocket live dashboard ───────────────────────────────────────────────────
@@ -323,18 +560,6 @@ async def websocket_dashboard(
     websocket: WebSocket,
     token: str = Query(default=""),
 ) -> None:
-    """Live dashboard WebSocket.
-
-    Connect with: ws://host:8765/ws/dashboard?token=<api-key>
-
-    Events pushed by server:
-        {"type": "trust_score",  "data": {...}}
-        {"type": "drift_alert",  "data": {...}}
-        {"type": "cost_update",  "data": {...}}
-        {"type": "guardrail",    "data": {...}}
-        {"type": "ping",         "connections": N}
-    """
-    # Auth — reject unauthenticated connections when auth is enabled
     if settings.auth_enabled and settings.api_keys:
         if token not in settings.api_keys:
             await websocket.close(code=4001, reason="Unauthorized")
@@ -345,15 +570,15 @@ async def websocket_dashboard(
     observe_websocket_connections(_ws_manager.connection_count)
 
     try:
-        # Send initial state snapshot
-        snapshot: dict[str, Any] = {"type": "connected", "version": "0.7.0"}
+        snapshot: dict[str, Any] = {"type": "connected", "version": "0.8.0"}
         if _cost_repo:
             snapshot["monthly_spend_usd"] = round(await _cost_repo.total_cost(30), 4)
         if _trust_repo:
             snapshot["models"] = await _trust_repo.all_models()
+        if _org_repo:
+            snapshot["org_count"] = len(await _org_repo.list_orgs())
         await websocket.send_json(snapshot)
 
-        # Keep alive — client should send pong or any message
         while True:
             await websocket.receive_text()
 
@@ -371,19 +596,16 @@ async def websocket_dashboard(
 async def create_webhook(
     request: Request,
     req: WebhookCreateRequest,
-    _auth=Depends(_require_auth),
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, Any]:
     try:
         events = [WebhookEvent(e) for e in req.events]
     except ValueError as exc:
         raise HTTPException(400, f"Invalid event type: {exc}") from exc
-
     config = WebhookConfig(
-        url=req.url,
-        events=events,
+        url=req.url, events=events,
         provider=WebhookProvider(req.provider),
-        secret=req.secret,
-        description=req.description,
+        secret=req.secret, description=req.description,
         max_retries=req.max_retries,
     )
     _webhook_manager.register(config)
@@ -394,7 +616,7 @@ async def create_webhook(
 @limiter.limit("60/minute")
 async def list_webhooks(
     request: Request,
-    _auth=Depends(_require_auth),
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
 ) -> dict[str, Any]:
     return {"webhooks": [c.to_dict() for c in _webhook_manager.list()]}
 
@@ -404,10 +626,9 @@ async def list_webhooks(
 async def delete_webhook(
     request: Request,
     webhook_id: str,
-    _auth=Depends(_require_auth),
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, Any]:
-    removed = _webhook_manager.remove(webhook_id)
-    if not removed:
+    if not _webhook_manager.remove(webhook_id):
         raise HTTPException(404, "Webhook not found")
     return {"deleted": webhook_id}
 
@@ -417,7 +638,7 @@ async def delete_webhook(
 async def webhook_deliveries(
     request: Request,
     limit: int = Query(default=50, ge=1, le=500),
-    _auth=Depends(_require_auth),
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
 ) -> dict[str, Any]:
     return {
         "deliveries": _webhook_manager.delivery_log(limit),
@@ -431,7 +652,7 @@ async def webhook_deliveries(
 async def test_webhook(
     request: Request,
     webhook_id: str,
-    _auth=Depends(_require_auth),
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, Any]:
     cfg = _webhook_manager.get(webhook_id)
     if cfg is None:
@@ -441,9 +662,7 @@ async def test_webhook(
         {"model": "test-model", "provider": "test", "score": 85.0, "test": True},
     )
     result = next((d for d in deliveries if d.webhook_id == webhook_id), None)
-    if result is None:
-        return {"success": False, "error": "No matching delivery"}
-    return result.to_dict()
+    return result.to_dict() if result else {"success": False, "error": "no delivery"}
 
 
 # ── Trust & Evaluation ─────────────────────────────────────────────────────────
@@ -453,7 +672,7 @@ async def test_webhook(
 async def evaluate_model(
     request: Request,
     req: EvaluateRequest,
-    _auth=Depends(_require_auth),
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
 ) -> dict[str, Any]:
     score = _trust_engine.compute(
         fairness=req.fairness, privacy=req.privacy, security=req.security,
@@ -472,48 +691,35 @@ async def evaluate_model(
     if req.record_drift:
         drift_alert = await _trust_repo.record(req.model_name, req.provider, score)
 
-    # Prometheus + OTEL instrumentation
     observe_trust_score(req.model_name, req.provider, score.overall)
     record_evaluation(req.model_name, req.provider, score.overall, score.grade)
 
-    # Push live update to connected WebSocket clients
     await _ws_manager.broadcast({
         "type": "trust_score",
         "data": {
-            "model": req.model_name,
-            "provider": req.provider,
-            "score": score.overall,
-            "grade": score.grade,
+            "model": req.model_name, "provider": req.provider,
+            "score": score.overall, "grade": score.grade,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         },
     })
 
-    # Fire webhooks on drift alert
     if drift_alert:
         observe_drift_alert(drift_alert.get("severity", "LOW"))
         deliveries = await _webhook_manager.fire(
             WebhookEvent.DRIFT_ALERT,
-            {
-                "model": req.model_name,
-                "provider": req.provider,
-                "delta": drift_alert.get("delta"),
-                "severity": drift_alert.get("severity"),
-                "score": score.overall,
-            },
+            {"model": req.model_name, "provider": req.provider,
+             "delta": drift_alert.get("delta"), "severity": drift_alert.get("severity"),
+             "score": score.overall},
         )
         for d in deliveries:
             observe_webhook_delivery(WebhookEvent.DRIFT_ALERT.value, d.success)
-
         await _ws_manager.broadcast({
             "type": "drift_alert",
             "data": {**drift_alert, "model": req.model_name, "provider": req.provider},
         })
 
-    logger.info(
-        "evaluation",
-        model=req.model_name, provider=req.provider,
-        score=score.overall, grade=score.grade,
-    )
+    logger.info("evaluation", model=req.model_name, provider=req.provider,
+                score=score.overall, grade=score.grade)
     return {
         "trust_score": score.to_dict(),
         "compliance": {
@@ -535,7 +741,7 @@ async def get_trust_history(
     model_name: str,
     provider: str,
     limit: int = 30,
-    _auth=Depends(_require_auth),
+    _auth: OrgContext = Depends(require_role(Role.VIEWER)),
 ) -> dict[str, Any]:
     if limit < 1 or limit > 365:
         raise HTTPException(400, "limit must be between 1 and 365")
@@ -546,7 +752,10 @@ async def get_trust_history(
 
 @app.get("/api/models", tags=["trust"])
 @limiter.limit("120/minute")
-async def list_models(request: Request, _auth=Depends(_require_auth)) -> dict[str, Any]:
+async def list_models(
+    request: Request,
+    _auth: OrgContext = Depends(require_role(Role.VIEWER)),
+) -> dict[str, Any]:
     return {"models": await _trust_repo.all_models()}
 
 
@@ -557,30 +766,22 @@ async def list_models(request: Request, _auth=Depends(_require_auth)) -> dict[st
 async def scan_text(
     request: Request,
     req: ScanTextRequest,
-    _auth=Depends(_require_auth),
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
 ) -> dict[str, Any]:
     result = _guardrails.scan(req.text)
     blocked = result.is_blocked
-
     observe_guardrail(blocked)
     record_guardrail_scan(blocked, len(result.pii_findings))
 
-    # Push to WebSocket clients
     if blocked:
         await _ws_manager.broadcast({
             "type": "guardrail",
-            "data": {
-                "blocked": True,
-                "pii_count": len(result.pii_findings),
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            },
+            "data": {"blocked": True, "pii_count": len(result.pii_findings),
+                     "timestamp": datetime.now(timezone.utc).isoformat()},
         })
         deliveries = await _webhook_manager.fire(
             WebhookEvent.GUARDRAIL_TRIGGERED,
-            {
-                "pii_count": len(result.pii_findings),
-                "block_reasons": result.block_reasons,
-            },
+            {"pii_count": len(result.pii_findings), "block_reasons": result.block_reasons},
         )
         for d in deliveries:
             observe_webhook_delivery(WebhookEvent.GUARDRAIL_TRIGGERED.value, d.success)
@@ -605,7 +806,7 @@ async def scan_text(
 async def analyze_hallucination(
     request: Request,
     body: dict[str, Any],
-    _auth=Depends(_require_auth),
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
 ) -> dict[str, Any]:
     text = str(body.get("text", ""))[:50_000]
     if not text:
@@ -629,7 +830,7 @@ async def analyze_hallucination(
 async def record_usage(
     request: Request,
     req: RecordUsageRequest,
-    _auth=Depends(_require_auth),
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
 ) -> dict[str, Any]:
     usage = TokenUsage.create(
         provider=req.provider, model=req.model,
@@ -637,32 +838,24 @@ async def record_usage(
         team=req.team, application=req.application,
     )
     cost_record = await _cost_repo.record(usage)
-
     observe_cost(req.model, req.provider, cost_record.total_cost, req.input_tokens, req.output_tokens)
     record_cost(req.provider, req.model, cost_record.total_cost, req.input_tokens + req.output_tokens)
 
-    # Push cost update to WebSocket clients
     await _ws_manager.broadcast({
         "type": "cost_update",
-        "data": {
-            "model": req.model,
-            "provider": req.provider,
-            "cost_usd": cost_record.total_cost,
-            "tokens": req.input_tokens + req.output_tokens,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        },
+        "data": {"model": req.model, "provider": req.provider,
+                 "cost_usd": cost_record.total_cost,
+                 "tokens": req.input_tokens + req.output_tokens,
+                 "timestamp": datetime.now(timezone.utc).isoformat()},
     })
 
-    # Fire budget webhook if exceeded
     budget = await _cost_repo.check_budget()
     if budget.is_exceeded:
         deliveries = await _webhook_manager.fire(
             WebhookEvent.BUDGET_EXCEEDED,
-            {
-                "monthly_limit_usd": budget.monthly_limit_usd,
-                "total_spent_usd": budget.total_spent_usd,
-                "overage_usd": round(budget.total_spent_usd - budget.monthly_limit_usd, 4),
-            },
+            {"monthly_limit_usd": budget.monthly_limit_usd,
+             "total_spent_usd": budget.total_spent_usd,
+             "overage_usd": round(budget.total_spent_usd - budget.monthly_limit_usd, 4)},
         )
         for d in deliveries:
             observe_webhook_delivery(WebhookEvent.BUDGET_EXCEEDED.value, d.success)
@@ -675,7 +868,7 @@ async def record_usage(
 async def cost_summary(
     request: Request,
     days: int = 30,
-    _auth=Depends(_require_auth),
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
 ) -> dict[str, Any]:
     if days < 1 or days > 365:
         raise HTTPException(400, "days must be between 1 and 365")
@@ -695,7 +888,7 @@ async def cost_summary(
 async def analyze_prompt(
     request: Request,
     req: AnalyzePromptRequest,
-    _auth=Depends(_require_auth),
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
 ) -> dict[str, Any]:
     result = _cost_analyzer.analyze_prompt_efficiency(
         prompt=req.prompt, response=req.response,
@@ -710,7 +903,7 @@ async def analyze_prompt(
 async def route_task(
     request: Request,
     req: RouteTaskRequest,
-    _auth=Depends(_require_auth),
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
 ) -> dict[str, Any]:
     decision = _router.route(req.task_description, req.quality_requirement)
     return decision.to_dict()
@@ -718,7 +911,10 @@ async def route_task(
 
 @app.get("/api/cost/models", tags=["cost"])
 @limiter.limit("60/minute")
-async def model_pricing(request: Request, _auth=Depends(_require_auth)) -> dict[str, Any]:
+async def model_pricing(
+    request: Request,
+    _auth: OrgContext = Depends(require_role(Role.VIEWER)),
+) -> dict[str, Any]:
     return {"models": _router.provider_comparison()}
 
 
@@ -730,7 +926,7 @@ async def get_drift_trend(
     request: Request,
     model_name: str,
     provider: str,
-    _auth=Depends(_require_auth),
+    _auth: OrgContext = Depends(require_role(Role.VIEWER)),
 ) -> dict[str, Any]:
     trend = await _trust_repo.trend(model_name, provider)
     history = await _trust_repo.history(model_name, provider, limit=10)

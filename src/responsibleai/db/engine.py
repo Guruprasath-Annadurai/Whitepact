@@ -58,6 +58,51 @@ trust_scores = Table(
     Index("idx_ts_recorded", "recorded_at"),
 )
 
+organizations = Table(
+    "organizations",
+    metadata,
+    Column("id",                 String(36),  primary_key=True),
+    Column("name",               String(200), nullable=False),
+    Column("slug",               String(100), nullable=False, unique=True),
+    Column("monthly_budget_usd", Float,       nullable=False, default=10_000.0),
+    Column("created_at",         String(32),  nullable=False),
+    Index("idx_org_slug", "slug"),
+)
+
+org_api_keys = Table(
+    "org_api_keys",
+    metadata,
+    Column("id",           String(36),  primary_key=True),
+    Column("org_id",       String(36),  nullable=False),
+    Column("key_hash",     String(64),  nullable=False, unique=True),
+    Column("name",         String(200), nullable=False),
+    Column("role",         String(20),  nullable=False, default="ANALYST"),
+    Column("created_at",   String(32),  nullable=False),
+    Column("last_used_at", String(32),  nullable=True),
+    Column("revoked",      Integer,     nullable=False, default=0),
+    Index("idx_oak_org",  "org_id"),
+    Index("idx_oak_hash", "key_hash"),
+)
+
+audit_log = Table(
+    "audit_log",
+    metadata,
+    Column("id",          String(36),  primary_key=True),
+    Column("timestamp",   String(32),  nullable=False),
+    Column("org_id",      String(36),  nullable=True),
+    Column("key_id",      String(36),  nullable=True),
+    Column("endpoint",    String(256), nullable=False),
+    Column("method",      String(10),  nullable=False),
+    Column("status_code", Integer,     nullable=True),
+    Column("ip_address",  String(64),  nullable=True),
+    Column("request_id",  String(64),  nullable=True),
+    Column("duration_ms", Float,       nullable=True),
+    Column("user_agent",  String(512), nullable=True),
+    Index("idx_al_timestamp", "timestamp"),
+    Index("idx_al_org",       "org_id"),
+    Index("idx_al_endpoint",  "endpoint"),
+)
+
 
 class DatabaseEngine:
     """Async database engine wrapping SQLAlchemy — SQLite or PostgreSQL."""
