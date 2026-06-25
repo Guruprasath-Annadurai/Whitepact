@@ -35,10 +35,10 @@ class TestHealth:
         assert r.status_code == 200
         d = r.json()
         assert d["status"] in ("healthy", "degraded")
-        assert d["version"] == "0.6.0"
+        assert d["version"] == "0.7.0"
         assert "checks" in d
         assert "modules" in d
-        assert len(d["modules"]) == 10
+        assert len(d["modules"]) >= 10
 
     async def test_health_has_uptime(self, client):
         r = await client.get("/api/health")

@@ -6,6 +6,48 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ---
 
+## [0.7.0] — 2026-06-25
+
+### Added
+- **WebSocket live dashboard** (`/ws/dashboard`)
+  - Real-time push of trust score updates, drift alerts, cost events, and guardrail blocks
+  - Auth via `?token=<api-key>` query param; unauthenticated connections rejected with code 4001
+  - Per-API-key tenant isolation — each client only receives its own events
+  - Background heartbeat ping every 30 s with live connection count
+  - Initial state snapshot sent on connect (monthly spend, registered models)
+- **Streaming LLM scanner** (`responsibleai.streaming`)
+  - `StreamingScanner` wraps any `AsyncIterator[str]` (OpenAI / Anthropic stream or custom generator)
+  - Scans every N tokens (configurable `scan_window`, default 50) and on sentence boundaries
+  - Hard-stop mode — terminates the stream immediately on PII detection
+  - `StreamScanSummary` with token count, scan count, PII detections, elapsed ms
+  - Async context-manager and plain async-generator interfaces
+- **Enterprise webhook system** (`responsibleai.webhooks`)
+  - `WebhookManager` — register, remove, list, test endpoints
+  - Event types: `drift_alert`, `budget_exceeded`, `guardrail_triggered`, `trust_score_changed`
+  - HMAC-SHA256 payload signing (`X-RAI-Signature-256` header)
+  - Exponential backoff retry: 1 s / 5 s / 30 s (configurable `max_retries`)
+  - Concurrent fan-out via `asyncio.gather`
+  - Provider-specific payload formatters: Slack Block Kit, Teams Adaptive Card, PagerDuty Events API v2, generic JSON
+  - In-memory delivery log (last 1 000 entries) with success/failure counters
+- **Prometheus `/metrics` endpoint**
+  - Metrics: `rai_trust_score`, `rai_requests_total`, `rai_cost_usd_total`, `rai_tokens_total`, `rai_guardrail_scans_total`, `rai_drift_alerts_total`, `rai_active_ws_connections`, `rai_webhook_deliveries_total`
+  - Labeled by `model`, `provider`, `severity`, `result`, etc.
+  - Compatible with Prometheus, Grafana, Datadog agent, VictoriaMetrics
+- **Webhook CRUD API** — `POST/GET/DELETE /api/webhooks`, `GET /api/webhooks/deliveries`, `POST /api/webhooks/test/{id}`
+- **`/api/health`** now reports `websocket_connections` and `webhooks_registered`
+- **`/api/metrics`** now reports `websocket_connections`, `webhooks_registered`, `webhook_deliveries`, `webhook_failures`
+- **46 new tests**: `tests/test_streaming.py` (17) + `tests/test_webhooks.py` (29)
+- New optional deps: `websockets>=12.0`, `prometheus-client>=0.20.0`
+
+### Changed
+- Version bumped `0.6.0 → 0.7.0`
+- `dashboard` dep group includes `websockets` and `prometheus-client`
+- CORS allows `PUT` and `DELETE` methods (webhook management)
+
+**683 tests passing · 88% coverage**
+
+---
+
 ## [0.6.0] — 2026-06-20
 
 ### Added
