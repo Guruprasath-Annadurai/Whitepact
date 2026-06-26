@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -31,7 +30,7 @@ def _entry(**kwargs) -> AuditEntry:
         "method": "POST",
         "status_code": 200,
         "duration_ms": 45.2,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
     defaults.update(kwargs)
     return AuditEntry(**defaults)
@@ -110,7 +109,7 @@ class TestAuditWrite:
 
 class TestAuditCleanup:
     async def test_cleanup_removes_old_entries(self, repo):
-        old_ts = (datetime.now(timezone.utc) - timedelta(days=100)).isoformat()
+        old_ts = (datetime.now(UTC) - timedelta(days=100)).isoformat()
         await repo.write(_entry(timestamp=old_ts))
         await repo.write(_entry())  # recent entry
         deleted = await repo.cleanup(retention_days=90)
@@ -124,7 +123,7 @@ class TestAuditCleanup:
         assert await repo.count(days=1) == 1
 
     async def test_cleanup_returns_count(self, repo):
-        old_ts = (datetime.now(timezone.utc) - timedelta(days=200)).isoformat()
+        old_ts = (datetime.now(UTC) - timedelta(days=200)).isoformat()
         for _ in range(3):
             await repo.write(_entry(timestamp=old_ts))
         deleted = await repo.cleanup(retention_days=90)

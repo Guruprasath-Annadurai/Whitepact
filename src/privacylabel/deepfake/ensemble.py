@@ -8,12 +8,12 @@ The ensemble combines them using configurable voting strategies.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 import numpy as np
 
 
-class VotingStrategy(str, Enum):
+class VotingStrategy(StrEnum):
     """How to combine individual model scores into an ensemble decision."""
 
     MEAN = "mean"            # Simple average

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 Severity = Literal["none", "low", "medium", "high", "critical"]
@@ -54,7 +54,7 @@ class ProbeResult:
     template_results: list[TemplateResult]
     metadata: dict[str, Any] = field(default_factory=dict)
     confidence_interval: tuple[float, float] | None = None
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -101,7 +101,7 @@ class SuiteResult:
     provider_name: str
     model_name: str
     probe_results: list[ProbeResult]
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     @property
     def overall_score(self) -> float:

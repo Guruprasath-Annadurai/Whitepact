@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Sequence
+from collections.abc import Sequence
 
 from biasbuster.core.base_probe import BaseProbe
 from biasbuster.core.result import SuiteResult

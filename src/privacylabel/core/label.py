@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 
@@ -15,7 +15,7 @@ class Label:
     confidence: float
     source: str  # "llm", "human", "ensemble"
     metadata: dict[str, Any] = field(default_factory=dict)
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def __post_init__(self) -> None:
         if not 0.0 <= self.confidence <= 1.0:
@@ -42,7 +42,7 @@ class LabelBatch:
     labels: list[Label] = field(default_factory=list)
     provider_name: str = "unknown"
     model_name: str = "unknown"
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def append(self, label: Label) -> None:
         self.labels.append(label)

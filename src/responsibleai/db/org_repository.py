@@ -11,17 +11,17 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import delete, insert, select, update
 
 from responsibleai.db.engine import DatabaseEngine, org_api_keys, organizations
-from responsibleai.rbac.models import OrgApiKey, OrgContext, Organization, Role
+from responsibleai.rbac.models import Organization, OrgApiKey, OrgContext, Role
 from responsibleai.rbac.permissions import role_from_str
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _hash_key(raw: str) -> str:

@@ -4,19 +4,19 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from enum import Enum
+from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any
 
 
-class BenchmarkSuite(str, Enum):
+class BenchmarkSuite(StrEnum):
     TRUTHFULQA = "truthfulqa"
     BBQ = "bbq"
     HELLASWAG = "hellaswag"
     CUSTOM = "custom"
 
 
-class RegressionSeverity(str, Enum):
+class RegressionSeverity(StrEnum):
     MINOR = "minor"       # 1–5 point drop
     MODERATE = "moderate" # 5–15 point drop
     SEVERE = "severe"     # > 15 point drop
@@ -71,7 +71,7 @@ class ComparisonResult:
     provider_a: str
     provider_b: str
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     prompt_results: list[PromptComparisonResult] = field(default_factory=list)
 
     @property
@@ -162,7 +162,7 @@ class BenchmarkResult:
     provider: str
     suite: BenchmarkSuite
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     sample_results: list[BenchmarkSampleResult] = field(default_factory=list)
 
     @property
@@ -224,7 +224,7 @@ class RegressionAlert:
     severity: RegressionSeverity
     suite: str = ""
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    detected_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    detected_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -258,7 +258,7 @@ class DatasetScanResult:
     filename: str
     total_rows: int
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     row_results: list[DatasetRowResult] = field(default_factory=list)
 
     @property

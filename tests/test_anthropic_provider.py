@@ -129,6 +129,7 @@ class TestAnthropicProviderImportError:
         sys.modules["anthropic"] = None  # type: ignore[assignment]
         try:
             import importlib
+
             import biasbuster.providers.anthropic_provider as mod
             importlib.reload(mod)
             with pytest.raises(ImportError, match="anthropic"):
@@ -139,5 +140,6 @@ class TestAnthropicProviderImportError:
             else:
                 sys.modules["anthropic"] = original
             import importlib
+
             import biasbuster.providers.anthropic_provider as mod
             importlib.reload(mod)

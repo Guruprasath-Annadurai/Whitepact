@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+
 import pytest
 
 os.environ.setdefault("RAI_DB_PATH", ":memory:")
@@ -15,7 +16,7 @@ from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
 
 from responsibleai.dashboard.app import app
-from responsibleai.dashboard.config import Settings, get_settings
+from responsibleai.dashboard.config import Settings
 
 
 @pytest.fixture()

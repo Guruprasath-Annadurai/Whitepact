@@ -9,12 +9,12 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from enum import Enum
+from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any
 
 
-class AttackCategory(str, Enum):
+class AttackCategory(StrEnum):
     PROMPT_INJECTION = "prompt_injection"
     JAILBREAK = "jailbreak"
     DATA_LEAKAGE = "data_leakage"
@@ -47,7 +47,7 @@ class RedTeamReport:
     provider: str
     attack_results: list[AttackResult]
     security_score: float
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     @property
     def vulnerabilities(self) -> list[AttackResult]:

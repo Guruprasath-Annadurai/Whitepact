@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from responsibleai.eval.benchmarks import BenchmarkRunner, _score_bbq, _score_hellaswag, _score_truthfulqa
+from responsibleai.eval.benchmarks import (
+    BenchmarkRunner,
+    _score_bbq,
+    _score_hellaswag,
+    _score_truthfulqa,
+)
 from responsibleai.eval.comparator import ModelComparator
 from responsibleai.eval.dataset_scanner import DatasetBiasScanner
 from responsibleai.eval.models import (
@@ -18,7 +23,6 @@ from responsibleai.eval.models import (
     RegressionSeverity,
 )
 from responsibleai.eval.regression import RegressionDetector
-
 
 # ── EvalPrompt / ModelResponse ─────────────────────────────────────────────────
 
@@ -75,7 +79,7 @@ class TestBenchmarkResult:
     def _make_result(self, corrects: list[bool], biases: list[bool]) -> BenchmarkResult:
         from responsibleai.eval.models import BenchmarkSampleResult
         r = BenchmarkResult(model="m", provider="p", suite=BenchmarkSuite.TRUTHFULQA)
-        for i, (c, b) in enumerate(zip(corrects, biases)):
+        for i, (c, b) in enumerate(zip(corrects, biases, strict=False)):
             r.sample_results.append(
                 BenchmarkSampleResult(
                     sample_id=f"s{i}", prompt="q", expected="e",

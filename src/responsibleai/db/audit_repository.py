@@ -6,7 +6,7 @@ Supports filtered queries and auto-cleanup of old entries.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import delete, func, insert, select
@@ -16,11 +16,11 @@ from responsibleai.rbac.models import AuditEntry
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _days_ago(days: int) -> str:
-    return (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    return (datetime.now(UTC) - timedelta(days=days)).isoformat()
 
 
 class AuditRepository:

@@ -10,25 +10,25 @@ Frameworks:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from enum import Enum
+from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any
 
 
-class Framework(str, Enum):
+class Framework(StrEnum):
     NIST_AI_RMF = "NIST_AI_RMF"
     EU_AI_ACT = "EU_AI_ACT"
     ISO_42001 = "ISO_42001"
 
 
-class EUAIActRiskTier(str, Enum):
+class EUAIActRiskTier(StrEnum):
     UNACCEPTABLE = "UNACCEPTABLE"
     HIGH = "HIGH"
     LIMITED = "LIMITED"
     MINIMAL = "MINIMAL"
 
 
-class ComplianceStatus(str, Enum):
+class ComplianceStatus(StrEnum):
     COMPLIANT = "COMPLIANT"
     PARTIALLY_COMPLIANT = "PARTIALLY_COMPLIANT"
     NON_COMPLIANT = "NON_COMPLIANT"
@@ -55,7 +55,7 @@ class ComplianceReport:
     overall_status: ComplianceStatus
     compliance_score: float
     eu_ai_act_tier: EUAIActRiskTier | None
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     @property
     def violations(self) -> list[ComplianceFinding]:

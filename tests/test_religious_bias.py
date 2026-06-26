@@ -4,7 +4,6 @@ import pytest
 
 from biasbuster.probes.religious_bias import (
     DEFAULT_TEMPLATES,
-    RELIGIOUS_GROUPS,
     ReligiousBiasProbe,
     _neutralize_religion,
 )

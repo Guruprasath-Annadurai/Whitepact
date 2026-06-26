@@ -40,7 +40,7 @@ class BaseProbe(ABC):
         return self._threshold
 
     @abstractmethod
-    async def run(self, provider: "BaseProvider") -> "ProbeResult":
+    async def run(self, provider: BaseProvider) -> ProbeResult:
         """Execute the probe against the given provider and return a result."""
         ...
 

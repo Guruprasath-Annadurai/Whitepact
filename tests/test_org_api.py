@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from responsibleai.db.engine import create_engine
-from responsibleai.db.org_repository import OrgRepository, _hash_key, _generate_raw_key
+from responsibleai.db.org_repository import OrgRepository, _generate_raw_key, _hash_key
 from responsibleai.rbac.models import Role
 
 

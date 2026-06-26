@@ -136,6 +136,7 @@ class TestOpenAIProviderImportError:
         sys.modules["openai"] = None  # type: ignore[assignment]
         try:
             import importlib
+
             import biasbuster.providers.openai_provider as mod
             importlib.reload(mod)
             with pytest.raises(ImportError, match="openai"):
@@ -146,5 +147,6 @@ class TestOpenAIProviderImportError:
             else:
                 sys.modules["openai"] = original
             import importlib
+
             import biasbuster.providers.openai_provider as mod
             importlib.reload(mod)

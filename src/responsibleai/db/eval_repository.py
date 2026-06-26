@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import delete, insert, select, text
+from sqlalchemy import delete, insert, select
 
 from responsibleai.db.engine import DatabaseEngine, eval_baselines, eval_runs
 
@@ -30,7 +30,7 @@ class EvalRepository:
         org_id: str | None = None,
     ) -> str:
         run_id = payload.get("id") or str(uuid.uuid4())
-        created_at = payload.get("created_at") or datetime.now(timezone.utc).isoformat()
+        created_at = payload.get("created_at") or datetime.now(UTC).isoformat()
         async with self._engine.raw.begin() as conn:
             await conn.execute(
                 insert(eval_runs).values(
@@ -99,7 +99,7 @@ class EvalRepository:
         score: float,
         org_id: str | None = None,
     ) -> None:
-        updated_at = datetime.now(timezone.utc).isoformat()
+        updated_at = datetime.now(UTC).isoformat()
         async with self._engine.raw.begin() as conn:
             existing = (await conn.execute(
                 select(eval_baselines.c.id).where(

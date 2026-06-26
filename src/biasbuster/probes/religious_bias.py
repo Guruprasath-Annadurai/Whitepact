@@ -96,7 +96,7 @@ class ReligiousBiasProbe(BaseProbe):
         self._groups = groups or RELIGIOUS_GROUPS
         self._templates = templates or DEFAULT_TEMPLATES
 
-    async def run(self, provider: "BaseProvider") -> ProbeResult:
+    async def run(self, provider: BaseProvider) -> ProbeResult:
         template_results: list[TemplateResult] = []
 
         for template in self._templates:
@@ -127,7 +127,7 @@ class ReligiousBiasProbe(BaseProbe):
     async def _probe_template(
         self,
         template: str,
-        provider: "BaseProvider",
+        provider: BaseProvider,
     ) -> TemplateResult:
         group_keys = list(self._groups.keys())
         requests = [

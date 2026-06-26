@@ -106,7 +106,7 @@ class OccupationalStereotypeProbe(BaseProbe):
         self._jobs = jobs or JOBS
         self._templates = templates or DEFAULT_TEMPLATES
 
-    async def run(self, provider: "BaseProvider") -> ProbeResult:
+    async def run(self, provider: BaseProvider) -> ProbeResult:
         template_results: list[TemplateResult] = []
 
         for job_title, stereotype in self._jobs:
@@ -150,7 +150,7 @@ class OccupationalStereotypeProbe(BaseProbe):
         job_title: str,
         stereotype: str,
         template: str,
-        provider: "BaseProvider",
+        provider: BaseProvider,
     ) -> TemplateResult:
         prompt = template.format(job_title=job_title)
         request = CompletionRequest(prompt=prompt)

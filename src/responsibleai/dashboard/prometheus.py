@@ -17,12 +17,11 @@ Metrics exported:
 from __future__ import annotations
 
 from prometheus_client import (
-    CollectorRegistry,
+    CONTENT_TYPE_LATEST,
+    REGISTRY,
     Counter,
     Gauge,
     generate_latest,
-    CONTENT_TYPE_LATEST,
-    REGISTRY,
 )
 
 # ── Gauges ────────────────────────────────────────────────────────────────────

@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from responsibleai.drift.monitor import DriftAlert, TrustDriftMonitor
+from responsibleai.drift.monitor import TrustDriftMonitor
 from responsibleai.trust.score import TrustScoreEngine
-
 
 _engine = TrustScoreEngine()
 

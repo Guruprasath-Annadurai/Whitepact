@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 
-class PIICategory(str, Enum):
+class PIICategory(StrEnum):
     EMAIL = "email"
     PHONE = "phone"
     SSN = "ssn"
@@ -21,7 +21,7 @@ class PIICategory(str, Enum):
     DATE_OF_BIRTH = "date_of_birth"
 
 
-class ToxicityCategory(str, Enum):
+class ToxicityCategory(StrEnum):
     HATE_SPEECH = "hate_speech"
     VIOLENCE = "violence"
     SELF_HARM = "self_harm"

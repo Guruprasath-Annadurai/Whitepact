@@ -150,7 +150,7 @@ def _intersectional_section(report: IntersectionalReport) -> str:
         status_label = "Both failing" if c.both_failing else "Passing"
         status_color = "#E24B4A" if c.both_failing else "#1D9E75"
         amplified_note = (
-            f'<span style="font-size:10px;color:#E24B4A;">+15% amplified</span>'
+            '<span style="font-size:10px;color:#E24B4A;">+15% amplified</span>'
             if c.both_failing
             else ""
         )

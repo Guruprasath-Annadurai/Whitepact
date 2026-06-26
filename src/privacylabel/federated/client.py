@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -42,7 +42,7 @@ class RoundSummary:
     mean_confidence: float
     gradient_norm: float
     privacy_spent: dict[str, float]
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -82,7 +82,7 @@ class FederatedClient:
     def __init__(
         self,
         node_id: str,
-        provider: "BaseLabelProvider",
+        provider: BaseLabelProvider,
         epsilon_per_round: float = 0.1,
         total_epsilon: float = 1.0,
         delta: float = 1e-6,
@@ -185,7 +185,7 @@ class FederatedClient:
         texts = [r.get("text", "") for r in records]
         results = await self.provider.batch_label(texts)
 
-        for record, result in zip(records, results):
+        for record, result in zip(records, results, strict=False):
             batch.append(
                 Label(
                     label_id=str(uuid.uuid4()),

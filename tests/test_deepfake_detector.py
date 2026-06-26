@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import numpy as np
+from pathlib import Path
+
 import pytest
 
 from privacylabel.deepfake.detector import DeepfakeDetector, DeepfakeResult
@@ -113,19 +114,19 @@ class TestDeepfakeDetectorResult:
             confidence=0.1,
             ensemble_score=0.1,
         )
-        with pytest.raises(Exception):
+        with pytest.raises(AttributeError):
             result.is_fake = True  # type: ignore[misc]
 
 
 class TestDeepfakeDetectorImageAsync:
     @pytest.mark.asyncio
-    async def test_detect_returns_deepfake_result(self, tmp_path: "Path") -> None:
-        from pathlib import Path
+    async def test_detect_returns_deepfake_result(self, tmp_path: Path) -> None:
         # Create a minimal fake image file
         img_path = tmp_path / "test.jpg"
         # Write a 1-pixel JPEG-like binary (detector falls back to mock if torch absent)
         try:
             import io
+
             from PIL import Image as PILImage
             img = PILImage.new("RGB", (224, 224), color=(100, 150, 200))
             buf = io.BytesIO()
@@ -142,11 +143,11 @@ class TestDeepfakeDetectorImageAsync:
         assert 0.0 <= result.confidence
 
     @pytest.mark.asyncio
-    async def test_detect_result_has_model_scores(self, tmp_path: "Path") -> None:
-        from pathlib import Path
+    async def test_detect_result_has_model_scores(self, tmp_path: Path) -> None:
         img_path = tmp_path / "test2.jpg"
         try:
             import io
+
             from PIL import Image as PILImage
             img = PILImage.new("RGB", (224, 224))
             buf = io.BytesIO()
@@ -160,7 +161,7 @@ class TestDeepfakeDetectorImageAsync:
         assert len(result.model_scores) >= 1
 
     @pytest.mark.asyncio
-    async def test_detect_video_frame_distribution(self, tmp_path: "Path") -> None:
+    async def test_detect_video_frame_distribution(self, tmp_path: Path) -> None:
         """Video detection without cv2 returns a synthesised result."""
         video_path = tmp_path / "fake.mp4"
         video_path.write_bytes(b"\x00" * 1024)  # dummy file

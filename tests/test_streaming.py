@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from responsibleai.guardrails.engine import GuardrailsEngine
-from responsibleai.streaming.scanner import StreamScanResult, StreamScanSummary, StreamingScanner
+from responsibleai.streaming.scanner import StreamingScanner, StreamScanResult, StreamScanSummary
 
 
 async def _gen(*tokens: str):
@@ -108,7 +108,6 @@ class TestStreamingScanner:
     async def test_reset_on_new_scan(self, scanner):
         async for _ in scanner.scan_stream(_gen("hello")):
             pass
-        first_count = scanner.summary.total_tokens
         async for _ in scanner.scan_stream(_gen("world", "!")):
             pass
         # second scan starts fresh

@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from sqlalchemy import (
-    Column, Float, Index, Integer, MetaData, String, Table, Text,
-    event, text,
+    Column,
+    Float,
+    Index,
+    Integer,
+    MetaData,
+    String,
+    Table,
+    Text,
+    text,
 )
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -34,13 +34,13 @@ def _make_suite() -> SuiteResult:
         threshold=0.20,
         template_results=[tr],
         confidence_interval=(0.08, 0.16),
-        timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        timestamp=datetime(2026, 1, 1, tzinfo=UTC),
     )
     return SuiteResult(
         provider_name="mock",
         model_name="mock-1.0",
         probe_results=[probe],
-        timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        timestamp=datetime(2026, 1, 1, tzinfo=UTC),
     )
 
 

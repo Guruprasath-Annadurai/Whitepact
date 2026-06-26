@@ -1,3 +1,6 @@
+from responsibleai.eval.benchmarks import BenchmarkRunner
+from responsibleai.eval.comparator import ModelComparator
+from responsibleai.eval.dataset_scanner import DatasetBiasScanner
 from responsibleai.eval.models import (
     BenchmarkResult,
     BenchmarkSuite,
@@ -8,9 +11,6 @@ from responsibleai.eval.models import (
     RegressionAlert,
     RegressionSeverity,
 )
-from responsibleai.eval.benchmarks import BenchmarkRunner
-from responsibleai.eval.comparator import ModelComparator
-from responsibleai.eval.dataset_scanner import DatasetBiasScanner
 from responsibleai.eval.regression import RegressionDetector
 
 __all__ = [

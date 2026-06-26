@@ -149,7 +149,7 @@ class FedAvgAggregator:
             weights = [u.num_samples / total_samples for u in updates]
 
         global_grads = sum(
-            w * u.gradients for w, u in zip(weights, updates)  # type: ignore[misc]
+            w * u.gradients for w, u in zip(weights, updates, strict=False)  # type: ignore[misc]
         )
         return np.asarray(global_grads), 0
 

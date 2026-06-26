@@ -1,4 +1,4 @@
-from responsibleai.rbac.models import AuditEntry, OrgApiKey, OrgContext, Organization, Role
+from responsibleai.rbac.models import AuditEntry, Organization, OrgApiKey, OrgContext, Role
 from responsibleai.rbac.permissions import has_permission, role_from_str, roles_above
 
 __all__ = [

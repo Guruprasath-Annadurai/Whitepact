@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from privacylabel.federated.aggregator import AggregationResult, FedAvgAggregator, NodeUpdate
+from privacylabel.federated.aggregator import FedAvgAggregator, NodeUpdate
 
 
 def _update(node_id: str, values: list[float], n_samples: int = 100) -> NodeUpdate:

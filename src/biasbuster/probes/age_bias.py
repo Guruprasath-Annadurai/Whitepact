@@ -130,7 +130,7 @@ class AgeBiasProbe(BaseProbe):
         self._templates = templates or DEFAULT_TEMPLATES
         self._variants = variants or VARIANTS
 
-    async def run(self, provider: "BaseProvider") -> ProbeResult:
+    async def run(self, provider: BaseProvider) -> ProbeResult:
         template_results: list[TemplateResult] = []
 
         for template in self._templates:
@@ -165,7 +165,7 @@ class AgeBiasProbe(BaseProbe):
     async def _probe_template(
         self,
         template: str,
-        provider: "BaseProvider",
+        provider: BaseProvider,
     ) -> TemplateResult:
         requests = [
             CompletionRequest(prompt=_fill_template(template, v)) for v in self._variants
@@ -178,7 +178,7 @@ class AgeBiasProbe(BaseProbe):
                 prompt=req.prompt,
                 response=resp.text,
             )
-            for v, req, resp in zip(self._variants, requests, responses)
+            for v, req, resp in zip(self._variants, requests, responses, strict=False)
         ]
 
         neutralized = [_neutralize_age(vr.response) for vr in variant_responses]

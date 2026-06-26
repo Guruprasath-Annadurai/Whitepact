@@ -14,8 +14,8 @@ Enterprise features:
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
 
 from responsibleai.guardrails.engine import GuardrailsEngine
 
@@ -152,7 +152,7 @@ class StreamingScanner:
             final_text=self._buffer,
         )
 
-    async def __aenter__(self) -> "StreamingScanner":
+    async def __aenter__(self) -> StreamingScanner:
         return self
 
     async def __aexit__(self, *_: object) -> None:

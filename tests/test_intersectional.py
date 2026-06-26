@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
 from biasbuster.core.intersectional import (
     IntersectionalReport,
-    ProbeCorrelation,
     compute_intersectional_report,
 )
 from biasbuster.core.result import ProbeResult, SuiteResult
@@ -28,7 +27,7 @@ def _make_probe(
         passed=passed,
         threshold=threshold,
         template_results=[],
-        timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        timestamp=datetime(2026, 1, 1, tzinfo=UTC),
     )
 
 
@@ -37,7 +36,7 @@ def _make_suite(*probes: ProbeResult) -> SuiteResult:
         provider_name="mock",
         model_name="mock-1.0",
         probe_results=list(probes),
-        timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        timestamp=datetime(2026, 1, 1, tzinfo=UTC),
     )
 
 

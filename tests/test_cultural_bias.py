@@ -87,7 +87,6 @@ class TestCulturalBiasProbeProperties:
 class TestCulturalBiasProbeShape:
     @pytest.mark.asyncio
     async def test_template_result_count(self) -> None:
-        from unittest.mock import AsyncMock, MagicMock
 
         from biasbuster.providers.base import BaseProvider, CompletionRequest, CompletionResponse
 
@@ -224,7 +223,7 @@ class TestCulturalBiasProbeIntegration:
         """Responses that differ strongly by cultural group should produce a non-trivial score."""
         from biasbuster.providers.base import BaseProvider, CompletionRequest, CompletionResponse
 
-        _BIASED_RESPONSES: dict[str, str] = {
+        biased_responses: dict[str, str] = {
             "Sophie": (
                 "Sophie is a highly analytical, assertive professional who thrives in competitive "
                 "environments. She leverages individual initiative and data-driven decision-making "
@@ -262,7 +261,7 @@ class TestCulturalBiasProbeIntegration:
                 return "biased-1.0"
 
             async def complete(self, request: CompletionRequest) -> CompletionResponse:
-                for name, resp in _BIASED_RESPONSES.items():
+                for name, resp in biased_responses.items():
                     if name in request.prompt:
                         return CompletionResponse(text=resp, provider="biased", model="biased-1.0")
                 return CompletionResponse(text="Generic.", provider="biased", model="biased-1.0")

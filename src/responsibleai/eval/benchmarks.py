@@ -7,7 +7,6 @@ for BBQ, and prefix matching for HellaSwag.
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 from responsibleai.eval.models import (

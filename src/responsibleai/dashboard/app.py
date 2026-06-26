@@ -6,7 +6,7 @@ import asyncio
 import time
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -25,13 +25,12 @@ from responsibleai.compliance.engine import ComplianceEngine
 from responsibleai.cost.analyzer import CostAnalyzer
 from responsibleai.cost.models import BudgetPolicy, TokenUsage
 from responsibleai.cost.router import ModelRouter
-from responsibleai.dashboard.config import Settings, get_settings
+from responsibleai.dashboard.config import get_settings
 from responsibleai.dashboard.logging_config import configure_logging, get_logger
 from responsibleai.dashboard.middleware import (
     RequestIDMiddleware,
     RequestLoggingMiddleware,
     SecurityHeadersMiddleware,
-    build_api_key_dependency,
     global_exception_handler,
     http_exception_handler,
 )
@@ -40,7 +39,6 @@ from responsibleai.dashboard.prometheus import (
     observe_cost,
     observe_drift_alert,
     observe_guardrail,
-    observe_request,
     observe_trust_score,
     observe_webhook_delivery,
     observe_websocket_connections,
@@ -52,13 +50,15 @@ from responsibleai.dashboard.telemetry import (
     setup_telemetry,
 )
 from responsibleai.dashboard.websocket_manager import ConnectionManager
-from responsibleai.db import AuditRepository, CostRepository, EvalRepository, OrgRepository, TrustRepository, create_engine
+from responsibleai.db import (
+    AuditRepository,
+    CostRepository,
+    EvalRepository,
+    OrgRepository,
+    TrustRepository,
+    create_engine,
+)
 from responsibleai.db.engine import DatabaseEngine
-from responsibleai.guardrails.engine import GuardrailsEngine
-from responsibleai.hallucination.detector import HallucinationDetector
-from responsibleai.rbac import AuditEntry, OrgContext, Role, has_permission, role_from_str
-from responsibleai.trust.passport import PassportGenerator
-from responsibleai.trust.score import TrustScoreEngine
 from responsibleai.eval import (
     BenchmarkRunner,
     BenchmarkSuite,
@@ -68,6 +68,11 @@ from responsibleai.eval import (
     ModelResponse,
     RegressionDetector,
 )
+from responsibleai.guardrails.engine import GuardrailsEngine
+from responsibleai.hallucination.detector import HallucinationDetector
+from responsibleai.rbac import AuditEntry, OrgContext, Role, has_permission, role_from_str
+from responsibleai.trust.passport import PassportGenerator
+from responsibleai.trust.score import TrustScoreEngine
 from responsibleai.webhooks import WebhookConfig, WebhookEvent, WebhookManager, WebhookProvider
 
 _START_TIME = time.monotonic()
@@ -88,7 +93,7 @@ if settings.redis_url:
 limiter = Limiter(**_limiter_kwargs)
 
 # ── ContextVar for audit log (scoped per-request in async) ────────────────────
-_audit_ctx: ContextVar[dict[str, Any]] = ContextVar("audit_ctx", default={})
+_audit_ctx: ContextVar[dict[str, Any] | None] = ContextVar("audit_ctx", default=None)
 
 # ── Module singletons ──────────────────────────────────────────────────────────
 _trust_engine: TrustScoreEngine | None = None
@@ -212,13 +217,13 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
             return response
 
         duration_ms = round((time.monotonic() - start) * 1000, 2)
-        ctx_data = _audit_ctx.get()
+        ctx_data = _audit_ctx.get() or {}
 
         if _audit_repo:
             entry = AuditEntry(
                 endpoint=path,
                 method=request.method,
-                timestamp=datetime.now(timezone.utc).isoformat(),
+                timestamp=datetime.now(UTC).isoformat(),
                 org_id=ctx_data.get("org_id"),
                 key_id=ctx_data.get("key_id"),
                 status_code=response.status_code,
@@ -426,7 +431,7 @@ async def health() -> dict[str, Any]:
         "status": "healthy" if db_ok else "degraded",
         "version": "0.9.0",
         "uptime_seconds": round(time.monotonic() - _START_TIME, 1),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "checks": {
             "database": "ok" if db_ok else "error",
             "db_backend": db_backend,
@@ -682,7 +687,7 @@ async def eval_benchmark_prompts(
     try:
         s = BenchmarkSuite(suite)
     except ValueError:
-        raise HTTPException(400, f"Unknown suite: {suite}. Valid: truthfulqa, bbq, hellaswag")
+        raise HTTPException(400, f"Unknown suite: {suite}. Valid: truthfulqa, bbq, hellaswag") from None
     prompts = _benchmark_runner.get_prompts(s)
     return {"suite": suite, "prompts": prompts, "count": len(prompts)}
 
@@ -920,7 +925,7 @@ async def evaluate_model(
         "data": {
             "model": req.model_name, "provider": req.provider,
             "score": score.overall, "grade": score.grade,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         },
     })
 
@@ -998,7 +1003,7 @@ async def scan_text(
         await _ws_manager.broadcast({
             "type": "guardrail",
             "data": {"blocked": True, "pii_count": len(result.pii_findings),
-                     "timestamp": datetime.now(timezone.utc).isoformat()},
+                     "timestamp": datetime.now(UTC).isoformat()},
         })
         deliveries = await _webhook_manager.fire(
             WebhookEvent.GUARDRAIL_TRIGGERED,
@@ -1067,7 +1072,7 @@ async def record_usage(
         "data": {"model": req.model, "provider": req.provider,
                  "cost_usd": cost_record.total_cost,
                  "tokens": req.input_tokens + req.output_tokens,
-                 "timestamp": datetime.now(timezone.utc).isoformat()},
+                 "timestamp": datetime.now(UTC).isoformat()},
     })
 
     budget = await _cost_repo.check_budget()

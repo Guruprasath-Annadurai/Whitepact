@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 
-class Role(str, Enum):
+class Role(StrEnum):
     OWNER = "OWNER"
     ADMIN = "ADMIN"
     ANALYST = "ANALYST"

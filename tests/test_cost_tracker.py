@@ -60,7 +60,7 @@ class TestRecord:
 
 class TestTotals:
     def test_total_cost_increases_with_records(self, tracker):
-        for i in range(5):
+        for _ in range(5):
             tracker.record(TokenUsage.create("openai", "gpt-4o", 1000, 500))
         assert tracker.total_cost() > 0
 

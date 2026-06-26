@@ -43,7 +43,7 @@ class TestLabel:
 
     def test_immutable(self) -> None:
         lb = Label(label_id="l", data_id="d", label="x", confidence=0.5, source="llm")
-        with pytest.raises(Exception):
+        with pytest.raises(AttributeError):
             lb.label = "y"  # type: ignore[misc]
 
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from responsibleai.cost.analyzer import classify_task_complexity, _TIER_RECOMMENDATIONS
+from responsibleai.cost.analyzer import _TIER_RECOMMENDATIONS, classify_task_complexity
 from responsibleai.cost.models import MODEL_CATALOG, RoutingDecision, get_pricing
 
 _GPT4O_1K_COST = (

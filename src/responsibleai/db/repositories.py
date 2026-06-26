@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import func, select, text
 
 from responsibleai.cost.models import (
     BudgetPolicy,
@@ -164,7 +164,7 @@ class TrustRepository:
 
     async def record(self, model_name: str, provider: str, score: TrustScore) -> dict[str, Any] | None:
         """Persist a score snapshot; return drift info if threshold exceeded."""
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
 
         async with self._engine.raw.begin() as conn:
             await conn.execute(
@@ -268,5 +268,5 @@ class TrustRepository:
 
 def _days_ago_iso(days: int) -> str:
     from datetime import timedelta
-    dt = datetime.now(timezone.utc) - timedelta(days=days)
+    dt = datetime.now(UTC) - timedelta(days=days)
     return dt.isoformat()

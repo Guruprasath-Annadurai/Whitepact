@@ -13,7 +13,6 @@ from responsibleai.db.engine import create_engine
 from responsibleai.db.repositories import CostRepository, TrustRepository
 from responsibleai.trust.score import TrustScoreEngine
 
-
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 @pytest.fixture()
@@ -79,7 +78,7 @@ class TestCostRepository:
         await cost_repo.record(u2)
         total = await cost_repo.total_cost()
         assert total > 0
-        r1 = (await cost_repo.record(u1)).total_cost  # already recorded, gets ignored
+        await cost_repo.record(u1)  # already recorded, gets ignored
         assert total > 0
 
     async def test_total_tokens_returns_dict(self, cost_repo, usage):

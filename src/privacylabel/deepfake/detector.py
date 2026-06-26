@@ -27,8 +27,8 @@ from privacylabel.deepfake.ensemble import EnsembleVoter, ModelScore, VotingStra
 try:
     import torch
     import torch.nn as nn
-    from torchvision import models, transforms
     from PIL import Image
+    from torchvision import models, transforms
     _TORCH_AVAILABLE = True
 except ImportError:
     _TORCH_AVAILABLE = False
@@ -147,7 +147,7 @@ class DeepfakeDetector:
             }
         self._loaded = True
 
-    def _build_xception(self) -> "nn.Module":
+    def _build_xception(self) -> nn.Module:
         """
         XceptionNet adapted for binary deepfake classification.
 
@@ -160,7 +160,7 @@ class DeepfakeDetector:
         model.eval()
         return model
 
-    def _build_efficientnet(self) -> "nn.Module":
+    def _build_efficientnet(self) -> nn.Module:
         model = models.efficientnet_b0(weights=None)
         model.classifier[1] = torch.nn.Linear(  # type: ignore[index]
             model.classifier[1].in_features, 2  # type: ignore[union-attr]

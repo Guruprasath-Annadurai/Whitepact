@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Generator
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Generator
+from typing import Any
 
 from responsibleai.cost.models import (
     BudgetPolicy,
@@ -186,7 +187,7 @@ class CostTracker:
         ]
 
     def monthly_summary(self, year: int | None = None, month: int | None = None) -> dict[str, Any]:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         year = year or now.year
         month = month or now.month
         rows = self._conn.execute(
@@ -217,7 +218,6 @@ class CostTracker:
 
     def check_budget(self) -> BudgetStatus:
         """Check current spend against the configured budget policy."""
-        now = datetime.now(timezone.utc)
         spent = self.total_cost(30)  # last 30 days
         pct = (spent / self._policy.monthly_limit_usd * 100) if self._policy.monthly_limit_usd > 0 else 0.0
         return BudgetStatus(

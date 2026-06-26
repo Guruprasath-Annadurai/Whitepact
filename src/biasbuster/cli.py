@@ -7,10 +7,10 @@ from pathlib import Path
 
 import click
 from dotenv import load_dotenv
+from rich import box
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from rich import box
 
 from biasbuster.core.result import ProbeResult, SuiteResult
 from biasbuster.core.runner import BiasBusterRunner
@@ -48,7 +48,6 @@ SEVERITY_COLORS = {
 
 
 def _build_provider(provider: str, model: str | None) -> object:
-    from biasbuster.providers.base import BaseProvider
 
     if provider == "openai":
         from biasbuster.providers.openai_provider import OpenAIProvider

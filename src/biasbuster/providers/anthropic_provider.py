@@ -42,7 +42,6 @@ class AnthropicProvider(BaseProvider):
         return self._model
 
     async def complete(self, request: CompletionRequest) -> CompletionResponse:
-        import anthropic
 
         response = await self._client.messages.create(
             model=self._model,

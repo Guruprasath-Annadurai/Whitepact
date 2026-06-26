@@ -5,8 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from responsibleai.trust.score import TrustScore
@@ -218,7 +218,7 @@ class PassportGenerator:
             Optional component-level summaries included in the passport.
             Raw data is never stored — only aggregated metadata.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         passport_id = str(uuid.uuid4())
         verification_hash = _compute_hash(
             passport_id,

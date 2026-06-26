@@ -10,12 +10,9 @@ No real API keys or network access required.
 
 from __future__ import annotations
 
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-import respx
-from httpx import Response
 
 from biasbuster.providers.anthropic_provider import AnthropicProvider
 from biasbuster.providers.base import CompletionRequest
@@ -25,7 +22,6 @@ from responsibleai.cost.tracker import CostTracker
 from responsibleai.guardrails.engine import GuardrailsEngine
 from responsibleai.hallucination.detector import HallucinationDetector
 from responsibleai.trust.score import TrustScoreEngine
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -247,7 +243,6 @@ class TestCrossProviderComparison:
     @pytest.mark.asyncio
     async def test_same_prompt_different_providers(self):
         """Both providers should produce scannable, evaluatable responses."""
-        prompt = "What are the key principles of responsible AI?"
         responses = {
             "openai": "Responsible AI requires fairness, transparency, and accountability in model design.",
             "anthropic": "The key principles include fairness, privacy protection, transparency, and human oversight.",
@@ -259,7 +254,7 @@ class TestCrossProviderComparison:
 
         for provider, text in responses.items():
             scan = guardrails.scan(text)
-            h_result = detector.analyze(text)
+            detector.analyze(text)
             score = trust_engine.compute(
                 fairness=0.85, privacy=0.90, security=0.85,
                 robustness=0.80, compliance=0.90, authenticity=0.85,

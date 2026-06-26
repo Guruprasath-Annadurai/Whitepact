@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-
-import pytest
 
 from biasbuster.core.result import ProbeResult, SuiteResult, TemplateResult, VariantResponse
 from biasbuster.reporting.html_reporter import HtmlReporter
@@ -36,13 +34,13 @@ def _make_suite(*, passed: bool = True, with_ci: bool = False) -> SuiteResult:
         threshold=0.20,
         template_results=[tr],
         confidence_interval=ci,
-        timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        timestamp=datetime(2026, 1, 1, tzinfo=UTC),
     )
     return SuiteResult(
         provider_name="mock",
         model_name="mock-1.0",
         probe_results=[probe],
-        timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        timestamp=datetime(2026, 1, 1, tzinfo=UTC),
     )
 
 
@@ -112,7 +110,7 @@ class TestHtmlReporter:
             passed=True,
             threshold=0.20,
             template_results=[],
-            timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            timestamp=datetime(2026, 1, 1, tzinfo=UTC),
         )
         suite.probe_results.append(extra)
         output = HtmlReporter().render(suite)
@@ -157,7 +155,7 @@ class TestHtmlReporter:
             passed=False,
             threshold=0.20,
             template_results=[],
-            timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            timestamp=datetime(2026, 1, 1, tzinfo=UTC),
         )
         suite.probe_results.append(extra)
         output = HtmlReporter().render(suite)
@@ -179,7 +177,7 @@ class TestHtmlReporter:
             passed=False,
             threshold=0.20,
             template_results=[],
-            timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            timestamp=datetime(2026, 1, 1, tzinfo=UTC),
         )
         suite.probe_results.append(extra)
         output = HtmlReporter().render(suite)
@@ -197,15 +195,15 @@ class TestHtmlReporter:
             passed=True,
             threshold=0.20,
             template_results=[],
-            timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            timestamp=datetime(2026, 1, 1, tzinfo=UTC),
         )
         suite.probe_results.append(extra)
         output = HtmlReporter().render(suite)
         assert "Combined risk" in output
 
     def test_intersectional_section_from_intersectional_module(self) -> None:
-        from biasbuster.reporting.html_reporter import _intersectional_section
         from biasbuster.core.intersectional import IntersectionalReport, ProbeCorrelation
+        from biasbuster.reporting.html_reporter import _intersectional_section
         report = IntersectionalReport(
             probe_correlations=[
                 ProbeCorrelation(
@@ -227,6 +225,6 @@ class TestHtmlReporter:
         assert "Both failing" in html_out
 
     def test_intersectional_empty_report_renders_empty(self) -> None:
-        from biasbuster.reporting.html_reporter import _intersectional_section
         from biasbuster.core.intersectional import IntersectionalReport
+        from biasbuster.reporting.html_reporter import _intersectional_section
         assert _intersectional_section(IntersectionalReport()) == ""

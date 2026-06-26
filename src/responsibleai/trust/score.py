@@ -8,7 +8,7 @@ compliance, authenticity) into a single 0-100 score with letter grade and risk t
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 _DEFAULT_WEIGHTS: dict[str, float] = {
@@ -59,7 +59,7 @@ class TrustScore:
     compliance: float
     authenticity: float
     weights: dict[str, float]
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     @property
     def passed(self) -> bool:

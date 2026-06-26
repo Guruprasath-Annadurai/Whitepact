@@ -6,7 +6,6 @@ import csv
 import io
 import json
 import re
-from typing import Any
 
 from responsibleai.eval.models import DatasetRowResult, DatasetScanResult
 from responsibleai.guardrails.engine import GuardrailsEngine

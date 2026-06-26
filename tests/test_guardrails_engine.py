@@ -1,12 +1,8 @@
 from __future__ import annotations
 
-import pytest
-
 from responsibleai.guardrails.engine import (
     GuardrailsEngine,
     GuardrailsPolicy,
-    PIICategory,
-    ToxicityCategory,
 )
 
 

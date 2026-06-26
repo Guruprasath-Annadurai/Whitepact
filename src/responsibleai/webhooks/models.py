@@ -5,18 +5,18 @@ from __future__ import annotations
 import time
 import uuid
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 
-class WebhookEvent(str, Enum):
+class WebhookEvent(StrEnum):
     DRIFT_ALERT = "drift_alert"
     BUDGET_EXCEEDED = "budget_exceeded"
     GUARDRAIL_TRIGGERED = "guardrail_triggered"
     TRUST_SCORE_CHANGED = "trust_score_changed"
 
 
-class WebhookProvider(str, Enum):
+class WebhookProvider(StrEnum):
     SLACK = "slack"
     TEAMS = "teams"
     PAGERDUTY = "pagerduty"

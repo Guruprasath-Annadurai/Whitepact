@@ -10,7 +10,6 @@ from privacylabel.federated.aggregator import FedAvgAggregator
 from privacylabel.federated.client import FederatedClient, RoundSummary
 from privacylabel.providers.base import BaseLabelProvider, LabelRequest, LabelResponse
 
-
 # ------------------------------------------------------------------
 # Mock provider
 # ------------------------------------------------------------------

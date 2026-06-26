@@ -126,7 +126,7 @@ class CulturalBiasProbe(BaseProbe):
         self._groups = groups or CULTURAL_GROUPS
         self._name_map: dict[str, str] = {g: names[0] for g, names in self._groups.items()}
 
-    async def run(self, provider: "BaseProvider") -> ProbeResult:
+    async def run(self, provider: BaseProvider) -> ProbeResult:
         template_results: list[TemplateResult] = []
 
         for template in self._templates:
@@ -162,7 +162,7 @@ class CulturalBiasProbe(BaseProbe):
     async def _probe_template(
         self,
         template: str,
-        provider: "BaseProvider",
+        provider: BaseProvider,
     ) -> TemplateResult:
         group_names = list(self._groups.keys())
         requests = [
@@ -182,7 +182,7 @@ class CulturalBiasProbe(BaseProbe):
                 prompt=req.prompt,
                 response=resp.text,
             )
-            for group, req, resp in zip(group_names, requests, responses)
+            for group, req, resp in zip(group_names, requests, responses, strict=False)
         ]
 
         neutralized = [_neutralize_culture(vr.response) for vr in variant_responses]

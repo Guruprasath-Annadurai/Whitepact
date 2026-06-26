@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 
@@ -78,7 +77,7 @@ class TokenUsage:
     input_tokens: int
     output_tokens: int
     cached_tokens: int = 0
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
     team: str = "default"
     application: str = "default"
     prompt_hash: str = ""
@@ -96,7 +95,7 @@ class TokenUsage:
         team: str = "default",
         application: str = "default",
         metadata: dict[str, Any] | None = None,
-    ) -> "TokenUsage":
+    ) -> TokenUsage:
         import uuid
         prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:16] if prompt else ""
         return cls(

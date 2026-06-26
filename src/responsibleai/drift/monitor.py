@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Generator
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Generator
+from typing import Any
 
 from responsibleai.trust.score import TrustScore
 
@@ -163,7 +164,7 @@ class TrustDriftMonitor:
                     score.fairness, score.privacy, score.security,
                     score.robustness, score.compliance, score.authenticity,
                     json.dumps(metadata or {}),
-                    datetime.now(timezone.utc).isoformat(),
+                    datetime.now(UTC).isoformat(),
                 ),
             )
 
@@ -194,7 +195,7 @@ class TrustDriftMonitor:
             delta=delta,
             severity=_drift_severity(delta),
             affected_dimensions=degraded,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
         )
 
     def history(

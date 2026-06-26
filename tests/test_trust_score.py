@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from responsibleai.trust.score import TrustScore, TrustScoreEngine, _DEFAULT_WEIGHTS
+from responsibleai.trust.score import _DEFAULT_WEIGHTS, TrustScoreEngine
 
 
 class TestTrustScoreEngineInit:
@@ -127,7 +127,7 @@ class TestTrustScoreCompute:
 
     def test_trust_score_frozen(self) -> None:
         score = self.engine.compute()
-        with pytest.raises(Exception):
+        with pytest.raises(AttributeError):
             score.grade = "Z"  # type: ignore[misc]
 
 

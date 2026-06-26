@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from responsibleai.hallucination.detector import HallucinationDetector, HallucinationResult
+from responsibleai.hallucination.detector import HallucinationDetector
 
 
 class TestHallucinationDetectorInit:
@@ -147,5 +147,5 @@ class TestHallucinationRisk:
 
     def test_result_is_frozen(self) -> None:
         result = self.detector.analyze("Text.")
-        with pytest.raises(Exception):
+        with pytest.raises(AttributeError):
             result.risk_level = "none"  # type: ignore[misc]
