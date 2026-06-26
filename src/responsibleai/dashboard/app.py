@@ -1,8 +1,9 @@
-"""Governance Dashboard — production FastAPI application (v0.8.0)."""
+"""Governance Dashboard — production FastAPI application (v1.0.0)."""
 
 from __future__ import annotations
 
 import asyncio
+import secrets
 import time
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
@@ -21,6 +22,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from responsibleai.auth.oidc import OIDCProvider
 from responsibleai.compliance.engine import ComplianceEngine
 from responsibleai.cost.analyzer import CostAnalyzer
 from responsibleai.cost.models import BudgetPolicy, TokenUsage
@@ -115,6 +117,8 @@ _comparator: ModelComparator | None = None
 _benchmark_runner: BenchmarkRunner | None = None
 _regression_detector: RegressionDetector = RegressionDetector()
 _dataset_scanner: DatasetBiasScanner | None = None
+_oidc_provider: OIDCProvider | None = None
+_oidc_state_store: dict[str, float] = {}  # state → issued_at; cleared on use
 
 
 @asynccontextmanager
@@ -123,6 +127,7 @@ async def lifespan(application: FastAPI):
     global _compliance, _cost_repo, _cost_analyzer, _router, _trust_repo
     global _org_repo, _audit_repo, _db_engine
     global _eval_repo, _comparator, _benchmark_runner, _dataset_scanner
+    global _oidc_provider
 
     setup_telemetry(
         service_name=settings.otel_service_name,
@@ -154,6 +159,14 @@ async def lifespan(application: FastAPI):
     _benchmark_runner = BenchmarkRunner(guardrails=_guardrails)
     _dataset_scanner  = DatasetBiasScanner(guardrails=_guardrails)
 
+    if settings.oidc_issuer:
+        _oidc_provider = OIDCProvider(
+            issuer=settings.oidc_issuer,
+            client_id=settings.oidc_client_id,
+            jwks_uri=settings.oidc_jwks_uri,
+            skip_verification=settings.oidc_skip_verification,
+        )
+
     _ws_manager.start()
 
     auth_status = "enabled" if (settings.auth_enabled and settings.api_keys) else "disabled"
@@ -161,7 +174,7 @@ async def lifespan(application: FastAPI):
     rl_backend   = "redis" if settings.redis_url else "memory"
     logger.info(
         "startup_complete",
-        version="0.9.0",
+        version="1.0.0",
         db_backend=db_backend,
         rate_limit_backend=rl_backend,
         otel=bool(settings.otel_endpoint),
@@ -184,9 +197,10 @@ app = FastAPI(
         "Hallucination Detection, Red Team, Cost Intelligence, Drift Monitoring, "
         "WebSocket live dashboard, Webhooks, Prometheus metrics, "
         "Multi-tenant RBAC, Org management, Audit log, "
-        "Model Evaluation Framework (A/B compare, benchmarks, regression, dataset scan)."
+        "Model Evaluation Framework (A/B compare, benchmarks, regression, dataset scan), "
+        "Single Sign-On (OAuth2/OIDC), versioned stable API."
     ),
-    version="0.9.0",
+    version="1.0.0",
     lifespan=lifespan,
     docs_url="/api/docs",
     redoc_url="/api/redoc",
@@ -252,6 +266,25 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
 
 
+# ── API version header middleware ─────────────────────────────────────────────
+
+class APIVersionMiddleware(BaseHTTPMiddleware):
+    """Stamps every response with X-API-Version and routes /api/v1/* → /api/*."""
+
+    async def dispatch(self, request: Request, call_next: Any) -> Any:
+        # Transparent rewrite: /api/v1/foo → /api/foo
+        path = request.url.path
+        if path.startswith("/api/v1/"):
+            new_path = "/api/" + path[len("/api/v1/"):]
+            request.scope["path"] = new_path
+            request.scope["raw_path"] = new_path.encode()
+
+        response = await call_next(request)
+        response.headers["X-API-Version"] = "1.0.0"
+        response.headers["X-API-Min-Version"] = "1.0.0"
+        return response
+
+
 # ── Middleware (outermost first) ───────────────────────────────────────────────
 origins = ["*"] if settings.allow_all_origins else settings.allowed_origins
 app.add_middleware(
@@ -263,6 +296,7 @@ app.add_middleware(
 )
 app.state.limiter = limiter
 app.add_middleware(AuditLogMiddleware)
+app.add_middleware(APIVersionMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(RequestIDMiddleware)
@@ -429,7 +463,7 @@ async def health() -> dict[str, Any]:
 
     return {
         "status": "healthy" if db_ok else "degraded",
-        "version": "0.9.0",
+        "version": "1.0.0",
         "uptime_seconds": round(time.monotonic() - _START_TIME, 1),
         "timestamp": datetime.now(UTC).isoformat(),
         "checks": {
@@ -448,7 +482,10 @@ async def health() -> dict[str, Any]:
             "model_router", "drift_monitor", "websockets", "webhooks",
             "prometheus", "rbac", "orgs", "audit_log",
             "eval_compare", "eval_benchmarks", "eval_regression", "dataset_scan",
+            "sso_oidc", "api_versioning", "support",
         ],
+        "api_versions": ["1.0"],
+        "stable_since": "1.0.0",
     }
 
 
@@ -1157,3 +1194,168 @@ async def get_drift_trend(
     trend = await _trust_repo.trend(model_name, provider)
     history = await _trust_repo.history(model_name, provider, limit=10)
     return {"trend": trend, "recent_history": history}
+
+
+# ── API versioning ─────────────────────────────────────────────────────────────
+
+@app.get("/api/version", tags=["ops"])
+async def api_version() -> dict[str, Any]:
+    """Return full version and stability metadata."""
+    return {
+        "version": "1.0.0",
+        "major": 1,
+        "minor": 0,
+        "patch": 0,
+        "stable": True,
+        "api_versions": ["1.0"],
+        "current_api_prefix": "/api/v1",
+        "deprecated_prefixes": [],
+        "release_date": "2025-06-26",
+        "changelog_url": "https://github.com/Guruprasath-Annadurai/ResponsibleAi/blob/main/CHANGELOG.md",
+    }
+
+
+# ── SSO / OAuth2 / OIDC ───────────────────────────────────────────────────────
+
+@app.get("/api/auth/providers", tags=["auth"])
+async def list_auth_providers() -> dict[str, Any]:
+    """List configured authentication providers."""
+    providers = []
+    if settings.oidc_issuer:
+        providers.append({
+            "id": "oidc",
+            "type": "oidc",
+            "issuer": settings.oidc_issuer,
+            "client_id": settings.oidc_client_id,
+            "login_url": "/api/auth/login/oidc",
+        })
+    providers.append({
+        "id": "api_key",
+        "type": "api_key",
+        "description": "Static API key via Authorization: Bearer <key>",
+    })
+    return {"providers": providers, "count": len(providers)}
+
+
+@app.get("/api/auth/login/{provider_id}", tags=["auth"])
+async def auth_login(provider_id: str, redirect_uri: str = "") -> JSONResponse:
+    """Initiate OAuth2 authorization code flow."""
+    if provider_id != "oidc" or not _oidc_provider:
+        raise HTTPException(404, f"Unknown or unconfigured provider: {provider_id!r}")
+
+    state = secrets.token_urlsafe(32)
+    _oidc_state_store[state] = time.monotonic()
+
+    target_redirect = redirect_uri or settings.oidc_redirect_uri
+    url = _oidc_provider.authorization_url(
+        redirect_uri=target_redirect,
+        state=state,
+        scopes=settings.oidc_scopes,
+    )
+    return JSONResponse({"authorization_url": url, "state": state})
+
+
+@app.get("/api/auth/callback", tags=["auth"])
+async def auth_callback(
+    code: str = Query(...),
+    state: str = Query(...),
+) -> dict[str, Any]:
+    """Handle the OAuth2 callback — exchange code for tokens and return claims."""
+    if not _oidc_provider:
+        raise HTTPException(501, "OIDC not configured")
+
+    issued_at = _oidc_state_store.pop(state, None)
+    if issued_at is None:
+        raise HTTPException(400, "Invalid or expired OAuth2 state parameter")
+    if time.monotonic() - issued_at > 300:
+        raise HTTPException(400, "OAuth2 state has expired (>5 min)")
+
+    try:
+        tokens = await _oidc_provider.exchange_code(
+            code=code,
+            redirect_uri=settings.oidc_redirect_uri,
+            client_secret=settings.oidc_client_secret,
+        )
+    except ValueError as e:
+        raise HTTPException(400, f"Token exchange failed: {e}") from None
+
+    id_token = tokens.get("id_token") or tokens.get("access_token", "")
+    try:
+        claims = await _oidc_provider.validate_token(id_token)
+    except ValueError as e:
+        raise HTTPException(401, f"Token validation failed: {e}") from None
+
+    return {
+        "sub": claims.sub,
+        "email": claims.email,
+        "name": claims.name,
+        "roles": claims.roles,
+        "org_id": claims.org_id,
+        "access_token": tokens.get("access_token"),
+        "token_type": tokens.get("token_type", "Bearer"),
+        "expires_in": tokens.get("expires_in"),
+    }
+
+
+@app.post("/api/auth/logout", tags=["auth"])
+async def auth_logout(
+    _auth: OrgContext = Depends(get_org_context),
+) -> dict[str, Any]:
+    """Invalidate the current session (client should discard its token)."""
+    return {"logged_out": True, "timestamp": datetime.now(UTC).isoformat()}
+
+
+# ── Support tier ───────────────────────────────────────────────────────────────
+
+@app.get("/api/support", tags=["support"])
+async def support_info() -> dict[str, Any]:
+    """Return SLA tiers and support contact information."""
+    return {
+        "tiers": [
+            {
+                "name": "Standard",
+                "uptime_sla": "99.0%",
+                "response_time": "Next business day",
+                "channels": ["email"],
+                "price": "Included",
+            },
+            {
+                "name": "Professional",
+                "uptime_sla": "99.5%",
+                "response_time": "4 business hours",
+                "channels": ["email", "slack"],
+                "price": "Contact sales",
+            },
+            {
+                "name": "Enterprise",
+                "uptime_sla": "99.9%",
+                "response_time": "1 hour (24/7)",
+                "channels": ["email", "slack", "phone", "dedicated TAM"],
+                "price": "Contact sales",
+            },
+        ],
+        "contact": {
+            "email": "milchcreamfoods@gmail.com",
+            "docs": "https://github.com/Guruprasath-Annadurai/ResponsibleAi",
+            "issues": "https://github.com/Guruprasath-Annadurai/ResponsibleAi/issues",
+        },
+        "platform_version": "1.0.0",
+    }
+
+
+@app.get("/api/support/status", tags=["support"])
+async def platform_status() -> dict[str, Any]:
+    """Public platform status — no auth required."""
+    db_ok = True
+    try:
+        if _cost_repo:
+            await _cost_repo.request_count()
+    except Exception:
+        db_ok = False
+    return {
+        "platform": "ResponsibleAI Governance Platform",
+        "version": "1.0.0",
+        "status": "operational" if db_ok else "degraded",
+        "uptime_seconds": round(time.monotonic() - _START_TIME, 1),
+        "timestamp": datetime.now(UTC).isoformat(),
+    }

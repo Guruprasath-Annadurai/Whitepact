@@ -1,0 +1,157 @@
+## Default values for rai-governance.
+## Override with: helm install rai ./helm/rai-governance -f my-values.yaml
+
+replicaCount: 2
+
+image:
+  repository: ghcr.io/guruprasath-annadurai/responsibleai
+  pullPolicy: IfNotPresent
+  tag: "1.0.0"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/path: "/metrics"
+  prometheus.io/port: "8765"
+
+podSecurityContext:
+  fsGroup: 1000
+  runAsNonRoot: true
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8765
+
+ingress:
+  enabled: false
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+  hosts:
+    - host: rai.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: rai-tls
+      hosts:
+        - rai.example.com
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+## Pod Disruption Budget — keep at least 1 pod available during rolling updates
+pdb:
+  enabled: true
+  minAvailable: 1
+
+## Liveness / readiness probes
+livenessProbe:
+  httpGet:
+    path: /api/health
+    port: 8765
+  initialDelaySeconds: 15
+  periodSeconds: 20
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /api/health
+    port: 8765
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  failureThreshold: 3
+
+nodeSelector: {}
+tolerations: []
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - rai-governance
+          topologyKey: kubernetes.io/hostname
+
+## Application configuration — maps to RAI_* env vars
+config:
+  ## Set to false to allow unauthenticated access (development only)
+  authEnabled: true
+  ## Comma-separated static API keys (prefer DB-backed keys for production)
+  apiKeys: ""
+  ## Alert threshold for trust score drift (points)
+  alertThreshold: "5.0"
+  ## Monthly AI spending budget
+  monthlyBudgetUsd: "10000.0"
+  ## Log level: DEBUG, INFO, WARNING, ERROR
+  logLevel: "INFO"
+  ## Emit JSON-formatted logs
+  logJson: "true"
+  ## PostgreSQL URL — leave empty to use embedded SQLite
+  databaseUrl: ""
+  ## Redis URL for distributed rate limiting
+  redisUrl: ""
+  ## OpenTelemetry OTLP endpoint
+  otelEndpoint: ""
+
+## OIDC / SSO configuration (optional)
+oidc:
+  enabled: false
+  issuer: ""
+  clientId: ""
+  redirectUri: ""
+  scopes: "openid,email,profile"
+  ## Secret name containing OIDC_CLIENT_SECRET key
+  existingSecret: ""
+
+## Persistent storage for SQLite (ignored when databaseUrl is set)
+persistence:
+  enabled: true
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 5Gi
+  mountPath: /data
+
+## Extra environment variables
+extraEnv: []
+## - name: MY_VAR
+##   value: my-value
+
+## Extra volumes / volume mounts
+extraVolumes: []
+extraVolumeMounts: []

@@ -1,0 +1,19 @@
+apiVersion: v2
+name: rai-governance
+description: ResponsibleAI Governance Platform — enterprise AI trust scoring, compliance, guardrails, and model evaluation.
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+home: https://github.com/Guruprasath-Annadurai/ResponsibleAi
+sources:
+  - https://github.com/Guruprasath-Annadurai/ResponsibleAi
+maintainers:
+  - name: Guruprasath Annadurai
+    email: milchcreamfoods@gmail.com
+keywords:
+  - ai-governance
+  - responsible-ai
+  - llm
+  - trust-score
+  - compliance
+  - guardrails

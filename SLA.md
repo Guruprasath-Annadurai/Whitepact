@@ -1,4 +1,4 @@
-# Service Level Agreement — ResponsibleAI Platform v0.5.0
+# Service Level Agreement — ResponsibleAI Platform v1.0.0
 
 ## Scope
 
@@ -65,12 +65,22 @@ Scheduled maintenance windows (max 4 hours/month, announced 48h in advance) are 
 
 ---
 
-## Support channels
+## Support tiers
 
-| Channel | Availability | Scope |
-|---|---|---|
-| GitHub Issues | Community hours | Bug reports, feature requests |
-| Email (milchcreamfoods@gmail.com) | 2 business days | Enterprise integration support |
+| Tier | Channels | Response time | Included |
+|---|---|---|---|
+| **Standard** | GitHub Issues, email | Next business day | All licenses |
+| **Professional** | GitHub Issues, email, Slack | 4 business hours | Professional plan |
+| **Enterprise** | All channels + dedicated TAM + phone | 1 hour (24/7) | Enterprise plan |
+
+### Support contacts
+
+| Channel | Address |
+|---|---|
+| GitHub Issues | https://github.com/Guruprasath-Annadurai/ResponsibleAi/issues |
+| Email | milchcreamfoods@gmail.com |
+| Status page | `GET /api/support/status` — real-time platform health |
+| SLA tiers API | `GET /api/support` — full tier details and contact info |
 
 ---
 
@@ -105,4 +115,4 @@ This SLA does not cover:
 
 ---
 
-*Last updated: 2025-06-20 — ResponsibleAI v0.5.0*
+*Last updated: 2026-06-26 — ResponsibleAI v1.0.0*

@@ -6,6 +6,52 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ---
 
+## [1.0.0] — 2026-06-26
+
+### Added
+- **Stable versioned API** — all breaking changes frozen after this release
+  - `GET /api/version` — returns version, stability metadata, and changelog URL
+  - `/api/v1/*` URL prefix supported via transparent rewrite middleware (no redirect overhead)
+  - `X-API-Version: 1.0.0` and `X-API-Min-Version: 1.0.0` response headers on every call
+  - Health endpoint reports `api_versions`, `stable_since` fields
+- **Single Sign-On — OAuth2 / OIDC** (`responsibleai.auth`)
+  - `OIDCProvider` — async JWKS caching, JWT validation (RS256/RS384/RS512/ES256/ES384/ES512)
+  - `AsyncJWKSClient` — fetches and caches JSON Web Key Sets with 1-hour TTL
+  - `JWTClaims` — frozen dataclass: `sub`, `email`, `name`, `roles`, `org_id`
+  - Discovery document auto-fetch from `{issuer}/.well-known/openid-configuration`
+  - New config fields: `oidc_issuer`, `oidc_client_id`, `oidc_client_secret`, `oidc_redirect_uri`, `oidc_scopes`, `oidc_jwks_uri`, `oidc_skip_verification`
+  - `GET /api/auth/providers` — list configured auth providers
+  - `GET /api/auth/login/{provider_id}` — initiate OAuth2 authorization code flow
+  - `GET /api/auth/callback` — exchange code, validate token, return claims
+  - `POST /api/auth/logout` — invalidate session
+- **SLA-backed support tier**
+  - `GET /api/support` — three-tier support table (Standard / Professional / Enterprise) with uptime SLAs and response times
+  - `GET /api/support/status` — public platform status page (no auth required)
+  - SLA.md updated with full support tier breakdown and direct contact info
+- **Kubernetes Helm chart** (`helm/rai-governance/`)
+  - `Deployment` with pod anti-affinity, non-root security context, read-only root filesystem
+  - `HorizontalPodAutoscaler` — CPU + memory targets, 2–10 replicas
+  - `PodDisruptionBudget` — minimum 1 available during rolling updates
+  - `Ingress` with TLS and nginx annotations
+  - `PersistentVolumeClaim` for SQLite data persistence
+  - `ConfigMap` + `Secret` for all `RAI_*` env vars and OIDC secrets
+  - `ServiceAccount` with `automountServiceAccountToken: false`
+- **Multi-language SDKs**
+  - **Python SDK** (`sdk/python/rai_client/`) — async `RAIClient` using `httpx`, full type hints, frozen response dataclasses for `TrustScore`, `GuardrailScan`, `HallucinationAnalysis`, `ComplianceReport`, `CostRecord`, `EvalCompareResult`
+  - **TypeScript SDK** (`sdk/typescript/`) — `RAIClient` using Fetch API (Node 18+ / browser), full TypeScript types, zero runtime dependencies
+  - **Go SDK** (`sdk/go/raiclient/`) — `Client` using `net/http`, context-aware, zero external dependencies
+- New optional dependency group: `sso` (`PyJWT[crypto]>=2.8.0`)
+
+### Changed
+- Version bumped `0.9.0 → 1.0.0`
+- `Development Status :: 4 - Beta` → `5 - Production/Stable` in PyPI classifiers
+- App description updated to mention SSO, versioned stable API
+- `modules` list in health endpoint updated with `sso_oidc`, `api_versioning`, `support`
+
+**802 tests passing · 87% coverage**
+
+---
+
 ## [0.9.0] — 2026-06-26
 
 ### Added

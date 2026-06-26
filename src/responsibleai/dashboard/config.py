@@ -105,10 +105,47 @@ class Settings(BaseSettings):
         description="Comma-separated key=value pairs sent as OTLP headers (e.g. Datadog API key).",
     )
 
+    # OIDC / OAuth2 Single Sign-On (optional — leave unset to use API key auth only)
+    oidc_issuer: str | None = Field(
+        default=None,
+        description="OIDC issuer URL, e.g. https://accounts.google.com or https://login.microsoftonline.com/<tenant>.",
+    )
+    oidc_client_id: str = Field(
+        default="",
+        description="OAuth2 client ID registered with the OIDC provider.",
+    )
+    oidc_client_secret: str = Field(
+        default="",
+        description="OAuth2 client secret (kept server-side only).",
+    )
+    oidc_redirect_uri: str = Field(
+        default="http://localhost:8765/api/auth/callback",
+        description="Callback URL registered with the OIDC provider.",
+    )
+    oidc_scopes: list[str] = Field(
+        default=["openid", "email", "profile"],
+        description="OAuth2 scopes to request.",
+    )
+    oidc_jwks_uri: str | None = Field(
+        default=None,
+        description="JWKS endpoint override. Auto-discovered from oidc_issuer if unset.",
+    )
+    oidc_skip_verification: bool = Field(
+        default=False,
+        description="Skip JWT signature verification (test/dev only — never use in production).",
+    )
+
     # Server
     host: str = Field(default="127.0.0.1")
     port: int = Field(default=8765, ge=1, le=65535)
     workers: int = Field(default=1, ge=1, le=32)
+
+    @field_validator("oidc_scopes", mode="before")
+    @classmethod
+    def _parse_scopes(cls, v: object) -> list[str]:
+        if isinstance(v, str):
+            return [s.strip() for s in v.split(",") if s.strip()]
+        return list(v) if v else ["openid", "email", "profile"]
 
     @field_validator("api_keys", mode="before")
     @classmethod

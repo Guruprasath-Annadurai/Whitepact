@@ -36,7 +36,7 @@ class TestHealth:
         assert r.status_code == 200
         d = r.json()
         assert d["status"] in ("healthy", "degraded")
-        assert d["version"] == "0.9.0"
+        assert d["version"] == "1.0.0"
         assert "checks" in d
         assert "modules" in d
         assert len(d["modules"]) >= 10
