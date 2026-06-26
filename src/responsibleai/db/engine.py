@@ -103,6 +103,38 @@ audit_log = Table(
     Index("idx_al_endpoint",  "endpoint"),
 )
 
+eval_runs = Table(
+    "eval_runs",
+    metadata,
+    Column("id",          String(36),   primary_key=True),
+    Column("run_type",    String(20),   nullable=False),   # "comparison" | "benchmark" | "dataset_scan"
+    Column("model",       String(100),  nullable=False),
+    Column("provider",    String(100),  nullable=False, default=""),
+    Column("suite",       String(50),   nullable=True),
+    Column("org_id",      String(36),   nullable=True),
+    Column("created_at",  String(32),   nullable=False),
+    Column("payload",     Text,         nullable=False),   # JSON-serialised result dict
+    Index("idx_er_model",      "model"),
+    Index("idx_er_run_type",   "run_type"),
+    Index("idx_er_created_at", "created_at"),
+    Index("idx_er_org",        "org_id"),
+)
+
+eval_baselines = Table(
+    "eval_baselines",
+    metadata,
+    Column("id",         String(36),  primary_key=True),
+    Column("model",      String(100), nullable=False),
+    Column("suite",      String(50),  nullable=False),
+    Column("metric",     String(100), nullable=False),
+    Column("score",      Float,       nullable=False),
+    Column("org_id",     String(36),  nullable=True),
+    Column("updated_at", String(32),  nullable=False),
+    Index("idx_eb_model",  "model"),
+    Index("idx_eb_suite",  "suite"),
+    Index("idx_eb_org",    "org_id"),
+)
+
 
 class DatabaseEngine:
     """Async database engine wrapping SQLAlchemy — SQLite or PostgreSQL."""

@@ -52,13 +52,22 @@ from responsibleai.dashboard.telemetry import (
     setup_telemetry,
 )
 from responsibleai.dashboard.websocket_manager import ConnectionManager
-from responsibleai.db import AuditRepository, CostRepository, OrgRepository, TrustRepository, create_engine
+from responsibleai.db import AuditRepository, CostRepository, EvalRepository, OrgRepository, TrustRepository, create_engine
 from responsibleai.db.engine import DatabaseEngine
 from responsibleai.guardrails.engine import GuardrailsEngine
 from responsibleai.hallucination.detector import HallucinationDetector
 from responsibleai.rbac import AuditEntry, OrgContext, Role, has_permission, role_from_str
 from responsibleai.trust.passport import PassportGenerator
 from responsibleai.trust.score import TrustScoreEngine
+from responsibleai.eval import (
+    BenchmarkRunner,
+    BenchmarkSuite,
+    DatasetBiasScanner,
+    EvalPrompt,
+    ModelComparator,
+    ModelResponse,
+    RegressionDetector,
+)
 from responsibleai.webhooks import WebhookConfig, WebhookEvent, WebhookManager, WebhookProvider
 
 _START_TIME = time.monotonic()
@@ -96,6 +105,11 @@ _audit_repo: AuditRepository | None = None
 _db_engine: DatabaseEngine | None = None
 _ws_manager: ConnectionManager = ConnectionManager()
 _webhook_manager: WebhookManager = WebhookManager()
+_eval_repo: EvalRepository | None = None
+_comparator: ModelComparator | None = None
+_benchmark_runner: BenchmarkRunner | None = None
+_regression_detector: RegressionDetector = RegressionDetector()
+_dataset_scanner: DatasetBiasScanner | None = None
 
 
 @asynccontextmanager
@@ -103,6 +117,7 @@ async def lifespan(application: FastAPI):
     global _trust_engine, _passport_gen, _guardrails, _hallucination
     global _compliance, _cost_repo, _cost_analyzer, _router, _trust_repo
     global _org_repo, _audit_repo, _db_engine
+    global _eval_repo, _comparator, _benchmark_runner, _dataset_scanner
 
     setup_telemetry(
         service_name=settings.otel_service_name,
@@ -125,6 +140,14 @@ async def lifespan(application: FastAPI):
     _compliance   = ComplianceEngine()
     _cost_analyzer = CostAnalyzer()
     _router       = ModelRouter()
+    _eval_repo    = EvalRepository(_db_engine)
+    _comparator   = ModelComparator(
+        trust_engine=_trust_engine,
+        guardrails=_guardrails,
+        hallucination=_hallucination,
+    )
+    _benchmark_runner = BenchmarkRunner(guardrails=_guardrails)
+    _dataset_scanner  = DatasetBiasScanner(guardrails=_guardrails)
 
     _ws_manager.start()
 
@@ -133,7 +156,7 @@ async def lifespan(application: FastAPI):
     rl_backend   = "redis" if settings.redis_url else "memory"
     logger.info(
         "startup_complete",
-        version="0.8.0",
+        version="0.9.0",
         db_backend=db_backend,
         rate_limit_backend=rl_backend,
         otel=bool(settings.otel_endpoint),
@@ -155,9 +178,10 @@ app = FastAPI(
         "Enterprise AI Governance API — Trust Scoring, Compliance, Guardrails, "
         "Hallucination Detection, Red Team, Cost Intelligence, Drift Monitoring, "
         "WebSocket live dashboard, Webhooks, Prometheus metrics, "
-        "Multi-tenant RBAC, Org management, Audit log."
+        "Multi-tenant RBAC, Org management, Audit log, "
+        "Model Evaluation Framework (A/B compare, benchmarks, regression, dataset scan)."
     ),
-    version="0.8.0",
+    version="0.9.0",
     lifespan=lifespan,
     docs_url="/api/docs",
     redoc_url="/api/redoc",
@@ -341,6 +365,29 @@ class WebhookCreateRequest(BaseModel):
     max_retries: int = Field(3, ge=1, le=5)
 
 
+class EvalCompareRequest(BaseModel):
+    model_a: str = Field(..., min_length=1, max_length=100)
+    model_b: str = Field(..., min_length=1, max_length=100)
+    provider_a: str = Field("unknown", max_length=50)
+    provider_b: str = Field("unknown", max_length=50)
+    prompts: list[dict[str, str]] = Field(..., min_length=1, max_length=50)
+    responses_a: list[dict[str, str]] = Field(..., min_length=1, max_length=50)
+    responses_b: list[dict[str, str]] = Field(..., min_length=1, max_length=50)
+
+
+class EvalBenchmarkRequest(BaseModel):
+    model: str = Field(..., min_length=1, max_length=100)
+    provider: str = Field("unknown", max_length=50)
+    suite: str = Field(..., pattern="^(truthfulqa|bbq|hellaswag)$")
+    responses: dict[str, str] = Field(...)
+    set_as_baseline: bool = Field(False)
+
+
+class EvalDatasetScanRequest(BaseModel):
+    texts: list[str] = Field(..., min_length=1, max_length=5000)
+    filename: str = Field("upload", max_length=200)
+
+
 class CreateOrgRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     slug: str = Field(..., min_length=1, max_length=100, pattern=r"^[a-z0-9\-]+$")
@@ -377,7 +424,7 @@ async def health() -> dict[str, Any]:
 
     return {
         "status": "healthy" if db_ok else "degraded",
-        "version": "0.8.0",
+        "version": "0.9.0",
         "uptime_seconds": round(time.monotonic() - _START_TIME, 1),
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "checks": {
@@ -395,6 +442,7 @@ async def health() -> dict[str, Any]:
             "compliance", "redteam", "cost_tracker", "cost_analyzer",
             "model_router", "drift_monitor", "websockets", "webhooks",
             "prometheus", "rbac", "orgs", "audit_log",
+            "eval_compare", "eval_benchmarks", "eval_regression", "dataset_scan",
         ],
     }
 
@@ -526,6 +574,179 @@ async def revoke_api_key(
     return {"revoked": key_id}
 
 
+# ── Model Evaluation Framework ────────────────────────────────────────────────
+
+@app.post("/api/eval/compare", tags=["eval"], status_code=201)
+@limiter.limit("20/minute")
+async def eval_compare(
+    request: Request,
+    req: EvalCompareRequest,
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
+) -> dict[str, Any]:
+    prompts = [
+        EvalPrompt(
+            id=p.get("id", ""),
+            prompt=p.get("prompt", ""),
+            expected=p.get("expected", ""),
+            category=p.get("category", ""),
+        )
+        for p in req.prompts
+    ]
+    ra = [
+        ModelResponse(
+            prompt_id=r.get("prompt_id", ""),
+            model=req.model_a,
+            provider=req.provider_a,
+            response=r.get("response", ""),
+        )
+        for r in req.responses_a
+    ]
+    rb = [
+        ModelResponse(
+            prompt_id=r.get("prompt_id", ""),
+            model=req.model_b,
+            provider=req.provider_b,
+            response=r.get("response", ""),
+        )
+        for r in req.responses_b
+    ]
+    result = _comparator.compare(
+        prompts=prompts,
+        responses_a=ra,
+        responses_b=rb,
+        model_a=req.model_a,
+        model_b=req.model_b,
+        provider_a=req.provider_a,
+        provider_b=req.provider_b,
+    )
+    payload = result.to_dict()
+    if _eval_repo:
+        await _eval_repo.save_run(
+            run_type="comparison",
+            model=f"{req.model_a}|{req.model_b}",
+            payload=payload,
+            provider=f"{req.provider_a}|{req.provider_b}",
+            org_id=_auth.org_id,
+        )
+    return payload
+
+
+@app.post("/api/eval/benchmark", tags=["eval"], status_code=201)
+@limiter.limit("10/minute")
+async def eval_benchmark(
+    request: Request,
+    req: EvalBenchmarkRequest,
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
+) -> dict[str, Any]:
+    suite = BenchmarkSuite(req.suite)
+    result = _benchmark_runner.run(
+        model=req.model,
+        provider=req.provider,
+        suite=suite,
+        responses=req.responses,
+    )
+    payload = result.to_dict()
+    if _eval_repo:
+        await _eval_repo.save_run(
+            run_type="benchmark",
+            model=req.model,
+            payload=payload,
+            provider=req.provider,
+            suite=req.suite,
+            org_id=_auth.org_id,
+        )
+    if req.set_as_baseline:
+        _regression_detector.set_baseline(req.model, result)
+        if _eval_repo:
+            for metric in ("accuracy", "bias_rate", "overall_score"):
+                score = getattr(result, metric)
+                await _eval_repo.set_baseline(
+                    model=req.model,
+                    suite=req.suite,
+                    metric=metric,
+                    score=score,
+                    org_id=_auth.org_id,
+                )
+    regressions = _regression_detector.check(req.model, result)
+    payload["regressions"] = [r.to_dict() for r in regressions]
+    return payload
+
+
+@app.get("/api/eval/benchmark/prompts/{suite}", tags=["eval"])
+@limiter.limit("60/minute")
+async def eval_benchmark_prompts(
+    request: Request,
+    suite: str,
+    _auth: OrgContext = Depends(require_role(Role.VIEWER)),
+) -> dict[str, Any]:
+    try:
+        s = BenchmarkSuite(suite)
+    except ValueError:
+        raise HTTPException(400, f"Unknown suite: {suite}. Valid: truthfulqa, bbq, hellaswag")
+    prompts = _benchmark_runner.get_prompts(s)
+    return {"suite": suite, "prompts": prompts, "count": len(prompts)}
+
+
+@app.get("/api/eval/regression/{model}", tags=["eval"])
+@limiter.limit("60/minute")
+async def eval_regression(
+    request: Request,
+    model: str,
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
+) -> dict[str, Any]:
+    baselines = _regression_detector.get_baselines(model)
+    db_baselines: dict[str, float] = {}
+    if _eval_repo:
+        db_baselines = await _eval_repo.get_baselines(model)
+    return {
+        "model": model,
+        "in_memory_baselines": baselines,
+        "db_baselines": db_baselines,
+        "has_baseline": bool(baselines or db_baselines),
+    }
+
+
+@app.post("/api/eval/dataset-scan", tags=["eval"], status_code=201)
+@limiter.limit("10/minute")
+async def eval_dataset_scan(
+    request: Request,
+    req: EvalDatasetScanRequest,
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
+) -> dict[str, Any]:
+    result = _dataset_scanner.scan_texts(req.texts, filename=req.filename)
+    payload = result.to_dict()
+    if _eval_repo:
+        await _eval_repo.save_run(
+            run_type="dataset_scan",
+            model="dataset",
+            payload=payload,
+            org_id=_auth.org_id,
+        )
+    return payload
+
+
+@app.get("/api/eval/results", tags=["eval"])
+@limiter.limit("30/minute")
+async def eval_results(
+    request: Request,
+    run_type: str | None = Query(default=None),
+    model: str | None = Query(default=None),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
+) -> dict[str, Any]:
+    if not _eval_repo:
+        return {"runs": [], "count": 0}
+    runs = await _eval_repo.list_runs(
+        run_type=run_type,
+        model=model,
+        org_id=_auth.org_id,
+        limit=limit,
+        offset=offset,
+    )
+    return {"runs": runs, "count": len(runs)}
+
+
 # ── Audit log ─────────────────────────────────────────────────────────────────
 
 @app.get("/api/audit-log", tags=["rbac"])
@@ -570,7 +791,7 @@ async def websocket_dashboard(
     observe_websocket_connections(_ws_manager.connection_count)
 
     try:
-        snapshot: dict[str, Any] = {"type": "connected", "version": "0.8.0"}
+        snapshot: dict[str, Any] = {"type": "connected", "version": "0.9.0"}
         if _cost_repo:
             snapshot["monthly_spend_usd"] = round(await _cost_repo.total_cost(30), 4)
         if _trust_repo:

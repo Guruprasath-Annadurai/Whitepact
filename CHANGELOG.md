@@ -6,6 +6,46 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ---
 
+## [0.9.0] — 2026-06-26
+
+### Added
+- **Model Evaluation Framework** (`responsibleai.eval`)
+  - **`ModelComparator`** — side-by-side A/B comparison of two models on identical prompts
+    - Per-prompt trust scoring via TrustScoreEngine; PII and hallucination penalties applied
+    - `ComparisonResult` with per-prompt breakdown, aggregate winner, win/tie counts
+    - `POST /api/eval/compare` — accepts prompt set + two response sets, persists result
+  - **`BenchmarkRunner`** — runs three built-in benchmark suites against pre-collected responses
+    - **TruthfulQA** (15 samples) — factual accuracy via keyword matching
+    - **BBQ** (15 samples) — social bias detection across gender, race, age, religion, disability
+    - **HellaSwag** (15 samples) — commonsense reasoning / sentence completion
+    - `BenchmarkResult` with accuracy, bias_rate, overall_score, per-category breakdown
+    - `POST /api/eval/benchmark` — runs suite, optionally sets result as baseline, checks regressions
+    - `GET /api/eval/benchmark/prompts/{suite}` — returns prompt list for feeding to any model
+  - **`RegressionDetector`** — tracks per-model baselines and flags score drops between runs
+    - Three severity levels: `MINOR` (≥1%), `MODERATE` (≥5%), `SEVERE` (≥15%)
+    - Monitors accuracy drop, bias_rate rise, and overall_score drop independently
+    - `GET /api/eval/regression/{model}` — returns in-memory and DB-persisted baselines
+  - **`DatasetBiasScanner`** — scans CSV/JSONL/text datasets for bias markers and PII
+    - Six bias categories: gender, racial, age, religious, occupational, socioeconomic
+    - PII detection via GuardrailsEngine; toxicity flagging included
+    - `scan_csv()`, `scan_jsonl()`, `scan_texts()` interfaces
+    - `DatasetScanResult` with flag_rate, per-category counts, flagged sample preview
+    - `POST /api/eval/dataset-scan` — accepts text list, returns full scan summary
+- **`EvalRepository`** (`responsibleai.db.EvalRepository`)
+  - Persists comparison runs, benchmark runs, and dataset scans to `eval_runs` table
+  - Persists model baselines to `eval_baselines` table with upsert semantics
+  - `GET /api/eval/results` — list stored runs, filterable by type/model/org
+- **Two new DB tables**: `eval_runs`, `eval_baselines`
+- **50 new tests**: `tests/test_eval.py`
+
+### Changed
+- Version bumped `0.8.0 → 0.9.0`
+- Dashboard description updated; `eval_compare`, `eval_benchmarks`, `eval_regression`, `dataset_scan` added to modules list
+
+**802 tests passing · 87% coverage**
+
+---
+
 ## [0.8.0] — 2026-06-25
 
 ### Added
