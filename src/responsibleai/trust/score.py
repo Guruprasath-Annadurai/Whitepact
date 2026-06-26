@@ -156,7 +156,7 @@ class TrustScoreEngine:
                     f"Dimension '{name}' must be in [0, 1]; got {val}"
                 )
 
-        overall = sum(self._weights[k] * v for k, v in dims.items()) * 100.0
+        overall = round(sum(self._weights[k] * v for k, v in dims.items()) * 100.0, 10)
         return TrustScore(
             overall=round(overall, 2),
             grade=_score_to_grade(overall),
