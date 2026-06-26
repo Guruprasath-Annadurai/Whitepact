@@ -73,6 +73,7 @@ from responsibleai.eval import (
 from responsibleai.guardrails.engine import GuardrailsEngine
 from responsibleai.hallucination.detector import HallucinationDetector
 from responsibleai.rbac import AuditEntry, OrgContext, Role, has_permission, role_from_str
+from responsibleai.redteam.simulator import RedTeamSimulator
 from responsibleai.trust.passport import PassportGenerator
 from responsibleai.trust.score import TrustScoreEngine
 from responsibleai.webhooks import WebhookConfig, WebhookEvent, WebhookManager, WebhookProvider
@@ -174,7 +175,7 @@ async def lifespan(application: FastAPI):
     rl_backend   = "redis" if settings.redis_url else "memory"
     logger.info(
         "startup_complete",
-        version="1.0.0",
+        version="1.1.0",
         db_backend=db_backend,
         rate_limit_backend=rl_backend,
         otel=bool(settings.otel_endpoint),
@@ -200,7 +201,7 @@ app = FastAPI(
         "Model Evaluation Framework (A/B compare, benchmarks, regression, dataset scan), "
         "Single Sign-On (OAuth2/OIDC), versioned stable API."
     ),
-    version="1.0.0",
+    version="1.1.0",
     lifespan=lifespan,
     docs_url="/api/docs",
     redoc_url="/api/redoc",
@@ -280,7 +281,7 @@ class APIVersionMiddleware(BaseHTTPMiddleware):
             request.scope["raw_path"] = new_path.encode()
 
         response = await call_next(request)
-        response.headers["X-API-Version"] = "1.0.0"
+        response.headers["X-API-Version"] = "1.1.0"
         response.headers["X-API-Min-Version"] = "1.0.0"
         return response
 
@@ -463,7 +464,7 @@ async def health() -> dict[str, Any]:
 
     return {
         "status": "healthy" if db_ok else "degraded",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "uptime_seconds": round(time.monotonic() - _START_TIME, 1),
         "timestamp": datetime.now(UTC).isoformat(),
         "checks": {
@@ -482,9 +483,9 @@ async def health() -> dict[str, Any]:
             "model_router", "drift_monitor", "websockets", "webhooks",
             "prometheus", "rbac", "orgs", "audit_log",
             "eval_compare", "eval_benchmarks", "eval_regression", "dataset_scan",
-            "sso_oidc", "api_versioning", "support",
+            "sso_oidc", "api_versioning", "support", "mcp_server", "billing",
         ],
-        "api_versions": ["1.0"],
+        "api_versions": ["1.0", "1.1"],
         "stable_since": "1.0.0",
     }
 
@@ -1202,15 +1203,15 @@ async def get_drift_trend(
 async def api_version() -> dict[str, Any]:
     """Return full version and stability metadata."""
     return {
-        "version": "1.0.0",
+        "version": "1.1.0",
         "major": 1,
-        "minor": 0,
+        "minor": 1,
         "patch": 0,
         "stable": True,
-        "api_versions": ["1.0"],
+        "api_versions": ["1.0", "1.1"],
         "current_api_prefix": "/api/v1",
         "deprecated_prefixes": [],
-        "release_date": "2025-06-26",
+        "release_date": "2026-06-26",
         "changelog_url": "https://github.com/Guruprasath-Annadurai/ResponsibleAi/blob/main/CHANGELOG.md",
     }
 
@@ -1339,7 +1340,7 @@ async def support_info() -> dict[str, Any]:
             "docs": "https://github.com/Guruprasath-Annadurai/ResponsibleAi",
             "issues": "https://github.com/Guruprasath-Annadurai/ResponsibleAi/issues",
         },
-        "platform_version": "1.0.0",
+        "platform_version": "1.1.0",
     }
 
 
@@ -1354,8 +1355,137 @@ async def platform_status() -> dict[str, Any]:
         db_ok = False
     return {
         "platform": "ResponsibleAI Governance Platform",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "status": "operational" if db_ok else "degraded",
         "uptime_seconds": round(time.monotonic() - _START_TIME, 1),
+        "timestamp": datetime.now(UTC).isoformat(),
+    }
+
+
+# ── Audit log ──────────────────────────────────────────────────────────────────
+
+@app.get("/api/audit", tags=["audit"])
+async def list_audit_entries(
+    org_id: str | None = Query(None, description="Filter by organisation ID"),
+    endpoint: str | None = Query(None, description="Filter by endpoint path"),
+    days: int = Query(30, ge=1, le=365, description="Lookback window in days"),
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    _auth: OrgContext = Depends(get_org_context),
+) -> dict[str, Any]:
+    """Query the governance audit log with optional filters."""
+    if not _audit_repo:
+        raise HTTPException(503, "Audit repository not initialised")
+    rows = await _audit_repo.query(org_id=org_id, endpoint=endpoint, days=days, limit=limit, offset=offset)
+    total = await _audit_repo.count(days=days, org_id=org_id)
+    return {
+        "entries": rows,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "days": days,
+    }
+
+
+@app.get("/api/audit/export", tags=["audit"])
+async def export_audit_log(
+    org_id: str | None = Query(None),
+    days: int = Query(30, ge=1, le=365),
+    _auth: OrgContext = Depends(get_org_context),
+) -> Response:
+    """Export audit log as CSV."""
+    if not _audit_repo:
+        raise HTTPException(503, "Audit repository not initialised")
+    rows = await _audit_repo.query(org_id=org_id, days=days, limit=10000)
+    headers_row = "id,timestamp,org_id,key_id,endpoint,method,status_code,ip_address,request_id,duration_ms\n"
+    lines = [headers_row]
+    for r in rows:
+        lines.append(",".join([
+            str(r.get("id", "")),
+            str(r.get("timestamp", "")),
+            str(r.get("org_id", "")),
+            str(r.get("key_id", "")),
+            str(r.get("endpoint", "")),
+            str(r.get("method", "")),
+            str(r.get("status_code", "")),
+            str(r.get("ip_address", "")),
+            str(r.get("request_id", "")),
+            str(r.get("duration_ms", "")),
+        ]) + "\n")
+    return Response(
+        content="".join(lines),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=audit-{days}d.csv"},
+    )
+
+
+@app.get("/api/audit/summary", tags=["audit"])
+async def audit_endpoint_summary(
+    days: int = Query(7, ge=1, le=90),
+    _auth: OrgContext = Depends(get_org_context),
+) -> dict[str, Any]:
+    """Top endpoints by request count and average latency."""
+    if not _audit_repo:
+        raise HTTPException(503, "Audit repository not initialised")
+    summary = await _audit_repo.endpoint_summary(days=days)
+    return {"days": days, "endpoints": summary}
+
+
+# ── Red team ───────────────────────────────────────────────────────────────────
+
+@app.get("/api/redteam/payloads", tags=["redteam"])
+async def get_redteam_payloads(
+    categories: list[str] | None = Query(None, description="Filter by attack category"),
+    _auth: OrgContext = Depends(get_org_context),
+) -> dict[str, Any]:
+    """Return all adversarial attack payloads, optionally filtered by category."""
+    sim = RedTeamSimulator()
+    payloads = sim.get_attack_payloads()
+    if categories:
+        payloads = [p for p in payloads if p["category"] in categories]
+    return {
+        "count": len(payloads),
+        "payloads": payloads,
+        "categories": list({p["category"] for p in payloads}),
+    }
+
+
+class RedTeamAnalyzeRequest(BaseModel):
+    model_name: str = Field(..., description="Name of the model under test")
+    provider: str = Field(..., description="Model provider")
+    responses: dict[str, str] = Field(..., description="Map of attack_name → model_response_text")
+
+
+@app.post("/api/redteam/analyze", tags=["redteam"])
+async def analyze_redteam_responses(
+    body: RedTeamAnalyzeRequest,
+    _auth: OrgContext = Depends(get_org_context),
+) -> dict[str, Any]:
+    """Analyse model responses to red team payloads and return a security report."""
+    sim = RedTeamSimulator()
+    report = sim.analyze_responses(body.model_name, body.provider, body.responses)
+    return report.to_dict()
+
+
+# ── Billing / revenue metering ─────────────────────────────────────────────────
+
+@app.get("/api/billing/usage", tags=["billing"])
+async def billing_usage(
+    days: int = Query(30, ge=1, le=365, description="Lookback window in days"),
+    _auth: OrgContext = Depends(get_org_context),
+) -> dict[str, Any]:
+    """Return usage and cost summary for billing and revenue reporting."""
+    if not _cost_repo:
+        raise HTTPException(503, "Cost repository not initialised")
+    total_cost = await _cost_repo.total_cost(days=days)
+    total_tokens = await _cost_repo.total_tokens(days=days)
+    request_count = await _cost_repo.request_count(days=days)
+    model_breakdown = await _cost_repo.get_model_breakdown(days=days)
+    return {
+        "period_days": days,
+        "total_cost_usd": round(total_cost, 6),
+        "total_requests": request_count,
+        "total_tokens": total_tokens,
+        "cost_by_model": {k: round(v, 6) for k, v in model_breakdown.items()},
         "timestamp": datetime.now(UTC).isoformat(),
     }

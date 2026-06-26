@@ -139,27 +139,29 @@ class TestAPIVersionEndpoint:
     async def test_version_body(self, client: AsyncClient) -> None:
         r = await client.get("/api/version")
         d = r.json()
-        assert d["version"] == "1.0.0"
+        assert d["version"] == "1.1.0"
         assert d["stable"] is True
         assert d["major"] == 1
-        assert d["minor"] == 0
+        assert d["minor"] == 1
         assert d["patch"] == 0
 
     @pytest.mark.asyncio
     async def test_api_versions_list(self, client: AsyncClient) -> None:
         r = await client.get("/api/version")
-        assert "1.0" in r.json()["api_versions"]
+        versions = r.json()["api_versions"]
+        assert "1.0" in versions
+        assert "1.1" in versions
 
     @pytest.mark.asyncio
     async def test_x_api_version_header(self, client: AsyncClient) -> None:
         r = await client.get("/api/health")
-        assert r.headers.get("x-api-version") == "1.0.0"
+        assert r.headers.get("x-api-version") == "1.1.0"
 
     @pytest.mark.asyncio
     async def test_v1_prefix_routes_to_health(self, client: AsyncClient) -> None:
         r = await client.get("/api/v1/health")
         assert r.status_code == 200
-        assert r.json()["version"] == "1.0.0"
+        assert r.json()["version"] == "1.1.0"
 
     @pytest.mark.asyncio
     async def test_v1_prefix_routes_to_version(self, client: AsyncClient) -> None:
@@ -225,7 +227,7 @@ class TestSupportEndpoints:
     @pytest.mark.asyncio
     async def test_platform_status_version(self, client: AsyncClient) -> None:
         r = await client.get("/api/support/status")
-        assert r.json()["version"] == "1.0.0"
+        assert r.json()["version"] == "1.1.0"
 
     @pytest.mark.asyncio
     async def test_platform_status_operational(self, client: AsyncClient) -> None:

@@ -6,6 +6,40 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ---
 
+## [1.1.0] — 2026-06-26
+
+### Added
+- **MCP Server** (`responsibleai.mcp`) — the primary enterprise distribution channel
+  - `responsibleai-mcp` CLI entry point; configure Claude Code by pointing `mcpServers.responsibleai` at it
+  - **10 governance tools**: `rai_scan`, `rai_trust_score`, `rai_compliance`, `rai_hallucination`, `rai_cost_estimate`, `rai_redteam_payloads`, `rai_redteam_analyze`, `rai_compare_models`, `rai_audit_summary`, `rai_health`
+  - **5 resources**: `rai://health`, `rai://models/catalog`, `rai://compliance/frameworks`, `rai://redteam/categories`, `rai://trust/dimensions`
+  - Pure-computation tools run in-process (no REST server required for MCP usage)
+  - `mcp>=1.0.0` added to core dependencies; `responsibleai-mcp` added to project scripts
+- **Audit log API endpoints**
+  - `GET /api/audit` — paginated governance audit log with optional `org_id`, `endpoint`, `days`, `limit`, `offset` filters
+  - `GET /api/audit/export` — full CSV download of audit log
+  - `GET /api/audit/summary` — top-N endpoints by request count and average latency
+- **Red team API endpoints**
+  - `GET /api/redteam/payloads` — all 10 adversarial attack payloads, filterable by category
+  - `POST /api/redteam/analyze` — submit model responses and get a security report with vulnerability findings and security score
+- **Billing / revenue metering**
+  - `GET /api/billing/usage` — per-period cost summary, token totals, and per-model breakdown for billing integrations
+- **Version bump to 1.1.0**
+  - `X-API-Version: 1.1.0` on all responses
+  - `api_versions` now reports `["1.0", "1.1"]`
+  - Health endpoint modules list extended with `mcp_server` and `billing`
+
+### Changed
+- `pyproject.toml` version `1.0.0` → `1.1.0`
+- Existing `/api/v1/*` prefix continues to work (no changes to routing middleware)
+
+### Tests
+- 919 tests passing (was 850), coverage 86%
+- `tests/test_mcp_server.py` — 39 tests covering all MCP tools and resources
+- `tests/test_redteam_audit_billing_api.py` — 30 tests covering the new REST endpoints
+
+---
+
 ## [1.0.0] — 2026-06-26
 
 ### Added
