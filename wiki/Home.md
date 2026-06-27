@@ -2,10 +2,6 @@
 
 **The Trust Layer for AI — Enterprise Governance Platform**
 
-<p align="center">
-  <img src="../assets/logo-wordmark-dark.svg" alt="ResponsibleAI" width="360"/>
-</p>
-
 ---
 
 ResponsibleAI is an open-source AI governance platform that provides trust scoring, bias detection, guardrails, hallucination detection, compliance auditing, cost intelligence, drift monitoring, and an MCP server for Claude Code integration.
@@ -76,6 +72,5 @@ src/
 ├── biasbuster/             # Bias evaluation CLI + 6 demographic probes
 └── privacylabel/           # Federated learning + differential privacy
 migrations/                 # Alembic versioned schema
-tests/                      # 942 tests, 86% coverage
-assets/                     # Logo SVGs
+tests/                      # 942 tests
 ```

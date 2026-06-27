@@ -1,8 +1,4 @@
 <p align="center">
-  <img src="assets/logo-wordmark-dark.svg" alt="ResponsibleAI — The Trust Layer for AI" width="420"/>
-</p>
-
-<p align="center">
   <a href="https://github.com/Guruprasath-Annadurai/ResponsibleAi/actions"><img src="https://github.com/Guruprasath-Annadurai/ResponsibleAi/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
   <a href="https://pypi.org/project/biasbuster/"><img src="https://img.shields.io/pypi/v/biasbuster" alt="PyPI version"/></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"/></a>
