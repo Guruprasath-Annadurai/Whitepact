@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-label="ResponsibleAI logo icon">
+  <!-- Rounded square background -->
+  <rect width="200" height="200" rx="40" ry="40" fill="#0f0f0f"/>
+
+  <!-- Stem: left vertical bar -->
+  <rect x="32" y="30" width="30" height="140" fill="#ffffff"/>
+
+  <!-- Bowl: D-crescent — outer r=45 inner r=16, center=(62,75) -->
+  <!-- evenodd cuts inner D out of outer D to create the ring shape -->
+  <path fill-rule="evenodd" fill="#ffffff" d="
+    M 62,30 A 45,45,0,0,1,62,120 L 62,30 Z
+    M 62,59 A 16,16,0,0,1,62,91  L 62,59 Z
+  "/>
+
+  <!-- Leg: diagonal slash from bowl-bottom to lower-right -->
+  <polygon fill="#ffffff" points="56,120 82,120 152,170 126,170"/>
+</svg>

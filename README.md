@@ -1,12 +1,16 @@
-# ResponsibleAI
+<p align="center">
+  <img src="assets/logo-wordmark-dark.svg" alt="ResponsibleAI — The Trust Layer for AI" width="420"/>
+</p>
 
-[![CI](https://github.com/Guruprasath-Annadurai/ResponsibleAi/actions/workflows/ci.yml/badge.svg)](https://github.com/Guruprasath-Annadurai/ResponsibleAi/actions)
-[![PyPI version](https://img.shields.io/pypi/v/biasbuster)](https://pypi.org/project/biasbuster/)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Coverage](https://img.shields.io/badge/coverage-86%25-brightgreen.svg)](https://github.com/Guruprasath-Annadurai/ResponsibleAi)
+<p align="center">
+  <a href="https://github.com/Guruprasath-Annadurai/ResponsibleAi/actions"><img src="https://github.com/Guruprasath-Annadurai/ResponsibleAi/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
+  <a href="https://pypi.org/project/biasbuster/"><img src="https://img.shields.io/pypi/v/biasbuster" alt="PyPI version"/></a>
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"/></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"/></a>
+  <a href="https://github.com/Guruprasath-Annadurai/ResponsibleAi"><img src="https://img.shields.io/badge/coverage-86%25-brightgreen.svg" alt="Coverage"/></a>
+</p>
 
-**Enterprise AI Governance Platform — trust scoring, bias detection, guardrails, hallucination detection, compliance (NIST AI RMF / EU AI Act / ISO 42001), cost intelligence, drift monitoring, and MCP server for Claude Code integration.**
+<p align="center"><strong>Enterprise AI Governance Platform — trust scoring, bias detection, guardrails, hallucination detection, compliance (NIST AI RMF / EU AI Act / ISO 42001), cost intelligence, drift monitoring, and MCP server for Claude Code integration.</strong></p>
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
