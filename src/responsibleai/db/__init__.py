@@ -5,8 +5,10 @@ from responsibleai.db.engine import DatabaseEngine, create_engine
 from responsibleai.db.eval_repository import EvalRepository
 from responsibleai.db.org_repository import OrgRepository
 from responsibleai.db.repositories import CostRepository, TrustRepository
+from responsibleai.db.webhook_repository import WebhookDeliveryRepository
 
 __all__ = [
     "DatabaseEngine", "CostRepository", "TrustRepository",
-    "OrgRepository", "AuditRepository", "EvalRepository", "create_engine",
+    "OrgRepository", "AuditRepository", "EvalRepository",
+    "WebhookDeliveryRepository", "create_engine",
 ]

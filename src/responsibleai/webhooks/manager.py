@@ -2,12 +2,12 @@
 
 Features:
 - HMAC-SHA256 payload signing (X-RAI-Signature-256 header)
-- Exponential backoff retry (1 s / 5 s / 30 s)
+- Exponential backoff retry (1 s / 5 s / 30 s / 2 min / 10 min)
 - Concurrent fan-out via asyncio.gather
 - Provider-specific payload formatting: Slack Block Kit, Teams Adaptive Card,
   PagerDuty Events API v2, generic JSON
-- In-memory delivery log (last 1 000 entries)
-- Thread-safe registration / removal
+- DB-persisted delivery log with retry recovery across server restarts
+- In-memory fallback when no DB is configured (test / dev)
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ import json
 import logging
 import time
 from collections import deque
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
@@ -30,18 +30,42 @@ from responsibleai.webhooks.models import (
     WebhookProvider,
 )
 
+if TYPE_CHECKING:
+    from responsibleai.db.webhook_repository import WebhookDeliveryRepository
+
 logger = logging.getLogger(__name__)
 
-_RETRY_DELAYS = [1.0, 5.0, 30.0]
+_RETRY_DELAYS = [1.0, 5.0, 30.0, 120.0, 600.0]
 _MAX_DELIVERY_LOG = 1_000
+_RETRY_POLL_INTERVAL = 30.0
 
 
 class WebhookManager:
-    """Register endpoints and fire events with HMAC signing and retry logic."""
+    """Register endpoints and fire events with HMAC signing and persistent retry logic."""
 
     def __init__(self) -> None:
         self._configs: dict[str, WebhookConfig] = {}
         self._delivery_log: deque[WebhookDelivery] = deque(maxlen=_MAX_DELIVERY_LOG)
+        self._repo: WebhookDeliveryRepository | None = None
+        self._retry_task: asyncio.Task[None] | None = None
+        self._stop_event: asyncio.Event = asyncio.Event()
+
+    def set_repository(self, repo: WebhookDeliveryRepository) -> None:
+        """Wire up the DB repository for persistent delivery log and retry queue."""
+        self._repo = repo
+
+    def start_retry_worker(self) -> None:
+        """Launch background retry worker (call after lifespan startup + repo attached)."""
+        if self._repo is not None and self._retry_task is None:
+            self._stop_event.clear()
+            self._retry_task = asyncio.create_task(self._retry_worker())
+
+    def stop_retry_worker(self) -> None:
+        """Signal the background worker to stop."""
+        self._stop_event.set()
+        if self._retry_task is not None:
+            self._retry_task.cancel()
+            self._retry_task = None
 
     # ── Registration ──────────────────────────────────────────────────────────
 
@@ -93,18 +117,42 @@ class WebhookManager:
         return deliveries
 
     async def _deliver(
-        self, config: WebhookConfig, event: WebhookEvent, data: dict[str, Any]
+        self,
+        config: WebhookConfig,
+        event: WebhookEvent,
+        data: dict[str, Any],
+        delivery_id: str | None = None,
+        start_attempt: int = 0,
     ) -> WebhookDelivery:
         payload = self._format_payload(config.provider, event, data)
         delivery = WebhookDelivery(
-            webhook_id=config.id, event=event, payload=payload
+            webhook_id=config.id, event=event, payload=payload,
         )
-        delays = [0.0] + _RETRY_DELAYS[: config.max_retries - 1]
+        if delivery_id:
+            delivery.id = delivery_id
 
-        for delay in delays:
+        if self._repo:
+            try:
+                await self._repo.create(
+                    delivery_id=delivery.id,
+                    webhook_id=config.id,
+                    event=event.value,
+                    payload=payload,
+                    max_retries=config.max_retries,
+                )
+            except Exception:
+                pass  # degraded — continue without persistence
+
+        delays = [0.0] + _RETRY_DELAYS[: config.max_retries - 1]
+        for i, delay in enumerate(delays):
+            if i < start_attempt:
+                continue
             if delay:
                 await asyncio.sleep(delay)
             delivery.attempts += 1
+            status_code: int | None = None
+            error: str | None = None
+            success = False
             try:
                 body = json.dumps(payload).encode()
                 headers: dict[str, str] = {"Content-Type": "application/json"}
@@ -114,28 +162,64 @@ class WebhookManager:
                     ).hexdigest()
                     headers["X-RAI-Signature-256"] = f"sha256={sig}"
 
-                async with httpx.AsyncClient(timeout=10.0) as client:
-                    resp = await client.post(
-                        config.url, content=body, headers=headers
-                    )
-                delivery.status_code = resp.status_code
+                async with httpx.AsyncClient(timeout=10.0) as http:
+                    resp = await http.post(config.url, content=body, headers=headers)
+                status_code = resp.status_code
                 if resp.is_success:
+                    delivery.status_code = status_code
                     delivery.success = True
-                    return delivery
-                delivery.last_error = f"HTTP {resp.status_code}"
+                    success = True
+                else:
+                    error = f"HTTP {resp.status_code}"
+                    delivery.last_error = error
             except Exception as exc:
-                delivery.last_error = str(exc)
+                error = str(exc)
+                delivery.last_error = error
                 logger.warning(
-                    "webhook_delivery_failed",
-                    extra={
-                        "webhook_id": config.id,
-                        "event": event.value,
-                        "attempt": delivery.attempts,
-                        "error": str(exc),
-                    },
+                    "webhook_delivery_failed webhook_id=%s event=%s attempt=%d error=%s",
+                    config.id, event.value, delivery.attempts, exc,
                 )
 
+            if self._repo:
+                try:
+                    await self._repo.record_attempt(
+                        delivery.id, delivery.attempts, status_code, error, success
+                    )
+                except Exception:
+                    pass
+
+            if success:
+                return delivery
+
         return delivery
+
+    async def _retry_worker(self) -> None:
+        """Background task: pick up pending DB retries and re-deliver them."""
+        while not self._stop_event.is_set():
+            try:
+                await asyncio.sleep(_RETRY_POLL_INTERVAL)
+                if self._repo is None:
+                    continue
+                pending = await self._repo.pending_retries()
+                for row in pending:
+                    cfg = self._configs.get(row["webhook_id"])
+                    if cfg is None:
+                        continue
+                    try:
+                        event = WebhookEvent(row["event"])
+                    except ValueError:
+                        continue
+                    asyncio.create_task(
+                        self._deliver(
+                            cfg, event, row["payload"],
+                            delivery_id=row["id"],
+                            start_attempt=row["attempts"],
+                        )
+                    )
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                logger.warning("webhook_retry_worker_error: %s", exc)
 
     # ── Delivery log ──────────────────────────────────────────────────────────
 

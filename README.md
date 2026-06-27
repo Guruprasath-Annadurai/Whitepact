@@ -4,13 +4,13 @@
 [![PyPI version](https://img.shields.io/pypi/v/biasbuster)](https://pypi.org/project/biasbuster/)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Coverage](https://img.shields.io/badge/coverage-90%25-brightgreen.svg)](https://github.com/Guruprasath-Annadurai/ResponsibleAi)
+[![Coverage](https://img.shields.io/badge/coverage-86%25-brightgreen.svg)](https://github.com/Guruprasath-Annadurai/ResponsibleAi)
 
-**Enterprise AI Governance Platform — trust scoring, bias detection, guardrails, hallucination detection, compliance (NIST AI RMF / EU AI Act / ISO 42001), cost intelligence, and drift monitoring. Production-ready REST API included.**
+**Enterprise AI Governance Platform — trust scoring, bias detection, guardrails, hallucination detection, compliance (NIST AI RMF / EU AI Act / ISO 42001), cost intelligence, drift monitoring, and MCP server for Claude Code integration.**
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│                        ResponsibleAI  v0.8.0                                 │
+│                        ResponsibleAI  v1.1.0                                 │
 │                                                                              │
 │  ┌──────────────┐  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐  │
 │  │ Trust Score  │  │ Compliance  │  │  Guardrails  │  │  Hallucination   │  │
@@ -20,10 +20,13 @@
 │  │ Cost Intel   │  │   Red Team  │  │ Drift Monitor│  │   AI Passport    │  │
 │  │ Route+Budget │  │ 10 attacks  │  │ Alerts+Trend │  │  SHA-256 cert    │  │
 │  └──────────────┘  └─────────────┘  └──────────────┘  └──────────────────┘  │
-│  ┌──────────────┐  ┌─────────────┐  ┌──────────────────────────────────────┐ │
-│  │  BiasBuster  │  │ PrivacyLabel│  │         Governance Dashboard         │ │
-│  │ 6 probes+CI  │  │  Federated  │  │  FastAPI · Auth · Rate limit · OTEL  │ │
-│  └──────────────┘  └─────────────┘  └──────────────────────────────────────┘ │
+│  ┌──────────────┐  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐  │
+│  │  BiasBuster  │  │ PrivacyLabel│  │  MCP Server  │  │  Audit Log API   │  │
+│  │ 6 probes+CI  │  │  Federated  │  │  10 tools    │  │  Export+Summary  │  │
+│  └──────────────┘  └─────────────┘  └──────────────┘  └──────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────────────────────┐ │
+│  │   Governance Dashboard — FastAPI · Per-org rate limit · Alembic · OTEL  │ │
+│  └──────────────────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -33,7 +36,7 @@
 
 Every team deploying AI in production faces the same gap: **no unified way to prove a model is safe, fair, and compliant.** Audits are manual, bias is discovered in production, compliance is a spreadsheet, and nobody knows what the LLM bill will be next month.
 
-ResponsibleAI gives you one platform — a REST API, a Python SDK, and a live dashboard — that covers the full governance lifecycle:
+ResponsibleAI gives you one platform — a REST API, a Python SDK, an MCP server, and a live dashboard — that covers the full governance lifecycle:
 
 | Problem | Module | Output |
 |---|---|---|
@@ -47,6 +50,7 @@ ResponsibleAI gives you one platform — a REST API, a Python SDK, and a live da
 | Is it biased? | `BiasBuster` | 6 demographic probes, CI gate |
 | Is this data labeled privately? | `PrivacyLabel` | Federated DP labels, never leaves device |
 | Is this media real? | `DeepfakeDetector` | Ensemble confidence, method detected |
+| Can Claude Code govern every AI call? | `MCP Server` | 10 governance tools over stdio |
 
 ---
 
@@ -103,7 +107,66 @@ curl -X POST http://localhost:8765/api/evaluate \
 }
 ```
 
-Open `http://localhost:8765` for the live dashboard.
+Open `http://localhost:8765` for the live dashboard and `http://localhost:8765/api/docs` for interactive API docs.
+
+---
+
+## MCP Server — govern every AI call from Claude Code
+
+The MCP (Model Context Protocol) server exposes ResponsibleAI as 10 tools and 5 resources directly inside Claude Code. When a team's Claude Code setup points at this server, every AI interaction is automatically governed — trust scoring, guardrails, compliance checks, and audit logging run on every call without code changes.
+
+### Setup
+
+```bash
+# Install
+pip install "rai-governance-platform[dashboard,mcp]"
+
+# Start the REST API (MCP tools call it internally)
+RAI_DB_PATH=/var/lib/rai/governance.db \
+RAI_API_KEYS=your-key-here \
+uvicorn responsibleai.dashboard.app:app --host 127.0.0.1 --port 8765 &
+
+# Add to Claude Code (~/.claude/claude_desktop_config.json or via /mcp)
+```
+
+```json
+{
+  "mcpServers": {
+    "responsibleai": {
+      "command": "responsibleai-mcp",
+      "env": {
+        "RAI_API_URL": "http://localhost:8765",
+        "RAI_API_KEY": "your-key-here"
+      }
+    }
+  }
+}
+```
+
+### Available tools
+
+| Tool | What it does |
+|---|---|
+| `evaluate_model` | Full trust score + compliance + passport in one call |
+| `scan_for_pii` | Detect and redact PII before it reaches logs |
+| `detect_hallucinations` | Score consistency against candidate responses |
+| `run_red_team` | Run all 10 attack vectors, get CVE-tagged findings |
+| `check_compliance` | NIST AI RMF + EU AI Act + ISO 42001 report |
+| `record_usage` | Track token costs by model, team, application |
+| `get_cost_summary` | Spend breakdown — by model, by team, by day |
+| `route_model` | Get the cheapest model that can handle a task |
+| `check_drift` | Current drift trend — is the model degrading? |
+| `list_models` | All evaluated models with latest trust scores |
+
+### Available resources
+
+| Resource | URI | Contents |
+|---|---|---|
+| Model catalogue | `rai://models/catalog` | All models + pricing + capabilities |
+| Trust leaderboard | `rai://trust/leaderboard` | Top 10 models by trust score |
+| Compliance summary | `rai://compliance/summary` | Aggregate framework coverage |
+| Cost dashboard | `rai://costs/dashboard` | Monthly spend, budget status |
+| Platform health | `rai://platform/health` | API, DB, auth, OTEL status |
 
 ---
 
@@ -122,14 +185,12 @@ score = engine.compute(
 print(f"{score.overall:.1f} / 100  Grade: {score.grade}  Risk: {score.risk_level}")
 # → 83.7 / 100  Grade: B  Risk: LOW
 
-# Generate a verifiable AI Passport (SHA-256 signed certificate)
 passport = PassportGenerator().generate(
     model_name="gpt-4o", provider="openai", trust_score=score,
     compliance_summary={"overall": 80.5},
 )
-print(passport.passport_id)      # rai-a3f7c2b1
-print(passport.verification_hash[:16])  # 4d8e1f2a9c3b...
-passport.export_html("passport.html")   # human-readable certificate
+print(passport.passport_id)
+passport.export_html("passport.html")
 ```
 
 ### Guardrails — block PII before it reaches a log
@@ -159,7 +220,6 @@ result = detector.analyze(
     ],
 )
 print(f"Risk: {result.hallucination_risk:.2f}  Level: {result.risk_level}")
-print(f"Consistency: {result.consistency_score:.2f}")
 ```
 
 ### Compliance — NIST AI RMF, EU AI Act, ISO 42001
@@ -175,9 +235,6 @@ report = engine.evaluate(
 )
 print(f"Score: {report.compliance_score * 100:.1f}%")
 print(f"EU AI Act tier: {report.eu_ai_act_tier.value}")  # high_risk
-print(f"Violations: {len(report.violations)}")
-for framework in report.frameworks:
-    print(f"  {framework['name']}: {framework.get('status', 'evaluated')}")
 ```
 
 ### Red team simulation
@@ -190,9 +247,8 @@ report = simulator.run_all()
 
 print(f"Security score: {report.security_score:.1f}/100")
 print(f"Vulnerabilities: {len(report.vulnerabilities)}")
-print(f"Critical: {len(report.critical_vulnerabilities)}")
 for v in report.critical_vulnerabilities:
-    print(f"  [{v['cwe_id']}] {v['name']}: {v['description'][:60]}")
+    print(f"  [{v['cwe_id']}] {v['name']}")
 ```
 
 ### Cost intelligence
@@ -200,7 +256,6 @@ for v in report.critical_vulnerabilities:
 ```python
 from responsibleai import CostTracker, ModelRouter, TokenUsage, BudgetPolicy
 
-# Track real usage
 tracker = CostTracker(db_path="~/.responsibleai/data.db",
                       policy=BudgetPolicy(monthly_limit_usd=500.0))
 usage = TokenUsage.create(
@@ -211,15 +266,9 @@ record = tracker.record(usage)
 print(f"This call: ${record.total_cost:.4f}")
 print(f"Month to date: ${tracker.total_cost(30):.2f}")
 
-budget = tracker.check_budget()
-print(f"Budget: {budget.percentage_used:.1f}% used  Exceeded: {budget.is_exceeded}")
-
-# Route tasks to the cheapest viable model
 router = ModelRouter()
 decision = router.route("Classify this email as spam or not spam", "balanced")
-print(f"Complexity: {decision.complexity}")
-print(f"Recommended: {decision.recommended_model}")
-print(f"Estimated cost: ${decision.estimated_cost_per_1k:.4f}/1k tokens")
+print(f"Recommended: {decision.recommended_model}  ${decision.estimated_cost_per_1k:.4f}/1k tokens")
 ```
 
 ### Trust drift monitoring
@@ -230,17 +279,12 @@ from responsibleai import TrustScoreEngine, TrustDriftMonitor
 monitor = TrustDriftMonitor(db_path=":memory:", alert_threshold=5.0)
 engine = TrustScoreEngine()
 
-# Record scores over time — alert fires if score drops ≥ 5 points
-for fairness in [0.90, 0.88, 0.85, 0.72]:   # gradual degradation
+for fairness in [0.90, 0.88, 0.85, 0.72]:
     score = engine.compute(fairness=fairness, privacy=0.85, security=0.80,
                            robustness=0.80, compliance=0.85, authenticity=0.85)
     alert = monitor.record("gpt-4o", "openai", score)
     if alert:
         print(f"Drift alert! {alert.severity}: {alert.delta:.1f} pt drop")
-
-trend = monitor.trend("gpt-4o", "openai")
-print(f"Direction: {trend['direction']}")   # degrading
-print(f"7-day avg: {trend['7d_avg']}")
 ```
 
 ---
@@ -250,10 +294,10 @@ print(f"7-day avg: {trend['7d_avg']}")
 A production FastAPI application with a dark-mode SPA.
 
 ```bash
-# Development
+# Development (auth off, SQLite in-memory)
 RAI_AUTH_ENABLED=false uvicorn responsibleai.dashboard.app:app --port 8765
 
-# Production (with auth + persistent DB)
+# Production (auth + persistent DB)
 RAI_API_KEYS=your-key-here \
 RAI_DB_PATH=/data/responsibleai.db \
 uvicorn responsibleai.dashboard.app:app --host 0.0.0.0 --port 8765 --workers 4
@@ -262,38 +306,92 @@ uvicorn responsibleai.dashboard.app:app --host 0.0.0.0 --port 8765 --workers 4
 docker compose up -d
 ```
 
-**Endpoints:**
+### REST API endpoints
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/health` | Health check with DB, auth, OTEL status |
+| `GET` | `/api/health` | Health — DB, auth, OTEL, version |
 | `GET` | `/api/metrics` | Uptime, request count, error rate, monthly spend |
-| `POST` | `/api/evaluate` | Full model evaluation → trust score + compliance + passport |
+| `POST` | `/api/evaluate` | Full evaluation → trust + compliance + passport |
 | `GET` | `/api/trust-score/{model}/{provider}` | Score history + drift trend |
 | `GET` | `/api/models` | All evaluated models |
-| `POST` | `/api/scan` | Guardrails scan — PII detection + redaction |
+| `POST` | `/api/scan` | Guardrails — PII detection + redaction |
 | `POST` | `/api/hallucination` | Hallucination risk analysis |
 | `POST` | `/api/cost/record` | Record token usage |
-| `GET` | `/api/cost/summary` | Cost breakdown by model, team, day |
-| `POST` | `/api/cost/analyze` | Prompt efficiency analysis — detect bloat |
-| `POST` | `/api/cost/route` | Route a task to cheapest viable model |
+| `GET` | `/api/cost/summary` | Cost breakdown by model / team / day |
+| `POST` | `/api/cost/analyze` | Prompt efficiency — detect bloat |
+| `POST` | `/api/cost/route` | Route task to cheapest viable model |
 | `GET` | `/api/cost/models` | Full model pricing catalogue |
-| `GET` | `/api/drift/{model}/{provider}` | Drift trend + recent history |
+| `GET` | `/api/drift/{model}/{provider}` | Drift trend + history |
+| `GET` | `/api/audit` | Paginated audit log (org-scoped) |
+| `GET` | `/api/audit/export` | Export audit log as JSONL or CSV |
+| `GET` | `/api/audit/summary` | Audit counts grouped by endpoint |
+| `GET` | `/api/redteam/payloads` | Red team payload library (10 vectors) |
+| `POST` | `/api/redteam/analyze` | Analyze model responses for vulnerabilities |
+| `GET` | `/api/billing/usage` | Token spend and budget status |
 
-Interactive API docs at `/api/docs`.
+Interactive docs at `/api/docs`.
 
 ### Production features
 
-| Feature | How |
+| Feature | Detail |
 |---|---|
-| Authentication | Bearer token (`RAI_API_KEYS`) |
-| Rate limiting | In-memory or Redis (`RAI_REDIS_URL`) |
+| Authentication | Bearer token (`RAI_API_KEYS`) with RBAC (OWNER / ADMIN / ANALYST / VIEWER) |
+| Per-org rate limiting | Each Bearer token gets its own rate limit bucket (SHA-256 keyed) — no shared global pool |
 | CORS | Configurable origins (`RAI_ALLOWED_ORIGINS`) |
 | Security headers | CSP, X-Frame-Options, X-Content-Type-Options |
 | Structured logging | JSON via structlog + request IDs |
-| Database | SQLite (default) or PostgreSQL (`RAI_DATABASE_URL`) |
+| Database | SQLite (default) or PostgreSQL (`RAI_DATABASE_URL`) with Alembic migrations |
 | Observability | OpenTelemetry traces + metrics (`RAI_OTEL_ENDPOINT`) |
-| Exception handling | No raw stack traces ever reach clients |
+| Webhooks | HMAC-signed delivery with DB-persisted retry queue (survives restarts) |
+| Exception handling | No raw stack traces reach clients |
+
+---
+
+## Database migrations (Alembic)
+
+Schema changes are managed with Alembic. The initial migration creates all 8 tables.
+
+```bash
+# Upgrade to latest schema
+RAI_DB_PATH=/var/lib/rai/governance.db alembic upgrade head
+
+# PostgreSQL
+RAI_DB_URL=postgresql://user:pass@host:5432/responsibleai alembic upgrade head
+
+# Show migration history
+alembic history
+
+# Generate a new migration after changing engine.py
+alembic revision --autogenerate -m "add_new_column"
+```
+
+All migrations use `render_as_batch=True` so they run on both SQLite and PostgreSQL without changes.
+
+---
+
+## Webhook notifications
+
+Register an endpoint and receive signed events when governance thresholds fire.
+
+```bash
+# Register a Slack webhook
+curl -X POST http://localhost:8765/api/webhooks \
+  -H "Authorization: Bearer your-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "ops-slack",
+    "url": "https://hooks.slack.com/services/...",
+    "events": ["drift_alert", "budget_exceeded", "guardrail_triggered"],
+    "provider": "slack",
+    "secret": "hmac-secret-for-signature-verification",
+    "max_retries": 5
+  }'
+```
+
+Deliveries are persisted to the database. If the server restarts during a retry cycle, the background worker picks up where it left off on next boot. Retry schedule: 1 s → 5 s → 30 s → 2 min → 10 min.
+
+Verify payloads with the `X-RAI-Signature-256: sha256=<hex>` header.
 
 ---
 
@@ -303,15 +401,14 @@ Interactive API docs at `/api/docs`.
 git clone https://github.com/Guruprasath-Annadurai/ResponsibleAi.git
 cd ResponsibleAi
 
-# Generate an API key
 python3 -c "import secrets; print(secrets.token_urlsafe(32))"
 
 cp .env.example .env
 # Edit .env — set RAI_API_KEYS
 
 docker compose up -d
-# Dashboard at http://localhost:8765
-# API docs at http://localhost:8765/api/docs
+# Dashboard: http://localhost:8765
+# API docs:  http://localhost:8765/api/docs
 ```
 
 ---
@@ -325,9 +422,12 @@ RAI_REDIS_URL=redis://redis-host:6379/0
 RAI_OTEL_ENDPOINT=http://otel-collector:4318
 
 pip install "rai-governance-platform[dashboard,postgres,redis,telemetry]"
+
+# Run migrations before first start
+RAI_DB_URL=postgresql://rai:secret@db-host:5432/responsibleai alembic upgrade head
 ```
 
-The async database layer uses SQLAlchemy with connection pooling (`pool_size=10`, `max_overflow=20`, `pool_pre_ping=True`). Rate limiting switches automatically to Redis-backed storage when `RAI_REDIS_URL` is set.
+The async database layer uses SQLAlchemy with connection pooling (`pool_size=10`, `max_overflow=20`, `pool_pre_ping=True`). Rate limiting switches to Redis-backed storage when `RAI_REDIS_URL` is set.
 
 ---
 
@@ -361,7 +461,7 @@ asyncio.run(main())
 
 **Available probes:** `gender-bias`, `racial-bias`, `age-bias`, `religious-bias`, `occupational-stereotype`, `cultural-bias`
 
-**Scoring:** TF-IDF cosine divergence + length asymmetry + VADER sentiment divergence, with 95% bootstrap confidence intervals and intersectional co-failure amplification (×1.15).
+**Scoring:** TF-IDF cosine divergence + length asymmetry + VADER sentiment divergence, 95% bootstrap confidence intervals, intersectional co-failure amplification (×1.15).
 
 ---
 
@@ -372,9 +472,9 @@ from privacylabel import FederatedClient, FedAvgAggregator
 
 client = FederatedClient(
     node_id="hospital-node-01",
-    provider=MyProvider(),      # your local or API model
-    epsilon_per_round=0.1,      # (ε, δ)-DP per round
-    total_epsilon=1.0,          # 10 rounds before budget exhaustion
+    provider=MyProvider(),
+    epsilon_per_round=0.1,
+    total_epsilon=1.0,
     delta=1e-6,
     gradient_clip=1.0,
 )
@@ -407,12 +507,13 @@ Implements Laplace, Gaussian, Exponential, and DP-SGD mechanisms. Byzantine-robu
 
 | Variable | Default | Description |
 |---|---|---|
-| `RAI_DB_PATH` | `~/.responsibleai/data.db` | SQLite path |
-| `RAI_DATABASE_URL` | *(unset = SQLite)* | PostgreSQL URL for horizontal scaling |
+| `RAI_DB_PATH` | `governance.db` | SQLite path |
+| `RAI_DB_URL` | *(unset = SQLite)* | Full SQLAlchemy URL — takes priority over `RAI_DB_PATH` |
+| `RAI_DATABASE_URL` | *(unset)* | Alias for `RAI_DB_URL` |
 | `RAI_API_KEYS` | *(empty = auth off)* | Comma-separated bearer tokens |
-| `RAI_AUTH_ENABLED` | `true` | Toggle auth |
+| `RAI_AUTH_ENABLED` | `true` | Toggle auth enforcement |
 | `RAI_REDIS_URL` | *(unset = in-memory)* | Redis URL for distributed rate limiting |
-| `RAI_RATE_LIMIT_DEFAULT` | `100/minute` | Global rate limit |
+| `RAI_RATE_LIMIT_DEFAULT` | `100/minute` | Per-org rate limit (keyed by Bearer token) |
 | `RAI_OTEL_ENDPOINT` | *(unset = disabled)* | OTLP HTTP endpoint |
 | `RAI_OTEL_SERVICE_NAME` | `responsibleai` | Service name for traces |
 | `RAI_ALERT_THRESHOLD` | `5.0` | Trust score drop that triggers drift alert |
@@ -421,8 +522,6 @@ Implements Laplace, Gaussian, Exponential, and DP-SGD mechanisms. Byzantine-robu
 | `RAI_LOG_JSON` | `true` | Structured JSON logs |
 | `RAI_HOST` | `127.0.0.1` | Bind address |
 | `RAI_PORT` | `8765` | Port |
-
-Full reference in [.env.example](.env.example). Deployment guide in [DEPLOYMENT.md](DEPLOYMENT.md). SLA in [SLA.md](SLA.md).
 
 ---
 
@@ -435,18 +534,22 @@ cd ResponsibleAi
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-# Full test suite (637 tests, 90% coverage)
+# Full test suite (942 tests, 86% coverage)
 pytest
 
-# Dashboard integration tests only
+# Dashboard tests only
 RAI_DB_PATH=:memory: RAI_AUTH_ENABLED=false pytest tests/test_dashboard_api.py
+
+# Webhook persistence tests
+pytest tests/test_webhook_persistence.py
+
+# MCP server tests
+pytest tests/test_mcp_server.py
 
 # Lint + type check
 ruff check src/ tests/
 mypy src/responsibleai src/biasbuster
 ```
-
-637 tests, 90% line coverage across the trust engine, compliance framework, guardrails, hallucination detector, cost intelligence, drift monitor, async database layer, and governance API.
 
 ---
 
@@ -458,8 +561,10 @@ mypy src/responsibleai src/biasbuster
 - [x] v0.4 — Cost Intelligence (CostTracker, ModelRouter, 16-model pricing), Trust Drift Monitor
 - [x] v0.5 — Governance Dashboard (FastAPI), Trust Score, AI Passport, Guardrails, Hallucination, Compliance, Red Team, CI/CD, Docker, SLA
 - [x] v0.6 — Async PostgreSQL (SQLAlchemy), Redis rate limiting, OpenTelemetry APM, LLM integration tests
-- [ ] v0.7 — Real-time WebSocket drift alerts, Prometheus metrics endpoint, multi-tenant passport registry
-- [ ] v1.0 — Managed cloud tier, SOC 2 audit trail, streaming aggregation server
+- [x] v1.0 — WebSocket drift alerts, Prometheus endpoint, multi-tenant RBAC, org management API
+- [x] v1.1 — MCP server (10 tools, 5 resources), audit log API, red team API, billing API, Alembic migrations, per-org rate limiting, DB-persisted webhook retry queue
+- [ ] v1.2 — Streaming response scanner, multi-region DB replication, SOC 2 audit export
+- [ ] v2.0 — Managed cloud tier, real-time aggregation server, ML-based drift prediction
 
 ---
 

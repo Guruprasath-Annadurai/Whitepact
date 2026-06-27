@@ -140,6 +140,26 @@ eval_baselines = Table(
     Index("idx_eb_org",    "org_id"),
 )
 
+webhook_deliveries = Table(
+    "webhook_deliveries",
+    metadata,
+    Column("id",            String(36),  primary_key=True),
+    Column("webhook_id",    String(36),  nullable=False),
+    Column("event",         String(64),  nullable=False),
+    Column("payload",       Text,        nullable=False),   # JSON
+    Column("status",        String(20),  nullable=False, default="pending"),
+    Column("attempts",      Integer,     nullable=False, default=0),
+    Column("max_retries",   Integer,     nullable=False, default=3),
+    Column("status_code",   Integer,     nullable=True),
+    Column("last_error",    Text,        nullable=True),
+    Column("created_at",    String(32),  nullable=False),
+    Column("next_retry_at", String(32),  nullable=True),
+    Column("delivered_at",  String(32),  nullable=True),
+    Index("idx_wd_webhook",  "webhook_id"),
+    Index("idx_wd_status",   "status"),
+    Index("idx_wd_retry",    "next_retry_at"),
+)
+
 
 class DatabaseEngine:
     """Async database engine wrapping SQLAlchemy — SQLite or PostgreSQL."""

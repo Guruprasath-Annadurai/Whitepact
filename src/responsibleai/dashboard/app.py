@@ -58,6 +58,7 @@ from responsibleai.db import (
     EvalRepository,
     OrgRepository,
     TrustRepository,
+    WebhookDeliveryRepository,
     create_engine,
 )
 from responsibleai.db.engine import DatabaseEngine
@@ -85,9 +86,26 @@ settings = get_settings()
 configure_logging(level=settings.log_level, json_logs=settings.log_json)
 logger = get_logger("app")
 
-# ── Rate limiter ───────────────────────────────────────────────────────────────
+# ── Per-org rate limiter ───────────────────────────────────────────────────────
+
+def _get_rate_limit_key(request: Request) -> str:
+    """Rate limit by API key (per org / per key) when present, IP address otherwise.
+
+    Using the API key as the bucket key means each organisation gets its own
+    quota rather than sharing a pool with all other tenants on the same IP
+    (common in cloud-hosted or NAT environments).
+    """
+    import hashlib as _hashlib
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        token = auth[7:].strip()
+        if token:
+            return "key:" + _hashlib.sha256(token.encode()).hexdigest()[:24]
+    return get_remote_address(request)
+
+
 _limiter_kwargs: dict[str, Any] = {
-    "key_func": get_remote_address,
+    "key_func": _get_rate_limit_key,
     "default_limits": [settings.rate_limit_default],
 }
 if settings.redis_url:
@@ -168,6 +186,11 @@ async def lifespan(application: FastAPI):
             skip_verification=settings.oidc_skip_verification,
         )
 
+    # Attach DB-backed delivery log + start persistent retry worker
+    _webhook_delivery_repo = WebhookDeliveryRepository(_db_engine)
+    _webhook_manager.set_repository(_webhook_delivery_repo)
+    _webhook_manager.start_retry_worker()
+
     _ws_manager.start()
 
     auth_status = "enabled" if (settings.auth_enabled and settings.api_keys) else "disabled"
@@ -184,6 +207,7 @@ async def lifespan(application: FastAPI):
 
     yield
 
+    _webhook_manager.stop_retry_worker()
     _ws_manager.stop()
     if _db_engine:
         await _db_engine.close()
