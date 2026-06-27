@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 80" role="img" aria-label="ResponsibleAI — The Trust Layer for AI">
   <!-- Icon: rounded square with R lettermark -->
   <g transform="translate(0,0) scale(0.4)">
-    <rect width="200" height="200" rx="40" ry="40" fill="#0f0f0f"/>
-    <rect x="32" y="30" width="30" height="140" fill="#ffffff"/>
-    <path fill-rule="evenodd" fill="#ffffff" d="M 62,30 A 45,45,0,0,1,62,120 L 62,30 Z M 62,59 A 16,16,0,0,1,62,91 L 62,59 Z"/>
-    <polygon fill="#ffffff" points="56,120 82,120 152,170 126,170"/>
+    <rect width="200" height="200" rx="44" ry="44" fill="#1a1a1a"/>
+    <rect x="28" y="26" width="30" height="148" fill="#ffffff"/>
+    <path fill-rule="evenodd" fill="#ffffff" d="M 58,26 A 47,47,0,0,1,58,120 L 58,26 Z M 58,53 A 20,20,0,0,1,58,93 L 58,53 Z"/>
+    <polygon fill="#ffffff" points="44,120 68,143 78,120 160,174 124,174"/>
   </g>
 
   <!-- Wordmark text group -->
