@@ -13,11 +13,14 @@ Enterprise features:
 
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
 from responsibleai.guardrails.engine import GuardrailsEngine
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -115,13 +118,20 @@ class StreamingScanner:
             if at_boundary or at_window:
                 scan_triggered = True
                 self._scans += 1
-                result = self._guardrails.scan(self._buffer)
-                pii_detected = len(result.pii_findings) > 0
-                pii_findings = [f.category for f in result.pii_findings]
-                if pii_detected:
-                    self._pii_detections += 1
-                if self._redact and result.redacted_text:
-                    self._buffer = result.redacted_text
+                try:
+                    result = self._guardrails.scan(self._buffer)
+                    pii_detected = len(result.pii_findings) > 0
+                    pii_findings = [f.category for f in result.pii_findings]
+                    if pii_detected:
+                        self._pii_detections += 1
+                    if self._redact and result.redacted_text:
+                        self._buffer = result.redacted_text
+                except Exception as exc:
+                    _log.warning(
+                        "Guardrail scan failed at token %d: %s — stream continues",
+                        self._token_index,
+                        exc,
+                    )
 
             should_stop = pii_detected and self._hard_stop
 

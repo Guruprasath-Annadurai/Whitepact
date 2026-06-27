@@ -821,16 +821,22 @@ async def eval_results(
 async def query_audit_log(
     request: Request,
     days: int = Query(default=7, ge=1, le=90),
-    org_id: str | None = Query(default=None),
+    org_id: str | None = Query(default=None, description="Cross-org filter (super-admin only)"),
     endpoint: str | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, Any]:
+    if _auth.org_id is not None:
+        scoped_org_id = _auth.org_id
+    elif _auth.is_legacy and _auth.role == Role.OWNER:
+        scoped_org_id = org_id
+    else:
+        scoped_org_id = None
     entries = await _audit_repo.query(
-        org_id=org_id, endpoint=endpoint, days=days, limit=limit, offset=offset
+        org_id=scoped_org_id, endpoint=endpoint, days=days, limit=limit, offset=offset
     )
-    total = await _audit_repo.count(days=days, org_id=org_id)
+    total = await _audit_repo.count(days=days, org_id=scoped_org_id)
     summary = await _audit_repo.endpoint_summary(days=days)
     return {
         "entries": entries,
@@ -1389,19 +1395,29 @@ async def platform_status() -> dict[str, Any]:
 # ── Audit log ──────────────────────────────────────────────────────────────────
 
 @app.get("/api/audit", tags=["audit"])
+@limiter.limit("60/minute")
 async def list_audit_entries(
-    org_id: str | None = Query(None, description="Filter by organisation ID"),
+    request: Request,
+    org_id: str | None = Query(None, description="Cross-org filter (super-admin only)"),
     endpoint: str | None = Query(None, description="Filter by endpoint path"),
     days: int = Query(30, ge=1, le=365, description="Lookback window in days"),
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
-    _auth: OrgContext = Depends(get_org_context),
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
 ) -> dict[str, Any]:
-    """Query the governance audit log with optional filters."""
+    """Query the governance audit log. Always scoped to the authenticated org."""
     if not _audit_repo:
         raise HTTPException(503, "Audit repository not initialised")
-    rows = await _audit_repo.query(org_id=org_id, endpoint=endpoint, days=days, limit=limit, offset=offset)
-    total = await _audit_repo.count(days=days, org_id=org_id)
+    # Org-specific keys: force scope to their org regardless of query param.
+    # Legacy super-admin keys (is_legacy=True, role=OWNER): allow cross-org filter.
+    if _auth.org_id is not None:
+        scoped_org_id = _auth.org_id
+    elif _auth.is_legacy and _auth.role == Role.OWNER:
+        scoped_org_id = org_id
+    else:
+        scoped_org_id = None
+    rows = await _audit_repo.query(org_id=scoped_org_id, endpoint=endpoint, days=days, limit=limit, offset=offset)
+    total = await _audit_repo.count(days=days, org_id=scoped_org_id)
     return {
         "entries": rows,
         "total": total,
@@ -1412,32 +1428,38 @@ async def list_audit_entries(
 
 
 @app.get("/api/audit/export", tags=["audit"])
+@limiter.limit("10/minute")
 async def export_audit_log(
-    org_id: str | None = Query(None),
+    request: Request,
+    org_id: str | None = Query(None, description="Cross-org filter (super-admin only)"),
     days: int = Query(30, ge=1, le=365),
-    _auth: OrgContext = Depends(get_org_context),
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> Response:
-    """Export audit log as CSV."""
+    """Export audit log as CSV. Results scoped to authenticated org."""
     if not _audit_repo:
         raise HTTPException(503, "Audit repository not initialised")
-    rows = await _audit_repo.query(org_id=org_id, days=days, limit=10000)
-    headers_row = "id,timestamp,org_id,key_id,endpoint,method,status_code,ip_address,request_id,duration_ms\n"
-    lines = [headers_row]
+    if _auth.org_id is not None:
+        scoped_org_id = _auth.org_id
+    elif _auth.is_legacy and _auth.role == Role.OWNER:
+        scoped_org_id = org_id
+    else:
+        scoped_org_id = None
+    rows = await _audit_repo.query(org_id=scoped_org_id, days=days, limit=5000)
+    import csv as _csv
+    import io as _io
+    buf = _io.StringIO()
+    writer = _csv.writer(buf)
+    writer.writerow(["id", "timestamp", "org_id", "key_id", "endpoint", "method",
+                     "status_code", "ip_address", "request_id", "duration_ms"])
     for r in rows:
-        lines.append(",".join([
-            str(r.get("id", "")),
-            str(r.get("timestamp", "")),
-            str(r.get("org_id", "")),
-            str(r.get("key_id", "")),
-            str(r.get("endpoint", "")),
-            str(r.get("method", "")),
-            str(r.get("status_code", "")),
-            str(r.get("ip_address", "")),
-            str(r.get("request_id", "")),
-            str(r.get("duration_ms", "")),
-        ]) + "\n")
+        writer.writerow([
+            r.get("id", ""), r.get("timestamp", ""), r.get("org_id", ""),
+            r.get("key_id", ""), r.get("endpoint", ""), r.get("method", ""),
+            r.get("status_code", ""), r.get("ip_address", ""),
+            r.get("request_id", ""), r.get("duration_ms", ""),
+        ])
     return Response(
-        content="".join(lines),
+        content=buf.getvalue(),
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=audit-{days}d.csv"},
     )

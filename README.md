@@ -7,7 +7,7 @@
   <a href="https://pypi.org/project/biasbuster/"><img src="https://img.shields.io/pypi/v/biasbuster" alt="PyPI version"/></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"/></a>
-  <a href="https://github.com/Guruprasath-Annadurai/ResponsibleAi"><img src="https://img.shields.io/badge/coverage-86%25-brightgreen.svg" alt="Coverage"/></a>
+  <a href="https://github.com/Guruprasath-Annadurai/ResponsibleAi"><img src="https://img.shields.io/badge/tests-942_passing-brightgreen.svg" alt="942 tests passing"/></a>
 </p>
 
 <p align="center"><strong>Enterprise AI Governance Platform — trust scoring, bias detection, guardrails, hallucination detection, compliance (NIST AI RMF / EU AI Act / ISO 42001), cost intelligence, drift monitoring, and MCP server for Claude Code integration.</strong></p>

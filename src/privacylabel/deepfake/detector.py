@@ -16,6 +16,8 @@ Design decisions:
 
 from __future__ import annotations
 
+import logging
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -23,6 +25,8 @@ from typing import Any
 import numpy as np
 
 from privacylabel.deepfake.ensemble import EnsembleVoter, ModelScore, VotingStrategy
+
+_log = logging.getLogger(__name__)
 
 try:
     import torch
@@ -219,6 +223,15 @@ class DeepfakeDetector:
         if _TORCH_AVAILABLE:
             image = Image.open(path).convert("RGB")
         else:
+            warnings.warn(
+                "torch/torchvision not installed — DeepfakeDetector is running in "
+                "heuristic-only mode. Install with: pip install 'rai-governance-platform[deepfake]'",
+                stacklevel=2,
+            )
+            _log.warning(
+                "DeepfakeDetector: torch unavailable, using frequency-heuristic fallback for %s",
+                path,
+            )
             image = np.random.randint(0, 256, (224, 224, 3), dtype=np.uint8)
 
         model_scores = self._predict_image(image)
