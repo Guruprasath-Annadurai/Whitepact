@@ -6,7 +6,7 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ---
 
-## [1.1.0] — 2026-06-26
+## [1.1.0] — 2026-06-27
 
 ### Added
 - **MCP Server** (`responsibleai.mcp`) — the primary enterprise distribution channel

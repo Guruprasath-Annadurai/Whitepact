@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import random
 from typing import Any
 
 import httpx
@@ -17,12 +19,15 @@ from .models import (
 
 _DEFAULT_BASE = "http://localhost:8765"
 _API_VERSION  = "v1"
+_MAX_RETRIES  = 3
+_RETRY_CODES  = {429, 502, 503, 504}
 
 
 class RAIClient:
     """Async client for the ResponsibleAI Governance Platform.
 
-    Usage::
+    Prefer using as an async context manager so the underlying connection
+    pool is reused across requests and closed cleanly on exit::
 
         async with RAIClient(api_key="rai-xxx", base_url="https://rai.example.com") as client:
             score = await client.evaluate(
@@ -31,6 +36,9 @@ class RAIClient:
                 robustness=0.75, compliance=0.88, authenticity=0.92,
             )
             print(score.grade)
+
+    One-off calls without a context manager are also supported; the client
+    opens and closes a short-lived connection per call.
     """
 
     def __init__(
@@ -38,10 +46,12 @@ class RAIClient:
         api_key: str = "",
         base_url: str = _DEFAULT_BASE,
         timeout: float = 30.0,
+        max_retries: int = _MAX_RETRIES,
     ) -> None:
         self._base = base_url.rstrip("/")
         self._key  = api_key
         self._timeout = timeout
+        self._max_retries = max_retries
         self._client: httpx.AsyncClient | None = None
 
     def _headers(self) -> dict[str, str]:
@@ -65,17 +75,53 @@ class RAIClient:
             await self._client.aclose()
             self._client = None
 
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        body: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Send an HTTP request with exponential-backoff retry on transient errors."""
+        owned = self._client is None
+        client = self._client or httpx.AsyncClient(
+            headers=self._headers(), timeout=self._timeout
+        )
+        try:
+            for attempt in range(self._max_retries):
+                try:
+                    if method == "POST":
+                        resp = await client.post(self._url(path), json=body)
+                    else:
+                        resp = await client.get(self._url(path), params=params or {})
+
+                    if resp.status_code not in _RETRY_CODES:
+                        resp.raise_for_status()
+                        return resp.json()
+
+                    if attempt == self._max_retries - 1:
+                        resp.raise_for_status()
+
+                    wait = (2 ** attempt) + random.uniform(0, 0.5)
+                    await asyncio.sleep(wait)
+
+                except httpx.TransportError:
+                    if attempt == self._max_retries - 1:
+                        raise
+                    wait = (2 ** attempt) + random.uniform(0, 0.5)
+                    await asyncio.sleep(wait)
+
+            raise RuntimeError("unreachable")  # noqa: TRY301
+        finally:
+            if owned:
+                await client.aclose()
+
     async def _post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
-        c = self._client or httpx.AsyncClient(headers=self._headers(), timeout=self._timeout)
-        resp = await c.post(self._url(path), json=body)
-        resp.raise_for_status()
-        return resp.json()
+        return await self._request("POST", path, body=body)
 
     async def _get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-        c = self._client or httpx.AsyncClient(headers=self._headers(), timeout=self._timeout)
-        resp = await c.get(self._url(path), params=params or {})
-        resp.raise_for_status()
-        return resp.json()
+        return await self._request("GET", path, params=params)
 
     # ── Trust Scoring ──────────────────────────────────────────────────────────
 

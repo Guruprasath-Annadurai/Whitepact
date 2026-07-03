@@ -82,6 +82,7 @@ class TokenUsage:
     application: str = "default"
     prompt_hash: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
+    org_id: str | None = None
 
     @classmethod
     def create(
@@ -95,6 +96,7 @@ class TokenUsage:
         team: str = "default",
         application: str = "default",
         metadata: dict[str, Any] | None = None,
+        org_id: str | None = None,
     ) -> TokenUsage:
         import uuid
         prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:16] if prompt else ""
@@ -109,6 +111,7 @@ class TokenUsage:
             application=application,
             prompt_hash=prompt_hash,
             metadata=metadata or {},
+            org_id=org_id,
         )
 
     @property

@@ -983,7 +983,7 @@ async def evaluate_model(
     )
     drift_alert = None
     if req.record_drift:
-        drift_alert = await _trust_repo.record(req.model_name, req.provider, score)
+        drift_alert = await _trust_repo.record(req.model_name, req.provider, score, org_id=_auth.org_id)
 
     observe_trust_score(req.model_name, req.provider, score.overall)
     record_evaluation(req.model_name, req.provider, score.overall, score.grade)
@@ -1039,8 +1039,8 @@ async def get_trust_history(
 ) -> dict[str, Any]:
     if limit < 1 or limit > 365:
         raise HTTPException(400, "limit must be between 1 and 365")
-    history = await _trust_repo.history(model_name, provider, limit=limit)
-    trend = await _trust_repo.trend(model_name, provider)
+    history = await _trust_repo.history(model_name, provider, limit=limit, org_id=_auth.org_id)
+    trend = await _trust_repo.trend(model_name, provider, org_id=_auth.org_id)
     return {"model": model_name, "provider": provider, "history": history, "trend": trend}
 
 
@@ -1050,7 +1050,7 @@ async def list_models(
     request: Request,
     _auth: OrgContext = Depends(require_role(Role.VIEWER)),
 ) -> dict[str, Any]:
-    return {"models": await _trust_repo.all_models()}
+    return {"models": await _trust_repo.all_models(org_id=_auth.org_id)}
 
 
 # ── Guardrails ─────────────────────────────────────────────────────────────────
@@ -1130,6 +1130,7 @@ async def record_usage(
         provider=req.provider, model=req.model,
         input_tokens=req.input_tokens, output_tokens=req.output_tokens,
         team=req.team, application=req.application,
+        org_id=_auth.org_id,
     )
     cost_record = await _cost_repo.record(usage)
     observe_cost(req.model, req.provider, cost_record.total_cost, req.input_tokens, req.output_tokens)
@@ -1143,7 +1144,7 @@ async def record_usage(
                  "timestamp": datetime.now(UTC).isoformat()},
     })
 
-    budget = await _cost_repo.check_budget()
+    budget = await _cost_repo.check_budget(org_id=_auth.org_id)
     if budget.is_exceeded:
         deliveries = await _webhook_manager.fire(
             WebhookEvent.BUDGET_EXCEEDED,
@@ -1166,14 +1167,15 @@ async def cost_summary(
 ) -> dict[str, Any]:
     if days < 1 or days > 365:
         raise HTTPException(400, "days must be between 1 and 365")
+    oid = _auth.org_id
     return {
-        "total_cost_usd": await _cost_repo.total_cost(days),
-        "total_tokens": await _cost_repo.total_tokens(days),
-        "model_breakdown": await _cost_repo.get_model_breakdown(days),
-        "team_breakdown": await _cost_repo.get_team_breakdown(days),
-        "daily_costs": await _cost_repo.get_daily_costs(days),
-        "budget_status": (await _cost_repo.check_budget()).to_dict(),
-        "request_count": await _cost_repo.request_count(days),
+        "total_cost_usd": await _cost_repo.total_cost(days, org_id=oid),
+        "total_tokens": await _cost_repo.total_tokens(days, org_id=oid),
+        "model_breakdown": await _cost_repo.get_model_breakdown(days, org_id=oid),
+        "team_breakdown": await _cost_repo.get_team_breakdown(days, org_id=oid),
+        "daily_costs": await _cost_repo.get_daily_costs(days, org_id=oid),
+        "budget_status": (await _cost_repo.check_budget(org_id=oid)).to_dict(),
+        "request_count": await _cost_repo.request_count(days, org_id=oid),
     }
 
 

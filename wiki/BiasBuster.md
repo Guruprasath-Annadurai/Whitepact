@@ -35,16 +35,18 @@ The three signals are averaged (equal weight) to produce a bias score between 0.
 
 ## CLI
 
+The primary CLI entry point is `responsibleai`. The `biasbuster` command is a backwards-compatible alias for the bias evaluation sub-commands.
+
 ```bash
-# Basic run — fails if bias score > threshold
-biasbuster run \
+# Primary command (recommended)
+responsibleai run \
   --provider openai \
   --model gpt-4o \
   --probes gender-bias,racial-bias,cultural-bias \
   --threshold 0.20
 
 # All probes, HTML report
-biasbuster run \
+responsibleai run \
   --provider openai \
   --model gpt-4o \
   --probes all \
@@ -53,7 +55,10 @@ biasbuster run \
   --format html
 
 # JSON output (for CI parsing)
-biasbuster run ... --format json > results.json
+responsibleai run ... --format json > results.json
+
+# Backwards-compatible alias (same behaviour)
+biasbuster run --provider openai --model gpt-4o --probes all --threshold 0.20
 ```
 
 Exit code: `0` if all probes pass, `1` if any probe exceeds threshold.

@@ -41,6 +41,7 @@ class CostRepository:
             await conn.execute(
                 token_usage.insert().prefix_with("OR IGNORE").values(
                     request_id    = usage.request_id,
+                    org_id        = usage.org_id,
                     provider      = usage.provider,
                     model         = usage.model,
                     team          = usage.team,
@@ -62,35 +63,40 @@ class CostRepository:
             input_cost=input_cost, output_cost=output_cost, total_cost=total_cost,
         )
 
-    async def total_cost(self, days: int | None = None) -> float:
+    async def total_cost(self, days: int | None = None, org_id: str | None = None) -> float:
         stmt = select(func.coalesce(func.sum(token_usage.c.total_cost), 0.0))
         if days is not None:
-            cutoff = _days_ago_iso(days)
-            stmt = stmt.where(token_usage.c.recorded_at >= cutoff)
+            stmt = stmt.where(token_usage.c.recorded_at >= _days_ago_iso(days))
+        if org_id is not None:
+            stmt = stmt.where(token_usage.c.org_id == org_id)
         async with self._engine.raw.connect() as conn:
             result = await conn.execute(stmt)
             return float(result.scalar() or 0.0)
 
-    async def total_tokens(self, days: int | None = None) -> dict[str, int]:
+    async def total_tokens(self, days: int | None = None, org_id: str | None = None) -> dict[str, int]:
         stmt = select(
             func.coalesce(func.sum(token_usage.c.input_tokens), 0),
             func.coalesce(func.sum(token_usage.c.output_tokens), 0),
         )
         if days is not None:
             stmt = stmt.where(token_usage.c.recorded_at >= _days_ago_iso(days))
+        if org_id is not None:
+            stmt = stmt.where(token_usage.c.org_id == org_id)
         async with self._engine.raw.connect() as conn:
             row = (await conn.execute(stmt)).one()
         inp, out = int(row[0]), int(row[1])
         return {"input": inp, "output": out, "total": inp + out}
 
-    async def request_count(self, days: int | None = None) -> int:
+    async def request_count(self, days: int | None = None, org_id: str | None = None) -> int:
         stmt = select(func.count()).select_from(token_usage)
         if days is not None:
             stmt = stmt.where(token_usage.c.recorded_at >= _days_ago_iso(days))
+        if org_id is not None:
+            stmt = stmt.where(token_usage.c.org_id == org_id)
         async with self._engine.raw.connect() as conn:
             return int((await conn.execute(stmt)).scalar() or 0)
 
-    async def get_model_breakdown(self, days: int | None = None) -> dict[str, float]:
+    async def get_model_breakdown(self, days: int | None = None, org_id: str | None = None) -> dict[str, float]:
         model_col = (token_usage.c.provider + text("'/'") + token_usage.c.model).label("key")
         stmt = (
             select(model_col, func.coalesce(func.sum(token_usage.c.total_cost), 0.0).label("cost"))
@@ -99,11 +105,13 @@ class CostRepository:
         )
         if days is not None:
             stmt = stmt.where(token_usage.c.recorded_at >= _days_ago_iso(days))
+        if org_id is not None:
+            stmt = stmt.where(token_usage.c.org_id == org_id)
         async with self._engine.raw.connect() as conn:
             rows = (await conn.execute(stmt)).fetchall()
         return {r[0]: round(float(r[1]), 6) for r in rows}
 
-    async def get_team_breakdown(self, days: int | None = None) -> dict[str, float]:
+    async def get_team_breakdown(self, days: int | None = None, org_id: str | None = None) -> dict[str, float]:
         stmt = (
             select(token_usage.c.team, func.coalesce(func.sum(token_usage.c.total_cost), 0.0).label("cost"))
             .group_by(token_usage.c.team)
@@ -111,12 +119,14 @@ class CostRepository:
         )
         if days is not None:
             stmt = stmt.where(token_usage.c.recorded_at >= _days_ago_iso(days))
+        if org_id is not None:
+            stmt = stmt.where(token_usage.c.org_id == org_id)
         async with self._engine.raw.connect() as conn:
             rows = (await conn.execute(stmt)).fetchall()
         return {r[0]: round(float(r[1]), 6) for r in rows}
 
-    async def check_budget(self) -> BudgetStatus:
-        spent = await self.total_cost(30)
+    async def check_budget(self, org_id: str | None = None) -> BudgetStatus:
+        spent = await self.total_cost(30, org_id=org_id)
         limit = self._policy.monthly_limit_usd
         pct = (spent / limit * 100) if limit > 0 else 0.0
         return BudgetStatus(
@@ -125,11 +135,11 @@ class CostRepository:
             percentage_used=round(pct, 2),
             is_exceeded=spent > limit,
             alert_triggered=pct >= self._policy.alert_threshold_pct * 100,
-            team_breakdown=await self.get_team_breakdown(30),
-            model_breakdown=await self.get_model_breakdown(30),
+            team_breakdown=await self.get_team_breakdown(30, org_id=org_id),
+            model_breakdown=await self.get_model_breakdown(30, org_id=org_id),
         )
 
-    async def get_daily_costs(self, days: int = 30) -> list[dict[str, Any]]:
+    async def get_daily_costs(self, days: int = 30, org_id: str | None = None) -> list[dict[str, Any]]:
         cutoff = _days_ago_iso(days)
         stmt = (
             select(
@@ -142,6 +152,8 @@ class CostRepository:
             .group_by(text("day"))
             .order_by(text("day"))
         )
+        if org_id is not None:
+            stmt = stmt.where(token_usage.c.org_id == org_id)
         async with self._engine.raw.connect() as conn:
             rows = (await conn.execute(stmt)).fetchall()
         return [
@@ -162,13 +174,20 @@ class TrustRepository:
         self._engine = engine
         self._alert_threshold = alert_threshold
 
-    async def record(self, model_name: str, provider: str, score: TrustScore) -> dict[str, Any] | None:
+    async def record(
+        self,
+        model_name: str,
+        provider: str,
+        score: TrustScore,
+        org_id: str | None = None,
+    ) -> dict[str, Any] | None:
         """Persist a score snapshot; return drift info if threshold exceeded."""
         now = datetime.now(UTC).isoformat()
 
         async with self._engine.raw.begin() as conn:
             await conn.execute(
                 trust_scores.insert().values(
+                    org_id       = org_id,
                     model_name   = model_name,
                     provider     = provider,
                     overall      = score.overall,
@@ -184,7 +203,7 @@ class TrustRepository:
                 )
             )
 
-        prev = await self._previous_score(model_name, provider)
+        prev = await self._previous_score(model_name, provider, org_id=org_id)
         if prev is not None:
             delta = prev - score.overall
             if abs(delta) >= self._alert_threshold:
@@ -199,7 +218,13 @@ class TrustRepository:
                 }
         return None
 
-    async def history(self, model_name: str, provider: str, limit: int = 30) -> list[dict[str, Any]]:
+    async def history(
+        self,
+        model_name: str,
+        provider: str,
+        limit: int = 30,
+        org_id: str | None = None,
+    ) -> list[dict[str, Any]]:
         stmt = (
             select(trust_scores)
             .where(
@@ -209,6 +234,8 @@ class TrustRepository:
             .order_by(trust_scores.c.recorded_at.desc())
             .limit(limit)
         )
+        if org_id is not None:
+            stmt = stmt.where(trust_scores.c.org_id == org_id)
         async with self._engine.raw.connect() as conn:
             rows = (await conn.execute(stmt)).fetchall()
         return [
@@ -221,8 +248,8 @@ class TrustRepository:
             for r in reversed(rows)
         ]
 
-    async def trend(self, model_name: str, provider: str) -> dict[str, Any]:
-        history = await self.history(model_name, provider, limit=30)
+    async def trend(self, model_name: str, provider: str, org_id: str | None = None) -> dict[str, Any]:
+        history = await self.history(model_name, provider, limit=30, org_id=org_id)
         if len(history) < 2:
             return {"error": "insufficient_data", "points": len(history)}
         scores = [h["overall"] for h in history]
@@ -244,13 +271,20 @@ class TrustRepository:
             "data_points": len(scores),
         }
 
-    async def all_models(self) -> list[dict[str, str]]:
+    async def all_models(self, org_id: str | None = None) -> list[dict[str, str]]:
         stmt = select(trust_scores.c.model_name, trust_scores.c.provider).distinct()
+        if org_id is not None:
+            stmt = stmt.where(trust_scores.c.org_id == org_id)
         async with self._engine.raw.connect() as conn:
             rows = (await conn.execute(stmt)).fetchall()
         return [{"model_name": r[0], "provider": r[1]} for r in rows]
 
-    async def _previous_score(self, model_name: str, provider: str) -> float | None:
+    async def _previous_score(
+        self,
+        model_name: str,
+        provider: str,
+        org_id: str | None = None,
+    ) -> float | None:
         stmt = (
             select(trust_scores.c.overall)
             .where(
@@ -261,6 +295,8 @@ class TrustRepository:
             .offset(1)
             .limit(1)
         )
+        if org_id is not None:
+            stmt = stmt.where(trust_scores.c.org_id == org_id)
         async with self._engine.raw.connect() as conn:
             row = (await conn.execute(stmt)).fetchone()
         return float(row[0]) if row else None

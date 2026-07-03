@@ -78,3 +78,25 @@ jobs:
         with:
           name: dist
           path: dist/
+
+  helm-lint:
+    name: Helm chart lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: "3.14.0"
+
+      - name: Lint Helm chart
+        run: helm lint helm/rai-governance/
+
+      - name: Validate Helm template rendering
+        run: |
+          helm template rai-governance helm/rai-governance/ \
+            --set image.tag=ci-test \
+            --debug \
+            > /dev/null

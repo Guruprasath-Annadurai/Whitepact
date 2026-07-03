@@ -9,6 +9,7 @@ from .models import (
     EvalCompareResult,
     GuardrailScan,
     HallucinationAnalysis,
+    PIIFinding,
     TrustScore,
 )
 
@@ -16,6 +17,7 @@ __all__ = [
     "RAIClient",
     "TrustScore",
     "GuardrailScan",
+    "PIIFinding",
     "HallucinationAnalysis",
     "ComplianceReport",
     "CostRecord",
