@@ -11,7 +11,7 @@ FROM python:3.12-slim AS runtime
 
 LABEL org.opencontainers.image.title="ResponsibleAI Governance Platform"
 LABEL org.opencontainers.image.description="Enterprise AI Governance — Trust Scoring, Compliance, Cost Intelligence"
-LABEL org.opencontainers.image.version="0.5.0"
+LABEL org.opencontainers.image.version="1.1.0"
 LABEL org.opencontainers.image.licenses="MIT"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

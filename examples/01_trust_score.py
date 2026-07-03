@@ -15,7 +15,7 @@ models = [
 ]
 
 print("\n" + "=" * 62)
-print("  TRUST SCORE REPORT — ResponsibleAI v0.4.0")
+print("  TRUST SCORE REPORT — ResponsibleAI v1.1.0")
 print("=" * 62)
 
 for model_name, provider, dims in models:

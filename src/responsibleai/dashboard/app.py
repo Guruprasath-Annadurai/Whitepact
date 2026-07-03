@@ -138,6 +138,17 @@ _regression_detector: RegressionDetector = RegressionDetector()
 _dataset_scanner: DatasetBiasScanner | None = None
 _oidc_provider: OIDCProvider | None = None
 _oidc_state_store: dict[str, float] = {}  # state → issued_at; cleared on use
+_OIDC_STATE_TTL = 300.0  # seconds — matches callback expiry window
+
+
+async def _oidc_state_cleanup() -> None:
+    """Periodic task: evict OIDC states that were never exchanged (abandoned logins)."""
+    while True:
+        await asyncio.sleep(60)
+        now = asyncio.get_event_loop().time()
+        stale = [k for k, t in list(_oidc_state_store.items()) if now - t > _OIDC_STATE_TTL]
+        for k in stale:
+            _oidc_state_store.pop(k, None)
 
 
 @asynccontextmanager
@@ -190,6 +201,7 @@ async def lifespan(application: FastAPI):
     _webhook_delivery_repo = WebhookDeliveryRepository(_db_engine)
     _webhook_manager.set_repository(_webhook_delivery_repo)
     _webhook_manager.start_retry_worker()
+    _oidc_cleanup_task = asyncio.create_task(_oidc_state_cleanup())
 
     _ws_manager.start()
 
@@ -207,6 +219,7 @@ async def lifespan(application: FastAPI):
 
     yield
 
+    _oidc_cleanup_task.cancel()
     _webhook_manager.stop_retry_worker()
     _ws_manager.stop()
     if _db_engine:
@@ -1525,10 +1538,11 @@ async def billing_usage(
     """Return usage and cost summary for billing and revenue reporting."""
     if not _cost_repo:
         raise HTTPException(503, "Cost repository not initialised")
-    total_cost = await _cost_repo.total_cost(days=days)
-    total_tokens = await _cost_repo.total_tokens(days=days)
-    request_count = await _cost_repo.request_count(days=days)
-    model_breakdown = await _cost_repo.get_model_breakdown(days=days)
+    oid = _auth.org_id
+    total_cost = await _cost_repo.total_cost(days=days, org_id=oid)
+    total_tokens = await _cost_repo.total_tokens(days=days, org_id=oid)
+    request_count = await _cost_repo.request_count(days=days, org_id=oid)
+    model_breakdown = await _cost_repo.get_model_breakdown(days=days, org_id=oid)
     return {
         "period_days": days,
         "total_cost_usd": round(total_cost, 6),
