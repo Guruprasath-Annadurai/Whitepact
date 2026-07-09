@@ -70,7 +70,7 @@ async def _run() -> None:
 
 def main() -> None:
     """CLI entry point: responsibleai-mcp."""
-    _logger.info("starting responsibleai-mcp v1.1.0")
+    _logger.info("starting responsibleai-mcp v1.2.0")
     asyncio.run(_run())
 
 

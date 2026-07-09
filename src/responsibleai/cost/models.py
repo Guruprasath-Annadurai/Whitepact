@@ -25,10 +25,10 @@ class ModelPricing:
         )
 
 
-# Pricing as of mid-2025 (USD per 1M tokens)
+# Pricing as of July 2026 (USD per 1M tokens)
 MODEL_CATALOG: dict[str, ModelPricing] = {
     # OpenAI
-    "openai/gpt-4o":              ModelPricing("openai",     "gpt-4o",              5.00,   15.00),
+    "openai/gpt-4o":              ModelPricing("openai",     "gpt-4o",              2.50,   10.00),
     "openai/gpt-4o-mini":         ModelPricing("openai",     "gpt-4o-mini",         0.15,    0.60),
     "openai/gpt-4-turbo":         ModelPricing("openai",     "gpt-4-turbo",        10.00,   30.00),
     "openai/gpt-3.5-turbo":       ModelPricing("openai",     "gpt-3.5-turbo",       0.50,    1.50),
