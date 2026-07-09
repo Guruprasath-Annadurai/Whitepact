@@ -23,6 +23,7 @@ from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from responsibleai.auth.oidc import OIDCProvider
+from responsibleai.billing import StripeBillingError, StripeNotConfigured, StripeService
 from responsibleai.compliance.engine import ComplianceEngine
 from responsibleai.cost.analyzer import CostAnalyzer
 from responsibleai.cost.models import BudgetPolicy, TokenUsage
@@ -73,7 +74,8 @@ from responsibleai.eval import (
 )
 from responsibleai.guardrails.engine import GuardrailsEngine
 from responsibleai.hallucination.detector import HallucinationDetector
-from responsibleai.rbac import AuditEntry, OrgContext, Role, has_permission, role_from_str
+from responsibleai.mcp.licensing import plan_catalog
+from responsibleai.rbac import AuditEntry, OrgContext, Plan, Role, has_permission, role_from_str
 from responsibleai.redteam.simulator import RedTeamSimulator
 from responsibleai.trust.passport import PassportGenerator
 from responsibleai.trust.score import TrustScoreEngine
@@ -139,6 +141,7 @@ _dataset_scanner: DatasetBiasScanner | None = None
 _oidc_provider: OIDCProvider | None = None
 _oidc_state_store: dict[str, float] = {}  # state → issued_at; cleared on use
 _OIDC_STATE_TTL = 300.0  # seconds — matches callback expiry window
+_stripe_service: StripeService | None = None
 
 
 async def _oidc_state_cleanup() -> None:
@@ -157,7 +160,7 @@ async def lifespan(application: FastAPI):
     global _compliance, _cost_repo, _cost_analyzer, _router, _trust_repo
     global _org_repo, _audit_repo, _db_engine
     global _eval_repo, _comparator, _benchmark_runner, _dataset_scanner
-    global _oidc_provider
+    global _oidc_provider, _stripe_service
 
     setup_telemetry(
         service_name=settings.otel_service_name,
@@ -196,6 +199,19 @@ async def lifespan(application: FastAPI):
             jwks_uri=settings.oidc_jwks_uri,
             skip_verification=settings.oidc_skip_verification,
         )
+
+    if settings.stripe_secret_key:
+        try:
+            _stripe_service = StripeService(
+                secret_key=settings.stripe_secret_key,
+                webhook_secret=settings.stripe_webhook_secret,
+                price_ids={
+                    Plan.PRO: settings.stripe_price_id_pro or "",
+                    Plan.ENTERPRISE: settings.stripe_price_id_enterprise or "",
+                },
+            )
+        except StripeNotConfigured as exc:
+            logger.warning("stripe_init_skipped", reason=str(exc))
 
     # Attach DB-backed delivery log + start persistent retry worker
     _webhook_delivery_repo = WebhookDeliveryRepository(_db_engine)
@@ -476,6 +492,15 @@ class CreateKeyRequest(BaseModel):
     role: str = Field("ANALYST", pattern="^(OWNER|ADMIN|ANALYST|VIEWER)$")
 
 
+class CheckoutRequest(BaseModel):
+    plan: str = Field(..., pattern="^(PRO|ENTERPRISE)$")
+    org_email: str | None = Field(None, max_length=254)
+
+
+class BillingPortalRequest(BaseModel):
+    return_url: str | None = Field(None, max_length=2048)
+
+
 # ── Root / HTML ────────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
@@ -652,6 +677,106 @@ async def revoke_api_key(
     if not revoked:
         raise HTTPException(404, "Key not found")
     return {"revoked": key_id}
+
+
+# ── Billing (Stripe) ───────────────────────────────────────────────────────────
+
+@app.get("/api/v1/billing/plans", tags=["billing"])
+@limiter.limit("60/minute")
+async def get_billing_plans(request: Request) -> dict[str, Any]:
+    """Public — plan tiers, pricing, and which MCP tools each tier unlocks."""
+    return plan_catalog()
+
+
+@app.post("/api/v1/billing/checkout", tags=["billing"])
+@limiter.limit("10/minute")
+async def create_checkout_session(
+    request: Request,
+    req: CheckoutRequest,
+    _auth: OrgContext = Depends(require_role(Role.OWNER)),
+) -> dict[str, Any]:
+    if _stripe_service is None:
+        raise HTTPException(503, "Billing is not configured on this server.")
+    if not _auth.org_id:
+        raise HTTPException(400, "Checkout requires an org-scoped API key, not a legacy flat key.")
+
+    org = await _org_repo.get_org(_auth.org_id)
+    if not org:
+        raise HTTPException(404, "Organization not found")
+
+    try:
+        url = await _stripe_service.create_checkout_session(
+            org_id=_auth.org_id,
+            org_email=req.org_email,
+            plan=Plan(req.plan),
+            success_url=settings.billing_success_url,
+            cancel_url=settings.billing_cancel_url,
+            existing_customer_id=org.stripe_customer_id,
+        )
+    except StripeBillingError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    return {"checkout_url": url}
+
+
+@app.post("/api/v1/billing/portal", tags=["billing"])
+@limiter.limit("10/minute")
+async def create_portal_session(
+    request: Request,
+    req: BillingPortalRequest,
+    _auth: OrgContext = Depends(require_role(Role.OWNER)),
+) -> dict[str, Any]:
+    if _stripe_service is None:
+        raise HTTPException(503, "Billing is not configured on this server.")
+    if not _auth.org_id:
+        raise HTTPException(400, "Billing portal requires an org-scoped API key.")
+
+    org = await _org_repo.get_org(_auth.org_id)
+    if not org or not org.stripe_customer_id:
+        raise HTTPException(404, "No active Stripe customer for this organization.")
+
+    try:
+        url = await _stripe_service.create_billing_portal_session(
+            customer_id=org.stripe_customer_id,
+            return_url=req.return_url or settings.billing_success_url,
+        )
+    except StripeBillingError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    return {"portal_url": url}
+
+
+@app.post("/api/v1/billing/webhook", tags=["billing"], include_in_schema=False)
+async def stripe_webhook(request: Request) -> dict[str, Any]:
+    """Stripe calls this directly — verified by signature, not by API key."""
+    if _stripe_service is None:
+        raise HTTPException(503, "Billing is not configured on this server.")
+
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature", "")
+
+    try:
+        event = _stripe_service.verify_and_parse_webhook(payload, sig_header)
+    except StripeBillingError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    update = _stripe_service.extract_plan_update(event)
+    if update is None:
+        return {"received": True, "processed": False}
+
+    await _org_repo.set_plan(
+        org_id=update.org_id,
+        plan=update.plan,
+        stripe_customer_id=update.stripe_customer_id,
+        stripe_subscription_id=update.stripe_subscription_id,
+        plan_renews_at=update.plan_renews_at,
+    )
+    logger.info(
+        "billing_plan_updated",
+        org_id=update.org_id,
+        plan=update.plan.value,
+    )
+    return {"received": True, "processed": True}
 
 
 # ── Model Evaluation Framework ────────────────────────────────────────────────

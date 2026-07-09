@@ -135,6 +135,32 @@ class Settings(BaseSettings):
         description="Skip JWT signature verification (test/dev only — never use in production).",
     )
 
+    # Stripe billing (optional — leave unset to disable paid-tier checkout)
+    stripe_secret_key: str | None = Field(
+        default=None,
+        description="Stripe secret key (sk_live_... / sk_test_...). Unset = billing endpoints disabled.",
+    )
+    stripe_webhook_secret: str | None = Field(
+        default=None,
+        description="Stripe webhook signing secret (whsec_...) for verifying incoming events.",
+    )
+    stripe_price_id_pro: str | None = Field(
+        default=None,
+        description="Stripe Price ID for the PRO plan subscription.",
+    )
+    stripe_price_id_enterprise: str | None = Field(
+        default=None,
+        description="Stripe Price ID for the ENTERPRISE plan subscription.",
+    )
+    billing_success_url: str = Field(
+        default="http://localhost:8765/billing/success",
+        description="Redirect URL after successful Stripe checkout.",
+    )
+    billing_cancel_url: str = Field(
+        default="http://localhost:8765/billing/cancel",
+        description="Redirect URL after cancelled Stripe checkout.",
+    )
+
     # Server
     host: str = Field(default="127.0.0.1")
     port: int = Field(default=8765, ge=1, le=65535)

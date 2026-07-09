@@ -16,8 +16,15 @@ from datetime import UTC, datetime
 from sqlalchemy import delete, insert, select, update
 
 from responsibleai.db.engine import DatabaseEngine, org_api_keys, organizations
-from responsibleai.rbac.models import Organization, OrgApiKey, OrgContext, Role
+from responsibleai.rbac.models import Organization, OrgApiKey, OrgContext, Plan, Role
 from responsibleai.rbac.permissions import role_from_str
+
+
+def _plan_from_str(s: str | None) -> Plan:
+    try:
+        return Plan(str(s).upper()) if s else Plan.FREE
+    except ValueError:
+        return Plan.FREE
 
 
 def _now() -> str:
@@ -45,12 +52,14 @@ class OrgRepository:
         name: str,
         slug: str,
         monthly_budget_usd: float = 10_000.0,
+        plan: Plan = Plan.FREE,
     ) -> Organization:
         org = Organization(
             name=name,
             slug=slug,
             monthly_budget_usd=monthly_budget_usd,
             created_at=_now(),
+            plan=plan,
         )
         async with self._engine.raw.begin() as conn:
             await conn.execute(insert(organizations).values(
@@ -59,8 +68,38 @@ class OrgRepository:
                 slug=org.slug,
                 monthly_budget_usd=org.monthly_budget_usd,
                 created_at=org.created_at,
+                plan=org.plan.value,
             ))
         return org
+
+    async def set_plan(
+        self,
+        org_id: str,
+        plan: Plan,
+        stripe_customer_id: str | None = None,
+        stripe_subscription_id: str | None = None,
+        plan_renews_at: str | None = None,
+    ) -> bool:
+        """Update an org's billing plan — called from Stripe webhook handlers."""
+        values: dict[str, object] = {"plan": plan.value}
+        if stripe_customer_id is not None:
+            values["stripe_customer_id"] = stripe_customer_id
+        if stripe_subscription_id is not None:
+            values["stripe_subscription_id"] = stripe_subscription_id
+        if plan_renews_at is not None:
+            values["plan_renews_at"] = plan_renews_at
+        async with self._engine.raw.begin() as conn:
+            result = await conn.execute(
+                update(organizations).where(organizations.c.id == org_id).values(**values)
+            )
+        return result.rowcount > 0
+
+    async def get_org_by_stripe_customer(self, stripe_customer_id: str) -> Organization | None:
+        async with self._engine.raw.connect() as conn:
+            row = (await conn.execute(
+                select(organizations).where(organizations.c.stripe_customer_id == stripe_customer_id)
+            )).fetchone()
+        return self._row_to_org(row) if row else None
 
     async def get_org(self, org_id: str) -> Organization | None:
         async with self._engine.raw.connect() as conn:
@@ -166,6 +205,7 @@ class OrgRepository:
             org_id=row.org_id,
             org_name=org.name if org else None,
             is_legacy=False,
+            plan=org.plan if org else Plan.FREE,
         )
 
     # ── Helpers ───────────────────────────────────────────────────────────────
@@ -177,6 +217,10 @@ class OrgRepository:
             slug=row.slug,
             monthly_budget_usd=row.monthly_budget_usd,
             created_at=row.created_at,
+            plan=_plan_from_str(getattr(row, "plan", None)),
+            stripe_customer_id=getattr(row, "stripe_customer_id", None),
+            stripe_subscription_id=getattr(row, "stripe_subscription_id", None),
+            plan_renews_at=getattr(row, "plan_renews_at", None),
         )
 
     def _row_to_key(self, row: object) -> OrgApiKey:

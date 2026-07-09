@@ -15,6 +15,13 @@ class Role(StrEnum):
     VIEWER = "VIEWER"
 
 
+class Plan(StrEnum):
+    """Billing tier — gates which MCP tools and API endpoints an org can use."""
+    FREE = "FREE"
+    PRO = "PRO"
+    ENTERPRISE = "ENTERPRISE"
+
+
 @dataclass
 class Organization:
     name: str
@@ -22,6 +29,10 @@ class Organization:
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     monthly_budget_usd: float = 10_000.0
     created_at: str = ""
+    plan: Plan = Plan.FREE
+    stripe_customer_id: str | None = None
+    stripe_subscription_id: str | None = None
+    plan_renews_at: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -30,6 +41,9 @@ class Organization:
             "slug": self.slug,
             "monthly_budget_usd": self.monthly_budget_usd,
             "created_at": self.created_at,
+            "plan": self.plan.value if isinstance(self.plan, Plan) else self.plan,
+            "stripe_customer_id": self.stripe_customer_id,
+            "plan_renews_at": self.plan_renews_at,
         }
 
 
@@ -66,6 +80,7 @@ class OrgContext:
     org_id: str | None = None
     org_name: str | None = None
     is_legacy: bool = False  # True for flat RAI_API_KEYS entries
+    plan: Plan = Plan.ENTERPRISE  # legacy/anon keys default to unrestricted for backward compat
 
 
 @dataclass

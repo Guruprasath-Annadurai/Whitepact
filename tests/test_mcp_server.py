@@ -9,7 +9,7 @@ import pytest
 class TestMCPToolDefs:
     def test_tool_count(self) -> None:
         from responsibleai.mcp.tools import TOOL_DEFS
-        assert len(TOOL_DEFS) == 10
+        assert len(TOOL_DEFS) == 26
 
     def test_all_tools_have_name_and_description(self) -> None:
         from responsibleai.mcp.tools import TOOL_DEFS
@@ -30,6 +30,12 @@ class TestMCPToolDefs:
             "rai_scan", "rai_trust_score", "rai_compliance", "rai_hallucination",
             "rai_cost_estimate", "rai_redteam_payloads", "rai_redteam_analyze",
             "rai_compare_models", "rai_audit_summary", "rai_health",
+            "rai_bias_evaluate", "rai_drift_check", "rai_passport_generate",
+            "rai_budget_check", "rai_policy_check", "rai_stream_scan",
+            "rai_benchmark", "rai_benchmark_prompts", "rai_model_route",
+            "rai_pii_report", "rai_incident_log", "rai_eu_ai_act_classify",
+            "rai_iso42001_gap", "rai_executive_summary", "rai_org_status",
+            "rai_webhook_status",
         }
         assert expected == names
 
@@ -39,7 +45,7 @@ class TestMCPToolDefs:
 class TestMCPResourceDefs:
     def test_resource_count(self) -> None:
         from responsibleai.mcp.resources import RESOURCE_DEFS
-        assert len(RESOURCE_DEFS) == 5
+        assert len(RESOURCE_DEFS) == 10
 
     def test_all_resources_have_uri_and_name(self) -> None:
         from responsibleai.mcp.resources import RESOURCE_DEFS
@@ -257,7 +263,7 @@ class TestRaiAuditSummary:
         from responsibleai.mcp.tools import dispatch_tool
         r = await dispatch_tool("rai_audit_summary", {"days": 7})
         assert "governance_engine" in r
-        assert r["governance_engine"]["tools_available"] == 10
+        assert r["governance_engine"]["tools_available"] == 26
 
     @pytest.mark.asyncio
     async def test_frameworks_listed(self) -> None:
@@ -272,7 +278,7 @@ class TestRaiHealth:
         from responsibleai.mcp.tools import dispatch_tool
         r = await dispatch_tool("rai_health", {})
         assert r["status"] == "ok"
-        assert r["version"] == "1.1.0"
+        assert r["version"] == "1.2.0"
 
     @pytest.mark.asyncio
     async def test_all_modules_ok(self) -> None:
@@ -301,7 +307,7 @@ class TestMCPResources:
         raw = await dispatch_resource("rai://health")
         data = json.loads(raw)
         assert data["status"] == "ok"
-        assert data["version"] == "1.1.0"
+        assert data["version"] == "1.2.0"
 
     @pytest.mark.asyncio
     async def test_models_catalog_resource(self) -> None:

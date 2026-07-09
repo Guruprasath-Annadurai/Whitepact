@@ -33,12 +33,12 @@ class TestRecord:
     def test_cost_calculation_openai_gpt4o(self, tracker):
         usage = TokenUsage.create("openai", "gpt-4o", input_tokens=1_000_000, output_tokens=0)
         record = tracker.record(usage)
-        assert abs(record.input_cost - 5.0) < 0.001  # $5 per 1M input
+        assert abs(record.input_cost - 2.50) < 0.001  # $2.50 per 1M input
 
     def test_cost_calculation_output_tokens(self, tracker):
         usage = TokenUsage.create("openai", "gpt-4o", input_tokens=0, output_tokens=1_000_000)
         record = tracker.record(usage)
-        assert abs(record.output_cost - 15.0) < 0.001  # $15 per 1M output
+        assert abs(record.output_cost - 10.0) < 0.001  # $10 per 1M output
 
     def test_local_model_zero_cost(self, tracker):
         usage = TokenUsage.create("ollama", "llama3.2", input_tokens=10_000, output_tokens=5_000)

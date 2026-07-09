@@ -74,6 +74,7 @@ privacy    = ["fastapi>=0.110.0", "uvicorn>=0.29.0"]
 deepfake   = ["torch>=2.0.0", "torchvision>=0.15.0", "pillow>=10.0.0", "opencv-python>=4.8.0"]
 all        = ["rai-governance-platform[dashboard,postgres,redis,telemetry,openai,anthropic,huggingface,deepfake,sso]"]
 mcp        = ["mcp>=1.0.0"]
+billing    = ["stripe>=9.0.0"]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
@@ -106,6 +107,7 @@ dev = [
 biasbuster        = "biasbuster.cli:main"
 responsibleai     = "biasbuster.cli:main"
 responsibleai-mcp = "responsibleai.mcp.server:main"
+responsibleai-mcp-http = "responsibleai.mcp.server:main_http"
 
 [project.urls]
 Homepage   = "https://github.com/Guruprasath-Annadurai/ResponsibleAi"

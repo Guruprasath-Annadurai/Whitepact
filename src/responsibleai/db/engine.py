@@ -70,12 +70,30 @@ trust_scores = Table(
 organizations = Table(
     "organizations",
     metadata,
-    Column("id",                 String(36),  primary_key=True),
-    Column("name",               String(200), nullable=False),
-    Column("slug",               String(100), nullable=False, unique=True),
-    Column("monthly_budget_usd", Float,       nullable=False, default=10_000.0),
-    Column("created_at",         String(32),  nullable=False),
+    Column("id",                      String(36),  primary_key=True),
+    Column("name",                    String(200), nullable=False),
+    Column("slug",                    String(100), nullable=False, unique=True),
+    Column("monthly_budget_usd",      Float,       nullable=False, default=10_000.0),
+    Column("created_at",              String(32),  nullable=False),
+    Column("plan",                    String(20),  nullable=False, default="FREE"),
+    Column("stripe_customer_id",      String(64),  nullable=True),
+    Column("stripe_subscription_id",  String(64),  nullable=True),
+    Column("plan_renews_at",          String(32),  nullable=True),
     Index("idx_org_slug", "slug"),
+    Index("idx_org_stripe_customer", "stripe_customer_id"),
+)
+
+mcp_tool_calls = Table(
+    "mcp_tool_calls",
+    metadata,
+    Column("id",        String(36),  primary_key=True),
+    Column("org_id",    String(36),  nullable=True),
+    Column("tool_name", String(64),  nullable=False),
+    Column("tier",      String(20),  nullable=False),
+    Column("timestamp", String(32),  nullable=False),
+    Column("allowed",   Integer,     nullable=False, default=1),
+    Index("idx_mcp_calls_org", "org_id"),
+    Index("idx_mcp_calls_ts",  "timestamp"),
 )
 
 org_api_keys = Table(
