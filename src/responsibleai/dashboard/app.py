@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.exceptions import RequestValidationError
@@ -142,6 +142,20 @@ _oidc_provider: OIDCProvider | None = None
 _oidc_state_store: dict[str, float] = {}  # state → issued_at; cleared on use
 _OIDC_STATE_TTL = 300.0  # seconds — matches callback expiry window
 _stripe_service: StripeService | None = None
+
+_T = TypeVar("_T")
+
+
+def _ready(value: _T | None) -> _T:
+    """Narrow a lifespan-initialized singleton for type checkers.
+
+    These singletons are always assigned during the `lifespan` startup phase
+    before any route can receive traffic. A None here means a route ran
+    before startup completed — a programming/wiring error, not a runtime
+    condition callers should handle gracefully.
+    """
+    assert value is not None, "accessed before application startup completed"
+    return value
 
 
 async def _oidc_state_cleanup() -> None:
@@ -301,15 +315,18 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
                 user_agent=(request.headers.get("user-agent", "")[:512] or None),
             )
             # Non-blocking write — don't delay the response
-            asyncio.ensure_future(_audit_repo.write(entry))
+            asyncio.ensure_future(_ready(_audit_repo).write(entry))
 
         return response
 
 
 # ── Exception handlers ─────────────────────────────────────────────────────────
+# Starlette's add_exception_handler stub requires Callable[[Request, Exception], ...],
+# but the standard FastAPI/Starlette convention is handlers typed to their specific
+# exception class — Starlette dispatches by the registered type, so this is safe.
 app.add_exception_handler(Exception, global_exception_handler)
-app.add_exception_handler(HTTPException, http_exception_handler)
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_exception_handler(HTTPException, http_exception_handler)  # type: ignore[arg-type]
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 
 
 @app.exception_handler(RequestValidationError)
@@ -388,10 +405,10 @@ async def get_org_context(request: Request) -> OrgContext:
         return ctx
 
     if _org_repo:
-        ctx = await _org_repo.authenticate(token)
-        if ctx:
-            _audit_ctx.set({"org_id": ctx.org_id, "key_id": ctx.key_id})
-            return ctx
+        resolved_ctx = await _ready(_org_repo).authenticate(token)
+        if resolved_ctx:
+            _audit_ctx.set({"org_id": resolved_ctx.org_id, "key_id": resolved_ctx.key_id})
+            return resolved_ctx
 
     raise HTTPException(401, detail="Invalid API key")
 
@@ -516,13 +533,13 @@ async def health() -> dict[str, Any]:
     db_ok = True
     try:
         if _cost_repo:
-            await _cost_repo.request_count()
+            await _ready(_cost_repo).request_count()
     except Exception:
         db_ok = False
 
     db_backend = "postgresql" if (settings.database_url or "").startswith("postgresql") else "sqlite"
     rl_backend = "redis" if settings.redis_url else "memory"
-    orgs_count = len(await _org_repo.list_orgs()) if _org_repo else 0
+    orgs_count = len(await _ready(_org_repo).list_orgs()) if _org_repo else 0
 
     return {
         "status": "healthy" if db_ok else "degraded",
@@ -536,7 +553,7 @@ async def health() -> dict[str, Any]:
             "otel": "enabled" if settings.otel_endpoint else "disabled",
             "auth": "enabled" if (settings.auth_enabled and settings.api_keys) else "disabled",
             "websocket_connections": _ws_manager.connection_count,
-            "webhooks_registered": len(_webhook_manager.list()),
+            "webhooks_registered": len(_webhook_manager.list_webhooks()),
             "orgs": orgs_count,
         },
         "modules": [
@@ -557,8 +574,8 @@ async def health() -> dict[str, Any]:
 async def metrics(request: Request, _auth: OrgContext = Depends(require_role(Role.ANALYST))) -> dict[str, Any]:
     total_requests = _REQUEST_COUNTER["total"]
     errors = _REQUEST_COUNTER["errors"]
-    total_cost = await _cost_repo.total_cost(30) if _cost_repo else 0.0
-    audit_count = await _audit_repo.count(30) if _audit_repo else 0
+    total_cost = await _ready(_cost_repo).total_cost(30) if _cost_repo else 0.0
+    audit_count = await _ready(_audit_repo).count(30) if _audit_repo else 0
     return {
         "uptime_seconds": round(time.monotonic() - _START_TIME, 1),
         "total_requests": total_requests,
@@ -572,7 +589,7 @@ async def metrics(request: Request, _auth: OrgContext = Depends(require_role(Rol
         "monthly_budget_usd": settings.monthly_budget_usd,
         "monthly_spend_usd": round(total_cost, 4),
         "websocket_connections": _ws_manager.connection_count,
-        "webhooks_registered": len(_webhook_manager.list()),
+        "webhooks_registered": len(_webhook_manager.list_webhooks()),
         "webhook_deliveries": _webhook_manager.total_deliveries,
         "webhook_failures": _webhook_manager.failed_deliveries,
         "audit_entries_30d": audit_count,
@@ -595,10 +612,10 @@ async def create_org(
     req: CreateOrgRequest,
     _auth: OrgContext = Depends(require_role(Role.OWNER)),
 ) -> dict[str, Any]:
-    existing = await _org_repo.get_org_by_slug(req.slug)
+    existing = await _ready(_org_repo).get_org_by_slug(req.slug)
     if existing:
         raise HTTPException(409, f"Slug '{req.slug}' is already taken")
-    org = await _org_repo.create_org(req.name, req.slug, req.monthly_budget_usd)
+    org = await _ready(_org_repo).create_org(req.name, req.slug, req.monthly_budget_usd)
     return org.to_dict()
 
 
@@ -608,7 +625,7 @@ async def list_orgs(
     request: Request,
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, Any]:
-    orgs = await _org_repo.list_orgs()
+    orgs = await _ready(_org_repo).list_orgs()
     return {"orgs": [o.to_dict() for o in orgs], "count": len(orgs)}
 
 
@@ -619,7 +636,7 @@ async def get_org(
     org_id: str,
     _auth: OrgContext = Depends(require_role(Role.VIEWER)),
 ) -> dict[str, Any]:
-    org = await _org_repo.get_org(org_id)
+    org = await _ready(_org_repo).get_org(org_id)
     if not org:
         raise HTTPException(404, "Organization not found")
     return org.to_dict()
@@ -632,7 +649,7 @@ async def delete_org(
     org_id: str,
     _auth: OrgContext = Depends(require_role(Role.OWNER)),
 ) -> dict[str, Any]:
-    deleted = await _org_repo.delete_org(org_id)
+    deleted = await _ready(_org_repo).delete_org(org_id)
     if not deleted:
         raise HTTPException(404, "Organization not found")
     return {"deleted": org_id}
@@ -646,11 +663,11 @@ async def create_api_key(
     req: CreateKeyRequest,
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, Any]:
-    org = await _org_repo.get_org(org_id)
+    org = await _ready(_org_repo).get_org(org_id)
     if not org:
         raise HTTPException(404, "Organization not found")
     role = role_from_str(req.role)
-    key_rec, raw_key = await _org_repo.create_key(org_id, req.name, role)
+    key_rec, raw_key = await _ready(_org_repo).create_key(org_id, req.name, role)
     return key_rec.to_dict(include_key=raw_key)
 
 
@@ -661,7 +678,7 @@ async def list_api_keys(
     org_id: str,
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, Any]:
-    keys = await _org_repo.list_keys(org_id)
+    keys = await _ready(_org_repo).list_keys(org_id)
     return {"keys": [k.to_dict() for k in keys]}
 
 
@@ -673,7 +690,7 @@ async def revoke_api_key(
     key_id: str,
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, Any]:
-    revoked = await _org_repo.revoke_key(key_id)
+    revoked = await _ready(_org_repo).revoke_key(key_id)
     if not revoked:
         raise HTTPException(404, "Key not found")
     return {"revoked": key_id}
@@ -700,7 +717,7 @@ async def create_checkout_session(
     if not _auth.org_id:
         raise HTTPException(400, "Checkout requires an org-scoped API key, not a legacy flat key.")
 
-    org = await _org_repo.get_org(_auth.org_id)
+    org = await _ready(_org_repo).get_org(_auth.org_id)
     if not org:
         raise HTTPException(404, "Organization not found")
 
@@ -731,7 +748,7 @@ async def create_portal_session(
     if not _auth.org_id:
         raise HTTPException(400, "Billing portal requires an org-scoped API key.")
 
-    org = await _org_repo.get_org(_auth.org_id)
+    org = await _ready(_org_repo).get_org(_auth.org_id)
     if not org or not org.stripe_customer_id:
         raise HTTPException(404, "No active Stripe customer for this organization.")
 
@@ -764,7 +781,7 @@ async def stripe_webhook(request: Request) -> dict[str, Any]:
     if update is None:
         return {"received": True, "processed": False}
 
-    await _org_repo.set_plan(
+    await _ready(_org_repo).set_plan(
         org_id=update.org_id,
         plan=update.plan,
         stripe_customer_id=update.stripe_customer_id,
@@ -815,7 +832,7 @@ async def eval_compare(
         )
         for r in req.responses_b
     ]
-    result = _comparator.compare(
+    result = _ready(_comparator).compare(
         prompts=prompts,
         responses_a=ra,
         responses_b=rb,
@@ -844,7 +861,7 @@ async def eval_benchmark(
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
 ) -> dict[str, Any]:
     suite = BenchmarkSuite(req.suite)
-    result = _benchmark_runner.run(
+    result = _ready(_benchmark_runner).run(
         model=req.model,
         provider=req.provider,
         suite=suite,
@@ -888,7 +905,7 @@ async def eval_benchmark_prompts(
         s = BenchmarkSuite(suite)
     except ValueError:
         raise HTTPException(400, f"Unknown suite: {suite}. Valid: truthfulqa, bbq, hellaswag") from None
-    prompts = _benchmark_runner.get_prompts(s)
+    prompts = _ready(_benchmark_runner).get_prompts(s)
     return {"suite": suite, "prompts": prompts, "count": len(prompts)}
 
 
@@ -918,7 +935,7 @@ async def eval_dataset_scan(
     req: EvalDatasetScanRequest,
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
 ) -> dict[str, Any]:
-    result = _dataset_scanner.scan_texts(req.texts, filename=req.filename)
+    result = _ready(_dataset_scanner).scan_texts(req.texts, filename=req.filename)
     payload = result.to_dict()
     if _eval_repo:
         await _eval_repo.save_run(
@@ -965,17 +982,18 @@ async def query_audit_log(
     offset: int = Query(default=0, ge=0),
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, Any]:
+    scoped_org_id: str | None
     if _auth.org_id is not None:
         scoped_org_id = _auth.org_id
     elif _auth.is_legacy and _auth.role == Role.OWNER:
         scoped_org_id = org_id
     else:
         scoped_org_id = None
-    entries = await _audit_repo.query(
+    entries = await _ready(_audit_repo).query(
         org_id=scoped_org_id, endpoint=endpoint, days=days, limit=limit, offset=offset
     )
-    total = await _audit_repo.count(days=days, org_id=scoped_org_id)
-    summary = await _audit_repo.endpoint_summary(days=days)
+    total = await _ready(_audit_repo).count(days=days, org_id=scoped_org_id)
+    summary = await _ready(_audit_repo).endpoint_summary(days=days)
     return {
         "entries": entries,
         "total": total,
@@ -1004,11 +1022,11 @@ async def websocket_dashboard(
     try:
         snapshot: dict[str, Any] = {"type": "connected", "version": "0.9.0"}
         if _cost_repo:
-            snapshot["monthly_spend_usd"] = round(await _cost_repo.total_cost(30), 4)
+            snapshot["monthly_spend_usd"] = round(await _ready(_cost_repo).total_cost(30), 4)
         if _trust_repo:
-            snapshot["models"] = await _trust_repo.all_models()
+            snapshot["models"] = await _ready(_trust_repo).all_models()
         if _org_repo:
-            snapshot["org_count"] = len(await _org_repo.list_orgs())
+            snapshot["org_count"] = len(await _ready(_org_repo).list_orgs())
         await websocket.send_json(snapshot)
 
         while True:
@@ -1050,7 +1068,7 @@ async def list_webhooks(
     request: Request,
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
 ) -> dict[str, Any]:
-    return {"webhooks": [c.to_dict() for c in _webhook_manager.list()]}
+    return {"webhooks": [c.to_dict() for c in _webhook_manager.list_webhooks()]}
 
 
 @app.delete("/api/webhooks/{webhook_id}", tags=["webhooks"])
@@ -1106,22 +1124,22 @@ async def evaluate_model(
     req: EvaluateRequest,
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
 ) -> dict[str, Any]:
-    score = _trust_engine.compute(
+    score = _ready(_trust_engine).compute(
         fairness=req.fairness, privacy=req.privacy, security=req.security,
         robustness=req.robustness, compliance=req.compliance, authenticity=req.authenticity,
     )
-    compliance_report = _compliance.evaluate(
+    compliance_report = _ready(_compliance).evaluate(
         fairness_score=req.fairness, privacy_score=req.privacy,
         security_score=req.security, robustness_score=req.robustness,
         compliance_maturity=req.compliance, use_case=req.use_case,
     )
-    passport = _passport_gen.generate(
+    passport = _ready(_passport_gen).generate(
         model_name=req.model_name, provider=req.provider, trust_score=score,
         compliance_summary={"overall": round(compliance_report.compliance_score * 100, 1)},
     )
     drift_alert = None
     if req.record_drift:
-        drift_alert = await _trust_repo.record(req.model_name, req.provider, score, org_id=_auth.org_id)
+        drift_alert = await _ready(_trust_repo).record(req.model_name, req.provider, score, org_id=_auth.org_id)
 
     observe_trust_score(req.model_name, req.provider, score.overall)
     record_evaluation(req.model_name, req.provider, score.overall, score.grade)
@@ -1177,8 +1195,8 @@ async def get_trust_history(
 ) -> dict[str, Any]:
     if limit < 1 or limit > 365:
         raise HTTPException(400, "limit must be between 1 and 365")
-    history = await _trust_repo.history(model_name, provider, limit=limit, org_id=_auth.org_id)
-    trend = await _trust_repo.trend(model_name, provider, org_id=_auth.org_id)
+    history = await _ready(_trust_repo).history(model_name, provider, limit=limit, org_id=_auth.org_id)
+    trend = await _ready(_trust_repo).trend(model_name, provider, org_id=_auth.org_id)
     return {"model": model_name, "provider": provider, "history": history, "trend": trend}
 
 
@@ -1188,7 +1206,7 @@ async def list_models(
     request: Request,
     _auth: OrgContext = Depends(require_role(Role.VIEWER)),
 ) -> dict[str, Any]:
-    return {"models": await _trust_repo.all_models(org_id=_auth.org_id)}
+    return {"models": await _ready(_trust_repo).all_models(org_id=_auth.org_id)}
 
 
 # ── Guardrails ─────────────────────────────────────────────────────────────────
@@ -1200,7 +1218,7 @@ async def scan_text(
     req: ScanTextRequest,
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
 ) -> dict[str, Any]:
-    result = _guardrails.scan(req.text)
+    result = _ready(_guardrails).scan(req.text)
     blocked = result.is_blocked
     observe_guardrail(blocked)
     record_guardrail_scan(blocked, len(result.pii_findings))
@@ -1245,7 +1263,7 @@ async def analyze_hallucination(
         raise HTTPException(400, "text field is required")
     candidates_raw = body.get("candidates", None)
     candidates = [str(c)[:10_000] for c in candidates_raw] if candidates_raw else None
-    result = _hallucination.analyze(text, candidates=candidates)
+    result = _ready(_hallucination).analyze(text, candidates=candidates)
     return {
         "hallucination_risk": round(result.hallucination_risk, 3),
         "risk_level": result.risk_level.upper(),
@@ -1270,7 +1288,7 @@ async def record_usage(
         team=req.team, application=req.application,
         org_id=_auth.org_id,
     )
-    cost_record = await _cost_repo.record(usage)
+    cost_record = await _ready(_cost_repo).record(usage)
     observe_cost(req.model, req.provider, cost_record.total_cost, req.input_tokens, req.output_tokens)
     record_cost(req.provider, req.model, cost_record.total_cost, req.input_tokens + req.output_tokens)
 
@@ -1282,7 +1300,7 @@ async def record_usage(
                  "timestamp": datetime.now(UTC).isoformat()},
     })
 
-    budget = await _cost_repo.check_budget(org_id=_auth.org_id)
+    budget = await _ready(_cost_repo).check_budget(org_id=_auth.org_id)
     if budget.is_exceeded:
         deliveries = await _webhook_manager.fire(
             WebhookEvent.BUDGET_EXCEEDED,
@@ -1307,13 +1325,13 @@ async def cost_summary(
         raise HTTPException(400, "days must be between 1 and 365")
     oid = _auth.org_id
     return {
-        "total_cost_usd": await _cost_repo.total_cost(days, org_id=oid),
-        "total_tokens": await _cost_repo.total_tokens(days, org_id=oid),
-        "model_breakdown": await _cost_repo.get_model_breakdown(days, org_id=oid),
-        "team_breakdown": await _cost_repo.get_team_breakdown(days, org_id=oid),
-        "daily_costs": await _cost_repo.get_daily_costs(days, org_id=oid),
-        "budget_status": (await _cost_repo.check_budget(org_id=oid)).to_dict(),
-        "request_count": await _cost_repo.request_count(days, org_id=oid),
+        "total_cost_usd": await _ready(_cost_repo).total_cost(days, org_id=oid),
+        "total_tokens": await _ready(_cost_repo).total_tokens(days, org_id=oid),
+        "model_breakdown": await _ready(_cost_repo).get_model_breakdown(days, org_id=oid),
+        "team_breakdown": await _ready(_cost_repo).get_team_breakdown(days, org_id=oid),
+        "daily_costs": await _ready(_cost_repo).get_daily_costs(days, org_id=oid),
+        "budget_status": (await _ready(_cost_repo).check_budget(org_id=oid)).to_dict(),
+        "request_count": await _ready(_cost_repo).request_count(days, org_id=oid),
     }
 
 
@@ -1324,7 +1342,7 @@ async def analyze_prompt(
     req: AnalyzePromptRequest,
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
 ) -> dict[str, Any]:
-    result = _cost_analyzer.analyze_prompt_efficiency(
+    result = _ready(_cost_analyzer).analyze_prompt_efficiency(
         prompt=req.prompt, response=req.response,
         provider=req.provider, model=req.model,
         monthly_requests=req.monthly_requests,
@@ -1339,7 +1357,7 @@ async def route_task(
     req: RouteTaskRequest,
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
 ) -> dict[str, Any]:
-    decision = _router.route(req.task_description, req.quality_requirement)
+    decision = _ready(_router).route(req.task_description, req.quality_requirement)
     return decision.to_dict()
 
 
@@ -1349,7 +1367,7 @@ async def model_pricing(
     request: Request,
     _auth: OrgContext = Depends(require_role(Role.VIEWER)),
 ) -> dict[str, Any]:
-    return {"models": _router.provider_comparison()}
+    return {"models": _ready(_router).provider_comparison()}
 
 
 # ── Drift ──────────────────────────────────────────────────────────────────────
@@ -1362,8 +1380,8 @@ async def get_drift_trend(
     provider: str,
     _auth: OrgContext = Depends(require_role(Role.VIEWER)),
 ) -> dict[str, Any]:
-    trend = await _trust_repo.trend(model_name, provider)
-    history = await _trust_repo.history(model_name, provider, limit=10)
+    trend = await _ready(_trust_repo).trend(model_name, provider)
+    history = await _ready(_trust_repo).history(model_name, provider, limit=10)
     return {"trend": trend, "recent_history": history}
 
 
@@ -1520,7 +1538,7 @@ async def platform_status() -> dict[str, Any]:
     db_ok = True
     try:
         if _cost_repo:
-            await _cost_repo.request_count()
+            await _ready(_cost_repo).request_count()
     except Exception:
         db_ok = False
     return {
@@ -1550,14 +1568,15 @@ async def list_audit_entries(
         raise HTTPException(503, "Audit repository not initialised")
     # Org-specific keys: force scope to their org regardless of query param.
     # Legacy super-admin keys (is_legacy=True, role=OWNER): allow cross-org filter.
+    scoped_org_id: str | None
     if _auth.org_id is not None:
         scoped_org_id = _auth.org_id
     elif _auth.is_legacy and _auth.role == Role.OWNER:
         scoped_org_id = org_id
     else:
         scoped_org_id = None
-    rows = await _audit_repo.query(org_id=scoped_org_id, endpoint=endpoint, days=days, limit=limit, offset=offset)
-    total = await _audit_repo.count(days=days, org_id=scoped_org_id)
+    rows = await _ready(_audit_repo).query(org_id=scoped_org_id, endpoint=endpoint, days=days, limit=limit, offset=offset)
+    total = await _ready(_audit_repo).count(days=days, org_id=scoped_org_id)
     return {
         "entries": rows,
         "total": total,
@@ -1578,13 +1597,14 @@ async def export_audit_log(
     """Export audit log as CSV. Results scoped to authenticated org."""
     if not _audit_repo:
         raise HTTPException(503, "Audit repository not initialised")
+    scoped_org_id: str | None
     if _auth.org_id is not None:
         scoped_org_id = _auth.org_id
     elif _auth.is_legacy and _auth.role == Role.OWNER:
         scoped_org_id = org_id
     else:
         scoped_org_id = None
-    rows = await _audit_repo.query(org_id=scoped_org_id, days=days, limit=5000)
+    rows = await _ready(_audit_repo).query(org_id=scoped_org_id, days=days, limit=5000)
     import csv as _csv
     import io as _io
     buf = _io.StringIO()
@@ -1613,7 +1633,7 @@ async def audit_endpoint_summary(
     """Top endpoints by request count and average latency."""
     if not _audit_repo:
         raise HTTPException(503, "Audit repository not initialised")
-    summary = await _audit_repo.endpoint_summary(days=days)
+    summary = await _ready(_audit_repo).endpoint_summary(days=days)
     return {"days": days, "endpoints": summary}
 
 
@@ -1664,10 +1684,10 @@ async def billing_usage(
     if not _cost_repo:
         raise HTTPException(503, "Cost repository not initialised")
     oid = _auth.org_id
-    total_cost = await _cost_repo.total_cost(days=days, org_id=oid)
-    total_tokens = await _cost_repo.total_tokens(days=days, org_id=oid)
-    request_count = await _cost_repo.request_count(days=days, org_id=oid)
-    model_breakdown = await _cost_repo.get_model_breakdown(days=days, org_id=oid)
+    total_cost = await _ready(_cost_repo).total_cost(days=days, org_id=oid)
+    total_tokens = await _ready(_cost_repo).total_tokens(days=days, org_id=oid)
+    request_count = await _ready(_cost_repo).request_count(days=days, org_id=oid)
+    model_breakdown = await _ready(_cost_repo).get_model_breakdown(days=days, org_id=oid)
     return {
         "period_days": days,
         "total_cost_usd": round(total_cost, 6),

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
@@ -49,11 +50,11 @@ class TestRegistration:
         assert result.id == generic_config.id
 
     def test_list_empty_initially(self, manager):
-        assert manager.list() == []
+        assert manager.list_webhooks() == []
 
     def test_list_after_register(self, manager, generic_config):
         manager.register(generic_config)
-        assert len(manager.list()) == 1
+        assert len(manager.list_webhooks()) == 1
 
     def test_remove_returns_true(self, manager, generic_config):
         manager.register(generic_config)
@@ -73,7 +74,23 @@ class TestRegistration:
         for i in range(5):
             c = WebhookConfig(url=f"https://hooks.example.com/{i}", events=[WebhookEvent.DRIFT_ALERT])
             manager.register(c)
-        assert len(manager.list()) == 5
+        assert len(manager.list_webhooks()) == 5
+
+    def test_update_changes_field(self, manager, generic_config):
+        manager.register(generic_config)
+        updated = manager.update(generic_config.id, enabled=False)
+        assert updated is not None
+        assert updated.enabled is False
+        assert manager.get(generic_config.id).enabled is False
+
+    def test_update_ignores_unknown_field(self, manager, generic_config):
+        manager.register(generic_config)
+        updated = manager.update(generic_config.id, nonexistent_field="x")
+        assert updated is not None
+        assert not hasattr(updated, "nonexistent_field")
+
+    def test_update_missing_webhook_returns_none(self, manager):
+        assert manager.update("missing-id", enabled=False) is None
 
 
 # ── Delivery ───────────────────────────────────────────────────────────────────
@@ -268,3 +285,149 @@ class TestDeliveryLog:
     def test_delivery_log_respects_limit(self, manager):
         log = manager.delivery_log(limit=10)
         assert isinstance(log, list)
+
+
+# ── Retry worker lifecycle ───────────────────────────────────────────────────────
+
+class TestRetryWorkerLifecycle:
+    def test_start_without_repo_is_noop(self, manager):
+        manager.start_retry_worker()
+        assert manager._retry_task is None
+
+    async def test_start_with_repo_launches_task(self, manager):
+        manager.set_repository(AsyncMock())
+        manager.start_retry_worker()
+        assert manager._retry_task is not None
+        manager.stop_retry_worker()
+
+    async def test_start_twice_does_not_duplicate_task(self, manager):
+        manager.set_repository(AsyncMock())
+        manager.start_retry_worker()
+        first_task = manager._retry_task
+        manager.start_retry_worker()
+        assert manager._retry_task is first_task
+        manager.stop_retry_worker()
+
+    async def test_stop_cancels_task(self, manager):
+        manager.set_repository(AsyncMock())
+        manager.start_retry_worker()
+        manager.stop_retry_worker()
+        assert manager._retry_task is None
+        assert manager._stop_event.is_set()
+
+    def test_stop_without_start_is_safe(self, manager):
+        manager.stop_retry_worker()
+        assert manager._retry_task is None
+
+
+# ── Repo-backed persistence ──────────────────────────────────────────────────────
+
+class TestRepoBackedDelivery:
+    @respx.mock
+    async def test_create_called_on_delivery(self, manager, generic_config):
+        repo = AsyncMock()
+        repo.pending_retries.return_value = []
+        manager.set_repository(repo)
+        respx.post(generic_config.url).mock(return_value=httpx.Response(200))
+        manager.register(generic_config)
+        await manager.fire(WebhookEvent.DRIFT_ALERT, {"model": "gpt-4o"})
+        repo.create.assert_awaited_once()
+        repo.record_attempt.assert_awaited()
+
+    @respx.mock
+    async def test_repo_create_failure_degrades_gracefully(self, manager, generic_config):
+        repo = AsyncMock()
+        repo.create.side_effect = RuntimeError("db down")
+        manager.set_repository(repo)
+        respx.post(generic_config.url).mock(return_value=httpx.Response(200))
+        manager.register(generic_config)
+        deliveries = await manager.fire(WebhookEvent.DRIFT_ALERT, {})
+        assert deliveries[0].success is True
+
+    @respx.mock
+    async def test_repo_record_attempt_failure_degrades_gracefully(self, manager, generic_config):
+        repo = AsyncMock()
+        repo.record_attempt.side_effect = RuntimeError("db down")
+        manager.set_repository(repo)
+        respx.post(generic_config.url).mock(return_value=httpx.Response(200))
+        manager.register(generic_config)
+        deliveries = await manager.fire(WebhookEvent.DRIFT_ALERT, {})
+        assert deliveries[0].success is True
+
+    async def test_retry_worker_redelivers_pending(self, manager, generic_config):
+        manager.register(generic_config)
+        repo = AsyncMock()
+        repo.pending_retries.return_value = [
+            {
+                "id": "delivery-1",
+                "webhook_id": generic_config.id,
+                "event": WebhookEvent.DRIFT_ALERT.value,
+                "payload": {"model": "gpt-4o"},
+                "attempts": 1,
+            }
+        ]
+        manager.set_repository(repo)
+
+        with (
+            respx.mock,
+            patch("responsibleai.webhooks.manager._RETRY_POLL_INTERVAL", 0.01),
+        ):
+            respx.post(generic_config.url).mock(return_value=httpx.Response(200))
+            manager.start_retry_worker()
+            await asyncio.sleep(0.05)
+            manager.stop_retry_worker()
+
+        repo.pending_retries.assert_awaited()
+
+    async def test_retry_worker_skips_unknown_webhook(self, manager):
+        repo = AsyncMock()
+        repo.pending_retries.return_value = [
+            {
+                "id": "delivery-2",
+                "webhook_id": "unknown-webhook-id",
+                "event": WebhookEvent.DRIFT_ALERT.value,
+                "payload": {},
+                "attempts": 0,
+            }
+        ]
+        manager.set_repository(repo)
+
+        with patch("responsibleai.webhooks.manager._RETRY_POLL_INTERVAL", 0.01):
+            manager.start_retry_worker()
+            await asyncio.sleep(0.05)
+            manager.stop_retry_worker()
+
+        # Should not raise — unknown webhook_id is silently skipped.
+        repo.pending_retries.assert_awaited()
+
+    async def test_retry_worker_skips_invalid_event(self, manager, generic_config):
+        manager.register(generic_config)
+        repo = AsyncMock()
+        repo.pending_retries.return_value = [
+            {
+                "id": "delivery-3",
+                "webhook_id": generic_config.id,
+                "event": "not_a_real_event",
+                "payload": {},
+                "attempts": 0,
+            }
+        ]
+        manager.set_repository(repo)
+
+        with patch("responsibleai.webhooks.manager._RETRY_POLL_INTERVAL", 0.01):
+            manager.start_retry_worker()
+            await asyncio.sleep(0.05)
+            manager.stop_retry_worker()
+
+        repo.pending_retries.assert_awaited()
+
+    async def test_retry_worker_handles_repo_exception(self, manager):
+        repo = AsyncMock()
+        repo.pending_retries.side_effect = RuntimeError("db unreachable")
+        manager.set_repository(repo)
+
+        with patch("responsibleai.webhooks.manager._RETRY_POLL_INTERVAL", 0.01):
+            manager.start_retry_worker()
+            await asyncio.sleep(0.05)
+            manager.stop_retry_worker()
+        # Should not raise — worker logs and keeps polling.

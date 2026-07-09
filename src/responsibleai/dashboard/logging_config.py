@@ -35,6 +35,7 @@ def configure_logging(level: str = "INFO", json_logs: bool = True) -> None:
         structlog.processors.StackInfoRenderer(),
     ]
 
+    renderer: structlog.processors.JSONRenderer | structlog.dev.ConsoleRenderer
     if json_logs:
         renderer = structlog.processors.JSONRenderer()
     else:

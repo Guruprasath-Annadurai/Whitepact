@@ -180,11 +180,11 @@ class GuardrailsEngine:
                 block_reasons.append(f"PII detected: {', '.join(cats)}")
 
         if self._policy.block_toxicity:
-            for cat, compiled_patterns in self._compiled_toxicity.items():
+            for tox_cat, compiled_patterns in self._compiled_toxicity.items():
                 for cp in compiled_patterns:
                     for m in cp.finditer(text):
                         toxicity_findings.append(
-                            ToxicityFinding(category=cat.value, match=m.group())
+                            ToxicityFinding(category=tox_cat.value, match=m.group())
                         )
             if toxicity_findings:
                 cats = sorted({f.category for f in toxicity_findings})

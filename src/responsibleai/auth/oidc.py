@@ -115,7 +115,13 @@ class OIDCProvider:
         if not jwk:
             raise ValueError("Unable to retrieve signing key from JWKS endpoint")
 
+        from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
+
         public_key = pyjwt.algorithms.RSAAlgorithm.from_jwk(jwk)
+        if not isinstance(public_key, RSAPublicKey):
+            # A JWKS endpoint must never serve a private key; from_jwk's stub
+            # allows both, so guard against a malicious/misconfigured endpoint.
+            raise ValueError("JWKS signing key resolved to a private key, expected public")
         try:
             payload = pyjwt.decode(
                 token,

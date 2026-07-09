@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import secrets
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import delete, insert, select, update
 
@@ -210,7 +211,7 @@ class OrgRepository:
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
-    def _row_to_org(self, row: object) -> Organization:
+    def _row_to_org(self, row: Any) -> Organization:
         return Organization(
             id=row.id,
             name=row.name,
@@ -223,7 +224,7 @@ class OrgRepository:
             plan_renews_at=getattr(row, "plan_renews_at", None),
         )
 
-    def _row_to_key(self, row: object) -> OrgApiKey:
+    def _row_to_key(self, row: Any) -> OrgApiKey:
         return OrgApiKey(
             id=row.id,
             org_id=row.org_id,

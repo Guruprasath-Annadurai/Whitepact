@@ -79,7 +79,7 @@ class WebhookManager:
     def get(self, webhook_id: str) -> WebhookConfig | None:
         return self._configs.get(webhook_id)
 
-    def list(self) -> list[WebhookConfig]:
+    def list_webhooks(self) -> list[WebhookConfig]:
         return list(self._configs.values())
 
     def update(self, webhook_id: str, **kwargs: Any) -> WebhookConfig | None:
@@ -88,8 +88,7 @@ class WebhookManager:
             return None
         for k, v in kwargs.items():
             if hasattr(cfg, k):
-                object.__setattr__(cfg, k, v) if cfg.__dataclass_fields__[k].init else None
-                cfg.__dict__[k] = v
+                setattr(cfg, k, v)
         return cfg
 
     # ── Delivery ──────────────────────────────────────────────────────────────

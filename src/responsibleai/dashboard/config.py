@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -168,21 +169,21 @@ class Settings(BaseSettings):
 
     @field_validator("oidc_scopes", mode="before")
     @classmethod
-    def _parse_scopes(cls, v: object) -> list[str]:
+    def _parse_scopes(cls, v: Any) -> list[str]:
         if isinstance(v, str):
             return [s.strip() for s in v.split(",") if s.strip()]
         return list(v) if v else ["openid", "email", "profile"]
 
     @field_validator("api_keys", mode="before")
     @classmethod
-    def _parse_keys(cls, v: object) -> list[str]:
+    def _parse_keys(cls, v: Any) -> list[str]:
         if isinstance(v, str):
             return [k.strip() for k in v.split(",") if k.strip()]
         return list(v) if v else []
 
     @field_validator("allowed_origins", mode="before")
     @classmethod
-    def _parse_origins(cls, v: object) -> list[str]:
+    def _parse_origins(cls, v: Any) -> list[str]:
         if isinstance(v, str):
             return [o.strip() for o in v.split(",") if o.strip()]
         return list(v) if v else []

@@ -105,6 +105,8 @@ def _build_http_app() -> Any:
     """
     from starlette.applications import Starlette
     from starlette.requests import Request
+    from contextlib import asynccontextmanager
+
     from starlette.responses import JSONResponse
     from starlette.routing import Mount, Route
 
@@ -117,6 +119,11 @@ def _build_http_app() -> Any:
     _db_engine = create_engine(settings.effective_db_url)
     _org_repo = OrgRepository(_db_engine)
     sse = SseServerTransport("/messages/")
+
+    @asynccontextmanager
+    async def _lifespan(_app: Starlette) -> Any:
+        await _db_engine.init()
+        yield
 
     async def _authenticate(request: Request) -> OrgContext | None:
         auth_header = request.headers.get("authorization", "")
@@ -155,11 +162,8 @@ def _build_http_app() -> Any:
             Route("/sse", endpoint=handle_sse),
             Mount("/messages/", app=sse.handle_post_message),
         ],
+        lifespan=_lifespan,
     )
-
-    @app.on_event("startup")
-    async def _startup() -> None:
-        await _db_engine.init()
 
     return app
 
