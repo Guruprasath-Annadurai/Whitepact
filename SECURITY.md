@@ -1,5 +1,8 @@
 # Security Policy
 
+For encryption-at-rest, data residency, audit trail integrity, and SSO
+enforcement details, see [ENTERPRISE_SECURITY.md](ENTERPRISE_SECURITY.md).
+
 ## Supported versions
 
 | Version | Supported |

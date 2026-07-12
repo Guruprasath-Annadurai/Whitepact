@@ -40,6 +40,14 @@ def _generate_raw_key() -> str:
     return "rai_" + secrets.token_urlsafe(32)
 
 
+class SSORequiredError(Exception):
+    """Raised by authenticate() when the org has enforced SSO-only login."""
+
+    def __init__(self, org_id: str) -> None:
+        self.org_id = org_id
+        super().__init__(f"Organization {org_id} requires SSO login — static API keys are disabled.")
+
+
 class OrgRepository:
     """CRUD operations for organizations and their API keys."""
 
@@ -92,6 +100,18 @@ class OrgRepository:
         async with self._engine.raw.begin() as conn:
             result = await conn.execute(
                 update(organizations).where(organizations.c.id == org_id).values(**values)
+            )
+        return result.rowcount > 0
+
+    async def set_sso_required(self, org_id: str, required: bool) -> bool:
+        """Enable/disable SSO-only enforcement. When enabled, static API keys
+        scoped to this org are rejected by authenticate() — SSO becomes the
+        only login path, closing the static-key backdoor for departed staff."""
+        async with self._engine.raw.begin() as conn:
+            result = await conn.execute(
+                update(organizations)
+                .where(organizations.c.id == org_id)
+                .values(sso_required=1 if required else 0)
             )
         return result.rowcount > 0
 
@@ -188,6 +208,10 @@ class OrgRepository:
         if row is None:
             return None
 
+        org = await self.get_org(row.org_id)
+        if org is not None and org.sso_required:
+            raise SSORequiredError(org.id)
+
         # Update last_used_at (best-effort, fire & forget)
         try:
             async with self._engine.raw.begin() as conn:
@@ -199,7 +223,6 @@ class OrgRepository:
         except Exception:
             pass
 
-        org = await self.get_org(row.org_id)
         return OrgContext(
             key_id=row.id,
             role=role_from_str(row.role),
@@ -222,6 +245,7 @@ class OrgRepository:
             stripe_customer_id=getattr(row, "stripe_customer_id", None),
             stripe_subscription_id=getattr(row, "stripe_subscription_id", None),
             plan_renews_at=getattr(row, "plan_renews_at", None),
+            sso_required=bool(getattr(row, "sso_required", 0)),
         )
 
     def _row_to_key(self, row: Any) -> OrgApiKey:

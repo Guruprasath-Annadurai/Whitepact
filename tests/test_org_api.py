@@ -5,7 +5,12 @@ from __future__ import annotations
 import pytest
 
 from responsibleai.db.engine import create_engine
-from responsibleai.db.org_repository import OrgRepository, _generate_raw_key, _hash_key
+from responsibleai.db.org_repository import (
+    OrgRepository,
+    SSORequiredError,
+    _generate_raw_key,
+    _hash_key,
+)
 from responsibleai.rbac.models import Role
 
 
@@ -166,3 +171,48 @@ class TestAuthentication:
         await repo.authenticate(raw)
         keys = await repo.list_keys(org.id)
         assert keys[0].last_used_at is not None
+
+
+# ── SSO enforcement ──────────────────────────────────────────────────────────────
+
+class TestSSOEnforcement:
+    async def test_org_sso_required_defaults_false(self, org):
+        assert org.sso_required is False
+
+    async def test_set_sso_required_true(self, repo, org):
+        updated = await repo.set_sso_required(org.id, True)
+        assert updated is True
+        fetched = await repo.get_org(org.id)
+        assert fetched.sso_required is True
+
+    async def test_set_sso_required_false(self, repo, org):
+        await repo.set_sso_required(org.id, True)
+        await repo.set_sso_required(org.id, False)
+        fetched = await repo.get_org(org.id)
+        assert fetched.sso_required is False
+
+    async def test_set_sso_required_missing_org_returns_false(self, repo):
+        assert await repo.set_sso_required("nonexistent", True) is False
+
+    async def test_authenticate_blocked_when_sso_required(self, repo, org):
+        _, raw = await repo.create_key(org.id, "app-key", Role.ANALYST)
+        await repo.set_sso_required(org.id, True)
+        with pytest.raises(SSORequiredError) as exc_info:
+            await repo.authenticate(raw)
+        assert exc_info.value.org_id == org.id
+
+    async def test_authenticate_works_after_sso_disabled_again(self, repo, org):
+        _, raw = await repo.create_key(org.id, "app-key", Role.ANALYST)
+        await repo.set_sso_required(org.id, True)
+        await repo.set_sso_required(org.id, False)
+        ctx = await repo.authenticate(raw)
+        assert ctx is not None
+        assert ctx.org_id == org.id
+
+    async def test_sso_required_does_not_affect_other_orgs(self, repo, org):
+        other = await repo.create_org("Other Co", "other-co")
+        _, raw_other = await repo.create_key(other.id, "k", Role.ANALYST)
+        await repo.set_sso_required(org.id, True)
+        ctx = await repo.authenticate(raw_other)
+        assert ctx is not None
+        assert ctx.org_id == other.id

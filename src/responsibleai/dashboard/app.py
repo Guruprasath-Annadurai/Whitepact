@@ -58,6 +58,7 @@ from responsibleai.db import (
     CostRepository,
     EvalRepository,
     OrgRepository,
+    SSORequiredError,
     TrustRepository,
     WebhookDeliveryRepository,
     create_engine,
@@ -379,14 +380,48 @@ app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
 
 # ── Auth / RBAC dependencies ───────────────────────────────────────────────────
 
+async def _resolve_oidc_context(token: str) -> OrgContext | None:
+    """Validate an OIDC-issued Bearer JWT and map its claims to an OrgContext.
+
+    Static API keys are prefixed "rai_"; anything else is attempted as a JWT
+    when an OIDC provider is configured. This is what makes SSO login
+    actually usable as an API credential — previously /api/auth/callback
+    returned claims but nothing accepted the resulting token afterward.
+    """
+    if _oidc_provider is None or token.startswith("rai_"):
+        return None
+    try:
+        claims = await _oidc_provider.validate_token(token)
+    except ValueError:
+        return None
+
+    org = await _org_repo.get_org(claims.org_id) if (_org_repo and claims.org_id) else None
+    role = Role.VIEWER
+    for raw_role in claims.roles:
+        candidate = role_from_str(raw_role)
+        if candidate.value == raw_role.upper():
+            role = candidate
+            break
+
+    return OrgContext(
+        key_id=f"oidc:{claims.sub}",
+        role=role,
+        org_id=claims.org_id,
+        org_name=org.name if org else None,
+        is_legacy=False,
+        plan=org.plan if org else Plan.FREE,
+    )
+
+
 async def get_org_context(request: Request) -> OrgContext:
-    """Resolve the API key to an OrgContext.
+    """Resolve the presented Bearer credential to an OrgContext.
 
     Resolution order:
     1. Auth disabled → anonymous OWNER (dev mode)
     2. Flat RAI_API_KEYS (legacy) → OWNER
-    3. DB-backed org key → role from DB
-    4. No match → 401
+    3. OIDC-issued JWT (when SSO configured) → role/org from token claims
+    4. DB-backed org key → role from DB, rejected if the org enforces SSO
+    5. No match → 401
     """
     if not settings.auth_enabled:
         ctx = OrgContext(key_id="anon", role=Role.OWNER, is_legacy=True)
@@ -404,8 +439,22 @@ async def get_org_context(request: Request) -> OrgContext:
         _audit_ctx.set({"org_id": None, "key_id": "legacy"})
         return ctx
 
+    oidc_ctx = await _resolve_oidc_context(token)
+    if oidc_ctx is not None:
+        _audit_ctx.set({"org_id": oidc_ctx.org_id, "key_id": oidc_ctx.key_id})
+        return oidc_ctx
+
     if _org_repo:
-        resolved_ctx = await _ready(_org_repo).authenticate(token)
+        try:
+            resolved_ctx = await _ready(_org_repo).authenticate(token)
+        except SSORequiredError as exc:
+            raise HTTPException(
+                403,
+                detail=(
+                    f"Organization {exc.org_id} requires SSO login. "
+                    "Static API keys are disabled — authenticate via /api/auth/login/oidc."
+                ),
+            ) from None
         if resolved_ctx:
             _audit_ctx.set({"org_id": resolved_ctx.org_id, "key_id": resolved_ctx.key_id})
             return resolved_ctx
@@ -507,6 +556,10 @@ class CreateOrgRequest(BaseModel):
 class CreateKeyRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     role: str = Field("ANALYST", pattern="^(OWNER|ADMIN|ANALYST|VIEWER)$")
+
+
+class SetSSORequest(BaseModel):
+    sso_required: bool
 
 
 class CheckoutRequest(BaseModel):
@@ -653,6 +706,34 @@ async def delete_org(
     if not deleted:
         raise HTTPException(404, "Organization not found")
     return {"deleted": org_id}
+
+
+@app.put("/api/orgs/{org_id}/sso", tags=["rbac"])
+@limiter.limit("10/minute")
+async def set_org_sso(
+    request: Request,
+    org_id: str,
+    req: SetSSORequest,
+    _auth: OrgContext = Depends(require_role(Role.OWNER)),
+) -> dict[str, Any]:
+    """Enable/disable SSO-only enforcement for an org.
+
+    When enabled, static API keys scoped to this org stop working — every
+    request must present an OIDC-issued Bearer token instead. Requires
+    RAI_OIDC_ISSUER to be configured on the server, otherwise enabling this
+    would lock the org out entirely.
+    """
+    if req.sso_required and _oidc_provider is None:
+        raise HTTPException(
+            400,
+            "Cannot enforce SSO — no OIDC provider is configured on this server "
+            "(set RAI_OIDC_ISSUER). Enabling this now would lock the organization out.",
+        )
+    org = await _ready(_org_repo).get_org(org_id)
+    if not org:
+        raise HTTPException(404, "Organization not found")
+    await _ready(_org_repo).set_sso_required(org_id, req.sso_required)
+    return {"org_id": org_id, "sso_required": req.sso_required}
 
 
 @app.post("/api/orgs/{org_id}/keys", tags=["rbac"], status_code=201)
@@ -1610,19 +1691,38 @@ async def export_audit_log(
     buf = _io.StringIO()
     writer = _csv.writer(buf)
     writer.writerow(["id", "timestamp", "org_id", "key_id", "endpoint", "method",
-                     "status_code", "ip_address", "request_id", "duration_ms"])
+                     "status_code", "ip_address", "request_id", "duration_ms",
+                     "entry_hash", "prev_hash"])
     for r in rows:
         writer.writerow([
             r.get("id", ""), r.get("timestamp", ""), r.get("org_id", ""),
             r.get("key_id", ""), r.get("endpoint", ""), r.get("method", ""),
             r.get("status_code", ""), r.get("ip_address", ""),
             r.get("request_id", ""), r.get("duration_ms", ""),
+            r.get("entry_hash", ""), r.get("prev_hash", ""),
         ])
     return Response(
         content=buf.getvalue(),
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=audit-{days}d.csv"},
     )
+
+
+@app.get("/api/audit/verify", tags=["audit"])
+@limiter.limit("10/minute")
+async def verify_audit_chain(
+    request: Request,
+    days: int = Query(90, ge=1, le=365),
+    _auth: OrgContext = Depends(require_role(Role.OWNER)),
+) -> dict[str, Any]:
+    """Verify audit log tamper-evidence by recomputing the hash chain.
+
+    Restricted to legacy super-admin OWNER — the chain spans all orgs on
+    this server, so verifying it inherently reveals cross-org existence.
+    """
+    if not (_auth.is_legacy and _auth.role == Role.OWNER):
+        raise HTTPException(403, "Audit chain verification requires super-admin access")
+    return await _ready(_audit_repo).verify_chain(days=days)
 
 
 @app.get("/api/audit/summary", tags=["audit"])

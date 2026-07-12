@@ -33,6 +33,7 @@ class Organization:
     stripe_customer_id: str | None = None
     stripe_subscription_id: str | None = None
     plan_renews_at: str | None = None
+    sso_required: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -44,6 +45,7 @@ class Organization:
             "plan": self.plan.value if isinstance(self.plan, Plan) else self.plan,
             "stripe_customer_id": self.stripe_customer_id,
             "plan_renews_at": self.plan_renews_at,
+            "sso_required": self.sso_required,
         }
 
 
@@ -96,6 +98,8 @@ class AuditEntry:
     request_id: str | None = None
     duration_ms: float | None = None
     user_agent: str | None = None
+    entry_hash: str | None = None
+    prev_hash: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -110,4 +114,6 @@ class AuditEntry:
             "request_id": self.request_id,
             "duration_ms": self.duration_ms,
             "user_agent": self.user_agent,
+            "entry_hash": self.entry_hash,
+            "prev_hash": self.prev_hash,
         }

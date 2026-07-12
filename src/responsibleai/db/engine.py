@@ -79,6 +79,7 @@ organizations = Table(
     Column("stripe_customer_id",      String(64),  nullable=True),
     Column("stripe_subscription_id",  String(64),  nullable=True),
     Column("plan_renews_at",          String(32),  nullable=True),
+    Column("sso_required",            Integer,     nullable=False, default=0),
     Index("idx_org_slug", "slug"),
     Index("idx_org_stripe_customer", "stripe_customer_id"),
 )
@@ -125,6 +126,8 @@ audit_log = Table(
     Column("request_id",  String(64),  nullable=True),
     Column("duration_ms", Float,       nullable=True),
     Column("user_agent",  String(512), nullable=True),
+    Column("entry_hash",  String(64),  nullable=True),
+    Column("prev_hash",   String(64),  nullable=True),
     Index("idx_al_timestamp", "timestamp"),
     Index("idx_al_org",       "org_id"),
     Index("idx_al_endpoint",  "endpoint"),

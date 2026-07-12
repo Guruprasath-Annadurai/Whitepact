@@ -160,3 +160,90 @@ class TestEndpointSummary:
             await repo.write(_entry(endpoint="/api/light"))
         summary = await repo.endpoint_summary(days=1)
         assert summary[0]["endpoint"] == "/api/heavy"
+
+
+# ── Hash chain tamper-evidence ─────────────────────────────────────────────────
+
+class TestAuditHashChain:
+    async def test_first_entry_chains_to_genesis(self, repo):
+        await repo.write(_entry())
+        entries = await repo.query(days=1)
+        assert entries[0]["prev_hash"] == "0" * 64
+        assert entries[0]["entry_hash"] is not None
+        assert len(entries[0]["entry_hash"]) == 64
+
+    async def test_entries_chain_sequentially(self, repo):
+        await repo.write(_entry(endpoint="/api/a"))
+        await repo.write(_entry(endpoint="/api/b"))
+        entries = await repo.query(days=1)
+        # query() returns newest first; sort ascending by write order.
+        entries = sorted(entries, key=lambda e: e["timestamp"])
+        assert entries[1]["prev_hash"] == entries[0]["entry_hash"]
+
+    async def test_verify_chain_intact_on_untouched_log(self, repo):
+        for _ in range(5):
+            await repo.write(_entry())
+        result = await repo.verify_chain(days=1)
+        assert result["intact"] is True
+        assert result["entries_checked"] == 5
+        assert result["broken_links"] == []
+
+    async def test_verify_chain_empty_log_is_intact(self, repo):
+        result = await repo.verify_chain(days=1)
+        assert result["intact"] is True
+        assert result["entries_checked"] == 0
+
+    async def test_verify_chain_detects_tampered_row(self, repo, db):
+        await repo.write(_entry())
+        await repo.write(_entry())
+
+        from sqlalchemy import update as sa_update
+
+        from responsibleai.db.engine import audit_log
+
+        async with db.raw.begin() as conn:
+            await conn.execute(
+                sa_update(audit_log)
+                .where(audit_log.c.endpoint == "/api/evaluate")
+                .values(status_code=999)
+            )
+
+        result = await repo.verify_chain(days=1)
+        assert result["intact"] is False
+        assert len(result["broken_links"]) >= 1
+
+    async def test_verify_chain_detects_deleted_row(self, repo, db):
+        await repo.write(_entry(endpoint="/api/a"))
+        await repo.write(_entry(endpoint="/api/b"))
+        await repo.write(_entry(endpoint="/api/c"))
+
+        from sqlalchemy import delete as sa_delete
+
+        from responsibleai.db.engine import audit_log
+
+        async with db.raw.begin() as conn:
+            await conn.execute(
+                sa_delete(audit_log).where(audit_log.c.endpoint == "/api/b")
+            )
+
+        result = await repo.verify_chain(days=1)
+        assert result["intact"] is False
+
+    async def test_hydration_resumes_chain_across_new_repo_instance(self, db):
+        repo1 = AuditRepository(db)
+        await repo1.write(_entry(endpoint="/api/first"))
+
+        repo2 = AuditRepository(db)  # simulates a fresh process attaching to same DB
+        await repo2.write(_entry(endpoint="/api/second"))
+
+        result = await repo2.verify_chain(days=1)
+        assert result["intact"] is True
+        assert result["entries_checked"] == 2
+
+    async def test_concurrent_writes_produce_valid_chain(self, repo):
+        import asyncio
+
+        await asyncio.gather(*[repo.write(_entry(endpoint=f"/api/c{i}")) for i in range(20)])
+        result = await repo.verify_chain(days=1)
+        assert result["intact"] is True
+        assert result["entries_checked"] == 20
