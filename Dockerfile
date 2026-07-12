@@ -11,7 +11,7 @@ FROM python:3.12-slim AS runtime
 
 LABEL org.opencontainers.image.title="ResponsibleAI Governance Platform"
 LABEL org.opencontainers.image.description="Enterprise AI Governance — Trust Scoring, Compliance, Cost Intelligence"
-LABEL org.opencontainers.image.version="1.1.0"
+LABEL org.opencontainers.image.version="1.2.0"
 LABEL org.opencontainers.image.licenses="MIT"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -34,13 +34,16 @@ WORKDIR /app
 COPY --from=builder /dist/*.whl /tmp/
 RUN pip install --no-cache-dir /tmp/*.whl \
     "fastapi>=0.110" "uvicorn[standard]>=0.29" \
-    "slowapi>=0.1" "pydantic-settings>=2.0" "structlog>=24.0" "python-dotenv>=1.0"
+    "slowapi>=0.1" "pydantic-settings>=2.0" "structlog>=24.0" "python-dotenv>=1.0" \
+    "asyncpg>=0.29.0" "limits[redis]>=3.6.0" "stripe>=9.0.0"
 
 COPY src/responsibleai/dashboard/static/ /app/static/
+COPY alembic.ini ./
+COPY migrations/ ./migrations/
 
 USER appuser
 
-EXPOSE 8765
+EXPOSE 8765 8766
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -fsS http://localhost:8765/api/health | python3 -c "import sys,json; d=json.load(sys.stdin); sys.exit(0 if d['status'] in ('healthy','degraded') else 1)"
