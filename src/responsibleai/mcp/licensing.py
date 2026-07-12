@@ -56,6 +56,26 @@ ENTERPRISE_TOOLS: frozenset[str] = frozenset({
 
 _TIER_ORDER: dict[Plan, int] = {Plan.FREE: 0, Plan.PRO: 1, Plan.ENTERPRISE: 2}
 
+# Monthly call quotas for the hosted HTTP/SSE transport. None = unlimited.
+# Self-hosted stdio is never metered regardless of these values.
+MONTHLY_CALL_QUOTA: dict[Plan, int | None] = {
+    Plan.FREE: 0,          # FREE has no hosted access at all — stdio only.
+    Plan.PRO: 10_000,
+    Plan.ENTERPRISE: None,
+}
+
+
+def monthly_quota(plan: Plan) -> int | None:
+    return MONTHLY_CALL_QUOTA.get(plan, 0)
+
+
+def quota_exceeded_message(plan: Plan, used: int, quota: int) -> str:
+    return (
+        f"Monthly MCP call quota exceeded: {used}/{quota} calls used on the "
+        f"{plan.value} plan this billing period. Upgrade at "
+        f"https://responsibleai.dev/pricing or wait for the next billing cycle."
+    )
+
 
 def tool_tier(tool_name: str) -> Plan:
     """Return the minimum Plan required to call *tool_name*."""

@@ -1,0 +1,122 @@
+# Production hosted stack — Postgres + Redis, not SQLite/in-memory rate limiting.
+# This is the actual sellable SKU: PRO/ENTERPRISE tiers are billed via Stripe
+# but need a real deployment to sell against. SQLite works for self-hosted
+# single-instance use; this compose file is for running ResponsibleAI as a
+# managed multi-replica service.
+#
+# Usage:
+#   cp .env.prod.example .env.prod   # fill in real secrets
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+#
+# Postgres and Redis are NOT exposed to the host — only the dashboard and MCP
+# HTTP ports are. Put a TLS-terminating reverse proxy in front of both
+# (see DEPLOYMENT.md's nginx section) before exposing this to the internet.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: rai-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-responsibleai}
+      POSTGRES_USER: ${POSTGRES_USER:-rai_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - rai-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rai_user} -d ${POSTGRES_DB:-responsibleai}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rai-internal
+
+  redis:
+    image: redis:7-alpine
+    container_name: rai-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"]
+    volumes:
+      - rai-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rai-internal
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: responsibleai:1.2.0
+    container_name: rai-dashboard
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8765:8765"  # bind localhost only — reverse proxy handles public TLS
+    env_file:
+      - .env.prod
+    environment:
+      RAI_DATABASE_URL: postgresql://${POSTGRES_USER:-rai_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-responsibleai}
+      RAI_REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      RAI_LOG_JSON: "true"
+      RAI_AUTH_ENABLED: "true"
+      RAI_WORKERS: "${RAI_WORKERS:-4}"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8765/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - rai-internal
+      - rai-public
+
+  mcp-http:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: responsibleai:1.2.0
+    container_name: rai-mcp-http
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["responsibleai-mcp-http"]
+    ports:
+      - "127.0.0.1:8766:8766"
+    env_file:
+      - .env.prod
+    environment:
+      RAI_DATABASE_URL: postgresql://${POSTGRES_USER:-rai_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-responsibleai}
+      RAI_MCP_HTTP_HOST: "0.0.0.0"
+      RAI_MCP_HTTP_PORT: "8766"
+      RAI_MCP_LOG_LEVEL: "INFO"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8766/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - rai-internal
+      - rai-public
+
+networks:
+  rai-internal:
+    driver: bridge
+    internal: true   # postgres/redis unreachable from outside this compose network
+  rai-public:
+    driver: bridge
+
+volumes:
+  rai-postgres-data:
+    driver: local
+  rai-redis-data:
+    driver: local

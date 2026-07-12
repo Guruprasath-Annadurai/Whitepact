@@ -227,7 +227,7 @@ class TestSupportEndpoints:
     @pytest.mark.asyncio
     async def test_platform_status_version(self, client: AsyncClient) -> None:
         r = await client.get("/api/support/status")
-        assert r.json()["version"] == "1.1.0"
+        assert r.json()["version"] == "1.2.0"
 
     @pytest.mark.asyncio
     async def test_platform_status_operational(self, client: AsyncClient) -> None:

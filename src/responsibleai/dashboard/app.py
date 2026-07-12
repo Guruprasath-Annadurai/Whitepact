@@ -57,6 +57,7 @@ from responsibleai.db import (
     AuditRepository,
     CostRepository,
     EvalRepository,
+    McpUsageRepository,
     OrgRepository,
     SSORequiredError,
     TrustRepository,
@@ -75,7 +76,7 @@ from responsibleai.eval import (
 )
 from responsibleai.guardrails.engine import GuardrailsEngine
 from responsibleai.hallucination.detector import HallucinationDetector
-from responsibleai.mcp.licensing import plan_catalog
+from responsibleai.mcp.licensing import monthly_quota, plan_catalog
 from responsibleai.rbac import AuditEntry, OrgContext, Plan, Role, has_permission, role_from_str
 from responsibleai.redteam.simulator import RedTeamSimulator
 from responsibleai.trust.passport import PassportGenerator
@@ -131,6 +132,7 @@ _router: ModelRouter | None = None
 _trust_repo: TrustRepository | None = None
 _org_repo: OrgRepository | None = None
 _audit_repo: AuditRepository | None = None
+_mcp_usage_repo: McpUsageRepository | None = None
 _db_engine: DatabaseEngine | None = None
 _ws_manager: ConnectionManager = ConnectionManager()
 _webhook_manager: WebhookManager = WebhookManager()
@@ -173,7 +175,7 @@ async def _oidc_state_cleanup() -> None:
 async def lifespan(application: FastAPI):
     global _trust_engine, _passport_gen, _guardrails, _hallucination
     global _compliance, _cost_repo, _cost_analyzer, _router, _trust_repo
-    global _org_repo, _audit_repo, _db_engine
+    global _org_repo, _audit_repo, _db_engine, _mcp_usage_repo
     global _eval_repo, _comparator, _benchmark_runner, _dataset_scanner
     global _oidc_provider, _stripe_service
 
@@ -191,6 +193,7 @@ async def lifespan(application: FastAPI):
     _trust_repo   = TrustRepository(_db_engine, alert_threshold=settings.alert_threshold)
     _org_repo     = OrgRepository(_db_engine)
     _audit_repo   = AuditRepository(_db_engine)
+    _mcp_usage_repo = McpUsageRepository(_db_engine)
     _trust_engine = TrustScoreEngine()
     _passport_gen = PassportGenerator()
     _guardrails   = GuardrailsEngine()
@@ -241,7 +244,7 @@ async def lifespan(application: FastAPI):
     rl_backend   = "redis" if settings.redis_url else "memory"
     logger.info(
         "startup_complete",
-        version="1.1.0",
+        version="1.2.0",
         db_backend=db_backend,
         rate_limit_backend=rl_backend,
         otel=bool(settings.otel_endpoint),
@@ -579,6 +582,14 @@ async def root() -> HTMLResponse:
     return HTMLResponse(content=index.read_text())
 
 
+@app.get("/status", response_class=HTMLResponse, include_in_schema=False)
+async def status_page() -> HTMLResponse:
+    """Self-hosted status page stopgap — polls /api/support/status client-side.
+    Not a substitute for a public multi-region status page (statuspage.io etc)."""
+    page = _static_dir / "status.html"
+    return HTMLResponse(content=page.read_text())
+
+
 # ── Health & Ops ───────────────────────────────────────────────────────────────
 
 @app.get("/api/health", tags=["ops"])
@@ -842,6 +853,43 @@ async def create_portal_session(
         raise HTTPException(400, str(exc)) from exc
 
     return {"portal_url": url}
+
+
+@app.get("/api/v1/billing/usage/mcp", tags=["billing"])
+@limiter.limit("30/minute")
+async def get_mcp_usage(
+    request: Request,
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
+) -> dict[str, Any]:
+    """This org's hosted MCP tool call volume for the current billing month."""
+    if _mcp_usage_repo is None:
+        raise HTTPException(503, "MCP usage metering not initialised.")
+    if not _auth.org_id:
+        raise HTTPException(400, "MCP usage requires an org-scoped API key, not a legacy flat key.")
+    usage = await _ready(_mcp_usage_repo).usage_this_month(_auth.org_id)
+    quota = monthly_quota(_auth.plan)
+    return {
+        **usage,
+        "plan": _auth.plan.value,
+        "monthly_quota": quota,
+        "quota_remaining": (quota - usage["allowed_calls"]) if quota is not None else None,
+    }
+
+
+@app.get("/api/v1/billing/usage/mcp/top", tags=["billing"], include_in_schema=False)
+@limiter.limit("10/minute")
+async def get_mcp_usage_leaderboard(
+    request: Request,
+    days: int = Query(30, ge=1, le=365),
+    _auth: OrgContext = Depends(require_role(Role.OWNER)),
+) -> dict[str, Any]:
+    """Platform-wide MCP usage by org — founder/ops visibility, not customer-facing."""
+    if not (_auth.is_legacy and _auth.role == Role.OWNER):
+        raise HTTPException(403, "Usage leaderboard requires super-admin access")
+    if _mcp_usage_repo is None:
+        raise HTTPException(503, "MCP usage metering not initialised.")
+    rows = await _ready(_mcp_usage_repo).top_orgs_by_volume(days=days)
+    return {"days": days, "orgs": rows}
 
 
 @app.post("/api/v1/billing/webhook", tags=["billing"], include_in_schema=False)
@@ -1624,7 +1672,7 @@ async def platform_status() -> dict[str, Any]:
         db_ok = False
     return {
         "platform": "ResponsibleAI Governance Platform",
-        "version": "1.1.0",
+        "version": "1.2.0",
         "status": "operational" if db_ok else "degraded",
         "uptime_seconds": round(time.monotonic() - _START_TIME, 1),
         "timestamp": datetime.now(UTC).isoformat(),

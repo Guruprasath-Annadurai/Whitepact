@@ -28,16 +28,20 @@ import json
 import logging
 import os
 from contextvars import ContextVar
-from typing import Any
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
 
 import mcp.types as types
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 
-from responsibleai.mcp.licensing import is_allowed, upgrade_message
+from responsibleai.mcp.licensing import is_allowed, monthly_quota, quota_exceeded_message, upgrade_message
 from responsibleai.mcp.resources import RESOURCE_DEFS, dispatch_resource
 from responsibleai.mcp.tools import TOOL_DEFS, dispatch_tool
 from responsibleai.rbac.models import OrgContext, Plan
+
+if TYPE_CHECKING:
+    from responsibleai.db.mcp_usage_repository import McpUsageRepository
 
 _log_level = os.environ.get("RAI_MCP_LOG_LEVEL", "WARNING").upper()
 logging.basicConfig(level=getattr(logging, _log_level, logging.WARNING))
@@ -49,6 +53,14 @@ server: Server = Server("responsibleai-mcp")
 # (self-hosted) — absence of a context means unrestricted access, matching
 # the open-core design: self-hosted stdio is always free and full-featured.
 _current_org: ContextVar[OrgContext | None] = ContextVar("_current_org", default=None)
+_current_usage_repo: ContextVar["McpUsageRepository | None"] = ContextVar(
+    "_current_usage_repo", default=None
+)
+
+
+def _month_start_iso() -> str:
+    now = datetime.now(UTC)
+    return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
 
 
 @server.list_tools()
@@ -64,9 +76,41 @@ async def _call_tool(
     _logger.debug("tool_call name=%s args=%s", name, arguments)
 
     ctx = _current_org.get()
-    if ctx is not None and not is_allowed(name, ctx.plan):
-        error = {"error": "upgrade_required", "message": upgrade_message(name, ctx.plan)}
-        return [types.TextContent(type="text", text=json.dumps(error, indent=2))]
+    usage_repo = _current_usage_repo.get()
+
+    if ctx is not None:
+        if not is_allowed(name, ctx.plan):
+            if usage_repo is not None and ctx.org_id:
+                await usage_repo.record_call(ctx.org_id, name, ctx.plan.value, allowed=False)
+            error = {"error": "upgrade_required", "message": upgrade_message(name, ctx.plan)}
+            return [types.TextContent(type="text", text=json.dumps(error, indent=2))]
+
+        quota = monthly_quota(ctx.plan)
+        if quota == 0:
+            if usage_repo is not None and ctx.org_id:
+                await usage_repo.record_call(ctx.org_id, name, ctx.plan.value, allowed=False)
+            error = {
+                "error": "hosted_access_unavailable",
+                "message": (
+                    f"The {ctx.plan.value} plan does not include hosted MCP access. "
+                    "Use the free self-hosted stdio transport, or upgrade at "
+                    "https://responsibleai.dev/pricing."
+                ),
+            }
+            return [types.TextContent(type="text", text=json.dumps(error, indent=2))]
+
+        if quota is not None and usage_repo is not None and ctx.org_id:
+            used = await usage_repo.count_since(ctx.org_id, _month_start_iso())
+            if used >= quota:
+                await usage_repo.record_call(ctx.org_id, name, ctx.plan.value, allowed=False)
+                error = {
+                    "error": "quota_exceeded",
+                    "message": quota_exceeded_message(ctx.plan, used, quota),
+                }
+                return [types.TextContent(type="text", text=json.dumps(error, indent=2))]
+
+        if usage_repo is not None and ctx.org_id:
+            await usage_repo.record_call(ctx.org_id, name, ctx.plan.value, allowed=True)
 
     result = await dispatch_tool(name, arguments or {})
     return [types.TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
@@ -113,11 +157,12 @@ def _build_http_app() -> Any:
     from mcp.server.sse import SseServerTransport
 
     from responsibleai.dashboard.config import get_settings
-    from responsibleai.db import OrgRepository, create_engine
+    from responsibleai.db import McpUsageRepository, OrgRepository, create_engine
 
     settings = get_settings()
     _db_engine = create_engine(settings.effective_db_url)
     _org_repo = OrgRepository(_db_engine)
+    _usage_repo = McpUsageRepository(_db_engine)
     sse = SseServerTransport("/messages/")
 
     @asynccontextmanager
@@ -142,7 +187,8 @@ def _build_http_app() -> Any:
                 status_code=401,
             )
 
-        token = _current_org.set(ctx)
+        org_token = _current_org.set(ctx)
+        usage_token = _current_usage_repo.set(_usage_repo)
         try:
             async with sse.connect_sse(
                 request.scope, request.receive, request._send
@@ -150,7 +196,8 @@ def _build_http_app() -> Any:
                 init_options = server.create_initialization_options()
                 await server.run(read_stream, write_stream, init_options)
         finally:
-            _current_org.reset(token)
+            _current_org.reset(org_token)
+            _current_usage_repo.reset(usage_token)
         return JSONResponse({}, status_code=200)
 
     async def health(request: Request) -> JSONResponse:
