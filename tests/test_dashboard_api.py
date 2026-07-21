@@ -263,6 +263,17 @@ class TestSecurityHeaders:
         r = await client.get("/api/health")
         assert "x-response-time-ms" in r.headers
 
+    async def test_csp_header_present_and_scoped(self, client):
+        r = await client.get("/api/health")
+        csp = r.headers["content-security-policy"]
+        assert "default-src 'self'" in csp
+        assert "frame-ancestors 'none'" in csp
+        assert "object-src 'none'" in csp
+
+    async def test_hsts_header_present(self, client):
+        r = await client.get("/api/health")
+        assert "max-age=31536000" in r.headers["strict-transport-security"]
+
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
@@ -287,3 +298,106 @@ class TestConfig:
     def test_empty_api_keys(self):
         s = Settings(_env_file=None, api_keys=[])
         assert s.api_keys == []
+
+
+# ── Incidents ─────────────────────────────────────────────────────────────────
+
+class TestIncidentsCRUD:
+    async def test_create_incident_persists_and_round_trips(self, client):
+        r = await client.post("/api/incidents", json={
+            "incident_type": "pii_leak",
+            "severity": "high",
+            "model_name": "gpt-4",
+            "provider": "openai",
+            "description": "Email address leaked in a completion.",
+            "evidence": {"prompt_id": "abc123"},
+        })
+        assert r.status_code == 201
+        created = r.json()
+        assert created["incident_type"] == "pii_leak"
+        assert created["severity"] == "high"
+        assert created["status"] == "OPEN"
+        assert created["sla_resolution_hours"] == 4
+        assert created["evidence_keys"] == ["prompt_id"]
+
+        r2 = await client.get(f"/api/incidents/{created['incident_id']}")
+        assert r2.status_code == 200
+        assert r2.json()["description"] == "Email address leaked in a completion."
+
+    async def test_create_incident_defaults(self, client):
+        r = await client.post("/api/incidents", json={"description": "Something odd happened."})
+        assert r.status_code == 201
+        d = r.json()
+        assert d["incident_type"] == "other"
+        assert d["severity"] == "medium"
+        assert d["mitigated"] is False
+
+    async def test_create_incident_rejects_bad_severity(self, client):
+        r = await client.post("/api/incidents", json={
+            "severity": "apocalyptic", "description": "x",
+        })
+        assert r.status_code == 422
+
+    async def test_list_incidents_returns_created_ones(self, client):
+        await client.post("/api/incidents", json={"description": "listed incident"})
+        r = await client.get("/api/incidents")
+        assert r.status_code == 200
+        d = r.json()
+        assert any(i["description"] == "listed incident" for i in d["incidents"])
+
+    async def test_list_incidents_filters_by_severity(self, client):
+        await client.post("/api/incidents", json={"severity": "critical", "description": "crit one"})
+        r = await client.get("/api/incidents", params={"severity": "critical"})
+        assert r.status_code == 200
+        assert all(i["severity"] == "critical" for i in r.json()["incidents"])
+
+    async def test_get_unknown_incident_404s(self, client):
+        r = await client.get("/api/incidents/does-not-exist")
+        assert r.status_code == 404
+
+
+class TestAlertsWebhookBridge:
+    async def test_disabled_when_token_unconfigured(self, client):
+        r = await client.post("/api/alerts/webhook", json={"alerts": []})
+        assert r.status_code == 503
+
+    async def test_rejects_missing_bearer_token(self, client, monkeypatch):
+        from responsibleai.dashboard import app as app_module
+        monkeypatch.setattr(app_module.settings, "alerts_webhook_token", "expected-token")
+        r = await client.post("/api/alerts/webhook", json={"alerts": []})
+        assert r.status_code == 401
+
+    async def test_creates_incident_from_firing_alert(self, client, monkeypatch):
+        from responsibleai.dashboard import app as app_module
+        monkeypatch.setattr(app_module.settings, "alerts_webhook_token", "expected-token")
+
+        payload = {
+            "alerts": [
+                {
+                    "status": "firing",
+                    "labels": {"alertname": "RAIDriftAlertSpike", "severity": "warning"},
+                    "annotations": {"summary": "Drift alerts fired for gpt-4 (openai)"},
+                },
+                {
+                    "status": "resolved",
+                    "labels": {"alertname": "RAINoTraffic", "severity": "warning"},
+                    "annotations": {},
+                },
+            ],
+        }
+        r = await client.post(
+            "/api/alerts/webhook",
+            json=payload,
+            headers={"Authorization": "Bearer expected-token"},
+        )
+        assert r.status_code == 200
+        d = r.json()
+        assert len(d["incidents_created"]) == 1
+        assert d["alerts_skipped"] == 1
+
+        incident = await client.get(f"/api/incidents/{d['incidents_created'][0]}")
+        assert incident.status_code == 200
+        body = incident.json()
+        assert body["source"] == "alertmanager"
+        assert body["severity"] == "medium"  # Alertmanager "warning" maps to our "medium"
+        assert body["incident_type"] == "drift_alert"  # classified from "RAIDriftAlertSpike"

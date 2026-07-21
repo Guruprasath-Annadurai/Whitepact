@@ -288,6 +288,32 @@ class TestRaiHealth:
             assert status == "ok", f"Module {module} not ok"
 
 
+class TestRaiIncidentLog:
+    @pytest.mark.asyncio
+    async def test_builds_structured_record(self) -> None:
+        from responsibleai.mcp.tools import dispatch_tool
+        r = await dispatch_tool("rai_incident_log", {
+            "incident_type": "pii_leak", "severity": "critical",
+            "description": "SSN found in completion.",
+        })
+        assert r["incident_type"] == "pii_leak"
+        assert r["severity"] == "critical"
+        assert r["sla_resolution_hours"] == 1
+        assert r["status"] == "OPEN"
+        assert r["siem_event_type"] == "DATA_EXPOSURE"
+
+    @pytest.mark.asyncio
+    async def test_persist_instructions_point_at_real_endpoint(self) -> None:
+        """Regression check for the gap the 2026-07-21 tabletop drill found:
+        this field used to claim a POST /api/v1/incidents endpoint existed
+        when it didn't. It's real now (POST /api/incidents) — assert the
+        tool says so instead of pointing at a 404."""
+        from responsibleai.mcp.tools import dispatch_tool
+        r = await dispatch_tool("rai_incident_log", {"description": "test"})
+        assert "POST /api/incidents" in r["persist_instructions"]
+        assert "/api/v1/incidents" not in r["persist_instructions"]
+
+
 class TestUnknownTool:
     @pytest.mark.asyncio
     async def test_unknown_tool_returns_error(self) -> None:

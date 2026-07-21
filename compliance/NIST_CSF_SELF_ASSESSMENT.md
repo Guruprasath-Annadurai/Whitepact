@@ -24,7 +24,7 @@ Last reviewed: 2026-07-21 · Platform version: 1.2.0
 | GV.RR — Roles and responsibilities defined | Partial | Single maintainer holds all roles today (`SECURITY.md` contact). RBAC (`OWNER/ADMIN/ANALYST/VIEWER`) defines *customer-facing* roles precisely; internal maintainer role separation doesn't apply yet at current team size. |
 | GV.PO — Policy established and communicated | Defined | `SECURITY.md` (vulnerability disclosure), `ENTERPRISE_SECURITY.md` (controls posture), `SLA.md` (commitments), this document and the CAIQ self-assessment. |
 | GV.OV — Oversight of risk management | Not Implemented | No board/exec oversight function exists at current company stage (pre-funding, solo founder). Will need building before any formal certification (SOC2 requires demonstrable management oversight). |
-| GV.SC — Supply chain risk managed | Partial | Dependencies declared with version constraints; `pip-audit` now scans every CI run (see CAIQ Domain 15). No formal vendor risk assessment process for third-party services (Stripe, OIDC providers, cloud hosts) — informal today. |
+| GV.SC — Supply chain risk managed | Partial | Dependencies declared with version constraints; `pip-audit` now scans every CI run (see CAIQ Domain 15). Vendor risk assessment for third-party services now exists (`compliance/VENDOR_RISK_ASSESSMENT.md`, covering OCI, Stripe, customer-owned OIDC/LLM vendors) — still a one-time, opportunistic write-up rather than a scheduled recurring process, which the document itself states plainly. |
 
 ---
 
@@ -44,9 +44,9 @@ Last reviewed: 2026-07-21 · Platform version: 1.2.0
 |---|---|---|
 | PR.AA — Identity management, authentication, access control | Managed | RBAC with 4 strictly hierarchical roles enforced on every endpoint; OIDC SSO with enforceable SSO-only mode (`PUT /api/orgs/{id}/sso`) closing the static-key-backdoor gap; API keys stored as SHA-256 hashes only, revocable immediately. |
 | PR.AT — Awareness and training | Not Implemented | No formal security training program — not applicable at current team size (solo maintainer). Flagged for when a team exists, not glossed over. |
-| PR.DS — Data security | Partial | PII detection/redaction (Guardrails Engine) is strong. Encryption at rest is explicitly the deployer's responsibility (documented, not hidden); no field-level encryption. Multi-tenant isolation via `org_id` filtering on every governance data table. |
+| PR.DS — Data security | Partial | PII detection/redaction (Guardrails Engine) is strong. Encryption at rest is explicitly the deployer's responsibility (documented, not hidden). Opt-in field-level encryption now covers `audit_log.ip_address` (`RAI_FIELD_ENCRYPTION_KEY`) — the one standalone PII column — but not every column with free-text metadata. Multi-tenant isolation via `org_id` filtering on every governance data table. |
 | PR.PS — Platform security | Managed | Non-root containers, dropped capabilities, `readOnlyRootFilesystem` where applicable, explicit zero-downtime rollout strategy, PodDisruptionBudget, internal-only network isolation for Postgres/Redis in the reference compose stack. |
-| PR.IR — Technology infrastructure resilience | Defined | Redis+Postgres production stack, documented DR (RPO 24h/RTO 1-4h), backup/restore scripts. No automated failover between replicas — deployer's Kubernetes/cloud responsibility. |
+| PR.IR — Technology infrastructure resilience | Defined | Redis+Postgres production stack, documented DR (RPO 24h/RTO 1-4h), backup/restore scripts. `DatabaseEngine.init()` retries transient connection failures with backoff (up to 5 attempts, exponential) — real protection against the app crashing hard during a brief DB failover window at startup. **Still not automated replica failover**: promoting a replica to primary itself (Patroni, RDS/Cloud SQL Multi-AZ, streaming replication) remains the deployer's Kubernetes/cloud responsibility — no application code substitutes for that. |
 
 ---
 
@@ -55,10 +55,10 @@ Last reviewed: 2026-07-21 · Platform version: 1.2.0
 | Subcategory | Maturity | Evidence |
 |---|---|---|
 | DE.CM — Continuous monitoring | Defined | Prometheus metrics (`/metrics`), Grafana dashboard built against the metrics that actually exist (an earlier version queried metrics that didn't exist at all — caught and rebuilt), alert rules for error rate, trust score degradation, guardrail block spikes, drift, cost spikes, webhook failures. |
-| DE.AE — Adverse event analysis | Partial | Hash-chained audit trail (`GET /api/audit/verify`) detects tampering. No automated anomaly-detection/correlation layer beyond the Prometheus alert rules — a human still has to look at the dashboard or receive the alert. |
+| DE.AE — Adverse event analysis | Partial | Hash-chained audit trail (`GET /api/audit/verify`) detects tampering. No automated anomaly-detection/correlation layer beyond the Prometheus alert rules. A human no longer has to manually log what an alert caught, though — a firing alert now auto-creates a queryable `incidents` row via `POST /api/alerts/webhook` (see `grafana/prometheus/alertmanager.yml.example`); a human still has to look at the dashboard/incident and actually respond. |
 | DE.OC — Anomalies and events reported | Managed | `rai_incident_log` MCP tool produces structured, SIEM-ready incident records with severity classification and evidence hashing. |
 
-**Known gap, stated plainly:** no metric currently carries an `org_id` label — monitoring today is platform-wide, not per-tenant. A real limitation for multi-tenant observability, not yet built.
+**Resolved, stated plainly:** the governance metrics (trust score, cost, tokens, guardrail scans, drift alerts, webhook deliveries) now carry an `org_id` label, so per-tenant observability is possible — Prometheus/Grafana queries can filter or break down by org. Default alert rules and dashboard panels still show platform-wide totals by design (see `grafana/prometheus/alert-rules.yml`), since alerting on every individual tenant isn't yet needed at current scale. The tradeoff, disclosed rather than hidden: per-tenant labels multiply Prometheus series cardinality by org count — fine for today's scale, worth revisiting (e.g. dropping the label at the scrape-config relabeling stage) if a deployment grows to thousands of active orgs.
 
 ---
 

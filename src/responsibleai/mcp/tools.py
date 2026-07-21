@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import uuid
 from datetime import UTC, datetime
 from typing import Any
 
@@ -16,6 +14,7 @@ from responsibleai.eval.benchmarks import BenchmarkRunner
 from responsibleai.eval.models import BenchmarkSuite
 from responsibleai.guardrails.engine import GuardrailsEngine
 from responsibleai.hallucination.detector import HallucinationDetector
+from responsibleai.incidents.logic import build_incident_record
 from responsibleai.redteam.simulator import RedTeamSimulator
 from responsibleai.trust.passport import PassportGenerator
 from responsibleai.trust.score import TrustScore, TrustScoreEngine
@@ -1466,70 +1465,27 @@ async def _handle_pii_report(args: dict[str, Any]) -> dict[str, Any]:
 
 
 async def _handle_incident_log(args: dict[str, Any]) -> dict[str, Any]:
-    incident_id = str(uuid.uuid4())
-    now = datetime.now(UTC).isoformat()
-
-    incident_type = str(args.get("incident_type", "other"))
-    severity = str(args.get("severity", "medium"))
-    model_name = str(args.get("model_name", "unknown"))
-    provider = str(args.get("provider", "unknown"))
-    description = str(args.get("description", ""))
-    evidence: dict[str, Any] = args.get("evidence", {})
-    mitigated = bool(args.get("mitigated", False))
-
-    sla_hours = {"critical": 1, "high": 4, "medium": 24, "low": 72}.get(severity, 24)
-    siem_event_type = {
-        "pii_leak": "DATA_EXPOSURE",
-        "jailbreak_attempt": "SECURITY_VIOLATION",
-        "bias_trigger": "FAIRNESS_VIOLATION",
-        "hallucination": "RELIABILITY_INCIDENT",
-        "policy_violation": "POLICY_BREACH",
-        "cost_overrun": "FINANCIAL_ALERT",
-        "drift_alert": "MODEL_DEGRADATION",
-        "other": "AI_GOVERNANCE_INCIDENT",
-    }.get(incident_type, "AI_GOVERNANCE_INCIDENT")
-
-    evidence_hash = hashlib.sha256(
-        f"{incident_id}{incident_type}{description}".encode()
-    ).hexdigest()[:16]
-
-    return {
-        "incident_id": incident_id,
-        "created_at": now,
-        "incident_type": incident_type,
-        "severity": severity,
-        "siem_event_type": siem_event_type,
-        "model_name": model_name,
-        "provider": provider,
-        "description": description,
-        "mitigated": mitigated,
-        "evidence_hash": evidence_hash,
-        "evidence_keys": list(evidence.keys()),
-        "sla_resolution_hours": sla_hours,
-        "status": "MITIGATED" if mitigated else "OPEN",
-        "next_steps": (
-            "Escalate to security team and CAIO within 1 hour." if severity == "critical" else
-            "Assign to AI Risk Analyst for root cause analysis." if severity == "high" else
-            "Log in incident tracker and schedule review." if severity == "medium" else
-            "Track and include in next weekly governance report."
-        ),
-        "siem_payload": {
-            "event_type": siem_event_type,
-            "incident_id": incident_id,
-            "severity": severity.upper(),
-            "timestamp": now,
-            "model": f"{provider}/{model_name}",
-            "evidence_hash": evidence_hash,
-        },
-        "persist_instructions": (
-            "This incident record is ephemeral in MCP context — no server-side "
-            "persistence endpoint exists yet (tracked as a known gap; do not "
-            "assume a POST /api/incidents endpoint is live). Until one ships, "
-            "log this record yourself: attach it to your own incident tracker, "
-            "or follow compliance/INCIDENT_RESPONSE_RUNBOOK.md's Phase 1 "
-            "guidance for capturing incident records manually."
-        ),
-    }
+    record = build_incident_record(
+        incident_type=str(args.get("incident_type", "other")),
+        severity=str(args.get("severity", "medium")),
+        model_name=str(args.get("model_name", "unknown")),
+        provider=str(args.get("provider", "unknown")),
+        description=str(args.get("description", "")),
+        evidence=args.get("evidence", {}),
+        mitigated=bool(args.get("mitigated", False)),
+        source="mcp_tool",
+    )
+    record["persist_instructions"] = (
+        "This record is ephemeral in MCP context — the MCP server has no "
+        "direct database connection of its own. To persist it, POST this "
+        "record (or just incident_type/severity/model_name/provider/"
+        "description/evidence/mitigated) to POST /api/incidents on the "
+        "ResponsibleAI REST server, which is a real, wired endpoint backed "
+        "by the incidents table (responsibleai.db.incident_repository). "
+        "See compliance/INCIDENT_RESPONSE_RUNBOOK.md's Phase 1 for when to "
+        "do this."
+    )
+    return record
 
 
 async def _handle_eu_ai_act_classify(args: dict[str, Any]) -> dict[str, Any]:

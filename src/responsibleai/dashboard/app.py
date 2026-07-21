@@ -58,6 +58,7 @@ from responsibleai.db import (
     AuditRepository,
     CostRepository,
     EvalRepository,
+    IncidentRepository,
     McpUsageRepository,
     OrgRepository,
     SSORequiredError,
@@ -78,6 +79,7 @@ from responsibleai.eval import (
 )
 from responsibleai.guardrails.engine import GuardrailsEngine
 from responsibleai.hallucination.detector import HallucinationDetector
+from responsibleai.incidents.logic import build_incident_record
 from responsibleai.mcp.licensing import monthly_quota, plan_catalog
 from responsibleai.rbac import AuditEntry, OrgContext, Plan, Role, has_permission, role_from_str
 from responsibleai.redteam.simulator import RedTeamSimulator
@@ -134,6 +136,7 @@ _router: ModelRouter | None = None
 _trust_repo: TrustRepository | None = None
 _org_repo: OrgRepository | None = None
 _audit_repo: AuditRepository | None = None
+_incident_repo: IncidentRepository | None = None
 _mcp_usage_repo: McpUsageRepository | None = None
 _db_engine: DatabaseEngine | None = None
 _ws_manager: ConnectionManager = ConnectionManager()
@@ -178,7 +181,7 @@ async def _oidc_state_cleanup() -> None:
 async def lifespan(application: FastAPI):
     global _trust_engine, _passport_gen, _guardrails, _hallucination
     global _compliance, _cost_repo, _cost_analyzer, _router, _trust_repo
-    global _org_repo, _audit_repo, _db_engine, _mcp_usage_repo
+    global _org_repo, _audit_repo, _incident_repo, _db_engine, _mcp_usage_repo
     global _eval_repo, _comparator, _benchmark_runner, _dataset_scanner
     global _oidc_provider, _stripe_service, _plan_rate_limiter
 
@@ -210,6 +213,7 @@ async def lifespan(application: FastAPI):
     _trust_repo   = TrustRepository(_db_engine, alert_threshold=settings.alert_threshold)
     _org_repo     = OrgRepository(_db_engine)
     _audit_repo   = AuditRepository(_db_engine)
+    _incident_repo = IncidentRepository(_db_engine)
     _mcp_usage_repo = McpUsageRepository(_db_engine)
     _trust_engine = TrustScoreEngine()
     _passport_gen = PassportGenerator()
@@ -539,6 +543,19 @@ class RecordUsageRequest(BaseModel):
     output_tokens: int = Field(..., ge=0, le=10_000_000)
     team: str = Field("default", max_length=100)
     application: str = Field("default", max_length=100)
+
+
+class IncidentCreateRequest(BaseModel):
+    incident_type: str = Field(
+        "other",
+        pattern="^(pii_leak|jailbreak_attempt|bias_trigger|hallucination|policy_violation|cost_overrun|drift_alert|other)$",
+    )
+    severity: str = Field("medium", pattern="^(critical|high|medium|low)$")
+    model_name: str = Field("unknown", max_length=100)
+    provider: str = Field("unknown", max_length=100)
+    description: str = Field(..., min_length=1, max_length=5000)
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    mitigated: bool = False
 
 
 class WebhookCreateRequest(BaseModel):
@@ -1163,6 +1180,156 @@ async def query_audit_log(
     }
 
 
+# ── Incidents ──────────────────────────────────────────────────────────────────
+# Real, wired persistence for governance incident records — closes the gap the
+# 2026-07-21 tabletop drill found: rai_incident_log's MCP output used to be
+# ephemeral with no server-side endpoint to send it to. See
+# compliance/TABLETOP_EXERCISE_2026-07-21.md and INCIDENT_RESPONSE_RUNBOOK.md.
+
+# Alertmanager sends "critical" | "warning" | "info" (or whatever a deployer's
+# alert rules set) — mapped onto this platform's four-tier incident severity
+# scale (see compliance/INCIDENT_RESPONSE_RUNBOOK.md's severity table).
+_ALERTMANAGER_SEVERITY_MAP = {
+    "critical": "critical",
+    "warning": "medium",
+    "info": "low",
+    "page": "critical",
+}
+
+
+def _incident_type_from_alertname(alertname: str) -> str:
+    """Best-effort classification from Prometheus alert rule names (see
+    grafana/prometheus/alert-rules.yml) onto rai_incident_log's incident_type
+    enum. Falls back to "other" rather than guessing wrong."""
+    name = alertname.lower()
+    if "drift" in name:
+        return "drift_alert"
+    if "guardrail" in name or "pii" in name:
+        return "policy_violation"
+    if "cost" in name or "budget" in name or "spend" in name:
+        return "cost_overrun"
+    return "other"
+
+
+@app.post("/api/incidents", tags=["incidents"], status_code=201)
+@limiter.limit("60/minute")
+async def create_incident(
+    request: Request,
+    req: IncidentCreateRequest,
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
+) -> dict[str, Any]:
+    record = build_incident_record(
+        incident_type=req.incident_type,
+        severity=req.severity,
+        model_name=req.model_name,
+        provider=req.provider,
+        description=req.description,
+        evidence=req.evidence,
+        mitigated=req.mitigated,
+        source="manual",
+    )
+    stored = await _ready(_incident_repo).create(record, org_id=_auth.org_id)
+    logger.info(
+        "incident_created", incident_id=stored["incident_id"],
+        severity=stored["severity"], incident_type=stored["incident_type"],
+        org_id=_auth.org_id,
+    )
+    return stored
+
+
+@app.get("/api/incidents", tags=["incidents"])
+@limiter.limit("60/minute")
+async def list_incidents(
+    request: Request,
+    severity: str | None = Query(default=None),
+    status: str | None = Query(default=None),
+    days: int = Query(default=90, ge=1, le=365),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    org_id: str | None = Query(default=None, description="Cross-org filter (super-admin only)"),
+    _auth: OrgContext = Depends(require_role(Role.VIEWER)),
+) -> dict[str, Any]:
+    scoped_org_id: str | None
+    if _auth.org_id is not None:
+        scoped_org_id = _auth.org_id
+    elif _auth.is_legacy and _auth.role == Role.OWNER:
+        scoped_org_id = org_id
+    else:
+        scoped_org_id = None
+    incidents_list = await _ready(_incident_repo).list(
+        org_id=scoped_org_id, severity=severity, status=status,
+        days=days, limit=limit, offset=offset,
+    )
+    return {"incidents": incidents_list, "limit": limit, "offset": offset}
+
+
+@app.get("/api/incidents/{incident_id}", tags=["incidents"])
+@limiter.limit("120/minute")
+async def get_incident(
+    request: Request,
+    incident_id: str,
+    _auth: OrgContext = Depends(require_role(Role.VIEWER)),
+) -> dict[str, Any]:
+    record = await _ready(_incident_repo).get(incident_id)
+    if record is None:
+        raise HTTPException(404, "Incident not found.")
+    is_super_admin = _auth.is_legacy and _auth.role == Role.OWNER
+    if not is_super_admin and record["org_id"] is not None and record["org_id"] != _auth.org_id:
+        raise HTTPException(404, "Incident not found.")
+    return record
+
+
+@app.post("/api/alerts/webhook", tags=["incidents"], include_in_schema=False)
+async def alerts_webhook(request: Request) -> dict[str, Any]:
+    """Prometheus Alertmanager calls this directly — configure a
+    `webhook_configs` receiver pointing here with
+    `http_config.authorization.credentials` set to RAI_ALERTS_WEBHOOK_TOKEN.
+    Verified by bearer token, not by org-scoped API key, since Alertmanager
+    has no concept of an org."""
+    if not settings.alerts_webhook_token:
+        raise HTTPException(503, "Alertmanager webhook bridge is not configured on this server.")
+
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header != f"Bearer {settings.alerts_webhook_token}":
+        raise HTTPException(401, "Missing or invalid bearer token.")
+
+    payload = await request.json()
+    alerts = payload.get("alerts", [])
+    created: list[str] = []
+    skipped = 0
+
+    for alert in alerts:
+        if alert.get("status") != "firing":
+            skipped += 1
+            continue
+        labels = alert.get("labels", {})
+        annotations = alert.get("annotations", {})
+        alertname = str(labels.get("alertname", "UnknownAlert"))
+        severity = _ALERTMANAGER_SEVERITY_MAP.get(str(labels.get("severity", "")).lower(), "medium")
+        description = str(
+            annotations.get("description") or annotations.get("summary") or alertname
+        )[:5000]
+
+        record = build_incident_record(
+            incident_type=_incident_type_from_alertname(alertname),
+            severity=severity,
+            model_name=str(labels.get("model", "unknown")),
+            provider=str(labels.get("provider", "unknown")),
+            description=f"[{alertname}] {description}",
+            evidence={"labels": labels, "annotations": annotations},
+            mitigated=False,
+            source="alertmanager",
+        )
+        stored = await _ready(_incident_repo).create(record, org_id=None, raw_payload=alert)
+        created.append(stored["incident_id"])
+        logger.info(
+            "incident_created_from_alert", incident_id=stored["incident_id"],
+            alertname=alertname, severity=severity,
+        )
+
+    return {"received": True, "incidents_created": created, "alerts_skipped": skipped}
+
+
 # ── WebSocket live dashboard ───────────────────────────────────────────────────
 
 @app.websocket("/ws/dashboard")
@@ -1301,7 +1468,7 @@ async def evaluate_model(
     if req.record_drift:
         drift_alert = await _ready(_trust_repo).record(req.model_name, req.provider, score, org_id=_auth.org_id)
 
-    observe_trust_score(req.model_name, req.provider, score.overall)
+    observe_trust_score(req.model_name, req.provider, score.overall, org_id=_auth.org_id)
     record_evaluation(req.model_name, req.provider, score.overall, score.grade)
 
     await _ws_manager.broadcast({
@@ -1314,7 +1481,7 @@ async def evaluate_model(
     })
 
     if drift_alert:
-        observe_drift_alert(drift_alert.get("severity", "LOW"))
+        observe_drift_alert(drift_alert.get("severity", "LOW"), org_id=_auth.org_id)
         deliveries = await _webhook_manager.fire(
             WebhookEvent.DRIFT_ALERT,
             {"model": req.model_name, "provider": req.provider,
@@ -1322,7 +1489,7 @@ async def evaluate_model(
              "score": score.overall},
         )
         for d in deliveries:
-            observe_webhook_delivery(WebhookEvent.DRIFT_ALERT.value, d.success)
+            observe_webhook_delivery(WebhookEvent.DRIFT_ALERT.value, d.success, org_id=_auth.org_id)
         await _ws_manager.broadcast({
             "type": "drift_alert",
             "data": {**drift_alert, "model": req.model_name, "provider": req.provider},
@@ -1380,7 +1547,7 @@ async def scan_text(
 ) -> dict[str, Any]:
     result = _ready(_guardrails).scan(req.text)
     blocked = result.is_blocked
-    observe_guardrail(blocked)
+    observe_guardrail(blocked, org_id=_auth.org_id)
     record_guardrail_scan(blocked, len(result.pii_findings))
 
     if blocked:
@@ -1394,7 +1561,7 @@ async def scan_text(
             {"pii_count": len(result.pii_findings), "block_reasons": result.block_reasons},
         )
         for d in deliveries:
-            observe_webhook_delivery(WebhookEvent.GUARDRAIL_TRIGGERED.value, d.success)
+            observe_webhook_delivery(WebhookEvent.GUARDRAIL_TRIGGERED.value, d.success, org_id=_auth.org_id)
 
     return {
         "is_blocked": blocked,
@@ -1449,7 +1616,7 @@ async def record_usage(
         org_id=_auth.org_id,
     )
     cost_record = await _ready(_cost_repo).record(usage)
-    observe_cost(req.model, req.provider, cost_record.total_cost, req.input_tokens, req.output_tokens)
+    observe_cost(req.model, req.provider, cost_record.total_cost, req.input_tokens, req.output_tokens, org_id=_auth.org_id)
     record_cost(req.provider, req.model, cost_record.total_cost, req.input_tokens + req.output_tokens)
 
     await _ws_manager.broadcast({
@@ -1469,7 +1636,7 @@ async def record_usage(
              "overage_usd": round(budget.total_spent_usd - budget.monthly_limit_usd, 4)},
         )
         for d in deliveries:
-            observe_webhook_delivery(WebhookEvent.BUDGET_EXCEEDED.value, d.success)
+            observe_webhook_delivery(WebhookEvent.BUDGET_EXCEEDED.value, d.success, org_id=_auth.org_id)
 
     return cost_record.to_dict()
 

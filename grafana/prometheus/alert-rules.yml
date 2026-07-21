@@ -2,9 +2,14 @@
 # actually exported by src/responsibleai/dashboard/prometheus.py. Load via
 # Prometheus's `rule_files` config, or import into Grafana Alerting/Mimir.
 #
-# None of these are org-scoped — the metrics themselves have no org_id
-# label yet (see grafana/dashboards/rai-overview.json's description for
-# why). These alert on platform-wide behavior.
+# The governance metrics (rai_trust_score, rai_cost_usd_total,
+# rai_guardrail_scans_total, rai_drift_alerts_total,
+# rai_webhook_deliveries_total) now carry an org_id label — see
+# grafana/dashboards/rai-overview.json's description for the cardinality
+# tradeoff that comes with it. The rules below are deliberately kept
+# platform-wide (summed across org_id) since alerting on every individual
+# tenant's error rate would be noisy at solo/small-team operational
+# capacity; add per-org rules here if/when a customer needs one.
 
 groups:
   - name: responsibleai_availability

@@ -54,6 +54,8 @@ class PlanRateLimiter:
         self._local: dict[str, deque[float]] = {}
 
     async def _get_redis(self) -> Redis:
+        # Only called from check() after confirming self._redis_url is set.
+        assert self._redis_url is not None
         if self._redis is None:
             import redis.asyncio as redis_asyncio
 

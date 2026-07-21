@@ -178,6 +178,17 @@ class Settings(BaseSettings):
         description="Redirect URL after cancelled Stripe checkout.",
     )
 
+    # Alertmanager → incident bridge (optional — leave unset to disable)
+    alerts_webhook_token: str | None = Field(
+        default=None,
+        description=(
+            "Shared-secret bearer token Prometheus Alertmanager must present "
+            "(via webhook_configs' http_config.authorization) to "
+            "POST /api/alerts/webhook. Unset = the endpoint returns 503, "
+            "same pattern as Stripe billing being disabled until configured."
+        ),
+    )
+
     # Server
     host: str = Field(default="127.0.0.1")
     port: int = Field(default=8765, ge=1, le=65535)

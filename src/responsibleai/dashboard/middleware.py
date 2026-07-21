@@ -14,6 +14,31 @@ from responsibleai.dashboard.logging_config import get_logger, set_request_id
 
 logger = get_logger("middleware")
 
+# The dashboard's static pages (static/index.html etc.) load Tailwind and
+# Chart.js from CDN and use inline <style>/<script> blocks plus onclick=
+# attribute handlers rather than a build step — so script-src/style-src
+# need 'unsafe-inline' until that markup is refactored to addEventListener
+# with nonces. Documented here rather than silently narrowed later: this
+# CSP still meaningfully restricts framing, object/embed, and outbound
+# connections even with that relaxation.
+_CONTENT_SECURITY_POLICY = "; ".join([
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net",
+    "style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com",
+    "img-src 'self' data:",
+    "font-src 'self' data:",
+    "connect-src 'self'",
+    "object-src 'none'",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+])
+
+# Safe to set at the application layer even though TLS termination is the
+# deployer's job (DEPLOYMENT.md's nginx config): browsers ignore
+# Strict-Transport-Security on plain-HTTP responses per spec, so this is a
+# no-op when accessed directly over HTTP and a real defense-in-depth layer
+# once a proxy terminates TLS in front of it.
 _SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
@@ -21,6 +46,8 @@ _SECURITY_HEADERS = {
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Cache-Control": "no-store",
     "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
+    "Content-Security-Policy": _CONTENT_SECURITY_POLICY,
+    "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
 }
 
 

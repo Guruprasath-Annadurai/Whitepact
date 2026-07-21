@@ -17,7 +17,7 @@
     {"type": "panel", "id": "gauge", "name": "Gauge", "version": ""}
   ],
   "annotations": {"list": []},
-  "description": "ResponsibleAI Governance Platform — built against the metrics actually exported by dashboard/prometheus.py. Every query here maps to a real Counter/Gauge in that module; none are aspirational. Note: metrics are NOT currently org-scoped (no org_id label exists on any of them) — this dashboard shows platform-wide totals, not per-tenant breakdowns. Multi-tenant metric labeling is a known gap, not a hidden one.",
+  "description": "ResponsibleAI Governance Platform — built against the metrics actually exported by dashboard/prometheus.py. Every query here maps to a real Counter/Gauge in that module; none are aspirational. Note: the governance metrics (trust score, cost, tokens, guardrail scans, drift alerts, webhook deliveries) now carry an org_id label, so a per-tenant breakdown is possible by adding an org_id filter/legend to any panel below — this dashboard's panels still show platform-wide totals (summed across org_id) by default. Per-tenant labeling trades off against Prometheus series cardinality at very large org counts; see the comment in dashboard/prometheus.py for the tradeoff and what to watch.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,

@@ -1,0 +1,39 @@
+# Reference Alertmanager config wiring alert-rules.yml's firing alerts into
+# ResponsibleAI's own incident tracker via POST /api/alerts/webhook.
+#
+# This closes a gap the 2026-07-21 tabletop drill found directly: alerts
+# fired, humans looked at Grafana, but nothing created a structured,
+# queryable incident record automatically. See
+# compliance/TABLETOP_EXERCISE_2026-07-21.md and
+# compliance/INCIDENT_RESPONSE_RUNBOOK.md's "Detection sources" table.
+#
+# Setup:
+#   1. Set RAI_ALERTS_WEBHOOK_TOKEN to a random secret on the ResponsibleAI
+#      server (the endpoint 503s until this is set — same pattern as Stripe
+#      billing being disabled until RAI_STRIPE_SECRET_KEY is set).
+#   2. Put the same value below.
+#   3. Point Prometheus's `alerting.alertmanagers` config at this
+#      Alertmanager instance, and load alert-rules.yml via `rule_files`.
+#
+# This is deliberately a single, platform-wide receiver — it does not
+# attempt per-org routing, since the alerts themselves aren't org-scoped
+# (see alert-rules.yml's own comment on that tradeoff). Incidents created
+# this way have org_id=None; use `GET /api/incidents` as a super-admin to
+# see them alongside manually/MCP-relayed ones.
+
+route:
+  receiver: responsibleai-incident-bridge
+  group_by: ["alertname"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: responsibleai-incident-bridge
+    webhook_configs:
+      - url: "https://your-responsibleai-host/api/alerts/webhook"
+        send_resolved: true  # resolved alerts are received and skipped, not ignored outright — see alerts_skipped in the response
+        http_config:
+          authorization:
+            type: Bearer
+            credentials: "REPLACE_WITH_RAI_ALERTS_WEBHOOK_TOKEN_VALUE"

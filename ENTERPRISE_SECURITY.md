@@ -28,7 +28,7 @@ self-hosted software and worth being explicit about:
 
 **Encryption in transit:** TLS termination is the deployer's responsibility (reverse proxy / load balancer / ingress). The application itself speaks plain HTTP — see `DEPLOYMENT.md` for the recommended nginx TLS config.
 
-**Gap, stated honestly:** there is no field-level or transparent database encryption built into the application (no SQLCipher, no pgcrypto column encryption). For customers who require this as a hard requirement rather than infra-level disk encryption, this is not yet supported — flag it during evaluation rather than discovering it in production.
+**Partially resolved, stated honestly:** `audit_log.ip_address` — the platform's one standalone PII field that isn't tied to your own LLM-provider account or Stripe billing relationship — now supports opt-in field-level encryption (Fernet, AES-128-CBC + HMAC) via `RAI_FIELD_ENCRYPTION_KEY`, independent of whatever disk-level encryption your database host provides. Off by default so existing installs aren't broken by a new required key; see `.env.example`. This is not transparent database encryption (no SQLCipher, no pgcrypto column encryption across every column) — it covers the one column that's actually PII today. Other columns (`metadata` free-text fields on `token_usage`/`trust_scores`) aren't encrypted; flag it during evaluation if your data model puts sensitive values there.
 
 ---
 

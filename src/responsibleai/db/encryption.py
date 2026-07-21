@@ -1,0 +1,96 @@
+"""Opt-in field-level encryption for individual PII columns.
+
+Encryption at rest for the *whole database* is the deployer's
+responsibility (see `ENTERPRISE_SECURITY.md`'s "Encryption at rest"
+section) — disk/volume encryption, not something the application can
+retrofit onto an existing Postgres/SQLite install. This module covers a
+narrower, real gap: encrypting one specific column's *value* so it's
+unreadable even to someone with raw table access but no application key
+(a stolen backup file, a misconfigured read replica, a DBA who shouldn't
+see raw IPs).
+
+Design choices, stated plainly:
+- Opt-in via `RAI_FIELD_ENCRYPTION_KEY`. Unset by default so existing
+  self-hosted installs aren't broken by a new required env var — this
+  mirrors how `RAI_OIDC_CLIENT_SECRET` etc. are optional until a
+  deployer configures SSO. When unset, `EncryptedString` is a
+  transparent passthrough (plaintext in, plaintext out) and a decrypt
+  failure is impossible because nothing was ever encrypted.
+- Fernet (symmetric, authenticated encryption — AES-128-CBC + HMAC)
+  rather than a bespoke scheme. It's the standard "encrypt a string
+  value with an app-held key" primitive in the `cryptography` package,
+  already a transitive dependency via `PyJWT[crypto]`.
+- Ciphertext is base64 text, so it's stored as `Text`, not a fixed-width
+  `String` — see migration 0005 for the `audit_log.ip_address` widening
+  this required.
+- Not applied to `audit_log`'s hash-chain fields: `_compute_entry_hash`
+  in `audit_repository.py` never includes `ip_address` in its hash
+  material, so encrypting it here has zero interaction with tamper
+  detection — verified before wiring this up, not assumed.
+"""
+
+from __future__ import annotations
+
+import os
+
+from cryptography.fernet import Fernet, InvalidToken
+from sqlalchemy import Text
+from sqlalchemy.types import TypeDecorator
+
+_ENV_VAR = "RAI_FIELD_ENCRYPTION_KEY"
+
+
+def _load_fernet() -> Fernet | None:
+    """Read the encryption key from the environment, once per column type.
+
+    Returns None (passthrough mode) if the env var is unset. Raises at
+    import/table-definition time if it's set but malformed — better to
+    fail loudly at startup than silently store unencrypted data because
+    of a typo'd key.
+    """
+    raw = os.environ.get(_ENV_VAR)
+    if not raw:
+        return None
+    try:
+        return Fernet(raw.encode())
+    except (ValueError, TypeError) as exc:
+        raise ValueError(
+            f"{_ENV_VAR} is set but is not a valid Fernet key. Generate one with: "
+            "python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+        ) from exc
+
+
+class EncryptedString(TypeDecorator):
+    """A Text column that transparently encrypts/decrypts its value.
+
+    No-op passthrough when `RAI_FIELD_ENCRYPTION_KEY` is unset, so this
+    is safe to apply to a column in an existing deployment without
+    forcing encryption on immediately.
+    """
+
+    impl = Text
+    cache_ok = True
+
+    def process_bind_param(self, value: str | None, dialect) -> str | None:  # noqa: ANN001
+        if value is None:
+            return None
+        fernet = _load_fernet()
+        if fernet is None:
+            return value
+        # Fernet tokens are already URL-safe base64 text.
+        return fernet.encrypt(value.encode()).decode()
+
+    def process_result_value(self, value: str | None, dialect) -> str | None:  # noqa: ANN001
+        if value is None:
+            return None
+        fernet = _load_fernet()
+        if fernet is None:
+            return value
+        try:
+            return fernet.decrypt(value.encode()).decode()
+        except (InvalidToken, ValueError):
+            # Value was written before encryption was enabled (or the key
+            # rotated) — return it as-is rather than crashing the request;
+            # this is stored plaintext from before the feature was turned
+            # on, not corrupted data.
+            return value

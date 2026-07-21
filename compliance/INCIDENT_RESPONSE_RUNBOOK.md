@@ -42,17 +42,18 @@ a team does, not to imply a team exists now.
 
 | Source | What it catches |
 |---|---|
-| Prometheus alert rules (`grafana/prometheus/alert-rules.yml`) | Error rate spikes, guardrail block-rate anomalies, trust score degradation, drift alerts, webhook failure spikes |
+| Prometheus alert rules (`grafana/prometheus/alert-rules.yml`) | Error rate spikes, guardrail block-rate anomalies, trust score degradation, drift alerts, webhook failure spikes. **Auto-bridged**: configure Alertmanager per `grafana/prometheus/alertmanager.yml.example` and a firing alert creates a real `incidents` table row via `POST /api/alerts/webhook`, no human step required to get it logged (a human still triages/responds — see Phase 1 below). |
 | `GET /api/audit/verify` | Tampering with the audit log — a broken hash chain link is itself an incident, not just a data-integrity check |
 | `pip-audit` CI findings (`.github/workflows/ci.yml`) | Newly disclosed vulnerabilities in dependencies |
 | External vulnerability report (`SECURITY.md` inbox) | Anything a third party finds and discloses responsibly |
 | Customer report | A customer notices something wrong first — treat this as at least as credible as internal detection, don't dismiss it pending "our own confirmation" before starting Phase 1 |
 | Manual observation | Anything caught by chance during normal work — log it the same way as an automated detection, don't let it go undocumented because it wasn't "official" |
 
-None of these sources auto-create an incident record today — detection
-always requires a human to recognize it as one and start Phase 1 below.
-There is no automated bridge from a Prometheus alert to an incident ticket
-yet; that's a real gap, not hidden.
+Prometheus alerts now auto-create an incident record via the Alertmanager
+bridge above; every other source still requires a human to recognize it as
+one and start Phase 1 below. Auto-created records still need a human to
+triage, contain, and resolve — the bridge closes the "nothing got logged"
+gap, not the "someone has to actually respond" step.
 
 ---
 
@@ -81,12 +82,12 @@ much lower than under-reacting to what's actually a P1.
    starts at detection, not at confirmation.
 2. Classify severity using the table above.
 3. **Create an incident record via the `rai_incident_log` MCP tool — every
-   time, even for a P3/P4 that turns out to be a non-issue.** No server-
-   side persistence endpoint exists yet (tracked as a known gap; the
-   tool's own `persist_instructions` field says so explicitly rather than
-   pointing at a URL that 404s), so capture the returned record yourself
-   — paste it into a tracked note, ticket, or file. **Caught by this
-   runbook's own tabletop drill**: the real `nltk` PYSEC-2026-597 finding
+   time, even for a P3/P4 that turns out to be a non-issue.** The tool's
+   output is ephemeral in MCP context (the MCP server has no direct DB
+   connection), but `POST /api/incidents` is now a real, wired endpoint —
+   POST the returned record there to persist it into the queryable
+   `incidents` table, per the tool's own `persist_instructions` field.
+   **Caught by this runbook's own tabletop drill**: the real `nltk` PYSEC-2026-597 finding
    (the P3 example in the table above) was triaged and resolved without
    ever creating one of these records. Documenting the decision in a CI
    comment was good; skipping the incident record meant there's no
@@ -230,6 +231,10 @@ Within a week of resolution (not "eventually"):
   question, tracked in `compliance/DPA_ATTORNEY_SCOPE_BRIEF.md`.
 - Multi-person escalation paths — not applicable at current team size;
   revisit the moment a second person joins with any operational access.
-- Automated bridging from detection (Prometheus alerts) to incident
-  ticket creation — currently manual; a real gap worth closing before
-  relying on this runbook under real production load.
+- ~~Automated bridging from detection (Prometheus alerts) to incident
+  ticket creation~~ — resolved: `POST /api/alerts/webhook` +
+  `grafana/prometheus/alertmanager.yml.example` auto-create an `incidents`
+  row for every firing alert. Not yet tested against a real Alertmanager
+  instance under production load, only against the test suite's synthetic
+  payloads — worth a live check the first time Alertmanager is actually
+  deployed against this.
