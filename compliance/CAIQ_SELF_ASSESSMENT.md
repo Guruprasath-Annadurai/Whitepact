@@ -174,7 +174,7 @@ Last reviewed: 2026-07-21 · Platform version: 1.2.0
 
 | Question | Answer |
 |---|---|
-| Is there a sub-processor list? | For self-hosted deployments: not applicable (you choose your own sub-processors — cloud provider, LLM providers, Stripe if you enable billing). For a future ResponsibleAI-operated hosted tier: doesn't exist yet, since no such tier is live. Will be published before one is sold. |
+| Is there a sub-processor list? | Yes — `SLA.md`'s "Sub-processors" section (summary) and `compliance/DPA_TEMPLATE.md` Section 2 (full detail: purpose, data processed, location, certifications for each). Currently lists Oracle Cloud Infrastructure (reference hosting), Stripe (billing, if enabled), and the customer's own OIDC/LLM provider choices. For self-hosted deployments where the customer runs their own infrastructure entirely, most of this doesn't apply — the customer *is* the infrastructure choice. This is not the same as a ResponsibleAI-operated hosted SaaS tier being live for sale, which it still isn't. |
 | Are third-party dependencies tracked and scanned? | Dependencies are declared in `pyproject.toml` with version constraints. `pip-audit` runs on every CI build (`.github/workflows/ci.yml`) and scans the full resolved dependency tree. One known vulnerability is currently tracked: `nltk` PYSEC-2026-597 (path traversal in `nltk.data.load()`/`find()` via percent-encoded traversal sequences) — reviewed and confirmed non-exploitable here, since this codebase's only nltk call passes a hardcoded literal resource name (`vader_lexicon`), never attacker-controlled input. Explicitly ignored in CI with that rationale documented inline, not silently suppressed. Dependabot is not configured (no automatic PR-based update flow yet — real remaining gap). |
 | Is there an SBOM (Software Bill of Materials)? | Not yet generated. Given the project is open source with a fully inspectable dependency tree, this is lower priority than for closed-source vendors, but still a gap for buyers who require a formal SBOM artifact. |
 
@@ -213,6 +213,7 @@ Last reviewed: 2026-07-21 · Platform version: 1.2.0
 | Formal incident response runbook | Not started | Engineering/process time |
 | Third-party penetration test | Not started | **Funding** — typically $5-15K even scoped narrow |
 | SOC2 Type II | Not started | **Funding** — $10-30K+/yr tooling plus auditor fees, 6-12mo timeline |
-| Sub-processor list (hosted tier) | N/A | No hosted tier exists yet |
+| Sub-processor list | ✅ Done — `SLA.md` + `compliance/DPA_TEMPLATE.md` | — |
+| DPA — attorney reviewed, executable | Draft only, not reviewed by counsel | **Funding** — legal review cost |
 
 This document will be updated as items move off this list — not left stale as marketing collateral.

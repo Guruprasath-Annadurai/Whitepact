@@ -66,6 +66,23 @@ Scheduled maintenance windows (max 4 hours/month, announced 48h in advance) are 
 
 ---
 
+## Sub-processors
+
+| Sub-processor | Purpose | Certifications |
+|---|---|---|
+| Oracle Cloud Infrastructure (OCI) | Infrastructure hosting for the reference deployment (compute, block storage, networking) — see `compliance/CAIQ_SELF_ASSESSMENT.md` Domain 6 for exact region and capacity details | Active SOC 2 attestation (renewed 2026-05-21) and ISO/IEC 27001 certification (renewed 2026-01-08), both verifiable at the [CSA STAR registry](https://cloudsecurityalliance.org/star/registry/oracle-corporation/services/oracle-cloud-infrastructure) |
+| Stripe, Inc. | Payment processing and subscription billing (PRO/ENTERPRISE plans only) — no governance data reaches Stripe, billing metadata only | Stripe's own published PCI-DSS Level 1 certification |
+| Customer's own OIDC/SSO provider (if enabled) | Authentication only | Per the customer's own IdP choice — not selected or certified by us |
+| LLM providers (OpenAI, Anthropic, Google, etc.), if configured | Model evaluation and cost tracking, under the customer's own account and API keys | Per each provider's own terms |
+
+Full detail, including exactly what each sub-processor does and doesn't
+receive, is in `compliance/DPA_TEMPLATE.md`'s Section 2 — this table is a
+summary, that document is the source of truth. Sub-processor changes will
+be reflected here and in the DPA template together, not one without the
+other.
+
+---
+
 ## Disaster recovery
 
 Applies to the Postgres-backed hosted stack (`docker-compose.prod.yml`).
@@ -179,4 +196,4 @@ claim about the free-tier reference setup.
 
 ---
 
-*Last updated: 2026-07-12 — ResponsibleAI v1.2.0*
+*Last updated: 2026-07-21 — ResponsibleAI v1.2.0*
