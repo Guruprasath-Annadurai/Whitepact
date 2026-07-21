@@ -13,6 +13,12 @@
 > Filling in a sub-processor's name accurately (see below) does not make
 > the surrounding legal language correct or enforceable — those are
 > separate problems, and only the second one requires a lawyer.
+>
+> **Getting this reviewed:** see `compliance/DPA_ATTORNEY_SCOPE_BRIEF.md`
+> before booking anyone — it tells the reviewer exactly what's already
+> solid (the sub-processor facts) versus what's an actual placeholder
+> needing real legal work (Sections 6, 7, 8, 10), so you're not paying
+> for time spent re-deriving what's already here.
 
 Last reviewed: 2026-07-21 · Platform version: 1.2.0
 
