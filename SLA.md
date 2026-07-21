@@ -161,6 +161,13 @@ This SLA does not cover:
 | OS | Linux (amd64/arm64) | Ubuntu 22.04 LTS |
 | Deployment | `docker-compose.yml` | `docker-compose.prod.yml` (Postgres + Redis + dashboard + MCP HTTP) |
 
+**Note on the reference deployment (Oracle Cloud Infrastructure Always
+Free tier):** its 2 OCPU / 12GB entitlement falls below the "Recommended"
+column's 4+ vCPUs per replica — see `DEPLOY_RUNBOOK.md`'s prerequisites
+for the honest capacity tradeoff. Workable for early-stage/low-traffic use;
+treat "Recommended" as the bar to grow into with paid capacity, not a
+claim about the free-tier reference setup.
+
 ---
 
 ## Versioning & backward compatibility

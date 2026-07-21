@@ -9,7 +9,16 @@ this file executes itself.
 
 ## 0. Prerequisites (you do this outside the terminal)
 
-- A VPS with at least 4 vCPU / 4GB RAM (see `SLA.md` hardware table). Any provider works — Hetzner, DigitalOcean, AWS Lightsail, etc.
+- A VPS. Reference/planned provider for this deployment: **Oracle Cloud
+  Infrastructure (OCI), Always Free tier** — chosen given no infrastructure
+  budget. Real numbers, verified against Oracle's own docs (not the older
+  "4 OCPU/24GB" figure some guides still quote — Oracle quietly halved it
+  in 2026):
+  - Ampere A1 (ARM) compute: 2 OCPU / 12GB continuous, single home region only, no automatic multi-region failover.
+  - 200GB block storage, 1 free load balancer (10 Mbps).
+  - **Capacity note:** this is below `SLA.md`'s "Recommended (Postgres + Redis, hosted)" spec of 4+ vCPUs per replica — running dashboard + MCP HTTP + Postgres + Redis together on 2 OCPUs total will be CPU-constrained under real load, not just RAM-constrained. Fine for early-stage/low-traffic; don't oversell it as meeting the recommended bar until upgrading to paid capacity.
+  - **Region capacity gotcha:** some OCI regions report intermittent "out of host capacity" errors for Always Free Ampere A1 provisioning, especially high-demand US regions. Frankfurt (`eu-frankfurt-1`) and Singapore (`ap-singapore-1`) have reported more reliable availability — pick your home region accordingly, and note it's a one-time, permanent choice for Always Free resources.
+  - Any other provider works too — Hetzner, DigitalOcean, AWS Lightsail, etc. — if budget becomes available later.
 - A domain or subdomain you control (e.g. `api.yourcompany.com`).
 - A Stripe account in live mode, if selling PRO/ENTERPRISE (skip if not billing yet).
 

@@ -11,6 +11,15 @@ file/mechanism behind it. Where a control doesn't exist, that's stated
 plainly, not omitted. If you find a claim here that doesn't match the code,
 the code is ground truth — report the discrepancy per `SECURITY.md`.
 
+**Reference hosting provider:** Oracle Cloud Infrastructure (OCI), Always
+Free tier — chosen for the reference/planned deployment given no funding
+for paid infrastructure. Domain 6 below documents OCI's own certifications
+and the *exact* Always Free resource limits, verified directly against
+Oracle's current documentation rather than assumed. This does not mean a
+ResponsibleAI-operated hosted SaaS tier is live — see `ENTERPRISE_SECURITY.md`'s
+Data Residency section; that status is unchanged until one is actually
+deployed and sold.
+
 Last reviewed: 2026-07-21 · Platform version: 1.2.0
 
 ---
@@ -63,7 +72,7 @@ Last reviewed: 2026-07-21 · Platform version: 1.2.0
 
 | Question | Answer |
 |---|---|
-| Is data encrypted at rest? | See `ENTERPRISE_SECURITY.md` — deployer's responsibility (disk/volume encryption), not enforced by the application layer. Stated as a gap, not implied as covered. |
+| Is data encrypted at rest? | Not enforced by the application layer — see `ENTERPRISE_SECURITY.md`. For the reference deployment specifically: **yes, at the infrastructure layer** — OCI Block Volume [encrypts all block and boot volumes at rest by default](https://docs.oracle.com/en-us/iaas/Content/Block/Concepts/blockvolumeencryption.htm) using AES-256 with Oracle-managed keys, with no opt-in required. This is a property of the chosen provider, not something this codebase implements — a different self-hosted provider/config could lack it, so don't read this as a platform-wide guarantee. |
 | Is data encrypted in transit? | TLS is the deployer's responsibility (reverse proxy termination) — the app speaks plain HTTP internally. See `DEPLOYMENT.md`'s nginx config. Webhook payloads carry HMAC-SHA256 signatures independent of transport encryption. |
 | Is there a data retention and deletion policy? | Yes — configurable per data type (`SLA.md`'s Data Retention table): trust scores/token usage default 365 days, audit log via `AuditRepository.cleanup(retention_days=N)`. Not run automatically; scheduling is the deployer's responsibility. |
 | Is PII detected and handled specially? | Yes — the Guardrails Engine (`rai_scan` / `GET /api/scan`) detects email, phone, SSN, credit card, IP address and can redact in real time; `rai_pii_report` aggregates findings for GDPR/CCPA evidence. |
@@ -75,8 +84,11 @@ Last reviewed: 2026-07-21 · Platform version: 1.2.0
 
 | Question | Answer |
 |---|---|
-| Where is data physically hosted? | Self-hosted by default — **you** choose the datacenter/region, since you run the infrastructure. No ResponsibleAI-operated datacenter exists as of v1.2.0. See `ENTERPRISE_SECURITY.md`'s Data Residency section. |
-| Is physical security independently certified? | Not applicable today — inherits whatever your chosen cloud/datacenter provider (AWS, GCP, Azure, on-prem) already has certified (their SOC2/ISO 27001 covers physical security, not ours). |
+| Where is data physically hosted? | Self-hosted by default — **you** choose the datacenter/region, since you run the infrastructure. No ResponsibleAI-operated datacenter exists as of v1.2.0 (see `ENTERPRISE_SECURITY.md`'s Data Residency section). **Reference/planned provider: Oracle Cloud Infrastructure (OCI), Always Free tier.** All Always Free resources are provisioned in a single "home region" chosen at account creation and cannot span multiple regions on the free tier — this is a real single-region constraint, not a design choice we're hiding. |
+| Is physical security independently certified? | Yes, inherited from OCI (not from us): Oracle Cloud Infrastructure holds an active **SOC 2 attestation** (CSA STAR Attestation, Trust Service Principles + Cloud Controls Matrix, renewed May 21, 2026) and an active **ISO/IEC 27001 certification** (CSA STAR Certification, renewed January 8, 2026), both independently verifiable at the [CSA STAR Registry](https://cloudsecurityalliance.org/star/registry/oracle-corporation/services/oracle-cloud-infrastructure). These certifications cover OCI's physical/infrastructure controls, not this platform's application-layer controls — don't conflate the two. |
+| What are the exact Always Free resource limits (for capacity/DR planning)? | Verified directly against [Oracle's Always Free Resources documentation](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm) as of this review — **not** the older "4 OCPU / 24GB" figure still quoted in some third-party guides: <br>• **Ampere A1 (ARM) compute:** 1,500 OCPU-hours + 9,000 GB-hours/month — equivalent to a continuous 2 OCPU / 12GB instance (or split across up to 2 smaller instances). <br>• **AMD Micro compute:** 2× VM.Standard.E2.1.Micro (1/8 OCPU, 1GB each). <br>• **Block storage:** 200GB total (boot + block volumes combined), 5 volume backups. <br>• **Load balancer:** 1 flexible LB, 10 Mbps min/max bandwidth. <br>• **Database:** 2× Autonomous AI Database (1 OCPU, 20GB each, non-scalable) or MySQL HeatWave (50GB). |
+| Is the free-tier capacity/entitlement stable? | Documented honestly: Oracle silently reduced the Ampere A1 Always Free allocation from 4 OCPU/24GB to the current 2 OCPU/12GB in 2026 with no formal customer announcement — third-party reports note enforcement has been inconsistent (some pre-existing instances still run at the old allocation). Plan capacity assuming the current documented limit (2 OCPU/12GB), not the higher figure some older guides still cite. Also note: some OCI regions report intermittent "out of host capacity" errors for Always Free Ampere A1 provisioning — pick a home region with reported availability (e.g., Frankfurt, Singapore) rather than the highest-demand US regions. |
+| Is there redundancy/failover within the free tier? | No — a single home region with no automatic failover between regions is a hard limitation of the Always Free tier itself, not something the application can work around. This is on top of the platform-level limitation already noted in Domain 3 (no automated replica failover orchestration). For real redundancy, a paid multi-region OCI deployment (or a different provider) would be required — tracked as a future upgrade path once revenue justifies the cost, not glossed over as already handled. |
 
 ---
 

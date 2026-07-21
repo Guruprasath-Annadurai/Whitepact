@@ -17,8 +17,8 @@ self-hosted software and worth being explicit about:
 
 | Database backend | Encryption at rest |
 |---|---|
-| SQLite (default, self-hosted) | **Not encrypted by the application.** The `.db` file is plaintext on disk unless the host filesystem/volume is encrypted (LUKS, dm-crypt, encrypted EBS/PD volume, FileVault, BitLocker). We recommend running SQLite only behind a full-disk-encrypted volume in production. |
-| PostgreSQL (recommended for production, `RAI_DATABASE_URL`) | Encryption at rest depends on your Postgres provider. Managed services (AWS RDS, GCP Cloud SQL, Azure Database for PostgreSQL) encrypt storage by default. Self-managed Postgres requires disk-level encryption configured separately — the application does not enable it. |
+| SQLite (default, self-hosted) | **Not encrypted by the application.** The `.db` file is plaintext on disk unless the host filesystem/volume is encrypted (LUKS, dm-crypt, encrypted EBS/PD volume, FileVault, BitLocker, or — for the reference deployment on Oracle Cloud Infrastructure — [OCI Block Volume's default AES-256 encryption](https://docs.oracle.com/en-us/iaas/Content/Block/Concepts/blockvolumeencryption.htm), which applies with no configuration required). We recommend running SQLite only behind a full-disk-encrypted volume in production. |
+| PostgreSQL (recommended for production, `RAI_DATABASE_URL`) | Encryption at rest depends on your Postgres provider. Managed services (AWS RDS, GCP Cloud SQL, Azure Database for PostgreSQL) encrypt storage by default. On the reference deployment (self-managed Postgres on OCI Always Free, via `docker-compose.prod.yml`), the underlying OCI Block Volume is encrypted at rest by default regardless — self-managed Postgres on other providers still requires disk-level encryption configured separately. |
 | Redis (optional, rate limiting only) | Redis stores rate-limit counters, never governance data, PII, or credentials. Encryption at rest is not required for this use case but is unaffected by our config either way — follow your Redis provider's defaults. |
 
 **What the application layer does guarantee regardless of disk encryption:**
@@ -38,7 +38,7 @@ ResponsibleAI is self-hosted by default. **You control where your data lives** b
 
 | Deployment mode | Data location |
 |---|---|
-| Self-hosted (Docker / Helm / bare-metal) | Entirely within your infrastructure and region. No data leaves your network unless you configure outbound integrations (webhooks, LLM provider APIs, Stripe billing, OTLP telemetry export) — all of which are optional and explicitly configured. |
+| Self-hosted (Docker / Helm / bare-metal) | Entirely within your infrastructure and region. No data leaves your network unless you configure outbound integrations (webhooks, LLM provider APIs, Stripe billing, OTLP telemetry export) — all of which are optional and explicitly configured. Reference/planned deployment: Oracle Cloud Infrastructure Always Free tier, single home region (see `compliance/CAIQ_SELF_ASSESSMENT.md` Domain 6 for exact region-selection and capacity considerations). |
 | Hosted MCP (`responsibleai-mcp-http`), self-operated | Same as above — this is a transport option you run yourself, not a managed service we operate. |
 | A future ResponsibleAI-operated SaaS tier | **Not yet available.** No such offering exists today. If/when one ships, this document will be updated with the specific region(s), sub-processor list, and data flow diagram before it's sold as a data-residency-compliant product. |
 
