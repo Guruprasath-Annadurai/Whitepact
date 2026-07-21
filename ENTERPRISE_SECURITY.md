@@ -89,6 +89,6 @@ All governance data (trust scores, cost/token usage, audit log, MCP tool call me
 
 - SOC2 / ISO 27001 certification status — see `SLA.md` and ask directly; certification is a roadmap item, not a current claim.
 - Penetration test reports — request current status directly; not published in this repo.
-- Sub-processor list for a future hosted SaaS — doesn't exist yet (see Data Residency above).
+- A signed Data Processing Agreement — a draft template with the current sub-processor list (OCI, Stripe, customer's own OIDC/LLM choices) exists at `compliance/DPA_TEMPLATE.md`, explicitly marked as unreviewed by counsel; not something to treat as an executable contract yet.
 
 This document is updated alongside the platform. If you find a claim here that's stale relative to the code, treat the code as ground truth and report the discrepancy per `SECURITY.md`.
