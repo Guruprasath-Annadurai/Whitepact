@@ -66,7 +66,7 @@ Last reviewed: 2026-07-21 · Platform version: 1.2.0
 
 | Subcategory | Maturity | Evidence |
 |---|---|---|
-| RS.MA — Incident management | Partial | `SECURITY.md` covers vulnerability disclosure response with concrete timelines (48h ack, 7-day resolution target). No separate internal incident-response runbook (detection → containment → customer notification) exists yet — real gap, tracked in the CAIQ roadmap. |
+| RS.MA — Incident management | Defined | `SECURITY.md` covers vulnerability disclosure response with concrete timelines (48h ack, 7-day resolution target). `compliance/INCIDENT_RESPONSE_RUNBOOK.md` documents the full internal process (detect → triage → contain → eradicate → recover → notify → post-incident review), aligned with `SLA.md`'s P1–P4 severity scale. **Not yet "Managed"**: the runbook is documented but untested against a real incident or tabletop exercise — stated as such in the document itself, not rounded up. |
 | RS.CO — Incident communication | Not Implemented | No formal breach-notification SLA (e.g., GDPR's 72-hour requirement) is documented as a standing commitment. Must be built before signing any contract that requires one — flagged as a pre-contract blocker, not assumed handled. |
 | RS.AN — Incident analysis | Managed | `rai_incident_log`'s evidence hashing and SIEM payload structure support post-incident analysis once an incident is logged. |
 
@@ -89,7 +89,7 @@ Last reviewed: 2026-07-21 · Platform version: 1.2.0
 | Identify | Partial to Defined |
 | Protect | Defined to Managed — the strongest function, reflecting where actual engineering effort has concentrated (RBAC, SSO enforcement, multi-tenancy, container hardening) |
 | Detect | Defined |
-| Respond | Partial — the weakest function alongside Govern; formal incident response and breach notification are the two things to build next |
+| Respond | Defined — the internal runbook now exists (`compliance/INCIDENT_RESPONSE_RUNBOOK.md`), untested against a real incident; the committed breach-notification SLA is still a Govern-adjacent legal gap, not a Respond gap |
 | Recover | Defined |
 
-**Honest bottom line:** the platform's *technical* controls (Protect, Detect) are ahead of its *organizational* controls (Govern, Respond) — typical for a solo-maintained project where engineering time is cheap relative to process/legal time. The next investment, funded or not, should go toward Respond (incident runbook, breach notification SLA) since those are pure documentation/process work, not infrastructure — genuinely buildable without a certification budget.
+**Honest bottom line:** the platform's *technical* controls (Protect, Detect) are ahead of its *organizational* controls (Govern) — typical for a solo-maintained project where engineering time is cheap relative to process/legal time. Respond moved from Partial to Defined once the internal runbook was written — that was pure documentation/process work, genuinely buildable without a certification budget. What's left in Respond/Govern now needs either a real incident to test the runbook against, or an attorney for the breach-notification commitment (see `compliance/DPA_ATTORNEY_SCOPE_BRIEF.md`) — the next investment should go toward Govern's oversight/risk-review gaps, since Respond's documentation work is done.

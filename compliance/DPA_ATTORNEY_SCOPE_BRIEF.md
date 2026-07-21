@@ -56,7 +56,7 @@ without an answer:
 | Section | What's missing | Why it needs an attorney, not us |
 |---|---|---|
 | §6 — Data subject rights assistance | No committed timeline or cost allocation for handling access/deletion/portability requests | Varies by regime (GDPR gives data subjects a right to a timely response; exact "reasonable" timeframe is a legal judgment call) |
-| §7 — Breach notification | No committed notification timeframe to the customer | GDPR implies notifying the supervisory authority within 72 hours of *awareness* — whether/how that flows into a customer-facing SLA is a legal decision, and we don't have an internal incident-response process yet either (see caveat below) |
+| §7 — Breach notification | No committed notification timeframe to the customer | GDPR implies notifying the supervisory authority within 72 hours of *awareness* — whether/how that flows into a customer-facing SLA is a legal decision. An internal process now exists (`INCIDENT_RESPONSE_RUNBOOK.md`) but is untested against a real incident (see caveat below) — don't let a committed number get drafted ahead of that proof |
 | §8 — International data transfers | No transfer mechanism specified (Standard Contractual Clauses, adequacy decision, etc.) | Only relevant if you'll have EU/UK customers — see the jurisdiction question above. If US-only for now, tell the attorney this section may not need much work yet |
 | §10 — Liability | Entirely blank — no caps, no indemnification language | Depends on actual contract value, any insurance coverage you hold (probably none yet), and jurisdiction. This is the section most likely to actually cost attorney time — flag it as the priority item |
 
@@ -64,15 +64,23 @@ without an answer:
 
 ## One thing to disclose to the attorney directly, not just imply
 
-We do not yet have a formal internal incident-response runbook (detection
-→ containment → customer notification) as a real, followed process — see
-`compliance/NIST_CSF_SELF_ASSESSMENT.md`'s Respond function assessment.
+An internal incident-response runbook now exists
+(`compliance/INCIDENT_RESPONSE_RUNBOOK.md` — detect → triage → contain →
+eradicate → recover → notify → post-incident review), but it has **not
+been tested against a real incident or a tabletop exercise**. That's a
+meaningful distinction to give the attorney: "documented" is not the same
+as "proven to work under pressure."
+
 **Don't let the attorney draft a breach-notification clause with a
-specific commitment (e.g., "within 24 hours") that isn't backed by an
-actual internal process to meet it.** Either:
-(a) build the internal process first, or
+specific numeric commitment (e.g., "within 24 hours") based solely on the
+existence of this runbook.** The runbook's own Phase 5 deliberately avoids
+committing to a specific timeframe for exactly this reason — it describes
+the *process* for deciding whether/how to notify, not a legal SLA. Either:
+(a) run a tabletop exercise first to build confidence in an actual number, or
 (b) have the attorney draft looser language ("without undue delay")
-until the process exists, and revisit once it does.
+until that confidence exists, and tighten it once a real drill (or,
+unfortunately, a real incident) proves the process works within a
+specific timeframe.
 
 Signing a specific SLA you can't operationally meet is worse than an
 honest, looser commitment — say this to the attorney explicitly so they

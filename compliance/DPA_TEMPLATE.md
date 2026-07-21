@@ -139,12 +139,15 @@ should be set by counsel, not left as a default.)*
 Processor will notify Customer of a confirmed personal data breach
 affecting Customer's data without undue delay.
 
-**Stated honestly**: as flagged in `compliance/NIST_CSF_SELF_ASSESSMENT.md`'s
-Respond function, Processor does not yet have a formal breach-notification
-SLA with a specific committed timeframe (e.g., GDPR's 72-hour requirement
-to the supervisory authority). **Do not execute a DPA that requires a
-specific breach-notification timeframe until that internal process
-actually exists** — this is listed as a known gap, not papered over.
+**Stated honestly**: Processor follows an internal incident-response
+process (`compliance/INCIDENT_RESPONSE_RUNBOOK.md`) covering detection,
+containment, and notification decision-making, but that process has not
+been tested against a real incident or a tabletop exercise, and does not
+itself commit to a specific notification timeframe (e.g., GDPR's 72-hour
+requirement to a supervisory authority). **Do not execute a DPA that
+requires a specific breach-notification timeframe until that process has
+been proven — by a drill or, if it comes to it, a real incident — to
+reliably meet one.** This is listed as a known gap, not papered over.
 
 ---
 
