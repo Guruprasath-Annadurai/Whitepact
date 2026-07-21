@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ResponsibleAI — Trust Center</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #fafafa;
+    --fg: #1a1a1a;
+    --muted: #666;
+    --card-bg: #ffffff;
+    --card-border: #e5e5e5;
+    --accent: #2563eb;
+    --green: #16a34a;
+    --amber: #d97706;
+    --red: #dc2626;
+    --gray: #6b7280;
+    --code-bg: #f1f1f1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0b0b0c;
+      --fg: #e8e8e8;
+      --muted: #999;
+      --card-bg: #17181a;
+      --card-border: #2a2a2c;
+      --code-bg: #232427;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 3rem 1.5rem 5rem;
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.55;
+  }
+  header { margin-bottom: 2.5rem; }
+  h1 { font-size: 2rem; margin: 0 0 0.4rem; letter-spacing: -0.02em; }
+  .lede { color: var(--muted); font-size: 1.05rem; max-width: 640px; }
+  .badges { margin-top: 1.25rem; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    font-size: 0.8rem; font-weight: 600;
+    padding: 0.3rem 0.7rem; border-radius: 999px;
+    border: 1px solid var(--card-border);
+    background: var(--card-bg);
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .dot.done { background: var(--green); }
+  .dot.progress { background: var(--amber); }
+  .dot.none { background: var(--gray); }
+
+  section { margin: 2.5rem 0; }
+  h2 {
+    font-size: 1.15rem; margin: 0 0 1rem;
+    display: flex; align-items: center; gap: 0.5rem;
+  }
+  h2 .icon { font-size: 1.1rem; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.9rem; }
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    padding: 1.25rem;
+  }
+  .card h3 { font-size: 0.95rem; margin: 0 0 0.5rem; }
+  .card p { margin: 0; color: var(--muted); font-size: 0.9rem; }
+  .status-line { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.6rem; font-size: 0.85rem; font-weight: 600; }
+  .status-line.done { color: var(--green); }
+  .status-line.progress { color: var(--amber); }
+  .status-line.none { color: var(--gray); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin-top: 0.5rem; }
+  th, td { text-align: left; padding: 0.55rem 0.7rem; border-bottom: 1px solid var(--card-border); }
+  th { color: var(--muted); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; }
+
+  .doc-links { display: flex; flex-direction: column; gap: 0.6rem; }
+  .doc-link {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0.9rem 1.1rem;
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 10px;
+    text-decoration: none;
+    color: var(--fg);
+    transition: border-color 0.15s;
+  }
+  .doc-link:hover { border-color: var(--accent); }
+  .doc-link .name { font-weight: 600; font-size: 0.95rem; }
+  .doc-link .desc { color: var(--muted); font-size: 0.82rem; margin-top: 0.15rem; }
+  .doc-link .arrow { color: var(--accent); font-size: 1.1rem; }
+
+  .honest-box {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-left: 3px solid var(--amber);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    font-size: 0.9rem;
+  }
+  .honest-box strong { display: block; margin-bottom: 0.35rem; }
+
+  code {
+    background: var(--code-bg);
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.85em;
+  }
+
+  footer {
+    margin-top: 3rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--card-border);
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Trust Center</h1>
+  <p class="lede">
+    ResponsibleAI's security, privacy, and compliance posture — stated as
+    current fact, not aspiration. Where a control doesn't exist yet, that's
+    said plainly here rather than implied or omitted.
+  </p>
+  <div class="badges">
+    <span class="badge"><span class="dot done"></span> Open source (MIT)</span>
+    <span class="badge"><span class="dot done"></span> SSO (OIDC)</span>
+    <span class="badge"><span class="dot done"></span> Tamper-evident audit log</span>
+    <span class="badge"><span class="dot progress"></span> SOC2 — not started</span>
+    <span class="badge"><span class="dot progress"></span> Pentest — not started</span>
+  </div>
+</header>
+
+<section>
+  <h2><span class="icon">🔐</span> Security posture at a glance</h2>
+  <div class="grid">
+    <div class="card">
+      <h3>Authentication &amp; Access</h3>
+      <p>OIDC SSO with enforceable SSO-only mode. 4-tier RBAC (Owner/Admin/Analyst/Viewer) on every endpoint. API keys stored as SHA-256 hashes only, never in plaintext.</p>
+      <div class="status-line done">● Implemented</div>
+    </div>
+    <div class="card">
+      <h3>Multi-tenant isolation</h3>
+      <p>Every governance data table carries an org_id and every query filters by it. Cross-org leakage is treated as a security defect.</p>
+      <div class="status-line done">● Implemented</div>
+    </div>
+    <div class="card">
+      <h3>Audit trail integrity</h3>
+      <p>Hash-chained audit log detects direct database tampering. Exportable for SIEM. Does not defend against a fully compromised database — stated honestly, not oversold.</p>
+      <div class="status-line done">● Implemented</div>
+    </div>
+    <div class="card">
+      <h3>Encryption at rest</h3>
+      <p>Deployer's responsibility (disk/volume encryption) — not enforced by the application layer. No field-level encryption.</p>
+      <div class="status-line progress">● Partial — infra-dependent</div>
+    </div>
+    <div class="card">
+      <h3>Dependency scanning</h3>
+      <p>pip-audit runs on every CI build against the full resolved dependency tree. Findings are triaged and documented, not silently ignored.</p>
+      <div class="status-line done">● Implemented</div>
+    </div>
+    <div class="card">
+      <h3>Third-party penetration test</h3>
+      <p>Not yet performed — cost-gated. An automated OWASP ZAP baseline scan is available as an interim measure and explicitly disclosed as such, not a substitute.</p>
+      <div class="status-line progress">● Not started</div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2><span class="icon">📍</span> Data residency</h2>
+  <table>
+    <thead><tr><th>Deployment mode</th><th>Where your data lives</th></tr></thead>
+    <tbody>
+      <tr><td>Self-hosted (Docker / Helm / bare-metal)</td><td>Entirely within your own infrastructure and region. Nothing leaves your network unless you explicitly configure an outbound integration.</td></tr>
+      <tr><td>Hosted MCP, self-operated</td><td>Same as above — a transport option you run yourself, not a managed service we operate.</td></tr>
+      <tr><td>ResponsibleAI-operated SaaS</td><td><strong>Does not exist yet.</strong> No such tier is live. This page will be updated with specific regions and a sub-processor list before one is sold.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2><span class="icon">📜</span> Compliance documents</h2>
+  <div class="doc-links">
+    <a class="doc-link" href="https://github.com/Guruprasath-Annadurai/ResponsibleAi/blob/main/compliance/CAIQ_SELF_ASSESSMENT.md" target="_blank">
+      <div><div class="name">CAIQ Self-Assessment</div><div class="desc">CSA-aligned, 17-domain security questionnaire — self-administered, ~300 questions worth of coverage, answered honestly.</div></div>
+      <span class="arrow">→</span>
+    </a>
+    <a class="doc-link" href="https://github.com/Guruprasath-Annadurai/ResponsibleAi/blob/main/compliance/NIST_CSF_SELF_ASSESSMENT.md" target="_blank">
+      <div><div class="name">NIST CSF 2.0 Self-Assessment</div><div class="desc">Maturity rating across all six CSF functions — Govern, Identify, Protect, Detect, Respond, Recover.</div></div>
+      <span class="arrow">→</span>
+    </a>
+    <a class="doc-link" href="https://github.com/Guruprasath-Annadurai/ResponsibleAi/blob/main/ENTERPRISE_SECURITY.md" target="_blank">
+      <div><div class="name">Enterprise Security Posture</div><div class="desc">Encryption, residency, audit integrity, SSO, RBAC, multi-tenancy — the detailed version of this page.</div></div>
+      <span class="arrow">→</span>
+    </a>
+    <a class="doc-link" href="https://github.com/Guruprasath-Annadurai/ResponsibleAi/blob/main/SLA.md" target="_blank">
+      <div><div class="name">Service Level Agreement</div><div class="desc">Uptime tiers, response time targets, disaster recovery RPO/RTO, incident classification.</div></div>
+      <span class="arrow">→</span>
+    </a>
+    <a class="doc-link" href="https://github.com/Guruprasath-Annadurai/ResponsibleAi/blob/main/SECURITY.md" target="_blank">
+      <div><div class="name">Vulnerability Disclosure Policy</div><div class="desc">How to report a security issue — 48-hour acknowledgment, 7-day resolution target.</div></div>
+      <span class="arrow">→</span>
+    </a>
+    <a class="doc-link" href="https://github.com/Guruprasath-Annadurai/ResponsibleAi/blob/main/PRIVACY.md" target="_blank">
+      <div><div class="name">Privacy &amp; Data Handling</div><div class="desc">Differential privacy guarantees for the federated learning module, data residency for that subsystem.</div></div>
+      <span class="arrow">→</span>
+    </a>
+  </div>
+</section>
+
+<section>
+  <h2><span class="icon">💬</span> Said plainly</h2>
+  <div class="honest-box">
+    <strong>We are not SOC2 or ISO 27001 certified.</strong>
+    That requires a licensed CPA firm audit and costs real money regardless
+    of company size — we haven't started it, and we won't claim otherwise.
+    In the meantime, the documents above are the actual, verifiable
+    substitute: specific, cited, and updated when the code changes rather
+    than left as static marketing copy. If a claim in any of them is stale
+    relative to the code, the code is ground truth — <a href="https://github.com/Guruprasath-Annadurai/ResponsibleAi/blob/main/SECURITY.md">tell us</a>.
+  </div>
+</section>
+
+<footer>
+  Platform version 1.2.0 · Live status: <a href="/status">/status</a> ·
+  Security contact: milchcreamfoods@gmail.com ·
+  <a href="https://github.com/Guruprasath-Annadurai/ResponsibleAi">Source on GitHub</a>
+</footer>
+
+</body>
+</html>

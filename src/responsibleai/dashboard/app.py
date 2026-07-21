@@ -613,6 +613,14 @@ async def status_page() -> HTMLResponse:
     return HTMLResponse(content=page.read_text())
 
 
+@app.get("/trust", response_class=HTMLResponse, include_in_schema=False)
+async def trust_center() -> HTMLResponse:
+    """Public security/compliance posture page — links to CAIQ, NIST CSF,
+    and enterprise security docs. States gaps plainly, not just controls."""
+    page = _static_dir / "trust.html"
+    return HTMLResponse(content=page.read_text())
+
+
 # ── Health & Ops ───────────────────────────────────────────────────────────────
 
 @app.get("/api/health", tags=["ops"])
