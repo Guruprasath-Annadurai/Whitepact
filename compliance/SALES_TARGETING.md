@@ -32,6 +32,43 @@ of how good the actual product is.
 
 ---
 
+## The OCI hosting decision changes the pitch, not just the infra
+
+The reference deployment runs on Oracle Cloud Infrastructure's Always Free
+tier (see `compliance/CAIQ_SELF_ASSESSMENT.md` Domain 6 for the verified
+specifics). That choice has real, non-obvious consequences for who to
+pitch and what to promise — separate from the SOC2/CAIQ segmentation
+above, and worth being just as honest about.
+
+- **OCI has real, verifiable certifications you can cite** — active SOC 2
+  attestation and ISO/IEC 27001 certification, both checkable at the CSA
+  STAR registry. When a mid-market prospect's vendor review asks "is your
+  infrastructure provider certified," the honest answer is yes, cited,
+  with dates — even though *this platform* isn't certified yet. Use this;
+  it's a real point in your favor, not a workaround.
+- **OCI is a weaker brand-recognition answer than AWS/GCP/Azure for some
+  reviewers.** A subset of enterprise vendor-risk checklists name a
+  specific short-list of approved cloud providers, and Oracle doesn't
+  always make that list the way the big three do. This is a real, if
+  narrow, reason some Fortune 500/regulated prospects go a different way
+  regardless of certifications — already a "don't spend cycles here yet"
+  segment per the table above, so this mostly just reinforces that
+  targeting rather than changing it.
+- **The free tier's actual capacity (2 OCPU/12GB, single region, no
+  failover) sets an honest ceiling on what to promise early customers.**
+  Don't pitch multi-region redundancy or high-concurrency guarantees on
+  this infrastructure — it isn't there yet (see `SLA.md`'s hardware note
+  and `DEPLOY_RUNBOOK.md`'s capacity caveat). This is fine for the first
+  handful of design partners from the Seed/Series A segment; it is a real
+  constraint to flag proactively once volume grows, not something to
+  discover under load with a paying customer watching.
+- **This reinforces "target smaller first" as an infrastructure fact, not
+  just a compliance one.** The certificate gap says don't chase Fortune
+  500 yet; the hosting capacity says the same thing independently — two
+  separate reasons pointing at the same near-term segment.
+
+---
+
 ## Where the CAIQ/Trust Center actually move the needle
 
 - **Series A-C startups and mid-market SaaS companies** run informal or
@@ -86,3 +123,7 @@ of how good the actual product is.
    actually time to spend real money on the certificate — don't guess,
    measure it against real sales conversations once there are some to
    measure.
+5. **Cite OCI's SOC 2/ISO 27001 certifications proactively when
+   infrastructure comes up**, and be upfront about the current capacity
+   ceiling (2 OCPU/12GB, single region) if a prospect asks about scale or
+   redundancy — before they find out under load, not after.
