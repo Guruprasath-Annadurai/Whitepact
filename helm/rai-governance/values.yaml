@@ -3,6 +3,16 @@
 
 replicaCount: 2
 
+## Zero-downtime rollout — maxUnavailable: 0 guarantees full capacity is
+## maintained during a deploy (paired with the PDB below); relying on
+## Kubernetes' own default (25%/25%) risks a capacity drop with low
+## replica counts due to percentage rounding.
+updateStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 0
+    maxSurge: 1
+
 image:
   repository: ghcr.io/guruprasath-annadurai/responsibleai
   pullPolicy: IfNotPresent

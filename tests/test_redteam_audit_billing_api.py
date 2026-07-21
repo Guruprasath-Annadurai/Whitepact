@@ -8,6 +8,7 @@ os.environ.setdefault("RAI_DB_PATH", ":memory:")
 os.environ.setdefault("RAI_AUTH_ENABLED", "false")
 os.environ.setdefault("RAI_LOG_JSON", "false")
 os.environ.setdefault("RAI_LOG_LEVEL", "WARNING")
+os.environ.setdefault("RAI_AUTO_MIGRATE", "false")
 
 import pytest
 from asgi_lifespan import LifespanManager
@@ -236,9 +237,9 @@ class TestBillingUsageEndpoint:
 
 class TestVersionBump:
     @pytest.mark.asyncio
-    async def test_version_is_1_1_0(self, client: AsyncClient) -> None:
+    async def test_version_is_1_2_0(self, client: AsyncClient) -> None:
         r = await client.get("/api/version")
-        assert r.json()["version"] == "1.1.0"
+        assert r.json()["version"] == "1.2.0"
 
     @pytest.mark.asyncio
     async def test_platform_status_version(self, client: AsyncClient) -> None:

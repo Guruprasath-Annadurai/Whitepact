@@ -1,0 +1,86 @@
+# Prometheus alerting rules for ResponsibleAI — matched to the metrics
+# actually exported by src/responsibleai/dashboard/prometheus.py. Load via
+# Prometheus's `rule_files` config, or import into Grafana Alerting/Mimir.
+#
+# None of these are org-scoped — the metrics themselves have no org_id
+# label yet (see grafana/dashboards/rai-overview.json's description for
+# why). These alert on platform-wide behavior.
+
+groups:
+  - name: responsibleai_availability
+    rules:
+      - alert: RAIHighErrorRate
+        expr: |
+          sum(rate(rai_requests_total{status=~"5.."}[5m]))
+          / sum(rate(rai_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ResponsibleAI 5xx error rate above 5%"
+          description: "{{ $value | humanizePercentage }} of requests are failing with 5xx over the last 5m. Matches SLA.md P1/P2 thresholds."
+
+      - alert: RAINoTraffic
+        expr: sum(rate(rai_requests_total[10m])) == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No requests observed in 10 minutes"
+          description: "Either genuinely idle or the app/scraper is down — check /api/health directly before assuming traffic just stopped."
+
+  - name: responsibleai_governance
+    rules:
+      - alert: RAITrustScoreDegraded
+        expr: rai_trust_score < 60
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Trust score below 60 for {{ $labels.model }} ({{ $labels.provider }})"
+          description: "Current score: {{ $value }}. Matches the CRITICAL risk tier in mcp/licensing.py / ENTERPRISE_SECURITY.md's trust grade reference."
+
+      - alert: RAIHighGuardrailBlockRate
+        expr: |
+          sum(rate(rai_guardrail_scans_total{result="blocked"}[15m]))
+          / sum(rate(rai_guardrail_scans_total[15m])) > 0.10
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Over 10% of guardrail scans are being blocked"
+          description: "{{ $value | humanizePercentage }} blocked over 15m — could indicate a misbehaving model, a prompt injection campaign, or an overly strict policy. Investigate before assuming it's noise."
+
+      - alert: RAIDriftAlertSpike
+        expr: increase(rai_drift_alerts_total{severity=~"HIGH|CRITICAL"}[1h]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "HIGH/CRITICAL trust drift alert fired"
+          description: "{{ $value }} HIGH/CRITICAL drift alert(s) in the last hour. Per SLA.md this warrants same-day investigation, not routine monitoring."
+
+  - name: responsibleai_cost
+    rules:
+      - alert: RAICostSpike
+        expr: |
+          sum(rate(rai_cost_usd_total[1h]))
+          > 2 * sum(rate(rai_cost_usd_total[1h] offset 1d))
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AI spend rate more than doubled vs same time yesterday"
+          description: "Current hourly rate: ${{ $value | humanize }}/hr. Check cost/summary and the budget_check MCP tool before assuming this is expected growth."
+
+  - name: responsibleai_webhooks
+    rules:
+      - alert: RAIWebhookFailureRate
+        expr: |
+          sum(rate(rai_webhook_deliveries_total{success="false"}[15m]))
+          / sum(rate(rai_webhook_deliveries_total[15m])) > 0.20
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Over 20% of webhook deliveries failing"
+          description: "{{ $value | humanizePercentage }} failed over 15m. Check the dead-letter queue via GET /api/v1/billing/webhook status or the webhook manager's delivery log."

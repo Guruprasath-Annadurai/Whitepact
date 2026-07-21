@@ -66,6 +66,36 @@ Scheduled maintenance windows (max 4 hours/month, announced 48h in advance) are 
 
 ---
 
+## Disaster recovery
+
+Applies to the Postgres-backed hosted stack (`docker-compose.prod.yml`).
+Self-hosted SQLite deployments are the customer's own backup responsibility —
+`scripts/backup-postgres.sh` is Postgres-specific.
+
+| Tier | RPO (data loss window) | RTO (time to restore) |
+|---|---|---|
+| PRO | 24 hours (nightly backup) | 4 hours |
+| ENTERPRISE | 24 hours (nightly backup); contact for point-in-time recovery | 1 hour |
+
+**Backup**: `scripts/backup-postgres.sh` — `pg_dump`, gzip-compressed, 30-day
+local retention by default. Intended to run nightly via cron; ship the
+output off-host (S3, rsync, etc.) for real disaster recovery — a backup
+that lives on the same disk as the database it backs up doesn't protect
+against disk/host failure, only against bad migrations or accidental
+deletes.
+
+**Restore**: `scripts/restore-postgres.sh <backup_file>` — drops and
+recreates the target database from a `pg_dump` file, with an explicit
+type-to-confirm prompt since it's destructive.
+
+**Stated honestly**: nightly `pg_dump` gives a 24h RPO, not continuous
+replication. If your compliance requirements need a tighter RPO
+(point-in-time recovery, streaming replication to a standby), that's not
+implemented yet — say so during evaluation rather than assuming it from
+the ENTERPRISE tier name.
+
+---
+
 ## Security commitments
 
 - All API keys are stored in memory only; never written to database or logs.

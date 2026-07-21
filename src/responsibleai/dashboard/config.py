@@ -86,6 +86,22 @@ class Settings(BaseSettings):
         ),
     )
 
+    # Schema migrations
+    auto_migrate: bool = Field(
+        default=True,
+        description=(
+            "Run `alembic upgrade head` automatically at startup. "
+            "create_all() only creates brand-new tables — it never ALTERs "
+            "existing ones, so without this, upgrading an existing self-hosted "
+            "install to a version with schema changes leaves old columns "
+            "missing and endpoints 500ing at runtime instead of failing at "
+            "startup. Disable only if you run migrations explicitly as a "
+            "separate deploy step (recommended for multi-replica hosted "
+            "deployments, to avoid concurrent migration runs — see "
+            "DEPLOY_RUNBOOK.md)."
+        ),
+    )
+
     # Redis (optional — falls back to in-memory rate limiting)
     redis_url: str | None = Field(
         default=None,

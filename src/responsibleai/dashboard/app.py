@@ -37,6 +37,7 @@ from responsibleai.dashboard.middleware import (
     global_exception_handler,
     http_exception_handler,
 )
+from responsibleai.dashboard.plan_rate_limiter import PlanRateLimiter
 from responsibleai.dashboard.prometheus import (
     get_metrics_output,
     observe_cost,
@@ -65,6 +66,7 @@ from responsibleai.db import (
     create_engine,
 )
 from responsibleai.db.engine import DatabaseEngine
+from responsibleai.db.migrate import MigrationError, run_migrations_or_raise
 from responsibleai.eval import (
     BenchmarkRunner,
     BenchmarkSuite,
@@ -145,6 +147,7 @@ _oidc_provider: OIDCProvider | None = None
 _oidc_state_store: dict[str, float] = {}  # state → issued_at; cleared on use
 _OIDC_STATE_TTL = 300.0  # seconds — matches callback expiry window
 _stripe_service: StripeService | None = None
+_plan_rate_limiter: PlanRateLimiter | None = None
 
 _T = TypeVar("_T")
 
@@ -177,7 +180,7 @@ async def lifespan(application: FastAPI):
     global _compliance, _cost_repo, _cost_analyzer, _router, _trust_repo
     global _org_repo, _audit_repo, _db_engine, _mcp_usage_repo
     global _eval_repo, _comparator, _benchmark_runner, _dataset_scanner
-    global _oidc_provider, _stripe_service
+    global _oidc_provider, _stripe_service, _plan_rate_limiter
 
     setup_telemetry(
         service_name=settings.otel_service_name,
@@ -185,8 +188,22 @@ async def lifespan(application: FastAPI):
         otlp_headers=settings.otel_headers_dict,
     )
 
+    if settings.auto_migrate:
+        try:
+            await run_migrations_or_raise(settings.effective_db_url)
+        except MigrationError as exc:
+            logger.error("db_migration_failed", error=str(exc))
+            raise RuntimeError(
+                "Startup aborted: database migrations failed. Fix the "
+                "underlying issue (see log above) or set RAI_AUTO_MIGRATE=false "
+                "and run `alembic upgrade head` manually. Refusing to serve "
+                "traffic against a schema that may be missing columns the "
+                "code expects."
+            ) from exc
+
     _db_engine = create_engine(settings.effective_db_url)
     await _db_engine.init()
+    _plan_rate_limiter = PlanRateLimiter(redis_url=settings.redis_url)
 
     policy = BudgetPolicy(monthly_limit_usd=settings.monthly_budget_usd)
     _cost_repo    = CostRepository(_db_engine, policy=policy)
@@ -256,6 +273,8 @@ async def lifespan(application: FastAPI):
     _oidc_cleanup_task.cancel()
     _webhook_manager.stop_retry_worker()
     _ws_manager.stop()
+    if _plan_rate_limiter:
+        await _plan_rate_limiter.close()
     if _db_engine:
         await _db_engine.close()
     logger.info("shutdown_complete")
@@ -355,7 +374,7 @@ class APIVersionMiddleware(BaseHTTPMiddleware):
             request.scope["raw_path"] = new_path.encode()
 
         response = await call_next(request)
-        response.headers["X-API-Version"] = "1.1.0"
+        response.headers["X-API-Version"] = "1.2.0"
         response.headers["X-API-Min-Version"] = "1.0.0"
         return response
 
@@ -444,6 +463,8 @@ async def get_org_context(request: Request) -> OrgContext:
 
     oidc_ctx = await _resolve_oidc_context(token)
     if oidc_ctx is not None:
+        if _plan_rate_limiter:
+            await _plan_rate_limiter.check(oidc_ctx.org_id, oidc_ctx.plan)
         _audit_ctx.set({"org_id": oidc_ctx.org_id, "key_id": oidc_ctx.key_id})
         return oidc_ctx
 
@@ -459,6 +480,8 @@ async def get_org_context(request: Request) -> OrgContext:
                 ),
             ) from None
         if resolved_ctx:
+            if _plan_rate_limiter:
+                await _plan_rate_limiter.check(resolved_ctx.org_id, resolved_ctx.plan)
             _audit_ctx.set({"org_id": resolved_ctx.org_id, "key_id": resolved_ctx.key_id})
             return resolved_ctx
 
@@ -607,7 +630,7 @@ async def health() -> dict[str, Any]:
 
     return {
         "status": "healthy" if db_ok else "degraded",
-        "version": "1.1.0",
+        "version": "1.2.0",
         "uptime_seconds": round(time.monotonic() - _START_TIME, 1),
         "timestamp": datetime.now(UTC).isoformat(),
         "checks": {
@@ -1520,15 +1543,15 @@ async def get_drift_trend(
 async def api_version() -> dict[str, Any]:
     """Return full version and stability metadata."""
     return {
-        "version": "1.1.0",
+        "version": "1.2.0",
         "major": 1,
-        "minor": 1,
+        "minor": 2,
         "patch": 0,
         "stable": True,
         "api_versions": ["1.0", "1.1"],
         "current_api_prefix": "/api/v1",
         "deprecated_prefixes": [],
-        "release_date": "2026-06-26",
+        "release_date": "2026-07-12",
         "changelog_url": "https://github.com/Guruprasath-Annadurai/ResponsibleAi/blob/main/CHANGELOG.md",
     }
 

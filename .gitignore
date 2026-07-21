@@ -11,6 +11,8 @@ venv/
 !.env.prod.example
 *.json
 !package.json
+!tsconfig.json
+!grafana/dashboards/*.json
 htmlcov/
 .coverage
 coverage.xml

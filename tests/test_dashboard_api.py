@@ -11,6 +11,11 @@ os.environ.setdefault("RAI_AUTH_ENABLED", "false")
 os.environ.setdefault("RAI_LOG_JSON", "false")
 os.environ.setdefault("RAI_LOG_LEVEL", "WARNING")
 os.environ.setdefault("RAI_ALLOW_ALL_ORIGINS", "true")
+# Auto-migrate shells out to `alembic upgrade head` — meaningless (and slow)
+# against an ephemeral :memory: DB, since create_all() already builds the
+# current schema fresh for every test run. Covered separately by
+# tests/test_db_migrate.py against real on-disk SQLite files.
+os.environ.setdefault("RAI_AUTO_MIGRATE", "false")
 
 from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
@@ -36,7 +41,7 @@ class TestHealth:
         assert r.status_code == 200
         d = r.json()
         assert d["status"] in ("healthy", "degraded")
-        assert d["version"] == "1.1.0"
+        assert d["version"] == "1.2.0"
         assert "checks" in d
         assert "modules" in d
         assert len(d["modules"]) >= 10
