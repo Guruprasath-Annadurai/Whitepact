@@ -13,12 +13,16 @@ performance degradation, or feature outage with no security dimension
 belongs in `SLA.md`'s incident classification instead, not here.
 
 **Stated honestly, per this project's standing practice**: this runbook
-has not yet been tested against a real incident or a tabletop exercise.
-Writing it down is necessary but not sufficient — the first real incident
-is also the first real test of whether these steps actually work in
-practice. Treat gaps found during a real event as expected, fix the
-runbook afterward (Phase 6), don't treat the plan as proven just because
-it's written.
+has been through one tabletop exercise (2026-07-21 — see
+`compliance/TABLETOP_EXERCISE_2026-07-21.md`) but not a real production
+incident. The drill exercised a live P2 scenario (suspected cross-tenant
+data exposure) against the real repository code — not just a paper
+walkthrough — and a retrospective P3 scenario against an incident that
+actually happened this session (the `nltk` CVE triage). Both surfaced
+real, fixed gaps (see the report). Treat "one drill done" as meaningfully
+better than "never tested," not as "proven" — a real incident, especially
+one under time pressure with a customer on the phone, is still a
+different and harder test than a controlled drill.
 
 Last reviewed: 2026-07-21 · Platform version: 1.2.0
 
@@ -76,14 +80,28 @@ much lower than under-reacting to what's actually a P1.
    "confirming" become an excuse to delay starting the clock. The clock
    starts at detection, not at confirmation.
 2. Classify severity using the table above.
-3. Create an incident record via the `rai_incident_log` MCP tool (or the
-   equivalent `POST /api/incidents` endpoint once persisted server-side —
-   today this tool returns a structured record but persistence is the
-   caller's responsibility; see the tool's own `persist_instructions`
-   field). Capture: incident type, severity, affected systems, initial
-   evidence, timestamp.
+3. **Create an incident record via the `rai_incident_log` MCP tool — every
+   time, even for a P3/P4 that turns out to be a non-issue.** No server-
+   side persistence endpoint exists yet (tracked as a known gap; the
+   tool's own `persist_instructions` field says so explicitly rather than
+   pointing at a URL that 404s), so capture the returned record yourself
+   — paste it into a tracked note, ticket, or file. **Caught by this
+   runbook's own tabletop drill**: the real `nltk` PYSEC-2026-597 finding
+   (the P3 example in the table above) was triaged and resolved without
+   ever creating one of these records. Documenting the decision in a CI
+   comment was good; skipping the incident record meant there's no
+   queryable trail of "how many P3s have we triaged and what was the
+   pattern." Don't repeat that — the step is cheap and the record is what
+   makes Phase 6 possible later.
 4. If P1/P2: stop other work. If P3/P4: continue but schedule this within
    the response target above — don't let it silently slip past due date.
+5. **Fast path for a confirmed non-issue** (e.g., a CVE scan hit that
+   turns out to be unreachable in this codebase's actual usage, like the
+   `nltk` example): after step 3's record is created, it is fine to skip
+   directly to Phase 6 rather than mechanically stepping through Phases
+   2–5 for something that was never actually exploitable. Note the
+   "no action needed, here's why" reasoning in the incident record itself
+   so the decision is auditable later — don't just close it silently.
 
 ---
 
@@ -202,9 +220,12 @@ Within a week of resolution (not "eventually"):
 
 ## What this runbook does not yet cover
 
-- A tested, drilled process — see the honesty note at the top. Consider
-  running a tabletop exercise (simulate a P1 scenario, walk through this
-  document) before the first real incident, not instead of one.
+- A process tested against a *real* incident — one tabletop drill is done
+  (see the honesty note at the top), which is meaningfully more than
+  nothing but still not the same test as a real event under real pressure.
+  Consider a second drill periodically (e.g., each time a new phase or
+  detection source is added) rather than treating one drill as sufficient
+  forever.
 - A specific, committed breach-notification timeframe — that's a DPA/legal
   question, tracked in `compliance/DPA_ATTORNEY_SCOPE_BRIEF.md`.
 - Multi-person escalation paths — not applicable at current team size;

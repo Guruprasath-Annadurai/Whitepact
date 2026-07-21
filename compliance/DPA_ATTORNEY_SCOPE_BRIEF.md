@@ -56,7 +56,7 @@ without an answer:
 | Section | What's missing | Why it needs an attorney, not us |
 |---|---|---|
 | §6 — Data subject rights assistance | No committed timeline or cost allocation for handling access/deletion/portability requests | Varies by regime (GDPR gives data subjects a right to a timely response; exact "reasonable" timeframe is a legal judgment call) |
-| §7 — Breach notification | No committed notification timeframe to the customer | GDPR implies notifying the supervisory authority within 72 hours of *awareness* — whether/how that flows into a customer-facing SLA is a legal decision. An internal process now exists (`INCIDENT_RESPONSE_RUNBOOK.md`) but is untested against a real incident (see caveat below) — don't let a committed number get drafted ahead of that proof |
+| §7 — Breach notification | No committed notification timeframe to the customer | GDPR implies notifying the supervisory authority within 72 hours of *awareness* — whether/how that flows into a customer-facing SLA is a legal decision. An internal process exists (`INCIDENT_RESPONSE_RUNBOOK.md`) and has been through one tabletop drill (`compliance/TABLETOP_EXERCISE_2026-07-21.md`), but not a real production incident (see caveat below) — don't let a committed number get drafted ahead of that proof |
 | §8 — International data transfers | No transfer mechanism specified (Standard Contractual Clauses, adequacy decision, etc.) | Only relevant if you'll have EU/UK customers — see the jurisdiction question above. If US-only for now, tell the attorney this section may not need much work yet |
 | §10 — Liability | Entirely blank — no caps, no indemnification language | Depends on actual contract value, any insurance coverage you hold (probably none yet), and jurisdiction. This is the section most likely to actually cost attorney time — flag it as the priority item |
 
@@ -66,10 +66,12 @@ without an answer:
 
 An internal incident-response runbook now exists
 (`compliance/INCIDENT_RESPONSE_RUNBOOK.md` — detect → triage → contain →
-eradicate → recover → notify → post-incident review), but it has **not
-been tested against a real incident or a tabletop exercise**. That's a
-meaningful distinction to give the attorney: "documented" is not the same
-as "proven to work under pressure."
+eradicate → recover → notify → post-incident review) and has been through
+one tabletop drill (`compliance/TABLETOP_EXERCISE_2026-07-21.md`, which
+found and fixed two real gaps), but it has **not been tested against a
+real production incident**. That's a meaningful distinction to give the
+attorney: "drilled once" is better than "never tested," but is still not
+the same as "proven to work under pressure with a real customer affected."
 
 **Don't let the attorney draft a breach-notification clause with a
 specific numeric commitment (e.g., "within 24 hours") based solely on the

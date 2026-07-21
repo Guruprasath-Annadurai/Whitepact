@@ -164,7 +164,7 @@ Last reviewed: 2026-07-21 · Platform version: 1.2.0
 
 | Question | Answer |
 |---|---|
-| Is there a documented incident response process? | Yes — `compliance/INCIDENT_RESPONSE_RUNBOOK.md` covers detect → triage → contain → eradicate → recover → notify → post-incident review, aligned with `SLA.md`'s P1–P4 severity scale. `SECURITY.md` separately covers external vulnerability disclosure intake (48h ack, 7-day resolution target). **Stated honestly:** the runbook is documented but has not been tested against a real incident or a tabletop exercise — that's the difference between "documented" and "proven," and it's noted as such in the runbook itself. |
+| Is there a documented incident response process? | Yes — `compliance/INCIDENT_RESPONSE_RUNBOOK.md` covers detect → triage → contain → eradicate → recover → notify → post-incident review, aligned with `SLA.md`'s P1–P4 severity scale. `SECURITY.md` separately covers external vulnerability disclosure intake (48h ack, 7-day resolution target). **Stated honestly:** the runbook has been through one tabletop drill (`compliance/TABLETOP_EXERCISE_2026-07-21.md`) — a live simulation against real repository code, plus a retrospective against a real CVE triage that happened this session — which found and fixed two real gaps. It has not yet been tested against an actual production incident; one drill is progress, not proof. |
 | Can security incidents be logged in a structured, exportable format? | Yes — `rai_incident_log` MCP tool produces structured incident records with SIEM-ready payloads (severity, SLA resolution targets, evidence hashing). |
 | Is there a customer notification process for breaches? | A *process* for deciding whether/how to notify exists (`INCIDENT_RESPONSE_RUNBOOK.md` Phase 5), but it does not create a *committed, specific timeframe* (e.g., GDPR's 72-hour requirement) — that's a legal commitment tracked in `compliance/DPA_TEMPLATE.md` and `compliance/DPA_ATTORNEY_SCOPE_BRIEF.md`, pending attorney review. Don't conflate "we have a process" with "we've committed to a number of hours" — those are two different questions and only one is answered so far. |
 
@@ -210,7 +210,7 @@ Last reviewed: 2026-07-21 · Platform version: 1.2.0
 | OWASP ZAP automated scan | Script ready, not yet run against a live deployment | Needs a running instance to scan |
 | Dependency vulnerability scanning in CI | ✅ Done — `pip-audit` on every CI run, one finding triaged | — |
 | Dependabot (automatic dependency update PRs) | Not started | Engineering time — quick win, should follow soon |
-| Formal incident response runbook | ✅ Done — untested against a real incident/tabletop drill | — |
+| Formal incident response runbook | ✅ Done — one tabletop drill completed 2026-07-21 (`TABLETOP_EXERCISE_2026-07-21.md`), two real gaps found and fixed; still untested against a real production incident | — |
 | Third-party penetration test | Not started | **Funding** — typically $5-15K even scoped narrow |
 | SOC2 Type II | Not started | **Funding** — $10-30K+/yr tooling plus auditor fees, 6-12mo timeline |
 | Sub-processor list | ✅ Done — `SLA.md` + `compliance/DPA_TEMPLATE.md` | — |

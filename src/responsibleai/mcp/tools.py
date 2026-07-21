@@ -1522,8 +1522,12 @@ async def _handle_incident_log(args: dict[str, Any]) -> dict[str, Any]:
             "evidence_hash": evidence_hash,
         },
         "persist_instructions": (
-            "This incident record is ephemeral in MCP context. "
-            "POST to POST /api/v1/incidents on the ResponsibleAI REST server to persist it."
+            "This incident record is ephemeral in MCP context — no server-side "
+            "persistence endpoint exists yet (tracked as a known gap; do not "
+            "assume a POST /api/incidents endpoint is live). Until one ships, "
+            "log this record yourself: attach it to your own incident tracker, "
+            "or follow compliance/INCIDENT_RESPONSE_RUNBOOK.md's Phase 1 "
+            "guidance for capturing incident records manually."
         ),
     }
 
