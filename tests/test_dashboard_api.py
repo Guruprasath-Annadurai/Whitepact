@@ -632,3 +632,175 @@ class TestTrustIndexCertification:
         r = await client.get("/api/trust-index/certified")
         assert r.status_code == 200
         assert r.json()["certified"] == []
+
+
+# ── AI Incident Database ─────────────────────────────────────────────────────
+# POST /api/incident-db/report is deliberately rate-limited to 5/hour (it's
+# the one unauthenticated write endpoint in the whole API) using slowapi's
+# module-level in-memory limiter, which is NOT reset between test functions
+# within one pytest run (it's created once at app.py import time, independent
+# of the per-test lifespan). Calling the real HTTP endpoint from every test
+# that needs a report to exist would exhaust that budget non-deterministically
+# depending on test order/count. So: only the tests that genuinely exercise
+# the report endpoint itself call it over HTTP; every other test seeds a
+# report directly via the repository, bypassing the rate limit entirely.
+
+_INCIDENT_PAYLOAD = {
+    "title": "Jailbreak via nested roleplay framing",
+    "description": "A multi-turn nested roleplay prompt reliably bypassed the model's "
+                    "safety training and produced disallowed content.",
+    "affected_model": "test-model", "affected_provider": "test-provider",
+    "incident_type": "jailbreak", "severity": "high",
+}
+
+
+async def _seed_incident_report(**overrides):
+    from responsibleai.dashboard import app as app_module
+
+    fields = {
+        "title": _INCIDENT_PAYLOAD["title"],
+        "description": _INCIDENT_PAYLOAD["description"],
+        "incident_type": _INCIDENT_PAYLOAD["incident_type"],
+        "severity": _INCIDENT_PAYLOAD["severity"],
+        "affected_model": _INCIDENT_PAYLOAD["affected_model"],
+        "affected_provider": _INCIDENT_PAYLOAD["affected_provider"],
+    }
+    fields.update(overrides)
+    return await app_module._public_incident_repo.submit(**fields)
+
+
+class TestIncidentDBReportAndPublicRead:
+    async def test_report_starts_pending_not_public(self, client):
+        r = await client.post("/api/incident-db/report", json=_INCIDENT_PAYLOAD)
+        assert r.status_code == 201
+        d = r.json()
+        assert d["status"] == "PENDING_REVIEW"
+        assert d["public_id"] is None
+        assert "pending review" in d["message"]
+
+        listing = await client.get("/api/incident-db")
+        assert listing.json()["incidents"] == []
+
+    async def test_report_rejects_short_title(self, client):
+        bad = {**_INCIDENT_PAYLOAD, "title": "hi"}
+        r = await client.post("/api/incident-db/report", json=bad)
+        assert r.status_code == 422
+
+    async def test_report_rejects_invalid_incident_type(self, client):
+        bad = {**_INCIDENT_PAYLOAD, "incident_type": "not-a-real-type"}
+        r = await client.post("/api/incident-db/report", json=bad)
+        assert r.status_code == 422
+
+    async def test_list_unknown_incident_404s(self, client):
+        r = await client.get("/api/incident-db/RAI-2026-9999")
+        assert r.status_code == 404
+
+    async def test_verify_empty_database(self, client):
+        r = await client.get("/api/incident-db/verify")
+        assert r.status_code == 200
+        d = r.json()
+        assert d["intact"] is True
+        assert d["entries_checked"] == 0
+
+
+class TestIncidentDBModerationWorkflow:
+    async def test_full_report_to_publish_flow(self, client):
+        seeded = await _seed_incident_report()
+        internal_id = seeded["id"]
+
+        pending = await client.get("/api/incident-db/pending")
+        assert pending.status_code == 200
+        assert any(p["id"] == internal_id for p in pending.json()["pending"])
+
+        approved = await client.post(f"/api/incident-db/{internal_id}/approve")
+        assert approved.status_code == 200
+        d = approved.json()
+        assert d["status"] == "PUBLISHED"
+        assert d["public_id"].startswith("RAI-")
+        assert d["entry_hash"] is not None
+
+        public_id = d["public_id"]
+        listing = await client.get("/api/incident-db")
+        assert any(row["public_id"] == public_id for row in listing.json()["incidents"])
+
+        detail = await client.get(f"/api/incident-db/{public_id}")
+        assert detail.status_code == 200
+        assert detail.json()["title"] == _INCIDENT_PAYLOAD["title"]
+
+        verify = await client.get("/api/incident-db/verify")
+        assert verify.json()["intact"] is True
+        assert verify.json()["entries_checked"] == 1
+
+    async def test_reject_flow(self, client):
+        seeded = await _seed_incident_report()
+        internal_id = seeded["id"]
+
+        rejected = await client.post(
+            f"/api/incident-db/{internal_id}/reject",
+            json={"reason": "duplicate of an existing report"},
+        )
+        assert rejected.status_code == 200
+        assert rejected.json()["status"] == "REJECTED"
+
+        listing = await client.get("/api/incident-db")
+        assert listing.json()["incidents"] == []
+
+    async def test_approve_unknown_id_404s(self, client):
+        r = await client.post("/api/incident-db/does-not-exist/approve")
+        assert r.status_code == 404
+
+    async def test_reject_unknown_id_404s(self, client):
+        r = await client.post("/api/incident-db/does-not-exist/reject", json={"reason": "not a real report"})
+        assert r.status_code == 404
+
+    async def test_reject_requires_a_reason(self, client):
+        seeded = await _seed_incident_report()
+        internal_id = seeded["id"]
+        r = await client.post(f"/api/incident-db/{internal_id}/reject", json={"reason": "no"})
+        assert r.status_code == 422  # below min_length=5
+
+    async def test_status_update_after_publish(self, client):
+        seeded = await _seed_incident_report()
+        internal_id = seeded["id"]
+        approved = await client.post(f"/api/incident-db/{internal_id}/approve")
+        public_id = approved.json()["public_id"]
+
+        r = await client.post(f"/api/incident-db/{public_id}/status", json={"status": "RESOLVED"})
+        assert r.status_code == 200
+        assert r.json()["status"] == "RESOLVED"
+        assert r.json()["entry_hash"] == approved.json()["entry_hash"]
+
+    async def test_status_update_rejects_invalid_value(self, client):
+        seeded = await _seed_incident_report()
+        internal_id = seeded["id"]
+        approved = await client.post(f"/api/incident-db/{internal_id}/approve")
+        public_id = approved.json()["public_id"]
+
+        r = await client.post(f"/api/incident-db/{public_id}/status", json={"status": "PENDING_REVIEW"})
+        assert r.status_code == 422
+
+
+class TestIncidentDBCheckEndpoint:
+    async def test_check_matches_published_incident(self, client):
+        seeded = await _seed_incident_report()
+        internal_id = seeded["id"]
+        await client.post(f"/api/incident-db/{internal_id}/approve")
+
+        r = await client.get("/api/incident-db/check", params={
+            "model": "test-model", "provider": "test-provider",
+        })
+        assert r.status_code == 200
+        d = r.json()
+        assert d["has_reported_incidents"] is True
+        assert len(d["incidents"]) == 1
+
+    async def test_check_no_match(self, client):
+        r = await client.get("/api/incident-db/check", params={
+            "model": "totally-unknown-model", "provider": "nobody",
+        })
+        assert r.status_code == 200
+        assert r.json()["has_reported_incidents"] is False
+
+    async def test_check_requires_both_params(self, client):
+        r = await client.get("/api/incident-db/check", params={"model": "x"})
+        assert r.status_code == 422

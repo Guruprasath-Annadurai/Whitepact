@@ -63,6 +63,7 @@ from responsibleai.db import (
     McpUsageRepository,
     OrgRepository,
     PassportRepository,
+    PublicIncidentRepository,
     SSORequiredError,
     TrustRepository,
     WebhookDeliveryRepository,
@@ -141,6 +142,7 @@ _audit_ctx: ContextVar[dict[str, Any] | None] = ContextVar("audit_ctx", default=
 _trust_engine: TrustScoreEngine | None = None
 _passport_gen: PassportGenerator | None = None
 _passport_repo: PassportRepository | None = None
+_public_incident_repo: PublicIncidentRepository | None = None
 _guardrails: GuardrailsEngine | None = None
 _hallucination: HallucinationDetector | None = None
 _compliance: ComplianceEngine | None = None
@@ -198,7 +200,7 @@ async def lifespan(application: FastAPI):
     global _trust_engine, _passport_gen, _guardrails, _hallucination
     global _compliance, _cost_repo, _cost_analyzer, _router, _trust_repo
     global _org_repo, _audit_repo, _incident_repo, _leaderboard_repo, _leaderboard_runner
-    global _passport_repo, _db_engine, _mcp_usage_repo
+    global _passport_repo, _public_incident_repo, _db_engine, _mcp_usage_repo
     global _eval_repo, _comparator, _benchmark_runner, _dataset_scanner
     global _oidc_provider, _stripe_service, _plan_rate_limiter
 
@@ -237,6 +239,7 @@ async def lifespan(application: FastAPI):
     _trust_engine = TrustScoreEngine()
     _passport_gen = PassportGenerator()
     _passport_repo = PassportRepository(_db_engine)
+    _public_incident_repo = PublicIncidentRepository(_db_engine)
     _guardrails   = GuardrailsEngine()
     _hallucination = HallucinationDetector()
     _compliance   = ComplianceEngine()
@@ -620,6 +623,33 @@ class TrustIndexCertifyRequest(BaseModel):
     certified_by: str = Field("ResponsibleAI Certification Team", max_length=200)
 
 
+class IncidentReportRequest(BaseModel):
+    title: str = Field(..., min_length=5, max_length=300)
+    description: str = Field(..., min_length=20, max_length=10_000)
+    incident_type: str = Field(
+        "other",
+        pattern="^(jailbreak|data_leak|harmful_output|misinformation|bias|"
+                "prompt_injection|privacy_violation|safety_failure|other)$",
+    )
+    severity: str = Field("medium", pattern="^(critical|high|medium|low)$")
+    affected_model: str = Field(..., min_length=1, max_length=100)
+    affected_provider: str = Field(..., min_length=1, max_length=100)
+    affected_version: str | None = Field(None, max_length=100)
+    reporter_name: str | None = Field(None, max_length=200)
+    reporter_contact: str | None = Field(None, max_length=200)
+    evidence_urls: list[str] = Field(default_factory=list, max_length=20)
+    reproduction_steps: str | None = Field(None, max_length=5000)
+    tags: list[str] = Field(default_factory=list, max_length=20)
+
+
+class IncidentRejectRequest(BaseModel):
+    reason: str = Field(..., min_length=5, max_length=2000)
+
+
+class IncidentStatusUpdateRequest(BaseModel):
+    status: str = Field(..., pattern="^(PUBLISHED|DISPUTED|RESOLVED)$")
+
+
 class WebhookCreateRequest(BaseModel):
     url: str = Field(..., min_length=1, max_length=2048)
     events: list[str] = Field(..., min_length=1)
@@ -715,6 +745,34 @@ async def trust_index_verify_page(passport_id: str) -> HTMLResponse:
     reads the ID from the URL path client-side. See
     compliance/TRUST_INDEX_SPEC.md for what this is and why it's citable."""
     page = _static_dir / "verify.html"
+    return HTMLResponse(content=page.read_text())
+
+
+@app.get("/incident-db", response_class=HTMLResponse, include_in_schema=False)
+async def incident_db_page() -> HTMLResponse:
+    """Public AI Incident Database — searchable list, reads live from
+    GET /api/incident-db client-side. Registered before /incident-db/report
+    and /incident-db/{public_id} only matters for the API routes above;
+    these three page routes are distinct paths so order is not load-bearing
+    here, but kept in the same order for readability."""
+    page = _static_dir / "incident_db.html"
+    return HTMLResponse(content=page.read_text())
+
+
+@app.get("/incident-db/report", response_class=HTMLResponse, include_in_schema=False)
+async def incident_db_report_page() -> HTMLResponse:
+    """Public report-submission form — posts to POST /api/incident-db/report."""
+    page = _static_dir / "incident_db_report.html"
+    return HTMLResponse(content=page.read_text())
+
+
+@app.get("/incident-db/{public_id}", response_class=HTMLResponse, include_in_schema=False)
+async def incident_db_detail_page(public_id: str) -> HTMLResponse:
+    """Public single-incident detail page — reads the ID from the URL path
+    client-side and fetches GET /api/incident-db/{public_id}. Registered
+    after /incident-db/report so a literal request for the report form
+    isn't swallowed by this catch-all path parameter."""
+    page = _static_dir / "incident_db_detail.html"
     return HTMLResponse(content=page.read_text())
 
 
@@ -1621,6 +1679,168 @@ async def trust_index_certify(
         raise HTTPException(404, "No Trust Passport found with this ID.")
     logger.info("trust_index_certified", passport_id=passport_id, certified_by=req.certified_by)
     return updated
+
+
+# ── Public AI Incident Database — "the CVE database for AI failures" ────────────
+# Anyone can report (POST /report, strictly rate-limited — this is the spam
+# surface). Nothing is publicly visible until a super-admin reviews it
+# (moderation queue, same posture as Trust Index certification: no automated
+# publish path). Once published, entries are hash-chained the same way the
+# internal audit log is, and GET /verify is public — unlike the internal
+# audit chain, anyone should be able to check this database's integrity, not
+# just the operator. GET /check is the paid product: "has anything been
+# reported against the model I'm about to deploy," gated at PRO plan for
+# real programmatic/CI use, same free-browse/paid-integration split as the
+# leaderboard's diagnostic tier.
+
+def _incident_db_super_admin_check(_auth: OrgContext) -> None:
+    if not (_auth.is_legacy and _auth.role == Role.OWNER):
+        raise HTTPException(403, "AI Incident Database moderation requires super-admin access")
+
+
+@app.post("/api/incident-db/report", tags=["incident-db"], status_code=201)
+@limiter.limit("5/hour")
+async def incident_db_report(request: Request, req: IncidentReportRequest) -> dict[str, Any]:
+    """Public, unauthenticated — anyone can report a publicly observed AI
+    incident. Held as PENDING_REVIEW until a super-admin approves it; never
+    visible in the public listing before that. Strictly rate-limited (5/hour
+    per IP) since this is the one endpoint on this feature with no auth gate
+    at all."""
+    stored = await _ready(_public_incident_repo).submit(
+        title=req.title, description=req.description, incident_type=req.incident_type,
+        severity=req.severity, affected_model=req.affected_model, affected_provider=req.affected_provider,
+        affected_version=req.affected_version, reporter_name=req.reporter_name,
+        reporter_contact=req.reporter_contact,
+        evidence={"urls": req.evidence_urls, "reproduction_steps": req.reproduction_steps},
+        tags=req.tags,
+    )
+    logger.info("incident_db_report_submitted", internal_id=stored["id"],
+                model=req.affected_model, provider=req.affected_provider, severity=req.severity)
+    return {
+        **stored,
+        "message": "Report received and is pending review. It will not appear in the "
+                    "public database until a moderator approves it.",
+    }
+
+
+@app.get("/api/incident-db", tags=["incident-db"])
+@limiter.limit("60/minute")
+async def incident_db_list(
+    request: Request,
+    severity: str | None = Query(default=None),
+    incident_type: str | None = Query(default=None),
+    model: str | None = Query(default=None),
+    provider: str | None = Query(default=None),
+    search: str | None = Query(default=None, max_length=200),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> dict[str, Any]:
+    """Public, unauthenticated. Published incidents only — free to browse,
+    like the CVE database, no account required."""
+    rows = await _ready(_public_incident_repo).list_published(
+        severity=severity, incident_type=incident_type, model=model, provider=provider,
+        search=search, limit=limit, offset=offset,
+    )
+    return {"incidents": rows, "limit": limit, "offset": offset}
+
+
+@app.get("/api/incident-db/check", tags=["incident-db"])
+@limiter.limit("120/minute")
+async def incident_db_check(
+    request: Request,
+    model: str = Query(..., min_length=1, max_length=100),
+    provider: str = Query(..., min_length=1, max_length=100),
+    _auth: OrgContext = Depends(require_plan(Plan.PRO)),
+) -> dict[str, Any]:
+    """PRO/ENTERPRISE only — the pre-deployment check product: 'has anything
+    been reported against the exact model/provider I'm about to deploy.'
+    Exact match, not fuzzy search, so this is safe to wire into a CI/CD
+    deploy gate without false positives from partial name matches."""
+    rows = await _ready(_public_incident_repo).check(model, provider)
+    return {
+        "model": model, "provider": provider,
+        "has_reported_incidents": len(rows) > 0,
+        "incidents": rows,
+    }
+
+
+@app.get("/api/incident-db/verify", tags=["incident-db"])
+@limiter.limit("30/minute")
+async def incident_db_verify(request: Request) -> dict[str, Any]:
+    """Public, unauthenticated — recomputes the hash chain over every
+    published entry. Deliberately public, unlike GET /api/audit/verify:
+    a CVE-style database's trustworthiness depends on anyone being able to
+    check it hasn't been quietly tampered with, not just the operator."""
+    return await _ready(_public_incident_repo).verify_chain()
+
+
+@app.get("/api/incident-db/pending", tags=["incident-db"])
+@limiter.limit("30/minute")
+async def incident_db_pending(
+    request: Request,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    _auth: OrgContext = Depends(require_role(Role.OWNER)),
+) -> dict[str, Any]:
+    _incident_db_super_admin_check(_auth)
+    rows = await _ready(_public_incident_repo).list_pending(limit=limit, offset=offset)
+    return {"pending": rows, "limit": limit, "offset": offset}
+
+
+@app.post("/api/incident-db/{internal_id}/approve", tags=["incident-db"])
+@limiter.limit("30/minute")
+async def incident_db_approve(
+    request: Request, internal_id: str,
+    _auth: OrgContext = Depends(require_role(Role.OWNER)),
+) -> dict[str, Any]:
+    _incident_db_super_admin_check(_auth)
+    updated = await _ready(_public_incident_repo).approve(internal_id, reviewed_by=_auth.key_id)
+    if updated is None:
+        raise HTTPException(404, "No pending report found with this ID (already reviewed, or doesn't exist).")
+    logger.info("incident_db_published", public_id=updated["public_id"], internal_id=internal_id)
+    return updated
+
+
+@app.post("/api/incident-db/{internal_id}/reject", tags=["incident-db"])
+@limiter.limit("30/minute")
+async def incident_db_reject(
+    request: Request, internal_id: str, req: IncidentRejectRequest,
+    _auth: OrgContext = Depends(require_role(Role.OWNER)),
+) -> dict[str, Any]:
+    _incident_db_super_admin_check(_auth)
+    updated = await _ready(_public_incident_repo).reject(internal_id, reviewed_by=_auth.key_id, reason=req.reason)
+    if updated is None:
+        raise HTTPException(404, "No pending report found with this ID (already reviewed, or doesn't exist).")
+    logger.info("incident_db_rejected", internal_id=internal_id, reason=req.reason)
+    return updated
+
+
+@app.post("/api/incident-db/{public_id}/status", tags=["incident-db"])
+@limiter.limit("30/minute")
+async def incident_db_update_status(
+    request: Request, public_id: str, req: IncidentStatusUpdateRequest,
+    _auth: OrgContext = Depends(require_role(Role.OWNER)),
+) -> dict[str, Any]:
+    """Post-publish lifecycle transition only (e.g. mark RESOLVED once a
+    provider patches the issue) — never touches the hash-chained disclosure
+    facts."""
+    _incident_db_super_admin_check(_auth)
+    updated = await _ready(_public_incident_repo).update_status(public_id, req.status, reviewed_by=_auth.key_id)
+    if updated is None:
+        raise HTTPException(404, "No published incident found with this ID.")
+    return updated
+
+
+@app.get("/api/incident-db/{public_id}", tags=["incident-db"])
+@limiter.limit("120/minute")
+async def incident_db_get(request: Request, public_id: str) -> dict[str, Any]:
+    """Public, unauthenticated. Must be registered after /check, /verify,
+    /pending, and the {id}/approve|reject|status routes so those literal
+    and admin-action paths aren't swallowed by this catch-all ID pattern."""
+    record = await _ready(_public_incident_repo).get_by_public_id(public_id)
+    if record is None:
+        raise HTTPException(404, "No published incident found with this ID.")
+    return record
 
 
 # ── WebSocket live dashboard ───────────────────────────────────────────────────

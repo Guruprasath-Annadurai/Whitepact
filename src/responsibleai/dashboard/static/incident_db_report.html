@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Report an AI Incident — ResponsibleAI</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #fafafa; --fg: #1a1a1a; --muted: #666;
+    --card-bg: #ffffff; --card-border: #e5e5e5;
+    --accent: #2563eb; --green: #16a34a; --red: #dc2626; --code-bg: #f1f1f1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0b0b0c; --fg: #e8e8e8; --muted: #999;
+      --card-bg: #17181a; --card-border: #2a2a2c; --code-bg: #232427;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    max-width: 640px; margin: 0 auto; padding: 3rem 1.5rem 5rem;
+    background: var(--bg); color: var(--fg); line-height: 1.55;
+  }
+  header { margin-bottom: 1.75rem; }
+  .brand { font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 0.5rem; }
+  h1 { font-size: 1.6rem; margin: 0 0 0.5rem; letter-spacing: -0.02em; }
+  .lede { color: var(--muted); font-size: 0.95rem; }
+  .meta-links { margin-top: 0.75rem; font-size: 0.88rem; }
+  .meta-links a { color: var(--accent); text-decoration: none; }
+
+  form { display: flex; flex-direction: column; gap: 1.1rem; }
+  label { font-size: 0.85rem; font-weight: 600; margin-bottom: 0.35rem; display: block; }
+  .hint { font-size: 0.78rem; color: var(--muted); margin-top: 0.25rem; }
+  input, select, textarea {
+    width: 100%; background: var(--card-bg); border: 1px solid var(--card-border); color: var(--fg);
+    border-radius: 8px; padding: 0.65rem 0.8rem; font-size: 0.9rem; font-family: inherit;
+  }
+  textarea { min-height: 110px; resize: vertical; }
+  .row { display: flex; gap: 0.75rem; }
+  .row > div { flex: 1; }
+  button {
+    background: var(--accent); color: #fff; border: none; border-radius: 8px;
+    padding: 0.8rem 1.2rem; font-size: 0.95rem; font-weight: 700; cursor: pointer; margin-top: 0.5rem;
+  }
+  button:disabled { opacity: 0.6; cursor: not-allowed; }
+  .result {
+    margin-top: 1.5rem; padding: 1.25rem; border-radius: 10px; font-size: 0.9rem;
+    border: 1px solid var(--card-border); display: none;
+  }
+  .result.ok { display: block; background: rgba(22,163,74,0.08); border-color: rgba(22,163,74,0.3); color: var(--green); }
+  .result.error { display: block; background: rgba(220,38,38,0.08); border-color: rgba(220,38,38,0.3); color: var(--red); }
+  .note {
+    background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 10px;
+    padding: 1rem 1.25rem; font-size: 0.84rem; color: var(--muted); margin-bottom: 1.75rem;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">ResponsibleAI · AI Incident Database</div>
+  <h1>Report an Incident</h1>
+  <p class="lede">Describe a publicly observed AI failure — a jailbreak, a data leak, harmful output, or similar. Your report is reviewed by a moderator before it appears in the public database.</p>
+  <div class="meta-links"><a href="/incident-db">&larr; Back to the database</a></div>
+</header>
+
+<div class="note">
+  Reports are held for review and are not published automatically. Include enough
+  detail (reproduction steps, evidence links) that a moderator can verify the claim.
+  Your contact info, if provided, is kept private and never shown publicly.
+</div>
+
+<form id="report-form">
+  <div>
+    <label for="title">Title</label>
+    <input id="title" name="title" required minlength="5" maxlength="300" placeholder="Short, specific summary of what happened" />
+  </div>
+
+  <div>
+    <label for="description">What happened</label>
+    <textarea id="description" name="description" required minlength="20" maxlength="10000" placeholder="Describe the incident in detail — what you did, what the model did, why it's a problem"></textarea>
+  </div>
+
+  <div class="row">
+    <div>
+      <label for="affected_model">Affected model</label>
+      <input id="affected_model" name="affected_model" required maxlength="100" placeholder="e.g. gpt-4o" />
+    </div>
+    <div>
+      <label for="affected_provider">Provider</label>
+      <input id="affected_provider" name="affected_provider" required maxlength="100" placeholder="e.g. openai" />
+    </div>
+  </div>
+
+  <div>
+    <label for="affected_version">Version (optional)</label>
+    <input id="affected_version" name="affected_version" maxlength="100" placeholder="e.g. gpt-4o-2024-08-06" />
+  </div>
+
+  <div class="row">
+    <div>
+      <label for="incident_type">Type</label>
+      <select id="incident_type" name="incident_type">
+        <option value="jailbreak">Jailbreak</option>
+        <option value="data_leak">Data leak</option>
+        <option value="harmful_output">Harmful output</option>
+        <option value="misinformation">Misinformation</option>
+        <option value="bias">Bias</option>
+        <option value="prompt_injection">Prompt injection</option>
+        <option value="privacy_violation">Privacy violation</option>
+        <option value="safety_failure">Safety failure</option>
+        <option value="other" selected>Other</option>
+      </select>
+    </div>
+    <div>
+      <label for="severity">Severity</label>
+      <select id="severity" name="severity">
+        <option value="critical">Critical</option>
+        <option value="high">High</option>
+        <option value="medium" selected>Medium</option>
+        <option value="low">Low</option>
+      </select>
+    </div>
+  </div>
+
+  <div>
+    <label for="evidence_urls">Evidence URLs (one per line, optional)</label>
+    <textarea id="evidence_urls" name="evidence_urls" style="min-height:70px" placeholder="https://…"></textarea>
+  </div>
+
+  <div>
+    <label for="reproduction_steps">Reproduction steps (optional)</label>
+    <textarea id="reproduction_steps" name="reproduction_steps" maxlength="5000" placeholder="Exact prompt(s) or steps to reproduce"></textarea>
+  </div>
+
+  <div class="row">
+    <div>
+      <label for="reporter_name">Your name (optional — leave blank to report anonymously)</label>
+      <input id="reporter_name" name="reporter_name" maxlength="200" />
+    </div>
+    <div>
+      <label for="reporter_contact">Contact (optional, kept private)</label>
+      <input id="reporter_contact" name="reporter_contact" maxlength="200" placeholder="email, for moderator follow-up only" />
+    </div>
+  </div>
+
+  <button type="submit" id="submit-btn">Submit Report</button>
+  <div class="result" id="result"></div>
+</form>
+
+<script>
+(function () {
+  const form = document.getElementById("report-form");
+  const resultEl = document.getElementById("result");
+  const submitBtn = document.getElementById("submit-btn");
+
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Submitting…";
+    resultEl.className = "result";
+    resultEl.textContent = "";
+
+    const evidenceUrls = document.getElementById("evidence_urls").value
+      .split("\n").map(function (s) { return s.trim(); }).filter(Boolean);
+
+    const payload = {
+      title: document.getElementById("title").value,
+      description: document.getElementById("description").value,
+      affected_model: document.getElementById("affected_model").value,
+      affected_provider: document.getElementById("affected_provider").value,
+      affected_version: document.getElementById("affected_version").value || null,
+      incident_type: document.getElementById("incident_type").value,
+      severity: document.getElementById("severity").value,
+      evidence_urls: evidenceUrls,
+      reproduction_steps: document.getElementById("reproduction_steps").value || null,
+      reporter_name: document.getElementById("reporter_name").value || null,
+      reporter_contact: document.getElementById("reporter_contact").value || null,
+      tags: [],
+    };
+
+    fetch("/api/incident-db/report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+      .then(function (res) {
+        return res.json().then(function (data) { return { ok: res.ok, status: res.status, data: data }; });
+      })
+      .then(function (r) {
+        if (!r.ok) {
+          const detail = r.data && r.data.message ? r.data.message : (r.data && r.data.detail ? JSON.stringify(r.data.detail) : "HTTP " + r.status);
+          throw new Error(detail);
+        }
+        resultEl.className = "result ok";
+        resultEl.textContent = r.data.message || "Report submitted — it is now pending review.";
+        form.reset();
+      })
+      .catch(function (err) {
+        resultEl.className = "result error";
+        resultEl.textContent = "Could not submit report: " + String(err.message || err);
+      })
+      .finally(function () {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Submit Report";
+      });
+  });
+})();
+</script>
+
+</body>
+</html>

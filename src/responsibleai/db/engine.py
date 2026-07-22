@@ -300,6 +300,37 @@ trust_passports = Table(
     Index("idx_tp_generated", "generated_at"),
 )
 
+public_incident_reports = Table(
+    "public_incident_reports",
+    metadata,
+    Column("id",                String(36),  primary_key=True),  # internal ID, always present
+    Column("public_id",         String(20),  nullable=True, unique=True),  # "RAI-YYYY-NNNN", set on publish
+    Column("status",            String(20),  nullable=False, default="PENDING_REVIEW"),
+    Column("title",             String(300), nullable=False),
+    Column("description",       Text,        nullable=False),
+    Column("incident_type",     String(50),  nullable=False),
+    Column("severity",          String(20),  nullable=False),
+    Column("affected_model",    String(100), nullable=False),
+    Column("affected_provider", String(100), nullable=False),
+    Column("affected_version",  String(100), nullable=True),
+    Column("reporter_name",     String(200), nullable=True),  # null = anonymous
+    Column("reporter_contact",  EncryptedString(), nullable=True),  # PII — opt-in encrypted, never public
+    Column("evidence",          Text,        nullable=True),  # JSON: {urls: [...], reproduction_steps: "..."}
+    Column("tags",              Text,        nullable=True),  # JSON list
+    Column("submitted_at",      String(32),  nullable=False),
+    Column("reviewed_at",       String(32),  nullable=True),
+    Column("reviewed_by",       String(200), nullable=True),
+    Column("rejection_reason",  Text,        nullable=True),
+    Column("published_at",      String(32),  nullable=True),
+    Column("entry_hash",        String(64),  nullable=True),
+    Column("prev_hash",         String(64),  nullable=True),
+    Index("idx_pir_status",       "status"),
+    Index("idx_pir_model",        "affected_model", "affected_provider"),
+    Index("idx_pir_severity",     "severity"),
+    Index("idx_pir_submitted",    "submitted_at"),
+    Index("idx_pir_published_at", "published_at"),
+)
+
 
 class DatabaseEngine:
     """Async database engine wrapping SQLAlchemy — SQLite or PostgreSQL.
