@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Hallucination Check — ResponsibleAI</title>
+<link rel="stylesheet" href="/static/css/app.css" />
+<style>
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; align-items: start; }
+  @media (max-width: 900px) { .split { grid-template-columns: 1fr; } }
+  .dim-bar { height: 6px; background: var(--code-bg); border-radius: 4px; overflow: hidden; }
+  .dim-fill { height: 100%; background: var(--accent); border-radius: 4px; }
+</style>
+</head>
+<body>
+<div id="rai-shell"></div>
+
+<script src="/static/js/app.js"></script>
+<script>
+(function () {
+  RAI.shell("hallucination");
+  const content = document.getElementById("rai-page-content");
+
+  function escHtml(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  const RISK_PILL = { LOW: "pill-success", MEDIUM: "pill-medium", HIGH: "pill-warning", CRITICAL: "pill-critical" };
+
+  content.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1>Hallucination Check</h1>
+        <p>Estimate factual-consistency risk in generated text, optionally against a set of reference candidates.</p>
+      </div>
+    </div>
+    <div class="split">
+      <div class="card">
+        <form id="hal-form">
+          <div class="field">
+            <label for="hal-text">Text to check</label>
+            <textarea id="hal-text" required placeholder="Paste model output…" style="min-height:160px;"></textarea>
+          </div>
+          <div class="field">
+            <label for="hal-candidates">Reference candidates (one per line, optional)</label>
+            <textarea id="hal-candidates" placeholder="Known-true facts or reference passages…" style="min-height:100px;"></textarea>
+            <div class="hint">Leave blank to rely on internal consistency + hedging analysis only.</div>
+          </div>
+          <button type="submit" class="btn btn-primary" id="hal-submit">Check</button>
+        </form>
+      </div>
+      <div class="card" id="hal-result">
+        <div class="state-box">Paste text and run a check to see results here.</div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById("hal-form").addEventListener("submit", async function (e) {
+    e.preventDefault();
+    const resultEl = document.getElementById("hal-result");
+    const submitBtn = document.getElementById("hal-submit");
+    submitBtn.disabled = true;
+    resultEl.innerHTML = '<div class="state-box"><span class="spinner"></span>&nbsp; Checking…</div>';
+    try {
+      const text = document.getElementById("hal-text").value;
+      const candidatesRaw = document.getElementById("hal-candidates").value.trim();
+      const candidates = candidatesRaw ? candidatesRaw.split("\n").filter(Boolean) : null;
+      const d = await RAI.fetchJSON("/api/hallucination", { method: "POST", body: JSON.stringify({ text: text, candidates: candidates }) });
+      resultEl.innerHTML = `
+        <div class="flex items-center gap-3" style="margin-bottom:1.25rem;">
+          <div style="font-size:1.8rem;font-weight:800;">${(d.hallucination_risk * 100).toFixed(0)}%</div>
+          <span class="pill ${RISK_PILL[d.risk_level] || "pill-neutral"}">${escHtml(d.risk_level)} risk</span>
+        </div>
+        <div style="margin-bottom:1rem;">
+          ${[["Consistency", d.consistency_score], ["Hedging density", d.hedging_score]].map(function (pair) {
+            return '<div style="margin-bottom:0.7rem;">' +
+              '<div class="flex" style="justify-content:space-between;font-size:0.8rem;color:var(--muted);margin-bottom:0.25rem;">' +
+              '<span>' + pair[0] + '</span><span>' + (pair[1] * 100).toFixed(0) + '%</span></div>' +
+              '<div class="dim-bar"><div class="dim-fill" style="width:' + (pair[1] * 100) + '%"></div></div>' +
+              '</div>';
+          }).join("")}
+        </div>
+        ${d.unsupported_claims.length
+          ? '<div class="text-sm text-muted" style="margin-bottom:0.4rem;">Unsupported Claims (' + d.unsupported_claims.length + ')</div>' +
+            d.unsupported_claims.slice(0, 5).map(function (c) { return '<div class="pill pill-warning" style="display:block;margin-bottom:0.35rem;">' + escHtml(String(c).slice(0, 120)) + "</div>"; }).join("")
+          : '<div class="pill pill-success">No unsupported claims detected.</div>'}
+      `;
+    } catch (err) {
+      resultEl.innerHTML = '<div class="state-box error">Error: ' + escHtml(err.message) + "</div>";
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+})();
+</script>
+</body>
+</html>

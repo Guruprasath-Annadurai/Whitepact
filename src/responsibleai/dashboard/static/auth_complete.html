@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Signing in — ResponsibleAI</title>
+<link rel="stylesheet" href="/static/css/app.css" />
+<style>
+  body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+</style>
+</head>
+<body>
+<div class="state-box" id="status"><span class="spinner"></span>&nbsp; Completing sign-in…</div>
+
+<script src="/static/js/app.js"></script>
+<script>
+(function () {
+  RAI.theme.init();
+  const statusEl = document.getElementById("status");
+  // The token arrives in the URL fragment (never sent to the server, unlike
+  // a query param), set by GET /api/auth/callback's redirect.
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  const token = hash.get("token");
+
+  if (!token) {
+    statusEl.className = "state-box error";
+    statusEl.textContent = "Sign-in did not return a token. Return to the login page and try again.";
+  } else {
+    RAI.auth.setToken(token);
+    // Strip the token from the URL/history immediately, then continue.
+    window.history.replaceState(null, "", "/auth/complete");
+    window.location.href = "/";
+  }
+})();
+</script>
+</body>
+</html>

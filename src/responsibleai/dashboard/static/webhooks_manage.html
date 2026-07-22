@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Webhooks — ResponsibleAI</title>
+<link rel="stylesheet" href="/static/css/app.css" />
+<style>
+  .split { display: grid; grid-template-columns: 1.3fr 1fr; gap: 1.5rem; align-items: start; }
+  @media (max-width: 900px) { .split { grid-template-columns: 1fr; } }
+  .event-check { display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; font-weight: 500; margin-bottom: 0.4rem; }
+  .event-check input { width: auto; }
+</style>
+</head>
+<body>
+<div id="rai-shell"></div>
+
+<script src="/static/js/app.js"></script>
+<script>
+(function () {
+  RAI.shell("webhooks");
+  const content = document.getElementById("rai-page-content");
+
+  function escHtml(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  const EVENTS = ["drift_alert", "budget_exceeded", "guardrail_triggered", "trust_score_changed"];
+
+  content.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1>Webhooks</h1>
+        <p>Deliver governance events to Slack, Teams, PagerDuty, or a generic HTTPS endpoint.</p>
+      </div>
+    </div>
+    <div class="split">
+      <div>
+        <div class="card">
+          <h2 style="margin-top:0;font-size:1.05rem;">Registered Webhooks</h2>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>URL</th><th>Provider</th><th>Events</th><th></th></tr></thead>
+              <tbody id="wh-tbody"><tr><td colspan="4" class="state-box">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card">
+          <h2 style="margin-top:0;font-size:1.05rem;">Recent Deliveries</h2>
+          <div id="wh-deliveries" class="state-box">Loading…</div>
+        </div>
+      </div>
+      <div class="card">
+        <h2 style="margin-top:0;font-size:1.05rem;">Register Webhook</h2>
+        <form id="wh-form">
+          <div class="field">
+            <label for="wh-url">URL</label>
+            <input id="wh-url" required placeholder="https://hooks.slack.com/services/…" />
+          </div>
+          <div class="field">
+            <label for="wh-provider">Provider</label>
+            <select id="wh-provider">
+              <option value="generic">Generic</option>
+              <option value="slack">Slack</option>
+              <option value="teams">Teams</option>
+              <option value="pagerduty">PagerDuty</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Events</label>
+            ${EVENTS.map(function (ev) {
+              return '<label class="event-check"><input type="checkbox" value="' + ev + '" checked /> ' + ev + '</label>';
+            }).join("")}
+          </div>
+          <div class="field">
+            <label for="wh-secret">Secret (optional)</label>
+            <input id="wh-secret" type="password" placeholder="HMAC signing secret" />
+          </div>
+          <div class="field">
+            <label for="wh-desc">Description</label>
+            <input id="wh-desc" placeholder="#alerts channel" />
+          </div>
+          <button type="submit" class="btn btn-primary" id="wh-submit">Register</button>
+        </form>
+      </div>
+    </div>
+  `;
+
+  async function loadWebhooks() {
+    const tbody = document.getElementById("wh-tbody");
+    try {
+      const d = await RAI.fetchJSON("/api/webhooks", { skipAuthRedirect: true });
+      const hooks = d.webhooks || [];
+      if (!hooks.length) {
+        tbody.innerHTML = '<tr><td colspan="4" class="state-box">No webhooks registered.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = hooks.map(function (w) {
+        return "<tr><td class=\"text-sm\">" + escHtml(w.url) + "</td><td><span class=\"pill pill-outline\">" + escHtml(w.provider) + "</span></td><td class=\"text-sm text-muted\">" +
+          (w.events || []).join(", ") + "</td><td><button class=\"btn btn-sm\" data-test-id=\"" + escHtml(w.id || w.webhook_id || "") + "\">Test</button></td></tr>";
+      }).join("");
+      tbody.querySelectorAll("[data-test-id]").forEach(function (btn) {
+        btn.addEventListener("click", async function () {
+          const id = btn.getAttribute("data-test-id");
+          btn.disabled = true;
+          btn.textContent = "Testing…";
+          try {
+            await RAI.fetchJSON("/api/webhooks/test/" + encodeURIComponent(id), { method: "POST" });
+            RAI.toast("Test delivery sent.", "success");
+            loadDeliveries();
+          } catch (e) {
+            RAI.toast("Test failed: " + e.message, "error");
+          } finally {
+            btn.disabled = false;
+            btn.textContent = "Test";
+          }
+        });
+      });
+    } catch (e) {
+      tbody.innerHTML = '<tr><td colspan="4" class="state-box error">Could not load webhooks: ' + escHtml(e.message) + "</td></tr>";
+    }
+  }
+
+  async function loadDeliveries() {
+    const el = document.getElementById("wh-deliveries");
+    try {
+      const d = await RAI.fetchJSON("/api/webhooks/deliveries?limit=20", { skipAuthRedirect: true });
+      if (!d.deliveries.length) {
+        el.innerHTML = '<div class="text-sm text-muted">No deliveries yet (' + d.total + " total, " + d.failed + " failed).</div>";
+        return;
+      }
+      el.innerHTML = '<div class="text-sm text-muted" style="margin-bottom:0.6rem;">' + d.total + ' total · ' + d.failed + ' failed</div>' +
+        '<div class="table-wrap"><table><thead><tr><th>Event</th><th>Status</th><th>Attempts</th><th>Time</th></tr></thead><tbody>' +
+        d.deliveries.map(function (x) {
+          return "<tr><td>" + escHtml(x.event || "—") + "</td><td><span class=\"pill " + (x.success ? "pill-success" : "pill-critical") + "\">" +
+            (x.success ? "OK" : "FAILED") + "</span>" + (x.last_error ? ' <span class="text-sm text-muted">' + escHtml(x.last_error) + "</span>" : "") + "</td><td>" + x.attempts +
+            "</td><td>" + (x.delivered_at ? new Date(x.delivered_at * 1000).toLocaleString() : "—") + "</td></tr>";
+        }).join("") + "</tbody></table></div>";
+    } catch (e) {
+      el.innerHTML = '<div class="state-box error">Could not load deliveries: ' + escHtml(e.message) + "</div>";
+    }
+  }
+
+  document.getElementById("wh-form").addEventListener("submit", async function (e) {
+    e.preventDefault();
+    const submitBtn = document.getElementById("wh-submit");
+    const events = Array.from(document.querySelectorAll('.event-check input:checked')).map(function (c) { return c.value; });
+    if (!events.length) {
+      RAI.toast("Select at least one event.", "error");
+      return;
+    }
+    submitBtn.disabled = true;
+    try {
+      const body = {
+        url: document.getElementById("wh-url").value,
+        provider: document.getElementById("wh-provider").value,
+        events: events,
+        secret: document.getElementById("wh-secret").value || "",
+        description: document.getElementById("wh-desc").value || "",
+      };
+      await RAI.fetchJSON("/api/webhooks", { method: "POST", body: JSON.stringify(body) });
+      RAI.toast("Webhook registered.", "success");
+      document.getElementById("wh-form").reset();
+      loadWebhooks();
+    } catch (err) {
+      RAI.toast("Could not register webhook: " + err.message, "error");
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+
+  loadWebhooks();
+  loadDeliveries();
+})();
+</script>
+</body>
+</html>

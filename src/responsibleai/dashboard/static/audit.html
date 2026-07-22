@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Audit Log — ResponsibleAI</title>
+<link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body>
+<div id="rai-shell"></div>
+
+<script src="/static/js/app.js"></script>
+<script>
+(function () {
+  RAI.shell("audit");
+  const content = document.getElementById("rai-page-content");
+
+  function escHtml(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  function statusPill(code) {
+    if (code >= 500) return "pill-critical";
+    if (code >= 400) return "pill-warning";
+    return "pill-success";
+  }
+
+  content.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1>Audit Log</h1>
+        <p>Tamper-evident, hash-chained record of every API request against this deployment.</p>
+      </div>
+      <div class="flex gap-2">
+        <button class="btn" id="verify-btn">Verify Chain</button>
+        <button class="btn" id="export-btn">Export CSV</button>
+      </div>
+    </div>
+
+    <div class="stat-grid" id="audit-summary">
+      <div class="state-box"><span class="spinner"></span>&nbsp; Loading summary…</div>
+    </div>
+
+    <div id="verify-result"></div>
+
+    <div class="card">
+      <div class="flex items-center gap-3" style="margin-bottom:1rem;">
+        <h2 style="margin:0;font-size:1.05rem;flex:1;">Recent Entries</h2>
+        <input id="filter-endpoint" placeholder="Filter by endpoint…" style="max-width:260px;" />
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Time</th><th>Method</th><th>Endpoint</th><th>Status</th><th>Duration</th><th>IP</th></tr></thead>
+          <tbody id="audit-tbody"><tr><td colspan="6" class="state-box">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  async function loadSummary() {
+    const el = document.getElementById("audit-summary");
+    try {
+      const d = await RAI.fetchJSON("/api/audit/summary?days=7", { skipAuthRedirect: true });
+      const top = d.endpoints.slice(0, 4);
+      el.innerHTML = top.map(function (e) {
+        return '<div class="stat-card"><div class="label">' + escHtml(e.endpoint) + '</div><div class="value" style="font-size:1.3rem;">' + e.count + '</div><div class="delta">' + e.avg_ms.toFixed(2) + 'ms avg</div></div>';
+      }).join("") || '<div class="state-box">No requests recorded yet.</div>';
+    } catch (e) {
+      el.innerHTML = '<div class="state-box error">Could not load summary: ' + escHtml(e.message) + "</div>";
+    }
+  }
+
+  async function loadEntries(endpoint) {
+    const tbody = document.getElementById("audit-tbody");
+    tbody.innerHTML = '<tr><td colspan="6" class="state-box"><span class="spinner"></span>&nbsp; Loading…</td></tr>';
+    try {
+      const qs = new URLSearchParams({ days: "30", limit: "100" });
+      if (endpoint) qs.set("endpoint", endpoint);
+      const d = await RAI.fetchJSON("/api/audit?" + qs.toString(), { skipAuthRedirect: true });
+      if (!d.entries.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="state-box">No entries found.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = d.entries.map(function (e) {
+        return "<tr><td>" + new Date(e.timestamp).toLocaleString() + "</td><td>" + escHtml(e.method) + "</td><td>" + escHtml(e.endpoint) +
+          "</td><td><span class=\"pill " + statusPill(e.status_code) + "\">" + e.status_code + "</span></td><td>" + e.duration_ms.toFixed(2) + "ms</td><td>" + escHtml(e.ip_address || "—") + "</td></tr>";
+      }).join("");
+    } catch (e) {
+      tbody.innerHTML = '<tr><td colspan="6" class="state-box error">Could not load entries: ' + escHtml(e.message) + "</td></tr>";
+    }
+  }
+
+  document.getElementById("filter-endpoint").addEventListener("input", function (e) {
+    clearTimeout(window.__auditFilterTimer);
+    window.__auditFilterTimer = setTimeout(function () { loadEntries(e.target.value.trim()); }, 350);
+  });
+
+  document.getElementById("verify-btn").addEventListener("click", async function () {
+    const el = document.getElementById("verify-result");
+    el.innerHTML = '<div class="state-box"><span class="spinner"></span>&nbsp; Verifying hash chain…</div>';
+    try {
+      const d = await RAI.fetchJSON("/api/audit/verify?days=90");
+      el.innerHTML = '<div class="pill ' + (d.intact ? "pill-success" : "pill-critical") + '" style="margin-bottom:1rem;">' +
+        (d.intact ? "Chain intact" : "Chain BROKEN") + " — " + d.entries_checked + " entries checked over " + d.days + " days" +
+        (d.broken_links.length ? " · " + d.broken_links.length + " broken link(s)" : "") + "</div>";
+    } catch (err) {
+      el.innerHTML = '<div class="state-box error">Error: ' + escHtml(err.message) + " (requires OWNER role)</div>";
+    }
+  });
+
+  document.getElementById("export-btn").addEventListener("click", async function () {
+    const btn = this;
+    btn.disabled = true;
+    try {
+      const res = await fetch("/api/audit/export?days=30", { headers: RAI.auth.headers() });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "audit-log-30d.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      RAI.toast("Export failed: " + e.message, "error");
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  loadSummary();
+  loadEntries();
+})();
+</script>
+</body>
+</html>

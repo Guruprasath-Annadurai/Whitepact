@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Red Team — ResponsibleAI</title>
+<link rel="stylesheet" href="/static/css/app.css" />
+<style>
+  .payload-card { border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+  .payload-card .meta { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; }
+  .payload-card .payload-text { background: var(--code-bg); border-radius: 6px; padding: 0.6rem 0.8rem; font-size: 0.8rem; font-family: ui-monospace, monospace; margin-bottom: 0.6rem; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<div id="rai-shell"></div>
+
+<script src="/static/js/app.js"></script>
+<script>
+(function () {
+  RAI.shell("redteam");
+  const content = document.getElementById("rai-page-content");
+
+  function escHtml(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  const SEVERITY_PILL = { critical: "pill-critical", high: "pill-high", medium: "pill-medium", low: "pill-low", none: "pill-success" };
+
+  content.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1>Red Team</h1>
+        <p>Test a model against known adversarial payloads. Paste the model's actual response to each attack to score its resistance.</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="row">
+        <div class="field" style="margin-bottom:0;">
+          <label for="rt-model">Model name</label>
+          <input id="rt-model" placeholder="gpt-4o" required />
+        </div>
+        <div class="field" style="margin-bottom:0;">
+          <label for="rt-provider">Provider</label>
+          <input id="rt-provider" placeholder="openai" required />
+        </div>
+      </div>
+    </div>
+    <div id="rt-payloads" class="state-box"><span class="spinner"></span>&nbsp; Loading attack payloads…</div>
+    <div id="rt-result"></div>
+  `;
+
+  let payloads = [];
+
+  async function loadPayloads() {
+    const container = document.getElementById("rt-payloads");
+    try {
+      const d = await RAI.fetchJSON("/api/redteam/payloads", { skipAuthRedirect: true });
+      payloads = d.payloads || [];
+      container.innerHTML = `
+        <form id="rt-analyze-form">
+          ${payloads.map(function (p, i) {
+            return '<div class="payload-card">' +
+              '<div class="meta"><strong>' + escHtml(p.name) + '</strong>' +
+              '<span class="pill pill-outline">' + escHtml(p.category) + '</span>' +
+              '<span class="pill ' + (SEVERITY_PILL[p.severity] || "pill-neutral") + '">' + escHtml(p.severity) + '</span></div>' +
+              '<div class="text-sm text-muted" style="margin-bottom:0.5rem;">' + escHtml(p.description) + '</div>' +
+              '<div class="payload-text">' + escHtml(p.payload) + '</div>' +
+              '<textarea data-payload-name="' + escHtml(p.name) + '" placeholder="Paste the model response to this attack…" style="min-height:70px;"></textarea>' +
+              '</div>';
+          }).join("")}
+          <button type="submit" class="btn btn-primary" id="rt-submit">Analyze Responses</button>
+        </form>
+      `;
+      document.getElementById("rt-analyze-form").addEventListener("submit", onAnalyze);
+    } catch (e) {
+      container.innerHTML = '<div class="state-box error">Could not load payloads: ' + escHtml(e.message) + "</div>";
+    }
+  }
+
+  async function onAnalyze(e) {
+    e.preventDefault();
+    const model = document.getElementById("rt-model").value.trim();
+    const provider = document.getElementById("rt-provider").value.trim();
+    const resultEl = document.getElementById("rt-result");
+    if (!model || !provider) {
+      resultEl.innerHTML = '<div class="state-box error">Model name and provider are required.</div>';
+      return;
+    }
+    const responses = {};
+    document.querySelectorAll("[data-payload-name]").forEach(function (ta) {
+      if (ta.value.trim()) responses[ta.getAttribute("data-payload-name")] = ta.value.trim();
+    });
+    if (Object.keys(responses).length === 0) {
+      resultEl.innerHTML = '<div class="state-box error">Paste at least one model response before analyzing.</div>';
+      return;
+    }
+    const submitBtn = document.getElementById("rt-submit");
+    submitBtn.disabled = true;
+    resultEl.innerHTML = '<div class="state-box"><span class="spinner"></span>&nbsp; Analyzing…</div>';
+    try {
+      const d = await RAI.fetchJSON("/api/redteam/analyze", {
+        method: "POST",
+        body: JSON.stringify({ model_name: model, provider: provider, responses: responses }),
+      });
+      resultEl.innerHTML = `
+        <div class="card">
+          <div class="stat-grid" style="margin-bottom:0;">
+            <div class="stat-card">
+              <div class="label">Security Score</div>
+              <div class="value">${d.security_score.toFixed(1)}</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">Attacks Tested</div>
+              <div class="value">${d.total_attacks}</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">Vulnerabilities Found</div>
+              <div class="value" style="color:${d.vulnerabilities_found > 0 ? "var(--red)" : "var(--green)"}">${d.vulnerabilities_found}</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">Critical</div>
+              <div class="value" style="color:${d.critical_vulnerabilities > 0 ? "var(--red)" : "var(--green)"}">${d.critical_vulnerabilities}</div>
+            </div>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Attack</th><th>Category</th><th>Result</th><th>Severity</th></tr></thead>
+            <tbody>
+              ${d.attack_results.map(function (r) {
+                return "<tr><td>" + escHtml(r.name) + "</td><td>" + escHtml(r.category) + "</td><td>" +
+                  (r.is_vulnerable ? '<span class="pill pill-critical">VULNERABLE</span>' : '<span class="pill pill-success">RESISTED</span>') +
+                  "</td><td>" + escHtml(r.severity) + "</td></tr>";
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+    } catch (err) {
+      resultEl.innerHTML = '<div class="state-box error">Error: ' + escHtml(err.message) + "</div>";
+    } finally {
+      submitBtn.disabled = false;
+    }
+  }
+
+  loadPayloads();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Billing — ResponsibleAI</title>
+<link rel="stylesheet" href="/static/css/app.css" />
+<style>
+  .plan-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
+  .plan-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem; background: var(--bg-raised); }
+  .plan-card h3 { margin: 0 0 0.3rem; font-size: 1.1rem; }
+  .plan-card .price { font-size: 1.6rem; font-weight: 800; margin-bottom: 0.75rem; }
+  .plan-card ul { margin: 0.75rem 0 0; padding-left: 1.1rem; font-size: 0.8rem; color: var(--muted); max-height: 160px; overflow-y: auto; }
+</style>
+</head>
+<body>
+<div id="rai-shell"></div>
+
+<script src="/static/js/app.js"></script>
+<script>
+(function () {
+  RAI.shell("billing");
+  const content = document.getElementById("rai-page-content");
+
+  function escHtml(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  content.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1>Billing</h1>
+        <p>Hosted MCP plan tiers and this organization's usage this billing period.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0;font-size:1.05rem;">This Org's Usage</h2>
+      <div id="usage-box" class="state-box"><span class="spinner"></span>&nbsp; Loading usage…</div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0;font-size:1.05rem;">Plans</h2>
+      <div class="plan-grid" id="plan-grid">
+        <div class="state-box"><span class="spinner"></span>&nbsp; Loading plans…</div>
+      </div>
+    </div>
+  `;
+
+  async function loadUsage() {
+    const el = document.getElementById("usage-box");
+    try {
+      const d = await RAI.fetchJSON("/api/v1/billing/usage/mcp", { skipAuthRedirect: true });
+      el.outerHTML = `<div class="stat-grid" id="usage-box">
+        <div class="stat-card"><div class="label">Plan</div><div class="value" style="font-size:1.2rem;">${escHtml(d.plan)}</div></div>
+        <div class="stat-card"><div class="label">Calls This Month</div><div class="value">${d.total_calls}</div></div>
+        <div class="stat-card"><div class="label">Blocked</div><div class="value">${d.blocked_calls}</div></div>
+        <div class="stat-card"><div class="label">Quota Remaining</div><div class="value">${d.monthly_quota === null ? "Unlimited" : d.quota_remaining}</div></div>
+      </div>`;
+    } catch (e) {
+      el.innerHTML = '<div class="text-sm text-muted">' + escHtml(e.message) + " (create an org-scoped key under Organizations &amp; Access).</div>";
+    }
+  }
+
+  async function loadPlans() {
+    const grid = document.getElementById("plan-grid");
+    try {
+      const d = await RAI.fetchJSON("/api/v1/billing/plans", { skipAuthRedirect: true });
+      grid.innerHTML = Object.keys(d).map(function (tier) {
+        const p = d[tier];
+        return '<div class="plan-card"><h3>' + escHtml(tier) + '</h3><div class="price">$' + p.price_usd_monthly + '/mo</div>' +
+          '<div class="text-sm text-muted">' + escHtml(p.description) + '</div>' +
+          '<ul>' + p.tools.map(function (t) { return "<li>" + escHtml(t) + "</li>"; }).join("") + '</ul>' +
+          (tier !== "FREE" ? '<button class="btn btn-primary" style="width:100%;margin-top:1rem;" data-plan="' + tier + '">Upgrade to ' + tier + '</button>' : '') +
+          '</div>';
+      }).join("");
+      grid.querySelectorAll("[data-plan]").forEach(function (btn) {
+        btn.addEventListener("click", async function () {
+          btn.disabled = true;
+          try {
+            const d2 = await RAI.fetchJSON("/api/v1/billing/checkout", { method: "POST", body: JSON.stringify({ plan: btn.getAttribute("data-plan") }) });
+            if (d2.checkout_url || d2.url) {
+              window.location.href = d2.checkout_url || d2.url;
+            } else {
+              RAI.toast("Checkout session created.", "success");
+            }
+          } catch (e) {
+            RAI.toast("Checkout unavailable: " + e.message, "error");
+          } finally {
+            btn.disabled = false;
+          }
+        });
+      });
+    } catch (e) {
+      grid.innerHTML = '<div class="state-box error">Could not load plans: ' + escHtml(e.message) + "</div>";
+    }
+  }
+
+  loadUsage();
+  loadPlans();
+})();
+</script>
+</body>
+</html>

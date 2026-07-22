@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Guardrails — ResponsibleAI</title>
+<link rel="stylesheet" href="/static/css/app.css" />
+<style>
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; align-items: start; }
+  @media (max-width: 900px) { .split { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div id="rai-shell"></div>
+
+<script src="/static/js/app.js"></script>
+<script>
+(function () {
+  RAI.shell("guardrails");
+  const content = document.getElementById("rai-page-content");
+
+  function escHtml(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  content.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1>Guardrails</h1>
+        <p>Scan text for PII exposure and toxicity before it reaches (or leaves) a model.</p>
+      </div>
+    </div>
+    <div class="split">
+      <div class="card">
+        <form id="gr-form">
+          <div class="field">
+            <label for="gr-text">Text to scan</label>
+            <textarea id="gr-text" required placeholder="Paste a prompt or response…" style="min-height:220px;"></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary" id="gr-submit">Scan</button>
+        </form>
+      </div>
+      <div class="card" id="gr-result">
+        <div class="state-box">Paste text and run a scan to see results here.</div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById("gr-form").addEventListener("submit", async function (e) {
+    e.preventDefault();
+    const resultEl = document.getElementById("gr-result");
+    const submitBtn = document.getElementById("gr-submit");
+    submitBtn.disabled = true;
+    resultEl.innerHTML = '<div class="state-box"><span class="spinner"></span>&nbsp; Scanning…</div>';
+    try {
+      const text = document.getElementById("gr-text").value;
+      const d = await RAI.fetchJSON("/api/scan", { method: "POST", body: JSON.stringify({ text: text }) });
+      resultEl.innerHTML = `
+        <div class="flex items-center gap-3" style="margin-bottom:1rem;">
+          <span class="pill ${d.is_blocked ? "pill-critical" : "pill-success"}">${d.is_blocked ? "BLOCKED" : "CLEAN"}</span>
+          <span class="text-sm text-muted">${d.pii_count} PII findings · ${d.toxicity_count} toxicity flags</span>
+        </div>
+        ${d.block_reasons.length ? '<div style="margin-bottom:1rem;"><div class="text-sm text-muted" style="margin-bottom:0.4rem;">Block Reasons</div>' +
+          d.block_reasons.map(function (r) { return '<div class="pill pill-critical" style="display:block;margin-bottom:0.35rem;">' + escHtml(r) + "</div>"; }).join("") + "</div>" : ""}
+        ${d.pii_findings.length ? '<div style="margin-bottom:1rem;"><div class="text-sm text-muted" style="margin-bottom:0.4rem;">PII Detected</div>' +
+          d.pii_findings.map(function (f) { return '<div class="pill pill-warning" style="display:block;margin-bottom:0.35rem;text-transform:capitalize;">' + escHtml(f.category) + " at [" + f.start + ":" + f.end + "]</div>"; }).join("") + "</div>" : ""}
+        ${d.redacted_text ? '<div><div class="text-sm text-muted" style="margin-bottom:0.4rem;">Redacted Text</div><div class="hash-box" style="white-space:pre-wrap;">' + escHtml(d.redacted_text) + "</div></div>" : ""}
+      `;
+    } catch (err) {
+      resultEl.innerHTML = '<div class="state-box error">Error: ' + escHtml(err.message) + "</div>";
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+})();
+</script>
+</body>
+</html>

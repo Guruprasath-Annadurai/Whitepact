@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Model Router — ResponsibleAI</title>
+<link rel="stylesheet" href="/static/css/app.css" />
+<style>
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; align-items: start; }
+  @media (max-width: 900px) { .split { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div id="rai-shell"></div>
+
+<script src="/static/js/app.js"></script>
+<script>
+(function () {
+  RAI.shell("router");
+  const content = document.getElementById("rai-page-content");
+
+  function escHtml(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  const COMPLEXITY_PILL = { high_risk: "pill-critical", complex: "pill-high", medium: "pill-medium", simple: "pill-success" };
+
+  content.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1>Model Router</h1>
+        <p>Describe a task and get a recommended model based on complexity and your quality requirement.</p>
+      </div>
+    </div>
+    <div class="split">
+      <div class="card">
+        <form id="rt-form">
+          <div class="field">
+            <label for="rt-task">Task description</label>
+            <textarea id="rt-task" required placeholder="e.g. Summarize this 10-page legal contract and flag risky clauses." style="min-height:140px;"></textarea>
+          </div>
+          <div class="field">
+            <label for="rt-quality">Quality requirement</label>
+            <select id="rt-quality">
+              <option value="cheapest">Cheapest</option>
+              <option value="balanced" selected>Balanced</option>
+              <option value="maximum">Maximum</option>
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary" id="rt-submit">Route Task</button>
+        </form>
+      </div>
+      <div class="card" id="rt-result">
+        <div class="state-box">Describe a task and route it to see a recommendation here.</div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById("rt-form").addEventListener("submit", async function (e) {
+    e.preventDefault();
+    const resultEl = document.getElementById("rt-result");
+    const submitBtn = document.getElementById("rt-submit");
+    submitBtn.disabled = true;
+    resultEl.innerHTML = '<div class="state-box"><span class="spinner"></span>&nbsp; Routing…</div>';
+    try {
+      const body = {
+        task_description: document.getElementById("rt-task").value,
+        quality_requirement: document.getElementById("rt-quality").value,
+      };
+      const d = await RAI.fetchJSON("/api/cost/route", { method: "POST", body: JSON.stringify(body) });
+      resultEl.innerHTML = `
+        <div style="margin-bottom:1rem;">
+          <div class="text-sm text-muted" style="margin-bottom:0.3rem;">Complexity</div>
+          <span class="pill ${COMPLEXITY_PILL[d.complexity] || "pill-neutral"}">${escHtml(String(d.complexity).replace("_", " "))}</span>
+        </div>
+        <div style="margin-bottom:1rem;">
+          <div class="text-sm text-muted" style="margin-bottom:0.3rem;">Recommended Model</div>
+          <div style="font-size:1.3rem;font-weight:800;">${escHtml(d.recommended_model)}</div>
+          <div class="text-sm text-muted">$${d.estimated_cost_per_1k_tokens_usd}/1K tokens · saves $${d.estimated_savings_vs_gpt4o_usd}/1K vs GPT-4o</div>
+        </div>
+        <div style="margin-bottom:1rem;">
+          <div class="text-sm text-muted" style="margin-bottom:0.3rem;">Alternative</div>
+          <div>${escHtml(d.alternative_model)}</div>
+        </div>
+        <div class="text-sm text-muted" style="margin-bottom:0.3rem;">Reasoning</div>
+        <div class="text-sm">${escHtml(d.reasoning)}</div>
+      `;
+    } catch (err) {
+      resultEl.innerHTML = '<div class="state-box error">Error: ' + escHtml(err.message) + "</div>";
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+})();
+</script>
+</body>
+</html>

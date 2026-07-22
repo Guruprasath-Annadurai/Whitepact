@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Incidents — ResponsibleAI</title>
+<link rel="stylesheet" href="/static/css/app.css" />
+<style>
+  .split { display: grid; grid-template-columns: 1.3fr 1fr; gap: 1.5rem; align-items: start; }
+  @media (max-width: 900px) { .split { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div id="rai-shell"></div>
+
+<script src="/static/js/app.js"></script>
+<script>
+(function () {
+  RAI.shell("incidents");
+  const content = document.getElementById("rai-page-content");
+
+  function escHtml(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  const SEVERITY_PILL = { critical: "pill-critical", high: "pill-high", medium: "pill-medium", low: "pill-low" };
+
+  content.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1>Incidents</h1>
+        <p>Private, org-scoped incident log — separate from the public Incident Database. Alerts (e.g. Prometheus) are bridged here automatically.</p>
+      </div>
+    </div>
+    <div class="split">
+      <div class="card">
+        <div class="flex items-center gap-3" style="margin-bottom:1rem;">
+          <h2 style="margin:0;font-size:1.05rem;flex:1;">Recent Incidents</h2>
+          <select id="filter-severity" style="max-width:160px;">
+            <option value="">All severities</option>
+            <option value="critical">Critical</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Time</th><th>Type</th><th>Severity</th><th>Model</th><th>Description</th></tr></thead>
+            <tbody id="inc-tbody"><tr><td colspan="5" class="state-box">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <h2 style="margin-top:0;font-size:1.05rem;">Log Incident</h2>
+        <form id="inc-form">
+          <div class="row">
+            <div class="field">
+              <label for="inc-type">Type</label>
+              <select id="inc-type">
+                <option value="pii_leak">PII Leak</option>
+                <option value="jailbreak_attempt">Jailbreak Attempt</option>
+                <option value="bias_trigger">Bias Trigger</option>
+                <option value="hallucination">Hallucination</option>
+                <option value="policy_violation">Policy Violation</option>
+                <option value="cost_overrun">Cost Overrun</option>
+                <option value="drift_alert">Drift Alert</option>
+                <option value="other" selected>Other</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="inc-severity">Severity</label>
+              <select id="inc-severity">
+                <option value="critical">Critical</option>
+                <option value="high">High</option>
+                <option value="medium" selected>Medium</option>
+                <option value="low">Low</option>
+              </select>
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label for="inc-model">Model</label>
+              <input id="inc-model" placeholder="gpt-4o" />
+            </div>
+            <div class="field">
+              <label for="inc-provider">Provider</label>
+              <input id="inc-provider" placeholder="openai" />
+            </div>
+          </div>
+          <div class="field">
+            <label for="inc-desc">Description</label>
+            <textarea id="inc-desc" required placeholder="What happened?" style="min-height:100px;"></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary" id="inc-submit">Log Incident</button>
+        </form>
+      </div>
+    </div>
+  `;
+
+  async function loadIncidents(severity) {
+    const tbody = document.getElementById("inc-tbody");
+    tbody.innerHTML = '<tr><td colspan="5" class="state-box"><span class="spinner"></span>&nbsp; Loading…</td></tr>';
+    try {
+      const qs = new URLSearchParams({ days: "90", limit: "100" });
+      if (severity) qs.set("severity", severity);
+      const d = await RAI.fetchJSON("/api/incidents?" + qs.toString(), { skipAuthRedirect: true });
+      if (!d.incidents.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="state-box">No incidents logged.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = d.incidents.map(function (i) {
+        return "<tr><td>" + new Date(i.created_at || i.timestamp).toLocaleString() + "</td><td>" + escHtml(i.incident_type) +
+          "</td><td><span class=\"pill " + (SEVERITY_PILL[i.severity] || "pill-neutral") + "\">" + escHtml(i.severity) + "</span></td><td>" +
+          escHtml(i.model_name || "—") + "</td><td>" + escHtml((i.description || "").slice(0, 100)) + "</td></tr>";
+      }).join("");
+    } catch (e) {
+      tbody.innerHTML = '<tr><td colspan="5" class="state-box error">Could not load incidents: ' + escHtml(e.message) + "</td></tr>";
+    }
+  }
+
+  document.getElementById("filter-severity").addEventListener("change", function (e) {
+    loadIncidents(e.target.value);
+  });
+
+  document.getElementById("inc-form").addEventListener("submit", async function (e) {
+    e.preventDefault();
+    const submitBtn = document.getElementById("inc-submit");
+    submitBtn.disabled = true;
+    try {
+      const body = {
+        incident_type: document.getElementById("inc-type").value,
+        severity: document.getElementById("inc-severity").value,
+        model_name: document.getElementById("inc-model").value || "unknown",
+        provider: document.getElementById("inc-provider").value || "unknown",
+        description: document.getElementById("inc-desc").value,
+      };
+      await RAI.fetchJSON("/api/incidents", { method: "POST", body: JSON.stringify(body) });
+      RAI.toast("Incident logged.", "success");
+      document.getElementById("inc-form").reset();
+      loadIncidents(document.getElementById("filter-severity").value);
+    } catch (err) {
+      RAI.toast("Could not log incident: " + err.message, "error");
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+
+  loadIncidents();
+})();
+</script>
+</body>
+</html>

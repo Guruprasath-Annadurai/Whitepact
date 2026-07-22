@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Settings — ResponsibleAI</title>
+<link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body>
+<div id="rai-shell"></div>
+
+<script src="/static/js/app.js"></script>
+<script>
+(function () {
+  RAI.shell("settings");
+  const content = document.getElementById("rai-page-content");
+
+  function escHtml(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  content.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1>Settings</h1>
+        <p>Appearance, authentication, session, and platform version information.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0;font-size:1.05rem;">Appearance</h2>
+      <div class="flex items-center gap-3">
+        <span class="text-sm">Theme</span>
+        <button class="btn btn-sm" id="settings-theme-toggle">Toggle Light / Dark</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0;font-size:1.05rem;">Session</h2>
+      <div id="session-box"></div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0;font-size:1.05rem;">Authentication Providers</h2>
+      <div id="providers-box" class="state-box"><span class="spinner"></span>&nbsp; Loading…</div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0;font-size:1.05rem;">Platform Version</h2>
+      <div id="version-box" class="state-box"><span class="spinner"></span>&nbsp; Loading…</div>
+    </div>
+
+    <div class="card" style="border-color:var(--red);">
+      <h2 style="margin-top:0;font-size:1.05rem;color:var(--red);">Danger Zone</h2>
+      <p class="text-sm text-muted">Clears the locally stored API key from this browser. This does not revoke the key server-side — revoke it under Organizations &amp; Access if it may be compromised.</p>
+      <button class="btn btn-danger" id="clear-session-btn">Clear Local Session</button>
+    </div>
+  `;
+
+  document.getElementById("settings-theme-toggle").addEventListener("click", RAI.theme.toggle);
+
+  function renderSession() {
+    const box = document.getElementById("session-box");
+    const loggedIn = RAI.auth.isLoggedIn();
+    box.innerHTML = loggedIn
+      ? '<div class="pill pill-success" style="margin-bottom:0.6rem;">Signed in</div><div class="hash-box">Token stored locally in this browser only. It is sent as an Authorization: Bearer header on every API request.</div>'
+      : '<div class="pill pill-outline">Not signed in</div>';
+  }
+
+  async function loadProviders() {
+    const box = document.getElementById("providers-box");
+    try {
+      const d = await RAI.fetchJSON("/api/auth/providers", { skipAuthRedirect: true });
+      box.innerHTML = '<div class="table-wrap"><table><thead><tr><th>ID</th><th>Type</th><th>Description</th></tr></thead><tbody>' +
+        d.providers.map(function (p) {
+          return "<tr><td>" + escHtml(p.id) + "</td><td><span class=\"pill pill-outline\">" + escHtml(p.type) + "</span></td><td class=\"text-sm text-muted\">" + escHtml(p.description || p.issuer || "") + "</td></tr>";
+        }).join("") + "</tbody></table></div>";
+    } catch (e) {
+      box.innerHTML = '<div class="state-box error">Could not load providers: ' + escHtml(e.message) + "</div>";
+    }
+  }
+
+  async function loadVersion() {
+    const box = document.getElementById("version-box");
+    try {
+      const d = await RAI.fetchJSON("/api/version", { skipAuthRedirect: true });
+      box.innerHTML = `
+        <div class="stat-grid" style="margin-bottom:0;">
+          <div class="stat-card"><div class="label">Version</div><div class="value" style="font-size:1.2rem;">${escHtml(d.version)}</div></div>
+          <div class="stat-card"><div class="label">API Prefix</div><div class="value" style="font-size:1.2rem;">${escHtml(d.current_api_prefix)}</div></div>
+          <div class="stat-card"><div class="label">Released</div><div class="value" style="font-size:1.2rem;">${escHtml(d.release_date)}</div></div>
+          <div class="stat-card"><div class="label">Stable</div><div class="value" style="font-size:1.2rem;">${d.stable ? "Yes" : "No"}</div></div>
+        </div>
+        <div class="text-sm text-muted" style="margin-top:1rem;"><a href="${escHtml(d.changelog_url)}" target="_blank" rel="noopener">View changelog</a></div>
+      `;
+    } catch (e) {
+      box.innerHTML = '<div class="state-box error">Could not load version: ' + escHtml(e.message) + "</div>";
+    }
+  }
+
+  document.getElementById("clear-session-btn").addEventListener("click", function () {
+    RAI.auth.clearToken();
+    RAI.toast("Local session cleared.", "success");
+    renderSession();
+    setTimeout(function () { window.location.href = "/login"; }, 600);
+  });
+
+  renderSession();
+  loadProviders();
+  loadVersion();
+})();
+</script>
+</body>
+</html>

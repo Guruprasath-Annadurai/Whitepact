@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Cost Intelligence — ResponsibleAI</title>
+<link rel="stylesheet" href="/static/css/app.css" />
+<style>
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; align-items: start; }
+  @media (max-width: 900px) { .split { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div id="rai-shell"></div>
+
+<script src="/static/js/app.js"></script>
+<script>
+(function () {
+  RAI.shell("cost");
+  const content = document.getElementById("rai-page-content");
+
+  function escHtml(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  const SEVERITY_PILL = { low: "pill-medium", medium: "pill-warning", high: "pill-critical" };
+
+  content.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1>Cost Intelligence</h1>
+        <p>Track spend against budget and find waste in prompts before they run at scale.</p>
+      </div>
+    </div>
+
+    <div class="stat-grid" id="cost-summary">
+      <div class="state-box"><span class="spinner"></span>&nbsp; Loading summary…</div>
+    </div>
+
+    <div class="split">
+      <div class="card">
+        <h2 style="margin-top:0;font-size:1.05rem;">Analyze Prompt Efficiency</h2>
+        <form id="ci-form">
+          <div class="field">
+            <label for="ci-prompt">Prompt</label>
+            <textarea id="ci-prompt" required placeholder="Paste the prompt you send to the model…" style="min-height:120px;"></textarea>
+          </div>
+          <div class="field">
+            <label for="ci-response">Response (optional)</label>
+            <textarea id="ci-response" placeholder="Model response, if you have one…" style="min-height:80px;"></textarea>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label for="ci-provider">Provider</label>
+              <input id="ci-provider" value="openai" />
+            </div>
+            <div class="field">
+              <label for="ci-model">Model</label>
+              <input id="ci-model" value="gpt-4o" />
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary" id="ci-submit">Analyze</button>
+        </form>
+      </div>
+      <div class="card" id="ci-result">
+        <div class="state-box">Run an analysis to see efficiency findings here.</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0;font-size:1.05rem;">Model Pricing</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Model</th><th>Provider</th><th>Input $/1M</th><th>Output $/1M</th><th>Type</th></tr></thead>
+          <tbody id="pricing-tbody"><tr><td colspan="5" class="state-box">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  async function loadSummary() {
+    const el = document.getElementById("cost-summary");
+    try {
+      const d = await RAI.fetchJSON("/api/cost/summary?days=30", { skipAuthRedirect: true });
+      const budget = d.budget_status;
+      el.innerHTML = `
+        <div class="stat-card">
+          <div class="label">Spend (30d)</div>
+          <div class="value">$${d.total_cost_usd.toFixed(2)}</div>
+          <div class="delta">${d.request_count} requests</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Budget Used</div>
+          <div class="value">${budget.percentage_used.toFixed(1)}%</div>
+          <div class="delta">of $${budget.monthly_limit_usd.toLocaleString()}</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Total Tokens</div>
+          <div class="value">${d.total_tokens.total.toLocaleString()}</div>
+          <div class="delta">${d.total_tokens.input.toLocaleString()} in / ${d.total_tokens.output.toLocaleString()} out</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Budget Status</div>
+          <div class="value" style="font-size:1.1rem;">
+            <span class="pill ${budget.is_exceeded ? "pill-critical" : "pill-success"}">${budget.is_exceeded ? "Exceeded" : "Healthy"}</span>
+          </div>
+        </div>
+      `;
+    } catch (e) {
+      el.innerHTML = '<div class="state-box error">Could not load cost summary: ' + escHtml(e.message) + "</div>";
+    }
+  }
+
+  async function loadPricing() {
+    const tbody = document.getElementById("pricing-tbody");
+    try {
+      const d = await RAI.fetchJSON("/api/cost/models", { skipAuthRedirect: true });
+      const models = (d.models || []).slice().sort(function (a, b) { return a.avg_cost_per_1m - b.avg_cost_per_1m; });
+      tbody.innerHTML = models.map(function (m) {
+        return "<tr><td>" + escHtml(m.model) + "</td><td>" + escHtml(m.provider) + "</td><td>$" + m.input_cost_per_1m.toFixed(3) +
+          "</td><td>$" + m.output_cost_per_1m.toFixed(3) + "</td><td>" +
+          (m.is_local ? '<span class="pill pill-outline">local</span>' : '<span class="pill pill-outline">hosted</span>') + "</td></tr>";
+      }).join("");
+    } catch (e) {
+      tbody.innerHTML = '<tr><td colspan="5" class="state-box error">Could not load pricing: ' + escHtml(e.message) + "</td></tr>";
+    }
+  }
+
+  document.getElementById("ci-form").addEventListener("submit", async function (e) {
+    e.preventDefault();
+    const resultEl = document.getElementById("ci-result");
+    const submitBtn = document.getElementById("ci-submit");
+    submitBtn.disabled = true;
+    resultEl.innerHTML = '<div class="state-box"><span class="spinner"></span>&nbsp; Analyzing…</div>';
+    try {
+      const body = {
+        prompt: document.getElementById("ci-prompt").value,
+        response: document.getElementById("ci-response").value,
+        provider: document.getElementById("ci-provider").value || "openai",
+        model: document.getElementById("ci-model").value || "gpt-4o",
+      };
+      const d = await RAI.fetchJSON("/api/cost/analyze", { method: "POST", body: JSON.stringify(body) });
+      resultEl.innerHTML = `
+        <div class="flex items-center gap-3" style="margin-bottom:1rem;">
+          <div style="font-size:1.8rem;font-weight:800;">${d.efficiency_score}</div>
+          <div class="text-sm text-muted">Efficiency Score</div>
+        </div>
+        <div class="stat-grid" style="grid-template-columns:1fr 1fr;margin-bottom:1rem;">
+          <div class="stat-card">
+            <div class="label">Tokens</div>
+            <div class="value" style="font-size:1.2rem;">${d.original_tokens} → ${d.estimated_optimized_tokens}</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">Monthly Savings</div>
+            <div class="value" style="font-size:1.2rem;color:var(--green);">$${d.estimated_monthly_savings_usd}</div>
+          </div>
+        </div>
+        ${d.waste_findings.length
+          ? '<div class="text-sm text-muted" style="margin-bottom:0.4rem;">Waste Findings</div>' +
+            d.waste_findings.map(function (f) {
+              return '<div class="card" style="padding:0.9rem;margin-bottom:0.6rem;">' +
+                '<div class="flex" style="justify-content:space-between;margin-bottom:0.3rem;">' +
+                '<span style="font-weight:600;">' + escHtml(f.category) + '</span>' +
+                '<span class="pill ' + (SEVERITY_PILL[f.severity] || "pill-neutral") + '">' + escHtml(f.severity) + '</span></div>' +
+                '<div class="text-sm text-muted" style="margin-bottom:0.4rem;">' + escHtml(f.description) + '</div>' +
+                '<div class="text-sm" style="font-style:italic;">' + escHtml(f.recommendation) + '</div></div>';
+            }).join("")
+          : '<div class="pill pill-success">No waste findings. Prompt looks efficient!</div>'}
+      `;
+    } catch (err) {
+      resultEl.innerHTML = '<div class="state-box error">Error: ' + escHtml(err.message) + "</div>";
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+
+  loadSummary();
+  loadPricing();
+})();
+</script>
+</body>
+</html>

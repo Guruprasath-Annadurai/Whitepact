@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sign in — ResponsibleAI</title>
+<link rel="stylesheet" href="/static/css/app.css" />
+<style>
+  body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+  .login-card { width: 100%; max-width: 380px; padding: 2rem; }
+  .login-brand { font-weight: 800; font-size: 1.3rem; text-align: center; margin-bottom: 1.5rem; }
+  .divider { display: flex; align-items: center; gap: 0.75rem; color: var(--muted); font-size: 0.78rem; margin: 1.25rem 0; }
+  .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+  .sso-list { display: flex; flex-direction: column; gap: 0.6rem; margin-bottom: 1.25rem; }
+  .footer-note { text-align: center; font-size: 0.8rem; color: var(--muted); margin-top: 1.25rem; }
+  .footer-note a { color: inherit; }
+</style>
+</head>
+<body>
+
+<div class="card login-card">
+  <div class="login-brand">ResponsibleAI</div>
+
+  <div id="sso-container" class="sso-list"></div>
+  <div id="sso-divider" class="divider" style="display:none">or</div>
+
+  <form id="key-form">
+    <div class="field">
+      <label for="api-key">API Key</label>
+      <input id="api-key" type="password" placeholder="Bearer token / org API key" autocomplete="off" required />
+      <div class="hint">Self-hosted deployments: use a key issued via <code>POST /api/orgs/{id}/keys</code>, or the flat <code>RAI_API_KEYS</code> value for legacy access.</div>
+    </div>
+    <button type="submit" class="btn btn-primary" style="width:100%" id="submit-btn">Continue</button>
+  </form>
+  <div id="result" class="state-box error" style="display:none; padding: 0.75rem 0 0;"></div>
+
+  <div class="footer-note">
+    <a href="/trust">Trust Center</a> &nbsp;·&nbsp; <a href="/leaderboard">Public Leaderboard</a>
+  </div>
+</div>
+
+<script src="/static/js/app.js"></script>
+<script>
+(function () {
+  RAI.theme.init();
+  const ssoContainer = document.getElementById("sso-container");
+  const ssoDivider = document.getElementById("sso-divider");
+  const form = document.getElementById("key-form");
+  const resultEl = document.getElementById("result");
+  const submitBtn = document.getElementById("submit-btn");
+
+  const params = new URLSearchParams(window.location.search);
+  const nextUrl = params.get("next") || "/";
+
+  fetch("/api/auth/providers").then(function (r) { return r.json(); }).then(function (data) {
+    const oidcProviders = (data.providers || []).filter(function (p) { return p.type === "oidc"; });
+    if (oidcProviders.length) {
+      ssoDivider.style.display = "flex";
+      ssoContainer.innerHTML = oidcProviders.map(function (p) {
+        return '<button class="btn" data-login-url="' + p.login_url + '">Continue with SSO (' + p.issuer + ")</button>";
+      }).join("");
+      ssoContainer.querySelectorAll("[data-login-url]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          fetch(btn.getAttribute("data-login-url"))
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+              if (d.authorization_url) window.location.href = d.authorization_url;
+              else RAI.toast("SSO login could not be started.", "error");
+            })
+            .catch(function () { RAI.toast("SSO login could not be started.", "error"); });
+        });
+      });
+    }
+  }).catch(function () { /* providers endpoint optional — silently show key form only */ });
+
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    const key = document.getElementById("api-key").value.trim();
+    if (!key) return;
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Checking…";
+    resultEl.style.display = "none";
+
+    fetch("/api/models", { headers: { "Authorization": "Bearer " + key } })
+      .then(function (res) {
+        if (res.status === 401 || res.status === 403) throw new Error("Invalid or revoked API key.");
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        RAI.auth.setToken(key);
+        window.location.href = nextUrl;
+      })
+      .catch(function (err) {
+        resultEl.style.display = "block";
+        resultEl.textContent = String(err.message || err);
+      })
+      .finally(function () {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Continue";
+      });
+  });
+})();
+</script>
+
+</body>
+</html>

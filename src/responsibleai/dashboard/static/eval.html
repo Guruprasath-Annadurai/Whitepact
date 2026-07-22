@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Compare & Benchmark — ResponsibleAI</title>
+<link rel="stylesheet" href="/static/css/app.css" />
+<style>
+  .tabs { display: flex; gap: 0.5rem; margin-bottom: 1.25rem; border-bottom: 1px solid var(--border); }
+  .tab-btn { padding: 0.6rem 1rem; background: none; border: none; border-bottom: 2px solid transparent; color: var(--muted); font-weight: 600; font-size: 0.9rem; cursor: pointer; }
+  .tab-btn.active { color: var(--fg); border-bottom-color: var(--accent); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+  .prompt-row { border: 1px solid var(--border); border-radius: 8px; padding: 0.9rem; margin-bottom: 0.6rem; }
+</style>
+</head>
+<body>
+<div id="rai-shell"></div>
+
+<script src="/static/js/app.js"></script>
+<script>
+(function () {
+  RAI.shell("eval");
+  const content = document.getElementById("rai-page-content");
+
+  function escHtml(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  content.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1>Compare &amp; Benchmark</h1>
+        <p>Run head-to-head model comparisons, standardized benchmark suites, and dataset-wide PII/bias scans.</p>
+      </div>
+    </div>
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="compare">Compare Models</button>
+      <button class="tab-btn" data-tab="benchmark">Benchmark Suite</button>
+      <button class="tab-btn" data-tab="scan">Dataset Scan</button>
+    </div>
+
+    <div class="tab-panel active" id="tab-compare">
+      <div class="card">
+        <form id="cmp-form">
+          <div class="row">
+            <div class="field">
+              <label for="cmp-a">Model A</label>
+              <input id="cmp-a" placeholder="gpt-4o" required />
+            </div>
+            <div class="field">
+              <label for="cmp-b">Model B</label>
+              <input id="cmp-b" placeholder="gpt-4o-mini" required />
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label for="cmp-provider-a">Provider A</label>
+              <input id="cmp-provider-a" placeholder="openai" />
+            </div>
+            <div class="field">
+              <label for="cmp-provider-b">Provider B</label>
+              <input id="cmp-provider-b" placeholder="openai" />
+            </div>
+          </div>
+          <div class="field">
+            <label for="cmp-prompts">Prompts (one per line)</label>
+            <textarea id="cmp-prompts" required placeholder="What is 2+2?&#10;Summarize the plot of Hamlet." style="min-height:90px;"></textarea>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label for="cmp-resp-a">Model A responses (one per line, matching order)</label>
+              <textarea id="cmp-resp-a" required style="min-height:90px;"></textarea>
+            </div>
+            <div class="field">
+              <label for="cmp-resp-b">Model B responses (one per line, matching order)</label>
+              <textarea id="cmp-resp-b" required style="min-height:90px;"></textarea>
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary" id="cmp-submit">Compare</button>
+        </form>
+        <div id="cmp-result" style="margin-top:1.25rem;"></div>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="tab-benchmark">
+      <div class="card">
+        <div class="row">
+          <div class="field">
+            <label for="bm-suite">Suite</label>
+            <select id="bm-suite">
+              <option value="truthfulqa">TruthfulQA</option>
+              <option value="bbq">BBQ (bias)</option>
+              <option value="hellaswag">HellaSwag</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="bm-model">Model</label>
+            <input id="bm-model" placeholder="gpt-4o" />
+          </div>
+          <div class="field">
+            <label for="bm-provider">Provider</label>
+            <input id="bm-provider" placeholder="openai" />
+          </div>
+        </div>
+        <button class="btn" id="bm-load">Load Prompts</button>
+        <form id="bm-form" style="margin-top:1rem;">
+          <div id="bm-prompts"></div>
+          <button type="submit" class="btn btn-primary" id="bm-submit" style="display:none;">Run Benchmark</button>
+        </form>
+        <div id="bm-result" style="margin-top:1.25rem;"></div>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="tab-scan">
+      <div class="card">
+        <form id="scan-form">
+          <div class="field">
+            <label for="scan-filename">Filename (label only)</label>
+            <input id="scan-filename" value="upload.csv" />
+          </div>
+          <div class="field">
+            <label for="scan-texts">Texts to scan (one row per line)</label>
+            <textarea id="scan-texts" required placeholder="My email is john@example.com&#10;This is a perfectly clean sentence." style="min-height:160px;"></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary" id="scan-submit">Scan Dataset</button>
+        </form>
+        <div id="scan-result" style="margin-top:1.25rem;"></div>
+      </div>
+    </div>
+  `;
+
+  document.querySelectorAll(".tab-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      document.querySelectorAll(".tab-btn").forEach(function (b) { b.classList.remove("active"); });
+      document.querySelectorAll(".tab-panel").forEach(function (p) { p.classList.remove("active"); });
+      btn.classList.add("active");
+      document.getElementById("tab-" + btn.getAttribute("data-tab")).classList.add("active");
+    });
+  });
+
+  function splitLines(s) {
+    return s.split("\n").map(function (l) { return l.trim(); }).filter(Boolean);
+  }
+
+  document.getElementById("cmp-form").addEventListener("submit", async function (e) {
+    e.preventDefault();
+    const resultEl = document.getElementById("cmp-result");
+    const submitBtn = document.getElementById("cmp-submit");
+    const promptLines = splitLines(document.getElementById("cmp-prompts").value);
+    const respALines = splitLines(document.getElementById("cmp-resp-a").value);
+    const respBLines = splitLines(document.getElementById("cmp-resp-b").value);
+    if (promptLines.length !== respALines.length || promptLines.length !== respBLines.length) {
+      resultEl.innerHTML = '<div class="state-box error">Prompts and both response lists must have the same number of lines.</div>';
+      return;
+    }
+    const prompts = promptLines.map(function (p, i) { return { id: "p" + i, prompt: p }; });
+    const responsesA = respALines.map(function (r, i) { return { id: "p" + i, response: r }; });
+    const responsesB = respBLines.map(function (r, i) { return { id: "p" + i, response: r }; });
+    submitBtn.disabled = true;
+    resultEl.innerHTML = '<div class="state-box"><span class="spinner"></span>&nbsp; Comparing…</div>';
+    try {
+      const body = {
+        model_a: document.getElementById("cmp-a").value,
+        model_b: document.getElementById("cmp-b").value,
+        provider_a: document.getElementById("cmp-provider-a").value || "unknown",
+        provider_b: document.getElementById("cmp-provider-b").value || "unknown",
+        prompts: prompts, responses_a: responsesA, responses_b: responsesB,
+      };
+      const d = await RAI.fetchJSON("/api/eval/compare", { method: "POST", body: JSON.stringify(body) });
+      resultEl.innerHTML = `
+        <div class="stat-grid" style="margin-bottom:0;">
+          <div class="stat-card"><div class="label">Winner</div><div class="value" style="font-size:1.3rem;">${escHtml(d.winner)}</div></div>
+          <div class="stat-card"><div class="label">Avg Trust A</div><div class="value">${d.avg_trust_a.toFixed(1)}</div></div>
+          <div class="stat-card"><div class="label">Avg Trust B</div><div class="value">${d.avg_trust_b.toFixed(1)}</div></div>
+          <div class="stat-card"><div class="label">Wins A / B / Tie</div><div class="value" style="font-size:1.2rem;">${d.wins_a} / ${d.wins_b} / ${d.ties}</div></div>
+        </div>
+      `;
+    } catch (err) {
+      resultEl.innerHTML = '<div class="state-box error">Error: ' + escHtml(err.message) + "</div>";
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+
+  let currentPrompts = [];
+  document.getElementById("bm-load").addEventListener("click", async function () {
+    const suite = document.getElementById("bm-suite").value;
+    const container = document.getElementById("bm-prompts");
+    container.innerHTML = '<div class="state-box"><span class="spinner"></span>&nbsp; Loading prompts…</div>';
+    try {
+      const d = await RAI.fetchJSON("/api/eval/benchmark/prompts/" + suite, { skipAuthRedirect: true });
+      currentPrompts = d.prompts || [];
+      container.innerHTML = currentPrompts.map(function (p) {
+        return '<div class="prompt-row"><div class="text-sm" style="margin-bottom:0.4rem;font-weight:600;">' + escHtml(p.prompt) + '</div>' +
+          '<textarea data-prompt-id="' + escHtml(p.id) + '" placeholder="Model response…" style="min-height:60px;"></textarea></div>';
+      }).join("");
+      document.getElementById("bm-submit").style.display = currentPrompts.length ? "inline-flex" : "none";
+    } catch (e) {
+      container.innerHTML = '<div class="state-box error">Could not load prompts: ' + escHtml(e.message) + "</div>";
+    }
+  });
+
+  document.getElementById("bm-form").addEventListener("submit", async function (e) {
+    e.preventDefault();
+    const resultEl = document.getElementById("bm-result");
+    const submitBtn = document.getElementById("bm-submit");
+    const responses = {};
+    document.querySelectorAll("[data-prompt-id]").forEach(function (ta) {
+      if (ta.value.trim()) responses[ta.getAttribute("data-prompt-id")] = ta.value.trim();
+    });
+    if (Object.keys(responses).length === 0) {
+      resultEl.innerHTML = '<div class="state-box error">Fill in at least one response.</div>';
+      return;
+    }
+    submitBtn.disabled = true;
+    resultEl.innerHTML = '<div class="state-box"><span class="spinner"></span>&nbsp; Running benchmark…</div>';
+    try {
+      const body = {
+        model: document.getElementById("bm-model").value || "unknown",
+        provider: document.getElementById("bm-provider").value || "unknown",
+        suite: document.getElementById("bm-suite").value,
+        responses: responses,
+      };
+      const d = await RAI.fetchJSON("/api/eval/benchmark", { method: "POST", body: JSON.stringify(body) });
+      resultEl.innerHTML = `
+        <div class="stat-grid" style="margin-bottom:0;">
+          <div class="stat-card"><div class="label">Overall Score</div><div class="value">${(d.overall_score * 100).toFixed(0)}%</div></div>
+          <div class="stat-card"><div class="label">Accuracy</div><div class="value">${(d.accuracy * 100).toFixed(0)}%</div></div>
+          <div class="stat-card"><div class="label">Bias Rate</div><div class="value">${(d.bias_rate * 100).toFixed(0)}%</div></div>
+          <div class="stat-card"><div class="label">Samples</div><div class="value">${d.total_samples}</div></div>
+        </div>
+      `;
+    } catch (err) {
+      resultEl.innerHTML = '<div class="state-box error">Error: ' + escHtml(err.message) + "</div>";
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+
+  document.getElementById("scan-form").addEventListener("submit", async function (e) {
+    e.preventDefault();
+    const resultEl = document.getElementById("scan-result");
+    const submitBtn = document.getElementById("scan-submit");
+    const texts = splitLines(document.getElementById("scan-texts").value);
+    submitBtn.disabled = true;
+    resultEl.innerHTML = '<div class="state-box"><span class="spinner"></span>&nbsp; Scanning…</div>';
+    try {
+      const body = { texts: texts, filename: document.getElementById("scan-filename").value || "upload" };
+      const d = await RAI.fetchJSON("/api/eval/dataset-scan", { method: "POST", body: JSON.stringify(body) });
+      resultEl.innerHTML = `
+        <div class="stat-grid">
+          <div class="stat-card"><div class="label">Total Rows</div><div class="value">${d.total_rows}</div></div>
+          <div class="stat-card"><div class="label">Flagged</div><div class="value">${d.flagged_rows}</div></div>
+          <div class="stat-card"><div class="label">PII Rows</div><div class="value">${d.pii_rows}</div></div>
+          <div class="stat-card"><div class="label">Flag Rate</div><div class="value">${(d.flag_rate * 100).toFixed(0)}%</div></div>
+        </div>
+        ${d.flagged_samples.length ? '<div class="table-wrap"><table><thead><tr><th>Row</th><th>Preview</th><th>Flags</th></tr></thead><tbody>' +
+          d.flagged_samples.map(function (s) {
+            return "<tr><td>" + s.row + "</td><td>" + escHtml(s.text_preview) + "</td><td>" + s.flags.map(function (f) { return '<span class="pill pill-warning">' + escHtml(f) + "</span>"; }).join(" ") + "</td></tr>";
+          }).join("") + "</tbody></table></div>" : '<div class="pill pill-success">No rows flagged.</div>'}
+      `;
+    } catch (err) {
+      resultEl.innerHTML = '<div class="state-box error">Error: ' + escHtml(err.message) + "</div>";
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+})();
+</script>
+</body>
+</html>

@@ -4,531 +4,164 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>ResponsibleAI · Governance Dashboard</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<style>
-  body { background: #0a0e1a; font-family: 'Inter', system-ui, sans-serif; }
-  .card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; }
-  .gauge-track { stroke: #1f2937; }
-  .metric-up   { color: #34d399; }
-  .metric-down { color: #f87171; }
-  .grade-A { color: #34d399; }
-  .grade-B { color: #60a5fa; }
-  .grade-C { color: #fbbf24; }
-  .grade-D { color: #f97316; }
-  .grade-F { color: #f87171; }
-  .risk-low      { background: #065f46; color: #6ee7b7; }
-  .risk-medium   { background: #78350f; color: #fde68a; }
-  .risk-high     { background: #7c2d12; color: #fdba74; }
-  .risk-critical { background: #450a0a; color: #fca5a5; }
-  .dim-bar { height: 8px; border-radius: 4px; background: #1f2937; overflow: hidden; }
-  .dim-fill { height: 100%; border-radius: 4px; transition: width 0.8s ease; }
-  .spinner { border: 3px solid #1f2937; border-top: 3px solid #6366f1; border-radius: 50%; width: 24px; height: 24px; animation: spin 0.7s linear infinite; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .tag { display: inline-block; padding: 2px 10px; border-radius: 9999px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; }
-  input, select, textarea { background: #1f2937; border: 1px solid #374151; border-radius: 8px; color: #e5e7eb; padding: 8px 12px; outline: none; transition: border-color 0.2s; }
-  input:focus, select:focus, textarea:focus { border-color: #6366f1; }
-  .btn { padding: 8px 20px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; transition: opacity 0.2s; border: none; }
-  .btn:hover { opacity: 0.85; }
-  .btn-primary { background: #6366f1; color: #fff; }
-  .btn-secondary { background: #374151; color: #e5e7eb; }
-  ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
-</style>
+<link rel="stylesheet" href="/static/css/app.css" />
 </head>
-<body class="text-gray-200 min-h-screen">
+<body>
+<div id="rai-shell"></div>
 
-<!-- Header -->
-<header class="border-b border-gray-800 px-8 py-4 flex items-center justify-between">
-  <div class="flex items-center gap-3">
-    <div class="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-bold text-sm">R</div>
-    <span class="font-semibold text-lg tracking-tight">ResponsibleAI</span>
-    <span class="text-gray-500 text-sm">Governance Dashboard</span>
-  </div>
-  <div class="flex items-center gap-4">
-    <span id="health-dot" class="w-2 h-2 rounded-full bg-gray-500 inline-block"></span>
-    <span id="health-text" class="text-xs text-gray-400">Connecting…</span>
-    <span class="text-xs text-gray-500">v0.4.0</span>
-  </div>
-</header>
-
-<div class="flex">
-<!-- Sidebar -->
-<nav class="w-52 border-r border-gray-800 min-h-screen px-4 py-6 shrink-0">
-  <ul class="space-y-1 text-sm">
-    <li><button onclick="showTab('overview')" class="nav-btn w-full text-left px-3 py-2 rounded-lg text-gray-300 hover:bg-gray-800 font-medium" id="nav-overview">Overview</button></li>
-    <li><button onclick="showTab('evaluate')" class="nav-btn w-full text-left px-3 py-2 rounded-lg text-gray-300 hover:bg-gray-800" id="nav-evaluate">Evaluate Model</button></li>
-    <li><button onclick="showTab('guardrails')" class="nav-btn w-full text-left px-3 py-2 rounded-lg text-gray-300 hover:bg-gray-800" id="nav-guardrails">Guardrails</button></li>
-    <li><button onclick="showTab('hallucination')" class="nav-btn w-full text-left px-3 py-2 rounded-lg text-gray-300 hover:bg-gray-800" id="nav-hallucination">Hallucination</button></li>
-    <li><button onclick="showTab('cost')" class="nav-btn w-full text-left px-3 py-2 rounded-lg text-gray-300 hover:bg-gray-800" id="nav-cost">Cost Intelligence</button></li>
-    <li><button onclick="showTab('router')" class="nav-btn w-full text-left px-3 py-2 rounded-lg text-gray-300 hover:bg-gray-800" id="nav-router">Model Router</button></li>
-  </ul>
-</nav>
-
-<!-- Main content -->
-<main class="flex-1 p-8 overflow-auto">
-
-<!-- ===== OVERVIEW ===== -->
-<div id="tab-overview" class="tab-panel">
-  <h2 class="text-xl font-bold mb-6">Platform Overview</h2>
-  <div class="grid grid-cols-4 gap-4 mb-8" id="kpi-row">
-    <div class="card p-5">
-      <div class="text-xs text-gray-400 mb-1 uppercase tracking-wider">Models Tracked</div>
-      <div class="text-3xl font-bold text-white" id="kpi-models">—</div>
-    </div>
-    <div class="card p-5">
-      <div class="text-xs text-gray-400 mb-1 uppercase tracking-wider">Avg Trust Score</div>
-      <div class="text-3xl font-bold text-indigo-400" id="kpi-avg-trust">—</div>
-    </div>
-    <div class="card p-5">
-      <div class="text-xs text-gray-400 mb-1 uppercase tracking-wider">Cost (30d)</div>
-      <div class="text-3xl font-bold text-emerald-400" id="kpi-cost">—</div>
-    </div>
-    <div class="card p-5">
-      <div class="text-xs text-gray-400 mb-1 uppercase tracking-wider">Requests (30d)</div>
-      <div class="text-3xl font-bold text-sky-400" id="kpi-requests">—</div>
-    </div>
-  </div>
-
-  <div class="grid grid-cols-2 gap-6 mb-6">
-    <div class="card p-6">
-      <h3 class="font-semibold mb-4">Tracked Models</h3>
-      <div id="models-list" class="space-y-3 text-sm text-gray-400">Loading…</div>
-    </div>
-    <div class="card p-6">
-      <h3 class="font-semibold mb-4">Daily Cost (30d)</h3>
-      <canvas id="cost-chart" height="160"></canvas>
-    </div>
-  </div>
-
-  <div class="card p-6">
-    <h3 class="font-semibold mb-4">Model Pricing Leaderboard</h3>
-    <div id="pricing-table" class="text-sm"></div>
-  </div>
-</div>
-
-<!-- ===== EVALUATE ===== -->
-<div id="tab-evaluate" class="tab-panel hidden">
-  <h2 class="text-xl font-bold mb-6">Evaluate Model Trust</h2>
-  <div class="grid grid-cols-2 gap-6">
-    <div class="card p-6">
-      <div class="grid grid-cols-2 gap-4 mb-4">
-        <div>
-          <label class="block text-xs text-gray-400 mb-1">Model Name</label>
-          <input id="ev-model" type="text" value="gpt-4o" class="w-full" />
-        </div>
-        <div>
-          <label class="block text-xs text-gray-400 mb-1">Provider</label>
-          <input id="ev-provider" type="text" value="openai" class="w-full" />
-        </div>
-      </div>
-      <div class="space-y-3 mb-4">
-        <div class="grid grid-cols-3 gap-4">
-          <div><label class="block text-xs text-gray-400 mb-1">Fairness (0-1)</label><input id="ev-fairness" type="number" step="0.05" min="0" max="1" value="0.75" class="w-full" /></div>
-          <div><label class="block text-xs text-gray-400 mb-1">Privacy (0-1)</label><input id="ev-privacy" type="number" step="0.05" min="0" max="1" value="0.80" class="w-full" /></div>
-          <div><label class="block text-xs text-gray-400 mb-1">Security (0-1)</label><input id="ev-security" type="number" step="0.05" min="0" max="1" value="0.70" class="w-full" /></div>
-        </div>
-        <div class="grid grid-cols-3 gap-4">
-          <div><label class="block text-xs text-gray-400 mb-1">Robustness (0-1)</label><input id="ev-robustness" type="number" step="0.05" min="0" max="1" value="0.75" class="w-full" /></div>
-          <div><label class="block text-xs text-gray-400 mb-1">Compliance (0-1)</label><input id="ev-compliance" type="number" step="0.05" min="0" max="1" value="0.80" class="w-full" /></div>
-          <div><label class="block text-xs text-gray-400 mb-1">Authenticity (0-1)</label><input id="ev-authenticity" type="number" step="0.05" min="0" max="1" value="0.85" class="w-full" /></div>
-        </div>
-      </div>
-      <div class="mb-4">
-        <label class="block text-xs text-gray-400 mb-1">Use Case</label>
-        <select id="ev-usecase" class="w-full">
-          <option value="general">General</option>
-          <option value="medical">Medical</option>
-          <option value="legal">Legal</option>
-          <option value="financial">Financial</option>
-          <option value="recruitment">Recruitment</option>
-        </select>
-      </div>
-      <button class="btn btn-primary w-full" onclick="runEvaluation()">Run Evaluation</button>
-    </div>
-
-    <div class="card p-6" id="eval-result">
-      <div class="text-gray-500 text-sm">Run an evaluation to see results.</div>
-    </div>
-  </div>
-</div>
-
-<!-- ===== GUARDRAILS ===== -->
-<div id="tab-guardrails" class="tab-panel hidden">
-  <h2 class="text-xl font-bold mb-6">Guardrails — PII & Toxicity Scanner</h2>
-  <div class="grid grid-cols-2 gap-6">
-    <div class="card p-6">
-      <label class="block text-xs text-gray-400 mb-2">Text to scan</label>
-      <textarea id="gr-text" rows="8" class="w-full text-sm" placeholder="Paste text here…&#10;&#10;Example: Call me at 555-123-4567 or user@example.com. My SSN is 123-45-6789."></textarea>
-      <button class="btn btn-primary mt-3 w-full" onclick="runScan()">Scan Text</button>
-    </div>
-    <div class="card p-6" id="scan-result">
-      <div class="text-gray-500 text-sm">Paste text and click Scan.</div>
-    </div>
-  </div>
-</div>
-
-<!-- ===== HALLUCINATION ===== -->
-<div id="tab-hallucination" class="tab-panel hidden">
-  <h2 class="text-xl font-bold mb-6">Hallucination Detector</h2>
-  <div class="grid grid-cols-2 gap-6">
-    <div class="card p-6">
-      <label class="block text-xs text-gray-400 mb-2">AI Response Text</label>
-      <textarea id="hal-text" rows="7" class="w-full text-sm" placeholder="Paste the AI response to analyze…"></textarea>
-      <label class="block text-xs text-gray-400 mb-2 mt-4">Candidate responses (one per line, optional)</label>
-      <textarea id="hal-candidates" rows="3" class="w-full text-sm" placeholder="Alternate responses for consistency check…"></textarea>
-      <button class="btn btn-primary mt-3 w-full" onclick="runHallucination()">Analyze</button>
-    </div>
-    <div class="card p-6" id="hal-result">
-      <div class="text-gray-500 text-sm">Paste an AI response and click Analyze.</div>
-    </div>
-  </div>
-</div>
-
-<!-- ===== COST ===== -->
-<div id="tab-cost" class="tab-panel hidden">
-  <h2 class="text-xl font-bold mb-6">Cost Intelligence</h2>
-  <div class="grid grid-cols-2 gap-6 mb-6">
-    <div class="card p-6">
-      <h3 class="font-semibold mb-4 text-sm">Analyze Prompt Efficiency</h3>
-      <label class="block text-xs text-gray-400 mb-1">Prompt</label>
-      <textarea id="ci-prompt" rows="4" class="w-full text-sm mb-2" placeholder="Paste your prompt here…"></textarea>
-      <label class="block text-xs text-gray-400 mb-1">Response (optional)</label>
-      <textarea id="ci-response" rows="3" class="w-full text-sm mb-3"></textarea>
-      <div class="grid grid-cols-2 gap-3 mb-3">
-        <div><label class="block text-xs text-gray-400 mb-1">Provider</label>
-          <select id="ci-provider" class="w-full text-sm">
-            <option value="openai">openai</option>
-            <option value="anthropic">anthropic</option>
-            <option value="google">google</option>
-            <option value="mistral">mistral</option>
-          </select>
-        </div>
-        <div><label class="block text-xs text-gray-400 mb-1">Model</label>
-          <input id="ci-model" type="text" value="gpt-4o" class="w-full text-sm" /></div>
-      </div>
-      <button class="btn btn-primary w-full text-sm" onclick="analyzePrompt()">Analyze Efficiency</button>
-    </div>
-    <div class="card p-6" id="ci-result">
-      <div class="text-gray-500 text-sm">Paste a prompt and click Analyze.</div>
-    </div>
-  </div>
-</div>
-
-<!-- ===== ROUTER ===== -->
-<div id="tab-router" class="tab-panel hidden">
-  <h2 class="text-xl font-bold mb-6">Model Router</h2>
-  <div class="grid grid-cols-2 gap-6">
-    <div class="card p-6">
-      <label class="block text-xs text-gray-400 mb-2">Task Description</label>
-      <textarea id="rt-task" rows="4" class="w-full text-sm" placeholder="Describe the AI task…&#10;&#10;Example: Classify this customer email as spam or not spam."></textarea>
-      <label class="block text-xs text-gray-400 mt-3 mb-1">Quality Requirement</label>
-      <select id="rt-quality" class="w-full text-sm mb-3">
-        <option value="balanced">Balanced (cost vs quality)</option>
-        <option value="cheapest">Cheapest</option>
-        <option value="maximum">Maximum quality</option>
-      </select>
-      <button class="btn btn-primary w-full" onclick="routeTask()">Route Task</button>
-    </div>
-    <div class="card p-6" id="rt-result">
-      <div class="text-gray-500 text-sm">Enter a task and click Route Task.</div>
-    </div>
-  </div>
-</div>
-
-</main>
-</div>
-
+<script src="/static/js/app.js"></script>
 <script>
-const API = '';
+(function () {
+  RAI.shell("overview");
+  const content = document.getElementById("rai-page-content");
 
-// ── Tab navigation ──────────────────────────────────────────────────────────
-function showTab(name) {
-  document.querySelectorAll('.tab-panel').forEach(el => el.classList.add('hidden'));
-  document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('bg-gray-800', 'text-white'));
-  document.getElementById('tab-' + name).classList.remove('hidden');
-  const nb = document.getElementById('nav-' + name);
-  if (nb) { nb.classList.add('bg-gray-800', 'text-white'); }
-}
-showTab('overview');
+  const QUICK_LINKS = [
+    { href: "/evaluate", label: "Evaluate Model", desc: "Score a model across 6 trust dimensions" },
+    { href: "/guardrails", label: "Guardrails", desc: "Scan text for PII and toxicity" },
+    { href: "/hallucination", label: "Hallucination", desc: "Check factual consistency" },
+    { href: "/cost", label: "Cost Intelligence", desc: "Analyze prompt efficiency" },
+    { href: "/router", label: "Model Router", desc: "Route tasks to the right model" },
+    { href: "/eval", label: "Compare & Benchmark", desc: "Run benchmark suites" },
+    { href: "/redteam", label: "Red Team", desc: "Adversarial prompt testing" },
+    { href: "/audit", label: "Audit Log", desc: "Tamper-evident action history" },
+    { href: "/leaderboard", label: "Public Leaderboard", desc: "Cross-model trust rankings" },
+    { href: "/incident-db", label: "Incident Database", desc: "Crowd-reported AI failures" },
+  ];
 
-// ── Health check ────────────────────────────────────────────────────────────
-async function checkHealth() {
-  try {
-    const r = await fetch(API + '/api/health');
-    const d = await r.json();
-    document.getElementById('health-dot').className = 'w-2 h-2 rounded-full bg-emerald-400 inline-block';
-    document.getElementById('health-text').textContent = 'Online · ' + d.modules.length + ' modules';
-  } catch {
-    document.getElementById('health-dot').className = 'w-2 h-2 rounded-full bg-red-500 inline-block';
-    document.getElementById('health-text').textContent = 'Offline — start uvicorn';
+  function escHtml(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
-}
 
-// ── Overview data ────────────────────────────────────────────────────────────
-let costChart = null;
-async function loadOverview() {
-  try {
-    const [modelsRes, costRes, pricingRes] = await Promise.all([
-      fetch(API + '/api/models').then(r => r.json()),
-      fetch(API + '/api/cost/summary?days=30').then(r => r.json()),
-      fetch(API + '/api/cost/models').then(r => r.json()),
-    ]);
-
-    const models = modelsRes.models || [];
-    document.getElementById('kpi-models').textContent = models.length || '0';
-
-    const avgTrust = models.length
-      ? (models.reduce((s, m) => s + m.overall, 0) / models.length).toFixed(1)
-      : '—';
-    document.getElementById('kpi-avg-trust').textContent = avgTrust;
-    document.getElementById('kpi-cost').textContent = '$' + (costRes.total_cost_usd || 0).toFixed(4);
-    document.getElementById('kpi-requests').textContent = (costRes.request_count || 0).toLocaleString();
-
-    // Models list
-    const ml = document.getElementById('models-list');
-    if (models.length === 0) {
-      ml.innerHTML = '<p class="text-gray-500 text-xs">No evaluations recorded yet. Use "Evaluate Model" to add one.</p>';
-    } else {
-      ml.innerHTML = models.map(m => `
-        <div class="flex items-center justify-between border-b border-gray-800 pb-2">
-          <div>
-            <span class="text-gray-200 font-medium">${m.model_name}</span>
-            <span class="text-gray-500 ml-2 text-xs">${m.provider}</span>
-          </div>
-          <div class="flex items-center gap-3">
-            <span class="font-bold text-indigo-400">${m.overall.toFixed(1)}</span>
-            <span class="tag grade-${m.grade}">${m.grade}</span>
-          </div>
-        </div>`).join('');
-    }
-
-    // Daily cost chart
-    const daily = costRes.daily_costs || [];
-    const ctx = document.getElementById('cost-chart').getContext('2d');
-    if (costChart) costChart.destroy();
-    costChart = new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: daily.map(d => d.date),
-        datasets: [{
-          data: daily.map(d => d.cost_usd),
-          borderColor: '#6366f1',
-          backgroundColor: 'rgba(99,102,241,0.12)',
-          tension: 0.4, fill: true, pointRadius: 3,
-        }]
-      },
-      options: {
-        responsive: true, plugins: { legend: { display: false } },
-        scales: {
-          x: { ticks: { color: '#6b7280', font: { size: 10 } }, grid: { color: '#1f2937' } },
-          y: { ticks: { color: '#6b7280', font: { size: 10 }, callback: v => '$' + v.toFixed(4) }, grid: { color: '#1f2937' } },
-        }
-      }
-    });
-
-    // Pricing table
-    const pr = (pricingRes.models || []).slice(0, 10);
-    document.getElementById('pricing-table').innerHTML = `
-      <table class="w-full text-xs">
-        <thead><tr class="text-gray-400 border-b border-gray-700">
-          <th class="text-left pb-2">Model</th>
-          <th class="text-right pb-2">In $/1M</th>
-          <th class="text-right pb-2">Out $/1M</th>
-          <th class="text-right pb-2">Avg $/1M</th>
-          <th class="pb-2"></th>
-        </tr></thead>
-        <tbody>${pr.map(m => `
-          <tr class="border-b border-gray-800 hover:bg-gray-800">
-            <td class="py-1.5 text-gray-300">${m.key}</td>
-            <td class="text-right text-gray-400">${m.is_local ? '—' : '$' + m.input_cost_per_1m}</td>
-            <td class="text-right text-gray-400">${m.is_local ? '—' : '$' + m.output_cost_per_1m}</td>
-            <td class="text-right font-medium text-emerald-400">${m.is_local ? 'FREE' : '$' + m.avg_cost_per_1m}</td>
-            <td class="text-right">${m.is_local ? '<span class="tag risk-low">Local</span>' : ''}</td>
-          </tr>`).join('')}
-        </tbody>
-      </table>`;
-  } catch (e) {
-    console.error('Overview load error:', e);
+  function fmtSeconds(s) {
+    const d = Math.floor(s / 86400);
+    const h = Math.floor((s % 86400) / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    if (d > 0) return d + "d " + h + "h";
+    if (h > 0) return h + "h " + m + "m";
+    return m + "m " + Math.floor(s % 60) + "s";
   }
-}
 
-// ── Evaluate ────────────────────────────────────────────────────────────────
-async function runEvaluation() {
-  const el = document.getElementById('eval-result');
-  el.innerHTML = '<div class="spinner mx-auto"></div>';
-  try {
-    const body = {
-      model_name: document.getElementById('ev-model').value,
-      provider: document.getElementById('ev-provider').value,
-      fairness: +document.getElementById('ev-fairness').value,
-      privacy: +document.getElementById('ev-privacy').value,
-      security: +document.getElementById('ev-security').value,
-      robustness: +document.getElementById('ev-robustness').value,
-      compliance: +document.getElementById('ev-compliance').value,
-      authenticity: +document.getElementById('ev-authenticity').value,
-      use_case: document.getElementById('ev-usecase').value,
-    };
-    const r = await fetch(API + '/api/evaluate', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
-    const d = await r.json();
-    const ts = d.trust_score;
-    const dims = ['fairness','privacy','security','robustness','compliance','authenticity'];
-    el.innerHTML = `
-      <div class="text-center mb-5">
-        <div class="text-5xl font-black text-indigo-400 mb-1">${ts.overall.toFixed(1)}</div>
-        <div class="text-2xl font-bold grade-${ts.grade} mb-1">${ts.grade}</div>
-        <span class="tag risk-${ts.risk_level.toLowerCase()}">${ts.risk_level}</span>
-        ${d.drift_alert ? `<div class="mt-2 p-2 bg-red-900 rounded text-xs text-red-300">⚠ Drift alert: ${d.drift_alert.severity} (${d.drift_alert.delta.toFixed(1)} pts)</div>` : ''}
-      </div>
-      <div class="space-y-2">
-        ${dims.map(dim => `
-          <div>
-            <div class="flex justify-between text-xs text-gray-400 mb-1">
-              <span class="capitalize">${dim}</span>
-              <span>${(ts[dim] * 100).toFixed(0)}</span>
-            </div>
-            <div class="dim-bar"><div class="dim-fill bg-indigo-500" style="width:${ts[dim]*100}%"></div></div>
-          </div>`).join('')}
-      </div>
-      <div class="mt-4 text-xs text-gray-500">Passport ID: <span class="font-mono text-indigo-400">${d.passport_id}</span></div>`;
-    loadOverview();
-  } catch (e) {
-    el.innerHTML = `<div class="text-red-400 text-sm">Error: ${e.message}</div>`;
-  }
-}
-
-// ── Guardrails ───────────────────────────────────────────────────────────────
-async function runScan() {
-  const el = document.getElementById('scan-result');
-  el.innerHTML = '<div class="spinner mx-auto"></div>';
-  try {
-    const text = document.getElementById('gr-text').value;
-    const r = await fetch(API + '/api/scan', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ text }) });
-    const d = await r.json();
-    el.innerHTML = `
-      <div class="flex items-center gap-3 mb-4">
-        <span class="text-2xl">${d.is_blocked ? '🚫' : '✅'}</span>
+  function render(health, metrics) {
+    const healthy = health.status === "healthy";
+    content.innerHTML = `
+      <div class="page-header">
         <div>
-          <div class="font-semibold ${d.is_blocked ? 'text-red-400' : 'text-emerald-400'}">${d.is_blocked ? 'BLOCKED' : 'CLEAN'}</div>
-          <div class="text-xs text-gray-400">${d.pii_count} PII findings · ${d.toxicity_count} toxicity flags</div>
+          <h1>Overview</h1>
+          <p>Real-time health, cost, and governance metrics for your ResponsibleAI deployment.</p>
+        </div>
+        <span class="pill ${healthy ? "pill-success" : "pill-critical"}">${healthy ? "Healthy" : "Degraded"} · v${escHtml(health.version)}</span>
+      </div>
+
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="label">Uptime</div>
+          <div class="value">${fmtSeconds(health.uptime_seconds)}</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Total Requests</div>
+          <div class="value">${metrics.total_requests.toLocaleString()}</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Error Rate</div>
+          <div class="value">${metrics.error_rate_pct.toFixed(2)}%</div>
+          <div class="delta">${metrics.error_count} errors</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Monthly Spend</div>
+          <div class="value">$${metrics.monthly_spend_usd.toLocaleString()}</div>
+          <div class="delta">of $${metrics.monthly_budget_usd.toLocaleString()} budget</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Audit Entries (30d)</div>
+          <div class="value">${metrics.audit_entries_30d}</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Live Connections</div>
+          <div class="value" id="ws-count">${metrics.websocket_connections}</div>
+          <div class="delta"><span class="spinner" id="ws-spinner" style="width:8px;height:8px;vertical-align:middle;"></span> <span id="ws-label">connecting…</span></div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Webhooks Registered</div>
+          <div class="value">${metrics.webhooks_registered}</div>
+          <div class="delta">${metrics.webhook_failures} failed deliveries</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Database</div>
+          <div class="value" style="font-size:1.1rem">${escHtml(health.checks.db_backend)}</div>
+          <div class="delta">rate limit: ${escHtml(health.checks.rate_limit_backend)}</div>
         </div>
       </div>
-      ${d.block_reasons.length ? `<div class="mb-3"><div class="text-xs text-gray-400 mb-1">Block Reasons</div>${d.block_reasons.map(r => `<div class="text-xs text-red-300 bg-red-950 rounded px-2 py-1 mb-1">${r}</div>`).join('')}</div>` : ''}
-      ${d.pii_findings.length ? `<div class="mb-3"><div class="text-xs text-gray-400 mb-1">PII Detected</div>${d.pii_findings.map(f => `<div class="text-xs text-amber-300 bg-amber-950 rounded px-2 py-1 mb-1 capitalize">${f.category} at [${f.start}:${f.end}]</div>`).join('')}</div>` : ''}
-      ${d.redacted_text ? `<div><div class="text-xs text-gray-400 mb-1">Redacted Text</div><div class="text-xs bg-gray-900 rounded p-3 font-mono text-gray-300 whitespace-pre-wrap">${escHtml(d.redacted_text)}</div></div>` : ''}`;
-  } catch (e) {
-    el.innerHTML = `<div class="text-red-400 text-sm">Error: ${e.message}</div>`;
+
+      <div class="card">
+        <h2 style="margin-top:0;font-size:1.05rem;">Jump to a tool</h2>
+        <div class="stat-grid" style="margin-bottom:0;">
+          ${QUICK_LINKS.map(function (l) {
+            return '<a class="stat-card" style="text-decoration:none;color:inherit;" href="' + l.href + '">' +
+              '<div class="label">' + escHtml(l.label) + '</div>' +
+              '<div class="text-sm text-muted">' + escHtml(l.desc) + '</div>' +
+              '</a>';
+          }).join("")}
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 style="margin-top:0;font-size:1.05rem;">Active Modules</h2>
+        <div class="flex" style="flex-wrap:wrap;gap:0.5rem;">
+          ${health.modules.map(function (m) { return '<span class="pill pill-outline">' + escHtml(m) + "</span>"; }).join("")}
+        </div>
+      </div>
+    `;
   }
-}
 
-// ── Hallucination ────────────────────────────────────────────────────────────
-async function runHallucination() {
-  const el = document.getElementById('hal-result');
-  el.innerHTML = '<div class="spinner mx-auto"></div>';
-  try {
-    const text = document.getElementById('hal-text').value;
-    const candidatesRaw = document.getElementById('hal-candidates').value.trim();
-    const candidates = candidatesRaw ? candidatesRaw.split('\n').filter(Boolean) : null;
-    const r = await fetch(API + '/api/hallucination', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ text, candidates }) });
-    const d = await r.json();
-    const riskColor = { LOW: 'text-emerald-400', MEDIUM: 'text-amber-400', HIGH: 'text-orange-400', CRITICAL: 'text-red-400' };
-    el.innerHTML = `
-      <div class="text-center mb-5">
-        <div class="text-4xl font-black mb-1 ${riskColor[d.risk_level] || 'text-gray-400'}">${(d.hallucination_risk * 100).toFixed(0)}%</div>
-        <div class="font-semibold ${riskColor[d.risk_level] || ''}">${d.risk_level} RISK</div>
-      </div>
-      <div class="space-y-2 mb-4">
-        ${[['Consistency', d.consistency_score], ['Hedging density', d.hedging_score]].map(([l,v]) => `
-          <div>
-            <div class="flex justify-between text-xs text-gray-400 mb-1"><span>${l}</span><span>${(v*100).toFixed(0)}%</span></div>
-            <div class="dim-bar"><div class="dim-fill bg-indigo-500" style="width:${v*100}%"></div></div>
-          </div>`).join('')}
-      </div>
-      ${d.unsupported_claims.length ? `
-        <div class="text-xs text-gray-400 mb-1">Unsupported Claims (${d.unsupported_claims.length})</div>
-        ${d.unsupported_claims.slice(0,5).map(c => `<div class="text-xs text-amber-300 bg-amber-950 rounded px-2 py-1 mb-1">${escHtml(c.slice(0,120))}</div>`).join('')}` : '<div class="text-xs text-emerald-400">No unsupported claims detected.</div>'}`;
-  } catch (e) {
-    el.innerHTML = `<div class="text-red-400 text-sm">Error: ${e.message}</div>`;
+  function connectLiveActivity() {
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    let ws;
+    try {
+      ws = new WebSocket(proto + "//" + window.location.host + "/ws/dashboard");
+    } catch (e) {
+      return;
+    }
+    ws.addEventListener("open", function () {
+      const label = document.getElementById("ws-label");
+      const spinner = document.getElementById("ws-spinner");
+      if (label) label.textContent = "live";
+      if (spinner) spinner.style.display = "none";
+    });
+    ws.addEventListener("message", function (evt) {
+      try {
+        const data = JSON.parse(evt.data);
+        if (typeof data.websocket_connections === "number") {
+          const el = document.getElementById("ws-count");
+          if (el) el.textContent = data.websocket_connections;
+        }
+      } catch (e) { /* ignore non-JSON pings */ }
+    });
+    ws.addEventListener("close", function () {
+      const label = document.getElementById("ws-label");
+      if (label) label.textContent = "disconnected";
+    });
+    ws.addEventListener("error", function () {
+      const label = document.getElementById("ws-label");
+      if (label) label.textContent = "unavailable";
+    });
   }
-}
 
-// ── Cost Intelligence ────────────────────────────────────────────────────────
-async function analyzePrompt() {
-  const el = document.getElementById('ci-result');
-  el.innerHTML = '<div class="spinner mx-auto"></div>';
-  try {
-    const body = {
-      prompt: document.getElementById('ci-prompt').value,
-      response: document.getElementById('ci-response').value,
-      provider: document.getElementById('ci-provider').value,
-      model: document.getElementById('ci-model').value,
-    };
-    const r = await fetch(API + '/api/cost/analyze', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
-    const d = await r.json();
-    const severityColor = { low: 'text-sky-400', medium: 'text-amber-400', high: 'text-red-400' };
-    el.innerHTML = `
-      <div class="text-center mb-4">
-        <div class="text-4xl font-black text-indigo-400 mb-1">${d.efficiency_score}</div>
-        <div class="text-xs text-gray-400">Efficiency Score</div>
-      </div>
-      <div class="grid grid-cols-2 gap-3 mb-4 text-xs">
-        <div class="bg-gray-900 rounded p-3"><div class="text-gray-400">Tokens</div><div class="font-bold">${d.original_tokens} → ${d.estimated_optimized_tokens}</div></div>
-        <div class="bg-gray-900 rounded p-3"><div class="text-gray-400">Monthly savings</div><div class="font-bold text-emerald-400">$${d.estimated_monthly_savings_usd}</div></div>
-      </div>
-      ${d.waste_findings.length ? `
-        <div class="text-xs text-gray-400 mb-2">Waste Findings</div>
-        ${d.waste_findings.map(f => `
-          <div class="bg-gray-900 rounded p-3 mb-2 text-xs">
-            <div class="flex justify-between mb-1">
-              <span class="font-semibold text-gray-300">${f.category}</span>
-              <span class="${severityColor[f.severity] || ''} capitalize">${f.severity}</span>
-            </div>
-            <div class="text-gray-400 mb-1">${escHtml(f.description)}</div>
-            <div class="text-indigo-300 italic">${escHtml(f.recommendation)}</div>
-          </div>`).join('')}` : '<div class="text-xs text-emerald-400">No waste findings. Prompt looks efficient!</div>'}`;
-  } catch (e) {
-    el.innerHTML = `<div class="text-red-400 text-sm">Error: ${e.message}</div>`;
+  async function load() {
+    content.innerHTML = '<div class="state-box"><span class="spinner"></span>&nbsp; Loading dashboard…</div>';
+    try {
+      const [health, metrics] = await Promise.all([
+        RAI.fetchJSON("/api/health", { skipAuthRedirect: true }),
+        RAI.fetchJSON("/api/metrics", { skipAuthRedirect: true }),
+      ]);
+      render(health, metrics);
+      connectLiveActivity();
+    } catch (e) {
+      content.innerHTML = '<div class="state-box error">Could not load dashboard: ' + escHtml(e.message) + "</div>";
+    }
   }
-}
 
-// ── Router ────────────────────────────────────────────────────────────────────
-async function routeTask() {
-  const el = document.getElementById('rt-result');
-  el.innerHTML = '<div class="spinner mx-auto"></div>';
-  try {
-    const body = {
-      task_description: document.getElementById('rt-task').value,
-      quality_requirement: document.getElementById('rt-quality').value,
-    };
-    const r = await fetch(API + '/api/cost/route', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
-    const d = await r.json();
-    el.innerHTML = `
-      <div class="mb-4">
-        <div class="text-xs text-gray-400 mb-1">Complexity</div>
-        <span class="tag risk-${d.complexity === 'high_risk' ? 'critical' : d.complexity === 'complex' ? 'high' : d.complexity === 'medium' ? 'medium' : 'low'} capitalize">${d.complexity.replace('_', ' ')}</span>
-      </div>
-      <div class="mb-4">
-        <div class="text-xs text-gray-400 mb-1">Recommended Model</div>
-        <div class="font-bold text-indigo-400 text-lg">${d.recommended_model}</div>
-        <div class="text-xs text-gray-400 mt-0.5">$${d.estimated_cost_per_1k_tokens_usd} per 1K tokens · saves $${d.estimated_savings_vs_gpt4o_usd}/1K vs GPT-4o</div>
-      </div>
-      <div class="mb-4">
-        <div class="text-xs text-gray-400 mb-1">Alternative</div>
-        <div class="text-gray-300">${d.alternative_model}</div>
-      </div>
-      <div class="text-xs text-gray-400 mb-1">Reasoning</div>
-      <div class="text-xs text-gray-300 leading-relaxed">${escHtml(d.reasoning)}</div>`;
-  } catch (e) {
-    el.innerHTML = `<div class="text-red-400 text-sm">Error: ${e.message}</div>`;
-  }
-}
-
-function escHtml(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-// Init
-checkHealth();
-loadOverview();
+  load();
+})();
 </script>
 </body>
 </html>

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Trust Scores — ResponsibleAI</title>
+<link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body>
+<div id="rai-shell"></div>
+
+<script src="/static/js/app.js"></script>
+<script>
+(function () {
+  RAI.shell("trust-scores");
+  const content = document.getElementById("rai-page-content");
+
+  function escHtml(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  const TREND_PILL = { improving: "pill-success", declining: "pill-critical", stable: "pill-neutral" };
+
+  content.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1>Trust Scores</h1>
+        <p>Look up trust score history and drift trend for any previously evaluated model.</p>
+      </div>
+    </div>
+    <div class="card">
+      <form id="ts-form" class="row" style="align-items:flex-end;">
+        <div class="field" style="margin-bottom:0;">
+          <label for="ts-model">Model name</label>
+          <input id="ts-model" placeholder="gpt-4o" required />
+        </div>
+        <div class="field" style="margin-bottom:0;">
+          <label for="ts-provider">Provider</label>
+          <input id="ts-provider" placeholder="openai" required />
+        </div>
+        <button type="submit" class="btn btn-primary" id="ts-submit" style="flex:0 0 auto;">Look Up</button>
+      </form>
+    </div>
+    <div id="ts-result"></div>
+  `;
+
+  document.getElementById("ts-form").addEventListener("submit", async function (e) {
+    e.preventDefault();
+    const model = document.getElementById("ts-model").value.trim();
+    const provider = document.getElementById("ts-provider").value.trim();
+    const resultEl = document.getElementById("ts-result");
+    const submitBtn = document.getElementById("ts-submit");
+    submitBtn.disabled = true;
+    resultEl.innerHTML = '<div class="state-box"><span class="spinner"></span>&nbsp; Loading…</div>';
+    try {
+      const d = await RAI.fetchJSON("/api/trust-score/" + encodeURIComponent(model) + "/" + encodeURIComponent(provider));
+      const t = d.trend;
+      resultEl.innerHTML = `
+        <div class="stat-grid">
+          <div class="stat-card">
+            <div class="label">Latest Score</div>
+            <div class="value">${t.latest.toFixed(1)}</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">Trend</div>
+            <div class="value" style="font-size:1.1rem;"><span class="pill ${TREND_PILL[t.direction] || "pill-neutral"}">${escHtml(t.direction)}</span></div>
+          </div>
+          <div class="stat-card">
+            <div class="label">7d avg</div>
+            <div class="value">${t["7d_avg"].toFixed(1)}</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">30d range</div>
+            <div class="value" style="font-size:1.2rem;">${t["30d_min"].toFixed(1)} – ${t["30d_max"].toFixed(1)}</div>
+          </div>
+        </div>
+        <div class="card">
+          <h2 style="margin-top:0;font-size:1.05rem;">History (${d.history.length})</h2>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Recorded</th><th>Overall</th><th>Grade</th><th>Risk</th><th>Fairness</th><th>Privacy</th><th>Security</th><th>Robustness</th><th>Compliance</th><th>Authenticity</th></tr></thead>
+              <tbody>
+                ${d.history.slice().reverse().map(function (h) {
+                  return "<tr><td>" + new Date(h.recorded_at).toLocaleString() + "</td><td>" + h.overall.toFixed(1) + "</td><td><span class=\"grade-badge " + h.grade + "\">" + h.grade + "</span></td><td>" + escHtml(h.risk_level) + "</td><td>" + (h.fairness * 100).toFixed(0) + "</td><td>" + (h.privacy * 100).toFixed(0) + "</td><td>" + (h.security * 100).toFixed(0) + "</td><td>" + (h.robustness * 100).toFixed(0) + "</td><td>" + (h.compliance * 100).toFixed(0) + "</td><td>" + (h.authenticity * 100).toFixed(0) + "</td></tr>";
+                }).join("")}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    } catch (err) {
+      resultEl.innerHTML = '<div class="state-box error">Error: ' + escHtml(err.message) + " — has this model/provider been evaluated yet? Try Evaluate Model first.</div>";
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+})();
+</script>
+</body>
+</html>

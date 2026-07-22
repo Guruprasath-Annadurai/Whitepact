@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Evaluate Model — ResponsibleAI</title>
+<link rel="stylesheet" href="/static/css/app.css" />
+<style>
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; align-items: start; }
+  @media (max-width: 900px) { .split { grid-template-columns: 1fr; } }
+  .slider-row { display: flex; align-items: center; gap: 0.8rem; margin-bottom: 1rem; }
+  .slider-row label { flex: 0 0 130px; margin-bottom: 0; }
+  .slider-row input[type="range"] { flex: 1; }
+  .slider-row .val { flex: 0 0 2.6rem; text-align: right; font-variant-numeric: tabular-nums; font-size: 0.85rem; color: var(--muted); }
+  .dim-bar { height: 6px; background: var(--code-bg); border-radius: 4px; overflow: hidden; }
+  .dim-fill { height: 100%; background: var(--accent); border-radius: 4px; }
+</style>
+</head>
+<body>
+<div id="rai-shell"></div>
+
+<script src="/static/js/app.js"></script>
+<script>
+(function () {
+  RAI.shell("evaluate");
+  const content = document.getElementById("rai-page-content");
+
+  function escHtml(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  const DIMS = [
+    ["fairness", 0.75], ["privacy", 0.80], ["security", 0.70],
+    ["robustness", 0.75], ["compliance", 0.80], ["authenticity", 0.85],
+  ];
+
+  content.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1>Evaluate Model</h1>
+        <p>Score a model across six trust dimensions and compute its overall Trust Score, grade, and risk level.</p>
+      </div>
+    </div>
+    <div class="split">
+      <div class="card">
+        <form id="ev-form">
+          <div class="row">
+            <div class="field">
+              <label for="ev-model">Model name</label>
+              <input id="ev-model" required placeholder="gpt-4o" />
+            </div>
+            <div class="field">
+              <label for="ev-provider">Provider</label>
+              <input id="ev-provider" required placeholder="openai" />
+            </div>
+          </div>
+          ${DIMS.map(function ([dim, def]) {
+            return '<div class="slider-row">' +
+              '<label for="ev-' + dim + '">' + dim[0].toUpperCase() + dim.slice(1) + '</label>' +
+              '<input type="range" id="ev-' + dim + '" min="0" max="1" step="0.01" value="' + def + '" />' +
+              '<span class="val" id="ev-' + dim + '-val">' + Math.round(def * 100) + '</span>' +
+              '</div>';
+          }).join("")}
+          <div class="field">
+            <label for="ev-usecase">Use case</label>
+            <input id="ev-usecase" value="general" placeholder="general" />
+          </div>
+          <button type="submit" class="btn btn-primary" id="ev-submit">Run Evaluation</button>
+        </form>
+      </div>
+      <div class="card" id="ev-result">
+        <div class="state-box">Fill in the form and run an evaluation to see results here.</div>
+      </div>
+    </div>
+  `;
+
+  DIMS.forEach(function ([dim]) {
+    const input = document.getElementById("ev-" + dim);
+    const val = document.getElementById("ev-" + dim + "-val");
+    input.addEventListener("input", function () { val.textContent = Math.round(input.value * 100); });
+  });
+
+  document.getElementById("ev-form").addEventListener("submit", async function (e) {
+    e.preventDefault();
+    const resultEl = document.getElementById("ev-result");
+    const submitBtn = document.getElementById("ev-submit");
+    submitBtn.disabled = true;
+    resultEl.innerHTML = '<div class="state-box"><span class="spinner"></span>&nbsp; Evaluating…</div>';
+    try {
+      const body = {
+        model_name: document.getElementById("ev-model").value,
+        provider: document.getElementById("ev-provider").value,
+        use_case: document.getElementById("ev-usecase").value || "general",
+      };
+      DIMS.forEach(function ([dim]) { body[dim] = +document.getElementById("ev-" + dim).value; });
+      const d = await RAI.fetchJSON("/api/evaluate", { method: "POST", body: JSON.stringify(body) });
+      const ts = d.trust_score;
+      const riskLevel = String(ts.risk || "MEDIUM");
+      const riskPill = riskLevel === "LOW" ? "pill-success" : riskLevel === "MEDIUM" ? "pill-medium" : "pill-critical";
+      const gradeClass = "grade-badge " + ts.grade;
+      resultEl.innerHTML = `
+        <div class="flex items-center gap-3" style="margin-bottom:1.25rem;">
+          <div class="${gradeClass}">${escHtml(ts.grade)}</div>
+          <div>
+            <div style="font-size:1.8rem;font-weight:800;">${ts.trust_score.toFixed(1)}</div>
+            <span class="pill ${riskPill}">${escHtml(riskLevel)} risk</span>
+          </div>
+        </div>
+        ${d.drift_alert ? '<div class="pill pill-warning" style="margin-bottom:1rem;">Drift alert: ' + escHtml(JSON.stringify(d.drift_alert)) + "</div>" : ""}
+        <div>
+          ${DIMS.map(function ([dim]) {
+            const v = ts.dimensions[dim];
+            return '<div style="margin-bottom:0.7rem;">' +
+              '<div class="flex" style="justify-content:space-between;font-size:0.8rem;color:var(--muted);margin-bottom:0.25rem;">' +
+              '<span style="text-transform:capitalize;">' + dim + '</span><span>' + v.toFixed(0) + '</span></div>' +
+              '<div class="dim-bar"><div class="dim-fill" style="width:' + v + '%"></div></div>' +
+              '</div>';
+          }).join("")}
+        </div>
+        <div class="text-sm text-muted" style="margin-top:1rem;">EU AI Act tier: <strong>${escHtml(d.compliance.eu_ai_act_tier)}</strong> · Compliance score: ${d.compliance.overall_score.toFixed(1)}</div>
+        <div class="hash-box" style="margin-top:0.6rem;">Passport ID: ${escHtml(d.passport_id)}</div>
+      `;
+    } catch (err) {
+      resultEl.innerHTML = '<div class="state-box error">Error: ' + escHtml(err.message) + "</div>";
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+})();
+</script>
+</body>
+</html>

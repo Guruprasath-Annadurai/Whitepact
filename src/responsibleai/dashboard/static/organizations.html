@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Organizations & Access — ResponsibleAI</title>
+<link rel="stylesheet" href="/static/css/app.css" />
+<style>
+  .split { display: grid; grid-template-columns: 1.3fr 1fr; gap: 1.5rem; align-items: start; }
+  @media (max-width: 900px) { .split { grid-template-columns: 1fr; } }
+  .org-row { cursor: pointer; }
+  .org-row.active { background: var(--row-hover); }
+</style>
+</head>
+<body>
+<div id="rai-shell"></div>
+
+<script src="/static/js/app.js"></script>
+<script>
+(function () {
+  RAI.shell("organizations");
+  const content = document.getElementById("rai-page-content");
+
+  function escHtml(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  content.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1>Organizations &amp; Access</h1>
+        <p>Manage organizations and their API keys. Requires OWNER/ADMIN role.</p>
+      </div>
+    </div>
+    <div class="split">
+      <div>
+        <div class="card">
+          <h2 style="margin-top:0;font-size:1.05rem;">Organizations</h2>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Name</th><th>Slug</th><th>Plan</th><th>Budget</th></tr></thead>
+              <tbody id="org-tbody"><tr><td colspan="4" class="state-box">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card" id="keys-card" style="display:none;">
+          <div class="flex items-center gap-3" style="margin-bottom:1rem;">
+            <h2 style="margin:0;font-size:1.05rem;flex:1;">API Keys — <span id="keys-org-name"></span></h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Name</th><th>Role</th><th>Created</th><th>Status</th></tr></thead>
+              <tbody id="key-tbody"></tbody>
+            </table>
+          </div>
+          <form id="key-form" style="margin-top:1rem;">
+            <div class="row">
+              <div class="field" style="margin-bottom:0;">
+                <label for="key-name">Key name</label>
+                <input id="key-name" placeholder="ci-key" required />
+              </div>
+              <div class="field" style="margin-bottom:0;">
+                <label for="key-role">Role</label>
+                <select id="key-role">
+                  <option value="OWNER">Owner</option>
+                  <option value="ADMIN">Admin</option>
+                  <option value="ANALYST" selected>Analyst</option>
+                  <option value="VIEWER">Viewer</option>
+                </select>
+              </div>
+              <button type="submit" class="btn btn-primary" id="key-submit" style="flex:0 0 auto;">Create Key</button>
+            </div>
+          </form>
+          <div id="new-key-box"></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2 style="margin-top:0;font-size:1.05rem;">Create Organization</h2>
+        <form id="org-form">
+          <div class="field">
+            <label for="org-name">Name</label>
+            <input id="org-name" required placeholder="Acme Corp" />
+          </div>
+          <div class="field">
+            <label for="org-slug">Slug</label>
+            <input id="org-slug" required placeholder="acme-corp" pattern="[a-z0-9\\-]+" />
+            <div class="hint">Lowercase letters, numbers, hyphens only.</div>
+          </div>
+          <div class="field">
+            <label for="org-budget">Monthly budget (USD)</label>
+            <input id="org-budget" type="number" value="10000" min="0" step="100" />
+          </div>
+          <button type="submit" class="btn btn-primary" id="org-submit">Create Organization</button>
+        </form>
+      </div>
+    </div>
+  `;
+
+  let orgs = [];
+
+  async function loadOrgs() {
+    const tbody = document.getElementById("org-tbody");
+    try {
+      const d = await RAI.fetchJSON("/api/orgs", { skipAuthRedirect: true });
+      orgs = d.orgs || [];
+      if (!orgs.length) {
+        tbody.innerHTML = '<tr><td colspan="4" class="state-box">No organizations yet.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = orgs.map(function (o) {
+        return '<tr class="org-row" data-org-id="' + escHtml(o.id) + '" data-org-name="' + escHtml(o.name) + '"><td>' + escHtml(o.name) +
+          '</td><td class="mono">' + escHtml(o.slug) + '</td><td><span class="pill pill-outline">' + escHtml(o.plan) + '</span></td><td>$' +
+          o.monthly_budget_usd.toLocaleString() + '</td></tr>';
+      }).join("");
+      tbody.querySelectorAll(".org-row").forEach(function (row) {
+        row.addEventListener("click", function () {
+          tbody.querySelectorAll(".org-row").forEach(function (r) { r.classList.remove("active"); });
+          row.classList.add("active");
+          selectOrg(row.getAttribute("data-org-id"), row.getAttribute("data-org-name"));
+        });
+      });
+    } catch (e) {
+      tbody.innerHTML = '<tr><td colspan="4" class="state-box error">Could not load organizations: ' + escHtml(e.message) + " (requires ADMIN role)</td></tr>";
+    }
+  }
+
+  let selectedOrgId = null;
+
+  async function selectOrg(orgId, orgName) {
+    selectedOrgId = orgId;
+    document.getElementById("keys-card").style.display = "block";
+    document.getElementById("keys-org-name").textContent = orgName;
+    document.getElementById("new-key-box").innerHTML = "";
+    await loadKeys(orgId);
+  }
+
+  async function loadKeys(orgId) {
+    const tbody = document.getElementById("key-tbody");
+    tbody.innerHTML = '<tr><td colspan="4" class="state-box"><span class="spinner"></span></td></tr>';
+    try {
+      const d = await RAI.fetchJSON("/api/orgs/" + encodeURIComponent(orgId) + "/keys");
+      const keys = d.keys || [];
+      tbody.innerHTML = keys.length ? keys.map(function (k) {
+        return "<tr><td>" + escHtml(k.name) + "</td><td>" + escHtml(k.role) + "</td><td>" + new Date(k.created_at).toLocaleDateString() +
+          "</td><td><span class=\"pill " + (k.revoked ? "pill-critical" : "pill-success") + "\">" + (k.revoked ? "Revoked" : "Active") + "</span></td></tr>";
+      }).join("") : '<tr><td colspan="4" class="state-box">No keys yet.</td></tr>';
+    } catch (e) {
+      tbody.innerHTML = '<tr><td colspan="4" class="state-box error">' + escHtml(e.message) + "</td></tr>";
+    }
+  }
+
+  document.getElementById("org-form").addEventListener("submit", async function (e) {
+    e.preventDefault();
+    const submitBtn = document.getElementById("org-submit");
+    submitBtn.disabled = true;
+    try {
+      const body = {
+        name: document.getElementById("org-name").value,
+        slug: document.getElementById("org-slug").value,
+        monthly_budget_usd: +document.getElementById("org-budget").value || 10000,
+      };
+      await RAI.fetchJSON("/api/orgs", { method: "POST", body: JSON.stringify(body) });
+      RAI.toast("Organization created.", "success");
+      document.getElementById("org-form").reset();
+      document.getElementById("org-budget").value = 10000;
+      loadOrgs();
+    } catch (err) {
+      RAI.toast("Could not create organization: " + err.message, "error");
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+
+  document.getElementById("key-form").addEventListener("submit", async function (e) {
+    e.preventDefault();
+    if (!selectedOrgId) return;
+    const submitBtn = document.getElementById("key-submit");
+    submitBtn.disabled = true;
+    try {
+      const body = { name: document.getElementById("key-name").value, role: document.getElementById("key-role").value };
+      const d = await RAI.fetchJSON("/api/orgs/" + encodeURIComponent(selectedOrgId) + "/keys", { method: "POST", body: JSON.stringify(body) });
+      document.getElementById("new-key-box").innerHTML = '<div class="hash-box" style="margin-top:1rem;">New key (shown once): ' + escHtml(d.key) + "</div>";
+      document.getElementById("key-form").reset();
+      loadKeys(selectedOrgId);
+    } catch (err) {
+      RAI.toast("Could not create key: " + err.message, "error");
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+
+  loadOrgs();
+})();
+</script>
+</body>
+</html>

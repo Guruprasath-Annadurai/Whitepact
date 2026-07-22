@@ -10,11 +10,12 @@ from contextvars import ContextVar
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypeVar
+from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -776,6 +777,37 @@ async def incident_db_detail_page(public_id: str) -> HTMLResponse:
     return HTMLResponse(content=page.read_text())
 
 
+def _page_route(path: str, filename: str) -> None:
+    """Register a GET route that serves a static HTML file verbatim.
+    Centralized so every simple page follows the exact same pattern — one
+    typo'd filename here breaks one page instead of a copy-pasted mistake
+    breaking many."""
+    async def _handler() -> HTMLResponse:
+        return HTMLResponse(content=(_static_dir / filename).read_text())
+    app.get(path, response_class=HTMLResponse, include_in_schema=False)(_handler)
+
+
+for _path, _filename in [
+    ("/login", "login.html"),
+    ("/auth/complete", "auth_complete.html"),
+    ("/evaluate", "evaluate.html"),
+    ("/guardrails", "guardrails.html"),
+    ("/hallucination", "hallucination.html"),
+    ("/cost", "cost.html"),
+    ("/router", "router.html"),
+    ("/trust-scores", "trust_scores.html"),
+    ("/eval", "eval.html"),
+    ("/redteam", "redteam.html"),
+    ("/audit", "audit.html"),
+    ("/incidents", "incidents.html"),
+    ("/webhooks-manage", "webhooks_manage.html"),
+    ("/organizations", "organizations.html"),
+    ("/billing", "billing.html"),
+    ("/settings", "settings.html"),
+]:
+    _page_route(_path, _filename)
+
+
 # ── Health & Ops ───────────────────────────────────────────────────────────────
 
 @app.get("/api/health", tags=["ops"])
@@ -976,14 +1008,14 @@ async def revoke_api_key(
 
 # ── Billing (Stripe) ───────────────────────────────────────────────────────────
 
-@app.get("/api/v1/billing/plans", tags=["billing"])
+@app.get("/api/billing/plans", tags=["billing"])
 @limiter.limit("60/minute")
 async def get_billing_plans(request: Request) -> dict[str, Any]:
     """Public — plan tiers, pricing, and which MCP tools each tier unlocks."""
     return plan_catalog()
 
 
-@app.post("/api/v1/billing/checkout", tags=["billing"])
+@app.post("/api/billing/checkout", tags=["billing"])
 @limiter.limit("10/minute")
 async def create_checkout_session(
     request: Request,
@@ -1014,7 +1046,7 @@ async def create_checkout_session(
     return {"checkout_url": url}
 
 
-@app.post("/api/v1/billing/portal", tags=["billing"])
+@app.post("/api/billing/portal", tags=["billing"])
 @limiter.limit("10/minute")
 async def create_portal_session(
     request: Request,
@@ -1041,7 +1073,7 @@ async def create_portal_session(
     return {"portal_url": url}
 
 
-@app.get("/api/v1/billing/usage/mcp", tags=["billing"])
+@app.get("/api/billing/usage/mcp", tags=["billing"])
 @limiter.limit("30/minute")
 async def get_mcp_usage(
     request: Request,
@@ -1062,7 +1094,7 @@ async def get_mcp_usage(
     }
 
 
-@app.get("/api/v1/billing/usage/mcp/top", tags=["billing"], include_in_schema=False)
+@app.get("/api/billing/usage/mcp/top", tags=["billing"], include_in_schema=False)
 @limiter.limit("10/minute")
 async def get_mcp_usage_leaderboard(
     request: Request,
@@ -1078,7 +1110,7 @@ async def get_mcp_usage_leaderboard(
     return {"days": days, "orgs": rows}
 
 
-@app.post("/api/v1/billing/webhook", tags=["billing"], include_in_schema=False)
+@app.post("/api/billing/webhook", tags=["billing"], include_in_schema=False)
 async def stripe_webhook(request: Request) -> dict[str, Any]:
     """Stripe calls this directly — verified by signature, not by API key."""
     if _stripe_service is None:
@@ -2290,8 +2322,11 @@ async def auth_login(provider_id: str, redirect_uri: str = "") -> JSONResponse:
 async def auth_callback(
     code: str = Query(...),
     state: str = Query(...),
-) -> dict[str, Any]:
-    """Handle the OAuth2 callback — exchange code for tokens and return claims."""
+) -> Response:
+    """Handle the OAuth2 callback — exchange code for tokens, then redirect the
+    browser to /auth/complete with the access token in a URL fragment (never
+    sent to the server, unlike a query param, so it never lands in access
+    logs). That page extracts it client-side and finishes the login."""
     if not _oidc_provider:
         raise HTTPException(501, "OIDC not configured")
 
@@ -2316,16 +2351,9 @@ async def auth_callback(
     except ValueError as e:
         raise HTTPException(401, f"Token validation failed: {e}") from None
 
-    return {
-        "sub": claims.sub,
-        "email": claims.email,
-        "name": claims.name,
-        "roles": claims.roles,
-        "org_id": claims.org_id,
-        "access_token": tokens.get("access_token"),
-        "token_type": tokens.get("token_type", "Bearer"),
-        "expires_in": tokens.get("expires_in"),
-    }
+    access_token = tokens.get("access_token") or ""
+    fragment = f"token={quote(access_token)}&name={quote(claims.name or claims.email or claims.sub)}"
+    return RedirectResponse(url=f"/auth/complete#{fragment}", status_code=302)
 
 
 @app.post("/api/auth/logout", tags=["auth"])
