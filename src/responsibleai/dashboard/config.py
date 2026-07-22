@@ -189,10 +189,36 @@ class Settings(BaseSettings):
         ),
     )
 
+    # Leaderboard — provider credentials for POST /api/leaderboard/run and
+    # scripts/run_leaderboard_eval.py (optional per-provider; a model whose
+    # provider has no key configured is skipped, not a hard failure, so a
+    # deployer can track e.g. only OpenAI + Anthropic without also holding a
+    # Google key). None of these gate the public read endpoints.
+    leaderboard_openai_api_key: str | None = Field(
+        default=None,
+        description="OpenAI API key used only for leaderboard evaluation runs.",
+    )
+    leaderboard_anthropic_api_key: str | None = Field(
+        default=None,
+        description="Anthropic API key used only for leaderboard evaluation runs.",
+    )
+    leaderboard_google_api_key: str | None = Field(
+        default=None,
+        description="Google (Gemini) API key used only for leaderboard evaluation runs.",
+    )
+
     # Server
     host: str = Field(default="127.0.0.1")
     port: int = Field(default=8765, ge=1, le=65535)
     workers: int = Field(default=1, ge=1, le=32)
+
+    @property
+    def leaderboard_api_keys(self) -> dict[str, str | None]:
+        return {
+            "openai": self.leaderboard_openai_api_key,
+            "anthropic": self.leaderboard_anthropic_api_key,
+            "google": self.leaderboard_google_api_key,
+        }
 
     @field_validator("oidc_scopes", mode="before")
     @classmethod

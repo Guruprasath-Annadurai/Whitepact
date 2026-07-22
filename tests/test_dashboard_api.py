@@ -401,3 +401,121 @@ class TestAlertsWebhookBridge:
         assert body["source"] == "alertmanager"
         assert body["severity"] == "medium"  # Alertmanager "warning" maps to our "medium"
         assert body["incident_type"] == "drift_alert"  # classified from "RAIDriftAlertSpike"
+
+
+# ── Leaderboard ───────────────────────────────────────────────────────────────
+
+class TestLeaderboardPublicRead:
+    async def test_empty_leaderboard_returns_empty_list(self, client):
+        r = await client.get("/api/leaderboard")
+        assert r.status_code == 200
+        d = r.json()
+        assert d["leaderboard"] == []
+        assert "methodology_version" in d
+        assert "methodology_url" in d
+
+    async def test_history_404s_for_unknown_model(self, client):
+        r = await client.get("/api/leaderboard/nope/nowhere/history")
+        assert r.status_code == 404
+
+    async def test_public_read_requires_no_authorization_header(self, client):
+        # Regression check: these are meant to be public. No Authorization
+        # header is sent by the fixture client, and it must still succeed.
+        r = await client.get("/api/leaderboard")
+        assert r.status_code == 200
+
+
+class TestLeaderboardAdminAndRun:
+    async def test_register_run_and_read_back(self, client):
+        register = await client.post(
+            "/api/leaderboard/models",
+            json={"model": "mock-a", "provider": "mock", "display_name": "Mock A"},
+        )
+        assert register.status_code == 201
+        assert register.json()["model"] == "mock-a"
+
+        listed = await client.get("/api/leaderboard/models")
+        assert listed.status_code == 200
+        assert any(m["model"] == "mock-a" for m in listed.json()["models"])
+
+        run = await client.post("/api/leaderboard/run")
+        assert run.status_code == 200
+        d = run.json()
+        assert len(d["runs_completed"]) >= 1
+        assert any(r["model"] == "mock-a" for r in d["runs_completed"])
+
+        board = await client.get("/api/leaderboard")
+        assert board.status_code == 200
+        assert any(row["model"] == "mock-a" for row in board.json()["leaderboard"])
+
+    async def test_run_specific_model_not_registered_404s(self, client):
+        r = await client.post(
+            "/api/leaderboard/run", params={"model": "ghost", "provider": "mock"},
+        )
+        assert r.status_code == 404
+
+    async def test_run_with_no_registered_models_returns_empty(self, client):
+        r = await client.post("/api/leaderboard/run")
+        assert r.status_code == 200
+        d = r.json()
+        assert d["runs_completed"] == []
+        assert d["runs_failed"] == []
+
+    async def test_register_rejects_unknown_provider(self, client):
+        r = await client.post(
+            "/api/leaderboard/models",
+            json={"model": "x", "provider": "not-a-real-provider"},
+        )
+        assert r.status_code == 422
+
+    async def test_diagnostic_404s_for_unknown_model(self, client):
+        r = await client.get("/api/leaderboard/nope/nowhere/diagnostic")
+        assert r.status_code == 404
+
+    async def test_diagnostic_returns_findings_after_a_run(self, client):
+        await client.post(
+            "/api/leaderboard/models",
+            json={"model": "mock-diag", "provider": "mock"},
+        )
+        await client.post("/api/leaderboard/run", params={"model": "mock-diag", "provider": "mock"})
+
+        r = await client.get("/api/leaderboard/mock-diag/mock/diagnostic")
+        assert r.status_code == 200
+        d = r.json()
+        assert "findings" in d
+        assert d["findings_count"] == len(d["findings"])
+
+
+class TestLeaderboardPlanGate:
+    """Auth is disabled in this test module's fixture, which defaults every
+    request to an ENTERPRISE-plan legacy context — so the diagnostic
+    endpoint's PRO gate can't be exercised end-to-end here. Exercise the
+    actual require_plan() dependency directly instead, which is the real
+    code the endpoint depends on."""
+
+    async def test_require_plan_blocks_free_tier(self):
+        from fastapi import HTTPException
+
+        from responsibleai.dashboard.app import require_plan
+        from responsibleai.rbac.models import OrgContext, Plan
+        from responsibleai.rbac.models import Role as RbacRole
+
+        dep = require_plan(Plan.PRO)
+        free_ctx = OrgContext(key_id="k", role=RbacRole.VIEWER, org_id="org1", plan=Plan.FREE)
+        with pytest.raises(HTTPException) as exc_info:
+            await dep(free_ctx)
+        assert exc_info.value.status_code == 402
+
+    async def test_require_plan_allows_pro_and_above(self):
+        from responsibleai.dashboard.app import require_plan
+        from responsibleai.rbac.models import OrgContext, Plan
+        from responsibleai.rbac.models import Role as RbacRole
+
+        dep = require_plan(Plan.PRO)
+        pro_ctx = OrgContext(key_id="k", role=RbacRole.VIEWER, org_id="org1", plan=Plan.PRO)
+        result = await dep(pro_ctx)
+        assert result is pro_ctx
+
+        ent_ctx = OrgContext(key_id="k", role=RbacRole.VIEWER, org_id="org1", plan=Plan.ENTERPRISE)
+        result2 = await dep(ent_ctx)
+        assert result2 is ent_ctx

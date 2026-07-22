@@ -329,8 +329,13 @@ docker compose up -d
 | `GET` | `/api/redteam/payloads` | Red team payload library (10 vectors) |
 | `POST` | `/api/redteam/analyze` | Analyze model responses for vulnerabilities |
 | `GET` | `/api/billing/usage` | Token spend and budget status |
+| `GET` | `/api/leaderboard` | Public cross-model trust leaderboard (no auth) |
+| `GET` | `/api/leaderboard/{model}/{provider}/history` | Trend over time for one model (no auth) |
+| `GET` | `/api/leaderboard/{model}/{provider}/diagnostic` | Per-prompt findings — PRO plan required |
 
-Interactive docs at `/api/docs`.
+Interactive docs at `/api/docs`. Public leaderboard page at `/leaderboard` —
+see `compliance/LEADERBOARD_METHODOLOGY.md` for the published scoring
+methodology and `scripts/run_leaderboard_eval.py` to run evaluations.
 
 ### Production features
 

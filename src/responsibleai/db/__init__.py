@@ -4,6 +4,7 @@ from responsibleai.db.audit_repository import AuditRepository
 from responsibleai.db.engine import DatabaseEngine, create_engine
 from responsibleai.db.eval_repository import EvalRepository
 from responsibleai.db.incident_repository import IncidentRepository
+from responsibleai.db.leaderboard_repository import LeaderboardRepository
 from responsibleai.db.mcp_usage_repository import McpUsageRepository
 from responsibleai.db.org_repository import OrgRepository, SSORequiredError
 from responsibleai.db.repositories import CostRepository, TrustRepository
@@ -13,5 +14,5 @@ __all__ = [
     "DatabaseEngine", "CostRepository", "TrustRepository",
     "OrgRepository", "AuditRepository", "EvalRepository",
     "WebhookDeliveryRepository", "McpUsageRepository", "IncidentRepository",
-    "SSORequiredError", "create_engine",
+    "LeaderboardRepository", "SSORequiredError", "create_engine",
 ]

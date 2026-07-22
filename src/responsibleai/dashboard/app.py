@@ -59,6 +59,7 @@ from responsibleai.db import (
     CostRepository,
     EvalRepository,
     IncidentRepository,
+    LeaderboardRepository,
     McpUsageRepository,
     OrgRepository,
     SSORequiredError,
@@ -80,8 +81,19 @@ from responsibleai.eval import (
 from responsibleai.guardrails.engine import GuardrailsEngine
 from responsibleai.hallucination.detector import HallucinationDetector
 from responsibleai.incidents.logic import build_incident_record
+from responsibleai.leaderboard.models import METHODOLOGY_VERSION
+from responsibleai.leaderboard.providers import ProviderNotConfiguredError, get_adapter
+from responsibleai.leaderboard.runner import LeaderboardRunner
 from responsibleai.mcp.licensing import monthly_quota, plan_catalog
-from responsibleai.rbac import AuditEntry, OrgContext, Plan, Role, has_permission, role_from_str
+from responsibleai.rbac import (
+    AuditEntry,
+    OrgContext,
+    Plan,
+    Role,
+    has_permission,
+    has_plan,
+    role_from_str,
+)
 from responsibleai.redteam.simulator import RedTeamSimulator
 from responsibleai.trust.passport import PassportGenerator
 from responsibleai.trust.score import TrustScoreEngine
@@ -137,6 +149,8 @@ _trust_repo: TrustRepository | None = None
 _org_repo: OrgRepository | None = None
 _audit_repo: AuditRepository | None = None
 _incident_repo: IncidentRepository | None = None
+_leaderboard_repo: LeaderboardRepository | None = None
+_leaderboard_runner: LeaderboardRunner | None = None
 _mcp_usage_repo: McpUsageRepository | None = None
 _db_engine: DatabaseEngine | None = None
 _ws_manager: ConnectionManager = ConnectionManager()
@@ -181,7 +195,8 @@ async def _oidc_state_cleanup() -> None:
 async def lifespan(application: FastAPI):
     global _trust_engine, _passport_gen, _guardrails, _hallucination
     global _compliance, _cost_repo, _cost_analyzer, _router, _trust_repo
-    global _org_repo, _audit_repo, _incident_repo, _db_engine, _mcp_usage_repo
+    global _org_repo, _audit_repo, _incident_repo, _leaderboard_repo, _leaderboard_runner
+    global _db_engine, _mcp_usage_repo
     global _eval_repo, _comparator, _benchmark_runner, _dataset_scanner
     global _oidc_provider, _stripe_service, _plan_rate_limiter
 
@@ -214,6 +229,8 @@ async def lifespan(application: FastAPI):
     _org_repo     = OrgRepository(_db_engine)
     _audit_repo   = AuditRepository(_db_engine)
     _incident_repo = IncidentRepository(_db_engine)
+    _leaderboard_repo = LeaderboardRepository(_db_engine)
+    _leaderboard_runner = LeaderboardRunner()
     _mcp_usage_repo = McpUsageRepository(_db_engine)
     _trust_engine = TrustScoreEngine()
     _passport_gen = PassportGenerator()
@@ -504,6 +521,26 @@ def require_role(min_role: Role):
     return _dep
 
 
+def require_plan(min_plan: Plan):
+    """FastAPI dependency factory — enforces minimum billing plan.
+
+    Used to gate paid content (the leaderboard diagnostic deep-dive) rather
+    than an endpoint's RBAC role — a VIEWER on an ENTERPRISE org can read the
+    diagnostic, an OWNER on a FREE org cannot.
+    """
+    async def _dep(ctx: OrgContext = Depends(get_org_context)) -> OrgContext:
+        if not has_plan(ctx.plan, min_plan):
+            raise HTTPException(
+                402,
+                detail=(
+                    f"Requires {min_plan.value} plan or higher. Your plan: {ctx.plan.value}. "
+                    "Upgrade at /api/v1/billing/checkout."
+                ),
+            )
+        return ctx
+    return _dep
+
+
 # ── Request / Response models ──────────────────────────────────────────────────
 
 class EvaluateRequest(BaseModel):
@@ -556,6 +593,13 @@ class IncidentCreateRequest(BaseModel):
     description: str = Field(..., min_length=1, max_length=5000)
     evidence: dict[str, Any] = Field(default_factory=dict)
     mitigated: bool = False
+
+
+class LeaderboardModelRegisterRequest(BaseModel):
+    model: str = Field(..., min_length=1, max_length=100)
+    provider: str = Field(..., pattern="^(openai|anthropic|google|mock)$")
+    display_name: str | None = Field(None, max_length=150)
+    active: bool = True
 
 
 class WebhookCreateRequest(BaseModel):
@@ -635,6 +679,14 @@ async def trust_center() -> HTMLResponse:
     """Public security/compliance posture page — links to CAIQ, NIST CSF,
     and enterprise security docs. States gaps plainly, not just controls."""
     page = _static_dir / "trust.html"
+    return HTMLResponse(content=page.read_text())
+
+
+@app.get("/leaderboard", response_class=HTMLResponse, include_in_schema=False)
+async def leaderboard_page() -> HTMLResponse:
+    """Public cross-model trust leaderboard — reads live from GET /api/leaderboard
+    client-side. See compliance/LEADERBOARD_METHODOLOGY.md for the methodology."""
+    page = _static_dir / "leaderboard.html"
     return HTMLResponse(content=page.read_text())
 
 
@@ -1328,6 +1380,139 @@ async def alerts_webhook(request: Request) -> dict[str, Any]:
         )
 
     return {"received": True, "incidents_created": created, "alerts_skipped": skipped}
+
+
+# ── Public cross-model trust leaderboard ────────────────────────────────────────
+# Free, public leaderboard (GET /api/leaderboard, /history) — no auth required,
+# by design: the leaderboard is a marketing/awareness surface, not customer
+# data. The per-prompt diagnostic ("here's exactly which prompts caused the
+# score to drop") is gated behind require_plan(Plan.PRO) — that's the paid
+# product this feature funds itself with. See compliance/LEADERBOARD_METHODOLOGY.md
+# for the published scoring methodology and STRATEGY_ROADMAP.md's Tier-1
+# feature #1 for why this exists.
+
+def _leaderboard_super_admin_check(_auth: OrgContext) -> None:
+    if not (_auth.is_legacy and _auth.role == Role.OWNER):
+        raise HTTPException(403, "Leaderboard administration requires super-admin access")
+
+
+_DIAGNOSTIC_ONLY_KEYS = {"findings", "findings_count"}
+
+
+def _strip_diagnostic_fields(row: dict[str, Any]) -> dict[str, Any]:
+    """Free-tier view of a stored run — omits the paid per-prompt findings."""
+    return {k: v for k, v in row.items() if k not in _DIAGNOSTIC_ONLY_KEYS}
+
+
+@app.get("/api/leaderboard", tags=["leaderboard"])
+@limiter.limit("120/minute")
+async def get_leaderboard(request: Request) -> dict[str, Any]:
+    """Public, unauthenticated. Current ranked list — one row per tracked
+    model, its most recent evaluation run, sorted by overall_score desc."""
+    rows = await _ready(_leaderboard_repo).ranked_leaderboard()
+    return {
+        "leaderboard": [_strip_diagnostic_fields(row) for row in rows],
+        "methodology_version": METHODOLOGY_VERSION,
+        "methodology_url": "https://github.com/Guruprasath-Annadurai/ResponsibleAi/blob/main/compliance/LEADERBOARD_METHODOLOGY.md",
+    }
+
+
+@app.get("/api/leaderboard/{model}/{provider}/history", tags=["leaderboard"])
+@limiter.limit("60/minute")
+async def get_leaderboard_history(
+    request: Request, model: str, provider: str, limit: int = Query(default=30, ge=1, le=200),
+) -> dict[str, Any]:
+    """Public, unauthenticated. Trend over time for one model."""
+    rows = await _ready(_leaderboard_repo).history(model, provider, limit=limit)
+    if not rows:
+        raise HTTPException(404, "No leaderboard runs found for this model/provider.")
+    return {
+        "model": model, "provider": provider,
+        "history": [_strip_diagnostic_fields(row) for row in rows],
+    }
+
+
+@app.get("/api/leaderboard/{model}/{provider}/diagnostic", tags=["leaderboard"])
+@limiter.limit("30/minute")
+async def get_leaderboard_diagnostic(
+    request: Request, model: str, provider: str,
+    _auth: OrgContext = Depends(require_plan(Plan.PRO)),
+) -> dict[str, Any]:
+    """PRO/ENTERPRISE only — the paid deep-dive: every specific prompt that
+    caused the score to drop, categorized, with severity."""
+    row = await _ready(_leaderboard_repo).latest_run(model, provider)
+    if row is None:
+        raise HTTPException(404, "No leaderboard runs found for this model/provider.")
+    return row
+
+
+@app.get("/api/leaderboard/models", tags=["leaderboard"])
+@limiter.limit("30/minute")
+async def list_leaderboard_models(
+    request: Request, _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, Any]:
+    _leaderboard_super_admin_check(_auth)
+    return {"models": await _ready(_leaderboard_repo).list_models()}
+
+
+@app.post("/api/leaderboard/models", tags=["leaderboard"], status_code=201)
+@limiter.limit("10/minute")
+async def register_leaderboard_model(
+    request: Request, req: LeaderboardModelRegisterRequest,
+    _auth: OrgContext = Depends(require_role(Role.OWNER)),
+) -> dict[str, Any]:
+    _leaderboard_super_admin_check(_auth)
+    adapter_name = req.provider if req.provider != "mock" else "mock"
+    stored = await _ready(_leaderboard_repo).register_model(
+        model=req.model, provider=req.provider, display_name=req.display_name,
+        adapter=adapter_name, active=req.active,
+    )
+    logger.info("leaderboard_model_registered", model=req.model, provider=req.provider)
+    return stored
+
+
+@app.post("/api/leaderboard/run", tags=["leaderboard"])
+@limiter.limit("5/minute")
+async def run_leaderboard_eval(
+    request: Request,
+    model: str | None = Query(default=None),
+    provider: str | None = Query(default=None),
+    _auth: OrgContext = Depends(require_role(Role.OWNER)),
+) -> dict[str, Any]:
+    """Super-admin only. Triggers a live evaluation run synchronously — fine
+    for one model or a small registry (~55 model calls each); for a large
+    registry, prefer scripts/run_leaderboard_eval.py on a schedule (cron)
+    instead of this endpoint, since a big run can take minutes per model and
+    ties up the request for that whole time."""
+    _leaderboard_super_admin_check(_auth)
+
+    if model and provider:
+        target = await _ready(_leaderboard_repo).get_model(model, provider)
+        if target is None:
+            raise HTTPException(404, f"Model {provider}/{model} is not registered.")
+        targets = [target]
+    else:
+        targets = await _ready(_leaderboard_repo).list_models(active_only=True)
+
+    if not targets:
+        return {"runs_completed": [], "runs_failed": []}
+
+    completed: list[dict[str, Any]] = []
+    failed: list[dict[str, Any]] = []
+    for t in targets:
+        try:
+            adapter = get_adapter(t["adapter"], t["model"], settings.leaderboard_api_keys)
+            result = await _ready(_leaderboard_runner).run_model(t["model"], t["provider"], adapter)
+            stored = await _ready(_leaderboard_repo).create_run(result)
+            completed.append({"model": t["model"], "provider": t["provider"], "run_id": stored["id"],
+                               "overall_score": stored["overall_score"]})
+            logger.info("leaderboard_run_completed", model=t["model"], provider=t["provider"],
+                        overall_score=stored["overall_score"])
+        except ProviderNotConfiguredError as exc:
+            failed.append({"model": t["model"], "provider": t["provider"], "reason": str(exc)})
+            logger.warning("leaderboard_run_skipped", model=t["model"], provider=t["provider"], reason=str(exc))
+
+    return {"runs_completed": completed, "runs_failed": failed}
 
 
 # ── WebSocket live dashboard ───────────────────────────────────────────────────

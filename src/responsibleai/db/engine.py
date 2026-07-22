@@ -222,6 +222,50 @@ incidents = Table(
     Index("idx_inc_status",    "status"),
 )
 
+leaderboard_models = Table(
+    "leaderboard_models",
+    metadata,
+    Column("id",           String(36),  primary_key=True),
+    Column("model",        String(100), nullable=False),
+    Column("provider",     String(50),  nullable=False),
+    Column("display_name", String(150), nullable=True),
+    Column("adapter",      String(20),  nullable=False, default="mock"),  # "openai"|"anthropic"|"google"|"mock"
+    Column("active",       Integer,     nullable=False, default=1),
+    Column("added_at",     String(32),  nullable=False),
+    Index("idx_lbm_active",         "active"),
+    Index("idx_lbm_model_provider", "model", "provider", unique=True),
+)
+
+leaderboard_runs = Table(
+    "leaderboard_runs",
+    metadata,
+    Column("id",                     String(36),  primary_key=True),
+    Column("model",                  String(100), nullable=False),
+    Column("provider",               String(50),  nullable=False),
+    Column("created_at",             String(32),  nullable=False),
+    Column("methodology_version",    String(20),  nullable=False),
+    Column("overall_score",          Float,       nullable=False),
+    Column("grade",                  String(2),   nullable=False),
+    Column("risk_level",             String(20),  nullable=False),
+    Column("fairness",               Float,       nullable=False),
+    Column("privacy",                Float,       nullable=False),
+    Column("security",               Float,       nullable=False),
+    Column("robustness",             Float,       nullable=False),
+    Column("compliance",             Float,       nullable=False),
+    Column("authenticity",           Float,       nullable=False),
+    Column("dimensions_live",        Text,        nullable=False),  # JSON: {dim: bool}
+    Column("truthfulqa_accuracy",    Float,       nullable=False),
+    Column("bbq_bias_rate",          Float,       nullable=False),
+    Column("hellaswag_accuracy",     Float,       nullable=False),
+    Column("security_score",         Float,       nullable=False),
+    Column("privacy_pii_leak_rate",  Float,       nullable=False),
+    Column("avg_hallucination_risk", Float,       nullable=False),
+    Column("sample_size",            Integer,     nullable=False),
+    Column("findings",               Text,        nullable=False),  # JSON list — the paid diagnostic
+    Index("idx_lbr_model_provider", "model", "provider"),
+    Index("idx_lbr_created",        "created_at"),
+)
+
 
 class DatabaseEngine:
     """Async database engine wrapping SQLAlchemy — SQLite or PostgreSQL.

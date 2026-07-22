@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from responsibleai.rbac.models import AuditEntry, Organization, OrgApiKey, OrgContext, Role
-from responsibleai.rbac.permissions import has_permission, role_from_str, roles_above
+from responsibleai.rbac.models import AuditEntry, Organization, OrgApiKey, OrgContext, Plan, Role
+from responsibleai.rbac.permissions import has_permission, has_plan, role_from_str, roles_above
 
 # ── Role hierarchy ─────────────────────────────────────────────────────────────
 
@@ -48,6 +48,24 @@ class TestRoleHierarchy:
         assert Role.ADMIN in above
         assert Role.OWNER in above
         assert Role.VIEWER not in above
+
+
+# ── Plan hierarchy ───────────────────────────────────────────────────────────────
+
+class TestPlanHierarchy:
+    def test_enterprise_satisfies_everything(self):
+        for plan in Plan:
+            assert has_plan(Plan.ENTERPRISE, plan)
+
+    def test_free_satisfies_only_free(self):
+        assert has_plan(Plan.FREE, Plan.FREE)
+        assert not has_plan(Plan.FREE, Plan.PRO)
+        assert not has_plan(Plan.FREE, Plan.ENTERPRISE)
+
+    def test_pro_satisfies_free_and_pro_not_enterprise(self):
+        assert has_plan(Plan.PRO, Plan.FREE)
+        assert has_plan(Plan.PRO, Plan.PRO)
+        assert not has_plan(Plan.PRO, Plan.ENTERPRISE)
 
 
 # ── role_from_str ──────────────────────────────────────────────────────────────
