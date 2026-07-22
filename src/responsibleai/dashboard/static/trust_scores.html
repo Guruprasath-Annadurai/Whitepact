@@ -54,7 +54,9 @@
     try {
       const d = await RAI.fetchJSON("/api/trust-score/" + encodeURIComponent(model) + "/" + encodeURIComponent(provider));
       const t = d.trend;
-      resultEl.innerHTML = `
+      const trendBox = t.error
+        ? '<div class="card"><div class="pill pill-outline">Not enough history yet</div><div class="text-sm text-muted" style="margin-top:0.6rem;">Only ' + t.points + ' data point(s) recorded — trend and averages need at least 2. Run another evaluation for this model/provider to build history.</div></div>'
+        : `
         <div class="stat-grid">
           <div class="stat-card">
             <div class="label">Latest Score</div>
@@ -72,7 +74,9 @@
             <div class="label">30d range</div>
             <div class="value" style="font-size:1.2rem;">${t["30d_min"].toFixed(1)} – ${t["30d_max"].toFixed(1)}</div>
           </div>
-        </div>
+        </div>`;
+      resultEl.innerHTML = `
+        ${trendBox}
         <div class="card">
           <h2 style="margin-top:0;font-size:1.05rem;">History (${d.history.length})</h2>
           <div class="table-wrap">
