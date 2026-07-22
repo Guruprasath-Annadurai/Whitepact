@@ -63,7 +63,7 @@ class AIPassport:
 
     def verify(self) -> bool:
         """Recompute the hash and confirm it matches the stored value."""
-        expected = _compute_hash(
+        expected = compute_verification_hash(
             self.passport_id,
             self.model_name,
             self.provider,
@@ -167,7 +167,7 @@ def _dict_to_table(data: dict[str, Any], empty_msg: str) -> str:
     return f"<table><tr><th>Field</th><th>Value</th></tr>{rows}</table>"
 
 
-def _compute_hash(
+def compute_verification_hash(
     passport_id: str,
     model_name: str,
     provider: str,
@@ -220,7 +220,7 @@ class PassportGenerator:
         """
         now = datetime.now(UTC)
         passport_id = str(uuid.uuid4())
-        verification_hash = _compute_hash(
+        verification_hash = compute_verification_hash(
             passport_id,
             model_name,
             provider,

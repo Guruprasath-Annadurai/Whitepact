@@ -62,6 +62,7 @@ from responsibleai.db import (
     LeaderboardRepository,
     McpUsageRepository,
     OrgRepository,
+    PassportRepository,
     SSORequiredError,
     TrustRepository,
     WebhookDeliveryRepository,
@@ -139,6 +140,7 @@ _audit_ctx: ContextVar[dict[str, Any] | None] = ContextVar("audit_ctx", default=
 # ── Module singletons ──────────────────────────────────────────────────────────
 _trust_engine: TrustScoreEngine | None = None
 _passport_gen: PassportGenerator | None = None
+_passport_repo: PassportRepository | None = None
 _guardrails: GuardrailsEngine | None = None
 _hallucination: HallucinationDetector | None = None
 _compliance: ComplianceEngine | None = None
@@ -196,7 +198,7 @@ async def lifespan(application: FastAPI):
     global _trust_engine, _passport_gen, _guardrails, _hallucination
     global _compliance, _cost_repo, _cost_analyzer, _router, _trust_repo
     global _org_repo, _audit_repo, _incident_repo, _leaderboard_repo, _leaderboard_runner
-    global _db_engine, _mcp_usage_repo
+    global _passport_repo, _db_engine, _mcp_usage_repo
     global _eval_repo, _comparator, _benchmark_runner, _dataset_scanner
     global _oidc_provider, _stripe_service, _plan_rate_limiter
 
@@ -234,6 +236,7 @@ async def lifespan(application: FastAPI):
     _mcp_usage_repo = McpUsageRepository(_db_engine)
     _trust_engine = TrustScoreEngine()
     _passport_gen = PassportGenerator()
+    _passport_repo = PassportRepository(_db_engine)
     _guardrails   = GuardrailsEngine()
     _hallucination = HallucinationDetector()
     _compliance   = ComplianceEngine()
@@ -602,6 +605,21 @@ class LeaderboardModelRegisterRequest(BaseModel):
     active: bool = True
 
 
+class TrustIndexAssessRequest(BaseModel):
+    model_name: str = Field(..., min_length=1, max_length=100)
+    provider: str = Field(..., min_length=1, max_length=100)
+    fairness: float = Field(0.5, ge=0.0, le=1.0)
+    privacy: float = Field(0.5, ge=0.0, le=1.0)
+    security: float = Field(0.5, ge=0.0, le=1.0)
+    robustness: float = Field(0.5, ge=0.0, le=1.0)
+    compliance: float = Field(0.5, ge=0.0, le=1.0)
+    authenticity: float = Field(0.5, ge=0.0, le=1.0)
+
+
+class TrustIndexCertifyRequest(BaseModel):
+    certified_by: str = Field("ResponsibleAI Certification Team", max_length=200)
+
+
 class WebhookCreateRequest(BaseModel):
     url: str = Field(..., min_length=1, max_length=2048)
     events: list[str] = Field(..., min_length=1)
@@ -687,6 +705,16 @@ async def leaderboard_page() -> HTMLResponse:
     """Public cross-model trust leaderboard — reads live from GET /api/leaderboard
     client-side. See compliance/LEADERBOARD_METHODOLOGY.md for the methodology."""
     page = _static_dir / "leaderboard.html"
+    return HTMLResponse(content=page.read_text())
+
+
+@app.get("/verify/{passport_id}", response_class=HTMLResponse, include_in_schema=False)
+async def trust_index_verify_page(passport_id: str) -> HTMLResponse:
+    """Public Trust Passport verification page — the human-readable version of
+    GET /api/trust-index/verify/{id}. Same static shell for every ID; the JS
+    reads the ID from the URL path client-side. See
+    compliance/TRUST_INDEX_SPEC.md for what this is and why it's citable."""
+    page = _static_dir / "verify.html"
     return HTMLResponse(content=page.read_text())
 
 
@@ -1515,6 +1543,86 @@ async def run_leaderboard_eval(
     return {"runs_completed": completed, "runs_failed": failed}
 
 
+# ── Trust Index — open, versioned scoring standard ──────────────────────────────
+# Free, public self-assessment and verification (POST /assess, GET /verify) — the
+# standard itself and the ability to get scored against it cost nothing, on
+# purpose: free things become the thing everyone cites (OWASP Top 10, PCI-DSS).
+# Certification (POST /certify) is the paid, audited product this funds itself
+# with — a self-reported score and a certified one are never conflated; every
+# verify response says which one it is. See compliance/TRUST_INDEX_SPEC.md.
+
+def _trust_index_super_admin_check(_auth: OrgContext) -> None:
+    if not (_auth.is_legacy and _auth.role == Role.OWNER):
+        raise HTTPException(403, "Trust Index certification requires super-admin access")
+
+
+@app.post("/api/trust-index/assess", tags=["trust-index"], status_code=201, include_in_schema=True)
+@limiter.limit("20/minute")
+async def trust_index_assess(request: Request, req: TrustIndexAssessRequest) -> dict[str, Any]:
+    """Public, unauthenticated, free — score any model against the open Trust
+    Index standard and get back a durable, independently-verifiable record.
+    No org context required: self-assessment doesn't need an account."""
+    score = _ready(_trust_engine).compute(
+        fairness=req.fairness, privacy=req.privacy, security=req.security,
+        robustness=req.robustness, compliance=req.compliance, authenticity=req.authenticity,
+    )
+    passport = _ready(_passport_gen).generate(
+        model_name=req.model_name, provider=req.provider, trust_score=score,
+    )
+    stored = await _ready(_passport_repo).create(passport, org_id=None, source="self_assessment")
+    logger.info("trust_index_self_assessment", model=req.model_name, provider=req.provider,
+                overall_score=score.overall)
+    return {
+        **stored,
+        "citation": f"Scored {score.overall}/100 (Grade {score.grade}) under the "
+                    f"ResponsibleAI Trust Index v{passport.version} — self-reported, not certified. "
+                    f"Verify at /api/trust-index/verify/{passport.passport_id}",
+        "verify_url": f"/api/trust-index/verify/{passport.passport_id}",
+    }
+
+
+@app.get("/api/trust-index/verify/{passport_id}", tags=["trust-index"])
+@limiter.limit("120/minute")
+async def trust_index_verify(request: Request, passport_id: str) -> dict[str, Any]:
+    """Public, unauthenticated. The whole point of a citable standard: anyone
+    who sees a cited score can check it's real here, not just trust the claim."""
+    record = await _ready(_passport_repo).get(passport_id)
+    if record is None:
+        raise HTTPException(404, "No Trust Passport found with this ID — the cited score cannot be verified.")
+    return record
+
+
+@app.get("/api/trust-index/certified", tags=["trust-index"])
+@limiter.limit("60/minute")
+async def trust_index_certified_directory(
+    request: Request,
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> dict[str, Any]:
+    """Public, unauthenticated. The 'who's actually certified' directory —
+    reinforces the standard's value by making certification checkable in bulk,
+    not just one ID at a time."""
+    rows = await _ready(_passport_repo).list_certified(limit=limit, offset=offset)
+    return {"certified": rows, "limit": limit, "offset": offset}
+
+
+@app.post("/api/trust-index/certify/{passport_id}", tags=["trust-index"])
+@limiter.limit("10/minute")
+async def trust_index_certify(
+    request: Request, passport_id: str, req: TrustIndexCertifyRequest,
+    _auth: OrgContext = Depends(require_role(Role.OWNER)),
+) -> dict[str, Any]:
+    """Super-admin only. Certification is a human-reviewed attestation, same
+    as any real certification body — there is no automated path to a
+    'certified' badge, by design; that's what makes the badge worth anything."""
+    _trust_index_super_admin_check(_auth)
+    updated = await _ready(_passport_repo).certify(passport_id, certified_by=req.certified_by)
+    if updated is None:
+        raise HTTPException(404, "No Trust Passport found with this ID.")
+    logger.info("trust_index_certified", passport_id=passport_id, certified_by=req.certified_by)
+    return updated
+
+
 # ── WebSocket live dashboard ───────────────────────────────────────────────────
 
 @app.websocket("/ws/dashboard")
@@ -1649,6 +1757,7 @@ async def evaluate_model(
         model_name=req.model_name, provider=req.provider, trust_score=score,
         compliance_summary={"overall": round(compliance_report.compliance_score * 100, 1)},
     )
+    await _ready(_passport_repo).create(passport, org_id=_auth.org_id, source="evaluate")
     drift_alert = None
     if req.record_drift:
         drift_alert = await _ready(_trust_repo).record(req.model_name, req.provider, score, org_id=_auth.org_id)
@@ -1692,6 +1801,7 @@ async def evaluate_model(
         },
         "passport_id": passport.passport_id,
         "passport_hash": passport.verification_hash[:16] + "...",
+        "verify_url": f"/api/trust-index/verify/{passport.passport_id}",
         "drift_alert": drift_alert,
     }
 

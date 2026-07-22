@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Trust Passport Verification — ResponsibleAI</title>
+<meta name="description" content="Verify a cited Trust Index score against the durable, independently-checkable record behind it." />
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #fafafa;
+    --fg: #1a1a1a;
+    --muted: #666;
+    --card-bg: #ffffff;
+    --card-border: #e5e5e5;
+    --accent: #2563eb;
+    --green: #16a34a;
+    --amber: #d97706;
+    --red: #dc2626;
+    --gray: #6b7280;
+    --code-bg: #f1f1f1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0b0b0c;
+      --fg: #e8e8e8;
+      --muted: #999;
+      --card-bg: #17181a;
+      --card-border: #2a2a2c;
+      --code-bg: #232427;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 3rem 1.5rem 5rem;
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.55;
+  }
+  header { margin-bottom: 2rem; }
+  .brand { font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 0.5rem; }
+  h1 { font-size: 1.7rem; margin: 0 0 0.4rem; letter-spacing: -0.02em; }
+  .meta-links { margin-top: 0.75rem; font-size: 0.9rem; }
+  .meta-links a { color: var(--accent); text-decoration: none; }
+  .meta-links a:hover { text-decoration: underline; }
+
+  .panel {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    padding: 1.75rem;
+    margin-bottom: 1.5rem;
+  }
+  .status-row { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.25rem; }
+  .status-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .status-dot.ok { background: var(--green); }
+  .status-dot.bad { background: var(--red); }
+  .status-text { font-weight: 700; font-size: 1rem; }
+  .status-text.ok { color: var(--green); }
+  .status-text.bad { color: var(--red); }
+
+  .score-row { display: flex; align-items: baseline; gap: 1rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
+  .score-num { font-size: 2.6rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .grade-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 2.1rem; height: 2.1rem; border-radius: 8px; font-weight: 800; font-size: 1rem;
+  }
+  .grade-badge.A { background: rgba(22,163,74,0.15); color: var(--green); }
+  .grade-badge.B { background: rgba(37,99,235,0.15); color: var(--accent); }
+  .grade-badge.C { background: rgba(217,119,6,0.15); color: var(--amber); }
+  .grade-badge.D, .grade-badge.F { background: rgba(220,38,38,0.15); color: var(--red); }
+  .risk-pill { font-size: 0.78rem; border: 1px solid var(--card-border); border-radius: 999px; padding: 0.2rem 0.65rem; color: var(--muted); }
+
+  .cert-pill {
+    display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; font-weight: 600;
+    border-radius: 999px; padding: 0.3rem 0.75rem; margin-bottom: 1.25rem;
+  }
+  .cert-pill.certified { background: rgba(22,163,74,0.12); color: var(--green); border: 1px solid rgba(22,163,74,0.35); }
+  .cert-pill.self-reported { background: var(--code-bg); color: var(--muted); border: 1px solid var(--card-border); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.88rem; margin-top: 0.5rem; }
+  td { padding: 0.5rem 0; border-bottom: 1px solid var(--card-border); }
+  td:first-child { color: var(--muted); width: 40%; }
+  td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+  tr:last-child td { border-bottom: none; }
+
+  .hash-box {
+    font-family: monospace; font-size: 0.78rem; color: var(--muted);
+    background: var(--code-bg); padding: 0.75rem 1rem; border-radius: 8px;
+    word-break: break-all; margin-top: 1.25rem;
+  }
+  .empty, .error { padding: 3rem 1.5rem; text-align: center; color: var(--muted); }
+  .error { color: var(--red); }
+  footer {
+    margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--card-border);
+    color: var(--muted); font-size: 0.85rem;
+  }
+  footer a { color: inherit; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">ResponsibleAI · Trust Index</div>
+  <h1>Passport Verification</h1>
+  <div class="meta-links">
+    <a href="https://github.com/Guruprasath-Annadurai/ResponsibleAi/blob/main/compliance/TRUST_INDEX_SPEC.md" target="_blank" rel="noopener">Trust Index Spec</a>
+    &nbsp;·&nbsp;
+    <a href="/leaderboard">Leaderboard</a>
+    &nbsp;·&nbsp;
+    <a href="/trust">Trust Center</a>
+  </div>
+</header>
+
+<div id="panel"><div class="empty">Verifying…</div></div>
+
+<footer>
+  Data via <code>GET /api/trust-index/verify/{id}</code> ·
+  <a href="https://github.com/Guruprasath-Annadurai/ResponsibleAi">Source on GitHub</a>
+</footer>
+
+<script>
+(function () {
+  const panel = document.getElementById("panel");
+  const passportId = window.location.pathname.split("/").filter(Boolean).pop();
+
+  function gradeClass(grade) {
+    return "grade-badge " + (grade || "").charAt(0);
+  }
+
+  function render(data) {
+    const ts = data.trust_score;
+    const dims = ts.dimensions;
+    const dimRows = Object.keys(dims).map(function (k) {
+      return "<tr><td>" + k.charAt(0).toUpperCase() + k.slice(1) + "</td><td>" + dims[k].toFixed(1) + "</td></tr>";
+    }).join("");
+    const certBadge = data.certified
+      ? '<div class="cert-pill certified">&#10003; Certified by ' + (data.certified_by || "ResponsibleAI") + " on " + new Date(data.certified_at).toLocaleDateString() + "</div>"
+      : '<div class="cert-pill self-reported">Self-reported — not independently certified</div>';
+
+    panel.innerHTML =
+      '<div class="panel">' +
+      '<div class="status-row"><span class="status-dot ok"></span><span class="status-text ok">Verified — this is a genuine, unmodified Trust Passport record</span></div>' +
+      certBadge +
+      '<div class="score-row">' +
+      '<span class="score-num">' + ts.overall.toFixed(1) + "</span>" +
+      '<span class="' + gradeClass(ts.grade) + '">' + ts.grade + "</span>" +
+      '<span class="risk-pill">' + ts.risk_level + " RISK</span>" +
+      "</div>" +
+      "<p><strong>" + data.model.name + "</strong> · " + data.model.provider + " · Trust Index v" + data.spec_version + "</p>" +
+      "<table>" + dimRows + "</table>" +
+      '<div class="hash-box">SHA-256: ' + data.verification_hash + "<br>Passport ID: " + data.passport_id + "<br>Generated: " + data.generated_at + "</div>" +
+      "</div>";
+  }
+
+  if (!passportId) {
+    panel.innerHTML = '<div class="error">No passport ID in the URL.</div>';
+    return;
+  }
+
+  fetch("/api/trust-index/verify/" + encodeURIComponent(passportId), { cache: "no-store" })
+    .then(function (res) {
+      if (res.status === 404) throw new Error("No passport found with this ID — this citation cannot be verified.");
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return res.json();
+    })
+    .then(render)
+    .catch(function (err) {
+      panel.innerHTML =
+        '<div class="panel">' +
+        '<div class="status-row"><span class="status-dot bad"></span><span class="status-text bad">Not verified</span></div>' +
+        "<p>" + String(err.message || err) + "</p>" +
+        "</div>";
+    });
+})();
+</script>
+
+</body>
+</html>

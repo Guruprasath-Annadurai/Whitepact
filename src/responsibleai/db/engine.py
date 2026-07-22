@@ -266,6 +266,40 @@ leaderboard_runs = Table(
     Index("idx_lbr_created",        "created_at"),
 )
 
+trust_passports = Table(
+    "trust_passports",
+    metadata,
+    Column("id",                      String(36),  primary_key=True),  # passport_id
+    Column("org_id",                  String(36),  nullable=True),     # null for public self-assessments
+    Column("source",                  String(20),  nullable=False),    # "evaluate" | "self_assessment"
+    Column("spec_version",            String(20),  nullable=False),
+    Column("model_name",              String(100), nullable=False),
+    Column("provider",                String(100), nullable=False),
+    Column("overall_score",           Float,       nullable=False),
+    Column("grade",                   String(2),   nullable=False),
+    Column("risk_level",              String(20),  nullable=False),
+    Column("fairness",                Float,       nullable=False),
+    Column("privacy",                 Float,       nullable=False),
+    Column("security",                Float,       nullable=False),
+    Column("robustness",              Float,       nullable=False),
+    Column("compliance",              Float,       nullable=False),
+    Column("authenticity",            Float,       nullable=False),
+    Column("bias_summary",            Text,        nullable=True),   # JSON
+    Column("hallucination_summary",   Text,        nullable=True),   # JSON
+    Column("security_summary",        Text,        nullable=True),   # JSON
+    Column("compliance_summary",      Text,        nullable=True),   # JSON
+    Column("privacy_summary",         Text,        nullable=True),   # JSON
+    Column("generated_at",            String(32),  nullable=False),
+    Column("verification_hash",       String(64),  nullable=False),
+    Column("certified",               Integer,     nullable=False, default=0),
+    Column("certified_at",            String(32),  nullable=True),
+    Column("certified_by",            String(200), nullable=True),
+    Index("idx_tp_org",       "org_id"),
+    Index("idx_tp_model",     "model_name", "provider"),
+    Index("idx_tp_certified", "certified"),
+    Index("idx_tp_generated", "generated_at"),
+)
+
 
 class DatabaseEngine:
     """Async database engine wrapping SQLAlchemy — SQLite or PostgreSQL.

@@ -519,3 +519,116 @@ class TestLeaderboardPlanGate:
         ent_ctx = OrgContext(key_id="k", role=RbacRole.VIEWER, org_id="org1", plan=Plan.ENTERPRISE)
         result2 = await dep(ent_ctx)
         assert result2 is ent_ctx
+
+
+# ── Trust Index ───────────────────────────────────────────────────────────────
+
+class TestTrustIndexAssessAndVerify:
+    async def test_assess_returns_scored_citable_passport(self, client):
+        r = await client.post("/api/trust-index/assess", json={
+            "model_name": "acme-bot", "provider": "acme",
+            "fairness": 0.9, "privacy": 0.85, "security": 0.8,
+            "robustness": 0.75, "compliance": 0.7, "authenticity": 0.6,
+        })
+        assert r.status_code == 201
+        d = r.json()
+        assert d["model"] == {"name": "acme-bot", "provider": "acme"}
+        assert d["certified"] is False
+        assert "self-reported" in d["citation"]
+        assert d["verify_url"] == f"/api/trust-index/verify/{d['passport_id']}"
+
+    async def test_assess_uses_neutral_defaults_when_omitted(self, client):
+        r = await client.post("/api/trust-index/assess", json={
+            "model_name": "x", "provider": "y",
+        })
+        assert r.status_code == 201
+        assert r.json()["trust_score"]["overall"] == 50.0
+
+    async def test_assess_rejects_out_of_range_dimension(self, client):
+        r = await client.post("/api/trust-index/assess", json={
+            "model_name": "x", "provider": "y", "fairness": 1.5,
+        })
+        assert r.status_code == 422
+
+    async def test_verify_round_trips_an_assessed_passport(self, client):
+        assess = await client.post("/api/trust-index/assess", json={
+            "model_name": "verify-me", "provider": "acme",
+        })
+        passport_id = assess.json()["passport_id"]
+
+        r = await client.get(f"/api/trust-index/verify/{passport_id}")
+        assert r.status_code == 200
+        d = r.json()
+        assert d["model"]["name"] == "verify-me"
+        assert d["verification_hash"] == assess.json()["verification_hash"]
+
+    async def test_verify_unknown_id_404s(self, client):
+        r = await client.get("/api/trust-index/verify/does-not-exist")
+        assert r.status_code == 404
+
+    async def test_evaluate_endpoint_persists_a_verifiable_passport(self, client):
+        """POST /api/evaluate used to generate a passport and discard it —
+        confirm it's now persisted and independently verifiable."""
+        r = await client.post("/api/evaluate", json={
+            "model_name": "eval-model", "provider": "openai",
+            "fairness": 0.8, "privacy": 0.8, "security": 0.8,
+            "robustness": 0.8, "compliance": 0.8, "authenticity": 0.8,
+        })
+        assert r.status_code == 200
+        d = r.json()
+        assert "verify_url" in d
+
+        verify = await client.get(d["verify_url"])
+        assert verify.status_code == 200
+        assert verify.json()["passport_id"] == d["passport_id"]
+        assert verify.json()["source"] == "evaluate"
+
+
+class TestTrustIndexCertification:
+    async def test_certify_marks_passport_certified(self, client):
+        assess = await client.post("/api/trust-index/assess", json={
+            "model_name": "cert-me", "provider": "acme",
+        })
+        passport_id = assess.json()["passport_id"]
+
+        r = await client.post(f"/api/trust-index/certify/{passport_id}", json={})
+        assert r.status_code == 200
+        d = r.json()
+        assert d["certified"] is True
+        assert d["certified_by"] == "ResponsibleAI Certification Team"
+
+        verify = await client.get(f"/api/trust-index/verify/{passport_id}")
+        assert verify.json()["certified"] is True
+
+    async def test_certify_custom_certifier_name(self, client):
+        assess = await client.post("/api/trust-index/assess", json={
+            "model_name": "cert-me-2", "provider": "acme",
+        })
+        passport_id = assess.json()["passport_id"]
+
+        r = await client.post(
+            f"/api/trust-index/certify/{passport_id}",
+            json={"certified_by": "Independent Auditor LLC"},
+        )
+        assert r.json()["certified_by"] == "Independent Auditor LLC"
+
+    async def test_certify_unknown_passport_404s(self, client):
+        r = await client.post("/api/trust-index/certify/does-not-exist", json={})
+        assert r.status_code == 404
+
+    async def test_certified_directory_lists_only_certified(self, client):
+        assess = await client.post("/api/trust-index/assess", json={
+            "model_name": "listed-model", "provider": "acme",
+        })
+        passport_id = assess.json()["passport_id"]
+        await client.post(f"/api/trust-index/certify/{passport_id}", json={})
+
+        r = await client.get("/api/trust-index/certified")
+        assert r.status_code == 200
+        d = r.json()
+        assert any(row["passport_id"] == passport_id for row in d["certified"])
+
+    async def test_certified_directory_empty_by_default(self, client):
+        r = await client.get("/api/trust-index/certified")
+        assert r.status_code == 200
+        assert r.json()["certified"] == []

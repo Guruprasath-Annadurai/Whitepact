@@ -332,10 +332,16 @@ docker compose up -d
 | `GET` | `/api/leaderboard` | Public cross-model trust leaderboard (no auth) |
 | `GET` | `/api/leaderboard/{model}/{provider}/history` | Trend over time for one model (no auth) |
 | `GET` | `/api/leaderboard/{model}/{provider}/diagnostic` | Per-prompt findings — PRO plan required |
+| `POST` | `/api/trust-index/assess` | Free, public self-assessment against the open Trust Index standard |
+| `GET` | `/api/trust-index/verify/{passport_id}` | Verify a cited Trust Index score (no auth) |
+| `GET` | `/api/trust-index/certified` | Directory of certified passports (no auth) |
+| `POST` | `/api/trust-index/certify/{passport_id}` | Certify a passport — super-admin only |
 
 Interactive docs at `/api/docs`. Public leaderboard page at `/leaderboard` —
 see `compliance/LEADERBOARD_METHODOLOGY.md` for the published scoring
-methodology and `scripts/run_leaderboard_eval.py` to run evaluations.
+methodology and `scripts/run_leaderboard_eval.py` to run evaluations. Open
+Trust Index standard and passport verification at `/verify/{id}` — see
+`compliance/TRUST_INDEX_SPEC.md`.
 
 ### Production features
 
