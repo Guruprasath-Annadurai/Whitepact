@@ -6,6 +6,105 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ---
 
+## [1.2.0] — 2026-07-23
+
+### Added
+- **Public Leaderboard** — cross-model trust leaderboard computed by
+  actually calling each model's public inference API against a fixed
+  prompt corpus (not self-reported): `leaderboard_models`/`leaderboard_runs`
+  tables, `LeaderboardRunner`, `GET /api/leaderboard`, public UI page,
+  `scripts/run_leaderboard_eval.py`, methodology doc
+  (`compliance/LEADERBOARD_METHODOLOGY.md`).
+- **Trust Index / Trust Passports** — the open, citable trust-scoring
+  standard (`compliance/TRUST_INDEX_SPEC.md`, six weighted dimensions):
+  `POST /api/trust-index/assess` (free self-assessment),
+  `GET /api/trust-index/verify/{id}` (public verification),
+  `POST /api/trust-index/certify/{id}` (human-reviewed certification,
+  no automated path by design), `GET /api/trust-index/certified`
+  directory, public `/verify/{id}` page, and an embeddable SVG badge
+  (`GET /api/trust-index/badge/{id}.svg`) with copy-paste HTML/Markdown
+  snippets distinguishing "Self-Assessed" from "Certified".
+- **Public AI Incident Database** — crowd-reported, moderator-reviewed
+  incident registry: `public_incident_reports` table, report/list/get/
+  verify/admin-review endpoints, paid `check` endpoint, public list and
+  detail pages.
+- **TOTP MFA** (RFC 6238, `pyotp`) for the one interactive human login
+  step (`POST /api/auth/login-key`), org-enforceable
+  (`PUT /api/orgs/{id}/mfa`), single-use backup codes.
+- **Field-level encryption expanded** from one column to four:
+  `audit_log.ip_address`, `public_incident_reports.reporter_name`/
+  `.reporter_contact`, `webhook_configs.secret`, `org_api_keys.mfa_secret`
+  — opt-in via `RAI_FIELD_ENCRYPTION_KEY`, with real key-rotation support
+  (`MultiFernet`, comma-separated key list) and a re-encryption sweep
+  script (`scripts/rotate_field_encryption_key.py`).
+- **Webhook configuration persisted to the database** (previously
+  in-memory only) — survives restarts, and the retry worker claims
+  pending deliveries atomically so running multiple replicas doesn't
+  double-fire a delivery.
+- **Multi-replica/HA readiness self-check** — `RAI_MULTI_REPLICA=true`
+  self-declaration flags a `multi_replica_misconfigured` warning at
+  startup if SQLite or in-memory rate limiting can't safely be shared
+  across replicas.
+- **Full dashboard UI rebuild** on a self-contained, CDN-free shared
+  design system (`static/css/app.css`, `static/js/app.js`) — every page
+  (overview, evaluate, guardrails, hallucination, cost, router,
+  trust-scores, eval/compare/benchmark, red team, audit, incidents,
+  webhooks, organizations, billing, settings) restyled and wired.
+- **White-label branding support** — `RAI_BRAND_NAME`/`RAI_BRAND_LOGO_URL`
+  config plus `GET /api/branding`, swapping the sidebar name/logo and tab
+  title across every page with no frontend fork.
+- **One-command self-hosted deploy** — `scripts/deploy.sh` automates
+  secret generation, `.env.prod` creation, bringing
+  `docker-compose.prod.yml` up, running migrations, and local health
+  verification.
+- **`/api/health` now returns HTTP 503** (not 200) when its database
+  check fails, so load-balancer/orchestrator health probes can actually
+  detect a degraded instance.
+- **Legal, compliance, and go-to-market documentation**: `TERMS_OF_SERVICE.md`,
+  `PRIVACY_POLICY.md` (drafts, attorney-review pending), a SOC 2
+  readiness package mapped to the AICPA Trust Services Criteria
+  (`compliance/SOC2_READINESS.md`), a real internal security review
+  (`compliance/INTERNAL_SECURITY_REVIEW.md`), an OEM/white-label
+  licensing one-pager, a compliance-methodology starter kit for other
+  companies (`compliance/starter-kit/`, `scripts/generate_compliance_kit.py`),
+  an insurance/underwriting partnership pitch, and the Trust Index
+  methodology written up as an arXiv-ready paper
+  (`compliance/TRUST_INDEX_PAPER.md`).
+- **A genuinely live hosted instance** — `https://responsibleai-dashboard.onrender.com`,
+  running on a card-free managed-services stack (Render for compute,
+  Supabase for Postgres, Upstash for Redis) after both Oracle Cloud's and
+  Google Cloud's signup flows hit real friction.
+
+### Fixed
+- **`nltk` PYSEC-2026-597** (path traversal) — moved out of the mandatory
+  dependency set into an opt-in `[sentiment]` extra; the one call site
+  passes a hardcoded, non-attacker-controlled resource name.
+- **SQL injection pattern** in `CostTracker` (f-string query construction
+  in `get_model_breakdown`/`get_team_breakdown`/`request_count`) —
+  switched to parameterized queries.
+- **SSRF in webhook delivery** — an admin could register a webhook
+  pointing at cloud metadata endpoints or internal network addresses;
+  added `validate_webhook_url()`, checked at registration and at every
+  delivery (handles DNS rebinding), plus disabled redirect-following.
+- **Stored XSS on the public `/verify/{id}` page** — `model_name`/
+  `provider`/`certified_by` were concatenated into `innerHTML` unescaped
+  on a public, unauthenticated page; now escaped via a shared `esc()`
+  helper.
+- **`Dockerfile` silently missing dependencies** (`pyotp`, `sqlalchemy`,
+  `aiosqlite`, `websockets`, `prometheus-client`, `cryptography`) — a
+  hand-maintained `pip install` package list had drifted out of sync with
+  `pyproject.toml`'s `dashboard` extra since MFA/field-encryption
+  shipped; now installs via the wheel's own extras instead.
+- **Supabase transaction-pooler incompatibility** — PgBouncer/Supavisor
+  transaction-mode pooling breaks asyncpg's prepared-statement cache;
+  fixed with `statement_cache_size=0` in both `db/engine.py` and
+  `migrations/env.py` (a separate engine-construction path Alembic uses).
+
+### Tests
+- 1271 passed, 1 skipped (up from 919 in 1.1.0).
+
+---
+
 ## [1.1.0] — 2026-06-27
 
 ### Added

@@ -10,7 +10,7 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│                        ResponsibleAI  v1.1.0                                 │
+│                        ResponsibleAI  v1.2.0                                 │
 │                                                                              │
 │  ┌──────────────┐  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐  │
 │  │ Trust Score  │  │ Compliance  │  │  Guardrails  │  │  Hallucination   │  │
@@ -601,8 +601,8 @@ mypy src/responsibleai src/biasbuster
 - [x] v0.6 — Async PostgreSQL (SQLAlchemy), Redis rate limiting, OpenTelemetry APM, LLM integration tests
 - [x] v1.0 — WebSocket drift alerts, Prometheus endpoint, multi-tenant RBAC, org management API
 - [x] v1.1 — MCP server (10 tools, 5 resources), audit log API, red team API, billing API, Alembic migrations, per-org rate limiting, DB-persisted webhook retry queue
-- [ ] v1.2 — Streaming response scanner, multi-region DB replication, SOC 2 audit export
-- [ ] v2.0 — Managed cloud tier, real-time aggregation server, ML-based drift prediction
+- [x] v1.2 — Public Leaderboard, Trust Index/Passports + embeddable badges, AI Incident Database, TOTP MFA, expanded field encryption, DB-persisted webhooks, full dashboard UI rebuild, white-label branding, a genuinely live hosted instance — see `CHANGELOG.md` for the full list
+- [ ] v2.0 onward — see `VERSION_ROADMAP.md` for the phase-by-phase plan through v6.0
 
 ---
 
