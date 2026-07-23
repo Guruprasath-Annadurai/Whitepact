@@ -32,10 +32,14 @@ RUN mkdir -p /data && chown appuser:appgroup /data
 
 WORKDIR /app
 COPY --from=builder /dist/*.whl /tmp/
-RUN pip install --no-cache-dir /tmp/*.whl \
-    "fastapi>=0.110" "uvicorn[standard]>=0.29" \
-    "slowapi>=0.1" "pydantic-settings>=2.0" "structlog>=24.0" "python-dotenv>=1.0" \
-    "asyncpg>=0.29.0" "limits[redis]>=3.6.0" "stripe>=9.0.0"
+# Install via the wheel's own [dashboard,postgres,redis,billing] extras
+# (defined in pyproject.toml) rather than a hand-maintained package list —
+# the previous hardcoded list silently drifted out of sync with
+# pyproject.toml's dashboard extra (missing sqlalchemy, aiosqlite,
+# websockets, prometheus-client, cryptography, pyotp) because nothing had
+# actually built and run this exact image since MFA/field-encryption
+# shipped. Extras-based install can't drift the same way again.
+RUN whl="$(ls /tmp/*.whl)" && pip install --no-cache-dir "${whl}[dashboard,postgres,redis,billing]"
 
 COPY src/responsibleai/dashboard/static/ /app/static/
 COPY alembic.ini ./
