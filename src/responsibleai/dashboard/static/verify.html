@@ -153,15 +153,32 @@
     return "grade-badge " + (grade || "").charAt(0);
   }
 
+  // model_name/provider/certified_by are free-form strings supplied by
+  // whoever called POST /api/trust-index/assess or /certify — this is a
+  // public page anyone can be sent a link to, so every one of them must be
+  // escaped before going into innerHTML. Never string-concatenate raw API
+  // response fields into markup on this page.
+  function esc(s) {
+    const div = document.createElement("div");
+    div.textContent = String(s == null ? "" : s);
+    return div.innerHTML;
+  }
+
   function render(data) {
     const ts = data.trust_score;
     const dims = ts.dimensions;
     const dimRows = Object.keys(dims).map(function (k) {
-      return "<tr><td>" + k.charAt(0).toUpperCase() + k.slice(1) + "</td><td>" + dims[k].toFixed(1) + "</td></tr>";
+      return "<tr><td>" + esc(k.charAt(0).toUpperCase() + k.slice(1)) + "</td><td>" + dims[k].toFixed(1) + "</td></tr>";
     }).join("");
     const certBadge = data.certified
-      ? '<div class="cert-pill certified">&#10003; Certified by ' + (data.certified_by || "ResponsibleAI") + " on " + new Date(data.certified_at).toLocaleDateString() + "</div>"
+      ? '<div class="cert-pill certified">&#10003; Certified by ' + esc(data.certified_by || "ResponsibleAI") + " on " + esc(new Date(data.certified_at).toLocaleDateString()) + "</div>"
       : '<div class="cert-pill self-reported">Self-reported — not independently certified</div>';
+
+    const origin = window.location.origin;
+    const badgeUrl = origin + "/api/trust-index/badge/" + encodeURIComponent(data.passport_id) + ".svg";
+    const verifyUrl = origin + "/verify/" + encodeURIComponent(data.passport_id);
+    const embedHtml = '<a href="' + verifyUrl + '"><img src="' + badgeUrl + '" alt="ResponsibleAI Trust Score" /></a>';
+    const embedMd = "[![ResponsibleAI Trust Score](" + badgeUrl + ")](" + verifyUrl + ")";
 
     panel.innerHTML =
       '<div class="panel">' +
@@ -169,12 +186,18 @@
       certBadge +
       '<div class="score-row">' +
       '<span class="score-num">' + ts.overall.toFixed(1) + "</span>" +
-      '<span class="' + gradeClass(ts.grade) + '">' + ts.grade + "</span>" +
-      '<span class="risk-pill">' + ts.risk_level + " RISK</span>" +
+      '<span class="' + gradeClass(ts.grade) + '">' + esc(ts.grade) + "</span>" +
+      '<span class="risk-pill">' + esc(ts.risk_level) + " RISK</span>" +
       "</div>" +
-      "<p><strong>" + data.model.name + "</strong> · " + data.model.provider + " · Trust Index v" + data.spec_version + "</p>" +
+      "<p><strong>" + esc(data.model.name) + "</strong> · " + esc(data.model.provider) + " · Trust Index v" + esc(data.spec_version) + "</p>" +
       "<table>" + dimRows + "</table>" +
-      '<div class="hash-box">SHA-256: ' + data.verification_hash + "<br>Passport ID: " + data.passport_id + "<br>Generated: " + data.generated_at + "</div>" +
+      '<div class="hash-box">SHA-256: ' + esc(data.verification_hash) + "<br>Passport ID: " + esc(data.passport_id) + "<br>Generated: " + esc(data.generated_at) + "</div>" +
+      '<div class="embed-section">' +
+      "<p><strong>Embed this badge</strong> — " + (data.certified ? "certified" : "free, self-assessed — upgrade to a certified badge via human review") + "</p>" +
+      '<p><img src="' + esc(badgeUrl) + '" alt="ResponsibleAI Trust Score" /></p>' +
+      "<p>HTML:</p><textarea readonly rows=\"2\" onclick=\"this.select()\">" + esc(embedHtml) + "</textarea>" +
+      "<p>Markdown:</p><textarea readonly rows=\"2\" onclick=\"this.select()\">" + esc(embedMd) + "</textarea>" +
+      "</div>" +
       "</div>";
   }
 

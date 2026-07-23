@@ -314,6 +314,41 @@ class TestConfig:
         s = Settings(_env_file=None, api_keys=[])
         assert s.api_keys == []
 
+    def test_brand_defaults(self):
+        s = Settings(_env_file=None, api_keys=[])
+        assert s.brand_name == "ResponsibleAI"
+        assert s.brand_logo_url == ""
+
+
+# ── Branding (white-label) ────────────────────────────────────────────────────
+
+class TestBranding:
+    async def test_default_branding(self, client):
+        r = await client.get("/api/branding")
+        assert r.status_code == 200
+        d = r.json()
+        assert d["brand_name"] == "ResponsibleAI"
+        assert d["logo_url"] == ""
+
+    async def test_custom_branding_reflected(self, client, monkeypatch):
+        import responsibleai.dashboard.app as app_module
+
+        monkeypatch.setattr(app_module.settings, "brand_name", "Acme Governance")
+        monkeypatch.setattr(app_module.settings, "brand_logo_url", "https://acme.example/logo.png")
+        r = await client.get("/api/branding")
+        assert r.status_code == 200
+        d = r.json()
+        assert d["brand_name"] == "Acme Governance"
+        assert d["logo_url"] == "https://acme.example/logo.png"
+
+    async def test_branding_endpoint_requires_no_auth(self, client, monkeypatch):
+        # White-label branding must be visible on the login page itself,
+        # before any credential is presented — confirm no auth dependency
+        # was accidentally added to this endpoint.
+        r = await client.get("/api/branding")
+        assert r.status_code != 401
+        assert r.status_code != 403
+
 
 # ── Incidents ─────────────────────────────────────────────────────────────────
 
@@ -740,6 +775,50 @@ class TestTrustIndexCertification:
         r = await client.get("/api/trust-index/certified")
         assert r.status_code == 200
         assert r.json()["certified"] == []
+
+
+class TestTrustIndexBadge:
+    async def test_badge_renders_svg_for_self_assessed(self, client):
+        assess = await client.post("/api/trust-index/assess", json={
+            "model_name": "badge-me", "provider": "acme",
+        })
+        passport_id = assess.json()["passport_id"]
+
+        r = await client.get(f"/api/trust-index/badge/{passport_id}.svg")
+        assert r.status_code == 200
+        assert r.headers["content-type"].startswith("image/svg+xml")
+        assert "Self-Assessed" in r.text
+        assert "<svg" in r.text
+
+    async def test_badge_renders_certified_after_certification(self, client):
+        assess = await client.post("/api/trust-index/assess", json={
+            "model_name": "badge-me-2", "provider": "acme",
+        })
+        passport_id = assess.json()["passport_id"]
+        await client.post(f"/api/trust-index/certify/{passport_id}", json={})
+
+        r = await client.get(f"/api/trust-index/badge/{passport_id}.svg")
+        assert r.status_code == 200
+        assert "Certified" in r.text
+        assert "Self-Assessed" not in r.text
+
+    async def test_badge_unknown_passport_404s(self, client):
+        r = await client.get("/api/trust-index/badge/does-not-exist.svg")
+        assert r.status_code == 404
+
+    async def test_badge_escapes_model_name_with_markup(self, client):
+        # model_name is free-form, attacker-controllable input to a public,
+        # unauthenticated endpoint — the badge only ever renders grade/score/
+        # certified status (never model_name), so this can't be an XSS vector
+        # via the badge specifically, but confirm it doesn't crash the SVG
+        # renderer either.
+        assess = await client.post("/api/trust-index/assess", json={
+            "model_name": "<script>alert(1)</script>", "provider": "acme",
+        })
+        passport_id = assess.json()["passport_id"]
+        r = await client.get(f"/api/trust-index/badge/{passport_id}.svg")
+        assert r.status_code == 200
+        assert "<script>" not in r.text
 
 
 # ── AI Incident Database ─────────────────────────────────────────────────────

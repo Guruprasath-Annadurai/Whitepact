@@ -244,6 +244,22 @@ class Settings(BaseSettings):
     port: int = Field(default=8765, ge=1, le=65535)
     workers: int = Field(default=1, ge=1, le=32)
 
+    # White-label branding (optional — for OEM/white-label deployments, see
+    # compliance/OEM_LICENSING.md). Defaults produce the standard
+    # ResponsibleAI-branded experience; an OEM licensee sets these via env
+    # vars to replace the sidebar name, logo, and browser tab title across
+    # every served page without forking the frontend. Deliberately just a
+    # display-layer swap — it doesn't touch licensing/entitlement, which is
+    # a separate, out-of-band agreement per `compliance/OEM_LICENSING.md`.
+    brand_name: str = Field(
+        default="ResponsibleAI",
+        description="Product name shown in the dashboard sidebar and browser tab title.",
+    )
+    brand_logo_url: str = Field(
+        default="",
+        description="Optional logo image URL shown in the sidebar instead of the brand name text.",
+    )
+
     @property
     def leaderboard_api_keys(self) -> dict[str, str | None]:
         return {

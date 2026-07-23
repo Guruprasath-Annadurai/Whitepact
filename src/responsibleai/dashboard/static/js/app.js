@@ -105,6 +105,41 @@
     return body;
   }
 
+  const BRAND_KEY = "rai_brand_cache";
+
+  const branding = {
+    // Cached in sessionStorage so every page nav doesn't re-fetch it, but
+    // never stale across a real deploy since sessionStorage clears per tab
+    // session. Falls back to the default name on any fetch failure —
+    // white-labeling is cosmetic, never a reason to break page load.
+    async get() {
+      const cached = sessionStorage.getItem(BRAND_KEY);
+      if (cached) {
+        try { return JSON.parse(cached); } catch (e) { /* fall through */ }
+      }
+      try {
+        const res = await fetch("/api/branding");
+        const data = await res.json();
+        sessionStorage.setItem(BRAND_KEY, JSON.stringify(data));
+        return data;
+      } catch (e) {
+        return { brand_name: "ResponsibleAI", logo_url: "" };
+      }
+    },
+    apply(data) {
+      if (data.brand_name && data.brand_name !== "ResponsibleAI") {
+        document.title = document.title.replace(/^ResponsibleAI/, data.brand_name);
+      }
+      const brandEl = document.querySelector(".brand");
+      if (!brandEl) return;
+      if (data.logo_url) {
+        brandEl.innerHTML = '<img src="' + data.logo_url + '" alt="' + data.brand_name + '" class="brand-logo" />';
+      } else if (data.brand_name) {
+        brandEl.textContent = data.brand_name;
+      }
+    },
+  };
+
   function shell(activeId) {
     theme.init();
 
@@ -151,7 +186,9 @@
         window.location.href = "/login";
       });
     }
+
+    branding.get().then(branding.apply);
   }
 
-  global.RAI = { shell, theme, auth, toast, fetchJSON, NAV };
+  global.RAI = { shell, theme, auth, toast, fetchJSON, branding, NAV };
 })(window);

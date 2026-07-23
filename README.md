@@ -22,7 +22,7 @@
 │  └──────────────┘  └─────────────┘  └──────────────┘  └──────────────────┘  │
 │  ┌──────────────┐  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐  │
 │  │  BiasBuster  │  │ PrivacyLabel│  │  MCP Server  │  │  Audit Log API   │  │
-│  │ 6 probes+CI  │  │  Federated  │  │  10 tools    │  │  Export+Summary  │  │
+│  │ 6 probes+CI  │  │  Federated  │  │  26 tools    │  │  Export+Summary  │  │
 │  └──────────────┘  └─────────────┘  └──────────────┘  └──────────────────┘  │
 │  ┌──────────────────────────────────────────────────────────────────────────┐ │
 │  │   Governance Dashboard — FastAPI · Per-org rate limit · Alembic · OTEL  │ │
@@ -50,7 +50,7 @@ ResponsibleAI gives you one platform — a REST API, a Python SDK, an MCP server
 | Is it biased? | `BiasBuster` | 6 demographic probes, CI gate |
 | Is this data labeled privately? | `PrivacyLabel` | Federated DP labels, never leaves device |
 | Is this media real? | `DeepfakeDetector` | Ensemble confidence, method detected |
-| Can Claude Code govern every AI call? | `MCP Server` | 10 governance tools over stdio |
+| Can any MCP client govern every AI call? | `MCP Server` | 26 governance tools over stdio or HTTP+SSE |
 
 ---
 
@@ -111,9 +111,15 @@ Open `http://localhost:8765` for the live dashboard and `http://localhost:8765/a
 
 ---
 
-## MCP Server — govern every AI call from Claude Code
+## MCP Server — govern every AI call from Claude Code, Claude Desktop, or any MCP client
 
-The MCP (Model Context Protocol) server exposes ResponsibleAI as 10 tools and 5 resources directly inside Claude Code. When a team's Claude Code setup points at this server, every AI interaction is automatically governed — trust scoring, guardrails, compliance checks, and audit logging run on every call without code changes.
+The MCP (Model Context Protocol) server exposes ResponsibleAI as **26 tools and
+10 resources** to any MCP-compatible client — Claude Code, Claude Desktop,
+Cursor, Windsurf, or your own agent runtime. When a team's client points at
+this server, every AI interaction is automatically governed — trust scoring,
+guardrails, compliance checks (NIST AI RMF / EU AI Act / ISO 42001), bias
+evaluation, drift detection, cost tracking, and audit logging run on any call
+without code changes.
 
 ### Setup
 
@@ -143,30 +149,51 @@ uvicorn responsibleai.dashboard.app:app --host 127.0.0.1 --port 8765 &
 }
 ```
 
-### Available tools
+### Available tools (26)
 
 | Tool | What it does |
 |---|---|
-| `evaluate_model` | Full trust score + compliance + passport in one call |
-| `scan_for_pii` | Detect and redact PII before it reaches logs |
-| `detect_hallucinations` | Score consistency against candidate responses |
-| `run_red_team` | Run all 10 attack vectors, get CVE-tagged findings |
-| `check_compliance` | NIST AI RMF + EU AI Act + ISO 42001 report |
-| `record_usage` | Track token costs by model, team, application |
-| `get_cost_summary` | Spend breakdown — by model, by team, by day |
-| `route_model` | Get the cheapest model that can handle a task |
-| `check_drift` | Current drift trend — is the model degrading? |
-| `list_models` | All evaluated models with latest trust scores |
+| `rai_scan` | Detect and redact PII + harmful content before it reaches a log |
+| `rai_trust_score` | Composite AI Trust Score (0-100) across 6 governance dimensions |
+| `rai_compliance` | NIST AI RMF / EU AI Act / ISO 42001 compliance evaluation |
+| `rai_hallucination` | Hallucination risk from hedging, consistency, unsupported claims |
+| `rai_cost_estimate` | USD cost of a model API call from token counts |
+| `rai_redteam_payloads` | Adversarial attack payloads (prompt injection, jailbreak, etc.) |
+| `rai_redteam_analyze` | Security report from model responses to red team payloads |
+| `rai_compare_models` | Compare two models across all 6 trust dimensions |
+| `rai_audit_summary` | Governance capability summary (tools, frameworks, attack vectors) |
+| `rai_health` | Status and module availability of the governance engine |
+| `rai_bias_evaluate` | Demographic bias across 6 probe dimensions with confidence intervals |
+| `rai_drift_check` | Trust score drift between a baseline and current evaluation |
+| `rai_passport_generate` | Verifiable, tamper-evident AI Passport for vendor risk assessment |
+| `rai_budget_check` | Spend vs. budget, per-team/model breakdown, month-end projection |
+| `rai_policy_check` | Text/response against a governance policy (blocklists, disclaimers) |
+| `rai_stream_scan` | PII/harm scan across streaming LLM output chunks |
+| `rai_benchmark` | Score responses against truthfulqa / bbq / hellaswag suites |
+| `rai_benchmark_prompts` | Question set for a benchmark suite |
+| `rai_model_route` | Cheapest model that can handle a task, with cost/quality tradeoff |
+| `rai_pii_report` | PII audit report by category with GDPR/CCPA remediation guidance |
+| `rai_incident_log` | Structured governance incident record for audit/SIEM |
+| `rai_eu_ai_act_classify` | EU AI Act risk tier classification with compliance roadmap |
+| `rai_iso42001_gap` | ISO/IEC 42001:2023 AI Management System gap analysis |
+| `rai_executive_summary` | Board-ready governance summary with RAG status indicators |
+| `rai_org_status` | Governance status snapshot: models, grades, compliance, risk |
+| `rai_webhook_status` | Webhook delivery health, failure analysis, remediation actions |
 
-### Available resources
+### Available resources (10)
 
 | Resource | URI | Contents |
 |---|---|---|
-| Model catalogue | `rai://models/catalog` | All models + pricing + capabilities |
-| Trust leaderboard | `rai://trust/leaderboard` | Top 10 models by trust score |
-| Compliance summary | `rai://compliance/summary` | Aggregate framework coverage |
-| Cost dashboard | `rai://costs/dashboard` | Monthly spend, budget status |
-| Platform health | `rai://platform/health` | API, DB, auth, OTEL status |
+| Health | `rai://health` | Current health status of the governance service |
+| Model pricing catalog | `rai://models/catalog` | Supported models with per-token pricing |
+| Compliance frameworks | `rai://compliance/frameworks` | NIST AI RMF, EU AI Act, ISO 42001 |
+| Red team categories | `rai://redteam/categories` | Adversarial attack categories |
+| Trust dimensions | `rai://trust/dimensions` | The 6 dimensions behind the Trust Score |
+| Bias probe catalog | `rai://bias/probes` | Available bias probes and scoring interpretation |
+| Governance policy template | `rai://governance/policy` | Default policy template for `rai_policy_check` |
+| Trust grade reference | `rai://trust/grades` | Grade thresholds, risk tiers, deployment guidance |
+| NIST AI RMF checklist | `rai://compliance/checklist/nist` | Actionable NIST implementation checklist |
+| EU AI Act checklist | `rai://compliance/checklist/eu-ai-act` | Compliance checklist for high-risk operators |
 
 ---
 

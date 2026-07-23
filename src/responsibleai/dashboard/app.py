@@ -100,6 +100,7 @@ from responsibleai.rbac import (
     role_from_str,
 )
 from responsibleai.redteam.simulator import RedTeamSimulator
+from responsibleai.trust.badge import render_badge_svg
 from responsibleai.trust.passport import PassportGenerator
 from responsibleai.trust.score import TrustScoreEngine
 from responsibleai.webhooks import (
@@ -849,6 +850,18 @@ for _path, _filename in [
     ("/settings", "settings.html"),
 ]:
     _page_route(_path, _filename)
+
+
+# ── Branding (white-label) ───────────────────────────────────────────────────────
+
+@app.get("/api/branding", tags=["ops"])
+async def branding() -> dict[str, Any]:
+    """Public, unauthenticated — the frontend shell fetches this on every
+    page load to render the sidebar brand name/logo. See
+    compliance/OEM_LICENSING.md for the white-label deployment model this
+    supports; this endpoint is the display-layer mechanism, not the
+    licensing agreement itself."""
+    return {"brand_name": settings.brand_name, "logo_url": settings.brand_logo_url}
 
 
 # ── Health & Ops ───────────────────────────────────────────────────────────────
@@ -1813,6 +1826,29 @@ async def trust_index_verify(request: Request, passport_id: str) -> dict[str, An
     if record is None:
         raise HTTPException(404, "No Trust Passport found with this ID — the cited score cannot be verified.")
     return record
+
+
+@app.get("/api/trust-index/badge/{passport_id}.svg", tags=["trust-index"], include_in_schema=True)
+@limiter.limit("300/minute")
+async def trust_index_badge(request: Request, passport_id: str) -> Response:
+    """Public, unauthenticated — the embeddable badge image behind the
+    free/paid split: a self-assessed passport renders 'Self-Assessed', a
+    human-reviewed one (see POST /certify above) renders 'Certified'. Same
+    endpoint, same mechanism, the underlying `certified` flag is the only
+    difference — see trust/badge.py and STRATEGY_ROADMAP.md Part 0 Item 3."""
+    record = await _ready(_passport_repo).get(passport_id)
+    if record is None:
+        raise HTTPException(404, "No Trust Passport found with this ID.")
+    svg = render_badge_svg(
+        grade=record["trust_score"]["grade"],
+        overall_score=record["trust_score"]["overall"],
+        certified=record["certified"],
+    )
+    return Response(
+        content=svg,
+        media_type="image/svg+xml",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
 
 
 @app.get("/api/trust-index/certified", tags=["trust-index"])

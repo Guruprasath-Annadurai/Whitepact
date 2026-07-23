@@ -95,6 +95,15 @@ methodology itself are free; the audited badge costs money, the same
 relationship ISO 9001 or SOC 2 has between their published standard (free
 to read) and the accredited audit (paid).
 
+**The embeddable badge** (`GET /api/trust-index/badge/{passport_id}.svg`,
+see `src/responsibleai/trust/badge.py`) is the same mechanism for both
+tiers — a self-assessed passport renders "Self-Assessed", a certified one
+renders "Certified," and nothing else about the image differs. The `/verify/{id}`
+page shows the badge preview plus copy-paste HTML/Markdown embed snippets.
+This is the actual product behind `STRATEGY_ROADMAP.md` Part 0 Item 3: free
+badge for awareness and adoption, paid certification to turn it into a
+verified claim.
+
 ---
 
 ## Citing a Trust Index score

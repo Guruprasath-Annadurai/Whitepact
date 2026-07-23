@@ -166,7 +166,7 @@ Verified against the current codebase, not marketing copy:
 | Incident management: `incidents` table, `POST/GET /api/incidents`, Alertmanager auto-bridge | Built, tested (this session) |
 | Per-tenant Prometheus metrics, CSP/HSTS headers, opt-in field encryption, DB retry-on-failover | Built, tested (this session) |
 | Stripe billing (FREE/PRO/ENTERPRISE), plan-based rate limiting, MCP usage metering | Built, tested |
-| MCP server exposing 15+ governance tools to any MCP client (Claude Desktop, Cursor, etc.) | Built, tested |
+| MCP server exposing 26 governance tools + 10 resources to any MCP client (Claude Desktop, Cursor, etc.) | Built, tested |
 | Compliance paperwork: CAIQ self-assessment, NIST CSF self-assessment, DPA template + attorney scope brief, incident response runbook (tabletop-tested), vendor risk assessment | Built this session |
 | SOC2 / ISO 27001 of our own | **Not started** — funding-gated |
 | Third-party penetration test | **Not started** — funding-gated |
