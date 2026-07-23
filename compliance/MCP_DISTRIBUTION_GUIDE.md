@@ -105,6 +105,88 @@ press coverage.
 
 ---
 
+## 3b. Per-platform registration — Claude, ChatGPT, Gemini
+
+MCP adoption across the three major assistant platforms is new and moving
+fast — treat every specific menu path/URL below as "true as of this
+writing, verify before you act," not a fixed reference. The mechanism for
+each platform splits into two distinct things: (a) getting a corporate
+user's *own* client to actually connect to `responsibleai-mcp`, which you
+can do today with zero external approval, and (b) getting *listed* in that
+platform's own directory/marketplace, which does require external review.
+
+### Claude (Anthropic) — native MCP support, most direct path
+
+- **Individual/team connection (works today, no approval needed)**: any
+  Claude Code or Claude Desktop user adds the server to their own MCP
+  config — exactly the JSON block already in this README's "MCP Server"
+  section. For a corporate team, this is often the fastest real adoption
+  path: send the config block directly to a prospect's engineering team,
+  skip the directory entirely.
+- **Claude.ai remote connectors (Team/Enterprise/Max plans)**: Claude.ai
+  supports adding custom remote MCP connectors via Settings → Connectors,
+  pointing at a hosted server's URL (this is what `responsibleai-mcp-http`,
+  the HTTP+SSE entry point, is for — see `mcp/server.py:main_http`). This
+  requires the server to actually be hosted somewhere reachable (Section 1
+  of `STRATEGY_ROADMAP.md`'s hosted-instance gap applies directly here) —
+  a corporate buyer can't add a connector pointing at your laptop.
+- **Directory listing**: check `github.com/modelcontextprotocol` (the
+  spec's home org) for the current official servers repository and its
+  contribution process — this is the closest thing to an "official"
+  Claude-adjacent directory. Submission is a PR, reviewed by maintainers,
+  not an instant listing.
+
+### ChatGPT / OpenAI — connectors and the Apps SDK
+
+- OpenAI has been extending ChatGPT and its developer platform with MCP
+  support (connectors that let ChatGPT call external MCP servers, and an
+  Apps SDK for building ChatGPT-native integrations). The exact current
+  menu path for a user or org admin to add a custom connector, and what
+  review (if any) is required to be *discoverable* inside ChatGPT's own
+  connector picker versus just privately configurable, changes fast enough
+  that this document should not be trusted as the current source — check
+  OpenAI's own developer documentation (platform.openai.com's docs site)
+  for "MCP" or "connectors" immediately before acting.
+- **What's stable regardless of exact menu paths**: `responsibleai-mcp-http`
+  already speaks the standard MCP HTTP+SSE transport, so the underlying
+  compatibility question ("does our server speak the protocol a ChatGPT
+  connector expects") is already answered yes — what remains is purely
+  OpenAI's own current registration/review mechanism, not anything to
+  build here.
+
+### Gemini / Google — Gemini API and Gemini Enterprise
+
+- Google has been adding tool-use and MCP-style extensibility to the
+  Gemini API and Gemini Enterprise (the corporate-facing product). As with
+  ChatGPT, the specific current mechanism for registering a custom
+  server/connector — and whether Google offers a public directory
+  analogous to Anthropic's or only private/enterprise-scoped connector
+  configuration — should be checked against Google's current AI
+  developer documentation (ai.google.dev or the Gemini Enterprise admin
+  docs) immediately before acting, not assumed from this document.
+- Same underlying point as ChatGPT: the compatibility question is already
+  solved (standard MCP transport), the open question is purely each
+  platform's current registration process.
+
+### The practical sequencing this suggests
+
+1. **Start with Claude** — it's Anthropic's own protocol, the integration
+   path is the most mature and the best-documented, and this project's own
+   primary development tool (Claude Code) already demonstrates the
+   integration working. Lead with this in any outbound pitch.
+2. **Treat ChatGPT and Gemini as "verify current docs, then repeat the
+   same motion"** — the engineering is already done
+   (`responsibleai-mcp-http` speaks standard MCP); what's left for both is
+   purely checking each platform's current connector/directory process,
+   which is a founder-time task to do fresh each time, not something to
+   solve once and forget.
+3. **Don't wait for all three before pitching a prospect** — a corporate
+   buyer using Claude Code today doesn't care whether ChatGPT support
+   exists yet; lead with whichever platform that specific prospect already
+   uses.
+
+---
+
 ## 4. What this does and doesn't unlock
 
 Directory listing is **pure top-of-funnel distribution** — it makes the
