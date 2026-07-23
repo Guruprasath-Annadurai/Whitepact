@@ -1,0 +1,181 @@
+# Founder Action Checklist
+
+> Every item below requires the founder personally — an account creation,
+> an external submission, a real conversation, or a legal/financial
+> decision — none of which Claude can do on your behalf (see this
+> project's standing policy against creating accounts or executing
+> financial actions for you). This consolidates every such item flagged
+> across `STRATEGY_ROADMAP.md`, `compliance/MCP_DISTRIBUTION_GUIDE.md`,
+> `compliance/OEM_LICENSING.md`, `compliance/COMPLIANCE_STARTER_KIT_OFFER.md`,
+> `compliance/INSURANCE_PARTNERSHIP_PITCH.md`,
+> `compliance/TRUST_INDEX_PAPER.md`, `compliance/SOC2_READINESS.md`,
+> `compliance/INTERNAL_SECURITY_REVIEW.md`, `DEPLOY_RUNBOOK.md`, and the
+> legal drafts — one place to work through, instead of six documents.
+>
+> Nothing here is ordered by urgency for you specifically — work top to
+> bottom or pick whatever's cheapest/fastest for your own situation.
+> Check items off in this file directly as you complete them; it's a
+> tracker, not a one-time read.
+
+Last reviewed: 2026-07-23
+
+---
+
+## 1. MCP distribution (zero cost — founder time only)
+
+*Source: `compliance/MCP_DISTRIBUTION_GUIDE.md`*
+
+- [ ] Submit `responsibleai-mcp` to the official Anthropic-adjacent MCP
+      servers directory (`github.com/modelcontextprotocol` — check current
+      contribution process, it's a PR).
+- [ ] Submit to community MCP directories/marketplaces (Glama, PulseMCP,
+      or whatever's current — search fresh, don't trust any fixed list).
+- [ ] Submit to Smithery or an equivalent MCP hosting/discovery platform,
+      if one is current.
+- [ ] Add a "Listed on [Directory]" badge to the README once accepted
+      anywhere.
+- [ ] Write a short launch post (blog, LinkedIn, "Show HN" if applicable)
+      timed to the first directory acceptance.
+- [ ] Check OpenAI's current developer docs for ChatGPT connector/MCP
+      registration process (moves fast — verify before acting).
+- [ ] Check Google's current Gemini API / Gemini Enterprise docs for
+      connector/MCP registration process (same caveat).
+
+## 2. OEM/white-label outreach (zero cost — founder time only)
+
+*Source: `compliance/OEM_LICENSING.md`*
+
+- [ ] Identify 5-10 named agent-platform startups as OEM prospects.
+- [ ] Send the one-pager (`compliance/OEM_LICENSING.md`) to each, adjusted
+      to a single PDF/email, not a full deck.
+- [ ] Have an actual OEM license agreement drafted by an attorney before
+      any real deal closes — the one-pager is a conversation starter only.
+- [ ] Update Section 4's pricing anchors once a real deal closes somewhere
+      different from the starting numbers.
+
+## 3. Compliance starter kit sales (zero cost to start)
+
+*Source: `compliance/COMPLIANCE_STARTER_KIT_OFFER.md`*
+
+- [ ] Quote the starter kit to 3 companies in your own network first, at a
+      founding-customer discount, before publishing any public price.
+- [ ] Have a simple one-page scope-of-work ready before taking a real
+      payment (even an email exchange is fine for the first few).
+- [ ] Update the pricing table once a real engagement closes at a
+      different number.
+
+## 4. Insurance/underwriting outreach (one afternoon, long-shot)
+
+*Source: `compliance/INSURANCE_PARTNERSHIP_PITCH.md`*
+
+- [ ] Search current AI-focused liability/E&O insurers, MGAs, insurtechs,
+      or cyber-insurance brokers with an AI practice (the pitch document
+      deliberately doesn't name fixed targets — this market moves fast).
+- [ ] Cold-email 2-3 of them the adapted two-sentence pitch plus a live
+      `/verify/{passport_id}` link as a working example.
+- [ ] Get any real interest confirmed in writing before treating it as a
+      partnership or announcing it publicly.
+
+## 5. arXiv publication
+
+*Source: `compliance/TRUST_INDEX_PAPER.md`*
+
+- [ ] Convert the Markdown draft to LaTeX (or a pandoc-generated PDF, if
+      your target category accepts it — verify current arXiv format
+      requirements first).
+- [ ] Check whether your target category (likely `cs.CY` or `cs.AI`)
+      requires endorsement from an existing arXiv author for a first-time
+      submitter, and line that up if so.
+- [ ] Replace every placeholder reference in the paper's References section
+      with real, correctly formatted citations.
+- [ ] Get a second, ideally domain-expert, reader to review the paper
+      before submitting — this was written by the same team that built the
+      system it describes.
+- [ ] Re-verify every code file reference in the paper against the current
+      codebase immediately before submission.
+- [ ] Create an arXiv account and actually submit.
+
+## 6. Hosted instance (blocks almost everything else commercially)
+
+*Source: `DEPLOY_RUNBOOK.md`, `SLA.md`, `STRATEGY_ROADMAP.md` Part 0*
+
+- [ ] Choose a VPS/cloud provider and create the account (OCI Always Free
+      tier is the documented reference option in `DEPLOY_RUNBOOK.md`, but
+      any provider works).
+- [ ] Register or point a domain/subdomain at the server.
+- [ ] Run `./scripts/deploy.sh` (automates secret generation, bringing the
+      stack up, migrations, and local health checks).
+- [ ] Issue a TLS certificate (certbot) and configure the nginx reverse
+      proxy per `DEPLOY_RUNBOOK.md` steps 6-7.
+- [ ] Create your first real org and retire the bootstrap API key
+      (`DEPLOY_RUNBOOK.md` step 11).
+- [ ] Set up a public status page (statuspage.io or equivalent) and link
+      it from `SLA.md`.
+- [ ] Once this is live, go back and remove the "no hosted instance is
+      live yet" caveat from `SLA.md`, `TERMS_OF_SERVICE.md`, and
+      `PRIVACY_POLICY.md` — not before.
+
+## 7. Billing (only once selling live)
+
+*Source: `DEPLOY_RUNBOOK.md` step 12*
+
+- [ ] Create live-mode Stripe Prices matching `mcp/licensing.py`'s
+      `plan_catalog()`.
+- [ ] Add and test the Stripe webhook endpoint in test mode before
+      flipping to live keys.
+
+## 8. Legal review (before anything above touches a real customer)
+
+*Source: `TERMS_OF_SERVICE.md`, `PRIVACY_POLICY.md`,
+`compliance/DPA_TEMPLATE.md`, `compliance/DPA_ATTORNEY_SCOPE_BRIEF.md`,
+`compliance/OEM_LICENSING.md`*
+
+- [ ] Decide your target jurisdiction/regime (EU/UK vs. US-only vs.
+      mixed) — `compliance/DPA_ATTORNEY_SCOPE_BRIEF.md`'s first question,
+      needed before booking any attorney call.
+- [ ] Get `TERMS_OF_SERVICE.md` attorney-reviewed before publishing or
+      linking it from a signup flow.
+- [ ] Get `PRIVACY_POLICY.md` attorney-reviewed before publishing.
+- [ ] Get `compliance/DPA_TEMPLATE.md` attorney-reviewed before executing
+      it with any real customer.
+- [ ] Get a real OEM license agreement drafted before signing any
+      white-label deal (see Section 2 above).
+- [ ] Decide your entity structure (stay sole proprietor, or form an
+      LLC/corp) — affects every legal document above, all of which
+      currently assume sole proprietor.
+
+## 9. SOC 2 and penetration test (funding-gated — no fixed date)
+
+*Source: `compliance/SOC2_READINESS.md`, `compliance/INTERNAL_SECURITY_REVIEW.md`*
+
+- [ ] Once the hosted instance (Section 6) has run for at least a full
+      quarter, engage a real CPA firm for a SOC 2 Type I report, using
+      `compliance/SOC2_READINESS.md` as the intake packet.
+- [ ] Operate under Type I's controls for 3-12 months, then pursue Type II.
+- [ ] Commission a real third-party penetration test ($5-15K) once budget
+      allows — `compliance/INTERNAL_SECURITY_REVIEW.md` narrows the gap
+      but doesn't close it.
+
+## 10. Governance and organizational (founder decisions, no fixed date)
+
+*Source: `GOVERNANCE.md`, `compliance/SOC2_READINESS.md`*
+
+- [ ] Decide on and bring in a named second person with real oversight
+      authority (advisor, fractional CISO, or eventual co-founder) — the
+      single item on this whole checklist that is purely a founder
+      decision, not an engineering or documentation task.
+- [ ] Run `GOVERNANCE.md`'s first scheduled quarterly risk review on
+      2026-10-23.
+- [ ] Set a real, counsel-confirmed breach-notification timeframe once the
+      DPA is attorney-reviewed (Section 8) and the internal 72-hour target
+      has been tested against a real incident, not just one tabletop drill.
+
+---
+
+## How to use this file
+
+Work through whichever section is cheapest or most relevant to what you're
+doing right now — nothing here has a hard dependency ordering except
+Section 6 (hosted instance) gating Section 9 (SOC 2) and parts of Section
+7. Check items off directly in this file as you go; it's meant to be
+edited over time, not a one-time snapshot.
