@@ -10,11 +10,19 @@
 > (1) converting this Markdown draft to arXiv's expected format (LaTeX is
 > the norm; a PDF generated from Markdown via pandoc is accepted in some
 > categories but LaTeX is safer), (2) creating an arXiv account, and (3)
-> in some categories (notably `cs.CY`, `cs.AI`), a first-time submitter may
-> need **endorsement** from an existing arXiv author in that category —
-> check arXiv's current endorsement policy before assuming a submission
-> will go through unassisted. None of this can be done on the founder's
-> behalf; this document is the content, not the submission.
+> **endorsement, confirmed required as of a policy change effective
+> 2026-01-21** (see arXiv's own blog post, "Attention Authors: updated
+> endorsement policy") — arXiv no longer accepts an institutional email
+> address alone as sufficient for a first-time poster. A new submitter now
+> needs *either* (a) both an institutional academic/research email *and*
+> prior authorship on a paper already accepted in the target endorsement
+> domain (likely `cs.AI` or `cs.CY` here), *or*, failing that, (b) personal
+> endorsement from an advisor, colleague, or existing arXiv author with
+> endorsement privileges in that domain. For an independent, first-time
+> submitter without a prior arXiv-accepted paper, path (b) is almost
+> certainly the real path — line up a personal endorser *before* starting
+> the submission, not after hitting the wall. None of this can be done on
+> the founder's behalf; this document is the content, not the submission.
 
 Last reviewed: 2026-07-23
 
@@ -311,11 +319,14 @@ properly, by their actual publication venues:)*
    such as `article` or a relevant conference/journal class) is the safest
    choice; verify current format requirements on arXiv's own submission
    help pages before starting, since these can change.
-2. **Verify the endorsement requirement for your target category** (likely
-   `cs.CY` — Computers and Society, or `cs.AI`) — arXiv requires
-   endorsement from an existing author in that category for some
-   first-time submitters. Check this before assuming submission is
-   friction-free.
+2. **Line up a personal endorser before starting.** As of arXiv's
+   2026-01-21 policy update, a first-time submitter without an
+   institutional academic email *and* prior authorship in the target
+   domain (`cs.AI` or `cs.CY` here) needs personal endorsement from an
+   advisor, colleague, or an existing arXiv author with endorsement
+   privileges in that category — arXiv no longer accepts an institutional
+   email alone. Identify who that person is and confirm their willingness
+   *before* starting the submission flow, not after arXiv blocks it.
 3. **Replace every placeholder reference in Section "References"** with
    verified, correctly formatted citations to the actual papers/standards
    — do not submit with unchecked citations.

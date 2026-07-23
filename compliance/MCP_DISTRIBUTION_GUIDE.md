@@ -75,11 +75,14 @@ Each of these requires creating an account and/or opening a PR on an
 external service. None of this can be done on your behalf — check each box
 as you complete it:
 
-- [ ] **Anthropic's official MCP server directory/examples repo** — the
-  canonical listing corporate Claude Code/Desktop users actually browse.
-  Check `github.com/modelcontextprotocol` for the current servers
-  directory and its contribution guidelines (these change; read the
-  current `CONTRIBUTING.md` there rather than assuming a fixed process).
+- [ ] **The official MCP registry** — `github.com/modelcontextprotocol/registry`
+  (confirmed live as of 2026-07-23; a community-driven registry service
+  the MCP org itself runs, distinct from the older `modelcontextprotocol/servers`
+  example-servers repo). Publishing works via a CLI publisher tool the
+  repo documents (its README references a `server.json` manifest format
+  and a `make publisher`-style build step) — read that repo's current
+  README/CONTRIBUTING before starting, since exact CLI flags are the kind
+  of detail that changes without this document being updated in step.
 - [ ] **Community MCP directories/marketplaces** (e.g., Glama, mcp.so-style
   aggregators, PulseMCP, or whatever the current landscape includes by the
   time you do this — the MCP directory ecosystem is new and shifting, so

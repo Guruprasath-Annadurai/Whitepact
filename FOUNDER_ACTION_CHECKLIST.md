@@ -25,9 +25,13 @@ Last reviewed: 2026-07-23
 
 *Source: `compliance/MCP_DISTRIBUTION_GUIDE.md`*
 
-- [ ] Submit `responsibleai-mcp` to the official Anthropic-adjacent MCP
-      servers directory (`github.com/modelcontextprotocol` — check current
-      contribution process, it's a PR).
+- [ ] Submit `responsibleai-mcp` to the official MCP registry —
+      **confirmed live**: `github.com/modelcontextprotocol/registry`
+      (real, found via research 2026-07-23; publishes via a `server.json`
+      manifest and a CLI publisher tool the repo documents). Note: your
+      GitHub CLI is already authenticated as `Guruprasath-Annadurai` — say
+      the word and this PR can be opened for you; otherwise it's a normal
+      PR flow you do yourself.
 - [ ] Submit to community MCP directories/marketplaces (Glama, PulseMCP,
       or whatever's current — search fresh, don't trust any fixed list).
 - [ ] Submit to Smithery or an equivalent MCP hosting/discovery platform,
@@ -43,11 +47,12 @@ Last reviewed: 2026-07-23
 
 ## 2. OEM/white-label outreach (zero cost — founder time only)
 
-*Source: `compliance/OEM_LICENSING.md`*
+*Source: `compliance/OEM_LICENSING.md`, draft email in
+`compliance/outreach/READY_TO_SEND_EMAILS.md` Section 1*
 
 - [ ] Identify 5-10 named agent-platform startups as OEM prospects.
-- [ ] Send the one-pager (`compliance/OEM_LICENSING.md`) to each, adjusted
-      to a single PDF/email, not a full deck.
+- [ ] Fill in and send the drafted outreach email to each — content is
+      ready, recipient research and sending are yours.
 - [ ] Have an actual OEM license agreement drafted by an attorney before
       any real deal closes — the one-pager is a conversation starter only.
 - [ ] Update Section 4's pricing anchors once a real deal closes somewhere
@@ -55,7 +60,8 @@ Last reviewed: 2026-07-23
 
 ## 3. Compliance starter kit sales (zero cost to start)
 
-*Source: `compliance/COMPLIANCE_STARTER_KIT_OFFER.md`*
+*Source: `compliance/COMPLIANCE_STARTER_KIT_OFFER.md`, draft email in
+`compliance/outreach/READY_TO_SEND_EMAILS.md` Section 2*
 
 - [ ] Quote the starter kit to 3 companies in your own network first, at a
       founding-customer discount, before publishing any public price.
@@ -66,13 +72,19 @@ Last reviewed: 2026-07-23
 
 ## 4. Insurance/underwriting outreach (one afternoon, long-shot)
 
-*Source: `compliance/INSURANCE_PARTNERSHIP_PITCH.md`*
+*Source: `compliance/INSURANCE_PARTNERSHIP_PITCH.md`, draft email in
+`compliance/outreach/READY_TO_SEND_EMAILS.md` Section 3*
 
-- [ ] Search current AI-focused liability/E&O insurers, MGAs, insurtechs,
-      or cyber-insurance brokers with an AI practice (the pitch document
-      deliberately doesn't name fixed targets — this market moves fast).
-- [ ] Cold-email 2-3 of them the adapted two-sentence pitch plus a live
-      `/verify/{passport_id}` link as a working example.
+- [ ] Two real, named candidates found 2026-07-23: **AIUC** (Artificial
+      Intelligence Underwriting Company — SF-based, AIUC-1 audit standard
+      + Beazley-backed liability coverage; frame as complementary, not
+      competing) and **Testudo** (Lloyd's-backed MGA, $10M-$10B revenue
+      mid-market focus — likely too large a customer profile to be your
+      own prospect, but worth a direct data-partnership pitch anyway).
+      Find current contact channels on `aiuc.com` and Testudo's site.
+- [ ] Search for additional current candidates beyond these two — this
+      market kept expanding through 2026.
+- [ ] Fill in and send the drafted email to 2-3 targets.
 - [ ] Get any real interest confirmed in writing before treating it as a
       partnership or announcing it publicly.
 
@@ -83,9 +95,12 @@ Last reviewed: 2026-07-23
 - [ ] Convert the Markdown draft to LaTeX (or a pandoc-generated PDF, if
       your target category accepts it — verify current arXiv format
       requirements first).
-- [ ] Check whether your target category (likely `cs.CY` or `cs.AI`)
-      requires endorsement from an existing arXiv author for a first-time
-      submitter, and line that up if so.
+- [ ] **Confirmed as of arXiv's 2026-01-21 policy update**: an
+      institutional email alone no longer qualifies a first-time
+      submitter. Without prior authorship on an already-accepted paper in
+      `cs.AI`/`cs.CY`, you need a personal endorser (advisor, colleague, or
+      existing arXiv author with endorsement privileges) — identify and
+      confirm that person *before* starting the submission.
 - [ ] Replace every placeholder reference in the paper's References section
       with real, correctly formatted citations.
 - [ ] Get a second, ideally domain-expert, reader to review the paper

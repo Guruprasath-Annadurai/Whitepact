@@ -78,22 +78,37 @@ mechanics of.
 
 ## 5. Target list — how to find the right contact
 
-AI liability/E&O insurance is a young, fast-moving line — search fresh
-rather than trusting a fixed list written into this document once and left
-stale (the same caveat `compliance/MCP_DISTRIBUTION_GUIDE.md` gives for MCP
-directories, for the same reason: the landscape changes faster than a
-static document should be trusted to track). Look for:
+AI liability/E&O insurance is a young, fast-moving line — treat the two
+named companies below as a starting point confirmed live as of
+2026-07-23, not a permanently accurate list; re-search before relying on
+either still being the right shape of company by the time you act.
 
-- **Specialty MGAs writing AI/tech E&O policies** — search "AI liability
-  insurance," "AI E&O coverage," "technology errors and omissions AI
-  rider" for current names; this market has been expanding and specific
-  named players will be more current found live than listed here.
-- **Insurtechs building underwriting tooling for tech/AI risk** — often
-  more receptive to a data-partnership pitch than a traditional carrier,
-  since integrating novel risk signals is closer to their core product.
-- **Cyber insurance brokers with an AI practice** — a broker who places
-  policies for AI companies may be a faster path to an actual underwriter
-  conversation than approaching a carrier cold.
+- **AIUC (Artificial Intelligence Underwriting Company)** — the closest
+  fit conceptually: an SF-based MGA that already bundles an audit standard
+  (AIUC-1, 5,000+ adversarial simulations across security/safety/
+  reliability/privacy/accountability) with underwritten liability coverage
+  (up to $50M, backed by Beazley as of a May 2026 paper). **Important
+  framing note**: AIUC already runs its own certification-plus-insurance
+  product, which is close enough to this pitch's core idea that they may
+  see ResponsibleAI as adjacent/competing rather than purely
+  complementary — lead with the free/self-assessment layer as a
+  *feeder* signal for companies not yet at AIUC's audit stage, not as a
+  replacement for what they do. Check `aiuc.com` for current contact
+  channels; no public direct-outreach process was found via search, so
+  a warm intro or a direct email to a named contact found on their site
+  is more likely to land than a generic contact form.
+- **Testudo** — a data-driven MGA that began underwriting AI risk for
+  US mid-market enterprises (revenue $10M-$10B) in January 2026, backed by
+  Lloyd's of London capacity. Likely too large a target-company profile
+  for this pitch's typical prospect (small/bootstrapped AI companies) to
+  be *Testudo's own* customer, but worth approaching directly as a
+  potential data-partnership conversation regardless, since they're
+  explicitly "data-driven" — a novel governance signal may be exactly
+  what their underwriting model wants to ingest.
+- **Broader search terms for additional candidates**: "AI liability
+  insurance," "AI E&O coverage," "AI agent liability MGA" — this market
+  has kept expanding through 2026, so a fresh search will likely surface
+  names beyond these two by the time you do outreach.
 
 **Outreach approach**: a short, direct email — this pitch's Section 1
 paragraph, adapted to two sentences, plus a link to a live
