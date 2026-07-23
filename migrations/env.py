@@ -73,7 +73,12 @@ def _run_migrations_sync(connection) -> None:
 
 async def run_migrations_online() -> None:
     """Run migrations with an async engine."""
-    connectable = create_async_engine(_resolve_url(), echo=False)
+    url = _resolve_url()
+    # Same transaction-pooler fix as db/engine.py's create_engine() — this
+    # is a separate engine construction path (Alembic's own), so it needs
+    # the fix independently, not automatically inherited from there.
+    connect_args = {"statement_cache_size": 0} if url.startswith("postgresql") else {}
+    connectable = create_async_engine(url, echo=False, connect_args=connect_args)
     async with connectable.connect() as conn:
         await conn.run_sync(_run_migrations_sync)
     await connectable.dispose()
