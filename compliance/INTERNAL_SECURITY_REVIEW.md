@@ -124,12 +124,13 @@ unresolvable-host handling. Also added an autouse DNS-mocking fixture so the
 `hooks.example.com`) continue to exercise the real guard code path without
 depending on real network DNS resolution in CI.
 
-**Known test-coverage gap, not fixed in this pass**: there is no existing
-test file exercising `POST /api/webhooks` at the FastAPI layer at all (the
-endpoint's registration-time validation added here is therefore currently
-verified by code review and the manager-level tests, not an end-to-end API
-test). Worth closing before relying on this endpoint's behavior in a
-regulated-industry sales cycle.
+**Update (2026-07-23, follow-up pass)**: the API-layer test-coverage gap
+noted above is now closed. `tests/test_dashboard_api.py::TestWebhooksAPI`
+exercises `POST/GET/DELETE /api/webhooks` end-to-end: create/list/delete
+roundtrip, invalid-event-type rejection, the SSRF guard rejecting a
+loopback URL and the cloud-metadata address at the actual HTTP layer (not
+just the manager unit tests), a 404 on deleting a nonexistent webhook, and
+the `/api/webhooks/test/{id}` firing path.
 
 ### 2.3 Findings reviewed and accepted as-is (no change needed)
 

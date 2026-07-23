@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 
+import httpx
 import pytest
 
 os.environ.setdefault("RAI_DB_PATH", ":memory:")
@@ -415,6 +416,99 @@ class TestAlertsWebhookBridge:
         assert body["source"] == "alertmanager"
         assert body["severity"] == "medium"  # Alertmanager "warning" maps to our "medium"
         assert body["incident_type"] == "drift_alert"  # classified from "RAIDriftAlertSpike"
+
+
+# ── Webhooks ──────────────────────────────────────────────────────────────────
+
+class TestWebhooksAPI:
+    """End-to-end coverage of POST/GET/DELETE /api/webhooks at the FastAPI
+    layer — the SSRF guard (webhooks/manager.py::validate_webhook_url) was
+    previously only exercised via WebhookManager unit tests, not through the
+    actual HTTP endpoint an admin calls."""
+
+    @pytest.fixture(autouse=True)
+    def _fake_public_dns(self, monkeypatch):
+        # validate_webhook_url() does a real getaddrinfo() lookup — pin every
+        # hostname in this test class to a fixed public IP so tests don't
+        # depend on real DNS.
+        monkeypatch.setattr(
+            "responsibleai.webhooks.manager.socket.getaddrinfo",
+            lambda host, *a, **k: [(2, 1, 6, "", ("93.184.216.34", 0))],
+        )
+
+    async def test_create_list_delete_roundtrip(self, client):
+        r = await client.post(
+            "/api/webhooks",
+            json={
+                "url": "https://hooks.example.com/generic",
+                "events": ["drift_alert"],
+                "provider": "generic",
+            },
+        )
+        assert r.status_code == 200
+        created = r.json()
+        assert created["url"] == "https://hooks.example.com/generic"
+        webhook_id = created["id"]
+
+        listed = await client.get("/api/webhooks")
+        assert listed.status_code == 200
+        assert any(w["id"] == webhook_id for w in listed.json()["webhooks"])
+
+        deleted = await client.delete(f"/api/webhooks/{webhook_id}")
+        assert deleted.status_code == 200
+        assert deleted.json()["deleted"] == webhook_id
+
+        listed_after = await client.get("/api/webhooks")
+        assert not any(w["id"] == webhook_id for w in listed_after.json()["webhooks"])
+
+    async def test_rejects_invalid_event_type(self, client):
+        r = await client.post(
+            "/api/webhooks",
+            json={"url": "https://hooks.example.com/x", "events": ["not_a_real_event"]},
+        )
+        assert r.status_code == 400
+        assert "Invalid event type" in r.json()["message"]
+
+    async def test_rejects_ssrf_loopback_url(self, client, monkeypatch):
+        monkeypatch.setattr(
+            "responsibleai.webhooks.manager.socket.getaddrinfo",
+            lambda host, *a, **k: [(2, 1, 6, "", ("127.0.0.1", 0))],
+        )
+        r = await client.post(
+            "/api/webhooks",
+            json={"url": "http://localhost/hook", "events": ["drift_alert"]},
+        )
+        assert r.status_code == 400
+        assert "Invalid webhook URL" in r.json()["message"]
+
+    async def test_rejects_ssrf_cloud_metadata_url(self, client, monkeypatch):
+        monkeypatch.setattr(
+            "responsibleai.webhooks.manager.socket.getaddrinfo",
+            lambda host, *a, **k: [(2, 1, 6, "", ("169.254.169.254", 0))],
+        )
+        r = await client.post(
+            "/api/webhooks",
+            json={"url": "http://metadata.internal/latest/meta-data", "events": ["drift_alert"]},
+        )
+        assert r.status_code == 400
+        assert "Invalid webhook URL" in r.json()["message"]
+
+    async def test_delete_nonexistent_returns_404(self, client):
+        r = await client.delete("/api/webhooks/does-not-exist")
+        assert r.status_code == 404
+
+    async def test_test_endpoint_fires_and_returns_delivery(self, client, respx_mock):
+        create = await client.post(
+            "/api/webhooks",
+            json={"url": "https://hooks.example.com/test-target", "events": ["trust_score_changed"]},
+        )
+        webhook_id = create.json()["id"]
+        respx_mock.post("https://hooks.example.com/test-target").mock(
+            return_value=httpx.Response(200)
+        )
+        r = await client.post(f"/api/webhooks/test/{webhook_id}")
+        assert r.status_code == 200
+        assert r.json()["success"] is True
 
 
 # ── Leaderboard ───────────────────────────────────────────────────────────────

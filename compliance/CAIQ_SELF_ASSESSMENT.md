@@ -97,8 +97,8 @@ Last reviewed: 2026-07-23 · Platform version: 1.2.0
 | Question | Answer |
 |---|---|
 | How are API keys/secrets stored? | API keys: SHA-256 hash only, never the raw value (`secrets.token_urlsafe(32)` generation, `hashlib.sha256` storage). Third-party secrets (Stripe, OIDC, webhook HMAC): environment variables only, never written to the database. |
-| Is there a key rotation mechanism? | Manual — revoke + reissue via the API. No automatic rotation schedule enforced by the platform. |
-| Is field-level/column-level encryption used for sensitive data? | Partially. `audit_log.ip_address` — the one standalone PII column in the schema — now supports opt-in Fernet encryption via `RAI_FIELD_ENCRYPTION_KEY` (off by default, see `.env.example` and `ENTERPRISE_SECURITY.md`). This is not blanket SQLCipher/pgcrypto column encryption across every table; other free-text columns (`metadata` on `token_usage`/`trust_scores`) still rely on infra-level disk encryption. |
+| Is there a key rotation mechanism? | For API keys: manual — revoke + reissue via the API, no automatic schedule. For the field-encryption key (`RAI_FIELD_ENCRYPTION_KEY`): yes, a real rotation mechanism as of this version — the env var accepts a comma-separated key list (`MultiFernet`: new writes use the first key, reads try all of them), plus `scripts/rotate_field_encryption_key.py` to re-encrypt existing rows under the new key. Full procedure and custody guidance in `compliance/KEY_MANAGEMENT.md`. |
+| Is field-level/column-level encryption used for sensitive data? | Partially, and wider than before. Opt-in Fernet encryption via `RAI_FIELD_ENCRYPTION_KEY` (off by default, see `.env.example` and `ENTERPRISE_SECURITY.md`) now covers four PII/secret columns — `audit_log.ip_address`, `public_incident_reports.reporter_name`/`.reporter_contact`, `webhook_configs.secret`, `org_api_keys.mfa_secret` — up from one. This is not blanket SQLCipher/pgcrypto column encryption across every table; other free-text columns (`metadata` on `token_usage`/`trust_scores`, incident `description` fields) still rely on infra-level disk encryption. |
 
 ---
 

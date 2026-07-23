@@ -20,7 +20,7 @@
 > needing real legal work (Sections 6, 7, 8, 10), so you're not paying
 > for time spent re-deriving what's already here.
 
-Last reviewed: 2026-07-21 · Platform version: 1.2.0
+Last reviewed: 2026-07-23 · Platform version: 1.2.0
 
 ---
 
@@ -141,13 +141,19 @@ affecting Customer's data without undue delay.
 
 **Stated honestly**: Processor follows an internal incident-response
 process (`compliance/INCIDENT_RESPONSE_RUNBOOK.md`) covering detection,
-containment, and notification decision-making, but that process has not
-been tested against a real incident or a tabletop exercise, and does not
-itself commit to a specific notification timeframe (e.g., GDPR's 72-hour
-requirement to a supervisory authority). **Do not execute a DPA that
-requires a specific breach-notification timeframe until that process has
-been proven — by a drill or, if it comes to it, a real incident — to
-reliably meet one.** This is listed as a known gap, not papered over.
+containment, and notification decision-making. One tabletop exercise has
+been run against it (`compliance/TABLETOP_EXERCISE_2026-07-21.md`, which
+found and fixed two real gaps) — real evidence the process is walkable
+end-to-end, though not the same proof bar as a real incident under real
+pressure. As of this version, the runbook also states an **internal
+operational target** of notifying affected customers within 72 hours of
+confirming a breach involves their data (matching GDPR's 72-hour spirit) —
+but that is an internal operating standard, not yet a term this Processor
+has committed to in writing to a Customer. **Do not execute a DPA that
+requires a specific, contractually binding breach-notification timeframe
+until that process has been proven against a real incident, and the exact
+language has been set by counsel** — this is listed as a known gap, not
+papered over.
 
 ---
 

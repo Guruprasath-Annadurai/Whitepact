@@ -6,7 +6,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, MultiFernet
 
 from responsibleai.db.audit_repository import AuditRepository
 from responsibleai.db.encryption import EncryptedString, _load_fernet
@@ -28,8 +28,29 @@ class TestLoadFernet:
 
     def test_raises_on_malformed_key(self, monkeypatch):
         monkeypatch.setenv("RAI_FIELD_ENCRYPTION_KEY", "not-a-valid-fernet-key")
-        with pytest.raises(ValueError, match="not a valid Fernet key"):
+        with pytest.raises(ValueError, match="invalid Fernet key"):
             _load_fernet()
+
+    def test_multiple_keys_returns_multifernet(self, monkeypatch):
+        keys = f"{Fernet.generate_key().decode()},{Fernet.generate_key().decode()}"
+        monkeypatch.setenv("RAI_FIELD_ENCRYPTION_KEY", keys)
+        fernet = _load_fernet()
+        assert isinstance(fernet, MultiFernet)
+
+    def test_rotation_new_key_first_still_decrypts_old_ciphertext(self, monkeypatch):
+        old_key = Fernet.generate_key().decode()
+        monkeypatch.setenv("RAI_FIELD_ENCRYPTION_KEY", old_key)
+        col = EncryptedString()
+        ciphertext = col.process_bind_param("203.0.113.5", _FAKE_TYPE_PARAMS)
+
+        new_key = Fernet.generate_key().decode()
+        monkeypatch.setenv("RAI_FIELD_ENCRYPTION_KEY", f"{new_key},{old_key}")
+        assert col.process_result_value(ciphertext, _FAKE_TYPE_PARAMS) == "203.0.113.5"
+
+        # New writes after rotation use the new (first) key.
+        new_ciphertext = col.process_bind_param("203.0.113.5", _FAKE_TYPE_PARAMS)
+        monkeypatch.setenv("RAI_FIELD_ENCRYPTION_KEY", new_key)
+        assert col.process_result_value(new_ciphertext, _FAKE_TYPE_PARAMS) == "203.0.113.5"
 
 
 class TestEncryptedStringTypeDecorator:

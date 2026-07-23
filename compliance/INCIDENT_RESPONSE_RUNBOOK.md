@@ -24,7 +24,7 @@ better than "never tested," not as "proven" — a real incident, especially
 one under time pressure with a customer on the phone, is still a
 different and harder test than a controlled drill.
 
-Last reviewed: 2026-07-21 · Platform version: 1.2.0
+Last reviewed: 2026-07-23 · Platform version: 1.2.0
 
 ---
 
@@ -169,13 +169,32 @@ about "how did this happen" delay stopping active harm.
 ## Phase 5 — Notify
 
 **Stated honestly, matching `compliance/DPA_ATTORNEY_SCOPE_BRIEF.md`'s
-disclosed caveat**: there is no committed, attorney-reviewed
-breach-notification SLA yet (e.g., GDPR's 72-hour requirement to a
-supervisory authority). This phase describes the internal *process* for
-deciding whether and how to notify — it does not itself create a legal
-commitment to a specific timeframe. Don't promise a specific hour count to
-a customer or regulator based on this document alone; that commitment
-needs to come from the DPA once attorney-reviewed.
+disclosed caveat**: there is no committed, attorney-reviewed,
+*contractual* breach-notification SLA yet (e.g., GDPR's 72-hour
+requirement to a supervisory authority, as a term in the DPA). This phase
+describes the internal *process* for deciding whether and how to notify —
+it does not itself create a legal commitment to a specific timeframe. Don't
+promise a specific hour count to a customer or regulator as a contractual
+guarantee based on this document alone; that commitment needs to come from
+the DPA once attorney-reviewed.
+
+**Internal operational target (adopted 2026-07-23, distinct from the
+contractual commitment above)**: this project targets notifying affected
+customers **within 72 hours of confirming** that a breach involves their
+data — matching GDPR's 72-hour supervisory-authority notification window in
+spirit, as an internal operating standard for how fast this team moves, not
+yet as a term this project promises in writing to a customer. The
+distinction matters: an internal target can be adopted immediately by a
+solo maintainer deciding how they'll operate; a *contractual* SLA requires
+the process behind it to be proven (by a drill or a real incident) and the
+exact language to be set by counsel, per `compliance/DPA_ATTORNEY_SCOPE_BRIEF.md`.
+One tabletop drill has been run against this runbook
+(`compliance/TABLETOP_EXERCISE_2026-07-21.md`) — real evidence the process
+is at least walkable end-to-end, though a single drill is not the same
+proof bar as a real incident under real pressure. Until that stronger
+proof exists, do not represent the 72-hour figure above as a binding
+promise in a signed DPA — that step is exactly what
+`compliance/DPA_ATTORNEY_SCOPE_BRIEF.md` §7 still gates on counsel.
 
 1. **Determine who must be notified**: affected customers (identified in
    Phase 2's scoping), and — only if legally required and only after
@@ -227,8 +246,10 @@ Within a week of resolution (not "eventually"):
   Consider a second drill periodically (e.g., each time a new phase or
   detection source is added) rather than treating one drill as sufficient
   forever.
-- A specific, committed breach-notification timeframe — that's a DPA/legal
-  question, tracked in `compliance/DPA_ATTORNEY_SCOPE_BRIEF.md`.
+- A specific, *contractually* committed breach-notification timeframe in a
+  signed DPA — an internal 72-hour operational target now exists (Phase 5
+  above), but turning that into a binding contract term is still a
+  DPA/legal question, tracked in `compliance/DPA_ATTORNEY_SCOPE_BRIEF.md`.
 - Multi-person escalation paths — not applicable at current team size;
   revisit the moment a second person joins with any operational access.
 - ~~Automated bridging from detection (Prometheus alerts) to incident

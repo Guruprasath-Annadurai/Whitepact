@@ -76,8 +76,8 @@ cover — a recommendation on which to include is given per category.
 | Encryption at rest | Partial | Whole-database encryption is the deployer's infrastructure choice (documented, not hidden — see `ENTERPRISE_SECURITY.md`). Opt-in application-layer field encryption (`RAI_FIELD_ENCRYPTION_KEY`, `db/encryption.py`) covers four PII/secret columns: `audit_log.ip_address`, `public_incident_reports.reporter_name`/`.reporter_contact`, `webhook_configs.secret`, `org_api_keys.mfa_secret`. **Gap**: not every free-text column (e.g. incident `description`) is covered; key management for `RAI_FIELD_ENCRYPTION_KEY` itself (rotation, storage) is not yet formalized. |
 | Vulnerability management | Partial | `pip-audit` runs on every CI run (zero known vulnerabilities in the mandatory dependency set as of this version — see Domain 15 in the CAIQ assessment for the nltk PYSEC-2026-597 resolution). Automated OWASP ZAP baseline scan exists (`scripts/security-scan.sh`), explicitly documented throughout the repo as **not** a substitute for a third-party penetration test. Internal manual security review documented in `compliance/INTERNAL_SECURITY_REVIEW.md`. **Gap**: no third-party penetration test has been performed (cost-gated, $5-15K; see Section 4). |
 | Change management | Yes | Alembic migrations, version-controlled, auto-applied at startup (fatal-on-failure, not silently degraded). CI gates every merge on the full test suite (1000+ tests), mypy strict-optional, ruff, and `helm lint`. |
-| Incident response | Partial | `compliance/INCIDENT_RESPONSE_RUNBOOK.md` documents the full internal process, aligned with `SLA.md`'s P1–P4 severity scale. One tabletop drill completed and documented (`compliance/TABLETOP_EXERCISE_2026-07-21.md`), which found and fixed two real process gaps. **Gap**: a SOC 2 auditor will want this exercised against a real production incident, not only a tabletop drill — not yet possible without a live hosted instance (Section 1). No formal breach-notification SLA (e.g. GDPR's 72-hour requirement) exists as a standing commitment. |
-| Governance / risk oversight | Not Implemented | No board or executive oversight function exists — accurate for a pre-funding, solo-founder stage, but this is precisely the control SOC 2's Common Criteria (CC1: Control Environment) examines first. An auditor will ask "who oversees the person who built this," and today the honest answer is "no one does yet." This needs a real answer (an advisor, a fractional CISO, a named second person with actual authority) before a credible engagement, not just a written policy. |
+| Incident response | Partial | `compliance/INCIDENT_RESPONSE_RUNBOOK.md` documents the full internal process, aligned with `SLA.md`'s P1–P4 severity scale. One tabletop drill completed and documented (`compliance/TABLETOP_EXERCISE_2026-07-21.md`), which found and fixed two real process gaps. An internal 72-hour breach-notification target now exists (adopted 2026-07-23, Phase 5 of the runbook) — an operational standard, not yet a contractual DPA term. **Gap**: a SOC 2 auditor will want this exercised against a real production incident, not only a tabletop drill — not yet possible without a live hosted instance (Section 1). |
+| Governance / risk oversight | Partial | A formal quarterly risk-review cadence now exists (`GOVERNANCE.md`, adopted 2026-07-23) — real process, not just a policy statement. What it explicitly does not fix, stated in that same document: no board or executive oversight function exists, so the cadence is disciplined self-assessment, not independent oversight. This is precisely the control SOC 2's Common Criteria (CC1: Control Environment) examines first. An auditor will ask "who oversees the person who built this," and today the honest answer is still "no one does yet." This needs a real answer (an advisor, a fractional CISO, a named second person with actual authority) before a credible engagement — a founder decision, not something further documentation can substitute for. |
 | Personnel security | Not Implemented | No formal background-check or security-training program — not applicable at current team size (solo maintainer). Will need building before scaling headcount, and before a SOC 2 auditor will accept "no policy needed" as a permanent answer rather than a stage-appropriate one. |
 
 ### 2.2 Availability
@@ -151,21 +151,36 @@ heavily with GDPR/CCPA obligations already covered by `PRIVACY_POLICY.md`.
 1. **No hosted instance to audit** (Section 1) — the load-bearing blocker.
    Nothing else on this list matters until this exists and has run long
    enough to generate operating evidence.
-2. **No governance/oversight function** (Section 2.1) — a named second
-   person with real authority (advisor, fractional CISO, or eventual
-   co-founder), not just a written policy, is what CC1 actually expects.
-3. **No formal risk register or scheduled risk-review cadence** — risk is
-   currently handled reactively (audit → fix → document), which
-   `NIST_CSF_SELF_ASSESSMENT.md`'s GV.RM row already states plainly.
-4. **No breach-notification SLA** as a standing commitment (e.g. GDPR's
-   72-hour window) — currently a real gap flagged in both the NIST CSF
-   self-assessment (RS.CO) and `TERMS_OF_SERVICE.md`.
+2. **No independent governance/oversight function** (Section 2.1) — a
+   named second person with real authority (advisor, fractional CISO, or
+   eventual co-founder) is what CC1 actually expects, and no process
+   document can substitute for that; this is the one item on this whole
+   list that is purely a founder decision, not an engineering or
+   documentation task.
+3. **No formal risk register** — a scheduled quarterly review cadence now
+   exists (`GOVERNANCE.md`, adopted 2026-07-23), closing part of the GV.RM
+   gap `NIST_CSF_SELF_ASSESSMENT.md` previously flagged, but a running,
+   structured, scored risk register is still a separate, not-yet-built
+   artifact from the cadence that will review it.
+4. **No *contractual* breach-notification SLA** — an internal 72-hour
+   operational target now exists (adopted 2026-07-23,
+   `compliance/INCIDENT_RESPONSE_RUNBOOK.md` Phase 5), but turning that
+   into a binding DPA term still requires the process to be proven against
+   a real incident (not just one tabletop drill) and the language set by
+   counsel — tracked in `compliance/DPA_ATTORNEY_SCOPE_BRIEF.md` §7.
 5. **No third-party penetration test** — cost-gated at $5-15K, tracked
    separately (see `compliance/INTERNAL_SECURITY_REVIEW.md` for what's been
    done in its place in the meantime).
-6. **Key management for `RAI_FIELD_ENCRYPTION_KEY`** is not formalized —
-   rotation policy, storage/custody, and recovery procedure need to be
-   written down and actually followed, not just technically supported.
+6. **Key management for `RAI_FIELD_ENCRYPTION_KEY`** — now formalized as of
+   2026-07-23: `compliance/KEY_MANAGEMENT.md` documents custody guidance and
+   a real rotation procedure, backed by actual mechanism (`MultiFernet`
+   multi-key support in `db/encryption.py` plus
+   `scripts/rotate_field_encryption_key.py` to re-encrypt existing rows).
+   What's still genuinely open: this has never been *exercised* against a
+   real production database with real data at stake — the procedure is
+   documented and the mechanism is tested, but "written down" and "actually
+   followed under real conditions" are different bars, and only the first
+   is met yet.
 7. **Entity structure** — a sole proprietor engagement is unusual for SOC 2;
    confirm with the CPA firm at initial scoping conversation whether this
    changes the engagement letter or requires entity formation first.
