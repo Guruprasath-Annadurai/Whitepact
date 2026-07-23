@@ -32,6 +32,14 @@
     </div>
     <button type="submit" class="btn btn-primary" style="width:100%" id="submit-btn">Continue</button>
   </form>
+  <form id="mfa-form" style="display:none;">
+    <div class="field">
+      <label for="mfa-code">Authenticator code</label>
+      <input id="mfa-code" placeholder="6-digit code or backup code" autocomplete="one-time-code" inputmode="numeric" required />
+      <div class="hint">This organization requires multi-factor authentication. Enter the current code from your authenticator app, or one of your backup codes.</div>
+    </div>
+    <button type="submit" class="btn btn-primary" style="width:100%" id="mfa-submit-btn">Verify</button>
+  </form>
   <div id="result" class="state-box error" style="display:none; padding: 0.75rem 0 0;"></div>
 
   <div class="footer-note">
@@ -73,6 +81,30 @@
     }
   }).catch(function () { /* providers endpoint optional — silently show key form only */ });
 
+  const mfaForm = document.getElementById("mfa-form");
+  const mfaSubmitBtn = document.getElementById("mfa-submit-btn");
+  let pendingKey = "";
+
+  function showError(message) {
+    resultEl.style.display = "block";
+    resultEl.textContent = message;
+  }
+
+  async function attemptLogin(key, mfaCode) {
+    const res = await fetch("/api/auth/login-key", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(mfaCode ? { api_key: key, mfa_code: mfaCode } : { api_key: key }),
+    });
+    let body = null;
+    try { body = await res.json(); } catch (e) { /* no body */ }
+    if (!res.ok) {
+      const message = (body && (body.message || body.detail)) || ("HTTP " + res.status);
+      throw new Error(typeof message === "string" ? message : "Login failed");
+    }
+    return body;
+  }
+
   form.addEventListener("submit", function (e) {
     e.preventDefault();
     const key = document.getElementById("api-key").value.trim();
@@ -81,20 +113,46 @@
     submitBtn.textContent = "Checking…";
     resultEl.style.display = "none";
 
-    fetch("/api/models", { headers: { "Authorization": "Bearer " + key } })
-      .then(function (res) {
-        if (res.status === 401 || res.status === 403) throw new Error("Invalid or revoked API key.");
-        if (!res.ok) throw new Error("HTTP " + res.status);
+    attemptLogin(key)
+      .then(function (body) {
+        if (body && body.mfa_required && !body.ok) {
+          pendingKey = key;
+          form.style.display = "none";
+          mfaForm.style.display = "block";
+          document.getElementById("mfa-code").focus();
+          return;
+        }
         RAI.auth.setToken(key);
         window.location.href = nextUrl;
       })
       .catch(function (err) {
-        resultEl.style.display = "block";
-        resultEl.textContent = String(err.message || err);
+        showError(String(err.message || err));
       })
       .finally(function () {
         submitBtn.disabled = false;
         submitBtn.textContent = "Continue";
+      });
+  });
+
+  mfaForm.addEventListener("submit", function (e) {
+    e.preventDefault();
+    const code = document.getElementById("mfa-code").value.trim();
+    if (!code || !pendingKey) return;
+    mfaSubmitBtn.disabled = true;
+    mfaSubmitBtn.textContent = "Verifying…";
+    resultEl.style.display = "none";
+
+    attemptLogin(pendingKey, code)
+      .then(function () {
+        RAI.auth.setToken(pendingKey);
+        window.location.href = nextUrl;
+      })
+      .catch(function (err) {
+        showError(String(err.message || err));
+      })
+      .finally(function () {
+        mfaSubmitBtn.disabled = false;
+        mfaSubmitBtn.textContent = "Verify";
       });
   });
 })();

@@ -216,3 +216,81 @@ class TestSSOEnforcement:
         ctx = await repo.authenticate(raw_other)
         assert ctx is not None
         assert ctx.org_id == other.id
+
+
+class TestMFA:
+    async def test_org_mfa_required_defaults_false(self, org):
+        assert org.mfa_required is False
+
+    async def test_set_org_mfa_required(self, repo, org):
+        assert await repo.set_org_mfa_required(org.id, True) is True
+        fetched = await repo.get_org(org.id)
+        assert fetched.mfa_required is True
+
+    async def test_set_org_mfa_required_missing_org_returns_false(self, repo):
+        assert await repo.set_org_mfa_required("nonexistent", True) is False
+
+    async def test_new_key_not_mfa_enrolled(self, repo, org):
+        key_rec, _ = await repo.create_key(org.id, "app-key", Role.ANALYST)
+        assert key_rec.mfa_enrolled is False
+
+    async def test_set_mfa_secret_stores_unconfirmed(self, repo, org):
+        key_rec, _ = await repo.create_key(org.id, "app-key", Role.ANALYST)
+        assert await repo.set_mfa_secret(key_rec.id, "JBSWY3DPEHPK3PXP") is True
+        fetched = await repo.get_key(key_rec.id)
+        assert fetched.mfa_secret == "JBSWY3DPEHPK3PXP"
+        assert fetched.mfa_enrolled is False  # not confirmed yet
+
+    async def test_confirm_mfa_marks_enrolled(self, repo, org):
+        key_rec, _ = await repo.create_key(org.id, "app-key", Role.ANALYST)
+        await repo.set_mfa_secret(key_rec.id, "JBSWY3DPEHPK3PXP")
+        assert await repo.confirm_mfa(key_rec.id, ["hash1", "hash2"]) is True
+        fetched = await repo.get_key(key_rec.id)
+        assert fetched.mfa_enrolled is True
+        assert fetched.mfa_backup_codes == ["hash1", "hash2"]
+
+    async def test_disable_mfa_clears_state(self, repo, org):
+        key_rec, _ = await repo.create_key(org.id, "app-key", Role.ANALYST)
+        await repo.set_mfa_secret(key_rec.id, "JBSWY3DPEHPK3PXP")
+        await repo.confirm_mfa(key_rec.id, ["hash1"])
+        assert await repo.disable_mfa(key_rec.id) is True
+        fetched = await repo.get_key(key_rec.id)
+        assert fetched.mfa_enrolled is False
+        assert fetched.mfa_secret is None
+        assert fetched.mfa_backup_codes is None
+
+    async def test_consume_backup_code_updates_remaining(self, repo, org):
+        key_rec, _ = await repo.create_key(org.id, "app-key", Role.ANALYST)
+        await repo.set_mfa_secret(key_rec.id, "JBSWY3DPEHPK3PXP")
+        await repo.confirm_mfa(key_rec.id, ["hash1", "hash2", "hash3"])
+        assert await repo.consume_backup_code(key_rec.id, ["hash1", "hash3"]) is True
+        fetched = await repo.get_key(key_rec.id)
+        assert fetched.mfa_backup_codes == ["hash1", "hash3"]
+
+    async def test_get_key_missing_returns_none(self, repo):
+        assert await repo.get_key("nonexistent") is None
+
+    async def test_authenticate_returns_key_name_and_mfa_enrolled(self, repo, org):
+        key_rec, raw = await repo.create_key(org.id, "jane-dashboard", Role.ANALYST)
+        await repo.set_mfa_secret(key_rec.id, "JBSWY3DPEHPK3PXP")
+        await repo.confirm_mfa(key_rec.id, ["hash1"])
+        ctx = await repo.authenticate(raw)
+        assert ctx is not None
+        assert ctx.key_name == "jane-dashboard"
+        assert ctx.mfa_enrolled is True
+
+    async def test_authenticate_mfa_enrolled_false_by_default(self, repo, org):
+        _, raw = await repo.create_key(org.id, "app-key", Role.ANALYST)
+        ctx = await repo.authenticate(raw)
+        assert ctx is not None
+        assert ctx.mfa_enrolled is False
+
+    async def test_to_dict_never_includes_secret_or_backup_codes(self, repo, org):
+        key_rec, _ = await repo.create_key(org.id, "app-key", Role.ANALYST)
+        await repo.set_mfa_secret(key_rec.id, "JBSWY3DPEHPK3PXP")
+        await repo.confirm_mfa(key_rec.id, ["hash1"])
+        fetched = await repo.get_key(key_rec.id)
+        d = fetched.to_dict()
+        assert "mfa_secret" not in d
+        assert "mfa_backup_codes" not in d
+        assert d["mfa_enrolled"] is True

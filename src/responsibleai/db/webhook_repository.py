@@ -1,4 +1,11 @@
-"""DB-backed webhook delivery log — persists delivery attempts so retries survive restarts."""
+"""DB-backed webhook delivery log and config storage.
+
+Delivery log persistence lets retries survive restarts (WebhookDeliveryRepository,
+original scope of this module). WebhookConfigRepository persists the webhook
+*registrations* themselves — added because WebhookManager previously held
+those only in an in-memory dict, so every registered webhook silently
+vanished on any process restart or redeploy. See migration 0010.
+"""
 
 from __future__ import annotations
 
@@ -6,9 +13,10 @@ import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, insert, select, update
 
-from responsibleai.db.engine import DatabaseEngine, webhook_deliveries
+from responsibleai.db.engine import DatabaseEngine, webhook_configs, webhook_deliveries
+from responsibleai.webhooks.models import WebhookConfig, WebhookEvent, WebhookProvider
 
 
 def _now() -> str:
@@ -91,17 +99,46 @@ class WebhookDeliveryRepository:
             await conn.execute(stmt)
 
     async def pending_retries(self) -> list[dict[str, Any]]:
-        """Return deliveries due for retry (status=retrying, next_retry_at <= now)."""
-        now = _now()
-        stmt = (
-            select(webhook_deliveries)
-            .where(webhook_deliveries.c.status == "retrying")
-            .where(webhook_deliveries.c.next_retry_at <= now)
+        """Atomically claim up to 50 deliveries due for retry.
+
+        Multi-replica note: this is DB-backed specifically so retries survive
+        a restart, which also means every replica's retry worker polls the
+        *same* table. A plain SELECT here would let two replicas both pick
+        up the same row and double-fire the webhook. Claiming via a single
+        UPDATE ... WHERE id IN (SELECT ...) RETURNING statement makes the
+        claim atomic under both SQLite (whole-DB write lock) and Postgres
+        (the subquery's row selection and the UPDATE happen as one
+        statement, so a concurrent claim from another replica either sees
+        the rows already flipped to 'claimed' or hasn't started yet — no
+        window where both read 'retrying' and both act on it).
+
+        Claiming stamps next_retry_at with the claim time (it has no other
+        meaning once status='claimed'), which doubles as this fix's stale-
+        claim detector: also reclaims rows stuck in 'claimed' for over 5
+        minutes — the safety net for a replica that claimed a delivery and
+        then crashed before firing it, which would otherwise orphan that
+        retry forever.
+        """
+        now_dt = datetime.now(UTC)
+        now = now_dt.isoformat()
+        stale_claim_cutoff = (now_dt - timedelta(minutes=5)).isoformat()
+        candidate_ids = (
+            select(webhook_deliveries.c.id)
+            .where(
+                ((webhook_deliveries.c.status == "retrying") & (webhook_deliveries.c.next_retry_at <= now))
+                | ((webhook_deliveries.c.status == "claimed") & (webhook_deliveries.c.next_retry_at <= stale_claim_cutoff))
+            )
             .order_by(webhook_deliveries.c.next_retry_at)
             .limit(50)
         )
-        async with self._engine.raw.connect() as conn:
-            rows = (await conn.execute(stmt)).fetchall()
+        claim_stmt = (
+            update(webhook_deliveries)
+            .where(webhook_deliveries.c.id.in_(candidate_ids))
+            .values(status="claimed", next_retry_at=now)
+            .returning(webhook_deliveries)
+        )
+        async with self._engine.raw.begin() as conn:
+            rows = (await conn.execute(claim_stmt)).fetchall()
         return [self._row_to_dict(r) for r in rows]
 
     async def list(self, limit: int = 100) -> list[dict[str, Any]]:
@@ -145,3 +182,61 @@ class WebhookDeliveryRepository:
             "next_retry_at": row.next_retry_at,
             "delivered_at":  row.delivered_at,
         }
+
+
+class WebhookConfigRepository:
+    """Persist webhook registrations so they survive process restarts."""
+
+    def __init__(self, engine: DatabaseEngine) -> None:
+        self._engine = engine
+
+    async def create(self, config: WebhookConfig) -> None:
+        config.created_at = config.created_at or _now()
+        async with self._engine.raw.begin() as conn:
+            await conn.execute(
+                insert(webhook_configs).values(
+                    id=config.id,
+                    org_id=config.org_id,
+                    url=config.url,
+                    provider=config.provider.value,
+                    events=json.dumps([e.value for e in config.events]),
+                    secret=config.secret or None,
+                    description=config.description or None,
+                    enabled=1 if config.enabled else 0,
+                    max_retries=config.max_retries,
+                    created_at=config.created_at,
+                )
+            )
+
+    async def delete(self, webhook_id: str, org_id: str | None = None) -> bool:
+        """Delete a webhook config. If org_id is given, only deletes a config
+        owned by that org — callers use this to enforce tenant isolation."""
+        stmt = delete(webhook_configs).where(webhook_configs.c.id == webhook_id)
+        if org_id is not None:
+            stmt = stmt.where(webhook_configs.c.org_id == org_id)
+        async with self._engine.raw.begin() as conn:
+            result = await conn.execute(stmt)
+        return result.rowcount > 0
+
+    async def list_all(self) -> list[WebhookConfig]:
+        """Load every persisted config — called once at startup to
+        repopulate WebhookManager's in-memory registry."""
+        async with self._engine.raw.connect() as conn:
+            rows = (await conn.execute(select(webhook_configs))).fetchall()
+        return [self._row_to_config(r) for r in rows]
+
+    @staticmethod
+    def _row_to_config(row: Any) -> WebhookConfig:
+        events = [WebhookEvent(e) for e in json.loads(row.events)]
+        return WebhookConfig(
+            id=row.id,
+            org_id=row.org_id,
+            url=row.url,
+            provider=WebhookProvider(row.provider),
+            events=events,
+            secret=row.secret or "",
+            description=row.description or "",
+            enabled=bool(row.enabled),
+            max_retries=row.max_retries,
+            created_at=row.created_at,
+        )

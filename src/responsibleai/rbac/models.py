@@ -34,6 +34,7 @@ class Organization:
     stripe_subscription_id: str | None = None
     plan_renews_at: str | None = None
     sso_required: bool = False
+    mfa_required: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -46,6 +47,7 @@ class Organization:
             "stripe_customer_id": self.stripe_customer_id,
             "plan_renews_at": self.plan_renews_at,
             "sso_required": self.sso_required,
+            "mfa_required": self.mfa_required,
         }
 
 
@@ -58,6 +60,12 @@ class OrgApiKey:
     created_at: str = ""
     last_used_at: str | None = None
     revoked: bool = False
+    mfa_enrolled: bool = False
+    # Carried in-process between repo <-> app layer for enroll/verify only —
+    # deliberately excluded from to_dict() so it's never serialized to a
+    # response body, same discipline as the raw API key itself.
+    mfa_secret: str | None = field(default=None, repr=False)
+    mfa_backup_codes: list[str] | None = field(default=None, repr=False)
 
     def to_dict(self, include_key: str | None = None) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -68,6 +76,7 @@ class OrgApiKey:
             "created_at": self.created_at,
             "last_used_at": self.last_used_at,
             "revoked": self.revoked,
+            "mfa_enrolled": self.mfa_enrolled,
         }
         if include_key is not None:
             d["key"] = include_key  # Only set on key creation; never stored
@@ -81,6 +90,8 @@ class OrgContext:
     role: Role
     org_id: str | None = None
     org_name: str | None = None
+    key_name: str | None = None
+    mfa_enrolled: bool = False
     is_legacy: bool = False  # True for flat RAI_API_KEYS entries
     plan: Plan = Plan.ENTERPRISE  # legacy/anon keys default to unrestricted for backward compat
 

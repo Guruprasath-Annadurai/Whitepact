@@ -202,7 +202,7 @@ Verify it applied cleanly:
 
 ```bash
 docker compose -f docker-compose.prod.yml exec dashboard alembic current
-# should print: 0004 (head)
+# should print: 0010 (head)
 ```
 
 ---
@@ -267,10 +267,58 @@ This step needs your account, not a command:
 
 ---
 
+## 13b. Multi-region / high availability — what's actually true here
+
+Stated plainly, not aspirationally:
+
+- **This runbook stands up one instance in one region.** There is no
+  multi-region active-active topology in this repo, and no code here can
+  substitute for one — that's infrastructure the deployer builds (a global
+  load balancer routing to independent regional stacks, each with its own
+  Postgres and Redis, plus a data-replication strategy across regions).
+  Nothing above provisions that.
+- **What this version *does* give you toward within-region HA:**
+  - `DatabaseEngine.init()` retries transient Postgres connection failures
+    with backoff (see `db/engine.py`) — it tolerates a managed database's
+    failover window, it doesn't perform the failover itself.
+  - Webhook delivery retries and webhook *registrations* are both DB-backed
+    (`webhook_deliveries`, `webhook_configs` — migration 0010), so either
+    survives a container restart or a second replica picking up where the
+    first left off.
+  - The webhook retry worker claims pending retries atomically
+    (`WebhookDeliveryRepository.pending_retries()`), so running more than
+    one replica doesn't double-fire the same webhook delivery.
+  - The dashboard itself is stateless (no server-side session — the
+    browser holds its own bearer token), so the app tier can run as
+    multiple replicas behind a load balancer *once* its dependencies are
+    shared, not per-replica (see next point).
+- **Set `RAI_MULTI_REPLICA=true` if you run more than one instance.** This
+  doesn't change behavior by itself — it's a self-declaration that makes
+  startup check whether your configuration can actually support that
+  honestly, and log a `multi_replica_misconfigured` warning if not:
+  - SQLite (the default) is a single file. Two replicas both writing to it
+    isn't "slower," it's a correctness problem. Set `RAI_DATABASE_URL` to a
+    shared Postgres instance before running more than one replica.
+  - In-memory rate limiting is per-process. Two replicas each enforce their
+    *own* counter, so a "100/minute" limit silently becomes "up to 100 ×
+    replica-count per minute" in aggregate — no error, just a limit that
+    doesn't do what its number says. Set `RAI_REDIS_URL` before running
+    more than one replica.
+- **Practical near-term HA path or once actual multi-instance traffic
+  justifies it:** one region, N app-tier replicas behind a load balancer,
+  a managed Postgres with automatic failover (e.g. RDS Multi-AZ, Cloud SQL
+  HA, or a self-managed Patroni cluster), and a managed or clustered Redis.
+  That's a meaningfully different (and higher-cost) deployment than the
+  single-VPS `docker-compose.prod.yml` this runbook automates — treat it as
+  the next infrastructure milestone, not something achievable by flipping
+  a flag.
+
+---
+
 ## 14. Post-deploy checklist
 
 - [ ] `docker compose ps` shows all 4 services healthy
-- [ ] `alembic current` shows `0004 (head)`
+- [ ] `alembic current` shows `0010 (head)`
 - [ ] `/api/health`, `/api/support/status`, `/status` all reachable over HTTPS
 - [ ] TLS cert valid (`curl -vI https://api.yourcompany.com 2>&1 | grep -i expire`)
 - [ ] Bootstrap `RAI_API_KEYS` removed after first org+key created

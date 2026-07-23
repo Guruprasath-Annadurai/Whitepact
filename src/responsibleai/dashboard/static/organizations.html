@@ -43,13 +43,24 @@
             </table>
           </div>
         </div>
+        <div class="card" id="security-card" style="display:none;">
+          <h2 style="margin-top:0;font-size:1.05rem;">Security — <span id="security-org-name"></span></h2>
+          <label class="flex items-center gap-2" style="font-weight:500;margin-bottom:0.6rem;">
+            <input type="checkbox" id="sso-required-toggle" style="width:auto;" />
+            Require SSO login (disables static API keys for this org)
+          </label>
+          <label class="flex items-center gap-2" style="font-weight:500;">
+            <input type="checkbox" id="mfa-required-toggle" style="width:auto;" />
+            Require MFA at login (keys must enroll TOTP before they can log in)
+          </label>
+        </div>
         <div class="card" id="keys-card" style="display:none;">
           <div class="flex items-center gap-3" style="margin-bottom:1rem;">
             <h2 style="margin:0;font-size:1.05rem;flex:1;">API Keys — <span id="keys-org-name"></span></h2>
           </div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Name</th><th>Role</th><th>Created</th><th>Status</th></tr></thead>
+              <thead><tr><th>Name</th><th>Role</th><th>Created</th><th>MFA</th><th>Status</th></tr></thead>
               <tbody id="key-tbody"></tbody>
             </table>
           </div>
@@ -132,20 +143,26 @@
     document.getElementById("keys-org-name").textContent = orgName;
     document.getElementById("new-key-box").innerHTML = "";
     await loadKeys(orgId);
+
+    const org = orgs.find(function (o) { return o.id === orgId; });
+    document.getElementById("security-card").style.display = "block";
+    document.getElementById("security-org-name").textContent = orgName;
+    document.getElementById("sso-required-toggle").checked = !!(org && org.sso_required);
+    document.getElementById("mfa-required-toggle").checked = !!(org && org.mfa_required);
   }
 
   async function loadKeys(orgId) {
     const tbody = document.getElementById("key-tbody");
-    tbody.innerHTML = '<tr><td colspan="4" class="state-box"><span class="spinner"></span></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="state-box"><span class="spinner"></span></td></tr>';
     try {
       const d = await RAI.fetchJSON("/api/orgs/" + encodeURIComponent(orgId) + "/keys");
       const keys = d.keys || [];
       tbody.innerHTML = keys.length ? keys.map(function (k) {
         return "<tr><td>" + escHtml(k.name) + "</td><td>" + escHtml(k.role) + "</td><td>" + new Date(k.created_at).toLocaleDateString() +
-          "</td><td><span class=\"pill " + (k.revoked ? "pill-critical" : "pill-success") + "\">" + (k.revoked ? "Revoked" : "Active") + "</span></td></tr>";
-      }).join("") : '<tr><td colspan="4" class="state-box">No keys yet.</td></tr>';
+          "</td><td><span class=\"pill " + (k.mfa_enrolled ? "pill-success" : "pill-outline") + "\">" + (k.mfa_enrolled ? "Enrolled" : "—") + "</span></td><td><span class=\"pill " + (k.revoked ? "pill-critical" : "pill-success") + "\">" + (k.revoked ? "Revoked" : "Active") + "</span></td></tr>";
+      }).join("") : '<tr><td colspan="5" class="state-box">No keys yet.</td></tr>';
     } catch (e) {
-      tbody.innerHTML = '<tr><td colspan="4" class="state-box error">' + escHtml(e.message) + "</td></tr>";
+      tbody.innerHTML = '<tr><td colspan="5" class="state-box error">' + escHtml(e.message) + "</td></tr>";
     }
   }
 
@@ -186,6 +203,34 @@
       RAI.toast("Could not create key: " + err.message, "error");
     } finally {
       submitBtn.disabled = false;
+    }
+  });
+
+  document.getElementById("sso-required-toggle").addEventListener("change", async function (e) {
+    if (!selectedOrgId) return;
+    const checked = e.target.checked;
+    try {
+      await RAI.fetchJSON("/api/orgs/" + encodeURIComponent(selectedOrgId) + "/sso", {
+        method: "PUT", body: JSON.stringify({ sso_required: checked }),
+      });
+      RAI.toast(checked ? "SSO now required for this org." : "SSO requirement removed.", "success");
+    } catch (err) {
+      e.target.checked = !checked;
+      RAI.toast("Could not update SSO setting: " + err.message, "error");
+    }
+  });
+
+  document.getElementById("mfa-required-toggle").addEventListener("change", async function (e) {
+    if (!selectedOrgId) return;
+    const checked = e.target.checked;
+    try {
+      await RAI.fetchJSON("/api/orgs/" + encodeURIComponent(selectedOrgId) + "/mfa", {
+        method: "PUT", body: JSON.stringify({ mfa_required: checked }),
+      });
+      RAI.toast(checked ? "MFA now required for this org's keys." : "MFA requirement removed.", "success");
+    } catch (err) {
+      e.target.checked = !checked;
+      RAI.toast("Could not update MFA setting: " + err.message, "error");
     }
   });
 

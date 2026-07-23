@@ -39,7 +39,6 @@ dependencies = [
     "click>=8.1.0",
     "python-dotenv>=1.0.0",
     "anyio>=4.0.0",
-    "nltk>=3.8.0",
     "mcp>=1.0.0",
     "alembic>=1.13.0",
 ]
@@ -58,6 +57,7 @@ dashboard = [
     "prometheus-client>=0.20.0",
     "httpx>=0.27.0",
     "cryptography>=42.0.0",
+    "pyotp>=2.9.0",
 ]
 postgres   = ["asyncpg>=0.29.0"]
 redis      = ["limits[redis]>=3.6.0"]
@@ -78,6 +78,15 @@ deepfake   = ["torch>=2.0.0", "torchvision>=0.15.0", "pillow>=10.0.0", "opencv-p
 all        = ["rai-governance-platform[dashboard,postgres,redis,telemetry,openai,anthropic,google,huggingface,deepfake,sso]"]
 mcp        = ["mcp>=1.0.0"]
 billing    = ["stripe>=9.0.0"]
+# Optional VADER sentiment-divergence scoring (src/biasbuster/core/scoring.py).
+# Not installed by default: nltk has an open path-traversal advisory
+# (PYSEC-2026-597 / CVE-2026-12243) with no fixed release as of this writing.
+# Our only call site passes the hardcoded literal "vader_lexicon" to
+# nltk.download() — never an attacker-controlled resource name — so this
+# codebase does not trigger the vulnerable path. Still opt-in only, so a
+# default install never carries the finding; installing this extra takes on
+# that (mitigated-here, unpatched-upstream) risk knowingly.
+sentiment  = ["nltk>=3.9.4"]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
@@ -104,6 +113,7 @@ dev = [
     "opentelemetry-instrumentation-fastapi>=0.45b0",
     "opentelemetry-instrumentation-httpx>=0.45b0",
     "mcp>=1.0.0",
+    "pyotp>=2.9.0",
 ]
 
 [project.scripts]

@@ -31,7 +31,10 @@ from responsibleai.webhooks.models import (
 )
 
 if TYPE_CHECKING:
-    from responsibleai.db.webhook_repository import WebhookDeliveryRepository
+    from responsibleai.db.webhook_repository import (
+        WebhookConfigRepository,
+        WebhookDeliveryRepository,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -47,12 +50,27 @@ class WebhookManager:
         self._configs: dict[str, WebhookConfig] = {}
         self._delivery_log: deque[WebhookDelivery] = deque(maxlen=_MAX_DELIVERY_LOG)
         self._repo: WebhookDeliveryRepository | None = None
+        self._config_repo: WebhookConfigRepository | None = None
         self._retry_task: asyncio.Task[None] | None = None
         self._stop_event: asyncio.Event = asyncio.Event()
 
     def set_repository(self, repo: WebhookDeliveryRepository) -> None:
         """Wire up the DB repository for persistent delivery log and retry queue."""
         self._repo = repo
+
+    def set_config_repository(self, repo: WebhookConfigRepository) -> None:
+        """Wire up the DB repository for persistent webhook registrations."""
+        self._config_repo = repo
+
+    async def load_configs(self) -> int:
+        """Repopulate the in-memory registry from the DB. Call once at
+        startup, after set_config_repository(). Returns the count loaded."""
+        if self._config_repo is None:
+            return 0
+        configs = await self._config_repo.list_all()
+        for cfg in configs:
+            self._configs[cfg.id] = cfg
+        return len(configs)
 
     def start_retry_worker(self) -> None:
         """Launch background retry worker (call after lifespan startup + repo attached)."""
@@ -70,17 +88,43 @@ class WebhookManager:
     # ── Registration ──────────────────────────────────────────────────────────
 
     def register(self, config: WebhookConfig) -> WebhookConfig:
+        """In-memory only. Use register_and_persist() from request handlers
+        so a registered webhook survives a restart."""
         self._configs[config.id] = config
         return config
 
     def remove(self, webhook_id: str) -> bool:
+        """In-memory only. Use remove_and_persist() from request handlers."""
         return self._configs.pop(webhook_id, None) is not None
+
+    async def register_and_persist(self, config: WebhookConfig) -> WebhookConfig:
+        self.register(config)
+        if self._config_repo is not None:
+            await self._config_repo.create(config)
+        return config
+
+    async def remove_and_persist(self, webhook_id: str, org_id: str | None = None) -> bool:
+        """Remove a webhook. If org_id is given, only removes a config owned
+        by that org (returns False otherwise) — enforces tenant isolation."""
+        cfg = self._configs.get(webhook_id)
+        if cfg is None:
+            return False
+        if org_id is not None and cfg.org_id != org_id:
+            return False
+        removed_locally = self.remove(webhook_id)
+        if self._config_repo is not None:
+            await self._config_repo.delete(webhook_id, org_id=org_id)
+        return removed_locally
 
     def get(self, webhook_id: str) -> WebhookConfig | None:
         return self._configs.get(webhook_id)
 
-    def list_webhooks(self) -> list[WebhookConfig]:
-        return list(self._configs.values())
+    def list_webhooks(self, org_id: str | None = None) -> list[WebhookConfig]:
+        """List registered webhooks. Pass org_id to scope to one tenant —
+        omit only for legacy/super-admin cross-org visibility."""
+        if org_id is None:
+            return list(self._configs.values())
+        return [c for c in self._configs.values() if c.org_id == org_id]
 
     def update(self, webhook_id: str, **kwargs: Any) -> WebhookConfig | None:
         cfg = self._configs.get(webhook_id)

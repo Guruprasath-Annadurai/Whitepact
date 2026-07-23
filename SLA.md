@@ -185,6 +185,17 @@ for the honest capacity tradeoff. Workable for early-stage/low-traffic use;
 treat "Recommended" as the bar to grow into with paid capacity, not a
 claim about the free-tier reference setup.
 
+**Running more than one replica:** set `RAI_MULTI_REPLICA=true`. This is a
+self-declaration, not a feature flag — it makes startup verify the
+database and rate-limit backends can actually be shared across replicas
+(Postgres + Redis) and log a loud warning if not, instead of silently
+running with per-replica state that makes rate limits and (for SQLite)
+data integrity wrong in ways that don't show up until real multi-replica
+traffic hits. See `DEPLOY_RUNBOOK.md` §13b for what this platform does and
+does not provide toward multi-region/HA — no multi-region active-active
+topology exists in this repo; that remains infrastructure the deployer
+builds.
+
 ---
 
 ## Versioning & backward compatibility

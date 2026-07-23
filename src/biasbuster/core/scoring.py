@@ -137,7 +137,13 @@ def bootstrap_confidence_interval(
 
 
 def _get_vader():  # type: ignore[return]
-    """Return a VADER SentimentIntensityAnalyzer, downloading lexicon if needed."""
+    """Return a VADER SentimentIntensityAnalyzer, downloading lexicon if needed.
+
+    nltk is an opt-in extra (`pip install rai-governance-platform[sentiment]`),
+    not a default dependency — see pyproject.toml for why (PYSEC-2026-597).
+    Returns None if it isn't installed; callers already treat that as "no
+    sentiment signal available" rather than an error.
+    """
     try:
         from nltk.sentiment.vader import SentimentIntensityAnalyzer
 

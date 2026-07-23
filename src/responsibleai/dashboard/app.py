@@ -23,13 +23,14 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from responsibleai.auth import mfa
 from responsibleai.auth.oidc import OIDCProvider
 from responsibleai.billing import StripeBillingError, StripeNotConfigured, StripeService
 from responsibleai.compliance.engine import ComplianceEngine
 from responsibleai.cost.analyzer import CostAnalyzer
 from responsibleai.cost.models import BudgetPolicy, TokenUsage
 from responsibleai.cost.router import ModelRouter
-from responsibleai.dashboard.config import get_settings
+from responsibleai.dashboard.config import get_settings, multi_replica_problems
 from responsibleai.dashboard.logging_config import configure_logging, get_logger
 from responsibleai.dashboard.middleware import (
     RequestIDMiddleware,
@@ -67,6 +68,7 @@ from responsibleai.db import (
     PublicIncidentRepository,
     SSORequiredError,
     TrustRepository,
+    WebhookConfigRepository,
     WebhookDeliveryRepository,
     create_engine,
 )
@@ -279,6 +281,12 @@ async def lifespan(application: FastAPI):
     # Attach DB-backed delivery log + start persistent retry worker
     _webhook_delivery_repo = WebhookDeliveryRepository(_db_engine)
     _webhook_manager.set_repository(_webhook_delivery_repo)
+    # Attach DB-backed config storage and reload any previously registered
+    # webhooks — without this they only ever lived in memory and vanished
+    # on every restart (see db/webhook_repository.py:WebhookConfigRepository).
+    _webhook_config_repo = WebhookConfigRepository(_db_engine)
+    _webhook_manager.set_config_repository(_webhook_config_repo)
+    loaded_webhooks = await _webhook_manager.load_configs()
     _webhook_manager.start_retry_worker()
     _oidc_cleanup_task = asyncio.create_task(_oidc_state_cleanup())
 
@@ -294,7 +302,22 @@ async def lifespan(application: FastAPI):
         rate_limit_backend=rl_backend,
         otel=bool(settings.otel_endpoint),
         auth=auth_status,
+        webhooks_loaded=loaded_webhooks,
     )
+
+    if settings.multi_replica:
+        problems = multi_replica_problems(db_backend, rl_backend)
+        if problems:
+            logger.warning(
+                "multi_replica_misconfigured",
+                replica_declared=True,
+                problems=problems,
+                guidance=(
+                    "RAI_MULTI_REPLICA=true was set but this instance's "
+                    "backends can't safely be shared across replicas. See "
+                    "DEPLOY_RUNBOOK.md's multi-region/HA section."
+                ),
+            )
 
     yield
 
@@ -698,6 +721,19 @@ class SetSSORequest(BaseModel):
     sso_required: bool
 
 
+class SetMFARequest(BaseModel):
+    mfa_required: bool
+
+
+class MFAVerifyRequest(BaseModel):
+    code: str = Field(..., min_length=6, max_length=10)
+
+
+class LoginKeyRequest(BaseModel):
+    api_key: str = Field(..., min_length=1, max_length=512)
+    mfa_code: str | None = Field(None, max_length=10)
+
+
 class CheckoutRequest(BaseModel):
     plan: str = Field(..., pattern="^(PRO|ENTERPRISE)$")
     org_email: str | None = Field(None, max_length=254)
@@ -965,6 +1001,25 @@ async def set_org_sso(
     return {"org_id": org_id, "sso_required": req.sso_required}
 
 
+@app.put("/api/orgs/{org_id}/mfa", tags=["rbac"])
+@limiter.limit("10/minute")
+async def set_org_mfa(
+    request: Request,
+    org_id: str,
+    req: SetMFARequest,
+    _auth: OrgContext = Depends(require_role(Role.OWNER)),
+) -> dict[str, Any]:
+    """Require every API key under this org to complete TOTP MFA at
+    /login. Keys that haven't enrolled yet are blocked from logging in
+    (not from making API calls directly — see auth/mfa.py for why) until
+    they enroll via POST /api/orgs/{org_id}/keys/{key_id}/mfa/enroll."""
+    org = await _ready(_org_repo).get_org(org_id)
+    if not org:
+        raise HTTPException(404, "Organization not found")
+    await _ready(_org_repo).set_org_mfa_required(org_id, req.mfa_required)
+    return {"org_id": org_id, "mfa_required": req.mfa_required}
+
+
 @app.post("/api/orgs/{org_id}/keys", tags=["rbac"], status_code=201)
 @limiter.limit("20/minute")
 async def create_api_key(
@@ -1004,6 +1059,76 @@ async def revoke_api_key(
     if not revoked:
         raise HTTPException(404, "Key not found")
     return {"revoked": key_id}
+
+
+@app.post("/api/orgs/{org_id}/keys/{key_id}/mfa/enroll", tags=["rbac"])
+@limiter.limit("10/minute")
+async def enroll_mfa(
+    request: Request,
+    org_id: str,
+    key_id: str,
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, Any]:
+    """Step 1 of 2: generate a TOTP secret and return it for the user to
+    add to their authenticator app. Not yet active — call .../mfa/verify
+    with a real code from that app to confirm enrollment. Calling this
+    again before verifying replaces the pending (unconfirmed) secret."""
+    key = await _ready(_org_repo).get_key(key_id)
+    if key is None or key.org_id != org_id:
+        raise HTTPException(404, "Key not found")
+    secret = mfa.generate_secret()
+    await _ready(_org_repo).set_mfa_secret(key_id, secret)
+    return {
+        "secret": secret,
+        "provisioning_uri": mfa.provisioning_uri(secret, account_name=key.name),
+        "message": "Scan or enter this into your authenticator app, then POST the "
+                   "6-digit code to .../mfa/verify to activate MFA on this key.",
+    }
+
+
+@app.post("/api/orgs/{org_id}/keys/{key_id}/mfa/verify", tags=["rbac"])
+@limiter.limit("10/minute")
+async def verify_mfa(
+    request: Request,
+    org_id: str,
+    key_id: str,
+    req: MFAVerifyRequest,
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, Any]:
+    """Step 2 of 2: confirm enrollment with a real code from the
+    authenticator app. Returns 10 one-time backup codes — shown exactly
+    once, store them now. Each is consumed on use if the authenticator
+    device is ever lost."""
+    key = await _ready(_org_repo).get_key(key_id)
+    if key is None or key.org_id != org_id:
+        raise HTTPException(404, "Key not found")
+    if not key.mfa_secret:
+        raise HTTPException(400, "No pending MFA enrollment — call .../mfa/enroll first")
+    if not mfa.verify_code(key.mfa_secret, req.code):
+        raise HTTPException(400, "Invalid code")
+    backup_codes = mfa.generate_backup_codes()
+    hashed = [mfa.hash_backup_code(c) for c in backup_codes]
+    await _ready(_org_repo).confirm_mfa(key_id, hashed)
+    return {
+        "enrolled": True,
+        "backup_codes": backup_codes,
+        "message": "Store these backup codes now — they will not be shown again.",
+    }
+
+
+@app.delete("/api/orgs/{org_id}/keys/{key_id}/mfa", tags=["rbac"])
+@limiter.limit("10/minute")
+async def disable_mfa(
+    request: Request,
+    org_id: str,
+    key_id: str,
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, Any]:
+    key = await _ready(_org_repo).get_key(key_id)
+    if key is None or key.org_id != org_id:
+        raise HTTPException(404, "Key not found")
+    await _ready(_org_repo).disable_mfa(key_id)
+    return {"org_id": org_id, "key_id": key_id, "mfa_enrolled": False}
 
 
 # ── Billing (Stripe) ───────────────────────────────────────────────────────────
@@ -1926,11 +2051,12 @@ async def create_webhook(
         raise HTTPException(400, f"Invalid event type: {exc}") from exc
     config = WebhookConfig(
         url=req.url, events=events,
+        org_id=_auth.org_id,
         provider=WebhookProvider(req.provider),
         secret=req.secret, description=req.description,
         max_retries=req.max_retries,
     )
-    _webhook_manager.register(config)
+    await _webhook_manager.register_and_persist(config)
     return config.to_dict()
 
 
@@ -1940,7 +2066,16 @@ async def list_webhooks(
     request: Request,
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
 ) -> dict[str, Any]:
-    return {"webhooks": [c.to_dict() for c in _webhook_manager.list_webhooks()]}
+    # Org-specific keys: force scope to their org. Legacy super-admin keys
+    # (is_legacy=True, role=OWNER): see everything, same as /api/audit.
+    scoped_org_id: str | None
+    if _auth.org_id is not None:
+        scoped_org_id = _auth.org_id
+    elif _auth.is_legacy and _auth.role == Role.OWNER:
+        scoped_org_id = None
+    else:
+        scoped_org_id = _auth.org_id
+    return {"webhooks": [c.to_dict() for c in _webhook_manager.list_webhooks(org_id=scoped_org_id)]}
 
 
 @app.delete("/api/webhooks/{webhook_id}", tags=["webhooks"])
@@ -1950,7 +2085,8 @@ async def delete_webhook(
     webhook_id: str,
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, Any]:
-    if not _webhook_manager.remove(webhook_id):
+    scoped_org_id = _auth.org_id if not (_auth.is_legacy and _auth.role == Role.OWNER) else None
+    if not await _webhook_manager.remove_and_persist(webhook_id, org_id=scoped_org_id):
         raise HTTPException(404, "Webhook not found")
     return {"deleted": webhook_id}
 
@@ -1977,7 +2113,8 @@ async def test_webhook(
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, Any]:
     cfg = _webhook_manager.get(webhook_id)
-    if cfg is None:
+    is_super_admin = _auth.is_legacy and _auth.role == Role.OWNER
+    if cfg is None or (not is_super_admin and cfg.org_id != _auth.org_id):
         raise HTTPException(404, "Webhook not found")
     deliveries = await _webhook_manager.fire(
         WebhookEvent.TRUST_SCORE_CHANGED,
@@ -2362,6 +2499,82 @@ async def auth_logout(
 ) -> dict[str, Any]:
     """Invalidate the current session (client should discard its token)."""
     return {"logged_out": True, "timestamp": datetime.now(UTC).isoformat()}
+
+
+@app.post("/api/auth/login-key", tags=["auth"])
+@limiter.limit("10/minute")
+async def login_with_key(request: Request, req: LoginKeyRequest) -> dict[str, Any]:
+    """Human-facing login step for the dashboard's /login page.
+
+    Distinct from every other endpoint's Bearer-header auth: this is the
+    one interactive login step, so it's where TOTP MFA gets enforced (see
+    auth/mfa.py's module docstring for why it can't be enforced on
+    ordinary API calls). Flow:
+      1. POST {api_key} — if the key's org requires MFA and the key isn't
+         enrolled yet, returns 403 telling the caller to enroll first.
+         If enrolled, returns {mfa_required: true} without a code.
+      2. POST {api_key, mfa_code} — verifies the code (or a backup code)
+         and returns {ok: true}. The frontend then treats the api_key
+         itself as the session token, same as before this endpoint existed.
+    """
+    if not settings.auth_enabled:
+        return {"ok": True, "mfa_required": False}
+    if settings.api_keys and req.api_key in settings.api_keys:
+        return {"ok": True, "mfa_required": False}
+
+    try:
+        ctx = await _ready(_org_repo).authenticate(req.api_key)
+    except SSORequiredError:
+        raise HTTPException(
+            403, "This organization requires SSO login — use the SSO button instead."
+        ) from None
+    if ctx is None:
+        raise HTTPException(401, "Invalid or revoked API key")
+
+    org = await _ready(_org_repo).get_org(ctx.org_id) if ctx.org_id else None
+    if org is not None and org.mfa_required:
+        if not ctx.mfa_enrolled:
+            raise HTTPException(
+                403,
+                "This organization requires MFA and this key hasn't enrolled yet. "
+                f"An admin must call POST /api/orgs/{org.id}/keys/{ctx.key_id}/mfa/enroll first.",
+            )
+        if not req.mfa_code:
+            return {"ok": False, "mfa_required": True}
+
+        key = await _ready(_org_repo).get_key(ctx.key_id)
+        if key is None or not key.mfa_secret:
+            raise HTTPException(401, "MFA state is inconsistent for this key — contact an admin")
+
+        if mfa.verify_code(key.mfa_secret, req.mfa_code):
+            return {"ok": True, "mfa_required": True}
+
+        remaining = mfa.verify_and_consume_backup_code(
+            key.mfa_backup_codes or [], req.mfa_code
+        )
+        if remaining is not None:
+            await _ready(_org_repo).consume_backup_code(ctx.key_id, remaining)
+            return {"ok": True, "mfa_required": True, "backup_code_used": True}
+
+        raise HTTPException(401, "Invalid MFA code")
+
+    return {"ok": True, "mfa_required": False}
+
+
+@app.get("/api/auth/session", tags=["auth"])
+async def auth_session(_auth: OrgContext = Depends(get_org_context)) -> dict[str, Any]:
+    """Current auth context — used by the Settings page for self-service
+    MFA enrollment (needs its own key_id/mfa_enrolled without a separate
+    list-keys call, which would require ADMIN and this doesn't)."""
+    return {
+        "key_id": _auth.key_id,
+        "key_name": _auth.key_name,
+        "org_id": _auth.org_id,
+        "org_name": _auth.org_name,
+        "role": _auth.role.value,
+        "is_legacy": _auth.is_legacy,
+        "mfa_enrolled": _auth.mfa_enrolled,
+    }
 
 
 # ── Support tier ───────────────────────────────────────────────────────────────

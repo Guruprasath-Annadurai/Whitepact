@@ -88,6 +88,7 @@ organizations = Table(
     Column("stripe_subscription_id",  String(64),  nullable=True),
     Column("plan_renews_at",          String(32),  nullable=True),
     Column("sso_required",            Integer,     nullable=False, default=0),
+    Column("mfa_required",            Integer,     nullable=False, default=0),
     Index("idx_org_slug", "slug"),
     Index("idx_org_stripe_customer", "stripe_customer_id"),
 )
@@ -116,6 +117,14 @@ org_api_keys = Table(
     Column("created_at",   String(32),  nullable=False),
     Column("last_used_at", String(32),  nullable=True),
     Column("revoked",      Integer,     nullable=False, default=0),
+    # TOTP MFA (RFC 6238) — see auth/mfa.py. mfa_secret is opt-in encrypted
+    # (EncryptedString, see db/encryption.py); mfa_backup_codes is a JSON list
+    # of SHA-256 hashes, each single-use. enrolled=0 until the first
+    # verify() call succeeds, so a secret that was issued but never
+    # confirmed can't silently gate login.
+    Column("mfa_secret",       EncryptedString(), nullable=True),
+    Column("mfa_enrolled",     Integer,     nullable=False, default=0),
+    Column("mfa_backup_codes", Text,        nullable=True),
     Index("idx_oak_org",  "org_id"),
     Index("idx_oak_hash", "key_hash"),
 )
@@ -174,6 +183,23 @@ eval_baselines = Table(
     Index("idx_eb_model",  "model"),
     Index("idx_eb_suite",  "suite"),
     Index("idx_eb_org",    "org_id"),
+)
+
+webhook_configs = Table(
+    "webhook_configs",
+    metadata,
+    Column("id",           String(36),  primary_key=True),
+    Column("org_id",       String(36),  nullable=True),  # null = legacy/dev flat-key registration
+    Column("url",          String(2048), nullable=False),
+    Column("provider",     String(20),  nullable=False, default="generic"),
+    Column("events",       Text,        nullable=False),   # JSON list of WebhookEvent values
+    Column("secret",       EncryptedString(), nullable=True),  # HMAC signing secret — opt-in encrypted
+    Column("description",  String(500), nullable=True),
+    Column("enabled",      Integer,     nullable=False, default=1),
+    Column("max_retries",  Integer,     nullable=False, default=3),
+    Column("created_at",   String(32),  nullable=False),
+    Index("idx_wc_org",     "org_id"),
+    Index("idx_wc_enabled", "enabled"),
 )
 
 webhook_deliveries = Table(
@@ -313,7 +339,7 @@ public_incident_reports = Table(
     Column("affected_model",    String(100), nullable=False),
     Column("affected_provider", String(100), nullable=False),
     Column("affected_version",  String(100), nullable=True),
-    Column("reporter_name",     String(200), nullable=True),  # null = anonymous
+    Column("reporter_name",     EncryptedString(), nullable=True),  # null = anonymous; PII — opt-in encrypted
     Column("reporter_contact",  EncryptedString(), nullable=True),  # PII — opt-in encrypted, never public
     Column("evidence",          Text,        nullable=True),  # JSON: {urls: [...], reproduction_steps: "..."}
     Column("tags",              Text,        nullable=True),  # JSON list

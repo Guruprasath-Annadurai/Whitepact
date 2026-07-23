@@ -26,7 +26,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,openai,anthropic,sso]"
+          pip install -e ".[dev,openai,anthropic,sso,sentiment]"
 
       - name: Lint with ruff
         run: ruff check src/ tests/
@@ -39,11 +39,14 @@ jobs:
           pip install pip-audit
           # PYSEC-2026-597: nltk path traversal in nltk.data.load()/find() via
           # percent-encoded "../" sequences. No fix version exists upstream
-          # yet. Triaged as not exploitable here — this codebase's only nltk
-          # call is nltk.download("vader_lexicon", quiet=True), a hardcoded
-          # literal resource name; the attack requires attacker-controlled
-          # input to that parameter, which never happens in this code path.
-          # Re-check when nltk ships a patched release.
+          # yet. nltk is an opt-in extra ([sentiment]), not installed by a
+          # plain `pip install rai-governance-platform` — this CI run
+          # installs it explicitly to keep VADER sentiment tests real.
+          # Triaged as not exploitable even when installed: this codebase's
+          # only nltk call is nltk.download("vader_lexicon", quiet=True), a
+          # hardcoded literal resource name; the attack requires
+          # attacker-controlled input to that parameter, which never happens
+          # in this code path. Re-check when nltk ships a patched release.
           pip-audit --strict --ignore-vuln PYSEC-2026-597
 
       - name: Run tests with coverage

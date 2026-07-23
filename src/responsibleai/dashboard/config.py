@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -25,7 +25,17 @@ class Settings(BaseSettings):
     )
 
     # Authentication
-    api_keys: list[str] = Field(
+    #
+    # Annotated with NoDecode on purpose: for a plain `list[str]`-typed
+    # field, pydantic-settings tries to JSON-decode the raw env var *before*
+    # our `_parse_keys` validator below ever runs — so the documented
+    # comma-separated format (`RAI_API_KEYS=key1,key2`, see .env.example /
+    # DEPLOY_RUNBOOK.md) isn't valid JSON and crashes the whole app at
+    # startup with a SettingsError. `NoDecode` tells pydantic-settings to
+    # skip that JSON pre-decode and hand the raw string straight to our
+    # validator instead. Confirmed via a clean-env repro before this fix;
+    # same pattern applied to allowed_origins and oidc_scopes below.
+    api_keys: Annotated[list[str], NoDecode] = Field(
         default=[],
         description="Comma-separated list of valid API keys. Empty = auth disabled (dev only).",
     )
@@ -45,7 +55,9 @@ class Settings(BaseSettings):
     )
 
     # CORS
-    allowed_origins: list[str] = Field(
+    # NoDecode: see api_keys above for why — same pydantic-settings
+    # env-parsing pitfall, same fix.
+    allowed_origins: Annotated[list[str], NoDecode] = Field(
         default=["http://localhost:8765", "http://127.0.0.1:8765"],
         description="Allowed CORS origins.",
     )
@@ -108,6 +120,24 @@ class Settings(BaseSettings):
         description="Redis URL for distributed rate limiting, e.g. redis://localhost:6379/0.",
     )
 
+    # Deployment topology self-declaration
+    multi_replica: bool = Field(
+        default=False,
+        description=(
+            "Set true when running more than one instance of this process "
+            "(load-balanced replicas, Kubernetes with replicas>1, etc.). "
+            "Purely a self-declaration for a startup readiness check — it "
+            "does not itself change any behavior. In-memory rate limiting "
+            "and SQLite each give per-instance-only state, which is silently "
+            "wrong (not just slow) once more than one instance shares "
+            "traffic: each replica enforces its own separate rate-limit "
+            "counter and its own separate database. Declaring this lets "
+            "startup warn loudly about that instead of the failure mode "
+            "being 'requests occasionally get 2x the intended rate limit "
+            "and no one knows why.'"
+        ),
+    )
+
     # OpenTelemetry (optional)
     otel_endpoint: str | None = Field(
         default=None,
@@ -139,7 +169,9 @@ class Settings(BaseSettings):
         default="http://localhost:8765/api/auth/callback",
         description="Callback URL registered with the OIDC provider.",
     )
-    oidc_scopes: list[str] = Field(
+    # NoDecode: see api_keys above for why — same pydantic-settings
+    # env-parsing pitfall, same fix.
+    oidc_scopes: Annotated[list[str], NoDecode] = Field(
         default=["openid", "email", "profile"],
         description="OAuth2 scopes to request.",
     )
@@ -263,6 +295,32 @@ class Settings(BaseSettings):
         if p.name == ":memory:":
             return Path(".")
         return p.parent
+
+
+def multi_replica_problems(db_backend: str, rate_limit_backend: str) -> list[str]:
+    """Return a human-readable problem per backend that can't safely be
+    shared across more than one replica of this process. Empty list means
+    the current db_backend/rate_limit_backend combination is multi-replica
+    safe. Pure function (no I/O) specifically so the startup readiness
+    check in dashboard/app.py's lifespan is unit-testable without booting
+    a real app instance.
+    """
+    problems = []
+    if db_backend != "postgresql":
+        problems.append(
+            "SQLite is a single-file database — concurrent writes from "
+            "multiple replicas will serialize and can corrupt under load. "
+            "Set RAI_DATABASE_URL to a shared PostgreSQL instance."
+        )
+    if rate_limit_backend != "redis":
+        problems.append(
+            "In-memory rate limiting is per-process — each replica "
+            "enforces its own separate counter, so the real aggregate "
+            "rate limit silently becomes (limit × replica count), not "
+            "the configured limit. Set RAI_REDIS_URL to share counters "
+            "across replicas."
+        )
+    return problems
 
 
 _settings: Settings | None = None

@@ -40,6 +40,11 @@
       <div id="session-box"></div>
     </div>
 
+    <div class="card" id="mfa-card" style="display:none;">
+      <h2 style="margin-top:0;font-size:1.05rem;">Multi-Factor Authentication</h2>
+      <div id="mfa-box" class="state-box"><span class="spinner"></span>&nbsp; Loading…</div>
+    </div>
+
     <div class="card">
       <h2 style="margin-top:0;font-size:1.05rem;">Authentication Providers</h2>
       <div id="providers-box" class="state-box"><span class="spinner"></span>&nbsp; Loading…</div>
@@ -105,9 +110,102 @@
     setTimeout(function () { window.location.href = "/login"; }, 600);
   });
 
+  async function loadMFA() {
+    if (!RAI.auth.isLoggedIn()) return;
+    const card = document.getElementById("mfa-card");
+    const box = document.getElementById("mfa-box");
+    try {
+      const session = await RAI.fetchJSON("/api/auth/session", { skipAuthRedirect: true });
+      if (session.is_legacy || !session.org_id || !session.key_id) {
+        // Legacy flat-key / anonymous dev-mode sessions aren't tied to a
+        // specific org_api_keys row — nothing to enroll MFA on.
+        return;
+      }
+      card.style.display = "block";
+      renderMFABox(box, session);
+    } catch (e) {
+      // Session lookup failing shouldn't block the rest of the page.
+    }
+  }
+
+  function renderMFABox(box, session) {
+    if (session.mfa_enrolled) {
+      box.innerHTML = `
+        <div class="pill pill-success" style="margin-bottom:0.75rem;">Enrolled — ${escHtml(session.key_name || session.key_id)}</div>
+        <p class="text-sm text-muted">This key requires a TOTP code (or backup code) to log in when your organization enforces MFA.</p>
+        <button class="btn btn-danger btn-sm" id="mfa-disable-btn">Disable MFA on this key</button>
+      `;
+      document.getElementById("mfa-disable-btn").addEventListener("click", async function () {
+        if (!confirm("Disable MFA on this key? You will be able to log in with just the API key again.")) return;
+        try {
+          await RAI.fetchJSON(`/api/orgs/${session.org_id}/keys/${session.key_id}/mfa`, { method: "DELETE" });
+          RAI.toast("MFA disabled.", "success");
+          session.mfa_enrolled = false;
+          renderMFABox(box, session);
+        } catch (e) {
+          RAI.toast("Could not disable MFA: " + e.message, "error");
+        }
+      });
+      return;
+    }
+
+    box.innerHTML = `
+      <div class="pill pill-outline" style="margin-bottom:0.75rem;">Not enrolled</div>
+      <p class="text-sm text-muted">Add a TOTP authenticator (Google Authenticator, 1Password, Authy, ...) as a second factor for this key. Requires ADMIN role.</p>
+      <button class="btn btn-primary btn-sm" id="mfa-enroll-btn">Set up MFA</button>
+      <div id="mfa-enroll-panel" style="margin-top:1rem;"></div>
+    `;
+    document.getElementById("mfa-enroll-btn").addEventListener("click", async function () {
+      const panel = document.getElementById("mfa-enroll-panel");
+      panel.innerHTML = '<div class="state-box"><span class="spinner"></span></div>';
+      try {
+        const d = await RAI.fetchJSON(
+          `/api/orgs/${session.org_id}/keys/${session.key_id}/mfa/enroll`, { method: "POST" }
+        );
+        panel.innerHTML = `
+          <div class="field">
+            <label>Secret (enter manually into your authenticator app)</label>
+            <div class="hash-box">${escHtml(d.secret)}</div>
+          </div>
+          <div class="field">
+            <label>Or use this URI</label>
+            <div class="hash-box" style="word-break:break-all;">${escHtml(d.provisioning_uri)}</div>
+          </div>
+          <div class="field">
+            <label for="mfa-verify-code">Enter the 6-digit code from your app</label>
+            <input id="mfa-verify-code" inputmode="numeric" placeholder="123456" />
+          </div>
+          <button class="btn btn-primary btn-sm" id="mfa-verify-btn">Verify &amp; Activate</button>
+          <div id="mfa-backup-codes" style="margin-top:1rem;"></div>
+        `;
+        document.getElementById("mfa-verify-btn").addEventListener("click", async function () {
+          const code = document.getElementById("mfa-verify-code").value.trim();
+          if (!code) return;
+          try {
+            const v = await RAI.fetchJSON(
+              `/api/orgs/${session.org_id}/keys/${session.key_id}/mfa/verify`,
+              { method: "POST", body: JSON.stringify({ code: code }) }
+            );
+            document.getElementById("mfa-backup-codes").innerHTML = `
+              <div class="pill pill-warning" style="margin-bottom:0.5rem;">Save these backup codes now — shown only once</div>
+              <div class="hash-box" style="white-space:pre-wrap;">${v.backup_codes.join("\n")}</div>
+            `;
+            RAI.toast("MFA enabled.", "success");
+            session.mfa_enrolled = true;
+          } catch (e) {
+            RAI.toast("Verification failed: " + e.message, "error");
+          }
+        });
+      } catch (e) {
+        panel.innerHTML = '<div class="state-box error">Could not start enrollment: ' + escHtml(e.message) + "</div>";
+      }
+    });
+  }
+
   renderSession();
   loadProviders();
   loadVersion();
+  loadMFA();
 })();
 </script>
 </body>

@@ -10,6 +10,7 @@ Key security decisions:
 from __future__ import annotations
 
 import hashlib
+import json
 import secrets
 from datetime import UTC, datetime
 from typing import Any
@@ -228,9 +229,74 @@ class OrgRepository:
             role=role_from_str(row.role),
             org_id=row.org_id,
             org_name=org.name if org else None,
+            key_name=row.name,
+            mfa_enrolled=bool(getattr(row, "mfa_enrolled", 0)),
             is_legacy=False,
             plan=org.plan if org else Plan.FREE,
         )
+
+    # ── MFA (TOTP) ────────────────────────────────────────────────────────────
+
+    async def get_key(self, key_id: str) -> OrgApiKey | None:
+        """Fetch a key by ID, including its MFA secret/backup codes.
+        Server-side use only (login/enroll flows) — never returned to a
+        client as-is; OrgApiKey.to_dict() already omits those fields."""
+        async with self._engine.raw.connect() as conn:
+            row = (await conn.execute(
+                select(org_api_keys).where(org_api_keys.c.id == key_id)
+            )).fetchone()
+        return self._row_to_key(row) if row else None
+
+    async def set_mfa_secret(self, key_id: str, secret: str) -> bool:
+        """Store a freshly generated, not-yet-confirmed TOTP secret.
+        enrolled stays 0 until confirm_mfa() succeeds."""
+        async with self._engine.raw.begin() as conn:
+            result = await conn.execute(
+                update(org_api_keys)
+                .where(org_api_keys.c.id == key_id)
+                .values(mfa_secret=secret, mfa_enrolled=0, mfa_backup_codes=None)
+            )
+        return result.rowcount > 0
+
+    async def confirm_mfa(self, key_id: str, backup_codes_hashed: list[str]) -> bool:
+        """Mark MFA enrolled after the first correct code is verified,
+        storing the hashed one-time backup codes."""
+        async with self._engine.raw.begin() as conn:
+            result = await conn.execute(
+                update(org_api_keys)
+                .where(org_api_keys.c.id == key_id)
+                .values(mfa_enrolled=1, mfa_backup_codes=json.dumps(backup_codes_hashed))
+            )
+        return result.rowcount > 0
+
+    async def disable_mfa(self, key_id: str) -> bool:
+        async with self._engine.raw.begin() as conn:
+            result = await conn.execute(
+                update(org_api_keys)
+                .where(org_api_keys.c.id == key_id)
+                .values(mfa_secret=None, mfa_enrolled=0, mfa_backup_codes=None)
+            )
+        return result.rowcount > 0
+
+    async def consume_backup_code(self, key_id: str, remaining_hashed: list[str]) -> bool:
+        async with self._engine.raw.begin() as conn:
+            result = await conn.execute(
+                update(org_api_keys)
+                .where(org_api_keys.c.id == key_id)
+                .values(mfa_backup_codes=json.dumps(remaining_hashed))
+            )
+        return result.rowcount > 0
+
+    async def set_org_mfa_required(self, org_id: str, required: bool) -> bool:
+        """Force every key under this org through MFA enrollment + TOTP
+        verification at /login — same enforcement pattern as set_sso_required."""
+        async with self._engine.raw.begin() as conn:
+            result = await conn.execute(
+                update(organizations)
+                .where(organizations.c.id == org_id)
+                .values(mfa_required=1 if required else 0)
+            )
+        return result.rowcount > 0
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -246,9 +312,11 @@ class OrgRepository:
             stripe_subscription_id=getattr(row, "stripe_subscription_id", None),
             plan_renews_at=getattr(row, "plan_renews_at", None),
             sso_required=bool(getattr(row, "sso_required", 0)),
+            mfa_required=bool(getattr(row, "mfa_required", 0)),
         )
 
     def _row_to_key(self, row: Any) -> OrgApiKey:
+        backup_codes_raw = getattr(row, "mfa_backup_codes", None)
         return OrgApiKey(
             id=row.id,
             org_id=row.org_id,
@@ -257,4 +325,7 @@ class OrgRepository:
             created_at=row.created_at,
             last_used_at=getattr(row, "last_used_at", None),
             revoked=bool(row.revoked),
+            mfa_enrolled=bool(getattr(row, "mfa_enrolled", 0)),
+            mfa_secret=getattr(row, "mfa_secret", None),
+            mfa_backup_codes=json.loads(backup_codes_raw) if backup_codes_raw else None,
         )

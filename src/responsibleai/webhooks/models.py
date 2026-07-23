@@ -28,11 +28,13 @@ class WebhookConfig:
     url: str
     events: list[WebhookEvent]
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    org_id: str | None = None
     provider: WebhookProvider = WebhookProvider.GENERIC
     secret: str = ""
     enabled: bool = True
     max_retries: int = 3
     description: str = ""
+    created_at: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {

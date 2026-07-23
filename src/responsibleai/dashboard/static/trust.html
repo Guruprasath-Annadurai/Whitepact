@@ -157,6 +157,7 @@
   <div class="badges">
     <span class="badge"><span class="dot done"></span> Open source (MIT)</span>
     <span class="badge"><span class="dot done"></span> SSO (OIDC)</span>
+    <span class="badge"><span class="dot done"></span> TOTP MFA</span>
     <span class="badge"><span class="dot done"></span> Tamper-evident audit log</span>
     <span class="badge"><span class="dot progress"></span> SOC2 — not started</span>
     <span class="badge"><span class="dot progress"></span> Pentest — not started</span>
@@ -168,7 +169,7 @@
   <div class="grid">
     <div class="card">
       <h3>Authentication &amp; Access</h3>
-      <p>OIDC SSO with enforceable SSO-only mode. 4-tier RBAC (Owner/Admin/Analyst/Viewer) on every endpoint. API keys stored as SHA-256 hashes only, never in plaintext.</p>
+      <p>OIDC SSO with enforceable SSO-only mode, plus optional org-enforced TOTP MFA (RFC 6238) at dashboard login with single-use backup codes. 4-tier RBAC (Owner/Admin/Analyst/Viewer) on every endpoint. API keys stored as SHA-256 hashes only, never in plaintext.</p>
       <div class="status-line done">● Implemented</div>
     </div>
     <div class="card">
@@ -183,8 +184,8 @@
     </div>
     <div class="card">
       <h3>Encryption at rest</h3>
-      <p>Deployer's responsibility (disk/volume encryption) — not enforced by the application layer. No field-level encryption.</p>
-      <div class="status-line progress">● Partial — infra-dependent</div>
+      <p>Whole-database disk/volume encryption remains the deployer's responsibility — that hasn't changed. Additionally, four specific PII/secret columns (audit log IPs, incident reporter name &amp; contact, webhook signing secrets) use opt-in application-layer field encryption via <code>RAI_FIELD_ENCRYPTION_KEY</code>, so they're unreadable even with raw table access but no app key.</p>
+      <div class="status-line progress">● Partial — field-level opt-in, disk-level still infra-dependent</div>
     </div>
     <div class="card">
       <h3>Dependency scanning</h3>

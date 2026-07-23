@@ -1,13 +1,20 @@
-"""Opt-in field-level encryption for individual PII columns.
+"""Opt-in field-level encryption for individual PII/secret columns.
 
 Encryption at rest for the *whole database* is the deployer's
 responsibility (see `ENTERPRISE_SECURITY.md`'s "Encryption at rest"
 section) — disk/volume encryption, not something the application can
 retrofit onto an existing Postgres/SQLite install. This module covers a
-narrower, real gap: encrypting one specific column's *value* so it's
+narrower, real gap: encrypting specific columns' *values* so they're
 unreadable even to someone with raw table access but no application key
 (a stolen backup file, a misconfigured read replica, a DBA who shouldn't
-see raw IPs).
+see raw IPs, names, or webhook secrets).
+
+Columns currently using `EncryptedString` (audit via
+`grep -rn EncryptedString src/responsibleai/db/engine.py`):
+- `audit_log.ip_address`
+- `public_incident_reports.reporter_name`, `.reporter_contact`
+- `org_api_keys.mfa_secret` (TOTP seed — see `auth/mfa.py`)
+- `webhook_configs.secret` (HMAC signing secret)
 
 Design choices, stated plainly:
 - Opt-in via `RAI_FIELD_ENCRYPTION_KEY`. Unset by default so existing
