@@ -434,6 +434,17 @@ def create_engine(db_url: str) -> DatabaseEngine:
             pool_pre_ping=True,
             pool_recycle=3600,
             echo=False,
+            # Transaction-mode connection poolers (PgBouncer, Supabase's
+            # Supavisor) multiplex many client connections over few backend
+            # ones — a prepared statement created on one backend connection
+            # can vanish or collide by the time asyncpg's statement cache
+            # tries to reuse it on a different one, surfacing as random
+            # "prepared statement already exists / does not exist" errors
+            # under concurrent load. Disabling asyncpg's statement cache
+            # avoids the whole class of bugs; the overhead is negligible
+            # for this workload and it's harmless against a direct
+            # (non-pooled) connection too.
+            connect_args={"statement_cache_size": 0},
         )
     elif db_url == ":memory:":
         engine = create_async_engine(
