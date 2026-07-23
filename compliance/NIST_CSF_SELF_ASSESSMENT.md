@@ -11,7 +11,7 @@ a different and unrelated framework despite the similar name.
 **Maturity scale used below:** Not Implemented → Partial → Defined → Managed → Optimized.
 Where an item is below "Managed," that's stated plainly rather than rounded up.
 
-Last reviewed: 2026-07-21 · Platform version: 1.2.0
+Last reviewed: 2026-07-23 · Platform version: 1.2.0
 
 ---
 
@@ -44,7 +44,7 @@ Last reviewed: 2026-07-21 · Platform version: 1.2.0
 |---|---|---|
 | PR.AA — Identity management, authentication, access control | Managed | RBAC with 4 strictly hierarchical roles enforced on every endpoint; OIDC SSO with enforceable SSO-only mode (`PUT /api/orgs/{id}/sso`) closing the static-key-backdoor gap; API keys stored as SHA-256 hashes only, revocable immediately. |
 | PR.AT — Awareness and training | Not Implemented | No formal security training program — not applicable at current team size (solo maintainer). Flagged for when a team exists, not glossed over. |
-| PR.DS — Data security | Partial | PII detection/redaction (Guardrails Engine) is strong. Encryption at rest is explicitly the deployer's responsibility (documented, not hidden). Opt-in field-level encryption now covers `audit_log.ip_address` (`RAI_FIELD_ENCRYPTION_KEY`) — the one standalone PII column — but not every column with free-text metadata. Multi-tenant isolation via `org_id` filtering on every governance data table. |
+| PR.DS — Data security | Partial | PII detection/redaction (Guardrails Engine) is strong. Encryption at rest for the whole database is explicitly the deployer's responsibility (documented, not hidden). Opt-in field-level encryption (`RAI_FIELD_ENCRYPTION_KEY`) now covers four PII/secret columns — `audit_log.ip_address`, `public_incident_reports.reporter_name` and `.reporter_contact`, `webhook_configs.secret`, and `org_api_keys.mfa_secret` — up from one. Still not every column with free-text metadata (e.g. incident `description` fields, which can contain pasted operational detail). Multi-tenant isolation via `org_id` filtering on every governance data table, now including `webhook_configs`. |
 | PR.PS — Platform security | Managed | Non-root containers, dropped capabilities, `readOnlyRootFilesystem` where applicable, explicit zero-downtime rollout strategy, PodDisruptionBudget, internal-only network isolation for Postgres/Redis in the reference compose stack. |
 | PR.IR — Technology infrastructure resilience | Defined | Redis+Postgres production stack, documented DR (RPO 24h/RTO 1-4h), backup/restore scripts. `DatabaseEngine.init()` retries transient connection failures with backoff (up to 5 attempts, exponential) — real protection against the app crashing hard during a brief DB failover window at startup. **Still not automated replica failover**: promoting a replica to primary itself (Patroni, RDS/Cloud SQL Multi-AZ, streaming replication) remains the deployer's Kubernetes/cloud responsibility — no application code substitutes for that. |
 

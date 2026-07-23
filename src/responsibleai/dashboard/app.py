@@ -102,7 +102,14 @@ from responsibleai.rbac import (
 from responsibleai.redteam.simulator import RedTeamSimulator
 from responsibleai.trust.passport import PassportGenerator
 from responsibleai.trust.score import TrustScoreEngine
-from responsibleai.webhooks import WebhookConfig, WebhookEvent, WebhookManager, WebhookProvider
+from responsibleai.webhooks import (
+    UnsafeWebhookURLError,
+    WebhookConfig,
+    WebhookEvent,
+    WebhookManager,
+    WebhookProvider,
+    validate_webhook_url,
+)
 
 _START_TIME = time.monotonic()
 _REQUEST_COUNTER: dict[str, int] = {"total": 0, "errors": 0}
@@ -847,7 +854,7 @@ for _path, _filename in [
 # ── Health & Ops ───────────────────────────────────────────────────────────────
 
 @app.get("/api/health", tags=["ops"])
-async def health() -> dict[str, Any]:
+async def health() -> JSONResponse:
     db_ok = True
     try:
         if _cost_repo:
@@ -859,7 +866,7 @@ async def health() -> dict[str, Any]:
     rl_backend = "redis" if settings.redis_url else "memory"
     orgs_count = len(await _ready(_org_repo).list_orgs()) if _org_repo else 0
 
-    return {
+    body = {
         "status": "healthy" if db_ok else "degraded",
         "version": "1.2.0",
         "uptime_seconds": round(time.monotonic() - _START_TIME, 1),
@@ -885,6 +892,7 @@ async def health() -> dict[str, Any]:
         "api_versions": ["1.0", "1.1"],
         "stable_since": "1.0.0",
     }
+    return JSONResponse(content=body, status_code=200 if db_ok else 503)
 
 
 @app.get("/api/metrics", tags=["ops"])
@@ -2049,6 +2057,10 @@ async def create_webhook(
         events = [WebhookEvent(e) for e in req.events]
     except ValueError as exc:
         raise HTTPException(400, f"Invalid event type: {exc}") from exc
+    try:
+        validate_webhook_url(req.url)
+    except UnsafeWebhookURLError as exc:
+        raise HTTPException(400, f"Invalid webhook URL: {exc}") from exc
     config = WebhookConfig(
         url=req.url, events=events,
         org_id=_auth.org_id,

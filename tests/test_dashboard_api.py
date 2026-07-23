@@ -50,6 +50,20 @@ class TestHealth:
         r = await client.get("/api/health")
         assert r.json()["uptime_seconds"] >= 0
 
+    async def test_health_returns_503_when_db_unhealthy(self, client, monkeypatch):
+        # A load balancer / orchestrator health check keys off the HTTP status
+        # code, not the JSON body — a degraded DB must surface as non-2xx so
+        # traffic actually gets routed away from a broken instance.
+        import responsibleai.dashboard.app as app_module
+
+        async def _boom(*args, **kwargs):
+            raise RuntimeError("db unreachable")
+
+        monkeypatch.setattr(app_module._cost_repo, "request_count", _boom)
+        r = await client.get("/api/health")
+        assert r.status_code == 503
+        assert r.json()["status"] == "degraded"
+
     async def test_metrics_no_auth_disabled(self, client):
         r = await client.get("/api/metrics")
         assert r.status_code == 200

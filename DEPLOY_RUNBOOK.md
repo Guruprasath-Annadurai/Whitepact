@@ -5,6 +5,16 @@ Written for a fresh Ubuntu 22.04 VPS — adjust package manager commands if
 using a different distro. Every step here is something you run; nothing in
 this file executes itself.
 
+**Shortcut**: steps 4, 5, 8, 9, and 10 below (secret generation, `.env.prod`
+creation, bringing the stack up, running migrations, and local health
+verification) are automated by `./scripts/deploy.sh` — run it after step 3
+(cloning the repo) and it'll do all five in one command, then tell you
+exactly which steps are left (DNS, TLS, nginx, Stripe — the ones that
+genuinely need a domain, a certificate authority, and a payment processor
+account, none of which a script can do for you). The manual steps below are
+kept in full for anyone who wants to run them by hand instead, or is
+debugging what the script did.
+
 ---
 
 ## 0. Prerequisites (you do this outside the terminal)
@@ -214,6 +224,11 @@ curl -s https://api.yourcompany.com/api/health | python3 -m json.tool
 curl -s https://api.yourcompany.com/api/support/status | python3 -m json.tool
 curl -s https://api.yourcompany.com/mcp/health | python3 -m json.tool
 ```
+
+`/api/health` returns HTTP 503 (not 200) when its database check fails —
+this is what a load balancer or orchestrator health probe should key off,
+not the JSON body's `status` field, since most LB health checks only look
+at the status code.
 
 Port 8766 (MCP HTTP) is only bound to `127.0.0.1` on the VPS per the compose
 file — it's not reachable directly from outside, only through nginx's

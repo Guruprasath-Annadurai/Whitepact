@@ -151,19 +151,33 @@ class CostTracker:
 
     def get_model_breakdown(self, days: int | None = None) -> dict[str, float]:
         """Cost per model, sorted descending."""
-        clause = f"WHERE recorded_at >= datetime('now', '-{days} days')" if days else ""
-        rows = self._conn.execute(
-            f"SELECT provider||'/'||model, COALESCE(SUM(total_cost),0) "
-            f"FROM token_usage {clause} GROUP BY provider, model ORDER BY 2 DESC"
-        ).fetchall()
+        if days:
+            rows = self._conn.execute(
+                "SELECT provider||'/'||model, COALESCE(SUM(total_cost),0) "
+                "FROM token_usage WHERE recorded_at >= datetime('now', ?) "
+                "GROUP BY provider, model ORDER BY 2 DESC",
+                (f"-{int(days)} days",),
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT provider||'/'||model, COALESCE(SUM(total_cost),0) "
+                "FROM token_usage GROUP BY provider, model ORDER BY 2 DESC"
+            ).fetchall()
         return {r[0]: round(float(r[1]), 6) for r in rows}
 
     def get_team_breakdown(self, days: int | None = None) -> dict[str, float]:
-        clause = f"WHERE recorded_at >= datetime('now', '-{days} days')" if days else ""
-        rows = self._conn.execute(
-            f"SELECT team, COALESCE(SUM(total_cost),0) "
-            f"FROM token_usage {clause} GROUP BY team ORDER BY 2 DESC"
-        ).fetchall()
+        if days:
+            rows = self._conn.execute(
+                "SELECT team, COALESCE(SUM(total_cost),0) "
+                "FROM token_usage WHERE recorded_at >= datetime('now', ?) "
+                "GROUP BY team ORDER BY 2 DESC",
+                (f"-{int(days)} days",),
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT team, COALESCE(SUM(total_cost),0) "
+                "FROM token_usage GROUP BY team ORDER BY 2 DESC"
+            ).fetchall()
         return {r[0]: round(float(r[1]), 6) for r in rows}
 
     def get_daily_costs(self, days: int = 30) -> list[dict[str, Any]]:
@@ -231,10 +245,13 @@ class CostTracker:
         )
 
     def request_count(self, days: int | None = None) -> int:
-        clause = f"WHERE recorded_at >= datetime('now', '-{days} days')" if days else ""
-        row = self._conn.execute(
-            f"SELECT COUNT(*) FROM token_usage {clause}"
-        ).fetchone()
+        if days:
+            row = self._conn.execute(
+                "SELECT COUNT(*) FROM token_usage WHERE recorded_at >= datetime('now', ?)",
+                (f"-{int(days)} days",),
+            ).fetchone()
+        else:
+            row = self._conn.execute("SELECT COUNT(*) FROM token_usage").fetchone()
         return int(row[0])
 
     def close(self) -> None:

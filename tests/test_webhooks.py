@@ -11,12 +11,33 @@ import httpx
 import pytest
 import respx
 
-from responsibleai.webhooks.manager import WebhookManager
+from responsibleai.webhooks.manager import (
+    UnsafeWebhookURLError,
+    WebhookManager,
+    validate_webhook_url,
+)
 from responsibleai.webhooks.models import (
     WebhookConfig,
     WebhookEvent,
     WebhookProvider,
 )
+
+
+@pytest.fixture(autouse=True)
+def _fake_public_dns(monkeypatch):
+    """Delivery tests use synthetic hostnames (hooks.example.com, etc.) that
+    aren't real DNS records. The SSRF guard (validate_webhook_url) does a
+    real getaddrinfo() lookup before every delivery — resolve every test
+    hostname to a fixed public IP so the guard's logic still runs (and still
+    rejects a genuinely private-IP config, see TestSSRFGuard below) without
+    depending on real network access."""
+
+    def _fake_getaddrinfo(host, *args, **kwargs):
+        return [(2, 1, 6, "", ("93.184.216.34", 0))]
+
+    monkeypatch.setattr(
+        "responsibleai.webhooks.manager.socket.getaddrinfo", _fake_getaddrinfo
+    )
 
 
 @pytest.fixture()
@@ -431,3 +452,58 @@ class TestRepoBackedDelivery:
             await asyncio.sleep(0.05)
             manager.stop_retry_worker()
         # Should not raise — worker logs and keeps polling.
+
+
+# ── SSRF guard ───────────────────────────────────────────────────────────────
+
+class TestSSRFGuard:
+    def test_rejects_non_http_scheme(self):
+        with pytest.raises(UnsafeWebhookURLError, match="scheme"):
+            validate_webhook_url("ftp://example.com/x")
+
+    def test_rejects_url_with_no_host(self, monkeypatch):
+        with pytest.raises(UnsafeWebhookURLError, match="no host"):
+            validate_webhook_url("http:///path")
+
+    def test_rejects_loopback(self, monkeypatch):
+        monkeypatch.setattr(
+            "responsibleai.webhooks.manager.socket.getaddrinfo",
+            lambda host, *a, **k: [(2, 1, 6, "", ("127.0.0.1", 0))],
+        )
+        with pytest.raises(UnsafeWebhookURLError, match="non-public"):
+            validate_webhook_url("http://localhost/hook")
+
+    def test_rejects_private_rfc1918(self, monkeypatch):
+        monkeypatch.setattr(
+            "responsibleai.webhooks.manager.socket.getaddrinfo",
+            lambda host, *a, **k: [(2, 1, 6, "", ("10.0.0.5", 0))],
+        )
+        with pytest.raises(UnsafeWebhookURLError, match="non-public"):
+            validate_webhook_url("http://internal.corp/hook")
+
+    def test_rejects_cloud_metadata_link_local(self, monkeypatch):
+        monkeypatch.setattr(
+            "responsibleai.webhooks.manager.socket.getaddrinfo",
+            lambda host, *a, **k: [(2, 1, 6, "", ("169.254.169.254", 0))],
+        )
+        with pytest.raises(UnsafeWebhookURLError, match="non-public"):
+            validate_webhook_url("http://metadata.internal/latest/meta-data")
+
+    def test_allows_public_ip(self, monkeypatch):
+        monkeypatch.setattr(
+            "responsibleai.webhooks.manager.socket.getaddrinfo",
+            lambda host, *a, **k: [(2, 1, 6, "", ("93.184.216.34", 0))],
+        )
+        validate_webhook_url("https://hooks.example.com/generic")  # should not raise
+
+    def test_unresolvable_host_raises(self, monkeypatch):
+        import socket as socket_module
+
+        def _raise(host, *a, **k):
+            raise socket_module.gaierror("nodename nor servname provided")
+
+        monkeypatch.setattr(
+            "responsibleai.webhooks.manager.socket.getaddrinfo", _raise
+        )
+        with pytest.raises(UnsafeWebhookURLError, match="could not resolve"):
+            validate_webhook_url("http://does-not-exist.invalid/hook")

@@ -20,7 +20,7 @@ ResponsibleAI-operated hosted SaaS tier is live — see `ENTERPRISE_SECURITY.md`
 Data Residency section; that status is unchanged until one is actually
 deployed and sold.
 
-Last reviewed: 2026-07-21 · Platform version: 1.2.0
+Last reviewed: 2026-07-23 · Platform version: 1.2.0
 
 ---
 
@@ -129,7 +129,7 @@ Last reviewed: 2026-07-21 · Platform version: 1.2.0
 | Is SSO supported? | OIDC (OAuth2 Authorization Code flow) — yes. SAML — no, explicitly not supported (see `ENTERPRISE_SECURITY.md`). |
 | Can SSO be enforced (blocking password/API-key fallback)? | Yes — `PUT /api/orgs/{id}/sso` disables static API-key auth for that org once SSO is configured, closing the departed-employee-static-key backdoor. |
 | Is least-privilege access enforced for cross-tenant operations? | Yes — org-scoped keys can only act within their own org; only legacy super-admin flat keys can cross org boundaries, and every such action is itself logged in the audit trail. |
-| Is multi-factor authentication (MFA) supported? | Not directly by the platform — MFA is delegated to your OIDC identity provider (Okta, Azure AD, etc.), which is where MFA enforcement actually belongs for SSO-based auth. Static API-key auth has no MFA concept (it's a bearer secret, not a login). |
+| Is multi-factor authentication (MFA) supported? | Yes, two ways. For SSO-based auth, MFA is delegated to your OIDC identity provider (Okta, Azure AD, etc.), where it belongs. For static API-key auth, TOTP MFA (RFC 6238) is available at the one interactive human login step (`POST /api/auth/login-key`) — an org can require it via `PUT /api/orgs/{id}/mfa`, and each key enrolls its own secret with single-use backup codes (`auth/mfa.py`). This does not, and cannot, extend to machine-to-machine API calls — there's no human present at request time to hold a second factor; those continue to authenticate on the key alone, same as before. |
 
 ---
 

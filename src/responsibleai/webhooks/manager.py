@@ -15,11 +15,14 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
+import ipaddress
 import json
 import logging
+import socket
 import time
 from collections import deque
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -41,6 +44,43 @@ logger = logging.getLogger(__name__)
 _RETRY_DELAYS = [1.0, 5.0, 30.0, 120.0, 600.0]
 _MAX_DELIVERY_LOG = 1_000
 _RETRY_POLL_INTERVAL = 30.0
+
+
+class UnsafeWebhookURLError(ValueError):
+    """Raised when a webhook URL resolves to a non-public address (SSRF guard)."""
+
+
+def validate_webhook_url(url: str) -> None:
+    """Reject webhook URLs that target private/loopback/link-local networks
+    or the cloud-metadata address — an org admin registering a webhook
+    shouldn't be able to make this server issue requests into its own
+    internal network or a cloud provider's instance-metadata endpoint.
+    Re-checked at every delivery (not just registration) since DNS can
+    resolve differently between the two."""
+    parsed = urlsplit(url)
+    if parsed.scheme not in ("http", "https"):
+        raise UnsafeWebhookURLError(f"unsupported URL scheme: {parsed.scheme!r}")
+    host = parsed.hostname
+    if not host:
+        raise UnsafeWebhookURLError("URL has no host")
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror as exc:
+        raise UnsafeWebhookURLError(f"could not resolve host: {host}") from exc
+    for info in infos:
+        addr = info[4][0]
+        ip = ipaddress.ip_address(addr)
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+            or ip.is_unspecified
+        ):
+            raise UnsafeWebhookURLError(
+                f"webhook host {host!r} resolves to a non-public address ({addr})"
+            )
 
 
 class WebhookManager:
@@ -197,6 +237,7 @@ class WebhookManager:
             error: str | None = None
             success = False
             try:
+                validate_webhook_url(config.url)
                 body = json.dumps(payload).encode()
                 headers: dict[str, str] = {"Content-Type": "application/json"}
                 if config.secret:
@@ -205,7 +246,7 @@ class WebhookManager:
                     ).hexdigest()
                     headers["X-RAI-Signature-256"] = f"sha256={sig}"
 
-                async with httpx.AsyncClient(timeout=10.0) as http:
+                async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as http:
                     resp = await http.post(config.url, content=body, headers=headers)
                 status_code = resp.status_code
                 if resp.is_success:
