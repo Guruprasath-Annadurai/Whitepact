@@ -19,16 +19,47 @@ debugging what the script did.
 
 ## 0. Prerequisites (you do this outside the terminal)
 
-- A VPS. Reference/planned provider for this deployment: **Oracle Cloud
-  Infrastructure (OCI), Always Free tier** — chosen given no infrastructure
-  budget. Real numbers, verified against Oracle's own docs (not the older
-  "4 OCPU/24GB" figure some guides still quote — Oracle quietly halved it
-  in 2026):
-  - Ampere A1 (ARM) compute: 2 OCPU / 12GB continuous, single home region only, no automatic multi-region failover.
-  - 200GB block storage, 1 free load balancer (10 Mbps).
-  - **Capacity note:** this is below `SLA.md`'s "Recommended (Postgres + Redis, hosted)" spec of 4+ vCPUs per replica — running dashboard + MCP HTTP + Postgres + Redis together on 2 OCPUs total will be CPU-constrained under real load, not just RAM-constrained. Fine for early-stage/low-traffic; don't oversell it as meeting the recommended bar until upgrading to paid capacity.
-  - **Region capacity gotcha:** some OCI regions report intermittent "out of host capacity" errors for Always Free Ampere A1 provisioning, especially high-demand US regions. Frankfurt (`eu-frankfurt-1`) and Singapore (`ap-singapore-1`) have reported more reliable availability — pick your home region accordingly, and note it's a one-time, permanent choice for Always Free resources.
-  - Any other provider works too — Hetzner, DigitalOcean, AWS Lightsail, etc. — if budget becomes available later.
+- A VPS. **Reference provider for this deployment (as of 2026-07-23):
+  Google Cloud Platform (GCP)** — chosen because Oracle Cloud's Always
+  Free signup requires a credit card the founder didn't want to provide;
+  GCP's $300/90-day free-trial credit was the workable alternative. This
+  is a **materially different capacity story than a permanent free tier,
+  stated honestly**: the credit expires in 90 days from account creation,
+  not never. Before day 90, you must either start paying for the instance
+  or migrate off — this is a real, dated obligation, not a someday
+  concern. Track your account creation date and put a reminder at day 75.
+  - Suggested instance: an `e2-medium` (2 vCPU / 4GB) or `e2-standard-2`
+    (2 vCPU / 8GB) Compute Engine VM running Ubuntu 22.04 — sized to
+    comfortably run `docker-compose.prod.yml`'s four services
+    (Postgres, Redis, dashboard, MCP HTTP) at low traffic.
+  - GCP itself maintains active SOC 2, SOC 3, and ISO 27001/27017/27018
+    certifications for the underlying platform (see
+    [cloud.google.com/security/compliance/soc-2](https://cloud.google.com/security/compliance/soc-2)
+    for current certificates) — cite this the same way `DEPLOY_RUNBOOK.md`
+    previously cited OCI's: the infrastructure provider's certification is
+    real and usable in a vendor security review even before this
+    platform has its own (see `compliance/SOC2_READINESS.md`).
+  - **Historical note**: this runbook previously targeted OCI's Always
+    Free tier (2 OCPU/12GB ARM compute, permanent, no card required for
+    the compute itself though OCI signup does ask for one). If a future
+    decision reverts to OCI or another provider, the deployment steps
+    below (Docker, `docker-compose.prod.yml`, `scripts/deploy.sh`) are
+    provider-agnostic and don't need to change — only this prerequisites
+    section and the capacity/pricing framing in
+    `compliance/SALES_TARGETING.md` do.
+  - **Capacity note:** an `e2-medium`/`e2-standard-2` is below `SLA.md`'s
+    "Recommended (Postgres + Redis, hosted)" spec of 4+ vCPUs per replica —
+    running dashboard + MCP HTTP + Postgres + Redis together on 2 vCPUs
+    total will be CPU-constrained under real load, not just RAM-constrained.
+    Fine for early-stage/low-traffic; don't oversell it as meeting the
+    recommended bar until upgrading to paid capacity.
+  - **Region choice**: pick whichever GCP region is geographically closest
+    to your expected early customers — unlike OCI's Always Free tier, this
+    isn't a permanent one-time choice, so it's lower-stakes than it was
+    under the previous provider.
+  - Any other provider works too — Hetzner, DigitalOcean, AWS Lightsail,
+    OCI, etc. — if the 90-day credit clock or GCP specifically stops being
+    the right fit later.
 - A domain or subdomain you control (e.g. `api.yourcompany.com`).
 - A Stripe account in live mode, if selling PRO/ENTERPRISE (skip if not billing yet).
 

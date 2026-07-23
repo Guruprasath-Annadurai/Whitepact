@@ -102,7 +102,7 @@ cost tracking).
 ## 5. Sub-processors
 
 See `compliance/DPA_TEMPLATE.md` Section 2 for the current, detailed
-sub-processor list (Oracle Cloud Infrastructure for hosting, Stripe for
+sub-processor list (Google Cloud Platform for hosting, Stripe for
 billing, Customer's own chosen OIDC provider for SSO, and any LLM
 providers Customer configures). That document is the source of truth;
 this policy incorporates it by reference rather than duplicating a list

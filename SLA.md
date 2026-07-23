@@ -70,7 +70,7 @@ Scheduled maintenance windows (max 4 hours/month, announced 48h in advance) are 
 
 | Sub-processor | Purpose | Certifications |
 |---|---|---|
-| Oracle Cloud Infrastructure (OCI) | Infrastructure hosting for the reference deployment (compute, block storage, networking) — see `compliance/CAIQ_SELF_ASSESSMENT.md` Domain 6 for exact region and capacity details | Active SOC 2 attestation (renewed 2026-05-21) and ISO/IEC 27001 certification (renewed 2026-01-08), both verifiable at the [CSA STAR registry](https://cloudsecurityalliance.org/star/registry/oracle-corporation/services/oracle-cloud-infrastructure) |
+| Google Cloud Platform (GCP) | Infrastructure hosting for the reference deployment (compute, block storage, networking) — updated 2026-07-23, previously Oracle Cloud Infrastructure; see `compliance/CAIQ_SELF_ASSESSMENT.md` Domain 6 for exact region, credit terms, and capacity details | Active SOC 2/SOC 3 reports and ISO/IEC 27001, 27017, 27018 certifications — see [cloud.google.com/security/compliance/soc-2](https://cloud.google.com/security/compliance/soc-2) |
 | Stripe, Inc. | Payment processing and subscription billing (PRO/ENTERPRISE plans only) — no governance data reaches Stripe, billing metadata only | Stripe's own published PCI-DSS Level 1 certification |
 | Customer's own OIDC/SSO provider (if enabled) | Authentication only | Per the customer's own IdP choice — not selected or certified by us |
 | LLM providers (OpenAI, Anthropic, Google, etc.), if configured | Model evaluation and cost tracking, under the customer's own account and API keys | Per each provider's own terms |
@@ -178,12 +178,16 @@ This SLA does not cover:
 | OS | Linux (amd64/arm64) | Ubuntu 22.04 LTS |
 | Deployment | `docker-compose.yml` | `docker-compose.prod.yml` (Postgres + Redis + dashboard + MCP HTTP) |
 
-**Note on the reference deployment (Oracle Cloud Infrastructure Always
-Free tier):** its 2 OCPU / 12GB entitlement falls below the "Recommended"
-column's 4+ vCPUs per replica — see `DEPLOY_RUNBOOK.md`'s prerequisites
-for the honest capacity tradeoff. Workable for early-stage/low-traffic use;
-treat "Recommended" as the bar to grow into with paid capacity, not a
-claim about the free-tier reference setup.
+**Note on the reference deployment (Google Cloud Platform, $300/90-day
+free-trial credit — updated 2026-07-23, previously Oracle Cloud
+Infrastructure Always Free tier):** its `e2-medium`/`e2-standard-2`
+instance sizing falls below the "Recommended" column's 4+ vCPUs per
+replica — see `DEPLOY_RUNBOOK.md`'s prerequisites for the honest capacity
+tradeoff, plus the real 90-day credit-expiry clock this reference
+deployment now runs on (a materially different constraint than a
+permanent free tier). Workable for early-stage/low-traffic use; treat
+"Recommended" as the bar to grow into with paid capacity, not a claim
+about the current reference setup.
 
 **Running more than one replica:** set `RAI_MULTI_REPLICA=true`. This is a
 self-declaration, not a feature flag — it makes startup verify the

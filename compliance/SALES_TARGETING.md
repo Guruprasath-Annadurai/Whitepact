@@ -6,7 +6,7 @@ They will not unblock all of them. Chasing the wrong segment first wastes
 cycles arguing about a certificate you don't have instead of closing deals
 that don't require one.
 
-Last reviewed: 2026-07-21
+Last reviewed: 2026-07-23
 
 ---
 
@@ -32,40 +32,46 @@ of how good the actual product is.
 
 ---
 
-## The OCI hosting decision changes the pitch, not just the infra
+## The hosting provider decision changes the pitch, not just the infra
 
-The reference deployment runs on Oracle Cloud Infrastructure's Always Free
-tier (see `compliance/CAIQ_SELF_ASSESSMENT.md` Domain 6 for the verified
-specifics). That choice has real, non-obvious consequences for who to
-pitch and what to promise — separate from the SOC2/CAIQ segmentation
-above, and worth being just as honest about.
+**Updated 2026-07-23**: the reference deployment now targets **Google
+Cloud Platform**, not Oracle Cloud Infrastructure — OCI's Always Free
+signup required a credit card the founder chose not to provide; GCP's
+$300/90-day free-trial credit was the workable alternative (see
+`DEPLOY_RUNBOOK.md`'s prerequisites section for the full reasoning). This
+changes some of the specifics below from the original OCI-based analysis,
+kept honest rather than silently edited:
 
-- **OCI has real, verifiable certifications you can cite** — active SOC 2
-  attestation and ISO/IEC 27001 certification, both checkable at the CSA
-  STAR registry. When a mid-market prospect's vendor review asks "is your
-  infrastructure provider certified," the honest answer is yes, cited,
-  with dates — even though *this platform* isn't certified yet. Use this;
-  it's a real point in your favor, not a workaround.
-- **OCI is a weaker brand-recognition answer than AWS/GCP/Azure for some
-  reviewers.** A subset of enterprise vendor-risk checklists name a
-  specific short-list of approved cloud providers, and Oracle doesn't
-  always make that list the way the big three do. This is a real, if
-  narrow, reason some Fortune 500/regulated prospects go a different way
-  regardless of certifications — already a "don't spend cycles here yet"
-  segment per the table above, so this mostly just reinforces that
-  targeting rather than changing it.
-- **The free tier's actual capacity (2 OCPU/12GB, single region, no
-  failover) sets an honest ceiling on what to promise early customers.**
-  Don't pitch multi-region redundancy or high-concurrency guarantees on
-  this infrastructure — it isn't there yet (see `SLA.md`'s hardware note
-  and `DEPLOY_RUNBOOK.md`'s capacity caveat). This is fine for the first
-  handful of design partners from the Seed/Series A segment; it is a real
-  constraint to flag proactively once volume grows, not something to
-  discover under load with a paying customer watching.
-- **This reinforces "target smaller first" as an infrastructure fact, not
-  just a compliance one.** The certificate gap says don't chase Fortune
-  500 yet; the hosting capacity says the same thing independently — two
-  separate reasons pointing at the same near-term segment.
+- **GCP has real, verifiable, and more widely recognized certifications
+  you can cite** — active SOC 2/SOC 3 reports and ISO 27001/27017/27018
+  certification for the platform (see
+  [cloud.google.com/security/compliance/soc-2](https://cloud.google.com/security/compliance/soc-2)
+  for current certificates). When a mid-market prospect's vendor review
+  asks "is your infrastructure provider certified," the honest answer is
+  yes, cited — even though *this platform* isn't certified yet. This is
+  actually a **stronger** answer than OCI was on the specific
+  brand-recognition point below, not just an equivalent one.
+- **GCP does not have OCI's brand-recognition weakness.** The previous
+  OCI-based analysis flagged that some enterprise vendor-risk checklists
+  name a specific short-list of "big three" approved cloud providers
+  (AWS/GCP/Azure) that Oracle doesn't always make. GCP is one of that
+  short list — this specific objection no longer applies with the new
+  provider.
+- **The $300/90-day credit sets a real, dated capacity ceiling, different
+  in kind from OCI's permanent-but-small free tier.** Don't promise a
+  prospect infrastructure continuity past the credit window without a
+  concrete plan to start paying — this is a genuinely different honesty
+  obligation than the old "small but permanent" framing, not just a
+  relabeling of the same caveat. See `DEPLOY_RUNBOOK.md`'s prerequisites
+  section for the exact date-tracking discipline this requires.
+- **Instance sizing (`e2-medium`/`e2-standard-2`) is still below `SLA.md`'s
+  "Recommended" spec**, same underlying capacity caveat as before — don't
+  pitch multi-region redundancy or high-concurrency guarantees on this
+  infrastructure yet (see `DEPLOY_RUNBOOK.md`'s capacity note).
+- **The "target smaller first" segmentation from the table above is
+  unchanged** — the certificate gap (this platform's own SOC2/pentest
+  status) still says don't chase Fortune 500/regulated industries yet,
+  independent of which cloud provider is underneath.
 
 ---
 
@@ -123,7 +129,8 @@ above, and worth being just as honest about.
    actually time to spend real money on the certificate — don't guess,
    measure it against real sales conversations once there are some to
    measure.
-5. **Cite OCI's SOC 2/ISO 27001 certifications proactively when
-   infrastructure comes up**, and be upfront about the current capacity
-   ceiling (2 OCPU/12GB, single region) if a prospect asks about scale or
-   redundancy — before they find out under load, not after.
+5. **Cite GCP's SOC 2/ISO 27001 certifications proactively when
+   infrastructure comes up**, and be upfront about both the current
+   instance's capacity ceiling and the 90-day free-trial-credit clock if a
+   prospect asks about scale, redundancy, or continuity — before they
+   find out under load or after the credit lapses, not after.

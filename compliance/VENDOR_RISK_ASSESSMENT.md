@@ -11,7 +11,7 @@ caveat as every other compliance document in this repo. Where a fact is
 independently verifiable (a certification, a registry entry), a source is
 cited; where it isn't, that's stated rather than implied.
 
-Last reviewed: 2026-07-21 · Platform version: 1.2.0
+Last reviewed: 2026-07-23 · Platform version: 1.2.0
 
 ---
 
@@ -25,21 +25,30 @@ this doesn't cover" below), not on a fixed calendar.
 
 ---
 
-## Oracle Cloud Infrastructure (OCI)
+## Google Cloud Platform (GCP)
+
+**Updated 2026-07-23**: switched from Oracle Cloud Infrastructure — OCI's
+Always Free signup required a credit card the founder chose not to
+provide; GCP's $300/90-day free-trial credit was the workable
+alternative. This is a vendor *and* a risk-profile change, not just a
+rename — the residual-risk row below reflects that honestly.
 
 **Role**: infrastructure hosting for the reference deployment — compute,
 block storage, networking. See `compliance/CAIQ_SELF_ASSESSMENT.md`
-Domain 6 for exact region/capacity details (Always Free tier: 2 OCPU/12GB
-Ampere A1, single home region, no automatic cross-region failover).
+Domain 6 for exact region/instance/credit details (`e2-medium` or
+`e2-standard-2` Compute Engine instance, single region, no automatic
+cross-region failover, $300/90-day free-trial credit — not a permanent
+free tier).
 
 | Question | Answer |
 |---|---|
-| What data reaches them? | Everything — this is the infrastructure the database and application run on. Full access in principle (as with any IaaS host), governed by OCI's own personnel/access controls, not ours. |
-| Independent certification? | Active SOC 2 attestation (renewed 2026-05-21) and ISO/IEC 27001 certification (renewed 2026-01-08), both verifiable at the [CSA STAR registry](https://cloudsecurityalliance.org/star/registry/oracle-corporation/services/oracle-cloud-infrastructure) — checked directly, not taken from marketing copy. |
-| What if OCI has an outage? | Single-region deployment on the Always Free tier has no cross-region failover — an OCI regional outage is a platform outage. Documented in `SLA.md`'s DR section, not hidden. Block storage is encrypted at rest by default regardless (AES-256), independent of the outage question. |
-| What if OCI has a breach affecting us? | Contractually, OCI's own incident-notification obligations under its customer agreement apply (not something this project has separately negotiated — Always Free tier terms are Oracle's standard terms, not custom-negotiated). Practically: rotate all secrets, treat as a P1 per `compliance/INCIDENT_RESPONSE_RUNBOOK.md`. |
-| Residual risk | **Medium** — real vendor lock-in and single-region exposure, offset by verified certification status and encryption-by-default. Appropriate for the current pre-revenue stage; a paid multi-region tier is the documented upgrade path once justified (see Domain 6). |
-| Alternative considered? | Yes — the OCI decision itself followed a cost/capability comparison against paid alternatives at project start; not revisited on a fixed schedule since, only opportunistically (e.g. this document). |
+| What data reaches them? | Everything — this is the infrastructure the database and application run on. Full access in principle (as with any IaaS host), governed by Google's own personnel/access controls, not ours. |
+| Independent certification? | Active SOC 2/SOC 3 reports and ISO/IEC 27001, 27017, 27018 certifications — see [cloud.google.com/security/compliance/soc-2](https://cloud.google.com/security/compliance/soc-2), checked directly, not taken from marketing copy. |
+| What if GCP has an outage? | Single-region deployment has no cross-region failover — a GCP regional outage is a platform outage. Documented in `SLA.md`'s DR section, not hidden. Persistent disk storage is encrypted at rest by default regardless (AES-256), independent of the outage question. |
+| What if GCP has a breach affecting us? | Contractually, Google's own incident-notification obligations under its customer agreement apply (not something this project has separately negotiated — free-trial terms are Google's standard terms, not custom-negotiated). Practically: rotate all secrets, treat as a P1 per `compliance/INCIDENT_RESPONSE_RUNBOOK.md`. |
+| **New risk this vendor introduces that OCI didn't**: the 90-day credit expiry | Unlike OCI's permanent Always Free tier, this reference deployment has a **hard, dated obligation** — track the account creation date and plan a migration-or-pay decision before day 90 (`DEPLOY_RUNBOOK.md`'s prerequisites section states this explicitly). Letting the credit lapse silently would be a self-inflicted outage, not a vendor-caused one — worth flagging as a distinct risk category from the outage/breach rows above. |
+| Residual risk | **Medium-to-High while the credit-expiry date is untracked; Medium once a migration/payment plan is confirmed before day 90.** Real vendor lock-in and single-region exposure, offset by verified certification status and encryption-by-default — same underlying profile as the prior OCI assessment, plus the new time-boxed-credit risk above. Appropriate for the current pre-revenue stage; a paid multi-region tier or committed GCP billing (removing the credit-expiry risk) is the documented upgrade path once justified (see Domain 6). |
+| Alternative considered? | Yes — GCP was chosen over OCI specifically because of the credit-card requirement at OCI signup; other alternatives (Hetzner, DigitalOcean, AWS) remain viable if GCP stops being the right fit before or after the credit expires. |
 
 ---
 
@@ -96,12 +105,12 @@ customer's behalf using credentials the customer supplies and controls.
   recurring calendar (annual, on each new vendor, etc.). A real gap for
   a team of one; revisit when a second person joins or a customer
   contract requires a documented cadence.
-- **No formal vendor questionnaire process** (e.g., sending OCI or
+- **No formal vendor questionnaire process** (e.g., sending GCP or
   Stripe a security questionnaire directly) — this assessment relies on
   each vendor's own public certification disclosures, not a
   vendor-specific interrogation.
 - **No SLA-backed vendor accountability beyond each vendor's own standard
-  terms** — the OCI Always Free tier in particular carries no negotiated
+  terms** — the GCP free-trial credit in particular carries no negotiated
   SLA; that's disclosed in `compliance/CAIQ_SELF_ASSESSMENT.md` Domain 6,
   not new information here.
 

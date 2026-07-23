@@ -114,9 +114,16 @@ Last reviewed: 2026-07-23
 
 *Source: `DEPLOY_RUNBOOK.md`, `SLA.md`, `STRATEGY_ROADMAP.md` Part 0*
 
-- [ ] Choose a VPS/cloud provider and create the account (OCI Always Free
-      tier is the documented reference option in `DEPLOY_RUNBOOK.md`, but
-      any provider works).
+- [x] Choose a VPS/cloud provider and create the account — **done
+      2026-07-23: Google Cloud Platform** (`responsible-ai-503312`),
+      $300/90-day free-trial credit (switched from OCI, which required a
+      credit card at signup). **Track the 90-day credit expiry date and
+      plan a migrate-or-pay decision before it lapses** — this is a real,
+      dated obligation now baked into `DEPLOY_RUNBOOK.md`,
+      `compliance/CAIQ_SELF_ASSESSMENT.md` Domain 6, and
+      `compliance/VENDOR_RISK_ASSESSMENT.md`.
+- [ ] Provision the actual Compute Engine VM (e2-medium or e2-standard-2,
+      Ubuntu 22.04) — not yet done as of this checklist's last update.
 - [ ] Register or point a domain/subdomain at the server.
 - [ ] Run `./scripts/deploy.sh` (automates secret generation, bringing the
       stack up, migrations, and local health checks).

@@ -30,10 +30,11 @@ without an answer:
 ## What's already done (don't pay to have this re-derived)
 
 - Full sub-processor list with purpose, data processed, location, and
-  certifications for each (Section 2) — Oracle Cloud Infrastructure,
-  Stripe, customer's own OIDC provider, customer's own LLM provider
-  choices. This is factual and current as of 2026-07-21, cited to live
-  sources (CSA STAR registry for OCI's SOC 2/ISO 27001 dates). The
+  certifications for each (Section 2) — Google Cloud Platform (updated
+  2026-07-23, previously Oracle Cloud Infrastructure), Stripe, customer's
+  own OIDC provider, customer's own LLM provider choices. This is factual
+  and current as of 2026-07-23, cited to live sources (Google's own
+  published compliance page for GCP's SOC 2/ISO 27001 status). The
   attorney doesn't need to research or verify these facts — just confirm
   the *legal framing* around them (e.g., is "sub-processor" the right
   term for the customer's-own-IdP and LLM-provider rows, or should those
