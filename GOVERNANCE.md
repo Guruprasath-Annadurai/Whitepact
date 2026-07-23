@@ -67,7 +67,7 @@ Each review is a written pass over:
    infrastructure, a near-miss that didn't become a full incident.
 3. **Vendor risk** — re-check `compliance/VENDOR_RISK_ASSESSMENT.md`
    against current sub-processors; confirm nothing changed without an
-   update (new GCP region, a Stripe feature change, a new LLM provider
+   update (a hosting vendor's region/terms change, a Stripe feature change, a new LLM provider
    integration).
 4. **Incident/tabletop cadence** — per
    `compliance/INCIDENT_RESPONSE_RUNBOOK.md`'s "what this runbook does not

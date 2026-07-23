@@ -25,30 +25,67 @@ this doesn't cover" below), not on a fixed calendar.
 
 ---
 
-## Google Cloud Platform (GCP)
+## Render (compute)
 
-**Updated 2026-07-23**: switched from Oracle Cloud Infrastructure — OCI's
-Always Free signup required a credit card the founder chose not to
-provide; GCP's $300/90-day free-trial credit was the workable
-alternative. This is a vendor *and* a risk-profile change, not just a
-rename — the residual-risk row below reflects that honestly.
+**Updated 2026-07-23**: the live reference deployment's actual compute
+vendor, chosen after both Oracle Cloud and Google Cloud's signup flows
+required a payment card the founder didn't have. Render, Supabase, and
+Upstash together replace the single-VM architecture with three
+card-free managed services — a real architectural change, not a rename.
 
-**Role**: infrastructure hosting for the reference deployment — compute,
-block storage, networking. See `compliance/CAIQ_SELF_ASSESSMENT.md`
-Domain 6 for exact region/instance/credit details (`e2-medium` or
-`e2-standard-2` Compute Engine instance, single region, no automatic
-cross-region failover, $300/90-day free-trial credit — not a permanent
-free tier).
+**Role**: builds and runs `Dockerfile` on every push to `main`
+(`autoDeploy: yes`), serving `https://responsibleai-dashboard.onrender.com`.
+Free tier: shared CPU, **no persistent local disk** — this is the direct
+cause of the Postgres-to-Supabase decision below, proven the hard way
+(the first deploy's in-container SQLite data was lost on the very next
+redeploy).
 
 | Question | Answer |
 |---|---|
-| What data reaches them? | Everything — this is the infrastructure the database and application run on. Full access in principle (as with any IaaS host), governed by Google's own personnel/access controls, not ours. |
-| Independent certification? | Active SOC 2/SOC 3 reports and ISO/IEC 27001, 27017, 27018 certifications — see [cloud.google.com/security/compliance/soc-2](https://cloud.google.com/security/compliance/soc-2), checked directly, not taken from marketing copy. |
-| What if GCP has an outage? | Single-region deployment has no cross-region failover — a GCP regional outage is a platform outage. Documented in `SLA.md`'s DR section, not hidden. Persistent disk storage is encrypted at rest by default regardless (AES-256), independent of the outage question. |
-| What if GCP has a breach affecting us? | Contractually, Google's own incident-notification obligations under its customer agreement apply (not something this project has separately negotiated — free-trial terms are Google's standard terms, not custom-negotiated). Practically: rotate all secrets, treat as a P1 per `compliance/INCIDENT_RESPONSE_RUNBOOK.md`. |
-| **New risk this vendor introduces that OCI didn't**: the 90-day credit expiry | Unlike OCI's permanent Always Free tier, this reference deployment has a **hard, dated obligation** — track the account creation date and plan a migration-or-pay decision before day 90 (`DEPLOY_RUNBOOK.md`'s prerequisites section states this explicitly). Letting the credit lapse silently would be a self-inflicted outage, not a vendor-caused one — worth flagging as a distinct risk category from the outage/breach rows above. |
-| Residual risk | **Medium-to-High while the credit-expiry date is untracked; Medium once a migration/payment plan is confirmed before day 90.** Real vendor lock-in and single-region exposure, offset by verified certification status and encryption-by-default — same underlying profile as the prior OCI assessment, plus the new time-boxed-credit risk above. Appropriate for the current pre-revenue stage; a paid multi-region tier or committed GCP billing (removing the credit-expiry risk) is the documented upgrade path once justified (see Domain 6). |
-| Alternative considered? | Yes — GCP was chosen over OCI specifically because of the credit-card requirement at OCI signup; other alternatives (Hetzner, DigitalOcean, AWS) remain viable if GCP stops being the right fit before or after the credit expires. |
+| What data reaches them? | The running application and whatever it holds in memory/logs. No database data lives on Render itself (see Supabase, below) — but request/response bodies pass through its compute at runtime. |
+| Independent certification? | SOC 2 Type II compliant, ISO/IEC 27001 certified — see [render.com/docs/certifications-compliance](https://render.com/docs/certifications-compliance), checked directly. |
+| What if Render has an outage? | Single free-tier instance, no redundancy — a Render outage is a platform outage. Free tier also has no SLA uptime commitment from Render itself. |
+| What if Render has a breach affecting us? | Render's own incident-notification obligations under its customer terms apply, not separately negotiated. Practically: rotate all secrets (API keys, database credentials) immediately, treat as P1 per `compliance/INCIDENT_RESPONSE_RUNBOOK.md`. |
+| Residual risk | **Medium** — free-tier vendor lock-in and no redundancy, offset by verified SOC 2/ISO 27001 certification. Appropriate for pre-revenue stage; paid tier removes the "no persistent disk / shared CPU" constraints once justified. |
+| Alternative considered? | Yes — chosen specifically because its free tier requires no card, unlike OCI/GCP's signup flows. Any VPS provider remains a viable alternative once budget allows. |
+
+---
+
+## Supabase (database)
+
+**Role**: managed PostgreSQL for the live reference deployment, accessed
+via its transaction-mode connection pooler (`aws-1-us-west-2.pooler.supabase.com:6543`)
+rather than the direct host — the direct host resolves IPv6-only and is
+unreachable from Render's network, discovered live during this
+deployment (see `DEPLOY_RUNBOOK.md`). This is where all persistent
+governance data actually lives.
+
+| Question | Answer |
+|---|---|
+| What data reaches them? | Everything the application persists — trust scores, audit logs, organization/API key metadata, incident records, all governance tables. Full access in principle (as with any managed database host), governed by Supabase's own personnel/access controls, not ours. |
+| Independent certification? | SOC 2 Type II, ISO 27001, HIPAA, and PCI DSS certified — see [supabase.com/docs/guides/security/soc-2-compliance](https://supabase.com/docs/guides/security/soc-2-compliance), checked directly. |
+| What if Supabase has an outage? | Single-project, single-region deployment with no cross-region failover configured — a Supabase outage is a platform outage. Free-tier projects also pause after a period of inactivity per Supabase's own policy — check current terms before relying on this for anything beyond early-stage use. |
+| What if Supabase has a breach affecting us? | Supabase's own incident-notification obligations under its customer terms apply. Practically: rotate the database password immediately (this also breaks the connection string everywhere it's configured — plan for that), treat as P1 per `compliance/INCIDENT_RESPONSE_RUNBOOK.md`. |
+| A real, already-encountered technical risk | The transaction-mode pooler is incompatible with asyncpg's default prepared-statement caching — fixed in code (`statement_cache_size=0` in both `db/engine.py` and `migrations/env.py`), but worth flagging here as the kind of integration risk a managed-pooler architecture introduces that a direct database connection wouldn't. |
+| Residual risk | **Medium** — free-tier vendor lock-in and pooler-specific integration risk (now mitigated in code), offset by strong, verified certification status (SOC 2 Type II + ISO 27001 + HIPAA + PCI DSS is a notably strong set for a free-tier database vendor). |
+| Alternative considered? | Yes — chosen specifically for its card-free free tier; any managed Postgres provider (RDS, Cloud SQL, Neon, etc.) remains viable once budget allows. |
+
+---
+
+## Upstash (cache / rate-limit backend)
+
+**Role**: managed Redis for the shared rate-limit backend (`RAI_REDIS_URL`),
+replacing the in-memory limiter so rate limits are enforced consistently
+even if the app runs multiple replicas in the future.
+
+| Question | Answer |
+|---|---|
+| What data reaches them? | Rate-limit counters only — no governance data, PII, or credentials are stored in Redis. |
+| Independent certification? | **No independently verified certification found as of this review** — stated honestly rather than assumed or guessed. Re-check Upstash's own current security/compliance documentation before citing this vendor in a customer-facing security review. |
+| What if Upstash has an outage? | Rate limiting would fail open or closed depending on `limits` library behavior on a backend connection failure — not explicitly tested against a real Upstash outage as of this review; worth a deliberate test before relying on this in a customer-facing SLA conversation. |
+| What if Upstash has a breach affecting us? | Since only rate-limit counters are stored, the practical blast radius is low — but rotate the Redis credential and treat as at least a P3 per `compliance/INCIDENT_RESPONSE_RUNBOOK.md` regardless. |
+| Residual risk | **Low** — minimal data exposure (counters only), though the certification gap above means this vendor's own security posture is less independently verifiable than Render's or Supabase's. |
+| Alternative considered? | Yes — chosen for its card-free free tier and native Redis TCP protocol support (unlike some serverless Redis competitors that are REST-API-only, which wouldn't work with this app's existing `limits[redis]`-based rate limiter without a code change). |
 
 ---
 
@@ -105,14 +142,14 @@ customer's behalf using credentials the customer supplies and controls.
   recurring calendar (annual, on each new vendor, etc.). A real gap for
   a team of one; revisit when a second person joins or a customer
   contract requires a documented cadence.
-- **No formal vendor questionnaire process** (e.g., sending GCP or
-  Stripe a security questionnaire directly) — this assessment relies on
-  each vendor's own public certification disclosures, not a
-  vendor-specific interrogation.
+- **No formal vendor questionnaire process** (e.g., sending Render,
+  Supabase, Upstash, or Stripe a security questionnaire directly) — this
+  assessment relies on each vendor's own public certification
+  disclosures, not a vendor-specific interrogation.
 - **No SLA-backed vendor accountability beyond each vendor's own standard
-  terms** — the GCP free-trial credit in particular carries no negotiated
-  SLA; that's disclosed in `compliance/CAIQ_SELF_ASSESSMENT.md` Domain 6,
-  not new information here.
+  terms** — all three infrastructure vendors' free tiers carry no
+  negotiated SLA; that's disclosed in `compliance/CAIQ_SELF_ASSESSMENT.md`
+  Domain 6, not new information here.
 
 This document is updated whenever the sub-processor list changes (see
 `SLA.md`'s note on keeping that table and `compliance/DPA_TEMPLATE.md`

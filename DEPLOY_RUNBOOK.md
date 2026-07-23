@@ -1,5 +1,50 @@
 # Deploy Runbook — Hosted ResponsibleAI (PRO/ENTERPRISE)
 
+> ## What's actually live, as of 2026-07-23
+>
+> The real, currently-running hosted instance is **not** the VM-based
+> architecture this document was originally written for. It's a managed
+> three-service stack, no VM, no Docker Compose in production:
+>
+> - **Compute**: [Render](https://render.com) free-tier web service
+>   (`responsibleai-dashboard`), building `Dockerfile` directly from the
+>   `main` branch on every push (`autoDeploy: yes`) — no VPS, no SSH-in
+>   deploy step.
+> - **Database**: [Supabase](https://supabase.com) managed Postgres,
+>   accessed via its **transaction-mode connection pooler**
+>   (`aws-1-us-west-2.pooler.supabase.com:6543`), not the direct
+>   `db.<ref>.supabase.co:5432` host — the direct host resolves IPv6-only
+>   and Render's network can't reach it (`OSError: Network is unreachable`,
+>   discovered and fixed live during this deployment).
+> - **Rate-limit backend**: [Upstash](https://upstash.com) managed Redis
+>   (`rediss://` TLS endpoint), replacing the in-memory limiter.
+> - **Live URL**: `https://responsibleai-dashboard.onrender.com`
+>
+> **Why this instead of the VM path below**: Oracle Cloud's signup wanted
+> a credit card the founder didn't have; Google Cloud's billing setup was
+> attempted next but its UPI payment flow hit real friction (a documented
+> Google Cloud/UPI issue — a required prepayment step and account
+> suspension loop) and was abandoned too. Render, Supabase, and Upstash
+> all offer genuinely card-free free tiers that
+> together replicate what `docker-compose.prod.yml` provides on a single
+> VM — at the cost of using three separate dashboards instead of one
+> `docker compose up`, and Render's free tier does not offer a permanent
+> disk, which is exactly why Postgres had to move to Supabase rather than
+> staying as an in-container SQLite file (the first deploy attempt lost
+> its data on the next redeploy before this was fixed).
+>
+> **Two real code bugs surfaced getting here**, both fixed and committed:
+> the `Dockerfile` was silently missing `pyotp`/`sqlalchemy`/`cryptography`
+> (fixed to install via `pyproject.toml`'s own extras instead of a
+> hand-maintained list), and Supabase's pooler breaks asyncpg's prepared-
+> statement cache (fixed in both `db/engine.py` and `migrations/env.py`
+> with `statement_cache_size=0`).
+>
+> The VM + Docker Compose instructions below remain valid and are kept in
+> full — they're the right path if you have a card and want everything on
+> one box, or if you're self-hosting on your own infrastructure rather than
+> using this project's specific free-tier combination.
+
 Exact commands for standing up `docker-compose.prod.yml` on a real server.
 Written for a fresh Ubuntu 22.04 VPS — adjust package manager commands if
 using a different distro. Every step here is something you run; nothing in
@@ -19,47 +64,35 @@ debugging what the script did.
 
 ## 0. Prerequisites (you do this outside the terminal)
 
-- A VPS. **Reference provider for this deployment (as of 2026-07-23):
-  Google Cloud Platform (GCP)** — chosen because Oracle Cloud's Always
-  Free signup requires a credit card the founder didn't want to provide;
-  GCP's $300/90-day free-trial credit was the workable alternative. This
-  is a **materially different capacity story than a permanent free tier,
-  stated honestly**: the credit expires in 90 days from account creation,
-  not never. Before day 90, you must either start paying for the instance
-  or migrate off — this is a real, dated obligation, not a someday
-  concern. Track your account creation date and put a reminder at day 75.
-  - Suggested instance: an `e2-medium` (2 vCPU / 4GB) or `e2-standard-2`
-    (2 vCPU / 8GB) Compute Engine VM running Ubuntu 22.04 — sized to
-    comfortably run `docker-compose.prod.yml`'s four services
-    (Postgres, Redis, dashboard, MCP HTTP) at low traffic.
-  - GCP itself maintains active SOC 2, SOC 3, and ISO 27001/27017/27018
-    certifications for the underlying platform (see
-    [cloud.google.com/security/compliance/soc-2](https://cloud.google.com/security/compliance/soc-2)
-    for current certificates) — cite this the same way `DEPLOY_RUNBOOK.md`
-    previously cited OCI's: the infrastructure provider's certification is
-    real and usable in a vendor security review even before this
-    platform has its own (see `compliance/SOC2_READINESS.md`).
-  - **Historical note**: this runbook previously targeted OCI's Always
-    Free tier (2 OCPU/12GB ARM compute, permanent, no card required for
-    the compute itself though OCI signup does ask for one). If a future
-    decision reverts to OCI or another provider, the deployment steps
-    below (Docker, `docker-compose.prod.yml`, `scripts/deploy.sh`) are
-    provider-agnostic and don't need to change — only this prerequisites
-    section and the capacity/pricing framing in
-    `compliance/SALES_TARGETING.md` do.
-  - **Capacity note:** an `e2-medium`/`e2-standard-2` is below `SLA.md`'s
-    "Recommended (Postgres + Redis, hosted)" spec of 4+ vCPUs per replica —
-    running dashboard + MCP HTTP + Postgres + Redis together on 2 vCPUs
-    total will be CPU-constrained under real load, not just RAM-constrained.
-    Fine for early-stage/low-traffic; don't oversell it as meeting the
-    recommended bar until upgrading to paid capacity.
-  - **Region choice**: pick whichever GCP region is geographically closest
-    to your expected early customers — unlike OCI's Always Free tier, this
-    isn't a permanent one-time choice, so it's lower-stakes than it was
-    under the previous provider.
-  - Any other provider works too — Hetzner, DigitalOcean, AWS Lightsail,
-    OCI, etc. — if the 90-day credit clock or GCP specifically stops being
-    the right fit later.
+**Note**: this whole VM-based path is the *alternative* to what's actually
+live (see the callout at the top of this document). Neither Oracle Cloud
+nor Google Cloud ended up being used for the real deployment — both
+signup flows hit friction the founder couldn't clear (OCI wanted a card
+at signup; GCP's billing setup failed via UPI). If you're following this
+section, you have a working payment method and want a single-VM
+architecture; pick whichever provider actually works for you rather than
+assuming either of those two.
+
+- A VPS, any provider. Considerations if you're choosing one:
+  - Sizing: 2+ vCPU / 4GB+ RAM comfortably runs `docker-compose.prod.yml`'s
+    four services (Postgres, Redis, dashboard, MCP HTTP) at low traffic —
+    below `SLA.md`'s "Recommended (Postgres + Redis, hosted)" spec of 4+
+    vCPUs per replica, so don't oversell this sizing as meeting that bar
+    until upgrading to paid capacity.
+  - If the provider offers a free/trial tier, check honestly whether it's
+    **permanent** (like OCI's Always Free tier was) or **time-boxed**
+    (like GCP's $300/90-day credit) — a time-boxed credit is a real, dated
+    obligation to track (migrate or pay before it lapses), not a someday
+    concern.
+  - Cite the provider's own SOC 2/ISO 27001 certification status if it
+    has one, the same way `compliance/VENDOR_RISK_ASSESSMENT.md` does for
+    the actual live deployment's vendors — real and usable in a vendor
+    security review even before this platform has its own certification
+    (see `compliance/SOC2_READINESS.md`).
+  - Hetzner, DigitalOcean, AWS Lightsail, OCI, GCP — all remain viable
+    choices; the point of this note is not to assume any one of them
+    works for you without checking their current signup requirements
+    yourself first.
 - A domain or subdomain you control (e.g. `api.yourcompany.com`).
 - A Stripe account in live mode, if selling PRO/ENTERPRISE (skip if not billing yet).
 

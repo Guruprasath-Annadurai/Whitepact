@@ -110,32 +110,46 @@ Last reviewed: 2026-07-23
       codebase immediately before submission.
 - [ ] Create an arXiv account and actually submit.
 
-## 6. Hosted instance (blocks almost everything else commercially)
+## 6. Hosted instance — **DONE, live as of 2026-07-23**
 
 *Source: `DEPLOY_RUNBOOK.md`, `SLA.md`, `STRATEGY_ROADMAP.md` Part 0*
 
-- [x] Choose a VPS/cloud provider and create the account — **done
-      2026-07-23: Google Cloud Platform** (`responsible-ai-503312`),
-      $300/90-day free-trial credit (switched from OCI, which required a
-      credit card at signup). **Track the 90-day credit expiry date and
-      plan a migrate-or-pay decision before it lapses** — this is a real,
-      dated obligation now baked into `DEPLOY_RUNBOOK.md`,
-      `compliance/CAIQ_SELF_ASSESSMENT.md` Domain 6, and
-      `compliance/VENDOR_RISK_ASSESSMENT.md`.
-- [ ] Provision the actual Compute Engine VM (e2-medium or e2-standard-2,
-      Ubuntu 22.04) — not yet done as of this checklist's last update.
-- [ ] Register or point a domain/subdomain at the server.
-- [ ] Run `./scripts/deploy.sh` (automates secret generation, bringing the
-      stack up, migrations, and local health checks).
-- [ ] Issue a TLS certificate (certbot) and configure the nginx reverse
-      proxy per `DEPLOY_RUNBOOK.md` steps 6-7.
-- [ ] Create your first real org and retire the bootstrap API key
-      (`DEPLOY_RUNBOOK.md` step 11).
+The plan below (GCP VM + Docker Compose) turned out not to be what
+actually got built — GCP's billing setup hit real friction (UPI payment
+failures), so the founder pivoted to a card-free managed-services stack
+instead. What's actually live:
+
+- [x] **Compute**: Render free-tier web service (`responsibleai-dashboard`),
+      auto-deploying `Dockerfile` from `main` on every push. Live at
+      `https://responsibleai-dashboard.onrender.com`.
+- [x] **Database**: Supabase managed Postgres, accessed via its
+      transaction-mode pooler (the direct host is IPv6-only and
+      unreachable from Render — fixed by using the pooler + a
+      `statement_cache_size=0` fix in both `db/engine.py` and
+      `migrations/env.py`).
+- [x] **Rate-limit backend**: Upstash managed Redis, replacing the
+      in-memory limiter (`rate_limit_backend: redis` confirmed via
+      `/api/health`).
+- [x] Migrations applied, first real org + OWNER key created, bootstrap
+      key retired — confirmed to survive a redeploy (proving persistence
+      actually works, not just configured).
+- [ ] Register or point a real domain/subdomain at the Render service
+      (currently only reachable at its `.onrender.com` URL).
 - [ ] Set up a public status page (statuspage.io or equivalent) and link
       it from `SLA.md`.
-- [ ] Once this is live, go back and remove the "no hosted instance is
-      live yet" caveat from `SLA.md`, `TERMS_OF_SERVICE.md`, and
-      `PRIVACY_POLICY.md` — not before.
+- [ ] **Now that this is genuinely live**, go back and remove/update the
+      "no hosted instance is live yet" caveat in `SLA.md`,
+      `TERMS_OF_SERVICE.md`, and `PRIVACY_POLICY.md` — this is now
+      inaccurate as written and should reflect the real (free-tier,
+      no-custom-domain-yet) status rather than either overclaiming or
+      leaving the old "doesn't exist" language standing.
+- [ ] **Abandoned**: the GCP project (`responsible-ai-503312`) — either
+      delete it to avoid any future billing surprise, or keep it as a
+      dormant sandbox; it's not part of the live architecture.
+- [ ] **Unresolved**: your Supabase database password and Upstash Redis
+      token both appeared in plaintext during this session's chat
+      history — rotate both from their respective dashboards when you
+      get a chance, same as the other credentials flagged along the way.
 
 ## 7. Billing (only once selling live)
 

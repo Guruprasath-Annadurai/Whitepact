@@ -17,8 +17,8 @@ self-hosted software and worth being explicit about:
 
 | Database backend | Encryption at rest |
 |---|---|
-| SQLite (default, self-hosted) | **Not encrypted by the application.** The `.db` file is plaintext on disk unless the host filesystem/volume is encrypted (LUKS, dm-crypt, encrypted EBS/PD volume, FileVault, BitLocker, or — for the reference deployment on Google Cloud Platform — [Compute Engine's default AES-256 persistent-disk encryption](https://docs.cloud.google.com/docs/security/encryption/default-encryption), which applies with no configuration required). We recommend running SQLite only behind a full-disk-encrypted volume in production. |
-| PostgreSQL (recommended for production, `RAI_DATABASE_URL`) | Encryption at rest depends on your Postgres provider. Managed services (AWS RDS, GCP Cloud SQL, Azure Database for PostgreSQL) encrypt storage by default. On the reference deployment (self-managed Postgres on a GCP Compute Engine instance, via `docker-compose.prod.yml`), the underlying persistent disk is encrypted at rest by default regardless — self-managed Postgres on other providers still requires disk-level encryption configured separately. |
+| SQLite (default, self-hosted) | **Not encrypted by the application.** The `.db` file is plaintext on disk unless the host filesystem/volume is encrypted (LUKS, dm-crypt, encrypted EBS/PD volume, FileVault, BitLocker). **Not used by the live reference deployment** — Render's free tier has no persistent local disk at all, which is exactly why that deployment uses managed Postgres (Supabase) rather than in-container SQLite; this row applies to self-hosted deployments choosing the SQLite default. |
+| PostgreSQL (recommended for production, `RAI_DATABASE_URL`) | Encryption at rest depends on your Postgres provider. Managed services (AWS RDS, GCP Cloud SQL, Azure Database for PostgreSQL, Supabase) encrypt storage by default. **The live reference deployment uses Supabase's managed Postgres**, which encrypts data at rest by default as part of its SOC 2 Type II / ISO 27001-certified infrastructure — self-managed Postgres on other providers still requires disk-level encryption configured separately. |
 | Redis (optional, rate limiting only) | Redis stores rate-limit counters, never governance data, PII, or credentials. Encryption at rest is not required for this use case but is unaffected by our config either way — follow your Redis provider's defaults. |
 
 **What the application layer does guarantee regardless of disk encryption:**
@@ -38,7 +38,8 @@ ResponsibleAI is self-hosted by default. **You control where your data lives** b
 
 | Deployment mode | Data location |
 |---|---|
-| Self-hosted (Docker / Helm / bare-metal) | Entirely within your infrastructure and region. No data leaves your network unless you configure outbound integrations (webhooks, LLM provider APIs, Stripe billing, OTLP telemetry export) — all of which are optional and explicitly configured. Reference/planned deployment: Google Cloud Platform, $300/90-day free-trial credit, single region (see `compliance/CAIQ_SELF_ASSESSMENT.md` Domain 6 for exact region-selection, credit terms, and capacity considerations). |
+| Self-hosted (Docker / Helm / bare-metal) | Entirely within your infrastructure and region. No data leaves your network unless you configure outbound integrations (webhooks, LLM provider APIs, Stripe billing, OTLP telemetry export) — all of which are optional and explicitly configured. |
+| Live reference deployment | **Not self-hosted** — a managed three-vendor stack: Render (compute, US/Oregon region), Supabase (Postgres, `aws-1-us-west-2`), Upstash (Redis). See `compliance/CAIQ_SELF_ASSESSMENT.md` Domain 6 for full detail on each vendor's region and constraints. |
 | Hosted MCP (`responsibleai-mcp-http`), self-operated | Same as above — this is a transport option you run yourself, not a managed service we operate. |
 | A future ResponsibleAI-operated SaaS tier | **Not yet available.** No such offering exists today. If/when one ships, this document will be updated with the specific region(s), sub-processor list, and data flow diagram before it's sold as a data-residency-compliant product. |
 
@@ -89,6 +90,6 @@ All governance data (trust scores, cost/token usage, audit log, MCP tool call me
 
 - SOC2 / ISO 27001 certification status — see `SLA.md` and ask directly; certification is a roadmap item, not a current claim.
 - Penetration test reports — request current status directly; not published in this repo.
-- A signed Data Processing Agreement — a draft template with the current sub-processor list (GCP, Stripe, customer's own OIDC/LLM choices) exists at `compliance/DPA_TEMPLATE.md`, explicitly marked as unreviewed by counsel; not something to treat as an executable contract yet.
+- A signed Data Processing Agreement — a draft template with the current sub-processor list (Render, Supabase, Upstash, Stripe, customer's own OIDC/LLM choices) exists at `compliance/DPA_TEMPLATE.md`, explicitly marked as unreviewed by counsel; not something to treat as an executable contract yet.
 
 This document is updated alongside the platform. If you find a claim here that's stale relative to the code, treat the code as ground truth and report the discrepancy per `SECURITY.md`.

@@ -70,7 +70,9 @@ Scheduled maintenance windows (max 4 hours/month, announced 48h in advance) are 
 
 | Sub-processor | Purpose | Certifications |
 |---|---|---|
-| Google Cloud Platform (GCP) | Infrastructure hosting for the reference deployment (compute, block storage, networking) — updated 2026-07-23, previously Oracle Cloud Infrastructure; see `compliance/CAIQ_SELF_ASSESSMENT.md` Domain 6 for exact region, credit terms, and capacity details | Active SOC 2/SOC 3 reports and ISO/IEC 27001, 27017, 27018 certifications — see [cloud.google.com/security/compliance/soc-2](https://cloud.google.com/security/compliance/soc-2) |
+| Render | Compute hosting for the live reference deployment (`responsibleai-dashboard`), building and running the Docker image on every push to `main` — the actual currently-running instance as of 2026-07-23; see `compliance/CAIQ_SELF_ASSESSMENT.md` Domain 6 | SOC 2 Type II compliant, ISO/IEC 27001 certified — see [render.com/docs/certifications-compliance](https://render.com/docs/certifications-compliance) |
+| Supabase | Managed PostgreSQL for the live reference deployment, accessed via its transaction-pooler endpoint | SOC 2 Type II, ISO 27001, HIPAA, PCI DSS certified — see [supabase.com/docs/guides/security/soc-2-compliance](https://supabase.com/docs/guides/security/soc-2-compliance) |
+| Upstash | Managed Redis for the live reference deployment's rate-limit backend | No independently verified certification found as of this review — stated honestly rather than assumed; re-check before citing this vendor in a customer-facing security review |
 | Stripe, Inc. | Payment processing and subscription billing (PRO/ENTERPRISE plans only) — no governance data reaches Stripe, billing metadata only | Stripe's own published PCI-DSS Level 1 certification |
 | Customer's own OIDC/SSO provider (if enabled) | Authentication only | Per the customer's own IdP choice — not selected or certified by us |
 | LLM providers (OpenAI, Anthropic, Google, etc.), if configured | Model evaluation and cost tracking, under the customer's own account and API keys | Per each provider's own terms |
@@ -178,16 +180,17 @@ This SLA does not cover:
 | OS | Linux (amd64/arm64) | Ubuntu 22.04 LTS |
 | Deployment | `docker-compose.yml` | `docker-compose.prod.yml` (Postgres + Redis + dashboard + MCP HTTP) |
 
-**Note on the reference deployment (Google Cloud Platform, $300/90-day
-free-trial credit — updated 2026-07-23, previously Oracle Cloud
-Infrastructure Always Free tier):** its `e2-medium`/`e2-standard-2`
-instance sizing falls below the "Recommended" column's 4+ vCPUs per
-replica — see `DEPLOY_RUNBOOK.md`'s prerequisites for the honest capacity
-tradeoff, plus the real 90-day credit-expiry clock this reference
-deployment now runs on (a materially different constraint than a
-permanent free tier). Workable for early-stage/low-traffic use; treat
-"Recommended" as the bar to grow into with paid capacity, not a claim
-about the current reference setup.
+**Note on the reference deployment (Render free tier + Supabase managed
+Postgres + Upstash managed Redis — updated 2026-07-23):** the live
+instance runs on Render's free web-service tier (shared CPU, no
+persistent local disk — this is exactly why Postgres lives on Supabase
+rather than in-container SQLite), which falls well below the
+"Recommended" column's 4+ vCPUs per replica. This is a managed-services
+architecture, not a single VM, so "Deployment" above (`docker-compose.prod.yml`)
+describes the *self-hosted VM alternative* in `DEPLOY_RUNBOOK.md`, not
+the actual live topology. Workable for early-stage/low-traffic use; treat
+"Recommended" as the bar to grow into with paid capacity on any of these
+three providers, not a claim about the current reference setup.
 
 **Running more than one replica:** set `RAI_MULTI_REPLICA=true`. This is a
 self-declaration, not a feature flag — it makes startup verify the

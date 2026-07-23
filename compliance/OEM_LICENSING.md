@@ -31,7 +31,7 @@ doesn't personally audit Stripe's SOC2 report line-by-line before accepting
 payments through it — you rely on Stripe's compliance posture as a
 sub-processor, disclosed in your own DPA to your customers, the same
 pattern `compliance/DPA_TEMPLATE.md` already uses for our own
-sub-processors (GCP, Stripe). An OEM licensee discloses ResponsibleAI as
+sub-processors (Render, Supabase, Upstash, Stripe). An OEM licensee discloses ResponsibleAI as
 *their* sub-processor/technology provider the same way, with the same
 honest disclosure obligations, not as a vendor whose own certification
 status blocks the deal.

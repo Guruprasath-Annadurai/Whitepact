@@ -11,18 +11,27 @@ file/mechanism behind it. Where a control doesn't exist, that's stated
 plainly, not omitted. If you find a claim here that doesn't match the code,
 the code is ground truth — report the discrepancy per `SECURITY.md`.
 
-**Reference hosting provider:** Google Cloud Platform (GCP), $300/90-day
-free-trial credit — chosen 2026-07-23 for the reference/planned deployment;
-Oracle Cloud's Always Free tier (the prior reference provider) required a
-credit card the founder chose not to provide. Domain 6 below documents
-GCP's own certifications and the trial's real constraints, verified
-against Google's current documentation rather than assumed. This does not
-mean a ResponsibleAI-operated hosted SaaS tier is live — see
-`ENTERPRISE_SECURITY.md`'s Data Residency section; that status is
-unchanged until one is actually deployed and sold. **Stated honestly**:
-unlike OCI's permanent Always Free tier, GCP's credit expires 90 days from
-account creation — this is a materially different capacity/continuity
-story, not a like-for-like swap, and Domain 6 below reflects that.
+**Reference hosting provider:** as of 2026-07-23, **a live, genuinely
+deployed instance exists** at `https://responsibleai-dashboard.onrender.com`
+— a three-vendor managed-services stack chosen because neither Oracle
+Cloud's nor Google Cloud's signup flow could be completed without a
+payment card the founder didn't have:
+- **Render** (compute) — builds and runs `Dockerfile` on every push to
+  `main`, free tier, no persistent local disk.
+- **Supabase** (database) — managed PostgreSQL, accessed via its
+  transaction-mode connection pooler (the direct host is IPv6-only and
+  unreachable from Render's network — discovered live, documented in
+  `DEPLOY_RUNBOOK.md`).
+- **Upstash** (cache) — managed Redis for the shared rate-limit backend.
+
+Domain 6 below documents each vendor's own certifications and the real
+constraints of this specific combination, verified against current
+documentation rather than assumed. This does not mean a
+ResponsibleAI-operated hosted SaaS *tier* is live for sale — see
+`ENTERPRISE_SECURITY.md`'s Data Residency section; that commercial status
+is unchanged until billing is actually wired up and a paying customer
+exists. What's true now is narrower and real: the platform itself is
+reachable and functioning at the URL above.
 
 Last reviewed: 2026-07-23 · Platform version: 1.2.0
 
@@ -76,7 +85,7 @@ Last reviewed: 2026-07-23 · Platform version: 1.2.0
 
 | Question | Answer |
 |---|---|
-| Is data encrypted at rest? | Not enforced by the application layer — see `ENTERPRISE_SECURITY.md`. For the reference deployment specifically: **yes, at the infrastructure layer** — [Google Cloud encrypts all Compute Engine persistent disk data by default](https://docs.cloud.google.com/docs/security/encryption/default-encryption) using AES-256, with Google-owned/managed keys, no opt-in required (customer-managed/customer-supplied keys are available via Cloud KMS if stronger key control is needed later). This is a property of the chosen provider, not something this codebase implements — a different self-hosted provider/config could lack it, so don't read this as a platform-wide guarantee. |
+| Is data encrypted at rest? | Not enforced by the application layer — see `ENTERPRISE_SECURITY.md`. For the live reference deployment specifically: **yes, at the infrastructure layer, per Supabase** — Supabase's managed Postgres encrypts data at rest by default as part of its SOC 2/ISO 27001-certified infrastructure (see Supabase's own security documentation for current specifics). This is a property of the chosen database vendor, not something this codebase implements — a different self-hosted provider/config could lack it, so don't read this as a platform-wide guarantee. |
 | Is data encrypted in transit? | TLS is the deployer's responsibility (reverse proxy termination) — the app speaks plain HTTP internally. See `DEPLOYMENT.md`'s nginx config. Webhook payloads carry HMAC-SHA256 signatures independent of transport encryption. |
 | Is there a data retention and deletion policy? | Yes — configurable per data type (`SLA.md`'s Data Retention table): trust scores/token usage default 365 days, audit log via `AuditRepository.cleanup(retention_days=N)`. Not run automatically; scheduling is the deployer's responsibility. |
 | Is PII detected and handled specially? | Yes — the Guardrails Engine (`rai_scan` / `GET /api/scan`) detects email, phone, SSN, credit card, IP address and can redact in real time; `rai_pii_report` aggregates findings for GDPR/CCPA evidence. |
@@ -88,11 +97,11 @@ Last reviewed: 2026-07-23 · Platform version: 1.2.0
 
 | Question | Answer |
 |---|---|
-| Where is data physically hosted? | Self-hosted by default — **you** choose the datacenter/region, since you run the infrastructure. No ResponsibleAI-operated datacenter exists as of v1.2.0 (see `ENTERPRISE_SECURITY.md`'s Data Residency section). **Reference/planned provider: Google Cloud Platform, Compute Engine, $300/90-day free-trial credit.** A single GCP region/zone is chosen at instance creation — unlike the prior OCI reference, this choice is not permanent and can be changed by recreating the instance in a different region if needed. |
-| Is physical security independently certified? | Yes, inherited from GCP (not from us): Google Cloud Platform maintains active **SOC 2 and SOC 3 reports** and **ISO/IEC 27001, 27017, and 27018 certifications** for the infrastructure, applications, people, and processes serving Google Cloud Platform — see [cloud.google.com/security/compliance/soc-2](https://cloud.google.com/security/compliance/soc-2) for current certificates. These certifications cover GCP's physical/infrastructure controls, not this platform's application-layer controls — don't conflate the two. |
-| What are the exact free-trial resource limits (for capacity/DR planning)? | The $300 credit (not a permanent free tier) can be applied to any Compute Engine instance type — the reference deployment uses an `e2-medium` (2 vCPU/4GB) or `e2-standard-2` (2 vCPU/8GB), sized to run `docker-compose.prod.yml`'s four services at low traffic. Unlike OCI's Always Free tier, there is no fixed "free forever" instance size — capacity is whatever the credit affords until it's exhausted or the 90 days elapse, whichever comes first. Verify current trial terms at `cloud.google.com/free` before relying on this figure, since promotional credit terms can change. |
-| Is the free-trial capacity/entitlement stable? | **No, by design** — stated honestly, and materially different from the prior OCI-based answer: this is a time-boxed promotional credit, not a stable long-term entitlement. It expires 90 days from account creation regardless of usage. `DEPLOY_RUNBOOK.md`'s prerequisites section requires tracking the account creation date and planning a migration-or-pay decision before day 90 — this is a real, dated operational obligation, not a someday concern. |
-| Is there redundancy/failover within the free-trial instance? | No — a single instance in a single region/zone with no automatic failover is the current reference deployment, same underlying limitation the prior OCI-based deployment had (see Domain 3's note on no automated replica failover orchestration). For real redundancy, a paid multi-region GCP deployment (or a different provider) would be required — tracked as a future upgrade path once revenue justifies the cost, not glossed over as already handled. |
+| Where is data physically hosted? | For self-hosted deployments: **you** choose the datacenter/region, since you run the infrastructure. **For the live reference deployment** (as of 2026-07-23): Render (compute, us-west/Oregon region), Supabase (Postgres, `aws-1-us-west-2`), Upstash (Redis, region selected at signup) — three separate managed vendors, not one datacenter. No ResponsibleAI-operated datacenter exists (see `ENTERPRISE_SECURITY.md`'s Data Residency section). |
+| Is physical security independently certified? | Inherited from each vendor, not from us: **Render** — SOC 2 Type II compliant, ISO/IEC 27001 certified ([render.com/docs/certifications-compliance](https://render.com/docs/certifications-compliance)). **Supabase** — SOC 2 Type II, ISO 27001, HIPAA, PCI DSS certified ([supabase.com/docs/guides/security/soc-2-compliance](https://supabase.com/docs/guides/security/soc-2-compliance)). **Upstash** — no independently verified certification found as of this review; stated honestly rather than assumed, re-check before citing in a customer-facing review. These certifications cover each vendor's own infrastructure controls, not this platform's application-layer controls — don't conflate the two. |
+| What are the exact free-tier resource limits (for capacity/DR planning)? | **Render**: free web services run on shared CPU with no persistent local disk — restarts/redeploys wipe anything written to the container filesystem, which is exactly why Postgres lives on Supabase rather than SQLite (proven the hard way: the first deploy's SQLite data was lost on the very next redeploy). **Supabase**: free tier project, standard connection-pooler limits apply (see Supabase's own published pool-size defaults). **Upstash**: free tier Redis, standard published request/data limits apply. None of these three are a "permanent Always Free tier" guarantee in the way OCI's compute tier was — verify current limits on each vendor's own pricing page before relying on a specific figure. |
+| Is the free-tier capacity/entitlement stable across all three vendors? | Partially — stated honestly: Render and Upstash's free tiers are ongoing (no fixed expiry date known), but each vendor can change free-tier terms without this document being updated in lockstep. This is a real operational dependency on three separate vendors' free-tier policies remaining available, not a committed SLA from any of them. |
+| Is there redundancy/failover within the current deployment? | No — a single Render instance, a single Supabase project, and a single Upstash database, each without cross-region failover configured, is the current reference deployment (see Domain 3's note on no automated replica failover orchestration). For real redundancy, paid tiers on any of these three vendors (or a self-hosted multi-region alternative) would be required — tracked as a future upgrade path once revenue justifies the cost, not glossed over as already handled. |
 
 ---
 
@@ -178,7 +187,7 @@ Last reviewed: 2026-07-23 · Platform version: 1.2.0
 
 | Question | Answer |
 |---|---|
-| Is there a sub-processor list? | Yes — `SLA.md`'s "Sub-processors" section (summary) and `compliance/DPA_TEMPLATE.md` Section 2 (full detail: purpose, data processed, location, certifications for each), both updated 2026-07-23 to list Google Cloud Platform as the reference hosting provider. Also lists Stripe (billing, if enabled) and the customer's own OIDC/LLM provider choices. For self-hosted deployments where the customer runs their own infrastructure entirely, most of this doesn't apply — the customer *is* the infrastructure choice. This is not the same as a ResponsibleAI-operated hosted SaaS tier being live for sale, which it still isn't. |
+| Is there a sub-processor list? | Yes — `SLA.md`'s "Sub-processors" section (summary) and `compliance/DPA_TEMPLATE.md` Section 2 (full detail: purpose, data processed, location, certifications for each), both updated 2026-07-23 to list Render, Supabase, and Upstash as the live reference deployment's infrastructure vendors. Also lists Stripe (billing, if enabled) and the customer's own OIDC/LLM provider choices. For self-hosted deployments where the customer runs their own infrastructure entirely, most of this doesn't apply — the customer *is* the infrastructure choice. This is not the same as a ResponsibleAI-operated hosted SaaS tier being live for sale, which it still isn't. |
 | Are third-party dependencies tracked and scanned? | Dependencies are declared in `pyproject.toml` with version constraints. `pip-audit` runs on every CI build (`.github/workflows/ci.yml`) and scans the full resolved dependency tree. A default `pip install rai-governance-platform` currently resolves to zero known vulnerabilities. `nltk` (PYSEC-2026-597, path traversal in `nltk.data.load()`/`find()` via percent-encoded traversal sequences, no upstream fix as of this writing) was removed from the mandatory dependency set and moved to an opt-in `[sentiment]` extra — installing it knowingly takes on that disclosed, upstream-unpatched risk, though reviewed and confirmed non-exploitable in this codebase's own usage (the only call site passes a hardcoded literal resource name, never attacker-controlled input). CI installs `[sentiment]` explicitly to keep the sentiment-scoring tests real, so `pip-audit --ignore-vuln PYSEC-2026-597` still appears there with that rationale documented inline — not silently suppressed. Dependabot is not configured (no automatic PR-based update flow yet — real remaining gap). |
 | Is there an SBOM (Software Bill of Materials)? | Not yet generated. Given the project is open source with a fully inspectable dependency tree, this is lower priority than for closed-source vendors, but still a gap for buyers who require a formal SBOM artifact. |
 | Is there a vendor/third-party risk assessment process? | Yes — `compliance/VENDOR_RISK_ASSESSMENT.md` evaluates each sub-processor listed above (data shared, certification status, outage/breach impact, residual risk). Stated honestly: it's a one-time write-up done alongside other compliance work, not a scheduled recurring review — the document says so itself. |

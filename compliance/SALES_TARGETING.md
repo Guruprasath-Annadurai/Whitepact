@@ -34,44 +34,46 @@ of how good the actual product is.
 
 ## The hosting provider decision changes the pitch, not just the infra
 
-**Updated 2026-07-23**: the reference deployment now targets **Google
-Cloud Platform**, not Oracle Cloud Infrastructure — OCI's Always Free
-signup required a credit card the founder chose not to provide; GCP's
-$300/90-day free-trial credit was the workable alternative (see
-`DEPLOY_RUNBOOK.md`'s prerequisites section for the full reasoning). This
-changes some of the specifics below from the original OCI-based analysis,
-kept honest rather than silently edited:
+**Updated 2026-07-23**: there is now a genuinely **live** hosted instance
+at `https://responsibleai-dashboard.onrender.com` — not a plan, an actual
+running deployment. It's not a single-VM architecture; it's three
+managed vendors: **Render** (compute), **Supabase** (Postgres), **Upstash**
+(Redis). Both Oracle Cloud's and Google Cloud's signup flows required a
+payment card the founder didn't have — these three vendors' free tiers
+don't. This changes the pitch from the prior OCI/GCP-based analysis, kept
+honest rather than silently edited:
 
-- **GCP has real, verifiable, and more widely recognized certifications
-  you can cite** — active SOC 2/SOC 3 reports and ISO 27001/27017/27018
-  certification for the platform (see
-  [cloud.google.com/security/compliance/soc-2](https://cloud.google.com/security/compliance/soc-2)
-  for current certificates). When a mid-market prospect's vendor review
-  asks "is your infrastructure provider certified," the honest answer is
-  yes, cited — even though *this platform* isn't certified yet. This is
-  actually a **stronger** answer than OCI was on the specific
-  brand-recognition point below, not just an equivalent one.
-- **GCP does not have OCI's brand-recognition weakness.** The previous
-  OCI-based analysis flagged that some enterprise vendor-risk checklists
-  name a specific short-list of "big three" approved cloud providers
-  (AWS/GCP/Azure) that Oracle doesn't always make. GCP is one of that
-  short list — this specific objection no longer applies with the new
-  provider.
-- **The $300/90-day credit sets a real, dated capacity ceiling, different
-  in kind from OCI's permanent-but-small free tier.** Don't promise a
-  prospect infrastructure continuity past the credit window without a
-  concrete plan to start paying — this is a genuinely different honesty
-  obligation than the old "small but permanent" framing, not just a
-  relabeling of the same caveat. See `DEPLOY_RUNBOOK.md`'s prerequisites
-  section for the exact date-tracking discipline this requires.
-- **Instance sizing (`e2-medium`/`e2-standard-2`) is still below `SLA.md`'s
-  "Recommended" spec**, same underlying capacity caveat as before — don't
-  pitch multi-region redundancy or high-concurrency guarantees on this
-  infrastructure yet (see `DEPLOY_RUNBOOK.md`'s capacity note).
+- **Render and Supabase both have real, strong, independently verifiable
+  certifications you can cite** — Render is SOC 2 Type II compliant and
+  ISO 27001 certified; Supabase is SOC 2 Type II, ISO 27001, HIPAA, and
+  PCI DSS certified (see `compliance/VENDOR_RISK_ASSESSMENT.md` for
+  sources). When a mid-market prospect's vendor review asks "is your
+  infrastructure provider certified," the honest answer is yes, cited for
+  two of the three vendors — even though *this platform* isn't certified
+  yet.
+- **Upstash's certification status is not independently verified** —
+  stated honestly rather than glossed over. If a prospect's review digs
+  into sub-processor certifications specifically, this is the one gap to
+  flag proactively rather than let them discover.
+- **This is now a genuinely multi-vendor infrastructure story, not a
+  single-provider one.** A prospect's vendor-risk review may ask about
+  each of three sub-processors separately (Render, Supabase, Upstash)
+  rather than one — more surface area to disclose, but also three
+  separate SOC 2/ISO 27001 answers to point to for two of them.
+- **No dated credit-expiry clock** (unlike the GCP plan this replaced) —
+  Render, Supabase, and Upstash's free tiers don't have a known fixed
+  expiration the way GCP's $300/90-day credit did. This removes a real
+  operational deadline that would have needed tracking.
+- **Real capacity limits still apply and should still be disclosed
+  honestly**: Render's free tier has no persistent local disk and shared
+  CPU; Supabase and Upstash both have standard free-tier resource caps.
+  Don't pitch multi-region redundancy or high-concurrency guarantees on
+  this infrastructure yet (see `DEPLOY_RUNBOOK.md`'s live-architecture
+  note and `SLA.md`'s capacity section).
 - **The "target smaller first" segmentation from the table above is
   unchanged** — the certificate gap (this platform's own SOC2/pentest
   status) still says don't chase Fortune 500/regulated industries yet,
-  independent of which cloud provider is underneath.
+  independent of which infrastructure vendors are underneath.
 
 ---
 
@@ -129,8 +131,9 @@ kept honest rather than silently edited:
    actually time to spend real money on the certificate — don't guess,
    measure it against real sales conversations once there are some to
    measure.
-5. **Cite GCP's SOC 2/ISO 27001 certifications proactively when
-   infrastructure comes up**, and be upfront about both the current
-   instance's capacity ceiling and the 90-day free-trial-credit clock if a
-   prospect asks about scale, redundancy, or continuity — before they
-   find out under load or after the credit lapses, not after.
+5. **Cite Render's and Supabase's SOC 2/ISO 27001 certifications
+   proactively when infrastructure comes up**, disclose Upstash's
+   unverified certification status honestly if asked, and be upfront
+   about the current instance's real capacity ceiling (shared CPU, no
+   persistent local disk on Render's free tier) if a prospect asks about
+   scale or redundancy — before they find out under load, not after.

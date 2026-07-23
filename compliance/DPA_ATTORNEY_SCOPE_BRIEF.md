@@ -30,15 +30,16 @@ without an answer:
 ## What's already done (don't pay to have this re-derived)
 
 - Full sub-processor list with purpose, data processed, location, and
-  certifications for each (Section 2) — Google Cloud Platform (updated
-  2026-07-23, previously Oracle Cloud Infrastructure), Stripe, customer's
-  own OIDC provider, customer's own LLM provider choices. This is factual
-  and current as of 2026-07-23, cited to live sources (Google's own
-  published compliance page for GCP's SOC 2/ISO 27001 status). The
-  attorney doesn't need to research or verify these facts — just confirm
-  the *legal framing* around them (e.g., is "sub-processor" the right
-  term for the customer's-own-IdP and LLM-provider rows, or should those
-  be reframed as something else since we don't select or contract with
+  certifications for each (Section 2) — Render, Supabase, and Upstash
+  (updated 2026-07-23, the actual live infrastructure vendors as of this
+  date), Stripe, customer's own OIDC provider, customer's own LLM
+  provider choices. This is factual and current as of 2026-07-23, cited
+  to live sources (each vendor's own published compliance page for their
+  SOC 2/ISO 27001 status). The attorney doesn't need to research or
+  verify these facts — just confirm the *legal framing* around them
+  (e.g., is "sub-processor" the right term for the customer's-own-IdP and
+  LLM-provider rows, or should those be reframed as something else since
+  we don't select or contract with
   them on the customer's behalf).
 - Security measures description (Section 5) — references real, verified
   documentation (`ENTERPRISE_SECURITY.md`, the CAIQ and NIST CSF
