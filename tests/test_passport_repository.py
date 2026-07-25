@@ -77,6 +77,46 @@ class TestCertification:
         assert stored["certified_by"] is None
         assert stored["certified_at"] is None
 
+class TestGetLatestByModel:
+    async def test_unknown_model_returns_none(self, repo):
+        assert await repo.get_latest_by_model("nope", "nobody") is None
+
+    async def test_returns_the_only_assessment(self, repo):
+        passport = _make_passport(fairness=0.5)
+        await repo.create(passport, org_id=None, source="self_assessment")
+        found = await repo.get_latest_by_model("gpt-4o", "openai")
+        assert found is not None
+        assert found["passport_id"] == passport.passport_id
+
+    async def test_exact_match_only(self, repo):
+        await repo.create(_make_passport(), org_id=None, source="self_assessment")
+        assert await repo.get_latest_by_model("GPT-4O", "openai") is None
+        assert await repo.get_latest_by_model("gpt-4o", "OpenAI") is None
+
+    async def test_certified_wins_over_more_recent_uncertified(self, repo):
+        first = _make_passport(fairness=0.1)
+        stored_first = await repo.create(first, org_id=None, source="self_assessment")
+        await repo.certify(stored_first["passport_id"], certified_by="reviewer")
+
+        second = _make_passport(fairness=0.9)
+        await repo.create(second, org_id=None, source="self_assessment")
+
+        found = await repo.get_latest_by_model("gpt-4o", "openai")
+        assert found["passport_id"] == stored_first["passport_id"]
+        assert found["certified"] is True
+
+    async def test_different_model_names_are_isolated(self, repo):
+        engine = TrustScoreEngine()
+        score = engine.compute(fairness=0.5)
+        other = PassportGenerator().generate("claude-3", "anthropic", score)
+        await repo.create(other, org_id=None, source="self_assessment")
+
+        assert await repo.get_latest_by_model("gpt-4o", "openai") is None
+        found = await repo.get_latest_by_model("claude-3", "anthropic")
+        assert found is not None
+
+
+class TestListCertified:
     async def test_list_certified_only_includes_certified(self, repo):
         p1 = _make_passport()
         p2 = _make_passport()

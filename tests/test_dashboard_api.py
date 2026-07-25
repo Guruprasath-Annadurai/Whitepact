@@ -777,6 +777,73 @@ class TestTrustIndexCertification:
         assert r.json()["certified"] == []
 
 
+class TestTrustIndexCheck:
+    """GET /api/trust-index/check — the free, public lookup the
+    LangChain/LangGraph/ADK integrations in src/responsibleai/integrations/
+    call before letting an agent invoke a third-party model or tool."""
+
+    async def test_check_unknown_model_returns_known_false(self, client):
+        r = await client.get(
+            "/api/trust-index/check", params={"model": "never-assessed", "provider": "nobody"}
+        )
+        assert r.status_code == 200
+        d = r.json()
+        assert d["known"] is False
+        assert d["trust_score"] is None
+        assert d["certified"] is False
+        assert d["has_reported_incidents"] is False
+        assert "Self-assess for free" in d["message"]
+
+    async def test_check_returns_latest_self_assessed_score(self, client):
+        await client.post("/api/trust-index/assess", json={
+            "model_name": "checkable-tool", "provider": "acme",
+            "fairness": 0.9, "privacy": 0.9, "security": 0.9,
+            "robustness": 0.9, "compliance": 0.9, "authenticity": 0.9,
+        })
+        r = await client.get(
+            "/api/trust-index/check", params={"model": "checkable-tool", "provider": "acme"}
+        )
+        assert r.status_code == 200
+        d = r.json()
+        assert d["known"] is True
+        assert d["certified"] is False
+        assert d["trust_score"]["overall"] == 90.0
+        assert d["verify_url"] == f"/api/trust-index/verify/{d['passport_id']}"
+
+    async def test_check_prefers_certified_over_more_recent_self_assessment(self, client):
+        first = await client.post("/api/trust-index/assess", json={
+            "model_name": "dual-history", "provider": "acme", "fairness": 0.2,
+        })
+        await client.post(
+            f"/api/trust-index/certify/{first.json()['passport_id']}", json={},
+        )
+        # A later, uncertified self-assessment for the same model+provider —
+        # the certified record should still win.
+        await client.post("/api/trust-index/assess", json={
+            "model_name": "dual-history", "provider": "acme", "fairness": 0.9,
+        })
+
+        r = await client.get(
+            "/api/trust-index/check", params={"model": "dual-history", "provider": "acme"}
+        )
+        d = r.json()
+        assert d["certified"] is True
+        assert d["passport_id"] == first.json()["passport_id"]
+
+    async def test_check_exact_match_only_no_fuzzy(self, client):
+        await client.post("/api/trust-index/assess", json={
+            "model_name": "Exact-Name", "provider": "acme",
+        })
+        r = await client.get(
+            "/api/trust-index/check", params={"model": "exact-name", "provider": "acme"}
+        )
+        assert r.json()["known"] is False
+
+    async def test_check_requires_both_query_params(self, client):
+        r = await client.get("/api/trust-index/check", params={"model": "x"})
+        assert r.status_code == 422
+
+
 class TestTrustIndexBadge:
     async def test_badge_renders_svg_for_self_assessed(self, client):
         assess = await client.post("/api/trust-index/assess", json={

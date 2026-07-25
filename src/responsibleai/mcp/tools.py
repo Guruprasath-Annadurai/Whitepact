@@ -15,6 +15,7 @@ from responsibleai.eval.models import BenchmarkSuite
 from responsibleai.guardrails.engine import GuardrailsEngine
 from responsibleai.hallucination.detector import HallucinationDetector
 from responsibleai.incidents.logic import build_incident_record
+from responsibleai.integrations.client import TrustClient
 from responsibleai.redteam.simulator import RedTeamSimulator
 from responsibleai.trust.passport import PassportGenerator
 from responsibleai.trust.score import TrustScore, TrustScoreEngine
@@ -29,6 +30,7 @@ _compliance = ComplianceEngine()
 _passport_gen = PassportGenerator()
 _benchmark_runner = BenchmarkRunner(guardrails=_guardrails)
 _model_router = ModelRouter()
+_trust_client = TrustClient()
 
 # ── tool definitions ──────────────────────────────────────────────────────────
 
@@ -722,6 +724,36 @@ TOOL_DEFS: list[types.Tool] = [
         },
     ),
 
+    # ── NEW: Trust Check (agent-native — checks someone else's model/tool) ─────
+    types.Tool(
+        name="rai_check_trust",
+        description=(
+            "Check the public, independently-verifiable Trust Index score, certification "
+            "status, and reported-incident history for a named AI model or tool BEFORE "
+            "invoking it. Unlike every other rai_* tool, which evaluates output the caller "
+            "itself produced, this one looks up a public record about a THIRD PARTY'S model "
+            "or tool — built for agents and agent frameworks (LangChain, LangGraph, Google "
+            "ADK) deciding whether to trust something before calling it. Free, no auth "
+            "required, exact model+provider match. Queries the hosted ResponsibleAI Trust "
+            "Index (configurable via the RAI_TRUST_API_BASE environment variable). Returns "
+            "'known: false' for anything never assessed — that is not an error, just an "
+            "absence of data; self-assessment is free at POST /api/trust-index/assess."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "model_name": {"type": "string", "description": "Exact model or tool name, e.g. 'gpt-4o'"},
+                "provider":   {"type": "string", "description": "Exact provider name, e.g. 'openai'"},
+                "min_score": {
+                    "type": "number", "minimum": 0, "maximum": 100, "default": 0,
+                    "description": "Minimum acceptable overall trust score (0-100). The response's "
+                                   "'passes' field reflects this threshold.",
+                },
+            },
+            "required": ["model_name", "provider"],
+        },
+    ),
+
     # ── NEW: Webhook Status ───────────────────────────────────────────────────
     types.Tool(
         name="rai_webhook_status",
@@ -787,6 +819,7 @@ async def dispatch_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
         "rai_executive_summary":    _handle_executive_summary,
         "rai_org_status":           _handle_org_status,
         "rai_webhook_status":       _handle_webhook_status,
+        "rai_check_trust":          _handle_check_trust,
     }
     handler = handlers.get(name)
     if not handler:
@@ -1461,6 +1494,28 @@ async def _handle_pii_report(args: dict[str, Any]) -> dict[str, Any]:
             "audit": "Document PII findings in your GDPR Records of Processing Activities (RoPA).",
         },
         "document_results": document_results,
+    }
+
+
+async def _handle_check_trust(args: dict[str, Any]) -> dict[str, Any]:
+    model_name = str(args.get("model_name", "")).strip()
+    provider = str(args.get("provider", "")).strip()
+    if not model_name or not provider:
+        return {"error": "model_name and provider are both required"}
+    min_score = float(args.get("min_score", 0))
+    result = await _trust_client.check_async(model_name, provider)
+    return {
+        "model": result.model,
+        "provider": result.provider,
+        "known": result.known,
+        "certified": result.certified,
+        "trust_score": result.trust_score,
+        "has_reported_incidents": result.has_reported_incidents,
+        "recent_incidents": result.recent_incidents,
+        "passport_id": result.passport_id,
+        "verify_url": result.verify_url,
+        "passes": result.passes(min_score=min_score),
+        "error": result.error,
     }
 
 

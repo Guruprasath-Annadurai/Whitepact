@@ -22,7 +22,7 @@
 │  └──────────────┘  └─────────────┘  └──────────────┘  └──────────────────┘  │
 │  ┌──────────────┐  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐  │
 │  │  BiasBuster  │  │ PrivacyLabel│  │  MCP Server  │  │  Audit Log API   │  │
-│  │ 6 probes+CI  │  │  Federated  │  │  26 tools    │  │  Export+Summary  │  │
+│  │ 6 probes+CI  │  │  Federated  │  │  27 tools    │  │  Export+Summary  │  │
 │  └──────────────┘  └─────────────┘  └──────────────┘  └──────────────────┘  │
 │  ┌──────────────────────────────────────────────────────────────────────────┐ │
 │  │   Governance Dashboard — FastAPI · Per-org rate limit · Alembic · OTEL  │ │
@@ -50,7 +50,7 @@ ResponsibleAI gives you one platform — a REST API, a Python SDK, an MCP server
 | Is it biased? | `BiasBuster` | 6 demographic probes, CI gate |
 | Is this data labeled privately? | `PrivacyLabel` | Federated DP labels, never leaves device |
 | Is this media real? | `DeepfakeDetector` | Ensemble confidence, method detected |
-| Can any MCP client govern every AI call? | `MCP Server` | 26 governance tools over stdio or HTTP+SSE |
+| Can any MCP client govern every AI call? | `MCP Server` | 27 governance tools over stdio or HTTP+SSE |
 
 ---
 
@@ -113,7 +113,7 @@ Open `http://localhost:8765` for the live dashboard and `http://localhost:8765/a
 
 ## MCP Server — govern every AI call from Claude Code, Claude Desktop, or any MCP client
 
-The MCP (Model Context Protocol) server exposes ResponsibleAI as **26 tools and
+The MCP (Model Context Protocol) server exposes ResponsibleAI as **27 tools and
 10 resources** to any MCP-compatible client — Claude Code, Claude Desktop,
 Cursor, Windsurf, or your own agent runtime. When a team's client points at
 this server, every AI interaction is automatically governed — trust scoring,
@@ -149,7 +149,7 @@ uvicorn responsibleai.dashboard.app:app --host 127.0.0.1 --port 8765 &
 }
 ```
 
-### Available tools (26)
+### Available tools (27)
 
 | Tool | What it does |
 |---|---|
@@ -179,6 +179,28 @@ uvicorn responsibleai.dashboard.app:app --host 127.0.0.1 --port 8765 &
 | `rai_executive_summary` | Board-ready governance summary with RAG status indicators |
 | `rai_org_status` | Governance status snapshot: models, grades, compliance, risk |
 | `rai_webhook_status` | Webhook delivery health, failure analysis, remediation actions |
+| `rai_check_trust` | Free public Trust Index lookup for a **third-party** model/tool, before an agent invokes it — unlike every other tool above, which evaluates output the caller itself produced |
+
+### Agent-framework integrations — LangChain, LangGraph, Google ADK
+
+`src/responsibleai/integrations/` wires `rai_check_trust` directly into three
+agent frameworks so an agent can be gated on a tool's public trust score
+before invoking it, not just log the call after the fact:
+
+- **LangChain** (`langchain_middleware.py`) — `TrustGateMiddleware`, a
+  `wrap_tool_call` middleware that blocks a call outright when its score is
+  below threshold. Requires `pip install "rai-governance-platform[langchain]"`.
+- **LangGraph** (`langgraph_gate.py`) — `make_trust_gate_node()`, a node that
+  pauses the graph with `interrupt()` for a human approve/reject decision on
+  a below-threshold call, instead of a hard block. Requires
+  `pip install "rai-governance-platform[langgraph]"`.
+- **Google ADK** (`adk_toolset.py`) — `build_stdio_toolset()` /
+  `build_http_toolset()`, thin factories over ADK's `McpToolset`, which
+  auto-discovers this project's MCP server's tools with no custom glue code.
+  Requires `pip install "rai-governance-platform[adk]"`.
+
+All three, or any subset, install via `pip install "rai-governance-platform[agent-frameworks]"`.
+See `GAME_CHANGER_BUILD_PLAN.md` Phase B for the reasoning behind each.
 
 ### Available resources (10)
 

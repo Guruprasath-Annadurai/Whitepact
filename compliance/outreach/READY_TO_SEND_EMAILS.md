@@ -19,7 +19,7 @@ Hi [Name],
 
 I've built ResponsibleAI — an open-source AI governance engine (trust
 scoring, guardrails, hallucination detection, compliance mapping against
-NIST AI RMF/EU AI Act/ISO 42001, 26 MCP tools) — and I think it could slot
+NIST AI RMF/EU AI Act/ISO 42001, 27 MCP tools) — and I think it could slot
 directly under [Their Product]'s own brand rather than you building
 governance tooling from scratch.
 

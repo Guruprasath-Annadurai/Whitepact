@@ -84,6 +84,26 @@ class PassportRepository:
             )
         return await self.get(passport_id)
 
+    async def get_latest_by_model(self, model_name: str, provider: str) -> dict[str, Any] | None:
+        """Latest passport for an exact model_name+provider match, certified
+        preferred over self-assessed, most recent within that tier. Powers
+        `GET /api/trust-index/check` — the one lookup agent-framework
+        integrations (see `src/responsibleai/integrations/`) use to ask
+        "is this third-party model trustworthy" before invoking it. Unlike
+        `get()`, callers checking someone else's model won't have a
+        passport_id to look up by."""
+        async with self._engine.raw.connect() as conn:
+            row = (await conn.execute(
+                select(trust_passports)
+                .where(
+                    trust_passports.c.model_name == model_name,
+                    trust_passports.c.provider == provider,
+                )
+                .order_by(trust_passports.c.certified.desc(), trust_passports.c.generated_at.desc())
+                .limit(1)
+            )).fetchone()
+        return self._row_to_dict(row) if row else None
+
     async def list_certified(self, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
         async with self._engine.raw.connect() as conn:
             rows = (await conn.execute(

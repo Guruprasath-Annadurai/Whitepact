@@ -1851,6 +1851,54 @@ async def trust_index_badge(request: Request, passport_id: str) -> Response:
     )
 
 
+@app.get("/api/trust-index/check", tags=["trust-index"])
+@limiter.limit("120/minute")
+async def trust_index_check(
+    request: Request,
+    model: str = Query(..., min_length=1, max_length=100),
+    provider: str = Query(..., min_length=1, max_length=100),
+) -> dict[str, Any]:
+    """Public, unauthenticated, free — the one endpoint the LangChain/
+    LangGraph/ADK integrations under `src/responsibleai/integrations/`
+    call before letting an agent invoke a third-party model or tool.
+    Exact model+provider match, same contract as
+    `GET /api/incident-db/check`'s CI/CD deploy-gate guarantee — but
+    unlike that PRO/ENTERPRISE endpoint, this is free and only surfaces a
+    best-effort incident count (up to 5 recent published entries) rather
+    than the full, guaranteed-fresh incident feed. That split preserves
+    the paid pre-deployment-check product while still letting an
+    unauthenticated agent framework ask "is this trustworthy" for free."""
+    passport = await _ready(_passport_repo).get_latest_by_model(model, provider)
+    incidents = await _ready(_public_incident_repo).list_published(
+        model=model, provider=provider, limit=5,
+    )
+    base = {
+        "model": model,
+        "provider": provider,
+        "has_reported_incidents": len(incidents) > 0,
+        "recent_incidents": incidents,
+    }
+    if passport is None:
+        return {
+            **base,
+            "known": False,
+            "trust_score": None,
+            "certified": False,
+            "passport_id": None,
+            "verify_url": None,
+            "message": "No Trust Index assessment on file for this model/provider. "
+                       "Self-assess for free at POST /api/trust-index/assess.",
+        }
+    return {
+        **base,
+        "known": True,
+        "trust_score": passport["trust_score"],
+        "certified": passport["certified"],
+        "passport_id": passport["passport_id"],
+        "verify_url": f"/api/trust-index/verify/{passport['passport_id']}",
+    }
+
+
 @app.get("/api/trust-index/certified", tags=["trust-index"])
 @limiter.limit("60/minute")
 async def trust_index_certified_directory(
