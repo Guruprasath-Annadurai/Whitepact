@@ -1849,7 +1849,11 @@ async def run_leaderboard_eval(
     failed: list[dict[str, Any]] = []
     for t in targets:
         try:
-            adapter = get_adapter(t["adapter"], t["model"], settings.leaderboard_api_keys)
+            adapter = get_adapter(
+                t["adapter"], t["model"], settings.leaderboard_api_keys,
+                azure_openai_endpoint=settings.leaderboard_azure_openai_endpoint,
+                azure_openai_api_version=settings.leaderboard_azure_openai_api_version,
+            )
             result = await _ready(_leaderboard_runner).run_model(t["model"], t["provider"], adapter)
             stored = await _ready(_leaderboard_repo).create_run(result)
             completed.append({"model": t["model"], "provider": t["provider"], "run_id": stored["id"],

@@ -115,6 +115,32 @@ changes in a way that makes before/after runs not directly comparable — a
 version bump is a signal to re-run history, not silently reinterpret old
 numbers under a new formula.
 
+## Configuring providers for evaluation runs
+
+Running a live evaluation needs API credentials for whichever providers
+you're tracking — these are separate from the platform's own `RAI_API_KEYS`
+auth and gate nothing on the public read endpoints (`/api/leaderboard`,
+`/leaderboard`, `/registry`, etc. all stay free and public with zero
+provider keys configured).
+
+| Provider | Env var(s) |
+|---|---|
+| OpenAI | `RAI_LEADERBOARD_OPENAI_API_KEY` |
+| Anthropic | `RAI_LEADERBOARD_ANTHROPIC_API_KEY` |
+| Google (Gemini) | `RAI_LEADERBOARD_GOOGLE_API_KEY` |
+| Azure OpenAI Service | `RAI_LEADERBOARD_AZURE_OPENAI_API_KEY`, `RAI_LEADERBOARD_AZURE_OPENAI_ENDPOINT` (required — e.g. `https://your-resource.openai.azure.com/`), `RAI_LEADERBOARD_AZURE_OPENAI_API_VERSION` (optional, defaults to `2024-10-21`) |
+
+Azure OpenAI is registered under the `azure-openai` adapter name — a model
+entry's `model` field should be the **Azure deployment name** you chose
+when deploying it in your resource (e.g. `prod-gpt4o`), not necessarily
+the underlying model's public name, since Azure lets you name deployments
+freely. Cost lookups (`cost/models.py`) resolve pricing by provider-level
+fallback when the exact deployment name isn't in the pricing catalog, so
+this doesn't need to match anything for cost tracking to work. A model
+whose provider has no key configured is skipped in a run, not a hard
+failure — you can track e.g. only OpenAI + Azure OpenAI without also
+holding Anthropic or Google credentials.
+
 ## Nominating a model
 
 Model registration is a super-admin action on the operator's own deployment

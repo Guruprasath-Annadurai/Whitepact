@@ -39,6 +39,17 @@ MODEL_CATALOG: dict[str, ModelPricing] = {
     # Google
     "google/gemini-1.5-pro":      ModelPricing("google",     "gemini-1.5-pro",      3.50,   10.50),
     "google/gemini-1.5-flash":    ModelPricing("google",     "gemini-1.5-flash",    0.075,   0.30),
+    # Azure OpenAI Service — Microsoft prices deployments at parity with the
+    # public OpenAI API for the same underlying model, so these mirror the
+    # "openai/*" rows above rather than being independently sourced. A real
+    # Azure deployment is named whatever the customer chose (not necessarily
+    # "gpt-4o"), so get_pricing()'s provider-level fallback below is what
+    # actually resolves cost for most azure-openai lookups, not an exact key
+    # match on this table.
+    "azure-openai/gpt-4o":        ModelPricing("azure-openai", "gpt-4o",             2.50,   10.00),
+    "azure-openai/gpt-4o-mini":   ModelPricing("azure-openai", "gpt-4o-mini",        0.15,    0.60),
+    "azure-openai/gpt-4-turbo":   ModelPricing("azure-openai", "gpt-4-turbo",       10.00,   30.00),
+    "azure-openai/gpt-3.5-turbo": ModelPricing("azure-openai", "gpt-3.5-turbo",      0.50,    1.50),
     # Mistral
     "mistral/mistral-large":      ModelPricing("mistral",    "mistral-large",       2.00,    6.00),
     "mistral/mistral-small":      ModelPricing("mistral",    "mistral-small",       0.20,    0.60),

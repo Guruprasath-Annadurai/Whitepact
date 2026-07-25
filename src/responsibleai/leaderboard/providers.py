@@ -97,6 +97,71 @@ class AnthropicAdapter(ModelAdapter):
         return "".join(parts)
 
 
+class AzureOpenAIAdapter(ModelAdapter):
+    """Uses Azure OpenAI Service instead of the public OpenAI API — the
+    provider a large share of enterprise buyers actually run on, for
+    data-residency and compliance reasons rather than calling
+    api.openai.com directly.
+
+    `model` here is the Azure *deployment name* the customer chose
+    themselves when they deployed the model in their Azure resource — it
+    won't always match the underlying model's public name (e.g. a
+    deployment named "prod-gpt4o"). Cost lookups in `cost/models.py` fall
+    back to provider-level Azure OpenAI pricing via `get_pricing()`'s
+    prefix match when the exact deployment name isn't in the catalog, so
+    this doesn't need to resolve that mapping itself.
+
+    Needs an endpoint URL in addition to an API key, unlike every other
+    adapter here — that's a real Azure OpenAI requirement, not an
+    inconsistency in this module.
+    """
+
+    DEFAULT_API_VERSION = "2024-10-21"
+
+    def __init__(
+        self,
+        model: str,
+        api_key: str | None,
+        *,
+        endpoint: str | None = None,
+        api_version: str | None = None,
+    ) -> None:
+        super().__init__(model)
+        if not api_key:
+            raise ProviderNotConfiguredError(
+                "AZURE_OPENAI_API_KEY / RAI_LEADERBOARD_AZURE_OPENAI_API_KEY is not "
+                "set — cannot evaluate an Azure OpenAI deployment without it."
+            )
+        if not endpoint:
+            raise ProviderNotConfiguredError(
+                "RAI_LEADERBOARD_AZURE_OPENAI_ENDPOINT is not set — Azure OpenAI "
+                "requires the resource endpoint URL (e.g. "
+                "https://your-resource.openai.azure.com/), unlike the public OpenAI API."
+            )
+        try:
+            from openai import AsyncAzureOpenAI
+        except ImportError as exc:
+            raise ProviderNotConfiguredError(
+                "The 'openai' package is not installed. Install the "
+                "'leaderboard' extra: pip install 'rai-governance-platform[leaderboard]'"
+            ) from exc
+        self._client = AsyncAzureOpenAI(
+            api_key=api_key,
+            azure_endpoint=endpoint,
+            api_version=api_version or self.DEFAULT_API_VERSION,
+        )
+
+    async def generate(self, prompt: str) -> str:
+        response = await self._client.chat.completions.create(
+            model=self.model,  # the Azure deployment name, not a base model name
+            messages=[{"role": "user", "content": prompt}],
+            max_completion_tokens=400,
+            temperature=0.0,
+        )
+        content = response.choices[0].message.content if response.choices else None
+        return content or ""
+
+
 class GoogleAdapter(ModelAdapter):
     def __init__(self, model: str, api_key: str | None) -> None:
         super().__init__(model)
@@ -157,21 +222,44 @@ _ADAPTERS: dict[str, Callable[[str, str | None], ModelAdapter]] = {
     "anthropic": AnthropicAdapter,
     "google": GoogleAdapter,
 }
+_ALL_PROVIDER_NAMES = [*_ADAPTERS, "azure-openai", "mock"]
 
 
-def get_adapter(provider: str, model: str, api_keys: dict[str, str | None]) -> ModelAdapter:
+def get_adapter(
+    provider: str,
+    model: str,
+    api_keys: dict[str, str | None],
+    *,
+    azure_openai_endpoint: str | None = None,
+    azure_openai_api_version: str | None = None,
+) -> ModelAdapter:
     """Factory: build the right adapter for *provider*.
 
     *api_keys* maps provider name -> API key (or None), so callers pass in
     whatever's configured once rather than every call site reading env vars
     directly. Raises ProviderNotConfiguredError (not a bare KeyError/ImportError)
     for every failure mode, so callers have one exception type to catch.
+
+    `azure_openai_endpoint`/`azure_openai_api_version` are only consulted
+    for `provider == "azure-openai"` — every other adapter needs just the
+    key from *api_keys*, but Azure OpenAI additionally requires a resource
+    endpoint URL, which doesn't fit the single-string-per-provider shape
+    *api_keys* uses. Passed as keyword args here rather than folded into
+    *api_keys* so the common-case call (every other provider) doesn't have
+    to know Azure's shape at all.
     """
     if provider == "mock":
         return MockAdapter(model=model)
+    if provider == "azure-openai":
+        return AzureOpenAIAdapter(
+            model,
+            api_keys.get(provider),
+            endpoint=azure_openai_endpoint,
+            api_version=azure_openai_api_version,
+        )
     adapter_cls = _ADAPTERS.get(provider)
     if adapter_cls is None:
         raise ProviderNotConfiguredError(
-            f"Unknown provider '{provider}'. Supported: {', '.join([*_ADAPTERS, 'mock'])}."
+            f"Unknown provider '{provider}'. Supported: {', '.join(_ALL_PROVIDER_NAMES)}."
         )
     return adapter_cls(model, api_keys.get(provider))

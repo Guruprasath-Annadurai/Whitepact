@@ -238,6 +238,19 @@ class Settings(BaseSettings):
         default=None,
         description="Google (Gemini) API key used only for leaderboard evaluation runs.",
     )
+    leaderboard_azure_openai_api_key: str | None = Field(
+        default=None,
+        description="Azure OpenAI Service API key used only for leaderboard evaluation runs.",
+    )
+    leaderboard_azure_openai_endpoint: str | None = Field(
+        default=None,
+        description="Azure OpenAI resource endpoint, e.g. https://your-resource.openai.azure.com/ "
+                    "— required alongside the key; Azure OpenAI has no default shared endpoint.",
+    )
+    leaderboard_azure_openai_api_version: str = Field(
+        default="2024-10-21",
+        description="Azure OpenAI REST API version.",
+    )
 
     # Server
     host: str = Field(default="127.0.0.1")
@@ -266,6 +279,7 @@ class Settings(BaseSettings):
             "openai": self.leaderboard_openai_api_key,
             "anthropic": self.leaderboard_anthropic_api_key,
             "google": self.leaderboard_google_api_key,
+            "azure-openai": self.leaderboard_azure_openai_api_key,
         }
 
     @field_validator("oidc_scopes", mode="before")

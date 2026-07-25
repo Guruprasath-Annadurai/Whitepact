@@ -62,7 +62,11 @@ async def _run(args: argparse.Namespace) -> int:
         for t in targets:
             adapter_name = "mock" if args.dry_run else t["adapter"]
             try:
-                adapter = get_adapter(adapter_name, t["model"], settings.leaderboard_api_keys)
+                adapter = get_adapter(
+                    adapter_name, t["model"], settings.leaderboard_api_keys,
+                    azure_openai_endpoint=settings.leaderboard_azure_openai_endpoint,
+                    azure_openai_api_version=settings.leaderboard_azure_openai_api_version,
+                )
             except ProviderNotConfiguredError as exc:
                 print(f"SKIP {t['provider']}/{t['model']}: {exc}", file=sys.stderr)
                 exit_code = 1
