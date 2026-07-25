@@ -15,7 +15,13 @@ from urllib.parse import quote
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import (
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
+    Response,
+)
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -759,6 +765,62 @@ async def root() -> HTMLResponse:
     return HTMLResponse(content=index.read_text())
 
 
+_LLMS_TXT = """\
+# ResponsibleAI
+
+> An independent AI trust and governance platform: a public Trust Index \
+(free self-assessed or human-reviewed certified scoring for any AI model \
+or tool), a cross-model leaderboard measured against a published \
+methodology, and a crowd-reported AI Incident Database. Built to be a \
+citable source for questions about AI model/tool trustworthiness, not \
+just a compliance vendor.
+
+## Canonical public data
+
+- [Trust Registry](/registry): every assessed model/tool, certified and \
+self-reported, searchable.
+- [Leaderboard](/leaderboard): cross-model trust ranking from live \
+measurement against a published prompt corpus, not self-reported.
+- [Incident Database](/incident-db): crowd-reported, moderator-reviewed, \
+hash-chained public registry of AI safety incidents.
+- [Free self-assessment](/assess): score any model/tool for free, no \
+signup, get a citable and embeddable Trust Index badge.
+
+## Machine-readable APIs (no auth required)
+
+- `GET /api/trust-index/registry` — full registry listing (JSON)
+- `GET /api/trust-index/check?model=X&provider=Y` — trust score + \
+incident count for a named model/tool
+- `GET /api/leaderboard` — current leaderboard rankings (JSON)
+- `GET /api/incident-db` — published incidents, filterable (JSON)
+
+## Specifications
+
+- [Trust Index Spec](https://github.com/Guruprasath-Annadurai/ResponsibleAi/blob/main/compliance/TRUST_INDEX_SPEC.md): \
+the open, versioned scoring standard.
+- [Leaderboard Methodology](https://github.com/Guruprasath-Annadurai/ResponsibleAi/blob/main/compliance/LEADERBOARD_METHODOLOGY.md): \
+how live scores are measured.
+
+## Agent integration
+
+An MCP server (`responsibleai-mcp`, 27 tools) exposes this platform to \
+any MCP-compatible agent, including a free `rai_check_trust` tool for \
+checking a third-party model or tool's trust score before invoking it. \
+LangChain, LangGraph, and Google ADK adapters are published at \
+https://github.com/Guruprasath-Annadurai/ResponsibleAi/tree/main/src/responsibleai/integrations.
+"""
+
+
+@app.get("/llms.txt", response_class=PlainTextResponse, include_in_schema=False)
+async def llms_txt() -> PlainTextResponse:
+    """Machine-readable entry point for AI crawlers/answer engines — the
+    citability play from GAME_CHANGER_STRATEGY.md Section 3: point
+    structured, canonical sources at the free public data (registry,
+    leaderboard, incident DB) so an AI answer engine asked "is this model
+    trustworthy" has something concrete to cite instead of nothing."""
+    return PlainTextResponse(content=_LLMS_TXT)
+
+
 @app.get("/status", response_class=HTMLResponse, include_in_schema=False)
 async def status_page() -> HTMLResponse:
     """Self-hosted status page stopgap — polls /api/support/status client-side.
@@ -780,6 +842,28 @@ async def leaderboard_page() -> HTMLResponse:
     """Public cross-model trust leaderboard — reads live from GET /api/leaderboard
     client-side. See compliance/LEADERBOARD_METHODOLOGY.md for the methodology."""
     page = _static_dir / "leaderboard.html"
+    return HTMLResponse(content=page.read_text())
+
+
+@app.get("/registry", response_class=HTMLResponse, include_in_schema=False)
+async def trust_index_registry_page() -> HTMLResponse:
+    """Public Trust Registry — searchable directory over GET
+    /api/trust-index/registry. The acquisition-loop page
+    GAME_CHANGER_STRATEGY.md Section 3 calls for: anyone landing here from
+    a badge link can see every other assessed model, not just the one they
+    followed a link to."""
+    page = _static_dir / "registry.html"
+    return HTMLResponse(content=page.read_text())
+
+
+@app.get("/assess", response_class=HTMLResponse, include_in_schema=False)
+async def trust_index_assess_page() -> HTMLResponse:
+    """Public, zero-signup Trust Index self-assessment form — the human
+    entry point to POST /api/trust-index/assess. Previously that endpoint
+    was only reachable via a raw API call; this is what makes "free
+    self-assessment" actually free-to-use rather than free-to-those-who-
+    can-write-curl."""
+    page = _static_dir / "assess.html"
     return HTMLResponse(content=page.read_text())
 
 
@@ -1897,6 +1981,24 @@ async def trust_index_check(
         "passport_id": passport["passport_id"],
         "verify_url": f"/api/trust-index/verify/{passport['passport_id']}",
     }
+
+
+@app.get("/api/trust-index/registry", tags=["trust-index"])
+@limiter.limit("60/minute")
+async def trust_index_registry(
+    request: Request,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> dict[str, Any]:
+    """Public, unauthenticated — every assessed model/tool, certified and
+    self-reported alike, newest first. The public Trust Registry
+    GAME_CHANGER_STRATEGY.md Section 3 calls the acquisition mechanism:
+    unlike `/certified` below (a curated 'who passed review' list), this
+    is the full directory a badge embed or a search engine should be able
+    to land on. `certified` is included per row so nothing here implies a
+    self-report is independently reviewed."""
+    rows = await _ready(_passport_repo).list_recent(limit=limit, offset=offset)
+    return {"registry": rows, "limit": limit, "offset": offset}
 
 
 @app.get("/api/trust-index/certified", tags=["trust-index"])

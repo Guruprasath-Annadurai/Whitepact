@@ -10,49 +10,59 @@
 Grounded in what already exists as of v1.2.0:
 `src/responsibleai/trust/badge.py` (badge SVG generation),
 `src/responsibleai/trust/passport.py` + `db/passport_repository.py`
-(Trust Passports), `src/responsibleai/mcp/tools.py` (25 MCP tools
+(Trust Passports), `src/responsibleai/mcp/tools.py` (27 MCP tools
 already registered, dispatched via `dispatch_tool()`), and the public
 `/verify/{id}` page in `dashboard/app.py`.
 
+**Status as of 2026-07-25**: Phase A items 1-4 shipped (this commit).
+Phase B shipped in the prior session — `rai_check_trust` MCP tool,
+`GET /api/trust-index/check`, and the LangChain/LangGraph/ADK adapters
+under `src/responsibleai/integrations/` are all real, tested code (see
+that section below for detail, kept as originally written since it's
+now a record of what was built, not a forward plan).
+
 ---
 
-## Phase A — "Free, public, citable" (build first, target: 4-6 weeks)
+## Phase A — "Free, public, citable" — shipped 2026-07-25, items 1-4
 
 **Goal**: the badge/registry loop actually runs, and the public pages
 are structured so AI answer engines can cite them.
 
-1. **Un-gate what's currently paid-only.** Audit `dashboard/app.py`'s
-   trust-index and incident endpoints for anything requiring an API key
-   or org login that should be free — the self-assessed badge
-   (`POST /api/trust-index/assess`, already free per
-   `compliance/TRUST_INDEX_SPEC.md`) needs a **zero-signup path**: a
-   public web form, not just an authenticated API call, so a developer
-   can get a badge without creating an account first.
-2. **Public Trust Registry page** (`/registry` or `/directory` in
-   `dashboard/app.py`) — a searchable, filterable list view over the
-   existing `passport_repository.py` data. This is mostly a UI build:
-   reuse the shared design system (`static/css/app.css`,
-   `static/js/app.js`) already built for the v1.2.0 dashboard rebuild,
-   not a new stack.
-3. **Badge embed flow, one-click.** `trust/badge.py` already generates
-   the SVG; add a "copy embed code" UI on the `/verify/{id}` page
-   (HTML `<img>` + Markdown snippet, already scoped in v1.2.0's
-   changelog) directly on the assessment-result screen, not buried in
-   docs — the whole point is zero-friction copy-paste.
-4. **Citability pass on public pages.** Add JSON-LD structured data
-   (schema.org `Rating`/`Dataset` types) to `/verify/{id}`, the
-   registry, and incident detail pages; ensure canonical URLs are
-   stable and dateable; add an `llms.txt` at the repo/site root
-   pointing AI crawlers at the registry, leaderboard, and incident feed
-   as the canonical machine-readable entry points.
-5. **Directory submissions, actually done** (already drafted in
-   `compliance/MCP_DISTRIBUTION_GUIDE.md`, per v2.0.0's plan — pull this
-   forward into Phase A since it's pure distribution, no dependency on
-   anything else).
+1. **Un-gate what's currently paid-only — done.** `GET /assess` is a
+   public, zero-signup HTML form (`dashboard/static/assess.html`)
+   posting to the already-free `POST /api/trust-index/assess` — no API
+   key, no account, a citable badge in one page load. Verified live: a
+   real submission through the rendered form returned `201 Created` and
+   immediately showed up in the registry.
+2. **Public Trust Registry page — done.** `GET /registry`
+   (`dashboard/static/registry.html`) is a searchable, client-side
+   filterable directory over a new `GET /api/trust-index/registry`
+   endpoint (backed by `PassportRepository.list_recent()`) — every
+   assessed model/tool, certified and self-reported, not just the
+   curated `/certified` list. Reuses the same self-contained page
+   pattern as `leaderboard.html`/`verify.html`, not a new stack.
+3. **Badge embed flow, one-click — done**, and extended: `verify.html`
+   already had the copy-embed-code panel from v1.2.0; `assess.html`
+   reuses the identical panel so the embed code appears immediately
+   after scoring, not just when revisiting `/verify/{id}` later.
+4. **Citability pass — done.** JSON-LD added to `verify.html`
+   (`schema.org/Review` wrapping a `Rating`) and `registry.html`
+   (`schema.org/ItemList`), both populated from live data client-side.
+   `GET /llms.txt` now exists, pointing AI crawlers/answer engines at
+   the registry, leaderboard, incident DB, free self-assessment, the
+   machine-readable APIs, and the open specs.
+5. **Directory submissions — not done, needs the user.** Actually
+   submitting to MCP/agent-tool directories means creating accounts on
+   third-party platforms, which this agent cannot do autonomously (see
+   the standing rule against creating third-party accounts). The guide
+   is ready at `compliance/MCP_DISTRIBUTION_GUIDE.md` — this is a
+   founder action item, not an engineering one.
 
 **Phase A is done when**: a stranger can go from "never heard of this"
 to "has an embedded badge on their own site" in under 5 minutes, with no
-signup, and the registry/incident pages are live and indexable.
+signup, and the registry/incident pages are live and indexable. Items
+1-4 meet that bar as of this commit; item 5 (actual distribution) is
+the one open action, and it's on the founder, not this codebase.
 
 ---
 

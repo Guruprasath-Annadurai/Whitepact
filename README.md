@@ -388,6 +388,7 @@ docker compose up -d
 | `POST` | `/api/trust-index/assess` | Free, public self-assessment against the open Trust Index standard |
 | `GET` | `/api/trust-index/verify/{passport_id}` | Verify a cited Trust Index score (no auth) |
 | `GET` | `/api/trust-index/check` | Free, public — trust score + incident count for a named model/tool, by exact name (no auth); what `rai_check_trust` and the LangChain/LangGraph/ADK integrations call |
+| `GET` | `/api/trust-index/registry` | Every assessed model/tool, certified and self-reported, newest first (no auth) — data source for the public `/registry` page |
 | `GET` | `/api/trust-index/certified` | Directory of certified passports (no auth) |
 | `POST` | `/api/trust-index/certify/{passport_id}` | Certify a passport — super-admin only |
 | `GET` | `/api/trust-index/badge/{passport_id}.svg` | Embeddable trust badge (Self-Assessed / Certified), no auth |
@@ -402,7 +403,10 @@ Interactive docs at `/api/docs`. Public leaderboard page at `/leaderboard` —
 see `compliance/LEADERBOARD_METHODOLOGY.md` for the published scoring
 methodology and `scripts/run_leaderboard_eval.py` to run evaluations. Open
 Trust Index standard and passport verification at `/verify/{id}` — see
-`compliance/TRUST_INDEX_SPEC.md`.
+`compliance/TRUST_INDEX_SPEC.md`. Free, zero-signup self-assessment at
+`/assess`; browse every assessed model/tool at `/registry`. `/llms.txt`
+points AI crawlers/answer engines at these as canonical sources — see
+`GAME_CHANGER_STRATEGY.md` for why.
 
 ### Production features
 

@@ -120,6 +120,8 @@
 <nav class="site-nav">
   <span class="brand">ResponsibleAI</span>
   <a href="/">Dashboard</a>
+  <a href="/registry">Trust Registry</a>
+  <a href="/assess">Self-Assess</a>
   <a href="/trust">Trust Center</a>
   <a href="/leaderboard">Leaderboard</a>
   <a href="/status">Status</a>
@@ -141,8 +143,11 @@
 
 <footer>
   Data via <code>GET /api/trust-index/verify/{id}</code> ·
+  <a href="/registry">Browse the Trust Registry</a> ·
   <a href="https://github.com/Guruprasath-Annadurai/ResponsibleAi">Source on GitHub</a>
 </footer>
+
+<script type="application/ld+json" id="passport-jsonld">{}</script>
 
 <script>
 (function () {
@@ -164,7 +169,31 @@
     return div.innerHTML;
   }
 
+  function updateJsonLd(data) {
+    const el = document.getElementById("passport-jsonld");
+    el.textContent = JSON.stringify({
+      "@context": "https://schema.org",
+      "@type": "Review",
+      "reviewBody": "ResponsibleAI Trust Index assessment — " + (data.certified ? "independently certified" : "self-reported"),
+      "datePublished": data.generated_at,
+      "url": window.location.href,
+      "itemReviewed": {
+        "@type": "SoftwareApplication",
+        "name": data.model.name,
+        "author": { "@type": "Organization", "name": data.model.provider }
+      },
+      "reviewRating": {
+        "@type": "Rating",
+        "ratingValue": data.trust_score.overall,
+        "bestRating": 100,
+        "worstRating": 0
+      },
+      "author": { "@type": "Organization", "name": "ResponsibleAI" }
+    });
+  }
+
   function render(data) {
+    updateJsonLd(data);
     const ts = data.trust_score;
     const dims = ts.dimensions;
     const dimRows = Object.keys(dims).map(function (k) {

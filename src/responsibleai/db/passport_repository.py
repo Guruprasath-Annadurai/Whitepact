@@ -104,6 +104,22 @@ class PassportRepository:
             )).fetchone()
         return self._row_to_dict(row) if row else None
 
+    async def list_recent(self, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
+        """All passports (certified and self-assessed), newest first —
+        powers `GET /api/trust-index/registry`, the public directory
+        GAME_CHANGER_BUILD_PLAN.md Phase A calls for. Unlike
+        `list_certified()`, this is not a trust signal by itself; the
+        registry page must show `certified` per row so a reader can tell
+        self-reported from independently reviewed."""
+        async with self._engine.raw.connect() as conn:
+            rows = (await conn.execute(
+                select(trust_passports)
+                .order_by(trust_passports.c.generated_at.desc())
+                .limit(limit)
+                .offset(offset)
+            )).fetchall()
+        return [self._row_to_dict(r) for r in rows]
+
     async def list_certified(self, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
         async with self._engine.raw.connect() as conn:
             rows = (await conn.execute(

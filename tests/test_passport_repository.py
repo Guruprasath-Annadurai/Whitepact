@@ -116,6 +116,43 @@ class TestGetLatestByModel:
         assert found is not None
 
 
+class TestListRecent:
+    async def test_empty_by_default(self, repo):
+        assert await repo.list_recent() == []
+
+    async def test_includes_both_certified_and_self_assessed(self, repo):
+        p1 = _make_passport()
+        p2 = _make_passport()
+        await repo.create(p1, org_id=None, source="self_assessment")
+        stored2 = await repo.create(p2, org_id=None, source="self_assessment")
+        await repo.certify(stored2["passport_id"], certified_by="reviewer")
+
+        rows = await repo.list_recent()
+        ids = {row["passport_id"] for row in rows}
+        assert p1.passport_id in ids
+        assert p2.passport_id in ids
+
+    async def test_newest_first(self, repo):
+        p1 = _make_passport()
+        await repo.create(p1, org_id=None, source="self_assessment")
+        p2 = _make_passport()
+        await repo.create(p2, org_id=None, source="self_assessment")
+
+        rows = await repo.list_recent()
+        assert rows[0]["passport_id"] == p2.passport_id
+        assert rows[1]["passport_id"] == p1.passport_id
+
+    async def test_respects_limit_and_offset(self, repo):
+        for _ in range(5):
+            await repo.create(_make_passport(), org_id=None, source="self_assessment")
+
+        page1 = await repo.list_recent(limit=2, offset=0)
+        page2 = await repo.list_recent(limit=2, offset=2)
+        assert len(page1) == 2
+        assert len(page2) == 2
+        assert {r["passport_id"] for r in page1}.isdisjoint({r["passport_id"] for r in page2})
+
+
 class TestListCertified:
     async def test_list_certified_only_includes_certified(self, repo):
         p1 = _make_passport()

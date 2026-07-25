@@ -727,6 +727,64 @@ class TestTrustIndexAssessAndVerify:
         assert verify.json()["source"] == "evaluate"
 
 
+class TestTrustIndexRegistry:
+    """GET /api/trust-index/registry — the public Trust Registry data
+    source (GAME_CHANGER_BUILD_PLAN.md Phase A), unlike /certified this
+    includes self-reported entries too."""
+
+    async def test_empty_by_default(self, client):
+        r = await client.get("/api/trust-index/registry")
+        assert r.status_code == 200
+        assert r.json() == {"registry": [], "limit": 50, "offset": 0}
+
+    async def test_includes_self_assessed_and_certified(self, client):
+        a = await client.post("/api/trust-index/assess", json={
+            "model_name": "registry-self", "provider": "acme",
+        })
+        b = await client.post("/api/trust-index/assess", json={
+            "model_name": "registry-certified", "provider": "acme",
+        })
+        await client.post(f"/api/trust-index/certify/{b.json()['passport_id']}", json={})
+
+        r = await client.get("/api/trust-index/registry")
+        ids = {row["passport_id"] for row in r.json()["registry"]}
+        assert a.json()["passport_id"] in ids
+        assert b.json()["passport_id"] in ids
+
+    async def test_respects_limit(self, client):
+        for i in range(3):
+            await client.post("/api/trust-index/assess", json={
+                "model_name": f"registry-limit-{i}", "provider": "acme",
+            })
+        r = await client.get("/api/trust-index/registry", params={"limit": 2})
+        assert len(r.json()["registry"]) == 2
+
+
+class TestPublicPagesLoad:
+    """New Phase A public pages actually render (GAME_CHANGER_BUILD_PLAN.md
+    Phase A) — a smoke check that the routes are wired to real files, not
+    a claim about the client-side JS, which the browser executes."""
+
+    async def test_registry_page_loads(self, client):
+        r = await client.get("/registry")
+        assert r.status_code == 200
+        assert "text/html" in r.headers["content-type"]
+        assert "Trust Registry" in r.text
+
+    async def test_assess_page_loads(self, client):
+        r = await client.get("/assess")
+        assert r.status_code == 200
+        assert "text/html" in r.headers["content-type"]
+        assert "Self-Assessment" in r.text
+
+    async def test_llms_txt_loads_as_plain_text(self, client):
+        r = await client.get("/llms.txt")
+        assert r.status_code == 200
+        assert "text/plain" in r.headers["content-type"]
+        assert "/registry" in r.text
+        assert "/api/trust-index/registry" in r.text
+
+
 class TestTrustIndexCertification:
     async def test_certify_marks_passport_certified(self, client):
         assess = await client.post("/api/trust-index/assess", json={

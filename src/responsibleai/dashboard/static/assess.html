@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Free Trust Index Self-Assessment — ResponsibleAI</title>
+<meta name="description" content="Score any AI model or tool against the open ResponsibleAI Trust Index for free — no signup, no API key, a citable record in under a minute." />
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #fafafa;
+    --fg: #1a1a1a;
+    --muted: #666;
+    --card-bg: #ffffff;
+    --card-border: #e5e5e5;
+    --accent: #2563eb;
+    --green: #16a34a;
+    --amber: #d97706;
+    --red: #dc2626;
+    --gray: #6b7280;
+    --code-bg: #f1f1f1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0b0b0c; --fg: #e8e8e8; --muted: #999; --card-bg: #17181a; --card-border: #2a2a2c; --code-bg: #232427;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0b0b0c; --fg: #e8e8e8; --muted: #999; --card-bg: #17181a; --card-border: #2a2a2c; --code-bg: #232427;
+  }
+  * { box-sizing: border-box; }
+  .site-nav {
+    max-width: 720px; margin: 0 auto; padding: 1rem 1.5rem 0;
+    display: flex; align-items: center; gap: 1.25rem; font-size: 0.85rem;
+  }
+  .site-nav a { color: var(--muted); text-decoration: none; }
+  .site-nav a:hover { color: var(--accent); }
+  .site-nav .brand { font-weight: 800; color: var(--fg); margin-right: auto; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    max-width: 720px; margin: 0 auto; padding: 2.5rem 1.5rem 5rem;
+    background: var(--bg); color: var(--fg); line-height: 1.55;
+  }
+  header { margin-bottom: 1.5rem; }
+  h1 { font-size: 1.8rem; margin: 0 0 0.4rem; letter-spacing: -0.02em; }
+  .lede { color: var(--muted); font-size: 1rem; }
+  .meta-links { margin-top: 0.75rem; font-size: 0.9rem; }
+  .meta-links a { color: var(--accent); text-decoration: none; }
+  .meta-links a:hover { text-decoration: underline; }
+
+  .panel { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 12px; padding: 1.75rem; margin-bottom: 1.5rem; }
+  .field { margin-bottom: 1.1rem; }
+  .field label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.35rem; }
+  .field .hint { font-size: 0.78rem; color: var(--muted); font-weight: 400; }
+  .field input[type=text] {
+    width: 100%; padding: 0.6rem 0.8rem; border-radius: 8px; border: 1px solid var(--card-border);
+    background: var(--bg); color: var(--fg); font-size: 0.95rem;
+  }
+  .dims { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem 1.5rem; }
+  .dims .field input[type=range] { width: 100%; }
+  .dims .field .val { float: right; font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 700; }
+  button {
+    background: var(--accent); color: #fff; border: none; border-radius: 8px;
+    padding: 0.75rem 1.5rem; font-size: 0.95rem; font-weight: 700; cursor: pointer; width: 100%;
+  }
+  button:hover { opacity: 0.9; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .status-row { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.25rem; }
+  .status-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; background: var(--green); }
+  .status-text { font-weight: 700; font-size: 1rem; color: var(--green); }
+  .score-row { display: flex; align-items: baseline; gap: 1rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
+  .score-num { font-size: 2.6rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .grade-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 2.1rem; height: 2.1rem; border-radius: 8px; font-weight: 800; font-size: 1rem;
+  }
+  .grade-badge.A { background: rgba(22,163,74,0.15); color: var(--green); }
+  .grade-badge.B { background: rgba(37,99,235,0.15); color: var(--accent); }
+  .grade-badge.C { background: rgba(217,119,6,0.15); color: var(--amber); }
+  .grade-badge.D, .grade-badge.F { background: rgba(220,38,38,0.15); color: var(--red); }
+  .embed-section textarea {
+    width: 100%; font-family: monospace; font-size: 0.8rem; background: var(--code-bg);
+    color: var(--fg); border: 1px solid var(--card-border); border-radius: 6px; padding: 0.5rem;
+  }
+  .error { color: var(--red); padding: 1rem; }
+  footer { margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--card-border); color: var(--muted); font-size: 0.85rem; }
+  footer a { color: inherit; }
+</style>
+</head>
+<body>
+<nav class="site-nav">
+  <span class="brand">ResponsibleAI</span>
+  <a href="/">Dashboard</a>
+  <a href="/registry">Trust Registry</a>
+  <a href="/leaderboard">Leaderboard</a>
+  <a href="/trust">Trust Center</a>
+</nav>
+
+<header>
+  <h1>Free Trust Index Self-Assessment</h1>
+  <p class="lede">
+    Score any AI model or tool against the open ResponsibleAI Trust Index.
+    No signup, no API key — just a name and your best-effort ratings. You get
+    a durable, citable, embeddable badge in under a minute.
+  </p>
+  <div class="meta-links">
+    <a href="https://github.com/Guruprasath-Annadurai/ResponsibleAi/blob/main/compliance/TRUST_INDEX_SPEC.md" target="_blank" rel="noopener">What the six dimensions mean</a>
+    &nbsp;·&nbsp;
+    <a href="/registry">Browse the registry</a>
+  </div>
+</header>
+
+<div class="panel" id="formPanel">
+  <div class="field">
+    <label>Model or tool name <span class="hint">— exact name, used for lookups later</span></label>
+    <input type="text" id="modelName" placeholder="e.g. gpt-4o, stripe-mcp-server" />
+  </div>
+  <div class="field">
+    <label>Provider <span class="hint">— who built it</span></label>
+    <input type="text" id="provider" placeholder="e.g. openai, acme-corp" />
+  </div>
+  <div class="dims" id="dims"></div>
+  <div class="field" style="margin-top: 1.25rem;">
+    <button id="submitBtn">Score it — free</button>
+  </div>
+</div>
+
+<div id="resultPanel"></div>
+
+<footer>
+  Submits to <code>POST /api/trust-index/assess</code> · Self-reported scores are
+  clearly labeled as such everywhere they appear — see
+  <a href="https://github.com/Guruprasath-Annadurai/ResponsibleAi/blob/main/compliance/TRUST_INDEX_SPEC.md" target="_blank" rel="noopener">the spec</a>
+  for how certification differs. <a href="https://github.com/Guruprasath-Annadurai/ResponsibleAi">Source on GitHub</a>
+</footer>
+
+<script>
+(function () {
+  const DIMENSIONS = ["fairness", "privacy", "security", "robustness", "compliance", "authenticity"];
+  const dimsEl = document.getElementById("dims");
+  const modelInput = document.getElementById("modelName");
+  const providerInput = document.getElementById("provider");
+  const submitBtn = document.getElementById("submitBtn");
+  const resultPanel = document.getElementById("resultPanel");
+
+  function esc(s) {
+    const div = document.createElement("div");
+    div.textContent = String(s == null ? "" : s);
+    return div.innerHTML;
+  }
+
+  DIMENSIONS.forEach(function (dim) {
+    const field = document.createElement("div");
+    field.className = "field";
+    const label = dim.charAt(0).toUpperCase() + dim.slice(1);
+    field.innerHTML =
+      '<label>' + label + ' <span class="val" id="val-' + dim + '">50</span></label>' +
+      '<input type="range" min="0" max="100" value="50" id="dim-' + dim + '" />';
+    dimsEl.appendChild(field);
+    field.querySelector("input").addEventListener("input", function (e) {
+      document.getElementById("val-" + dim).textContent = e.target.value;
+    });
+  });
+
+  function gradeClass(grade) {
+    return "grade-badge " + (grade || "").charAt(0);
+  }
+
+  function renderResult(data) {
+    const ts = data.trust_score;
+    const origin = window.location.origin;
+    const badgeUrl = origin + "/api/trust-index/badge/" + encodeURIComponent(data.passport_id) + ".svg";
+    const verifyUrl = origin + "/verify/" + encodeURIComponent(data.passport_id);
+    const embedHtml = '<a href="' + verifyUrl + '"><img src="' + badgeUrl + '" alt="ResponsibleAI Trust Score" /></a>';
+    const embedMd = "[![ResponsibleAI Trust Score](" + badgeUrl + ")](" + verifyUrl + ")";
+
+    resultPanel.innerHTML =
+      '<div class="panel">' +
+      '<div class="status-row"><span class="status-dot"></span><span class="status-text">Scored — free, self-assessed</span></div>' +
+      '<div class="score-row">' +
+      '<span class="score-num">' + ts.overall.toFixed(1) + "</span>" +
+      '<span class="' + gradeClass(ts.grade) + '">' + esc(ts.grade) + "</span>" +
+      "</div>" +
+      "<p>Verify or re-check this any time: <a href=\"" + verifyUrl + "\">" + verifyUrl + "</a></p>" +
+      '<div class="embed-section">' +
+      "<p><strong>Embed this badge</strong></p>" +
+      '<p><img src="' + esc(badgeUrl) + '" alt="ResponsibleAI Trust Score" /></p>' +
+      "<p>HTML:</p><textarea readonly rows=\"2\" onclick=\"this.select()\">" + esc(embedHtml) + "</textarea>" +
+      "<p>Markdown:</p><textarea readonly rows=\"2\" onclick=\"this.select()\">" + esc(embedMd) + "</textarea>" +
+      "</div></div>";
+  }
+
+  submitBtn.addEventListener("click", function () {
+    const modelName = modelInput.value.trim();
+    const provider = providerInput.value.trim();
+    if (!modelName || !provider) {
+      resultPanel.innerHTML = '<div class="error">Model name and provider are both required.</div>';
+      return;
+    }
+    const payload = { model_name: modelName, provider: provider };
+    DIMENSIONS.forEach(function (dim) {
+      payload[dim] = Number(document.getElementById("dim-" + dim).value) / 100;
+    });
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Scoring…";
+    resultPanel.innerHTML = "";
+
+    fetch("/api/trust-index/assess", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+      .then(function (res) {
+        if (!res.ok) return res.json().then(function (d) { throw new Error(d.detail || ("HTTP " + res.status)); });
+        return res.json();
+      })
+      .then(renderResult)
+      .catch(function (err) {
+        resultPanel.innerHTML = '<div class="error">' + String(err.message || err) + "</div>";
+      })
+      .finally(function () {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Score it — free";
+      });
+  });
+})();
+(function () {
+  var saved = localStorage.getItem("rai_theme");
+  if (saved === "dark" || saved === "light") document.documentElement.setAttribute("data-theme", saved);
+})();
+</script>
+
+</body>
+</html>
