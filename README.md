@@ -603,6 +603,7 @@ mypy src/responsibleai src/biasbuster
 - [x] v1.1 — MCP server (10 tools, 5 resources), audit log API, red team API, billing API, Alembic migrations, per-org rate limiting, DB-persisted webhook retry queue
 - [x] v1.2 — Public Leaderboard, Trust Index/Passports + embeddable badges, AI Incident Database, TOTP MFA, expanded field encryption, DB-persisted webhooks, full dashboard UI rebuild, white-label branding, a genuinely live hosted instance — see `CHANGELOG.md` for the full list
 - [ ] v2.0 onward — see `VERSION_ROADMAP.md` for the phase-by-phase plan through v6.0
+- **Strategic direction** — `GAME_CHANGER_STRATEGY.md` lays out an infrastructure-first bet (free public trust registry, an agent-native trust-check primitive, AI-answer-engine citability) as an alternative to the enterprise-SaaS path, with `GAME_CHANGER_BUILD_PLAN.md` breaking it into concrete engineering phases against the current codebase
 
 ---
 
