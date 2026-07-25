@@ -3,10 +3,10 @@
   <a href="https://pypi.org/project/biasbuster/"><img src="https://img.shields.io/pypi/v/biasbuster" alt="PyPI version"/></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"/></a>
-  <a href="https://github.com/Guruprasath-Annadurai/ResponsibleAi"><img src="https://img.shields.io/badge/tests-942_passing-brightgreen.svg" alt="942 tests passing"/></a>
+  <a href="https://github.com/Guruprasath-Annadurai/ResponsibleAi"><img src="https://img.shields.io/badge/tests-1326_passing-brightgreen.svg" alt="1326 tests passing"/></a>
 </p>
 
-<p align="center"><strong>Enterprise AI Governance Platform — trust scoring, bias detection, guardrails, hallucination detection, compliance (NIST AI RMF / EU AI Act / ISO 42001), cost intelligence, drift monitoring, and MCP server for Claude Code integration.</strong></p>
+<p align="center"><strong>Enterprise AI Governance Platform — trust scoring, bias detection, guardrails, hallucination detection, compliance (NIST AI RMF / EU AI Act / ISO 42001), cost intelligence, drift monitoring, a public Trust Index / leaderboard / AI Incident Database, and an MCP server (27 tools) with LangChain, LangGraph, and Google ADK trust-gate integrations.</strong></p>
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -50,6 +50,10 @@ ResponsibleAI gives you one platform — a REST API, a Python SDK, an MCP server
 | Is it biased? | `BiasBuster` | 6 demographic probes, CI gate |
 | Is this data labeled privately? | `PrivacyLabel` | Federated DP labels, never leaves device |
 | Is this media real? | `DeepfakeDetector` | Ensemble confidence, method detected |
+| How does this model rank against others, independently? | `Public Leaderboard` | Cross-model trust ranking from actually calling each model's API, not self-reported |
+| Can I cite and verify a trust score anywhere? | `Trust Index` | Free self-assessed or human-reviewed certified passport, verifiable at `/verify/{id}`, embeddable badge |
+| Has this AI system failed publicly before? | `AI Incident Database` | Crowd-reported, moderator-reviewed, hash-chained public registry |
+| Should my agent trust this third-party tool before calling it? | `rai_check_trust` + LangChain/LangGraph/ADK integrations | Free lookup, plus a real block/pause gate in-agent |
 | Can any MCP client govern every AI call? | `MCP Server` | 27 governance tools over stdio or HTTP+SSE |
 
 ---
@@ -383,8 +387,16 @@ docker compose up -d
 | `GET` | `/api/leaderboard/{model}/{provider}/diagnostic` | Per-prompt findings — PRO plan required |
 | `POST` | `/api/trust-index/assess` | Free, public self-assessment against the open Trust Index standard |
 | `GET` | `/api/trust-index/verify/{passport_id}` | Verify a cited Trust Index score (no auth) |
+| `GET` | `/api/trust-index/check` | Free, public — trust score + incident count for a named model/tool, by exact name (no auth); what `rai_check_trust` and the LangChain/LangGraph/ADK integrations call |
 | `GET` | `/api/trust-index/certified` | Directory of certified passports (no auth) |
 | `POST` | `/api/trust-index/certify/{passport_id}` | Certify a passport — super-admin only |
+| `GET` | `/api/trust-index/badge/{passport_id}.svg` | Embeddable trust badge (Self-Assessed / Certified), no auth |
+| `POST` | `/api/incident-db/report` | Report a publicly observed AI incident (no auth, rate-limited) |
+| `GET` | `/api/incident-db` | Browse published incidents — filter by model, provider, severity, type (no auth) |
+| `GET` | `/api/incident-db/check` | Pre-deployment exact-match incident check for a model/provider — PRO/ENTERPRISE |
+| `GET` | `/api/incident-db/verify` | Recompute the hash chain over every published entry (no auth) |
+| `POST` | `/api/orgs/{org_id}/keys/{key_id}/mfa/enroll` | Enroll an API key in TOTP MFA |
+| `POST` | `/api/orgs/{org_id}/keys/{key_id}/mfa/verify` | Verify a TOTP code / backup code |
 
 Interactive docs at `/api/docs`. Public leaderboard page at `/leaderboard` —
 see `compliance/LEADERBOARD_METHODOLOGY.md` for the published scoring
@@ -397,6 +409,8 @@ Trust Index standard and passport verification at `/verify/{id}` — see
 | Feature | Detail |
 |---|---|
 | Authentication | Bearer token (`RAI_API_KEYS`) with RBAC (OWNER / ADMIN / ANALYST / VIEWER) |
+| MFA | TOTP (RFC 6238) on the interactive login step, org-enforceable, single-use backup codes |
+| Field-level encryption | Opt-in (`RAI_FIELD_ENCRYPTION_KEY`) on `audit_log.ip_address`, incident reporter contact info, webhook secrets, MFA secrets — with key-rotation support (`MultiFernet`) |
 | Per-org rate limiting | Each Bearer token gets its own rate limit bucket (SHA-256 keyed) — no shared global pool |
 | CORS | Configurable origins (`RAI_ALLOWED_ORIGINS`) |
 | Security headers | CSP, X-Frame-Options, X-Content-Type-Options |
@@ -410,7 +424,7 @@ Trust Index standard and passport verification at `/verify/{id}` — see
 
 ## Database migrations (Alembic)
 
-Schema changes are managed with Alembic. The initial migration creates all 8 tables.
+Schema changes are managed with Alembic — 11 migrations as of this writing, 15 tables total (the initial migration created the first 8; leaderboard, Trust Passports, public incident reports, and DB-persisted webhooks each added their own since).
 
 ```bash
 # Upgrade to latest schema
@@ -594,7 +608,7 @@ cd ResponsibleAi
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-# Full test suite (942 tests, 86% coverage)
+# Full test suite (1326 tests, 83% coverage)
 pytest
 
 # Dashboard tests only
