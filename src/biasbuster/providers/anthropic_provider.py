@@ -51,7 +51,12 @@ class AnthropicProvider(BaseProvider):
             temperature=request.temperature,
         )
         return CompletionResponse(
-            text=response.content[0].text if response.content else "",
+            # response.content can hold tool-use/thinking blocks alongside
+            # plain text ones (the Anthropic SDK's content-block union has
+            # grown many members over time) -- getattr with a default
+            # avoids assuming the first block is text-shaped, since a
+            # tool-use block has no .text attribute at all.
+            text=getattr(response.content[0], "text", "") if response.content else "",
             model=response.model,
             provider=self.name,
             input_tokens=response.usage.input_tokens,

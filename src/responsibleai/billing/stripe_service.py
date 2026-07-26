@@ -33,7 +33,7 @@ class StripeBillingError(Exception):
     """Raised when a Stripe API call or webhook verification fails."""
 
 
-class StripeNotConfigured(StripeBillingError):
+class StripeNotConfiguredError(StripeBillingError):
     """Raised when billing is invoked without STRIPE_SECRET_KEY configured."""
 
 
@@ -62,7 +62,7 @@ class StripeService:
         try:
             import stripe  # noqa: F401
         except ImportError as exc:
-            raise StripeNotConfigured(
+            raise StripeNotConfiguredError(
                 "The 'stripe' package is required for billing. "
                 "Install with: pip install 'rai-governance-platform[billing]'"
             ) from exc

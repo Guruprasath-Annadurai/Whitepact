@@ -1,7 +1,7 @@
 from responsibleai.billing.stripe_service import (
     StripeBillingError,
-    StripeNotConfigured,
+    StripeNotConfiguredError,
     StripeService,
 )
 
-__all__ = ["StripeBillingError", "StripeNotConfigured", "StripeService"]
+__all__ = ["StripeBillingError", "StripeNotConfiguredError", "StripeService"]

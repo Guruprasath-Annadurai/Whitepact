@@ -31,7 +31,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from responsibleai.auth import mfa
 from responsibleai.auth.oidc import OIDCProvider
-from responsibleai.billing import StripeBillingError, StripeNotConfigured, StripeService
+from responsibleai.billing import StripeBillingError, StripeNotConfiguredError, StripeService
 from responsibleai.compliance.engine import ComplianceEngine
 from responsibleai.cost.analyzer import CostAnalyzer
 from responsibleai.cost.models import BudgetPolicy, TokenUsage
@@ -289,7 +289,7 @@ async def lifespan(application: FastAPI):
                     Plan.ENTERPRISE: settings.stripe_price_id_enterprise or "",
                 },
             )
-        except StripeNotConfigured as exc:
+        except StripeNotConfiguredError as exc:
             logger.warning("stripe_init_skipped", reason=str(exc))
 
     # Attach DB-backed delivery log + start persistent retry worker

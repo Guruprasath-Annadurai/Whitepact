@@ -12,6 +12,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from biasbuster.core.base_probe import BaseProbe
 from biasbuster.core.result import ProbeResult, SuiteResult
 from biasbuster.core.runner import BiasBusterRunner
 from biasbuster.probes.age_bias import AgeBiasProbe
@@ -27,7 +28,7 @@ load_dotenv()
 
 console = Console()
 
-PROBE_REGISTRY = {
+PROBE_REGISTRY: dict[str, type[BaseProbe]] = {
     "gender-bias": GenderBiasProbe,
     "racial-bias": RacialBiasProbe,
     "occupational-stereotype": OccupationalStereotypeProbe,

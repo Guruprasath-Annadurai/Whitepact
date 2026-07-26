@@ -35,10 +35,15 @@ import mcp.types as types
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 
-from responsibleai.mcp.licensing import is_allowed, monthly_quota, quota_exceeded_message, upgrade_message
+from responsibleai.mcp.licensing import (
+    is_allowed,
+    monthly_quota,
+    quota_exceeded_message,
+    upgrade_message,
+)
 from responsibleai.mcp.resources import RESOURCE_DEFS, dispatch_resource
 from responsibleai.mcp.tools import TOOL_DEFS, dispatch_tool
-from responsibleai.rbac.models import OrgContext, Plan
+from responsibleai.rbac.models import OrgContext
 
 if TYPE_CHECKING:
     from responsibleai.db.mcp_usage_repository import McpUsageRepository
@@ -53,7 +58,7 @@ server: Server = Server("responsibleai-mcp")
 # (self-hosted) — absence of a context means unrestricted access, matching
 # the open-core design: self-hosted stdio is always free and full-featured.
 _current_org: ContextVar[OrgContext | None] = ContextVar("_current_org", default=None)
-_current_usage_repo: ContextVar["McpUsageRepository | None"] = ContextVar(
+_current_usage_repo: ContextVar[McpUsageRepository | None] = ContextVar(
     "_current_usage_repo", default=None
 )
 
@@ -147,14 +152,13 @@ def _build_http_app() -> Any:
     """Construct the ASGI app for hosted MCP. Imports are local — this path
     pulls in Starlette + the DB layer, which self-hosted stdio users never need.
     """
-    from starlette.applications import Starlette
-    from starlette.requests import Request
     from contextlib import asynccontextmanager
 
+    from mcp.server.sse import SseServerTransport
+    from starlette.applications import Starlette
+    from starlette.requests import Request
     from starlette.responses import JSONResponse
     from starlette.routing import Mount, Route
-
-    from mcp.server.sse import SseServerTransport
 
     from responsibleai.dashboard.config import get_settings
     from responsibleai.db import McpUsageRepository, OrgRepository, create_engine

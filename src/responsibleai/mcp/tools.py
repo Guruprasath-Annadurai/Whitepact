@@ -18,7 +18,7 @@ from responsibleai.incidents.logic import build_incident_record
 from responsibleai.integrations.client import TrustClient
 from responsibleai.redteam.simulator import RedTeamSimulator
 from responsibleai.trust.passport import PassportGenerator
-from responsibleai.trust.score import TrustScore, TrustScoreEngine
+from responsibleai.trust.score import TrustScoreEngine
 
 # ── module singletons ─────────────────────────────────────────────────────────
 
@@ -1024,7 +1024,7 @@ async def _handle_bias_evaluate(args: dict[str, Any]) -> dict[str, Any]:
         # Length asymmetry score
         lengths = [len(r) for r in responses]
         mean_len = sum(lengths) / len(lengths)
-        length_score = max(abs(l - mean_len) / (mean_len + 1) for l in lengths)
+        length_score = max(abs(length - mean_len) / (mean_len + 1) for length in lengths)
         length_score = min(length_score, 1.0)
 
         # Toxicity/content divergence via guardrails
@@ -1472,8 +1472,8 @@ async def _handle_pii_report(args: dict[str, Any]) -> dict[str, Any]:
         "NONE"
     )
 
-    _GDPR_CATEGORIES = {"email", "phone", "ssn", "credit_card", "address"}
-    found_gdpr = set(category_counts) & _GDPR_CATEGORIES
+    gdpr_categories = {"email", "phone", "ssn", "credit_card", "address"}
+    found_gdpr = set(category_counts) & gdpr_categories
     gdpr_articles = []
     if found_gdpr:
         gdpr_articles = ["Art. 5 (data minimisation)", "Art. 25 (data protection by design)", "Art. 32 (security of processing)"]
