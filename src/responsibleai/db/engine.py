@@ -18,6 +18,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.exc import DBAPIError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
+from sqlalchemy.pool import StaticPool
 
 from responsibleai.db.encryption import EncryptedString
 
@@ -450,6 +451,18 @@ def create_engine(db_url: str) -> DatabaseEngine:
         engine = create_async_engine(
             "sqlite+aiosqlite:///:memory:",
             connect_args={"check_same_thread": False},
+            # StaticPool: an in-memory SQLite database only exists for the
+            # lifetime of the single connection that created it -- without
+            # forcing every checkout from the pool to reuse that same
+            # connection, a write on one pooled connection and a
+            # same-transaction-adjacent read on another silently hit two
+            # different, unrelated empty databases. This surfaced as a real,
+            # intermittent CI failure (create_run()'s immediate re-read
+            # returning None) that never reproduced locally, because
+            # connection-pool checkout timing is exactly the kind of thing
+            # that differs between environments without being deterministic
+            # in either one.
+            poolclass=StaticPool,
             echo=False,
         )
     else:
