@@ -186,6 +186,7 @@ _oidc_state_store: dict[str, float] = {}  # state → issued_at; cleared on use
 _OIDC_STATE_TTL = 300.0  # seconds — matches callback expiry window
 _stripe_service: StripeService | None = None
 _plan_rate_limiter: PlanRateLimiter | None = None
+_pending_audit_writes: set[asyncio.Task[Any]] = set()
 
 _T = TypeVar("_T")
 
@@ -340,6 +341,10 @@ async def lifespan(application: FastAPI):
     _ws_manager.stop()
     if _plan_rate_limiter:
         await _plan_rate_limiter.close()
+    if _pending_audit_writes:
+        # Drain fire-and-forget audit writes before the engine (and this
+        # event loop) go away — see AuditLogMiddleware's docstring.
+        await asyncio.gather(*_pending_audit_writes, return_exceptions=True)
     if _db_engine:
         await _db_engine.close()
     logger.info("shutdown_complete")
@@ -373,7 +378,15 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
 
     - Skips /metrics and /static (noise)
     - Uses _audit_ctx ContextVar to get org/key context set by auth dep
-    - Writes to DB non-blockingly (asyncio.ensure_future)
+    - Writes to DB non-blockingly (asyncio.ensure_future), but the task is
+      tracked in _pending_audit_writes and drained during shutdown -- an
+      untracked fire-and-forget task can still be running (or queued on
+      aiosqlite's background worker thread) when the app's event loop
+      closes, which surfaces as "Cannot operate on a closed database" /
+      "Event loop is closed" from a thread trying to signal completion
+      back to a loop that no longer exists. Real, previously-latent bug:
+      rare under normal request volume, reliable under the fast
+      request-then-shutdown cycle every test in the suite performs.
     """
 
     async def dispatch(self, request: Request, call_next: Any) -> Any:
@@ -402,8 +415,13 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
                 duration_ms=duration_ms,
                 user_agent=(request.headers.get("user-agent", "")[:512] or None),
             )
-            # Non-blocking write — don't delay the response
-            asyncio.ensure_future(_ready(_audit_repo).write(entry))
+            # Non-blocking write — don't delay the response. Tracked (not a
+            # bare ensure_future) so shutdown can drain it — see class
+            # docstring for why an untracked task is a real bug, not just
+            # defensive caution.
+            task = asyncio.ensure_future(_ready(_audit_repo).write(entry))
+            _pending_audit_writes.add(task)
+            task.add_done_callback(_pending_audit_writes.discard)
 
         return response
 
