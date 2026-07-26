@@ -158,6 +158,12 @@ select = ["E", "F", "I", "UP", "B", "N"]
 ignore = ["E501", "B008", "N802"]
 
 [tool.mypy]
-python_version = "3.11"
+# No python_version pin: CI runs this against both 3.11 and 3.12 (see
+# .github/workflows/ci.yml's matrix). Pinning to 3.11 made mypy refuse to
+# parse numpy's own stub file under the 3.12 job -- numpy's stub uses
+# PEP 695 `type X = ...` syntax, valid only when mypy's target version is
+# 3.12+, so a fixed 3.11 pin broke type-checking on a dependency's stub,
+# not on this project's own code. Letting mypy default to the running
+# interpreter's version means each matrix job checks against itself.
 ignore_missing_imports = true
 mypy_path = "src"
