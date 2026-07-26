@@ -18,7 +18,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.exc import DBAPIError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import AsyncAdaptedQueuePool
 
 from responsibleai.db.encryption import EncryptedString
 
@@ -451,18 +451,40 @@ def create_engine(db_url: str) -> DatabaseEngine:
         engine = create_async_engine(
             "sqlite+aiosqlite:///:memory:",
             connect_args={"check_same_thread": False},
-            # StaticPool: an in-memory SQLite database only exists for the
-            # lifetime of the single connection that created it -- without
-            # forcing every checkout from the pool to reuse that same
-            # connection, a write on one pooled connection and a
-            # same-transaction-adjacent read on another silently hit two
-            # different, unrelated empty databases. This surfaced as a real,
-            # intermittent CI failure (create_run()'s immediate re-read
-            # returning None) that never reproduced locally, because
-            # connection-pool checkout timing is exactly the kind of thing
-            # that differs between environments without being deterministic
-            # in either one.
-            poolclass=StaticPool,
+            # An in-memory SQLite database only exists for the lifetime of
+            # the single connection that created it, so every checkout from
+            # this engine must reuse that same connection -- otherwise a
+            # write on one pooled connection and a same-transaction-adjacent
+            # read on another silently hit two different, unrelated empty
+            # databases.
+            #
+            # StaticPool alone isn't enough: it hands out the same
+            # connection object to every concurrent checkout without
+            # blocking, it doesn't queue them -- and Starlette's
+            # BaseHTTPMiddleware runs the downstream app via a separate
+            # task, so even one sequential-looking `await client.post(...)`
+            # can have two coroutines touching the connection at overlapping
+            # points. That combination (shared but not exclusive) is what
+            # produced real, intermittent CI failures: a request's own
+            # query and something else both mid-flight on the identical
+            # aiosqlite connection at once, corrupting whichever read lost
+            # the race -- reliably reproducible on GitHub's runner, never
+            # locally, because it depends on scheduling timing this fast
+            # local machine rarely hits.
+            #
+            # SQLAlchemy auto-selects StaticPool for any ":memory:" URL
+            # regardless of what's passed here, so it has to be overridden
+            # explicitly. AsyncAdaptedQueuePool with pool_size=1,
+            # max_overflow=0 gives both properties actually needed: only one
+            # connection is ever created (satisfying the ":memory:" sharing
+            # requirement), and -- unlike StaticPool, which hands the same
+            # connection to every concurrent checkout without blocking -- a
+            # second concurrent checkout attempt genuinely queues and waits
+            # for checkin instead of racing the first on the same
+            # connection.
+            poolclass=AsyncAdaptedQueuePool,
+            pool_size=1,
+            max_overflow=0,
             echo=False,
         )
     else:
