@@ -421,6 +421,31 @@ governance_approvals = Table(
     Index("idx_gap_action",      "action_id"),
 )
 
+# Phase 26 gap-closure — persisted governance policy rules (see
+# db/policy_repository.py, governance/policy.py). One row per
+# `PolicyRule`; `position` is the first-match-wins evaluation order
+# within an org, since `Policy.evaluate()` has no other conflict
+# resolution model. `risk_tiers`/`action_types`/`targets` are JSON lists
+# or null (meaning "matches any"), mirroring `PolicyRule`'s own
+# `frozenset | None` fields.
+governance_policies = Table(
+    "governance_policies",
+    metadata,
+    Column("id",            String(36),  primary_key=True),
+    Column("org_id",        String(36),  nullable=False),
+    Column("rule_id",       String(100), nullable=False),
+    Column("reason_code",   String(100), nullable=False),
+    Column("effect",        String(30),  nullable=False),
+    Column("risk_tiers",    Text,        nullable=True),  # JSON list or null
+    Column("action_types",  Text,        nullable=True),  # JSON list or null
+    Column("targets",       Text,        nullable=True),  # JSON list or null
+    Column("position",      Integer,     nullable=False),
+    Column("created_at",    String(32),  nullable=False),
+    Column("updated_at",    String(32),  nullable=False),
+    Index("idx_gpol_org",      "org_id"),
+    Index("idx_gpol_position", "org_id", "position"),
+)
+
 
 class DatabaseEngine:
     """Async database engine wrapping SQLAlchemy — SQLite or PostgreSQL.

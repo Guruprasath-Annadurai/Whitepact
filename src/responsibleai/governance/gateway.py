@@ -27,11 +27,26 @@ What ``evaluate()`` checks, in order:
    ``DENY``; PII-only findings become ``ALLOW_WITH_REDACTION`` using
    ``GuardrailsEngine``'s own redaction, exactly as SPEC.md Section 3.6
    says this decision should reuse it.
+6. **Quarantine** (``recent_violation_count``, ``governance/quarantine.py``)
+   — checked *first*, before authority, so a pattern of recent ``DENY``
+   decisions overrides even a valid authority grant. The count itself is
+   computed by the caller (an async DB query against ``EvidenceRepository``
+   — see ``quarantine.recent_violation_count()``) and passed in as a
+   plain int, keeping this method itself synchronous and DB-free.
+7. **Trust state** (``action.agent.trust_state``, populated by
+   ``governance/trust_integration.py`` when the action names a
+   third-party model/provider) — an otherwise-``ALLOW`` decision is
+   downgraded to ``REQUIRE_APPROVAL`` when the Trust Index reports a
+   known model scoring below ``LOW_TRUST_SCORE_THRESHOLD``. Never
+   escalates a redaction or a deny, and never fires for an unknown or
+   unscored model — see ``_apply_trust_state`` below.
 
 No LLM call anywhere in this file — "prefer deterministic security
 controls over LLM-based controls where possible" applies to the
 runtime gateway most of all, since it's the one component every
-governed action passes through.
+governed action passes through. The Trust Index score consulted above
+is itself a stored, previously-computed value (not a live LLM judgment
+call made here), consistent with that rule.
 """
 
 from __future__ import annotations
@@ -45,8 +60,11 @@ from responsibleai.governance.models import (
     GovernanceDecision,
 )
 from responsibleai.governance.policy import Policy
+from responsibleai.governance.quarantine import QUARANTINE_VIOLATION_THRESHOLD
 from responsibleai.governance.risk import RiskTier, classify_action_risk
 from responsibleai.guardrails.engine import GuardrailsEngine, GuardrailsResult
+
+LOW_TRUST_SCORE_THRESHOLD = 40.0
 
 
 class WhitePactRuntimeGateway:
@@ -63,12 +81,28 @@ class WhitePactRuntimeGateway:
         action: ActionRequest,
         authority: AuthorityContext,
         policy: Policy | None = None,
+        *,
+        recent_violation_count: int = 0,
     ) -> DecisionResult:
+        risk_tier = classify_action_risk(action.action_type, action.target)
+
+        if recent_violation_count >= QUARANTINE_VIOLATION_THRESHOLD:
+            return DecisionResult(
+                decision=GovernanceDecision.QUARANTINE,
+                action_id=action.action_id,
+                reason_codes=[
+                    f"quarantine:recent_denials={recent_violation_count}",
+                    f"quarantine:threshold={QUARANTINE_VIOLATION_THRESHOLD}",
+                ],
+                risk_tier=risk_tier,
+            )
+
         if not authority.permits(action.action_type):
             return DecisionResult(
                 decision=GovernanceDecision.DENY,
                 action_id=action.action_id,
                 reason_codes=[f"authority_not_granted:{action.action_type}"],
+                risk_tier=risk_tier,
             )
 
         if action.action_type in authority.require_approval_for:
@@ -76,9 +110,9 @@ class WhitePactRuntimeGateway:
                 decision=GovernanceDecision.REQUIRE_APPROVAL,
                 action_id=action.action_id,
                 reason_codes=[f"approval_required:{action.action_type}"],
+                risk_tier=risk_tier,
             )
 
-        risk_tier = classify_action_risk(action.action_type, action.target)
         policy_reason_codes: list[str] = []
 
         if policy is not None:
@@ -142,9 +176,33 @@ class WhitePactRuntimeGateway:
                 risk_tier=risk_tier,
             )
 
+        low_trust_reason = self._low_trust_reason(action)
+        if low_trust_reason is not None:
+            return DecisionResult(
+                decision=GovernanceDecision.REQUIRE_APPROVAL,
+                action_id=action.action_id,
+                reason_codes=[*policy_reason_codes, low_trust_reason],
+                risk_tier=risk_tier,
+            )
+
         return DecisionResult(
             decision=GovernanceDecision.ALLOW,
             action_id=action.action_id,
             reason_codes=policy_reason_codes,
             risk_tier=risk_tier,
         )
+
+    @staticmethod
+    def _low_trust_reason(action: ActionRequest) -> str | None:
+        """None unless the Trust Index has scored this action's model as
+        both *known* and below ``LOW_TRUST_SCORE_THRESHOLD`` — an unknown
+        or unscored model is not treated as untrustworthy (same
+        fail-open-on-unknown reasoning ``TrustCheckResult.passes()``
+        documents), only a model with a real, low score escalates."""
+        trust_state = action.agent.trust_state
+        if trust_state is None or not trust_state.known:
+            return None
+        score = trust_state.overall_score
+        if score is None or score >= LOW_TRUST_SCORE_THRESHOLD:
+            return None
+        return f"trust_state:low_score:{score:.1f}"

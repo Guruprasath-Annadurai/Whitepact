@@ -19,7 +19,7 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import insert, select
+from sqlalchemy import func, insert, select
 
 from responsibleai.db.engine import DatabaseEngine, governance_evidence
 from responsibleai.governance.evidence import EvidenceRecord
@@ -163,6 +163,33 @@ class EvidenceRepository:
         async with self._engine.raw.connect() as conn:
             rows = (await conn.execute(query)).fetchall()
         return [_row_to_record(r) for r in rows]
+
+    async def count_recent(
+        self, org_id: str | None, agent_id: str, decision: str, *, since: str,
+    ) -> int:
+        """Count *decision*-outcome entries for *agent_id* recorded at or
+        after *since* (an ISO-8601 timestamp) — the cross-request
+        violation-pattern query `governance/quarantine.py` needs to
+        actually produce `GovernanceDecision.QUARANTINE`, instead of it
+        being a defined-but-unreachable enum member. A `COUNT(*)` query,
+        not `list_for_org()` plus `len()`, so this stays cheap regardless
+        of how much evidence history exists."""
+        org_filter = (
+            governance_evidence.c.org_id.is_(None)
+            if org_id is None
+            else governance_evidence.c.org_id == org_id
+        )
+        query = (
+            select(func.count())
+            .select_from(governance_evidence)
+            .where(org_filter)
+            .where(governance_evidence.c.agent_id == agent_id)
+            .where(governance_evidence.c.decision == decision)
+            .where(governance_evidence.c.recorded_at >= since)
+        )
+        async with self._engine.raw.connect() as conn:
+            result = (await conn.execute(query)).scalar()
+        return int(result or 0)
 
     async def verify_chain(self, org_id: str | None) -> bool:
         """Re-walk *org_id*'s entire chain in insertion order and

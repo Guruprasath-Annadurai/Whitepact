@@ -211,14 +211,17 @@ class TestGatewayRiskClassification:
         result = gw.evaluate(action, authority)
         assert result.risk_tier == RiskTier.HIGH
 
-    def test_risk_tier_none_on_authority_denial(self) -> None:
-        """Authority is checked before risk is classified -- an
-        ungranted action never reaches risk classification."""
+    def test_risk_tier_populated_on_authority_denial(self) -> None:
+        """Risk is now classified before the authority check (the
+        quarantine short-circuit needs a risk_tier to attach to its own
+        result, so classification moved ahead of every other check) --
+        a denied action's evidence still records what risk tier it
+        would have been, which is more useful than None, not less."""
         gw = WhitePactRuntimeGateway()
         action = ActionRequest(agent=_agent(), action_type="payment", target="stripe")
         result = gw.evaluate(action, _authority())
         assert result.decision == GovernanceDecision.DENY
-        assert result.risk_tier is None
+        assert result.risk_tier is not None
 
     def test_minimal_risk_tool_still_allows_normally(self) -> None:
         gw = WhitePactRuntimeGateway()

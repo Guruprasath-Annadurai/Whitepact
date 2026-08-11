@@ -303,3 +303,124 @@ class TestSupplyChainScanEndpoint:
             headers={"Authorization": f"Bearer {key}"},
         )
         assert r.status_code == 422
+
+
+class TestPolicyEndpoints:
+    async def test_get_policy_empty_for_new_org(self, client: AsyncClient, org_and_analyst_key) -> None:
+        _org_id, key = org_and_analyst_key
+        r = await client.get("/api/governance/policy", headers={"Authorization": f"Bearer {key}"})
+        assert r.status_code == 200
+        assert r.json()["rules"] == []
+
+    async def test_analyst_cannot_add_rule(self, client: AsyncClient, org_and_analyst_key) -> None:
+        _org_id, key = org_and_analyst_key
+        r = await client.post(
+            "/api/governance/policy/rules",
+            json={"rule_id": "r1", "reason_code": "test", "effect": "DENY"},
+            headers={"Authorization": f"Bearer {key}"},
+        )
+        assert r.status_code == 403
+
+    async def test_admin_adds_rule(self, client: AsyncClient, org_and_admin_key) -> None:
+        org_id, admin_key = org_and_admin_key
+        r = await client.post(
+            "/api/governance/policy/rules",
+            json={
+                "rule_id": "block-deployment",
+                "reason_code": "no_prod_deploys_without_review",
+                "effect": "REQUIRE_APPROVAL",
+                "action_types": ["deployment"],
+            },
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["rule_id"] == "block-deployment"
+        assert body["effect"] == "REQUIRE_APPROVAL"
+        assert body["action_types"] == ["deployment"]
+
+        r = await client.get("/api/governance/policy", headers={"Authorization": f"Bearer {admin_key}"})
+        assert [rule["rule_id"] for rule in r.json()["rules"]] == ["block-deployment"]
+
+    async def test_duplicate_rule_id_rejected(self, client: AsyncClient, org_and_admin_key) -> None:
+        _org_id, admin_key = org_and_admin_key
+        body = {"rule_id": "r1", "reason_code": "test", "effect": "DENY"}
+        r1 = await client.post(
+            "/api/governance/policy/rules", json=body, headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        assert r1.status_code == 200
+        r2 = await client.post(
+            "/api/governance/policy/rules", json=body, headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        assert r2.status_code == 409
+
+    async def test_invalid_effect_rejected_by_validation(self, client: AsyncClient, org_and_admin_key) -> None:
+        _org_id, admin_key = org_and_admin_key
+        r = await client.post(
+            "/api/governance/policy/rules",
+            json={"rule_id": "r1", "reason_code": "test", "effect": "QUARANTINE"},
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        # QUARANTINE is a real GovernanceDecision but not a valid *rule*
+        # effect (see governance/policy.py's _RULE_EFFECTS) — rejected at
+        # the request-schema level (pattern match), same layer that
+        # rejects any other unrecognized string.
+        assert r.status_code == 422
+
+    async def test_remove_rule(self, client: AsyncClient, org_and_admin_key) -> None:
+        _org_id, admin_key = org_and_admin_key
+        await client.post(
+            "/api/governance/policy/rules",
+            json={"rule_id": "r1", "reason_code": "test", "effect": "DENY"},
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        r = await client.delete(
+            "/api/governance/policy/rules/r1", headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        assert r.status_code == 200
+        r = await client.get("/api/governance/policy", headers={"Authorization": f"Bearer {admin_key}"})
+        assert r.json()["rules"] == []
+
+    async def test_remove_unknown_rule_returns_404(self, client: AsyncClient, org_and_admin_key) -> None:
+        _org_id, admin_key = org_and_admin_key
+        r = await client.delete(
+            "/api/governance/policy/rules/does-not-exist", headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        assert r.status_code == 404
+
+    async def test_reorder_rules(self, client: AsyncClient, org_and_admin_key) -> None:
+        _org_id, admin_key = org_and_admin_key
+        headers = {"Authorization": f"Bearer {admin_key}"}
+        for rid in ("r1", "r2", "r3"):
+            await client.post(
+                "/api/governance/policy/rules",
+                json={"rule_id": rid, "reason_code": "test", "effect": "DENY"},
+                headers=headers,
+            )
+        r = await client.post(
+            "/api/governance/policy/reorder", json={"rule_ids": ["r3", "r1", "r2"]}, headers=headers,
+        )
+        assert r.status_code == 200
+        assert [rule["rule_id"] for rule in r.json()["rules"]] == ["r3", "r1", "r2"]
+
+    async def test_policy_scoped_to_caller_org_not_visible_across_orgs(
+        self, client: AsyncClient, org_and_admin_key,
+    ) -> None:
+        org_id, admin_key = org_and_admin_key
+        await client.post(
+            "/api/governance/policy/rules",
+            json={"rule_id": "org-a-secret-rule", "reason_code": "test", "effect": "DENY"},
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+
+        r = await client.post(
+            "/api/orgs", json={"name": "Other Policy Co", "slug": "other-policy-co"}, headers=BOOTSTRAP_AUTH,
+        )
+        other_org_id = r.json()["id"]
+        r = await client.post(
+            f"/api/orgs/{other_org_id}/keys", json={"name": "k", "role": "ADMIN"}, headers=BOOTSTRAP_AUTH,
+        )
+        other_key = r.json()["key"]
+
+        r = await client.get("/api/governance/policy", headers={"Authorization": f"Bearer {other_key}"})
+        assert r.json()["rules"] == []

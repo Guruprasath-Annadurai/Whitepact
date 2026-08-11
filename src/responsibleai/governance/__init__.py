@@ -17,7 +17,13 @@ from responsibleai.governance.models import (
     IdentityContext,
 )
 from responsibleai.governance.policy import Policy, PolicyMatch, PolicyRule
+from responsibleai.governance.quarantine import (
+    QUARANTINE_VIOLATION_THRESHOLD,
+    QUARANTINE_WINDOW_MINUTES,
+    recent_violation_count,
+)
 from responsibleai.governance.risk import RiskTier, classify_action_risk
+from responsibleai.governance.trust_integration import enrich_agent_trust_state
 
 __all__ = [
     "ActionRequest",
@@ -29,7 +35,11 @@ __all__ = [
     "Policy",
     "PolicyMatch",
     "PolicyRule",
+    "QUARANTINE_VIOLATION_THRESHOLD",
+    "QUARANTINE_WINDOW_MINUTES",
     "RiskTier",
     "WhitePactRuntimeGateway",
     "classify_action_risk",
+    "enrich_agent_trust_state",
+    "recent_violation_count",
 ]

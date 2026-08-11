@@ -14,6 +14,7 @@ from responsibleai.db.leaderboard_repository import LeaderboardRepository
 from responsibleai.db.mcp_usage_repository import McpUsageRepository
 from responsibleai.db.org_repository import OrgRepository, SSORequiredError
 from responsibleai.db.passport_repository import PassportRepository
+from responsibleai.db.policy_repository import PolicyRepository, PolicyRuleNotFoundError
 from responsibleai.db.public_incident_repository import PublicIncidentRepository
 from responsibleai.db.repositories import CostRepository, TrustRepository
 from responsibleai.db.webhook_repository import (
@@ -31,5 +32,6 @@ __all__ = [
     "WebhookConfigRepository", "WebhookDeliveryRepository",
     "McpUsageRepository", "IncidentRepository",
     "LeaderboardRepository", "PassportRepository", "PublicIncidentRepository",
+    "PolicyRepository", "PolicyRuleNotFoundError",
     "SSORequiredError", "create_engine",
 ]

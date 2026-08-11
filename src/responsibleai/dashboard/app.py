@@ -74,6 +74,8 @@ from responsibleai.db import (
     McpUsageRepository,
     OrgRepository,
     PassportRepository,
+    PolicyRepository,
+    PolicyRuleNotFoundError,
     PublicIncidentRepository,
     SSORequiredError,
     TrustRepository,
@@ -93,6 +95,9 @@ from responsibleai.eval import (
     RegressionDetector,
 )
 from responsibleai.governance.approval import ApprovalStatus
+from responsibleai.governance.models import GovernanceDecision
+from responsibleai.governance.policy import PolicyRule
+from responsibleai.governance.risk import RiskTier
 from responsibleai.guardrails.engine import GuardrailsEngine
 from responsibleai.hallucination.detector import HallucinationDetector
 from responsibleai.incidents.logic import build_incident_record
@@ -190,6 +195,7 @@ _leaderboard_runner: LeaderboardRunner | None = None
 _mcp_usage_repo: McpUsageRepository | None = None
 _evidence_repo: EvidenceRepository | None = None
 _approval_repo: ApprovalRepository | None = None
+_policy_repo: PolicyRepository | None = None
 _db_engine: DatabaseEngine | None = None
 _ws_manager: ConnectionManager = ConnectionManager()
 _webhook_manager: WebhookManager = WebhookManager()
@@ -237,7 +243,7 @@ async def lifespan(application: FastAPI):
     global _compliance, _cost_repo, _cost_analyzer, _router, _trust_repo
     global _org_repo, _audit_repo, _incident_repo, _leaderboard_repo, _leaderboard_runner
     global _passport_repo, _public_incident_repo, _db_engine, _mcp_usage_repo
-    global _evidence_repo, _approval_repo
+    global _evidence_repo, _approval_repo, _policy_repo
     global _eval_repo, _comparator, _benchmark_runner, _dataset_scanner
     global _oidc_provider, _stripe_service, _plan_rate_limiter
 
@@ -279,6 +285,7 @@ async def lifespan(application: FastAPI):
     _public_incident_repo = PublicIncidentRepository(_db_engine)
     _evidence_repo = EvidenceRepository(_db_engine)
     _approval_repo = ApprovalRepository(_db_engine)
+    _policy_repo = PolicyRepository(_db_engine)
     _guardrails   = GuardrailsEngine()
     _hallucination = HallucinationDetector()
     _compliance   = ComplianceEngine()
@@ -735,6 +742,19 @@ class IncidentStatusUpdateRequest(BaseModel):
 class ApprovalResolveRequest(BaseModel):
     outcome: str = Field(..., pattern="^(APPROVED|DENIED)$")
     notes: str | None = Field(default=None, max_length=2000)
+
+
+class PolicyRuleCreateRequest(BaseModel):
+    rule_id: str = Field(..., min_length=1, max_length=100)
+    reason_code: str = Field(..., min_length=1, max_length=100)
+    effect: str = Field(..., pattern="^(ALLOW|DENY|REQUIRE_APPROVAL)$")
+    risk_tiers: list[str] | None = Field(default=None)
+    action_types: list[str] | None = Field(default=None)
+    targets: list[str] | None = Field(default=None)
+
+
+class PolicyReorderRequest(BaseModel):
+    rule_ids: list[str] = Field(..., min_length=1)
 
 
 class SupplyChainToolRequest(BaseModel):
@@ -2351,6 +2371,102 @@ async def governance_resolve_approval(
         outcome=req.outcome, resolved_by=_auth.key_id, org_id=_auth.org_id,
     )
     return resolved.to_dict()
+
+
+def _policy_rule_to_dict(rule: PolicyRule) -> dict[str, Any]:
+    return {
+        "rule_id": rule.rule_id,
+        "reason_code": rule.reason_code,
+        "effect": rule.effect.value,
+        "risk_tiers": sorted(t.value for t in rule.risk_tiers) if rule.risk_tiers else None,
+        "action_types": sorted(rule.action_types) if rule.action_types else None,
+        "targets": sorted(rule.targets) if rule.targets else None,
+    }
+
+
+@app.get("/api/governance/policy", tags=["governance"])
+@limiter.limit("30/minute")
+async def governance_get_policy(
+    request: Request,
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
+) -> dict[str, Any]:
+    """The org's persisted policy, in evaluation order (first-match-wins
+    — see governance/policy.py). Previously policies only existed as
+    in-code objects a call site constructed fresh each time; this is
+    what an org actually configured, queryable and editable without a
+    deploy."""
+    if not _auth.org_id:
+        raise HTTPException(400, "Governance policy requires an org-scoped API key, not a legacy flat key.")
+    policy = await _ready(_policy_repo).get_policy(_auth.org_id)
+    return {"org_id": _auth.org_id, "rules": [_policy_rule_to_dict(r) for r in policy.rules]}
+
+
+@app.post("/api/governance/policy/rules", tags=["governance"])
+@limiter.limit("20/minute")
+async def governance_add_policy_rule(
+    request: Request,
+    req: PolicyRuleCreateRequest,
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, Any]:
+    """Adding a policy rule is ADMIN+ (like resolving an approval) — it
+    changes what future actions this org's own governance pipeline
+    allows, not just a view of past decisions. Appended at the end of
+    the evaluation order; use POST /api/governance/policy/reorder to
+    change that."""
+    if not _auth.org_id:
+        raise HTTPException(400, "Governance policy requires an org-scoped API key, not a legacy flat key.")
+    try:
+        rule = PolicyRule(
+            rule_id=req.rule_id,
+            reason_code=req.reason_code,
+            effect=GovernanceDecision(req.effect),
+            risk_tiers=frozenset(RiskTier(t) for t in req.risk_tiers) if req.risk_tiers else None,
+            action_types=frozenset(req.action_types) if req.action_types else None,
+            targets=frozenset(req.targets) if req.targets else None,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+    existing = await _ready(_policy_repo).get_policy(_auth.org_id)
+    if any(r.rule_id == rule.rule_id for r in existing.rules):
+        raise HTTPException(409, f"Rule {rule.rule_id!r} already exists for this org.")
+    await _ready(_policy_repo).add_rule(_auth.org_id, rule)
+    logger.info("governance_policy_rule_added", rule_id=rule.rule_id, org_id=_auth.org_id, added_by=_auth.key_id)
+    return _policy_rule_to_dict(rule)
+
+
+@app.delete("/api/governance/policy/rules/{rule_id}", tags=["governance"])
+@limiter.limit("20/minute")
+async def governance_remove_policy_rule(
+    request: Request,
+    rule_id: str,
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, str]:
+    if not _auth.org_id:
+        raise HTTPException(400, "Governance policy requires an org-scoped API key, not a legacy flat key.")
+    try:
+        await _ready(_policy_repo).remove_rule(_auth.org_id, rule_id)
+    except PolicyRuleNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from None
+    logger.info("governance_policy_rule_removed", rule_id=rule_id, org_id=_auth.org_id, removed_by=_auth.key_id)
+    return {"status": "removed", "rule_id": rule_id}
+
+
+@app.post("/api/governance/policy/reorder", tags=["governance"])
+@limiter.limit("20/minute")
+async def governance_reorder_policy(
+    request: Request,
+    req: PolicyReorderRequest,
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, Any]:
+    if not _auth.org_id:
+        raise HTTPException(400, "Governance policy requires an org-scoped API key, not a legacy flat key.")
+    try:
+        await _ready(_policy_repo).reorder(_auth.org_id, req.rule_ids)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+    policy = await _ready(_policy_repo).get_policy(_auth.org_id)
+    logger.info("governance_policy_reordered", org_id=_auth.org_id, reordered_by=_auth.key_id)
+    return {"org_id": _auth.org_id, "rules": [_policy_rule_to_dict(r) for r in policy.rules]}
 
 
 @app.post("/api/governance/supplychain/scan", tags=["governance"])

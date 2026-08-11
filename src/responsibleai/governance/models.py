@@ -5,21 +5,26 @@ the full rationale and the [TODAY] precedent each one builds on.
 
 Risk-tiered routing (Phase 9, ``governance/risk.py``) and a first policy
 engine (Phase 10, ``governance/policy.py``) now exist and are wired into
-``WhitePactRuntimeGateway`` — see those modules' docstrings. Still
-deliberately not included here (real gaps, not oversights — later
-phases per MIGRATION_WHITEPACT_V2.md):
+``WhitePactRuntimeGateway`` — see those modules' docstrings.
+``EvidenceRecord`` is persisted and hash-chained
+(``db/evidence_repository.py``, Phase 12) — ``DecisionResult`` below
+remains the in-memory decision output ``build_evidence_record()``
+converts into that immutable form; it doesn't persist anything itself.
+``GovernanceDecision.QUARANTINE`` is genuinely reachable, not just a
+defined enum member — ``governance/quarantine.py`` computes the
+cross-request violation count `WhitePactRuntimeGateway.evaluate()``
+consults. ``AgentContext.trust_state`` below is populated by
+``governance/trust_integration.py`` when an action names a third-party
+model/provider, and consulted by the gateway to downgrade a low-trust
+``ALLOW`` to ``REQUIRE_APPROVAL``.
 
-- ``EvidenceRecord`` / persisted, hash-chained decision evidence
-  (Phase 12) — ``DecisionResult`` below is an in-memory, unpersisted
-  decision output, not the immutable audit trail SPEC.md Section 3.7
-  describes. The existing hash-chaining primitive it will generalize
-  from already exists and is real
-  (``db/public_incident_repository.py``); wiring it to decisions is
-  separate work.
-- A standing "pattern of violations" tracker — ``GovernanceDecision.QUARANTINE``
-  is a real member of the enum (the decision model is genuinely
-  five-way), but nothing in this package ever *produces* it yet: that
-  requires cross-request state this phase doesn't build.
+What's still genuinely not built, stated honestly: a richer policy rule
+language (OPA/Rego) beyond ``governance/policy.py``'s flat
+risk-tier/action-type/target matching, and wiring the gateway into
+every governed surface (the MCP dispatch path is wired as of
+MIGRATION_WHITEPACT_V2.md's gap-closure phase; direct Python-library
+callers of the underlying engines bypass it by design — see
+``THREAT_MODEL.md``'s governance-pipeline section).
 """
 
 from __future__ import annotations
