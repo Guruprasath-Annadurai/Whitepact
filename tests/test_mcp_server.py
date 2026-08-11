@@ -43,9 +43,15 @@ class TestMCPToolDefs:
 # ── Resource listing ───────────────────────────────────────────────────────────
 
 class TestMCPResourceDefs:
-    def test_resource_count(self) -> None:
-        from responsibleai.mcp.resources import RESOURCE_DEFS
-        assert len(RESOURCE_DEFS) == 10
+    def test_canonical_resource_count(self) -> None:
+        from responsibleai.mcp.resources import _CANONICAL_RESOURCE_DEFS
+        assert len(_CANONICAL_RESOURCE_DEFS) == 10
+
+    def test_advertised_resource_count_is_doubled_for_dual_scheme(self) -> None:
+        # MIGRATION_WHITEPACT_V2.md Section 6: every canonical resource is
+        # advertised under both whitepact:// and rai://.
+        from responsibleai.mcp.resources import _CANONICAL_RESOURCE_DEFS, RESOURCE_DEFS
+        assert len(RESOURCE_DEFS) == 2 * len(_CANONICAL_RESOURCE_DEFS)
 
     def test_all_resources_have_uri_and_name(self) -> None:
         from responsibleai.mcp.resources import RESOURCE_DEFS
@@ -57,6 +63,69 @@ class TestMCPResourceDefs:
         from responsibleai.mcp.resources import RESOURCE_DEFS
         for res in RESOURCE_DEFS:
             assert res.mimeType == "application/json"
+
+    def test_every_canonical_uri_has_a_whitepact_twin(self) -> None:
+        from responsibleai.mcp.resources import RESOURCE_DEFS
+        uris = {str(r.uri) for r in RESOURCE_DEFS}
+        legacy_uris = {u for u in uris if u.startswith("rai://")}
+        for legacy_uri in legacy_uris:
+            whitepact_uri = "whitepact://" + legacy_uri.removeprefix("rai://")
+            assert whitepact_uri in uris, f"missing whitepact:// twin for {legacy_uri}"
+
+    def test_whitepact_scheme_listed_before_legacy(self) -> None:
+        # Not load-bearing behavior, but documents the deliberate choice
+        # (see resources.py's RESOURCE_DEFS comment) so a client that only
+        # reads the first N results sees the preferred scheme.
+        from responsibleai.mcp.resources import RESOURCE_DEFS
+        assert str(RESOURCE_DEFS[0].uri).startswith("whitepact://")
+
+
+class TestMCPResourceDualScheme:
+    """dispatch_resource() must resolve whitepact:// identically to the
+    legacy rai:// scheme it aliases — see MIGRATION_WHITEPACT_V2.md
+    Section 6."""
+
+    async def test_whitepact_and_legacy_health_are_identical(self) -> None:
+        from responsibleai.mcp.resources import dispatch_resource
+        legacy = await dispatch_resource("rai://health")
+        new = await dispatch_resource("whitepact://health")
+        assert legacy == new
+
+    async def test_whitepact_and_legacy_models_catalog_are_identical(self) -> None:
+        from responsibleai.mcp.resources import dispatch_resource
+        legacy = await dispatch_resource("rai://models/catalog")
+        new = await dispatch_resource("whitepact://models/catalog")
+        assert legacy == new
+
+    async def test_health_reports_accurate_tool_and_resource_counts(self) -> None:
+        # Regression coverage: this exact field was hardcoded and stale
+        # (claimed 26 tools when the real count was 27) before this
+        # migration made it read from TOOL_DEFS/_CANONICAL_RESOURCE_DEFS.
+        import json
+
+        from responsibleai.mcp.resources import _CANONICAL_RESOURCE_DEFS, dispatch_resource
+        from responsibleai.mcp.tools import TOOL_DEFS
+        payload = json.loads(await dispatch_resource("whitepact://health"))
+        assert payload["tools_available"] == len(TOOL_DEFS)
+        assert payload["resources_available"] == len(_CANONICAL_RESOURCE_DEFS)
+
+    async def test_unknown_whitepact_uri_reports_not_found_like_legacy_scheme(self) -> None:
+        import json
+
+        from responsibleai.mcp.resources import dispatch_resource
+        legacy = json.loads(await dispatch_resource("rai://not-a-real-resource"))
+        new = json.loads(await dispatch_resource("whitepact://not-a-real-resource"))
+        assert "error" in legacy
+        # The normalized (rai://) form appears in the error either way --
+        # normalization happens before the not-found fallback runs, so
+        # both inputs report the same underlying, resolved URI.
+        assert legacy == new
+
+
+class TestMCPServerIdentity:
+    def test_server_name_is_whitepact(self) -> None:
+        from responsibleai.mcp.server import server
+        assert server.name == "whitepact"
 
 
 # ── Tool handlers ──────────────────────────────────────────────────────────────

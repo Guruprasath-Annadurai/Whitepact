@@ -1,4 +1,13 @@
-"""MCP resource definitions for the ResponsibleAI governance server."""
+"""MCP resource definitions for the WhitePact governance server.
+
+See MIGRATION_WHITEPACT_V2.md Section 6: resources are served under
+both the legacy `rai://` scheme and the preferred `whitepact://` scheme
+during the transition window, pointing at the identical handler --
+`_CANONICAL_RESOURCE_DEFS` below is defined once under `rai://`, and
+`RESOURCE_DEFS` (what `list_resources()` actually advertises) is built
+from it by generating a `whitepact://` twin for each entry, rather than
+duplicating every field by hand.
+"""
 
 from __future__ import annotations
 
@@ -7,8 +16,12 @@ import json
 import mcp.types as types
 
 from responsibleai.cost.models import MODEL_CATALOG
+from responsibleai.mcp.tools import TOOL_DEFS
 
-RESOURCE_DEFS: list[types.Resource] = [
+WHITEPACT_URI_SCHEME = "whitepact://"
+LEGACY_URI_SCHEME = "rai://"
+
+_CANONICAL_RESOURCE_DEFS: list[types.Resource] = [
     types.Resource(
         uri=types.AnyUrl("rai://health"),  # type: ignore[arg-type]
         name="ResponsibleAI Health",
@@ -73,16 +86,43 @@ RESOURCE_DEFS: list[types.Resource] = [
 ]
 
 
+def _with_whitepact_alias(resource: types.Resource) -> types.Resource:
+    """Build the whitepact:// twin of a rai://-scheme resource — same
+    name/description/mimeType, only the URI scheme differs."""
+    legacy_uri = str(resource.uri)
+    whitepact_uri = WHITEPACT_URI_SCHEME + legacy_uri.removeprefix(LEGACY_URI_SCHEME)
+    return resource.model_copy(update={"uri": types.AnyUrl(whitepact_uri)})  # type: ignore[arg-type]
+
+
+# What list_resources() actually advertises: every canonical resource
+# under both schemes, same handler behind each — see dispatch_resource's
+# URI normalization below. Preferred (whitepact://) listed first so
+# clients that surface only the first N results still see the current
+# scheme.
+RESOURCE_DEFS: list[types.Resource] = [
+    *(_with_whitepact_alias(r) for r in _CANONICAL_RESOURCE_DEFS),
+    *_CANONICAL_RESOURCE_DEFS,
+]
+
+
 async def dispatch_resource(uri: str) -> str:
-    """Return the serialised content of a resource URI."""
+    """Return the serialised content of a resource URI.
+
+    Accepts both the preferred `whitepact://` scheme and the legacy
+    `rai://` scheme — normalized to `rai://` here so the match branches
+    below only need to be written once. See MIGRATION_WHITEPACT_V2.md
+    Section 6.
+    """
+    if uri.startswith(WHITEPACT_URI_SCHEME):
+        uri = LEGACY_URI_SCHEME + uri.removeprefix(WHITEPACT_URI_SCHEME)
 
     if uri == "rai://health":
         return json.dumps({
             "status": "ok",
             "version": "1.2.0",
             "modules": ["guardrails", "trust_score", "hallucination", "compliance", "redteam", "cost", "passport", "benchmark", "model_router"],
-            "tools_available": 26,
-            "resources_available": 10,
+            "tools_available": len(TOOL_DEFS),
+            "resources_available": len(_CANONICAL_RESOURCE_DEFS),
         })
 
     if uri == "rai://models/catalog":

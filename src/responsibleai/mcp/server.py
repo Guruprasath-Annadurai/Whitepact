@@ -1,5 +1,12 @@
 """
-ResponsibleAI MCP Server — governance tools for Claude Code and MCP-compatible AI assistants.
+WhitePact MCP Server (governance tools for Claude Code and MCP-compatible
+AI assistants) — the governance engine behind WhitePact's runtime
+authority layer. See MIGRATION_WHITEPACT_V2.md Section 6: the server's
+protocol-level identity is `whitepact`; the console script names
+(`responsibleai-mcp`/`responsibleai-mcp-http`) launching this exact
+process are unchanged, kept for backward compatibility. MCP clients
+treat the server name as an opaque display string, not a dependency, so
+this rename carries no compatibility break.
 
 Two transports:
 
@@ -7,7 +14,7 @@ Two transports:
    Configure Claude Code:
        {
          "mcpServers": {
-           "responsibleai": { "command": "responsibleai-mcp" }
+           "whitepact": { "command": "responsibleai-mcp" }
          }
        }
 
@@ -52,7 +59,7 @@ _log_level = os.environ.get("RAI_MCP_LOG_LEVEL", "WARNING").upper()
 logging.basicConfig(level=getattr(logging, _log_level, logging.WARNING))
 _logger = logging.getLogger("responsibleai.mcp")
 
-server: Server = Server("responsibleai-mcp")
+server: Server = Server("whitepact")
 
 # Set by the HTTP transport's auth middleware per-connection. None on stdio
 # (self-hosted) — absence of a context means unrestricted access, matching
