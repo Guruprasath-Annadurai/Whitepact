@@ -35,9 +35,22 @@ Both hosted transports are served by the same `main_http()` process on the
 same port; a client picks its transport by which path it connects to.
 
 Environment variables (all optional):
-    RAI_MCP_LOG_LEVEL     Logging level: DEBUG | INFO | WARNING (default: WARNING)
-    RAI_MCP_HTTP_HOST     HTTP transport bind host (default: 0.0.0.0)
-    RAI_MCP_HTTP_PORT     HTTP transport bind port (default: 8766)
+    RAI_MCP_LOG_LEVEL                     Logging level: DEBUG | INFO | WARNING (default: WARNING)
+    RAI_MCP_HTTP_HOST                     HTTP transport bind host (default: 0.0.0.0)
+    RAI_MCP_HTTP_PORT                     HTTP transport bind port (default: 8766)
+    RAI_MCP_HTTP_ALLOWED_HOSTS            Comma-separated Host header allowlist for DNS
+                                           rebinding protection (e.g. "mcp.example.com,
+                                           mcp.example.com:*"). Empty by default — see
+                                           MIGRATION_WHITEPACT_V2.md Section on transport
+                                           security for why that's the safe default.
+    RAI_MCP_HTTP_ALLOWED_ORIGINS          Comma-separated Origin header allowlist, same
+                                           DNS rebinding protection mechanism.
+    RAI_MCP_HTTP_DNS_REBINDING_PROTECTION Force-enable/disable DNS rebinding protection
+                                           (true/false). Defaults to enabled automatically
+                                           once either allowlist above is non-empty.
+    RAI_MCP_HTTP_AUTH_MAX_FAILURES        Failed Bearer-auth attempts allowed per client
+                                           IP within the window below before 429s (default: 10).
+    RAI_MCP_HTTP_AUTH_WINDOW_SECONDS      Sliding window for the above, in seconds (default: 60).
 """
 
 from __future__ import annotations
@@ -203,6 +216,81 @@ def main() -> None:
 
 # ── HTTP/SSE transport (hosted, billed, plan-gated) ─────────────────────────────
 
+def _split_csv(raw: str) -> list[str]:
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def _env_bool(name: str, *, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _build_transport_security() -> Any:
+    """DNS rebinding protection for both hosted transports (spec: MCP servers
+    must validate Host/Origin headers to prevent a malicious webpage from
+    reaching a server bound to localhost/an internal address via the
+    victim's browser). Disabled by default — matching the underlying SDK's
+    own backward-compatible default — unless the deployer actually
+    configures an allowlist, since enabling it with empty allowlists would
+    reject every request. See MIGRATION_WHITEPACT_V2.md's transport
+    security section.
+    """
+    from mcp.server.transport_security import TransportSecuritySettings
+
+    allowed_hosts = _split_csv(os.environ.get("RAI_MCP_HTTP_ALLOWED_HOSTS", ""))
+    allowed_origins = _split_csv(os.environ.get("RAI_MCP_HTTP_ALLOWED_ORIGINS", ""))
+    enabled = _env_bool(
+        "RAI_MCP_HTTP_DNS_REBINDING_PROTECTION",
+        default=bool(allowed_hosts or allowed_origins),
+    )
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=enabled,
+        allowed_hosts=allowed_hosts,
+        allowed_origins=allowed_origins,
+    )
+
+
+class _AuthFailureLimiter:
+    """Per-process sliding-window limiter on failed Bearer-auth attempts,
+    keyed by client IP — blocks credential-stuffing/brute-force probing of
+    `/mcp` and `/sse` before it reaches `OrgRepository.authenticate`'s
+    database round trip. Deliberately separate from `PlanRateLimiter`
+    (dashboard/plan_rate_limiter.py): that one meters *successful*,
+    authenticated tool calls against a billing plan; this one guards the
+    auth boundary itself and has no concept of an org or plan yet.
+
+    In-memory, so this is per-replica, not cluster-wide — same documented
+    limitation as everything else in this codebase that isn't backed by
+    Postgres/Redis (see `DatabaseEngine`'s docstring). A determined
+    attacker distributing requests across replicas isn't stopped by this
+    alone; it's a real speed bump against the common single-source case,
+    not a claim of distributed rate limiting.
+    """
+
+    def __init__(self, max_failures: int, window_seconds: float) -> None:
+        self._max_failures = max_failures
+        self._window_seconds = window_seconds
+        self._failures: dict[str, list[float]] = {}
+        self._lock = asyncio.Lock()
+
+    def _prune(self, key: str, now: float) -> list[float]:
+        attempts = [t for t in self._failures.get(key, []) if now - t < self._window_seconds]
+        self._failures[key] = attempts
+        return attempts
+
+    async def is_blocked(self, key: str) -> bool:
+        async with self._lock:
+            now = asyncio.get_running_loop().time()
+            return len(self._prune(key, now)) >= self._max_failures
+
+    async def record_failure(self, key: str) -> None:
+        async with self._lock:
+            now = asyncio.get_running_loop().time()
+            self._prune(key, now).append(now)
+
+
 def _build_http_app() -> Any:
     """Construct the ASGI app for hosted MCP. Imports are local — this path
     pulls in Starlette + the DB layer, which self-hosted stdio users never need.
@@ -229,17 +317,27 @@ def _build_http_app() -> Any:
     _db_engine = create_engine(settings.effective_db_url)
     _org_repo = OrgRepository(_db_engine)
     _usage_repo = McpUsageRepository(_db_engine)
-    sse = SseServerTransport("/messages/")
+    transport_security = _build_transport_security()
+    sse = SseServerTransport("/messages/", security_settings=transport_security)
     # stateless=True: each POST to /mcp is authenticated and dispatched
     # independently, mirroring the legacy /sse transport's per-connection
     # Bearer auth rather than introducing cross-request session affinity.
-    streamable_http = StreamableHTTPSessionManager(app=server, stateless=True)
+    streamable_http = StreamableHTTPSessionManager(
+        app=server, stateless=True, security_settings=transport_security,
+    )
+    auth_limiter = _AuthFailureLimiter(
+        max_failures=int(os.environ.get("RAI_MCP_HTTP_AUTH_MAX_FAILURES", "10")),
+        window_seconds=float(os.environ.get("RAI_MCP_HTTP_AUTH_WINDOW_SECONDS", "60")),
+    )
 
     @asynccontextmanager
     async def _lifespan(_app: Starlette) -> Any:
         await _db_engine.init()
         async with streamable_http.run():
             yield
+
+    def _client_key(request: Request) -> str:
+        return request.client.host if request.client else "unknown"
 
     async def _authenticate(request: Request) -> OrgContext | None:
         auth_header = request.headers.get("authorization", "")
@@ -250,13 +348,34 @@ def _build_http_app() -> Any:
             return None
         return await _org_repo.authenticate(raw_key)
 
-    async def handle_sse(request: Request) -> Any:
+    async def _authenticate_or_error(request: Request) -> tuple[OrgContext | None, JSONResponse | None]:
+        """Bearer auth gated by `auth_limiter`: blocks a client IP that's
+        already exhausted its failure budget *before* touching the DB, then
+        records a fresh failure on rejection. Shared by both hosted
+        transports so a probe against one doesn't get a bigger budget by
+        switching to the other."""
+        client_key = _client_key(request)
+        if await auth_limiter.is_blocked(client_key):
+            return None, JSONResponse(
+                {
+                    "error": "too_many_attempts",
+                    "message": "Too many failed authentication attempts from this client. Try again later.",
+                },
+                status_code=429,
+            )
         ctx = await _authenticate(request)
         if ctx is None:
-            return JSONResponse(
+            await auth_limiter.record_failure(client_key)
+            return None, JSONResponse(
                 {"error": "unauthorized", "message": "Provide a valid Bearer API key."},
                 status_code=401,
             )
+        return ctx, None
+
+    async def handle_sse(request: Request) -> Any:
+        ctx, error = await _authenticate_or_error(request)
+        if error is not None:
+            return error
 
         org_token = _current_org.set(ctx)
         usage_token = _current_usage_repo.set(_usage_repo)
@@ -285,13 +404,9 @@ def _build_http_app() -> Any:
 
         async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
             request = Request(scope, receive=receive)
-            ctx = await _authenticate(request)
-            if ctx is None:
-                response = JSONResponse(
-                    {"error": "unauthorized", "message": "Provide a valid Bearer API key."},
-                    status_code=401,
-                )
-                await response(scope, receive, send)
+            ctx, error = await _authenticate_or_error(request)
+            if error is not None:
+                await error(scope, receive, send)
                 return
 
             org_token = _current_org.set(ctx)

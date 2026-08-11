@@ -282,6 +282,62 @@ contracts (`structuredContent`, output schemas) — both are later phases
 of the WhitePact Enterprise Foundation v2 program, not required to add
 a second transport alongside the first.
 
+### 7.1 Transport security hardening
+
+Two gaps existed in both hosted transports before this addendum, found
+by inspecting what the pinned MCP SDK actually provides versus what the
+server was passing it (`mcp.server.transport_security.TransportSecurityMiddleware`'s
+own docstring: DNS rebinding protection is **disabled by default** when
+no `security_settings` is passed — which is what both transports had
+been doing since Section 7 landed).
+
+**DNS rebinding protection** (Host/Origin header validation): now wired
+via `_build_transport_security()`, shared by both `/mcp` and `/sse`.
+
+- `RAI_MCP_HTTP_ALLOWED_HOSTS` / `RAI_MCP_HTTP_ALLOWED_ORIGINS`
+  (comma-separated allowlists) and `RAI_MCP_HTTP_DNS_REBINDING_PROTECTION`
+  (explicit force on/off).
+- Stays **disabled by default** even though this is a "security
+  hardening" change — enabling it with an empty allowlist would reject
+  every request against the SDK's own validation logic
+  (`_validate_host`/`_validate_origin` require an exact or wildcard
+  match against a non-empty list), which would silently break every
+  existing hosted deployment on upgrade. Per the standing rule to
+  preserve backward compatibility unless there's a strong technical
+  reason not to: there isn't one strong enough to justify breaking
+  deployments that haven't opted in. Once either allowlist is
+  configured, protection auto-enables; the explicit flag can still force
+  it either way.
+- Deployers fronting the hosted MCP process with a known set of
+  hostnames (the common case) should set `RAI_MCP_HTTP_ALLOWED_HOSTS` —
+  this is the single most impactful hardening step available here and
+  costs nothing functionally once the allowlist matches the real
+  deployment.
+
+**Bearer-auth brute-force rate limiting**: `_AuthFailureLimiter`, an
+in-memory sliding-window limiter keyed by client IP, gates
+`OrgRepository.authenticate()` on both transports — a client that
+exhausts `RAI_MCP_HTTP_AUTH_MAX_FAILURES` (default 10) failed attempts
+within `RAI_MCP_HTTP_AUTH_WINDOW_SECONDS` (default 60) gets `429`s
+without touching the database, and the failure budget is shared between
+`/mcp` and `/sse` so switching transports doesn't reset it. This is
+explicitly **not** the same thing as `PlanRateLimiter`
+(`dashboard/plan_rate_limiter.py`), which meters successful,
+authenticated tool calls against a billing plan and is backed by Redis
+for cluster-wide accuracy — `_AuthFailureLimiter` guards the auth
+boundary itself and is in-memory, so it's per-process, not cluster-wide.
+Stated plainly per the non-negotiable rule against overclaiming: this is
+a real speed bump against the common single-source brute-force case, not
+distributed rate limiting across replicas.
+
+**Tests**: `tests/test_mcp_transport_security.py` — unit tests for the
+env-var parsing helpers and `_AuthFailureLimiter`'s window/threshold/
+per-key-independence behavior, plus integration tests proving a
+mismatched `Host` header gets `421` once an allowlist is configured, a
+matching host passes through to the existing auth check, and repeated
+auth failures against either transport produce `429`s that share one
+budget.
+
 ---
 
 ## 8. Deployment migration
