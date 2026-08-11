@@ -358,6 +358,69 @@ public_incident_reports = Table(
     Index("idx_pir_published_at", "published_at"),
 )
 
+# Phase 12 (SPEC.md Section 3.7) — persisted, hash-chained
+# GovernanceDecision evidence. Chained per-org (unlike
+# public_incident_reports' single global chain above): each
+# organization's evidence trail must be independently verifiable
+# without needing knowledge of any other org's records. Never stores
+# raw argument values -- argument_keys is field names only, see
+# governance/evidence.py's module docstring for why.
+governance_evidence = Table(
+    "governance_evidence",
+    metadata,
+    Column("id",                      String(36),  primary_key=True),  # evidence_id
+    Column("org_id",                  String(36),  nullable=True),
+    Column("action_id",               String(36),  nullable=False),
+    Column("agent_id",                String(36),  nullable=False),
+    Column("identity_id",             String(200), nullable=False),
+    Column("action_type",             String(50),  nullable=False),
+    Column("target",                  String(200), nullable=False),
+    Column("argument_keys",           Text,        nullable=True),  # JSON list of field names, never values
+    Column("authority_delegated_by",  String(200), nullable=False),
+    Column("risk_tier",               String(20),  nullable=True),
+    Column("decision",                String(30),  nullable=False),
+    Column("reason_codes",            Text,        nullable=False),  # JSON list
+    Column("framework",               String(50),  nullable=True),
+    Column("provider",                String(50),  nullable=True),
+    Column("model",                   String(100), nullable=True),
+    Column("evaluated_at",            String(32),  nullable=False),
+    Column("recorded_at",             String(32),  nullable=False),
+    Column("entry_hash",              String(64),  nullable=False),
+    Column("prev_hash",               String(64),  nullable=True),
+    Index("idx_gev_org",       "org_id"),
+    Index("idx_gev_action",    "action_id"),
+    Index("idx_gev_decision",  "decision"),
+    Index("idx_gev_recorded",  "recorded_at"),
+)
+
+# Phase 11 — persisted GovernanceDecision.REQUIRE_APPROVAL requests,
+# resolvable by a human/delegated authority. evidence_id links back to
+# the governance_evidence row for the same action_id, when one was
+# recorded for it (optional -- evidence recording and approval
+# creation are independent operations, see db/approval_repository.py).
+governance_approvals = Table(
+    "governance_approvals",
+    metadata,
+    Column("id",                 String(36),  primary_key=True),  # approval_id
+    Column("org_id",             String(36),  nullable=True),
+    Column("action_id",          String(36),  nullable=False),
+    Column("evidence_id",        String(36),  nullable=True),
+    Column("action_type",        String(50),  nullable=False),
+    Column("target",             String(200), nullable=False),
+    Column("reason_codes",       Text,        nullable=False),  # JSON list
+    Column("risk_tier",          String(20),  nullable=True),
+    Column("status",             String(20),  nullable=False, default="PENDING"),
+    Column("requested_by",       String(200), nullable=True),
+    Column("requested_at",       String(32),  nullable=False),
+    Column("resolved_by",        String(200), nullable=True),
+    Column("resolved_at",        String(32),  nullable=True),
+    Column("resolution_notes",   Text,        nullable=True),
+    Index("idx_gap_org",         "org_id"),
+    Index("idx_gap_status",      "status"),
+    Index("idx_gap_requested",   "requested_at"),
+    Index("idx_gap_action",      "action_id"),
+)
+
 
 class DatabaseEngine:
     """Async database engine wrapping SQLAlchemy — SQLite or PostgreSQL.

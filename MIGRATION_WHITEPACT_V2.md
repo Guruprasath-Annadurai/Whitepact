@@ -549,39 +549,111 @@ first — not an LLM, not necessarily OPA/Rego on day one." First version:
   Also not OPA/Rego or any expression language — `PolicyRule`'s filters
   are plain set-membership checks, nothing that needs its own parser.
 
-**Also explicitly not built anywhere in Phase 8-10** (real gaps, tracked
-as their own later phases — SPEC.md's per-section status markers say
-this too, not just here):
-
-- **Evidence persistence** (Phase 12) — `DecisionResult` is an
-  in-memory, unpersisted output. No hash chain, no
-  `policies_evaluated`/`deterministic_checks` breakdown, nothing written
-  to a database. The existing hash-chaining primitive this will
-  eventually generalize from (`db/public_incident_repository.py`) is
-  real and unchanged; wiring it to decisions is separate work.
-- **Approval workflow** — `REQUIRE_APPROVAL` is a real decision the
-  gateway can return; nothing then queues it, notifies anyone, or
-  exposes a resolution API.
-- **`QUARANTINE`** — a real, tested enum member, but nothing anywhere
-  in this package ever produces it: that needs cross-request pattern
-  tracking (e.g. "this agent has had 3 policy violations this week")
-  this phase doesn't build.
-- **MCP tool dispatch integration** — `dispatch_tool()` in `mcp/tools.py`
-  is completely unchanged; nothing routes an actual MCP tool call
-  through `WhitePactRuntimeGateway` before dispatching it. The gateway
-  exists and is tested standalone; wiring it into the live request path
-  is real, separate, own-tested work.
-- **Trust Index signal integration** — `AgentContext.trust_state` exists
-  as a field; nothing populates it from a live Trust Index lookup or
-  reads it in a decision.
-
 **Tests**: `tests/test_governance_risk.py` (tier-table coverage against
 the live `TOOL_DEFS` list, classification defaults) and
 `tests/test_governance_policy.py` (rule-filter matching, effect
 validation, first-match-wins/fall-through evaluation) — plus the
-gateway-integration tests noted in the main section above. 49 tests
-total across `test_governance_core.py` + `test_governance_risk.py` +
-`test_governance_policy.py`.
+gateway-integration tests noted in the main section above.
+
+### 8.3 Evidence persistence (Phase 12)
+
+SPEC.md Section 3.7 defines an `EvidenceRecord` — immutable, tamper-evident
+structured evidence for every decision. Before this section: `DecisionResult`
+was in-memory and unpersisted; nothing generalized the existing, proven
+hash-chaining pattern (`db/public_incident_repository.py`) to governance
+decisions.
+
+- `governance/evidence.py`: `EvidenceRecord` (a pure, unhashed shape) and
+  `build_evidence_record(action, agent, authority, decision)` (a pure
+  assembly function — no I/O, no hashing). Deliberately **never stores
+  raw argument values** — `argument_keys: list[str]` captures only the
+  field *names* an action carried, not their contents, since field names
+  alone can't leak a secret the way even a truncated value sometimes can.
+- `db/evidence_repository.py`: `EvidenceRepository.record()` persists an
+  `EvidenceRecord`, computing its hash chained onto that **organization's**
+  last entry — chained per-org, not globally like the public incident
+  registry, since an org's evidence trail must be independently
+  verifiable without needing any other org's records.
+  `verify_chain(org_id)` re-walks the chain from scratch and recomputes
+  every hash, catching both a directly-tampered field and a broken
+  `prev_hash` link (`tests/test_governance_persistence.py` proves both).
+  Write-once: no `update`/`delete` method exists.
+- Exposed via `GET /api/governance/evidence` (list, org-scoped,
+  `ANALYST`+) and `GET /api/governance/evidence/verify` (chain integrity
+  check, org-scoped).
+- **What's honestly not captured**, against SPEC.md's full
+  `EvidenceRecord` shape (`governance/evidence.py`'s module docstring has
+  the complete accounting): `trust_signals` (nothing computes a live
+  `TrustCheckResult` automatically), `deterministic_checks`/
+  `probabilistic_checks` as separate structured fields (folded into
+  `reason_codes` instead), `execution_result_metadata` (this package
+  can't see whether an allowed action was actually executed).
+
+### 8.4 Approval workflow (Phase 11)
+
+SPEC.md Section 3.6: `REQUIRE_APPROVAL` was a real decision the gateway
+could return, but nothing queued it, notified anyone, or exposed a
+resolution API — a decision with no mechanism to act on it.
+
+- `governance/approval.py`: `ApprovalRequest` + `ApprovalStatus`
+  (`PENDING`/`APPROVED`/`DENIED`) and `build_approval_request(action, decision)`,
+  pure assembly matching `governance/evidence.py`'s pattern.
+- `db/approval_repository.py`: `ApprovalRepository.create()` persists a
+  `PENDING` request and, if a `WebhookManager` is supplied (optional,
+  keyword-only), fires the new `WebhookEvent.APPROVAL_REQUESTED` through
+  the existing, tested webhook infrastructure — real notification, not a
+  new notification system. `resolve()` is a one-way state transition
+  (`PENDING -> APPROVED`/`DENIED`) guarded two ways: an in-Python check
+  before the write, and a `WHERE status = 'PENDING'` clause on the
+  `UPDATE` itself, so a race between two concurrent resolvers can't both
+  succeed — the loser gets `ApprovalAlreadyResolvedError`, never a
+  silently overwritten decision. `ApprovalNotFoundError` for an unknown
+  ID.
+- Exposed via `GET /api/governance/approvals` (list pending, org-scoped,
+  `ANALYST`+) and `POST /api/governance/approvals/{id}/resolve`
+  (org-scoped, **`ADMIN`+** — resolving is a materially more privileged
+  action than viewing). A resolve request for another org's approval ID
+  returns `404`, never `403`, so the endpoint never confirms *anything*
+  about another org's approval IDs existing.
+- **What's honestly not built**: any notification beyond the optional
+  webhook fire (no email/Slack-app-specific integration, no in-app UI,
+  no SLA/expiry timers), and no automatic re-evaluation or execution of
+  the original action once approved — resolving records a human
+  decision; acting on it is the caller's responsibility, same as an
+  `ALLOW` decision always was.
+
+**Also explicitly not built anywhere in Phases 8-12** (real gaps,
+tracked as their own later work — SPEC.md's per-section status markers
+say this too, not just here):
+
+- **`QUARANTINE`** — a real, tested enum member, but nothing anywhere
+  in this package ever produces it: that needs cross-request pattern
+  tracking (e.g. "this agent has had 3 policy violations this week")
+  no phase so far builds.
+- **MCP tool dispatch integration** — `dispatch_tool()` in `mcp/tools.py`
+  is completely unchanged; nothing routes an actual MCP tool call
+  through `WhitePactRuntimeGateway`, `EvidenceRepository`, or
+  `ApprovalRepository` before dispatching it. All three exist and are
+  tested standalone; wiring them into the live request path is real,
+  separate, own-tested work.
+- **Trust Index signal integration** — `AgentContext.trust_state` exists
+  as a field; nothing populates it from a live Trust Index lookup or
+  reads it in a decision or a piece of evidence.
+- **Evidence export beyond JSON** (e.g. a signed PDF/CSV bundle for an
+  auditor) — `EvidenceRecord.to_dict()` and the list API are the only
+  export path today.
+
+**Tests**: `tests/test_governance_persistence.py` (hash chain
+record/get/list, tamper detection on both a mutated field and a broken
+`prev_hash` link, per-org chain independence, approval creation/listing/
+resolution including the double-resolve and not-found error paths) and
+`tests/test_governance_api.py` (the four HTTP endpoints end-to-end
+against a real auth-enabled app instance: org-scoping, the `ANALYST` vs
+`ADMIN` role split, cross-org access returning `404` not `403`,
+double-resolve returning `409`). 85 tests total across
+`test_governance_core.py` + `test_governance_risk.py` +
+`test_governance_policy.py` + `test_governance_persistence.py` +
+`test_governance_api.py`.
 
 ---
 
@@ -649,22 +721,23 @@ Per the standing rule against fabricating implementation status:
 ## 12. What this document does not cover
 
 Docker/Helm/CLI/package/env-var/MCP-identity/transport migration, plus
-now the runtime governance core through its first three phases —
-the gateway itself (Section 8), risk-tiered routing (Section 8.1), and
-a first policy engine (Section 8.2) — MCP OAuth/OIDC authorization
-(Section 7.2), and structured tool-output contracts (Section 7.3).
-What remains genuinely out of scope here: **evidence persistence**
-(Phase 12 — `DecisionResult` is in-memory only, no hash chain), an
-**approval workflow** (no queue/notification/resolution API behind
-`REQUIRE_APPROVAL`), **`QUARANTINE`** actually being produced by
-anything (needs cross-request pattern tracking not built here), a
-**richer policy rule language** than plain risk-tier/action-type/target
-matching (OPA/Rego or similar, if ever needed), **Trust Index signal
-integration** (`AgentContext.trust_state` exists as a field, nothing
-populates or reads it), and **wiring the governance gateway into the
-live MCP tool-dispatch path** (`dispatch_tool()` is unchanged; nothing
-routes an actual tool call through `WhitePactRuntimeGateway` yet).
-These are tracked separately and are not blocked on this document —
-they can proceed against the current `responsibleai` code paths and be
-renamed in step with whichever phase above actually executes the
-package migration.
+now the runtime governance core through all five of its phases so
+far — the gateway itself (Section 8), risk-tiered routing
+(Section 8.1), a first policy engine (Section 8.2), evidence
+persistence (Section 8.3), and a first approval workflow
+(Section 8.4) — MCP OAuth/OIDC authorization (Section 7.2), and
+structured tool-output contracts (Section 7.3). What remains genuinely
+out of scope here: **`QUARANTINE`** actually being produced by anything
+(needs cross-request pattern tracking not built here), a **richer
+policy rule language** than plain risk-tier/action-type/target matching
+(OPA/Rego or similar, if ever needed), a **richer approval lifecycle**
+than `PENDING -> APPROVED`/`DENIED` (expiry/timeout, multi-approver
+quorum, delegation-chain approval), **Trust Index signal integration**
+(`AgentContext.trust_state` exists as a field, nothing populates or
+reads it), **evidence export beyond JSON**, and **wiring the governance
+gateway/evidence/approval layers into the live MCP tool-dispatch path**
+(`dispatch_tool()` is unchanged; nothing routes an actual tool call
+through any of them yet). These are tracked separately and are not
+blocked on this document — they can proceed against the current
+`responsibleai` code paths and be renamed in step with whichever phase
+above actually executes the package migration.

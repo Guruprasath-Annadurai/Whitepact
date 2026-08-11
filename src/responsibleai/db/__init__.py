@@ -1,8 +1,14 @@
 """Async database layer — supports SQLite (default) and PostgreSQL."""
 
+from responsibleai.db.approval_repository import (
+    ApprovalAlreadyResolvedError,
+    ApprovalNotFoundError,
+    ApprovalRepository,
+)
 from responsibleai.db.audit_repository import AuditRepository
 from responsibleai.db.engine import DatabaseEngine, create_engine
 from responsibleai.db.eval_repository import EvalRepository
+from responsibleai.db.evidence_repository import EvidenceRepository
 from responsibleai.db.incident_repository import IncidentRepository
 from responsibleai.db.leaderboard_repository import LeaderboardRepository
 from responsibleai.db.mcp_usage_repository import McpUsageRepository
@@ -16,8 +22,12 @@ from responsibleai.db.webhook_repository import (
 )
 
 __all__ = [
+    "ApprovalAlreadyResolvedError",
+    "ApprovalNotFoundError",
+    "ApprovalRepository",
     "DatabaseEngine", "CostRepository", "TrustRepository",
     "OrgRepository", "AuditRepository", "EvalRepository",
+    "EvidenceRepository",
     "WebhookConfigRepository", "WebhookDeliveryRepository",
     "McpUsageRepository", "IncidentRepository",
     "LeaderboardRepository", "PassportRepository", "PublicIncidentRepository",

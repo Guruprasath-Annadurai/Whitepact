@@ -58,7 +58,7 @@ fact.
 
 ---
 
-## 2. The core pipeline **[PARTIALLY TODAY — Phases 8-10]**
+## 2. The core pipeline **[PARTIALLY TODAY — Phases 8-12]**
 
 ```
 Organization
@@ -77,7 +77,7 @@ Decision: ALLOW | ALLOW_WITH_REDACTION | REQUIRE_APPROVAL | DENY | QUARANTINE
   → routes to
 Execution (the actual MCP/API/SaaS/database call, only if allowed)
   → and always produces
-Evidence (an immutable, exportable record of the whole decision) [TARGET — Phase 12]
+Evidence (an immutable, exportable record of the whole decision) [TODAY, first version — Phase 12]
 ```
 
 **[TODAY]**: `src/responsibleai/governance/` now has a real, tested
@@ -96,13 +96,23 @@ effect is recorded but doesn't skip the next step; (4) does the
 existing, tested `GuardrailsEngine` find PII (→
 `ALLOW_WITH_REDACTION`, reusing its own redaction) or
 toxicity/custom-pattern matches (→ `DENY`) in any string-valued
-argument. Genuinely still **[TARGET]**: Trust Index signals don't
+argument. A `DecisionResult` can now be turned into a persisted,
+hash-chained `EvidenceRecord` (`db/evidence_repository.py`, Phase 12)
+and a `REQUIRE_APPROVAL` decision into a persisted, resolvable
+`ApprovalRequest` (`db/approval_repository.py`, Phase 11) — both real,
+tested (`tests/test_governance_persistence.py`,
+`tests/test_governance_api.py`), and exposed via
+`/api/governance/evidence`, `/api/governance/evidence/verify`,
+`/api/governance/approvals`, and
+`/api/governance/approvals/{id}/resolve` in the dashboard API — see
+Section 3.7 and MIGRATION_WHITEPACT_V2.md Section 8 for exactly what's
+covered. Genuinely still **[TARGET]**: Trust Index signals don't
 actually feed into any decision yet (an `AgentContext.trust_state` field
-exists but nothing populates or reads it automatically), and Evidence
-persistence doesn't exist (Phase 12). This gateway is also not wired
-into the MCP tool dispatch path yet: `dispatch_tool()` in `mcp/tools.py`
-calls tool handlers directly, unchanged; nothing today constructs an
-`ActionRequest` from an incoming MCP tool call and routes it through
+exists but nothing populates or reads it automatically). This gateway is
+also not wired into the MCP tool dispatch path yet: `dispatch_tool()` in
+`mcp/tools.py` calls tool handlers directly, unchanged; nothing today
+constructs an `ActionRequest` from an incoming MCP tool call and routes
+it through
 `WhitePactRuntimeGateway` first. That wiring is real, separate,
 own-tested work, not implied by the gateway existing.
 
@@ -242,7 +252,7 @@ One of exactly five outcomes:
 |---|---|---|
 | `ALLOW` | The action proceeds unmodified. | **[TODAY]** — produced by the gateway when nothing else fires. |
 | `ALLOW_WITH_REDACTION` | The action proceeds, but the payload is modified first (e.g. PII stripped) — see `GuardrailsEngine`'s existing redaction logic, which this reuses. | **[TODAY]** — produced when `GuardrailsEngine` finds PII-only findings. |
-| `REQUIRE_APPROVAL` | The action is held pending a human (or delegated-authority) approval — see Section 3.7 and the forthcoming approval-workflow phase. | **[TODAY, trigger only]** — produced when the caller-supplied `AuthorityContext.require_approval_for` names the action type; there is no approval *workflow* yet (no queue, no notification, no resolution API) — the decision is returned, nothing then does anything with it. |
+| `REQUIRE_APPROVAL` | The action is held pending a human (or delegated-authority) approval — see Section 3.7. | **[TODAY]** — produced when the caller-supplied `AuthorityContext.require_approval_for` names the action type (or a matching `Policy` rule says so, Section 3.5); `db/approval_repository.py`'s `ApprovalRepository` now persists it as a resolvable request (`PENDING` → `APPROVED`/`DENIED`, double-resolution rejected), queryable and resolvable via `GET /api/governance/approvals` and `POST /api/governance/approvals/{id}/resolve`. Genuinely still missing: any notification beyond an optional webhook fire, and no automatic re-evaluation or execution of the action once approved — resolving records a human decision, acting on it is the caller's job. |
 | `DENY` | The action is blocked outright. | **[TODAY]** — produced on a missing authority grant, or a toxicity/custom-pattern guardrails match. |
 | `QUARANTINE` | The action, the agent, or both are held for review beyond a single decision — e.g. an agent exhibiting a pattern of policy violations gets its authority suspended pending investigation, distinct from a single denied action. | **[TARGET]** — a real enum member (`GovernanceDecision.QUARANTINE` exists and is tested as part of the five-way set), but nothing in `WhitePactRuntimeGateway` ever returns it: that requires tracking a *pattern* of violations across requests, which this phase doesn't build. |
 
@@ -253,10 +263,11 @@ true of every decision-shaped output in this codebase — binary
 layer; `GovernanceDecision` is a layer above it, not a replacement for
 it).
 
-### 3.7 Evidence **[TARGET — new model]**
+### 3.7 Evidence **[TODAY, first version — Phase 12]**
 
 Immutable, tamper-evident structured evidence for every decision.
-Conceptually:
+Conceptually (this is the *target* shape; see below for what's actually
+implemented against it):
 
 ```
 EvidenceRecord:
@@ -285,15 +296,35 @@ EvidenceRecord:
   hash: str
 ```
 
-**[TODAY]**: this project already has a real, tested, hash-chained
-audit/evidence primitive — the AI Incident Database
-(`src/responsibleai/db/public_incident_repository.py`) uses hash
-chaining with a verifiable `GET /api/incident-db/verify` endpoint, and
-the standard audit log (`AuditRepository`) records every HTTP request.
-Neither is shaped as a per-*governance-decision* evidence record the way
-`EvidenceRecord` is designed to be — Phase 12 generalizes the existing
-hash-chaining pattern (already proven correct and tested) into
-`EvidenceRecord`, rather than inventing tamper-evidence from scratch.
+**[TODAY]**: `governance/evidence.py`'s `EvidenceRecord` +
+`db/evidence_repository.py`'s `EvidenceRepository` implement a real,
+persisted, hash-chained subset of the shape above —
+`tests/test_governance_persistence.py` proves tamper detection
+(mutating a stored field, or breaking the `prev_hash` link between two
+entries, both make `verify_chain()` return `False`) and per-org chain
+independence. This generalizes the AI Incident Database's proven
+hash-chaining pattern (`db/public_incident_repository.py`,
+`GET /api/incident-db/verify`) into per-org evidence rather than
+inventing tamper-evidence from scratch, exactly as originally planned
+— except chained **per organization**, not globally, since an org's own
+evidence trail should be independently verifiable without needing any
+other org's records. Exposed via `GET /api/governance/evidence` and
+`GET /api/governance/evidence/verify`.
+
+Field-by-field honesty against the target shape above —
+`governance/evidence.py`'s module docstring has the full accounting,
+summarized: `sanitized_arguments_metadata` is implemented as
+`argument_keys: list[str]` (field *names* only, deliberately never
+values); `trust_signals` is not populated (nothing computes a live
+`TrustCheckResult` automatically yet); `deterministic_checks` /
+`probabilistic_checks` are not broken out as separate structured
+fields, `reason_codes` carries what a `GuardrailsResult`/`Policy` match
+found instead; `execution_result_metadata` is not populated (this
+package has no visibility into whether an allowed action was actually
+executed); `human_identity` is populated from
+`AgentContext.identity.identity_id`, since no concept of "the human
+behind the agent, distinct from the API key/OIDC identity that
+authorized it" exists yet.
 
 ---
 
@@ -381,7 +412,11 @@ speculative detail:
   risk-tier/action-type/target matching (Phase 10's first version now
   exists — see Section 3.5 — but OPA/Rego or an expression language, if
   ever needed, is still undesigned).
-- The approval-workflow state machine's persistence schema (Phase 11).
+- A richer approval-workflow lifecycle beyond `ApprovalRequest`'s
+  `PENDING -> APPROVED`/`DENIED` (Phase 11's first version now exists —
+  see Section 3.6's `REQUIRE_APPROVAL` row — but expiry/timeout,
+  multi-approver quorum, and delegation-chain approval are still
+  undesigned).
 - The MCP Trust/Supply-Chain Scanner's scoring methodology (Phase 13) —
   this explicitly must distinguish VERIFIED FACT / INFERRED SIGNAL /
   UNKNOWN per input, not produce a single opaque score.

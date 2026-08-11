@@ -63,9 +63,13 @@ from responsibleai.dashboard.telemetry import (
 )
 from responsibleai.dashboard.websocket_manager import ConnectionManager
 from responsibleai.db import (
+    ApprovalAlreadyResolvedError,
+    ApprovalNotFoundError,
+    ApprovalRepository,
     AuditRepository,
     CostRepository,
     EvalRepository,
+    EvidenceRepository,
     IncidentRepository,
     LeaderboardRepository,
     McpUsageRepository,
@@ -89,6 +93,7 @@ from responsibleai.eval import (
     ModelResponse,
     RegressionDetector,
 )
+from responsibleai.governance.approval import ApprovalStatus
 from responsibleai.guardrails.engine import GuardrailsEngine
 from responsibleai.hallucination.detector import HallucinationDetector
 from responsibleai.incidents.logic import build_incident_record
@@ -173,6 +178,8 @@ _incident_repo: IncidentRepository | None = None
 _leaderboard_repo: LeaderboardRepository | None = None
 _leaderboard_runner: LeaderboardRunner | None = None
 _mcp_usage_repo: McpUsageRepository | None = None
+_evidence_repo: EvidenceRepository | None = None
+_approval_repo: ApprovalRepository | None = None
 _db_engine: DatabaseEngine | None = None
 _ws_manager: ConnectionManager = ConnectionManager()
 _webhook_manager: WebhookManager = WebhookManager()
@@ -219,6 +226,7 @@ async def lifespan(application: FastAPI):
     global _compliance, _cost_repo, _cost_analyzer, _router, _trust_repo
     global _org_repo, _audit_repo, _incident_repo, _leaderboard_repo, _leaderboard_runner
     global _passport_repo, _public_incident_repo, _db_engine, _mcp_usage_repo
+    global _evidence_repo, _approval_repo
     global _eval_repo, _comparator, _benchmark_runner, _dataset_scanner
     global _oidc_provider, _stripe_service, _plan_rate_limiter
 
@@ -258,6 +266,8 @@ async def lifespan(application: FastAPI):
     _passport_gen = PassportGenerator()
     _passport_repo = PassportRepository(_db_engine)
     _public_incident_repo = PublicIncidentRepository(_db_engine)
+    _evidence_repo = EvidenceRepository(_db_engine)
+    _approval_repo = ApprovalRepository(_db_engine)
     _guardrails   = GuardrailsEngine()
     _hallucination = HallucinationDetector()
     _compliance   = ComplianceEngine()
@@ -704,6 +714,11 @@ class IncidentRejectRequest(BaseModel):
 
 class IncidentStatusUpdateRequest(BaseModel):
     status: str = Field(..., pattern="^(PUBLISHED|DISPUTED|RESOLVED)$")
+
+
+class ApprovalResolveRequest(BaseModel):
+    outcome: str = Field(..., pattern="^(APPROVED|DENIED)$")
+    notes: str | None = Field(default=None, max_length=2000)
 
 
 class WebhookCreateRequest(BaseModel):
@@ -2214,6 +2229,96 @@ async def incident_db_get(request: Request, public_id: str) -> dict[str, Any]:
     if record is None:
         raise HTTPException(404, "No published incident found with this ID.")
     return record
+
+
+# ── Governance: evidence + approvals (WhitePact Phases 11-12) ──────────────────
+# See MIGRATION_WHITEPACT_V2.md Section 8. Every route below is scoped to the
+# caller's own org (_auth.org_id) -- there is no cross-org listing endpoint,
+# matching get_mcp_usage's pattern just above: a legacy flat key with no
+# org_id can't use these either, same 400 as that endpoint gives, for the
+# same reason (there is no "this org's" evidence/approvals for a key that
+# isn't scoped to an org).
+
+@app.get("/api/governance/evidence", tags=["governance"])
+@limiter.limit("30/minute")
+async def governance_list_evidence(
+    request: Request,
+    limit: int = Query(default=50, ge=1, le=200),
+    decision: str | None = Query(default=None),
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
+) -> dict[str, Any]:
+    if not _auth.org_id:
+        raise HTTPException(400, "Governance evidence requires an org-scoped API key, not a legacy flat key.")
+    records = await _ready(_evidence_repo).list_for_org(_auth.org_id, limit=limit, decision=decision)
+    return {"evidence": [r.to_dict() for r in records], "limit": limit}
+
+
+@app.get("/api/governance/evidence/verify", tags=["governance"])
+@limiter.limit("30/minute")
+async def governance_verify_evidence(
+    request: Request,
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
+) -> dict[str, Any]:
+    """Recomputes this org's evidence hash chain from scratch and reports
+    whether it's intact -- the same tamper-evidence check
+    /api/incident-db/verify offers for the public registry, scoped here
+    to the caller's own org rather than public."""
+    if not _auth.org_id:
+        raise HTTPException(400, "Governance evidence requires an org-scoped API key, not a legacy flat key.")
+    intact = await _ready(_evidence_repo).verify_chain(_auth.org_id)
+    return {"org_id": _auth.org_id, "chain_intact": intact}
+
+
+@app.get("/api/governance/approvals", tags=["governance"])
+@limiter.limit("30/minute")
+async def governance_list_pending_approvals(
+    request: Request,
+    limit: int = Query(default=50, ge=1, le=200),
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
+) -> dict[str, Any]:
+    if not _auth.org_id:
+        raise HTTPException(400, "Governance approvals require an org-scoped API key, not a legacy flat key.")
+    pending = await _ready(_approval_repo).list_pending(_auth.org_id, limit=limit)
+    return {"pending": [p.to_dict() for p in pending], "limit": limit}
+
+
+@app.post("/api/governance/approvals/{approval_id}/resolve", tags=["governance"])
+@limiter.limit("30/minute")
+async def governance_resolve_approval(
+    request: Request,
+    approval_id: str,
+    req: ApprovalResolveRequest,
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, Any]:
+    """Resolving an approval is a privileged action (ADMIN+), unlike the
+    read endpoints above (ANALYST+) -- deciding whether a governed action
+    proceeds is a materially different responsibility than viewing the
+    record of past decisions."""
+    if not _auth.org_id:
+        raise HTTPException(400, "Governance approvals require an org-scoped API key, not a legacy flat key.")
+    existing = await _ready(_approval_repo).get(approval_id)
+    if existing is None:
+        raise HTTPException(404, "No approval request found with this ID.")
+    if existing.organization_id != _auth.org_id:
+        # Same 404 as "doesn't exist" -- not 403 -- so this endpoint never
+        # confirms *anything* about another org's approval IDs existing.
+        raise HTTPException(404, "No approval request found with this ID.")
+    try:
+        resolved = await _ready(_approval_repo).resolve(
+            approval_id,
+            resolved_by=_auth.key_id,
+            outcome=ApprovalStatus(req.outcome),
+            notes=req.notes,
+        )
+    except ApprovalNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from None
+    except ApprovalAlreadyResolvedError as exc:
+        raise HTTPException(409, str(exc)) from None
+    logger.info(
+        "governance_approval_resolved", approval_id=approval_id,
+        outcome=req.outcome, resolved_by=_auth.key_id, org_id=_auth.org_id,
+    )
+    return resolved.to_dict()
 
 
 # ── WebSocket live dashboard ───────────────────────────────────────────────────

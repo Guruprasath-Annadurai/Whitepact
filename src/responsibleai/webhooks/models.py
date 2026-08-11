@@ -14,6 +14,7 @@ class WebhookEvent(StrEnum):
     BUDGET_EXCEEDED = "budget_exceeded"
     GUARDRAIL_TRIGGERED = "guardrail_triggered"
     TRUST_SCORE_CHANGED = "trust_score_changed"
+    APPROVAL_REQUESTED = "approval_requested"
 
 
 class WebhookProvider(StrEnum):
