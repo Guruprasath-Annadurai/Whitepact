@@ -48,7 +48,7 @@ names.
 | `ResponsibleAi` | 20 | GitHub-URL-casing variant in docs/badges |
 | `responsibleai-mcp` | 17 | The published MCP server console script |
 | `rai://` | 6 | MCP resource URI scheme (`src/responsibleai/mcp/resources.py`) |
-| `responsibleai.dev` | 3 | A domain referenced in docs that has never been registered/deployed — see Section 8 |
+| `responsibleai.dev` | 3 | A domain referenced in docs that has never been registered/deployed — see Section 9 |
 
 ---
 
@@ -209,7 +209,82 @@ transition window: register every resource under both `rai://foo` and
 
 ---
 
-## 7. Deployment migration
+## 7. MCP transport modernization (Streamable HTTP)
+
+**Current** (verified in `src/responsibleai/mcp/server.py` before this
+section's implementation): the hosted MCP HTTP app (`main_http()` /
+`responsibleai-mcp-http`) served exactly one transport — HTTP+SSE, the
+MCP spec's 2024-11-05 transport, on `/sse` (event stream) + `/messages/`
+(client-to-server POSTs), both Bearer-authenticated and plan-gated
+against the calling org (`mcp/licensing.py`).
+
+**Target** (implemented): a second, additive endpoint, `/mcp`, serving
+**Streamable HTTP** — the MCP spec's 2025-03-26+ transport, a single path
+handling both directions instead of two. Implementation notes:
+
+- Built on `mcp.server.streamable_http_manager.StreamableHTTPSessionManager`
+  (already vendored by the pinned `mcp<2.0.0` SDK — no new dependency).
+- Registered as `stateless=True`: every request to `/mcp` is
+  authenticated and dispatched independently, matching the existing
+  `/sse` transport's per-connection Bearer-auth model rather than adding
+  cross-request session affinity the current deployment topology (see
+  Section on HA readiness) doesn't yet support.
+- Shares the exact same `_authenticate()` Bearer-token check and the
+  same `_current_org`/`_current_usage_repo` contextvars that
+  `_call_tool` reads for plan-gating and quota metering (Section on
+  runtime governance) — a request over `/mcp` is billed and gated
+  identically to one over `/sse`.
+- Registered via Starlette `Route`, not `Mount` — `/mcp` matches the
+  exact path with no trailing-slash redirect, since MCP clients
+  connecting to `/mcp` don't expect a 307.
+
+**Client configuration** — both transports point at the same
+`responsibleai-mcp-http` / `whitepact-mcp-http` process, on the same
+port; a client selects its transport by which path it connects to:
+
+```jsonc
+// Streamable HTTP (preferred for new clients)
+{ "mcpServers": { "whitepact": {
+    "url": "https://<host>/mcp",
+    "headers": { "Authorization": "Bearer <api-key>" }
+} } }
+
+// HTTP+SSE (legacy, unchanged, still supported)
+{ "mcpServers": { "whitepact": {
+    "url": "https://<host>/sse",
+    "headers": { "Authorization": "Bearer <api-key>" }
+} } }
+```
+
+**Deprecation posture for `/sse`**: not deprecated in the sense of a
+removal date — it keeps running, byte-for-byte unmodified by this
+change (verified by `tests/test_mcp_http_transport.py`'s
+`TestLegacySseTransportUnaffected`). `/mcp` is simply the transport new
+integrations should prefer, per the same "additive, not a replacement"
+posture as every other alias in this document. No removal date is
+committed here, consistent with Section 10's timeline for every other
+legacy name.
+
+**Tests**: `tests/test_mcp_http_transport.py` runs a real MCP client
+(`mcp.client.streamable_http.streamable_http_client`) against the real
+Starlette app in-process (`httpx.ASGITransport`, no socket) — covering
+unauthenticated/invalid-token rejection, `initialize` + `list_tools` +
+`call_tool` round trips over `/mcp`, and that `/sse` still requires and
+enforces the same auth. This also closed a pre-existing test gap: the
+hosted HTTP app had no transport-level integration test before this
+change, only the plan-gating unit tests in
+`tests/test_mcp_server_gating.py` that call `_call_tool` directly.
+
+**Not in scope for this section** (tracked separately, per the "no
+refactor beyond what's required" rule): OAuth/OIDC-based authorization
+for MCP (currently static Bearer API keys), and structured tool-output
+contracts (`structuredContent`, output schemas) — both are later phases
+of the WhitePact Enterprise Foundation v2 program, not required to add
+a second transport alongside the first.
+
+---
+
+## 8. Deployment migration
 
 **Docker**: `Dockerfile`'s `LABEL org.opencontainers.image.*` fields
 currently describe `ResponsibleAI`/`responsibleai`. These are metadata,
@@ -239,7 +314,7 @@ directly.
 
 ---
 
-## 8. What is explicitly *not* claimed by this migration
+## 9. What is explicitly *not* claimed by this migration
 
 Per the standing rule against fabricating implementation status:
 
@@ -259,23 +334,24 @@ Per the standing rule against fabricating implementation status:
 
 ---
 
-## 9. Backward compatibility timeline
+## 10. Backward compatibility timeline
 
 | Version | State |
 |---|---|
 | **v1.2.0** (current, shipped) | `responsibleai`/`rai-governance-platform`/`RAI_*`/`responsibleai-mcp`/`rai://` only. |
-| **v2.0.0** (this migration) | `whitepact` package/CLI/env-prefix/MCP-identity/resource-scheme introduced as preferred, additive. Every v1.2.0 name keeps working identically, with deprecation warnings (stderr/logs, never stdout on stdio transport) where a legacy name is actually used. |
+| **v2.0.0** (this migration) | `whitepact` package/CLI/env-prefix/MCP-identity/resource-scheme introduced as preferred, additive. `/mcp` (Streamable HTTP) introduced alongside the existing `/sse`+`/messages/` (HTTP+SSE) transport, unmodified. Every v1.2.0 name and endpoint keeps working identically, with deprecation warnings (stderr/logs, never stdout on stdio transport) where a legacy name is actually used. |
 | **v2.x** (subsequent minors) | New feature development targets `whitepact` naming primarily; legacy names remain supported, unchanged. |
 | **v3.0.0** (future major, not scheduled) | `responsibleai` import alias, `RAI_*` env vars, `responsibleai-mcp` console scripts, and `rai://` resource URIs may be removed, only after a full v2.x cycle of visible deprecation warnings and only if usage telemetry/issue reports suggest it's safe to do so. No specific date is committed here — per the rule against inventing commitments the project can't back.
 
 ---
 
-## 10. What this document does not cover
+## 11. What this document does not cover
 
-Docker/Helm/CLI/package/env-var/MCP-identity migration only. The
-runtime governance architecture (`SPEC.md`), MCP transport modernization,
-OAuth/OIDC authorization, the policy engine, and the other phases of the
-WhitePact Enterprise Foundation v2 program are tracked separately and
-are not blocked on this document — they can proceed against the current
-`responsibleai` code paths and be renamed in step with whichever phase
-above actually executes the package migration.
+Docker/Helm/CLI/package/env-var/MCP-identity/transport migration only.
+The runtime governance architecture (`SPEC.md`), OAuth/OIDC
+authorization, modern structured tool-output contracts, the policy
+engine, and the other phases of the WhitePact Enterprise Foundation v2
+program are tracked separately and are not blocked on this document —
+they can proceed against the current `responsibleai` code paths and be
+renamed in step with whichever phase above actually executes the
+package migration.

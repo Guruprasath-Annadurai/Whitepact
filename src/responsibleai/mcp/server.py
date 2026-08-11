@@ -8,7 +8,7 @@ process are unchanged, kept for backward compatibility. MCP clients
 treat the server name as an opaque display string, not a dependency, so
 this rename carries no compatibility break.
 
-Two transports:
+Three transports:
 
 1. **stdio** (default, free, self-hosted) — full unrestricted tool access.
    Configure Claude Code:
@@ -18,9 +18,21 @@ Two transports:
          }
        }
 
-2. **HTTP/SSE** (hosted, billed) — Bearer-token authenticated, tools gated by
-   the calling org's billing Plan (FREE/PRO/ENTERPRISE — see mcp/licensing.py).
-   Run with: `responsibleai-mcp-http` (reads RAI_MCP_HTTP_* env vars).
+2. **Streamable HTTP** (hosted, billed) — the modern MCP HTTP transport
+   (spec 2025-03-26+): a single `/mcp` endpoint, Bearer-token authenticated,
+   tools gated by the calling org's billing Plan (FREE/PRO/ENTERPRISE — see
+   mcp/licensing.py). This is the **preferred** hosted transport — point new
+   clients here. Run with: `responsibleai-mcp-http` (reads RAI_MCP_HTTP_*
+   env vars).
+
+3. **HTTP+SSE** (hosted, billed, legacy) — the original MCP HTTP transport
+   (spec 2024-11-05): separate `/sse` + `/messages/` endpoints. Same auth and
+   plan-gating as Streamable HTTP. Kept running, unmodified, for existing
+   clients built against it — see MIGRATION_WHITEPACT_V2.md Section 7 for
+   the deprecation posture (no removal date; migrate at your own pace).
+
+Both hosted transports are served by the same `main_http()` process on the
+same port; a client picks its transport by which path it connects to.
 
 Environment variables (all optional):
     RAI_MCP_LOG_LEVEL     Logging level: DEBUG | INFO | WARNING (default: WARNING)
@@ -194,14 +206,21 @@ def main() -> None:
 def _build_http_app() -> Any:
     """Construct the ASGI app for hosted MCP. Imports are local — this path
     pulls in Starlette + the DB layer, which self-hosted stdio users never need.
+
+    Serves both hosted transports on one app — see the module docstring:
+    `/mcp` (Streamable HTTP, preferred) and `/sse` + `/messages/` (legacy
+    HTTP+SSE, unmodified). Both share the same auth (`_authenticate`) and
+    the same plan-gating contextvars consumed by `_call_tool`.
     """
     from contextlib import asynccontextmanager
 
     from mcp.server.sse import SseServerTransport
+    from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
     from starlette.applications import Starlette
     from starlette.requests import Request
     from starlette.responses import JSONResponse
     from starlette.routing import Mount, Route
+    from starlette.types import Receive, Scope, Send
 
     from responsibleai.dashboard.config import get_settings
     from responsibleai.db import McpUsageRepository, OrgRepository, create_engine
@@ -211,11 +230,16 @@ def _build_http_app() -> Any:
     _org_repo = OrgRepository(_db_engine)
     _usage_repo = McpUsageRepository(_db_engine)
     sse = SseServerTransport("/messages/")
+    # stateless=True: each POST to /mcp is authenticated and dispatched
+    # independently, mirroring the legacy /sse transport's per-connection
+    # Bearer auth rather than introducing cross-request session affinity.
+    streamable_http = StreamableHTTPSessionManager(app=server, stateless=True)
 
     @asynccontextmanager
     async def _lifespan(_app: Starlette) -> Any:
         await _db_engine.init()
-        yield
+        async with streamable_http.run():
+            yield
 
     async def _authenticate(request: Request) -> OrgContext | None:
         auth_header = request.headers.get("authorization", "")
@@ -247,12 +271,53 @@ def _build_http_app() -> Any:
             _current_usage_repo.reset(usage_token)
         return JSONResponse({}, status_code=200)
 
+    class _StreamableHttpEndpoint:
+        """A plain `async def` here would make Starlette's `Route` treat it
+        as a `func(request) -> Response` handler (see `Route.__init__`'s
+        `inspect.isfunction` check) and wrap it in `request_response`,
+        which is incompatible with `StreamableHTTPSessionManager.handle_request`'s
+        raw `(scope, receive, send)` ASGI signature. A callable *instance*
+        fails that isfunction/ismethod check, so Route mounts it as ASGI
+        directly — and unlike `Mount`, `Route` matches the exact path with
+        no wildcard remainder, so `/mcp` needs no trailing slash and never
+        307-redirects the way `Mount("/mcp", ...)` would.
+        """
+
+        async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+            request = Request(scope, receive=receive)
+            ctx = await _authenticate(request)
+            if ctx is None:
+                response = JSONResponse(
+                    {"error": "unauthorized", "message": "Provide a valid Bearer API key."},
+                    status_code=401,
+                )
+                await response(scope, receive, send)
+                return
+
+            org_token = _current_org.set(ctx)
+            usage_token = _current_usage_repo.set(_usage_repo)
+            try:
+                await streamable_http.handle_request(scope, receive, send)
+            finally:
+                _current_org.reset(org_token)
+                _current_usage_repo.reset(usage_token)
+
+    handle_streamable_http = _StreamableHttpEndpoint()
+
     async def health(request: Request) -> JSONResponse:
-        return JSONResponse({"status": "ok", "transport": "http+sse", "tools": len(TOOL_DEFS)})
+        return JSONResponse({
+            "status": "ok",
+            # "transport" (singular) is kept for existing consumers of this
+            # diagnostics endpoint; "transports" is the new, complete list.
+            "transport": "http+sse",
+            "transports": ["streamable-http", "http+sse"],
+            "tools": len(TOOL_DEFS),
+        })
 
     app = Starlette(
         routes=[
             Route("/health", endpoint=health),
+            Route("/mcp", endpoint=handle_streamable_http),
             Route("/sse", endpoint=handle_sse),
             Mount("/messages/", app=sse.handle_post_message),
         ],
