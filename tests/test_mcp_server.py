@@ -128,6 +128,81 @@ class TestMCPServerIdentity:
         assert server.name == "whitepact"
 
 
+class TestCliEntryPoints:
+    """MIGRATION_WHITEPACT_V2.md Section 4: whitepact/whitepact-mcp/
+    whitepact-mcp-http are additive, identical entry-point functions to
+    their legacy counterparts — nothing removed, nothing repointed."""
+
+    def test_pyproject_declares_both_legacy_and_preferred_scripts(self) -> None:
+        import tomllib
+        from pathlib import Path
+
+        pyproject = tomllib.loads(
+            (Path(__file__).parent.parent / "pyproject.toml").read_text()
+        )
+        scripts = pyproject["project"]["scripts"]
+        assert scripts["responsibleai-mcp"] == scripts["whitepact-mcp"]
+        assert scripts["responsibleai-mcp-http"] == scripts["whitepact-mcp-http"]
+        assert scripts["responsibleai"] == scripts["whitepact"]
+
+    def test_no_legacy_script_was_removed(self) -> None:
+        import tomllib
+        from pathlib import Path
+
+        pyproject = tomllib.loads(
+            (Path(__file__).parent.parent / "pyproject.toml").read_text()
+        )
+        scripts = set(pyproject["project"]["scripts"])
+        legacy = {"biasbuster", "responsibleai", "responsibleai-mcp", "responsibleai-mcp-http"}
+        assert legacy <= scripts
+
+
+class TestInvocationNameObservability:
+    """Section 4: whichever script name actually launched the process is
+    logged (stderr/structured logging), never assumed or hardcoded."""
+
+    def test_invoked_as_reads_argv0_basename(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from responsibleai.mcp.server import _invoked_as
+        monkeypatch.setattr("sys.argv", ["/usr/local/bin/whitepact-mcp"])
+        assert _invoked_as() == "whitepact-mcp"
+
+    def test_invoked_as_handles_empty_argv(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from responsibleai.mcp.server import _invoked_as
+        monkeypatch.setattr("sys.argv", [])
+        assert _invoked_as() == "unknown"
+
+    def test_legacy_invocation_logs_the_preferred_alternative(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        from responsibleai.mcp.server import _log_invocation_name
+        monkeypatch.setattr("sys.argv", ["/usr/local/bin/responsibleai-mcp"])
+        with caplog.at_level("INFO", logger="responsibleai.mcp"):
+            _log_invocation_name("stdio server")
+        assert "whitepact-mcp" in caplog.text
+        assert "responsibleai-mcp" in caplog.text
+
+    def test_legacy_http_invocation_names_the_http_preferred_alternative(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        from responsibleai.mcp.server import _log_invocation_name
+        monkeypatch.setattr("sys.argv", ["/usr/local/bin/responsibleai-mcp-http"])
+        with caplog.at_level("INFO", logger="responsibleai.mcp"):
+            _log_invocation_name("http+sse server")
+        # Regression guard: an earlier draft of this string-built the
+        # suffix wrong and could produce "whitepact-mcp'-http" instead of
+        # "whitepact-mcp-http" — assert the correctly-joined form appears.
+        assert "whitepact-mcp-http" in caplog.text
+
+    def test_preferred_invocation_does_not_mention_legacy(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        from responsibleai.mcp.server import _log_invocation_name
+        monkeypatch.setattr("sys.argv", ["/usr/local/bin/whitepact-mcp"])
+        with caplog.at_level("INFO", logger="responsibleai.mcp"):
+            _log_invocation_name("stdio server")
+        assert "legacy" not in caplog.text.lower()
+
+
 # ── Tool handlers ──────────────────────────────────────────────────────────────
 
 class TestRaiScan:

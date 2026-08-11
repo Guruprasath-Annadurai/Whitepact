@@ -129,10 +129,16 @@ dev = [
 ]
 
 [project.scripts]
+# Legacy names — unchanged, kept for backward compatibility per
+# MIGRATION_WHITEPACT_V2.md Section 4. No planned removal date.
 biasbuster        = "biasbuster.cli:main"
 responsibleai     = "biasbuster.cli:main"
 responsibleai-mcp = "responsibleai.mcp.server:main"
 responsibleai-mcp-http = "responsibleai.mcp.server:main_http"
+# Preferred names — identical entry-point functions, new invocation name only.
+whitepact          = "biasbuster.cli:main"
+whitepact-mcp       = "responsibleai.mcp.server:main"
+whitepact-mcp-http  = "responsibleai.mcp.server:main_http"
 
 [project.urls]
 Homepage   = "https://github.com/Guruprasath-Annadurai/Whitepact"

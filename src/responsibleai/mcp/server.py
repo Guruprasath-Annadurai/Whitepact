@@ -34,6 +34,7 @@ import asyncio
 import json
 import logging
 import os
+import sys
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -60,6 +61,40 @@ logging.basicConfig(level=getattr(logging, _log_level, logging.WARNING))
 _logger = logging.getLogger("responsibleai.mcp")
 
 server: Server = Server("whitepact")
+
+# Legacy console-script name -> its preferred replacement, per
+# pyproject.toml's [project.scripts] (Migration Section 4). Both sides
+# of each pair launch the identical entry-point function.
+_LEGACY_TO_PREFERRED_NAME = {
+    "responsibleai-mcp": "whitepact-mcp",
+    "responsibleai-mcp-http": "whitepact-mcp-http",
+}
+
+
+def _invoked_as() -> str:
+    """The console-script name this process was actually launched under
+    (e.g. "whitepact-mcp" or the legacy "responsibleai-mcp") — read from
+    argv[0], not hardcoded, so it reflects reality regardless of which
+    of the aliases in pyproject.toml's [project.scripts] launched it."""
+    return os.path.basename(sys.argv[0]) if sys.argv else "unknown"
+
+
+def _log_invocation_name(process_kind: str) -> None:
+    """MIGRATION_WHITEPACT_V2.md Section 4: log which entry-point name
+    launched this process, for observability during the transition —
+    stderr/structured logging only, never stdout, since stdout is the
+    stdio MCP transport itself and writing to it would corrupt the
+    protocol on every `main()` (stdio) invocation."""
+    invoked_as = _invoked_as()
+    preferred = _LEGACY_TO_PREFERRED_NAME.get(invoked_as)
+    if preferred is not None:
+        _logger.info(
+            "%s started via the legacy '%s' command — the preferred name is "
+            "'%s'. Both keep working; see MIGRATION_WHITEPACT_V2.md.",
+            process_kind, invoked_as, preferred,
+        )
+    else:
+        _logger.info("%s started via '%s'.", process_kind, invoked_as)
 
 # Set by the HTTP transport's auth middleware per-connection. None on stdio
 # (self-hosted) — absence of a context means unrestricted access, matching
@@ -148,8 +183,9 @@ async def _run_stdio() -> None:
 
 
 def main() -> None:
-    """CLI entry point: responsibleai-mcp (stdio, self-hosted)."""
-    _logger.info("starting responsibleai-mcp v1.2.0 (stdio)")
+    """CLI entry point: whitepact-mcp / responsibleai-mcp (stdio, self-hosted)."""
+    _logger.info("starting %s v1.2.0 (stdio)", server.name)
+    _log_invocation_name("stdio server")
     asyncio.run(_run_stdio())
 
 
@@ -227,12 +263,13 @@ def _build_http_app() -> Any:
 
 
 def main_http() -> None:
-    """CLI entry point: responsibleai-mcp-http (hosted, Bearer-authenticated, plan-gated)."""
+    """CLI entry point: whitepact-mcp-http / responsibleai-mcp-http (hosted, Bearer-authenticated, plan-gated)."""
     import uvicorn
 
     host = os.environ.get("RAI_MCP_HTTP_HOST", "0.0.0.0")
     port = int(os.environ.get("RAI_MCP_HTTP_PORT", "8766"))
-    _logger.info("starting responsibleai-mcp v1.2.0 (http+sse) on %s:%s", host, port)
+    _logger.info("starting %s v1.2.0 (http+sse) on %s:%s", server.name, host, port)
+    _log_invocation_name("http+sse server")
     uvicorn.run(_build_http_app(), host=host, port=port)
 
 
