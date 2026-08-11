@@ -424,8 +424,10 @@ designed to compose with this existing boundary, not replace it.
 ## 6. Deterministic vs. probabilistic controls
 
 This distinction is a first-class architectural principle, not an
-afterthought (see `MIGRATION_WHITEPACT_V2.md` Phase 24 for the dedicated
-document this spec's principle will expand into).
+afterthought — see `DETERMINISTIC_VS_PROBABILISTIC.md` for the full
+inventory of which current components are which and why the distinction
+matters more for a governance layer than for ordinary application code
+(`MIGRATION_WHITEPACT_V2.md` Section 11.5).
 
 **Deterministic** (same input → same output, always, no model call):
 identity checks, RBAC role checks, rate limits, `rai_scan`'s

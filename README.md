@@ -1,28 +1,28 @@
 <p align="center">
-  <a href="https://github.com/Guruprasath-Annadurai/ResponsibleAi/actions"><img src="https://github.com/Guruprasath-Annadurai/ResponsibleAi/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
-  <a href="https://pypi.org/project/biasbuster/"><img src="https://img.shields.io/pypi/v/biasbuster" alt="PyPI version"/></a>
+  <a href="https://github.com/Guruprasath-Annadurai/Whitepact/actions"><img src="https://github.com/Guruprasath-Annadurai/Whitepact/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
+  <a href="https://pypi.org/project/rai-governance-platform/"><img src="https://img.shields.io/pypi/v/rai-governance-platform" alt="PyPI version"/></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"/></a>
-  <a href="https://github.com/Guruprasath-Annadurai/ResponsibleAi"><img src="https://img.shields.io/badge/tests-1326_passing-brightgreen.svg" alt="1326 tests passing"/></a>
+  <a href="https://github.com/Guruprasath-Annadurai/Whitepact"><img src="https://img.shields.io/badge/tests-1538_passing-brightgreen.svg" alt="1538 tests passing"/></a>
 </p>
 
-<p align="center"><strong>Enterprise AI Governance Platform — trust scoring, bias detection, guardrails, hallucination detection, compliance (NIST AI RMF / EU AI Act / ISO 42001), cost intelligence, drift monitoring, a public Trust Index / leaderboard / AI Incident Database, and an MCP server (27 tools) with LangChain, LangGraph, and Google ADK trust-gate integrations.</strong></p>
+<p align="center"><strong>WhitePact — an independent runtime authority, governance, and assurance layer for autonomous systems: a five-way governance decision engine (ALLOW / ALLOW_WITH_REDACTION / REQUIRE_APPROVAL / DENY / QUARANTINE), trust scoring, bias detection, guardrails, hallucination detection, compliance mapping (NIST AI RMF / EU AI Act / ISO 42001), cost intelligence, drift monitoring, a public Trust Index / leaderboard / AI Incident Database, and an MCP server (27 tools, 20 resources) with LangChain, LangGraph, and Google ADK trust-gate integrations.</strong></p>
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│                        ResponsibleAI  v1.2.0                                 │
+│                        WhitePact  v1.2.0                                     │
 │                                                                              │
 │  ┌──────────────┐  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐  │
-│  │ Trust Score  │  │ Compliance  │  │  Guardrails  │  │  Hallucination   │  │
-│  │ 6-dim A–F    │  │ NIST/EU/ISO │  │  PII + Tox   │  │  Self-consist.   │  │
+│  │ Governance   │  │ Trust Score │  │  Compliance  │  │  Guardrails      │  │
+│  │ 5-way decide │  │ 6-dim A–F   │  │ NIST/EU/ISO  │  │  PII + Tox       │  │
 │  └──────────────┘  └─────────────┘  └──────────────┘  └──────────────────┘  │
 │  ┌──────────────┐  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐  │
-│  │ Cost Intel   │  │   Red Team  │  │ Drift Monitor│  │   AI Passport    │  │
-│  │ Route+Budget │  │ 10 attacks  │  │ Alerts+Trend │  │  SHA-256 cert    │  │
+│  │ Hallucination│  │ Cost Intel  │  │   Red Team   │  │  Drift Monitor   │  │
+│  │ Self-consist.│  │ Route+Budget│  │ 10 attacks   │  │  Alerts+Trend    │  │
 │  └──────────────┘  └─────────────┘  └──────────────┘  └──────────────────┘  │
 │  ┌──────────────┐  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐  │
-│  │  BiasBuster  │  │ PrivacyLabel│  │  MCP Server  │  │  Audit Log API   │  │
-│  │ 6 probes+CI  │  │  Federated  │  │  27 tools    │  │  Export+Summary  │  │
+│  │ AI Passport  │  │  BiasBuster │  │ PrivacyLabel │  │  MCP Server      │  │
+│  │ SHA-256 cert │  │ 6 probes+CI │  │  Federated   │  │  27 tools/HTTP   │  │
 │  └──────────────┘  └─────────────┘  └──────────────┘  └──────────────────┘  │
 │  ┌──────────────────────────────────────────────────────────────────────────┐ │
 │  │   Governance Dashboard — FastAPI · Per-org rate limit · Alembic · OTEL  │ │
@@ -34,12 +34,18 @@
 
 ## What this solves
 
-Every team deploying AI in production faces the same gap: **no unified way to prove a model is safe, fair, and compliant.** Audits are manual, bias is discovered in production, compliance is a spreadsheet, and nobody knows what the LLM bill will be next month.
+Every team deploying AI in production faces the same gap: **no unified way to
+prove a model — or an autonomous agent's actions — is safe, fair, compliant,
+and accountable.** Audits are manual, bias is discovered in production,
+compliance is a spreadsheet, an agent's tool calls go ungoverned, and nobody
+knows what the LLM bill will be next month.
 
-ResponsibleAI gives you one platform — a REST API, a Python SDK, an MCP server, and a live dashboard — that covers the full governance lifecycle:
+WhitePact gives you one platform — a REST API, a Python SDK, an MCP server,
+and a live dashboard — that covers the full governance lifecycle:
 
 | Problem | Module | Output |
 |---|---|---|
+| Should this agent action be allowed, redacted, held for approval, denied, or quarantined? | `WhitePactRuntimeGateway` (governance core) | A five-way `GovernanceDecision`, deterministic, no LLM call in the decision path |
 | Is this model trustworthy? | `TrustScoreEngine` | 0–100 score, A–F grade, risk level |
 | Does it comply with regulations? | `ComplianceEngine` | NIST AI RMF, EU AI Act tier, ISO 42001 |
 | Is it exposing PII? | `GuardrailsEngine` | Block / redact with audit log |
@@ -50,11 +56,14 @@ ResponsibleAI gives you one platform — a REST API, a Python SDK, an MCP server
 | Is it biased? | `BiasBuster` | 6 demographic probes, CI gate |
 | Is this data labeled privately? | `PrivacyLabel` | Federated DP labels, never leaves device |
 | Is this media real? | `DeepfakeDetector` | Ensemble confidence, method detected |
+| Can I trust a third-party MCP server before connecting to it? | `SupplyChainScanner` | VERIFIED_FACT / INFERRED_SIGNAL / UNKNOWN verdicts — typosquat, description-content, known-incident checks |
+| Is there a tamper-evident record of every governance decision? | `EvidenceRepository` | Hash-chained `EvidenceRecord`, per-org, `verify_chain()` |
+| Does a risky action get a human in the loop? | `ApprovalRepository` | Race-safe `PENDING → APPROVED/DENIED` workflow |
 | How does this model rank against others, independently? | `Public Leaderboard` | Cross-model trust ranking from actually calling each model's API, not self-reported |
 | Can I cite and verify a trust score anywhere? | `Trust Index` | Free self-assessed or human-reviewed certified passport, verifiable at `/verify/{id}`, embeddable badge |
 | Has this AI system failed publicly before? | `AI Incident Database` | Crowd-reported, moderator-reviewed, hash-chained public registry |
 | Should my agent trust this third-party tool before calling it? | `rai_check_trust` + LangChain/LangGraph/ADK integrations | Free lookup, plus a real block/pause gate in-agent |
-| Can any MCP client govern every AI call? | `MCP Server` | 27 governance tools over stdio or HTTP+SSE |
+| Can any MCP client govern every AI call? | `MCP Server` | 27 governance tools over stdio, Streamable HTTP, or legacy HTTP+SSE |
 
 ---
 
@@ -76,6 +85,11 @@ pip install "rai-governance-platform[dashboard,openai,anthropic]"
 # Everything
 pip install "rai-governance-platform[all]"
 ```
+
+The published PyPI package name (`rai-governance-platform`) and the import
+name (`responsibleai`) predate the WhitePact rename and are kept as-is —
+see `MIGRATION_WHITEPACT_V2.md` Section 3 for why an alias package
+(`whitepact`) was added instead of renaming the published package outright.
 
 ---
 
@@ -111,19 +125,62 @@ curl -X POST http://localhost:8765/api/evaluate \
 }
 ```
 
-Open `http://localhost:8765` for the live dashboard and `http://localhost:8765/api/docs` for interactive API docs.
+Open `http://localhost:8765` for the live dashboard and
+`http://localhost:8765/api/docs` for interactive API docs.
+
+---
+
+## Governance core — five-way decisions, not a binary block/allow
+
+`src/responsibleai/governance/` (see `SPEC.md` Sections 4-8 for the full
+architecture contract) is a deterministic runtime authority sitting in front
+of agent tool calls:
+
+```python
+from responsibleai.governance import WhitePactRuntimeGateway, ActionRequest, AuthorityContext
+
+gateway = WhitePactRuntimeGateway()
+result = gateway.evaluate(
+    action=ActionRequest(tool_name="rai_scan", arguments={"text": "..."}),
+    authority=AuthorityContext(org_id="acme", agent_id="agent-1"),
+)
+print(result.decision)  # GovernanceDecision.ALLOW | ALLOW_WITH_REDACTION | REQUIRE_APPROVAL | DENY | QUARANTINE
+```
+
+- **Risk tiering** (`governance/risk.py`) — every MCP tool is classified
+  against a hardcoded, drift-tested table, not inferred at call time.
+- **Policy engine** (`governance/policy.py`) — first-match-wins rules with
+  `ALLOW` / `DENY` / `REQUIRE_APPROVAL` effects.
+- **Evidence** (`governance/evidence.py`) — every decision is written to a
+  per-org, hash-chained `EvidenceRecord`; `verify_chain()` detects tampering.
+  Raw argument values are never stored, only field-name keys.
+- **Approval workflow** (`governance/approval.py`) — `REQUIRE_APPROVAL`
+  decisions queue a real, race-safe `ApprovalRequest` with a resolution API,
+  not just a log line.
+- **Supply-chain scanner** (`src/responsibleai/supplychain/`) — before an
+  agent trusts a third-party MCP server or tool, `SupplyChainScanner` returns
+  one of three explicit verdicts (`VERIFIED_FACT` / `INFERRED_SIGNAL` /
+  `UNKNOWN`) — never a single opaque trust score — from typosquat detection,
+  tool-description scanning, and known-incident cross-reference.
+
+No governance decision is LLM-based; see
+`DETERMINISTIC_VS_PROBABILISTIC.md` for why.
 
 ---
 
 ## MCP Server — govern every AI call from Claude Code, Claude Desktop, or any MCP client
 
-The MCP (Model Context Protocol) server exposes ResponsibleAI as **27 tools and
-10 resources** to any MCP-compatible client — Claude Code, Claude Desktop,
-Cursor, Windsurf, or your own agent runtime. When a team's client points at
-this server, every AI interaction is automatically governed — trust scoring,
-guardrails, compliance checks (NIST AI RMF / EU AI Act / ISO 42001), bias
-evaluation, drift detection, cost tracking, and audit logging run on any call
-without code changes.
+The MCP (Model Context Protocol) server exposes WhitePact as **27 tools and
+20 resources** (10 canonical resource URIs, dual-advertised under both
+`whitepact://` and `rai://` schemes — see `MIGRATION_WHITEPACT_V2.md`) to any
+MCP-compatible client — Claude Code, Claude Desktop, Cursor, Windsurf, or your
+own agent runtime. Three transports are supported: stdio, Streamable HTTP
+(`/mcp`, current MCP spec), and legacy HTTP+SSE (`/sse` + `/messages/`, kept
+for older clients). When a team's client points at this server, every AI
+interaction is automatically governed — five-way governance decisions, trust
+scoring, guardrails, compliance checks (NIST AI RMF / EU AI Act / ISO 42001),
+bias evaluation, drift detection, cost tracking, and hash-chained audit
+evidence run on any call without code changes.
 
 ### Setup
 
@@ -142,8 +199,8 @@ uvicorn responsibleai.dashboard.app:app --host 127.0.0.1 --port 8765 &
 ```json
 {
   "mcpServers": {
-    "responsibleai": {
-      "command": "responsibleai-mcp",
+    "whitepact": {
+      "command": "whitepact-mcp",
       "env": {
         "RAI_API_URL": "http://localhost:8765",
         "RAI_API_KEY": "your-key-here"
@@ -152,6 +209,10 @@ uvicorn responsibleai.dashboard.app:app --host 127.0.0.1 --port 8765 &
   }
 }
 ```
+
+`whitepact-mcp` and `responsibleai-mcp` are the same entry point — see
+`pyproject.toml`'s `[project.scripts]`; both will keep working, use whichever
+name you prefer.
 
 ### Available tools (27)
 
@@ -206,20 +267,32 @@ before invoking it, not just log the call after the fact:
 All three, or any subset, install via `pip install "rai-governance-platform[agent-frameworks]"`.
 See `GAME_CHANGER_BUILD_PLAN.md` Phase B for the reasoning behind each.
 
-### Available resources (10)
+### Available resources (20)
+
+10 canonical resources, each advertised under both the `whitepact://` and
+`rai://` URI schemes (dual scheme is additive — see
+`MIGRATION_WHITEPACT_V2.md`; the table below shows the canonical URI):
 
 | Resource | URI | Contents |
 |---|---|---|
-| Health | `rai://health` | Current health status of the governance service |
-| Model pricing catalog | `rai://models/catalog` | Supported models with per-token pricing |
-| Compliance frameworks | `rai://compliance/frameworks` | NIST AI RMF, EU AI Act, ISO 42001 |
-| Red team categories | `rai://redteam/categories` | Adversarial attack categories |
-| Trust dimensions | `rai://trust/dimensions` | The 6 dimensions behind the Trust Score |
-| Bias probe catalog | `rai://bias/probes` | Available bias probes and scoring interpretation |
-| Governance policy template | `rai://governance/policy` | Default policy template for `rai_policy_check` |
-| Trust grade reference | `rai://trust/grades` | Grade thresholds, risk tiers, deployment guidance |
-| NIST AI RMF checklist | `rai://compliance/checklist/nist` | Actionable NIST implementation checklist |
-| EU AI Act checklist | `rai://compliance/checklist/eu-ai-act` | Compliance checklist for high-risk operators |
+| Health | `whitepact://health` | Current health status of the governance service |
+| Model pricing catalog | `whitepact://models/catalog` | Supported models with per-token pricing |
+| Compliance frameworks | `whitepact://compliance/frameworks` | NIST AI RMF, EU AI Act, ISO 42001 |
+| Red team categories | `whitepact://redteam/categories` | Adversarial attack categories |
+| Trust dimensions | `whitepact://trust/dimensions` | The 6 dimensions behind the Trust Score |
+| Bias probe catalog | `whitepact://bias/probes` | Available bias probes and scoring interpretation |
+| Governance policy template | `whitepact://governance/policy` | Default policy template for `rai_policy_check` |
+| Trust grade reference | `whitepact://trust/grades` | Grade thresholds, risk tiers, deployment guidance |
+| NIST AI RMF checklist | `whitepact://compliance/checklist/nist` | Actionable NIST implementation checklist |
+| EU AI Act checklist | `whitepact://compliance/checklist/eu-ai-act` | Compliance checklist for high-risk operators |
+
+### MCP registry manifest
+
+`server.json` at the repository root is the official MCP registry manifest
+(schema `2025-12-11`). It is **not yet submitted** — see
+`compliance/MCP_DISTRIBUTION_GUIDE.md` for the specific, real blockers
+(a PyPI release matching the manifest's version, GitHub namespace
+verification, and a real hosted transport URL).
 
 ---
 
@@ -398,6 +471,8 @@ docker compose up -d
 | `GET` | `/api/incident-db/verify` | Recompute the hash chain over every published entry (no auth) |
 | `POST` | `/api/orgs/{org_id}/keys/{key_id}/mfa/enroll` | Enroll an API key in TOTP MFA |
 | `POST` | `/api/orgs/{org_id}/keys/{key_id}/mfa/verify` | Verify a TOTP code / backup code |
+| `GET`/`POST` | `/api/governance/evidence` | Read/write hash-chained governance evidence records |
+| `GET`/`POST` | `/api/governance/approvals` | Queue and resolve `REQUIRE_APPROVAL` decisions |
 
 Interactive docs at `/api/docs`. Public leaderboard page at `/leaderboard` —
 see `compliance/LEADERBOARD_METHODOLOGY.md` for the published scoring
@@ -423,12 +498,16 @@ points AI crawlers/answer engines at these as canonical sources — see
 | Observability | OpenTelemetry traces + metrics (`RAI_OTEL_ENDPOINT`) |
 | Webhooks | HMAC-signed delivery with DB-persisted retry queue (survives restarts) |
 | Exception handling | No raw stack traces reach clients |
+| Governance evidence | Hash-chained, per-org, tamper-evident (`GET /api/governance/evidence`) |
 
 ---
 
 ## Database migrations (Alembic)
 
-Schema changes are managed with Alembic — 11 migrations as of this writing, 15 tables total (the initial migration created the first 8; leaderboard, Trust Passports, public incident reports, and DB-persisted webhooks each added their own since).
+Schema changes are managed with Alembic. Run `alembic history` for the
+current, authoritative migration count and table list — this number changes
+frequently enough that a hardcoded count here goes stale fast; the command
+itself is the source of truth.
 
 ```bash
 # Upgrade to latest schema
@@ -444,7 +523,8 @@ alembic history
 alembic revision --autogenerate -m "add_new_column"
 ```
 
-All migrations use `render_as_batch=True` so they run on both SQLite and PostgreSQL without changes.
+All migrations use `render_as_batch=True` so they run on both SQLite and
+PostgreSQL without changes.
 
 ---
 
@@ -467,7 +547,9 @@ curl -X POST http://localhost:8765/api/webhooks \
   }'
 ```
 
-Deliveries are persisted to the database. If the server restarts during a retry cycle, the background worker picks up where it left off on next boot. Retry schedule: 1 s → 5 s → 30 s → 2 min → 10 min.
+Deliveries are persisted to the database. If the server restarts during a
+retry cycle, the background worker picks up where it left off on next boot.
+Retry schedule: 1 s → 5 s → 30 s → 2 min → 10 min.
 
 Verify payloads with the `X-RAI-Signature-256: sha256=<hex>` header.
 
@@ -476,8 +558,8 @@ Verify payloads with the `X-RAI-Signature-256: sha256=<hex>` header.
 ## Docker
 
 ```bash
-git clone https://github.com/Guruprasath-Annadurai/ResponsibleAi.git
-cd ResponsibleAi
+git clone https://github.com/Guruprasath-Annadurai/Whitepact.git
+cd Whitepact
 
 python3 -c "import secrets; print(secrets.token_urlsafe(32))"
 
@@ -505,7 +587,9 @@ pip install "rai-governance-platform[dashboard,postgres,redis,telemetry]"
 RAI_DB_URL=postgresql://rai:secret@db-host:5432/responsibleai alembic upgrade head
 ```
 
-The async database layer uses SQLAlchemy with connection pooling (`pool_size=10`, `max_overflow=20`, `pool_pre_ping=True`). Rate limiting switches to Redis-backed storage when `RAI_REDIS_URL` is set.
+The async database layer uses SQLAlchemy with connection pooling
+(`pool_size=10`, `max_overflow=20`, `pool_pre_ping=True`). Rate limiting
+switches to Redis-backed storage when `RAI_REDIS_URL` is set.
 
 ---
 
@@ -601,18 +685,22 @@ Implements Laplace, Gaussian, Exponential, and DP-SGD mechanisms. Byzantine-robu
 | `RAI_HOST` | `127.0.0.1` | Bind address |
 | `RAI_PORT` | `8765` | Port |
 
+Dual-prefixed `WHITEPACT_*` equivalents for these are also read where
+`MIGRATION_WHITEPACT_V2.md` documents them — the `RAI_*` names remain the
+primary, always-supported form.
+
 ---
 
 ## Development
 
 ```bash
-git clone https://github.com/Guruprasath-Annadurai/ResponsibleAi.git
-cd ResponsibleAi
+git clone https://github.com/Guruprasath-Annadurai/Whitepact.git
+cd Whitepact
 
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-# Full test suite (1326 tests, 83% coverage)
+# Full test suite (1,538 tests, 85% coverage, as of this writing)
 pytest
 
 # Dashboard tests only
@@ -642,8 +730,19 @@ mypy src/responsibleai src/biasbuster
 - [x] v1.0 — WebSocket drift alerts, Prometheus endpoint, multi-tenant RBAC, org management API
 - [x] v1.1 — MCP server (10 tools, 5 resources), audit log API, red team API, billing API, Alembic migrations, per-org rate limiting, DB-persisted webhook retry queue
 - [x] v1.2 — Public Leaderboard, Trust Index/Passports + embeddable badges, AI Incident Database, TOTP MFA, expanded field encryption, DB-persisted webhooks, full dashboard UI rebuild, white-label branding, a genuinely live hosted instance — see `CHANGELOG.md` for the full list
+- [x] WhitePact migration (in progress across `1.2.0`) — governance decision core, MCP Streamable HTTP + OAuth/OIDC, risk tiering + policy engine, hash-chained evidence, approval workflow, MCP trust/supply-chain scanner, HA Helm deployment, supply chain security (SBOM/provenance), release engineering, MCP registry manifest, open source governance — see `MIGRATION_WHITEPACT_V2.md` for the full phase-by-phase log and what's still not done
 - [ ] v2.0 onward — see `VERSION_ROADMAP.md` for the phase-by-phase plan through v6.0
 - **Strategic direction** — `GAME_CHANGER_STRATEGY.md` lays out an infrastructure-first bet (free public trust registry, an agent-native trust-check primitive, AI-answer-engine citability) as an alternative to the enterprise-SaaS path, with `GAME_CHANGER_BUILD_PLAN.md` breaking it into concrete engineering phases against the current codebase
+
+---
+
+## Further reading
+
+- [`SPEC.md`](SPEC.md) — the current architecture contract
+- [`MIGRATION_WHITEPACT_V2.md`](MIGRATION_WHITEPACT_V2.md) — phase-by-phase migration log, what's done and what's explicitly not
+- [`THREAT_MODEL.md`](THREAT_MODEL.md) — threat model for the current attack surface
+- [`DETERMINISTIC_VS_PROBABILISTIC.md`](DETERMINISTIC_VS_PROBABILISTIC.md) — why governance decisions are deterministic
+- [`SLA.md`](SLA.md), [`ENTERPRISE_SECURITY.md`](ENTERPRISE_SECURITY.md), [`SECURITY.md`](SECURITY.md) — enterprise/security posture, stated honestly
 
 ---
 

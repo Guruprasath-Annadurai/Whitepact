@@ -6,7 +6,6 @@ import asyncio
 import secrets
 import time
 from contextlib import asynccontextmanager
-from contextvars import ContextVar
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypeVar
@@ -158,8 +157,18 @@ if settings.redis_url:
 
 limiter = Limiter(**_limiter_kwargs)
 
-# ── ContextVar for audit log (scoped per-request in async) ────────────────────
-_audit_ctx: ContextVar[dict[str, Any] | None] = ContextVar("audit_ctx", default=None)
+# ── Audit log org/key attribution ──────────────────────────────────────────────
+# Deliberately NOT a ContextVar: AuditLogMiddleware is a BaseHTTPMiddleware,
+# and Starlette runs the downstream app (including every dependency, e.g.
+# get_org_context below) in a separate task via its internal task group so
+# StreamingResponse/background-task support works correctly. A ContextVar
+# set inside that inner task does not propagate back to the middleware's
+# own scope after `call_next()` returns — its mutations are invisible one
+# task boundary up, so every audit entry silently recorded org_id=None
+# regardless of the real caller. `request.state` sidesteps this because
+# it's an attribute on the same `Request` object instance shared across
+# that task boundary, not a per-task context var — see AuditLogMiddleware
+# and get_org_context below for where it's read/written.
 
 # ── Module singletons ──────────────────────────────────────────────────────────
 _trust_engine: TrustScoreEngine | None = None
@@ -389,7 +398,10 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
     """Capture every HTTP request as an audit log entry.
 
     - Skips /metrics and /static (noise)
-    - Uses _audit_ctx ContextVar to get org/key context set by auth dep
+    - Reads request.state.audit_org_id/audit_key_id, set by get_org_context
+      (the auth dependency) — deliberately request.state, not a ContextVar,
+      since BaseHTTPMiddleware runs the downstream app in a separate task
+      and a ContextVar set there doesn't propagate back to this scope.
     - Writes to DB non-blockingly (asyncio.ensure_future), but the task is
       tracked in _pending_audit_writes and drained during shutdown -- an
       untracked fire-and-forget task can still be running (or queued on
@@ -403,7 +415,6 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: Any) -> Any:
         start = time.monotonic()
-        _audit_ctx.set({})
 
         response = await call_next(request)
 
@@ -412,15 +423,14 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
             return response
 
         duration_ms = round((time.monotonic() - start) * 1000, 2)
-        ctx_data = _audit_ctx.get() or {}
 
         if _audit_repo:
             entry = AuditEntry(
                 endpoint=path,
                 method=request.method,
                 timestamp=datetime.now(UTC).isoformat(),
-                org_id=ctx_data.get("org_id"),
-                key_id=ctx_data.get("key_id"),
+                org_id=getattr(request.state, "audit_org_id", None),
+                key_id=getattr(request.state, "audit_key_id", None),
                 status_code=response.status_code,
                 ip_address=request.client.host if request.client else None,
                 request_id=getattr(request.state, "request_id", None),
@@ -542,7 +552,8 @@ async def get_org_context(request: Request) -> OrgContext:
     """
     if not settings.auth_enabled:
         ctx = OrgContext(key_id="anon", role=Role.OWNER, is_legacy=True)
-        _audit_ctx.set({"org_id": None, "key_id": "anon"})
+        request.state.audit_org_id = None
+        request.state.audit_key_id = "anon"
         return ctx
 
     auth_header = request.headers.get("Authorization", "")
@@ -553,14 +564,16 @@ async def get_org_context(request: Request) -> OrgContext:
 
     if settings.api_keys and token in settings.api_keys:
         ctx = OrgContext(key_id="legacy", role=Role.OWNER, is_legacy=True)
-        _audit_ctx.set({"org_id": None, "key_id": "legacy"})
+        request.state.audit_org_id = None
+        request.state.audit_key_id = "legacy"
         return ctx
 
     oidc_ctx = await _resolve_oidc_context(token)
     if oidc_ctx is not None:
         if _plan_rate_limiter:
             await _plan_rate_limiter.check(oidc_ctx.org_id, oidc_ctx.plan)
-        _audit_ctx.set({"org_id": oidc_ctx.org_id, "key_id": oidc_ctx.key_id})
+        request.state.audit_org_id = oidc_ctx.org_id
+        request.state.audit_key_id = oidc_ctx.key_id
         return oidc_ctx
 
     if _org_repo:
@@ -577,7 +590,8 @@ async def get_org_context(request: Request) -> OrgContext:
         if resolved_ctx:
             if _plan_rate_limiter:
                 await _plan_rate_limiter.check(resolved_ctx.org_id, resolved_ctx.plan)
-            _audit_ctx.set({"org_id": resolved_ctx.org_id, "key_id": resolved_ctx.key_id})
+            request.state.audit_org_id = resolved_ctx.org_id
+            request.state.audit_key_id = resolved_ctx.key_id
             return resolved_ctx
 
     raise HTTPException(401, detail="Invalid API key")

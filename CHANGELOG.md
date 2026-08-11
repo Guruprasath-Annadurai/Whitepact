@@ -63,6 +63,14 @@ unchanged (see `MIGRATION_WHITEPACT_V2.md` Section 11's timeline).
   install pick up the MCP SDK's breaking 2.0.0 release; pinned
   `<2.0.0` with the SDK-kwarg-rename migration tracked as separate,
   deliberate future work.
+- Audit log entries were silently recorded with `org_id: null` for every
+  request regardless of the real caller, because `AuditLogMiddleware`
+  (a `BaseHTTPMiddleware`) read a `ContextVar` that Starlette's internal
+  task-group boundary prevented the auth dependency from actually
+  populating — making `GET /api/audit`'s per-org scoping vacuous. Fixed
+  by moving org/key attribution onto `request.state`; see
+  `THREAT_MODEL.md`'s Dashboard REST API section and
+  `tests/test_tenant_isolation.py` for the regression test.
 
 ---
 

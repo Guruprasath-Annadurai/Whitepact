@@ -1,8 +1,8 @@
-# Service Level Agreement — ResponsibleAI Platform v1.2.0
+# Service Level Agreement — WhitePact Platform v1.2.0
 
 ## Scope
 
-This SLA covers the ResponsibleAI Governance Platform API, Governance Dashboard,
+This SLA covers the WhitePact Governance Platform API, Governance Dashboard,
 and hosted MCP endpoint. Tier names match the billing plans in `mcp/licensing.py`
 and `GET /api/v1/billing/plans` — FREE, PRO, ENTERPRISE — rather than a separate
 naming scheme, so what you see in billing is what this SLA refers to.
@@ -11,7 +11,7 @@ naming scheme, so what you see in billing is what this SLA refers to.
 recommendations for what to design toward, not a commitment we can enforce
 on infrastructure we don't control.
 
-**Hosted (PRO/ENTERPRISE)**: as of v1.2.0, no ResponsibleAI-operated hosted
+**Hosted (PRO/ENTERPRISE)**: as of v1.2.0, no WhitePact-operated hosted
 instance is live yet — `docker-compose.prod.yml` is the production-ready
 stack (Postgres + Redis, not SQLite/in-memory limiting) for standing one up.
 Once a hosted instance is running against this stack, these targets become
@@ -214,4 +214,4 @@ builds.
 
 ---
 
-*Last updated: 2026-07-21 — ResponsibleAI v1.2.0*
+*Last updated: 2026-08-11 — WhitePact v1.2.0*

@@ -48,7 +48,7 @@ names.
 | `ResponsibleAi` | 20 | GitHub-URL-casing variant in docs/badges |
 | `responsibleai-mcp` | 17 | The published MCP server console script |
 | `rai://` | 6 | MCP resource URI scheme (`src/responsibleai/mcp/resources.py`) |
-| `responsibleai.dev` | 3 | A domain referenced in docs that has never been registered/deployed — see Section 11 |
+| `responsibleai.dev` | 3 | A domain referenced in docs that has never been registered/deployed — see Section 12 |
 
 ---
 
@@ -262,7 +262,7 @@ change (verified by `tests/test_mcp_http_transport.py`'s
 `TestLegacySseTransportUnaffected`). `/mcp` is simply the transport new
 integrations should prefer, per the same "additive, not a replacement"
 posture as every other alias in this document. No removal date is
-committed here, consistent with Section 12's timeline for every other
+committed here, consistent with Section 13's timeline for every other
 legacy name.
 
 **Tests**: `tests/test_mcp_http_transport.py` runs a real MCP client
@@ -849,7 +849,7 @@ port/env values expected) — both also run in CI's `helm-lint` job.
   invoked via `uvx --from rai-governance-platform whitepact-mcp`).
   **`remotes` (the hosted `/mcp`/`/sse` transports) was deliberately
   left out** — there is no verified, publicly reachable URL for the
-  hosted MCP transport today (Section 11 below); a placeholder
+  hosted MCP transport today (Section 12 below); a placeholder
   `example.com` URL would be exactly the kind of fabricated-but-plausible
   detail this project's rules prohibit. `tests/test_server_json.py`
   guards against one being added without updating this reasoning.
@@ -891,7 +891,121 @@ port/env values expected) — both also run in CI's `helm-lint` job.
 
 ---
 
-## 11. What is explicitly *not* claimed by this migration
+## 11. Documentation, threat model, and benchmarking (Phases 19-25)
+
+### 11.1 CONTRIBUTING.md and README.md rewrites (Phases 19-20)
+
+Both were still substantially BiasBuster/ResponsibleAI-branded and didn't
+reflect anything built across Phases 3-18 (the governance core, MCP
+transports, supply-chain scanner, evidence/approval workflow). Rewritten to:
+describe the current repository layout and the governance core's role,
+add an "Engineering Principles" section restating the 23 non-negotiable
+rules this whole migration operates under, document the risk-tiering /
+policy / evidence / approval subsystems for contributors touching them,
+and replace stale facts in README.md (test count, resource count, tool
+table) with real, verified-at-write-time numbers: **1,538 tests passing,
+85% coverage** (`pytest`, this session), **27 MCP tools / 20 resources**
+(`len(TOOL_DEFS)` / `len(RESOURCE_DEFS)`, this session — resources count
+was previously documented as "10," which was the canonical count before
+the dual `whitepact://`/`rai://` scheme made the advertised count 20).
+
+### 11.2 SLA/enterprise claims review (Phase 21)
+
+Audited `SLA.md`, `ENTERPRISE_SECURITY.md`, and `README.md` for
+unsubstantiated claims (SOC 2/ISO 27001 self-certification, guarantees,
+"enterprise-grade" marketing language). Found none — prior phases had
+already kept this honest (every certification claim found is correctly
+attributed to a sub-processor's *own* published certification, e.g.
+Supabase's SOC 2 Type II, never claimed as WhitePact's own). What the
+review did fix: both documents' titles and internal references still said
+"ResponsibleAI Platform" while every other document had moved to
+"WhitePact" — corrected for consistency, not a claims fix.
+
+### 11.3 THREAT_MODEL.md (Phase 22)
+
+New document — a STRIDE-structured threat model against the actual current
+attack surface (MCP transports, OAuth/OIDC, the governance decision
+pipeline, evidence hash chain, approval workflow, dashboard REST API, DB
+layer, Helm/K8s deployment). Every mitigation cited points at real code;
+every gap is stated as a gap. Explicitly scoped as a solo-founder
+self-assessment, not independent red-team output — same honesty standard
+`GOVERNANCE.md` holds itself to.
+
+One entry was corrected mid-draft: a first pass claimed webhook SSRF was
+an open gap, before finding `webhooks/manager.py`'s
+`validate_webhook_url()` already mitigates it (private/loopback/
+link-local/reserved/multicast/unspecified address rejection, checked at
+registration and delivery, tested in `tests/test_webhooks.py`) — corrected
+before this document was ever committed, consistent with the standing
+"never fabricate implementation status" rule applying to documenting a
+false gap just as much as a false capability.
+
+### 11.4 Security test suite expansion (Phase 23) — a real bug found and fixed
+
+Writing cross-org isolation tests for `/api/models`, `/api/cost/summary`,
+and `/api/audit` (new file `tests/test_tenant_isolation.py`) surfaced a
+genuine, previously-unknown defect: **every audit log entry was recorded
+with `org_id: null` regardless of who actually made the request.**
+
+Root cause: `AuditLogMiddleware` is a `BaseHTTPMiddleware`. Starlette runs
+the downstream app — including `get_org_context`, the auth dependency that
+resolves which org a request belongs to — inside a separate task via its
+own internal task group (needed for `StreamingResponse`/background-task
+support). A `ContextVar` mutated inside that inner task does not propagate
+back to the middleware's own scope once `call_next()` returns — a
+well-known Starlette gotcha this codebase had not hit before because
+nothing had previously written an end-to-end test asserting audit-entry
+*content* for an authenticated, org-scoped request (existing tests only
+asserted response shape/status, e.g. `test_redteam_audit_billing_api.py`).
+
+Fixed by moving org/key attribution from the `_audit_ctx` `ContextVar`
+onto `request.state.audit_org_id`/`audit_key_id` — `request.state` is an
+attribute on the same `Request` object instance shared across that task
+boundary, so it survives where a `ContextVar` didn't. Fixed in
+`src/responsibleai/dashboard/app.py` (`get_org_context`,
+`AuditLogMiddleware.dispatch`); regression-tested in
+`tests/test_tenant_isolation.py`; documented in `THREAT_MODEL.md`'s
+Dashboard REST API section and `CHANGELOG.md`'s Unreleased/Fixed list.
+Full suite re-run clean after the fix: **1,542 tests passing** (the
+previous 1,538 plus 4 new tenant-isolation tests).
+
+This is the clearest evidence so far that "expand the security test
+suite" is worth doing as real, executed test-writing rather than a
+documentation pass — the bug was invisible to code review (the code
+*looked* correct; the ContextVar/BaseHTTPMiddleware interaction is a
+runtime property, not a static one) and only surfaced by actually
+asserting on response content end-to-end.
+
+### 11.5 Deterministic vs. probabilistic controls (Phase 24)
+
+New document `DETERMINISTIC_VS_PROBABILISTIC.md`, expanding SPEC.md
+Section 6's existing principle into a full inventory of which current
+components are deterministic (risk tiering, policy matching, the evidence
+hash chain, approval resolution, RBAC checks, PII regex detection,
+typosquat detection) versus probabilistic (hallucination detection, bias
+probes, toxicity scanning, the supply-chain scanner's description-content
+check) — plus the reasoning for why this distinction matters more for a
+governance layer than ordinary application code (reproducibility, prompt-
+injection surface, false assurance), and a contributor checklist for
+classifying new checks correctly.
+
+### 11.6 Real performance benchmarks (Phase 25)
+
+New `scripts/run_benchmarks.py` and `BENCHMARKS.md`. Every number in
+`BENCHMARKS.md` came from an actual execution of that script in this
+environment (Python 3.14.6, macOS arm64, single-threaded, in-process) —
+not an estimate. Benchmarked: `GuardrailsEngine.scan()` (clean and
+PII-bearing text), `TrustScoreEngine.compute()`, `WhitePactRuntimeGateway.
+evaluate()` (allowed, PII-redaction, and authority-DENY-short-circuit
+paths), and an MCP `TOOL_DEFS` lookup. Explicitly documented what these
+numbers do *not* measure: concurrency/load, database-backed paths,
+MCP transport-level overhead, and LLM-provider-dependent modules
+(hallucination detection, bias probes) — stated honestly rather than
+implied as covered.
+
+---
+
+## 12. What is explicitly *not* claimed by this migration
 
 Per the standing rule against fabricating implementation status:
 
@@ -911,7 +1025,7 @@ Per the standing rule against fabricating implementation status:
 
 ---
 
-## 12. Backward compatibility timeline
+## 13. Backward compatibility timeline
 
 | Version | State |
 |---|---|
@@ -922,7 +1036,7 @@ Per the standing rule against fabricating implementation status:
 
 ---
 
-## 13. What this document does not cover
+## 14. What this document does not cover
 
 Docker/Helm/CLI/package/env-var/MCP-identity/transport migration, plus
 now the runtime governance core through all six of its phases so

@@ -1,4 +1,4 @@
-# Enterprise Security Posture — ResponsibleAI Platform v1.2.0
+# Enterprise Security Posture — WhitePact Platform v1.2.0
 
 This document answers the questions a security/procurement team asks before
 approving a vendor. It states current fact, not aspiration — where a control
@@ -34,14 +34,14 @@ self-hosted software and worth being explicit about:
 
 ## Data residency
 
-ResponsibleAI is self-hosted by default. **You control where your data lives** because you control the infrastructure — there is no ResponsibleAI-operated cloud region your data passes through unless you explicitly configure one (e.g. calling OpenAI/Anthropic/Google APIs from the cost-tracking or eval modules, which is opt-in per your own provider configuration).
+WhitePact is self-hosted by default. **You control where your data lives** because you control the infrastructure — there is no WhitePact-operated cloud region your data passes through unless you explicitly configure one (e.g. calling OpenAI/Anthropic/Google APIs from the cost-tracking or eval modules, which is opt-in per your own provider configuration).
 
 | Deployment mode | Data location |
 |---|---|
 | Self-hosted (Docker / Helm / bare-metal) | Entirely within your infrastructure and region. No data leaves your network unless you configure outbound integrations (webhooks, LLM provider APIs, Stripe billing, OTLP telemetry export) — all of which are optional and explicitly configured. |
 | Live reference deployment | **Not self-hosted** — a managed three-vendor stack: Render (compute, US/Oregon region), Supabase (Postgres, `aws-1-us-west-2`), Upstash (Redis). See `compliance/CAIQ_SELF_ASSESSMENT.md` Domain 6 for full detail on each vendor's region and constraints. |
 | Hosted MCP (`responsibleai-mcp-http`), self-operated | Same as above — this is a transport option you run yourself, not a managed service we operate. |
-| A future ResponsibleAI-operated SaaS tier | **Not yet available.** No such offering exists today. If/when one ships, this document will be updated with the specific region(s), sub-processor list, and data flow diagram before it's sold as a data-residency-compliant product. |
+| A future WhitePact-operated SaaS tier | **Not yet available.** No such offering exists today. If/when one ships, this document will be updated with the specific region(s), sub-processor list, and data flow diagram before it's sold as a data-residency-compliant product. |
 
 **Third-party data flows that exist only if you enable them:**
 - LLM provider calls (OpenAI, Anthropic, Google, etc.) — your API keys, your account, your provider's data handling terms apply.
