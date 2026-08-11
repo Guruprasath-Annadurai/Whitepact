@@ -378,7 +378,7 @@ app = FastAPI(
     docs_url="/api/docs",
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json",
-    contact={"name": "Guruprasath Annadurai", "email": "milchcreamfoods@gmail.com"},
+    contact={"name": "Guruprasath Annadurai", "email": "annaduraiguruprasath7@gmail.com"},
     license_info={"name": "MIT"},
 )
 
@@ -2973,7 +2973,7 @@ async def support_info() -> dict[str, Any]:
             },
         ],
         "contact": {
-            "email": "milchcreamfoods@gmail.com",
+            "email": "annaduraiguruprasath7@gmail.com",
             "docs": "https://github.com/Guruprasath-Annadurai/ResponsibleAi",
             "issues": "https://github.com/Guruprasath-Annadurai/ResponsibleAi/issues",
         },

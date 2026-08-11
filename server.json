@@ -1,0 +1,57 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.guruprasath-annadurai/whitepact",
+  "description": "AI governance MCP server: trust scoring, guardrails, bias/hallucination detection, compliance.",
+  "title": "WhitePact",
+  "websiteUrl": "https://github.com/Guruprasath-Annadurai/Whitepact",
+  "repository": {
+    "url": "https://github.com/Guruprasath-Annadurai/Whitepact",
+    "source": "github"
+  },
+  "version": "1.2.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "rai-governance-platform",
+      "version": "1.2.0",
+      "runtimeHint": "uvx",
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "--from",
+          "value": "rai-governance-platform",
+          "description": "PyPI project name (distinct from the console script invoked below — see packageArguments)."
+        }
+      ],
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "whitepact-mcp",
+          "description": "Console script to run (stdio transport, self-hosted, free, unrestricted). The legacy name `responsibleai-mcp` launches the identical process; see MIGRATION_WHITEPACT_V2.md Section 4."
+        }
+      ],
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "RAI_MCP_LOG_LEVEL",
+          "description": "Logging level: DEBUG | INFO | WARNING.",
+          "isRequired": false,
+          "default": "WARNING"
+        }
+      ]
+    }
+  ],
+  "_meta": {
+    "io.modelcontextprotocol.registry/publisher-provided": {
+      "tool_count": 27,
+      "resource_count_canonical": 10,
+      "resource_count_advertised": 20,
+      "resource_note": "Canonical resources are served under both whitepact:// and rai:// URI schemes (dual-scheme, see MIGRATION_WHITEPACT_V2.md Section 6) — 20 is the advertised count over the wire, 10 is the count of distinct underlying resources.",
+      "license": "MIT",
+      "governance_decision_model": ["ALLOW", "ALLOW_WITH_REDACTION", "REQUIRE_APPROVAL", "DENY", "QUARANTINE"]
+    }
+  }
+}

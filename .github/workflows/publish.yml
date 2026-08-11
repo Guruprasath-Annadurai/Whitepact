@@ -6,8 +6,9 @@ on:
       - "v*"
 
 permissions:
-  contents: read
-  id-token: write  # required for trusted publishing (no secret token needed)
+  contents: write  # create the GitHub Release (Phase 16) -- was read-only before
+  id-token: write  # trusted publishing to PyPI + build provenance attestation, no secret token needed
+  attestations: write  # actions/attest-build-provenance (Phase 15)
 
 jobs:
   publish:
@@ -33,5 +34,49 @@ jobs:
       - name: Verify distribution
         run: twine check dist/*
 
+      # Phase 15 (supply chain security) -- generate a CycloneDX SBOM
+      # from the actual shipped artifact's dependency closure, not just
+      # a static read of pyproject.toml, by installing the built wheel
+      # into a clean venv first and scanning *that* environment.
+      - name: Generate SBOM (CycloneDX)
+        run: |
+          python -m venv /tmp/sbom-venv
+          /tmp/sbom-venv/bin/pip install --upgrade pip
+          /tmp/sbom-venv/bin/pip install dist/*.whl
+          /tmp/sbom-venv/bin/pip install cyclonedx-bom
+          /tmp/sbom-venv/bin/cyclonedx-py environment \
+            --pyproject pyproject.toml \
+            --of json \
+            -o sbom.cyclonedx.json \
+            /tmp/sbom-venv/bin/python
+
+      # Sigstore-backed, GitHub-attested provenance for the built wheel +
+      # sdist -- a consumer can verify these artifacts were built by this
+      # repo's own workflow from this exact commit, not tampered with or
+      # substituted in between. Verify with:
+      #   gh attestation verify dist/<file> --owner Guruprasath-Annadurai
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "dist/*"
+
       - name: Publish to PyPI (trusted publisher)
         uses: pypa/gh-action-pypi-publish@release/v1
+
+      # Phase 16 (release engineering) -- a GitHub Release previously
+      # never got created by this workflow; the tag existed, PyPI got
+      # the package, but there was no single place linking a version to
+      # its changelog entry, its SBOM, and its build provenance.
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*
+            sbom.cyclonedx.json
+          generate_release_notes: true
+          body: |
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for the curated entry for this version.
+
+            **Supply chain verification** (Phase 15):
+            - SBOM: `sbom.cyclonedx.json` (CycloneDX 1.6) attached to this release.
+            - Build provenance: `gh attestation verify <file> --owner ${{ github.repository_owner }}`

@@ -121,7 +121,7 @@ Last reviewed: 2026-07-23 · Platform version: 1.2.0
 |---|---|
 | Is there a documented security policy? | Yes — `SECURITY.md` (vulnerability disclosure), `ENTERPRISE_SECURITY.md` (controls posture), this document (self-assessment). |
 | Is there a formal risk assessment process? | Informal — no dedicated GRC tooling or scheduled risk review cadence yet. This is a real gap for a solo-maintained project; flagged honestly rather than fabricating a review cadence that doesn't happen. |
-| Is there a named security contact? | Yes — `milchcreamfoods@gmail.com`, documented in `SECURITY.md` with a 48-hour acknowledgment commitment. |
+| Is there a named security contact? | Yes — `annaduraiguruprasath7@gmail.com`, documented in `SECURITY.md` with a 48-hour acknowledgment commitment. |
 
 ---
 

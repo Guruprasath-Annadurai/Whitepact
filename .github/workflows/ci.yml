@@ -96,11 +96,29 @@ jobs:
       - name: Verify distribution
         run: twine check dist/*
 
+      # Phase 15 (supply chain security) -- generated on every build, not
+      # just at release, so a PR reviewer can see the dependency closure
+      # a change would ship before it's tagged. The release workflow
+      # (publish.yml) regenerates and attaches its own copy at tag time.
+      - name: Generate SBOM (CycloneDX)
+        run: |
+          python -m venv /tmp/sbom-venv
+          /tmp/sbom-venv/bin/pip install --upgrade pip
+          /tmp/sbom-venv/bin/pip install dist/*.whl
+          /tmp/sbom-venv/bin/pip install cyclonedx-bom
+          /tmp/sbom-venv/bin/cyclonedx-py environment \
+            --pyproject pyproject.toml \
+            --of json \
+            -o sbom.cyclonedx.json \
+            /tmp/sbom-venv/bin/python
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: dist
-          path: dist/
+          path: |
+            dist/
+            sbom.cyclonedx.json
 
   helm-lint:
     name: Helm chart lint

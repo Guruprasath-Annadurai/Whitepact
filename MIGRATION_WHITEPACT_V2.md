@@ -48,7 +48,7 @@ names.
 | `ResponsibleAi` | 20 | GitHub-URL-casing variant in docs/badges |
 | `responsibleai-mcp` | 17 | The published MCP server console script |
 | `rai://` | 6 | MCP resource URI scheme (`src/responsibleai/mcp/resources.py`) |
-| `responsibleai.dev` | 3 | A domain referenced in docs that has never been registered/deployed — see Section 10 |
+| `responsibleai.dev` | 3 | A domain referenced in docs that has never been registered/deployed — see Section 11 |
 
 ---
 
@@ -262,7 +262,7 @@ change (verified by `tests/test_mcp_http_transport.py`'s
 `TestLegacySseTransportUnaffected`). `/mcp` is simply the transport new
 integrations should prefer, per the same "additive, not a replacement"
 posture as every other alias in this document. No removal date is
-committed here, consistent with Section 11's timeline for every other
+committed here, consistent with Section 12's timeline for every other
 legacy name.
 
 **Tests**: `tests/test_mcp_http_transport.py` runs a real MCP client
@@ -783,7 +783,115 @@ port/env values expected) — both also run in CI's `helm-lint` job.
 
 ---
 
-## 10. What is explicitly *not* claimed by this migration
+## 10. Supply chain, release, registry, and OSS governance (Phases 15-18)
+
+### 10.1 Supply chain security (Phase 15)
+
+- **SBOM generation** (`.github/workflows/ci.yml`'s `build` job and
+  `publish.yml`) — a CycloneDX 1.6 SBOM generated with `cyclonedx-py
+  environment` against a clean venv with the *actual built wheel*
+  installed into it, not a static read of `pyproject.toml` — verified
+  locally before this landed: a real build produced a 66-component SBOM.
+  Uploaded as a CI artifact on every build; attached to every GitHub
+  Release.
+- **Build provenance attestation** (`publish.yml`) —
+  `actions/attest-build-provenance@v2` signs the published wheel/sdist
+  via Sigstore, verifiable with `gh attestation verify <file> --owner
+  Guruprasath-Annadurai`. Requires the new `attestations: write`
+  permission and `contents: write` (for the GitHub Release, Section 10.2).
+- **Dependency review on PRs** (`.github/workflows/dependency-review.yml`,
+  new) — `actions/dependency-review-action@v4`, distinct from `pip-audit`
+  in `ci.yml`: `pip-audit` scans what this repo's dependencies *already
+  are* on every push; this workflow reviews what a *PR is proposing to
+  change* (new/bumped dependencies and their licenses) before merge.
+  License allowlist verified against this project's actual dependency
+  tree (`pip-licenses`) at the time it was written, not guessed.
+- **Not built**: a pinned lockfile (`pyproject.toml` uses range
+  constraints only — no `uv.lock`/`poetry.lock`/pinned
+  `requirements.txt`). A real gap for fully reproducible builds, not
+  invented away here; choosing a lockfile tool is an architecture
+  decision this migration doesn't impose unilaterally.
+
+### 10.2 Release engineering (Phase 16)
+
+- **`CHANGELOG.md`** gained an `[Unreleased]` section summarizing every
+  WhitePact-migration change from Phase 3 through Phase 15 in one place
+  — previously the last real entry was `[1.2.0]`, dated before any of
+  this migration's work started.
+- **`RELEASING.md`** (new) — the actual mechanical release process
+  (bump version in two places, move the changelog entry, tag, push),
+  and what it deliberately does *not* automate (version-bump judgment
+  calls, changelog generation from commits, Docker image publishing,
+  pre-release channels) — stated plainly rather than silently absent.
+- **`publish.yml`** gained a `Create GitHub Release` step
+  (`softprops/action-gh-release@v2`) — previously a tag push built and
+  published to PyPI but created no GitHub Release at all; now one gets
+  created with the built artifacts, the SBOM, and a pointer back to the
+  `CHANGELOG.md` entry.
+- **Real, verified fact this section surfaced**: as of this writing,
+  PyPI's actual latest published `rai-governance-platform` release is
+  **1.1.0** (checked against `pypi.org/pypi/rai-governance-platform/json`)
+  — `pyproject.toml`'s `1.2.0` has never actually been released. This
+  matters directly for Section 10.3 below.
+
+### 10.3 MCP registry readiness (Phase 17)
+
+- **`server.json`** (repo root, new) — the manifest the official MCP
+  registry (`github.com/modelcontextprotocol/registry`) requires,
+  validated with `jsonschema` against the real, current schema
+  (`https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json`,
+  fetched at the time this was written, not guessed at) —
+  `tests/test_server_json.py` keeps its `version` and tool/resource
+  counts in sync with `pyproject.toml`/`TOOL_DEFS`/`RESOURCE_DEFS` the
+  same way `governance/risk.py`'s tier table is checked against
+  `TOOL_DEFS`.
+- **`packages`** describes the PyPI install path (`rai-governance-platform`,
+  invoked via `uvx --from rai-governance-platform whitepact-mcp`).
+  **`remotes` (the hosted `/mcp`/`/sse` transports) was deliberately
+  left out** — there is no verified, publicly reachable URL for the
+  hosted MCP transport today (Section 11 below); a placeholder
+  `example.com` URL would be exactly the kind of fabricated-but-plausible
+  detail this project's rules prohibit. `tests/test_server_json.py`
+  guards against one being added without updating this reasoning.
+- **Not done, and can't be from here** (`compliance/MCP_DISTRIBUTION_GUIDE.md`
+  has the full checklist): the `1.2.0` version in `server.json` must
+  actually exist on PyPI before the registry accepts it (see 10.2's
+  1.1.0-vs-1.2.0 finding — cut the release first); namespace ownership
+  of `io.github.guruprasath-annadurai` requires a GitHub OAuth device
+  flow this session has no access to; actually running `mcp-publisher
+  validate`/`publish` is a founder action.
+
+### 10.4 Open source governance (Phase 18)
+
+- **`CODE_OF_CONDUCT.md`** (new) — Contributor Covenant 2.1, real
+  contact email, enforcement responsibility stated as the founder's
+  (matching `GOVERNANCE.md`, not inventing a moderation team).
+- **`GOVERNANCE.md`** (already existed — a risk-oversight cadence
+  document from earlier work; extended here, not replaced) — gained a
+  new Section 6 covering day-to-day contribution/code-change
+  decision-making, stating plainly that this is a founder-led project
+  (Guruprasath Annadurai) with no steering committee or maintainer
+  council today, per the standing rule against fabricating team roles
+  that don't exist. An early draft of this change mistakenly
+  overwrote the file wholesale instead of extending it — caught before
+  commit by checking `git status`/`git diff` before staging, and fixed
+  by restoring the original content and adding Section 6 alongside it.
+- **`.github/CODEOWNERS`** (new) — one name, on purpose, same reasoning.
+- **`SECURITY.md`** — fixed a real staleness bug found while touching
+  this area: the "Supported versions" table still listed `0.4.x`/`0.3.x`
+  while `pyproject.toml` has been at `1.2.0`; replaced with a policy
+  that doesn't hardcode a version number that will just go stale again.
+  Also fixed the disclosure email's subject-line branding
+  (`[ResponsibleAI Security]` → `[WhitePact Security]`) and the "affected
+  component" list (was BiasBuster/PrivacyLabel/Guardrails/RedTeam only —
+  didn't mention the MCP governance engine or runtime governance core
+  at all).
+- **`CONTRIBUTING.md`** gained a one-line pointer to both new documents
+  — a full rewrite of that file is its own later phase, not done here.
+
+---
+
+## 11. What is explicitly *not* claimed by this migration
 
 Per the standing rule against fabricating implementation status:
 
@@ -803,7 +911,7 @@ Per the standing rule against fabricating implementation status:
 
 ---
 
-## 11. Backward compatibility timeline
+## 12. Backward compatibility timeline
 
 | Version | State |
 |---|---|
@@ -814,7 +922,7 @@ Per the standing rule against fabricating implementation status:
 
 ---
 
-## 12. What this document does not cover
+## 13. What this document does not cover
 
 Docker/Helm/CLI/package/env-var/MCP-identity/transport migration, plus
 now the runtime governance core through all six of its phases so
@@ -844,7 +952,17 @@ config rather than a wrong one), and **the supply-chain scanner
 actually connecting to a remote MCP server** (it analyzes a
 caller-supplied manifest only — full Unicode TR39 confusables
 detection and publisher/domain identity verification are also
-undesigned). These are tracked separately and are
+undesigned). Section 10 adds supply chain security (Phase 15),
+release engineering (Phase 16), MCP registry readiness (Phase 17),
+and open source governance (Phase 18) — but explicitly does not
+include: a **pinned dependency lockfile** (range constraints only),
+**Docker image publishing** (no CI workflow builds/pushes the image
+Helm/compose reference), **actually submitting to the MCP registry**
+(namespace ownership needs a GitHub OAuth device flow this session
+has no access to, and `1.2.0` isn't on PyPI yet — see Section 10.2's
+finding), and a **distributed maintainer model** (`GOVERNANCE.md`
+states plainly this is founder-led, not a claim of a team that
+doesn't exist). These are tracked separately and are
 not blocked on this document — they can proceed against the current
 `responsibleai` code paths and be renamed in step with whichever phase
 above actually executes the package migration.

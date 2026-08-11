@@ -75,14 +75,35 @@ Each of these requires creating an account and/or opening a PR on an
 external service. None of this can be done on your behalf — check each box
 as you complete it:
 
-- [ ] **The official MCP registry** — `github.com/modelcontextprotocol/registry`
-  (confirmed live as of 2026-07-23; a community-driven registry service
-  the MCP org itself runs, distinct from the older `modelcontextprotocol/servers`
-  example-servers repo). Publishing works via a CLI publisher tool the
-  repo documents (its README references a `server.json` manifest format
-  and a `make publisher`-style build step) — read that repo's current
-  README/CONTRIBUTING before starting, since exact CLI flags are the kind
-  of detail that changes without this document being updated in step.
+- [ ] **The official MCP registry** — `github.com/modelcontextprotocol/registry`.
+  MIGRATION_WHITEPACT_V2.md Phase 17: `server.json` (repo root) is written
+  and validated against the real, current schema
+  (`https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json`,
+  fetched and checked with `jsonschema` at the time this file was
+  written — not guessed). What's still a founder action, and why it
+  can't be finished here:
+  - **`packages[0].version` (`1.2.0`) must actually exist on PyPI
+    before the registry will accept it.** As of this writing, PyPI's
+    latest published `rai-governance-platform` release is **1.1.0** —
+    `1.2.0` is only committed to this repo, not released yet. Cut the
+    release first (see `RELEASING.md`), *then* publish `server.json`.
+  - **Namespace ownership** (`io.github.guruprasath-annadurai/whitepact`)
+    requires proving control of the `Guruprasath-Annadurai` GitHub
+    account via the registry's own `mcp-publisher` CLI (GitHub OAuth
+    device flow) — this session has no access to that login.
+  - **`remotes` (the hosted `/mcp` and `/sse` transports) were
+    deliberately left out of `server.json`.** There is no verified,
+    publicly reachable URL for the hosted MCP transport today (see
+    `MIGRATION_WHITEPACT_V2.md` Section 10 — only the dashboard has a
+    documented real hosted instance,
+    `responsibleai-dashboard.onrender.com`, and even that is "itself
+    pending its own rename decision"). Add a `remotes` array once a
+    real domain is live; a placeholder URL would be exactly the kind
+    of fabricated-but-plausible detail this project's rules prohibit.
+  - Once the above are real: `mcp-publisher validate server.json` then
+    `mcp-publisher publish` (exact CLI flags are the kind of detail
+    that changes without this document being updated in step — check
+    that repo's current README before running either command).
 - [ ] **Community MCP directories/marketplaces** (e.g., Glama, mcp.so-style
   aggregators, PulseMCP, or whatever the current landscape includes by the
   time you do this — the MCP directory ecosystem is new and shifting, so

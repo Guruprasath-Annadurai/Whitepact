@@ -128,7 +128,7 @@ this document's aspiration.)*
 Depending on your jurisdiction (GDPR, CCPA, and others each grant
 different specific rights), you may have the right to access, correct,
 delete, or export your personal data, and to object to certain
-processing. To exercise these rights, contact **milchcreamfoods@gmail.com**
+processing. To exercise these rights, contact **annaduraiguruprasath7@gmail.com**
 (the same security/privacy contact published in `SECURITY.md` and
 `SLA.md`).
 

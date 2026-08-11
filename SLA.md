@@ -121,7 +121,7 @@ the ENTERPRISE tier name.
 - PII detected by the Guardrails Engine is redacted in all log output.
 - Request bodies are limited to 10 MB by default.
 - HTTPS is enforced when deployed behind the recommended reverse proxy.
-- Security vulnerabilities can be reported to: milchcreamfoods@gmail.com
+- Security vulnerabilities can be reported to: annaduraiguruprasath7@gmail.com
   See [SECURITY.md](SECURITY.md) for the full responsible disclosure policy.
 
 ---
@@ -139,7 +139,7 @@ the ENTERPRISE tier name.
 | Channel | Address |
 |---|---|
 | GitHub Issues | https://github.com/Guruprasath-Annadurai/ResponsibleAi/issues |
-| Email | milchcreamfoods@gmail.com |
+| Email | annaduraiguruprasath7@gmail.com |
 | Status API | `GET /api/support/status` — public, no auth, real-time platform status |
 | Public status page | See "Uptime status page" below — not yet live |
 | SLA tiers API | `GET /api/support` — full tier details and contact info |

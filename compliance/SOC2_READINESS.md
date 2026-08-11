@@ -124,7 +124,7 @@ heavily with GDPR/CCPA obligations already covered by `PRIVACY_POLICY.md`.
 | Control area | Implemented | Evidence |
 |---|---|---|
 | Notice and disclosure | Documented, not yet attorney-reviewed | `PRIVACY_POLICY.md` — itself explicitly a draft pending counsel review and pending re-verification against a live system (see that document's own header). |
-| Data subject rights | Documented | `PRIVACY_POLICY.md` Section 7, contact `milchcreamfoods@gmail.com`. Response-timeframe commitment is an explicit placeholder pending counsel. |
+| Data subject rights | Documented | `PRIVACY_POLICY.md` Section 7, contact `annaduraiguruprasath7@gmail.com`. Response-timeframe commitment is an explicit placeholder pending counsel. |
 | PII handling / minimization | Yes | Guardrails Engine PII detection/redaction; opt-in field-level encryption for the PII columns enumerated in Section 2.1 above. |
 
 ---

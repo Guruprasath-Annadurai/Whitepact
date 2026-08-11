@@ -2,6 +2,10 @@
 
 Thanks for your interest in improving BiasBuster. Contributions are welcome — bug reports, new probes, provider integrations, documentation fixes, anything that makes the framework better.
 
+By participating, you're expected to follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+See [GOVERNANCE.md](GOVERNANCE.md) for how decisions get made — this is
+a founder-led project, not a claim of a committee that doesn't exist.
+
 ## Table of Contents
 
 - [Getting Started](#getting-started)

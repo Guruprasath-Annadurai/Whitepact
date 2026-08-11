@@ -5,23 +5,30 @@ enforcement details, see [ENTERPRISE_SECURITY.md](ENTERPRISE_SECURITY.md).
 
 ## Supported versions
 
+This project does not yet maintain parallel supported branches — there
+is one active line of development, and fixes land on the latest
+release. `RELEASING.md` documents the actual release process;
+`pyproject.toml`'s `version` field is the current source of truth for
+what's shipping.
+
 | Version | Supported |
 |---|---|
-| 0.4.x | Yes |
-| 0.3.x | Yes (critical fixes only) |
-| < 0.3 | No |
+| Latest release | Yes |
+| Older releases | Critical fixes only, at maintainer discretion |
 
 ## Reporting a vulnerability
 
 **Do not open a public GitHub issue for security vulnerabilities.**
 
-Email **milchcreamfoods@gmail.com** with the subject line:
-`[ResponsibleAI Security] <brief description>`
+Email **annaduraiguruprasath7@gmail.com** with the subject line:
+`[WhitePact Security] <brief description>`
 
 Please include:
 - A description of the vulnerability and its potential impact
 - Steps to reproduce (proof of concept preferred)
-- Affected component (BiasBuster / PrivacyLabel / Guardrails / RedTeam / etc.)
+- Affected component (MCP governance engine / runtime governance core /
+  BiasBuster / PrivacyLabel / Guardrails / RedTeam / etc. — see
+  `SPEC.md` for the current architecture)
 - Suggested fix if you have one
 
 You will receive an acknowledgement within **48 hours** and a resolution timeline within **7 days**.

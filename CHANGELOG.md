@@ -6,6 +6,66 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ---
 
+## [Unreleased]
+
+WhitePact Enterprise Foundation v2 — see `SPEC.md` and
+`MIGRATION_WHITEPACT_V2.md` for full detail on every item below;
+this entry summarizes, it isn't the source of truth. Additive
+throughout: every `RAI_`/`responsibleai`/`rai://` name kept working
+unchanged (see `MIGRATION_WHITEPACT_V2.md` Section 11's timeline).
+
+### Added
+- **`whitepact` alias package** (`src/whitepact/`) re-exporting
+  `responsibleai`'s public API by object identity, plus
+  `WHITEPACT_*` env var precedence and `whitepact`/`whitepact-mcp`/
+  `whitepact-mcp-http` console script names.
+- **MCP server identity migration** — protocol name `whitepact`, dual
+  `whitepact://`/`rai://` resource URI schemes.
+- **Streamable HTTP MCP transport** (`/mcp`, spec 2025-03-26+) —
+  additive alongside the existing HTTP+SSE transport (`/sse` +
+  `/messages/`), which keeps running unmodified.
+- **MCP transport security hardening** — DNS rebinding protection
+  (opt-in) and a shared per-IP auth-failure rate limiter across both
+  hosted transports.
+- **MCP OAuth/OIDC resource server** — hosted transports now accept an
+  OIDC-issued JWT (reusing the dashboard's existing SSO config) in
+  addition to static API keys; RFC 9728 protected-resource metadata.
+- **Structured tool-output contracts** (spec 2025-06-18) — all 27 MCP
+  tools now return `structuredContent` alongside the legacy text blob.
+- **Runtime governance core** (`src/responsibleai/governance/`) —
+  `GovernanceDecision` (`ALLOW`/`ALLOW_WITH_REDACTION`/
+  `REQUIRE_APPROVAL`/`DENY`/`QUARANTINE`), `WhitePactRuntimeGateway`,
+  risk-tiered routing, a first policy engine, hash-chained evidence
+  persistence (per-org chain, tamper-detectable), and a first
+  approval workflow (`PENDING`→`APPROVED`/`DENIED`, race-safe
+  resolution) — exposed via `/api/governance/*`.
+- **MCP Trust/Supply-Chain Scanner** (`src/responsibleai/supplychain/`)
+  — evaluates a third-party MCP server manifest (confusable-character/
+  typosquat check, tool-description content scan, known-incident
+  cross-reference), every finding classified `VERIFIED_FACT`/
+  `INFERRED_SIGNAL`/`UNKNOWN`, never a single score.
+  `POST /api/governance/supplychain/scan`.
+- **HA Helm deployment for the hosted MCP transport** — a second
+  Deployment (`mcp-*.yaml` templates) with the same replica/HPA/PDB/
+  anti-affinity posture as the dashboard, previously undeployable via
+  Helm at all.
+- **Supply chain security** (CI) — CycloneDX SBOM generated on every
+  build and attached to releases, Sigstore build provenance
+  attestation on published artifacts, dependency-review gating on
+  pull requests.
+
+### Fixed
+- Stale `__version__ = "0.4.0"` in `responsibleai/__init__.py` (didn't
+  match `pyproject.toml`'s `1.2.0`).
+- Hardcoded-stale tool/resource counts in the MCP `health` resource
+  payload.
+- Unbounded `mcp>=1.0.0` dependency constraint that let a fresh CI
+  install pick up the MCP SDK's breaking 2.0.0 release; pinned
+  `<2.0.0` with the SDK-kwarg-rename migration tracked as separate,
+  deliberate future work.
+
+---
+
 ## [1.2.0] — 2026-07-23
 
 ### Added

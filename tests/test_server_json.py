@@ -1,0 +1,73 @@
+"""Drift guard for server.json (MCP registry manifest, Phase 17): its
+version and tool/resource counts must stay in sync with the real
+source of truth (pyproject.toml, TOOL_DEFS, RESOURCE_DEFS) the same
+way governance/risk.py's tier table is checked against TOOL_DEFS.
+"""
+
+from __future__ import annotations
+
+import json
+import tomllib
+from pathlib import Path
+
+_REPO_ROOT = Path(__file__).parent.parent
+
+
+def _load_server_json() -> dict:
+    return json.loads((_REPO_ROOT / "server.json").read_text())
+
+
+class TestServerJsonShape:
+    def test_is_valid_json(self) -> None:
+        _load_server_json()  # raises if malformed
+
+    def test_has_required_top_level_fields(self) -> None:
+        d = _load_server_json()
+        for field in ("name", "description", "version", "repository", "packages"):
+            assert field in d, f"server.json missing required field: {field}"
+
+    def test_description_within_registry_length_limit(self) -> None:
+        # The official registry's schema caps this at 100 chars --
+        # verified against the live schema when this file was written.
+        assert len(_load_server_json()["description"]) <= 100
+
+    def test_no_remotes_without_a_real_url(self) -> None:
+        """See MCP_DISTRIBUTION_GUIDE.md: `remotes` is deliberately
+        omitted until a real, publicly reachable hosted MCP URL exists.
+        This guards against someone adding a placeholder/example.com URL
+        later without updating that reasoning."""
+        d = _load_server_json()
+        if "remotes" in d:
+            for remote in d["remotes"]:
+                assert "example.com" not in remote.get("url", "")
+
+
+class TestServerJsonVersionSync:
+    def test_version_matches_pyproject(self) -> None:
+        pyproject = tomllib.loads((_REPO_ROOT / "pyproject.toml").read_text())
+        d = _load_server_json()
+        assert d["version"] == pyproject["project"]["version"]
+        assert d["packages"][0]["version"] == pyproject["project"]["version"]
+
+    def test_pypi_package_identifier_matches_pyproject_name(self) -> None:
+        pyproject = tomllib.loads((_REPO_ROOT / "pyproject.toml").read_text())
+        d = _load_server_json()
+        pypi_package = next(p for p in d["packages"] if p["registryType"] == "pypi")
+        assert pypi_package["identifier"] == pyproject["project"]["name"]
+
+
+class TestServerJsonToolCounts:
+    def test_tool_count_matches_live_tool_defs(self) -> None:
+        from responsibleai.mcp.tools import TOOL_DEFS
+
+        d = _load_server_json()
+        meta = d["_meta"]["io.modelcontextprotocol.registry/publisher-provided"]
+        assert meta["tool_count"] == len(TOOL_DEFS)
+
+    def test_resource_counts_match_live_resource_defs(self) -> None:
+        from responsibleai.mcp.resources import _CANONICAL_RESOURCE_DEFS, RESOURCE_DEFS
+
+        d = _load_server_json()
+        meta = d["_meta"]["io.modelcontextprotocol.registry/publisher-provided"]
+        assert meta["resource_count_canonical"] == len(_CANONICAL_RESOURCE_DEFS)
+        assert meta["resource_count_advertised"] == len(RESOURCE_DEFS)

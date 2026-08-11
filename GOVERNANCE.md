@@ -117,3 +117,43 @@ security reviewer, a future hire, an auditor).
 | Date | Reviewer | Summary |
 |---|---|---|
 | 2026-07-23 | Guruprasath Annadurai | Initial adoption of this cadence. No prior quarterly review existed before this document. |
+
+---
+
+## 6. Project decision-making and open source contribution
+
+Sections 1-5 above cover *risk* oversight. This section covers the
+separate, narrower question of how day-to-day open source contribution
+and code-change decisions work — added as part of
+`MIGRATION_WHITEPACT_V2.md` Phase 18 (open source governance).
+
+- **Model**: founder-led, same single-person structure as Section 2 —
+  Guruprasath Annadurai
+  ([@Guruprasath-Annadurai](https://github.com/Guruprasath-Annadurai))
+  has final say on what merges and when. No steering committee, core
+  team, or maintainer council exists today. `.github/CODEOWNERS`
+  reflects this directly (one name, not invented team handles), for
+  the same reason Section 2 states every role plainly rather than
+  implying a team that doesn't exist.
+- **Code changes**: reviewed and merged at the founder's discretion —
+  see `CONTRIBUTING.md` for the mechanics of proposing one (fork, PR,
+  tests, style).
+- **Architecture and roadmap**: `SPEC.md` is the current architecture
+  contract; `MIGRATION_WHITEPACT_V2.md` is the active migration plan.
+  Both are living documents, updated as decisions are made, not voted on.
+- **Releases**: `RELEASING.md` documents the actual mechanical
+  process; what ships in a given version is a founder decision.
+- **Becoming a contributor**: anyone can contribute (see
+  `CONTRIBUTING.md`). Contributing doesn't itself confer commit
+  access, a title, or decision-making authority — there's no formal
+  path to "maintainer" defined here today, for the same
+  don't-invent-process-before-it's-needed reason as everywhere else in
+  this document.
+- **Code of Conduct**: see `CODE_OF_CONDUCT.md`. Enforcement is the
+  founder's responsibility today, for the same reason Section 4 states
+  there's no separate oversight body yet.
+
+Like Sections 1-5, this section describes what's actually true today,
+not a permanent commitment. If the project grows a real set of
+regular, trusted contributors, a more distributed model may follow —
+written here once it's actually true, not announced ahead of it.
