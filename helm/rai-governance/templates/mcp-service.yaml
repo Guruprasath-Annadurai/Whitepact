@@ -1,0 +1,17 @@
+{{- if .Values.mcp.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "rai-governance.mcp.fullname" . }}
+  labels:
+    {{- include "rai-governance.mcp.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.mcp.service.type }}
+  ports:
+    - port: {{ .Values.mcp.service.port }}
+      targetPort: {{ .Values.mcp.service.targetPort }}
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "rai-governance.mcp.selectorLabels" . | nindent 4 }}
+{{- end }}

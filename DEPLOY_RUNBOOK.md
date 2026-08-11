@@ -390,7 +390,26 @@ Stated plainly, not aspirationally:
   That's a meaningfully different (and higher-cost) deployment than the
   single-VPS `docker-compose.prod.yml` this runbook automates — treat it as
   the next infrastructure milestone, not something achievable by flipping
-  a flag.
+  a flag. `helm/rai-governance/` is that path, made concrete (below).
+- **`helm/rai-governance/`'s defaults are already within-region HA**, not
+  a bare-minimum single-pod chart: `replicaCount: 2`, a
+  `PodDisruptionBudget` (`minAvailable: 1`), an `HorizontalPodAutoscaler`
+  (2-10 replicas on CPU/memory), preferred pod anti-affinity (spreads
+  replicas across nodes), a zero-downtime `RollingUpdate` strategy
+  (`maxUnavailable: 0`), and liveness/readiness probes against
+  `/api/health`. This was true before MIGRATION_WHITEPACT_V2.md Phase 14;
+  what Phase 14 added is that the **hosted MCP transport**
+  (`responsibleai-mcp-http` — see `MIGRATION_WHITEPACT_V2.md` Section 7)
+  previously had no Helm-deployable story at all, only a
+  `docker-compose.prod.yml` `mcp-http` service. It's now a second
+  Deployment (`mcp-*.yaml` templates) with the identical HA posture —
+  its own replica count, HPA, PDB, anti-affinity, and probes against
+  `/health` on port 8766 — sharing the dashboard's ConfigMap/Secret
+  (both processes read the same `Settings` class) but scaling
+  independently, since MCP tool-call traffic and dashboard HTTP traffic
+  don't move together. Set `mcp.enabled: false` in `values.yaml` to skip
+  deploying it entirely (e.g. self-hosted-stdio-only deployments that
+  never run the hosted transport).
 
 ---
 

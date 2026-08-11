@@ -58,3 +58,33 @@ ServiceAccount name.
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+Hosted MCP deployment fullname -- distinct from the dashboard's own
+fullname so the two Deployments never collide on name or selector
+labels (a Deployment's selector is immutable after creation, so this
+must stay stable once released, same as the dashboard's).
+*/}}
+{{- define "rai-governance.mcp.fullname" -}}
+{{- printf "%s-mcp" (include "rai-governance.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Hosted MCP selector labels.
+*/}}
+{{- define "rai-governance.mcp.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "rai-governance.name" . }}-mcp
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+{{/*
+Hosted MCP common labels.
+*/}}
+{{- define "rai-governance.mcp.labels" -}}
+helm.sh/chart: {{ include "rai-governance.chart" . }}
+{{ include "rai-governance.mcp.selectorLabels" . }}
+{{- if .Chart.AppVersion }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{- end }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end }}

@@ -165,3 +165,61 @@ extraEnv: []
 ## Extra volumes / volume mounts
 extraVolumes: []
 extraVolumeMounts: []
+
+## Hosted MCP transport (Streamable HTTP + legacy HTTP/SSE, see
+## MIGRATION_WHITEPACT_V2.md Section 7) -- a separate Deployment from the
+## dashboard above, sharing its configmap/secret (both processes read the
+## same Settings class) but with its own replica count, autoscaling, and
+## PDB: MCP tool-call traffic and dashboard HTTP traffic scale
+## independently, and previously this process had no Helm-deployable, HA
+## story at all (docker-compose.prod.yml's mcp-http service was the only
+## place it existed as a deployable unit).
+mcp:
+  enabled: true
+  replicaCount: 2
+  ## No default scrape annotations -- this process doesn't expose /metrics
+  ## yet (unlike the dashboard). Set this once/if it does.
+  podAnnotations: {}
+  image:
+    ## Empty values fall back to the dashboard's .image.repository/.tag
+    ## above -- same container image, different command (responsibleai-mcp-http).
+    repository: ""
+    tag: ""
+    pullPolicy: ""
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8766
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  ## Keep at least 1 pod available during rolling updates, same rationale
+  ## as the dashboard's pdb above.
+  pdb:
+    enabled: true
+    minAvailable: 1
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8766
+    initialDelaySeconds: 15
+    periodSeconds: 20
+    failureThreshold: 3
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 8766
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    failureThreshold: 3
+  extraEnv: []

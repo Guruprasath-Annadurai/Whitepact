@@ -685,6 +685,58 @@ changes its release history addressing for anyone who's already
 compose project and not part of any external contract — renamed
 directly.
 
+### 9.1 High-availability deployment defaults (Phase 14)
+
+**Current** (before this section's work): `helm/rai-governance/` already
+had solid within-region HA defaults for the dashboard —
+`replicaCount: 2`, a `PodDisruptionBudget`, an `HorizontalPodAutoscaler`,
+preferred pod anti-affinity, a zero-downtime `RollingUpdate` strategy,
+and liveness/readiness probes — this predates this migration and wasn't
+touched. What was missing: the hosted MCP transport process
+(`responsibleai-mcp-http`, Section 7) had a `docker-compose.prod.yml`
+service (`mcp-http`) but **no Helm representation at all** — a Kubernetes
+deployer following this chart could run the dashboard with real HA and
+had no equivalent path for the actual MCP governance layer, the core
+deliverable of this whole migration.
+
+**Target** (implemented): four new templates in `helm/rai-governance/templates/`
+— `mcp-deployment.yaml`, `mcp-service.yaml`, `mcp-hpa.yaml`,
+`mcp-pdb.yaml` — plus a new `mcp:` block in `values.yaml`, giving the
+hosted MCP transport the identical HA posture as the dashboard:
+
+- Its own `Deployment`, distinct name/selector from the dashboard's
+  (`{{ fullname }}-mcp`) so the two never collide — a Deployment's
+  selector is immutable after creation, same constraint the dashboard's
+  already respects.
+- `replicaCount: 2` by default, an `HorizontalPodAutoscaler` (2-10
+  replicas on CPU/memory), a `PodDisruptionBudget` (`minAvailable: 1`),
+  and preferred pod anti-affinity keyed to its own label — copied
+  patterns, not new ones invented for this.
+- Liveness/readiness probes against `GET /health` on port 8766 (the
+  real health endpoint `mcp/server.py`'s `_build_http_app()` serves,
+  verified against source, not assumed).
+- Shares the dashboard's `ConfigMap`/`Secret` via `envFrom` (both
+  processes read the same `Settings` class, so `RAI_DATABASE_URL` etc.
+  only need to be defined once) but sets `RAI_MCP_HTTP_HOST`/
+  `RAI_MCP_HTTP_PORT` directly in the Deployment spec, since those are
+  specific to this process and irrelevant to the dashboard.
+- **Deliberately does not reuse `.Values.podAnnotations`** for
+  Prometheus scraping — that block hardcodes `prometheus.io/port:
+  "8765"`, the dashboard's port. Copying it verbatim onto the MCP
+  Deployment would tell Prometheus to scrape a port these pods don't
+  even listen on. `mcp.podAnnotations` is a separate, empty-by-default
+  value instead, since this process has no `/metrics` endpoint today —
+  an honest gap, not something to paper over with copy-pasted
+  annotations that happen to render without error.
+- `mcp.enabled: false` skips deploying it entirely, for self-hosted
+  stdio-only deployments that never run the hosted transport.
+
+**Verified**: `helm lint helm/rai-governance/` (clean) and
+`helm template rai-governance helm/rai-governance/ --set image.tag=ci-test
+--debug` (renders without error, checked by hand for the exact image/
+port/env values expected) — both also run in CI's `helm-lint` job.
+`mcp.enabled=false` was verified to produce zero MCP resources.
+
 ---
 
 ## 10. What is explicitly *not* claimed by this migration
@@ -725,19 +777,25 @@ now the runtime governance core through all five of its phases so
 far — the gateway itself (Section 8), risk-tiered routing
 (Section 8.1), a first policy engine (Section 8.2), evidence
 persistence (Section 8.3), and a first approval workflow
-(Section 8.4) — MCP OAuth/OIDC authorization (Section 7.2), and
-structured tool-output contracts (Section 7.3). What remains genuinely
-out of scope here: **`QUARANTINE`** actually being produced by anything
-(needs cross-request pattern tracking not built here), a **richer
-policy rule language** than plain risk-tier/action-type/target matching
-(OPA/Rego or similar, if ever needed), a **richer approval lifecycle**
-than `PENDING -> APPROVED`/`DENIED` (expiry/timeout, multi-approver
-quorum, delegation-chain approval), **Trust Index signal integration**
+(Section 8.4) — MCP OAuth/OIDC authorization (Section 7.2), structured
+tool-output contracts (Section 7.3), and HA deployment defaults for the
+hosted MCP transport (Section 9.1). What remains genuinely out of scope
+here: **`QUARANTINE`** actually being produced by anything (needs
+cross-request pattern tracking not built here), a **richer policy rule
+language** than plain risk-tier/action-type/target matching (OPA/Rego
+or similar, if ever needed), a **richer approval lifecycle** than
+`PENDING -> APPROVED`/`DENIED` (expiry/timeout, multi-approver quorum,
+delegation-chain approval), **Trust Index signal integration**
 (`AgentContext.trust_state` exists as a field, nothing populates or
-reads it), **evidence export beyond JSON**, and **wiring the governance
+reads it), **evidence export beyond JSON**, **wiring the governance
 gateway/evidence/approval layers into the live MCP tool-dispatch path**
 (`dispatch_tool()` is unchanged; nothing routes an actual tool call
-through any of them yet). These are tracked separately and are not
-blocked on this document — they can proceed against the current
+through any of them yet), **true multi-region HA** (Section 9.1 is
+within-region only — no cross-region replication, no global load
+balancer, that's infrastructure the deployer builds, see
+`DEPLOY_RUNBOOK.md`), and **`/metrics` on the MCP transport** (it has
+none today, so `mcp.podAnnotations` defaults to no Prometheus scrape
+config rather than a wrong one). These are tracked separately and are
+not blocked on this document — they can proceed against the current
 `responsibleai` code paths and be renamed in step with whichever phase
 above actually executes the package migration.
