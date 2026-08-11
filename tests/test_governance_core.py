@@ -13,6 +13,9 @@ from responsibleai.governance import (
     DecisionResult,
     GovernanceDecision,
     IdentityContext,
+    Policy,
+    PolicyRule,
+    RiskTier,
     WhitePactRuntimeGateway,
 )
 from responsibleai.rbac.models import OrgContext, Plan, Role
@@ -190,3 +193,125 @@ class TestDecisionResultSerialization:
         assert d["decision"] == "ALLOW"
         assert d["action_id"] == "a1"
         assert isinstance(d["evaluated_at"], str)
+        assert d["risk_tier"] is None
+
+    def test_to_dict_includes_risk_tier_value(self) -> None:
+        result = DecisionResult(decision=GovernanceDecision.ALLOW, action_id="a1", risk_tier=RiskTier.HIGH)
+        assert result.to_dict()["risk_tier"] == "HIGH"
+
+
+class TestGatewayRiskClassification:
+    """Phase 9 wiring: risk_tier is always populated once the gateway
+    reaches the content-scan stage, whether or not a Policy is supplied."""
+
+    def test_risk_tier_populated_without_a_policy(self) -> None:
+        gw = WhitePactRuntimeGateway()
+        authority = _authority(granted_action_types=frozenset({"mcp_tool_call"}))
+        action = ActionRequest(agent=_agent(), action_type="mcp_tool_call", target="rai_hallucination")
+        result = gw.evaluate(action, authority)
+        assert result.risk_tier == RiskTier.HIGH
+
+    def test_risk_tier_none_on_authority_denial(self) -> None:
+        """Authority is checked before risk is classified -- an
+        ungranted action never reaches risk classification."""
+        gw = WhitePactRuntimeGateway()
+        action = ActionRequest(agent=_agent(), action_type="payment", target="stripe")
+        result = gw.evaluate(action, _authority())
+        assert result.decision == GovernanceDecision.DENY
+        assert result.risk_tier is None
+
+    def test_minimal_risk_tool_still_allows_normally(self) -> None:
+        gw = WhitePactRuntimeGateway()
+        authority = _authority(granted_action_types=frozenset({"mcp_tool_call"}))
+        action = ActionRequest(agent=_agent(), action_type="mcp_tool_call", target="rai_health")
+        result = gw.evaluate(action, authority)
+        assert result.decision == GovernanceDecision.ALLOW
+        assert result.risk_tier == RiskTier.MINIMAL
+
+
+class TestGatewayPolicyIntegration:
+    """Phase 10 wiring: an optional Policy evaluated after risk
+    classification, before the content scan."""
+
+    def test_no_policy_behaves_exactly_as_phase_8(self) -> None:
+        gw = WhitePactRuntimeGateway()
+        authority = _authority(granted_action_types=frozenset({"mcp_tool_call"}))
+        action = ActionRequest(agent=_agent(), action_type="mcp_tool_call", target="rai_scan", arguments={})
+        result = gw.evaluate(action, authority, policy=None)
+        assert result.decision == GovernanceDecision.ALLOW
+        assert result.reason_codes == []
+
+    def test_policy_deny_short_circuits_before_content_scan(self) -> None:
+        gw = WhitePactRuntimeGateway()
+        authority = _authority(granted_action_types=frozenset({"mcp_tool_call"}))
+        policy = Policy(org_id="org-1", rules=[
+            PolicyRule(
+                rule_id="no-high-risk", reason_code="high_risk_blocked",
+                effect=GovernanceDecision.DENY, risk_tiers=frozenset({RiskTier.HIGH}),
+            ),
+        ])
+        # Clean arguments -- would otherwise ALLOW; policy must be what denies it.
+        action = ActionRequest(
+            agent=_agent(), action_type="mcp_tool_call", target="rai_hallucination",
+            arguments={"text": "nothing objectionable here"},
+        )
+        result = gw.evaluate(action, authority, policy)
+        assert result.decision == GovernanceDecision.DENY
+        assert result.reason_codes == ["policy:no-high-risk:high_risk_blocked"]
+        assert result.risk_tier == RiskTier.HIGH
+
+    def test_policy_require_approval_short_circuits(self) -> None:
+        gw = WhitePactRuntimeGateway()
+        authority = _authority(granted_action_types=frozenset({"mcp_tool_call"}))
+        policy = Policy(org_id="org-1", rules=[
+            PolicyRule(
+                rule_id="writes-need-approval", reason_code="write_action",
+                effect=GovernanceDecision.REQUIRE_APPROVAL, targets=frozenset({"rai_incident_log"}),
+            ),
+        ])
+        action = ActionRequest(agent=_agent(), action_type="mcp_tool_call", target="rai_incident_log")
+        result = gw.evaluate(action, authority, policy)
+        assert result.decision == GovernanceDecision.REQUIRE_APPROVAL
+        assert result.reason_codes == ["policy:writes-need-approval:write_action"]
+
+    def test_policy_allow_does_not_skip_content_scan(self) -> None:
+        """An explicit ALLOW policy match still goes through
+        GuardrailsEngine -- defense in depth."""
+        gw = WhitePactRuntimeGateway()
+        authority = _authority(granted_action_types=frozenset({"mcp_tool_call"}))
+        policy = Policy(org_id="org-1", rules=[
+            PolicyRule(rule_id="allow-low", reason_code="low_risk_ok", effect=GovernanceDecision.ALLOW),
+        ])
+        action = ActionRequest(
+            agent=_agent(), action_type="mcp_tool_call", target="rai_scan",
+            arguments={"text": "contact me at a@b.com"},
+        )
+        result = gw.evaluate(action, authority, policy)
+        assert result.decision == GovernanceDecision.ALLOW_WITH_REDACTION
+        assert "policy:allow-low:low_risk_ok" in result.reason_codes
+        assert any(code.endswith(":pii_redacted") for code in result.reason_codes)
+
+    def test_policy_allow_reason_present_on_clean_final_allow(self) -> None:
+        gw = WhitePactRuntimeGateway()
+        authority = _authority(granted_action_types=frozenset({"mcp_tool_call"}))
+        policy = Policy(org_id="org-1", rules=[
+            PolicyRule(rule_id="allow-low", reason_code="low_risk_ok", effect=GovernanceDecision.ALLOW),
+        ])
+        action = ActionRequest(agent=_agent(), action_type="mcp_tool_call", target="rai_scan", arguments={})
+        result = gw.evaluate(action, authority, policy)
+        assert result.decision == GovernanceDecision.ALLOW
+        assert result.reason_codes == ["policy:allow-low:low_risk_ok"]
+
+    def test_no_matching_policy_rule_falls_through_to_scan(self) -> None:
+        gw = WhitePactRuntimeGateway()
+        authority = _authority(granted_action_types=frozenset({"mcp_tool_call"}))
+        policy = Policy(org_id="org-1", rules=[
+            PolicyRule(
+                rule_id="critical-only", reason_code="x", effect=GovernanceDecision.DENY,
+                targets=frozenset({"nonexistent_tool"}),
+            ),
+        ])
+        action = ActionRequest(agent=_agent(), action_type="mcp_tool_call", target="rai_scan", arguments={})
+        result = gw.evaluate(action, authority, policy)
+        assert result.decision == GovernanceDecision.ALLOW
+        assert result.reason_codes == []

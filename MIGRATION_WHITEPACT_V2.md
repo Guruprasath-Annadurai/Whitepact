@@ -465,55 +465,123 @@ returned one of a real decision model as output.
   vocabulary without modifying it — the same additive, non-breaking
   pattern as every other alias in this document, applied to a data
   model instead of a package/env-var/CLI name.
-- `WhitePactRuntimeGateway.evaluate(action, authority) -> DecisionResult`:
-  the actual missing component. Two deterministic checks, no LLM call:
-  does `AuthorityContext` grant this `action_type` at all, and does the
+- `WhitePactRuntimeGateway.evaluate(action, authority, policy=None) -> DecisionResult`:
+  the actual missing component. Deterministic checks, no LLM call: does
+  `AuthorityContext` grant this `action_type` at all; does a
+  caller-declared `require_approval_for` set on `AuthorityContext` name
+  this action type (→ `REQUIRE_APPROVAL`, a caller-supplied trigger,
+  distinct from automatic risk-based routing — see Section 8.1); does
+  an optional `Policy` match a rule (Section 8.2); and does the
   existing, tested `GuardrailsEngine` find PII (→
   `ALLOW_WITH_REDACTION`, reusing its own redaction) or
   toxicity/custom-pattern matches (→ `DENY`) in any string-valued
-  argument. A caller-declared `require_approval_for` set on
-  `AuthorityContext` produces `REQUIRE_APPROVAL` deterministically —
-  this is *not* Phase 9's risk-tiered routing (which would classify
-  action types by risk automatically); it's a caller-supplied trigger,
-  which is an honestly smaller thing.
+  argument.
 
-**Explicitly not built here** (real gaps, tracked as their own later
-phases, not oversights — SPEC.md's per-section status markers were
-updated in place to say exactly this, not just here):
+**Tests**: `tests/test_governance_core.py` — the entity dataclasses
+(`IdentityContext.from_org_context`'s api_key/oidc kind detection,
+`AgentContext`'s `organization_id` defaulting), and the gateway's full
+decision matrix: authority denial, the approval trigger (and that
+authority denial still wins over it), PII redaction (non-PII fields
+left untouched, reason codes field-qualified), toxicity hard-denying
+even when PII is also present in the same argument, risk-tier
+population, and policy short-circuit/fall-through behavior (see 8.1/8.2
+below for the pieces those last two exercise).
 
-- **Policy engine** (Phase 10) — nothing evaluates organization-authored
-  rules beyond the deterministic guardrails scan above. `rai_policy_check`
-  (an existing, separate MCP tool) is unrelated and unchanged.
-- **Risk-tiered routing** (Phase 9) — no HIGH/CRITICAL classification of
-  action types; SPEC.md Section 4's tiering table remains a proposal,
-  not executable code.
+### 8.1 Risk-tiered routing (Phase 9)
+
+SPEC.md Section 4 recorded a **proposed** tiering for the 27 MCP tools
+"so the tiering decision is made once, deliberately, and reviewably,
+rather than invented ad hoc when Phase 9 starts." This makes it real:
+
+- `governance/risk.py`: `RiskTier` (`MINIMAL`/`LOW`/`MEDIUM`/`HIGH`) and
+  `TOOL_RISK_TIERS`, a hardcoded table implementing SPEC.md Section 4's
+  categories exactly — not re-derived or re-decided here, per that
+  section's own instruction. `classify_action_risk(action_type, target)`
+  is the router: MCP tool calls look up `target` in the table;
+  non-MCP action types and unrecognized tool names both get `MEDIUM`
+  (never a silent `MINIMAL` default for something unclassified).
+- Deliberately dependency-free from `mcp.tools` — the table is hardcoded
+  rather than derived from `TOOL_DEFS` at runtime, keeping the
+  architectural dependency direction SPEC.md Section 4 describes (MCP
+  tools are intelligence the governance pipeline calls *into*, not the
+  reverse). `tests/test_governance_risk.py` instead verifies the table
+  stays in sync with the live `TOOL_DEFS` list as its own drift check.
+- Wired into `WhitePactRuntimeGateway`: every action that reaches the
+  risk-classification step gets a `RiskTier` recorded on
+  `DecisionResult.risk_tier` — always, whether or not a `Policy` is
+  supplied. An action denied at the authority-check stage never reaches
+  risk classification (`risk_tier` stays `None` on that path — Phase 9
+  computing a tier for an action that was already going to be denied
+  outright would be wasted, meaningless work).
+- **What tiering does *not* do by itself**: classification alone causes
+  no behavioral difference between tiers. A `HIGH`-tier action isn't
+  automatically held for approval — that only happens if a `Policy`
+  rule reads the tier and says so (Section 8.2). No default policy ships
+  that does this, since that would be an opinionated governance stance
+  imposed on every deployment rather than a neutral, available signal.
+
+### 8.2 Policy engine (Phase 10)
+
+SPEC.md Section 3.5 called for "a small, strongly typed internal model
+first — not an LLM, not necessarily OPA/Rego on day one." First version:
+
+- `governance/policy.py`: `PolicyRule` (`risk_tiers`/`action_types`/
+  `targets` match filters, each `None` meaning "any"; an `effect` of
+  `ALLOW`/`DENY`/`REQUIRE_APPROVAL` — `ALLOW_WITH_REDACTION` and
+  `QUARANTINE` are rejected at construction, since redaction needs a
+  matched span only `GuardrailsEngine` has and `QUARANTINE` needs
+  cross-request state no rule here has access to) and `Policy` (an
+  ordered `list[PolicyRule]`, evaluated first-match-wins — the entire
+  conflict-resolution model is "read the rules top to bottom," not a
+  priority/specificity scoring system needing its own explanation).
+- Gateway integration: `policy` is an optional parameter to `evaluate()`,
+  defaulting to `None` — omitting it reproduces Phase 8's exact original
+  behavior byte-for-byte (`tests/test_governance_core.py`'s
+  `test_no_policy_behaves_exactly_as_phase_8`). When supplied and a rule
+  matches: `DENY`/`REQUIRE_APPROVAL` short-circuits immediately with
+  `reason_codes=["policy:<rule_id>:<reason_code>"]`; `ALLOW` is recorded
+  but does **not** skip the guardrails content scan that follows —
+  defense in depth, an org allowing an action type isn't a statement
+  about what's safe to leave unscanned.
+- **What this explicitly is not**: rule *persistence*. A `Policy` is
+  constructed in code and passed to `evaluate()` per call — there is no
+  `policies` database table, no API to author or store one, and no UI.
+  Also not OPA/Rego or any expression language — `PolicyRule`'s filters
+  are plain set-membership checks, nothing that needs its own parser.
+
+**Also explicitly not built anywhere in Phase 8-10** (real gaps, tracked
+as their own later phases — SPEC.md's per-section status markers say
+this too, not just here):
+
 - **Evidence persistence** (Phase 12) — `DecisionResult` is an
   in-memory, unpersisted output. No hash chain, no
   `policies_evaluated`/`deterministic_checks` breakdown, nothing written
   to a database. The existing hash-chaining primitive this will
-  eventually generalize from (`db/public_incident_repository.py`)
-  is real and unchanged; wiring it to decisions is separate work.
+  eventually generalize from (`db/public_incident_repository.py`) is
+  real and unchanged; wiring it to decisions is separate work.
 - **Approval workflow** — `REQUIRE_APPROVAL` is a real decision the
   gateway can return; nothing then queues it, notifies anyone, or
   exposes a resolution API.
-- **`QUARANTINE`** — a real, tested enum member, but nothing in the
-  gateway ever produces it: that needs cross-request pattern tracking
-  (e.g. "this agent has had 3 policy violations this week") this phase
-  doesn't build.
+- **`QUARANTINE`** — a real, tested enum member, but nothing anywhere
+  in this package ever produces it: that needs cross-request pattern
+  tracking (e.g. "this agent has had 3 policy violations this week")
+  this phase doesn't build.
 - **MCP tool dispatch integration** — `dispatch_tool()` in `mcp/tools.py`
   is completely unchanged; nothing routes an actual MCP tool call
   through `WhitePactRuntimeGateway` before dispatching it. The gateway
   exists and is tested standalone; wiring it into the live request path
   is real, separate, own-tested work.
+- **Trust Index signal integration** — `AgentContext.trust_state` exists
+  as a field; nothing populates it from a live Trust Index lookup or
+  reads it in a decision.
 
-**Tests**: `tests/test_governance_core.py` (18 tests) — the entity
-dataclasses (`IdentityContext.from_org_context`'s api_key/oidc kind
-detection, `AgentContext`'s `organization_id` defaulting), and the
-gateway's full decision matrix: authority denial, the approval trigger
-(and that authority denial still wins over it), PII redaction
-(non-PII fields left untouched, reason codes field-qualified), and
-toxicity hard-denying even when PII is also present in the same
-argument.
+**Tests**: `tests/test_governance_risk.py` (tier-table coverage against
+the live `TOOL_DEFS` list, classification defaults) and
+`tests/test_governance_policy.py` (rule-filter matching, effect
+validation, first-match-wins/fall-through evaluation) — plus the
+gateway-integration tests noted in the main section above. 49 tests
+total across `test_governance_core.py` + `test_governance_risk.py` +
+`test_governance_policy.py`.
 
 ---
 
@@ -581,18 +649,22 @@ Per the standing rule against fabricating implementation status:
 ## 12. What this document does not cover
 
 Docker/Helm/CLI/package/env-var/MCP-identity/transport migration, plus
-now the first slice of the runtime governance core (Section 8), MCP
-OAuth/OIDC authorization (Section 7.2), and structured tool-output
-contracts (Section 7.3). What remains genuinely out of scope here: the
-**policy engine** (Phase 10 — nothing evaluates organization-authored
-rules yet), **risk-tiered routing** (Phase 9 — no automatic
-HIGH/CRITICAL classification of action types), **evidence persistence**
+now the runtime governance core through its first three phases —
+the gateway itself (Section 8), risk-tiered routing (Section 8.1), and
+a first policy engine (Section 8.2) — MCP OAuth/OIDC authorization
+(Section 7.2), and structured tool-output contracts (Section 7.3).
+What remains genuinely out of scope here: **evidence persistence**
 (Phase 12 — `DecisionResult` is in-memory only, no hash chain), an
 **approval workflow** (no queue/notification/resolution API behind
-`REQUIRE_APPROVAL`), and **wiring the governance gateway into the live
-MCP tool-dispatch path** (`dispatch_tool()` is unchanged; nothing routes
-an actual tool call through `WhitePactRuntimeGateway` yet). These are
-tracked separately and are not blocked on this document — they can
-proceed against the current `responsibleai` code paths and be renamed
-in step with whichever phase above actually executes the package
-migration.
+`REQUIRE_APPROVAL`), **`QUARANTINE`** actually being produced by
+anything (needs cross-request pattern tracking not built here), a
+**richer policy rule language** than plain risk-tier/action-type/target
+matching (OPA/Rego or similar, if ever needed), **Trust Index signal
+integration** (`AgentContext.trust_state` exists as a field, nothing
+populates or reads it), and **wiring the governance gateway into the
+live MCP tool-dispatch path** (`dispatch_tool()` is unchanged; nothing
+routes an actual tool call through `WhitePactRuntimeGateway` yet).
+These are tracked separately and are not blocked on this document —
+they can proceed against the current `responsibleai` code paths and be
+renamed in step with whichever phase above actually executes the
+package migration.

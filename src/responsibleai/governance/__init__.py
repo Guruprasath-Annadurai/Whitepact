@@ -16,6 +16,8 @@ from responsibleai.governance.models import (
     GovernanceDecision,
     IdentityContext,
 )
+from responsibleai.governance.policy import Policy, PolicyMatch, PolicyRule
+from responsibleai.governance.risk import RiskTier, classify_action_risk
 
 __all__ = [
     "ActionRequest",
@@ -24,5 +26,10 @@ __all__ = [
     "DecisionResult",
     "GovernanceDecision",
     "IdentityContext",
+    "Policy",
+    "PolicyMatch",
+    "PolicyRule",
+    "RiskTier",
     "WhitePactRuntimeGateway",
+    "classify_action_risk",
 ]

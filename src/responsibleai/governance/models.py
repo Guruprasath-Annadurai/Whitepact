@@ -3,15 +3,12 @@ SPEC.md Section 3. Each dataclass below is the concrete, executable
 form of a **[TARGET]** entity SPEC.md defines; see that document for
 the full rationale and the [TODAY] precedent each one builds on.
 
-Deliberately not included here (real gaps, not oversights — later
+Risk-tiered routing (Phase 9, ``governance/risk.py``) and a first policy
+engine (Phase 10, ``governance/policy.py``) now exist and are wired into
+``WhitePactRuntimeGateway`` — see those modules' docstrings. Still
+deliberately not included here (real gaps, not oversights — later
 phases per MIGRATION_WHITEPACT_V2.md):
 
-- ``Policy`` / a policy engine (Phase 10) — nothing here evaluates
-  organization-authored rules beyond the deterministic guardrails scan
-  ``WhitePactRuntimeGateway`` already wires up.
-- Risk-tiered routing (Phase 9) — no HIGH/CRITICAL classification of
-  action types exists yet; SPEC.md Section 4's tiering table is
-  explicitly "proposed... not implemented as executable routing logic".
 - ``EvidenceRecord`` / persisted, hash-chained decision evidence
   (Phase 12) — ``DecisionResult`` below is an in-memory, unpersisted
   decision output, not the immutable audit trail SPEC.md Section 3.7
@@ -33,6 +30,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
+from responsibleai.governance.risk import RiskTier
 from responsibleai.integrations.client import TrustCheckResult
 from responsibleai.rbac.models import OrgContext
 
@@ -154,6 +152,7 @@ class DecisionResult:
     action_id: str
     reason_codes: list[str] = field(default_factory=list)
     redacted_arguments: dict[str, Any] | None = None
+    risk_tier: RiskTier | None = None
     evaluated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def to_dict(self) -> dict[str, Any]:
@@ -162,5 +161,6 @@ class DecisionResult:
             "action_id": self.action_id,
             "reason_codes": self.reason_codes,
             "redacted_arguments": self.redacted_arguments,
+            "risk_tier": self.risk_tier.value if self.risk_tier is not None else None,
             "evaluated_at": self.evaluated_at.isoformat(),
         }

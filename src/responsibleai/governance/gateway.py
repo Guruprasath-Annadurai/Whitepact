@@ -1,20 +1,27 @@
 """The WhitePact Runtime Gateway — SPEC.md Section 2's missing piece:
 "there is no single component that takes 'agent proposes action' as
-input and returns one of the five decisions above as output." This is
-that component's first, deliberately minimal version.
+input and returns one of the five decisions above as output."
 
-What ``evaluate()`` actually checks, in order:
+What ``evaluate()`` checks, in order:
 
 1. **Authority** — does ``AuthorityContext`` actually grant this
    ``action_type``? Deterministic, no model call.
 2. **Caller-declared approval requirements** — did the caller mark this
    ``action_type`` as needing human sign-off
-   (``AuthorityContext.require_approval_for``)? Also deterministic and
-   caller-configured, not a fabricated risk classification — Phase 9's
-   risk-tiered routing (which *would* classify action types by risk
-   automatically) is explicitly not implemented yet, per
-   ``models.py``'s module docstring.
-3. **Deterministic content scan** — every string-valued argument is run
+   (``AuthorityContext.require_approval_for``)? Deterministic and
+   caller-configured, checked before risk/policy so an agent's own
+   authority grant is always the first word.
+3. **Risk classification** (Phase 9, ``governance/risk.py``) — every
+   action gets a ``RiskTier``, always recorded on the result, whether or
+   not a ``Policy`` is supplied.
+4. **Policy** (Phase 10, ``governance/policy.py``, optional) — if a
+   ``Policy`` is passed and a rule matches, a ``DENY``/``REQUIRE_APPROVAL``
+   effect short-circuits immediately; an ``ALLOW`` effect is recorded but
+   does *not* skip the content scan below (defense in depth: an org
+   allowing an action type doesn't mean skip PII/toxicity scanning of its
+   arguments). No ``Policy`` supplied — behavior is identical to before
+   Phase 9/10 existed; this is additive, not a required argument.
+5. **Deterministic content scan** — every string-valued argument is run
    through the existing, tested ``GuardrailsEngine`` (PII/toxicity/custom
    pattern detection). Toxicity or a custom policy match is a hard
    ``DENY``; PII-only findings become ``ALLOW_WITH_REDACTION`` using
@@ -37,19 +44,25 @@ from responsibleai.governance.models import (
     DecisionResult,
     GovernanceDecision,
 )
+from responsibleai.governance.policy import Policy
+from responsibleai.governance.risk import RiskTier, classify_action_risk
 from responsibleai.guardrails.engine import GuardrailsEngine, GuardrailsResult
 
 
 class WhitePactRuntimeGateway:
     """Stateless evaluator: one ``GuardrailsEngine`` instance, reused
-    across calls (it has no per-request state — see its own docstring),
-    injectable so callers can supply an org-specific policy."""
+    across calls (it has no per-request state — see its own docstring).
+    ``Policy`` is passed per call, not to the constructor, since it's
+    per-organization and one gateway instance may serve many orgs."""
 
     def __init__(self, guardrails: GuardrailsEngine | None = None) -> None:
         self._guardrails = guardrails or GuardrailsEngine()
 
     def evaluate(
-        self, action: ActionRequest, authority: AuthorityContext,
+        self,
+        action: ActionRequest,
+        authority: AuthorityContext,
+        policy: Policy | None = None,
     ) -> DecisionResult:
         if not authority.permits(action.action_type):
             return DecisionResult(
@@ -65,8 +78,23 @@ class WhitePactRuntimeGateway:
                 reason_codes=[f"approval_required:{action.action_type}"],
             )
 
+        risk_tier = classify_action_risk(action.action_type, action.target)
+        policy_reason_codes: list[str] = []
+
+        if policy is not None:
+            match = policy.evaluate(action, risk_tier)
+            if match is not None:
+                if match.rule.effect in (GovernanceDecision.DENY, GovernanceDecision.REQUIRE_APPROVAL):
+                    return DecisionResult(
+                        decision=match.rule.effect,
+                        action_id=action.action_id,
+                        reason_codes=[f"policy:{match.rule.rule_id}:{match.rule.reason_code}"],
+                        risk_tier=risk_tier,
+                    )
+                policy_reason_codes.append(f"policy:{match.rule.rule_id}:{match.rule.reason_code}")
+
         field_results, redacted_arguments = self._scan_arguments(action.arguments)
-        return self._decide_from_scan(action, field_results, redacted_arguments)
+        return self._decide_from_scan(action, field_results, redacted_arguments, risk_tier, policy_reason_codes)
 
     def _scan_arguments(
         self, arguments: dict[str, Any],
@@ -87,6 +115,8 @@ class WhitePactRuntimeGateway:
         action: ActionRequest,
         field_results: dict[str, GuardrailsResult],
         redacted_arguments: dict[str, Any],
+        risk_tier: RiskTier,
+        policy_reason_codes: list[str],
     ) -> DecisionResult:
         hard_block_reasons = [
             f"{field}:{reason}"
@@ -98,7 +128,8 @@ class WhitePactRuntimeGateway:
             return DecisionResult(
                 decision=GovernanceDecision.DENY,
                 action_id=action.action_id,
-                reason_codes=hard_block_reasons,
+                reason_codes=[*policy_reason_codes, *hard_block_reasons],
+                risk_tier=risk_tier,
             )
 
         pii_fields = [field for field, result in field_results.items() if result.has_pii]
@@ -106,8 +137,14 @@ class WhitePactRuntimeGateway:
             return DecisionResult(
                 decision=GovernanceDecision.ALLOW_WITH_REDACTION,
                 action_id=action.action_id,
-                reason_codes=[f"{field}:pii_redacted" for field in pii_fields],
+                reason_codes=[*policy_reason_codes, *[f"{field}:pii_redacted" for field in pii_fields]],
                 redacted_arguments=redacted_arguments,
+                risk_tier=risk_tier,
             )
 
-        return DecisionResult(decision=GovernanceDecision.ALLOW, action_id=action.action_id)
+        return DecisionResult(
+            decision=GovernanceDecision.ALLOW,
+            action_id=action.action_id,
+            reason_codes=policy_reason_codes,
+            risk_tier=risk_tier,
+        )

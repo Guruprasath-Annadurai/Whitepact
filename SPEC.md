@@ -12,12 +12,13 @@
 
 Last reviewed: 2026-08-11 · Repository: `Guruprasath-Annadurai/Whitepact`
 (renamed from `ResponsibleAi`; package identity migration in progress —
-see Section 9). Sections 2-3's core entities and a first, deterministic
-`WhitePactRuntimeGateway` now exist in `src/responsibleai/governance/`
-(Phase 8, see `MIGRATION_WHITEPACT_V2.md` Section 8) — each affected
-section below has been updated in place to say exactly what's real and
-what remains **[TARGET]**; none of the original **[TARGET]** markers
-were removed wholesale.
+see Section 9). Sections 2-3's core entities, a first, deterministic
+`WhitePactRuntimeGateway`, risk-tiered routing (Phase 9), and a first
+policy engine (Phase 10) now exist in `src/responsibleai/governance/`
+(see `MIGRATION_WHITEPACT_V2.md` Section 8) — each affected section
+below has been updated in place to say exactly what's real and what
+remains **[TARGET]**; none of the original **[TARGET]** markers were
+removed wholesale.
 
 ---
 
@@ -57,7 +58,7 @@ fact.
 
 ---
 
-## 2. The core pipeline **[PARTIALLY TODAY — Phase 8]**
+## 2. The core pipeline **[PARTIALLY TODAY — Phases 8-10]**
 
 ```
 Organization
@@ -66,11 +67,11 @@ Agent (identity + framework + model)
   → proposes
 Action (an MCP tool call, an API operation, a transaction, a data export...)
   → evaluated against
-Policy (deterministic organizational rules)              [TARGET — Phase 10]
+Policy (deterministic organizational rules)              [TODAY, first version — Phase 10]
   → informed by
 Trust (existing Trust Index / leaderboard signals)        [TODAY, not yet wired in]
   → and
-Risk (classified severity of the action)                 [TARGET — Phase 9]
+Risk (classified severity of the action)                 [TODAY — Phase 9]
   → produces a
 Decision: ALLOW | ALLOW_WITH_REDACTION | REQUIRE_APPROVAL | DENY | QUARANTINE
   → routes to
@@ -82,23 +83,28 @@ Evidence (an immutable, exportable record of the whole decision) [TARGET — Pha
 **[TODAY]**: `src/responsibleai/governance/` now has a real, tested
 component that takes "agent proposes action" as input and returns one
 of the five decisions above as output —
-`WhitePactRuntimeGateway.evaluate(action, authority)`
-(`tests/test_governance_core.py`, 18 tests). Concretely, today it checks
-only two things, both deterministic: (1) does the caller-supplied
-`AuthorityContext` grant this action's type at all, and (2) does the
+`WhitePactRuntimeGateway.evaluate(action, authority, policy=None)`
+(`tests/test_governance_core.py` + `test_governance_risk.py` +
+`test_governance_policy.py`, 49 tests across the package). Concretely,
+today it checks, in order: (1) does the caller-supplied
+`AuthorityContext` grant this action's type at all; (2) risk
+classification (`governance/risk.py`) — every action gets a real
+`RiskTier`, always recorded on the result; (3) an *optional*
+organization `Policy` (`governance/policy.py`) — if supplied and a rule
+matches, a `DENY`/`REQUIRE_APPROVAL` effect short-circuits, an `ALLOW`
+effect is recorded but doesn't skip the next step; (4) does the
 existing, tested `GuardrailsEngine` find PII (→
 `ALLOW_WITH_REDACTION`, reusing its own redaction) or
 toxicity/custom-pattern matches (→ `DENY`) in any string-valued
-argument. Everything else in the pipeline diagram above — a real Policy
-subsystem evaluating organization-authored rules, Risk classification
-routing action types to different scrutiny tiers, Trust Index signals
-actually feeding into the decision, and Evidence persistence — remains
-**[TARGET]**, tracked as their own later phases. This gateway is not
-wired into the MCP tool dispatch path yet either: `dispatch_tool()` in
-`mcp/tools.py` calls tool handlers directly, unchanged; nothing today
-routes an MCP tool call through `WhitePactRuntimeGateway` first. That
-wiring is real, separate, own-tested work, not implied by the gateway
-existing.
+argument. Genuinely still **[TARGET]**: Trust Index signals don't
+actually feed into any decision yet (an `AgentContext.trust_state` field
+exists but nothing populates or reads it automatically), and Evidence
+persistence doesn't exist (Phase 12). This gateway is also not wired
+into the MCP tool dispatch path yet: `dispatch_tool()` in `mcp/tools.py`
+calls tool handlers directly, unchanged; nothing today constructs an
+`ActionRequest` from an incoming MCP tool call and routes it through
+`WhitePactRuntimeGateway` first. That wiring is real, separate,
+own-tested work, not implied by the gateway existing.
 
 ---
 
@@ -209,19 +215,24 @@ storage" in practice, because there is no Evidence storage yet
 (Section 3.7) — the note in the field comment above describes the
 target end state, not a guarantee this phase enforces.
 
-### 3.5 Policy **[TARGET — new subsystem]**
+### 3.5 Policy **[TODAY, first version — Phase 10]**
 
-Machine-enforceable organizational rules governing actions. See Phase 10
-of the migration plan for the policy engine design (a small, strongly
-typed internal model first — not an LLM, not necessarily OPA/Rego on day
-one; see Section 6 below on deterministic vs. probabilistic controls).
-
-**[TODAY]**: `rai_policy_check` (an existing MCP tool) evaluates text or
-a response against a governance policy template (blocklists,
-disclaimers) — a real, narrow, working feature. It is not the
-general-purpose, reason-coded, threshold-aware policy engine described
-in Phase 10. There is no `src/responsibleai/policy/` package today (a
-directory search confirms this).
+Machine-enforceable organizational rules governing actions. The "small,
+strongly typed internal model first — not an LLM, not necessarily
+OPA/Rego on day one" this section originally called for (see Section 6
+below on deterministic vs. probabilistic controls) now exists:
+`Policy`/`PolicyRule` in `src/responsibleai/governance/policy.py`. A
+`Policy` is an ordered list of `PolicyRule`s, each matching on risk
+tier / action type / target and producing an `ALLOW`/`DENY`/
+`REQUIRE_APPROVAL` effect; evaluation is first-match-wins, deliberately
+with no priority/specificity scoring to explain. This is genuinely the
+first, smallest version — no OPA/Rego, no expression language, no rule
+persistence (an organization's `Policy` is constructed in code and
+handed to `WhitePactRuntimeGateway.evaluate()` per call; there is no
+`policies` database table, no API to author or store one, and no UI).
+`rai_policy_check` (a separate, existing MCP tool that evaluates text
+against blocklists/disclaimers) is unrelated and unchanged by this —
+still a real, narrow, working feature, still not this engine.
 
 ### 3.6 Decision **[TODAY — Phase 8, QUARANTINE excepted]**
 
@@ -296,19 +307,29 @@ they do not disappear, get renamed at the tool level, or lose their
 existing MCP-client-facing contract. They are reorganized conceptually
 into the risk-tiered execution model (Phase 9):
 
-| Tier | Existing tools (verified names) |
-|---|---|
-| Identity/health (near-zero cost, safe to run on every request) | `rai_health`, `rai_audit_summary`, `rai_org_status` |
-| Deterministic scan (fast, no LLM) | `rai_scan` (PII/harm detection), `rai_pii_report`, `rai_policy_check`, `rai_stream_scan` |
-| Trust/cost lookups (cached-friendly) | `rai_trust_score`, `rai_check_trust`, `rai_cost_estimate`, `rai_budget_check`, `rai_model_route` |
-| Compliance classification | `rai_compliance`, `rai_eu_ai_act_classify`, `rai_iso42001_gap` |
-| Deeper/probabilistic evaluation (reserved for HIGH/CRITICAL risk actions) | `rai_hallucination`, `rai_bias_evaluate`, `rai_drift_check`, `rai_redteam_payloads`, `rai_redteam_analyze`, `rai_compare_models`, `rai_benchmark`, `rai_benchmark_prompts` |
-| Record-keeping (writes — never mislabel as read-only) | `rai_incident_log`, `rai_passport_generate`, `rai_executive_summary`, `rai_webhook_status` |
+| Tier | Risk | Existing tools (verified names) |
+|---|---|---|
+| Identity/health (near-zero cost, safe to run on every request) | MINIMAL | `rai_health`, `rai_audit_summary`, `rai_org_status` |
+| Deterministic scan (fast, no LLM) | LOW | `rai_scan` (PII/harm detection), `rai_pii_report`, `rai_policy_check`, `rai_stream_scan` |
+| Trust/cost lookups (cached-friendly) | LOW | `rai_trust_score`, `rai_check_trust`, `rai_cost_estimate`, `rai_budget_check`, `rai_model_route` |
+| Compliance classification | MEDIUM | `rai_compliance`, `rai_eu_ai_act_classify`, `rai_iso42001_gap` |
+| Deeper/probabilistic evaluation | HIGH | `rai_hallucination`, `rai_bias_evaluate`, `rai_drift_check`, `rai_redteam_payloads`, `rai_redteam_analyze`, `rai_compare_models`, `rai_benchmark`, `rai_benchmark_prompts` |
+| Record-keeping (writes — never mislabel as read-only) | MEDIUM | `rai_incident_log`, `rai_passport_generate`, `rai_executive_summary`, `rai_webhook_status` |
 
-This table is a **proposed** tiering for Phase 9's risk router — it has
-not been implemented as executable routing logic yet. It's recorded here
-so the tiering decision is made once, deliberately, and reviewably,
-rather than invented ad hoc when Phase 9 starts.
+**[TODAY]**: this table is now executable, not just proposed —
+`governance/risk.py`'s `TOOL_RISK_TIERS` and `classify_action_risk()`
+implement it exactly (`tests/test_governance_risk.py` asserts the table
+stays in sync with the live `TOOL_DEFS` list, so it can't silently drift
+as tools are added). What "risk-tiered execution" doesn't yet mean:
+there's no automatic behavioral difference *between* the four tiers
+baked into the gateway itself — a `HIGH`-tier action isn't automatically
+held for approval or subjected to extra scrutiny by `risk.py` alone. The
+tier is a real, computed classification made available to a `Policy`
+(Section 3.5) to act on; whether it actually changes a decision depends
+entirely on whether an organization's `Policy` has a rule that reads it.
+No default policy ships that does this automatically — that would be an
+opinionated governance stance imposed on every deployment, not a neutral
+capability.
 
 ---
 
@@ -356,7 +377,10 @@ migration plan but intentionally left undesigned in this document until
 their own phase is reached, so this spec doesn't accumulate unreviewed
 speculative detail:
 
-- The exact policy rule language/schema (Phase 10).
+- A richer policy rule language beyond `PolicyRule`'s plain
+  risk-tier/action-type/target matching (Phase 10's first version now
+  exists — see Section 3.5 — but OPA/Rego or an expression language, if
+  ever needed, is still undesigned).
 - The approval-workflow state machine's persistence schema (Phase 11).
 - The MCP Trust/Supply-Chain Scanner's scoring methodology (Phase 13) —
   this explicitly must distinguish VERIFIED FACT / INFERRED SIGNAL /
