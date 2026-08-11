@@ -25,6 +25,16 @@ Three transports:
    clients here. Run with: `responsibleai-mcp-http` (reads RAI_MCP_HTTP_*
    env vars).
 
+   The Bearer credential is either a static API key (`rai_...`, issued via
+   `OrgRepository.create_key`) or, when this deployment has SSO configured
+   (`Settings.oidc_issuer` — the exact same config the dashboard API's
+   `/api/auth/login/oidc` already uses), an OIDC-issued JWT. This makes the
+   hosted MCP server an OAuth/OIDC *resource server*: it validates tokens
+   issued by the org's existing Authorization Server rather than running
+   its own. When OIDC is configured, `/.well-known/oauth-protected-resource`
+   (RFC 9728) advertises it, and a `401` includes a `WWW-Authenticate:
+   Bearer resource_metadata="..."` header pointing there.
+
 3. **HTTP+SSE** (hosted, billed, legacy) — the original MCP HTTP transport
    (spec 2024-11-05): separate `/sse` + `/messages/` endpoints. Same auth and
    plan-gating as Streamable HTTP. Kept running, unmodified, for existing
@@ -310,13 +320,33 @@ def _build_http_app() -> Any:
     from starlette.routing import Mount, Route
     from starlette.types import Receive, Scope, Send
 
+    from responsibleai.auth.oidc import OIDCProvider
     from responsibleai.dashboard.config import get_settings
     from responsibleai.db import McpUsageRepository, OrgRepository, create_engine
+    from responsibleai.rbac.models import Plan, Role
+    from responsibleai.rbac.permissions import role_from_str
 
     settings = get_settings()
     _db_engine = create_engine(settings.effective_db_url)
     _org_repo = OrgRepository(_db_engine)
     _usage_repo = McpUsageRepository(_db_engine)
+    # Reuses the exact same RAI_OIDC_* / Settings.oidc_* config the
+    # dashboard API's SSO login already reads (dashboard/app.py's own
+    # `_oidc_provider` construction) — a Bearer JWT obtained via the
+    # existing `/api/auth/login/oidc` flow authenticates here too, making
+    # the hosted MCP server an OAuth/OIDC *resource server* against
+    # whichever Authorization Server the org's SSO already trusts, rather
+    # than a second, MCP-specific OIDC config to keep in sync.
+    _oidc_provider = (
+        OIDCProvider(
+            issuer=settings.oidc_issuer,
+            client_id=settings.oidc_client_id,
+            jwks_uri=settings.oidc_jwks_uri,
+            skip_verification=settings.oidc_skip_verification,
+        )
+        if settings.oidc_issuer
+        else None
+    )
     transport_security = _build_transport_security()
     sse = SseServerTransport("/messages/", security_settings=transport_security)
     # stateless=True: each POST to /mcp is authenticated and dispatched
@@ -339,6 +369,37 @@ def _build_http_app() -> Any:
     def _client_key(request: Request) -> str:
         return request.client.host if request.client else "unknown"
 
+    async def _resolve_oidc_context(token: str) -> OrgContext | None:
+        """Validate an OIDC-issued Bearer JWT and map its claims to an
+        OrgContext — same logic as dashboard/app.py's `_resolve_oidc_context`.
+        Static API keys are prefixed `rai_` (see `_generate_raw_key` in
+        org_repository.py); anything else is attempted as a JWT when an
+        OIDC provider is configured, so a JWT and a static key are never
+        ambiguous."""
+        if _oidc_provider is None or token.startswith("rai_"):
+            return None
+        try:
+            claims = await _oidc_provider.validate_token(token)
+        except ValueError:
+            return None
+
+        org = await _org_repo.get_org(claims.org_id) if claims.org_id else None
+        role = Role.VIEWER
+        for raw_role in claims.roles:
+            candidate = role_from_str(raw_role)
+            if candidate.value == raw_role.upper():
+                role = candidate
+                break
+
+        return OrgContext(
+            key_id=f"oidc:{claims.sub}",
+            role=role,
+            org_id=claims.org_id,
+            org_name=org.name if org else None,
+            is_legacy=False,
+            plan=org.plan if org else Plan.FREE,
+        )
+
     async def _authenticate(request: Request) -> OrgContext | None:
         auth_header = request.headers.get("authorization", "")
         if not auth_header.lower().startswith("bearer "):
@@ -346,7 +407,13 @@ def _build_http_app() -> Any:
         raw_key = auth_header[7:].strip()
         if not raw_key:
             return None
+        oidc_ctx = await _resolve_oidc_context(raw_key)
+        if oidc_ctx is not None:
+            return oidc_ctx
         return await _org_repo.authenticate(raw_key)
+
+    def _protected_resource_metadata_url(request: Request) -> str:
+        return str(request.url.replace(path="/.well-known/oauth-protected-resource", query=""))
 
     async def _authenticate_or_error(request: Request) -> tuple[OrgContext | None, JSONResponse | None]:
         """Bearer auth gated by `auth_limiter`: blocks a client IP that's
@@ -366,9 +433,21 @@ def _build_http_app() -> Any:
         ctx = await _authenticate(request)
         if ctx is None:
             await auth_limiter.record_failure(client_key)
+            headers = {}
+            if _oidc_provider is not None:
+                # RFC 9728 / MCP Authorization spec: point an OAuth-aware
+                # client at where to discover the Authorization Server,
+                # instead of leaving it to guess. Only advertised when an
+                # OIDC provider is actually configured — advertising it
+                # unconditionally would tell every client "use OAuth" even
+                # for deployments that only support static API keys.
+                headers["WWW-Authenticate"] = (
+                    f'Bearer resource_metadata="{_protected_resource_metadata_url(request)}"'
+                )
             return None, JSONResponse(
                 {"error": "unauthorized", "message": "Provide a valid Bearer API key."},
                 status_code=401,
+                headers=headers,
             )
         return ctx, None
 
@@ -429,12 +508,26 @@ def _build_http_app() -> Any:
             "tools": len(TOOL_DEFS),
         })
 
+    async def protected_resource_metadata(request: Request) -> JSONResponse:
+        """RFC 9728 Protected Resource Metadata. 404 when no OIDC provider
+        is configured — this deployment then only supports static API
+        keys, and there's no Authorization Server to point a client at."""
+        if _oidc_provider is None:
+            return JSONResponse({"error": "not_found"}, status_code=404)
+        resource_url = str(request.url.replace(path="/mcp", query=""))
+        return JSONResponse({
+            "resource": resource_url,
+            "authorization_servers": [settings.oidc_issuer],
+            "bearer_methods_supported": ["header"],
+        })
+
     app = Starlette(
         routes=[
             Route("/health", endpoint=health),
             Route("/mcp", endpoint=handle_streamable_http),
             Route("/sse", endpoint=handle_sse),
             Mount("/messages/", app=sse.handle_post_message),
+            Route("/.well-known/oauth-protected-resource", endpoint=protected_resource_metadata),
         ],
         lifespan=_lifespan,
     )

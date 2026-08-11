@@ -276,11 +276,11 @@ change, only the plan-gating unit tests in
 `tests/test_mcp_server_gating.py` that call `_call_tool` directly.
 
 **Not in scope for this section** (tracked separately, per the "no
-refactor beyond what's required" rule): OAuth/OIDC-based authorization
-for MCP (currently static Bearer API keys), and structured tool-output
-contracts (`structuredContent`, output schemas) — both are later phases
-of the WhitePact Enterprise Foundation v2 program, not required to add
-a second transport alongside the first.
+refactor beyond what's required" rule): structured tool-output contracts
+(`structuredContent`, output schemas) — a later phase of the WhitePact
+Enterprise Foundation v2 program, not required to add a second transport
+alongside the first. OAuth/OIDC-based authorization, originally deferred
+here too, is now covered by Section 7.2 below.
 
 ### 7.1 Transport security hardening
 
@@ -337,6 +337,61 @@ mismatched `Host` header gets `421` once an allowlist is configured, a
 matching host passes through to the existing auth check, and repeated
 auth failures against either transport produce `429`s that share one
 budget.
+
+### 7.2 MCP authorization / OAuth modernization
+
+Before this addendum, both hosted transports accepted exactly one
+credential kind: a static, opaque API key (`rai_...`, `OrgRepository`-
+issued, revocable but never expiring on its own). That's a real gap
+against the MCP Authorization spec's expectation that a server can act
+as an OAuth 2.1 resource server.
+
+**What this does *not* do**: stand up a new OAuth Authorization Server
+(client dynamic registration, `/authorize` + `/token` endpoints, consent
+screens, refresh-token issuance). Building one from scratch, for a
+product whose dashboard API already has a working SSO integration
+point, would be reinventing infrastructure that already exists in this
+codebase — and per the standing rule against unnecessary new
+dependencies/features, there's no requirement here that calls for it.
+
+**What this does**: makes the hosted MCP server an OAuth/OIDC
+**resource server** against whichever Authorization Server an org's SSO
+already trusts.
+
+- Reuses `Settings.oidc_issuer` / `oidc_client_id` / `oidc_jwks_uri` /
+  `oidc_skip_verification` — the exact same config
+  `dashboard/app.py`'s `_oidc_provider` already reads for
+  `/api/auth/login/oidc`. No new MCP-specific OIDC env vars: one IdP
+  configuration serves both the dashboard API and the MCP server.
+- `_resolve_oidc_context()` in `mcp/server.py` mirrors
+  `dashboard/app.py`'s `_resolve_oidc_context()` claims-to-`OrgContext`
+  mapping line for line, so a JWT behaves identically against both
+  surfaces.
+- Credential resolution order (both transports): `rai_`-prefixed →
+  always a static key, DB lookup. Anything else → tried as an OIDC JWT
+  first when a provider is configured, DB lookup otherwise. The `rai_`
+  prefix (`_generate_raw_key()`, `org_repository.py`) makes the two
+  credential kinds structurally unambiguous, never guessed.
+- **RFC 9728** Protected Resource Metadata is served at
+  `/.well-known/oauth-protected-resource` — `{"resource": ".../mcp",
+  "authorization_servers": [oidc_issuer], ...}` — when OIDC is
+  configured, `404` otherwise (there's no Authorization Server to point
+  a client at). A `401` response also carries `WWW-Authenticate: Bearer
+  resource_metadata="..."` pointing at that same document, per the spec,
+  again only when OIDC is actually configured — an unconditional hint
+  would tell every client "this deployment supports OAuth" even for
+  ones that only ever will support static keys.
+- A JWT with an `org_id` claim the DB doesn't recognize still
+  authenticates (the JWT's signature/issuer is the trust boundary, not
+  DB membership) but resolves to `Plan.FREE` — the existing plan-gating
+  in `_call_tool` then applies normally, same as any other FREE-plan
+  context.
+
+**Tests**: `tests/test_mcp_oauth.py` — JWT auth succeeding on both
+`/mcp` and `/sse`, static keys still working when OIDC is configured,
+malformed/JWT-shaped-but-no-provider tokens rejected, the unknown-org-id
+FREE-plan fallback, the `WWW-Authenticate` hint appearing only when
+configured, and the metadata endpoint's `200`/`404` split.
 
 ---
 
