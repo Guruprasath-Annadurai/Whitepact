@@ -135,10 +135,10 @@ responsibleai-mcp = "responsibleai.mcp.server:main"
 responsibleai-mcp-http = "responsibleai.mcp.server:main_http"
 
 [project.urls]
-Homepage   = "https://github.com/Guruprasath-Annadurai/ResponsibleAi"
-Repository = "https://github.com/Guruprasath-Annadurai/ResponsibleAi"
-Issues     = "https://github.com/Guruprasath-Annadurai/ResponsibleAi/issues"
-Changelog  = "https://github.com/Guruprasath-Annadurai/ResponsibleAi/blob/main/CHANGELOG.md"
+Homepage   = "https://github.com/Guruprasath-Annadurai/Whitepact"
+Repository = "https://github.com/Guruprasath-Annadurai/Whitepact"
+Issues     = "https://github.com/Guruprasath-Annadurai/Whitepact/issues"
+Changelog  = "https://github.com/Guruprasath-Annadurai/Whitepact/blob/main/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/biasbuster", "src/privacylabel", "src/responsibleai"]
