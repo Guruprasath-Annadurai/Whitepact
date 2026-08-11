@@ -362,6 +362,52 @@ No default policy ships that does this automatically — that would be an
 opinionated governance stance imposed on every deployment, not a neutral
 capability.
 
+### 4.1 MCP Trust/Supply-Chain Scanner **[TODAY, first version — Phase 13]**
+
+Before this section's work: no code anywhere evaluated the
+trustworthiness of a *third-party* MCP server before an organization
+grants an agent authority to use it — a real gap distinct from
+everything else in this document, which governs actions against
+*this* server's own tools, not decides whether to trust *someone
+else's*.
+
+**[TODAY]**: `src/responsibleai/supplychain/` — `SupplyChainScanner`
+takes a caller-supplied `McpServerManifest` (server name, publisher,
+tool name/description list) and returns a `SupplyChainReport`: a list
+of `Finding`s, each classified `VERIFIED_FACT` / `INFERRED_SIGNAL` /
+`UNKNOWN` — never collapsed into a single opaque score, per this
+section's one hard requirement. Three checks, each honestly scoped to
+what it can actually claim:
+
+1. **Confusable-character check** (`VERIFIED_FACT` either way) — a
+   bounded Cyrillic/Greek lookalike-character lookup table against
+   server and tool names (the classic typosquat trick). Presence or
+   absence is a verifiable fact about the string itself. Deliberately
+   *not* a full Unicode TR39 confusables implementation — that's real,
+   separate, larger work; this is a stated, bounded subset.
+2. **Tool description content scan** (always `INFERRED_SIGNAL`) —
+   reuses the existing, tested `GuardrailsEngine` against every tool
+   description, looking for injected-instruction/PII/toxicity patterns.
+   A match is a signal worth a human look; a clean scan is not proof of
+   safety, only that this heuristic found nothing.
+3. **Known public incident cross-reference** (`VERIFIED_FACT` if found,
+   `UNKNOWN` if not — optional, needs a `PublicIncidentRepository`) —
+   reuses the existing AI Incident Database's `check()` method. Filed
+   incidents are a real fact; their absence is explicitly *not* treated
+   as evidence of safety, since a new or low-visibility server may
+   simply not have been scrutinized yet.
+
+This scanner never connects to a remote MCP server itself — it
+analyzes whatever manifest a caller already has (from a real
+`tools/list` response, a registry listing, etc.). Actually speaking
+the MCP protocol to an arbitrary third-party server is real, separate
+transport-layer work with its own security questions (SSRF risk in
+fetching an arbitrary server-supplied URL, for one), not implied by
+this scanner's existence. Exposed via `POST
+/api/governance/supplychain/scan` (not org-scoped: the checks are
+either pure or query the public, org-agnostic incident database, so
+there's no per-org data to isolate).
+
 ---
 
 ## 5. Multi-tenancy and organization boundary **[TODAY]**
@@ -417,9 +463,12 @@ speculative detail:
   see Section 3.6's `REQUIRE_APPROVAL` row — but expiry/timeout,
   multi-approver quorum, and delegation-chain approval are still
   undesigned).
-- The MCP Trust/Supply-Chain Scanner's scoring methodology (Phase 13) —
-  this explicitly must distinguish VERIFIED FACT / INFERRED SIGNAL /
-  UNKNOWN per input, not produce a single opaque score.
+- A richer MCP Trust/Supply-Chain Scanner than the three checks in
+  Section 4.1 (Phase 13's first version now exists — confusable
+  characters, tool description content scan, known-incident
+  cross-reference — but a full Unicode TR39 confusables implementation,
+  publisher/domain identity verification, and actually connecting to a
+  remote MCP server to fetch its manifest are all still undesigned).
 - OAuth/OIDC scope names for remote MCP authorization (Phase 6) — to be
   designed against the actual current MCP specification, not guessed
   here.

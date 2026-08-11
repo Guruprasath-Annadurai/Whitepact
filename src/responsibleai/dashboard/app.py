@@ -111,6 +111,7 @@ from responsibleai.rbac import (
     role_from_str,
 )
 from responsibleai.redteam.simulator import RedTeamSimulator
+from responsibleai.supplychain import McpServerManifest, McpToolDescriptor, SupplyChainScanner
 from responsibleai.trust.badge import render_badge_svg
 from responsibleai.trust.passport import PassportGenerator
 from responsibleai.trust.score import TrustScoreEngine
@@ -183,6 +184,7 @@ _approval_repo: ApprovalRepository | None = None
 _db_engine: DatabaseEngine | None = None
 _ws_manager: ConnectionManager = ConnectionManager()
 _webhook_manager: WebhookManager = WebhookManager()
+_supplychain_scanner: SupplyChainScanner = SupplyChainScanner()
 _eval_repo: EvalRepository | None = None
 _comparator: ModelComparator | None = None
 _benchmark_runner: BenchmarkRunner | None = None
@@ -719,6 +721,22 @@ class IncidentStatusUpdateRequest(BaseModel):
 class ApprovalResolveRequest(BaseModel):
     outcome: str = Field(..., pattern="^(APPROVED|DENIED)$")
     notes: str | None = Field(default=None, max_length=2000)
+
+
+class SupplyChainToolRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    description: str = Field(default="", max_length=5000)
+
+
+class SupplyChainScanRequest(BaseModel):
+    server_name: str = Field(..., min_length=1, max_length=200)
+    publisher: str | None = Field(default=None, max_length=200)
+    tools: list[SupplyChainToolRequest] = Field(default_factory=list, max_length=200)
+    check_known_incidents: bool = Field(
+        default=True,
+        description="Cross-reference the public AI Incident Database. "
+        "Set false to run only the offline checks (no DB query).",
+    )
 
 
 class WebhookCreateRequest(BaseModel):
@@ -2319,6 +2337,29 @@ async def governance_resolve_approval(
         outcome=req.outcome, resolved_by=_auth.key_id, org_id=_auth.org_id,
     )
     return resolved.to_dict()
+
+
+@app.post("/api/governance/supplychain/scan", tags=["governance"])
+@limiter.limit("30/minute")
+async def governance_supplychain_scan(
+    request: Request,
+    req: SupplyChainScanRequest,
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
+) -> dict[str, Any]:
+    """MCP Trust/Supply-Chain Scanner (SPEC.md Section 7, Phase 13) --
+    evaluates a caller-supplied MCP server manifest (this endpoint never
+    connects to a remote MCP server itself; see supplychain/scanner.py's
+    module docstring for why). Not org-scoped: the checks it runs are
+    either pure (content/name analysis) or query the public, org-agnostic
+    AI Incident Database, so there's no per-org data to isolate here."""
+    manifest = McpServerManifest(
+        name=req.server_name,
+        publisher=req.publisher,
+        tools=[McpToolDescriptor(name=t.name, description=t.description) for t in req.tools],
+    )
+    incident_repo = _public_incident_repo if req.check_known_incidents else None
+    report = await _supplychain_scanner.scan(manifest, incident_repo=incident_repo)
+    return report.to_dict()
 
 
 # ── WebSocket live dashboard ───────────────────────────────────────────────────

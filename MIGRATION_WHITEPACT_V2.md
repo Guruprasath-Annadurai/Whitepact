@@ -655,6 +655,50 @@ double-resolve returning `409`). 85 tests total across
 `test_governance_policy.py` + `test_governance_persistence.py` +
 `test_governance_api.py`.
 
+### 8.5 MCP Trust/Supply-Chain Scanner (Phase 13)
+
+**Current** (before this section's work): nothing in this codebase
+evaluated the trustworthiness of a *third-party* MCP server before an
+org grants an agent authority to use it — a real gap distinct from the
+rest of the governance core, which governs actions against *this*
+server's own tools.
+
+**Target** (implemented): `src/responsibleai/supplychain/` —
+`SupplyChainScanner.scan(manifest, incident_repo=...)` returns a
+`SupplyChainReport`: a list of per-check `Finding`s, each a
+`VERIFIED_FACT` / `INFERRED_SIGNAL` / `UNKNOWN` verdict — SPEC.md
+Section 4.1's one hard requirement, never a single opaque score.
+
+- **Confusable-character check** — `VERIFIED_FACT` either way, a
+  bounded Cyrillic/Greek lookalike lookup table (not full Unicode TR39
+  confusables — a stated, bounded subset) against server and tool
+  names, the classic typosquat trick.
+- **Tool description content scan** — always `INFERRED_SIGNAL`, reuses
+  the existing, tested `GuardrailsEngine` rather than inventing new
+  pattern-matching for this.
+- **Known public incident cross-reference** — `VERIFIED_FACT` if the
+  existing AI Incident Database's `check()` returns filed reports,
+  `UNKNOWN` (not "safe") if it returns none — optional, only runs if a
+  `PublicIncidentRepository` is supplied.
+- Exposed via `POST /api/governance/supplychain/scan` (`ANALYST`+, not
+  org-scoped — the checks are either pure or query the public,
+  org-agnostic incident database).
+- **Deliberately does not connect to a remote MCP server itself** — it
+  analyzes a caller-supplied manifest. Actually speaking the MCP
+  protocol to an arbitrary third-party server (handshake, `tools/list`,
+  following redirects) is real, separate transport-layer work with its
+  own security questions (SSRF risk in fetching an arbitrary
+  server-supplied URL from the backend, for one) — out of scope here,
+  not implied by this scanner's existence.
+
+**Tests**: `tests/test_supplychain_scanner.py` (13 tests — each check's
+verdict logic, including that the description scan can never claim
+`VERIFIED_FACT` in either direction) and a new `TestSupplyChainScanEndpoint`
+class in `tests/test_governance_api.py` (5 tests — auth required, the
+findings list shape with no score/rating field present, the incident
+check's default-on behavior, confusable-name detection, request
+validation).
+
 ---
 
 ## 9. Deployment migration
@@ -773,14 +817,15 @@ Per the standing rule against fabricating implementation status:
 ## 12. What this document does not cover
 
 Docker/Helm/CLI/package/env-var/MCP-identity/transport migration, plus
-now the runtime governance core through all five of its phases so
+now the runtime governance core through all six of its phases so
 far — the gateway itself (Section 8), risk-tiered routing
 (Section 8.1), a first policy engine (Section 8.2), evidence
-persistence (Section 8.3), and a first approval workflow
-(Section 8.4) — MCP OAuth/OIDC authorization (Section 7.2), structured
-tool-output contracts (Section 7.3), and HA deployment defaults for the
-hosted MCP transport (Section 9.1). What remains genuinely out of scope
-here: **`QUARANTINE`** actually being produced by anything (needs
+persistence (Section 8.3), a first approval workflow (Section 8.4),
+and the MCP Trust/Supply-Chain Scanner (Section 8.5) — MCP OAuth/OIDC
+authorization (Section 7.2), structured tool-output contracts
+(Section 7.3), and HA deployment defaults for the hosted MCP transport
+(Section 9.1). What remains genuinely out of scope here:
+**`QUARANTINE`** actually being produced by anything (needs
 cross-request pattern tracking not built here), a **richer policy rule
 language** than plain risk-tier/action-type/target matching (OPA/Rego
 or similar, if ever needed), a **richer approval lifecycle** than
@@ -793,9 +838,13 @@ gateway/evidence/approval layers into the live MCP tool-dispatch path**
 through any of them yet), **true multi-region HA** (Section 9.1 is
 within-region only — no cross-region replication, no global load
 balancer, that's infrastructure the deployer builds, see
-`DEPLOY_RUNBOOK.md`), and **`/metrics` on the MCP transport** (it has
+`DEPLOY_RUNBOOK.md`), **`/metrics` on the MCP transport** (it has
 none today, so `mcp.podAnnotations` defaults to no Prometheus scrape
-config rather than a wrong one). These are tracked separately and are
+config rather than a wrong one), and **the supply-chain scanner
+actually connecting to a remote MCP server** (it analyzes a
+caller-supplied manifest only — full Unicode TR39 confusables
+detection and publisher/domain identity verification are also
+undesigned). These are tracked separately and are
 not blocked on this document — they can proceed against the current
 `responsibleai` code paths and be renamed in step with whichever phase
 above actually executes the package migration.

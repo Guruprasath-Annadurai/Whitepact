@@ -244,3 +244,62 @@ class TestApprovalEndpoints:
             headers={"Authorization": f"Bearer {admin_key}"},
         )
         assert r.status_code == 422
+
+
+class TestSupplyChainScanEndpoint:
+    async def test_scan_requires_auth(self, client: AsyncClient) -> None:
+        r = await client.post(
+            "/api/governance/supplychain/scan", json={"server_name": "acme-tools"},
+        )
+        assert r.status_code == 401
+
+    async def test_clean_manifest_returns_findings_list(self, client: AsyncClient, org_and_analyst_key) -> None:
+        _org_id, key = org_and_analyst_key
+        r = await client.post(
+            "/api/governance/supplychain/scan",
+            json={
+                "server_name": "acme-tools",
+                "publisher": "Acme Inc",
+                "tools": [{"name": "search_web", "description": "Search the web."}],
+                "check_known_incidents": False,
+            },
+            headers={"Authorization": f"Bearer {key}"},
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["server_name"] == "acme-tools"
+        assert isinstance(body["findings"], list)
+        assert not any(k in body for k in ("score", "trust_score", "rating"))
+        checks = {f["check"] for f in body["findings"]}
+        assert checks == {"confusable_characters", "tool_description_scan"}
+
+    async def test_incident_check_included_by_default(self, client: AsyncClient, org_and_analyst_key) -> None:
+        _org_id, key = org_and_analyst_key
+        r = await client.post(
+            "/api/governance/supplychain/scan",
+            json={"server_name": "acme-tools"},
+            headers={"Authorization": f"Bearer {key}"},
+        )
+        assert r.status_code == 200
+        checks = {f["check"] for f in r.json()["findings"]}
+        assert "known_incidents" in checks
+
+    async def test_confusable_server_name_flagged(self, client: AsyncClient, org_and_analyst_key) -> None:
+        _org_id, key = org_and_analyst_key
+        r = await client.post(
+            "/api/governance/supplychain/scan",
+            json={"server_name": "rаi_tools", "check_known_incidents": False},  # Cyrillic а
+            headers={"Authorization": f"Bearer {key}"},
+        )
+        finding = next(f for f in r.json()["findings"] if f["check"] == "confusable_characters")
+        assert finding["verdict"] == "VERIFIED_FACT"
+        assert "server_name" in finding["detail"]["matches"]
+
+    async def test_empty_server_name_rejected_by_validation(self, client: AsyncClient, org_and_analyst_key) -> None:
+        _org_id, key = org_and_analyst_key
+        r = await client.post(
+            "/api/governance/supplychain/scan",
+            json={"server_name": ""},
+            headers={"Authorization": f"Bearer {key}"},
+        )
+        assert r.status_code == 422
