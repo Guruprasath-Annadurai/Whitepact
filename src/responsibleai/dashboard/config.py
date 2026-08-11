@@ -2,21 +2,69 @@
 
 from __future__ import annotations
 
+import os
+import warnings
 from pathlib import Path
 from typing import Annotated, Any
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    NoDecode,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
+from pydantic_settings.sources import EnvSettingsSource
+
+# See MIGRATION_WHITEPACT_V2.md Section 5. WHITEPACT_ is the preferred
+# prefix; RAI_ is the legacy prefix, kept fully functional for backward
+# compatibility. Neither is hardcoded elsewhere -- both are derived from
+# these two constants so the precedence rule stays in one place.
+WHITEPACT_ENV_PREFIX = "WHITEPACT_"
+LEGACY_ENV_PREFIX = "RAI_"
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_prefix="RAI_",
+        env_prefix=LEGACY_ENV_PREFIX,
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
     )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Give WHITEPACT_-prefixed env vars priority over RAI_-prefixed
+        ones, per MIGRATION_WHITEPACT_V2.md Section 5's precedence rule:
+        if both WHITEPACT_FOO and RAI_FOO are set, WHITEPACT_FOO wins.
+
+        pydantic-settings resolves fields using the *first* source in this
+        tuple that provides a value, falling through to later sources for
+        anything the earlier ones don't set -- so prepending a
+        WHITEPACT_-prefixed source ahead of the existing RAI_-prefixed
+        `env_settings` gives exactly that precedence without touching how
+        any individual field is declared.
+        """
+        whitepact_env_settings = EnvSettingsSource(
+            settings_cls,
+            case_sensitive=False,
+            env_prefix=WHITEPACT_ENV_PREFIX,
+        )
+        return (
+            init_settings,
+            whitepact_env_settings,
+            env_settings,
+            dotenv_settings,
+            file_secret_settings,
+        )
 
     # Database
     db_path: str = Field(
@@ -356,9 +404,50 @@ def multi_replica_problems(db_backend: str, rate_limit_backend: str) -> list[str
 _settings: Settings | None = None
 
 
+def warn_deprecated_env_vars(environ: dict[str, str] | None = None) -> list[str]:
+    """Warn once per legacy RAI_ variable that's actually in effect (its
+    WHITEPACT_ counterpart is absent, so RAI_ is the value being used, not
+    silently overridden). Returns the list of legacy variable names found,
+    mainly so tests can assert on it without parsing warning output.
+
+    Scoped to `Settings`'s real field names rather than a blind scan for
+    any RAI_-prefixed key in the environment — an unrelated variable that
+    happens to start with RAI_ but doesn't map to an actual setting
+    (typo, or something else entirely) isn't "a legacy variable being
+    used to satisfy a setting," so it shouldn't warn as one.
+
+    Uses `warnings.warn` rather than the structlog-based app logger
+    deliberately: config.py has no dependency today on
+    `dashboard.logging_config`, and this must run correctly during
+    `get_settings()`'s very first call, which can happen before
+    `configure_logging()` has run. `warnings.warn`'s default handler
+    writes to stderr -- satisfying MIGRATION_WHITEPACT_V2.md Section 4's
+    "never stdout" requirement (stdout is the MCP stdio transport in the
+    `whitepact-mcp` process) -- without depending on logging setup order.
+    """
+    env = environ if environ is not None else os.environ
+    env_upper = {k.upper() for k in env}
+    found: list[str] = []
+    for field_name in Settings.model_fields:
+        suffix = field_name.upper()
+        legacy_key = LEGACY_ENV_PREFIX + suffix
+        whitepact_key = WHITEPACT_ENV_PREFIX + suffix
+        if legacy_key in env_upper and whitepact_key not in env_upper:
+            found.append(legacy_key)
+            warnings.warn(
+                f"{legacy_key} is a deprecated environment variable name. "
+                f"Use {whitepact_key} instead — see MIGRATION_WHITEPACT_V2.md. "
+                f"{legacy_key} will keep working for the full v2.x series.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+    return found
+
+
 def get_settings() -> Settings:
     global _settings
     if _settings is None:
+        warn_deprecated_env_vars()
         _settings = Settings()
         _ensure_db_dir(_settings)
     return _settings
