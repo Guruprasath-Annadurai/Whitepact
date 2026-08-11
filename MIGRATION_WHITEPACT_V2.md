@@ -393,6 +393,54 @@ malformed/JWT-shaped-but-no-provider tokens rejected, the unknown-org-id
 FREE-plan fallback, the `WWW-Authenticate` hint appearing only when
 configured, and the metadata endpoint's `200`/`404` split.
 
+### 7.3 Structured tool-output contracts
+
+Spec 2025-06-18 added `structuredContent` to `CallToolResult`: a tool's
+result as a real JSON object a client can consume directly, instead of
+every client parsing the legacy `content[0].text` JSON-string blob.
+Every one of the 27 tools' handlers in `mcp/tools.py` already returns
+`dict[str, Any]` (`dispatch_tool`'s own return type) — the gap was
+purely in `mcp/server.py`'s `_call_tool`, which discarded that structure
+and serialized straight to `TextContent`.
+
+**What changed**: `_call_tool` now returns `(content, structuredContent)`
+tuples via a small `_text_and_structured()` helper — a shape the pinned
+MCP SDK's `@server.call_tool()` decorator already recognizes natively
+(`CombinationContent` in its own type signature) and turns into a
+`CallToolResult` with **both** fields populated. The legacy
+`content[0].text` blob is unchanged byte-for-byte (same
+`json.dumps(result, indent=2, default=str)` call as before, just moved
+into the helper) — pre-2025-06-18 clients that only ever read `content`
+keep working exactly as before.
+
+**What deliberately did *not* change**: `TOOL_DEFS`' `outputSchema`
+field is left unset for all 27 tools. Per-tool output schemas would
+need to be derived accurately from each handler's actual return shape
+in `mcp/tools.py` (27 handlers, several with conditional/optional
+fields) — writing them by hand without that derivation risks exactly
+the kind of fabricated-but-wrong implementation detail the standing
+rules prohibit, and the SDK enforces `outputSchema` strictly (a
+declared-but-inaccurate schema would make previously-working calls fail
+jsonschema validation). `structuredContent` is valid and useful without
+a declared `outputSchema` — clients can still consume it, they just
+don't get server-side schema validation on it yet. Adding accurate
+schemas is real, separate, enumerable work, not implied by this change.
+
+**Breaking change, internal-only**: `_call_tool`'s own return type
+changed from `list[TextContent | ...]` to
+`tuple[list[TextContent], dict[str, Any]]`. This function is not part
+of the public MCP protocol surface (the protocol-level `tools/call`
+response shape is unaffected — the SDK's decorator normalizes either
+return shape into the same wire format) but it *is* called directly by
+`tests/test_mcp_server_gating.py`, which was updated: `result[0].text`
+(parse the JSON string) became `result[1]` (already the dict).
+
+**Tests**: `test_mcp_http_transport.py`'s `test_call_tool_over_streamable_http`
+now asserts `result.structuredContent is not None` and that it matches
+`content[0].text`'s parsed JSON, over the real wire protocol. New
+`TestStructuredToolOutput` in `test_mcp_server.py` covers the
+`_text_and_structured` helper and `_call_tool`'s tuple shape directly.
+
 ---
 
 ## 8. Deployment migration

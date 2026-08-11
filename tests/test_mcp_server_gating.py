@@ -6,8 +6,6 @@ what the HTTP/SSE transport's `handle_sse` does per-request.
 
 from __future__ import annotations
 
-import json
-
 import pytest
 
 from responsibleai.db.engine import create_engine
@@ -45,7 +43,7 @@ class TestStdioUnrestricted:
     async def test_no_context_allows_any_tool(self):
         """Self-hosted stdio has no org context — every tool is callable."""
         result = await mcp_server._call_tool("rai_health", {})
-        payload = json.loads(result[0].text)
+        payload = result[1]
         assert "error" not in payload
 
     async def test_no_context_allows_enterprise_tool(self):
@@ -53,7 +51,7 @@ class TestStdioUnrestricted:
             "model_name": "gpt-4o", "provider": "openai",
             "trust_dimensions": {"fairness": 0.8},
         })
-        payload = json.loads(result[0].text)
+        payload = result[1]
         assert "error" not in payload
 
 
@@ -65,7 +63,7 @@ class TestTierGating:
             result = await mcp_server._call_tool("rai_bias_evaluate", {})
         finally:
             _reset_context(tokens)
-        payload = json.loads(result[0].text)
+        payload = result[1]
         assert payload["error"] == "upgrade_required"
 
     async def test_free_plan_has_no_hosted_access_even_for_free_tools(self, usage_repo):
@@ -77,7 +75,7 @@ class TestTierGating:
             result = await mcp_server._call_tool("rai_health", {})
         finally:
             _reset_context(tokens)
-        payload = json.loads(result[0].text)
+        payload = result[1]
         assert payload["error"] == "hosted_access_unavailable"
 
     async def test_pro_plan_allowed_free_tool(self, usage_repo):
@@ -87,7 +85,7 @@ class TestTierGating:
             result = await mcp_server._call_tool("rai_health", {})
         finally:
             _reset_context(tokens)
-        payload = json.loads(result[0].text)
+        payload = result[1]
         assert "error" not in payload
 
     async def test_pro_plan_blocked_from_enterprise_tool(self, usage_repo):
@@ -97,7 +95,7 @@ class TestTierGating:
             result = await mcp_server._call_tool("rai_executive_summary", {})
         finally:
             _reset_context(tokens)
-        payload = json.loads(result[0].text)
+        payload = result[1]
         assert payload["error"] == "upgrade_required"
 
     async def test_enterprise_plan_allowed_all_tiers(self, usage_repo):
@@ -110,7 +108,7 @@ class TestTierGating:
             })
         finally:
             _reset_context(tokens)
-        payload = json.loads(result[0].text)
+        payload = result[1]
         assert "error" not in payload
 
     async def test_blocked_call_is_metered(self, usage_repo):
@@ -145,7 +143,7 @@ class TestQuotaEnforcement:
             result = await mcp_server._call_tool("rai_health", {})
         finally:
             _reset_context(tokens)
-        payload = json.loads(result[0].text)
+        payload = result[1]
         assert payload["error"] == "quota_exceeded"
 
     async def test_enterprise_plan_unlimited_quota(self, usage_repo, monkeypatch):
@@ -157,7 +155,7 @@ class TestQuotaEnforcement:
                 result = await mcp_server._call_tool("rai_health", {})
         finally:
             _reset_context(tokens)
-        payload = json.loads(result[0].text)
+        payload = result[1]
         assert "error" not in payload
 
     async def test_quota_exceeded_call_is_metered_as_blocked(self, usage_repo, monkeypatch):
@@ -181,7 +179,7 @@ class TestQuotaEnforcement:
             result = await mcp_server._call_tool("rai_health", {})
         finally:
             _reset_context(tokens)
-        payload = json.loads(result[0].text)
+        payload = result[1]
         assert "error" not in payload
 
     async def test_context_without_org_id_skips_metering(self, usage_repo):
@@ -192,5 +190,5 @@ class TestQuotaEnforcement:
             result = await mcp_server._call_tool("rai_health", {})
         finally:
             _reset_context(tokens)
-        payload = json.loads(result[0].text)
+        payload = result[1]
         assert "error" not in payload

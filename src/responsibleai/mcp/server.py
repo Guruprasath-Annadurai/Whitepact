@@ -150,11 +150,26 @@ async def _list_tools() -> list[types.Tool]:
     return TOOL_DEFS
 
 
+def _text_and_structured(
+    payload: dict[str, Any],
+) -> tuple[list[types.TextContent], dict[str, Any]]:
+    """Every tool/error payload here is a JSON-native `dict[str, Any]`
+    (verified: `dispatch_tool` is typed `-> dict[str, Any]`, and every
+    inline error dict below is built from string/bool/None literals) —
+    safe to hand to the SDK's `structuredContent` as-is. Still returning
+    the serialized `TextContent` alongside it (not replacing it) per
+    MIGRATION_WHITEPACT_V2.md's structured-output section: pre-2025-06-18
+    clients that only read `content` keep working unchanged.
+    """
+    text = types.TextContent(type="text", text=json.dumps(payload, indent=2, default=str))
+    return [text], payload
+
+
 @server.call_tool()
 async def _call_tool(
     name: str,
     arguments: dict[str, Any] | None,
-) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
+) -> tuple[list[types.TextContent], dict[str, Any]]:
     _logger.debug("tool_call name=%s args=%s", name, arguments)
 
     ctx = _current_org.get()
@@ -165,7 +180,7 @@ async def _call_tool(
             if usage_repo is not None and ctx.org_id:
                 await usage_repo.record_call(ctx.org_id, name, ctx.plan.value, allowed=False)
             error = {"error": "upgrade_required", "message": upgrade_message(name, ctx.plan)}
-            return [types.TextContent(type="text", text=json.dumps(error, indent=2))]
+            return _text_and_structured(error)
 
         quota = monthly_quota(ctx.plan)
         if quota == 0:
@@ -179,7 +194,7 @@ async def _call_tool(
                     "https://responsibleai.dev/pricing."
                 ),
             }
-            return [types.TextContent(type="text", text=json.dumps(error, indent=2))]
+            return _text_and_structured(error)
 
         if quota is not None and usage_repo is not None and ctx.org_id:
             used = await usage_repo.count_since(ctx.org_id, _month_start_iso())
@@ -189,13 +204,13 @@ async def _call_tool(
                     "error": "quota_exceeded",
                     "message": quota_exceeded_message(ctx.plan, used, quota),
                 }
-                return [types.TextContent(type="text", text=json.dumps(error, indent=2))]
+                return _text_and_structured(error)
 
         if usage_repo is not None and ctx.org_id:
             await usage_repo.record_call(ctx.org_id, name, ctx.plan.value, allowed=True)
 
     result = await dispatch_tool(name, arguments or {})
-    return [types.TextContent(type="text", text=json.dumps(result, indent=2, default=str))]
+    return _text_and_structured(result)
 
 
 @server.list_resources()

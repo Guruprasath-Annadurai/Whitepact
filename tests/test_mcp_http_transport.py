@@ -12,6 +12,8 @@ keeps running unmodified for existing clients.
 
 from __future__ import annotations
 
+import json
+
 import httpx
 import pytest
 from asgi_lifespan import LifespanManager
@@ -108,6 +110,11 @@ class TestStreamableHttpTransport:
                 result = await session.call_tool("rai_health", {})
 
         assert result.isError is not True
+        # Structured tool-output contracts (spec 2025-06-18): the same
+        # payload is available as structuredContent, not just serialized
+        # into the legacy content[0].text blob.
+        assert result.structuredContent is not None
+        assert json.loads(result.content[0].text) == result.structuredContent
 
 
 class TestLegacySseTransportUnaffected:

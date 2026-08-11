@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 # ── Tool listing ───────────────────────────────────────────────────────────────
@@ -414,6 +416,32 @@ class TestRaiAuditSummary:
         from responsibleai.mcp.tools import dispatch_tool
         r = await dispatch_tool("rai_audit_summary", {})
         assert "NIST_AI_RMF" in r["governance_engine"]["frameworks"]
+
+
+class TestStructuredToolOutput:
+    """Structured tool-output contracts (spec 2025-06-18): `_call_tool`
+    returns `(content, structuredContent)` tuples, which the SDK's
+    `@server.call_tool()` decorator turns into a `CallToolResult` with
+    both populated -- verified end-to-end (over the wire) in
+    test_mcp_http_transport.py; these test the raw function's contract
+    directly, the same way test_mcp_server_gating.py does."""
+
+    async def test_text_and_structured_helper_shapes(self) -> None:
+        from responsibleai.mcp.server import _text_and_structured
+
+        content, structured = _text_and_structured({"status": "ok", "n": 1})
+        assert structured == {"status": "ok", "n": 1}
+        assert len(content) == 1
+        assert content[0].type == "text"
+        assert json.loads(content[0].text) == structured
+
+    async def test_call_tool_returns_tuple_with_matching_content(self) -> None:
+        from responsibleai.mcp import server as mcp_server
+
+        content, structured = await mcp_server._call_tool("rai_health", {})
+        assert isinstance(structured, dict)
+        assert structured["status"] == "ok"
+        assert json.loads(content[0].text) == structured
 
 
 class TestRaiHealth:
