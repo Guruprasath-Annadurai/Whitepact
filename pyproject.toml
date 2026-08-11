@@ -141,7 +141,7 @@ Issues     = "https://github.com/Guruprasath-Annadurai/Whitepact/issues"
 Changelog  = "https://github.com/Guruprasath-Annadurai/Whitepact/blob/main/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/biasbuster", "src/privacylabel", "src/responsibleai"]
+packages = ["src/biasbuster", "src/privacylabel", "src/responsibleai", "src/whitepact"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
