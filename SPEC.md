@@ -10,9 +10,14 @@
 > `MIGRATION_WHITEPACT_V2.md` (forthcoming) for the phased plan that
 > closes the gap between the two.
 
-Last reviewed: 2026-07-26 · Repository: `Guruprasath-Annadurai/Whitepact`
+Last reviewed: 2026-08-11 · Repository: `Guruprasath-Annadurai/Whitepact`
 (renamed from `ResponsibleAi`; package identity migration in progress —
-see Section 9).
+see Section 9). Sections 2-3's core entities and a first, deterministic
+`WhitePactRuntimeGateway` now exist in `src/responsibleai/governance/`
+(Phase 8, see `MIGRATION_WHITEPACT_V2.md` Section 8) — each affected
+section below has been updated in place to say exactly what's real and
+what remains **[TARGET]**; none of the original **[TARGET]** markers
+were removed wholesale.
 
 ---
 
@@ -52,7 +57,7 @@ fact.
 
 ---
 
-## 2. The core pipeline **[TARGET]**
+## 2. The core pipeline **[PARTIALLY TODAY — Phase 8]**
 
 ```
 Organization
@@ -61,33 +66,45 @@ Agent (identity + framework + model)
   → proposes
 Action (an MCP tool call, an API operation, a transaction, a data export...)
   → evaluated against
-Policy (deterministic organizational rules)
+Policy (deterministic organizational rules)              [TARGET — Phase 10]
   → informed by
-Trust (existing Trust Index / leaderboard signals)
+Trust (existing Trust Index / leaderboard signals)        [TODAY, not yet wired in]
   → and
-Risk (classified severity of the action)
+Risk (classified severity of the action)                 [TARGET — Phase 9]
   → produces a
 Decision: ALLOW | ALLOW_WITH_REDACTION | REQUIRE_APPROVAL | DENY | QUARANTINE
   → routes to
 Execution (the actual MCP/API/SaaS/database call, only if allowed)
   → and always produces
-Evidence (an immutable, exportable record of the whole decision)
+Evidence (an immutable, exportable record of the whole decision) [TARGET — Phase 12]
 ```
 
-Nothing in this pipeline exists as a wired-together runtime today.
-**[TODAY]**, the pieces exist as independent, callable components (an
-MCP tool computes a trust score; a guardrails engine returns
-`is_blocked: bool`; RBAC gates who can call which REST endpoint) but
-there is no single component that takes "agent proposes action" as
-input and returns one of the five decisions above as output. Building
-that component — the **WhitePact Runtime Gateway** — is what Phase 8
-(`RUNTIME GOVERNANCE CORE`) of the migration plan does.
+**[TODAY]**: `src/responsibleai/governance/` now has a real, tested
+component that takes "agent proposes action" as input and returns one
+of the five decisions above as output —
+`WhitePactRuntimeGateway.evaluate(action, authority)`
+(`tests/test_governance_core.py`, 18 tests). Concretely, today it checks
+only two things, both deterministic: (1) does the caller-supplied
+`AuthorityContext` grant this action's type at all, and (2) does the
+existing, tested `GuardrailsEngine` find PII (→
+`ALLOW_WITH_REDACTION`, reusing its own redaction) or
+toxicity/custom-pattern matches (→ `DENY`) in any string-valued
+argument. Everything else in the pipeline diagram above — a real Policy
+subsystem evaluating organization-authored rules, Risk classification
+routing action types to different scrutiny tiers, Trust Index signals
+actually feeding into the decision, and Evidence persistence — remains
+**[TARGET]**, tracked as their own later phases. This gateway is not
+wired into the MCP tool dispatch path yet either: `dispatch_tool()` in
+`mcp/tools.py` calls tool handlers directly, unchanged; nothing today
+routes an MCP tool call through `WhitePactRuntimeGateway` first. That
+wiring is real, separate, own-tested work, not implied by the gateway
+existing.
 
 ---
 
 ## 3. Core entities
 
-### 3.1 Agent **[TARGET — new model]**
+### 3.1 Agent **[TODAY — Phase 8]**
 
 An autonomous or semi-autonomous software actor requesting an action.
 
@@ -99,17 +116,22 @@ AgentContext:
   framework: str | None         # e.g. "langchain", "langgraph", "adk", "mcp-client"
   provider: str | None          # e.g. "openai", "anthropic", "azure-openai"
   model: str | None             # e.g. "gpt-4o", a customer's Azure deployment name
-  trust_state: TrustSummary | None  # cached Trust Index result for this agent/tool, if known
+  trust_state: TrustCheckResult | None  # cached Trust Index result for this agent/tool, if known
   metadata: dict[str, Any]      # framework-specific extras, never secrets
 ```
 
-**[TODAY]**: the closest existing concept is `TrustCheckResult`
-(`src/responsibleai/integrations/client.py`) — a lookup of a *model or
-tool's* public trust score, not a structured record of an *agent
-instance* making a request. `AgentContext` as defined above does not
-exist yet.
+**[TODAY]**: `AgentContext` is a real, tested dataclass
+(`src/responsibleai/governance/models.py`) — this is verified current
+source, not the target shape above restated as a claim. It reuses the
+existing `TrustCheckResult` (`src/responsibleai/integrations/client.py`)
+for `trust_state` rather than inventing a new `TrustSummary` type, since
+`TrustCheckResult` already is exactly "a lookup of a model or tool's
+public trust score" and nothing about `AgentContext` needed anything
+more. Not yet true: nothing populates `trust_state` automatically —
+callers construct it themselves; auto-populating it from a live Trust
+Index lookup is unimplemented, real follow-up work.
 
-### 3.2 Identity **[TARGET, partially TODAY]**
+### 3.2 Identity **[TODAY, partially — Phase 8]**
 
 Who or what is making the request. Must support humans, service
 accounts, agents, API keys, OAuth/OIDC identities, and future workload
@@ -121,16 +143,19 @@ and `plan` — this is a real, working, tested identity model, but it's
 scoped to *human/API-key* access to the REST API and dashboard, not to
 an *agent* acting on a human's or organization's behalf. OIDC/SSO
 support exists (`src/responsibleai/auth/` — see `sso` extra in
-`pyproject.toml`). MFA (TOTP, RFC 6238) is implemented and tested. None
-of this is currently extended to represent "this specific agent
-instance, running under this delegated authority, on behalf of this
-organization."
+`pyproject.toml`). MFA (TOTP, RFC 6238) is implemented and tested.
 
-`IdentityContext` in the target architecture generalizes `OrgContext` to
-cover agent identities and future workload identities (e.g. SPIFFE/SPIRE
--style), without breaking the existing human/API-key identity model.
+`IdentityContext` (`src/responsibleai/governance/models.py`) now
+generalizes `OrgContext` as described — `IdentityContext.from_org_context()`
+maps a real `OrgContext` (from a static API key or an OIDC JWT, see
+`mcp/server.py`'s `_authenticate`) into the broader vocabulary, without
+modifying `OrgContext` itself. What remains genuinely unimplemented: a
+workload-identity kind (SPIFFE/SPIRE-style) has no real issuer or
+verification path anywhere in this codebase — `IdentityContext.kind`
+accepts the string `"workload"`, but nothing produces or validates one
+today, so treat that specific kind as aspirational, not working.
 
-### 3.3 Authority **[TARGET — new concept]**
+### 3.3 Authority **[TODAY, minimal — Phase 8]**
 
 What authority has been delegated to the agent. This is deliberately
 **not** the same thing as a raw RBAC role.
@@ -143,12 +168,21 @@ What authority has been delegated to the agent. This is deliberately
   agent*, in *this context* (time of day, transaction value, data
   sensitivity, environment)?
 
-**[TODAY]**: no `AuthorityContext` or delegation model exists. RBAC
-roles are the only authority signal in the codebase today, and they are
-static and human-provisioned, not scoped per-agent or per-action-context.
-This is new architecture, built in Phase 8.
+**[TODAY]**: `AuthorityContext` exists
+(`src/responsibleai/governance/models.py`) as a minimal, real
+implementation: `granted_action_types` (a set the caller supplies —
+nothing derives it from RBAC roles automatically yet) and
+`require_approval_for`, both enforced by `WhitePactRuntimeGateway`. The
+"in *this context*" part of the authority question above — time of day,
+transaction value, data sensitivity — is represented only as an open
+`constraints: dict[str, Any]` bag; nothing in the gateway actually reads
+or enforces those constraints yet. There is still no delegation
+*workflow* (an org granting authority to a specific agent through some
+UI or API) — callers construct `AuthorityContext` directly in code
+today. RBAC roles remain the only authority signal enforced
+automatically anywhere in the codebase.
 
-### 3.4 Action **[TARGET — new model]**
+### 3.4 Action **[TODAY — Phase 8]**
 
 A proposed operation an agent wants to execute. Conceptually:
 
@@ -164,11 +198,16 @@ ActionRequest:
   proposed_at: datetime
 ```
 
-**[TODAY]**: the closest analogue is an MCP tool call itself
-(`dispatch_tool(name, args)` in `src/responsibleai/mcp/tools.py`) — real,
-tested, 27 tools registered — but there is no generic `ActionRequest`
-abstraction that covers non-MCP actions (a database write, a payment, an
-approval) the way this target model does.
+**[TODAY]**: `ActionRequest` is a real dataclass
+(`src/responsibleai/governance/models.py`) matching the shape above
+exactly. It's a generic abstraction, not yet a *used* one: `dispatch_tool`
+in `mcp/tools.py` still dispatches MCP tool calls directly, and nothing
+in `mcp/server.py` constructs an `ActionRequest` for an incoming tool
+call and routes it through `WhitePactRuntimeGateway` before dispatching.
+`arguments` is not yet actually "sanitized before it reaches Evidence
+storage" in practice, because there is no Evidence storage yet
+(Section 3.7) — the note in the field comment above describes the
+target end state, not a guarantee this phase enforces.
 
 ### 3.5 Policy **[TARGET — new subsystem]**
 
@@ -184,23 +223,24 @@ general-purpose, reason-coded, threshold-aware policy engine described
 in Phase 10. There is no `src/responsibleai/policy/` package today (a
 directory search confirms this).
 
-### 3.6 Decision **[TARGET — new model]**
+### 3.6 Decision **[TODAY — Phase 8, QUARANTINE excepted]**
 
 One of exactly five outcomes:
 
-| Decision | Meaning |
-|---|---|
-| `ALLOW` | The action proceeds unmodified. |
-| `ALLOW_WITH_REDACTION` | The action proceeds, but the payload is modified first (e.g. PII stripped) — see `GuardrailsEngine`'s existing redaction logic, which this reuses. |
-| `REQUIRE_APPROVAL` | The action is held pending a human (or delegated-authority) approval — see Section 3.7 and the forthcoming approval-workflow phase. |
-| `DENY` | The action is blocked outright. |
-| `QUARANTINE` | The action, the agent, or both are held for review beyond a single decision — e.g. an agent exhibiting a pattern of policy violations gets its authority suspended pending investigation, distinct from a single denied action. |
+| Decision | Meaning | Status |
+|---|---|---|
+| `ALLOW` | The action proceeds unmodified. | **[TODAY]** — produced by the gateway when nothing else fires. |
+| `ALLOW_WITH_REDACTION` | The action proceeds, but the payload is modified first (e.g. PII stripped) — see `GuardrailsEngine`'s existing redaction logic, which this reuses. | **[TODAY]** — produced when `GuardrailsEngine` finds PII-only findings. |
+| `REQUIRE_APPROVAL` | The action is held pending a human (or delegated-authority) approval — see Section 3.7 and the forthcoming approval-workflow phase. | **[TODAY, trigger only]** — produced when the caller-supplied `AuthorityContext.require_approval_for` names the action type; there is no approval *workflow* yet (no queue, no notification, no resolution API) — the decision is returned, nothing then does anything with it. |
+| `DENY` | The action is blocked outright. | **[TODAY]** — produced on a missing authority grant, or a toxicity/custom-pattern guardrails match. |
+| `QUARANTINE` | The action, the agent, or both are held for review beyond a single decision — e.g. an agent exhibiting a pattern of policy violations gets its authority suspended pending investigation, distinct from a single denied action. | **[TARGET]** — a real enum member (`GovernanceDecision.QUARANTINE` exists and is tested as part of the five-way set), but nothing in `WhitePactRuntimeGateway` ever returns it: that requires tracking a *pattern* of violations across requests, which this phase doesn't build. |
 
-**[TODAY]**: every existing decision-shaped output in this codebase is
-binary. `GuardrailsEngine.scan()` returns `is_blocked: bool`
-(`src/responsibleai/guardrails/engine.py`). There is no five-way
-`GovernanceDecision` enum anywhere in source today. This is the single
-most consequential net-new piece of Phase 8.
+`GovernanceDecision` is a real five-way `StrEnum`
+(`src/responsibleai/governance/models.py`), replacing what used to be
+true of every decision-shaped output in this codebase — binary
+(`GuardrailsEngine.scan()` still returns `is_blocked: bool` at its own
+layer; `GovernanceDecision` is a layer above it, not a replacement for
+it).
 
 ### 3.7 Evidence **[TARGET — new model]**
 

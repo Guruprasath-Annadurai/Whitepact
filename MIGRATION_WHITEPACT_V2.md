@@ -48,7 +48,7 @@ names.
 | `ResponsibleAi` | 20 | GitHub-URL-casing variant in docs/badges |
 | `responsibleai-mcp` | 17 | The published MCP server console script |
 | `rai://` | 6 | MCP resource URI scheme (`src/responsibleai/mcp/resources.py`) |
-| `responsibleai.dev` | 3 | A domain referenced in docs that has never been registered/deployed — see Section 9 |
+| `responsibleai.dev` | 3 | A domain referenced in docs that has never been registered/deployed — see Section 10 |
 
 ---
 
@@ -262,7 +262,7 @@ change (verified by `tests/test_mcp_http_transport.py`'s
 `TestLegacySseTransportUnaffected`). `/mcp` is simply the transport new
 integrations should prefer, per the same "additive, not a replacement"
 posture as every other alias in this document. No removal date is
-committed here, consistent with Section 10's timeline for every other
+committed here, consistent with Section 11's timeline for every other
 legacy name.
 
 **Tests**: `tests/test_mcp_http_transport.py` runs a real MCP client
@@ -443,7 +443,81 @@ now asserts `result.structuredContent is not None` and that it matches
 
 ---
 
-## 8. Deployment migration
+## 8. Runtime governance core (Phase 8)
+
+**Current** (before this section's work): SPEC.md Section 2 described a
+five-stage decision pipeline — Agent → Action → Policy/Trust/Risk →
+Decision → Execution → Evidence — entirely as **[TARGET]** architecture.
+Every existing decision-shaped output in the codebase was binary
+(`GuardrailsEngine.scan()` → `is_blocked: bool`), and there was no
+single component that took "an agent proposes an action" as input and
+returned one of a real decision model as output.
+
+**Target** (implemented): `src/responsibleai/governance/` —
+
+- `GovernanceDecision`: the real, five-member `StrEnum`
+  (`ALLOW` / `ALLOW_WITH_REDACTION` / `REQUIRE_APPROVAL` / `DENY` /
+  `QUARANTINE`) SPEC.md Section 3.6 defines.
+- `IdentityContext`, `AgentContext`, `AuthorityContext`, `ActionRequest`:
+  the core entities from SPEC.md Section 3.1-3.4, as tested dataclasses.
+  `IdentityContext.from_org_context()` generalizes the existing
+  `OrgContext` (human/API-key/OIDC identity, unchanged) into the new
+  vocabulary without modifying it — the same additive, non-breaking
+  pattern as every other alias in this document, applied to a data
+  model instead of a package/env-var/CLI name.
+- `WhitePactRuntimeGateway.evaluate(action, authority) -> DecisionResult`:
+  the actual missing component. Two deterministic checks, no LLM call:
+  does `AuthorityContext` grant this `action_type` at all, and does the
+  existing, tested `GuardrailsEngine` find PII (→
+  `ALLOW_WITH_REDACTION`, reusing its own redaction) or
+  toxicity/custom-pattern matches (→ `DENY`) in any string-valued
+  argument. A caller-declared `require_approval_for` set on
+  `AuthorityContext` produces `REQUIRE_APPROVAL` deterministically —
+  this is *not* Phase 9's risk-tiered routing (which would classify
+  action types by risk automatically); it's a caller-supplied trigger,
+  which is an honestly smaller thing.
+
+**Explicitly not built here** (real gaps, tracked as their own later
+phases, not oversights — SPEC.md's per-section status markers were
+updated in place to say exactly this, not just here):
+
+- **Policy engine** (Phase 10) — nothing evaluates organization-authored
+  rules beyond the deterministic guardrails scan above. `rai_policy_check`
+  (an existing, separate MCP tool) is unrelated and unchanged.
+- **Risk-tiered routing** (Phase 9) — no HIGH/CRITICAL classification of
+  action types; SPEC.md Section 4's tiering table remains a proposal,
+  not executable code.
+- **Evidence persistence** (Phase 12) — `DecisionResult` is an
+  in-memory, unpersisted output. No hash chain, no
+  `policies_evaluated`/`deterministic_checks` breakdown, nothing written
+  to a database. The existing hash-chaining primitive this will
+  eventually generalize from (`db/public_incident_repository.py`)
+  is real and unchanged; wiring it to decisions is separate work.
+- **Approval workflow** — `REQUIRE_APPROVAL` is a real decision the
+  gateway can return; nothing then queues it, notifies anyone, or
+  exposes a resolution API.
+- **`QUARANTINE`** — a real, tested enum member, but nothing in the
+  gateway ever produces it: that needs cross-request pattern tracking
+  (e.g. "this agent has had 3 policy violations this week") this phase
+  doesn't build.
+- **MCP tool dispatch integration** — `dispatch_tool()` in `mcp/tools.py`
+  is completely unchanged; nothing routes an actual MCP tool call
+  through `WhitePactRuntimeGateway` before dispatching it. The gateway
+  exists and is tested standalone; wiring it into the live request path
+  is real, separate, own-tested work.
+
+**Tests**: `tests/test_governance_core.py` (18 tests) — the entity
+dataclasses (`IdentityContext.from_org_context`'s api_key/oidc kind
+detection, `AgentContext`'s `organization_id` defaulting), and the
+gateway's full decision matrix: authority denial, the approval trigger
+(and that authority denial still wins over it), PII redaction
+(non-PII fields left untouched, reason codes field-qualified), and
+toxicity hard-denying even when PII is also present in the same
+argument.
+
+---
+
+## 9. Deployment migration
 
 **Docker**: `Dockerfile`'s `LABEL org.opencontainers.image.*` fields
 currently describe `ResponsibleAI`/`responsibleai`. These are metadata,
@@ -473,7 +547,7 @@ directly.
 
 ---
 
-## 9. What is explicitly *not* claimed by this migration
+## 10. What is explicitly *not* claimed by this migration
 
 Per the standing rule against fabricating implementation status:
 
@@ -493,7 +567,7 @@ Per the standing rule against fabricating implementation status:
 
 ---
 
-## 10. Backward compatibility timeline
+## 11. Backward compatibility timeline
 
 | Version | State |
 |---|---|
@@ -504,13 +578,21 @@ Per the standing rule against fabricating implementation status:
 
 ---
 
-## 11. What this document does not cover
+## 12. What this document does not cover
 
-Docker/Helm/CLI/package/env-var/MCP-identity/transport migration only.
-The runtime governance architecture (`SPEC.md`), OAuth/OIDC
-authorization, modern structured tool-output contracts, the policy
-engine, and the other phases of the WhitePact Enterprise Foundation v2
-program are tracked separately and are not blocked on this document —
-they can proceed against the current `responsibleai` code paths and be
-renamed in step with whichever phase above actually executes the
-package migration.
+Docker/Helm/CLI/package/env-var/MCP-identity/transport migration, plus
+now the first slice of the runtime governance core (Section 8), MCP
+OAuth/OIDC authorization (Section 7.2), and structured tool-output
+contracts (Section 7.3). What remains genuinely out of scope here: the
+**policy engine** (Phase 10 — nothing evaluates organization-authored
+rules yet), **risk-tiered routing** (Phase 9 — no automatic
+HIGH/CRITICAL classification of action types), **evidence persistence**
+(Phase 12 — `DecisionResult` is in-memory only, no hash chain), an
+**approval workflow** (no queue/notification/resolution API behind
+`REQUIRE_APPROVAL`), and **wiring the governance gateway into the live
+MCP tool-dispatch path** (`dispatch_tool()` is unchanged; nothing routes
+an actual tool call through `WhitePactRuntimeGateway` yet). These are
+tracked separately and are not blocked on this document — they can
+proceed against the current `responsibleai` code paths and be renamed
+in step with whichever phase above actually executes the package
+migration.
