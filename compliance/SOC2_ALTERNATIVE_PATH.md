@@ -46,24 +46,32 @@ organization completes the CAIQ and submits it for publication on the
 fee for submission or listing, annual update required to stay current
 ([CSA STAR overview](https://hyperproof.io/csa-star/),
 [CSA STAR Level 1 vs Level 2](https://atlantsecurity.com/blog/csa-star-level-1-vs-level-2-key-differences)).
-The completed CAIQ v4.0.3 (`compliance/CAIQv4.0.3_WhitePact_completed.xlsx`,
+**Status: rejected 2026-08-12, blocked on a real gap — not resolved
+yet.** The completed CAIQ v4.0.3
+(`compliance/CAIQv4.0.3_WhitePact_completed.xlsx`,
 `scripts/caiq_answers.py`) was submitted through the founder's own CSA
 account via the STAR submission portal (`star.watch`) as a Self
-Assessment, Service Category: SaaS. As of 2026-08-12 the submission
-status shows **Email Confirmed → Approved by Organization → Pending
-CSA Approval** — everything on the founder's side is complete; it now
-sits in CSA's own review queue with no fixed published SLA. Check
-[cloudsecurityalliance.org/star/registry](https://cloudsecurityalliance.org/star/registry)
-periodically for "WhitePact" to appear, and watch the account email for
-any CSA follow-up. Do not describe this as "SOC 2 compliant" or
-"audited" — it is a self-assessment, and should be described that way
-to buyers, same as every other signal on this page.
+Assessment, Service Category: SaaS, and initially showed **Email
+Confirmed → Approved by Organization → Pending CSA Approval**. CSA then
+rejected it with this reason, verbatim: *"To maintain the security and
+validity of the registry, all STAR submissions must be submitted using
+an email address with an official domain connected to your
+organization. We are unable to accept or process submissions sent from
+personal email addresses (such as Gmail)."*
 
-**Open item**: the Backup Point of Contact on the submission form was
-filled with the founder's own second email, since there is currently no
-second person with real oversight authority (see
-`FOUNDER_ACTION_CHECKLIST.md` Section 10 and `GOVERNANCE.md`) — revisit
-via CSA's edit/update flow once a real second contact exists.
+**The real gap this exposes**: WhitePact doesn't yet have its own
+domain — the hosted instance is only reachable at
+`responsibleai-dashboard.onrender.com`, and this was already an open
+item in `FOUNDER_ACTION_CHECKLIST.md` Section 6. CSA's rejection makes
+that a hard blocker for this specific submission, not just a polish
+item. **Cheapest real path**: register a domain (~$10-15/yr for a
+`.com`/`.ai`/`.dev`, e.g. via Namecheap/Cloudflare/Porkbun — genuinely
+low-cost, not the SOC2/pentest-scale spend this whole document exists
+to route around) and set up a domain email — free options exist
+(Cloudflare Email Routing forwards `you@whitepact.xyz` to your existing
+Gmail at no cost; Zoho Mail's free tier also supports one custom-domain
+mailbox) — then resubmit the same completed CAIQ under that address.
+No new CAIQ content work needed, just a different sender email.
 
 ## What none of this replaces
 

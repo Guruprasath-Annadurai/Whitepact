@@ -148,7 +148,13 @@ instead. What's actually live:
       key retired — confirmed to survive a redeploy (proving persistence
       actually works, not just configured).
 - [ ] Register or point a real domain/subdomain at the Render service
-      (currently only reachable at its `.onrender.com` URL).
+      (currently only reachable at its `.onrender.com` URL). **This
+      just became a hard blocker, not just polish**: CSA rejected the
+      2026-08-12 STAR submission specifically because it came from a
+      personal Gmail address rather than an organizational domain (see
+      Section 9 below) — a cheap domain (~$10-15/yr) plus free email
+      forwarding (Cloudflare Email Routing or Zoho Mail's free tier)
+      unblocks resubmission with zero new CAIQ content work.
 - [ ] Set up a public status page (statuspage.io or equivalent) and link
       it from `SLA.md`.
 - [ ] **Now that this is genuinely live**, go back and remove/update the
@@ -209,11 +215,16 @@ instead. What's actually live:
       `compliance/SOC2_READINESS.md` as the intake packet. In the
       meantime, `compliance/SOC2_ALTERNATIVE_PATH.md` is the free,
       honest interim signal set (OpenSSF Scorecard, SBOM/provenance,
-      and CSA STAR Level 1 — **submitted 2026-08-12**, listing pending
-      CSA's review).
-- [ ] Check `cloudsecurityalliance.org/star/registry` periodically for
-      the WhitePact listing to go live, and revisit the Backup Point of
-      Contact on the CSA submission once a real second person with
+      and CSA STAR Level 1 — **submitted 2026-08-12, rejected the same
+      day**: CSA requires an organizational-domain email, not personal
+      Gmail. Blocked on Section 6's domain item above; resubmit the
+      same completed CAIQ once a domain email exists — no new content
+      work needed.
+- [ ] Once a domain + domain email exist (Section 6), resubmit the CAIQ
+      to CSA STAR under that address, then check
+      `cloudsecurityalliance.org/star/registry` periodically for the
+      WhitePact listing to go live, and revisit the Backup Point of
+      Contact on the submission once a real second person with
       oversight authority exists (see Section 10 below).
 - [ ] Operate under Type I's controls for 3-12 months, then pursue Type II.
 - [ ] Commission a real third-party penetration test ($5-15K) once budget

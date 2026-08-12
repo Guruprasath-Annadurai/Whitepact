@@ -141,12 +141,16 @@ must never be said.
 
 See **`compliance/SOC2_ALTERNATIVE_PATH.md`** for the full picture:
 OpenSSF Scorecard (live), SBOM + Sigstore provenance (live), branch
-protection (live), and CSA STAR Registry Level 1 — **submitted
-2026-08-12** via the founder's own CSA account (Self Assessment, SaaS
-category), free to submit and free to maintain, a real registry
-enterprise security teams check. Listing publication is pending CSA's
-own review timeline. That document's own rule applies here too: never
-describe any of this as "SOC 2 compliant" or "audited."
+protection (live), and CSA STAR Registry Level 1 — submitted
+2026-08-12, then **rejected the same day**: CSA requires the submitter
+email to be on the organization's own domain, and this was sent from a
+personal Gmail address. This surfaces a real, previously-only-cosmetic
+gap: WhitePact has no domain of its own yet. A domain is genuinely
+cheap (~$10-15/yr) — nowhere near SOC2/pentest territory — so this is
+worth doing regardless of CSA; see `SOC2_ALTERNATIVE_PATH.md` for the
+concrete registrar + free-email-forwarding path. That document's own
+rule applies here too: never describe any of this as "SOC 2 compliant"
+or "audited."
 
 ---
 
