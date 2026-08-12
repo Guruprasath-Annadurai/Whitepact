@@ -106,15 +106,24 @@ tested (`tests/test_governance_persistence.py`,
 `/api/governance/approvals`, and
 `/api/governance/approvals/{id}/resolve` in the dashboard API — see
 Section 3.7 and MIGRATION_WHITEPACT_V2.md Section 8 for exactly what's
-covered. Genuinely still **[TARGET]**: Trust Index signals don't
-actually feed into any decision yet (an `AgentContext.trust_state` field
-exists but nothing populates or reads it automatically). This gateway is
-also not wired into the MCP tool dispatch path yet: `dispatch_tool()` in
-`mcp/tools.py` calls tool handlers directly, unchanged; nothing today
-constructs an `ActionRequest` from an incoming MCP tool call and routes
-it through
-`WhitePactRuntimeGateway` first. That wiring is real, separate,
-own-tested work, not implied by the gateway existing.
+covered.
+
+Three gaps this section used to flag as **[TARGET]** are now real,
+tested, MIGRATION_WHITEPACT_V2.md Section 11 gap-closure work:
+`GovernanceDecision.QUARANTINE` is reachable
+(`governance/quarantine.py`'s cross-request violation tracking,
+consulted before every other check); `AgentContext.trust_state` is
+populated (`governance/trust_integration.py`) and consulted (a known,
+low-scoring model downgrades an otherwise-`ALLOW` to
+`REQUIRE_APPROVAL`); and the gateway is wired into the live, hosted MCP
+tool-call dispatch path (`mcp/governance_integration.py`), opt-in via
+`Settings.mcp_governance_enabled` — see that field's own docstring for
+why it defaults to `False` rather than silently changing existing
+hosted deployments' behavior. Genuinely still **[TARGET]**: a richer
+policy rule language (OPA/Rego) beyond Section 3.5's flat matching, and
+governing the self-hosted stdio transport (it has no organizational
+identity to build an `AuthorityContext`/`Policy` against, so this
+wiring only ever applies to org-scoped Streamable HTTP/SSE calls).
 
 ---
 
@@ -143,9 +152,10 @@ existing `TrustCheckResult` (`src/responsibleai/integrations/client.py`)
 for `trust_state` rather than inventing a new `TrustSummary` type, since
 `TrustCheckResult` already is exactly "a lookup of a model or tool's
 public trust score" and nothing about `AgentContext` needed anything
-more. Not yet true: nothing populates `trust_state` automatically —
-callers construct it themselves; auto-populating it from a live Trust
-Index lookup is unimplemented, real follow-up work.
+more. `governance/trust_integration.py`'s `enrich_agent_trust_state()`
+now populates it from a live Trust Index lookup when a call names a
+`provider`/`model`, and `WhitePactRuntimeGateway` consults it (see
+Section 2 above) — no longer caller-constructed-only.
 
 ### 3.2 Identity **[TODAY, partially — Phase 8]**
 
@@ -216,14 +226,14 @@ ActionRequest:
 
 **[TODAY]**: `ActionRequest` is a real dataclass
 (`src/responsibleai/governance/models.py`) matching the shape above
-exactly. It's a generic abstraction, not yet a *used* one: `dispatch_tool`
-in `mcp/tools.py` still dispatches MCP tool calls directly, and nothing
-in `mcp/server.py` constructs an `ActionRequest` for an incoming tool
-call and routes it through `WhitePactRuntimeGateway` before dispatching.
-`arguments` is not yet actually "sanitized before it reaches Evidence
-storage" in practice, because there is no Evidence storage yet
-(Section 3.7) — the note in the field comment above describes the
-target end state, not a guarantee this phase enforces.
+exactly, and a genuinely used one: `mcp/governance_integration.py`
+constructs one from every hosted-MCP tool call (when
+`Settings.mcp_governance_enabled` is on — see Section 2) and routes it
+through `WhitePactRuntimeGateway` before `dispatch_tool()` in
+`mcp/tools.py` ever runs. `arguments` is sanitized before it reaches
+Evidence storage in practice, not just in the field comment above —
+`EvidenceRecord` stores only `argument_keys`, never values (Section
+3.7).
 
 ### 3.5 Policy **[TODAY, first version — Phase 10]**
 
@@ -244,7 +254,7 @@ handed to `WhitePactRuntimeGateway.evaluate()` per call; there is no
 against blocklists/disclaimers) is unrelated and unchanged by this —
 still a real, narrow, working feature, still not this engine.
 
-### 3.6 Decision **[TODAY — Phase 8, QUARANTINE excepted]**
+### 3.6 Decision **[TODAY — Phase 8]**
 
 One of exactly five outcomes:
 
@@ -254,7 +264,7 @@ One of exactly five outcomes:
 | `ALLOW_WITH_REDACTION` | The action proceeds, but the payload is modified first (e.g. PII stripped) — see `GuardrailsEngine`'s existing redaction logic, which this reuses. | **[TODAY]** — produced when `GuardrailsEngine` finds PII-only findings. |
 | `REQUIRE_APPROVAL` | The action is held pending a human (or delegated-authority) approval — see Section 3.7. | **[TODAY]** — produced when the caller-supplied `AuthorityContext.require_approval_for` names the action type (or a matching `Policy` rule says so, Section 3.5); `db/approval_repository.py`'s `ApprovalRepository` now persists it as a resolvable request (`PENDING` → `APPROVED`/`DENIED`, double-resolution rejected), queryable and resolvable via `GET /api/governance/approvals` and `POST /api/governance/approvals/{id}/resolve`. Genuinely still missing: any notification beyond an optional webhook fire, and no automatic re-evaluation or execution of the action once approved — resolving records a human decision, acting on it is the caller's job. |
 | `DENY` | The action is blocked outright. | **[TODAY]** — produced on a missing authority grant, or a toxicity/custom-pattern guardrails match. |
-| `QUARANTINE` | The action, the agent, or both are held for review beyond a single decision — e.g. an agent exhibiting a pattern of policy violations gets its authority suspended pending investigation, distinct from a single denied action. | **[TARGET]** — a real enum member (`GovernanceDecision.QUARANTINE` exists and is tested as part of the five-way set), but nothing in `WhitePactRuntimeGateway` ever returns it: that requires tracking a *pattern* of violations across requests, which this phase doesn't build. |
+| `QUARANTINE` | The action, the agent, or both are held for review beyond a single decision — e.g. an agent exhibiting a pattern of policy violations gets its authority suspended pending investigation, distinct from a single denied action. | **[TODAY]** — `governance/quarantine.py`'s `recent_violation_count()` queries persisted evidence for a caller's recent `DENY` decisions; at or above `QUARANTINE_VIOLATION_THRESHOLD` (5, within a 60-minute window), `WhitePactRuntimeGateway.evaluate()` returns `QUARANTINE` before even checking authority. Tested end-to-end, including via the live MCP dispatch path. |
 
 `GovernanceDecision` is a real five-way `StrEnum`
 (`src/responsibleai/governance/models.py`), replacing what used to be
@@ -315,8 +325,13 @@ Field-by-field honesty against the target shape above —
 `governance/evidence.py`'s module docstring has the full accounting,
 summarized: `sanitized_arguments_metadata` is implemented as
 `argument_keys: list[str]` (field *names* only, deliberately never
-values); `trust_signals` is not populated (nothing computes a live
-`TrustCheckResult` automatically yet); `deterministic_checks` /
+values); `trust_signals` as its own structured `EvidenceRecord` field
+is still not populated — `AgentContext.trust_state` is now computed
+live (`governance/trust_integration.py`) and consulted by the gateway
+*before* the decision, but the evidence record itself only captures
+`provider`/`model`, not the trust score that fed the decision; a
+low-trust downgrade's reason code (`trust_state:low_score:N`) is the
+current way to see it in `reason_codes`. `deterministic_checks` /
 `probabilistic_checks` are not broken out as separate structured
 fields, `reason_codes` carries what a `GuardrailsResult`/`Policy` match
 found instead; `execution_result_metadata` is not populated (this

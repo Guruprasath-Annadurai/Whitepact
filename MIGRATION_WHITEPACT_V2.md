@@ -48,7 +48,7 @@ names.
 | `ResponsibleAi` | 20 | GitHub-URL-casing variant in docs/badges |
 | `responsibleai-mcp` | 17 | The published MCP server console script |
 | `rai://` | 6 | MCP resource URI scheme (`src/responsibleai/mcp/resources.py`) |
-| `responsibleai.dev` | 3 | A domain referenced in docs that has never been registered/deployed — see Section 12 |
+| `responsibleai.dev` | 3 | A domain referenced in docs that has never been registered/deployed — see Section 13 |
 
 ---
 
@@ -262,7 +262,7 @@ change (verified by `tests/test_mcp_http_transport.py`'s
 `TestLegacySseTransportUnaffected`). `/mcp` is simply the transport new
 integrations should prefer, per the same "additive, not a replacement"
 posture as every other alias in this document. No removal date is
-committed here, consistent with Section 13's timeline for every other
+committed here, consistent with Section 14's timeline for every other
 legacy name.
 
 **Tests**: `tests/test_mcp_http_transport.py` runs a real MCP client
@@ -849,7 +849,7 @@ port/env values expected) — both also run in CI's `helm-lint` job.
   invoked via `uvx --from rai-governance-platform whitepact-mcp`).
   **`remotes` (the hosted `/mcp`/`/sse` transports) was deliberately
   left out** — there is no verified, publicly reachable URL for the
-  hosted MCP transport today (Section 12 below); a placeholder
+  hosted MCP transport today (Section 13 below); a placeholder
   `example.com` URL would be exactly the kind of fabricated-but-plausible
   detail this project's rules prohibit. `tests/test_server_json.py`
   guards against one being added without updating this reasoning.
@@ -1005,7 +1005,130 @@ implied as covered.
 
 ---
 
-## 12. What is explicitly *not* claimed by this migration
+## 12. Closing the four flagged gaps: QUARANTINE, trust_state, dispatch wiring, policy persistence
+
+Four specific gaps were called out by name against the already-built
+governance core: `GovernanceDecision.QUARANTINE` was a real enum member
+nothing ever produced; `AgentContext.trust_state` existed but nothing
+populated it; `dispatch_tool()` was unchanged — no live MCP tool call
+routed through `WhitePactRuntimeGateway`; and policy rules existed only
+as in-code `PolicyRule`/`Policy` objects a call site constructed fresh
+each time, never persisted or editable without a deploy. All four are
+now closed, real, and tested.
+
+### 12.1 QUARANTINE is now reachable
+
+`governance/quarantine.py` adds `recent_violation_count()` — an async
+query (`EvidenceRepository.count_recent()`, a `COUNT(*)` against the
+persisted evidence chain, not a fetch-then-filter) counting a caller's
+`DENY` decisions within a rolling window (default 60 minutes).
+`WhitePactRuntimeGateway.evaluate()` gained an optional
+`recent_violation_count: int = 0` parameter; at or above
+`QUARANTINE_VIOLATION_THRESHOLD` (5), it returns `QUARANTINE` before
+even checking authority — a quarantined identity is blocked even with a
+valid authority grant, which is the point of the decision. The gateway
+itself stays synchronous and DB-free (the async count is computed by
+the caller and passed in as a plain int), preserving the "deterministic
+controls, no I/O in the decision path" property the rest of the gateway
+already had.
+
+### 12.2 AgentContext.trust_state is populated and consulted
+
+`governance/trust_integration.py`'s `enrich_agent_trust_state()` calls
+the existing `TrustClient` (the same HTTP client the LangChain/
+LangGraph/ADK trust-gate integrations already use — no second way to
+call the Trust Index API) when an action names a `provider`/`model`.
+`WhitePactRuntimeGateway` now consults the result: a known model
+scoring below `LOW_TRUST_SCORE_THRESHOLD` (40.0) downgrades an
+otherwise-`ALLOW` decision to `REQUIRE_APPROVAL`. Fails open on an
+unknown/unscored model or a network error (never escalates), and never
+overrides an existing `DENY`/`ALLOW_WITH_REDACTION` — only the plain
+`ALLOW` path is affected, keeping this an additive signal, not a
+change to any other decision branch's behavior.
+
+### 12.3 Policy rules are persisted per-org
+
+New `governance_policies` table (migration `0012`) and
+`db/policy_repository.py`'s `PolicyRepository` — full CRUD (`add_rule`,
+`remove_rule`, `reorder`), first-match-wins order preserved as a
+`position` column. Exposed via `GET /api/governance/policy`,
+`POST /api/governance/policy/rules`,
+`DELETE /api/governance/policy/rules/{rule_id}`, and
+`POST /api/governance/policy/reorder` — mutations are ADMIN-gated
+(changing what future actions an org's own pipeline allows is a
+materially different responsibility than viewing past decisions, same
+reasoning `/api/governance/approvals/{id}/resolve` already used), reads
+are ANALYST+, everything is org-isolated. A richer rule language
+(OPA/Rego) remains explicitly out of scope, per `governance/policy.py`'s
+own long-standing docstring — this closes the persistence gap, not the
+expressiveness one, which was never claimed as a target for this phase.
+
+### 12.4 The MCP dispatch path is wired — opt-in
+
+`mcp/governance_integration.py`'s `apply_governance()` builds an
+`ActionRequest`/`AuthorityContext` from an incoming MCP tool call,
+enriches `trust_state` when the call's arguments name a provider+model,
+queries the quarantine violation count, loads the org's persisted
+`Policy`, evaluates, records evidence, and — on `REQUIRE_APPROVAL` —
+queues a real `ApprovalRequest` instead of executing.
+`DENY`/`QUARANTINE` block execution outright and return a structured
+error instead of the tool's normal response;
+`ALLOW_WITH_REDACTION` substitutes the redacted arguments before
+`dispatch_tool()` ever sees the originals.
+
+**Deliberately opt-in**: `Settings.mcp_governance_enabled` defaults to
+`False`. Turning this on for an already-running hosted deployment is a
+real behavior change — a call that used to always execute can now come
+back `DENY`/`QUARANTINE`/queued-for-approval, and PII-bearing arguments
+can get silently redacted before the underlying tool sees them. Making
+that the silent default for existing installs would violate this
+project's own backward-compatibility rule; making it opt-in instead
+means the gap is genuinely closed (the wiring exists, is real, and is
+tested end-to-end) without breaking anyone who hasn't asked for it. Only
+applies to org-scoped calls over Streamable HTTP/SSE — the self-hosted
+stdio transport has no organizational identity to build an
+`AuthorityContext`/`Policy` against and is unaffected either way,
+regardless of the flag.
+
+`AgentContext.agent_id` is deliberately set to the caller's API key ID
+for MCP-dispatched calls, not left as the dataclass's random per-call
+default — quarantine tracking needs a *stable* identity across repeated
+calls from the same key to accumulate a violation count against; a
+fresh random UUID every call would make `recent_violation_count()`
+never see more than zero.
+
+### 12.5 A real bug found while writing this section's tests
+
+Writing `tests/test_governance_quarantine.py` and
+`tests/test_mcp_governance_dispatch.py` required computing risk tier
+before the authority check (so the `QUARANTINE` short-circuit has a
+`risk_tier` to attach to its own result) — which changed
+`test_governance_core.py::test_risk_tier_none_on_authority_denial`'s
+previously-documented invariant ("an ungranted action never reaches
+risk classification"). Updated that test to assert the new, more useful
+behavior (a denied action's evidence now records what risk tier it
+would have been) rather than silently letting the assertion rot or
+reverting a deliberate improvement — consistent with the standing rule
+that a functional change updates its own tests in the same commit, not
+a follow-up.
+
+### 12.6 What's still genuinely out of scope
+
+Not built, stated honestly: a richer policy rule language (OPA/Rego);
+webhook notification when a hosted-MCP dispatch call queues a
+`REQUIRE_APPROVAL` (the dashboard REST API's approval endpoint fires
+one via `WebhookManager`; the hosted MCP transport has no webhook
+subsystem wired in — `ApprovalRepository.create()`'s `webhook_manager`
+parameter is left unset in `apply_governance()`); graceful degradation
+if `EvidenceRepository.record()` itself fails mid-dispatch (currently
+propagates as an exception and fails the tool call, rather than
+degrading — see `THREAT_MODEL.md`'s Dashboard REST API / governance
+sections); and governing the self-hosted stdio transport at all, which
+has no organizational identity to evaluate against by design.
+
+---
+
+## 13. What is explicitly *not* claimed by this migration
 
 Per the standing rule against fabricating implementation status:
 
@@ -1025,7 +1148,7 @@ Per the standing rule against fabricating implementation status:
 
 ---
 
-## 13. Backward compatibility timeline
+## 14. Backward compatibility timeline
 
 | Version | State |
 |---|---|
@@ -1034,9 +1157,87 @@ Per the standing rule against fabricating implementation status:
 | **v2.x** (subsequent minors) | New feature development targets `whitepact` naming primarily; legacy names remain supported, unchanged. |
 | **v3.0.0** (future major, not scheduled) | `responsibleai` import alias, `RAI_*` env vars, `responsibleai-mcp` console scripts, and `rai://` resource URIs may be removed, only after a full v2.x cycle of visible deprecation warnings and only if usage telemetry/issue reports suggest it's safe to do so. No specific date is committed here — per the rule against inventing commitments the project can't back.
 
+### 13.1 CI requirements review (Phase 28)
+
+Read directly from `.github/workflows/` and the live repository, not
+restated from memory:
+
+- **`ci.yml`** — `test` job matrix on Python 3.11/3.12: `ruff check`,
+  `mypy src/responsibleai`, `pip-audit` (one documented, justified
+  ignore: `PYSEC-2026-597`, an nltk path-traversal CVE not reachable by
+  this codebase's one hardcoded `nltk.download()` call), then the full
+  suite with `--cov-fail-under=80` (currently running at 85%, so real
+  margin exists, not a threshold sitting exactly at the line). `build`
+  job compiles the wheel/sdist, generates a CycloneDX SBOM, uploads
+  both as artifacts. `helm-lint` job lints and template-renders the
+  Helm chart. All three ran and passed on every push this session made.
+- **`dependency-review.yml`** — gates pull requests on new/changed
+  dependencies' licenses and severity, distinct from `pip-audit`'s
+  scan of what's already installed.
+- **`publish.yml`** — tag-triggered PyPI publish with Sigstore build
+  provenance attestation and automated GitHub Release creation
+  (Phases 15-16).
+- **mypy scope**: only `src/responsibleai`, not `tests/` or
+  `src/biasbuster`/`src/privacylabel` — consistent with this session's
+  own local verification commands throughout, not a new gap introduced
+  here, but worth stating plainly rather than implying full-repo type
+  coverage.
+
+**Real gap found, not assumed away**: `gh api
+repos/Guruprasath-Annadurai/Whitepact/branches/main/protection` returns
+`404 Branch not protected` — `main` has no branch protection rule
+today. Every CI check above runs and reports status, but none of them
+are configured as a *required* status check, and nothing prevents a
+direct push or a merge with a failing/incomplete CI run. This session's
+own workflow (push directly to `main`, then watch CI) has relied on
+that openness throughout — flagging it here rather than quietly
+assuming CI functions as a merge gate, which it currently doesn't.
+Enabling branch protection (requiring the `test`/`build`/`helm-lint`
+checks, requiring PR review) is a repository-settings change with real
+workflow implications — worth doing, but a founder decision, not
+something this document unilaterally enables.
+
+### 14.1 Discipline audit (Phases 26-27)
+
+Backward compatibility here is ongoing discipline enforced by every
+phase's own tests, not a one-time deliverable — this is a checkpoint
+audit against real, currently-checked-out source, not a re-statement of
+intent:
+
+- **CLI entry points** — all four legacy names
+  (`biasbuster`/`responsibleai`/`responsibleai-mcp`/
+  `responsibleai-mcp-http`) still present in `pyproject.toml`'s
+  `[project.scripts]`, pointing at the identical entry-point functions
+  as their `whitepact*` preferred counterparts. Verified by direct
+  read, not memory.
+- **Env var precedence** — `Settings.settings_customise_sources`
+  still gives `WHITEPACT_*` priority over `RAI_*` per Section 5's rule;
+  `warn_deprecated_env_vars()` still fires the stderr-only
+  (never-stdout) deprecation warning when a legacy name is what
+  actually resolved a setting.
+- **Version sync** — `pyproject.toml`'s `version` and
+  `responsibleai/__init__.py`'s `__version__` both read `1.2.0`,
+  enforced by `tests/test_whitepact_alias.py`'s
+  `test_matches_pyproject_version` (not just eyeballed here).
+- **MCP resource dual-scheme** — `rai://` URIs still served alongside
+  `whitepact://`; neither this batch of work nor the gap-closure phase
+  (Section 12) touched `mcp/resources.py`.
+- **New work in this batch stayed additive** — the four gap closures
+  (Section 12) added new tables/columns/endpoints/parameters; none
+  renamed or removed an existing field, endpoint, or config option.
+  The one genuine behavior-affecting addition
+  (`Settings.mcp_governance_enabled`) is opt-in, default `False`, per
+  Section 12.4 — the one place this phase deliberately chose "opt-in
+  toggle" over "purely additive," and said so plainly rather than
+  understating it as risk-free.
+- **No global replace occurred** — `git grep -c "responsibleai\."` and
+  `git grep -c "RAI_"` counts were not driven toward zero by this
+  phase; every rename in this document remains alias-based, not a
+  find-and-replace.
+
 ---
 
-## 14. What this document does not cover
+## 15. What this document does not cover
 
 Docker/Helm/CLI/package/env-var/MCP-identity/transport migration, plus
 now the runtime governance core through all six of its phases so
@@ -1046,18 +1247,21 @@ persistence (Section 8.3), a first approval workflow (Section 8.4),
 and the MCP Trust/Supply-Chain Scanner (Section 8.5) — MCP OAuth/OIDC
 authorization (Section 7.2), structured tool-output contracts
 (Section 7.3), and HA deployment defaults for the hosted MCP transport
-(Section 9.1). What remains genuinely out of scope here:
-**`QUARANTINE`** actually being produced by anything (needs
-cross-request pattern tracking not built here), a **richer policy rule
-language** than plain risk-tier/action-type/target matching (OPA/Rego
-or similar, if ever needed), a **richer approval lifecycle** than
-`PENDING -> APPROVED`/`DENIED` (expiry/timeout, multi-approver quorum,
-delegation-chain approval), **Trust Index signal integration**
-(`AgentContext.trust_state` exists as a field, nothing populates or
-reads it), **evidence export beyond JSON**, **wiring the governance
-gateway/evidence/approval layers into the live MCP tool-dispatch path**
-(`dispatch_tool()` is unchanged; nothing routes an actual tool call
-through any of them yet), **true multi-region HA** (Section 9.1 is
+(Section 9.1). Section 12 closes four of what were previously listed
+here as gaps — `QUARANTINE` production, `AgentContext.trust_state`
+population/consultation, persisted policy rules, and wiring the
+governance gateway into the live MCP tool-dispatch path (opt-in via
+`Settings.mcp_governance_enabled`) — see that section for what's real
+now versus what within it is still deliberately unbuilt (webhook
+notification on a dispatch-path `REQUIRE_APPROVAL`, graceful
+degradation on an evidence-write failure, governing the stdio
+transport). What remains genuinely out of scope here: a **richer
+policy rule language** than plain risk-tier/action-type/target matching
+(OPA/Rego or similar, if ever needed — a deliberate, stated non-goal
+of `governance/policy.py`, not an oversight), a **richer approval
+lifecycle** than `PENDING -> APPROVED`/`DENIED` (expiry/timeout,
+multi-approver quorum, delegation-chain approval), **evidence export
+beyond JSON**, **true multi-region HA** (Section 9.1 is
 within-region only — no cross-region replication, no global load
 balancer, that's infrastructure the deployer builds, see
 `DEPLOY_RUNBOOK.md`), **`/metrics` on the MCP transport** (it has

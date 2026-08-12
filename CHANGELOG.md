@@ -53,6 +53,32 @@ unchanged (see `MIGRATION_WHITEPACT_V2.md` Section 11's timeline).
   build and attached to releases, Sigstore build provenance
   attestation on published artifacts, dependency-review gating on
   pull requests.
+- **`THREAT_MODEL.md`**, **`DETERMINISTIC_VS_PROBABILISTIC.md`**,
+  **`BENCHMARKS.md`** — new documents; `CONTRIBUTING.md`/`README.md`
+  rewritten for the current architecture.
+- **`GovernanceDecision.QUARANTINE` is now reachable** —
+  `governance/quarantine.py` tracks a caller's recent `DENY` decisions
+  (persisted evidence, rolling window) and the gateway returns
+  `QUARANTINE` at or above a fixed threshold, before even checking
+  authority.
+- **`AgentContext.trust_state` is populated and consulted** —
+  `governance/trust_integration.py` looks it up via the existing
+  `TrustClient` when an action names a provider+model; a known,
+  low-scoring model downgrades an otherwise-`ALLOW` decision to
+  `REQUIRE_APPROVAL`.
+- **Persisted governance policy rules** — new `governance_policies`
+  table (migration `0012`), `PolicyRepository` (add/remove/reorder),
+  and `GET/POST/DELETE /api/governance/policy*` endpoints. Policy rules
+  no longer only exist as in-code objects.
+- **MCP dispatch-path governance wiring** (opt-in,
+  `Settings.mcp_governance_enabled`, default `False`) — every hosted
+  Streamable HTTP/SSE tool call can now be evaluated by
+  `WhitePactRuntimeGateway` before it executes: `DENY`/`QUARANTINE`
+  block execution, `REQUIRE_APPROVAL` queues a real `ApprovalRequest`
+  instead of running the tool, `ALLOW_WITH_REDACTION` substitutes
+  redacted arguments. Off by default — a real behavior change for
+  anyone who enables it, so existing hosted deployments are unaffected
+  unless they opt in.
 
 ### Fixed
 - Stale `__version__ = "0.4.0"` in `responsibleai/__init__.py` (didn't
