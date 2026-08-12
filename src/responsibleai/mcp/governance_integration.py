@@ -38,9 +38,11 @@ now exactly one place in the governed path that invokes
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from responsibleai.dashboard.prometheus import observe_governance_decision
 from responsibleai.db import ApprovalRepository, EvidenceRepository, PolicyRepository
 from responsibleai.governance import (
     ActionRequest,
@@ -143,8 +145,15 @@ async def apply_governance(
     violation_count = await recent_violation_count(services.evidence_repo, ctx.org_id, agent.agent_id)
     policy = await services.policy_repo.get_policy(ctx.org_id)
 
+    evaluate_started = time.monotonic()
     decision = services.gateway.evaluate(
         action, authority, policy=policy, recent_violation_count=violation_count,
+    )
+    observe_governance_decision(
+        decision.decision.value,
+        decision.risk_tier.value if decision.risk_tier is not None else None,
+        time.monotonic() - evaluate_started,
+        org_id=ctx.org_id,
     )
     evidence = build_evidence_record(action, agent, authority, decision)
     try:

@@ -49,3 +49,27 @@ class TestClassifyActionRisk:
     def test_non_mcp_action_type_defaults_to_medium(self) -> None:
         assert classify_action_risk("api_call", "POST /api/webhooks") == RiskTier.MEDIUM
         assert classify_action_risk("transaction", "stripe") == RiskTier.MEDIUM
+
+    def test_tool_name_as_action_type_still_classifies_correctly(self) -> None:
+        """Regression test for a real bug found while wiring observability
+        metrics (Task #138): mcp/governance_integration.py's live
+        apply_governance() builds ActionRequest(action_type=name,
+        target=name, ...) for every real tool call -- the tool name in
+        BOTH fields, never the literal string "mcp_tool_call". Before
+        the fix, that meant every live governed call fell through to
+        the MEDIUM default regardless of the tool's real configured
+        tier, silently making TOOL_RISK_TIERS dead code on the one path
+        that matters."""
+        assert classify_action_risk("rai_health", "rai_health") == RiskTier.MINIMAL
+        assert classify_action_risk("rai_hallucination", "rai_hallucination") == RiskTier.HIGH
+        assert classify_action_risk("rai_scan", "rai_scan") == RiskTier.LOW
+
+    def test_coincidental_target_match_with_unrelated_action_type_still_classifies(self) -> None:
+        """Documents the (accepted) tradeoff of fixing via `target in
+        TOOL_RISK_TIERS`: an unrelated action_type whose target happens
+        to equal a real tool name also gets that tool's tier. Judged
+        safe -- tool names are specific strings ("rai_hallucination"),
+        not the kind of generic identifier ("stripe", "POST /api/...")
+        real non-MCP action targets use, so an accidental collision is
+        implausible in practice."""
+        assert classify_action_risk("some_other_action_type", "rai_hallucination") == RiskTier.HIGH

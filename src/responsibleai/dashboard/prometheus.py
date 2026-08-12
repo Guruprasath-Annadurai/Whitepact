@@ -12,6 +12,16 @@ Metrics exported:
     rai_drift_alerts_total        Counter Drift alerts fired by severity/org
     rai_active_ws_connections     Gauge   Live WebSocket connections
     rai_webhook_deliveries_total  Counter Webhook deliveries by event/success/org
+    whitepact_decisions_total     Counter Governance decisions by decision/risk_tier/org
+    whitepact_evaluation_seconds  Histogram WhitePactRuntimeGateway.evaluate() latency by org
+    whitepact_approvals_total     Counter Approval resolutions by outcome/org
+
+The `whitepact_*` metrics are named separately from the `rai_*` ones
+above (not `rai_governance_decisions_total`) deliberately — they belong
+to the v3 authority-layer pipeline (`governance/gateway.py`), a
+distinct subsystem from the pre-v3 `rai_*` product surface these other
+metrics instrument, and the naming makes that origin traceable in any
+dashboard or alert rule built against them.
 
 Per-tenant labeling, and its tradeoff: every governance metric now carries
 an `org_id` label so a per-tenant Grafana breakdown is possible (closing
@@ -35,6 +45,7 @@ from prometheus_client import (
     REGISTRY,
     Counter,
     Gauge,
+    Histogram,
     generate_latest,
 )
 
@@ -89,6 +100,29 @@ webhook_deliveries_total = Counter(
     ["event", "success", "org_id"],  # success: true | false
 )
 
+governance_decisions_total = Counter(
+    "whitepact_decisions_total",
+    "Total governance decisions produced by WhitePactRuntimeGateway.evaluate()",
+    ["decision", "risk_tier", "org_id"],
+)
+
+governance_evaluation_seconds = Histogram(
+    "whitepact_evaluation_seconds",
+    "WhitePactRuntimeGateway.evaluate() wall-clock latency",
+    ["org_id"],
+    # Sub-millisecond to low-single-digit-millisecond buckets -- evaluate()
+    # is a synchronous, regex-only, no-I/O call (gateway.py's own module
+    # docstring: "No LLM call anywhere in this file"), so anything above
+    # the top bucket here is itself a signal worth alerting on.
+    buckets=(0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0),
+)
+
+governance_approvals_total = Counter(
+    "whitepact_approvals_total",
+    "Total ApprovalRepository.resolve() outcomes",
+    ["outcome", "org_id"],  # outcome: APPROVED | DENIED
+)
+
 _UNSCOPED_ORG = "unscoped"
 
 
@@ -132,6 +166,20 @@ def observe_webhook_delivery(event: str, success: bool, org_id: str | None = Non
     webhook_deliveries_total.labels(
         event=event, success=str(success).lower(), org_id=_org_label(org_id),
     ).inc()
+
+
+def observe_governance_decision(
+    decision: str, risk_tier: str | None, duration_seconds: float, org_id: str | None = None,
+) -> None:
+    org = _org_label(org_id)
+    governance_decisions_total.labels(
+        decision=decision, risk_tier=risk_tier or "UNCLASSIFIED", org_id=org,
+    ).inc()
+    governance_evaluation_seconds.labels(org_id=org).observe(duration_seconds)
+
+
+def observe_governance_approval(outcome: str, org_id: str | None = None) -> None:
+    governance_approvals_total.labels(outcome=outcome, org_id=_org_label(org_id)).inc()
 
 
 def get_metrics_output() -> tuple[bytes, str]:

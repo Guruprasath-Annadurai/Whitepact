@@ -49,6 +49,7 @@ from responsibleai.dashboard.prometheus import (
     get_metrics_output,
     observe_cost,
     observe_drift_alert,
+    observe_governance_approval,
     observe_guardrail,
     observe_trust_score,
     observe_webhook_delivery,
@@ -2372,6 +2373,7 @@ async def governance_resolve_approval(
         raise HTTPException(409, str(exc)) from None
     except SelfApprovalError as exc:
         raise HTTPException(403, str(exc)) from None
+    observe_governance_approval(req.outcome, org_id=_auth.org_id)
     logger.info(
         "governance_approval_resolved", approval_id=approval_id,
         outcome=req.outcome, resolved_by=_auth.key_id, org_id=_auth.org_id,

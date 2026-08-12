@@ -83,12 +83,21 @@ _DEFAULT_TIER = RiskTier.MEDIUM
 
 def classify_action_risk(action_type: str, target: str) -> RiskTier:
     """The router: SPEC.md Section 2's "Risk (classified severity of the
-    action)" pipeline stage. For `action_type == "mcp_tool_call"`,
-    `target` is looked up in `TOOL_RISK_TIERS`; an unrecognized tool name
-    (a new tool added without updating this table, or a genuinely
-    unknown one) also gets the same honest MEDIUM default, not MINIMAL —
-    unclassified is not the same claim as verified-safe.
+    action)" pipeline stage. `target` is looked up in `TOOL_RISK_TIERS`
+    whenever `action_type == "mcp_tool_call"` (the literal convention
+    this module originally assumed) *or* whenever `target` itself is a
+    recognized tool name — the second branch exists because
+    `mcp/governance_integration.py`'s real, live `apply_governance()`
+    builds `ActionRequest(action_type=name, target=name, ...)` for a
+    tool call (the tool name in both fields, never the literal string
+    `"mcp_tool_call"`), so requiring an exact `action_type` match here
+    silently forced every live governed call through the MEDIUM
+    default regardless of its real tier — `TOOL_RISK_TIERS` was dead
+    code on the one path that matters until this fix. An unrecognized
+    tool name (a new tool added without updating this table, or a
+    genuinely unknown one) still gets the same honest MEDIUM default,
+    not MINIMAL — unclassified is not the same claim as verified-safe.
     """
-    if action_type == "mcp_tool_call":
+    if action_type == "mcp_tool_call" or target in TOOL_RISK_TIERS:
         return TOOL_RISK_TIERS.get(target, _DEFAULT_TIER)
     return _DEFAULT_TIER
