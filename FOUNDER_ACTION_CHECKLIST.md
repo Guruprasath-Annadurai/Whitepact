@@ -247,6 +247,30 @@ What's actually live:
       `database: ok`, `rate_limit_backend: redis`, prior org data
       intact. `whitepact-mcp-http` has no DB/Redis config at all
       (confirmed empty), so nothing needed rotating there.
+- [x] **Resolved 2026-08-13**: `whitepact-mcp-http` now has
+      `RAI_DATABASE_URL` and `RAI_REDIS_URL` wired in (the gap flagged
+      immediately above, from earlier the same day). Confirmed via a
+      genuinely new deploy (build started 20:17:51 UTC, distinct from
+      the prior 20:12 UTC deploy that only added `server.json`'s
+      `remotes` entry) — clean startup, no `asyncpg` or
+      `limits.errors.ConfigurationError` crash, `/health` returning
+      `200` continuously afterward. **Honest caveat**: this confirms
+      the values are set and didn't break startup — it does not prove
+      a real query against Postgres/Redis has actually succeeded yet,
+      since `create_engine()` connects lazily and this server (unlike
+      `responsibleai-dashboard`'s `/api/health`) doesn't report its DB
+      backend on either endpoint. Full confirmation needs an
+      authenticated tool call that touches usage/quota tracking once a
+      real API key exercises it — treat as "config applied, boot
+      verified" rather than "DB read/write verified" until then.
+- [ ] **Server.json `remotes` published 2026-08-13** (registry listing
+      version 1.2.3): `whitepact-mcp-http.onrender.com` is now listed
+      as a real remote MCP transport (`/mcp` streamable-http, `/sse`)
+      on the official MCP Registry, not just the stdio package. Live
+      per direct registry query (`isLatest: true`, `status: active`).
+      Follow-up still open: decide on OAuth 2.1 vs the current
+      apiKey-only auth before submitting to Anthropic's Connectors
+      Directory — see `compliance/CONNECTOR_READINESS_REPORT.md` §4.
 
 ## 7. Billing (only once selling live)
 
