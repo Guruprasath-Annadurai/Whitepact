@@ -4,10 +4,11 @@ Run: python examples/05_cost_intelligence.py
 """
 
 import random
-from responsibleai.cost.models import TokenUsage
-from responsibleai.cost.tracker import CostTracker
+
 from responsibleai.cost.analyzer import CostAnalyzer
+from responsibleai.cost.models import TokenUsage
 from responsibleai.cost.router import ModelRouter
+from responsibleai.cost.tracker import CostTracker
 
 tracker = CostTracker()
 analyzer = CostAnalyzer()
@@ -42,18 +43,18 @@ print("  COST INTELLIGENCE REPORT — ResponsibleAI v0.4.0")
 print("=" * 60)
 
 summary = tracker.monthly_summary()
-print(f"\n  Monthly Summary")
+print("\n  Monthly Summary")
 print(f"  Total Cost    : ${summary['total_cost_usd']:.4f}")
 print(f"  Total Tokens  : {summary['total_tokens']:,}")
 print(f"  Requests      : {summary['total_requests']:,}")
 print(f"  Distinct Models: {summary['distinct_models']}")
 
-print(f"\n  Model Breakdown")
+print("\n  Model Breakdown")
 for model_key, cost in summary["model_breakdown"].items():
     bar = "█" * max(1, int(cost / max(summary["model_breakdown"].values()) * 20))
     print(f"  {model_key:35s} {bar:20s} ${cost:.4f}")
 
-print(f"\n  Team Breakdown")
+print("\n  Team Breakdown")
 for team, cost in summary["team_breakdown"].items():
     print(f"  {team:20s} ${cost:.4f}")
 
@@ -63,7 +64,7 @@ status = "OVER BUDGET" if budget.is_exceeded else ("WARNING" if budget.alert_tri
 print(f"\n  Budget Status : {status} ({pct:.1f}% of ${budget.monthly_limit_usd:,.0f}/mo)")
 
 # Prompt efficiency
-print(f"\n  Prompt Efficiency Analysis")
+print("\n  Prompt Efficiency Analysis")
 bloated = (
     "Please note that as an AI language model, I want you to be aware that "
     "you should summarize the following text. It is important to note that "
@@ -80,7 +81,7 @@ for f in result.waste_findings:
     print(f"  [{f.severity.upper():6s}] {f.category}: {f.description[:55]}")
 
 # Routing
-print(f"\n  Model Router Recommendations")
+print("\n  Model Router Recommendations")
 tasks = [
     "Classify this support ticket as billing, technical, or general",
     "Summarize this 20-page contract into key clauses",

@@ -4,16 +4,16 @@ Simulates a complete AI governance evaluation cycle without requiring any API ke
 Run: python examples/07_full_governance_pipeline.py
 """
 
-from responsibleai.trust.score import TrustScoreEngine
-from responsibleai.trust.passport import PassportGenerator
+from responsibleai.compliance.engine import ComplianceEngine, Framework
+from responsibleai.cost.models import TokenUsage
+from responsibleai.cost.router import ModelRouter
+from responsibleai.cost.tracker import CostTracker
+from responsibleai.drift.monitor import TrustDriftMonitor
 from responsibleai.guardrails.engine import GuardrailsEngine
 from responsibleai.hallucination.detector import HallucinationDetector
-from responsibleai.compliance.engine import ComplianceEngine, Framework
 from responsibleai.redteam.simulator import RedTeamSimulator
-from responsibleai.cost.models import TokenUsage
-from responsibleai.cost.tracker import CostTracker
-from responsibleai.cost.router import ModelRouter
-from responsibleai.drift.monitor import TrustDriftMonitor
+from responsibleai.trust.passport import PassportGenerator
+from responsibleai.trust.score import TrustScoreEngine
 
 # ── Configuration ──────────────────────────────────────────────────────────
 MODEL_NAME = "enterprise-llm-v2"

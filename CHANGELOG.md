@@ -10,6 +10,21 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ---
 
+## [1.2.1] — 2026-08-12
+
+### Added
+
+- `mcp-name: io.github.guruprasath-annadurai/whitepact` verification
+  marker in `README.md` (rendered as an invisible HTML comment) —
+  the ownership-proof the official MCP Registry's `mcp-publisher` CLI
+  requires in a PyPI package's README before it will let the
+  `io.github.guruprasath-annadurai/whitepact` namespace publish
+  against the `rai-governance-platform` PyPI package. No behavior
+  change; PATCH bump exists solely to get this marker onto a live
+  PyPI release so registry publishing can proceed.
+
+---
+
 ## [1.2.0] — 2026-08-12
 
 Two development pushes, shipped together as one release since neither

@@ -100,6 +100,48 @@ to every other self-assessed claim.
 
 ---
 
+## 5a. Target list — named prospects (researched 2026-08-12)
+
+Agentic AI is a fast-moving space — treat this as a starting point to
+verify and refresh before outreach, not a permanent list. Prioritized
+toward smaller/mid-size agent-builder and orchestration platforms that
+plausibly lack their own governance layer and would see licensing one
+as faster than building it, over the giant enterprise incumbents
+(Salesforce Agentforce, Microsoft Copilot Studio, Kore.ai, Cognigy)
+who almost certainly build in-house and are not realistic OEM
+licensees for a small counterparty.
+
+- **CrewAI** — open-source-rooted multi-agent orchestration framework
+  with a growing commercial layer; large developer install base without
+  a bundled governance/compliance product of its own.
+- **Relevance AI** — no-code AI agent builder for business teams;
+  governance/audit-trail is a plausible enterprise-tier gap to fill via
+  licensing rather than building.
+- **Lyzr** — ships an "Agent Control Plane" concept already (identity,
+  observability, guardrails) — worth approaching either as a licensee
+  for the governance internals specifically, or as a partner/integration
+  rather than a full white-label, depending on how much they've already
+  built themselves.
+- **StackAI** — enterprise AI agent builder; targets exactly the
+  compliance-sensitive buyer (regulated industries) this pitch is built
+  for.
+- **Cognosys** — smaller agent-platform entrant; a governance layer is
+  the kind of enterprise checkbox a smaller team would rather license
+  than build from scratch.
+- **Orby AI** — enterprise process-automation/agent platform; the
+  compliance-and-audit angle fits their buyer profile.
+- **TrueFoundry** — AI infra/deployment platform for enterprises running
+  their own agents; a natural distribution partner even if not a
+  classic "OEM" fit (could license the governance layer as an add-on to
+  their existing infra offering).
+
+**Before sending anything**: confirm each company still exists in this
+shape and find a real named contact (LinkedIn, their own site) — do not
+use a generic "contact us" form for a cold OEM pitch; a warm or
+specific outreach lands far better than a form submission.
+
+---
+
 ## 6. Before this goes live
 
 1. This one-pager is a BD conversation starter, not a contract — a real OEM

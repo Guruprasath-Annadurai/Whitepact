@@ -3,7 +3,7 @@ Example 04 — Compliance Engine (NIST AI RMF, EU AI Act, ISO 42001)
 Run: python examples/04_compliance.py
 """
 
-from responsibleai.compliance.engine import ComplianceEngine, Framework, ComplianceStatus
+from responsibleai.compliance.engine import ComplianceEngine, ComplianceStatus, Framework
 
 engine = ComplianceEngine()
 

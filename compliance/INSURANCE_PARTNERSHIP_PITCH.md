@@ -105,10 +105,31 @@ either still being the right shape of company by the time you act.
   potential data-partnership conversation regardless, since they're
   explicitly "data-driven" — a novel governance signal may be exactly
   what their underwriting model wants to ingest.
+- **Armilla AI** — Chaucer-backed, pairs affirmative AI liability
+  coverage with independent model verification; reports limits up to
+  $25M as of this research (2026-08-12). The "independent verification"
+  angle makes this the second-closest conceptual fit to AIUC — same
+  competing-vs-complementary framing note applies: lead with the free
+  self-assessment layer as a feeder signal, not a replacement pitch.
+- **Corgi** — a full-stack AI-native insurance carrier (not just an MGA)
+  that bundles Tech & AI liability directly into a startup insurance
+  package. Worth approaching as a potential distribution partner for
+  bootstrapped AI companies specifically, since that's already their
+  target customer profile — a closer size match than Testudo.
+- **Klaimee** — insures autonomous AI agents specifically, covering both
+  first- and third-party harm. The narrowest, most directly relevant
+  fit of the newer entrants given WhitePact's own focus on agent/tool-
+  calling governance — an actual product-alignment conversation, not
+  just a data-partnership angle.
+- **Google Cloud Risk Protection Program** (with Beazley/Chubb/Munich Re)
+  — adjacent rather than a direct prospect: an affirmative-AI-insurance
+  endorsement for Google Cloud customers, not an MGA taking direct
+  outside pitches. Lower priority; only worth pursuing if there's a
+  concrete GCP-hosted-customer angle to bring to them.
 - **Broader search terms for additional candidates**: "AI liability
   insurance," "AI E&O coverage," "AI agent liability MGA" — this market
   has kept expanding through 2026, so a fresh search will likely surface
-  names beyond these two by the time you do outreach.
+  names beyond these by the time you do outreach.
 
 **Outreach approach**: a short, direct email — this pitch's Section 1
 paragraph, adapted to two sentences, plus a link to a live

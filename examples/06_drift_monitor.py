@@ -23,7 +23,7 @@ def make_score(v: float):
 print("\n" + "=" * 66)
 print("  TRUST DRIFT MONITOR — ResponsibleAI v0.4.0")
 print("=" * 66)
-print(f"\n  Simulating 12 weeks of evaluations for 2 models...\n")
+print("\n  Simulating 12 weeks of evaluations for 2 models...\n")
 
 alerts_gpt4o = []
 for week, s in enumerate(gpt4o_scores, 1):
@@ -60,7 +60,7 @@ else:
     print("  No drift alerts triggered.")
 
 # All-models summary
-print(f"\n  All Models Summary")
+print("\n  All Models Summary")
 for row in monitor.all_models():
     print(f"  {row['model_name']:20s} {row['provider']:12s} Score: {row['overall']:.1f}  [{row['grade']}]")
 

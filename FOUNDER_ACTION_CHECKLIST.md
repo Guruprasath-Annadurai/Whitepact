@@ -50,9 +50,14 @@ Last reviewed: 2026-07-23
 *Source: `compliance/OEM_LICENSING.md`, draft email in
 `compliance/outreach/READY_TO_SEND_EMAILS.md` Section 1*
 
-- [ ] Identify 5-10 named agent-platform startups as OEM prospects.
+- [x] Identify 5-10 named agent-platform startups as OEM prospects —
+      **done 2026-08-12**: CrewAI, Relevance AI, Lyzr, StackAI,
+      Cognosys, Orby AI, TrueFoundry. See `compliance/OEM_LICENSING.md`
+      Section 5a for rationale per company; confirm each still fits
+      before outreach, this space moves fast.
 - [ ] Fill in and send the drafted outreach email to each — content is
-      ready, recipient research and sending are yours.
+      ready, recipient research is now done, sending is yours (find a
+      named contact per company, don't use a generic contact form).
 - [ ] Have an actual OEM license agreement drafted by an attorney before
       any real deal closes — the one-pager is a conversation starter only.
 - [ ] Update Section 4's pricing anchors once a real deal closes somewhere
@@ -82,9 +87,18 @@ Last reviewed: 2026-07-23
       mid-market focus — likely too large a customer profile to be your
       own prospect, but worth a direct data-partnership pitch anyway).
       Find current contact channels on `aiuc.com` and Testudo's site.
-- [ ] Search for additional current candidates beyond these two — this
-      market kept expanding through 2026.
-- [ ] Fill in and send the drafted email to 2-3 targets.
+- [x] Search for additional current candidates beyond these two —
+      **done 2026-08-12**: **Armilla AI** (Chaucer-backed, up to $25M,
+      pairs coverage with independent model verification — same
+      competing/complementary framing as AIUC), **Corgi** (full-stack
+      AI-native carrier, closer size match to a bootstrapped company
+      than Testudo), **Klaimee** (insures autonomous AI agents
+      specifically — narrowest product fit of any candidate found),
+      **Google Cloud Risk Protection Program** (adjacent, lower
+      priority). See `compliance/INSURANCE_PARTNERSHIP_PITCH.md`
+      Section 5 for detail.
+- [ ] Fill in and send the drafted email to 2-3 targets — Klaimee and
+      Corgi are the strongest fits given the researched detail above.
 - [ ] Get any real interest confirmed in writing before treating it as a
       partnership or announcing it publicly.
 

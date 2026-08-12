@@ -1,3 +1,4 @@
+<!-- mcp-name: io.github.guruprasath-annadurai/whitepact -->
 <p align="center">
   <a href="https://github.com/Guruprasath-Annadurai/Whitepact/actions"><img src="https://github.com/Guruprasath-Annadurai/Whitepact/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
   <a href="https://pypi.org/project/rai-governance-platform/"><img src="https://img.shields.io/pypi/v/rai-governance-platform" alt="PyPI version"/></a>
