@@ -164,7 +164,7 @@ instead. What's actually live:
 
 *Source: `TERMS_OF_SERVICE.md`, `PRIVACY_POLICY.md`,
 `compliance/DPA_TEMPLATE.md`, `compliance/DPA_ATTORNEY_SCOPE_BRIEF.md`,
-`compliance/OEM_LICENSING.md`*
+`compliance/OEM_LICENSING.md`, `compliance/NO_BUDGET_TRUST_PATH.md`*
 
 - [ ] Decide your target jurisdiction/regime (EU/UK vs. US-only vs.
       mixed) — `compliance/DPA_ATTORNEY_SCOPE_BRIEF.md`'s first question,
@@ -178,19 +178,33 @@ instead. What's actually live:
       white-label deal (see Section 2 above).
 - [ ] Decide your entity structure (stay sole proprietor, or form an
       LLC/corp) — affects every legal document above, all of which
-      currently assume sole proprietor.
+      currently assume sole proprietor. `compliance/NO_BUDGET_TRUST_PATH.md`
+      Section 1 has real, low-cost options researched for this (India
+      OPC via SPICe+, or a US LLC in a low-fee state) if a full-fee
+      incorporation isn't in budget yet — inferred from this repo's own
+      INR-denominated test fixtures that India is the likely
+      jurisdiction; correct that document if it's wrong.
 
 ## 9. SOC 2 and penetration test (funding-gated — no fixed date)
 
-*Source: `compliance/SOC2_READINESS.md`, `compliance/INTERNAL_SECURITY_REVIEW.md`*
+*Source: `compliance/SOC2_READINESS.md`, `compliance/INTERNAL_SECURITY_REVIEW.md`,
+`compliance/SOC2_ALTERNATIVE_PATH.md`, `compliance/NO_BUDGET_TRUST_PATH.md`*
 
 - [ ] Once the hosted instance (Section 6) has run for at least a full
       quarter, engage a real CPA firm for a SOC 2 Type I report, using
-      `compliance/SOC2_READINESS.md` as the intake packet.
+      `compliance/SOC2_READINESS.md` as the intake packet. In the
+      meantime, `compliance/SOC2_ALTERNATIVE_PATH.md` is the free,
+      honest interim signal set (OpenSSF Scorecard, SBOM/provenance,
+      CSA STAR Level 1 once you submit `CAIQ_SELF_ASSESSMENT.md`).
 - [ ] Operate under Type I's controls for 3-12 months, then pursue Type II.
 - [ ] Commission a real third-party penetration test ($5-15K) once budget
       allows — `compliance/INTERNAL_SECURITY_REVIEW.md` narrows the gap
-      but doesn't close it.
+      but doesn't close it. `.github/workflows/security-scan.yml` (added
+      this session) is the free, honest interim step: a recurring,
+      automated, dated Bandit + pip-audit scan — real and checkable, but
+      never describe it as a penetration test. See
+      `compliance/NO_BUDGET_TRUST_PATH.md` Section 2 for exactly how to
+      phrase this to a buyer without overclaiming.
 
 ## 10. Governance and organizational (founder decisions, no fixed date)
 

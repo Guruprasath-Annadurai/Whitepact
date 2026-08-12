@@ -1,0 +1,59 @@
+name: Self-Conducted Security Scan
+
+# A real, recurring, dated, publicly-viewable-in-Actions-history SAST
+# (Bandit) + dependency vulnerability audit (pip-audit) run — free,
+# zero external cost, self-conducted (not an independent third-party
+# assessment, never described as one). See
+# compliance/SELF_CONDUCTED_SECURITY_ASSESSMENT.md for what this is
+# honestly worth as an interim step before a real, paid, independent
+# penetration test, and why "self-conducted, automated, recurring, and
+# with real findings triaged in git history" is a materially stronger
+# claim than a one-time manual scan would be.
+
+on:
+  schedule:
+    - cron: "17 4 * * 1" # weekly
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: Bandit SAST + pip-audit dependency scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install project + scan tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install bandit pip-audit
+
+      - name: Run Bandit (static analysis for common security issues)
+        run: |
+          bandit -r src/responsibleai -ll -f json -o bandit-report.json
+          bandit -r src/responsibleai -ll
+
+      - name: Run pip-audit (known-vulnerability dependency scan)
+        run: pip-audit --format json -o pip-audit-report.json || pip-audit
+        continue-on-error: false
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-scan-reports
+          path: |
+            bandit-report.json
+            pip-audit-report.json
+          retention-days: 90
