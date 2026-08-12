@@ -49,9 +49,10 @@ fee for submission or listing, annual update required to stay current
 The completed CAIQ v4.0.3 (`compliance/CAIQv4.0.3_WhitePact_completed.xlsx`,
 `scripts/caiq_answers.py`) was submitted through the founder's own CSA
 account via the STAR submission portal (`star.watch`) as a Self
-Assessment, Service Category: SaaS. Submission confirmation was
-received; the listing itself is subject to CSA's own review/publish
-timeline — check
+Assessment, Service Category: SaaS. As of 2026-08-12 the submission
+status shows **Email Confirmed → Approved by Organization → Pending
+CSA Approval** — everything on the founder's side is complete; it now
+sits in CSA's own review queue with no fixed published SLA. Check
 [cloudsecurityalliance.org/star/registry](https://cloudsecurityalliance.org/star/registry)
 periodically for "WhitePact" to appear, and watch the account email for
 any CSA follow-up. Do not describe this as "SOC 2 compliant" or
