@@ -230,6 +230,12 @@ class DecisionResult:
     redacted_arguments: dict[str, Any] | None = None
     risk_tier: RiskTier | None = None
     evaluated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    # None whenever no Policy reached evaluation for this action at all
+    # (a quarantine/authority/constraint short-circuit before the
+    # policy-check step never consulted one) -- distinct from a Policy
+    # that was consulted and had no matching rule, which still stamps
+    # its version here. See Policy.version's docstring.
+    policy_version: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -239,4 +245,5 @@ class DecisionResult:
             "redacted_arguments": self.redacted_arguments,
             "risk_tier": self.risk_tier.value if self.risk_tier is not None else None,
             "evaluated_at": self.evaluated_at.isoformat(),
+            "policy_version": self.policy_version,
         }

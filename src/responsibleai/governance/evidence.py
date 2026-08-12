@@ -72,6 +72,11 @@ class EvidenceRecord:
     evidence_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     organization_id: str | None = None
     risk_tier: str | None = None  # RiskTier.value, or None if never classified
+    # DecisionResult.policy_version's value, carried through -- None
+    # whenever no Policy reached evaluation for this action, otherwise
+    # exactly which persisted policy version this decision was
+    # evaluated against (Policy.version's docstring).
+    policy_version: int | None = None
     framework: str | None = None
     provider: str | None = None
     model: str | None = None
@@ -90,6 +95,7 @@ class EvidenceRecord:
             "argument_keys": self.argument_keys,
             "authority_delegated_by": self.authority_delegated_by,
             "risk_tier": self.risk_tier,
+            "policy_version": self.policy_version,
             "decision": self.decision,
             "reason_codes": self.reason_codes,
             "framework": self.framework,
@@ -125,6 +131,7 @@ def build_evidence_record(
         evaluated_at=decision.evaluated_at,
         organization_id=agent.organization_id,
         risk_tier=decision.risk_tier.value if isinstance(decision.risk_tier, RiskTier) else None,
+        policy_version=decision.policy_version,
         framework=agent.framework,
         provider=agent.provider,
         model=agent.model,

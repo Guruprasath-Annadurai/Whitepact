@@ -137,6 +137,7 @@ class WhitePactRuntimeGateway:
             )
 
         policy_reason_codes: list[str] = []
+        policy_version = policy.version if policy is not None else None
 
         if policy is not None:
             match = policy.evaluate(action, risk_tier)
@@ -157,11 +158,14 @@ class WhitePactRuntimeGateway:
                         action_id=action.action_id,
                         reason_codes=[reason],
                         risk_tier=risk_tier,
+                        policy_version=policy_version,
                     )
                 policy_reason_codes.append(reason)
 
         field_results, redacted_arguments = self._scan_arguments(action.arguments)
-        return self._decide_from_scan(action, field_results, redacted_arguments, risk_tier, policy_reason_codes)
+        return self._decide_from_scan(
+            action, field_results, redacted_arguments, risk_tier, policy_reason_codes, policy_version,
+        )
 
     def _scan_arguments(
         self, arguments: dict[str, Any],
@@ -184,6 +188,7 @@ class WhitePactRuntimeGateway:
         redacted_arguments: dict[str, Any],
         risk_tier: RiskTier,
         policy_reason_codes: list[str],
+        policy_version: int | None = None,
     ) -> DecisionResult:
         hard_block_reasons = [
             format_reason(ReasonCode.CONTENT_POLICY_VIOLATION, field=field, detail=reason)
@@ -197,6 +202,7 @@ class WhitePactRuntimeGateway:
                 action_id=action.action_id,
                 reason_codes=[*policy_reason_codes, *hard_block_reasons],
                 risk_tier=risk_tier,
+                policy_version=policy_version,
             )
 
         pii_fields = [field for field, result in field_results.items() if result.has_pii]
@@ -210,6 +216,7 @@ class WhitePactRuntimeGateway:
                 ],
                 redacted_arguments=redacted_arguments,
                 risk_tier=risk_tier,
+                policy_version=policy_version,
             )
 
         low_trust_reason = self._low_trust_reason(action)
@@ -219,6 +226,7 @@ class WhitePactRuntimeGateway:
                 action_id=action.action_id,
                 reason_codes=[*policy_reason_codes, low_trust_reason],
                 risk_tier=risk_tier,
+                policy_version=policy_version,
             )
 
         return DecisionResult(
@@ -226,6 +234,7 @@ class WhitePactRuntimeGateway:
             action_id=action.action_id,
             reason_codes=policy_reason_codes,
             risk_tier=risk_tier,
+            policy_version=policy_version,
         )
 
     @staticmethod

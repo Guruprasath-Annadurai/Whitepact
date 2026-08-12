@@ -378,6 +378,9 @@ governance_evidence = Table(
     Column("argument_keys",           Text,        nullable=True),  # JSON list of field names, never values
     Column("authority_delegated_by",  String(200), nullable=False),
     Column("risk_tier",               String(20),  nullable=True),
+    # NULL when no Policy reached evaluation for this action at all --
+    # see governance/policy.py's Policy.version docstring.
+    Column("policy_version",          Integer,     nullable=True),
     Column("decision",                String(30),  nullable=False),
     Column("reason_codes",            Text,        nullable=False),  # JSON list
     Column("framework",               String(50),  nullable=True),
@@ -452,6 +455,20 @@ governance_policies = Table(
     Column("updated_at",    String(32),  nullable=False),
     Index("idx_gpol_org",      "org_id"),
     Index("idx_gpol_position", "org_id", "position"),
+)
+
+# One row per org: a monotonically increasing counter bumped by
+# PolicyRepository on every rule-set mutation (add/remove/reorder).
+# Deliberately a separate table, not a column derived from MAX(rows'
+# updated_at) or COUNT(rows) -- a removal must still advance the
+# version (evidence recorded before the removal referenced a real,
+# distinct rule set), which a row-count-based scheme would get wrong.
+governance_policy_versions = Table(
+    "governance_policy_versions",
+    metadata,
+    Column("org_id",     String(36), primary_key=True),
+    Column("version",    Integer,    nullable=False, default=0),
+    Column("updated_at", String(32), nullable=False),
 )
 
 

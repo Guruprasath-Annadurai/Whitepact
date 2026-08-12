@@ -145,3 +145,89 @@ class TestIntegrationWithGatewayEvaluate:
         result = gateway.evaluate(action, authority, policy=policy)
         assert result.decision == GovernanceDecision.DENY
         assert any("block-incident-log" in code for code in result.reason_codes)
+
+
+class TestPolicyVersioning:
+    """v3 authority-layer work (Task #134): evidence must be able to say
+    exactly which persisted policy version a decision was evaluated
+    against, not just "a Policy" or "no Policy" -- see
+    governance/policy.py's Policy.version docstring."""
+
+    async def test_untouched_org_has_version_zero(self, repo: PolicyRepository) -> None:
+        assert await repo.get_policy_version("new-org") == 0
+        policy = await repo.get_policy("new-org")
+        assert policy.version == 0
+
+    async def test_add_rule_bumps_version(self, repo: PolicyRepository) -> None:
+        await repo.add_rule("org-1", _rule("r1"))
+        assert await repo.get_policy_version("org-1") == 1
+        await repo.add_rule("org-1", _rule("r2"))
+        assert await repo.get_policy_version("org-1") == 2
+
+    async def test_remove_rule_bumps_version(self, repo: PolicyRepository) -> None:
+        await repo.add_rule("org-1", _rule("r1"))
+        version_after_add = await repo.get_policy_version("org-1")
+        await repo.remove_rule("org-1", "r1")
+        assert await repo.get_policy_version("org-1") == version_after_add + 1
+
+    async def test_reorder_bumps_version_even_with_no_content_change(self, repo: PolicyRepository) -> None:
+        await repo.add_rule("org-1", _rule("r1"))
+        await repo.add_rule("org-1", _rule("r2"))
+        version_before = await repo.get_policy_version("org-1")
+        await repo.reorder("org-1", ["r2", "r1"])
+        assert await repo.get_policy_version("org-1") == version_before + 1
+
+    async def test_get_policy_returns_current_version(self, repo: PolicyRepository) -> None:
+        await repo.add_rule("org-1", _rule("r1"))
+        policy = await repo.get_policy("org-1")
+        assert policy.version == 1
+
+    async def test_versions_are_independent_per_org(self, repo: PolicyRepository) -> None:
+        await repo.add_rule("org-a", _rule("r1"))
+        await repo.add_rule("org-a", _rule("r2"))
+        await repo.add_rule("org-b", _rule("r1"))
+        assert await repo.get_policy_version("org-a") == 2
+        assert await repo.get_policy_version("org-b") == 1
+
+    async def test_gateway_decision_carries_the_policy_version(self, repo: PolicyRepository) -> None:
+        from responsibleai.governance import (
+            ActionRequest,
+            AgentContext,
+            AuthorityContext,
+            IdentityContext,
+            WhitePactRuntimeGateway,
+        )
+
+        await repo.add_rule(
+            "org-1",
+            PolicyRule(rule_id="allow-all", reason_code="ok", effect=GovernanceDecision.ALLOW),
+        )
+        policy = await repo.get_policy("org-1")
+        assert policy.version == 1
+
+        gateway = WhitePactRuntimeGateway()
+        identity = IdentityContext(identity_id="k1", kind="api_key", org_id="org-1")
+        agent = AgentContext(identity=identity)
+        authority = AuthorityContext(delegated_by="org-1", granted_action_types=frozenset({"rai_health"}))
+        action = ActionRequest(agent=agent, action_type="rai_health", target="rai_health", arguments={})
+
+        result = gateway.evaluate(action, authority, policy=policy)
+        assert result.policy_version == 1
+
+    async def test_no_policy_supplied_leaves_policy_version_none(self) -> None:
+        from responsibleai.governance import (
+            ActionRequest,
+            AgentContext,
+            AuthorityContext,
+            IdentityContext,
+            WhitePactRuntimeGateway,
+        )
+
+        gateway = WhitePactRuntimeGateway()
+        identity = IdentityContext(identity_id="k1", kind="api_key", org_id="org-1")
+        agent = AgentContext(identity=identity)
+        authority = AuthorityContext(delegated_by="org-1", granted_action_types=frozenset({"rai_health"}))
+        action = ActionRequest(agent=agent, action_type="rai_health", target="rai_health", arguments={})
+
+        result = gateway.evaluate(action, authority, policy=None)
+        assert result.policy_version is None

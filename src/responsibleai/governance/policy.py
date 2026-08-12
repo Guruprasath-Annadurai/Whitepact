@@ -70,10 +70,20 @@ class Policy:
     order is the whole conflict-resolution model, deliberately, so a
     policy's behavior is always "read the rules top to bottom," not a
     priority/specificity scoring system that needs its own explanation.
+
+    ``version`` is a monotonically increasing integer bumped by
+    ``PolicyRepository`` on every mutation (add/remove/reorder a rule)
+    — not a version of any one rule, but of the *ordered set as a
+    whole*, since a reorder with no rule content change still changes
+    which rule wins for an overlapping action. ``0`` for an in-memory
+    ``Policy`` built directly (e.g. in a test) rather than fetched via
+    ``PolicyRepository.get_policy()`` — never persisted, never
+    evaluated as if it were a real version.
     """
 
     org_id: str
     rules: list[PolicyRule] = field(default_factory=list)
+    version: int = 0
 
     def evaluate(self, action: ActionRequest, risk_tier: RiskTier) -> PolicyMatch | None:
         for rule in self.rules:

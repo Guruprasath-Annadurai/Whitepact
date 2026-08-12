@@ -20,7 +20,7 @@ from typing import Any
 
 from sqlalchemy import delete, insert, select, update
 
-from responsibleai.db.engine import DatabaseEngine, governance_policies
+from responsibleai.db.engine import DatabaseEngine, governance_policies, governance_policy_versions
 from responsibleai.governance.models import GovernanceDecision
 from responsibleai.governance.policy import Policy, PolicyRule
 from responsibleai.governance.risk import RiskTier
@@ -48,11 +48,48 @@ class PolicyRuleNotFoundError(Exception):
     pass
 
 
+async def _bump_version(conn: Any, org_id: str) -> int:
+    """Increments `governance_policy_versions`' counter for *org_id* by
+    1 (creating the row at version 1 if none exists), within the
+    caller's already-open transaction — every mutation below calls this
+    inside its own `begin()` block, so the rule-set change and the
+    version bump are atomic together, never one without the other."""
+    current = (await conn.execute(
+        select(governance_policy_versions.c.version)
+        .where(governance_policy_versions.c.org_id == org_id)
+    )).scalar()
+    now = _now()
+    next_version = 1 if current is None else current + 1
+    if current is None:
+        await conn.execute(insert(governance_policy_versions).values(
+            org_id=org_id, version=next_version, updated_at=now,
+        ))
+    else:
+        await conn.execute(
+            update(governance_policy_versions)
+            .where(governance_policy_versions.c.org_id == org_id)
+            .values(version=next_version, updated_at=now)
+        )
+    return next_version
+
+
 class PolicyRepository:
     """CRUD over one ordered rule set per organization."""
 
     def __init__(self, engine: DatabaseEngine) -> None:
         self._engine = engine
+
+    async def get_policy_version(self, org_id: str) -> int:
+        """0 for an org that has never mutated its rule set — matches
+        `Policy.version`'s own documented default for an unpersisted
+        `Policy`, so a never-touched org's evaluations are indistinguishable
+        from "no real version exists yet," which is the honest state."""
+        async with self._engine.raw.connect() as conn:
+            version = (await conn.execute(
+                select(governance_policy_versions.c.version)
+                .where(governance_policy_versions.c.org_id == org_id)
+            )).scalar()
+        return version or 0
 
     async def get_policy(self, org_id: str) -> Policy:
         """Always returns a `Policy` — empty (no rules) if the org has
@@ -64,7 +101,8 @@ class PolicyRepository:
                 .where(governance_policies.c.org_id == org_id)
                 .order_by(governance_policies.c.position.asc())
             )).fetchall()
-        return Policy(org_id=org_id, rules=[_row_to_rule(r) for r in rows])
+        version = await self.get_policy_version(org_id)
+        return Policy(org_id=org_id, rules=[_row_to_rule(r) for r in rows], version=version)
 
     async def add_rule(self, org_id: str, rule: PolicyRule) -> None:
         """Appends *rule* at the end of the org's current evaluation
@@ -94,6 +132,7 @@ class PolicyRepository:
                 created_at=now,
                 updated_at=now,
             ))
+            await _bump_version(conn, org_id)
 
     async def remove_rule(self, org_id: str, rule_id: str) -> None:
         async with self._engine.raw.begin() as conn:
@@ -104,6 +143,7 @@ class PolicyRepository:
             )
             if result.rowcount == 0:
                 raise PolicyRuleNotFoundError(f"No rule {rule_id!r} for org {org_id!r}")
+            await _bump_version(conn, org_id)
 
     async def reorder(self, org_id: str, rule_ids_in_order: list[str]) -> None:
         """Replaces the org's evaluation order wholesale — every existing
@@ -126,3 +166,4 @@ class PolicyRepository:
                     .where(governance_policies.c.rule_id == rule_id)
                     .values(position=position, updated_at=now)
                 )
+            await _bump_version(conn, org_id)
