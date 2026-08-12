@@ -8,6 +8,61 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ## [Unreleased]
 
+### Added
+
+- Multi-approver quorum for `REQUIRE_APPROVAL` decisions on high-risk
+  actions — configurable `required_approvals` (default 2 for HIGH
+  risk tier), `governance_approval_votes` table, veto-on-any-DENY
+  semantics, replay-guarded against a resolver voting twice.
+- Delegation chains on `AuthorityContext.delegation_chain`, validated
+  against the acting identity and a configurable `max_delegation_depth`,
+  carried through to `EvidenceRecord` for audit.
+- Upstream MCP tool discovery — `GET /api/governance/upstream/tools`
+  queries every registered upstream server in parallel, per-server
+  timeout-bounded, namespaced `server_id::tool_name` results; one dead
+  server can't hang or hide the rest.
+- Public, unauthenticated `/.well-known/mcp/server-card.json` on the
+  hosted MCP HTTP transport, serving the same live `TOOL_DEFS`/
+  `RESOURCE_DEFS` the server advertises over MCP itself — lets
+  directories without an OAuth authorization server configured (this
+  deployment only supports static Bearer API keys) complete a listing
+  without a live authenticated scan.
+- `.github/workflows/security-scan.yml` — weekly + on-push Bandit
+  (SAST) + pip-audit (dependency vulnerability) scan, the free, honest
+  interim signal ahead of a real, paid, independent penetration test.
+- `compliance/NO_BUDGET_TRUST_PATH.md` — researched, real options for
+  legal entity formation, penetration testing, and SOC 2 under a
+  dev/scaling-only budget constraint.
+- `scripts/caiq_answers.py` + `compliance/CAIQv4.0.3_WhitePact_completed.xlsx`
+  — the full, honestly-answered 261-question CSA STAR CAIQ v4.0.3
+  questionnaire (107 Yes / 122 No / 32 N/A), submitted to the CSA STAR
+  Registry, Level 1 (currently pending CSA's own review).
+- WhitePact is now listed on the official MCP Registry
+  (`io.github.Guruprasath-Annadurai/whitepact`) and on Smithery
+  (`guruprasathannadurai-official/whitepact`) — both verified live,
+  not just submitted.
+- `whitepact-mcp-http` — a second Render web service hosting the
+  Streamable HTTP MCP transport publicly for the first time; the
+  dashboard service alone never served `/mcp`.
+
+### Fixed
+
+- Seven call sites across `dashboard/app.py`, `mcp/tools.py`, and
+  `mcp/resources.py` (`/api/health`, `/api/version`,
+  `/api/support/status`, the `X-API-Version` header, the
+  `rai_audit_summary`/`rai_health` MCP tools, the `rai://health` MCP
+  resource) had the package version hardcoded as a literal string,
+  silently stale since the 1.2.1/1.2.2 releases. Now read
+  `responsibleai.__version__` everywhere; tests assert against the
+  real value instead of a literal so this can't drift stale again.
+- A real ~17-day hosted-instance outage (2026-07-26 to 2026-08-12):
+  the Supabase free-tier database auto-paused from inactivity, and
+  every deploy since crashed at startup on an unreachable-tenant
+  pooler error — including pure-documentation commits, which is what
+  ruled out the application code as the cause. Resolved by freeing a
+  Supabase free-tier project slot and resuming the paused database;
+  no data lost.
+
 ---
 
 ## [1.2.2] — 2026-08-12

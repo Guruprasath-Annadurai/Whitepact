@@ -4,7 +4,9 @@
   <a href="https://pypi.org/project/rai-governance-platform/"><img src="https://img.shields.io/pypi/v/rai-governance-platform" alt="PyPI version"/></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"/></a>
-  <a href="https://github.com/Guruprasath-Annadurai/Whitepact"><img src="https://img.shields.io/badge/tests-1584_passing-brightgreen.svg" alt="1584 tests passing"/></a>
+  <a href="https://github.com/Guruprasath-Annadurai/Whitepact"><img src="https://img.shields.io/badge/tests-1725_passing-brightgreen.svg" alt="1725 tests passing"/></a>
+  <a href="https://registry.modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP_Registry-listed-blue.svg" alt="Listed on the official MCP Registry"/></a>
+  <a href="https://smithery.ai/server/guruprasathannadurai-official/whitepact"><img src="https://img.shields.io/badge/Smithery-listed-blue.svg" alt="Listed on Smithery"/></a>
   <a href="https://scorecard.dev/viewer/?uri=github.com/Guruprasath-Annadurai/Whitepact"><img src="https://api.scorecard.dev/projects/github.com/Guruprasath-Annadurai/Whitepact/badge" alt="OpenSSF Scorecard"/></a>
 </p>
 
@@ -12,7 +14,7 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│                        WhitePact  v1.2.0                                     │
+│                        WhitePact  v1.2.2                                     │
 │                                                                              │
 │  ┌──────────────┐  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐  │
 │  │ Governance   │  │ Trust Score │  │  Compliance  │  │  Guardrails      │  │
@@ -288,13 +290,31 @@ See `GAME_CHANGER_BUILD_PLAN.md` Phase B for the reasoning behind each.
 | NIST AI RMF checklist | `whitepact://compliance/checklist/nist` | Actionable NIST implementation checklist |
 | EU AI Act checklist | `whitepact://compliance/checklist/eu-ai-act` | Compliance checklist for high-risk operators |
 
-### MCP registry manifest
+### MCP directory listings
 
-`server.json` at the repository root is the official MCP registry manifest
-(schema `2025-12-11`). It is **not yet submitted** — see
-`compliance/MCP_DISTRIBUTION_GUIDE.md` for the specific, real blockers
-(a PyPI release matching the manifest's version, GitHub namespace
-verification, and a real hosted transport URL).
+WhitePact is listed and queryable today on two real MCP directories —
+not aspirational, both verified live:
+
+- **Official MCP Registry** — `server.json` at the repository root
+  (schema `2025-12-11`) is published as
+  `io.github.Guruprasath-Annadurai/whitepact`, confirmed queryable at
+  [registry.modelcontextprotocol.io](https://registry.modelcontextprotocol.io).
+  Advertises the PyPI/stdio package (`whitepact-mcp`), self-hosted,
+  free, unrestricted.
+- **Smithery** — listed as
+  [`guruprasathannadurai-official/whitepact`](https://smithery.ai/server/guruprasathannadurai-official/whitepact),
+  27 tools and 20 resources discovered against the hosted Streamable
+  HTTP transport (`whitepact-mcp-http.onrender.com/mcp`, a separate
+  Render service from the main dashboard). This deployment has no
+  OAuth authorization server configured — only static Bearer API
+  keys — so a public, unauthenticated
+  `/.well-known/mcp/server-card.json` serves the same live
+  `TOOL_DEFS`/`RESOURCE_DEFS` the server itself advertises, for
+  directories whose scanners can't complete a live authenticated
+  crawl.
+
+See `compliance/MCP_DISTRIBUTION_GUIDE.md` for the full distribution
+plan, including directories not yet submitted to.
 
 ---
 
@@ -732,7 +752,7 @@ mypy src/responsibleai src/biasbuster
 - [x] v1.0 — WebSocket drift alerts, Prometheus endpoint, multi-tenant RBAC, org management API
 - [x] v1.1 — MCP server (10 tools, 5 resources), audit log API, red team API, billing API, Alembic migrations, per-org rate limiting, DB-persisted webhook retry queue
 - [x] v1.2 — Public Leaderboard, Trust Index/Passports + embeddable badges, AI Incident Database, TOTP MFA, expanded field encryption, DB-persisted webhooks, full dashboard UI rebuild, white-label branding, a genuinely live hosted instance — see `CHANGELOG.md` for the full list
-- [x] WhitePact migration (in progress across `1.2.0`) — governance decision core, MCP Streamable HTTP + OAuth/OIDC, risk tiering + policy engine, hash-chained evidence, approval workflow, MCP trust/supply-chain scanner, HA Helm deployment, supply chain security (SBOM/provenance), release engineering, MCP registry manifest, open source governance — see `MIGRATION_WHITEPACT_V2.md` for the full phase-by-phase log and what's still not done
+- [x] WhitePact migration (`1.2.0` → `1.2.2`) — governance decision core, MCP Streamable HTTP + OAuth/OIDC, risk tiering + policy engine, hash-chained evidence, approval workflow, multi-approver quorum + delegation chains, upstream MCP tool discovery, MCP trust/supply-chain scanner, HA Helm deployment, supply chain security (SBOM/provenance), release engineering, open source governance, live listings on the official MCP Registry and Smithery — see `MIGRATION_WHITEPACT_V2.md` for the full phase-by-phase log and what's still not done
 - [ ] v2.0 onward — see `VERSION_ROADMAP.md` for the phase-by-phase plan through v6.0
 - **Strategic direction** — `GAME_CHANGER_STRATEGY.md` lays out an infrastructure-first bet (free public trust registry, an agent-native trust-check primitive, AI-answer-engine citability) as an alternative to the enterprise-SaaS path, with `GAME_CHANGER_BUILD_PLAN.md` breaking it into concrete engineering phases against the current codebase
 
