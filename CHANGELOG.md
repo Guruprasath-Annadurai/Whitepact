@@ -8,13 +8,24 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ## [Unreleased]
 
-WhitePact Enterprise Foundation v2 — see `SPEC.md` and
-`MIGRATION_WHITEPACT_V2.md` for full detail on every item below;
-this entry summarizes, it isn't the source of truth. Additive
-throughout: every `RAI_`/`responsibleai`/`rai://` name kept working
-unchanged (see `MIGRATION_WHITEPACT_V2.md` Section 11's timeline).
+---
 
-### Added
+## [1.2.0] — 2026-08-12
+
+Two development pushes, shipped together as one release since neither
+had reached PyPI before now (the previous published version is
+`1.1.0`): the pre-migration batch below (Leaderboard, Trust Index,
+Incident Database, MFA, and a set of real security fixes) and the full
+WhitePact Enterprise Foundation v2 migration on top of it. See `SPEC.md`
+and `MIGRATION_WHITEPACT_V2.md` for full detail on every item below;
+this entry summarizes, it isn't the source of truth.
+
+### Added — WhitePact Enterprise Foundation v2 migration
+
+Additive throughout: every `RAI_`/`responsibleai`/`rai://` name kept
+working unchanged (see `MIGRATION_WHITEPACT_V2.md` Section 14's
+timeline).
+
 - **`whitepact` alias package** (`src/whitepact/`) re-exporting
   `responsibleai`'s public API by object identity, plus
   `WHITEPACT_*` env var precedence and `whitepact`/`whitepact-mcp`/
@@ -89,7 +100,7 @@ unchanged (see `MIGRATION_WHITEPACT_V2.md` Section 11's timeline).
   independently verifiable trust signals for when a paid SOC 2 audit
   isn't yet affordable, researched with real 2026 pricing.
 
-### Fixed
+### Fixed — WhitePact Enterprise Foundation v2 migration
 - Stale `__version__ = "0.4.0"` in `responsibleai/__init__.py` (didn't
   match `pyproject.toml`'s `1.2.0`).
 - Hardcoded-stale tool/resource counts in the MCP `health` resource
@@ -107,11 +118,7 @@ unchanged (see `MIGRATION_WHITEPACT_V2.md` Section 11's timeline).
   `THREAT_MODEL.md`'s Dashboard REST API section and
   `tests/test_tenant_isolation.py` for the regression test.
 
----
-
-## [1.2.0] — 2026-07-23
-
-### Added
+### Added — pre-migration batch (built 2026-07-23, shipped now)
 - **Public Leaderboard** — cross-model trust leaderboard computed by
   actually calling each model's public inference API against a fixed
   prompt corpus (not self-reported): `leaderboard_models`/`leaderboard_runs`
@@ -178,7 +185,7 @@ unchanged (see `MIGRATION_WHITEPACT_V2.md` Section 11's timeline).
   Supabase for Postgres, Upstash for Redis) after both Oracle Cloud's and
   Google Cloud's signup flows hit real friction.
 
-### Fixed
+### Fixed — pre-migration batch
 - **`nltk` PYSEC-2026-597** (path traversal) — moved out of the mandatory
   dependency set into an opt-in `[sentiment]` extra; the one call site
   passes a hardcoded, non-attacker-controlled resource name.
@@ -204,7 +211,9 @@ unchanged (see `MIGRATION_WHITEPACT_V2.md` Section 11's timeline).
   `migrations/env.py` (a separate engine-construction path Alembic uses).
 
 ### Tests
-- 1271 passed, 1 skipped (up from 919 in 1.1.0).
+- Combined result as of this release: **1586 passed** (up from 919 in
+  1.1.0 — 1271 after the pre-migration batch above, then the full
+  WhitePact migration on top of that).
 
 ---
 
