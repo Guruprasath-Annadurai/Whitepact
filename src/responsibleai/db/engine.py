@@ -416,6 +416,10 @@ governance_approvals = Table(
     Column("status",             String(20),  nullable=False, default="PENDING"),
     Column("requested_by",       String(200), nullable=True),
     Column("requested_at",       String(32),  nullable=False),
+    # NULL = no expiry enforced (only true for rows persisted before
+    # this column existed; every new approval always gets one — see
+    # governance/approval.py's DEFAULT_APPROVAL_TTL_HOURS).
+    Column("expires_at",         String(32),  nullable=True),
     Column("resolved_by",        String(200), nullable=True),
     Column("resolved_at",        String(32),  nullable=True),
     Column("resolution_notes",   Text,        nullable=True),

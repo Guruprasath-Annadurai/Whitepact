@@ -63,6 +63,7 @@ from responsibleai.dashboard.telemetry import (
 from responsibleai.dashboard.websocket_manager import ConnectionManager
 from responsibleai.db import (
     ApprovalAlreadyResolvedError,
+    ApprovalExpiredError,
     ApprovalNotFoundError,
     ApprovalRepository,
     AuditRepository,
@@ -77,6 +78,7 @@ from responsibleai.db import (
     PolicyRepository,
     PolicyRuleNotFoundError,
     PublicIncidentRepository,
+    SelfApprovalError,
     SSORequiredError,
     TrustRepository,
     WebhookConfigRepository,
@@ -2366,6 +2368,10 @@ async def governance_resolve_approval(
         raise HTTPException(404, str(exc)) from None
     except ApprovalAlreadyResolvedError as exc:
         raise HTTPException(409, str(exc)) from None
+    except ApprovalExpiredError as exc:
+        raise HTTPException(409, str(exc)) from None
+    except SelfApprovalError as exc:
+        raise HTTPException(403, str(exc)) from None
     logger.info(
         "governance_approval_resolved", approval_id=approval_id,
         outcome=req.outcome, resolved_by=_auth.key_id, org_id=_auth.org_id,

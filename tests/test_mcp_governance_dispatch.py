@@ -22,7 +22,7 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
 from responsibleai.db import EvidenceRepository, OrgRepository, create_engine
-from responsibleai.governance import QUARANTINE_VIOLATION_THRESHOLD
+from responsibleai.governance import QUARANTINE_VIOLATION_THRESHOLD, WhitePactRuntimeGateway
 from responsibleai.rbac.models import Plan, Role
 
 
@@ -303,3 +303,43 @@ class TestEvidenceWriteFailsClosed:
         payload = json.loads(result.content[0].text)
         assert payload["error"] == "governance_evidence_unavailable"
         assert "status" not in payload  # rai_health's own real response never ran
+
+
+class TestAuthoritySubsystemCrashFailsClosed:
+    """Distinct invariant from TestEvidenceWriteFailsClosed above: this
+    proves a crash *inside the decision engine itself*
+    (`WhitePactRuntimeGateway.evaluate()`) — not a downstream persistence
+    failure — also fails closed. `apply_governance()` has no
+    try/except around `services.gateway.evaluate(...)`; an exception
+    there propagates out of `apply_governance()` before evidence is
+    written and before `authorize_execution()`/`InternalToolExecutor`
+    is ever reached, so the tool structurally cannot have run. What
+    this test locks in: the MCP server layer must not convert that
+    propagated exception into a silent ALLOW — either it surfaces as an
+    MCP-protocol error, or a non-2xx/error CallToolResult, but never a
+    normal tool payload."""
+
+    async def test_gateway_exception_never_executes_the_tool(
+        self, governed_app, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        def _raise(self, action, authority, policy=None, *, recent_violation_count=0):
+            raise RuntimeError("simulated authority/policy subsystem crash")
+
+        monkeypatch.setattr(WhitePactRuntimeGateway, "evaluate", _raise)
+
+        app, raw_key, org_id, engine = governed_app
+        try:
+            result = await _call(app, raw_key, "rai_health", {})
+        except Exception:  # noqa: BLE001 -- either failure mode proves fail-closed
+            pass
+        else:
+            # The MCP SDK caught it server-side and returned a result --
+            # that result must be an explicit error, never rai_health's
+            # real payload (which has a "status" key).
+            assert result.isError is True or "status" not in json.loads(result.content[0].text)
+
+        # No evidence exists for this call at all (not even a DENY) --
+        # confirms build_evidence_record()/evidence_repo.record() were
+        # never reached, i.e. execution never got past evaluate().
+        records = await EvidenceRepository(engine).list_for_org(org_id)
+        assert not any(r.action_type == "rai_health" for r in records)

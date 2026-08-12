@@ -24,12 +24,18 @@ import hashlib
 import json
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any
 
 from responsibleai.governance.models import ActionRequest, DecisionResult
 from responsibleai.governance.risk import RiskTier
+
+# A single, hardcoded default rather than per-org configuration -- same
+# reasoning as quarantine.py's QUARANTINE_VIOLATION_THRESHOLD: a
+# circuit breaker/safety bound, not a tuning knob orgs are expected to
+# reach for on day one.
+DEFAULT_APPROVAL_TTL_HOURS = 24
 
 
 class ApprovalStatus(StrEnum):
@@ -83,6 +89,10 @@ class ApprovalRequest:
     risk_tier: str | None = None
     requested_by: str | None = None  # identity_id of the agent/actor that proposed the action
     status: ApprovalStatus = ApprovalStatus.PENDING
+    # None only for rows persisted before this field existed -- every
+    # newly built ApprovalRequest always gets one, via
+    # build_approval_request() below.
+    expires_at: datetime | None = None
     resolved_by: str | None = None
     resolved_at: datetime | None = None
     resolution_notes: str | None = None
@@ -90,6 +100,15 @@ class ApprovalRequest:
     @property
     def is_resolved(self) -> bool:
         return self.status is not ApprovalStatus.PENDING
+
+    @property
+    def is_expired(self) -> bool:
+        """False (not expired) for a legacy row with no expires_at --
+        same fail-closed-only-where-we-have-signal reasoning as
+        matches_action()'s empty-digest case, but inverted: an absent
+        TTL is a data-migration artifact, not a security signal, so it
+        must not retroactively expire approvals nobody set a limit on."""
+        return self.expires_at is not None and datetime.now(UTC) > self.expires_at
 
     def matches_action(self, action: ActionRequest) -> bool:
         """True only if *action* is byte-for-byte the same action_type/
@@ -113,6 +132,7 @@ class ApprovalRequest:
             "requested_by": self.requested_by,
             "status": self.status.value,
             "requested_at": self.requested_at.isoformat(),
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
             "resolved_by": self.resolved_by,
             "resolved_at": self.resolved_at.isoformat() if self.resolved_at else None,
             "resolution_notes": self.resolution_notes,
@@ -134,6 +154,7 @@ def build_approval_request(action: ActionRequest, decision: DecisionResult) -> A
         action_digest=compute_action_digest(action),
         reason_codes=list(decision.reason_codes),
         requested_at=decision.evaluated_at,
+        expires_at=decision.evaluated_at + timedelta(hours=DEFAULT_APPROVAL_TTL_HOURS),
         organization_id=action.agent.organization_id,
         risk_tier=decision.risk_tier.value if isinstance(decision.risk_tier, RiskTier) else None,
         requested_by=action.agent.identity.identity_id,

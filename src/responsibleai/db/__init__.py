@@ -3,6 +3,7 @@
 from responsibleai.db.approval_repository import (
     ApprovalActionMismatchError,
     ApprovalAlreadyResolvedError,
+    ApprovalExpiredError,
     ApprovalNotApprovedError,
     ApprovalNotFoundError,
     ApprovalRepository,
@@ -28,6 +29,7 @@ from responsibleai.db.webhook_repository import (
 __all__ = [
     "ApprovalActionMismatchError",
     "ApprovalAlreadyResolvedError",
+    "ApprovalExpiredError",
     "ApprovalNotApprovedError",
     "ApprovalNotFoundError",
     "ApprovalRepository",

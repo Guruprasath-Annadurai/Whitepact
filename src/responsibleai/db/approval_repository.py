@@ -56,6 +56,21 @@ class SelfApprovalError(Exception):
         )
 
 
+class ApprovalExpiredError(Exception):
+    """The approval window (`ApprovalRequest.expires_at`) has passed --
+    raised uniformly by both `resolve()` and `consume()`, since a human
+    decision made against a since-expired context, or an execution
+    attempted against one, are both exactly the case an expiry exists
+    to prevent."""
+
+    reason_code = ReasonCode.APPROVAL_EXPIRED
+
+    def __init__(self, approval_id: str, expires_at: str | None) -> None:
+        self.approval_id = approval_id
+        self.expires_at = expires_at
+        super().__init__(f"Approval {approval_id!r} expired at {expires_at!r}.")
+
+
 class ApprovalNotApprovedError(Exception):
     """consume() requires status == APPROVED — covers both "never
     approved" (PENDING/DENIED) and "already executed once"
@@ -96,6 +111,7 @@ def _row_to_request(row: Any) -> ApprovalRequest:
         requested_by=row.requested_by,
         status=ApprovalStatus(row.status),
         requested_at=datetime.fromisoformat(row.requested_at),
+        expires_at=datetime.fromisoformat(row.expires_at) if getattr(row, "expires_at", None) else None,
         resolved_by=row.resolved_by,
         resolved_at=datetime.fromisoformat(row.resolved_at) if row.resolved_at else None,
         resolution_notes=row.resolution_notes,
@@ -136,6 +152,7 @@ class ApprovalRepository:
                 status=approval.status.value,
                 requested_by=approval.requested_by,
                 requested_at=approval.requested_at.isoformat(),
+                expires_at=approval.expires_at.isoformat() if approval.expires_at else None,
             ))
 
         if webhook_manager is not None:
@@ -191,6 +208,8 @@ class ApprovalRepository:
             raise ApprovalNotFoundError(approval_id)
         if current.is_resolved:
             raise ApprovalAlreadyResolvedError(approval_id, current.status.value)
+        if current.is_expired:
+            raise ApprovalExpiredError(approval_id, current.expires_at.isoformat() if current.expires_at else None)
         # Section 26: the identity that proposed the action cannot also
         # be the one who resolves its own approval requirement — checked
         # even though today's REST layer requires ADMIN role to resolve,
@@ -262,6 +281,8 @@ class ApprovalRepository:
             raise ApprovalNotFoundError(approval_id)
         if current.status is not ApprovalStatus.APPROVED:
             raise ApprovalNotApprovedError(approval_id, current.status.value)
+        if current.is_expired:
+            raise ApprovalExpiredError(approval_id, current.expires_at.isoformat() if current.expires_at else None)
         if not current.matches_action(action):
             raise ApprovalActionMismatchError(approval_id)
 
