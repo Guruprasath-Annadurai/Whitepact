@@ -74,6 +74,19 @@ Last reviewed: 2026-07-23
       Gemini Enterprise has a "set up your custom MCP server data
       store" flow — a per-org admin connects a custom MCP server
       manually, no central directory. Nothing to submit here either.
+- [ ] Anthropic — **checked live 2026-08-13, genuinely different from
+      OpenAI/Google**: Claude's **Custom Connectors** (bring-your-own
+      URL) already works today with zero action, same as the others —
+      any user can paste `https://whitepact-mcp-http.onrender.com/mcp`
+      into their own Custom Connectors settings right now. But
+      Anthropic *also* runs a real, curated, in-app **Connectors
+      Directory** with its own actual submission/review process (an
+      "Anthropic Software Directory Policy" and a verification step,
+      per their own help center) — this is the one directory of the
+      four that genuinely needs a founder action. The submission entry
+      point lives behind Claude Console login (`console.claude.com`),
+      which needs your own account — search the Console for
+      "Connectors Directory" or "Submit a connector" once logged in.
 
 ## 2. OEM/white-label outreach (zero cost — founder time only)
 
