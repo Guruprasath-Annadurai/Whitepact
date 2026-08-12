@@ -73,6 +73,14 @@ TOOL_RISK_TIERS: dict[str, RiskTier] = {
     "rai_benchmark_prompts": RiskTier.HIGH,
 }
 
+# The action_type governance/upstream_executor.py's UpstreamMCPExecutor
+# uses -- defined here, not there, so this module (imported by
+# governance/models.py) never has to import upstream_executor.py
+# (which imports governance/execution.py, which imports models.py --
+# upstream_executor importing this constant from here is the only
+# direction that doesn't cycle).
+UPSTREAM_ACTION_TYPE = "upstream_mcp_tool_call"
+
 # Non-MCP action types (SPEC.md Section 3.4's other action_type values:
 # "api_call", "transaction", "db_operation", ...) have no tool-name table
 # to classify by. MEDIUM, not MINIMAL, is the honest default -- treating
@@ -98,6 +106,15 @@ def classify_action_risk(action_type: str, target: str) -> RiskTier:
     genuinely unknown one) still gets the same honest MEDIUM default,
     not MINIMAL — unclassified is not the same claim as verified-safe.
     """
+    if action_type == UPSTREAM_ACTION_TYPE:
+        # A call proxied to a third-party MCP server (governance/
+        # upstream_executor.py) is inherently less verified than this
+        # platform's own 27 tools -- the honest default is the top
+        # tier, not the same MEDIUM given to a merely-unrecognized
+        # internal action_type. Registration itself is the approval
+        # gate (ReasonCode.UNAPPROVED_MCP_SERVER); this is a
+        # risk-tiering decision, not a substitute for that gate.
+        return RiskTier.HIGH
     if action_type == "mcp_tool_call" or target in TOOL_RISK_TIERS:
         return TOOL_RISK_TIERS.get(target, _DEFAULT_TIER)
     return _DEFAULT_TIER

@@ -84,6 +84,8 @@ from responsibleai.db import (
     SelfApprovalError,
     SSORequiredError,
     TrustRepository,
+    UpstreamServerNotFoundError,
+    UpstreamServerRepository,
     WebhookConfigRepository,
     WebhookDeliveryRepository,
     create_engine,
@@ -100,9 +102,15 @@ from responsibleai.eval import (
     RegressionDetector,
 )
 from responsibleai.governance.approval import ApprovalStatus
+from responsibleai.governance.gateway import WhitePactRuntimeGateway
 from responsibleai.governance.models import GovernanceDecision
 from responsibleai.governance.policy import PolicyRule
 from responsibleai.governance.risk import RiskTier
+from responsibleai.governance.upstream import UnsafeUpstreamServerURLError
+from responsibleai.governance.upstream_executor import (
+    UpstreamMCPExecutor,
+    UpstreamServerNotAvailableError,
+)
 from responsibleai.guardrails.engine import GuardrailsEngine
 from responsibleai.hallucination.detector import HallucinationDetector
 from responsibleai.incidents.logic import build_incident_record
@@ -111,6 +119,7 @@ from responsibleai.leaderboard.providers import ProviderNotConfiguredError, get_
 from responsibleai.leaderboard.runner import LeaderboardRunner
 from responsibleai.mcp.governance_integration import resume_approval
 from responsibleai.mcp.licensing import monthly_quota, plan_catalog
+from responsibleai.mcp.upstream_dispatch import apply_upstream_governance
 from responsibleai.rbac import (
     AuditEntry,
     OrgContext,
@@ -202,6 +211,8 @@ _mcp_usage_repo: McpUsageRepository | None = None
 _evidence_repo: EvidenceRepository | None = None
 _approval_repo: ApprovalRepository | None = None
 _policy_repo: PolicyRepository | None = None
+_upstream_registry: UpstreamServerRepository | None = None
+_upstream_gateway: WhitePactRuntimeGateway = WhitePactRuntimeGateway()
 _db_engine: DatabaseEngine | None = None
 _ws_manager: ConnectionManager = ConnectionManager()
 _webhook_manager: WebhookManager = WebhookManager()
@@ -249,7 +260,7 @@ async def lifespan(application: FastAPI):
     global _compliance, _cost_repo, _cost_analyzer, _router, _trust_repo
     global _org_repo, _audit_repo, _incident_repo, _leaderboard_repo, _leaderboard_runner
     global _passport_repo, _public_incident_repo, _db_engine, _mcp_usage_repo
-    global _evidence_repo, _approval_repo, _policy_repo
+    global _evidence_repo, _approval_repo, _policy_repo, _upstream_registry
     global _eval_repo, _comparator, _benchmark_runner, _dataset_scanner
     global _oidc_provider, _stripe_service, _plan_rate_limiter
 
@@ -292,6 +303,7 @@ async def lifespan(application: FastAPI):
     _evidence_repo = EvidenceRepository(_db_engine)
     _approval_repo = ApprovalRepository(_db_engine)
     _policy_repo = PolicyRepository(_db_engine)
+    _upstream_registry = UpstreamServerRepository(_db_engine)
     _guardrails   = GuardrailsEngine()
     _hallucination = HallucinationDetector()
     _compliance   = ComplianceEngine()
@@ -777,6 +789,17 @@ class SupplyChainScanRequest(BaseModel):
         description="Cross-reference the public AI Incident Database. "
         "Set false to run only the offline checks (no DB query).",
     )
+
+
+class UpstreamServerRegisterRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    url: str = Field(..., min_length=1, max_length=2048)
+    auth_token: str | None = Field(default=None, max_length=4096)
+
+
+class UpstreamToolCallRequest(BaseModel):
+    tool_name: str = Field(..., min_length=1, max_length=200)
+    arguments: dict[str, Any] = Field(default_factory=dict)
 
 
 class WebhookCreateRequest(BaseModel):
@@ -2542,6 +2565,100 @@ async def governance_supplychain_scan(
     incident_repo = _public_incident_repo if req.check_known_incidents else None
     report = await _supplychain_scanner.scan(manifest, incident_repo=incident_repo)
     return report.to_dict()
+
+
+# ── MCP Upstream Gateway ────────────────────────────────────────────────────────
+# v3 authority-layer work: an org-scoped registry of approved external MCP
+# servers, and a governed proxy call to a specific tool on one of them. See
+# governance/upstream.py, governance/upstream_executor.py,
+# mcp/upstream_dispatch.py.
+
+@app.post("/api/governance/upstream/servers", tags=["governance"], status_code=201)
+@limiter.limit("10/minute")
+async def upstream_register_server(
+    request: Request,
+    req: UpstreamServerRegisterRequest,
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, Any]:
+    """Registering a server IS the approval step (see
+    ReasonCode.UNAPPROVED_MCP_SERVER) -- ADMIN-role, and the URL is
+    SSRF-validated (private/loopback/link-local/reserved/multicast/
+    unspecified addresses, cloud-metadata endpoint) before anything is
+    persisted."""
+    if not _auth.org_id:
+        raise HTTPException(400, "Upstream servers require an org-scoped API key, not a legacy flat key.")
+    try:
+        server = await _ready(_upstream_registry).register(
+            _auth.org_id, req.name, req.url, added_by=_auth.key_id, auth_token=req.auth_token,
+        )
+    except UnsafeUpstreamServerURLError as exc:
+        raise HTTPException(422, str(exc)) from None
+    logger.info("upstream_server_registered", server_id=server.server_id, org_id=_auth.org_id, added_by=_auth.key_id)
+    return server.to_dict()
+
+
+@app.get("/api/governance/upstream/servers", tags=["governance"])
+@limiter.limit("30/minute")
+async def upstream_list_servers(
+    request: Request,
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
+) -> dict[str, Any]:
+    if not _auth.org_id:
+        raise HTTPException(400, "Upstream servers require an org-scoped API key, not a legacy flat key.")
+    servers = await _ready(_upstream_registry).list_for_org(_auth.org_id)
+    return {"servers": [s.to_dict() for s in servers]}
+
+
+@app.delete("/api/governance/upstream/servers/{server_id}", tags=["governance"])
+@limiter.limit("10/minute")
+async def upstream_remove_server(
+    request: Request,
+    server_id: str,
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, str]:
+    if not _auth.org_id:
+        raise HTTPException(400, "Upstream servers require an org-scoped API key, not a legacy flat key.")
+    try:
+        await _ready(_upstream_registry).remove(_auth.org_id, server_id)
+    except UpstreamServerNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from None
+    logger.info("upstream_server_removed", server_id=server_id, org_id=_auth.org_id, removed_by=_auth.key_id)
+    return {"status": "removed", "server_id": server_id}
+
+
+@app.post("/api/governance/upstream/servers/{server_id}/call", tags=["governance"])
+@limiter.limit("30/minute")
+async def upstream_call_tool(
+    request: Request,
+    server_id: str,
+    req: UpstreamToolCallRequest,
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
+) -> dict[str, Any]:
+    """A governed proxy call to one tool on one registered upstream MCP
+    server -- goes through the exact same five-way decision every
+    internal tool call goes through (risk classification, authority,
+    policy, quarantine, evidence), with the registry membership check
+    (registered / same org / enabled) as an additional pre-check. Same
+    ANALYST+ tier as internal governed tool calls: real authorization
+    happens in the governance pipeline, not the REST role check."""
+    if not _auth.org_id:
+        raise HTTPException(400, "Upstream calls require an org-scoped API key, not a legacy flat key.")
+    executor = UpstreamMCPExecutor(_ready(_upstream_registry))
+    try:
+        outcome = await apply_upstream_governance(
+            server_id, req.tool_name, req.arguments, _auth,
+            gateway=_upstream_gateway,
+            evidence_repo=_ready(_evidence_repo),
+            policy_repo=_ready(_policy_repo),
+            approval_repo=_ready(_approval_repo),
+            upstream_registry=_ready(_upstream_registry),
+            executor=executor,
+        )
+    except UpstreamServerNotAvailableError as exc:
+        raise HTTPException(404, str(exc)) from None
+    if not outcome.proceed:
+        return outcome.blocked_response or {"error": "governance_blocked"}
+    return {"server_id": server_id, "tool_name": req.tool_name, "result": outcome.result}
 
 
 # ── WebSocket live dashboard ───────────────────────────────────────────────────

@@ -480,6 +480,29 @@ governance_policy_versions = Table(
     Column("updated_at", String(32), nullable=False),
 )
 
+# The MCP Upstream Gateway's registry (v3 authority-layer work): one row
+# per org-registered, SSRF-validated external MCP server. Registration
+# is the approval step -- a call naming an unregistered/disabled/other-
+# org's server_id is denied (ReasonCode.UNAPPROVED_MCP_SERVER) before
+# any network connection is attempted. See governance/upstream.py and
+# governance/upstream_executor.py.
+upstream_mcp_servers = Table(
+    "upstream_mcp_servers",
+    metadata,
+    Column("id",         String(36),   primary_key=True),  # server_id
+    Column("org_id",     String(36),   nullable=False),
+    Column("name",       String(200),  nullable=False),
+    Column("url",        String(2048), nullable=False),
+    Column("enabled",    Integer,      nullable=False, server_default="1"),
+    # Bearer credential for the upstream server itself -- opt-in
+    # encrypted (EncryptedString, RAI_FIELD_ENCRYPTION_KEY), same
+    # protection as every other credential column in this schema.
+    Column("auth_token", EncryptedString(), nullable=True),
+    Column("added_by",   String(200),  nullable=True),
+    Column("created_at", String(32),   nullable=False),
+    Index("idx_ums_org", "org_id"),
+)
+
 
 class DatabaseEngine:
     """Async database engine wrapping SQLAlchemy — SQLite or PostgreSQL.

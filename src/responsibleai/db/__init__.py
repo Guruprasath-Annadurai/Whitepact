@@ -21,6 +21,10 @@ from responsibleai.db.passport_repository import PassportRepository
 from responsibleai.db.policy_repository import PolicyRepository, PolicyRuleNotFoundError
 from responsibleai.db.public_incident_repository import PublicIncidentRepository
 from responsibleai.db.repositories import CostRepository, TrustRepository
+from responsibleai.db.upstream_repository import (
+    UpstreamServerNotFoundError,
+    UpstreamServerRepository,
+)
 from responsibleai.db.webhook_repository import (
     WebhookConfigRepository,
     WebhookDeliveryRepository,
@@ -42,4 +46,5 @@ __all__ = [
     "LeaderboardRepository", "PassportRepository", "PublicIncidentRepository",
     "PolicyRepository", "PolicyRuleNotFoundError",
     "SSORequiredError", "create_engine",
+    "UpstreamServerNotFoundError", "UpstreamServerRepository",
 ]

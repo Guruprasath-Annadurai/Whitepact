@@ -270,25 +270,33 @@ async def resume_approval(
     approval_repo: ApprovalRepository,
     evidence_repo: EvidenceRepository,
     org_id: str,
+    upstream_registry: Any = None,
 ) -> dict[str, Any]:
     """The REQUIRE_APPROVAL -> resume-execution pipeline: given an
     approval a human has already resolved APPROVED, reconstruct the
     exact action they approved, consume the approval (mutation/replay/
     self-approval-protected, `db/approval_repository.py`'s `consume()`),
-    and actually execute it via `InternalToolExecutor`, the same
-    executor the live governed dispatch path uses -- there is still
-    only one place `dispatch_tool()` is reachable from, whether an
-    action runs immediately (ALLOW) or later (REQUIRE_APPROVAL ->
-    resume).
+    and actually execute it -- via `InternalToolExecutor` for one of
+    this platform's own tools, or via `UpstreamMCPExecutor` when the
+    persisted approval's `action_type` is
+    `governance/upstream_executor.py`'s `ACTION_TYPE` (an approval
+    queued by `mcp/upstream_dispatch.py`'s `apply_upstream_governance()`).
+    `upstream_registry` is required only for that second case -- a
+    caller that only ever resumes internal-tool approvals (the REST
+    endpoint's default) can omit it and never pays for importing the
+    upstream module.
 
     Raises `ApprovalNotFoundError`/`ApprovalNotApprovedError`/
     `ApprovalExpiredError`/`ApprovalActionMismatchError` (all from
     `db/approval_repository.py`) or `ValueError` (no persisted
-    arguments, i.e. a pre-resume-feature approval) -- callers (e.g. a
+    arguments, i.e. a pre-resume-feature approval, OR an upstream
+    approval resumed without `upstream_registry`) -- callers (e.g. a
     REST endpoint) map these the same way the resolve endpoint already
     maps the first three.
     """
     from responsibleai.db import ApprovalNotFoundError
+    from responsibleai.governance.upstream_executor import ACTION_TYPE as _UPSTREAM_ACTION_TYPE
+    from responsibleai.governance.upstream_executor import UpstreamMCPExecutor
 
     approval = await approval_repo.get(approval_id)
     if approval is None or approval.organization_id != org_id:
@@ -299,6 +307,16 @@ async def resume_approval(
 
     agent = _agent_from_approval(approval)
     action = build_resume_action(approval, agent=agent)
+
+    if approval.action_type == _UPSTREAM_ACTION_TYPE:
+        if upstream_registry is None:
+            raise ValueError(
+                f"Approval {approval.approval_id!r} is an upstream MCP tool call and "
+                "requires upstream_registry to resume."
+            )
+        executor: Any = UpstreamMCPExecutor(upstream_registry)
+    else:
+        executor = _executor
 
     # consume() is called BEFORE execution, not after -- it's the
     # single-use guard (mutation + replay protection); a resume must
@@ -313,7 +331,7 @@ async def resume_approval(
         risk_tier=RiskTier(approval.risk_tier) if approval.risk_tier else None,
     )
     authorization = authorize_execution(decision, action)
-    result = await _executor.execute(authorization, action)
+    result = await executor.execute(authorization, action)
 
     authority = AuthorityContext(delegated_by=org_id, granted_action_types=frozenset({action.action_type}))
     evidence = build_evidence_record(action, agent, authority, decision)
