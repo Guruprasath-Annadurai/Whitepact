@@ -605,3 +605,134 @@ class TestResumeApprovalWorksForUpstreamOriginatedApprovals:
                 org_id="org-1",
             )
         await engine.close()
+
+
+class TestUpstreamToolDiscovery:
+    """governance/upstream_discovery.py (Task #144, bounded scope --
+    discovery/aggregation only, deliberately not live MCP protocol
+    tools/list injection, see that module's docstring)."""
+
+    async def test_discover_returns_real_tools_from_a_real_second_server(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from responsibleai.db import OrgRepository, create_engine
+        from responsibleai.governance.upstream_discovery import discover_upstream_tools
+        from responsibleai.mcp.server import _build_http_app
+        from responsibleai.rbac.models import Plan, Role
+
+        _fake_public_dns(monkeypatch)
+
+        upstream_engine = create_engine(":memory:")
+        await upstream_engine.init()
+        upstream_org_repo = OrgRepository(upstream_engine)
+        upstream_org = await upstream_org_repo.create_org(
+            "Discovery Provider Co", "discovery-provider-co", plan=Plan.ENTERPRISE,
+        )
+        _key_rec, upstream_raw_key = await upstream_org_repo.create_key(
+            upstream_org.id, "discovery-key", role=Role.ANALYST,
+        )
+
+        import responsibleai.db as db_module
+
+        monkeypatch.setattr(db_module, "create_engine", lambda _url: upstream_engine)
+        upstream_app = _build_http_app()
+
+        def _http_client_factory():
+            return httpx.AsyncClient(transport=ASGITransport(app=upstream_app), base_url="http://upstream-test")
+
+        # _FakeRegistry (used elsewhere in this file) only implements
+        # get(); discover_upstream_tools also needs list_for_org(), so
+        # this uses the real repository against a throwaway engine.
+        real_engine = create_engine(":memory:")
+        await real_engine.init()
+        real_registry = UpstreamServerRepository(real_engine)
+        await real_registry.register(
+            "org-1", "real-upstream", "http://upstream-test/mcp", auth_token=upstream_raw_key,
+        )
+
+        async with LifespanManager(upstream_app):
+            tools, errors = await discover_upstream_tools(
+                real_registry, "org-1", http_client_factory=_http_client_factory,
+            )
+
+        assert errors == {}
+        assert len(tools) > 0
+        assert any(t.tool_name == "rai_health" for t in tools)
+        namespaced = next(t for t in tools if t.tool_name == "rai_health")
+        assert namespaced.namespaced_name.startswith(namespaced.server_id)
+        assert "::" in namespaced.namespaced_name
+
+        await real_engine.close()
+        await upstream_engine.close()
+
+    async def test_unreachable_server_reports_error_not_exception(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from responsibleai.db import create_engine
+        from responsibleai.governance.upstream_discovery import discover_upstream_tools
+
+        _fake_public_dns(monkeypatch)
+        engine = create_engine(":memory:")
+        await engine.init()
+        registry = UpstreamServerRepository(engine)
+        await registry.register("org-1", "dead-server", "https://dead.example.com/mcp")
+
+        def _broken_factory():
+            return httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(500)))
+
+        tools, errors = await discover_upstream_tools(registry, "org-1", http_client_factory=_broken_factory)
+        assert tools == []
+        assert len(errors) == 1
+        await engine.close()
+
+    async def test_rest_endpoint_returns_discovered_tools(
+        self, client: AsyncClient, org_and_admin_key, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        org_id, admin_key = org_and_admin_key
+        _fake_public_dns(monkeypatch)
+        headers = {"Authorization": f"Bearer {admin_key}"}
+
+        import responsibleai.db as db_module
+        from responsibleai.db import OrgRepository, create_engine
+        from responsibleai.mcp.server import _build_http_app
+        from responsibleai.rbac.models import Plan, Role
+
+        upstream_engine = create_engine(":memory:")
+        await upstream_engine.init()
+        upstream_org_repo = OrgRepository(upstream_engine)
+        upstream_org = await upstream_org_repo.create_org(
+            "REST Discovery Co", "rest-discovery-co", plan=Plan.ENTERPRISE,
+        )
+        _key_rec, upstream_raw_key = await upstream_org_repo.create_key(
+            upstream_org.id, "rest-discovery-key", role=Role.ANALYST,
+        )
+
+        r = await client.post(
+            "/api/governance/upstream/servers",
+            json={"name": "rest-upstream", "url": "http://upstream-test/mcp", "auth_token": upstream_raw_key},
+            headers=headers,
+        )
+        assert r.status_code == 201
+
+        monkeypatch.setattr(db_module, "create_engine", lambda _url: upstream_engine)
+        upstream_app = _build_http_app()
+
+        def _fake_factory():
+            return httpx.AsyncClient(transport=ASGITransport(app=upstream_app), base_url="http://upstream-test")
+
+        monkeypatch.setattr(
+            "responsibleai.governance.upstream_discovery._default_http_client_factory", _fake_factory,
+        )
+
+        async with LifespanManager(upstream_app):
+            r = await client.get("/api/governance/upstream/tools", headers=headers)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["errors"] == {}
+        assert any(t["tool_name"] == "rai_health" for t in body["tools"])
+
+    async def test_rest_endpoint_no_servers_returns_empty(self, client: AsyncClient, org_and_admin_key) -> None:
+        _org_id, admin_key = org_and_admin_key
+        r = await client.get(
+            "/api/governance/upstream/tools", headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        assert r.status_code == 200
+        assert r.json() == {"tools": [], "errors": {}}

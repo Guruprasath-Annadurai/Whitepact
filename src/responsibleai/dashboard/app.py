@@ -108,6 +108,7 @@ from responsibleai.governance.models import GovernanceDecision
 from responsibleai.governance.policy import PolicyRule
 from responsibleai.governance.risk import RiskTier
 from responsibleai.governance.upstream import UnsafeUpstreamServerURLError
+from responsibleai.governance.upstream_discovery import discover_upstream_tools
 from responsibleai.governance.upstream_executor import (
     UpstreamMCPExecutor,
     UpstreamServerNotAvailableError,
@@ -2636,6 +2637,25 @@ async def upstream_list_servers(
         raise HTTPException(400, "Upstream servers require an org-scoped API key, not a legacy flat key.")
     servers = await _ready(_upstream_registry).list_for_org(_auth.org_id)
     return {"servers": [s.to_dict() for s in servers]}
+
+
+@app.get("/api/governance/upstream/tools", tags=["governance"])
+@limiter.limit("15/minute")
+async def upstream_list_tools(
+    request: Request,
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
+) -> dict[str, Any]:
+    """Discovery/aggregation across every enabled upstream server this
+    org has registered (v3 authority-layer work, bounded scope --
+    see governance/upstream_discovery.py's module docstring for what
+    this deliberately does NOT do: inject these into the live MCP
+    protocol's own tool listing). A server that can't be reached
+    appears in `errors`, not as a 500 for the whole request -- one
+    broken registration must not hide every other server's tools."""
+    if not _auth.org_id:
+        raise HTTPException(400, "Upstream servers require an org-scoped API key, not a legacy flat key.")
+    tools, errors = await discover_upstream_tools(_ready(_upstream_registry), _auth.org_id)
+    return {"tools": [t.to_dict() for t in tools], "errors": errors}
 
 
 @app.delete("/api/governance/upstream/servers/{server_id}", tags=["governance"])
