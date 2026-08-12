@@ -28,7 +28,7 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any
 
-from responsibleai.governance.models import ActionRequest, DecisionResult
+from responsibleai.governance.models import ActionRequest, AgentContext, DecisionResult
 from responsibleai.governance.risk import RiskTier
 
 # A single, hardcoded default rather than per-org configuration -- same
@@ -96,6 +96,16 @@ class ApprovalRequest:
     resolved_by: str | None = None
     resolved_at: datetime | None = None
     resolution_notes: str | None = None
+    # The original action's arguments -- what build_resume_action()
+    # needs to reconstruct the exact ActionRequest a human approved.
+    # Persisted encrypted at rest (db/engine.py's EncryptedString on
+    # this column); deliberately excluded from to_dict() below so the
+    # approvals list/get REST API never echoes raw argument values back
+    # out, even to an authenticated caller -- the whole reason this
+    # wasn't persisted before was to avoid exposing raw/PII arguments,
+    # and encrypting the column doesn't change that exposure risk once
+    # the API itself hands the plaintext back over HTTP.
+    arguments: dict[str, Any] | None = None
 
     @property
     def is_resolved(self) -> bool:
@@ -158,4 +168,39 @@ def build_approval_request(action: ActionRequest, decision: DecisionResult) -> A
         organization_id=action.agent.organization_id,
         risk_tier=decision.risk_tier.value if isinstance(decision.risk_tier, RiskTier) else None,
         requested_by=action.agent.identity.identity_id,
+        arguments=dict(action.arguments),
+    )
+
+
+def build_resume_action(approval: ApprovalRequest, *, agent: AgentContext) -> ActionRequest:
+    """Reconstructs the exact `ActionRequest` a human approved, from an
+    `ApprovalRequest`'s persisted `arguments` -- what a resume-after-
+    approval flow needs to actually execute a previously-queued action
+    (`db/approval_repository.py`'s `consume()` proves the binding, this
+    function is what makes there be something to bind *to* at resume
+    time, closing the gap `governance/approval.py`'s own module
+    docstring used to flag: "no automatic re-evaluation or resumption
+    of the original action once resolved").
+
+    `action_id` is carried over unchanged, not regenerated -- it's the
+    same logical action, and `EvidenceRecord`/webhook payloads elsewhere
+    already reference the original `action_id`; a resume shouldn't mint
+    a second identity for one action.
+
+    Raises `ValueError` if `approval.arguments` is `None` -- a legacy
+    approval persisted before this field existed has nothing to resume
+    with; callers must treat that as "not resumable," not silently
+    execute against an empty/guessed argument set.
+    """
+    if approval.arguments is None:
+        raise ValueError(
+            f"Approval {approval.approval_id!r} has no persisted arguments "
+            "(created before resume-after-approval existed) and cannot be resumed."
+        )
+    return ActionRequest(
+        agent=agent,
+        action_type=approval.action_type,
+        target=approval.target,
+        arguments=approval.arguments,
+        action_id=approval.action_id,
     )

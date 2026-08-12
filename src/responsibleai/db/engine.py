@@ -414,6 +414,15 @@ governance_approvals = Table(
     # matches this exact action" actually means. See
     # governance/approval.py's compute_action_digest()/matches_action().
     Column("action_digest",      String(64),  nullable=False, server_default=""),
+    # The original action's arguments, JSON-serialized -- encrypted at
+    # rest (EncryptedString, opt-in via RAI_FIELD_ENCRYPTION_KEY, see
+    # db/encryption.py) since this is exactly the raw/PII-bearing
+    # payload every other part of the governance pipeline deliberately
+    # avoids persisting unencrypted. NULL for approvals created before
+    # this column existed -- those can never be resumed (see
+    # governance/approval.py's build_resume_action()), only
+    # resolved/viewed, which was already all they supported.
+    Column("arguments",          EncryptedString(), nullable=True),
     Column("reason_codes",       Text,        nullable=False),  # JSON list
     Column("risk_tier",          String(20),  nullable=True),
     Column("status",             String(20),  nullable=False, default="PENDING"),

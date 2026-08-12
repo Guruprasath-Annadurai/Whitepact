@@ -48,15 +48,23 @@ from responsibleai.governance import (
     ActionRequest,
     AgentContext,
     AuthorityContext,
+    DecisionResult,
     GovernanceDecision,
     IdentityContext,
     InternalToolExecutor,
+    ReasonCode,
+    RiskTier,
     WhitePactRuntimeGateway,
     authorize_execution,
     enrich_agent_trust_state,
+    format_reason,
     recent_violation_count,
 )
-from responsibleai.governance.approval import build_approval_request
+from responsibleai.governance.approval import (
+    ApprovalRequest,
+    build_approval_request,
+    build_resume_action,
+)
 from responsibleai.governance.evidence import build_evidence_record
 from responsibleai.integrations.client import TrustClient
 from responsibleai.rbac.models import OrgContext
@@ -237,3 +245,90 @@ async def apply_governance(
     authorization = authorize_execution(decision, final_action)
     result = await _executor.execute(authorization, final_action)
     return GovernanceOutcome(proceed=True, arguments=final_arguments, result=result)
+
+
+def _agent_from_approval(approval: ApprovalRequest) -> AgentContext:
+    """A resume flow has no live request context (no fresh OrgContext,
+    no MCP call in flight) -- reconstructs the minimal `AgentContext`
+    `build_resume_action()`/evidence recording need from what the
+    original `ApprovalRequest` itself already recorded. `identity_id`
+    falls back to `"unknown"` only for a pre-existing approval that
+    somehow has no `requested_by` (shouldn't happen for anything built
+    via `build_approval_request()`, which always sets it), rather than
+    raising and blocking an otherwise-valid resume."""
+    identity = IdentityContext(
+        identity_id=approval.requested_by or "unknown",
+        kind="api_key",
+        org_id=approval.organization_id,
+    )
+    return AgentContext(identity=identity, organization_id=approval.organization_id, framework="resumed-approval")
+
+
+async def resume_approval(
+    approval_id: str,
+    *,
+    approval_repo: ApprovalRepository,
+    evidence_repo: EvidenceRepository,
+    org_id: str,
+) -> dict[str, Any]:
+    """The REQUIRE_APPROVAL -> resume-execution pipeline: given an
+    approval a human has already resolved APPROVED, reconstruct the
+    exact action they approved, consume the approval (mutation/replay/
+    self-approval-protected, `db/approval_repository.py`'s `consume()`),
+    and actually execute it via `InternalToolExecutor`, the same
+    executor the live governed dispatch path uses -- there is still
+    only one place `dispatch_tool()` is reachable from, whether an
+    action runs immediately (ALLOW) or later (REQUIRE_APPROVAL ->
+    resume).
+
+    Raises `ApprovalNotFoundError`/`ApprovalNotApprovedError`/
+    `ApprovalExpiredError`/`ApprovalActionMismatchError` (all from
+    `db/approval_repository.py`) or `ValueError` (no persisted
+    arguments, i.e. a pre-resume-feature approval) -- callers (e.g. a
+    REST endpoint) map these the same way the resolve endpoint already
+    maps the first three.
+    """
+    from responsibleai.db import ApprovalNotFoundError
+
+    approval = await approval_repo.get(approval_id)
+    if approval is None or approval.organization_id != org_id:
+        # Same 404-not-403 pattern as governance_resolve_approval: this
+        # function never confirms whether an approval ID belonging to
+        # another org exists.
+        raise ApprovalNotFoundError(approval_id)
+
+    agent = _agent_from_approval(approval)
+    action = build_resume_action(approval, agent=agent)
+
+    # consume() is called BEFORE execution, not after -- it's the
+    # single-use guard (mutation + replay protection); a resume must
+    # never execute against an approval it hasn't already, atomically,
+    # marked CONSUMED. If this raises, nothing below runs.
+    await approval_repo.consume(approval.approval_id, action=action)
+
+    decision = DecisionResult(
+        decision=GovernanceDecision.ALLOW,
+        action_id=action.action_id,
+        reason_codes=[format_reason(ReasonCode.RESUMED_AFTER_APPROVAL, approval_id=approval.approval_id)],
+        risk_tier=RiskTier(approval.risk_tier) if approval.risk_tier else None,
+    )
+    authorization = authorize_execution(decision, action)
+    result = await _executor.execute(authorization, action)
+
+    authority = AuthorityContext(delegated_by=org_id, granted_action_types=frozenset({action.action_type}))
+    evidence = build_evidence_record(action, agent, authority, decision)
+    try:
+        await evidence_repo.record(evidence)
+    except Exception:
+        # Unlike apply_governance()'s pre-execution fail-closed
+        # handling, the action has ALREADY executed by this point --
+        # there's nothing left to block. Log loudly (a missing evidence
+        # record for an executed action is a real audit-trail gap) but
+        # still return the result; the alternative (raising here) would
+        # hide a successful execution behind an unrelated DB error.
+        _logger.exception(
+            "resume_approval_evidence_write_failed approval_id=%s action_id=%s org_id=%s",
+            approval.approval_id, action.action_id, org_id,
+        )
+
+    return result

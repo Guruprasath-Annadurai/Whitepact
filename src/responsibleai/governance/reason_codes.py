@@ -76,6 +76,13 @@ class ReasonCode(StrEnum):
     # PII_EXTERNAL_TRANSFER/REDACTION_REQUIRED, which apply to the
     # PII-only, non-blocking case.
     CONTENT_POLICY_VIOLATION = "CONTENT_POLICY_VIOLATION"
+    # Not in the original list; marks the synthetic ALLOW decision the
+    # resume-after-approval flow (governance/approval.py's
+    # build_resume_action(), mcp/governance_integration.py's
+    # resume_approval()) constructs to authorize execution of an
+    # action a human approved earlier — distinct from a real-time
+    # ALLOW the gateway itself produced.
+    RESUMED_AFTER_APPROVAL = "RESUMED_AFTER_APPROVAL"
 
 
 def format_reason(code: ReasonCode, /, **details: object) -> str:

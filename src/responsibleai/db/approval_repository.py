@@ -112,6 +112,7 @@ def _row_to_request(row: Any) -> ApprovalRequest:
         status=ApprovalStatus(row.status),
         requested_at=datetime.fromisoformat(row.requested_at),
         expires_at=datetime.fromisoformat(row.expires_at) if getattr(row, "expires_at", None) else None,
+        arguments=json.loads(row.arguments) if getattr(row, "arguments", None) else None,
         resolved_by=row.resolved_by,
         resolved_at=datetime.fromisoformat(row.resolved_at) if row.resolved_at else None,
         resolution_notes=row.resolution_notes,
@@ -153,6 +154,7 @@ class ApprovalRepository:
                 requested_by=approval.requested_by,
                 requested_at=approval.requested_at.isoformat(),
                 expires_at=approval.expires_at.isoformat() if approval.expires_at else None,
+                arguments=json.dumps(approval.arguments) if approval.arguments is not None else None,
             ))
 
         if webhook_manager is not None:

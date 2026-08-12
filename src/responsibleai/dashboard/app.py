@@ -63,8 +63,10 @@ from responsibleai.dashboard.telemetry import (
 )
 from responsibleai.dashboard.websocket_manager import ConnectionManager
 from responsibleai.db import (
+    ApprovalActionMismatchError,
     ApprovalAlreadyResolvedError,
     ApprovalExpiredError,
+    ApprovalNotApprovedError,
     ApprovalNotFoundError,
     ApprovalRepository,
     AuditRepository,
@@ -107,6 +109,7 @@ from responsibleai.incidents.logic import build_incident_record
 from responsibleai.leaderboard.models import METHODOLOGY_VERSION
 from responsibleai.leaderboard.providers import ProviderNotConfiguredError, get_adapter
 from responsibleai.leaderboard.runner import LeaderboardRunner
+from responsibleai.mcp.governance_integration import resume_approval
 from responsibleai.mcp.licensing import monthly_quota, plan_catalog
 from responsibleai.rbac import (
     AuditEntry,
@@ -2379,6 +2382,47 @@ async def governance_resolve_approval(
         outcome=req.outcome, resolved_by=_auth.key_id, org_id=_auth.org_id,
     )
     return resolved.to_dict()
+
+
+@app.post("/api/governance/approvals/{approval_id}/execute", tags=["governance"])
+@limiter.limit("30/minute")
+async def governance_execute_approval(
+    request: Request,
+    approval_id: str,
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, Any]:
+    """The REQUIRE_APPROVAL -> resume-execution pipeline (v3
+    authority-layer work): a human has already resolved this approval
+    APPROVED via the resolve endpoint above; this actually runs the
+    original action against the exact arguments they reviewed, via the
+    same InternalToolExecutor the live governed MCP dispatch path uses.
+    ADMIN-role, same as resolve -- executing a previously-gated action
+    is at least as privileged as approving it.
+    """
+    if not _auth.org_id:
+        raise HTTPException(400, "Governance approvals require an org-scoped API key, not a legacy flat key.")
+    try:
+        result = await resume_approval(
+            approval_id,
+            approval_repo=_ready(_approval_repo),
+            evidence_repo=_ready(_evidence_repo),
+            org_id=_auth.org_id,
+        )
+    except ApprovalNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from None
+    except ApprovalExpiredError as exc:
+        raise HTTPException(409, str(exc)) from None
+    except (ApprovalNotApprovedError, ApprovalActionMismatchError) as exc:
+        raise HTTPException(409, str(exc)) from None
+    except ValueError as exc:
+        # build_resume_action()'s "no persisted arguments" case -- a
+        # pre-resume-feature approval that was already APPROVED before
+        # this endpoint existed.
+        raise HTTPException(422, str(exc)) from None
+    logger.info(
+        "governance_approval_executed", approval_id=approval_id, org_id=_auth.org_id,
+    )
+    return {"approval_id": approval_id, "result": result}
 
 
 def _policy_rule_to_dict(rule: PolicyRule) -> dict[str, Any]:
