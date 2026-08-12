@@ -52,6 +52,25 @@ runtime gateway most of all, since it's the one component every
 governed action passes through. The Trust Index score consulted above
 is itself a stored, previously-computed value (not a live LLM judgment
 call made here), consistent with that rule.
+
+**Risk-tiered fast/deep path split — investigated, deliberately not
+built as a risk-tier gate**: the v3 spec proposes routing MINIMAL/LOW
+risk actions through a cheaper path that skips full content scanning.
+Investigated for this gateway specifically and rejected in that form:
+``GuardrailsEngine`` (step 5) is pure ``re``-module regex matching, not
+an LLM or NLP call (see its own module docstring) — there is no
+"expensive deep path" to skip *to* a cheap one, cost is already
+O(argument string length) regardless of risk tier. Worse, several
+``LOW``-tier tools (``rai_scan``, ``rai_pii_report``, ``rai_stream_scan``)
+exist specifically to carry free-text arguments through this exact
+scan — gating step 5 on risk tier would skip PII/toxicity detection for
+the tools whose entire purpose is PII/toxicity detection, a real
+security regression, not an optimization. The one fast path that *is*
+safe already exists implicitly: ``_scan_arguments`` only calls
+``GuardrailsEngine.scan()`` on string-valued arguments, so an action
+with zero string arguments (true of every ``MINIMAL``-tier identity/
+health tool) already never invokes the engine at all — no risk-tier
+branch needed to get that for free.
 """
 
 from __future__ import annotations

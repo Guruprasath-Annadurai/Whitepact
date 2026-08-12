@@ -18,6 +18,7 @@ from responsibleai.governance import (
     RiskTier,
     WhitePactRuntimeGateway,
 )
+from responsibleai.guardrails.engine import GuardrailsEngine
 from responsibleai.rbac.models import OrgContext, Plan, Role
 
 
@@ -230,6 +231,45 @@ class TestGatewayRiskClassification:
         result = gw.evaluate(action, authority)
         assert result.decision == GovernanceDecision.ALLOW
         assert result.risk_tier == RiskTier.MINIMAL
+
+
+class TestFastPathSkipsGuardrailsForArgumentFreeActions:
+    """Locks in the claim gateway.py's module docstring makes about the
+    v3 risk-router investigation (Task #141): an action with zero
+    string-valued arguments already never invokes GuardrailsEngine at
+    all, regardless of risk tier -- no risk-tier-gated skip needed to
+    get this, and this test proves it stays true rather than just
+    being asserted in prose."""
+
+    def test_no_string_arguments_never_calls_guardrails_scan(self) -> None:
+        from unittest.mock import MagicMock
+
+        spy_guardrails = MagicMock(wraps=GuardrailsEngine())
+        gw = WhitePactRuntimeGateway(guardrails=spy_guardrails)
+        authority = _authority(granted_action_types=frozenset({"mcp_tool_call"}))
+        action = ActionRequest(
+            agent=_agent(), action_type="mcp_tool_call", target="rai_health",
+            arguments={"count": 5, "enabled": True},
+        )
+        result = gw.evaluate(action, authority)
+        assert result.decision == GovernanceDecision.ALLOW
+        spy_guardrails.scan.assert_not_called()
+
+    def test_a_string_argument_does_invoke_guardrails_scan(self) -> None:
+        """Contrast case: the moment there IS a string argument, the
+        scan still runs -- this isn't a risk-tier skip, it's a
+        genuinely-nothing-to-scan skip."""
+        from unittest.mock import MagicMock
+
+        spy_guardrails = MagicMock(wraps=GuardrailsEngine())
+        gw = WhitePactRuntimeGateway(guardrails=spy_guardrails)
+        authority = _authority(granted_action_types=frozenset({"mcp_tool_call"}))
+        action = ActionRequest(
+            agent=_agent(), action_type="mcp_tool_call", target="rai_health",
+            arguments={"note": "hello"},
+        )
+        gw.evaluate(action, authority)
+        spy_guardrails.scan.assert_called_once_with("hello")
 
 
 class TestGatewayPolicyIntegration:
