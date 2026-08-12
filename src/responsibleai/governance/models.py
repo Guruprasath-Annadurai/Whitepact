@@ -29,15 +29,24 @@ callers of the underlying engines bypass it by design — see
 
 from __future__ import annotations
 
+import fnmatch
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
+from responsibleai.governance.reason_codes import ReasonCode, format_reason
 from responsibleai.governance.risk import RiskTier
 from responsibleai.integrations.client import TrustCheckResult
 from responsibleai.rbac.models import OrgContext
+
+# Recognized numeric argument keys a value-limit constraint checks
+# against, in priority order — the first one present in
+# ActionRequest.arguments wins. A fixed, small list rather than
+# scanning every numeric argument: an unrelated numeric argument (e.g.
+# a page size) must never accidentally trip a dollar-value limit.
+_VALUE_ARGUMENT_KEYS = ("amount_usd", "value_usd", "amount")
 
 
 class GovernanceDecision(StrEnum):
@@ -113,9 +122,31 @@ class AuthorityContext:
     delegated authority to take a given action in a given context).
 
     ``constraints`` is a deliberately open, deterministic key/value bag
-    (e.g. ``{"max_transaction_usd": 500}``) rather than a policy DSL —
-    building an actual constraint language is Phase 10's job, not
-    this one's.
+    rather than a policy DSL — building an actual constraint language
+    (OPA/Rego or similar) remains explicitly out of scope (SPEC.md's
+    documented non-goal). What *is* built, in ``constraint_violation()``
+    below: a fixed, small set of recognized keys, each a plain
+    equality/threshold/pattern check, no expression language:
+
+    - ``max_value_usd`` (float): denies if the action's arguments carry
+      a recognized numeric value key (``amount_usd``, ``value_usd``, or
+      ``amount``, first one present wins) exceeding this limit. Absent
+      value argument -> not applicable, never blocks.
+    - ``allowed_targets`` (list[str]): fnmatch glob patterns (e.g.
+      ``"payment_*"``); the action's ``target`` must match at least one
+      or the action is denied. Absent/empty -> not applicable.
+    - ``denied_targets`` (list[str]): fnmatch glob patterns; a match
+      denies regardless of ``allowed_targets``. Checked first.
+    - ``allowed_hours_utc`` (list[int, int]): ``[start, end)`` in UTC
+      hours (0-23); outside this window the action is denied. A
+      deliberately simple fixed window, not a timezone-aware calendar —
+      matches this package's "no feature beyond a real, stated
+      requirement" rule.
+
+    An unrecognized key in ``constraints`` is silently ignored, not an
+    error — this bag was designed as forward-open (SPEC.md Section 3.3),
+    and a typo'd key should not be able to accidentally disable
+    enforcement of a different action's constraints checked elsewhere.
     """
 
     delegated_by: str  # org_id or human identity_id that granted this authority
@@ -125,6 +156,46 @@ class AuthorityContext:
 
     def permits(self, action_type: str) -> bool:
         return action_type in self.granted_action_types
+
+    def constraint_violation(self, action: ActionRequest) -> str | None:
+        """``None`` if every recognized constraint passes (or none
+        apply); otherwise a ``format_reason()``-formatted string
+        identifying which one failed. Order: denied_targets ->
+        allowed_targets -> max_value_usd -> allowed_hours_utc — denies
+        checked before allow-lists, narrowest scope first."""
+        denied_targets = self.constraints.get("denied_targets")
+        if denied_targets and any(fnmatch.fnmatch(action.target, pattern) for pattern in denied_targets):
+            return format_reason(ReasonCode.TARGET_NOT_ALLOWED, target=action.target, rule="denied_targets")
+
+        allowed_targets = self.constraints.get("allowed_targets")
+        if allowed_targets and not any(fnmatch.fnmatch(action.target, pattern) for pattern in allowed_targets):
+            return format_reason(ReasonCode.TARGET_NOT_ALLOWED, target=action.target, rule="allowed_targets")
+
+        max_value_usd = self.constraints.get("max_value_usd")
+        if max_value_usd is not None:
+            for key in _VALUE_ARGUMENT_KEYS:
+                if key in action.arguments:
+                    value = action.arguments[key]
+                    if isinstance(value, int | float) and value > max_value_usd:
+                        return format_reason(
+                            ReasonCode.VALUE_LIMIT_EXCEEDED, argument=key, value=value, limit=max_value_usd,
+                        )
+                    break
+
+        allowed_hours_utc = self.constraints.get("allowed_hours_utc")
+        if allowed_hours_utc is not None:
+            start, end = allowed_hours_utc
+            current_hour = action.proposed_at.astimezone(UTC).hour
+            in_window = start <= current_hour < end if start <= end else current_hour >= start or current_hour < end
+            if not in_window:
+                return format_reason(
+                    ReasonCode.ACTION_NOT_ALLOWED,
+                    rule="allowed_hours_utc",
+                    hour=current_hour,
+                    window=f"{start}-{end}",
+                )
+
+        return None
 
 
 @dataclass

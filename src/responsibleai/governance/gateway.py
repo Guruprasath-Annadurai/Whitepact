@@ -14,6 +14,11 @@ What ``evaluate()`` checks, in order:
 3. **Risk classification** (Phase 9, ``governance/risk.py``) — every
    action gets a ``RiskTier``, always recorded on the result, whether or
    not a ``Policy`` is supplied.
+3b. **Authority constraints** (``AuthorityContext.constraint_violation()``,
+   v3 authority-layer work) — a granted action type can still be denied
+   by a value limit, target pattern, or time window recorded on the
+   authority grant itself; see that method's docstring for the fixed
+   set of recognized constraint keys.
 4. **Policy** (Phase 10, ``governance/policy.py``, optional) — if a
    ``Policy`` is passed and a rule matches, a ``DENY``/``REQUIRE_APPROVAL``
    effect short-circuits immediately; an ``ALLOW`` effect is recorded but
@@ -61,10 +66,16 @@ from responsibleai.governance.models import (
 )
 from responsibleai.governance.policy import Policy
 from responsibleai.governance.quarantine import QUARANTINE_VIOLATION_THRESHOLD
+from responsibleai.governance.reason_codes import ReasonCode, format_reason
 from responsibleai.governance.risk import RiskTier, classify_action_risk
 from responsibleai.guardrails.engine import GuardrailsEngine, GuardrailsResult
 
 LOW_TRUST_SCORE_THRESHOLD = 40.0
+
+_POLICY_EFFECT_CODES = {
+    GovernanceDecision.DENY: ReasonCode.POLICY_EXPLICIT_DENY,
+    GovernanceDecision.REQUIRE_APPROVAL: ReasonCode.POLICY_REQUIRES_APPROVAL,
+}
 
 
 class WhitePactRuntimeGateway:
@@ -91,8 +102,11 @@ class WhitePactRuntimeGateway:
                 decision=GovernanceDecision.QUARANTINE,
                 action_id=action.action_id,
                 reason_codes=[
-                    f"quarantine:recent_denials={recent_violation_count}",
-                    f"quarantine:threshold={QUARANTINE_VIOLATION_THRESHOLD}",
+                    format_reason(
+                        ReasonCode.IDENTITY_QUARANTINED,
+                        recent_denials=recent_violation_count,
+                        threshold=QUARANTINE_VIOLATION_THRESHOLD,
+                    ),
                 ],
                 risk_tier=risk_tier,
             )
@@ -101,7 +115,7 @@ class WhitePactRuntimeGateway:
             return DecisionResult(
                 decision=GovernanceDecision.DENY,
                 action_id=action.action_id,
-                reason_codes=[f"authority_not_granted:{action.action_type}"],
+                reason_codes=[format_reason(ReasonCode.AUTHORITY_NOT_DELEGATED, action_type=action.action_type)],
                 risk_tier=risk_tier,
             )
 
@@ -109,7 +123,16 @@ class WhitePactRuntimeGateway:
             return DecisionResult(
                 decision=GovernanceDecision.REQUIRE_APPROVAL,
                 action_id=action.action_id,
-                reason_codes=[f"approval_required:{action.action_type}"],
+                reason_codes=[format_reason(ReasonCode.APPROVAL_REQUIRED, action_type=action.action_type)],
+                risk_tier=risk_tier,
+            )
+
+        constraint_violation = authority.constraint_violation(action)
+        if constraint_violation is not None:
+            return DecisionResult(
+                decision=GovernanceDecision.DENY,
+                action_id=action.action_id,
+                reason_codes=[constraint_violation],
                 risk_tier=risk_tier,
             )
 
@@ -118,14 +141,24 @@ class WhitePactRuntimeGateway:
         if policy is not None:
             match = policy.evaluate(action, risk_tier)
             if match is not None:
+                policy_code = _POLICY_EFFECT_CODES.get(match.rule.effect)
+                reason = (
+                    format_reason(policy_code, rule_id=match.rule.rule_id, rule_reason=match.rule.reason_code)
+                    if policy_code is not None
+                    # ALLOW effect: no dedicated ReasonCode (an explicit
+                    # allow isn't a "reason to block/flag"), keep the
+                    # rule_id/reason_code trail as plain detail so
+                    # evidence still shows which rule matched.
+                    else f"policy_allow:rule_id={match.rule.rule_id};rule_reason={match.rule.reason_code}"
+                )
                 if match.rule.effect in (GovernanceDecision.DENY, GovernanceDecision.REQUIRE_APPROVAL):
                     return DecisionResult(
                         decision=match.rule.effect,
                         action_id=action.action_id,
-                        reason_codes=[f"policy:{match.rule.rule_id}:{match.rule.reason_code}"],
+                        reason_codes=[reason],
                         risk_tier=risk_tier,
                     )
-                policy_reason_codes.append(f"policy:{match.rule.rule_id}:{match.rule.reason_code}")
+                policy_reason_codes.append(reason)
 
         field_results, redacted_arguments = self._scan_arguments(action.arguments)
         return self._decide_from_scan(action, field_results, redacted_arguments, risk_tier, policy_reason_codes)
@@ -153,7 +186,7 @@ class WhitePactRuntimeGateway:
         policy_reason_codes: list[str],
     ) -> DecisionResult:
         hard_block_reasons = [
-            f"{field}:{reason}"
+            format_reason(ReasonCode.CONTENT_POLICY_VIOLATION, field=field, detail=reason)
             for field, result in field_results.items()
             if result.has_toxicity or result.custom_pattern_matches
             for reason in result.block_reasons
@@ -171,7 +204,10 @@ class WhitePactRuntimeGateway:
             return DecisionResult(
                 decision=GovernanceDecision.ALLOW_WITH_REDACTION,
                 action_id=action.action_id,
-                reason_codes=[*policy_reason_codes, *[f"{field}:pii_redacted" for field in pii_fields]],
+                reason_codes=[
+                    *policy_reason_codes,
+                    *[format_reason(ReasonCode.REDACTION_REQUIRED, field=field) for field in pii_fields],
+                ],
                 redacted_arguments=redacted_arguments,
                 risk_tier=risk_tier,
             )
@@ -205,4 +241,4 @@ class WhitePactRuntimeGateway:
         score = trust_state.overall_score
         if score is None or score >= LOW_TRUST_SCORE_THRESHOLD:
             return None
-        return f"trust_state:low_score:{score:.1f}"
+        return format_reason(ReasonCode.LOW_TRUST_SCORE, score=f"{score:.1f}", threshold=LOW_TRUST_SCORE_THRESHOLD)

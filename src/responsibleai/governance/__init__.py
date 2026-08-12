@@ -34,6 +34,7 @@ from responsibleai.governance.quarantine import (
     QUARANTINE_WINDOW_MINUTES,
     recent_violation_count,
 )
+from responsibleai.governance.reason_codes import ReasonCode, format_reason
 from responsibleai.governance.risk import RiskTier, classify_action_risk
 from responsibleai.governance.trust_integration import enrich_agent_trust_state
 
@@ -58,10 +59,12 @@ __all__ = [
     "PolicyRule",
     "QUARANTINE_VIOLATION_THRESHOLD",
     "QUARANTINE_WINDOW_MINUTES",
+    "ReasonCode",
     "RiskTier",
     "WhitePactRuntimeGateway",
     "authorize_execution",
     "classify_action_risk",
     "enrich_agent_trust_state",
+    "format_reason",
     "recent_violation_count",
 ]

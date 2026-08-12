@@ -69,7 +69,7 @@ class TestGatewayQuarantineThreshold:
             action, authority, recent_violation_count=QUARANTINE_VIOLATION_THRESHOLD,
         )
         assert result.decision == GovernanceDecision.QUARANTINE
-        assert any("quarantine:recent_denials" in code for code in result.reason_codes)
+        assert any(code.startswith("IDENTITY_QUARANTINED:") and "recent_denials" in code for code in result.reason_codes)
 
     def test_quarantine_overrides_valid_authority_grant(self) -> None:
         """A quarantined agent is blocked even though its AuthorityContext

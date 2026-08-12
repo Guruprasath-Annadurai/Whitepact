@@ -121,7 +121,7 @@ class TestGatewayLowTrustDowngrade:
         action = ActionRequest(agent=agent, action_type="rai_scan", target="rai_scan", arguments={})
         result = gateway.evaluate(action, authority)
         assert result.decision == GovernanceDecision.REQUIRE_APPROVAL
-        assert any("trust_state:low_score" in code for code in result.reason_codes)
+        assert any(code.startswith("LOW_TRUST_SCORE:") for code in result.reason_codes)
 
     @respx.mock
     async def test_low_trust_does_not_override_pii_redaction(self) -> None:

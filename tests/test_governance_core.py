@@ -94,7 +94,7 @@ class TestGatewayAuthority:
         action = ActionRequest(agent=_agent(), action_type="payment", target="stripe")
         result = gw.evaluate(action, _authority())
         assert result.decision == GovernanceDecision.DENY
-        assert result.reason_codes == ["authority_not_granted:payment"]
+        assert result.reason_codes == ["AUTHORITY_NOT_DELEGATED:action_type=payment"]
 
     def test_allows_granted_action_with_clean_arguments(self) -> None:
         gw = WhitePactRuntimeGateway()
@@ -127,7 +127,7 @@ class TestGatewayApprovalTrigger:
         action = ActionRequest(agent=_agent(), action_type="deployment", target="prod")
         result = gw.evaluate(action, authority)
         assert result.decision == GovernanceDecision.REQUIRE_APPROVAL
-        assert result.reason_codes == ["approval_required:deployment"]
+        assert result.reason_codes == ["APPROVAL_REQUIRED:action_type=deployment"]
 
     def test_authority_check_still_wins_over_approval_list(self) -> None:
         """An action_type in require_approval_for but NOT in
@@ -183,7 +183,7 @@ class TestGatewayContentScan:
             arguments={"contact": "reach me at a@b.com"},
         )
         result = gw.evaluate(action, _authority())
-        assert result.reason_codes == ["contact:pii_redacted"]
+        assert result.reason_codes == ["REDACTION_REQUIRED:field=contact"]
 
 
 class TestDecisionResultSerialization:
@@ -260,7 +260,7 @@ class TestGatewayPolicyIntegration:
         )
         result = gw.evaluate(action, authority, policy)
         assert result.decision == GovernanceDecision.DENY
-        assert result.reason_codes == ["policy:no-high-risk:high_risk_blocked"]
+        assert result.reason_codes == ["POLICY_EXPLICIT_DENY:rule_id=no-high-risk;rule_reason=high_risk_blocked"]
         assert result.risk_tier == RiskTier.HIGH
 
     def test_policy_require_approval_short_circuits(self) -> None:
@@ -275,7 +275,9 @@ class TestGatewayPolicyIntegration:
         action = ActionRequest(agent=_agent(), action_type="mcp_tool_call", target="rai_incident_log")
         result = gw.evaluate(action, authority, policy)
         assert result.decision == GovernanceDecision.REQUIRE_APPROVAL
-        assert result.reason_codes == ["policy:writes-need-approval:write_action"]
+        assert result.reason_codes == [
+            "POLICY_REQUIRES_APPROVAL:rule_id=writes-need-approval;rule_reason=write_action",
+        ]
 
     def test_policy_allow_does_not_skip_content_scan(self) -> None:
         """An explicit ALLOW policy match still goes through
@@ -291,8 +293,8 @@ class TestGatewayPolicyIntegration:
         )
         result = gw.evaluate(action, authority, policy)
         assert result.decision == GovernanceDecision.ALLOW_WITH_REDACTION
-        assert "policy:allow-low:low_risk_ok" in result.reason_codes
-        assert any(code.endswith(":pii_redacted") for code in result.reason_codes)
+        assert "policy_allow:rule_id=allow-low;rule_reason=low_risk_ok" in result.reason_codes
+        assert any(code.startswith("REDACTION_REQUIRED:") for code in result.reason_codes)
 
     def test_policy_allow_reason_present_on_clean_final_allow(self) -> None:
         gw = WhitePactRuntimeGateway()
@@ -303,7 +305,7 @@ class TestGatewayPolicyIntegration:
         action = ActionRequest(agent=_agent(), action_type="mcp_tool_call", target="rai_scan", arguments={})
         result = gw.evaluate(action, authority, policy)
         assert result.decision == GovernanceDecision.ALLOW
-        assert result.reason_codes == ["policy:allow-low:low_risk_ok"]
+        assert result.reason_codes == ["policy_allow:rule_id=allow-low;rule_reason=low_risk_ok"]
 
     def test_no_matching_policy_rule_falls_through_to_scan(self) -> None:
         gw = WhitePactRuntimeGateway()
