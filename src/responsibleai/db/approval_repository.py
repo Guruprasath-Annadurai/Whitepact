@@ -18,8 +18,10 @@ from sqlalchemy import insert, select, update
 
 from responsibleai.db.engine import DatabaseEngine, governance_approvals
 from responsibleai.governance.approval import ApprovalRequest, ApprovalStatus
+from responsibleai.governance.reason_codes import ReasonCode
 
 if TYPE_CHECKING:
+    from responsibleai.governance.models import ActionRequest
     from responsibleai.webhooks.manager import WebhookManager
 
 
@@ -40,6 +42,47 @@ class ApprovalAlreadyResolvedError(Exception):
         super().__init__(f"Approval {approval_id!r} was already resolved (status={status}).")
 
 
+class SelfApprovalError(Exception):
+    """Section 26's invariant: the identity that proposed an action may
+    not also be the one who resolves its own REQUIRE_APPROVAL request."""
+
+    reason_code = ReasonCode.SELF_APPROVAL_REJECTED
+
+    def __init__(self, approval_id: str, identity_id: str) -> None:
+        self.approval_id = approval_id
+        self.identity_id = identity_id
+        super().__init__(
+            f"Identity {identity_id!r} requested approval {approval_id!r} and cannot resolve it."
+        )
+
+
+class ApprovalNotApprovedError(Exception):
+    """consume() requires status == APPROVED — covers both "never
+    approved" (PENDING/DENIED) and "already executed once"
+    (already CONSUMED, i.e. replay) with one check."""
+
+    reason_code = ReasonCode.APPROVAL_REQUIRED
+
+    def __init__(self, approval_id: str, status: str) -> None:
+        self.approval_id = approval_id
+        self.status = status
+        super().__init__(f"Approval {approval_id!r} is not APPROVED (status={status}); cannot consume.")
+
+
+class ApprovalActionMismatchError(Exception):
+    """consume()'s mutation-invariant check: the action being executed
+    is not byte-identical to the one a human approved."""
+
+    reason_code = ReasonCode.APPROVAL_ACTION_MISMATCH
+
+    def __init__(self, approval_id: str) -> None:
+        self.approval_id = approval_id
+        super().__init__(
+            f"Approval {approval_id!r} does not match the action presented for execution "
+            "(arguments, target, or action_type changed since approval)."
+        )
+
+
 def _row_to_request(row: Any) -> ApprovalRequest:
     return ApprovalRequest(
         approval_id=row.id,
@@ -47,6 +90,7 @@ def _row_to_request(row: Any) -> ApprovalRequest:
         action_id=row.action_id,
         action_type=row.action_type,
         target=row.target,
+        action_digest=row.action_digest or "",
         reason_codes=json.loads(row.reason_codes),
         risk_tier=row.risk_tier,
         requested_by=row.requested_by,
@@ -86,6 +130,7 @@ class ApprovalRepository:
                 evidence_id=evidence_id,
                 action_type=approval.action_type,
                 target=approval.target,
+                action_digest=approval.action_digest,
                 reason_codes=json.dumps(approval.reason_codes),
                 risk_tier=approval.risk_tier,
                 status=approval.status.value,
@@ -146,6 +191,13 @@ class ApprovalRepository:
             raise ApprovalNotFoundError(approval_id)
         if current.is_resolved:
             raise ApprovalAlreadyResolvedError(approval_id, current.status.value)
+        # Section 26: the identity that proposed the action cannot also
+        # be the one who resolves its own approval requirement — checked
+        # even though today's REST layer requires ADMIN role to resolve,
+        # since an ADMIN-role API key can still be the same identity
+        # that made the original (lower-privilege) request.
+        if current.requested_by is not None and resolved_by == current.requested_by:
+            raise SelfApprovalError(approval_id, resolved_by)
 
         resolved_at = _now()
         async with self._engine.raw.begin() as conn:
@@ -174,4 +226,64 @@ class ApprovalRepository:
         current.resolved_by = resolved_by
         current.resolved_at = datetime.fromisoformat(resolved_at)
         current.resolution_notes = notes
+        return current
+
+    async def consume(self, approval_id: str, *, action: ActionRequest) -> ApprovalRequest:
+        """The execution-binding check (Sections 24/25/27/51): an
+        executor must call this — and only proceed if it returns
+        normally — immediately before actually running an action that
+        was gated behind `REQUIRE_APPROVAL`.
+
+        Enforces, in one atomic operation:
+        - **Mutation invariant**: raises `ApprovalActionMismatchError`
+          unless *action*'s digest is byte-identical to what was
+          approved (`ApprovalRequest.matches_action`) — a changed
+          amount, target, or argument after approval is never silently
+          honored.
+        - **Replay protection**: the `WHERE status = 'APPROVED'` guard
+          (same race-safe pattern as `resolve()`) means a second call
+          for the same approval — whether the exact same action or a
+          mutated one — always fails, because the first successful
+          call already transitioned it to CONSUMED. There is no way to
+          execute against one human approval twice.
+        - **Not-yet-approved / already-denied**: raises
+          `ApprovalNotApprovedError` uniformly for PENDING, DENIED, or
+          already-CONSUMED — the caller doesn't need to branch on why,
+          only that execution must not proceed.
+
+        Deliberately does not accept an `expected_digest` parameter
+        from the caller — recomputing it from a freshly-constructed
+        `ActionRequest` (the one about to actually execute) is the
+        entire point; trusting a caller-supplied digest would let a
+        compromised caller simply pass back whatever digest is stored.
+        """
+        current = await self.get(approval_id)
+        if current is None:
+            raise ApprovalNotFoundError(approval_id)
+        if current.status is not ApprovalStatus.APPROVED:
+            raise ApprovalNotApprovedError(approval_id, current.status.value)
+        if not current.matches_action(action):
+            raise ApprovalActionMismatchError(approval_id)
+
+        consumed_at = _now()
+        async with self._engine.raw.begin() as conn:
+            result = await conn.execute(
+                update(governance_approvals)
+                .where(governance_approvals.c.id == approval_id)
+                .where(governance_approvals.c.status == ApprovalStatus.APPROVED.value)
+                .values(status=ApprovalStatus.CONSUMED.value)
+            )
+        if result.rowcount == 0:
+            # Lost a race with a concurrent consume() call between the
+            # read above and this UPDATE -- exactly the replay scenario
+            # this method exists to prevent (two executors racing to
+            # spend the same approval). Whichever one loses the race
+            # gets this, not a silently-successful double execution.
+            refreshed = await self.get(approval_id)
+            raise ApprovalNotApprovedError(
+                approval_id, refreshed.status.value if refreshed else "UNKNOWN",
+            )
+
+        current.status = ApprovalStatus.CONSUMED
+        current.resolved_at = current.resolved_at or datetime.fromisoformat(consumed_at)
         return current

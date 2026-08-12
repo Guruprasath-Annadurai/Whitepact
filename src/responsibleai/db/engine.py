@@ -407,6 +407,10 @@ governance_approvals = Table(
     Column("evidence_id",        String(36),  nullable=True),
     Column("action_type",        String(50),  nullable=False),
     Column("target",             String(200), nullable=False),
+    # SHA-256 over action_type/target/arguments — what "this approval
+    # matches this exact action" actually means. See
+    # governance/approval.py's compute_action_digest()/matches_action().
+    Column("action_digest",      String(64),  nullable=False, server_default=""),
     Column("reason_codes",       Text,        nullable=False),  # JSON list
     Column("risk_tier",          String(20),  nullable=True),
     Column("status",             String(20),  nullable=False, default="PENDING"),

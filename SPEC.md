@@ -476,10 +476,22 @@ speculative detail:
   exists — see Section 3.5 — but OPA/Rego or an expression language, if
   ever needed, is still undesigned).
 - A richer approval-workflow lifecycle beyond `ApprovalRequest`'s
-  `PENDING -> APPROVED`/`DENIED` (Phase 11's first version now exists —
-  see Section 3.6's `REQUIRE_APPROVAL` row — but expiry/timeout,
-  multi-approver quorum, and delegation-chain approval are still
-  undesigned).
+  `PENDING -> APPROVED`/`DENIED`/`CONSUMED` (Phase 11's first version
+  now exists — see Section 3.6's `REQUIRE_APPROVAL` row. The execution-
+  binding invariants are real and tested:
+  `ApprovalRequest.action_digest` (SHA-256 over action_type/target/
+  arguments, `governance/approval.py`) means an approval is valid only
+  for the byte-identical action a human reviewed —
+  `ApprovalRepository.consume()` is the one atomic operation an
+  executor must call before running an approved action, and it
+  enforces the mutation invariant (changed arguments raise
+  `ApprovalActionMismatchError`), replay protection (a second call,
+  whether identical or mutated, raises `ApprovalNotApprovedError`
+  because the first call already transitioned the row to `CONSUMED`),
+  and `resolve()` separately rejects an identity resolving its own
+  request (`SelfApprovalError`) — `tests/test_approval_execution_
+  binding.py`. Still undesigned: expiry/timeout, multi-approver
+  quorum, and delegation-chain approval).
 - A richer MCP Trust/Supply-Chain Scanner than the three checks in
   Section 4.1 (Phase 13's first version now exists — confusable
   characters, tool description content scan, known-incident

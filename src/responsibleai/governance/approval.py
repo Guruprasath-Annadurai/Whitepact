@@ -20,6 +20,8 @@ action) is the caller's responsibility, same as an `ALLOW` decision.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -34,6 +36,38 @@ class ApprovalStatus(StrEnum):
     PENDING = "PENDING"
     APPROVED = "APPROVED"
     DENIED = "DENIED"
+    # A one-way transition out of APPROVED, entered only via
+    # ApprovalRepository.consume() — see that method's docstring for
+    # why this is the state that actually enforces "an approval
+    # authorizes execution exactly once, of exactly the action a human
+    # reviewed" (the mutation + replay invariants).
+    CONSUMED = "CONSUMED"
+
+
+def compute_action_digest(action: ActionRequest) -> str:
+    """A stable SHA-256 digest over exactly the fields that define
+    "what a human approved" — action_type, target, and the argument
+    values (not just their names, unlike `EvidenceRecord.argument_keys`
+    — the mutation invariant needs to detect a *changed value*, e.g.
+    the payment amount, not just a changed argument *name*).
+
+    This function's whole job is producing a value comparable across
+    two separately-constructed `ActionRequest`s for the same logical
+    action — it is not a secrecy boundary, and `arguments` may still
+    end up embedded in it indirectly via the hash input; that's why
+    only the *digest* is ever persisted (`ApprovalRequest.action_digest`),
+    never the canonical JSON itself.
+    """
+    canonical = json.dumps(
+        {
+            "action_type": action.action_type,
+            "target": action.target,
+            "arguments": action.arguments,
+        },
+        sort_keys=True,
+        default=str,
+    )
+    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 @dataclass
@@ -43,6 +77,7 @@ class ApprovalRequest:
     target: str
     reason_codes: list[str]
     requested_at: datetime
+    action_digest: str = ""
     approval_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     organization_id: str | None = None
     risk_tier: str | None = None
@@ -56,6 +91,15 @@ class ApprovalRequest:
     def is_resolved(self) -> bool:
         return self.status is not ApprovalStatus.PENDING
 
+    def matches_action(self, action: ActionRequest) -> bool:
+        """True only if *action* is byte-for-byte the same action_type/
+        target/arguments a human approved — the mutation invariant's
+        actual check. An approval with no digest (``action_digest ==
+        ""``, e.g. one persisted before this field existed) never
+        matches anything, deliberately fail-closed rather than
+        skipping the check for old rows."""
+        return bool(self.action_digest) and self.action_digest == compute_action_digest(action)
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "approval_id": self.approval_id,
@@ -63,6 +107,7 @@ class ApprovalRequest:
             "action_id": self.action_id,
             "action_type": self.action_type,
             "target": self.target,
+            "action_digest": self.action_digest,
             "reason_codes": self.reason_codes,
             "risk_tier": self.risk_tier,
             "requested_by": self.requested_by,
@@ -86,6 +131,7 @@ def build_approval_request(action: ActionRequest, decision: DecisionResult) -> A
         action_id=action.action_id,
         action_type=action.action_type,
         target=action.target,
+        action_digest=compute_action_digest(action),
         reason_codes=list(decision.reason_codes),
         requested_at=decision.evaluated_at,
         organization_id=action.agent.organization_id,
