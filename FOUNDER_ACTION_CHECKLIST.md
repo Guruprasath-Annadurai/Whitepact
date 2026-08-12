@@ -287,6 +287,16 @@ What's actually live:
       (minor client-experience polish, not a correctness bug) — both
       worth revisiting if real connector traffic volume ever
       materializes, but neither blocks a directory submission today.
+- [x] **Resolved 2026-08-13**: uptime monitoring added for
+      `whitepact-mcp-http` via UptimeRobot (free tier — Render's own
+      Hobby plan doesn't include runtime downtime alerting, only
+      deploy-failure notifications). Monitor: `GET
+      https://whitepact-mcp-http.onrender.com/health` every 5 minutes.
+      Alert path verified end-to-end, not just configured — a test
+      "DOWN" notification was sent and confirmed received in Gmail
+      within the same minute. This closes the "reviewer/admin hits a
+      cold or dead endpoint with nobody noticing" gap from the original
+      connector-readiness build list.
 
 ## 7. Billing (only once selling live)
 
