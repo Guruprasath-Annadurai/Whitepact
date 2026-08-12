@@ -38,23 +38,31 @@ waiting on us.
 | `compliance/NIST_CSF_SELF_ASSESSMENT.md` | NIST Cybersecurity Framework maturity self-rating by function | Free | Already shipping |
 | `compliance/INTERNAL_SECURITY_REVIEW.md`, `compliance/INCIDENT_RESPONSE_RUNBOOK.md` | Documented internal security process | Free | Already shipping |
 
-## The one real next step that needs your action (still free — just needs your own account)
+## CSA STAR Registry, Level 1 — **submitted 2026-08-12**
 
-**CSA STAR Registry, Level 1 (self-assessment).** Researched for this
-document: Level 1 is free to submit and free to maintain — an
+Level 1 self-assessment is free to submit and free to maintain — an
 organization completes the CAIQ and submits it for publication on the
 [STAR Registry](https://cloudsecurityalliance.org/star/registry), no
 fee for submission or listing, annual update required to stay current
 ([CSA STAR overview](https://hyperproof.io/csa-star/),
 [CSA STAR Level 1 vs Level 2](https://atlantsecurity.com/blog/csa-star-level-1-vs-level-2-key-differences)).
-`compliance/CAIQ_SELF_ASSESSMENT.md` in this repo is already written in
-exactly the format Level 1 needs — the content work is done. What's
-left is entirely something only you can do: create a CSA account,
-adapt the answers into their submission portal
-([cloudsecurityalliance.org/star/submit](https://cloudsecurityalliance.org/star/submit)),
-and submit. This gets WhitePact listed on a real, independently
-recognized public registry that enterprise security teams actually
-check, at zero cost — the single highest-leverage free action left.
+The completed CAIQ v4.0.3 (`compliance/CAIQv4.0.3_WhitePact_completed.xlsx`,
+`scripts/caiq_answers.py`) was submitted through the founder's own CSA
+account via the STAR submission portal (`star.watch`) as a Self
+Assessment, Service Category: SaaS. Submission confirmation was
+received; the listing itself is subject to CSA's own review/publish
+timeline — check
+[cloudsecurityalliance.org/star/registry](https://cloudsecurityalliance.org/star/registry)
+periodically for "WhitePact" to appear, and watch the account email for
+any CSA follow-up. Do not describe this as "SOC 2 compliant" or
+"audited" — it is a self-assessment, and should be described that way
+to buyers, same as every other signal on this page.
+
+**Open item**: the Backup Point of Contact on the submission form was
+filled with the founder's own second email, since there is currently no
+second person with real oversight authority (see
+`FOUNDER_ACTION_CHECKLIST.md` Section 10 and `GOVERNANCE.md`) — revisit
+via CSA's edit/update flow once a real second contact exists.
 
 ## What none of this replaces
 

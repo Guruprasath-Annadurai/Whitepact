@@ -195,7 +195,12 @@ instead. What's actually live:
       `compliance/SOC2_READINESS.md` as the intake packet. In the
       meantime, `compliance/SOC2_ALTERNATIVE_PATH.md` is the free,
       honest interim signal set (OpenSSF Scorecard, SBOM/provenance,
-      CSA STAR Level 1 once you submit `CAIQ_SELF_ASSESSMENT.md`).
+      and CSA STAR Level 1 — **submitted 2026-08-12**, listing pending
+      CSA's review).
+- [ ] Check `cloudsecurityalliance.org/star/registry` periodically for
+      the WhitePact listing to go live, and revisit the Backup Point of
+      Contact on the CSA submission once a real second person with
+      oversight authority exists (see Section 10 below).
 - [ ] Operate under Type I's controls for 3-12 months, then pursue Type II.
 - [ ] Commission a real third-party penetration test ($5-15K) once budget
       allows — `compliance/INTERNAL_SECURITY_REVIEW.md` narrows the gap

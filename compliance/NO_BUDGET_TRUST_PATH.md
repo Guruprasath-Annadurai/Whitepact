@@ -139,14 +139,14 @@ must never be said.
 
 ## 3. SOC 2 — already has its own document
 
-See **`compliance/SOC2_ALTERNATIVE_PATH.md`** (built earlier this
-session) for the full picture: OpenSSF Scorecard (live), SBOM +
-Sigstore provenance (live), branch protection (live), and the one
-remaining founder action — submitting `compliance/CAIQ_SELF_ASSESSMENT.md`
-to the CSA STAR Registry, Level 1, which is free to submit and free to
-maintain, and is a real registry enterprise security teams check. That
-document's own rule applies here too: never describe any of this as
-"SOC 2 compliant" or "audited."
+See **`compliance/SOC2_ALTERNATIVE_PATH.md`** for the full picture:
+OpenSSF Scorecard (live), SBOM + Sigstore provenance (live), branch
+protection (live), and CSA STAR Registry Level 1 — **submitted
+2026-08-12** via the founder's own CSA account (Self Assessment, SaaS
+category), free to submit and free to maintain, a real registry
+enterprise security teams check. Listing publication is pending CSA's
+own review timeline. That document's own rule applies here too: never
+describe any of this as "SOC 2 compliant" or "audited."
 
 ---
 
