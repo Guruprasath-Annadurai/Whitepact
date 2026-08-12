@@ -10,6 +10,21 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ---
 
+## [1.2.2] — 2026-08-12
+
+### Fixed
+
+- `mcp-name` verification marker in `README.md` and `server.json`'s
+  `name` field corrected to `io.github.Guruprasath-Annadurai/whitepact`
+  (matching the exact casing of the authenticated GitHub account). The
+  MCP Registry's publish validation is case-sensitive on both the
+  namespace-ownership check (against the GitHub OAuth identity) and
+  the PyPI-package-ownership check (against the literal `mcp-name:`
+  line in the published README) — the 1.2.1 release used all-lowercase
+  in both places and failed both checks in turn once actually tried.
+
+---
+
 ## [1.2.1] — 2026-08-12
 
 ### Added
