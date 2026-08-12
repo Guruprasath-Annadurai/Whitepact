@@ -94,6 +94,31 @@ class TestEvidenceRepositoryRecordAndGet:
         fetched = await evidence_repo.get(saved.evidence_id)
         assert fetched.argument_keys == ["text"]
 
+    async def test_delegation_chain_persisted_round_trip(self, evidence_repo) -> None:
+        """v3 authority-layer work (Task #143): AuthorityContext.
+        delegation_chain must survive a real DB write/read, not just
+        the in-memory build_evidence_record() step."""
+        gw = WhitePactRuntimeGateway()
+        agent = _agent()
+        authority = _authority(delegated_by=agent.agent_id, delegation_chain=("org-1", "alice", agent.agent_id))
+        action = ActionRequest(agent=agent, action_type="mcp_tool_call", target="rai_health")
+        decision = gw.evaluate(action, authority)
+
+        saved = await evidence_repo.record(build_evidence_record(action, agent, authority, decision))
+        fetched = await evidence_repo.get(saved.evidence_id)
+        assert fetched.delegation_chain == ["org-1", "alice", agent.agent_id]
+
+    async def test_no_delegation_chain_persists_as_empty_list(self, evidence_repo) -> None:
+        gw = WhitePactRuntimeGateway()
+        agent = _agent()
+        authority = _authority()
+        action = ActionRequest(agent=agent, action_type="mcp_tool_call", target="rai_health")
+        decision = gw.evaluate(action, authority)
+
+        saved = await evidence_repo.record(build_evidence_record(action, agent, authority, decision))
+        fetched = await evidence_repo.get(saved.evidence_id)
+        assert fetched.delegation_chain == []
+
 
 class TestEvidenceHashChain:
     async def test_first_entry_has_no_prev_hash(self, evidence_repo) -> None:

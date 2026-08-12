@@ -77,6 +77,12 @@ class EvidenceRecord:
     # exactly which persisted policy version this decision was
     # evaluated against (Policy.version's docstring).
     policy_version: int | None = None
+    # AuthorityContext.delegation_chain, carried through for the audit
+    # trail -- who delegated to whom, through however many hops, not
+    # just the immediate grantor authority_delegated_by already
+    # records. Empty for every action whose AuthorityContext never set
+    # a chain (the default), identical to before this field existed.
+    delegation_chain: list[str] = field(default_factory=list)
     framework: str | None = None
     provider: str | None = None
     model: str | None = None
@@ -94,6 +100,7 @@ class EvidenceRecord:
             "target": self.target,
             "argument_keys": self.argument_keys,
             "authority_delegated_by": self.authority_delegated_by,
+            "delegation_chain": self.delegation_chain,
             "risk_tier": self.risk_tier,
             "policy_version": self.policy_version,
             "decision": self.decision,
@@ -126,6 +133,7 @@ def build_evidence_record(
         target=action.target,
         argument_keys=sorted(action.arguments.keys()),
         authority_delegated_by=authority.delegated_by,
+        delegation_chain=list(authority.delegation_chain),
         decision=decision.decision.value,
         reason_codes=list(decision.reason_codes),
         evaluated_at=decision.evaluated_at,

@@ -142,17 +142,44 @@ class AuthorityContext:
       deliberately simple fixed window, not a timezone-aware calendar —
       matches this package's "no feature beyond a real, stated
       requirement" rule.
+    - ``max_delegation_depth`` (int): denies if ``len(delegation_chain)``
+      exceeds this — see ``delegation_chain`` below.
 
     An unrecognized key in ``constraints`` is silently ignored, not an
     error — this bag was designed as forward-open (SPEC.md Section 3.3),
     and a typo'd key should not be able to accidentally disable
     enforcement of a different action's constraints checked elsewhere.
+
+    ``delegation_chain`` (v3 authority-layer work) closes "authority
+    model remains coarse... no delegation chains": the full ordered
+    path of identity_ids from the ultimate root authority down through
+    every intermediate sub-delegation to ``delegated_by`` itself (the
+    last element, when the chain is non-empty, always equals
+    ``delegated_by`` — enforced in ``__post_init__``). Empty (the
+    default) means "no multi-hop chain was recorded, this is a direct
+    grant" — every ``AuthorityContext`` built before this field existed
+    behaves identically to one with an empty chain, since nothing reads
+    it unless a caller opts in by setting ``max_delegation_depth``.
+    This is deliberately *not* a trust-scoring or transitive-permission
+    algebra (e.g. "B may only grant what A granted B") — that's a much
+    larger, separate feature; what's built here is the audit trail (who
+    delegated to whom, recorded on every `EvidenceRecord`) and a single
+    bounded-depth guard, which is the concrete, stated requirement.
     """
 
     delegated_by: str  # org_id or human identity_id that granted this authority
     granted_action_types: frozenset[str]
     constraints: dict[str, Any] = field(default_factory=dict)
     require_approval_for: frozenset[str] = field(default_factory=frozenset)
+    delegation_chain: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.delegation_chain and self.delegation_chain[-1] != self.delegated_by:
+            raise ValueError(
+                f"AuthorityContext.delegation_chain[-1] ({self.delegation_chain[-1]!r}) must equal "
+                f"delegated_by ({self.delegated_by!r}) -- the chain's last link is who actually "
+                "granted this authority."
+            )
 
     def permits(self, action_type: str) -> bool:
         return action_type in self.granted_action_types
@@ -194,6 +221,15 @@ class AuthorityContext:
                     hour=current_hour,
                     window=f"{start}-{end}",
                 )
+
+        max_delegation_depth = self.constraints.get("max_delegation_depth")
+        if max_delegation_depth is not None and len(self.delegation_chain) > max_delegation_depth:
+            return format_reason(
+                ReasonCode.ACTION_NOT_ALLOWED,
+                rule="max_delegation_depth",
+                depth=len(self.delegation_chain),
+                limit=max_delegation_depth,
+            )
 
         return None
 

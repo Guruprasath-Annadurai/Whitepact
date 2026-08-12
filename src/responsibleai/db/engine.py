@@ -378,6 +378,9 @@ governance_evidence = Table(
     Column("target",                  String(200), nullable=False),
     Column("argument_keys",           Text,        nullable=True),  # JSON list of field names, never values
     Column("authority_delegated_by",  String(200), nullable=False),
+    # JSON list -- AuthorityContext.delegation_chain, empty for every
+    # action that never set one (see governance/models.py's docstring).
+    Column("delegation_chain",        Text,        nullable=True),
     Column("risk_tier",               String(20),  nullable=True),
     # NULL when no Policy reached evaluation for this action at all --
     # see governance/policy.py's Policy.version docstring.
