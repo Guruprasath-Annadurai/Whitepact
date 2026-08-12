@@ -90,6 +90,7 @@ from responsibleai.rbac.models import OrgContext
 
 if TYPE_CHECKING:
     from responsibleai.db.mcp_usage_repository import McpUsageRepository
+    from responsibleai.mcp.governance_integration import GovernanceServices
 
 _log_level = os.environ.get("RAI_MCP_LOG_LEVEL", "WARNING").upper()
 logging.basicConfig(level=getattr(logging, _log_level, logging.WARNING))
@@ -137,6 +138,12 @@ def _log_invocation_name(process_kind: str) -> None:
 _current_org: ContextVar[OrgContext | None] = ContextVar("_current_org", default=None)
 _current_usage_repo: ContextVar[McpUsageRepository | None] = ContextVar(
     "_current_usage_repo", default=None
+)
+# None unless Settings.mcp_governance_enabled is True — see that field's
+# docstring and governance_integration.py's module docstring for why
+# this is opt-in rather than always wired up.
+_current_governance: ContextVar[GovernanceServices | None] = ContextVar(
+    "_current_governance", default=None
 )
 
 
@@ -209,7 +216,21 @@ async def _call_tool(
         if usage_repo is not None and ctx.org_id:
             await usage_repo.record_call(ctx.org_id, name, ctx.plan.value, allowed=True)
 
-    result = await dispatch_tool(name, arguments or {})
+    call_arguments = arguments or {}
+    governance = _current_governance.get()
+    if governance is not None and ctx is not None and ctx.org_id:
+        # Local import: keeps the stdio transport's import graph free of
+        # the DB/governance layer unless a hosted-HTTP connection with
+        # mcp_governance_enabled=True actually populated this ContextVar
+        # — see governance_integration.py's module docstring.
+        from responsibleai.mcp.governance_integration import apply_governance
+
+        outcome = await apply_governance(name, call_arguments, ctx, governance)
+        if not outcome.proceed:
+            return _text_and_structured(outcome.blocked_response or {"error": "governance_blocked"})
+        call_arguments = outcome.arguments
+
+    result = await dispatch_tool(name, call_arguments)
     return _text_and_structured(result)
 
 
@@ -345,6 +366,23 @@ def _build_http_app() -> Any:
     _db_engine = create_engine(settings.effective_db_url)
     _org_repo = OrgRepository(_db_engine)
     _usage_repo = McpUsageRepository(_db_engine)
+
+    _governance_services: GovernanceServices | None = None
+    if settings.mcp_governance_enabled:
+        from responsibleai.db import ApprovalRepository, EvidenceRepository, PolicyRepository
+        from responsibleai.governance import WhitePactRuntimeGateway
+        from responsibleai.integrations.client import TrustClient
+        from responsibleai.mcp.governance_integration import (
+            GovernanceServices as RuntimeGovernanceServices,
+        )
+
+        _governance_services = RuntimeGovernanceServices(
+            gateway=WhitePactRuntimeGateway(),
+            evidence_repo=EvidenceRepository(_db_engine),
+            approval_repo=ApprovalRepository(_db_engine),
+            policy_repo=PolicyRepository(_db_engine),
+            trust_client=TrustClient(),
+        )
     # Reuses the exact same RAI_OIDC_* / Settings.oidc_* config the
     # dashboard API's SSO login already reads (dashboard/app.py's own
     # `_oidc_provider` construction) — a Bearer JWT obtained via the
@@ -473,6 +511,7 @@ def _build_http_app() -> Any:
 
         org_token = _current_org.set(ctx)
         usage_token = _current_usage_repo.set(_usage_repo)
+        governance_token = _current_governance.set(_governance_services)
         try:
             async with sse.connect_sse(
                 request.scope, request.receive, request._send
@@ -482,6 +521,7 @@ def _build_http_app() -> Any:
         finally:
             _current_org.reset(org_token)
             _current_usage_repo.reset(usage_token)
+            _current_governance.reset(governance_token)
         return JSONResponse({}, status_code=200)
 
     class _StreamableHttpEndpoint:
@@ -505,11 +545,13 @@ def _build_http_app() -> Any:
 
             org_token = _current_org.set(ctx)
             usage_token = _current_usage_repo.set(_usage_repo)
+            governance_token = _current_governance.set(_governance_services)
             try:
                 await streamable_http.handle_request(scope, receive, send)
             finally:
                 _current_org.reset(org_token)
                 _current_usage_repo.reset(usage_token)
+                _current_governance.reset(governance_token)
 
     handle_streamable_http = _StreamableHttpEndpoint()
 

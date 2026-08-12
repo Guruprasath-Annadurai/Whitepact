@@ -121,7 +121,6 @@ class TestIntegrationWithGatewayEvaluate:
             ActionRequest,
             AgentContext,
             AuthorityContext,
-            GovernanceDecision as GD,
             IdentityContext,
             WhitePactRuntimeGateway,
         )
@@ -131,7 +130,7 @@ class TestIntegrationWithGatewayEvaluate:
             PolicyRule(
                 rule_id="block-incident-log",
                 reason_code="no_incident_logging_from_this_org",
-                effect=GD.DENY,
+                effect=GovernanceDecision.DENY,
                 action_types=frozenset({"rai_incident_log"}),
             ),
         )
@@ -144,5 +143,5 @@ class TestIntegrationWithGatewayEvaluate:
         action = ActionRequest(agent=agent, action_type="rai_incident_log", target="rai_incident_log", arguments={})
 
         result = gateway.evaluate(action, authority, policy=policy)
-        assert result.decision == GD.DENY
+        assert result.decision == GovernanceDecision.DENY
         assert any("block-incident-log" in code for code in result.reason_codes)

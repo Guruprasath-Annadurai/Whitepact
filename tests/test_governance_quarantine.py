@@ -136,7 +136,6 @@ class TestRecentViolationCountQuery:
     async def test_scoped_to_org(self, evidence_repo: EvidenceRepository) -> None:
         gateway = WhitePactRuntimeGateway()
         agent_org_a = _agent("shared-agent-id", org_id="org-a")
-        agent_org_b = _agent("shared-agent-id", org_id="org-b")
         denying_authority = AuthorityContext(delegated_by="org-x", granted_action_types=frozenset())
 
         action_a = _denied_action(agent_org_a)

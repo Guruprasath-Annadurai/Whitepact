@@ -162,6 +162,27 @@ class Settings(BaseSettings):
         ),
     )
 
+    # Governance dispatch-path gating (opt-in — see MIGRATION_WHITEPACT_V2.md)
+    mcp_governance_enabled: bool = Field(
+        default=False,
+        description=(
+            "Route every hosted-MCP-transport tool call through "
+            "WhitePactRuntimeGateway.evaluate() before it executes, instead "
+            "of the gateway existing only as a separate, opt-in API "
+            "(GET/POST /api/governance/*). Off by default: turning this on "
+            "for an existing hosted deployment is a real behavior change — "
+            "a call that used to always execute can now come back DENY, "
+            "QUARANTINE, or REQUIRE_APPROVAL (queued, not executed), and "
+            "PII-bearing arguments can get silently redacted before the "
+            "underlying tool sees them. Only applies to org-scoped calls "
+            "over Streamable HTTP/SSE; the self-hosted stdio transport has "
+            "no organizational identity to evaluate authority/policy "
+            "against and is unaffected either way. See THREAT_MODEL.md's "
+            "governance-pipeline section for what this does and doesn't "
+            "cover once enabled."
+        ),
+    )
+
     # Redis (optional — falls back to in-memory rate limiting)
     redis_url: str | None = Field(
         default=None,
