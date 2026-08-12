@@ -740,6 +740,7 @@ mypy src/responsibleai src/biasbuster
 
 - [`SPEC.md`](SPEC.md) — the current architecture contract
 - [`MIGRATION_WHITEPACT_V2.md`](MIGRATION_WHITEPACT_V2.md) — phase-by-phase migration log, what's done and what's explicitly not
+- [`DEFINITION_OF_DONE.md`](DEFINITION_OF_DONE.md) — closing report: what's real today, what isn't, verifiable
 - [`THREAT_MODEL.md`](THREAT_MODEL.md) — threat model for the current attack surface
 - [`DETERMINISTIC_VS_PROBABILISTIC.md`](DETERMINISTIC_VS_PROBABILISTIC.md) — why governance decisions are deterministic
 - [`SLA.md`](SLA.md), [`ENTERPRISE_SECURITY.md`](ENTERPRISE_SECURITY.md), [`SECURITY.md`](SECURITY.md) — enterprise/security posture, stated honestly
