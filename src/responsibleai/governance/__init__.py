@@ -7,6 +7,18 @@ document."""
 
 from __future__ import annotations
 
+from responsibleai.governance.execution import (
+    AuthorizationActionMismatchError,
+    AuthorizationAlreadyConsumedError,
+    AuthorizationExpiredError,
+    AuthorizationOrganizationMismatchError,
+    DecisionNotExecutableError,
+    ExecutionAuthorization,
+    ExecutionNotAuthorizedError,
+    Executor,
+    InternalToolExecutor,
+    authorize_execution,
+)
 from responsibleai.governance.gateway import WhitePactRuntimeGateway
 from responsibleai.governance.models import (
     ActionRequest,
@@ -29,9 +41,18 @@ __all__ = [
     "ActionRequest",
     "AgentContext",
     "AuthorityContext",
+    "AuthorizationActionMismatchError",
+    "AuthorizationAlreadyConsumedError",
+    "AuthorizationExpiredError",
+    "AuthorizationOrganizationMismatchError",
+    "DecisionNotExecutableError",
     "DecisionResult",
+    "ExecutionAuthorization",
+    "ExecutionNotAuthorizedError",
+    "Executor",
     "GovernanceDecision",
     "IdentityContext",
+    "InternalToolExecutor",
     "Policy",
     "PolicyMatch",
     "PolicyRule",
@@ -39,6 +60,7 @@ __all__ = [
     "QUARANTINE_WINDOW_MINUTES",
     "RiskTier",
     "WhitePactRuntimeGateway",
+    "authorize_execution",
     "classify_action_risk",
     "enrich_agent_trust_state",
     "recent_violation_count",

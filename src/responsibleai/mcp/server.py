@@ -229,7 +229,13 @@ async def _call_tool(
         outcome = await apply_governance(name, call_arguments, ctx, governance)
         if not outcome.proceed:
             return _text_and_structured(outcome.blocked_response or {"error": "governance_blocked"})
-        call_arguments = outcome.arguments
+        # apply_governance() already ran the tool via InternalToolExecutor
+        # once it had a valid ExecutionAuthorization — outcome.result is
+        # that result. Calling dispatch_tool() again here would both
+        # double-execute the tool and reintroduce the exact bypass this
+        # wiring exists to close.
+        assert outcome.result is not None, "governed ALLOW outcome must carry an execution result"
+        return _text_and_structured(outcome.result)
 
     result = await dispatch_tool(name, call_arguments)
     return _text_and_structured(result)

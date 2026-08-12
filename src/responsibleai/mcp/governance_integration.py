@@ -22,6 +22,17 @@ this still does *not* cover: the self-hosted stdio transport, which
 has no organizational identity to build an AuthorityContext/Policy
 against and is therefore never governed by this path regardless of the
 setting.
+
+**Execution binding (v3 authority-layer work)**: an ALLOW/
+ALLOW_WITH_REDACTION decision no longer just tells `_call_tool()`
+"go ahead and call `dispatch_tool()` yourself" — this module now
+constructs an `ExecutionAuthorization` (`governance/execution.py`) and
+runs the tool itself via `InternalToolExecutor`, which structurally
+cannot execute without a matching, unexpired, single-use
+authorization. `_call_tool()` uses the resulting `GovernanceOutcome.result`
+directly rather than calling `dispatch_tool()` a second time — there is
+now exactly one place in the governed path that invokes
+`dispatch_tool()`, and it's gated.
 """
 
 from __future__ import annotations
@@ -37,7 +48,9 @@ from responsibleai.governance import (
     AuthorityContext,
     GovernanceDecision,
     IdentityContext,
+    InternalToolExecutor,
     WhitePactRuntimeGateway,
+    authorize_execution,
     enrich_agent_trust_state,
     recent_violation_count,
 )
@@ -45,6 +58,8 @@ from responsibleai.governance.approval import build_approval_request
 from responsibleai.governance.evidence import build_evidence_record
 from responsibleai.integrations.client import TrustClient
 from responsibleai.rbac.models import OrgContext
+
+_executor = InternalToolExecutor()
 
 if TYPE_CHECKING:
     from responsibleai.webhooks.manager import WebhookManager
@@ -71,6 +86,13 @@ class GovernanceOutcome:
     proceed: bool
     arguments: dict[str, Any]
     blocked_response: dict[str, Any] | None = None
+    # Set only when proceed=True — the tool already ran, via
+    # InternalToolExecutor, by the time apply_governance() returns.
+    # _call_tool() uses this directly instead of calling
+    # dispatch_tool() itself, which is the actual enforcement: there is
+    # no code path left where a governed call reaches dispatch_tool()
+    # without first passing through authorize_execution().
+    result: dict[str, Any] | None = None
 
 
 async def apply_governance(
@@ -192,7 +214,17 @@ async def apply_governance(
             },
         )
 
-    if decision.decision == GovernanceDecision.ALLOW_WITH_REDACTION:
-        return GovernanceOutcome(proceed=True, arguments=decision.redacted_arguments or arguments)
-
-    return GovernanceOutcome(proceed=True, arguments=arguments)
+    final_arguments = decision.redacted_arguments if decision.decision == GovernanceDecision.ALLOW_WITH_REDACTION else arguments
+    final_arguments = final_arguments or arguments
+    # The action authorized and executed must be built from
+    # final_arguments, not the original `action` — for
+    # ALLOW_WITH_REDACTION those differ, and the whole point of
+    # binding an ExecutionAuthorization to a digest is that it binds to
+    # what actually runs, not to what was originally proposed.
+    final_action = ActionRequest(
+        agent=agent, action_type=name, target=name, arguments=final_arguments,
+        action_id=action.action_id,
+    )
+    authorization = authorize_execution(decision, final_action)
+    result = await _executor.execute(authorization, final_action)
+    return GovernanceOutcome(proceed=True, arguments=final_arguments, result=result)

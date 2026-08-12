@@ -230,10 +230,17 @@ exactly, and a genuinely used one: `mcp/governance_integration.py`
 constructs one from every hosted-MCP tool call (when
 `Settings.mcp_governance_enabled` is on — see Section 2) and routes it
 through `WhitePactRuntimeGateway` before `dispatch_tool()` in
-`mcp/tools.py` ever runs. `arguments` is sanitized before it reaches
-Evidence storage in practice, not just in the field comment above —
-`EvidenceRecord` stores only `argument_keys`, never values (Section
-3.7).
+`mcp/tools.py` ever runs — and, since the executor-abstraction work,
+"before ... ever runs" is now structurally enforced, not just true by
+convention: an ALLOW/ALLOW_WITH_REDACTION decision produces an
+`ExecutionAuthorization` (`governance/execution.py`,
+`authorize_execution()`), and `InternalToolExecutor.execute()` — the
+only code path left that calls `dispatch_tool()` on the governed
+route — validates that authorization (matching digest, matching org,
+unexpired, unconsumed) before invoking it. `arguments` is sanitized
+before it reaches Evidence storage in practice, not just in the field
+comment above — `EvidenceRecord` stores only `argument_keys`, never
+values (Section 3.7).
 
 ### 3.5 Policy **[TODAY, first version — Phase 10]**
 
