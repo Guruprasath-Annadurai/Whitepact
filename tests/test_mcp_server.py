@@ -6,6 +6,8 @@ import json
 
 import pytest
 
+from responsibleai import __version__
+
 # ── Tool listing ───────────────────────────────────────────────────────────────
 
 class TestMCPToolDefs:
@@ -450,7 +452,7 @@ class TestRaiHealth:
         from responsibleai.mcp.tools import dispatch_tool
         r = await dispatch_tool("rai_health", {})
         assert r["status"] == "ok"
-        assert r["version"] == "1.2.0"
+        assert r["version"] == __version__
 
     @pytest.mark.asyncio
     async def test_all_modules_ok(self) -> None:
@@ -505,7 +507,7 @@ class TestMCPResources:
         raw = await dispatch_resource("rai://health")
         data = json.loads(raw)
         assert data["status"] == "ok"
-        assert data["version"] == "1.2.0"
+        assert data["version"] == __version__
 
     @pytest.mark.asyncio
     async def test_models_catalog_resource(self) -> None:

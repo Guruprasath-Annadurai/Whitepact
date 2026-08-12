@@ -28,6 +28,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from responsibleai import __version__
 from responsibleai.auth import mfa
 from responsibleai.auth.oidc import OIDCProvider
 from responsibleai.billing import StripeBillingError, StripeNotConfiguredError, StripeService
@@ -360,7 +361,7 @@ async def lifespan(application: FastAPI):
     rl_backend   = "redis" if settings.redis_url else "memory"
     logger.info(
         "startup_complete",
-        version="1.2.0",
+        version=__version__,
         db_backend=db_backend,
         rate_limit_backend=rl_backend,
         otel=bool(settings.otel_endpoint),
@@ -506,7 +507,7 @@ class APIVersionMiddleware(BaseHTTPMiddleware):
             request.scope["raw_path"] = new_path.encode()
 
         response = await call_next(request)
-        response.headers["X-API-Version"] = "1.2.0"
+        response.headers["X-API-Version"] = __version__
         response.headers["X-API-Min-Version"] = "1.0.0"
         return response
 
@@ -1081,7 +1082,7 @@ async def health() -> JSONResponse:
 
     body = {
         "status": "healthy" if db_ok else "degraded",
-        "version": "1.2.0",
+        "version": __version__,
         "uptime_seconds": round(time.monotonic() - _START_TIME, 1),
         "timestamp": datetime.now(UTC).isoformat(),
         "checks": {
@@ -3115,11 +3116,12 @@ async def get_drift_trend(
 @app.get("/api/version", tags=["ops"])
 async def api_version() -> dict[str, Any]:
     """Return full version and stability metadata."""
+    major, minor, patch = (int(part) for part in __version__.split(".")[:3])
     return {
-        "version": "1.2.0",
-        "major": 1,
-        "minor": 2,
-        "patch": 0,
+        "version": __version__,
+        "major": major,
+        "minor": minor,
+        "patch": patch,
         "stable": True,
         "api_versions": ["1.0", "1.1"],
         "current_api_prefix": "/api/v1",
@@ -3340,7 +3342,7 @@ async def platform_status() -> dict[str, Any]:
         db_ok = False
     return {
         "platform": "ResponsibleAI Governance Platform",
-        "version": "1.2.0",
+        "version": __version__,
         "status": "operational" if db_ok else "degraded",
         "uptime_seconds": round(time.monotonic() - _START_TIME, 1),
         "timestamp": datetime.now(UTC).isoformat(),

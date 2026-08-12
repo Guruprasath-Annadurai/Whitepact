@@ -15,6 +15,7 @@ import json
 
 import mcp.types as types
 
+from responsibleai import __version__
 from responsibleai.cost.models import MODEL_CATALOG
 from responsibleai.mcp.tools import TOOL_DEFS
 
@@ -119,7 +120,7 @@ async def dispatch_resource(uri: str) -> str:
     if uri == "rai://health":
         return json.dumps({
             "status": "ok",
-            "version": "1.2.0",
+            "version": __version__,
             "modules": ["guardrails", "trust_score", "hallucination", "compliance", "redteam", "cost", "passport", "benchmark", "model_router"],
             "tools_available": len(TOOL_DEFS),
             "resources_available": len(_CANONICAL_RESOURCE_DEFS),

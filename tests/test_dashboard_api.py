@@ -21,6 +21,7 @@ os.environ.setdefault("RAI_AUTO_MIGRATE", "false")
 from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
 
+from responsibleai import __version__
 from responsibleai.dashboard.app import app
 from responsibleai.dashboard.config import Settings
 
@@ -42,7 +43,7 @@ class TestHealth:
         assert r.status_code == 200
         d = r.json()
         assert d["status"] in ("healthy", "degraded")
-        assert d["version"] == "1.2.0"
+        assert d["version"] == __version__
         assert "checks" in d
         assert "modules" in d
         assert len(d["modules"]) >= 10

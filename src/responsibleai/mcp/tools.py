@@ -7,6 +7,7 @@ from typing import Any
 
 import mcp.types as types
 
+from responsibleai import __version__
 from responsibleai.compliance.engine import ComplianceEngine, Framework
 from responsibleai.cost.models import get_pricing
 from responsibleai.cost.router import ModelRouter
@@ -973,7 +974,7 @@ async def _handle_audit_summary(args: dict[str, Any]) -> dict[str, Any]:
     return {
         "days_requested": days,
         "governance_engine": {
-            "version": "1.2.0",
+            "version": __version__,
             "tools_available": len(TOOL_DEFS),
             "frameworks": ["NIST_AI_RMF", "EU_AI_ACT", "ISO_42001"],
             "attack_vectors": len(payloads),
@@ -999,7 +1000,7 @@ async def _handle_health(args: dict[str, Any]) -> dict[str, Any]:
     }
     return {
         "status": "ok",
-        "version": "1.2.0",
+        "version": __version__,
         "modules": modules,
         "tools": len(TOOL_DEFS),
     }
@@ -1824,7 +1825,7 @@ async def _handle_org_status(args: dict[str, Any]) -> dict[str, Any]:
         },
         "mcp_capabilities": {
             "tools_available": len(TOOL_DEFS),
-            "version": "1.2.0",
+            "version": __version__,
         },
     }
 

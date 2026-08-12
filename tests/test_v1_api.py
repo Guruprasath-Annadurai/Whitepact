@@ -13,6 +13,8 @@ import pytest
 from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
 
+from responsibleai import __version__
+
 # ── OIDC module unit tests ────────────────────────────────────────────────────
 
 class TestJWTClaims:
@@ -139,11 +141,14 @@ class TestAPIVersionEndpoint:
     async def test_version_body(self, client: AsyncClient) -> None:
         r = await client.get("/api/version")
         d = r.json()
-        assert d["version"] == "1.2.0"
+        expected_major, expected_minor, expected_patch = (
+            int(part) for part in __version__.split(".")[:3]
+        )
+        assert d["version"] == __version__
         assert d["stable"] is True
-        assert d["major"] == 1
-        assert d["minor"] == 2
-        assert d["patch"] == 0
+        assert d["major"] == expected_major
+        assert d["minor"] == expected_minor
+        assert d["patch"] == expected_patch
 
     @pytest.mark.asyncio
     async def test_api_versions_list(self, client: AsyncClient) -> None:
@@ -155,13 +160,13 @@ class TestAPIVersionEndpoint:
     @pytest.mark.asyncio
     async def test_x_api_version_header(self, client: AsyncClient) -> None:
         r = await client.get("/api/health")
-        assert r.headers.get("x-api-version") == "1.2.0"
+        assert r.headers.get("x-api-version") == __version__
 
     @pytest.mark.asyncio
     async def test_v1_prefix_routes_to_health(self, client: AsyncClient) -> None:
         r = await client.get("/api/v1/health")
         assert r.status_code == 200
-        assert r.json()["version"] == "1.2.0"
+        assert r.json()["version"] == __version__
 
     @pytest.mark.asyncio
     async def test_v1_prefix_routes_to_version(self, client: AsyncClient) -> None:
@@ -227,7 +232,7 @@ class TestSupportEndpoints:
     @pytest.mark.asyncio
     async def test_platform_status_version(self, client: AsyncClient) -> None:
         r = await client.get("/api/support/status")
-        assert r.json()["version"] == "1.2.0"
+        assert r.json()["version"] == __version__
 
     @pytest.mark.asyncio
     async def test_platform_status_operational(self, client: AsyncClient) -> None:

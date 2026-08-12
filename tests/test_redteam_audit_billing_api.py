@@ -14,6 +14,7 @@ import pytest
 from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
 
+from responsibleai import __version__
 from responsibleai.dashboard.app import app
 
 
@@ -237,11 +238,11 @@ class TestBillingUsageEndpoint:
 
 class TestVersionBump:
     @pytest.mark.asyncio
-    async def test_version_is_1_2_0(self, client: AsyncClient) -> None:
+    async def test_version_matches_package(self, client: AsyncClient) -> None:
         r = await client.get("/api/version")
-        assert r.json()["version"] == "1.2.0"
+        assert r.json()["version"] == __version__
 
     @pytest.mark.asyncio
     async def test_platform_status_version(self, client: AsyncClient) -> None:
         r = await client.get("/api/support/status")
-        assert r.json()["version"] == "1.2.0"
+        assert r.json()["version"] == __version__
