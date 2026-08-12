@@ -34,12 +34,19 @@ Last reviewed: 2026-07-23
       are both case-sensitive, and the original `server.json` used
       all-lowercase where the actual GitHub account is
       `Guruprasath-Annadurai` — see `CHANGELOG.md`'s 1.2.2 entry.
-- [ ] Submit to community MCP directories/marketplaces (Glama, PulseMCP,
-      or whatever's current — search fresh, don't trust any fixed list).
-      Per research done 2026-08-12: Glama largely auto-discovers/lets you
-      claim a listing once you're on the official registry; PulseMCP had
-      new submissions paused until mid-August per their own site — check
-      if that's lifted before trying `pulsemcp.com/submit`.
+- [ ] Glama — **checked live 2026-08-13, not indexed yet**: searched
+      `glama.ai/mcp/servers?query=whitepact`, zero results. No public
+      submission form without their own account login; likely just
+      needs time for their crawler to pick up the official registry
+      listing. Check back periodically, or sign in and use their "Add
+      Server" flow directly if it's still unlisted after a week or two.
+- [x] PulseMCP — **no action needed**, confirmed live 2026-08-13:
+      their own `/submit` page states plainly *"if you have a server to
+      share, publish it to the Official MCP Registry... we will pick it
+      up automatically once we are back."* WhitePact is already on the
+      official registry, so once their submissions-paused period ends
+      (their page says "until mid-August" — essentially now), no manual
+      submission is required at all.
 - [x] Submit to Smithery — **done and live 2026-08-12**: listed as
       `guruprasathannadurai-official/whitepact`, 27 tools + 20 resources
       discovered. Required real infra work, not just a form: this
@@ -52,14 +59,21 @@ Last reviewed: 2026-07-23
       public `/.well-known/mcp/server-card.json` endpoint serving the
       same live TOOL_DEFS/RESOURCE_DEFS the server itself advertises,
       per Smithery's own documented fallback for auth-required servers.
-- [ ] Add a "Listed on [Directory]" badge to the README once accepted
-      anywhere.
+- [x] Add "Listed on [Directory]" badges to the README — **done**:
+      MCP Registry and Smithery badges added 2026-08-12.
 - [ ] Write a short launch post (blog, LinkedIn, "Show HN" if applicable)
-      timed to the first directory acceptance.
-- [ ] Check OpenAI's current developer docs for ChatGPT connector/MCP
-      registration process (moves fast — verify before acting).
-- [ ] Check Google's current Gemini API / Gemini Enterprise docs for
-      connector/MCP registration process (same caveat).
+      now that both listings are live.
+- [x] OpenAI — **checked live 2026-08-13**: no public directory to
+      submit to. ChatGPT/Codex reach an MCP server via per-organization
+      "Connectors" config — a customer manually points their own
+      instance at your `/mcp` URL (`platform.openai.com`'s MCP-server
+      guide describes building/connecting one, not a central listing).
+      Nothing to submit; this already works today via the live hosted
+      endpoint.
+- [x] Google — **checked live 2026-08-13**: same shape as OpenAI.
+      Gemini Enterprise has a "set up your custom MCP server data
+      store" flow — a per-org admin connects a custom MCP server
+      manually, no central directory. Nothing to submit here either.
 
 ## 2. OEM/white-label outreach (zero cost — founder time only)
 
