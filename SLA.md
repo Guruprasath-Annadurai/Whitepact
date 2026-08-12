@@ -181,7 +181,7 @@ This SLA does not cover:
 | Deployment | `docker-compose.yml` | `docker-compose.prod.yml` (Postgres + Redis + dashboard + MCP HTTP) |
 
 **Note on the reference deployment (Render free tier + Supabase managed
-Postgres + Upstash managed Redis — updated 2026-07-23):** the live
+Postgres + Upstash managed Redis — updated 2026-08-12):** the live
 instance runs on Render's free web-service tier (shared CPU, no
 persistent local disk — this is exactly why Postgres lives on Supabase
 rather than in-container SQLite), which falls well below the
@@ -191,6 +191,19 @@ describes the *self-hosted VM alternative* in `DEPLOY_RUNBOOK.md`, not
 the actual live topology. Workable for early-stage/low-traffic use; treat
 "Recommended" as the bar to grow into with paid capacity on any of these
 three providers, not a claim about the current reference setup.
+
+**Real incident, disclosed honestly**: this reference deployment was
+down for ~17 days (2026-07-26 to 2026-08-12) because Supabase's
+free-tier database auto-paused from inactivity, and every subsequent
+deploy failed at startup as a result — confirmed via Render deploy
+logs and Supabase's dashboard, resolved by resuming the paused
+project. No paying customer traffic existed during this window (this
+deployment predates any real customer usage), but this is exactly the
+kind of gap `SLA.md`'s own uptime commitments below should account
+for honestly on a free-tier reference deployment — see the "What none
+of this replaces" framing throughout `compliance/SOC2_ALTERNATIVE_PATH.md`
+for the same discipline applied here. A paid Supabase tier removes
+this specific failure mode.
 
 **Running more than one replica:** set `RAI_MULTI_REPLICA=true`. This is a
 self-declaration, not a feature flag — it makes startup verify the

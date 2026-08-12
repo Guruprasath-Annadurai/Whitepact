@@ -131,14 +131,36 @@ Last reviewed: 2026-07-23
       codebase immediately before submission.
 - [ ] Create an arXiv account and actually submit.
 
-## 6. Hosted instance — **DONE, live as of 2026-07-23**
+## 6. Hosted instance — **live, with a real ~17-day outage 2026-07-26 to 2026-08-12**
 
 *Source: `DEPLOY_RUNBOOK.md`, `SLA.md`, `STRATEGY_ROADMAP.md` Part 0*
 
 The plan below (GCP VM + Docker Compose) turned out not to be what
 actually got built — GCP's billing setup hit real friction (UPI payment
 failures), so the founder pivoted to a card-free managed-services stack
-instead. What's actually live:
+instead.
+
+**Real incident, not a hypothetical**: the Supabase free-tier database
+auto-paused from inactivity around 2026-07-26 (Supabase pauses free
+projects after ~1 week idle). Every deploy attempt from then through
+2026-08-12 — roughly 40 consecutive commits, including several pure
+documentation changes with no code touched at all — crashed at startup
+with `asyncpg.exceptions.InternalServerError: (ENOTFOUND) tenant/user
+... not found`, Supabase's exact pooler error for an unreachable
+paused project. Root-caused via Render's deploy logs (a docs-only
+commit failing identically to a code commit was the tell that ruled
+out anything in the diffs) and Supabase's own dashboard. Blocked on a
+second issue while fixing it: the account's other Supabase
+organization (`Edora`) already used 2 of 2 free-tier project slots,
+so the paused WhitePact project couldn't resume until an unused
+project (`edora-staging`) was paused to free a slot. Confirmed
+recovered 2026-08-12 via `/api/health` returning `200` with
+`database: ok` and the pre-outage org data intact (`orgs: 1` — nothing
+lost across the pause). **Action item**: consider Supabase's paid tier,
+or a scheduled keep-alive ping, if another multi-week gap between
+deploys is likely — free-tier auto-pause will recur otherwise.
+
+What's actually live:
 
 - [x] **Compute**: Render free-tier web service (`responsibleai-dashboard`),
       auto-deploying `Dockerfile` from `main` on every push. Live at
