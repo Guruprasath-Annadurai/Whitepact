@@ -25,17 +25,24 @@ Last reviewed: 2026-07-23
 
 *Source: `compliance/MCP_DISTRIBUTION_GUIDE.md`*
 
-- [ ] Submit `responsibleai-mcp` to the official MCP registry —
-      **confirmed live**: `github.com/modelcontextprotocol/registry`
-      (real, found via research 2026-07-23; publishes via a `server.json`
-      manifest and a CLI publisher tool the repo documents). Note: your
-      GitHub CLI is already authenticated as `Guruprasath-Annadurai` — say
-      the word and this PR can be opened for you; otherwise it's a normal
-      PR flow you do yourself.
+- [x] Submit to the official MCP registry — **done and live 2026-08-12**:
+      published as `io.github.Guruprasath-Annadurai/whitepact` v1.2.2 via
+      `mcp-publisher`, confirmed queryable at
+      `registry.modelcontextprotocol.io/v0/servers?search=whitepact`.
+      Took 3 patch releases (1.2.0→1.2.2) to land: PyPI's README-based
+      `mcp-name` ownership marker and the GitHub-OAuth namespace check
+      are both case-sensitive, and the original `server.json` used
+      all-lowercase where the actual GitHub account is
+      `Guruprasath-Annadurai` — see `CHANGELOG.md`'s 1.2.2 entry.
 - [ ] Submit to community MCP directories/marketplaces (Glama, PulseMCP,
       or whatever's current — search fresh, don't trust any fixed list).
+      Per research done 2026-08-12: Glama largely auto-discovers/lets you
+      claim a listing once you're on the official registry; PulseMCP had
+      new submissions paused until mid-August per their own site — check
+      if that's lifted before trying `pulsemcp.com/submit`.
 - [ ] Submit to Smithery or an equivalent MCP hosting/discovery platform,
-      if one is current.
+      if one is current — needs its own CLI publish + your login,
+      same shape as the official registry.
 - [ ] Add a "Listed on [Directory]" badge to the README once accepted
       anywhere.
 - [ ] Write a short launch post (blog, LinkedIn, "Show HN" if applicable)
