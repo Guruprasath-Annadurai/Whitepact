@@ -246,6 +246,113 @@ class TestApprovalEndpoints:
         assert r.status_code == 422
 
 
+async def _seed_quorum_approval(org_id: str, *, required_approvals: int = 2) -> str:
+    """Same shape as _seed_approval() above, but with a caller-chosen
+    required_approvals -- REST-level proof of the quorum feature
+    (governance/approval.py's default_required_approvals(), Task #142)
+    on top of test_approval_quorum.py's repository-level coverage."""
+    from responsibleai.dashboard.app import _db_engine
+
+    gw = WhitePactRuntimeGateway()
+    identity = IdentityContext(identity_id="k1", kind="api_key", org_id=org_id)
+    agent = AgentContext(identity=identity, framework="mcp-client")
+    authority = AuthorityContext(
+        delegated_by=org_id, granted_action_types=frozenset({"deployment"}),
+        require_approval_for=frozenset({"deployment"}),
+    )
+    action = ActionRequest(agent=agent, action_type="deployment", target="prod")
+    decision = gw.evaluate(action, authority)
+    approval = build_approval_request(action, decision)
+    approval.required_approvals = required_approvals
+    saved = await ApprovalRepository(_db_engine).create(approval)
+    return saved.approval_id
+
+
+class TestApprovalQuorumEndpoints:
+    async def test_single_admin_vote_leaves_approval_pending(
+        self, client: AsyncClient, org_and_admin_key,
+    ) -> None:
+        org_id, admin_key = org_and_admin_key
+        approval_id = await _seed_quorum_approval(org_id, required_approvals=2)
+        r = await client.post(
+            f"/api/governance/approvals/{approval_id}/resolve",
+            json={"outcome": "APPROVED"},
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        assert r.status_code == 200
+        assert r.json()["status"] == "PENDING"
+        assert r.json()["required_approvals"] == 2
+
+    async def test_second_distinct_admin_reaches_quorum(
+        self, client: AsyncClient, org_and_admin_key,
+    ) -> None:
+        org_id, admin_key = org_and_admin_key
+        approval_id = await _seed_quorum_approval(org_id, required_approvals=2)
+
+        r = await client.post(
+            f"/api/orgs/{org_id}/keys", json={"name": "second-admin", "role": "ADMIN"}, headers=BOOTSTRAP_AUTH,
+        )
+        second_admin_key = r.json()["key"]
+
+        await client.post(
+            f"/api/governance/approvals/{approval_id}/resolve",
+            json={"outcome": "APPROVED"},
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        r2 = await client.post(
+            f"/api/governance/approvals/{approval_id}/resolve",
+            json={"outcome": "APPROVED"},
+            headers={"Authorization": f"Bearer {second_admin_key}"},
+        )
+        assert r2.status_code == 200
+        assert r2.json()["status"] == "APPROVED"
+
+    async def test_double_vote_from_same_admin_returns_409(
+        self, client: AsyncClient, org_and_admin_key,
+    ) -> None:
+        org_id, admin_key = org_and_admin_key
+        approval_id = await _seed_quorum_approval(org_id, required_approvals=2)
+        headers = {"Authorization": f"Bearer {admin_key}"}
+        await client.post(
+            f"/api/governance/approvals/{approval_id}/resolve", json={"outcome": "APPROVED"}, headers=headers,
+        )
+        r = await client.post(
+            f"/api/governance/approvals/{approval_id}/resolve", json={"outcome": "APPROVED"}, headers=headers,
+        )
+        assert r.status_code == 409
+
+    async def test_votes_endpoint_lists_history(self, client: AsyncClient, org_and_admin_key) -> None:
+        org_id, admin_key = org_and_admin_key
+        approval_id = await _seed_quorum_approval(org_id, required_approvals=2)
+        headers = {"Authorization": f"Bearer {admin_key}"}
+        await client.post(
+            f"/api/governance/approvals/{approval_id}/resolve",
+            json={"outcome": "APPROVED", "notes": "first vote"},
+            headers=headers,
+        )
+
+        r = await client.get(f"/api/governance/approvals/{approval_id}/votes", headers=headers)
+        assert r.status_code == 200
+        body = r.json()
+        assert body["required_approvals"] == 2
+        assert len(body["votes"]) == 1
+        assert body["votes"][0]["notes"] == "first vote"
+
+    async def test_votes_endpoint_cross_org_returns_404(self, client: AsyncClient, org_and_admin_key) -> None:
+        _org_id, admin_key = org_and_admin_key
+        r = await client.post(
+            "/api/orgs", json={"name": "Other Quorum Co", "slug": "other-quorum-co"}, headers=BOOTSTRAP_AUTH,
+        )
+        other_org_id = r.json()["id"]
+        other_approval_id = await _seed_quorum_approval(other_org_id)
+
+        r = await client.get(
+            f"/api/governance/approvals/{other_approval_id}/votes",
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        assert r.status_code == 404
+
+
 class TestSupplyChainScanEndpoint:
     async def test_scan_requires_auth(self, client: AsyncClient) -> None:
         r = await client.post(

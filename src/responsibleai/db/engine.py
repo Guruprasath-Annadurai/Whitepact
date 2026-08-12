@@ -14,6 +14,7 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    UniqueConstraint,
     text,
 )
 from sqlalchemy.exc import DBAPIError, OperationalError
@@ -432,6 +433,13 @@ governance_approvals = Table(
     # this column existed; every new approval always gets one — see
     # governance/approval.py's DEFAULT_APPROVAL_TTL_HOURS).
     Column("expires_at",         String(32),  nullable=True),
+    # How many distinct APPROVED votes are needed before this approval
+    # transitions out of PENDING -- see governance/approval.py's
+    # required_approvals docstring for the risk-tier-based default and
+    # db/approval_repository.py's resolve()/cast_vote() for the quorum
+    # logic. 1 (the default) preserves the exact single-approver
+    # behavior every approval had before this column existed.
+    Column("required_approvals", Integer,     nullable=False, server_default="1"),
     Column("resolved_by",        String(200), nullable=True),
     Column("resolved_at",        String(32),  nullable=True),
     Column("resolution_notes",   Text,        nullable=True),
@@ -439,6 +447,30 @@ governance_approvals = Table(
     Index("idx_gap_status",      "status"),
     Index("idx_gap_requested",   "requested_at"),
     Index("idx_gap_action",      "action_id"),
+)
+
+# One row per (approval, resolver) -- the individual votes a quorum-N
+# approval accumulates before the parent governance_approvals row
+# transitions out of PENDING. A single-approver (required_approvals=1)
+# approval also gets exactly one row here; the parent row's own
+# resolved_by/resolved_at/resolution_notes columns still reflect the
+# vote that actually closed it, so nothing reading only the parent row
+# needs to change to keep working.
+governance_approval_votes = Table(
+    "governance_approval_votes",
+    metadata,
+    Column("id",                  String(36),  primary_key=True),
+    Column("approval_id",         String(36),  nullable=False),
+    Column("resolver_identity_id", String(200), nullable=False),
+    Column("outcome",             String(20),  nullable=False),  # APPROVED | DENIED
+    Column("notes",               Text,        nullable=True),
+    Column("resolved_at",         String(32),  nullable=False),
+    Index("idx_gapv_approval",    "approval_id"),
+    # A given identity may cast at most one vote per approval -- the
+    # replay/double-vote guard (db/approval_repository.py's
+    # AlreadyVotedError), enforced at the DB layer, not just in
+    # application code.
+    UniqueConstraint("approval_id", "resolver_identity_id", name="uq_gapv_approval_resolver"),
 )
 
 # Phase 26 gap-closure — persisted governance policy rules (see

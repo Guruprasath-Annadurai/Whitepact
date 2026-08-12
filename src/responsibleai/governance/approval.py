@@ -37,6 +37,25 @@ from responsibleai.governance.risk import RiskTier
 # reach for on day one.
 DEFAULT_APPROVAL_TTL_HOURS = 24
 
+# Fixed, risk-tier-keyed default for how many distinct human approvals
+# a REQUIRE_APPROVAL action needs before it's actually approved --
+# closes "no multi-approver quorum" without inventing a per-org
+# configuration surface (no UI/API to set this per-org exists; a fixed,
+# reviewable table is the honest scope here, same principle as
+# QUARANTINE_VIOLATION_THRESHOLD above). HIGH-risk actions need two
+# independent humans to agree; everything else needs the one this
+# system already required before quorum existed -- MEDIUM/LOW/MINIMAL/
+# unclassified (None) all default to 1, preserving exact prior behavior
+# for every risk tier that isn't HIGH.
+_DEFAULT_REQUIRED_APPROVALS_BY_TIER: dict[RiskTier | None, int] = {
+    RiskTier.HIGH: 2,
+}
+_DEFAULT_REQUIRED_APPROVALS = 1
+
+
+def default_required_approvals(risk_tier: RiskTier | None) -> int:
+    return _DEFAULT_REQUIRED_APPROVALS_BY_TIER.get(risk_tier, _DEFAULT_REQUIRED_APPROVALS)
+
 
 class ApprovalStatus(StrEnum):
     PENDING = "PENDING"
@@ -77,6 +96,32 @@ def compute_action_digest(action: ActionRequest) -> str:
 
 
 @dataclass
+class ApprovalVote:
+    """One resolver's vote on a quorum approval -- persisted in
+    ``governance_approval_votes``, distinct from ``ApprovalRequest``'s
+    own ``resolved_by``/``resolved_at``/``resolution_notes`` (which
+    reflect only the vote that actually closed the approval, for
+    backward-compatible single-approver reads)."""
+
+    approval_id: str
+    resolver_identity_id: str
+    outcome: ApprovalStatus
+    resolved_at: datetime
+    vote_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    notes: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "vote_id": self.vote_id,
+            "approval_id": self.approval_id,
+            "resolver_identity_id": self.resolver_identity_id,
+            "outcome": self.outcome.value,
+            "notes": self.notes,
+            "resolved_at": self.resolved_at.isoformat(),
+        }
+
+
+@dataclass
 class ApprovalRequest:
     action_id: str
     action_type: str
@@ -96,6 +141,11 @@ class ApprovalRequest:
     resolved_by: str | None = None
     resolved_at: datetime | None = None
     resolution_notes: str | None = None
+    # How many distinct APPROVED votes close this approval -- see
+    # default_required_approvals() above. 1 for every approval built
+    # before this field existed (server_default="1" on the DB column),
+    # which is exactly the single-approver behavior they always had.
+    required_approvals: int = 1
     # The original action's arguments -- what build_resume_action()
     # needs to reconstruct the exact ActionRequest a human approved.
     # Persisted encrypted at rest (db/engine.py's EncryptedString on
@@ -143,6 +193,7 @@ class ApprovalRequest:
             "status": self.status.value,
             "requested_at": self.requested_at.isoformat(),
             "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "required_approvals": self.required_approvals,
             "resolved_by": self.resolved_by,
             "resolved_at": self.resolved_at.isoformat() if self.resolved_at else None,
             "resolution_notes": self.resolution_notes,
@@ -169,6 +220,7 @@ def build_approval_request(action: ActionRequest, decision: DecisionResult) -> A
         risk_tier=decision.risk_tier.value if isinstance(decision.risk_tier, RiskTier) else None,
         requested_by=action.agent.identity.identity_id,
         arguments=dict(action.arguments),
+        required_approvals=default_required_approvals(decision.risk_tier),
     )
 
 

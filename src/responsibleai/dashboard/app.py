@@ -63,6 +63,7 @@ from responsibleai.dashboard.telemetry import (
 )
 from responsibleai.dashboard.websocket_manager import ConnectionManager
 from responsibleai.db import (
+    AlreadyVotedError,
     ApprovalActionMismatchError,
     ApprovalAlreadyResolvedError,
     ApprovalExpiredError,
@@ -2399,12 +2400,40 @@ async def governance_resolve_approval(
         raise HTTPException(409, str(exc)) from None
     except SelfApprovalError as exc:
         raise HTTPException(403, str(exc)) from None
+    except AlreadyVotedError as exc:
+        raise HTTPException(409, str(exc)) from None
     observe_governance_approval(req.outcome, org_id=_auth.org_id)
     logger.info(
         "governance_approval_resolved", approval_id=approval_id,
         outcome=req.outcome, resolved_by=_auth.key_id, org_id=_auth.org_id,
+        status=resolved.status.value,
     )
     return resolved.to_dict()
+
+
+@app.get("/api/governance/approvals/{approval_id}/votes", tags=["governance"])
+@limiter.limit("30/minute")
+async def governance_list_approval_votes(
+    request: Request,
+    approval_id: str,
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
+) -> dict[str, Any]:
+    """The quorum audit trail (v3 authority-layer work): every vote cast
+    so far on a multi-approver approval -- the parent approval's own
+    resolved_by/resolved_at only ever reflects the single vote that
+    closed (or is closing) it, not the full history for a quorum > 1
+    approval."""
+    if not _auth.org_id:
+        raise HTTPException(400, "Governance approvals require an org-scoped API key, not a legacy flat key.")
+    approval = await _ready(_approval_repo).get(approval_id)
+    if approval is None or approval.organization_id != _auth.org_id:
+        raise HTTPException(404, "No approval request found with this ID.")
+    votes = await _ready(_approval_repo).list_votes(approval_id)
+    return {
+        "approval_id": approval_id,
+        "required_approvals": approval.required_approvals,
+        "votes": [v.to_dict() for v in votes],
+    }
 
 
 @app.post("/api/governance/approvals/{approval_id}/execute", tags=["governance"])

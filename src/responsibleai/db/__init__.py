@@ -1,6 +1,7 @@
 """Async database layer — supports SQLite (default) and PostgreSQL."""
 
 from responsibleai.db.approval_repository import (
+    AlreadyVotedError,
     ApprovalActionMismatchError,
     ApprovalAlreadyResolvedError,
     ApprovalExpiredError,
@@ -31,6 +32,7 @@ from responsibleai.db.webhook_repository import (
 )
 
 __all__ = [
+    "AlreadyVotedError",
     "ApprovalActionMismatchError",
     "ApprovalAlreadyResolvedError",
     "ApprovalExpiredError",
