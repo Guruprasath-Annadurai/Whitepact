@@ -78,6 +78,7 @@ import mcp.types as types
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 
+from responsibleai import __version__
 from responsibleai.mcp.licensing import (
     is_allowed,
     monthly_quota,
@@ -605,6 +606,32 @@ def _build_http_app() -> Any:
             "bearer_methods_supported": ["header"],
         })
 
+    async def mcp_server_card(request: Request) -> JSONResponse:
+        """Static capability card for directories (e.g. Smithery) that
+        can't complete a live authenticated scan against /mcp — this
+        deployment has no OAuth authorization server configured (see
+        protected_resource_metadata above), only static Bearer API
+        keys, which a directory's automated crawler can't obtain on
+        its own. Bypasses live scanning per the directory's own
+        documented fallback rather than leaving the listing unscanned.
+        Tool/resource data is generated from the same TOOL_DEFS/
+        RESOURCE_DEFS the live server itself advertises — never a
+        separately maintained, driftable copy."""
+        return JSONResponse({
+            "serverInfo": {"name": "whitepact", "version": __version__},
+            "authentication": {
+                "required": True,
+                "schemes": ["apiKey"],
+            },
+            "tools": [
+                t.model_dump(mode="json", exclude_none=True, by_alias=True) for t in TOOL_DEFS
+            ],
+            "resources": [
+                r.model_dump(mode="json", exclude_none=True, by_alias=True) for r in RESOURCE_DEFS
+            ],
+            "prompts": [],
+        })
+
     app = Starlette(
         routes=[
             Route("/health", endpoint=health),
@@ -612,6 +639,7 @@ def _build_http_app() -> Any:
             Route("/sse", endpoint=handle_sse),
             Mount("/messages/", app=sse.handle_post_message),
             Route("/.well-known/oauth-protected-resource", endpoint=protected_resource_metadata),
+            Route("/.well-known/mcp/server-card.json", endpoint=mcp_server_card),
         ],
         lifespan=_lifespan,
     )

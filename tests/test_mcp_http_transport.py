@@ -145,3 +145,32 @@ class TestHealthEndpoint:
         assert payload["transport"] == "http+sse"
         assert set(payload["transports"]) == {"streamable-http", "http+sse"}
         assert payload["tools"] == 27
+
+
+class TestMCPServerCard:
+    """/.well-known/mcp/server-card.json — the static capability card
+    directories (e.g. Smithery) fall back to when they can't complete a
+    live authenticated scan against /mcp, since this deployment has no
+    OAuth authorization server configured (only static Bearer API
+    keys, which an automated crawler can't obtain)."""
+
+    async def test_server_card_is_public_no_auth_required(self, seeded_app) -> None:
+        app, _raw_key = seeded_app
+        async with await _raw_client(app) as client:
+            response = await client.get("/.well-known/mcp/server-card.json")
+        assert response.status_code == 200
+
+    async def test_server_card_matches_live_tool_and_resource_defs(self, seeded_app) -> None:
+        from responsibleai import __version__
+        from responsibleai.mcp.resources import RESOURCE_DEFS
+        from responsibleai.mcp.tools import TOOL_DEFS
+
+        app, _raw_key = seeded_app
+        async with await _raw_client(app) as client:
+            response = await client.get("/.well-known/mcp/server-card.json")
+        payload = response.json()
+        assert payload["serverInfo"] == {"name": "whitepact", "version": __version__}
+        assert len(payload["tools"]) == len(TOOL_DEFS)
+        assert {t["name"] for t in payload["tools"]} == {t.name for t in TOOL_DEFS}
+        assert len(payload["resources"]) == len(RESOURCE_DEFS)
+        assert payload["prompts"] == []
