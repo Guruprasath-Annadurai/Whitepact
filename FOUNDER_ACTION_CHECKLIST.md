@@ -40,9 +40,18 @@ Last reviewed: 2026-07-23
       claim a listing once you're on the official registry; PulseMCP had
       new submissions paused until mid-August per their own site — check
       if that's lifted before trying `pulsemcp.com/submit`.
-- [ ] Submit to Smithery or an equivalent MCP hosting/discovery platform,
-      if one is current — needs its own CLI publish + your login,
-      same shape as the official registry.
+- [x] Submit to Smithery — **done and live 2026-08-12**: listed as
+      `guruprasathannadurai-official/whitepact`, 27 tools + 20 resources
+      discovered. Required real infra work, not just a form: this
+      deployment had no separate hosted MCP HTTP transport at all (the
+      dashboard only serves REST), so a second Render service
+      (`whitepact-mcp-http`, running `responsibleai-mcp-http`) was
+      created to actually host `/mcp` publicly. Smithery's scanner then
+      hit an OAuth-discovery dead end (this deployment only supports
+      static Bearer API keys, no OIDC configured) — fixed by adding a
+      public `/.well-known/mcp/server-card.json` endpoint serving the
+      same live TOOL_DEFS/RESOURCE_DEFS the server itself advertises,
+      per Smithery's own documented fallback for auth-required servers.
 - [ ] Add a "Listed on [Directory]" badge to the README once accepted
       anywhere.
 - [ ] Write a short launch post (blog, LinkedIn, "Show HN" if applicable)
