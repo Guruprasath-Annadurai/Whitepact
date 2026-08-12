@@ -271,6 +271,22 @@ What's actually live:
       Follow-up still open: decide on OAuth 2.1 vs the current
       apiKey-only auth before submitting to Anthropic's Connectors
       Directory — see `compliance/CONNECTOR_READINESS_REPORT.md` §4.
+- [x] **Resolved 2026-08-13**: load-tested `whitepact-mcp-http`'s live
+      public endpoints directly (no Render access needed for this
+      part). Results: 150 concurrent `GET /health` requests → 100%
+      success, p95 1.25s; 50 concurrent server-card fetches → 100%
+      success; 30 concurrent `POST /mcp` with no API key → correctly
+      triggered a Redis-backed auth-failure lockout (`429
+      too_many_attempts`) rather than crashing or hanging — incidental
+      but real confirmation that `RAI_REDIS_URL` is functioning, not
+      just present. Single `WEB_CONCURRENCY=1` worker (Render's
+      default for this instance's CPU allocation) held up fine at this
+      scale via async I/O. **Caveats, stated plainly**: this is burst
+      load from one location over ~1 minute, not sustained/soak-tested
+      load, and the 429 response is missing a `Retry-After` header
+      (minor client-experience polish, not a correctness bug) — both
+      worth revisiting if real connector traffic volume ever
+      materializes, but neither blocks a directory submission today.
 
 ## 7. Billing (only once selling live)
 
