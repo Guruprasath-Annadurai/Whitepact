@@ -13,19 +13,22 @@ graph stays free of the DB/governance layer it never touches — `import
 responsibleai.mcp.server` for `main()` (stdio) never pulls this file
 in unless `_build_http_app()` actually imports it.
 
-What this does *not* cover, stated honestly: webhook notification on a
-queued REQUIRE_APPROVAL (ApprovalRepository.create()'s webhook_manager
-parameter is left unset here — the hosted MCP transport has no webhook
-subsystem wired in today, unlike the dashboard REST API); and the
-self-hosted stdio transport, which has no organizational identity to
-build an AuthorityContext/Policy against and is therefore never
-governed by this path regardless of the setting.
+A queued REQUIRE_APPROVAL now fires `WebhookEvent.APPROVAL_REQUESTED`
+to any org webhook subscribed to it, via the same `WebhookManager`
+class the dashboard REST API uses — `_build_http_app()` constructs and
+wires its own instance when `mcp_governance_enabled` is on, since the
+hosted MCP process previously had no webhook subsystem at all. What
+this still does *not* cover: the self-hosted stdio transport, which
+has no organizational identity to build an AuthorityContext/Policy
+against and is therefore never governed by this path regardless of the
+setting.
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from responsibleai.db import ApprovalRepository, EvidenceRepository, PolicyRepository
 from responsibleai.governance import (
@@ -43,6 +46,11 @@ from responsibleai.governance.evidence import build_evidence_record
 from responsibleai.integrations.client import TrustClient
 from responsibleai.rbac.models import OrgContext
 
+if TYPE_CHECKING:
+    from responsibleai.webhooks.manager import WebhookManager
+
+_logger = logging.getLogger("responsibleai.mcp.governance")
+
 
 @dataclass
 class GovernanceServices:
@@ -55,6 +63,7 @@ class GovernanceServices:
     approval_repo: ApprovalRepository
     policy_repo: PolicyRepository
     trust_client: TrustClient
+    webhook_manager: WebhookManager | None = None
 
 
 @dataclass
@@ -116,7 +125,33 @@ async def apply_governance(
         action, authority, policy=policy, recent_violation_count=violation_count,
     )
     evidence = build_evidence_record(action, agent, authority, decision)
-    await services.evidence_repo.record(evidence)
+    try:
+        await services.evidence_repo.record(evidence)
+    except Exception:
+        # Fail closed, not open: evidence is this platform's whole audit-
+        # trail guarantee (SPEC.md Section 3.7). Letting an ALLOW proceed
+        # with no record of why would be a worse failure mode than
+        # blocking a call during a transient DB problem — the caller can
+        # retry once the underlying issue clears. Every decision branch
+        # gets the same treatment here, not just ALLOW, so a QUARANTINE/
+        # DENY/REQUIRE_APPROVAL outcome that also couldn't be recorded
+        # doesn't get silently downgraded to "block but pretend it was
+        # logged."
+        _logger.exception(
+            "governance_evidence_write_failed action_id=%s decision=%s org_id=%s",
+            action.action_id, decision.decision.value, ctx.org_id,
+        )
+        return GovernanceOutcome(
+            proceed=False, arguments=arguments, blocked_response={
+                "error": "governance_evidence_unavailable",
+                "message": (
+                    "This action could not be evaluated because its evidence "
+                    "record could not be persisted. No action was taken; "
+                    "retry once the underlying issue clears."
+                ),
+                "action_id": decision.action_id,
+            },
+        )
 
     if decision.decision == GovernanceDecision.DENY:
         return GovernanceOutcome(
@@ -143,7 +178,9 @@ async def apply_governance(
 
     if decision.decision == GovernanceDecision.REQUIRE_APPROVAL:
         approval = await services.approval_repo.create(
-            build_approval_request(action, decision), evidence_id=evidence.evidence_id,
+            build_approval_request(action, decision),
+            evidence_id=evidence.evidence_id,
+            webhook_manager=services.webhook_manager,
         )
         return GovernanceOutcome(
             proceed=False, arguments=arguments, blocked_response={

@@ -1112,19 +1112,41 @@ reverting a deliberate improvement — consistent with the standing rule
 that a functional change updates its own tests in the same commit, not
 a follow-up.
 
-### 12.6 What's still genuinely out of scope
+### 12.6 Two more gaps closed the same day, plus what's still genuinely out of scope
 
-Not built, stated honestly: a richer policy rule language (OPA/Rego);
-webhook notification when a hosted-MCP dispatch call queues a
-`REQUIRE_APPROVAL` (the dashboard REST API's approval endpoint fires
-one via `WebhookManager`; the hosted MCP transport has no webhook
-subsystem wired in — `ApprovalRepository.create()`'s `webhook_manager`
-parameter is left unset in `apply_governance()`); graceful degradation
-if `EvidenceRepository.record()` itself fails mid-dispatch (currently
-propagates as an exception and fails the tool call, rather than
-degrading — see `THREAT_MODEL.md`'s Dashboard REST API / governance
-sections); and governing the self-hosted stdio transport at all, which
-has no organizational identity to evaluate against by design.
+Two items this section originally listed as open gaps were closed
+before this document's first version was even committed:
+
+- **Webhook notification on a dispatch-path `REQUIRE_APPROVAL`** —
+  `_build_http_app()` now constructs its own `WebhookManager` (wired to
+  `WebhookConfigRepository`/`WebhookDeliveryRepository`, configs loaded
+  and the retry worker started/stopped in the app's lifespan) when
+  `mcp_governance_enabled` is on, and passes it into
+  `ApprovalRepository.create()`'s `webhook_manager` parameter — the
+  hosted MCP transport previously had no webhook subsystem at all.
+  Tested end-to-end: `test_mcp_governance_dispatch.py::
+  TestRequireApprovalFiresWebhook` registers a real webhook, makes a
+  governed call that resolves to `REQUIRE_APPROVAL`, and asserts the
+  webhook's HTTP delivery actually fired (via a captured
+  `WebhookManager` instance and a respx-mocked delivery endpoint).
+- **Graceful degradation on an `EvidenceRepository.record()` failure**
+  — now fails *closed*: an exception during evidence persistence is
+  caught, logged, and the call is blocked with a
+  `governance_evidence_unavailable` error instead of either crashing
+  with an unhandled exception or (worse) silently letting the action
+  proceed with no audit record. Deliberately asymmetric with the Trust
+  Index lookup's fail-*open* behavior (Section 12.2) — an unreachable
+  trust check shouldn't block routine calls, but an unrecorded decision
+  always should, since evidence is this platform's entire audit-trail
+  guarantee. Tested — `test_mcp_governance_dispatch.py::
+  TestEvidenceWriteFailsClosed` monkeypatches `EvidenceRepository.record`
+  to raise and confirms the underlying tool never runs.
+
+**Still genuinely out of scope**: a richer policy rule language
+(OPA/Rego) — confirmed as a deliberate non-goal, not revisited, after
+asking the user directly whether to build it; and governing the
+self-hosted stdio transport at all, which has no organizational
+identity to evaluate against by design.
 
 ---
 
@@ -1183,19 +1205,20 @@ restated from memory:
   here, but worth stating plainly rather than implying full-repo type
   coverage.
 
-**Real gap found, not assumed away**: `gh api
-repos/Guruprasath-Annadurai/Whitepact/branches/main/protection` returns
-`404 Branch not protected` — `main` has no branch protection rule
-today. Every CI check above runs and reports status, but none of them
-are configured as a *required* status check, and nothing prevents a
-direct push or a merge with a failing/incomplete CI run. This session's
-own workflow (push directly to `main`, then watch CI) has relied on
-that openness throughout — flagging it here rather than quietly
-assuming CI functions as a merge gate, which it currently doesn't.
-Enabling branch protection (requiring the `test`/`build`/`helm-lint`
-checks, requiring PR review) is a repository-settings change with real
-workflow implications — worth doing, but a founder decision, not
-something this document unilaterally enables.
+**Real gap found, then closed the same day**: `gh api
+repos/Guruprasath-Annadurai/Whitepact/branches/main/protection` first
+returned `404 Branch not protected` — `main` had no branch protection
+rule at all. Fixed via `PUT .../branches/main/protection`: all four CI
+checks (`Lint · Type-check · Test (3.11)`/`(3.12)`, `Build
+distribution`, `Helm chart lint`) are now required status checks
+(`strict: true` — a branch must be up to date before a PR merges),
+force-pushes and branch deletion are disabled. `enforce_admins` is
+deliberately left `false` — this session's own workflow (push directly
+to `main`, then watch CI) and the founder's own solo-maintainer
+workflow both still work exactly as before; what changes is that a
+future contributor's *pull request* can no longer merge past a failing
+or incomplete check. Verified after the fact by re-querying the same
+API endpoint, not just trusting the `PUT` response.
 
 ### 14.1 Discipline audit (Phases 26-27)
 

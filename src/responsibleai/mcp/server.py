@@ -91,6 +91,7 @@ from responsibleai.rbac.models import OrgContext
 if TYPE_CHECKING:
     from responsibleai.db.mcp_usage_repository import McpUsageRepository
     from responsibleai.mcp.governance_integration import GovernanceServices
+    from responsibleai.webhooks.manager import WebhookManager
 
 _log_level = os.environ.get("RAI_MCP_LOG_LEVEL", "WARNING").upper()
 logging.basicConfig(level=getattr(logging, _log_level, logging.WARNING))
@@ -368,13 +369,25 @@ def _build_http_app() -> Any:
     _usage_repo = McpUsageRepository(_db_engine)
 
     _governance_services: GovernanceServices | None = None
+    _governance_webhook_manager: WebhookManager | None = None
     if settings.mcp_governance_enabled:
-        from responsibleai.db import ApprovalRepository, EvidenceRepository, PolicyRepository
+        from responsibleai.db import (
+            ApprovalRepository,
+            EvidenceRepository,
+            PolicyRepository,
+            WebhookConfigRepository,
+            WebhookDeliveryRepository,
+        )
         from responsibleai.governance import WhitePactRuntimeGateway
         from responsibleai.integrations.client import TrustClient
         from responsibleai.mcp.governance_integration import (
             GovernanceServices as RuntimeGovernanceServices,
         )
+        from responsibleai.webhooks.manager import WebhookManager as RuntimeWebhookManager
+
+        _governance_webhook_manager = RuntimeWebhookManager()
+        _governance_webhook_manager.set_repository(WebhookDeliveryRepository(_db_engine))
+        _governance_webhook_manager.set_config_repository(WebhookConfigRepository(_db_engine))
 
         _governance_services = RuntimeGovernanceServices(
             gateway=WhitePactRuntimeGateway(),
@@ -382,6 +395,7 @@ def _build_http_app() -> Any:
             approval_repo=ApprovalRepository(_db_engine),
             policy_repo=PolicyRepository(_db_engine),
             trust_client=TrustClient(),
+            webhook_manager=_governance_webhook_manager,
         )
     # Reuses the exact same RAI_OIDC_* / Settings.oidc_* config the
     # dashboard API's SSO login already reads (dashboard/app.py's own
@@ -416,8 +430,15 @@ def _build_http_app() -> Any:
     @asynccontextmanager
     async def _lifespan(_app: Starlette) -> Any:
         await _db_engine.init()
-        async with streamable_http.run():
-            yield
+        if _governance_webhook_manager is not None:
+            await _governance_webhook_manager.load_configs()
+            _governance_webhook_manager.start_retry_worker()
+        try:
+            async with streamable_http.run():
+                yield
+        finally:
+            if _governance_webhook_manager is not None:
+                _governance_webhook_manager.stop_retry_worker()
 
     def _client_key(request: Request) -> str:
         return request.client.host if request.client else "unknown"

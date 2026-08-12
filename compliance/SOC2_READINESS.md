@@ -23,8 +23,15 @@
 > function) — this document doesn't duplicate their content, it maps the same
 > underlying facts onto the specific TSC categories a SOC 2 auditor scopes
 > against.
+>
+> **No budget for a real audit right now?** See
+> `compliance/SOC2_ALTERNATIVE_PATH.md` — real, free, independently
+> verifiable signals (OpenSSF Scorecard, CSA STAR Level 1 registry
+> listing, branch-protected CI) that don't claim to be SOC 2, researched
+> and priced honestly against real 2026 SOC 2 auditor costs for when
+> that budget exists.
 
-Last reviewed: 2026-07-23 · Platform version: 1.2.0
+Last reviewed: 2026-08-12 · Platform version: 1.2.0
 
 ---
 

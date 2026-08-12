@@ -196,3 +196,110 @@ class TestRequireApprovalQueuesNotExecutes:
 
         pending = await ApprovalRepository(engine).list_pending(org_id)
         assert any(p.action_type == "rai_cost_estimate" for p in pending)
+
+
+class TestRequireApprovalFiresWebhook:
+    async def test_queued_approval_fires_a_registered_webhook(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """webhooks/manager.py's validate_webhook_url() (the SSRF guard)
+        does a real socket.getaddrinfo() lookup before every delivery, not
+        just at registration — fake it to a fixed public IP the same way
+        test_webhooks.py's _fake_public_dns fixture does, so this test
+        doesn't depend on hooks.example.com being real DNS."""
+        def _fake_getaddrinfo(host, *args, **kwargs):
+            return [(2, 1, 6, "", ("93.184.216.34", 0))]
+
+        monkeypatch.setattr(
+            "responsibleai.webhooks.manager.socket.getaddrinfo", _fake_getaddrinfo,
+        )
+        """The dashboard REST API's approval endpoint already fires
+        WebhookEvent.APPROVAL_REQUESTED via ApprovalRepository.create()'s
+        webhook_manager parameter; this proves the MCP dispatch path now
+        does the same, using the WebhookManager _build_http_app()
+        constructs when governance is enabled."""
+        import httpx as httpx_module
+        import respx
+
+        import responsibleai.db as db_module
+        import responsibleai.webhooks.manager as webhook_manager_module
+        from responsibleai.dashboard.config import get_settings
+        from responsibleai.mcp.server import _build_http_app
+        from responsibleai.webhooks.models import WebhookConfig, WebhookEvent
+
+        settings = get_settings()
+        monkeypatch.setattr(settings, "mcp_governance_enabled", True)
+
+        engine = create_engine(":memory:")
+        await engine.init()
+        monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
+
+        created_managers: list[webhook_manager_module.WebhookManager] = []
+        _real_webhook_manager_cls = webhook_manager_module.WebhookManager
+
+        class _CapturingWebhookManager(_real_webhook_manager_cls):  # type: ignore[misc]
+            def __init__(self) -> None:
+                super().__init__()
+                created_managers.append(self)
+
+        monkeypatch.setattr(webhook_manager_module, "WebhookManager", _CapturingWebhookManager)
+
+        org_repo = OrgRepository(engine)
+        org = await org_repo.create_org("Webhook Co", "webhook-co", plan=Plan.ENTERPRISE)
+        _key_rec, raw_key = await org_repo.create_key(org.id, "test-key", role=Role.ANALYST)
+
+        app = _build_http_app()
+        assert len(created_managers) == 1
+        webhook_manager = created_managers[0]
+
+        webhook_manager.register(WebhookConfig(
+            url="https://hooks.example.com/mcp-approvals",
+            events=[WebhookEvent.APPROVAL_REQUESTED],
+            org_id=org.id,
+        ))
+
+        async with LifespanManager(app) as manager:
+            with respx.mock(assert_all_called=False) as mock:
+                mock.get("https://responsibleai-dashboard.onrender.com/api/trust-index/check").mock(
+                    return_value=httpx_module.Response(200, json={
+                        "model": "sketchy-model", "provider": "unknown-vendor", "known": True,
+                        "trust_score": {"overall": 5.0}, "certified": False,
+                        "has_reported_incidents": True,
+                    })
+                )
+                webhook_route = mock.post("https://hooks.example.com/mcp-approvals").mock(
+                    return_value=httpx_module.Response(200)
+                )
+                result = await _call(manager.app, raw_key, "rai_cost_estimate", {
+                    "model": "sketchy-model", "provider": "unknown-vendor",
+                    "input_tokens": 100, "output_tokens": 50,
+                })
+                assert webhook_route.call_count >= 1
+
+        payload = json.loads(result.content[0].text)
+        assert payload["error"] == "governance_approval_required"
+
+        await engine.close()
+
+
+class TestEvidenceWriteFailsClosed:
+    async def test_evidence_persistence_failure_blocks_an_otherwise_allowed_call(
+        self, governed_app, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """An action that would have been ALLOW must not execute if its
+        evidence record can't be persisted — no evidence, no execution,
+        rather than silently letting a call through with no audit trail.
+        Patches EvidenceRepository.record at the class level so it
+        affects the instance _build_http_app() already constructed."""
+        app, raw_key, _org_id, _engine = governed_app
+
+        async def _raise(self, evidence):
+            raise RuntimeError("simulated transient DB failure")
+
+        monkeypatch.setattr(EvidenceRepository, "record", _raise)
+
+        result = await _call(app, raw_key, "rai_health", {})
+        assert result.isError is not True
+        payload = json.loads(result.content[0].text)
+        assert payload["error"] == "governance_evidence_unavailable"
+        assert "status" not in payload  # rai_health's own real response never ran

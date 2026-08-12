@@ -3,7 +3,8 @@
   <a href="https://pypi.org/project/rai-governance-platform/"><img src="https://img.shields.io/pypi/v/rai-governance-platform" alt="PyPI version"/></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"/></a>
-  <a href="https://github.com/Guruprasath-Annadurai/Whitepact"><img src="https://img.shields.io/badge/tests-1538_passing-brightgreen.svg" alt="1538 tests passing"/></a>
+  <a href="https://github.com/Guruprasath-Annadurai/Whitepact"><img src="https://img.shields.io/badge/tests-1584_passing-brightgreen.svg" alt="1584 tests passing"/></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/Guruprasath-Annadurai/Whitepact"><img src="https://api.scorecard.dev/projects/github.com/Guruprasath-Annadurai/Whitepact/badge" alt="OpenSSF Scorecard"/></a>
 </p>
 
 <p align="center"><strong>WhitePact — an independent runtime authority, governance, and assurance layer for autonomous systems: a five-way governance decision engine (ALLOW / ALLOW_WITH_REDACTION / REQUIRE_APPROVAL / DENY / QUARANTINE), trust scoring, bias detection, guardrails, hallucination detection, compliance mapping (NIST AI RMF / EU AI Act / ISO 42001), cost intelligence, drift monitoring, a public Trust Index / leaderboard / AI Incident Database, and an MCP server (27 tools, 20 resources) with LangChain, LangGraph, and Google ADK trust-gate integrations.</strong></p>
@@ -744,6 +745,7 @@ mypy src/responsibleai src/biasbuster
 - [`THREAT_MODEL.md`](THREAT_MODEL.md) — threat model for the current attack surface
 - [`DETERMINISTIC_VS_PROBABILISTIC.md`](DETERMINISTIC_VS_PROBABILISTIC.md) — why governance decisions are deterministic
 - [`SLA.md`](SLA.md), [`ENTERPRISE_SECURITY.md`](ENTERPRISE_SECURITY.md), [`SECURITY.md`](SECURITY.md) — enterprise/security posture, stated honestly
+- [`compliance/SOC2_ALTERNATIVE_PATH.md`](compliance/SOC2_ALTERNATIVE_PATH.md) — real, free, independently verifiable trust signals for now; the honest path to a real SOC 2 when there's budget for one
 
 ---
 

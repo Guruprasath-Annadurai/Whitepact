@@ -78,7 +78,16 @@ unchanged (see `MIGRATION_WHITEPACT_V2.md` Section 11's timeline).
   instead of running the tool, `ALLOW_WITH_REDACTION` substitutes
   redacted arguments. Off by default — a real behavior change for
   anyone who enables it, so existing hosted deployments are unaffected
-  unless they opt in.
+  unless they opt in. A queued `REQUIRE_APPROVAL` now fires a real
+  webhook (`WebhookEvent.APPROVAL_REQUESTED`) if the org has one
+  registered, and an `EvidenceRepository.record()` failure now fails
+  the call closed (blocked, clear error) instead of crashing.
+- Branch protection on `main` — all four CI checks required, force-push
+  and branch deletion disabled.
+- **`compliance/SOC2_ALTERNATIVE_PATH.md`** + OpenSSF Scorecard
+  (`.github/workflows/scorecard.yml`, README badge) — free,
+  independently verifiable trust signals for when a paid SOC 2 audit
+  isn't yet affordable, researched with real 2026 pricing.
 
 ### Fixed
 - Stale `__version__ = "0.4.0"` in `responsibleai/__init__.py` (didn't

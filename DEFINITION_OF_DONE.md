@@ -60,7 +60,7 @@ real performance benchmarks.
 | 24 | `DETERMINISTIC_VS_PROBABILISTIC.md` — expands `SPEC.md` Section 6 | Done |
 | 25 | `BENCHMARKS.md` + `scripts/run_benchmarks.py` — real, locally-executed numbers | Done |
 | 26-27 | Backward-compatibility/versioning discipline audit | Done (Section 14.1) |
-| 28 | CI requirements review — real finding: `main` has no branch protection (verified via GitHub API, not assumed) | Done (Section 13.1) |
+| 28 | CI requirements review — found `main` had no branch protection (verified via GitHub API), then fixed the same day: all 4 CI checks now required | Done (Section 13.1) |
 | 29 | This report | Done |
 
 **Gap-closure work** (flagged by name, not part of the original 29
@@ -104,10 +104,29 @@ category:
   is claimed.
 - No penetration test has been performed or is claimed.
 
-**Explicitly not done, stated plainly:**
-- `main` has no branch protection — CI runs and reports, but nothing
-  requires it to pass before a merge (Section 13.1). A founder decision
-  to enable, not something this pass did unilaterally.
+**Fixed since the first version of this report (same day):**
+- Branch protection on `main` — all four CI checks are now required
+  status checks, force-pushes and branch deletion disabled
+  (`enforce_admins: false`, so the founder's own direct-push workflow
+  is unaffected — only a future PR can no longer merge past a failing
+  check). Verified via `gh api .../branches/main/protection` after the
+  change, not just trusted from the API response.
+- Webhook notification on a dispatch-path `REQUIRE_APPROVAL` — the
+  hosted MCP process now constructs and wires its own `WebhookManager`
+  when `mcp_governance_enabled` is on; tested end-to-end with a real
+  registered webhook and a respx-mocked delivery.
+- Graceful degradation on an `EvidenceRepository.record()` failure —
+  now fails *closed* (blocks the call with a clear error) instead of
+  crashing with an unhandled exception; tested.
+- A free, honest, no-budget path toward enterprise trust signals
+  without a paid SOC 2 audit — `compliance/SOC2_ALTERNATIVE_PATH.md`,
+  researched with real 2026 pricing citations. OpenSSF Scorecard is now
+  live (`.github/workflows/scorecard.yml`, badge on the README); CSA
+  STAR Level 1 registry submission is free and the content
+  (`compliance/CAIQ_SELF_ASSESSMENT.md`) is already written — submitting
+  it needs the founder's own CSA account, the one remaining action item.
+
+**Explicitly not done, stated plainly (needs your own accounts/credentials, not code):**
 - The published PyPI package is still `rai-governance-platform` at
   `1.1.0` (verified via the live PyPI API during Phase 17); `1.2.0` has
   never been released, and `whitepact` has never been published as its
@@ -117,19 +136,18 @@ category:
 - No hosted, WhitePact-operated MCP transport exists — the reference
   deployment (`responsibleai-dashboard.onrender.com`) serves the
   dashboard, not a publicly reachable MCP endpoint.
-- A richer policy language (OPA/Rego) — deliberately out of scope,
-  stated as a non-goal in `governance/policy.py`'s own docstring, not
-  an oversight.
+- No named second person for independent risk oversight — `GOVERNANCE.md`
+  Section 4 states this plainly; a hiring/advisor decision, not
+  something a coding session can complete.
+
+**Confirmed as deliberate non-goals, not gaps (asked directly, not assumed):**
+- A richer policy language (OPA/Rego) — confirmed with the user rather
+  than built, staying a stated non-goal in `governance/policy.py`'s own
+  docstring.
 - `QUARANTINE`'s violation threshold (5 denials/60 minutes) is a fixed
   constant, not per-org configurable — a circuit breaker, not a tuning
   knob, per the same "don't build ahead of a real requirement"
   principle the rest of this package follows.
-- Webhook notification when a hosted-MCP dispatch call queues a
-  `REQUIRE_APPROVAL` — the dashboard REST API's approval endpoint fires
-  one; the hosted MCP transport has no webhook subsystem wired in yet.
-- Graceful degradation if `EvidenceRepository.record()` itself fails
-  mid-dispatch — currently propagates as an exception and fails the
-  tool call rather than degrading.
 
 ---
 
@@ -137,7 +155,9 @@ category:
 
 Founder-scoped, not this session's to decide or execute:
 
-1. Enable branch protection on `main` (Section 13.1).
+1. Create a CSA account and submit the already-written CAIQ to the
+   STAR Registry Level 1 — free, the single highest-leverage action
+   left (`compliance/SOC2_ALTERNATIVE_PATH.md`).
 2. Cut a real `1.2.0` release to PyPI (`RELEASING.md`'s documented
    process), then revisit MCP registry submission.
 3. Decide whether/when to make `mcp_governance_enabled` the default,
