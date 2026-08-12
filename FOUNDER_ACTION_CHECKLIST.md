@@ -231,10 +231,22 @@ What's actually live:
 - [ ] **Abandoned**: the GCP project (`responsible-ai-503312`) — either
       delete it to avoid any future billing surprise, or keep it as a
       dormant sandbox; it's not part of the live architecture.
-- [ ] **Unresolved**: your Supabase database password and Upstash Redis
-      token both appeared in plaintext during this session's chat
-      history — rotate both from their respective dashboards when you
-      get a chance, same as the other credentials flagged along the way.
+- [x] **Resolved 2026-08-13**: the Supabase database password and
+      Upstash Redis token that appeared in plaintext earlier in this
+      session's chat history have both been rotated. Real friction
+      along the way, worth remembering: (1) Supabase's connection
+      string page defaults to the *direct* connection (IPv6-only,
+      unreachable from Render) — had to explicitly select "Transaction
+      pooler" mode each time; (2) the literal `[YOUR-PASSWORD]`
+      placeholder got pasted unsubstituted at one point; (3) Upstash's
+      console shows credentials in a `KEY="value"` .env-snippet format
+      — pasting that whole line (quotes and variable name included)
+      instead of just the bare URL caused a silent crash-loop for
+      ~40 minutes with no visible error until the deploy logs were
+      checked directly. Confirmed live via `/api/health`:
+      `database: ok`, `rate_limit_backend: redis`, prior org data
+      intact. `whitepact-mcp-http` has no DB/Redis config at all
+      (confirmed empty), so nothing needed rotating there.
 
 ## 7. Billing (only once selling live)
 
