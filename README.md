@@ -292,15 +292,23 @@ See `GAME_CHANGER_BUILD_PLAN.md` Phase B for the reasoning behind each.
 
 ### MCP directory listings
 
-WhitePact is listed and queryable today on two real MCP directories —
-not aspirational, both verified live:
+WhitePact is listed and queryable today on real MCP directories — not
+aspirational, all verified live:
 
 - **Official MCP Registry** — `server.json` at the repository root
-  (schema `2025-12-11`) is published as
+  (schema `2025-12-11`, listing version `1.2.3`) is published as
   `io.github.Guruprasath-Annadurai/whitepact`, confirmed queryable at
   [registry.modelcontextprotocol.io](https://registry.modelcontextprotocol.io).
-  Advertises the PyPI/stdio package (`whitepact-mcp`), self-hosted,
-  free, unrestricted.
+  Advertises both the PyPI/stdio package (`whitepact-mcp`, self-hosted,
+  free, unrestricted) and a `remotes` entry pointing at the hosted
+  Streamable HTTP and SSE transports (`whitepact-mcp-http.onrender.com`)
+  — a one-click remote connector, not just an installable package.
+- **Antigravity CLI plugin** — `plugins/whitepact/` at the repository
+  root follows the [official Antigravity plugin manifest
+  format](https://antigravity.google/docs/plugins), connecting to the
+  same hosted Streamable HTTP transport via `serverUrl`. No official
+  Antigravity plugin directory exists yet, so this is distributed
+  directly from the repo — see `plugins/whitepact/README.md`.
 - **Smithery** — listed as
   [`guruprasathannadurai-official/whitepact`](https://smithery.ai/server/guruprasathannadurai-official/whitepact),
   27 tools and 20 resources discovered against the hosted Streamable

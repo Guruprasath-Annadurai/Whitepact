@@ -14,6 +14,7 @@ venv/
 !tsconfig.json
 !grafana/dashboards/*.json
 !server.json
+!plugins/**/*.json
 htmlcov/
 .coverage
 coverage.xml

@@ -1,0 +1,5 @@
+{
+  "$schema": "https://antigravity.google/schemas/v1/plugin.json",
+  "name": "whitepact",
+  "description": "AI governance MCP server: trust scoring, guardrails, bias/hallucination detection, and NIST AI RMF / EU AI Act / ISO 42001 compliance checks for any LLM agent."
+}
