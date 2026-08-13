@@ -2,15 +2,16 @@
 
 > ## ⚠️ This is a draft, not a binding legal document
 >
-> This has **not been reviewed by an attorney**, and — unlike most of this
-> repository's other honest self-assessments — it also has **not been
-> reviewed against a real data inventory**, because no hosted instance
-> exists yet to inventory (see `SLA.md`). Do not publish this as your live
+> This has **not been reviewed by an attorney**. A free-tier hosted
+> instance now exists (`responsibleai-dashboard.onrender.com` and
+> `whitepact-mcp-http.onrender.com` — see `SLA.md`'s Scope section), and
+> Section 2's data categories below were cross-checked against what that
+> live instance actually stores as of this pass (org/API-key metadata,
+> audit logs, Stripe billing wiring). That is a spot-check, not an
+> attorney-grade data inventory audit. Do not publish this as your live
 > privacy policy, link it from a signup flow, or represent it as accurate
-> until: (1) counsel has reviewed it for your jurisdiction (GDPR, CCPA,
-> and others impose different mandatory disclosures), and (2) it has been
-> re-verified against whatever a live hosted instance actually collects,
-> which may differ from what's described below once one exists.
+> until counsel has reviewed it for your jurisdiction (GDPR, CCPA, and
+> others impose different mandatory disclosures).
 >
 > **Why this document exists even though `PRIVACY.md` already exists in
 > this repository**: `PRIVACY.md` documents the differential-privacy
@@ -20,7 +21,7 @@
 > handles personal data. The two documents cover different things and both
 > are needed; this one does not replace that one.
 
-Last reviewed: 2026-07-23 · Platform version: 1.2.0
+Last reviewed: 2026-08-13 · Platform version: 1.2.3
 
 ---
 
@@ -30,10 +31,12 @@ This Privacy Policy describes how Guruprasath Annadurai, operating as the
 ResponsibleAI project ("Provider," "we"), handles personal data in
 connection with:
 
-- A Provider-operated hosted instance of the Service, **if and when one
-  exists** — as of this version, none does (see `SLA.md`'s Scope
-  section). Most of this document is currently forward-looking for that
-  reason, stated plainly rather than implied.
+- A Provider-operated hosted instance of the Service — **a free-tier
+  instance is live as of this version** (see `SLA.md`'s Scope section).
+  No paid hosted tier exists yet, so anything below describing paid-tier
+  data handling (e.g. plan-tier result history in Section 6) remains
+  forward-looking; the free-tier data categories in Section 2 describe
+  what's actually collected today.
 - Provider's own project-level touchpoints that exist today regardless of
   hosting status: the public Trust Leaderboard, the public Trust Index
   verification pages, and the public AI Incident Database, all described
@@ -112,14 +115,16 @@ that will drift out of sync if maintained in two places.
 
 ## 6. Data retention
 
-*(Placeholder — no hosted instance exists yet to set a real retention
-policy against. A reasonable default to propose to counsel: account and
-audit-log data retained for the duration of the account relationship plus
-a defined post-termination window for legal/audit purposes; submitted
-evaluation content not retained beyond what's needed to return the
-result, unless Customer's plan tier includes result history. Confirm
-against actual database retention behavior once implemented, not just
-this document's aspiration.)*
+*(Placeholder — a hosted instance now exists, but no formal retention
+policy has been set or confirmed with counsel, and no automated deletion
+job currently enforces one against the live database. A reasonable
+default to propose to counsel: account and audit-log data retained for
+the duration of the account relationship plus a defined post-termination
+window for legal/audit purposes; submitted evaluation content not
+retained beyond what's needed to return the result, unless Customer's
+plan tier includes result history. As of this version, data persists
+indefinitely on the live instance until a real policy and enforcement
+mechanism are both implemented — stated plainly rather than implied.)*
 
 ---
 

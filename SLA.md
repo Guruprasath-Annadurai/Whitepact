@@ -1,4 +1,4 @@
-# Service Level Agreement — WhitePact Platform v1.2.0
+# Service Level Agreement — WhitePact Platform v1.2.3
 
 ## Scope
 
@@ -11,11 +11,16 @@ naming scheme, so what you see in billing is what this SLA refers to.
 recommendations for what to design toward, not a commitment we can enforce
 on infrastructure we don't control.
 
-**Hosted (PRO/ENTERPRISE)**: as of v1.2.0, no WhitePact-operated hosted
-instance is live yet — `docker-compose.prod.yml` is the production-ready
-stack (Postgres + Redis, not SQLite/in-memory limiting) for standing one up.
-Once a hosted instance is running against this stack, these targets become
-an enforceable commitment for that instance specifically.
+**Hosted (currently FREE tier only)**: a WhitePact-operated hosted instance
+is now live — `responsibleai-dashboard.onrender.com` (dashboard/API) and
+`whitepact-mcp-http.onrender.com` (MCP server), both on Postgres + Redis
+(`docker-compose.prod.yml`'s stack), not SQLite/in-memory. Stated
+precisely: this is free-tier hosting on Render's free instance class —
+no PRO/ENTERPRISE live-mode billing exists yet (see
+`FOUNDER_ACTION_CHECKLIST.md` Section 7), and the uptime targets below are
+**not yet an enforceable commitment** on this free-tier instance. They
+become enforceable once a paid tier with matching infrastructure
+(dedicated instance class, not free-tier spin-down) is actually sold.
 
 ---
 

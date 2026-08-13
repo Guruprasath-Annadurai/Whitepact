@@ -16,7 +16,7 @@
 > This exists so you have a concrete, platform-accurate starting point to
 > hand to an attorney — not a document to publish as-is.
 
-Last reviewed: 2026-07-23 · Platform version: 1.2.0
+Last reviewed: 2026-08-13 · Platform version: 1.2.3
 
 ---
 
@@ -48,16 +48,20 @@ model routing, drift monitoring, and audit logging, delivered as:
   license) that Customer deploys and operates on Customer's own
   infrastructure — the FREE tier and the primary way this platform is
   used today.
-- **A hosted MCP endpoint and/or hosted dashboard**, if and when Provider
-  operates one — **as of this version, no Provider-operated hosted
-  instance is live**. See `SLA.md`'s Scope section, which states this
-  plainly. These Terms apply to a hosted offering once one exists; until
-  then, the sections below describing "the Service" as something Provider
-  operates should be read as forward-looking, not a claim about today.
+- **A hosted MCP endpoint and hosted dashboard** — as of this version, a
+  Provider-operated hosted instance **is live**, at
+  `responsibleai-dashboard.onrender.com` (dashboard/REST API) and
+  `whitepact-mcp-http.onrender.com` (hosted MCP server, HTTP+SSE and
+  Streamable HTTP transports). Stated precisely rather than rounded up:
+  this is a **free-tier hosted instance** — no live-mode paid Stripe
+  Prices exist yet (see `FOUNDER_ACTION_CHECKLIST.md` Section 7), no
+  custom domain, and no enterprise SLA commitment is being made merely
+  because the infrastructure exists. See `SLA.md`'s Scope section for
+  what uptime commitment, if any, actually applies today.
 
-Do not sign a customer up for a hosted subscription, or represent a
-hosted tier as available, until a hosted instance is actually live and
-this caveat is removed.
+Do not represent a **paid** hosted tier as available, or sign a customer
+up for one, until live-mode billing actually exists and this caveat is
+updated again to reflect that.
 
 ---
 
@@ -126,11 +130,14 @@ with notice where reasonably practicable.
 Uptime targets, support tiers, and maintenance windows are defined in
 `SLA.md`, incorporated here by reference. As that document states
 directly: **self-hosted uptime targets are design recommendations, not an
-enforceable commitment** on infrastructure Provider doesn't operate, and
-**hosted-tier commitments only become real once a hosted instance is
-actually live** — this is the same caveat as Section 2 above, stated
-again here because it's the single most load-bearing fact in this whole
-document for an enterprise buyer.
+enforceable commitment** on infrastructure Provider doesn't operate.
+**A free-tier hosted instance is now live** (Section 2), but no
+enterprise-grade SLA commitment (guaranteed uptime percentage, credits,
+paid support response times) is being made on that free-tier
+infrastructure — that only becomes real once a paid hosted tier with
+matching infrastructure exists. This is still the single most
+load-bearing fact in this document for an enterprise buyer: hosted, yes;
+enterprise-committed, not yet.
 
 ---
 
@@ -267,10 +274,12 @@ relied upon.)*
    law) are intentionally incomplete or generic here.
 2. Do not publish this, link it from a signup or checkout flow, or
    represent it as binding until that review is complete.
-3. Keep Section 2 and Section 6's "no hosted instance is live yet"
-   caveats accurate — remove them only once a Provider-operated hosted
-   instance is actually live, not in anticipation of one.
+3. **Updated 2026-08-13**: a Provider-operated hosted instance is now
+   live (free tier only — see Section 2). Keep Sections 2 and 6's
+   free-tier-vs-paid-tier distinction accurate going forward — update
+   them again once live-mode paid billing actually exists, not in
+   anticipation of it.
 4. Pair this with a real privacy policy (see Section 11) before either
-   goes live — a Terms of Service without a matching privacy policy is
-   an incomplete legal foundation for a service that touches personal
-   data, and this repository does not yet have one.
+   goes live — `PRIVACY_POLICY.md` exists in draft form but carries the
+   same "not attorney reviewed" caveat as this document; neither should
+   be treated as binding until both clear that review together.
