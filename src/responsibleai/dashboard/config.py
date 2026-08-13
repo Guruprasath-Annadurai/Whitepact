@@ -252,6 +252,18 @@ class Settings(BaseSettings):
         default=False,
         description="Skip JWT signature verification (test/dev only — never use in production).",
     )
+    mcp_http_allow_unauthenticated_demo: bool = Field(
+        default=False,
+        description=(
+            "DANGER — demo/recording use only. When true, whitepact-mcp-http "
+            "grants every request read-only VIEWER access with no Bearer key "
+            "required, so a reviewer/demo-recording session can exercise the "
+            "live tools without provisioning a key. There is no expiry or "
+            "time limit enforced in code — this must be manually unset and "
+            "the service redeployed immediately after the recording is done. "
+            "Never leave this true in a long-running deployment."
+        ),
+    )
 
     # Stripe billing (optional — leave unset to disable paid-tier checkout)
     stripe_secret_key: str | None = Field(
