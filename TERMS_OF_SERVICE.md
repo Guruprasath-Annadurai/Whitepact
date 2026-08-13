@@ -280,6 +280,8 @@ relied upon.)*
    them again once live-mode paid billing actually exists, not in
    anticipation of it.
 4. Pair this with a real privacy policy (see Section 11) before either
-   goes live — `PRIVACY_POLICY.md` exists in draft form but carries the
-   same "not attorney reviewed" caveat as this document; neither should
-   be treated as binding until both clear that review together.
+   goes live — `PRIVACY_POLICY.md` is now written to corporate-grade
+   completeness (defined retention periods, response timeframes, legal
+   bases) but carries the same "not attorney reviewed" caveat as this
+   document; neither should be treated as binding until both clear that
+   review together.

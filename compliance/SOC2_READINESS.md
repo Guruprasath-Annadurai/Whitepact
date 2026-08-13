@@ -106,7 +106,7 @@ handling concerns.
 
 | Control area | Implemented | Evidence |
 |---|---|---|
-| Data classification | Partial | Public-by-design features (Trust Leaderboard, Trust Index verification pages, AI Incident Database) are explicitly separated from confidential account/content data in `PRIVACY_POLICY.md` Section 3. No formal internal data-classification policy document exists beyond that. |
+| Data classification | Partial | Public-by-design features (Trust Leaderboard, Trust Index verification pages, AI Incident Database) are explicitly separated from confidential account/content data in `PRIVACY_POLICY.md` Section 5. No formal internal data-classification policy document exists beyond that. |
 | Confidentiality commitments | Documented, not yet attorney-reviewed | `TERMS_OF_SERVICE.md` Section 8 (confidentiality clause, placeholder pending counsel), `compliance/DPA_TEMPLATE.md` (data processing terms, same status). |
 | Multi-tenant isolation | Yes | `org_id` filtering enforced on every governance data table, including `webhook_configs` as of this version. |
 
@@ -130,8 +130,8 @@ heavily with GDPR/CCPA obligations already covered by `PRIVACY_POLICY.md`.
 
 | Control area | Implemented | Evidence |
 |---|---|---|
-| Notice and disclosure | Documented, not yet attorney-reviewed | `PRIVACY_POLICY.md` — itself explicitly a draft pending counsel review and pending re-verification against a live system (see that document's own header). |
-| Data subject rights | Documented | `PRIVACY_POLICY.md` Section 7, contact `annaduraiguruprasath7@gmail.com`. Response-timeframe commitment is an explicit placeholder pending counsel. |
+| Notice and disclosure | Documented, not yet attorney-reviewed | `PRIVACY_POLICY.md` — content is complete and specific (defined retention periods, response timeframes, legal bases), spot-checked against the live hosted instance, but not yet attorney-certified (see that document's provenance notice). |
+| Data subject rights | Documented, firm timeframes adopted | `PRIVACY_POLICY.md` Section 8: 30-day response for GDPR-equivalent requests, 45-day for CCPA/CPRA requests. Timeframes are Provider's adopted operating policy, not yet counsel-validated per jurisdiction. |
 | PII handling / minimization | Yes | Guardrails Engine PII detection/redaction; opt-in field-level encryption for the PII columns enumerated in Section 2.1 above. |
 
 ---
