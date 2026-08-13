@@ -360,7 +360,7 @@ def _build_http_app() -> Any:
     from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
     from starlette.applications import Starlette
     from starlette.requests import Request
-    from starlette.responses import JSONResponse
+    from starlette.responses import JSONResponse, PlainTextResponse
     from starlette.routing import Mount, Route
     from starlette.types import Receive, Scope, Send
 
@@ -642,6 +642,16 @@ def _build_http_app() -> Any:
             "prompts": [],
         })
 
+    async def openai_apps_challenge(request: Request) -> PlainTextResponse:
+        """Plaintext token for OpenAI's plugin-submission domain-ownership
+        check (see compliance/OPENAI_PLUGIN_SUBMISSION_PREP.md). Per their
+        spec this endpoint must return *only* the raw token -- no JSON
+        wrapper -- so PlainTextResponse, not JSONResponse. 404s when no
+        token is configured rather than serving an empty/stale body."""
+        if not settings.openai_apps_challenge_token:
+            return PlainTextResponse("not configured", status_code=404)
+        return PlainTextResponse(settings.openai_apps_challenge_token)
+
     app = Starlette(
         routes=[
             Route("/health", endpoint=health),
@@ -650,6 +660,7 @@ def _build_http_app() -> Any:
             Mount("/messages/", app=sse.handle_post_message),
             Route("/.well-known/oauth-protected-resource", endpoint=protected_resource_metadata),
             Route("/.well-known/mcp/server-card.json", endpoint=mcp_server_card),
+            Route("/.well-known/openai-apps-challenge", endpoint=openai_apps_challenge),
         ],
         lifespan=_lifespan,
     )
