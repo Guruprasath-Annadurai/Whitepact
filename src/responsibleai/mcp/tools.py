@@ -39,6 +39,8 @@ TOOL_DEFS: list[types.Tool] = [
     # ── Guardrails ────────────────────────────────────────────────────────────
     types.Tool(
         name="rai_scan",
+        title="Scan for PII & Harmful Content",
+        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True),
         description=(
             "Scan text for PII (email, phone, SSN, credit card, IP address) and harmful "
             "content (hate speech, violence, self-harm). Returns findings and a redacted copy."
@@ -59,6 +61,8 @@ TOOL_DEFS: list[types.Tool] = [
     # ── Trust Score ───────────────────────────────────────────────────────────
     types.Tool(
         name="rai_trust_score",
+        title="Compute AI Trust Score",
+        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True),
         description=(
             "Compute a composite AI Trust Score (0-100) across six governance dimensions: "
             "fairness, privacy, security, robustness, compliance, authenticity. "
@@ -79,6 +83,8 @@ TOOL_DEFS: list[types.Tool] = [
     # ── Compliance ────────────────────────────────────────────────────────────
     types.Tool(
         name="rai_compliance",
+        title="Evaluate Governance Compliance",
+        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True),
         description=(
             "Evaluate AI governance compliance against NIST AI RMF, EU AI Act, or ISO 42001. "
             "Returns compliance score, findings per control, and remediation recommendations."
@@ -103,6 +109,8 @@ TOOL_DEFS: list[types.Tool] = [
     # ── Hallucination ─────────────────────────────────────────────────────────
     types.Tool(
         name="rai_hallucination",
+        title="Detect Hallucination Risk",
+        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True),
         description=(
             "Detect hallucination risk in AI-generated text. Analyses hedging language, "
             "self-consistency across candidate responses, and unsupported factual claims."
@@ -123,6 +131,8 @@ TOOL_DEFS: list[types.Tool] = [
     # ── Cost Estimate ─────────────────────────────────────────────────────────
     types.Tool(
         name="rai_cost_estimate",
+        title="Estimate Model API Cost",
+        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True),
         description="Estimate the USD cost of a model API call from token counts.",
         inputSchema={
             "type": "object",
@@ -138,6 +148,8 @@ TOOL_DEFS: list[types.Tool] = [
     # ── Red Team ──────────────────────────────────────────────────────────────
     types.Tool(
         name="rai_redteam_payloads",
+        title="Get Red Team Attack Payloads",
+        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True),
         description=(
             "Return adversarial attack payloads to probe an AI model for security vulnerabilities. "
             "Categories: prompt_injection, jailbreak, data_leakage, role_confusion, delimiter_attack."
@@ -157,6 +169,8 @@ TOOL_DEFS: list[types.Tool] = [
     ),
     types.Tool(
         name="rai_redteam_analyze",
+        title="Analyze Red Team Responses",
+        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True),
         description=(
             "Analyse model responses to red team attack payloads. Returns a security report "
             "with vulnerability findings, severity breakdown, and an overall security score."
@@ -178,6 +192,8 @@ TOOL_DEFS: list[types.Tool] = [
     # ── Model Comparison ──────────────────────────────────────────────────────
     types.Tool(
         name="rai_compare_models",
+        title="Compare Two Models' Trust Scores",
+        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True),
         description=(
             "Compare two AI models across all six trust dimensions. Returns scores for each, "
             "delta analysis, and a recommendation on which model is more trustworthy."
@@ -211,6 +227,8 @@ TOOL_DEFS: list[types.Tool] = [
     ),
     types.Tool(
         name="rai_audit_summary",
+        title="Get Governance Capability Summary",
+        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True),
         description=(
             "Return a governance capability summary including supported tools, frameworks, "
             "and available attack vectors. Full audit log access requires the REST endpoint."
@@ -224,6 +242,8 @@ TOOL_DEFS: list[types.Tool] = [
     ),
     types.Tool(
         name="rai_health",
+        title="Check Governance Engine Health",
+        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True),
         description="Check the status and module availability of the ResponsibleAI governance engine.",
         inputSchema={"type": "object", "properties": {}},
     ),
@@ -231,6 +251,8 @@ TOOL_DEFS: list[types.Tool] = [
     # ── NEW: Bias Evaluation ──────────────────────────────────────────────────
     types.Tool(
         name="rai_bias_evaluate",
+        title="Evaluate Demographic Bias",
+        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True),
         description=(
             "Evaluate demographic bias across six probe dimensions: gender, racial, age, "
             "religious, occupational, and cultural. Provide paired response samples for each "
@@ -272,6 +294,8 @@ TOOL_DEFS: list[types.Tool] = [
     # ── NEW: Drift Check ──────────────────────────────────────────────────────
     types.Tool(
         name="rai_drift_check",
+        title="Check Trust Score Drift",
+        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True),
         description=(
             "Detect trust score drift between a baseline evaluation and a current evaluation. "
             "Returns drift delta per dimension, overall drift severity "
@@ -315,6 +339,8 @@ TOOL_DEFS: list[types.Tool] = [
     # ── NEW: AI Passport ──────────────────────────────────────────────────────
     types.Tool(
         name="rai_passport_generate",
+        title="Generate AI Passport",
+        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True),
         description=(
             "Generate a verifiable AI Passport for a model — a tamper-evident governance card "
             "containing trust scores, compliance status, bias summary, and a cryptographic "
@@ -348,6 +374,8 @@ TOOL_DEFS: list[types.Tool] = [
     # ── NEW: Budget Check ─────────────────────────────────────────────────────
     types.Tool(
         name="rai_budget_check",
+        title="Check AI Spending Against Budget",
+        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True),
         description=(
             "Evaluate current AI spending against monthly budget limits. Returns consumption "
             "percentage, alert status, per-team and per-model breakdown, and projected month-end spend. "
@@ -379,6 +407,8 @@ TOOL_DEFS: list[types.Tool] = [
     # ── NEW: Policy Check ─────────────────────────────────────────────────────
     types.Tool(
         name="rai_policy_check",
+        title="Check Text Against Governance Policy",
+        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True),
         description=(
             "Evaluate text or a model response against a governance policy. Checks for: "
             "prohibited topics, required disclaimers, output length limits, language restrictions, "
@@ -426,6 +456,8 @@ TOOL_DEFS: list[types.Tool] = [
     # ── NEW: Stream Scan ──────────────────────────────────────────────────────
     types.Tool(
         name="rai_stream_scan",
+        title="Scan Streaming Text Chunks",
+        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True),
         description=(
             "Scan a list of text chunks (as would arrive from an LLM streaming response) for PII "
             "and harmful content. Simulates the StreamingScanner guardrail without a live stream. "
@@ -458,6 +490,8 @@ TOOL_DEFS: list[types.Tool] = [
     # ── NEW: Benchmark ────────────────────────────────────────────────────────
     types.Tool(
         name="rai_benchmark",
+        title="Evaluate Responses Against Benchmark",
+        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True),
         description=(
             "Evaluate pre-collected model responses against a standard benchmark suite. "
             "Suites: truthfulqa (factual accuracy), bbq (bias in questions), hellaswag (reasoning). "
@@ -484,6 +518,8 @@ TOOL_DEFS: list[types.Tool] = [
     ),
     types.Tool(
         name="rai_benchmark_prompts",
+        title="Get Benchmark Question Set",
+        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True),
         description=(
             "Return the question set for a benchmark suite. Use to collect model responses "
             "before calling rai_benchmark. Suites: truthfulqa, bbq, hellaswag."
@@ -503,6 +539,8 @@ TOOL_DEFS: list[types.Tool] = [
     # ── NEW: Model Routing ────────────────────────────────────────────────────
     types.Tool(
         name="rai_model_route",
+        title="Recommend Optimal Model",
+        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True),
         description=(
             "Recommend the optimal AI model for a task based on complexity analysis and cost-quality "
             "tradeoff. Returns recommended model, alternative, estimated cost per 1K tokens, and "
@@ -533,6 +571,8 @@ TOOL_DEFS: list[types.Tool] = [
     # ── NEW: PII Report ───────────────────────────────────────────────────────
     types.Tool(
         name="rai_pii_report",
+        title="Generate PII Audit Report",
+        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True),
         description=(
             "Generate a detailed PII audit report for a document or corpus. Classifies findings "
             "by PII category (email, phone, SSN, credit card, IP, address), counts occurrences, "
@@ -566,6 +606,8 @@ TOOL_DEFS: list[types.Tool] = [
     # ── NEW: Incident Log ─────────────────────────────────────────────────────
     types.Tool(
         name="rai_incident_log",
+        title="Build Governance Incident Record",
+        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True),
         description=(
             "Create a structured governance incident record. Used by Security Engineers and "
             "AI Risk Analysts to log AI safety events (PII leaks, jailbreak attempts, bias triggers, "
@@ -596,6 +638,8 @@ TOOL_DEFS: list[types.Tool] = [
     # ── NEW: EU AI Act Classification ─────────────────────────────────────────
     types.Tool(
         name="rai_eu_ai_act_classify",
+        title="Classify EU AI Act Risk Tier",
+        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True),
         description=(
             "Classify an AI system into an EU AI Act risk tier: UNACCEPTABLE, HIGH, LIMITED, or MINIMAL. "
             "Evaluates deployment context, capabilities, and affected populations against Annex III "
@@ -633,6 +677,8 @@ TOOL_DEFS: list[types.Tool] = [
     # ── NEW: ISO 42001 Gap Analysis ───────────────────────────────────────────
     types.Tool(
         name="rai_iso42001_gap",
+        title="Run ISO 42001 Gap Analysis",
+        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True),
         description=(
             "Perform an ISO/IEC 42001:2023 AI Management System gap analysis. Evaluates maturity "
             "across all 10 clauses: Context, Leadership, Planning, Support, Operation, Performance "
@@ -662,6 +708,8 @@ TOOL_DEFS: list[types.Tool] = [
     # ── NEW: Executive Summary ────────────────────────────────────────────────
     types.Tool(
         name="rai_executive_summary",
+        title="Generate Executive Governance Summary",
+        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True),
         description=(
             "Generate a board-ready executive AI governance summary. Synthesises trust grades, "
             "compliance posture, cost intelligence, risk incidents, and drift trends into a "
@@ -699,6 +747,8 @@ TOOL_DEFS: list[types.Tool] = [
     # ── NEW: Org Status ───────────────────────────────────────────────────────
     types.Tool(
         name="rai_org_status",
+        title="Get Organization Governance Status",
+        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True),
         description=(
             "Return a structured governance status snapshot for an organisation. Summarises "
             "active models, trust grade distribution, compliance coverage, open risks, and "
@@ -728,6 +778,8 @@ TOOL_DEFS: list[types.Tool] = [
     # ── NEW: Trust Check (agent-native — checks someone else's model/tool) ─────
     types.Tool(
         name="rai_check_trust",
+        title="Check Public Trust Index Score",
+        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True),
         description=(
             "Check the public, independently-verifiable Trust Index score, certification "
             "status, and reported-incident history for a named AI model or tool BEFORE "
@@ -758,6 +810,8 @@ TOOL_DEFS: list[types.Tool] = [
     # ── NEW: Webhook Status ───────────────────────────────────────────────────
     types.Tool(
         name="rai_webhook_status",
+        title="Check Webhook Delivery Health",
+        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True),
         description=(
             "Check webhook delivery health and generate a structured status report. "
             "Takes delivery statistics and returns health grade, failure analysis, dead-letter "
