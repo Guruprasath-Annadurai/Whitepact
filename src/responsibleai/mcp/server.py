@@ -485,7 +485,13 @@ def _build_http_app() -> Any:
         if settings.mcp_http_allow_unauthenticated_demo:
             # DANGER — demo/recording use only, see config.py's field
             # docstring. Grants read-only access with no key at all.
-            return OrgContext(key_id="demo:unauthenticated", role=Role.VIEWER, is_legacy=True, plan=Plan.FREE)
+            # Plan.ENTERPRISE (not FREE): FREE gets zero hosted quota by
+            # design (see licensing.py MONTHLY_CALL_QUOTA), which would
+            # block a reviewer from exercising the full tool surface —
+            # the opposite of what a demo should show. Role stays
+            # VIEWER (read-only) regardless; plan and role are separate
+            # axes, so this doesn't grant any write/admin capability.
+            return OrgContext(key_id="demo:unauthenticated", role=Role.VIEWER, is_legacy=True, plan=Plan.ENTERPRISE)
         auth_header = request.headers.get("authorization", "")
         if not auth_header.lower().startswith("bearer "):
             return None
