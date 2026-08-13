@@ -129,10 +129,13 @@ def _log_invocation_name(process_kind: str) -> None:
         _logger.info(
             "%s started via the legacy '%s' command — the preferred name is "
             "'%s'. Both keep working; see MIGRATION_WHITEPACT_V2.md.",
-            process_kind, invoked_as, preferred,
+            process_kind,
+            invoked_as,
+            preferred,
         )
     else:
         _logger.info("%s started via '%s'.", process_kind, invoked_as)
+
 
 # Set by the HTTP transport's auth middleware per-connection. None on stdio
 # (self-hosted) — absence of a context means unrestricted access, matching
@@ -255,6 +258,7 @@ async def _read_resource(uri: types.AnyUrl) -> str:
 
 # ── stdio transport (self-hosted, free, unrestricted) ──────────────────────────
 
+
 async def _run_stdio() -> None:
     async with stdio_server() as (read_stream, write_stream):
         init_options = server.create_initialization_options()
@@ -269,6 +273,7 @@ def main() -> None:
 
 
 # ── HTTP/SSE transport (hosted, billed, plan-gated) ─────────────────────────────
+
 
 def _split_csv(raw: str) -> list[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
@@ -427,7 +432,9 @@ def _build_http_app() -> Any:
     # independently, mirroring the legacy /sse transport's per-connection
     # Bearer auth rather than introducing cross-request session affinity.
     streamable_http = StreamableHTTPSessionManager(
-        app=server, stateless=True, security_settings=transport_security,
+        app=server,
+        stateless=True,
+        security_settings=transport_security,
     )
     auth_limiter = _AuthFailureLimiter(
         max_failures=int(os.environ.get("RAI_MCP_HTTP_AUTH_MAX_FAILURES", "10")),
@@ -491,7 +498,12 @@ def _build_http_app() -> Any:
             # the opposite of what a demo should show. Role stays
             # VIEWER (read-only) regardless; plan and role are separate
             # axes, so this doesn't grant any write/admin capability.
-            return OrgContext(key_id="demo:unauthenticated", role=Role.VIEWER, is_legacy=True, plan=Plan.ENTERPRISE)
+            return OrgContext(
+                key_id="demo:unauthenticated",
+                role=Role.VIEWER,
+                is_legacy=True,
+                plan=Plan.ENTERPRISE,
+            )
         auth_header = request.headers.get("authorization", "")
         if not auth_header.lower().startswith("bearer "):
             return None
@@ -506,7 +518,9 @@ def _build_http_app() -> Any:
     def _protected_resource_metadata_url(request: Request) -> str:
         return str(request.url.replace(path="/.well-known/oauth-protected-resource", query=""))
 
-    async def _authenticate_or_error(request: Request) -> tuple[OrgContext | None, JSONResponse | None]:
+    async def _authenticate_or_error(
+        request: Request,
+    ) -> tuple[OrgContext | None, JSONResponse | None]:
         """Bearer auth gated by `auth_limiter`: blocks a client IP that's
         already exhausted its failure budget *before* touching the DB, then
         records a fresh failure on rejection. Shared by both hosted
@@ -551,9 +565,10 @@ def _build_http_app() -> Any:
         usage_token = _current_usage_repo.set(_usage_repo)
         governance_token = _current_governance.set(_governance_services)
         try:
-            async with sse.connect_sse(
-                request.scope, request.receive, request._send
-            ) as (read_stream, write_stream):
+            async with sse.connect_sse(request.scope, request.receive, request._send) as (
+                read_stream,
+                write_stream,
+            ):
                 init_options = server.create_initialization_options()
                 await server.run(read_stream, write_stream, init_options)
         finally:
@@ -594,14 +609,16 @@ def _build_http_app() -> Any:
     handle_streamable_http = _StreamableHttpEndpoint()
 
     async def health(request: Request) -> JSONResponse:
-        return JSONResponse({
-            "status": "ok",
-            # "transport" (singular) is kept for existing consumers of this
-            # diagnostics endpoint; "transports" is the new, complete list.
-            "transport": "http+sse",
-            "transports": ["streamable-http", "http+sse"],
-            "tools": len(TOOL_DEFS),
-        })
+        return JSONResponse(
+            {
+                "status": "ok",
+                # "transport" (singular) is kept for existing consumers of this
+                # diagnostics endpoint; "transports" is the new, complete list.
+                "transport": "http+sse",
+                "transports": ["streamable-http", "http+sse"],
+                "tools": len(TOOL_DEFS),
+            }
+        )
 
     async def protected_resource_metadata(request: Request) -> JSONResponse:
         """RFC 9728 Protected Resource Metadata. 404 when no OIDC provider
@@ -610,11 +627,13 @@ def _build_http_app() -> Any:
         if _oidc_provider is None:
             return JSONResponse({"error": "not_found"}, status_code=404)
         resource_url = str(request.url.replace(path="/mcp", query=""))
-        return JSONResponse({
-            "resource": resource_url,
-            "authorization_servers": [settings.oidc_issuer],
-            "bearer_methods_supported": ["header"],
-        })
+        return JSONResponse(
+            {
+                "resource": resource_url,
+                "authorization_servers": [settings.oidc_issuer],
+                "bearer_methods_supported": ["header"],
+            }
+        )
 
     async def mcp_server_card(request: Request) -> JSONResponse:
         """Static capability card for directories (e.g. Smithery) that
@@ -627,20 +646,23 @@ def _build_http_app() -> Any:
         Tool/resource data is generated from the same TOOL_DEFS/
         RESOURCE_DEFS the live server itself advertises — never a
         separately maintained, driftable copy."""
-        return JSONResponse({
-            "serverInfo": {"name": "whitepact", "version": __version__},
-            "authentication": {
-                "required": True,
-                "schemes": ["apiKey"],
-            },
-            "tools": [
-                t.model_dump(mode="json", exclude_none=True, by_alias=True) for t in TOOL_DEFS
-            ],
-            "resources": [
-                r.model_dump(mode="json", exclude_none=True, by_alias=True) for r in RESOURCE_DEFS
-            ],
-            "prompts": [],
-        })
+        return JSONResponse(
+            {
+                "serverInfo": {"name": "whitepact", "version": __version__},
+                "authentication": {
+                    "required": True,
+                    "schemes": ["apiKey"],
+                },
+                "tools": [
+                    t.model_dump(mode="json", exclude_none=True, by_alias=True) for t in TOOL_DEFS
+                ],
+                "resources": [
+                    r.model_dump(mode="json", exclude_none=True, by_alias=True)
+                    for r in RESOURCE_DEFS
+                ],
+                "prompts": [],
+            }
+        )
 
     async def openai_apps_challenge(request: Request) -> PlainTextResponse:
         """Plaintext token for OpenAI's plugin-submission domain-ownership
@@ -672,7 +694,13 @@ def main_http() -> None:
     """CLI entry point: whitepact-mcp-http / responsibleai-mcp-http (hosted, Bearer-authenticated, plan-gated)."""
     import uvicorn
 
-    host = os.environ.get("RAI_MCP_HTTP_HOST", "0.0.0.0")
+    # This process runs in a container (Render) that requires binding all
+    # interfaces to be reachable at all; 127.0.0.1 would make the hosted
+    # server unreachable and break the deployment. The actual security
+    # boundary is the Bearer-key auth plus RAI_MCP_HTTP_ALLOWED_ORIGINS /
+    # RAI_MCP_HTTP_ALLOWED_HOSTS enforced in _build_http_app(), not the bind
+    # address -- see THREAT_MODEL.md.
+    host = os.environ.get("RAI_MCP_HTTP_HOST", "0.0.0.0")  # nosec B104
     port = int(os.environ.get("RAI_MCP_HTTP_PORT", "8766"))
     _logger.info("starting %s v1.2.0 (http+sse) on %s:%s", server.name, host, port)
     _log_invocation_name("http+sse server")
