@@ -1,0 +1,57 @@
+# Canonical WhitePact listing metadata, shared across every platform
+# submission so text isn't duplicated (and drifted) across nine forms.
+# Tool/resource lists are NOT duplicated here -- they're generated live
+# from TOOL_DEFS/RESOURCE_DEFS and served at the server-card URL below;
+# copy that reference into a submission form, not a stale snapshot.
+
+name: whitepact
+display_name: WhitePact
+short_description: >-
+  The authority layer for autonomous systems -- trust scoring, guardrails,
+  and compliance checks for any LLM agent, over MCP.
+description: >-
+  WhitePact is an AI governance MCP server: trust scoring, PII/harmful
+  content guardrails, hallucination detection, and compliance checks
+  (NIST AI RMF, EU AI Act, ISO 42001) for any LLM agent. All 27 tools are
+  read-only -- WhitePact evaluates and reports, it does not act on an
+  agent's behalf.
+
+homepage: https://github.com/Guruprasath-Annadurai/Whitepact
+documentation: https://github.com/Guruprasath-Annadurai/Whitepact#readme
+repository: https://github.com/Guruprasath-Annadurai/Whitepact
+
+mcp_endpoint:
+  streamable_http: https://whitepact-mcp-http.onrender.com/mcp
+  legacy_sse: https://whitepact-mcp-http.onrender.com/sse
+  server_card: https://whitepact-mcp-http.onrender.com/.well-known/mcp/server-card.json
+  health: https://whitepact-mcp-http.onrender.com/health
+
+# Real, currently-reachable (verified 200 live, 2026-08-13) but not on a
+# branded domain yet -- swapping to a dedicated domain is a founder
+# action noted in FOUNDER_ACTIONS.md, not a content gap.
+support: mailto:annaduraiguruprasath7@gmail.com
+privacy: https://raw.githubusercontent.com/Guruprasath-Annadurai/Whitepact/main/PRIVACY_POLICY.md
+terms: https://raw.githubusercontent.com/Guruprasath-Annadurai/Whitepact/main/TERMS_OF_SERVICE.md
+
+# No dedicated icon file path is asserted here -- reuse whatever asset
+# path the OpenAI submission used (see compliance/OPENAI_PLUGIN_SUBMISSION_PREP.md);
+# do not redesign the logo for this task, per instructions.
+icon: null # TODO_FOUNDER_ACTION_REQUIRED: point at the canonical logo asset path
+
+version: "1.2.2" # published PyPI package version
+listing_version: "1.2.3" # MCP Registry listing version
+
+transport:
+  primary: streamable-http
+  legacy: sse
+  self_hosted: stdio
+
+auth:
+  type: apiKey
+  scheme: Bearer
+  oauth_authorization_server: null # not deployed -- static Bearer keys only
+
+tools:
+  count: 27
+  all_read_only: true
+  all_non_destructive: true

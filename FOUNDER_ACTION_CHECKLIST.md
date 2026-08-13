@@ -25,6 +25,25 @@ Last reviewed: 2026-07-23
 
 *Source: `compliance/MCP_DISTRIBUTION_GUIDE.md`*
 
+- [ ] **Multi-platform onboarding prep — done 2026-08-13, submissions
+      still open**: built `docs/integrations/` (compatibility matrix +
+      9 per-platform setup docs), `examples/` configs for Grok/Gemini/
+      Amazon Q/AWS AgentCore, `.cursor-example/mcp.json`,
+      `docs/adr/ADR-MISTRAL-MCP-TRANSPORT.md`, `distribution/microsoft/`
+      certification prep package, and `scripts/integration_smoke.py`
+      (live-verified against the hosted endpoint, all 5
+      `LOCAL_PROTOCOL_TEST` checks passing). Full breakdown of what
+      still needs you, grouped by action type, in
+      `docs/integrations/FOUNDER_ACTIONS.md` — highlights: GitHub
+      Copilot CLI and Claude's connector UI need a live session to
+      confirm (not automatable here); Grok/Gemini examples need
+      `XAI_API_KEY`/`GEMINI_API_KEY` to run for real; Microsoft
+      certification needs Partner Center + business verification
+      (blocked on Radtech LLP not yet being incorporated — see
+      [[project_radtech_llp_startup]]); Mistral has no confirmed
+      official submission channel (only an unofficial community repo
+      was found — did not treat it as authoritative).
+
 - [x] Submit to the official MCP registry — **done and live 2026-08-12**:
       published as `io.github.Guruprasath-Annadurai/whitepact` v1.2.2 via
       `mcp-publisher`, confirmed queryable at

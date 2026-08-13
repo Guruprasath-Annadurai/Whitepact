@@ -15,6 +15,10 @@ venv/
 !grafana/dashboards/*.json
 !server.json
 !plugins/**/*.json
+!distribution/**/*.json
+!examples/amazon-q/*.json
+!examples/aws-agentcore/*.json
+!.cursor-example/*.json
 htmlcov/
 .coverage
 coverage.xml

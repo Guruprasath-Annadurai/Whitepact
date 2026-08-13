@@ -324,6 +324,18 @@ aspirational, all verified live:
 See `compliance/MCP_DISTRIBUTION_GUIDE.md` for the full distribution
 plan, including directories not yet submitted to.
 
+### Platform integrations
+
+WhitePact connects to the major AI platforms as one MCP server through
+standards-compliant clients — no per-platform forks, no per-platform
+governance logic. See [`docs/integrations/`](docs/integrations/) for the
+canonical compatibility matrix (`PLATFORM_COMPATIBILITY.md`), per-platform
+setup docs (GitHub Copilot, Microsoft Copilot, Claude, Grok, Gemini,
+Amazon Q, AWS Bedrock AgentCore, Mistral Le Chat, Cursor), and
+`FOUNDER_ACTIONS.md` for what still needs a human. Run
+`python scripts/integration_smoke.py` for a live protocol-level preflight
+against the hosted endpoint.
+
 ---
 
 ## Python SDK

@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "whitepact": {
+      "url": "https://whitepact-mcp-http.onrender.com/mcp",
+      "transport": "streamable-http",
+      "headers": {
+        "Authorization": "Bearer <YOUR_WHITEPACT_API_KEY>"
+      }
+    }
+  }
+}
