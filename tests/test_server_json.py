@@ -17,6 +17,10 @@ def _load_server_json() -> dict:
     return json.loads((_REPO_ROOT / "server.json").read_text())
 
 
+def _version_tuple(v: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in v.split("."))
+
+
 class TestServerJsonShape:
     def test_is_valid_json(self) -> None:
         _load_server_json()  # raises if malformed
@@ -43,11 +47,41 @@ class TestServerJsonShape:
 
 
 class TestServerJsonVersionSync:
-    def test_version_matches_pyproject(self) -> None:
+    """server.json carries two version numbers on purpose, and they're
+    allowed to diverge in one direction only:
+
+    - `packages[0].version` names the PyPI release the `stdio` transport
+      actually installs. It must never be ahead of pyproject.toml's
+      version -- that would point installers at a release that was
+      never built from the code currently checked in.
+    - top-level `version` is the *registry listing* version. The
+      registry rejects republishing under an unchanged version, so this
+      gets bumped for listing-only metadata changes (e.g. adding
+      `remotes`) without cutting a full PyPI release -- see
+      FOUNDER_ACTION_CHECKLIST.md's MCP distribution section. It can
+      therefore run ahead of both pyproject.toml and the published
+      package, but never fall behind the package version it describes.
+    """
+
+    def test_package_version_does_not_outrun_pyproject(self) -> None:
         pyproject = tomllib.loads((_REPO_ROOT / "pyproject.toml").read_text())
         d = _load_server_json()
-        assert d["version"] == pyproject["project"]["version"]
-        assert d["packages"][0]["version"] == pyproject["project"]["version"]
+        pkg_version = _version_tuple(d["packages"][0]["version"])
+        pyproject_version = _version_tuple(pyproject["project"]["version"])
+        assert pkg_version <= pyproject_version, (
+            f"server.json packages[0].version ({d['packages'][0]['version']}) is "
+            f"ahead of pyproject.toml ({pyproject['project']['version']}) -- that "
+            "release was never built from this source."
+        )
+
+    def test_listing_version_is_at_least_the_package_version(self) -> None:
+        d = _load_server_json()
+        listing_version = _version_tuple(d["version"])
+        pkg_version = _version_tuple(d["packages"][0]["version"])
+        assert listing_version >= pkg_version, (
+            f"server.json top-level version ({d['version']}) is behind its own "
+            f"packages[0].version ({d['packages'][0]['version']})."
+        )
 
     def test_pypi_package_identifier_matches_pyproject_name(self) -> None:
         pyproject = tomllib.loads((_REPO_ROOT / "pyproject.toml").read_text())
