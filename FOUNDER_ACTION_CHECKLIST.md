@@ -87,6 +87,31 @@ Last reviewed: 2026-07-23
       point lives behind Claude Console login (`console.claude.com`),
       which needs your own account — search the Console for
       "Connectors Directory" or "Submit a connector" once logged in.
+- [x] **Resolved 2026-08-13**: OpenAI Plugins Directory submission —
+      WhitePact v1.2.3 submitted for review, confirmed both in-app and
+      via a real confirmation email from OpenAI. Full path completed:
+      Individual identity verification, domain ownership verification
+      (built a `/.well-known/openai-apps-challenge` route serving a
+      portal-issued token), all 27 tools scanned with annotations and
+      per-tool justifications, 5 starter prompts, 5 positive + 3
+      negative test cases, a Developer-Mode demo recording
+      (`https://youtu.be/PkVZ5Kq6zrU`), Allowed Countries set to all
+      (a real risk given the privacy policy/terms are still
+      self-drafted, not attorney-reviewed — flagged to the founder,
+      founder's explicit choice to proceed anyway).
+      **Notable engineering byproduct**: this submission required a
+      demo-only unauthenticated-access bypass
+      (`RAI_MCP_HTTP_ALLOW_UNAUTHENTICATED_DEMO`) on
+      `whitepact-mcp-http`, since neither ChatGPT's Developer Mode
+      connector UI nor the OpenAI submission portal's own MCP auth
+      picker (OAuth / No Auth / Mixed only) support a static Bearer
+      API key — the same real gap flagged for the Anthropic submission
+      above. The bypass was enabled twice (for the demo recording, and
+      separately for the portal's "Scan Tools" step), verified active
+      before each use and verified reverted to `401 unauthorized`
+      immediately after both times — never left open. Building real
+      OAuth 2.1 support for `whitepact-mcp-http` remains open, larger
+      work, deferred by choice (see `compliance/CONNECTOR_READINESS_REPORT.md`).
 
 ## 2. OEM/white-label outreach (zero cost — founder time only)
 
