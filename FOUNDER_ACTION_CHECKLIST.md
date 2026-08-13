@@ -43,6 +43,36 @@ Last reviewed: 2026-07-23
       [[project_radtech_llp_startup]]); Mistral has no confirmed
       official submission channel (only an unofficial community repo
       was found — did not treat it as authoritative).
+- [x] **Post-push CI green-up — done 2026-08-13**: the multi-platform
+      onboarding push above surfaced a pre-existing red `main` (from
+      before this session) — fixed, not silenced:
+      - `test_version_matches_pyproject` was asserting `server.json`'s
+        top-level *and* `packages[0]` version both equal
+        `pyproject.toml` exactly, which made the intentional
+        listing-vs-published-package version split undoable without a
+        real PyPI release. Bumped `pyproject.toml` (and
+        `responsibleai.__version__`, kept in lockstep by its own
+        drift-guard test) to `1.2.3` to match the registry listing, and
+        replaced the equality check with two directional invariants:
+        the published package version can never be ahead of
+        `pyproject.toml`, and the listing version can never fall behind
+        the package it describes. `packages[0].version` stays at
+        `1.2.2` — the real, currently-published PyPI release; `1.2.3`
+        has not been published (confirmed live against PyPI's API).
+      - `Self-Conducted Security Scan` (Bandit) was failing on B104
+        (`hardcoded_bind_all_interfaces`) in
+        `src/responsibleai/mcp/server.py`'s `main_http()` — the
+        `0.0.0.0` default bind, unchanged since 2026-07-09, so also
+        pre-existing. Added a scoped, justified `# nosec B104` (not a
+        blanket rule exclusion) with a comment explaining why: the
+        process runs in a Render container that requires binding all
+        interfaces to be reachable, and the actual security boundary is
+        the Bearer-key auth plus `RAI_MCP_HTTP_ALLOWED_ORIGINS`/
+        `ALLOWED_HOSTS`, not the bind address.
+      - Verified live on GitHub: `CI`, `Self-Conducted Security Scan`,
+        and `OpenSSF Scorecard` all green on commit `6764ee7` before
+        calling this closed — not just "should pass," actually
+        confirmed via `gh run list`.
 
 - [x] Submit to the official MCP registry — **done and live 2026-08-12**:
       published as `io.github.Guruprasath-Annadurai/whitepact` v1.2.2 via
