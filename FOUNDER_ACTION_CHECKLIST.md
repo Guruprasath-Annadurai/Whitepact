@@ -83,12 +83,16 @@ Last reviewed: 2026-07-23
       are both case-sensitive, and the original `server.json` used
       all-lowercase where the actual GitHub account is
       `Guruprasath-Annadurai` — see `CHANGELOG.md`'s 1.2.2 entry.
-- [ ] Glama — **checked live 2026-08-13, not indexed yet**: searched
-      `glama.ai/mcp/servers?query=whitepact`, zero results. No public
+- [ ] Glama — **still not indexed as of 2026-08-14**: re-checked, this
+      time against their actual API
+      (`glama.ai/api/mcp/v1/servers?query=whitepact`, not just the
+      JS-rendered page) — `{"servers": []}`, a clean zero-match result,
+      out of 72,352 total servers in their registry. No public
       submission form without their own account login; likely just
-      needs time for their crawler to pick up the official registry
-      listing. Check back periodically, or sign in and use their "Add
-      Server" flow directly if it's still unlisted after a week or two.
+      needs more time for their crawler to pick up the official
+      registry listing. Check back again in another week or two, or
+      sign in and use their "Add Server" flow directly if it's still
+      unlisted by then.
 - [x] PulseMCP — **no action needed**, confirmed live 2026-08-13:
       their own `/submit` page states plainly *"if you have a server to
       share, publish it to the Official MCP Registry... we will pick it
