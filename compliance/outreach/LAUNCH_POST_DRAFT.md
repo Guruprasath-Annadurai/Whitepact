@@ -113,3 +113,74 @@ agents in production — what's missing, what would make this something
 you'd actually rely on.
 
 #AIGovernance #ResponsibleAI #OpenSource #AIAgents #MCP
+
+---
+
+## X (x.com), thread format
+
+X has no official app-listing/directory analogous to a plugin
+marketplace — "displaying WhitePact on X" means posting about it from
+your own account. A thread reads better than one dense post at this
+length; each tweet below was character-counted (215–268 chars) and
+fits X's 280-char limit on its own, with room to spare since X
+auto-shortens URLs.
+
+**Tweet 1 (hook)**
+
+> Every AI agent framework has the same gap: no way to check, in code,
+> whether a specific action is safe, fair, compliant, or accountable —
+> just vague "trust us" marketing or a 100-page regulatory framework.
+>
+> Built WhitePact to fix that. Open source, live, free to try 🧵
+
+**Tweet 2**
+
+> WhitePact sits in front of an agent's actions — not another model.
+>
+> A deterministic 5-way decision (ALLOW / REDACT / REQUIRE_APPROVAL /
+> DENY / QUARANTINE) for any proposed action. No LLM in the loop
+> deciding whether to trust another LLM.
+
+**Tweet 3**
+
+> Plus a 6-dimension Trust Score (fairness, privacy, security,
+> robustness, compliance, authenticity) — open spec, open reference
+> implementation. The published score can't silently drift from what
+> the code actually computes, because it's the same code.
+
+**Tweet 4**
+
+> The part I care about most: every self-assessed score is labeled
+> `certified: false` — everywhere, always. A trust standard that can be
+> quietly gamed into looking like independent verification isn't a
+> trust standard.
+
+**Tweet 5**
+
+> Zero signup, try it now:
+> → Public leaderboard: responsibleai-dashboard.onrender.com/registry
+> → Self-assess any model: .../assess
+> → Source (MIT): github.com/Guruprasath-Annadurai/Whitepact
+> → `pip install rai-governance-platform`
+
+**Tweet 6 (Grok-specific, since it's genuinely fresh and true)**
+
+> Also just shipped: a WhitePact plugin for Grok Build, xAI's coding
+> agent — 27 governance tools available directly in-agent.
+> github.com/xai-org/plugin-marketplace/pull/244
+
+**Tweet 7 (close)**
+
+> Would genuinely value feedback from anyone building or governing AI
+> agents in production. What's missing? What would make this something
+> you'd actually rely on?
+
+**Optional single-post version** (if you'd rather not thread):
+
+> Built WhitePact: an open governance layer for AI agents. A
+> deterministic ALLOW/REDACT/DENY decision for any agent action, an
+> open 6-dim Trust Score, PII/hallucination guardrails, and a public
+> verify endpoint so a cited score is checkable, not just claimed.
+>
+> MIT-licensed, live, free to try:
+> github.com/Guruprasath-Annadurai/Whitepact

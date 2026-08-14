@@ -155,10 +155,14 @@ Last reviewed: 2026-07-23
       MCP Registry and Smithery badges added 2026-08-12.
 - [x] Write a short launch post (blog, LinkedIn, "Show HN" if applicable)
       now that both listings are live — **drafted 2026-08-14**:
-      `compliance/outreach/LAUNCH_POST_DRAFT.md`, both a Show HN variant
-      and a LinkedIn variant, same underlying facts framed for each
-      audience. Every claim (dashboard, `/registry`, `/assess`, PyPI)
-      checked live (HTTP 200) before drafting — nothing aspirational.
+      `compliance/outreach/LAUNCH_POST_DRAFT.md`, a Show HN variant, a
+      LinkedIn variant, and an X (x.com) thread variant (7 tweets,
+      character-counted against X's 280-char limit), same underlying
+      facts framed for each audience. Every claim (dashboard,
+      `/registry`, `/assess`, PyPI) checked live (HTTP 200) before
+      drafting — nothing aspirational. X has no app-directory analogous
+      to a plugin marketplace — "displaying WhitePact on X" means
+      posting from your own account, which is what this draft is for.
       You only need to review and post.
 - [x] OpenAI — **checked live 2026-08-13**: no public directory to
       submit to. ChatGPT/Codex reach an MCP server via per-organization
