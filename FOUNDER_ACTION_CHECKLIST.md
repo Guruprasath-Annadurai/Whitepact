@@ -65,6 +65,16 @@ Last reviewed: 2026-07-23
       passed all local validation scripts and all 3 of xAI's automated
       PR checks. Awaiting xAI code-owner review — see
       `docs/integrations/FOUNDER_ACTIONS.md` for full detail.
+- [ ] **GitHub curated MCP Registry — correction 2026-08-14**: an
+      earlier pass said "no public submission process found" for
+      `github.com/mcp`; that was wrong — dug further and found a real,
+      named channel directly on GitHub's own blog: email
+      `partnerships@github.com` requesting inclusion, after already
+      being on the official registry (already done). Confirmed live
+      that WhitePact isn't listed yet (`github.com/mcp/Guruprasath-
+      Annadurai/whitepact` 404s). Draft ready in
+      `compliance/outreach/READY_TO_SEND_EMAILS.md` Section 4 — send it
+      yourself.
 - [ ] **Gemini live-verification — attempted 2026-08-14,
       billing-blocked**: found and fixed two genuine bugs (wrong API
       method, a model name deprecated for new users despite still

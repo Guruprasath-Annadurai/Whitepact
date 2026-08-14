@@ -95,6 +95,41 @@ AIUC's own audit stage.)*
 
 ---
 
+## 4. GitHub MCP Registry curated inclusion (`docs/integrations/FOUNDER_ACTIONS.md` SUBMISSION REQUIRED)
+
+**To**: partnerships@github.com — a real, named channel, confirmed
+directly from GitHub's own blog post ["How to find, install, and manage
+MCP servers with the GitHub MCP
+Registry"](https://github.blog/ai-and-ml/generative-ai/how-to-find-install-and-manage-mcp-servers-with-the-github-mcp-registry/),
+not a guess or a generic contact-form fallback.
+
+**Subject**: Requesting GitHub MCP Registry inclusion — WhitePact
+
+Hi GitHub MCP Registry team,
+
+I'd like to request that WhitePact be considered for inclusion in the
+GitHub MCP Registry (github.com/mcp).
+
+WhitePact is an AI governance MCP server — trust scoring, PII/harmful-
+content guardrails, hallucination detection, and compliance checks
+(NIST AI RMF, EU AI Act, ISO 42001) for any AI agent's actions. All 27
+tools are read-only.
+
+It's already published to the official MCP Registry and live:
+- Registry listing: `io.github.Guruprasath-Annadurai/whitepact`,
+  queryable at `registry.modelcontextprotocol.io/v0/servers?search=whitepact`
+- `server.json` includes both a `stdio` package and hosted `remotes`
+  (Streamable HTTP + SSE)
+- Source: https://github.com/Guruprasath-Annadurai/Whitepact (MIT
+  licensed)
+- Hosted endpoint: https://whitepact-mcp-http.onrender.com/mcp
+
+Happy to provide anything else needed for review.
+
+[Your name]
+
+---
+
 ## Before sending any of these
 
 1. Replace every `[bracketed placeholder]` with real specifics — a

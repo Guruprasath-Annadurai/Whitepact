@@ -50,19 +50,26 @@ Expected: `whitepact` listed, status connected, 27 tools discoverable.
 
 WhitePact is live on the official MCP Registry
 (`io.github.Guruprasath-Annadurai/whitepact`, confirmed queryable). That is
-**not** the same as being in GitHub's own curated Copilot registry. If
-`/mcp search whitepact` (Copilot CLI's experimental registry search) does
-not surface WhitePact, treat that as:
+**not** the same as being in GitHub's own curated registry at
+`github.com/mcp` (219 servers as of 2026-08-14, editorially curated —
+confirmed live that WhitePact has no page there yet:
+`github.com/mcp/Guruprasath-Annadurai/whitepact` returns 404 despite the
+official-registry listing already being live).
 
 ```
 OPEN_REGISTRY_LIVE
 GITHUB_CURATED_REGISTRY_PENDING
 ```
 
-Evidence ready for a future curation-outreach request: official MCP
-Registry listing (live, `isLatest: true`), 27 read-only annotated tools,
-published `server.json` with `remotes`, this compatibility matrix. No
-outreach has been sent — that is a founder action (see `FOUNDER_ACTIONS.md`).
+**Real submission path found 2026-08-14**, confirmed directly from
+GitHub's own blog
+([How to find, install, and manage MCP servers with the GitHub MCP
+Registry](https://github.blog/ai-and-ml/generative-ai/how-to-find-install-and-manage-mcp-servers-with-the-github-mcp-registry/)):
+after publishing to the official OSS registry (already done for
+WhitePact), email **partnerships@github.com** and request inclusion,
+referencing the live registry listing. Not a self-serve form, but a
+real, documented, named channel — not "no path found." Draft email in
+`compliance/outreach/READY_TO_SEND_EMAILS.md`.
 
 ## Safe test prompt
 
@@ -88,5 +95,7 @@ disable client-side approval prompts.
 ## Founder actions
 
 None required to reach current (PARTIALLY_VERIFIED) state. GitHub curated
-registry inclusion, if pursued, is a founder outreach action — see
-`FOUNDER_ACTIONS.md`.
+registry inclusion has a real, confirmed path now (email
+`partnerships@github.com`) — draft ready in
+`compliance/outreach/READY_TO_SEND_EMAILS.md`, sending it is the founder
+action (see `FOUNDER_ACTIONS.md`).
