@@ -187,8 +187,16 @@ Last reviewed: 2026-07-23
 
 - [ ] Quote the starter kit to 3 companies in your own network first, at a
       founding-customer discount, before publishing any public price.
-- [ ] Have a simple one-page scope-of-work ready before taking a real
-      payment (even an email exchange is fine for the first few).
+- [x] Have a simple one-page scope-of-work ready before taking a real
+      payment — **done 2026-08-14**:
+      `compliance/starter-kit/SCOPE_OF_WORK_TEMPLATE.md`, fill-in-the-
+      blank, covers both paid tiers (Guided fill-in, Full consulting),
+      states plainly what's not included (not a certification, not
+      legal advice, not an audit of the client's actual security
+      posture) before any payment changes hands. Smoke-tested
+      `scripts/generate_compliance_kit.py` while drafting this — it
+      still scaffolds both templates exactly as described, generates
+      real output.
 - [ ] Update the pricing table once a real engagement closes at a
       different number.
 
