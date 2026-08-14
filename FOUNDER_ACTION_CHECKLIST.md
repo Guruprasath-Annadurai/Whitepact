@@ -58,8 +58,13 @@ Last reviewed: 2026-07-23
       `grok.com/connectors`' curated catalog has no public submission
       path found; `xai-org/plugin-marketplace` is a real, official,
       PR-based process but for Grok Build (coding agent), not the chat
-      connector catalog — see `docs/integrations/FOUNDER_ACTIONS.md`
-      "SUBMISSION REQUIRED" for both.
+      connector catalog.
+      **Submitted 2026-08-14**:
+      [xai-org/plugin-marketplace#244](https://github.com/xai-org/plugin-marketplace/pull/244)
+      adds WhitePact as a local plugin (MCP server config + skill),
+      passed all local validation scripts and all 3 of xAI's automated
+      PR checks. Awaiting xAI code-owner review — see
+      `docs/integrations/FOUNDER_ACTIONS.md` for full detail.
 - [ ] **Gemini live-verification — attempted 2026-08-14,
       billing-blocked**: found and fixed two genuine bugs (wrong API
       method, a model name deprecated for new users despite still

@@ -18,6 +18,23 @@ remaining optional step: upgrade the test org's plan to see a full
 data-returning tool response (not required to consider Grok integration
 "working").
 
+## DONE — `xai-org/plugin-marketplace` submission
+
+**Submitted 2026-08-14**: PR opened at
+[xai-org/plugin-marketplace#244](https://github.com/xai-org/plugin-marketplace/pull/244),
+adding WhitePact as a local plugin (`external_plugins/whitepact/`) —
+bundles a `.mcp.json` (Streamable HTTP, `WHITEPACT_API_KEY` env var
+substitution) and a `SKILL.md` describing when to reach for WhitePact's
+tools. Both required local validation scripts passed before submission
+(`validate-catalog.py`, `generate-plugin-index.py --check`); all three
+of xAI's own automated PR checks (two Socket Security supply-chain
+scans, one semgrep scan) confirmed passing shortly after. This makes
+WhitePact discoverable to Grok Build (the coding agent)
+developers browsing the official plugin marketplace — not `grok.com`
+chat users, which still has no public submission path found (see the
+`grok.com/connectors` row under SUBMISSION REQUIRED below). Awaiting
+xAI code-owner review; nothing further to do until they respond.
+
 ## READY NOW (zero-cost, no account needed)
 
 | Platform | Action | Why Claude can't do it | Evidence prepared | Next step |
@@ -67,7 +84,6 @@ data-returning tool response (not required to consider Grok integration
 | Microsoft Copilot (Mode 2) | Submit the certified connector application | Marketplace submissions are explicitly excluded | `distribution/microsoft/` package | Complete checklist items 1-5 first |
 | GitHub curated registry | Outreach to get WhitePact into GitHub's curated Copilot registry (separate from the open MCP Registry, where it's already live) | Requires a real outreach relationship | Live MCP Registry listing as supporting evidence | Decide whether to pursue; no outreach sent |
 | xAI `grok.com/connectors` catalog | Outreach to get WhitePact into xAI's curated ~30-connector catalog | No public self-serve submission process found (researched live 2026-08-14) — likely requires a direct relationship with xAI | Live, verified end-to-end Grok integration (see `grok.md`) as supporting evidence | Decide whether to pursue outreach; no channel found to submit through directly |
-| `xai-org/plugin-marketplace` (Grok Build) | Submit a PR adding WhitePact as a plugin (bundling an `.mcp.json`) | Marketplace submissions are explicitly excluded | Confirmed real, official, PR-based process (read directly from the repo's own README/CONTRIBUTING); reaches Grok Build developers, not `grok.com` chat users | Decide whether this narrower audience is worth pursuing; if so, follow the repo's 6-step PR process |
 
 ## BLOCKED
 
