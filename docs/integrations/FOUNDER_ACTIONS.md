@@ -18,8 +18,8 @@ still in `FOUNDER_ACTION_CHECKLIST.md` and not duplicated here.
 
 | Platform | Action | Why Claude can't do it | Evidence prepared | Next step |
 |---|---|---|---|---|
-| xAI Grok | Run `examples/grok/remote_mcp_example.py` for real | No `XAI_API_KEY` in this environment | Working example script | Export `XAI_API_KEY` + `WHITEPACT_API_KEY`, run it |
-| Gemini | Run `examples/gemini/remote_mcp_example.py` for real | No `GEMINI_API_KEY` in this environment | Working example script | Export `GEMINI_API_KEY` + `WHITEPACT_API_KEY`, run it |
+| xAI Grok | Run `examples/grok/remote_mcp_example.py` for real | **Run live 2026-08-14** with real keys — blocked by a `403 permission-denied`: "team has either used all available credits or reached its monthly spending limit," even after a $5 credit purchase on console.x.ai | Working example script; live error confirms auth/schema reach the API correctly, blocked purely on account credits | Check console.x.ai billing page directly to confirm the $5 credit actually applied; may need to wait for it to process or raise the spending limit |
+| Gemini | Run `examples/gemini/remote_mcp_example.py` for real | **Run live 2026-08-14** with real keys — found and fixed two real bugs in the process (wrong API method `models.generate_content` vs `interactions.create`; a model name deprecated for new users despite still appearing in the SDK's own type hints). After fixing both, tool-config schema is now confirmed accepted by the live server; blocked by a `429` requiring a billing-enabled Google Cloud project | Corrected, live-schema-verified example script | Enable billing on the Google Cloud project behind `GEMINI_API_KEY` |
 
 ## UI CONFIRMATION REQUIRED
 

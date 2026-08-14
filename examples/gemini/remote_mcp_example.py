@@ -10,6 +10,24 @@ Constraints confirmed from Gemini's current Remote MCP docs (see
 docs/integrations/gemini.md):
   - Streamable HTTP only -- do not configure SSE here.
   - Server name must not contain a hyphen -- "whitepact", not "white-pact".
+
+Schema verified live 2026-08-14 against the real Interactions API
+(google-genai SDK v2.14.0, model="gemini-pro-latest"). Two real,
+live-confirmed corrections versus an earlier draft of this script:
+  1. `client.models.generate_content(model="gemini-2.5-pro", ...)` is
+     the WRONG API for this -- that model returns a live 404
+     ("no longer available to new users... use the Interactions API")
+     even though it's still listed in the SDK's own Model type hints,
+     which are stale relative to the live server. Use
+     `client.interactions.create(...)` instead, with a rolling model
+     alias ("gemini-pro-latest") that can't go stale the same way.
+  2. The correct MCP tool shape for this API is
+     `{"type": "mcp_server", "name", "url", "headers", "allowed_tools"}`
+     -- a flat dict, not the nested `Tool(mcp_servers=[McpServer(...)])`
+     shape used by the older `models.generate_content` path (a
+     different, unrelated Tool type in the same SDK). allowed_tools
+     really does exist as a scoping mechanism here -- it just lives on
+     this type, not the one checked first.
 """
 
 from __future__ import annotations
@@ -19,23 +37,18 @@ import sys
 
 WHITEPACT_MCP_URL = "https://whitepact-mcp-http.onrender.com/mcp"
 SERVER_NAME = "whitepact"  # no hyphen -- see module docstring
+MODEL = "gemini-pro-latest"  # rolling alias -- avoids the exact staleness bug found above
 
-ALLOWED_TOOLS = [
-    "rai_scan",
-    "rai_trust_score",
-    "rai_policy_check",
-]
+ALLOWED_TOOLS = ["rai_scan", "rai_trust_score", "rai_policy_check"]
 
 
 def build_remote_mcp_tool(whitepact_api_key: str) -> dict:
     return {
-        "mcp_server": {
-            "name": SERVER_NAME,
-            "url": WHITEPACT_MCP_URL,
-            "transport": "streamable_http",
-            "headers": {"Authorization": f"Bearer {whitepact_api_key}"},
-            "allowed_tools": ALLOWED_TOOLS,
-        }
+        "type": "mcp_server",
+        "name": SERVER_NAME,
+        "url": WHITEPACT_MCP_URL,
+        "headers": {"Authorization": f"Bearer {whitepact_api_key}"},
+        "allowed_tools": [{"tools": ALLOWED_TOOLS}],
     }
 
 
@@ -62,12 +75,12 @@ def main() -> int:
         return 1
 
     client = genai.Client(api_key=gemini_api_key)
-    response = client.models.generate_content(
-        model="gemini-2.5-pro",
-        contents="Run rai_trust_score on: 'Our system is 100% bias-free.'",
-        config={"tools": [build_remote_mcp_tool(whitepact_api_key)]},
+    response = client.interactions.create(
+        model=MODEL,
+        input="Run rai_trust_score on: 'Our system is 100% bias-free.'",
+        tools=[build_remote_mcp_tool(whitepact_api_key)],
     )
-    print(response.text)
+    print(response)
     return 0
 
 
