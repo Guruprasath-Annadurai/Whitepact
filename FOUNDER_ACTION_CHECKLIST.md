@@ -110,8 +110,13 @@ Last reviewed: 2026-07-23
       per Smithery's own documented fallback for auth-required servers.
 - [x] Add "Listed on [Directory]" badges to the README — **done**:
       MCP Registry and Smithery badges added 2026-08-12.
-- [ ] Write a short launch post (blog, LinkedIn, "Show HN" if applicable)
-      now that both listings are live.
+- [x] Write a short launch post (blog, LinkedIn, "Show HN" if applicable)
+      now that both listings are live — **drafted 2026-08-14**:
+      `compliance/outreach/LAUNCH_POST_DRAFT.md`, both a Show HN variant
+      and a LinkedIn variant, same underlying facts framed for each
+      audience. Every claim (dashboard, `/registry`, `/assess`, PyPI)
+      checked live (HTTP 200) before drafting — nothing aspirational.
+      You only need to review and post.
 - [x] OpenAI — **checked live 2026-08-13**: no public directory to
       submit to. ChatGPT/Codex reach an MCP server via per-organization
       "Connectors" config — a customer manually points their own
