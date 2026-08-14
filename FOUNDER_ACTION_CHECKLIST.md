@@ -43,25 +43,40 @@ Last reviewed: 2026-07-23
       [[project_radtech_llp_startup]]); Mistral has no confirmed
       official submission channel (only an unofficial community repo
       was found — did not treat it as authoritative).
-- [ ] **Grok/Gemini live-verification — attempted 2026-08-14,
-      account-blocked**: ran both example scripts for real with real
-      credentials. Found and fixed two genuine bugs in the Gemini
-      script (wrong API method, a model name deprecated for new users
-      despite still appearing in the SDK's own type hints) — after the
-      fix, the tool config is confirmed accepted by the live Gemini
-      server. Both scripts are now blocked purely on account billing:
-      Grok gets a `403` ("team has used all available credits or
-      reached its monthly spending limit," even after a $5 purchase on
-      console.x.ai — worth checking that it actually applied); Gemini
-      gets a `429` requiring a billing-enabled Google Cloud project.
-      See `docs/integrations/gemini.md` and `FOUNDER_ACTIONS.md` for
-      full detail.
-      **Also**: during this, a `RAI_API_KEY` (OWNER-role, used to
-      create a test org for this work) was pasted into chat and is
-      compromised — **rotate it in Render → responsibleai-dashboard →
-      Environment → `RAI_API_KEYS`/`WHITEPACT_API_KEYS`, then click
-      Save, rebuild, and deploy** — this has not been done yet as of
-      this entry.
+- [x] **Grok live-verification — DONE 2026-08-14**: full round trip
+      (connect, auth, tool discovery, `rai_scan` tool call, structured
+      response) succeeded against the live xAI API with real
+      credentials. The response was WhitePact's own correct FREE-plan
+      gating (`hosted_access_unavailable`) — genuine proof the
+      integration works end to end, not a config check. Three real bugs
+      found and fixed along the way: (1) wrong `WHITEPACT_API_KEY` — a
+      dashboard OWNER key was mistakenly used instead of an org-scoped
+      key from `POST /api/orgs/{id}/keys`; (2) the bearer token belongs
+      in the OpenAI SDK's dedicated `authorization` field, not `headers`;
+      (3) [Gemini's two bugs, see below]. See `docs/integrations/grok.md`
+      for full detail, plus new research on public discoverability:
+      `grok.com/connectors`' curated catalog has no public submission
+      path found; `xai-org/plugin-marketplace` is a real, official,
+      PR-based process but for Grok Build (coding agent), not the chat
+      connector catalog — see `docs/integrations/FOUNDER_ACTIONS.md`
+      "SUBMISSION REQUIRED" for both.
+- [ ] **Gemini live-verification — attempted 2026-08-14,
+      billing-blocked**: found and fixed two genuine bugs (wrong API
+      method, a model name deprecated for new users despite still
+      appearing in the SDK's own type hints) — after the fix, the tool
+      config is confirmed accepted by the live Gemini server. Blocked
+      purely on account billing: `429` requiring a billing-enabled
+      Google Cloud project. See `docs/integrations/gemini.md` for full
+      detail.
+      **Two compromised secrets from this work, neither rotated yet**:
+      (1) a `RAI_API_KEY` (OWNER-role dashboard key, pasted into chat
+      while creating a test org) — **rotate in Render →
+      responsibleai-dashboard → Environment →
+      `RAI_API_KEYS`/`WHITEPACT_API_KEYS`, then click Save, rebuild, and
+      deploy**; (2) a scoped `WHITEPACT_API_KEY` (visible in an SDK
+      response repr during the successful Grok test) — **rotate via a
+      fresh `POST /api/orgs/{id}/keys` call**. Neither has been done as
+      of this entry.
 - [x] **Post-push CI green-up — done 2026-08-13**: the multi-platform
       onboarding push above surfaced a pre-existing red `main` (from
       before this session) — fixed, not silenced:

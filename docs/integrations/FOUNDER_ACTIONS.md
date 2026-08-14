@@ -7,6 +7,17 @@ the platform-onboarding work in `docs/integrations/`; the pre-existing,
 broader list (OpenAI submission, MCP registry, compliance items) is
 still in `FOUNDER_ACTION_CHECKLIST.md` and not duplicated here.
 
+## DONE — xAI Grok (API path)
+
+**Verified live 2026-08-14**, no longer a pending action: full round trip
+(connect, auth, tool discovery, tool call, structured response)
+succeeded with real credentials. Response was WhitePact's own correct
+FREE-plan gating (`hosted_access_unavailable`), not a failure. Two real
+bugs found and fixed along the way — see `grok.md` for detail. Only
+remaining optional step: upgrade the test org's plan to see a full
+data-returning tool response (not required to consider Grok integration
+"working").
+
 ## READY NOW (zero-cost, no account needed)
 
 | Platform | Action | Why Claude can't do it | Evidence prepared | Next step |
@@ -18,7 +29,6 @@ still in `FOUNDER_ACTION_CHECKLIST.md` and not duplicated here.
 
 | Platform | Action | Why Claude can't do it | Evidence prepared | Next step |
 |---|---|---|---|---|
-| xAI Grok | Run `examples/grok/remote_mcp_example.py` for real | **Run live 2026-08-14** with real keys — blocked by a `403 permission-denied`: "team has either used all available credits or reached its monthly spending limit," even after a $5 credit purchase on console.x.ai | Working example script; live error confirms auth/schema reach the API correctly, blocked purely on account credits | Check console.x.ai billing page directly to confirm the $5 credit actually applied; may need to wait for it to process or raise the spending limit |
 | Gemini | Run `examples/gemini/remote_mcp_example.py` for real | **Run live 2026-08-14** with real keys — found and fixed two real bugs in the process (wrong API method `models.generate_content` vs `interactions.create`; a model name deprecated for new users despite still appearing in the SDK's own type hints). After fixing both, tool-config schema is now confirmed accepted by the live server; blocked by a `429` requiring a billing-enabled Google Cloud project | Corrected, live-schema-verified example script | Enable billing on the Google Cloud project behind `GEMINI_API_KEY` |
 
 ## UI CONFIRMATION REQUIRED
@@ -56,6 +66,8 @@ still in `FOUNDER_ACTION_CHECKLIST.md` and not duplicated here.
 |---|---|---|---|---|
 | Microsoft Copilot (Mode 2) | Submit the certified connector application | Marketplace submissions are explicitly excluded | `distribution/microsoft/` package | Complete checklist items 1-5 first |
 | GitHub curated registry | Outreach to get WhitePact into GitHub's curated Copilot registry (separate from the open MCP Registry, where it's already live) | Requires a real outreach relationship | Live MCP Registry listing as supporting evidence | Decide whether to pursue; no outreach sent |
+| xAI `grok.com/connectors` catalog | Outreach to get WhitePact into xAI's curated ~30-connector catalog | No public self-serve submission process found (researched live 2026-08-14) — likely requires a direct relationship with xAI | Live, verified end-to-end Grok integration (see `grok.md`) as supporting evidence | Decide whether to pursue outreach; no channel found to submit through directly |
+| `xai-org/plugin-marketplace` (Grok Build) | Submit a PR adding WhitePact as a plugin (bundling an `.mcp.json`) | Marketplace submissions are explicitly excluded | Confirmed real, official, PR-based process (read directly from the repo's own README/CONTRIBUTING); reaches Grok Build developers, not `grok.com` chat users | Decide whether this narrower audience is worth pursuing; if so, follow the repo's 6-step PR process |
 
 ## BLOCKED
 
