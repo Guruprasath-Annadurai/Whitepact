@@ -10,6 +10,16 @@ or pass one on the command line where it could end up in shell history.
 Security note: `allowed_tools` is deliberately scoped to a small
 read-only set below rather than left unset (which would expose all 27
 WhitePact tools). Widen it once you've confirmed the connection works.
+
+Fixed 2026-08-14 after a live run against the real xAI API returned
+"Failed to connect to MCP server" with real credentials and a warm,
+confirmed-reachable server: the OpenAI SDK's real `Mcp` tool param type
+(`openai.types.responses.tool_param.Mcp`) has a dedicated
+`authorization: str` field for bearer tokens, separate from `headers`.
+The original draft put the bearer token inside `headers` instead --
+plausible root cause, since xAI's server-side handling of arbitrary
+custom `headers` on this OpenAI-compatible endpoint isn't guaranteed to
+match OpenAI's own. Switched to the documented field.
 """
 
 from __future__ import annotations
@@ -31,7 +41,7 @@ def build_remote_mcp_config(whitepact_api_key: str) -> dict:
         "type": "mcp",
         "server_label": "whitepact",
         "server_url": WHITEPACT_MCP_URL,
-        "headers": {"Authorization": f"Bearer {whitepact_api_key}"},
+        "authorization": f"Bearer {whitepact_api_key}",
         "allowed_tools": ALLOWED_TOOLS,
     }
 
