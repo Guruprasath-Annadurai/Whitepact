@@ -7,24 +7,28 @@
 > bootstrapped project can pursue with founder time alone.
 >
 > **What this is not**: an arXiv submission. Actually submitting requires
-> (1) converting this Markdown draft to arXiv's expected format (LaTeX is
-> the norm; a PDF generated from Markdown via pandoc is accepted in some
-> categories but LaTeX is safer), (2) creating an arXiv account, and (3)
-> **endorsement, confirmed required as of a policy change effective
-> 2026-01-21** (see arXiv's own blog post, "Attention Authors: updated
-> endorsement policy") — arXiv no longer accepts an institutional email
-> address alone as sufficient for a first-time poster. A new submitter now
-> needs *either* (a) both an institutional academic/research email *and*
-> prior authorship on a paper already accepted in the target endorsement
-> domain (likely `cs.AI` or `cs.CY` here), *or*, failing that, (b) personal
-> endorsement from an advisor, colleague, or existing arXiv author with
-> endorsement privileges in that domain. For an independent, first-time
-> submitter without a prior arXiv-accepted paper, path (b) is almost
-> certainly the real path — line up a personal endorser *before* starting
-> the submission, not after hitting the wall. None of this can be done on
-> the founder's behalf; this document is the content, not the submission.
+> (1) uploading a LaTeX source (a draft now exists at
+> `compliance/trust_index_paper.tex` — re-verify current arXiv format
+> requirements against it before uploading, since these can change), (2)
+> creating an arXiv account, and (3) **endorsement, confirmed required as
+> of a policy change effective 2026-01-21** (see arXiv's own blog post,
+> "Attention Authors: updated endorsement policy") — arXiv no longer
+> accepts an institutional email address alone as sufficient for a
+> first-time poster. A new submitter now needs *either* (a) both an
+> institutional academic/research email *and* prior authorship on a paper
+> already accepted in the target endorsement domain (likely `cs.AI` or
+> `cs.CY` here), *or*, failing that, (b) personal endorsement from an
+> advisor, colleague, or existing arXiv author with endorsement privileges
+> in that domain. For an independent, first-time submitter without a
+> prior arXiv-accepted paper, path (b) is almost certainly the real path —
+> line up a personal endorser *before* starting the submission, not after
+> hitting the wall. None of this can be done on the founder's behalf; this
+> document is the content, not the submission.
 
-Last reviewed: 2026-07-23
+Last reviewed: 2026-08-14 — references verified live, code references
+re-checked against current source, LaTeX draft prepared. Endorser and
+independent reader still outstanding; see "Before submitting this to
+arXiv" below.
 
 ---
 
@@ -92,26 +96,26 @@ without requiring trust in the citing party alone.
 
 ## 2. Related work
 
-**Regulatory AI risk frameworks.** The EU AI Act and the NIST AI Risk
-Management Framework provide comprehensive governance requirements but are
-structured as compliance obligations and voluntary guidance respectively,
-not as a single comparable numeric score intended for rapid, informal
-buyer-side comparison across vendors.
+**Regulatory AI risk frameworks.** The EU AI Act [4] and the NIST AI Risk
+Management Framework [3] provide comprehensive governance requirements but
+are structured as compliance obligations and voluntary guidance
+respectively, not as a single comparable numeric score intended for rapid,
+informal buyer-side comparison across vendors.
 
-**Model evaluation benchmarks.** Benchmarks such as TruthfulQA, BBQ, and
-HellaSwag measure specific narrow capabilities (truthfulness, bias in
-question-answering, commonsense reasoning) and are widely used in the
-research community, but are not packaged as a composite, governance-
+**Model evaluation benchmarks.** Benchmarks such as TruthfulQA [1], BBQ
+[2], and HellaSwag [6] measure specific narrow capabilities (truthfulness,
+bias in question-answering, commonsense reasoning) and are widely used in
+the research community, but are not packaged as a composite, governance-
 oriented trust score, nor do they distinguish self-reported from
 independently measured results as a first-class feature of the standard
 itself.
 
-**Industry security standards.** PCI-DSS and ISO/IEC 27001 demonstrate the
-publication pattern this work follows — an open, versioned standard
-separable from any single accreditation body, with certification as an
-optional paid layer atop a freely available specification. We adopt this
-structure directly, substituting AI trustworthiness dimensions for payment
-or information-security controls.
+**Industry security standards.** PCI-DSS [5] and ISO/IEC 27001 [7]
+demonstrate the publication pattern this work follows — an open, versioned
+standard separable from any single accreditation body, with certification
+as an optional paid layer atop a freely available specification. We adopt
+this structure directly, substituting AI trustworthiness dimensions for
+payment or information-security controls.
 
 **This work's distinguishing claim** is not a novel scoring formula in
 isolation, but the combination of (a) an open, versioned, code-synchronized
@@ -224,17 +228,35 @@ specification version, explicit provenance label, and a verification URL:
 
 ## 4. Reference implementation
 
-The methodology described here is implemented as open-source code
-(`src/responsibleai/trust/score.py` for scoring;
-`src/responsibleai/trust/passport.py` for record generation;
-`src/responsibleai/db/passport_repository.py` for persistence and
-verification). We consider synchronization between the published
-specification and the running implementation a first-class design
-requirement, not an afterthought: the specification document states
-explicitly that the reference implementation's default weights are the
-source of truth for the current version, and specification version bumps
-are recorded as dated changelog entries alongside the corresponding code
-change, rather than as an independently drifting paper standard.
+The methodology described here is implemented as open-source code.
+Scoring and provenance labeling are implemented across four modules, one
+per concern rather than one monolith: `src/responsibleai/trust/score.py`
+computes the weighted composite (Section 3.1) from six dimension values;
+`src/responsibleai/trust/passport.py` generates the immutable, hashed
+record for a computed score; `src/responsibleai/db/passport_repository.py`
+persists records and serves the verification lookup described in Section
+3.4; and `src/responsibleai/leaderboard/runner.py` implements the
+automated-measurement provenance path of Section 3.3 specifically —
+querying a model's public inference API against the TruthfulQA corpus to
+compute the robustness dimension live, while holding compliance and
+authenticity at the disclosed neutral placeholder described in Section
+3.2, since neither is directly observable from API probing alone (see
+`compliance/LEADERBOARD_METHODOLOGY.md` for the full measurement
+protocol). The three provenance paths therefore correspond to three
+distinct, identifiable code paths rather than a single generator
+parameterized after the fact — self-assessment and certification are
+served by `POST /api/trust-index/assess` and
+`POST /api/trust-index/certify/{id}` respectively, and automated
+measurement by `GET /api/leaderboard` and its underlying
+`LeaderboardRunner`.
+
+We consider synchronization between the published specification and the
+running implementation a first-class design requirement, not an
+afterthought: the specification document states explicitly that the
+reference implementation's default weights are the source of truth for
+the current version, and specification version bumps are recorded as
+dated changelog entries alongside the corresponding code change, rather
+than as an independently drifting paper standard.
 
 ---
 
@@ -258,9 +280,10 @@ volatility that a single measurement does not capture.
 **Not a substitute for regulatory compliance certification.** Scoring well
 under this standard is not itself a compliance certification for any
 specific law or regulation. The compliance dimension references frameworks
-such as GDPR and the EU AI Act as inputs to its own scoring, but a high
-Trust Index score should not be represented, by any party citing it, as
-equivalent to formal regulatory compliance.
+— specifically the NIST AI Risk Management Framework, the EU AI Act, and
+ISO/IEC 42001 (`src/responsibleai/compliance/engine.py`) — as inputs to
+its own scoring, but a high Trust Index score should not be represented,
+by any party citing it, as equivalent to formal regulatory compliance.
 
 **Self-assessment remains gameable in principle.** Nothing prevents a
 self-assessing party from submitting favorable, unverified dimension
@@ -290,52 +313,102 @@ significant current limitation and an explicit direction for future work.
 
 ## References
 
-*(Populate with real, checkable citations before submission — do not
-submit with placeholder references. Candidates to review and cite
-properly, by their actual publication venues:)*
+*Verified against primary sources 2026-08-14 — DOIs and identifiers
+checked live, not reproduced from memory.*
 
-- Dwork, C., & Roth, A. (2014). *The Algorithmic Foundations of
-  Differential Privacy.* [Relevant if citing this project's related
-  `PRIVACY.md` differential-privacy work as prior art for the privacy
-  dimension's measurement approach.]
-- Lin, S., Hilton, J., & Evans, O. (2022). *TruthfulQA: Measuring How
-  Models Mimic Human Falsehoods.* [Relevant to the robustness dimension
-  and the `rai_benchmark` truthfulqa suite.]
-- Parrish, A., et al. (2022). *BBQ: A Hand-Built Bias Benchmark for
-  Question Answering.* [Relevant to the fairness dimension.]
-- NIST. *AI Risk Management Framework (AI RMF 1.0).* National Institute of
-  Standards and Technology, 2023.
-- European Parliament and Council. *Regulation (EU) 2024/1689 (EU AI
-  Act).*
-- PCI Security Standards Council. *Payment Card Industry Data Security
-  Standard (PCI-DSS).* [Cited as the structural model for open-standard
-  publication with optional paid certification.]
+[1] Lin, S., Hilton, J., & Evans, O. (2022). TruthfulQA: Measuring How
+Models Mimic Human Falsehoods. In *Proceedings of the 60th Annual Meeting
+of the Association for Computational Linguistics (Volume 1: Long
+Papers)*, pages 3214–3252, Dublin, Ireland. Association for Computational
+Linguistics. https://doi.org/10.18653/v1/2022.acl-long.229
+(arXiv:2109.07958)
+
+[2] Parrish, A., Chen, A., Nangia, N., Padmakumar, V., Phang, J.,
+Thompson, J., Htut, P. M., & Bowman, S. R. (2022). BBQ: A Hand-Built Bias
+Benchmark for Question Answering. In *Findings of the Association for
+Computational Linguistics: ACL 2022*, pages 2086–2105, Dublin, Ireland.
+Association for Computational Linguistics. (arXiv:2110.08193)
+
+[3] Tabassi, E. (2023). Artificial Intelligence Risk Management Framework
+(AI RMF 1.0). NIST Trustworthy and Responsible AI, NIST AI 100-1,
+National Institute of Standards and Technology, Gaithersburg, MD.
+https://doi.org/10.6028/NIST.AI.100-1
+
+[4] European Parliament and Council of the European Union. (2024).
+Regulation (EU) 2024/1689 of the European Parliament and of the Council
+of 13 June 2024 laying down harmonised rules on artificial intelligence
+(Artificial Intelligence Act). *Official Journal of the European Union*,
+published 12 July 2024. https://eur-lex.europa.eu/eli/reg/2024/1689/oj
+
+[5] PCI Security Standards Council. (2024). Payment Card Industry Data
+Security Standard, Version 4.0.1. Published 11 June 2024. [Cited as the
+structural model for open-standard publication with optional paid
+certification — see Section 2.]
+
+[6] Zellers, R., Holtzman, A., Bisk, Y., Farhadi, A., & Choi, Y. (2019).
+HellaSwag: Can a Machine Really Finish Your Sentence? In *Proceedings of
+the 57th Annual Meeting of the Association for Computational Linguistics*,
+pages 4791–4800, Florence, Italy. Association for Computational
+Linguistics. (arXiv:1905.07830)
+
+[7] International Organization for Standardization / International
+Electrotechnical Commission. (2022). ISO/IEC 27001:2022 — Information
+security, cybersecurity and privacy protection — Information security
+management systems — Requirements.
 
 ---
 
 ## Before submitting this to arXiv
 
-1. **Convert to arXiv's expected format.** LaTeX (via a standard template
-   such as `article` or a relevant conference/journal class) is the safest
-   choice; verify current format requirements on arXiv's own submission
-   help pages before starting, since these can change.
-2. **Line up a personal endorser before starting.** As of arXiv's
+1. [ ] **Convert to arXiv's expected format.** LaTeX (via a standard
+   template such as `article` or a relevant conference/journal class) is
+   the safest choice; verify current format requirements on arXiv's own
+   submission help pages before starting, since these can change. **A
+   LaTeX source is now prepared** — see `compliance/trust_index_paper.tex`
+   — re-verify arXiv's current format requirements against it before
+   actually uploading, since format rules can change between now and
+   submission.
+2. [ ] **Line up a personal endorser before starting.** As of arXiv's
    2026-01-21 policy update, a first-time submitter without an
    institutional academic email *and* prior authorship in the target
    domain (`cs.AI` or `cs.CY` here) needs personal endorsement from an
    advisor, colleague, or an existing arXiv author with endorsement
    privileges in that category — arXiv no longer accepts an institutional
    email alone. Identify who that person is and confirm their willingness
-   *before* starting the submission flow, not after arXiv blocks it.
-3. **Replace every placeholder reference in Section "References"** with
-   verified, correctly formatted citations to the actual papers/standards
-   — do not submit with unchecked citations.
-4. **Have a second, ideally domain-expert, reader review the paper** before
-   submission — this draft was produced by the same team that built the
-   system it describes, the same self-review limitation
+   *before* starting the submission flow, not after arXiv blocks it. This
+   step cannot be done on the founder's behalf.
+3. [x] **Replace every placeholder reference in Section "References"**
+   with verified, correctly formatted citations — **done 2026-08-14**: all
+   7 citations checked live against primary sources (arXiv, ACL Anthology,
+   NIST DOI, EUR-Lex, PCI SSC, ISO), not reproduced from memory. One
+   originally-listed citation (Dwork & Roth, differential privacy) was
+   **removed** rather than kept as padding — it described an unrelated
+   feature (`PRIVACY.md`'s "PrivacyLabel" differential-privacy work) with
+   zero actual connection to this paper's privacy dimension, which is
+   measured via PII detection (`src/responsibleai/guardrails/engine.py`),
+   not differential privacy. Added HellaSwag and ISO/IEC 27001, both of
+   which were named in the body text but had no corresponding citation.
+   Every reference now has an inline `[n]` marker at its point of use in
+   the body — the draft previously listed sources without ever citing them
+   in text.
+4. [ ] **Have a second, ideally domain-expert, reader review the paper**
+   before submission — this draft was produced by the same team that
+   built the system it describes, the same self-review limitation
    `compliance/INTERNAL_SECURITY_REVIEW.md` states plainly about its own
-   findings. An independent read catches things self-review cannot.
-5. **Re-verify every code/file reference** (`src/responsibleai/trust/score.py`,
-   etc.) against the actual current codebase before submission — this
-   paper describes the system as of its "Last reviewed" date above, and
-   the code may have moved on by the time you actually submit.
+   findings. An independent read catches things self-review cannot. This
+   step requires a human and was not attempted here.
+5. [x] **Re-verify every code/file reference** against the actual current
+   codebase before submission — **done 2026-08-14**: checked all code
+   citations (`trust/score.py`, `trust/passport.py`,
+   `db/passport_repository.py`, verify/badge/assess/certify endpoints,
+   SHA-256 hash) against the live source; every one still matches exactly
+   (weights, grade/risk-tier thresholds, endpoint behavior). Found and
+   fixed two real drifts in the process: Section 4 was missing a citation
+   for `leaderboard/runner.py`, the actual code implementing the
+   "automated measurement" provenance path described in Section 3.3; and
+   Section 5 incorrectly named GDPR as one of the compliance dimension's
+   reference frameworks, when the real code
+   (`src/responsibleai/compliance/engine.py`) references NIST AI RMF, EU
+   AI Act, and ISO/IEC 42001 — GDPR isn't referenced there at all. Since
+   code moves faster than a paper draft, **re-run this check again
+   immediately before actual submission**, not just once now.

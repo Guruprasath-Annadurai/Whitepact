@@ -1,0 +1,399 @@
+% Trust Index paper -- LaTeX source for arXiv submission.
+%
+% Converted from compliance/TRUST_INDEX_PAPER.md (Markdown draft) on
+% 2026-08-14. Content is a direct translation, not a rewrite -- if the
+% two ever disagree, treat the Markdown draft as having drifted and
+% re-sync it from here (or vice versa), rather than trusting either
+% blindly. See TRUST_INDEX_PAPER.md's own header for what still needs
+% a human before this can actually be submitted (endorser, independent
+% reader) -- this file only satisfies the "convert to LaTeX" step.
+%
+% Uses the plain `article` class deliberately: arXiv accepts it across
+% every plausible category for this paper (cs.AI, cs.CY), and it avoids
+% any dependency on a conference/journal class that might not be
+% installed in arXiv's compilation environment. Re-verify current arXiv
+% format requirements before uploading -- these can change.
+
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{times}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{microtype}
+\usepackage[hyphens]{xurl}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  citecolor=black,
+  urlcolor=blue,
+}
+
+% \texttt{} cannot break at `/` or `_`, which overflows the margin on
+% long file paths (see Section 4). \code{} reuses \url{}'s line-breaking
+% behavior, styled monospace via \urlstyle{tt} below, without treating
+% the content as a clickable hyperlink.
+\urlstyle{tt}
+\newcommand{\code}[1]{\url{#1}}
+
+\title{The Trust Index: An Open, Citable Methodology for\\
+Multi-Dimensional AI System Trustworthiness Scoring}
+
+\author{WhitePact\thanks{\url{https://github.com/Guruprasath-Annadurai/Whitepact}}}
+
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+AI governance today lacks a standardized, openly-verifiable signal for
+comparing the trustworthiness of deployed AI systems across
+organizations --- unlike domains such as payment security (PCI-DSS) or
+web application security (OWASP Top 10), where a published, versioned
+standard lets any party independently assess and cite compliance
+without depending on a single vendor's proprietary methodology. We
+present the \textbf{Trust Index}, an open specification for scoring an
+AI system across six weighted dimensions --- fairness, privacy,
+security, robustness, compliance, and authenticity --- producing a
+0--100 composite score, a letter grade, and a risk tier. We describe
+three distinct provenance paths for a Trust Index score
+(self-assessment, automated measurement against a public inference
+API, and human-reviewed certification), each explicitly labeled to
+prevent the conflation of self-reported and independently-verified
+claims --- a distinction we argue is necessary for any trust signal to
+remain meaningful as adoption scales. We provide a reference
+implementation (\texttt{src/responsibleai/trust/score.py}) and a
+public verification mechanism
+(\texttt{GET /api/trust-index/verify/\{id\}}) that returns the full
+scored record for any cited passport ID, making every citation
+independently checkable rather than an unfalsifiable claim. We discuss
+the specification's current limitations, including the absence of a
+formal third-party accreditation process and the lack of statistical
+confidence intervals on point-estimate scores, and outline a
+versioning discipline intended to keep the published standard
+synchronized with its reference implementation over time.
+\end{abstract}
+
+\section{Introduction}
+
+As organizations increasingly deploy large language models and other
+AI systems in production, buyers, regulators, and end users face a
+recurring question with no standardized answer: \emph{how trustworthy
+is this specific AI system, on what basis, and who verified the
+claim?} Existing approaches tend toward one of two extremes. At one
+end, informal marketing claims (``our AI is safe and unbiased'') carry
+no verifiable structure at all. At the other, formal regulatory
+compliance frameworks (the EU AI Act, NIST AI RMF) are comprehensive
+but not designed to produce a single, comparable, publicly citable
+score suitable for quick buyer-side comparison the way a credit rating
+or a PCI-DSS attestation is.
+
+We propose the Trust Index to fill this gap: a lightweight, open,
+versioned scoring methodology, deliberately modeled on the publication
+pattern of security standards bodies (OWASP, PCI Security Standards
+Council) rather than on a proprietary vendor certification. The
+specification is published in full
+(\texttt{compliance/TRUST\_INDEX\_SPEC.md}) and its reference
+implementation ships as open-source code
+(\texttt{src/responsibleai/trust/score.py}), so that the formula
+computing a published score is never separated from a paper
+description that could drift from what is actually run.
+
+This paper's contribution is threefold: (1) a six-dimension weighted
+scoring methodology with defined grade and risk-tier bands; (2) an
+explicit three-tier provenance model distinguishing self-reported,
+automatically measured, and human-certified scores, which we argue is
+necessary to prevent the standard's erosion into an unfalsifiable
+marketing claim as adoption grows; and (3) a public verification
+mechanism that makes any cited score independently checkable by any
+third party, without requiring trust in the citing party alone.
+
+\section{Related work}
+
+\textbf{Regulatory AI risk frameworks.} The EU AI Act \cite{euaiact}
+and the NIST AI Risk Management Framework \cite{nistairmf} provide
+comprehensive governance requirements but are structured as compliance
+obligations and voluntary guidance respectively, not as a single
+comparable numeric score intended for rapid, informal buyer-side
+comparison across vendors.
+
+\textbf{Model evaluation benchmarks.} Benchmarks such as TruthfulQA
+\cite{truthfulqa}, BBQ \cite{bbq}, and HellaSwag \cite{hellaswag}
+measure specific narrow capabilities (truthfulness, bias in
+question-answering, commonsense reasoning) and are widely used in the
+research community, but are not packaged as a composite,
+governance-oriented trust score, nor do they distinguish self-reported
+from independently measured results as a first-class feature of the
+standard itself.
+
+\textbf{Industry security standards.} PCI-DSS \cite{pcidss} and
+ISO/IEC~27001 \cite{iso27001} demonstrate the publication pattern this
+work follows --- an open, versioned standard separable from any single
+accreditation body, with certification as an optional paid layer atop
+a freely available specification. We adopt this structure directly,
+substituting AI trustworthiness dimensions for payment or
+information-security controls.
+
+\textbf{This work's distinguishing claim} is not a novel scoring
+formula in isolation, but the combination of (a) an open, versioned,
+code-synchronized specification, (b) an explicit, labeled three-tier
+provenance model, and (c) a public, per-score verification endpoint
+--- together intended to keep a ``Trust Index score'' a checkable
+claim rather than a marketing assertion, even as the standard is cited
+by parties other than its original publisher.
+
+\section{Methodology}
+
+\subsection{Dimensions and weighting}
+
+A Trust Index score is a weighted composite across six dimensions,
+each normalized to $[0, 1]$ before weighting (Table~\ref{tab:dims}).
+
+\begin{table}[h]
+\centering
+\caption{Trust Index dimensions and default weights}
+\label{tab:dims}
+\begin{tabular}{@{}llp{8cm}@{}}
+\toprule
+Dimension & Weight & Definition \\
+\midrule
+Fairness & 0.20 & Absence of detected bias across protected categories in system outputs. \\
+Privacy & 0.15 & Avoidance of leaking or mishandling personally identifiable information. \\
+Security & 0.20 & Resistance to adversarial manipulation (prompt injection, jailbreaks, data exfiltration, role-confusion). \\
+Robustness & 0.15 & Factual reliability; resistance to hallucination. \\
+Compliance & 0.20 & Regulatory/governance process maturity (documented audit trails, incident response, framework alignment). \\
+Authenticity & 0.10 & For media-generating/evaluating systems: resistance to deepfake/synthetic-media misuse. Not applicable to text-only systems. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The overall score is computed as:
+\begin{equation}
+\text{overall\_score} = \left(\sum_{i=1}^{6} \text{dimension\_value}_i \times \text{weight}_i\right) \times 100
+\end{equation}
+producing a value in $[0, 100]$. Grade bands are defined as A $\geq$
+90, B $\geq$ 80, C $\geq$ 70, D $\geq$ 60, F $<$ 60; risk tiers as LOW
+$\geq$ 80, MEDIUM $\geq$ 60, HIGH $\geq$ 40, CRITICAL $<$ 40.
+
+\subsection{Handling not-applicable dimensions}
+
+Not every system under evaluation admits a meaningful measurement on
+every dimension --- a text-only system has no media-authenticity
+signal, for instance. Rather than silently omitting a dimension (which
+would alter the effective weighting distribution non-transparently) or
+fabricating a measurement, we specify that a not-applicable dimension
+be held at a disclosed neutral value of 0.5, with the disclosure
+itself a required part of any citation. This design choice trades a
+small loss of precision for transparency about what was actually
+measured versus assumed neutral.
+
+\subsection{Provenance: three distinct paths to a score}
+
+We argue that the central design risk for any open, citable trust
+standard is \emph{provenance conflation} --- the failure to
+distinguish a self-reported claim from an independently verified one
+once both produce numbers in the same visible format. We address this
+directly by defining three structurally distinct, separately labeled
+paths to a Trust Index score:
+
+\begin{enumerate}
+\item \textbf{Self-assessment} (free, unverified): a party submits its
+  own dimension values and receives a permanently recorded, hashed
+  record. The arithmetic is verifiable; the underlying input claims
+  are not audited. Every self-assessed record is labeled
+  \texttt{certified: false} everywhere it is displayed or returned via
+  API.
+\item \textbf{Automated measurement} (free, independently measured,
+  narrower scope): dimensions are computed by directly querying a
+  system's public inference API against a fixed evaluation corpus,
+  without relying on self-reported values for the dimensions it
+  covers. This is more credible than self-assessment but is only
+  applicable to systems reachable through a public API, and --- in our
+  reference implementation --- still holds the compliance and
+  authenticity dimensions at the disclosed neutral placeholder, since
+  those are not directly measurable via API probing alone.
+\item \textbf{Human-reviewed certification} (paid, no automated path):
+  a reviewer examines the evidence behind a submitted score and, if it
+  holds up, marks the record \texttt{certified: true} with a named
+  certifier and timestamp. We deliberately provide no automated route
+  to this state --- the moment certification could be self-served, it
+  would cease to carry information beyond self-assessment.
+\end{enumerate}
+
+\subsection{Verification mechanism}
+
+Every generated record receives a stable identifier and a SHA-256
+verification hash. A public endpoint
+(\texttt{GET /api/trust-index/verify/\{passport\_id\}}) returns the
+complete stored record for any identifier; an unresolvable identifier
+returns an explicit 404, signaling that a citation referencing it is
+unverifiable. We treat this mechanism --- not the scoring formula
+alone --- as the paper's central methodological contribution: a trust
+claim that cannot be checked by a party other than the one making it
+provides no more assurance than an unstructured marketing statement,
+regardless of how principled its underlying arithmetic is.
+
+We additionally define a minimal citation format (Section~3.5)
+intended to make every citation self-documenting with respect to
+provenance, and an embeddable badge mechanism
+(\texttt{GET /api/trust-index/badge/\{id\}.svg}) that renders the same
+provenance distinction visually (``Self-Assessed'' vs.\ ``Certified'')
+wherever a score is displayed outside the verification page itself.
+
+\subsection{Citation format}
+
+We specify a minimum citation format requiring the scored value,
+grade, specification version, explicit provenance label, and a
+verification URL:
+
+\begin{quote}
+\emph{``[System] scored [X]/100 (Grade [Y]) under the [Standard Name]
+v[version] --- [self-reported | certified by [certifier] on [date]].
+Verify at [verify\_url].''}
+\end{quote}
+
+\section{Reference implementation}
+
+The methodology described here is implemented as open-source code.
+Scoring and provenance labeling are implemented across four modules,
+one per concern rather than one monolith:
+\code{src/responsibleai/trust/score.py} computes the weighted
+composite (Section~3.1) from six dimension values;
+\code{src/responsibleai/trust/passport.py} generates the immutable,
+hashed record for a computed score;
+\code{src/responsibleai/db/passport_repository.py} persists records
+and serves the verification lookup described in Section~3.4; and
+\code{src/responsibleai/leaderboard/runner.py} implements the
+automated-measurement provenance path of Section~3.3 specifically ---
+querying a model's public inference API against the TruthfulQA corpus
+to compute the robustness dimension live, while holding compliance and
+authenticity at the disclosed neutral placeholder described in
+Section~3.2, since neither is directly observable from API probing
+alone (see \code{compliance/LEADERBOARD_METHODOLOGY.md} for the
+full measurement protocol). The three provenance paths therefore
+correspond to three distinct, identifiable code paths rather than a
+single generator parameterized after the fact --- self-assessment and
+certification are served by \code{POST /api/trust-index/assess} and
+\code{POST /api/trust-index/certify/{id}} respectively, and
+automated measurement by \code{GET /api/leaderboard} and its
+underlying \texttt{LeaderboardRunner}.
+
+We consider synchronization between the published specification and
+the running implementation a first-class design requirement, not an
+afterthought: the specification document states explicitly that the
+reference implementation's default weights are the source of truth
+for the current version, and specification version bumps are recorded
+as dated changelog entries alongside the corresponding code change,
+rather than as an independently drifting paper standard.
+
+\section{Discussion and limitations}
+
+\textbf{No formal third-party accreditation process yet.} As of the
+current specification version, certification is performed only by the
+standard's originating team. We consider this an honest, stated
+limitation rather than a design goal --- a mature version of this
+standard would define how an independent auditor could become an
+accredited certifier, analogous to accreditation bodies for ISO
+management-system standards, but this is not yet built.
+
+\textbf{Point estimates without confidence intervals.} A Trust Index
+score is a point estimate from a single evaluation run, not a
+distribution with error bars. Future versions may incorporate
+repeated-measurement variance, particularly for the
+automated-measurement provenance path, where re-querying a live
+model's API could in principle surface score volatility that a single
+measurement does not capture.
+
+\textbf{Not a substitute for regulatory compliance certification.}
+Scoring well under this standard is not itself a compliance
+certification for any specific law or regulation. The compliance
+dimension references frameworks --- specifically the NIST AI Risk
+Management Framework, the EU AI Act, and ISO/IEC~42001
+(\texttt{src/responsibleai/compliance/engine.py}) --- as inputs to its
+own scoring, but a high Trust Index score should not be represented,
+by any party citing it, as equivalent to formal regulatory compliance.
+
+\textbf{Self-assessment remains gameable in principle.} Nothing
+prevents a self-assessing party from submitting favorable, unverified
+dimension values. We view this as an accepted, disclosed limitation of
+the self-assessment tier specifically (matching the explicit
+\texttt{certified: false} labeling), not a flaw in the standard as a
+whole --- the same way a self-reported SAT score is arithmetically
+real but not independently proctored, and is understood as such by
+anyone reading it correctly labeled.
+
+\section{Conclusion}
+
+We present the Trust Index as an open, versioned, code-synchronized
+methodology for scoring AI system trustworthiness, distinguished from
+prior work primarily by its explicit three-tier provenance model and
+public per-score verification mechanism. We publish the full
+specification and reference implementation openly, in the pattern of
+established security and payment-industry standards, with the goal
+that a Trust Index citation become a checkable claim rather than a
+marketing assertion, regardless of which party is doing the citing. We
+identify the absence of a formal third-party accreditation process as
+the standard's most significant current limitation and an explicit
+direction for future work.
+
+\begin{thebibliography}{9}
+
+\bibitem{truthfulqa}
+Lin, S., Hilton, J., \& Evans, O. (2022).
+TruthfulQA: Measuring How Models Mimic Human Falsehoods.
+In \emph{Proceedings of the 60th Annual Meeting of the Association for
+Computational Linguistics (Volume 1: Long Papers)}, pages 3214--3252,
+Dublin, Ireland. Association for Computational Linguistics.
+\url{https://doi.org/10.18653/v1/2022.acl-long.229}
+(arXiv:2109.07958)
+
+\bibitem{bbq}
+Parrish, A., Chen, A., Nangia, N., Padmakumar, V., Phang, J.,
+Thompson, J., Htut, P.~M., \& Bowman, S.~R. (2022).
+BBQ: A Hand-Built Bias Benchmark for Question Answering.
+In \emph{Findings of the Association for Computational Linguistics:
+ACL 2022}, pages 2086--2105, Dublin, Ireland. Association for
+Computational Linguistics. (arXiv:2110.08193)
+
+\bibitem{nistairmf}
+Tabassi, E. (2023).
+Artificial Intelligence Risk Management Framework (AI RMF 1.0).
+NIST Trustworthy and Responsible AI, NIST AI 100-1, National Institute
+of Standards and Technology, Gaithersburg, MD.
+\url{https://doi.org/10.6028/NIST.AI.100-1}
+
+\bibitem{euaiact}
+European Parliament and Council of the European Union. (2024).
+Regulation (EU) 2024/1689 of the European Parliament and of the
+Council of 13 June 2024 laying down harmonised rules on artificial
+intelligence (Artificial Intelligence Act).
+\emph{Official Journal of the European Union}, published 12 July 2024.
+\url{https://eur-lex.europa.eu/eli/reg/2024/1689/oj}
+
+\bibitem{pcidss}
+PCI Security Standards Council. (2024).
+Payment Card Industry Data Security Standard, Version 4.0.1.
+Published 11 June 2024.
+
+\bibitem{hellaswag}
+Zellers, R., Holtzman, A., Bisk, Y., Farhadi, A., \& Choi, Y. (2019).
+HellaSwag: Can a Machine Really Finish Your Sentence?
+In \emph{Proceedings of the 57th Annual Meeting of the Association for
+Computational Linguistics}, pages 4791--4800, Florence, Italy.
+Association for Computational Linguistics. (arXiv:1905.07830)
+
+\bibitem{iso27001}
+International Organization for Standardization / International
+Electrotechnical Commission. (2022).
+ISO/IEC 27001:2022 --- Information security, cybersecurity and privacy
+protection --- Information security management systems ---
+Requirements.
+
+\end{thebibliography}
+
+\end{document}

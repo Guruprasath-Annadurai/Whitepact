@@ -26,3 +26,9 @@ coverage.xml
 .ruff_cache/
 .pytest_cache/
 .DS_Store
+*.aux
+*.log
+*.out
+*.fls
+*.fdb_latexmk
+compliance/trust_index_paper.pdf
