@@ -223,22 +223,47 @@ Last reviewed: 2026-07-23
 
 *Source: `compliance/TRUST_INDEX_PAPER.md`*
 
-- [ ] Convert the Markdown draft to LaTeX (or a pandoc-generated PDF, if
-      your target category accepts it — verify current arXiv format
-      requirements first).
+- [x] Convert the Markdown draft to LaTeX — **done 2026-08-14**:
+      `compliance/trust_index_paper.tex`, compile-verified with
+      `tectonic` (installed locally for this purpose), zero errors,
+      zero undefined citations, zero overfull/underfull boxes after
+      fixing an `amsmath` omission and a `\texttt{}`-can't-break-at-`/`
+      issue. Rendered pages checked visually (title/abstract, table,
+      bibliography). Re-verify current arXiv format requirements
+      against it before actually uploading, since these can change.
 - [ ] **Confirmed as of arXiv's 2026-01-21 policy update**: an
       institutional email alone no longer qualifies a first-time
       submitter. Without prior authorship on an already-accepted paper in
       `cs.AI`/`cs.CY`, you need a personal endorser (advisor, colleague, or
       existing arXiv author with endorsement privileges) — identify and
-      confirm that person *before* starting the submission.
-- [ ] Replace every placeholder reference in the paper's References section
-      with real, correctly formatted citations.
+      confirm that person *before* starting the submission. Cannot be
+      done on the founder's behalf.
+- [x] Replace every placeholder reference in the paper's References
+      section with real, correctly formatted citations — **done
+      2026-08-14**: 7 citations (TruthfulQA, BBQ, NIST AI RMF, EU AI
+      Act, PCI-DSS, HellaSwag, ISO/IEC 27001) checked live against
+      primary sources, not reproduced from memory. Removed one
+      originally-listed citation (differential privacy) that turned out
+      to have zero actual connection to this paper — it described an
+      unrelated feature (`PRIVACY.md`'s "PrivacyLabel"), not the
+      PII-detection mechanism the privacy dimension actually uses.
+      Added inline `[n]` markers in the body text, which the draft
+      previously lacked entirely.
 - [ ] Get a second, ideally domain-expert, reader to review the paper
       before submitting — this was written by the same team that built the
-      system it describes.
-- [ ] Re-verify every code file reference in the paper against the current
-      codebase immediately before submission.
+      system it describes. Requires a human; not attempted here.
+- [x] Re-verify every code file reference in the paper against the
+      current codebase — **done 2026-08-14**: all citations checked
+      (`trust/score.py`, `trust/passport.py`,
+      `db/passport_repository.py`, verify/badge/assess/certify
+      endpoints, SHA-256 hash) — everything still matches exactly. Found
+      and fixed two real drifts in the process: a missing citation for
+      `leaderboard/runner.py` (the code that actually implements the
+      paper's "automated measurement" provenance path), and a factual
+      error claiming the compliance dimension references GDPR when the
+      real code references NIST AI RMF/EU AI Act/ISO 42001. **Re-run
+      this check again immediately before actual submission** — code
+      moves faster than a paper draft.
 - [ ] Create an arXiv account and actually submit.
 
 ## 6. Hosted instance — **live, with a real ~17-day outage 2026-07-26 to 2026-08-12**
