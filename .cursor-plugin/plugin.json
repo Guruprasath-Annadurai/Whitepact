@@ -8,6 +8,7 @@
   "homepage": "https://github.com/Guruprasath-Annadurai/Whitepact",
   "repository": "https://github.com/Guruprasath-Annadurai/Whitepact",
   "license": "MIT",
+  "logo": "assets/logo.png",
   "keywords": [
     "ai-governance",
     "trust-scoring",
