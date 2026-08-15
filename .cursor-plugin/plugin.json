@@ -1,0 +1,33 @@
+{
+  "name": "whitepact",
+  "description": "AI governance for agent tool calls: trust scoring, PII/harmful-content guardrails, hallucination detection, and compliance checks (NIST AI RMF, EU AI Act, ISO 42001) via 27 read-only MCP tools.",
+  "version": "1.2.3",
+  "author": {
+    "name": "Guruprasath Annadurai"
+  },
+  "homepage": "https://github.com/Guruprasath-Annadurai/Whitepact",
+  "repository": "https://github.com/Guruprasath-Annadurai/Whitepact",
+  "license": "MIT",
+  "keywords": [
+    "ai-governance",
+    "trust-scoring",
+    "guardrails",
+    "hallucination-detection",
+    "compliance",
+    "pii-detection",
+    "responsible-ai"
+  ],
+  "category": "security",
+  "mcpServers": "mcp.json",
+  "variables": {
+    "type": "object",
+    "properties": {
+      "WHITEPACT_API_KEY": {
+        "type": "string",
+        "title": "WhitePact API key",
+        "description": "Bearer token from your WhitePact org (Settings -> API Keys). Get one free at the WhitePact dashboard."
+      }
+    },
+    "required": ["WHITEPACT_API_KEY"]
+  }
+}

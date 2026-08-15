@@ -19,6 +19,7 @@ venv/
 !examples/amazon-q/*.json
 !examples/aws-agentcore/*.json
 !.cursor-example/*.json
+!.cursor-plugin/*.json
 htmlcov/
 .coverage
 coverage.xml
