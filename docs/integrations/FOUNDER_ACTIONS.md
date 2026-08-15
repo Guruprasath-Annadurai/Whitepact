@@ -57,7 +57,7 @@ xAI code-owner review; nothing further to do until they respond.
 
 | Platform | Action | Why Claude can't do it | Evidence prepared | Next step |
 |---|---|---|---|---|
-| Gemini | Run `examples/gemini/remote_mcp_example.py` for real | **Run live 2026-08-14** with real keys — found and fixed two real bugs in the process (wrong API method `models.generate_content` vs `interactions.create`; a model name deprecated for new users despite still appearing in the SDK's own type hints). After fixing both, tool-config schema is now confirmed accepted by the live server; blocked by a `429` requiring a billing-enabled Google Cloud project | Corrected, live-schema-verified example script | Enable billing on the Google Cloud project behind `GEMINI_API_KEY` |
+| Gemini | Run `examples/gemini/remote_mcp_example.py` for real | **Run live 2026-08-14 and 2026-08-15** with real keys — found and fixed two real bugs in the process (wrong API method `models.generate_content` vs `interactions.create`; a model name deprecated for new users despite still appearing in the SDK's own type hints). Cloud billing account linked to the "Default Gemini Project" (`gen-lang-client-0113985869`) 2026-08-15 — this cleared the original `429` free-tier block, but surfaced a second, separate blocker: Gemini API bills against a **prepay credit balance** (distinct from Cloud billing), and that balance is currently $0 (`"Your prepayment credits are depleted"` from `ai.studio/projects`) | Corrected, live-schema-verified example script; Cloud billing now linked | Add prepay credits at `ai.studio/projects` → Billing (founder plans to do this in ~2 days, 2026-08-15) |
 
 ## UI CONFIRMATION REQUIRED
 
