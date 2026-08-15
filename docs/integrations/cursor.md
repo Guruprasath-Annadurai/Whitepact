@@ -70,8 +70,33 @@ in Cursor's MCP settings.
 | Server not listed | Wrong config file scope (global vs. project) | Confirm which `mcp.json` Cursor is reading |
 | `401` | Bad header | Re-check `Authorization: Bearer <key>` |
 
+## Cursor Marketplace listing (all-users discoverability)
+
+Config-based install (above) works today for any individual user, but
+only reaches people who already have the config. To make WhitePact
+discoverable and one-click installable by **all** Cursor users, it needs
+to be listed in the official Cursor Marketplace
+(`cursor.com/marketplace`) — separate from the community
+`cursor.directory`.
+
+Built and pushed 2026-08-15:
+- `.cursor-plugin/plugin.json` — manifest with `variables` schema so each
+  installer enters their own `WHITEPACT_API_KEY` at install time (no
+  shared/embedded key)
+- `.cursor-plugin/mcp.json` — server config using `${WHITEPACT_API_KEY}`
+  interpolation
+- `.cursor-plugin/README.md` — usage docs
+- `.cursor-plugin/assets/logo.png` — logo, served via
+  `raw.githubusercontent.com`
+
+**Submitted 2026-08-15** at `cursor.com/marketplace/publish` (individual
+publisher, org handle `whitepact`) — confirmation received: "Thanks for
+applying, we've received your submission." Cursor manually reviews every
+submission before listing; follow-up expected at
+`marketplace-publishing@cursor.com`. No further action until they
+respond.
+
 ## Founder action
 
-None required to reach current (VERIFIED) state. Optionally: confirm the
-current "Add to Cursor" deep-link format from Cursor's own docs if a
-one-click button is wanted later.
+None required to reach current (VERIFIED) state for config-based
+install. Marketplace listing is awaiting Cursor's review response.
