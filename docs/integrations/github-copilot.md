@@ -1,7 +1,7 @@
 # GitHub Copilot
 
-**Status**: PARTIALLY_VERIFIED — see `PLATFORM_COMPATIBILITY.md`.
-**Source-of-truth date**: 2026-08-13.
+**Status**: VERIFIED — see `PLATFORM_COMPATIBILITY.md`.
+**Source-of-truth date**: 2026-08-15.
 
 ## Prerequisites
 
@@ -25,17 +25,18 @@ custom headers on remote MCP server registration.
 ## Setup
 
 ```bash
-copilot mcp add --transport http whitepact \
-  https://whitepact-mcp-http.onrender.com/mcp \
-  --header "Authorization: Bearer <YOUR_WHITEPACT_API_KEY>"
+copilot mcp add --transport http --header "Authorization: Bearer <YOUR_WHITEPACT_API_KEY>" whitepact \
+  https://whitepact-mcp-http.onrender.com/mcp
 ```
 
-> The exact flag names above follow Copilot CLI's documented remote-MCP
-> syntax as of this writing. Copilot CLI was not installed in the
-> environment this doc was prepared in, so the command itself is
-> **CONFIG_READY, not provider-verified** — run `copilot mcp add --help`
-> first and adjust flags if your installed version differs before relying
-> on this.
+**Verified live 2026-08-15** against GitHub Copilot CLI v1.0.80
+(installed via `npm install -g @github/copilot`): `copilot mcp add`
+registered the server correctly (`copilot mcp get whitepact` showed
+`Type: http`, correct URL, header present, `Tools: * (all)`), and in an
+interactive session the prompt "Use whitepact's rai_scan tool to check
+this text for PII: 'Contact John at john@example.com or 555-123-4567.'"
+triggered a real `rai_scan` tool call that correctly identified both PII
+elements and returned the redacted text.
 
 ## Verification steps
 

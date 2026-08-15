@@ -18,6 +18,17 @@ remaining optional step: upgrade the test org's plan to see a full
 data-returning tool response (not required to consider Grok integration
 "working").
 
+## DONE — GitHub Copilot CLI
+
+**Verified live 2026-08-15**: installed GitHub Copilot CLI v1.0.80
+(`npm install -g @github/copilot`), ran `copilot mcp add` to register
+WhitePact, confirmed config with `copilot mcp get whitepact`, and in an
+interactive session confirmed a real tool call — `rai_scan` correctly
+detected and redacted PII in a test string. Full round trip working; see
+`github-copilot.md`. Only remaining GitHub Copilot item is the separate
+curated-registry inclusion (see SUBMISSION REQUIRED below), which does
+not block this integration.
+
 ## DONE — `xai-org/plugin-marketplace` submission
 
 **Submitted 2026-08-14**: PR opened at
