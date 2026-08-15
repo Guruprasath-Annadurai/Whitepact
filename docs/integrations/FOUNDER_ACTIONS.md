@@ -93,7 +93,7 @@ xAI code-owner review; nothing further to do until they respond.
 | Platform | Action | Why Claude can't do it | Evidence prepared | Next step |
 |---|---|---|---|---|
 | Microsoft Copilot (Mode 2) | Submit the certified connector application | Marketplace submissions are explicitly excluded | `distribution/microsoft/` package | Complete checklist items 1-5 first |
-| GitHub curated registry | Email `partnerships@github.com` requesting inclusion in GitHub's curated MCP Registry (`github.com/mcp`) | Sending email is explicitly excluded | Real, confirmed process (from GitHub's own blog, 2026-08-14); WhitePact already meets every technical prerequisite (official registry listing live, `remotes` published, 27 read-only annotated tools); draft ready in `compliance/outreach/READY_TO_SEND_EMAILS.md` | Review the draft, send it yourself |
+| GitHub curated registry | ~~Email `partnerships@github.com` requesting inclusion~~ **SENT 2026-08-15** | Sending email is explicitly excluded | Email sent by founder, referencing the live official registry listing, `server.json` remotes, source repo, and hosted endpoint | Awaiting GitHub's response — no further action until they reply |
 | xAI `grok.com/connectors` catalog | Outreach to get WhitePact into xAI's curated ~30-connector catalog | No public self-serve submission process found (researched live 2026-08-14) — likely requires a direct relationship with xAI | Live, verified end-to-end Grok integration (see `grok.md`) as supporting evidence | Decide whether to pursue outreach; no channel found to submit through directly |
 
 ## BLOCKED

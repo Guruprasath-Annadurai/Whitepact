@@ -69,8 +69,12 @@ Registry](https://github.blog/ai-and-ml/generative-ai/how-to-find-install-and-ma
 after publishing to the official OSS registry (already done for
 WhitePact), email **partnerships@github.com** and request inclusion,
 referencing the live registry listing. Not a self-serve form, but a
-real, documented, named channel — not "no path found." Draft email in
-`compliance/outreach/READY_TO_SEND_EMAILS.md`.
+real, documented, named channel — not "no path found."
+
+**Email sent 2026-08-15** to `partnerships@github.com`, requesting
+curated registry inclusion — see
+`compliance/outreach/READY_TO_SEND_EMAILS.md` for the sent content.
+Awaiting GitHub's response.
 
 ## Safe test prompt
 
@@ -95,8 +99,6 @@ disable client-side approval prompts.
 
 ## Founder actions
 
-None required to reach current (PARTIALLY_VERIFIED) state. GitHub curated
-registry inclusion has a real, confirmed path now (email
-`partnerships@github.com`) — draft ready in
-`compliance/outreach/READY_TO_SEND_EMAILS.md`, sending it is the founder
-action (see `FOUNDER_ACTIONS.md`).
+None required to reach current (VERIFIED) state. GitHub curated registry
+inclusion request was sent 2026-08-15 to `partnerships@github.com` —
+now awaiting GitHub's response (see `FOUNDER_ACTIONS.md`).
