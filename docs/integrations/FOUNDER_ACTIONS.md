@@ -46,11 +46,17 @@ chat users, which still has no public submission path found (see the
 `grok.com/connectors` row under SUBMISSION REQUIRED below). Awaiting
 xAI code-owner review; nothing further to do until they respond.
 
+## DONE — Cursor
+
+**Verified live 2026-08-15**: added `whitepact` to `~/.cursor/mcp.json`
+alongside an existing server, substituted the real API key, restarted
+Cursor, and confirmed `whitepact` shows as connected in Cursor's MCP
+settings panel. See `cursor.md`.
+
 ## READY NOW (zero-cost, no account needed)
 
 | Platform | Action | Why Claude can't do it | Evidence prepared | Next step |
 |---|---|---|---|---|
-| Cursor | Copy `.cursor-example/mcp.json` into your own `~/.cursor/mcp.json` | Requires your own local Cursor install | Config file, docs | Copy, paste your API key, reload Cursor |
 | Amazon Q | Add `examples/amazon-q/mcp-config.json` to your Amazon Q config | Requires your own local Amazon Q install | Config file, docs | Copy config, confirm config path for your version |
 
 ## API KEY REQUIRED

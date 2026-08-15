@@ -1,7 +1,7 @@
 # Cursor
 
-**Status**: CONFIG_READY — see `PLATFORM_COMPATIBILITY.md`.
-**Source-of-truth date**: 2026-08-13.
+**Status**: VERIFIED — see `PLATFORM_COMPATIBILITY.md`.
+**Source-of-truth date**: 2026-08-15.
 
 ## Example config
 
@@ -51,8 +51,12 @@ format directly against Cursor's docs.
 ## Verification steps
 
 Open Cursor's MCP settings panel after adding the config; `whitepact`
-should show as connected with 27 tools listed. Not exercised in this pass
-— no live Cursor installation was available to test against.
+should show as connected with 27 tools listed.
+
+**Verified live 2026-08-15**: added the `whitepact` entry to
+`~/.cursor/mcp.json` alongside an existing server, substituted the real
+API key, restarted Cursor, and confirmed `whitepact` shows as connected
+in Cursor's MCP settings.
 
 ## Safe test prompt
 
@@ -68,6 +72,6 @@ should show as connected with 27 tools listed. Not exercised in this pass
 
 ## Founder action
 
-Verify the config against a real Cursor install (CONFIG_READY →
-VERIFIED), and confirm the current "Add to Cursor" deep-link format from
-Cursor's own docs if a one-click button is wanted later.
+None required to reach current (VERIFIED) state. Optionally: confirm the
+current "Add to Cursor" deep-link format from Cursor's own docs if a
+one-click button is wanted later.
