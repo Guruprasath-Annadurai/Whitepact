@@ -4,6 +4,15 @@ input and returns one of the five decisions above as output."
 
 What ``evaluate()`` checks, in order:
 
+0. **Authority attenuation** (optional — only when a caller passes
+   ``parent_authority``) — does this ``AuthorityContext`` stay within
+   the authority that delegated it, per
+   ``models.validate_attenuation()``? Checked before the authority's
+   own action-type grant, since a delegated authority that itself
+   exceeds its parent is invalid regardless of what it claims to
+   permit. No ``parent_authority`` supplied (every caller before this
+   existed, and any caller not tracking a delegation chain today) —
+   this step is skipped entirely, identical to pre-existing behavior.
 1. **Authority** — does ``AuthorityContext`` actually grant this
    ``action_type``? Deterministic, no model call.
 2. **Caller-declared approval requirements** — did the caller mark this
@@ -82,6 +91,7 @@ from responsibleai.governance.models import (
     AuthorityContext,
     DecisionResult,
     GovernanceDecision,
+    validate_attenuation,
 )
 from responsibleai.governance.policy import Policy
 from responsibleai.governance.quarantine import QUARANTINE_VIOLATION_THRESHOLD
@@ -113,6 +123,7 @@ class WhitePactRuntimeGateway:
         policy: Policy | None = None,
         *,
         recent_violation_count: int = 0,
+        parent_authority: AuthorityContext | None = None,
     ) -> DecisionResult:
         risk_tier = classify_action_risk(action.action_type, action.target)
 
@@ -130,11 +141,25 @@ class WhitePactRuntimeGateway:
                 risk_tier=risk_tier,
             )
 
+        if parent_authority is not None:
+            escalation_reason = validate_attenuation(parent_authority, authority)
+            if escalation_reason is not None:
+                return DecisionResult(
+                    decision=GovernanceDecision.DENY,
+                    action_id=action.action_id,
+                    reason_codes=[escalation_reason],
+                    risk_tier=risk_tier,
+                )
+
         if not authority.permits(action.action_type):
             return DecisionResult(
                 decision=GovernanceDecision.DENY,
                 action_id=action.action_id,
-                reason_codes=[format_reason(ReasonCode.AUTHORITY_NOT_DELEGATED, action_type=action.action_type)],
+                reason_codes=[
+                    format_reason(
+                        ReasonCode.AUTHORITY_NOT_DELEGATED, action_type=action.action_type
+                    )
+                ],
                 risk_tier=risk_tier,
             )
 
@@ -142,7 +167,9 @@ class WhitePactRuntimeGateway:
             return DecisionResult(
                 decision=GovernanceDecision.REQUIRE_APPROVAL,
                 action_id=action.action_id,
-                reason_codes=[format_reason(ReasonCode.APPROVAL_REQUIRED, action_type=action.action_type)],
+                reason_codes=[
+                    format_reason(ReasonCode.APPROVAL_REQUIRED, action_type=action.action_type)
+                ],
                 risk_tier=risk_tier,
             )
 
@@ -163,7 +190,9 @@ class WhitePactRuntimeGateway:
             if match is not None:
                 policy_code = _POLICY_EFFECT_CODES.get(match.rule.effect)
                 reason = (
-                    format_reason(policy_code, rule_id=match.rule.rule_id, rule_reason=match.rule.reason_code)
+                    format_reason(
+                        policy_code, rule_id=match.rule.rule_id, rule_reason=match.rule.reason_code
+                    )
                     if policy_code is not None
                     # ALLOW effect: no dedicated ReasonCode (an explicit
                     # allow isn't a "reason to block/flag"), keep the
@@ -171,7 +200,10 @@ class WhitePactRuntimeGateway:
                     # evidence still shows which rule matched.
                     else f"policy_allow:rule_id={match.rule.rule_id};rule_reason={match.rule.reason_code}"
                 )
-                if match.rule.effect in (GovernanceDecision.DENY, GovernanceDecision.REQUIRE_APPROVAL):
+                if match.rule.effect in (
+                    GovernanceDecision.DENY,
+                    GovernanceDecision.REQUIRE_APPROVAL,
+                ):
                     return DecisionResult(
                         decision=match.rule.effect,
                         action_id=action.action_id,
@@ -183,11 +215,17 @@ class WhitePactRuntimeGateway:
 
         field_results, redacted_arguments = self._scan_arguments(action.arguments)
         return self._decide_from_scan(
-            action, field_results, redacted_arguments, risk_tier, policy_reason_codes, policy_version,
+            action,
+            field_results,
+            redacted_arguments,
+            risk_tier,
+            policy_reason_codes,
+            policy_version,
         )
 
     def _scan_arguments(
-        self, arguments: dict[str, Any],
+        self,
+        arguments: dict[str, Any],
     ) -> tuple[dict[str, GuardrailsResult], dict[str, Any]]:
         field_results: dict[str, GuardrailsResult] = {}
         redacted: dict[str, Any] = {}
@@ -231,7 +269,10 @@ class WhitePactRuntimeGateway:
                 action_id=action.action_id,
                 reason_codes=[
                     *policy_reason_codes,
-                    *[format_reason(ReasonCode.REDACTION_REQUIRED, field=field) for field in pii_fields],
+                    *[
+                        format_reason(ReasonCode.REDACTION_REQUIRED, field=field)
+                        for field in pii_fields
+                    ],
                 ],
                 redacted_arguments=redacted_arguments,
                 risk_tier=risk_tier,
@@ -269,4 +310,6 @@ class WhitePactRuntimeGateway:
         score = trust_state.overall_score
         if score is None or score >= LOW_TRUST_SCORE_THRESHOLD:
             return None
-        return format_reason(ReasonCode.LOW_TRUST_SCORE, score=f"{score:.1f}", threshold=LOW_TRUST_SCORE_THRESHOLD)
+        return format_reason(
+            ReasonCode.LOW_TRUST_SCORE, score=f"{score:.1f}", threshold=LOW_TRUST_SCORE_THRESHOLD
+        )

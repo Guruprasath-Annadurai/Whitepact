@@ -25,7 +25,11 @@ from responsibleai.rbac.models import OrgContext, Plan, Role
 class TestGovernanceDecisionEnum:
     def test_five_members(self) -> None:
         assert {d.value for d in GovernanceDecision} == {
-            "ALLOW", "ALLOW_WITH_REDACTION", "REQUIRE_APPROVAL", "DENY", "QUARANTINE",
+            "ALLOW",
+            "ALLOW_WITH_REDACTION",
+            "REQUIRE_APPROVAL",
+            "DENY",
+            "QUARANTINE",
         }
 
 
@@ -73,7 +77,9 @@ class TestActionRequest:
 
 class TestAuthorityContext:
     def test_permits_granted_action(self) -> None:
-        authority = AuthorityContext(delegated_by="org-1", granted_action_types=frozenset({"mcp_tool_call"}))
+        authority = AuthorityContext(
+            delegated_by="org-1", granted_action_types=frozenset({"mcp_tool_call"})
+        )
         assert authority.permits("mcp_tool_call") is True
         assert authority.permits("payment") is False
 
@@ -100,7 +106,9 @@ class TestGatewayAuthority:
     def test_allows_granted_action_with_clean_arguments(self) -> None:
         gw = WhitePactRuntimeGateway()
         action = ActionRequest(
-            agent=_agent(), action_type="mcp_tool_call", target="rai_health",
+            agent=_agent(),
+            action_type="mcp_tool_call",
+            target="rai_health",
             arguments={"query": "hello world"},
         )
         result = gw.evaluate(action, _authority())
@@ -111,11 +119,85 @@ class TestGatewayAuthority:
     def test_non_string_arguments_pass_through_unscanned(self) -> None:
         gw = WhitePactRuntimeGateway()
         action = ActionRequest(
-            agent=_agent(), action_type="mcp_tool_call", target="x",
+            agent=_agent(),
+            action_type="mcp_tool_call",
+            target="x",
             arguments={"count": 5, "enabled": True, "tags": ["a", "b"]},
         )
         result = gw.evaluate(action, _authority())
         assert result.decision == GovernanceDecision.ALLOW
+
+
+class TestGatewayAttenuation:
+    """Wiring for `validate_attenuation()` (governance/models.py) into
+    `WhitePactRuntimeGateway.evaluate()` — see gateway.py's module
+    docstring, step 0."""
+
+    def test_no_parent_authority_unaffected(self) -> None:
+        """Every caller not passing `parent_authority` behaves exactly
+        as before this wiring existed."""
+        gw = WhitePactRuntimeGateway()
+        action = ActionRequest(agent=_agent(), action_type="mcp_tool_call", target="x")
+        result = gw.evaluate(action, _authority())
+        assert result.decision == GovernanceDecision.ALLOW
+
+    def test_attenuated_child_proceeds_normally(self) -> None:
+        gw = WhitePactRuntimeGateway()
+        parent = _authority(constraints={"max_value_usd": 500_000})
+        child = _authority(constraints={"max_value_usd": 100_000})
+        action = ActionRequest(agent=_agent(), action_type="mcp_tool_call", target="x")
+        result = gw.evaluate(action, child, parent_authority=parent)
+        assert result.decision == GovernanceDecision.ALLOW
+
+    def test_flagship_demo_scenario_denied_at_gateway(self) -> None:
+        """Agent A holds Rs 500,000 authority. Agent B's authority
+        requests Rs 1,000,000 -- the gateway denies before even checking
+        whether the action type itself is granted."""
+        gw = WhitePactRuntimeGateway()
+        agent_a_authority = _authority(constraints={"max_value_usd": 500_000})
+        agent_b_authority = _authority(constraints={"max_value_usd": 1_000_000})
+        action = ActionRequest(agent=_agent(), action_type="mcp_tool_call", target="payment_tool")
+
+        result = gw.evaluate(action, agent_b_authority, parent_authority=agent_a_authority)
+
+        assert result.decision == GovernanceDecision.DENY
+        assert len(result.reason_codes) == 1
+        assert result.reason_codes[0].startswith("DELEGATION_AUTHORITY_ESCALATION")
+        assert "max_value_usd" in result.reason_codes[0]
+
+    def test_escalation_checked_before_quarantine(self) -> None:
+        """Quarantine (recent_violation_count) still wins even when an
+        escalation is also present -- quarantine is step 0 in the
+        gateway's own numbering, attenuation is the new step immediately
+        after it, so quarantine must still short-circuit first."""
+        gw = WhitePactRuntimeGateway()
+        from responsibleai.governance.quarantine import QUARANTINE_VIOLATION_THRESHOLD
+
+        parent = _authority(constraints={"max_value_usd": 500_000})
+        child = _authority(constraints={"max_value_usd": 1_000_000})
+        action = ActionRequest(agent=_agent(), action_type="mcp_tool_call", target="x")
+
+        result = gw.evaluate(
+            action,
+            child,
+            parent_authority=parent,
+            recent_violation_count=QUARANTINE_VIOLATION_THRESHOLD,
+        )
+        assert result.decision == GovernanceDecision.QUARANTINE
+
+    def test_escalation_checked_before_action_type_grant(self) -> None:
+        """An escalated child authority is denied for the escalation even
+        when it also wasn't granted the action type at all -- the
+        attenuation check runs first, so that's the reason surfaced."""
+        gw = WhitePactRuntimeGateway()
+        parent = _authority(granted_action_types=frozenset({"mcp_tool_call"}))
+        child = _authority(granted_action_types=frozenset({"mcp_tool_call", "payment.execute"}))
+        action = ActionRequest(agent=_agent(), action_type="payment.execute", target="x")
+
+        result = gw.evaluate(action, child, parent_authority=parent)
+
+        assert result.decision == GovernanceDecision.DENY
+        assert result.reason_codes[0].startswith("DELEGATION_AUTHORITY_ESCALATION")
 
 
 class TestGatewayApprovalTrigger:
@@ -148,7 +230,9 @@ class TestGatewayContentScan:
     def test_pii_triggers_redaction_not_denial(self) -> None:
         gw = WhitePactRuntimeGateway()
         action = ActionRequest(
-            agent=_agent(), action_type="mcp_tool_call", target="x",
+            agent=_agent(),
+            action_type="mcp_tool_call",
+            target="x",
             arguments={"note": "contact me at test@example.com"},
         )
         result = gw.evaluate(action, _authority())
@@ -160,7 +244,9 @@ class TestGatewayContentScan:
     def test_non_pii_fields_untouched_by_redaction(self) -> None:
         gw = WhitePactRuntimeGateway()
         action = ActionRequest(
-            agent=_agent(), action_type="mcp_tool_call", target="x",
+            agent=_agent(),
+            action_type="mcp_tool_call",
+            target="x",
             arguments={"note": "email me at a@b.com", "label": "unrelated text"},
         )
         result = gw.evaluate(action, _authority())
@@ -170,7 +256,9 @@ class TestGatewayContentScan:
     def test_toxicity_hard_denies_even_with_pii_present(self) -> None:
         gw = WhitePactRuntimeGateway()
         action = ActionRequest(
-            agent=_agent(), action_type="mcp_tool_call", target="x",
+            agent=_agent(),
+            action_type="mcp_tool_call",
+            target="x",
             arguments={"note": "I will kill you, contact me at a@b.com"},
         )
         result = gw.evaluate(action, _authority())
@@ -180,7 +268,9 @@ class TestGatewayContentScan:
     def test_reason_codes_are_field_qualified(self) -> None:
         gw = WhitePactRuntimeGateway()
         action = ActionRequest(
-            agent=_agent(), action_type="mcp_tool_call", target="x",
+            agent=_agent(),
+            action_type="mcp_tool_call",
+            target="x",
             arguments={"contact": "reach me at a@b.com"},
         )
         result = gw.evaluate(action, _authority())
@@ -197,7 +287,9 @@ class TestDecisionResultSerialization:
         assert d["risk_tier"] is None
 
     def test_to_dict_includes_risk_tier_value(self) -> None:
-        result = DecisionResult(decision=GovernanceDecision.ALLOW, action_id="a1", risk_tier=RiskTier.HIGH)
+        result = DecisionResult(
+            decision=GovernanceDecision.ALLOW, action_id="a1", risk_tier=RiskTier.HIGH
+        )
         assert result.to_dict()["risk_tier"] == "HIGH"
 
 
@@ -208,7 +300,9 @@ class TestGatewayRiskClassification:
     def test_risk_tier_populated_without_a_policy(self) -> None:
         gw = WhitePactRuntimeGateway()
         authority = _authority(granted_action_types=frozenset({"mcp_tool_call"}))
-        action = ActionRequest(agent=_agent(), action_type="mcp_tool_call", target="rai_hallucination")
+        action = ActionRequest(
+            agent=_agent(), action_type="mcp_tool_call", target="rai_hallucination"
+        )
         result = gw.evaluate(action, authority)
         assert result.risk_tier == RiskTier.HIGH
 
@@ -248,7 +342,9 @@ class TestFastPathSkipsGuardrailsForArgumentFreeActions:
         gw = WhitePactRuntimeGateway(guardrails=spy_guardrails)
         authority = _authority(granted_action_types=frozenset({"mcp_tool_call"}))
         action = ActionRequest(
-            agent=_agent(), action_type="mcp_tool_call", target="rai_health",
+            agent=_agent(),
+            action_type="mcp_tool_call",
+            target="rai_health",
             arguments={"count": 5, "enabled": True},
         )
         result = gw.evaluate(action, authority)
@@ -265,7 +361,9 @@ class TestFastPathSkipsGuardrailsForArgumentFreeActions:
         gw = WhitePactRuntimeGateway(guardrails=spy_guardrails)
         authority = _authority(granted_action_types=frozenset({"mcp_tool_call"}))
         action = ActionRequest(
-            agent=_agent(), action_type="mcp_tool_call", target="rai_health",
+            agent=_agent(),
+            action_type="mcp_tool_call",
+            target="rai_health",
             arguments={"note": "hello"},
         )
         gw.evaluate(action, authority)
@@ -279,7 +377,9 @@ class TestGatewayPolicyIntegration:
     def test_no_policy_behaves_exactly_as_phase_8(self) -> None:
         gw = WhitePactRuntimeGateway()
         authority = _authority(granted_action_types=frozenset({"mcp_tool_call"}))
-        action = ActionRequest(agent=_agent(), action_type="mcp_tool_call", target="rai_scan", arguments={})
+        action = ActionRequest(
+            agent=_agent(), action_type="mcp_tool_call", target="rai_scan", arguments={}
+        )
         result = gw.evaluate(action, authority, policy=None)
         assert result.decision == GovernanceDecision.ALLOW
         assert result.reason_codes == []
@@ -287,32 +387,48 @@ class TestGatewayPolicyIntegration:
     def test_policy_deny_short_circuits_before_content_scan(self) -> None:
         gw = WhitePactRuntimeGateway()
         authority = _authority(granted_action_types=frozenset({"mcp_tool_call"}))
-        policy = Policy(org_id="org-1", rules=[
-            PolicyRule(
-                rule_id="no-high-risk", reason_code="high_risk_blocked",
-                effect=GovernanceDecision.DENY, risk_tiers=frozenset({RiskTier.HIGH}),
-            ),
-        ])
+        policy = Policy(
+            org_id="org-1",
+            rules=[
+                PolicyRule(
+                    rule_id="no-high-risk",
+                    reason_code="high_risk_blocked",
+                    effect=GovernanceDecision.DENY,
+                    risk_tiers=frozenset({RiskTier.HIGH}),
+                ),
+            ],
+        )
         # Clean arguments -- would otherwise ALLOW; policy must be what denies it.
         action = ActionRequest(
-            agent=_agent(), action_type="mcp_tool_call", target="rai_hallucination",
+            agent=_agent(),
+            action_type="mcp_tool_call",
+            target="rai_hallucination",
             arguments={"text": "nothing objectionable here"},
         )
         result = gw.evaluate(action, authority, policy)
         assert result.decision == GovernanceDecision.DENY
-        assert result.reason_codes == ["POLICY_EXPLICIT_DENY:rule_id=no-high-risk;rule_reason=high_risk_blocked"]
+        assert result.reason_codes == [
+            "POLICY_EXPLICIT_DENY:rule_id=no-high-risk;rule_reason=high_risk_blocked"
+        ]
         assert result.risk_tier == RiskTier.HIGH
 
     def test_policy_require_approval_short_circuits(self) -> None:
         gw = WhitePactRuntimeGateway()
         authority = _authority(granted_action_types=frozenset({"mcp_tool_call"}))
-        policy = Policy(org_id="org-1", rules=[
-            PolicyRule(
-                rule_id="writes-need-approval", reason_code="write_action",
-                effect=GovernanceDecision.REQUIRE_APPROVAL, targets=frozenset({"rai_incident_log"}),
-            ),
-        ])
-        action = ActionRequest(agent=_agent(), action_type="mcp_tool_call", target="rai_incident_log")
+        policy = Policy(
+            org_id="org-1",
+            rules=[
+                PolicyRule(
+                    rule_id="writes-need-approval",
+                    reason_code="write_action",
+                    effect=GovernanceDecision.REQUIRE_APPROVAL,
+                    targets=frozenset({"rai_incident_log"}),
+                ),
+            ],
+        )
+        action = ActionRequest(
+            agent=_agent(), action_type="mcp_tool_call", target="rai_incident_log"
+        )
         result = gw.evaluate(action, authority, policy)
         assert result.decision == GovernanceDecision.REQUIRE_APPROVAL
         assert result.reason_codes == [
@@ -324,11 +440,18 @@ class TestGatewayPolicyIntegration:
         GuardrailsEngine -- defense in depth."""
         gw = WhitePactRuntimeGateway()
         authority = _authority(granted_action_types=frozenset({"mcp_tool_call"}))
-        policy = Policy(org_id="org-1", rules=[
-            PolicyRule(rule_id="allow-low", reason_code="low_risk_ok", effect=GovernanceDecision.ALLOW),
-        ])
+        policy = Policy(
+            org_id="org-1",
+            rules=[
+                PolicyRule(
+                    rule_id="allow-low", reason_code="low_risk_ok", effect=GovernanceDecision.ALLOW
+                ),
+            ],
+        )
         action = ActionRequest(
-            agent=_agent(), action_type="mcp_tool_call", target="rai_scan",
+            agent=_agent(),
+            action_type="mcp_tool_call",
+            target="rai_scan",
             arguments={"text": "contact me at a@b.com"},
         )
         result = gw.evaluate(action, authority, policy)
@@ -339,10 +462,17 @@ class TestGatewayPolicyIntegration:
     def test_policy_allow_reason_present_on_clean_final_allow(self) -> None:
         gw = WhitePactRuntimeGateway()
         authority = _authority(granted_action_types=frozenset({"mcp_tool_call"}))
-        policy = Policy(org_id="org-1", rules=[
-            PolicyRule(rule_id="allow-low", reason_code="low_risk_ok", effect=GovernanceDecision.ALLOW),
-        ])
-        action = ActionRequest(agent=_agent(), action_type="mcp_tool_call", target="rai_scan", arguments={})
+        policy = Policy(
+            org_id="org-1",
+            rules=[
+                PolicyRule(
+                    rule_id="allow-low", reason_code="low_risk_ok", effect=GovernanceDecision.ALLOW
+                ),
+            ],
+        )
+        action = ActionRequest(
+            agent=_agent(), action_type="mcp_tool_call", target="rai_scan", arguments={}
+        )
         result = gw.evaluate(action, authority, policy)
         assert result.decision == GovernanceDecision.ALLOW
         assert result.reason_codes == ["policy_allow:rule_id=allow-low;rule_reason=low_risk_ok"]
@@ -350,13 +480,20 @@ class TestGatewayPolicyIntegration:
     def test_no_matching_policy_rule_falls_through_to_scan(self) -> None:
         gw = WhitePactRuntimeGateway()
         authority = _authority(granted_action_types=frozenset({"mcp_tool_call"}))
-        policy = Policy(org_id="org-1", rules=[
-            PolicyRule(
-                rule_id="critical-only", reason_code="x", effect=GovernanceDecision.DENY,
-                targets=frozenset({"nonexistent_tool"}),
-            ),
-        ])
-        action = ActionRequest(agent=_agent(), action_type="mcp_tool_call", target="rai_scan", arguments={})
+        policy = Policy(
+            org_id="org-1",
+            rules=[
+                PolicyRule(
+                    rule_id="critical-only",
+                    reason_code="x",
+                    effect=GovernanceDecision.DENY,
+                    targets=frozenset({"nonexistent_tool"}),
+                ),
+            ],
+        )
+        action = ActionRequest(
+            agent=_agent(), action_type="mcp_tool_call", target="rai_scan", arguments={}
+        )
         result = gw.evaluate(action, authority, policy)
         assert result.decision == GovernanceDecision.ALLOW
         assert result.reason_codes == []
