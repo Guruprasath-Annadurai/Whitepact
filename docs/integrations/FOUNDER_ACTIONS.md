@@ -57,7 +57,7 @@ settings panel. See `cursor.md`.
 
 | Platform | Action | Why Claude can't do it | Evidence prepared | Next step |
 |---|---|---|---|---|
-| Amazon Q | Add `examples/amazon-q/mcp-config.json` to your Amazon Q config | Requires your own local Amazon Q install | Config file, docs | Copy config, confirm config path for your version |
+| Kiro CLI | Install (`brew install --cask amazon-q`, the cask that now installs Kiro), sign in, add `examples/kiro-cli/mcp-config.json` to `~/.kiro/settings/mcp.json` | Requires your own local Kiro install | Config file, docs (`kiro-cli.md`) | Install, sign in, copy config, export `WHITEPACT_API_KEY` |
 
 ## API KEY REQUIRED
 
@@ -79,7 +79,6 @@ settings panel. See `cursor.md`.
 
 | Platform | Action | Why Claude can't do it | Evidence prepared | Next step |
 |---|---|---|---|---|
-| Amazon Q | Install/sign in to Amazon Q Developer tooling | No account access | Config prepared | Install, sign in, add config |
 | AWS AgentCore | AWS account with Bedrock AgentCore access | No account access | Reference architecture + example config | Provision account/access |
 
 ## LEGAL ENTITY REQUIRED

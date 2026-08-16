@@ -17,6 +17,7 @@ venv/
 !plugins/**/*.json
 !distribution/**/*.json
 !examples/amazon-q/*.json
+!examples/kiro-cli/*.json
 !examples/aws-agentcore/*.json
 !.cursor-example/*.json
 !.cursor-plugin/*.json
