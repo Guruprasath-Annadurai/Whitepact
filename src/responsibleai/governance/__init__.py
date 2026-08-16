@@ -39,6 +39,11 @@ from responsibleai.governance.quarantine import (
 from responsibleai.governance.reason_codes import ReasonCode, format_reason
 from responsibleai.governance.risk import RiskTier, classify_action_risk
 from responsibleai.governance.trust_integration import enrich_agent_trust_state
+from responsibleai.governance.workflow import (
+    TimestampedAction,
+    WorkflowSequenceRule,
+    check_composition_violation,
+)
 
 __all__ = [
     "ActionRequest",
@@ -64,8 +69,11 @@ __all__ = [
     "QUARANTINE_WINDOW_MINUTES",
     "ReasonCode",
     "RiskTier",
+    "TimestampedAction",
     "WhitePactRuntimeGateway",
+    "WorkflowSequenceRule",
     "authorize_execution",
+    "check_composition_violation",
     "classify_action_risk",
     "enrich_agent_trust_state",
     "format_reason",

@@ -233,6 +233,70 @@ class TestOrgAuthorityCeiling:
         assert "error" not in payload
 
 
+class TestWorkflowAuthorityEngine:
+    """The Workflow Authority Engine (v3 authority-layer work) enforced
+    live on the real hosted MCP dispatch path -- each step below is
+    individually permitted; the third call is denied because the whole
+    sequence matches a forbidden composition the org configured."""
+
+    async def test_full_sequence_denied_on_third_call(self, governed_app) -> None:
+        from responsibleai.db import WorkflowRuleRepository
+        from responsibleai.governance import WorkflowSequenceRule
+
+        app, raw_key, org_id, engine = governed_app
+        await WorkflowRuleRepository(engine).add_rule(
+            org_id,
+            WorkflowSequenceRule(
+                rule_id="health-then-compliance-then-audit",
+                action_types=("rai_health", "rai_compliance", "rai_audit_summary"),
+                window_minutes=15,
+            ),
+        )
+
+        r1 = await _call(app, raw_key, "rai_health", {})
+        assert json.loads(r1.content[0].text).get("error") is None
+
+        r2 = await _call(app, raw_key, "rai_compliance", {})
+        assert json.loads(r2.content[0].text).get("error") is None
+
+        r3 = await _call(app, raw_key, "rai_audit_summary", {})
+        payload3 = json.loads(r3.content[0].text)
+        assert payload3["error"] == "governance_denied"
+        assert any(
+            r.startswith("AUTHORITY_COMPOSITION_VIOLATION") for r in payload3["reason_codes"]
+        )
+
+        records = await EvidenceRepository(engine).list_for_org(org_id, decision="DENY")
+        assert any(r.action_type == "rai_audit_summary" for r in records)
+
+    async def test_partial_sequence_not_denied(self, governed_app) -> None:
+        from responsibleai.db import WorkflowRuleRepository
+        from responsibleai.governance import WorkflowSequenceRule
+
+        app, raw_key, org_id, engine = governed_app
+        await WorkflowRuleRepository(engine).add_rule(
+            org_id,
+            WorkflowSequenceRule(
+                rule_id="health-then-compliance-then-audit",
+                action_types=("rai_health", "rai_compliance", "rai_audit_summary"),
+                window_minutes=15,
+            ),
+        )
+
+        r1 = await _call(app, raw_key, "rai_health", {})
+        assert json.loads(r1.content[0].text).get("error") is None
+        r2 = await _call(app, raw_key, "rai_compliance", {})
+        assert json.loads(r2.content[0].text).get("error") is None
+
+    async def test_no_rules_configured_unaffected(self, governed_app) -> None:
+        app, raw_key, _org_id, _engine = governed_app
+        r1 = await _call(app, raw_key, "rai_health", {})
+        r2 = await _call(app, raw_key, "rai_compliance", {})
+        r3 = await _call(app, raw_key, "rai_audit_summary", {})
+        for r in (r1, r2, r3):
+            assert json.loads(r.content[0].text).get("error") is None
+
+
 class TestQuarantineAfterRepeatedViolations:
     async def test_repeated_denials_eventually_quarantine(self, governed_app) -> None:
         app, raw_key, _org_id, _engine = governed_app

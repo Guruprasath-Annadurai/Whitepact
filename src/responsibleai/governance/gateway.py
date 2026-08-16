@@ -4,6 +4,15 @@ input and returns one of the five decisions above as output."
 
 What ``evaluate()`` checks, in order:
 
+-1. **Workflow composition** (optional — only when a caller passes
+   ``workflow_rules``) — does this action, combined with the agent's
+   own recent action history, complete a forbidden sequence per
+   ``workflow.check_composition_violation()``? Each step in such a
+   sequence may itself be individually permitted; the violation is in
+   the composition, not any single action. Checked before per-action
+   authority, mirroring quarantine's "a broader pattern overrides a
+   single valid-looking action" precedent. No ``workflow_rules``
+   supplied (every caller before this existed) — skipped entirely.
 0. **Authority attenuation** (optional — only when a caller passes
    ``parent_authority``) — does this ``AuthorityContext`` stay within
    the authority that delegated it, per
@@ -97,6 +106,11 @@ from responsibleai.governance.policy import Policy
 from responsibleai.governance.quarantine import QUARANTINE_VIOLATION_THRESHOLD
 from responsibleai.governance.reason_codes import ReasonCode, format_reason
 from responsibleai.governance.risk import RiskTier, classify_action_risk
+from responsibleai.governance.workflow import (
+    TimestampedAction,
+    WorkflowSequenceRule,
+    check_composition_violation,
+)
 from responsibleai.guardrails.engine import GuardrailsEngine, GuardrailsResult
 
 LOW_TRUST_SCORE_THRESHOLD = 40.0
@@ -124,6 +138,8 @@ class WhitePactRuntimeGateway:
         *,
         recent_violation_count: int = 0,
         parent_authority: AuthorityContext | None = None,
+        recent_actions: list[TimestampedAction] | None = None,
+        workflow_rules: list[WorkflowSequenceRule] | None = None,
     ) -> DecisionResult:
         risk_tier = classify_action_risk(action.action_type, action.target)
 
@@ -140,6 +156,18 @@ class WhitePactRuntimeGateway:
                 ],
                 risk_tier=risk_tier,
             )
+
+        if workflow_rules:
+            composition_reason = check_composition_violation(
+                recent_actions or [], action.action_type, action.proposed_at, workflow_rules,
+            )
+            if composition_reason is not None:
+                return DecisionResult(
+                    decision=GovernanceDecision.DENY,
+                    action_id=action.action_id,
+                    reason_codes=[composition_reason],
+                    risk_tier=risk_tier,
+                )
 
         if parent_authority is not None:
             escalation_reason = validate_attenuation(parent_authority, authority)

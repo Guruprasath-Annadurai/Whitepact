@@ -745,3 +745,140 @@ class TestAuthorityCeilingEndpoints:
             headers={"Authorization": f"Bearer {owner_key}"},
         )
         assert r.status_code == 422
+
+
+class TestWorkflowRuleEndpoints:
+    async def test_get_rules_empty_for_new_org(
+        self, client: AsyncClient, org_and_analyst_key
+    ) -> None:
+        _org_id, key = org_and_analyst_key
+        r = await client.get(
+            "/api/governance/workflow-rules", headers={"Authorization": f"Bearer {key}"}
+        )
+        assert r.status_code == 200
+        assert r.json()["rules"] == []
+
+    async def test_analyst_cannot_add_rule(self, client: AsyncClient, org_and_analyst_key) -> None:
+        _org_id, key = org_and_analyst_key
+        r = await client.post(
+            "/api/governance/workflow-rules",
+            json={"rule_id": "r1", "action_types": ["a", "b"], "window_minutes": 30},
+            headers={"Authorization": f"Bearer {key}"},
+        )
+        assert r.status_code == 403
+
+    async def test_admin_adds_rule(self, client: AsyncClient, org_and_admin_key) -> None:
+        org_id, admin_key = org_and_admin_key
+        r = await client.post(
+            "/api/governance/workflow-rules",
+            json={
+                "rule_id": "beneficiary-then-payment",
+                "action_types": ["beneficiary.create", "payment.limit.raise", "payment.execute"],
+                "window_minutes": 15,
+            },
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        assert r.status_code == 201, r.text
+        body = r.json()
+        assert body["rule_id"] == "beneficiary-then-payment"
+        assert body["action_types"] == [
+            "beneficiary.create",
+            "payment.limit.raise",
+            "payment.execute",
+        ]
+        assert body["window_minutes"] == 15
+
+        r = await client.get(
+            "/api/governance/workflow-rules",
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        assert [rule["rule_id"] for rule in r.json()["rules"]] == ["beneficiary-then-payment"]
+
+    async def test_duplicate_rule_id_rejected(self, client: AsyncClient, org_and_admin_key) -> None:
+        _org_id, admin_key = org_and_admin_key
+        body = {"rule_id": "r1", "action_types": ["a", "b"], "window_minutes": 10}
+        r1 = await client.post(
+            "/api/governance/workflow-rules",
+            json=body,
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        assert r1.status_code == 201
+        r2 = await client.post(
+            "/api/governance/workflow-rules",
+            json=body,
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        assert r2.status_code == 409
+
+    async def test_single_action_type_rejected_by_validation(
+        self,
+        client: AsyncClient,
+        org_and_admin_key,
+    ) -> None:
+        """A sequence needs at least two steps to be a sequence."""
+        _org_id, admin_key = org_and_admin_key
+        r = await client.post(
+            "/api/governance/workflow-rules",
+            json={"rule_id": "r1", "action_types": ["a"], "window_minutes": 10},
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        assert r.status_code == 422
+
+    async def test_remove_rule(self, client: AsyncClient, org_and_admin_key) -> None:
+        _org_id, admin_key = org_and_admin_key
+        await client.post(
+            "/api/governance/workflow-rules",
+            json={"rule_id": "r1", "action_types": ["a", "b"], "window_minutes": 10},
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        r = await client.delete(
+            "/api/governance/workflow-rules/r1",
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        assert r.status_code == 200
+        r = await client.get(
+            "/api/governance/workflow-rules",
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        assert r.json()["rules"] == []
+
+    async def test_remove_unknown_rule_returns_404(
+        self, client: AsyncClient, org_and_admin_key
+    ) -> None:
+        _org_id, admin_key = org_and_admin_key
+        r = await client.delete(
+            "/api/governance/workflow-rules/does-not-exist",
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        assert r.status_code == 404
+
+    async def test_rules_scoped_to_caller_org_not_visible_across_orgs(
+        self,
+        client: AsyncClient,
+        org_and_admin_key,
+    ) -> None:
+        org_id, admin_key = org_and_admin_key
+        await client.post(
+            "/api/governance/workflow-rules",
+            json={"rule_id": "org-a-secret-rule", "action_types": ["a", "b"], "window_minutes": 10},
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+
+        r = await client.post(
+            "/api/orgs",
+            json={"name": "Other Workflow Co", "slug": "other-workflow-co"},
+            headers=BOOTSTRAP_AUTH,
+        )
+        other_org_id = r.json()["id"]
+        r = await client.post(
+            f"/api/orgs/{other_org_id}/keys",
+            json={"name": "k", "role": "ADMIN"},
+            headers=BOOTSTRAP_AUTH,
+        )
+        other_key = r.json()["key"]
+
+        r = await client.get(
+            "/api/governance/workflow-rules",
+            headers={"Authorization": f"Bearer {other_key}"},
+        )
+        assert r.json()["rules"] == []

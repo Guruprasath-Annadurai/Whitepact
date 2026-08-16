@@ -524,6 +524,18 @@ governance_policy_versions = Table(
 # see `governance/ceiling.py`'s `OrgAuthorityCeiling.to_authority_context()`.
 # All-null row (or no row at all) means "no ceiling configured" -- every
 # org before this table existed behaves identically.
+governance_workflow_rules = Table(
+    "governance_workflow_rules",
+    metadata,
+    Column("id",             String(36),  primary_key=True),
+    Column("org_id",         String(36),  nullable=False),
+    Column("rule_id",        String(100), nullable=False),
+    Column("action_types",   Text,        nullable=False),  # JSON ordered list
+    Column("window_minutes", Integer,     nullable=False),
+    Column("created_at",     String(32),  nullable=False),
+    Index("idx_gwr_org", "org_id"),
+)
+
 org_authority_ceilings = Table(
     "org_authority_ceilings",
     metadata,

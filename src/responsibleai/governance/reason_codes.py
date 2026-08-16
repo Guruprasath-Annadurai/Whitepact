@@ -88,6 +88,11 @@ class ReasonCode(StrEnum):
     # models.py) — no existing code covered "a delegated authority
     # grants more than its own parent authority held."
     DELEGATION_AUTHORITY_ESCALATION = "DELEGATION_AUTHORITY_ESCALATION"
+    # Not in the original list; added for the Workflow Authority Engine
+    # (governance/workflow.py) -- no existing code covered "each action
+    # in this sequence was individually permitted, but the sequence
+    # itself matches a forbidden composition."
+    AUTHORITY_COMPOSITION_VIOLATION = "AUTHORITY_COMPOSITION_VIOLATION"
 
 
 def format_reason(code: ReasonCode, /, **details: object) -> str:

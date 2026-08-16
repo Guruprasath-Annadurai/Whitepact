@@ -91,6 +91,9 @@ from responsibleai.db import (
     UpstreamServerRepository,
     WebhookConfigRepository,
     WebhookDeliveryRepository,
+    WorkflowRuleAlreadyExistsError,
+    WorkflowRuleNotFoundError,
+    WorkflowRuleRepository,
     create_engine,
 )
 from responsibleai.db.engine import DatabaseEngine
@@ -116,6 +119,7 @@ from responsibleai.governance.upstream_executor import (
     UpstreamMCPExecutor,
     UpstreamServerNotAvailableError,
 )
+from responsibleai.governance.workflow import WorkflowSequenceRule
 from responsibleai.guardrails.engine import GuardrailsEngine
 from responsibleai.hallucination.detector import HallucinationDetector
 from responsibleai.incidents.logic import build_incident_record
@@ -216,6 +220,7 @@ _mcp_usage_repo: McpUsageRepository | None = None
 _evidence_repo: EvidenceRepository | None = None
 _approval_repo: ApprovalRepository | None = None
 _ceiling_repo: OrgAuthorityCeilingRepository | None = None
+_workflow_rule_repo: WorkflowRuleRepository | None = None
 _policy_repo: PolicyRepository | None = None
 _upstream_registry: UpstreamServerRepository | None = None
 _upstream_gateway: WhitePactRuntimeGateway = WhitePactRuntimeGateway()
@@ -267,6 +272,7 @@ async def lifespan(application: FastAPI):
     global _org_repo, _audit_repo, _incident_repo, _leaderboard_repo, _leaderboard_runner
     global _passport_repo, _public_incident_repo, _db_engine, _mcp_usage_repo
     global _evidence_repo, _approval_repo, _policy_repo, _upstream_registry, _ceiling_repo
+    global _workflow_rule_repo
     global _eval_repo, _comparator, _benchmark_runner, _dataset_scanner
     global _oidc_provider, _stripe_service, _plan_rate_limiter
 
@@ -311,6 +317,7 @@ async def lifespan(application: FastAPI):
     _policy_repo = PolicyRepository(_db_engine)
     _upstream_registry = UpstreamServerRepository(_db_engine)
     _ceiling_repo = OrgAuthorityCeilingRepository(_db_engine)
+    _workflow_rule_repo = WorkflowRuleRepository(_db_engine)
     _guardrails   = GuardrailsEngine()
     _hallucination = HallucinationDetector()
     _compliance   = ComplianceEngine()
@@ -780,6 +787,16 @@ class PolicyRuleCreateRequest(BaseModel):
 
 class PolicyReorderRequest(BaseModel):
     rule_ids: list[str] = Field(..., min_length=1)
+
+
+class WorkflowRuleCreateRequest(BaseModel):
+    """See governance/workflow.py's WorkflowSequenceRule -- action_types
+    is the forbidden *ordered* sequence, e.g. ["beneficiary.create",
+    "payment.limit.raise", "payment.execute"]."""
+
+    rule_id: str = Field(..., min_length=1, max_length=100)
+    action_types: list[str] = Field(..., min_length=2, max_length=20)
+    window_minutes: int = Field(..., ge=1, le=10_080)  # up to 7 days
 
 
 class SupplyChainToolRequest(BaseModel):
@@ -2660,6 +2677,74 @@ async def governance_reorder_policy(
     policy = await _ready(_policy_repo).get_policy(_auth.org_id)
     logger.info("governance_policy_reordered", org_id=_auth.org_id, reordered_by=_auth.key_id)
     return {"org_id": _auth.org_id, "rules": [_policy_rule_to_dict(r) for r in policy.rules]}
+
+
+def _workflow_rule_to_dict(rule: WorkflowSequenceRule) -> dict[str, Any]:
+    return {
+        "rule_id": rule.rule_id,
+        "action_types": list(rule.action_types),
+        "window_minutes": rule.window_minutes,
+    }
+
+
+@app.get("/api/governance/workflow-rules", tags=["governance"])
+@limiter.limit("30/minute")
+async def governance_get_workflow_rules(
+    request: Request,
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
+) -> dict[str, Any]:
+    """The org's persisted forbidden-sequence rules (Workflow Authority
+    Engine, v3 authority-layer work) — enforced live on every hosted MCP
+    tool call via governance/workflow.py's check_composition_violation().
+    """
+    if not _auth.org_id:
+        raise HTTPException(400, "Workflow rules require an org-scoped API key, not a legacy flat key.")
+    rules = await _ready(_workflow_rule_repo).get_rules(_auth.org_id)
+    return {"org_id": _auth.org_id, "rules": [_workflow_rule_to_dict(r) for r in rules]}
+
+
+@app.post("/api/governance/workflow-rules", tags=["governance"], status_code=201)
+@limiter.limit("20/minute")
+async def governance_add_workflow_rule(
+    request: Request,
+    req: WorkflowRuleCreateRequest,
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, Any]:
+    """Adding a workflow rule is ADMIN+ (same bar as adding a policy
+    rule) — it changes what future action sequences this org's own
+    agents are allowed to complete."""
+    if not _auth.org_id:
+        raise HTTPException(400, "Workflow rules require an org-scoped API key, not a legacy flat key.")
+    rule = WorkflowSequenceRule(
+        rule_id=req.rule_id, action_types=tuple(req.action_types), window_minutes=req.window_minutes,
+    )
+    try:
+        await _ready(_workflow_rule_repo).add_rule(_auth.org_id, rule)
+    except WorkflowRuleAlreadyExistsError as exc:
+        raise HTTPException(409, str(exc)) from None
+    logger.info(
+        "governance_workflow_rule_added", rule_id=rule.rule_id, org_id=_auth.org_id, added_by=_auth.key_id,
+    )
+    return _workflow_rule_to_dict(rule)
+
+
+@app.delete("/api/governance/workflow-rules/{rule_id}", tags=["governance"])
+@limiter.limit("20/minute")
+async def governance_remove_workflow_rule(
+    request: Request,
+    rule_id: str,
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, str]:
+    if not _auth.org_id:
+        raise HTTPException(400, "Workflow rules require an org-scoped API key, not a legacy flat key.")
+    try:
+        await _ready(_workflow_rule_repo).remove_rule(_auth.org_id, rule_id)
+    except WorkflowRuleNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from None
+    logger.info(
+        "governance_workflow_rule_removed", rule_id=rule_id, org_id=_auth.org_id, removed_by=_auth.key_id,
+    )
+    return {"status": "removed", "rule_id": rule_id}
 
 
 @app.post("/api/governance/supplychain/scan", tags=["governance"])

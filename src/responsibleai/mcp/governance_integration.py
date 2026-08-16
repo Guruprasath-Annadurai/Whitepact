@@ -40,6 +40,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from responsibleai.dashboard.prometheus import observe_governance_decision
@@ -48,6 +49,7 @@ from responsibleai.db import (
     EvidenceRepository,
     OrgAuthorityCeilingRepository,
     PolicyRepository,
+    WorkflowRuleRepository,
 )
 from responsibleai.governance import (
     ActionRequest,
@@ -100,6 +102,11 @@ class GovernanceServices:
     # ceilings existed. Not required so existing test/deploy setups that
     # construct `GovernanceServices` without one keep working.
     ceiling_repo: OrgAuthorityCeilingRepository | None = None
+    # Optional, same pattern as ceiling_repo -- an org with no rules
+    # configured (or no repo wired) never gets `workflow_rules` passed
+    # to `WhitePactRuntimeGateway.evaluate()`, identical to behavior
+    # before the Workflow Authority Engine existed.
+    workflow_rule_repo: WorkflowRuleRepository | None = None
 
 
 @dataclass
@@ -144,7 +151,10 @@ async def apply_governance(
         display_name=ctx.org_name,
     )
     agent = AgentContext(
-        identity=identity, organization_id=ctx.org_id, agent_id=ctx.key_id, framework="mcp-client",
+        identity=identity,
+        organization_id=ctx.org_id,
+        agent_id=ctx.key_id,
+        framework="mcp-client",
     )
 
     # Several rai_* tools accept `provider`/`model` arguments naming the
@@ -190,7 +200,9 @@ async def apply_governance(
     # constraints above -- it should route to REQUIRE_APPROVAL (the
     # gateway's step 2), not read as this call's authority having
     # illegitimately dropped a requirement.
-    ceiling = await services.ceiling_repo.get(ctx.org_id) if services.ceiling_repo is not None else None
+    ceiling = (
+        await services.ceiling_repo.get(ctx.org_id) if services.ceiling_repo is not None else None
+    )
     parent_authority = ceiling.to_authority_context(name) if ceiling is not None else None
     inherited_approval = (
         frozenset({name}) & ceiling.require_approval_for if ceiling is not None else frozenset()
@@ -214,12 +226,40 @@ async def apply_governance(
     )
     action = ActionRequest(agent=agent, action_type=name, target=name, arguments=arguments)
 
-    violation_count = await recent_violation_count(services.evidence_repo, ctx.org_id, agent.agent_id)
+    violation_count = await recent_violation_count(
+        services.evidence_repo, ctx.org_id, agent.agent_id
+    )
     policy = await services.policy_repo.get_policy(ctx.org_id)
+
+    # Workflow Authority Engine (v3 authority-layer work): does this
+    # action, combined with the agent's own recent history, complete a
+    # forbidden sequence the org has configured? Fetches the widest
+    # window any of the org's rules needs in one query, then lets
+    # `check_composition_violation()` apply each rule's own narrower
+    # window on top -- see governance/workflow.py for why a single
+    # fetched history can serve rules with different window lengths.
+    workflow_rules = (
+        await services.workflow_rule_repo.get_rules(ctx.org_id)
+        if services.workflow_rule_repo is not None
+        else []
+    )
+    recent_actions = []
+    if workflow_rules:
+        widest_window = max(rule.window_minutes for rule in workflow_rules)
+        since = (datetime.now(UTC) - timedelta(minutes=widest_window)).isoformat()
+        recent_actions = await services.evidence_repo.list_recent_actions(
+            ctx.org_id, agent.agent_id, since=since
+        )
 
     evaluate_started = time.monotonic()
     decision = services.gateway.evaluate(
-        action, authority, policy=policy, recent_violation_count=violation_count, parent_authority=parent_authority,
+        action,
+        authority,
+        policy=policy,
+        recent_violation_count=violation_count,
+        parent_authority=parent_authority,
+        recent_actions=recent_actions,
+        workflow_rules=workflow_rules,
     )
     observe_governance_decision(
         decision.decision.value,
@@ -242,10 +282,14 @@ async def apply_governance(
         # logged."
         _logger.exception(
             "governance_evidence_write_failed action_id=%s decision=%s org_id=%s",
-            action.action_id, decision.decision.value, ctx.org_id,
+            action.action_id,
+            decision.decision.value,
+            ctx.org_id,
         )
         return GovernanceOutcome(
-            proceed=False, arguments=arguments, blocked_response={
+            proceed=False,
+            arguments=arguments,
+            blocked_response={
                 "error": "governance_evidence_unavailable",
                 "message": (
                     "This action could not be evaluated because its evidence "
@@ -258,7 +302,9 @@ async def apply_governance(
 
     if decision.decision == GovernanceDecision.DENY:
         return GovernanceOutcome(
-            proceed=False, arguments=arguments, blocked_response={
+            proceed=False,
+            arguments=arguments,
+            blocked_response={
                 "error": "governance_denied",
                 "message": "This action was denied by governance policy.",
                 "action_id": decision.action_id,
@@ -268,7 +314,9 @@ async def apply_governance(
 
     if decision.decision == GovernanceDecision.QUARANTINE:
         return GovernanceOutcome(
-            proceed=False, arguments=arguments, blocked_response={
+            proceed=False,
+            arguments=arguments,
+            blocked_response={
                 "error": "governance_quarantined",
                 "message": (
                     "This identity is temporarily quarantined after a recent "
@@ -286,7 +334,9 @@ async def apply_governance(
             webhook_manager=services.webhook_manager,
         )
         return GovernanceOutcome(
-            proceed=False, arguments=arguments, blocked_response={
+            proceed=False,
+            arguments=arguments,
+            blocked_response={
                 "error": "governance_approval_required",
                 "message": "This action requires human approval before it can execute.",
                 "approval_id": approval.approval_id,
@@ -295,7 +345,11 @@ async def apply_governance(
             },
         )
 
-    final_arguments = decision.redacted_arguments if decision.decision == GovernanceDecision.ALLOW_WITH_REDACTION else arguments
+    final_arguments = (
+        decision.redacted_arguments
+        if decision.decision == GovernanceDecision.ALLOW_WITH_REDACTION
+        else arguments
+    )
     final_arguments = final_arguments or arguments
     # The action authorized and executed must be built from
     # final_arguments, not the original `action` — for
@@ -303,7 +357,10 @@ async def apply_governance(
     # binding an ExecutionAuthorization to a digest is that it binds to
     # what actually runs, not to what was originally proposed.
     final_action = ActionRequest(
-        agent=agent, action_type=name, target=name, arguments=final_arguments,
+        agent=agent,
+        action_type=name,
+        target=name,
+        arguments=final_arguments,
         action_id=action.action_id,
     )
     authorization = authorize_execution(decision, final_action)
@@ -325,7 +382,9 @@ def _agent_from_approval(approval: ApprovalRequest) -> AgentContext:
         kind="api_key",
         org_id=approval.organization_id,
     )
-    return AgentContext(identity=identity, organization_id=approval.organization_id, framework="resumed-approval")
+    return AgentContext(
+        identity=identity, organization_id=approval.organization_id, framework="resumed-approval"
+    )
 
 
 async def resume_approval(
@@ -391,13 +450,17 @@ async def resume_approval(
     decision = DecisionResult(
         decision=GovernanceDecision.ALLOW,
         action_id=action.action_id,
-        reason_codes=[format_reason(ReasonCode.RESUMED_AFTER_APPROVAL, approval_id=approval.approval_id)],
+        reason_codes=[
+            format_reason(ReasonCode.RESUMED_AFTER_APPROVAL, approval_id=approval.approval_id)
+        ],
         risk_tier=RiskTier(approval.risk_tier) if approval.risk_tier else None,
     )
     authorization = authorize_execution(decision, action)
     result = await executor.execute(authorization, action)
 
-    authority = AuthorityContext(delegated_by=org_id, granted_action_types=frozenset({action.action_type}))
+    authority = AuthorityContext(
+        delegated_by=org_id, granted_action_types=frozenset({action.action_type})
+    )
     evidence = build_evidence_record(action, agent, authority, decision)
     try:
         await evidence_repo.record(evidence)
@@ -410,7 +473,9 @@ async def resume_approval(
         # hide a successful execution behind an unrelated DB error.
         _logger.exception(
             "resume_approval_evidence_write_failed approval_id=%s action_id=%s org_id=%s",
-            approval.approval_id, action.action_id, org_id,
+            approval.approval_id,
+            action.action_id,
+            org_id,
         )
 
     return result
