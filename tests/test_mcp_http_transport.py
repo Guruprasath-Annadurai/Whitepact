@@ -95,7 +95,7 @@ class TestStreamableHttpTransport:
 
         names = {t.name for t in result.tools}
         assert "rai_health" in names
-        assert len(result.tools) == 27
+        assert len(result.tools) == 29
 
     async def test_call_tool_over_streamable_http(self, seeded_app) -> None:
         app, raw_key = seeded_app
@@ -144,7 +144,7 @@ class TestHealthEndpoint:
         assert payload["status"] == "ok"
         assert payload["transport"] == "http+sse"
         assert set(payload["transports"]) == {"streamable-http", "http+sse"}
-        assert payload["tools"] == 27
+        assert payload["tools"] == 29
 
 
 class TestMCPServerCard:

@@ -13,7 +13,7 @@ from responsibleai import __version__
 class TestMCPToolDefs:
     def test_tool_count(self) -> None:
         from responsibleai.mcp.tools import TOOL_DEFS
-        assert len(TOOL_DEFS) == 27
+        assert len(TOOL_DEFS) == 29
 
     def test_all_tools_have_name_and_description(self) -> None:
         from responsibleai.mcp.tools import TOOL_DEFS
@@ -40,6 +40,7 @@ class TestMCPToolDefs:
             "rai_pii_report", "rai_incident_log", "rai_eu_ai_act_classify",
             "rai_iso42001_gap", "rai_executive_summary", "rai_org_status",
             "rai_webhook_status", "rai_check_trust",
+            "rai_memory_write_check", "rai_memory_read_check",
         }
         assert expected == names
 
@@ -411,7 +412,7 @@ class TestRaiAuditSummary:
         from responsibleai.mcp.tools import dispatch_tool
         r = await dispatch_tool("rai_audit_summary", {"days": 7})
         assert "governance_engine" in r
-        assert r["governance_engine"]["tools_available"] == 27
+        assert r["governance_engine"]["tools_available"] == 29
 
     @pytest.mark.asyncio
     async def test_frameworks_listed(self) -> None:

@@ -22,6 +22,7 @@ from responsibleai.governance.execution import (
     authorize_execution,
 )
 from responsibleai.governance.gateway import WhitePactRuntimeGateway
+from responsibleai.governance.memory_firewall import MemoryFirewallResult, scan_memory_write
 from responsibleai.governance.models import (
     ActionRequest,
     AgentContext,
@@ -63,6 +64,7 @@ __all__ = [
     "GovernanceDecision",
     "IdentityContext",
     "InternalToolExecutor",
+    "MemoryFirewallResult",
     "OrgAuthorityCeiling",
     "Policy",
     "PolicyMatch",
@@ -80,5 +82,6 @@ __all__ = [
     "enrich_agent_trust_state",
     "format_reason",
     "recent_violation_count",
+    "scan_memory_write",
     "validate_attenuation",
 ]

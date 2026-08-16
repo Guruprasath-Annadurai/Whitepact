@@ -13,6 +13,7 @@ from responsibleai.cost.models import get_pricing
 from responsibleai.cost.router import ModelRouter
 from responsibleai.eval.benchmarks import BenchmarkRunner
 from responsibleai.eval.models import BenchmarkSuite
+from responsibleai.governance.memory_firewall import scan_memory_write
 from responsibleai.guardrails.engine import GuardrailsEngine
 from responsibleai.hallucination.detector import HallucinationDetector
 from responsibleai.incidents.logic import build_incident_record
@@ -841,6 +842,61 @@ TOOL_DEFS: list[types.Tool] = [
             },
         },
     ),
+
+    # ── NEW: Memory Authority / Memory Firewall ───────────────────────────────
+    types.Tool(
+        name="rai_memory_write_check",
+        title="Check Memory Write for Injection Patterns",
+        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False),
+        description=(
+            "Gate a write to PERSISTENT agent memory (a vector DB, conversation log, or "
+            "similar long-term store your own system owns -- WhitePact does not host a "
+            "memory store itself). Scans the content for prompt-injection patterns aimed "
+            "specifically at persistent memory -- text engineered to look like an "
+            "instruction, a fake system/assistant role marker, or an override, so that a "
+            "future session reading this memory back treats it as trusted context rather "
+            "than as content. Call this BEFORE actually persisting the write; if "
+            "'allowed' is false, do not write it. When governance is enabled on the "
+            "hosted MCP server and the caller's authority carries a memory_scope "
+            "constraint, memory_scope is also checked for cross-tenant/cross-agent "
+            "isolation -- outside the governed dispatch path this tool only runs the "
+            "content scan."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "content": {"type": "string", "description": "The text about to be written to memory."},
+                "memory_scope": {
+                    "type": "string",
+                    "description": "The memory namespace this write targets, e.g. 'org:acme:agent:bot1'.",
+                },
+            },
+            "required": ["content"],
+        },
+    ),
+    types.Tool(
+        name="rai_memory_read_check",
+        title="Check Memory Read Scope Authorization",
+        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False),
+        description=(
+            "Gate a read from persistent agent memory. Standalone, this tool only echoes "
+            "back the requested scope (there's no content to scan for a read) -- its real "
+            "enforcement value is when governance is enabled on the hosted MCP server: the "
+            "caller's authority's memory_scope constraint (if any) is checked against the "
+            "requested memory_scope, denying cross-tenant/cross-agent memory access before "
+            "the read happens."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "memory_scope": {
+                    "type": "string",
+                    "description": "The memory namespace this read targets, e.g. 'org:acme:agent:bot1'.",
+                },
+            },
+            "required": ["memory_scope"],
+        },
+    ),
 ]
 
 # ── tool dispatch ─────────────────────────────────────────────────────────────
@@ -875,6 +931,8 @@ async def dispatch_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
         "rai_org_status":           _handle_org_status,
         "rai_webhook_status":       _handle_webhook_status,
         "rai_check_trust":          _handle_check_trust,
+        "rai_memory_write_check":   _handle_memory_write_check,
+        "rai_memory_read_check":    _handle_memory_read_check,
     }
     handler = handlers.get(name)
     if not handler:
@@ -1572,6 +1630,31 @@ async def _handle_check_trust(args: dict[str, Any]) -> dict[str, Any]:
         "passes": result.passes(min_score=min_score),
         "error": result.error,
     }
+
+
+async def _handle_memory_write_check(args: dict[str, Any]) -> dict[str, Any]:
+    content = str(args.get("content", ""))
+    if not content:
+        return {"error": "content is required"}
+    result = scan_memory_write(content)
+    return {
+        "allowed": not result.is_blocked,
+        "matched_patterns": list(result.matched_patterns),
+        "memory_scope": args.get("memory_scope"),
+    }
+
+
+async def _handle_memory_read_check(args: dict[str, Any]) -> dict[str, Any]:
+    memory_scope = str(args.get("memory_scope", "")).strip()
+    if not memory_scope:
+        return {"error": "memory_scope is required"}
+    # Standalone (governance disabled, or called outside the hosted MCP
+    # dispatch path), there's no authority to check the scope against --
+    # the real memory_scope enforcement is
+    # AuthorityContext.constraint_violation() in the governed dispatch
+    # path (mcp/governance_integration.py), which runs before this
+    # handler is ever reached. This bare call just echoes the request.
+    return {"allowed": True, "memory_scope": memory_scope}
 
 
 async def _handle_incident_log(args: dict[str, Any]) -> dict[str, Any]:

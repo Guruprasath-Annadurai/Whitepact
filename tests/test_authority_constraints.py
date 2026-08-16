@@ -118,6 +118,49 @@ class TestTimeWindow:
         assert authority.constraint_violation(_action(proposed_at=datetime(2026, 8, 12, 12, 0, tzinfo=UTC))) is not None
 
 
+class TestMemoryScope:
+    """Memory Authority / Memory Firewall (v3 authority-layer work):
+    cross-tenant/cross-agent memory isolation via the `memory_scope`
+    constraint."""
+
+    def test_exact_scope_match_passes(self) -> None:
+        authority = _authority(memory_scope="org:acme:agent:bot1")
+        action = _action(arguments={"memory_scope": "org:acme:agent:bot1"})
+        assert authority.constraint_violation(action) is None
+
+    def test_nested_sub_scope_passes(self) -> None:
+        authority = _authority(memory_scope="org:acme")
+        action = _action(arguments={"memory_scope": "org:acme:agent:bot1"})
+        assert authority.constraint_violation(action) is None
+
+    def test_different_scope_denies(self) -> None:
+        authority = _authority(memory_scope="org:acme:agent:bot1")
+        action = _action(arguments={"memory_scope": "org:other-org:agent:bot2"})
+        violation = authority.constraint_violation(action)
+        assert violation is not None
+        assert violation.startswith("MEMORY_SCOPE_VIOLATION:")
+
+    def test_sibling_prefix_does_not_falsely_pass(self) -> None:
+        """'org:acme2' must not be treated as a sub-scope of 'org:acme'
+        -- startswith() alone (without the ':' separator check) would
+        wrongly pass this."""
+        authority = _authority(memory_scope="org:acme")
+        action = _action(arguments={"memory_scope": "org:acme2:agent:bot1"})
+        violation = authority.constraint_violation(action)
+        assert violation is not None
+        assert violation.startswith("MEMORY_SCOPE_VIOLATION:")
+
+    def test_no_memory_scope_argument_is_not_applicable(self) -> None:
+        authority = _authority(memory_scope="org:acme")
+        action = _action(arguments={"note": "unrelated call"})
+        assert authority.constraint_violation(action) is None
+
+    def test_no_memory_scope_constraint_is_not_applicable(self) -> None:
+        authority = _authority()
+        action = _action(arguments={"memory_scope": "org:anything:at:all"})
+        assert authority.constraint_violation(action) is None
+
+
 class TestUnrecognizedConstraintKeyIgnored:
     def test_typo_key_does_not_block(self) -> None:
         authority = _authority(mx_value_usd=1)  # typo, not a recognized key

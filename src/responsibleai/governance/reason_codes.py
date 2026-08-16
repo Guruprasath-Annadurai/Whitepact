@@ -98,6 +98,16 @@ class ReasonCode(StrEnum):
     # revoke_branch()) -- distinct from AUTHORITY_EXPIRED (a natural
     # time-based lapse) since this is a deliberate admin action.
     AUTHORITY_REVOKED = "AUTHORITY_REVOKED"
+    # Not in the original list; added for the Memory Firewall
+    # (governance/memory_firewall.py) -- no existing code covered "this
+    # content matches a known prompt-injection pattern aimed at
+    # persistent memory specifically."
+    MEMORY_FIREWALL_VIOLATION = "MEMORY_FIREWALL_VIOLATION"
+    # Not in the original list; added for Memory Authority's scope
+    # isolation (AuthorityContext.constraints["memory_scope"]) -- reuses
+    # the allowed_targets/denied_targets pattern but for a memory
+    # namespace rather than an action target.
+    MEMORY_SCOPE_VIOLATION = "MEMORY_SCOPE_VIOLATION"
 
 
 def format_reason(code: ReasonCode, /, **details: object) -> str:

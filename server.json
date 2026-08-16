@@ -74,7 +74,7 @@
   ],
   "_meta": {
     "io.modelcontextprotocol.registry/publisher-provided": {
-      "tool_count": 27,
+      "tool_count": 29,
       "resource_count_canonical": 10,
       "resource_count_advertised": 20,
       "resource_note": "Canonical resources are served under both whitepact:// and rai:// URI schemes (dual-scheme, see MIGRATION_WHITEPACT_V2.md Section 6) — 20 is the advertised count over the wire, 10 is the count of distinct underlying resources.",

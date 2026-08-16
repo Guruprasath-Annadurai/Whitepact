@@ -144,6 +144,15 @@ class AuthorityContext:
       requirement" rule.
     - ``max_delegation_depth`` (int): denies if ``len(delegation_chain)``
       exceeds this — see ``delegation_chain`` below.
+    - ``memory_scope`` (str, Memory Authority/Memory Firewall, v3
+      authority-layer work): a namespace prefix (e.g.
+      ``"org:acme:agent:bot1"``); denies if the action's ``memory_scope``
+      argument is neither exactly this value nor a sub-scope of it
+      (``requested == memory_scope`` or
+      ``requested.startswith(f"{memory_scope}:")``) — cross-tenant/
+      cross-agent memory isolation. Absent ``memory_scope`` argument ->
+      not applicable, never blocks (same "argument-driven, not
+      action-type-gated" pattern as ``max_value_usd``).
 
     An unrecognized key in ``constraints`` is silently ignored, not an
     error — this bag was designed as forward-open (SPEC.md Section 3.3),
@@ -188,8 +197,9 @@ class AuthorityContext:
         """``None`` if every recognized constraint passes (or none
         apply); otherwise a ``format_reason()``-formatted string
         identifying which one failed. Order: denied_targets ->
-        allowed_targets -> max_value_usd -> allowed_hours_utc — denies
-        checked before allow-lists, narrowest scope first."""
+        allowed_targets -> max_value_usd -> allowed_hours_utc ->
+        max_delegation_depth -> memory_scope — denies checked before
+        allow-lists, narrowest scope first."""
         denied_targets = self.constraints.get("denied_targets")
         if denied_targets and any(
             fnmatch.fnmatch(action.target, pattern) for pattern in denied_targets
@@ -245,6 +255,18 @@ class AuthorityContext:
                 depth=len(self.delegation_chain),
                 limit=max_delegation_depth,
             )
+
+        memory_scope = self.constraints.get("memory_scope")
+        if memory_scope is not None:
+            requested_scope = action.arguments.get("memory_scope")
+            if isinstance(requested_scope, str) and not (
+                requested_scope == memory_scope or requested_scope.startswith(f"{memory_scope}:")
+            ):
+                return format_reason(
+                    ReasonCode.MEMORY_SCOPE_VIOLATION,
+                    requested_scope=requested_scope,
+                    allowed_scope=memory_scope,
+                )
 
         return None
 

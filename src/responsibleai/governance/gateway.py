@@ -49,7 +49,13 @@ What ``evaluate()`` checks, in order:
    pattern detection). Toxicity or a custom policy match is a hard
    ``DENY``; PII-only findings become ``ALLOW_WITH_REDACTION`` using
    ``GuardrailsEngine``'s own redaction, exactly as SPEC.md Section 3.6
-   says this decision should reuse it.
+   says this decision should reuse it. Alongside it, when
+   ``action_type == "rai_memory_write_check"`` and a ``content`` string
+   argument is present, ``governance/memory_firewall.py``'s
+   ``scan_memory_write()`` runs too — a match is also a hard ``DENY``
+   (Memory Authority/Memory Firewall, v3 authority-layer work; see that
+   module's docstring for why persistent-memory writes get a dedicated
+   injection-pattern scan on top of PII/toxicity).
 6. **Quarantine** (``recent_violation_count``, ``governance/quarantine.py``)
    — checked *first*, before authority, so a pattern of recent ``DENY``
    decisions overrides even a valid authority grant. The count itself is
@@ -99,6 +105,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from responsibleai.governance.memory_firewall import scan_memory_write
 from responsibleai.governance.models import (
     ActionRequest,
     AuthorityContext,
@@ -285,6 +292,11 @@ class WhitePactRuntimeGateway:
             if result.has_toxicity or result.custom_pattern_matches
             for reason in result.block_reasons
         ]
+
+        memory_firewall_reason = self._memory_firewall_reason(action)
+        if memory_firewall_reason is not None:
+            hard_block_reasons.append(memory_firewall_reason)
+
         if hard_block_reasons:
             return DecisionResult(
                 decision=GovernanceDecision.DENY,
@@ -327,6 +339,29 @@ class WhitePactRuntimeGateway:
             reason_codes=policy_reason_codes,
             risk_tier=risk_tier,
             policy_version=policy_version,
+        )
+
+    @staticmethod
+    def _memory_firewall_reason(action: ActionRequest) -> str | None:
+        """``None`` unless this is a memory-write check carrying a
+        ``content`` string that matches a known injection pattern --
+        see ``governance/memory_firewall.py`` for what's scanned for
+        and why memory gets a dedicated check on top of the general
+        PII/toxicity scan every action's arguments already go through.
+        Gated to ``rai_memory_write_check`` specifically, not every
+        action with a ``content`` argument -- this scan is about memory
+        persistence risk, not a second general-purpose content filter."""
+        if action.action_type != "rai_memory_write_check":
+            return None
+        content = action.arguments.get("content")
+        if not isinstance(content, str):
+            return None
+        result = scan_memory_write(content)
+        if not result.is_blocked:
+            return None
+        return format_reason(
+            ReasonCode.MEMORY_FIREWALL_VIOLATION,
+            patterns=",".join(result.matched_patterns),
         )
 
     @staticmethod
