@@ -43,7 +43,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from responsibleai.dashboard.prometheus import observe_governance_decision
-from responsibleai.db import ApprovalRepository, EvidenceRepository, PolicyRepository
+from responsibleai.db import (
+    ApprovalRepository,
+    EvidenceRepository,
+    OrgAuthorityCeilingRepository,
+    PolicyRepository,
+)
 from responsibleai.governance import (
     ActionRequest,
     AgentContext,
@@ -89,6 +94,12 @@ class GovernanceServices:
     policy_repo: PolicyRepository
     trust_client: TrustClient
     webhook_manager: WebhookManager | None = None
+    # Optional -- an org with no ceiling repo wired (or no ceiling row
+    # for that org) simply never gets a `parent_authority` passed to
+    # `WhitePactRuntimeGateway.evaluate()`, identical to behavior before
+    # ceilings existed. Not required so existing test/deploy setups that
+    # construct `GovernanceServices` without one keep working.
+    ceiling_repo: OrgAuthorityCeilingRepository | None = None
 
 
 @dataclass
@@ -147,7 +158,60 @@ async def apply_governance(
         agent.model = model
         agent = await enrich_agent_trust_state(agent, services.trust_client)
 
-    authority = AuthorityContext(delegated_by=ctx.org_id, granted_action_types=frozenset({name}))
+    # Org authority ceiling (v3 authority-layer work): a structural cap
+    # no per-call authority built for this org can exceed. `ceiling` is
+    # `None` for any org with no ceiling configured (or when no
+    # `ceiling_repo` is wired at all) -- behavior is then identical to
+    # before this feature existed.
+    #
+    # Value/target/depth constraints are copied directly onto the
+    # per-call `authority` below, NOT left for `parent_authority` +
+    # `validate_attenuation()` alone to enforce -- `constraint_violation()`
+    # (the gateway's existing step 3b) is action-aware: it already knows
+    # "no recognized dollar argument present -> max_value_usd doesn't
+    # apply, never blocks" (see AuthorityContext's own docstring).
+    # `validate_attenuation()` compares two authorities with no action in
+    # scope at all, so passing the ceiling's max_value_usd *only* via
+    # `parent_authority` would flag every call with no dollar argument at
+    # all (e.g. `rai_health`) as an escalation, since the per-call
+    # authority would have no matching constraint to compare -- a real
+    # bug caught by this feature's own integration tests, not a
+    # hypothetical one. Copying the constraints directly means parent and
+    # child agree on this dimension by construction, and the actual
+    # denial (when it fires) comes from the existing, correct,
+    # action-aware VALUE_LIMIT_EXCEEDED path instead.
+    #
+    # `parent_authority` (below) is kept for the one thing
+    # `constraint_violation()` can't check: whether `name` itself is
+    # inside the ceiling's `allowed_action_types` allowlist at all.
+    #
+    # A ceiling-mandated approval requirement for this specific `name`
+    # is folded into `require_approval_for` for the same reason as the
+    # constraints above -- it should route to REQUIRE_APPROVAL (the
+    # gateway's step 2), not read as this call's authority having
+    # illegitimately dropped a requirement.
+    ceiling = await services.ceiling_repo.get(ctx.org_id) if services.ceiling_repo is not None else None
+    parent_authority = ceiling.to_authority_context(name) if ceiling is not None else None
+    inherited_approval = (
+        frozenset({name}) & ceiling.require_approval_for if ceiling is not None else frozenset()
+    )
+    inherited_constraints: dict[str, Any] = {}
+    if ceiling is not None:
+        if ceiling.max_value_usd is not None:
+            inherited_constraints["max_value_usd"] = ceiling.max_value_usd
+        if ceiling.allowed_targets is not None:
+            inherited_constraints["allowed_targets"] = ceiling.allowed_targets
+        if ceiling.denied_targets is not None:
+            inherited_constraints["denied_targets"] = ceiling.denied_targets
+        if ceiling.max_delegation_depth is not None:
+            inherited_constraints["max_delegation_depth"] = ceiling.max_delegation_depth
+
+    authority = AuthorityContext(
+        delegated_by=ctx.org_id,
+        granted_action_types=frozenset({name}),
+        constraints=inherited_constraints,
+        require_approval_for=inherited_approval,
+    )
     action = ActionRequest(agent=agent, action_type=name, target=name, arguments=arguments)
 
     violation_count = await recent_violation_count(services.evidence_repo, ctx.org_id, agent.agent_id)
@@ -155,7 +219,7 @@ async def apply_governance(
 
     evaluate_started = time.monotonic()
     decision = services.gateway.evaluate(
-        action, authority, policy=policy, recent_violation_count=violation_count,
+        action, authority, policy=policy, recent_violation_count=violation_count, parent_authority=parent_authority,
     )
     observe_governance_decision(
         decision.decision.value,

@@ -78,6 +78,7 @@ from responsibleai.db import (
     IncidentRepository,
     LeaderboardRepository,
     McpUsageRepository,
+    OrgAuthorityCeilingRepository,
     OrgRepository,
     PassportRepository,
     PolicyRepository,
@@ -104,6 +105,7 @@ from responsibleai.eval import (
     RegressionDetector,
 )
 from responsibleai.governance.approval import ApprovalStatus
+from responsibleai.governance.ceiling import OrgAuthorityCeiling
 from responsibleai.governance.gateway import WhitePactRuntimeGateway
 from responsibleai.governance.models import GovernanceDecision
 from responsibleai.governance.policy import PolicyRule
@@ -213,6 +215,7 @@ _leaderboard_runner: LeaderboardRunner | None = None
 _mcp_usage_repo: McpUsageRepository | None = None
 _evidence_repo: EvidenceRepository | None = None
 _approval_repo: ApprovalRepository | None = None
+_ceiling_repo: OrgAuthorityCeilingRepository | None = None
 _policy_repo: PolicyRepository | None = None
 _upstream_registry: UpstreamServerRepository | None = None
 _upstream_gateway: WhitePactRuntimeGateway = WhitePactRuntimeGateway()
@@ -263,7 +266,7 @@ async def lifespan(application: FastAPI):
     global _compliance, _cost_repo, _cost_analyzer, _router, _trust_repo
     global _org_repo, _audit_repo, _incident_repo, _leaderboard_repo, _leaderboard_runner
     global _passport_repo, _public_incident_repo, _db_engine, _mcp_usage_repo
-    global _evidence_repo, _approval_repo, _policy_repo, _upstream_registry
+    global _evidence_repo, _approval_repo, _policy_repo, _upstream_registry, _ceiling_repo
     global _eval_repo, _comparator, _benchmark_runner, _dataset_scanner
     global _oidc_provider, _stripe_service, _plan_rate_limiter
 
@@ -307,6 +310,7 @@ async def lifespan(application: FastAPI):
     _approval_repo = ApprovalRepository(_db_engine)
     _policy_repo = PolicyRepository(_db_engine)
     _upstream_registry = UpstreamServerRepository(_db_engine)
+    _ceiling_repo = OrgAuthorityCeilingRepository(_db_engine)
     _guardrails   = GuardrailsEngine()
     _hallucination = HallucinationDetector()
     _compliance   = ComplianceEngine()
@@ -856,6 +860,24 @@ class SetMFARequest(BaseModel):
     mfa_required: bool
 
 
+class SetAuthorityCeilingRequest(BaseModel):
+    """Mirrors `OrgAuthorityCeiling`'s fields directly (governance/ceiling.py)
+    -- see that dataclass's docstring for what each one means. All
+    fields optional/omittable; an omitted field means "no restriction
+    on this dimension," not "clear whatever was set before" (`PUT`
+    replaces the whole ceiling in one call, per
+    `OrgAuthorityCeilingRepository.set()`'s own "replace-in-full, not
+    incremental" semantics -- so submit the full desired ceiling each
+    time, not a partial patch)."""
+
+    max_value_usd: float | None = Field(None, ge=0.0)
+    allowed_targets: list[str] | None = None
+    denied_targets: list[str] | None = None
+    max_delegation_depth: int | None = Field(None, ge=0)
+    allowed_action_types: list[str] | None = None
+    require_approval_for: list[str] = Field(default_factory=list)
+
+
 class MFAVerifyRequest(BaseModel):
     code: str = Field(..., min_length=6, max_length=10)
 
@@ -1240,6 +1262,71 @@ async def set_org_mfa(
         raise HTTPException(404, "Organization not found")
     await _ready(_org_repo).set_org_mfa_required(org_id, req.mfa_required)
     return {"org_id": org_id, "mfa_required": req.mfa_required}
+
+
+@app.get("/api/orgs/{org_id}/authority-ceiling", tags=["rbac"])
+@limiter.limit("30/minute")
+async def get_authority_ceiling(
+    request: Request,
+    org_id: str,
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, Any]:
+    """The structural authority ceiling (v3 authority-layer work) no
+    per-call `AuthorityContext` built for this org can ever exceed —
+    enforced live on every hosted MCP tool call via
+    `validate_attenuation()`. `null` fields mean unrestricted; no row at
+    all (every org before this feature existed) returns all-`null`."""
+    org = await _ready(_org_repo).get_org(org_id)
+    if not org:
+        raise HTTPException(404, "Organization not found")
+    ceiling = await _ready(_ceiling_repo).get(org_id)
+    if ceiling is None:
+        ceiling = OrgAuthorityCeiling(org_id=org_id)
+    return {
+        "org_id": org_id,
+        "max_value_usd": ceiling.max_value_usd,
+        "allowed_targets": ceiling.allowed_targets,
+        "denied_targets": ceiling.denied_targets,
+        "max_delegation_depth": ceiling.max_delegation_depth,
+        "allowed_action_types": ceiling.allowed_action_types,
+        "require_approval_for": sorted(ceiling.require_approval_for),
+    }
+
+
+@app.put("/api/orgs/{org_id}/authority-ceiling", tags=["rbac"])
+@limiter.limit("10/minute")
+async def set_authority_ceiling(
+    request: Request,
+    org_id: str,
+    req: SetAuthorityCeilingRequest,
+    _auth: OrgContext = Depends(require_role(Role.OWNER)),
+) -> dict[str, Any]:
+    """Sets the org's authority ceiling wholesale — every hosted MCP
+    tool call under this org is checked against it from the next call
+    onward (no restart needed, `mcp/governance_integration.py` fetches
+    it fresh per call)."""
+    org = await _ready(_org_repo).get_org(org_id)
+    if not org:
+        raise HTTPException(404, "Organization not found")
+    ceiling = OrgAuthorityCeiling(
+        org_id=org_id,
+        max_value_usd=req.max_value_usd,
+        allowed_targets=req.allowed_targets,
+        denied_targets=req.denied_targets,
+        max_delegation_depth=req.max_delegation_depth,
+        allowed_action_types=req.allowed_action_types,
+        require_approval_for=frozenset(req.require_approval_for),
+    )
+    await _ready(_ceiling_repo).set(ceiling)
+    return {
+        "org_id": org_id,
+        "max_value_usd": ceiling.max_value_usd,
+        "allowed_targets": ceiling.allowed_targets,
+        "denied_targets": ceiling.denied_targets,
+        "max_delegation_depth": ceiling.max_delegation_depth,
+        "allowed_action_types": ceiling.allowed_action_types,
+        "require_approval_for": sorted(ceiling.require_approval_for),
+    }
 
 
 @app.post("/api/orgs/{org_id}/keys", tags=["rbac"], status_code=201)

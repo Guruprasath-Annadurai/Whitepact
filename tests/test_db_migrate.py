@@ -103,12 +103,10 @@ class TestNeedsBaselineStamp:
         engine = create_engine(tmp_sqlite_path)
         await engine.init()
         async with engine.raw.begin() as conn:
-            await conn.execute(text(
-                "CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"
-            ))
-            await conn.execute(text(
-                "INSERT INTO alembic_version (version_num) VALUES ('0004')"
-            ))
+            await conn.execute(
+                text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)")
+            )
+            await conn.execute(text("INSERT INTO alembic_version (version_num) VALUES ('0004')"))
         await engine.close()
 
         result = await _needs_baseline_stamp(tmp_sqlite_path)
@@ -120,9 +118,9 @@ class TestNeedsBaselineStamp:
         engine = create_engine(tmp_sqlite_path)
         await engine.init()
         async with engine.raw.begin() as conn:
-            await conn.execute(text(
-                "CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"
-            ))
+            await conn.execute(
+                text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)")
+            )
         await engine.close()
 
         result = await _needs_baseline_stamp(tmp_sqlite_path)
@@ -137,7 +135,7 @@ class TestRunMigrationsOrRaise:
         try:
             async with engine.raw.connect() as conn:
                 rows = await conn.execute(text("SELECT version_num FROM alembic_version"))
-                assert rows.scalar() == "0019"
+                assert rows.scalar() == "0020"
 
                 cols = await conn.execute(text("PRAGMA table_info(organizations)"))
                 col_names = {r[1] for r in cols.fetchall()}
@@ -158,7 +156,7 @@ class TestRunMigrationsOrRaise:
         try:
             async with engine2.raw.connect() as conn:
                 rows = await conn.execute(text("SELECT version_num FROM alembic_version"))
-                assert rows.scalar() == "0019"
+                assert rows.scalar() == "0020"
         finally:
             await engine2.raw.dispose()
 
@@ -170,14 +168,12 @@ class TestRunMigrationsOrRaise:
         try:
             async with engine.raw.connect() as conn:
                 rows = await conn.execute(text("SELECT version_num FROM alembic_version"))
-                assert rows.scalar() == "0019"
+                assert rows.scalar() == "0020"
         finally:
             await engine.raw.dispose()
 
     async def test_missing_alembic_ini_raises(self, tmp_sqlite_path, monkeypatch):
-        monkeypatch.setattr(
-            "responsibleai.db.migrate._find_alembic_ini", lambda: None
-        )
+        monkeypatch.setattr("responsibleai.db.migrate._find_alembic_ini", lambda: None)
         with pytest.raises(MigrationError, match="Could not locate alembic.ini"):
             await run_migrations_or_raise(tmp_sqlite_path)
 

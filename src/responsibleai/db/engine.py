@@ -515,6 +515,28 @@ governance_policy_versions = Table(
     Column("updated_at", String(32), nullable=False),
 )
 
+# One row per org: a structural ceiling no per-call `AuthorityContext`
+# built for that org can ever exceed, enforced via
+# `governance.validate_attenuation()` as the live `parent_authority` on
+# every hosted MCP tool call (`mcp/governance_integration.py`). Unlike
+# `governance_policies` (rule matching), this is the same fixed
+# constraint shape `AuthorityContext.constraints` already recognizes --
+# see `governance/ceiling.py`'s `OrgAuthorityCeiling.to_authority_context()`.
+# All-null row (or no row at all) means "no ceiling configured" -- every
+# org before this table existed behaves identically.
+org_authority_ceilings = Table(
+    "org_authority_ceilings",
+    metadata,
+    Column("org_id",               String(36), primary_key=True),
+    Column("max_value_usd",        Float,      nullable=True),
+    Column("allowed_targets",      Text,       nullable=True),  # JSON list or null
+    Column("denied_targets",       Text,       nullable=True),  # JSON list or null
+    Column("max_delegation_depth", Integer,    nullable=True),
+    Column("allowed_action_types", Text,       nullable=True),  # JSON list or null; null = unrestricted
+    Column("require_approval_for", Text,       nullable=True),  # JSON list or null
+    Column("updated_at",           String(32), nullable=False),
+)
+
 # The MCP Upstream Gateway's registry (v3 authority-layer work): one row
 # per org-registered, SSRF-validated external MCP server. Registration
 # is the approval step -- a call naming an unregistered/disabled/other-

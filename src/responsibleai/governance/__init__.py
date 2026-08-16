@@ -7,6 +7,7 @@ document."""
 
 from __future__ import annotations
 
+from responsibleai.governance.ceiling import OrgAuthorityCeiling
 from responsibleai.governance.execution import (
     AuthorizationActionMismatchError,
     AuthorizationAlreadyConsumedError,
@@ -55,6 +56,7 @@ __all__ = [
     "GovernanceDecision",
     "IdentityContext",
     "InternalToolExecutor",
+    "OrgAuthorityCeiling",
     "Policy",
     "PolicyMatch",
     "PolicyRule",

@@ -89,7 +89,9 @@ async def _call(app, raw_key: str, tool_name: str, arguments: dict):
     async with (
         _client(app, raw_key) as http_client,
         streamable_http_client("/mcp", http_client=http_client) as (
-            read_stream, write_stream, _get_session_id,
+            read_stream,
+            write_stream,
+            _get_session_id,
         ),
     ):
         async with ClientSession(read_stream, write_stream) as session:
@@ -130,7 +132,10 @@ class TestPiiRedactionBeforeDispatch:
     async def test_pii_text_is_redacted_before_the_tool_sees_it(self, governed_app) -> None:
         app, raw_key, org_id, engine = governed_app
         result = await _call(
-            app, raw_key, "rai_scan", {"text": "Contact me at alice@example.com about this."},
+            app,
+            raw_key,
+            "rai_scan",
+            {"text": "Contact me at alice@example.com about this."},
         )
         assert result.isError is not True
         payload = json.loads(result.content[0].text)
@@ -139,7 +144,9 @@ class TestPiiRedactionBeforeDispatch:
         # reaches the tool at all.
         assert "alice@example.com" not in json.dumps(payload)
 
-        records = await EvidenceRepository(engine).list_for_org(org_id, decision="ALLOW_WITH_REDACTION")
+        records = await EvidenceRepository(engine).list_for_org(
+            org_id, decision="ALLOW_WITH_REDACTION"
+        )
         assert any(r.action_type == "rai_scan" for r in records)
 
 
@@ -156,6 +163,76 @@ class TestDenyBlocksExecution:
         assert any(r.action_type == "rai_scan" for r in records)
 
 
+class TestOrgAuthorityCeiling:
+    """The org authority ceiling (v3 authority-layer work) enforced live
+    on the real hosted MCP dispatch path — `mcp/governance_integration.py`
+    fetches the org's ceiling and passes it as `parent_authority` on
+    every call."""
+
+    async def test_call_within_ceiling_proceeds_normally(self, governed_app) -> None:
+        from responsibleai.db import OrgAuthorityCeilingRepository
+        from responsibleai.governance import OrgAuthorityCeiling
+
+        app, raw_key, org_id, engine = governed_app
+        await OrgAuthorityCeilingRepository(engine).set(
+            OrgAuthorityCeiling(org_id=org_id, max_value_usd=500_000),
+        )
+        result = await _call(app, raw_key, "rai_health", {})
+        assert result.isError is not True
+        payload = json.loads(result.content[0].text)
+        assert "error" not in payload
+
+    async def test_call_exceeding_ceiling_value_denied(self, governed_app) -> None:
+        """A call carrying a real dollar argument over the ceiling's
+        max_value_usd is denied through the existing, action-aware
+        VALUE_LIMIT_EXCEEDED path -- not left unenforced, and not
+        mis-denied as an escalation the way `rai_health` (no dollar
+        argument at all) would be if the ceiling's constraints weren't
+        copied onto the per-call authority."""
+        from responsibleai.db import OrgAuthorityCeilingRepository
+        from responsibleai.governance import OrgAuthorityCeiling
+
+        app, raw_key, org_id, engine = governed_app
+        await OrgAuthorityCeilingRepository(engine).set(
+            OrgAuthorityCeiling(org_id=org_id, max_value_usd=500_000),
+        )
+        result = await _call(app, raw_key, "rai_scan", {"text": "hello", "amount_usd": 999_999})
+        assert result.isError is not True
+        payload = json.loads(result.content[0].text)
+        assert payload["error"] == "governance_denied"
+        assert any(r.startswith("VALUE_LIMIT_EXCEEDED") for r in payload["reason_codes"])
+
+    async def test_ceiling_restricted_action_type_denied(self, governed_app) -> None:
+        """A ceiling that only allows a different tool denies rai_health
+        before dispatch, as an escalation -- rai_health isn't in the
+        ceiling's own allowlist, and every per-call authority requests
+        exactly the tool being called."""
+        from responsibleai.db import OrgAuthorityCeilingRepository
+        from responsibleai.governance import OrgAuthorityCeiling
+
+        app, raw_key, org_id, engine = governed_app
+        await OrgAuthorityCeilingRepository(engine).set(
+            OrgAuthorityCeiling(org_id=org_id, allowed_action_types=["rai_scan"]),
+        )
+        result = await _call(app, raw_key, "rai_health", {})
+        assert result.isError is not True
+        payload = json.loads(result.content[0].text)
+        assert payload["error"] == "governance_denied"
+        assert any(r.startswith("DELEGATION_AUTHORITY_ESCALATION") for r in payload["reason_codes"])
+
+        records = await EvidenceRepository(engine).list_for_org(org_id, decision="DENY")
+        assert any(r.action_type == "rai_health" for r in records)
+
+    async def test_no_ceiling_configured_unaffected(self, governed_app) -> None:
+        """No row for this org (the default, before anyone configures
+        one) -- behavior is identical to before ceilings existed."""
+        app, raw_key, _org_id, _engine = governed_app
+        result = await _call(app, raw_key, "rai_health", {})
+        assert result.isError is not True
+        payload = json.loads(result.content[0].text)
+        assert "error" not in payload
+
+
 class TestQuarantineAfterRepeatedViolations:
     async def test_repeated_denials_eventually_quarantine(self, governed_app) -> None:
         app, raw_key, _org_id, _engine = governed_app
@@ -168,7 +245,9 @@ class TestQuarantineAfterRepeatedViolations:
 
 class TestRequireApprovalQueuesNotExecutes:
     async def test_low_trust_model_queues_approval_instead_of_executing(
-        self, governed_app, monkeypatch: pytest.MonkeyPatch,
+        self,
+        governed_app,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         import httpx as httpx_module
         import respx
@@ -177,15 +256,29 @@ class TestRequireApprovalQueuesNotExecutes:
 
         with respx.mock(base_url="https://responsibleai-dashboard.onrender.com") as mock:
             mock.get("/api/trust-index/check").mock(
-                return_value=httpx_module.Response(200, json={
-                    "model": "sketchy-model", "provider": "unknown-vendor", "known": True,
-                    "trust_score": {"overall": 5.0}, "certified": False, "has_reported_incidents": True,
-                })
+                return_value=httpx_module.Response(
+                    200,
+                    json={
+                        "model": "sketchy-model",
+                        "provider": "unknown-vendor",
+                        "known": True,
+                        "trust_score": {"overall": 5.0},
+                        "certified": False,
+                        "has_reported_incidents": True,
+                    },
+                )
             )
-            result = await _call(app, raw_key, "rai_cost_estimate", {
-                "model": "sketchy-model", "provider": "unknown-vendor",
-                "input_tokens": 100, "output_tokens": 50,
-            })
+            result = await _call(
+                app,
+                raw_key,
+                "rai_cost_estimate",
+                {
+                    "model": "sketchy-model",
+                    "provider": "unknown-vendor",
+                    "input_tokens": 100,
+                    "output_tokens": 50,
+                },
+            )
 
         assert result.isError is not True
         payload = json.loads(result.content[0].text)
@@ -200,18 +293,21 @@ class TestRequireApprovalQueuesNotExecutes:
 
 class TestRequireApprovalFiresWebhook:
     async def test_queued_approval_fires_a_registered_webhook(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """webhooks/manager.py's validate_webhook_url() (the SSRF guard)
         does a real socket.getaddrinfo() lookup before every delivery, not
         just at registration — fake it to a fixed public IP the same way
         test_webhooks.py's _fake_public_dns fixture does, so this test
         doesn't depend on hooks.example.com being real DNS."""
+
         def _fake_getaddrinfo(host, *args, **kwargs):
             return [(2, 1, 6, "", ("93.184.216.34", 0))]
 
         monkeypatch.setattr(
-            "responsibleai.webhooks.manager.socket.getaddrinfo", _fake_getaddrinfo,
+            "responsibleai.webhooks.manager.socket.getaddrinfo",
+            _fake_getaddrinfo,
         )
         """The dashboard REST API's approval endpoint already fires
         WebhookEvent.APPROVAL_REQUESTED via ApprovalRepository.create()'s
@@ -252,28 +348,43 @@ class TestRequireApprovalFiresWebhook:
         assert len(created_managers) == 1
         webhook_manager = created_managers[0]
 
-        webhook_manager.register(WebhookConfig(
-            url="https://hooks.example.com/mcp-approvals",
-            events=[WebhookEvent.APPROVAL_REQUESTED],
-            org_id=org.id,
-        ))
+        webhook_manager.register(
+            WebhookConfig(
+                url="https://hooks.example.com/mcp-approvals",
+                events=[WebhookEvent.APPROVAL_REQUESTED],
+                org_id=org.id,
+            )
+        )
 
         async with LifespanManager(app) as manager:
             with respx.mock(assert_all_called=False) as mock:
                 mock.get("https://responsibleai-dashboard.onrender.com/api/trust-index/check").mock(
-                    return_value=httpx_module.Response(200, json={
-                        "model": "sketchy-model", "provider": "unknown-vendor", "known": True,
-                        "trust_score": {"overall": 5.0}, "certified": False,
-                        "has_reported_incidents": True,
-                    })
+                    return_value=httpx_module.Response(
+                        200,
+                        json={
+                            "model": "sketchy-model",
+                            "provider": "unknown-vendor",
+                            "known": True,
+                            "trust_score": {"overall": 5.0},
+                            "certified": False,
+                            "has_reported_incidents": True,
+                        },
+                    )
                 )
                 webhook_route = mock.post("https://hooks.example.com/mcp-approvals").mock(
                     return_value=httpx_module.Response(200)
                 )
-                result = await _call(manager.app, raw_key, "rai_cost_estimate", {
-                    "model": "sketchy-model", "provider": "unknown-vendor",
-                    "input_tokens": 100, "output_tokens": 50,
-                })
+                result = await _call(
+                    manager.app,
+                    raw_key,
+                    "rai_cost_estimate",
+                    {
+                        "model": "sketchy-model",
+                        "provider": "unknown-vendor",
+                        "input_tokens": 100,
+                        "output_tokens": 50,
+                    },
+                )
                 assert webhook_route.call_count >= 1
 
         payload = json.loads(result.content[0].text)
@@ -284,7 +395,9 @@ class TestRequireApprovalFiresWebhook:
 
 class TestEvidenceWriteFailsClosed:
     async def test_evidence_persistence_failure_blocks_an_otherwise_allowed_call(
-        self, governed_app, monkeypatch: pytest.MonkeyPatch,
+        self,
+        governed_app,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """An action that would have been ALLOW must not execute if its
         evidence record can't be persisted — no evidence, no execution,
@@ -320,7 +433,9 @@ class TestAuthoritySubsystemCrashFailsClosed:
     normal tool payload."""
 
     async def test_gateway_exception_never_executes_the_tool(
-        self, governed_app, monkeypatch: pytest.MonkeyPatch,
+        self,
+        governed_app,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         def _raise(self, action, authority, policy=None, *, recent_violation_count=0):
             raise RuntimeError("simulated authority/policy subsystem crash")
