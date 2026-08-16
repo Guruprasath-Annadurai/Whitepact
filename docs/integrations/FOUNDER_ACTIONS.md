@@ -53,11 +53,12 @@ alongside an existing server, substituted the real API key, restarted
 Cursor, and confirmed `whitepact` shows as connected in Cursor's MCP
 settings panel. See `cursor.md`.
 
-## READY NOW (zero-cost, no account needed)
+## DONE — Kiro CLI
 
-| Platform | Action | Why Claude can't do it | Evidence prepared | Next step |
-|---|---|---|---|---|
-| Kiro CLI | Install (`brew install --cask amazon-q`, the cask that now installs Kiro), sign in, add `examples/kiro-cli/mcp-config.json` to `~/.kiro/settings/mcp.json` | Requires your own local Kiro install | Config file, docs (`kiro-cli.md`) | Install, sign in, copy config, export `WHITEPACT_API_KEY` |
+**Verified live 2026-08-16**: installed via `brew install --cask
+amazon-q` (installs Kiro CLI), signed in, added `whitepact` to
+`~/.kiro/settings/mcp.json`, confirmed WhitePact's tools show up in
+`kiro-cli`. See `kiro-cli.md`.
 
 ## API KEY REQUIRED
 

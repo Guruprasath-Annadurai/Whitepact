@@ -1,6 +1,6 @@
 # Kiro CLI
 
-**Status**: CONFIG_READY / NOT_PROVIDER_VERIFIED — see `PLATFORM_COMPATIBILITY.md`.
+**Status**: VERIFIED — see `PLATFORM_COMPATIBILITY.md`.
 **Source-of-truth date**: 2026-08-16.
 
 Kiro is AWS's successor to Amazon Q Developer — Amazon Q Developer's IDE
@@ -60,7 +60,12 @@ Kiro auto-copies existing MCP settings into `~/.kiro/` on first install
 
 Kiro CLI hot-reloads MCP config changes on save — no restart needed.
 Ask Kiro to list available tools and confirm `whitepact` shows 27 tools.
-Not run in this pass — Kiro CLI is not installed in this environment.
+
+**Verified live 2026-08-16**: installed via `brew install --cask
+amazon-q` (which installs Kiro CLI, `kiro-cli` binary confirmed at
+`~/.local/bin/kiro-cli`), signed in, added `whitepact` to
+`~/.kiro/settings/mcp.json` with `${WHITEPACT_API_KEY}` interpolation,
+launched `kiro-cli`, and confirmed WhitePact's tools show up.
 
 ## Safe test prompt
 
@@ -83,5 +88,4 @@ WhitePact does not bypass client-side approval.
 
 ## Founder action
 
-Install Kiro CLI and add the config to your own environment — Claude
-does not have access to a live Kiro installation.
+None required to reach current (VERIFIED) state.
