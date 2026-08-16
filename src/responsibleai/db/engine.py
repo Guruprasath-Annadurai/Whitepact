@@ -578,6 +578,23 @@ org_authority_ceilings = Table(
     Column("updated_at",           String(32), nullable=False),
 )
 
+# Autonomy Budget (v3 authority-layer work): one row per org, a rolling-
+# window cap on how many ALLOW/ALLOW_WITH_REDACTION decisions a single
+# identity may accrue before the next one is forced to REQUIRE_APPROVAL
+# -- see governance/autonomy_budget.py's module docstring for why this
+# is a distinct control from the quarantine circuit breaker (which
+# reacts to bad outcomes, not volume). No row for an org means no
+# budget configured -- every org before this table existed behaves
+# identically (no cap).
+org_autonomy_budgets = Table(
+    "org_autonomy_budgets",
+    metadata,
+    Column("org_id",                  String(36), primary_key=True),
+    Column("max_autonomous_actions",  Integer,    nullable=False),
+    Column("window_minutes",          Integer,    nullable=False),
+    Column("updated_at",              String(32), nullable=False),
+)
+
 # The MCP Upstream Gateway's registry (v3 authority-layer work): one row
 # per org-registered, SSRF-validated external MCP server. Registration
 # is the approval step -- a call naming an unregistered/disabled/other-

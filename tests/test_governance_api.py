@@ -747,6 +747,118 @@ class TestAuthorityCeilingEndpoints:
         assert r.status_code == 422
 
 
+class TestAutonomyBudgetEndpoints:
+    async def test_get_budget_unconfigured_for_new_org(
+        self, client: AsyncClient, org_and_admin_key
+    ) -> None:
+        org_id, admin_key = org_and_admin_key
+        r = await client.get(
+            f"/api/orgs/{org_id}/autonomy-budget",
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["org_id"] == org_id
+        assert body["configured"] is False
+        assert body["max_autonomous_actions"] is None
+        assert body["window_minutes"] is None
+
+    async def test_analyst_cannot_view_budget(
+        self, client: AsyncClient, org_and_analyst_key
+    ) -> None:
+        org_id, key = org_and_analyst_key
+        r = await client.get(
+            f"/api/orgs/{org_id}/autonomy-budget",
+            headers={"Authorization": f"Bearer {key}"},
+        )
+        assert r.status_code == 403
+
+    async def test_admin_cannot_set_budget(self, client: AsyncClient, org_and_admin_key) -> None:
+        """Setting the budget requires OWNER, same bar as the authority
+        ceiling -- a cap on unsupervised autonomy is a consequential,
+        org-wide change."""
+        org_id, admin_key = org_and_admin_key
+        r = await client.put(
+            f"/api/orgs/{org_id}/autonomy-budget",
+            json={"max_autonomous_actions": 10, "window_minutes": 60},
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        assert r.status_code == 403
+
+    async def test_owner_sets_and_gets_budget(
+        self, client: AsyncClient, org_and_owner_key
+    ) -> None:
+        org_id, owner_key = org_and_owner_key
+        r = await client.put(
+            f"/api/orgs/{org_id}/autonomy-budget",
+            json={"max_autonomous_actions": 10, "window_minutes": 60},
+            headers={"Authorization": f"Bearer {owner_key}"},
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["configured"] is True
+        assert body["max_autonomous_actions"] == 10
+        assert body["window_minutes"] == 60
+
+        r = await client.get(
+            f"/api/orgs/{org_id}/autonomy-budget",
+            headers={"Authorization": f"Bearer {owner_key}"},
+        )
+        assert r.json()["max_autonomous_actions"] == 10
+
+    async def test_set_budget_upserts(self, client: AsyncClient, org_and_owner_key) -> None:
+        org_id, owner_key = org_and_owner_key
+        await client.put(
+            f"/api/orgs/{org_id}/autonomy-budget",
+            json={"max_autonomous_actions": 10, "window_minutes": 60},
+            headers={"Authorization": f"Bearer {owner_key}"},
+        )
+        r = await client.put(
+            f"/api/orgs/{org_id}/autonomy-budget",
+            json={"max_autonomous_actions": 5, "window_minutes": 15},
+            headers={"Authorization": f"Bearer {owner_key}"},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["max_autonomous_actions"] == 5
+        assert r.json()["window_minutes"] == 15
+
+    async def test_zero_max_autonomous_actions_rejected(
+        self, client: AsyncClient, org_and_owner_key
+    ) -> None:
+        org_id, owner_key = org_and_owner_key
+        r = await client.put(
+            f"/api/orgs/{org_id}/autonomy-budget",
+            json={"max_autonomous_actions": 0, "window_minutes": 60},
+            headers={"Authorization": f"Bearer {owner_key}"},
+        )
+        assert r.status_code == 422
+
+    async def test_owner_deletes_budget(self, client: AsyncClient, org_and_owner_key) -> None:
+        org_id, owner_key = org_and_owner_key
+        headers = {"Authorization": f"Bearer {owner_key}"}
+        await client.put(
+            f"/api/orgs/{org_id}/autonomy-budget",
+            json={"max_autonomous_actions": 10, "window_minutes": 60},
+            headers=headers,
+        )
+        r = await client.delete(f"/api/orgs/{org_id}/autonomy-budget", headers=headers)
+        assert r.status_code == 200, r.text
+        assert r.json()["configured"] is False
+
+        r = await client.get(f"/api/orgs/{org_id}/autonomy-budget", headers=headers)
+        assert r.json()["configured"] is False
+
+    async def test_admin_cannot_delete_budget(
+        self, client: AsyncClient, org_and_admin_key
+    ) -> None:
+        org_id, admin_key = org_and_admin_key
+        r = await client.delete(
+            f"/api/orgs/{org_id}/autonomy-budget",
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        assert r.status_code == 403
+
+
 class TestWorkflowRuleEndpoints:
     async def test_get_rules_empty_for_new_org(
         self, client: AsyncClient, org_and_analyst_key

@@ -7,6 +7,10 @@ document."""
 
 from __future__ import annotations
 
+from responsibleai.governance.autonomy_budget import (
+    AutonomyBudgetPolicy,
+    recent_autonomous_action_count,
+)
 from responsibleai.governance.ceiling import OrgAuthorityCeiling
 from responsibleai.governance.delegation import DelegationRecord
 from responsibleai.governance.execution import (
@@ -51,6 +55,7 @@ __all__ = [
     "ActionRequest",
     "AgentContext",
     "AuthorityContext",
+    "AutonomyBudgetPolicy",
     "AuthorizationActionMismatchError",
     "AuthorizationAlreadyConsumedError",
     "AuthorizationExpiredError",
@@ -81,6 +86,7 @@ __all__ = [
     "classify_action_risk",
     "enrich_agent_trust_state",
     "format_reason",
+    "recent_autonomous_action_count",
     "recent_violation_count",
     "scan_memory_write",
     "validate_attenuation",

@@ -23,6 +23,7 @@ from responsibleai.db.incident_repository import IncidentRepository
 from responsibleai.db.leaderboard_repository import LeaderboardRepository
 from responsibleai.db.mcp_usage_repository import McpUsageRepository
 from responsibleai.db.org_authority_ceiling_repository import OrgAuthorityCeilingRepository
+from responsibleai.db.org_autonomy_budget_repository import OrgAutonomyBudgetRepository
 from responsibleai.db.org_repository import OrgRepository, SSORequiredError
 from responsibleai.db.passport_repository import PassportRepository
 from responsibleai.db.policy_repository import PolicyRepository, PolicyRuleNotFoundError
@@ -78,4 +79,5 @@ __all__ = [
     "DelegationEscalationError",
     "DelegationNotFoundError",
     "DelegationRepository",
+    "OrgAutonomyBudgetRepository",
 ]

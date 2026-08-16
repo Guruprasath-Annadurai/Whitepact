@@ -49,6 +49,7 @@ from responsibleai.db import (
     DelegationRepository,
     EvidenceRepository,
     OrgAuthorityCeilingRepository,
+    OrgAutonomyBudgetRepository,
     PolicyRepository,
     WorkflowRuleRepository,
 )
@@ -66,6 +67,7 @@ from responsibleai.governance import (
     authorize_execution,
     enrich_agent_trust_state,
     format_reason,
+    recent_autonomous_action_count,
     recent_violation_count,
 )
 from responsibleai.governance.approval import (
@@ -113,6 +115,11 @@ class GovernanceServices:
     # subject to the continuous re-authorization check below, identical
     # to behavior before the Delegation Graph existed.
     delegation_repo: DelegationRepository | None = None
+    # Optional, same pattern -- an org with no autonomy budget
+    # configured (or no repo wired) never gets an `autonomy_budget`
+    # passed to `WhitePactRuntimeGateway.evaluate()`, identical to
+    # behavior before the Autonomy Budget existed.
+    autonomy_budget_repo: OrgAutonomyBudgetRepository | None = None
 
 
 @dataclass
@@ -283,6 +290,26 @@ async def apply_governance(
             ctx.org_id, agent.agent_id, since=since
         )
 
+    # Autonomy Budget (v3 authority-layer work): a rolling-window cap
+    # on how many ALLOW/ALLOW_WITH_REDACTION decisions this identity
+    # may accrue before the gateway forces the next one to
+    # REQUIRE_APPROVAL. `autonomy_budget` is `None` for any org with no
+    # budget configured (or when no `autonomy_budget_repo` is wired at
+    # all) -- behavior is then identical to before this feature existed.
+    autonomy_budget = (
+        await services.autonomy_budget_repo.get(ctx.org_id)
+        if services.autonomy_budget_repo is not None
+        else None
+    )
+    autonomous_action_count = 0
+    if autonomy_budget is not None:
+        autonomous_action_count = await recent_autonomous_action_count(
+            services.evidence_repo,
+            ctx.org_id,
+            agent.agent_id,
+            window_minutes=autonomy_budget.window_minutes,
+        )
+
     evaluate_started = time.monotonic()
     if delegation_denied_reason is not None:
         decision = DecisionResult(
@@ -299,6 +326,8 @@ async def apply_governance(
             parent_authority=parent_authority,
             recent_actions=recent_actions,
             workflow_rules=workflow_rules,
+            autonomy_budget=autonomy_budget,
+            recent_autonomous_action_count=autonomous_action_count,
         )
     observe_governance_decision(
         decision.decision.value,

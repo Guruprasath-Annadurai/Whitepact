@@ -384,6 +384,69 @@ class TestRequireApprovalQueuesNotExecutes:
         assert any(p.action_type == "rai_cost_estimate" for p in pending)
 
 
+class TestAutonomyBudget:
+    """Autonomy Budget (v3 authority-layer work) enforced live on the
+    real hosted MCP dispatch path -- an identity that's already
+    accrued `max_autonomous_actions` ALLOW/ALLOW_WITH_REDACTION
+    decisions in the window is forced to REQUIRE_APPROVAL on the next
+    call, even though the call itself is otherwise unremarkable."""
+
+    async def test_no_budget_configured_unaffected(self, governed_app) -> None:
+        app, raw_key, _org_id, _engine = governed_app
+        for _ in range(5):
+            result = await _call(app, raw_key, "rai_health", {})
+            assert json.loads(result.content[0].text).get("error") is None
+
+    async def test_call_within_budget_allowed(self, governed_app) -> None:
+        from responsibleai.db import OrgAutonomyBudgetRepository
+        from responsibleai.governance import AutonomyBudgetPolicy
+
+        app, raw_key, org_id, engine = governed_app
+        await OrgAutonomyBudgetRepository(engine).set(
+            org_id, AutonomyBudgetPolicy(max_autonomous_actions=3, window_minutes=60)
+        )
+        result = await _call(app, raw_key, "rai_health", {})
+        assert json.loads(result.content[0].text).get("error") is None
+
+    async def test_call_exceeding_budget_requires_approval(self, governed_app) -> None:
+        from responsibleai.db import OrgAutonomyBudgetRepository
+        from responsibleai.governance import AutonomyBudgetPolicy
+
+        app, raw_key, org_id, engine = governed_app
+        await OrgAutonomyBudgetRepository(engine).set(
+            org_id, AutonomyBudgetPolicy(max_autonomous_actions=2, window_minutes=60)
+        )
+        for _ in range(2):
+            result = await _call(app, raw_key, "rai_health", {})
+            assert json.loads(result.content[0].text).get("error") is None
+
+        result = await _call(app, raw_key, "rai_health", {})
+        payload = json.loads(result.content[0].text)
+        assert payload["error"] == "governance_approval_required"
+        assert any(r.startswith("AUTONOMY_BUDGET_EXCEEDED") for r in payload["reason_codes"])
+
+        from responsibleai.db import ApprovalRepository
+
+        pending = await ApprovalRepository(engine).list_pending(org_id)
+        assert any(p.action_type == "rai_health" for p in pending)
+
+    async def test_deleted_budget_stops_being_enforced(self, governed_app) -> None:
+        from responsibleai.db import OrgAutonomyBudgetRepository
+        from responsibleai.governance import AutonomyBudgetPolicy
+
+        app, raw_key, org_id, engine = governed_app
+        repo = OrgAutonomyBudgetRepository(engine)
+        await repo.set(org_id, AutonomyBudgetPolicy(max_autonomous_actions=1, window_minutes=60))
+        result = await _call(app, raw_key, "rai_health", {})
+        assert json.loads(result.content[0].text).get("error") is None
+        blocked = await _call(app, raw_key, "rai_health", {})
+        assert json.loads(blocked.content[0].text)["error"] == "governance_approval_required"
+
+        await repo.delete(org_id)
+        result = await _call(app, raw_key, "rai_health", {})
+        assert json.loads(result.content[0].text).get("error") is None
+
+
 class TestMemoryAuthority:
     """Memory Authority / Memory Firewall (v3 authority-layer work)
     enforced live on the real hosted MCP dispatch path -- an injected

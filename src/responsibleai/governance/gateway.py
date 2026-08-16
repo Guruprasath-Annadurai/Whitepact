@@ -56,6 +56,19 @@ What ``evaluate()`` checks, in order:
    (Memory Authority/Memory Firewall, v3 authority-layer work; see that
    module's docstring for why persistent-memory writes get a dedicated
    injection-pattern scan on top of PII/toxicity).
+5b. **Autonomy Budget** (optional — only when a caller passes
+   ``autonomy_budget``, v3 authority-layer work) — checked right after
+   the hard-block/toxicity check, before PII-redaction and trust: if
+   the identity has already accrued ``autonomy_budget.max_autonomous_actions``
+   ``ALLOW``/``ALLOW_WITH_REDACTION`` decisions within
+   ``autonomy_budget.window_minutes`` (a count the caller computes via
+   ``autonomy_budget.recent_autonomous_action_count()``, same
+   DB-query-in-the-caller pattern as quarantine below), this call is
+   forced to ``REQUIRE_APPROVAL`` regardless of what it would otherwise
+   have decided — a circuit breaker on unsupervised *volume*, not on
+   bad outcomes. No ``autonomy_budget`` supplied (every caller before
+   this existed, and any org that hasn't configured one) — skipped
+   entirely.
 6. **Quarantine** (``recent_violation_count``, ``governance/quarantine.py``)
    — checked *first*, before authority, so a pattern of recent ``DENY``
    decisions overrides even a valid authority grant. The count itself is
@@ -105,6 +118,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from responsibleai.governance.autonomy_budget import AutonomyBudgetPolicy
 from responsibleai.governance.memory_firewall import scan_memory_write
 from responsibleai.governance.models import (
     ActionRequest,
@@ -151,6 +165,8 @@ class WhitePactRuntimeGateway:
         parent_authority: AuthorityContext | None = None,
         recent_actions: list[TimestampedAction] | None = None,
         workflow_rules: list[WorkflowSequenceRule] | None = None,
+        autonomy_budget: AutonomyBudgetPolicy | None = None,
+        recent_autonomous_action_count: int = 0,
     ) -> DecisionResult:
         risk_tier = classify_action_risk(action.action_type, action.target)
 
@@ -260,6 +276,8 @@ class WhitePactRuntimeGateway:
             risk_tier,
             policy_reason_codes,
             policy_version,
+            autonomy_budget=autonomy_budget,
+            recent_autonomous_action_count=recent_autonomous_action_count,
         )
 
     def _scan_arguments(
@@ -285,6 +303,9 @@ class WhitePactRuntimeGateway:
         risk_tier: RiskTier,
         policy_reason_codes: list[str],
         policy_version: int | None = None,
+        *,
+        autonomy_budget: AutonomyBudgetPolicy | None = None,
+        recent_autonomous_action_count: int = 0,
     ) -> DecisionResult:
         hard_block_reasons = [
             format_reason(ReasonCode.CONTENT_POLICY_VIOLATION, field=field, detail=reason)
@@ -302,6 +323,26 @@ class WhitePactRuntimeGateway:
                 decision=GovernanceDecision.DENY,
                 action_id=action.action_id,
                 reason_codes=[*policy_reason_codes, *hard_block_reasons],
+                risk_tier=risk_tier,
+                policy_version=policy_version,
+            )
+
+        if (
+            autonomy_budget is not None
+            and recent_autonomous_action_count >= autonomy_budget.max_autonomous_actions
+        ):
+            return DecisionResult(
+                decision=GovernanceDecision.REQUIRE_APPROVAL,
+                action_id=action.action_id,
+                reason_codes=[
+                    *policy_reason_codes,
+                    format_reason(
+                        ReasonCode.AUTONOMY_BUDGET_EXCEEDED,
+                        recent_autonomous_actions=recent_autonomous_action_count,
+                        limit=autonomy_budget.max_autonomous_actions,
+                        window_minutes=autonomy_budget.window_minutes,
+                    ),
+                ],
                 risk_tier=risk_tier,
                 policy_version=policy_version,
             )

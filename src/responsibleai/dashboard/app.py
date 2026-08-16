@@ -81,6 +81,7 @@ from responsibleai.db import (
     LeaderboardRepository,
     McpUsageRepository,
     OrgAuthorityCeilingRepository,
+    OrgAutonomyBudgetRepository,
     OrgRepository,
     PassportRepository,
     PolicyRepository,
@@ -110,6 +111,7 @@ from responsibleai.eval import (
     RegressionDetector,
 )
 from responsibleai.governance.approval import ApprovalStatus
+from responsibleai.governance.autonomy_budget import AutonomyBudgetPolicy
 from responsibleai.governance.ceiling import OrgAuthorityCeiling
 from responsibleai.governance.gateway import WhitePactRuntimeGateway
 from responsibleai.governance.models import GovernanceDecision
@@ -222,6 +224,7 @@ _mcp_usage_repo: McpUsageRepository | None = None
 _evidence_repo: EvidenceRepository | None = None
 _approval_repo: ApprovalRepository | None = None
 _ceiling_repo: OrgAuthorityCeilingRepository | None = None
+_autonomy_budget_repo: OrgAutonomyBudgetRepository | None = None
 _workflow_rule_repo: WorkflowRuleRepository | None = None
 _delegation_repo: DelegationRepository | None = None
 _policy_repo: PolicyRepository | None = None
@@ -275,7 +278,7 @@ async def lifespan(application: FastAPI):
     global _org_repo, _audit_repo, _incident_repo, _leaderboard_repo, _leaderboard_runner
     global _passport_repo, _public_incident_repo, _db_engine, _mcp_usage_repo
     global _evidence_repo, _approval_repo, _policy_repo, _upstream_registry, _ceiling_repo
-    global _workflow_rule_repo, _delegation_repo
+    global _workflow_rule_repo, _delegation_repo, _autonomy_budget_repo
     global _eval_repo, _comparator, _benchmark_runner, _dataset_scanner
     global _oidc_provider, _stripe_service, _plan_rate_limiter
 
@@ -322,6 +325,7 @@ async def lifespan(application: FastAPI):
     _ceiling_repo = OrgAuthorityCeilingRepository(_db_engine)
     _workflow_rule_repo = WorkflowRuleRepository(_db_engine)
     _delegation_repo = DelegationRepository(_db_engine)
+    _autonomy_budget_repo = OrgAutonomyBudgetRepository(_db_engine)
     _guardrails   = GuardrailsEngine()
     _hallucination = HallucinationDetector()
     _compliance   = ComplianceEngine()
@@ -919,6 +923,16 @@ class SetAuthorityCeilingRequest(BaseModel):
     require_approval_for: list[str] = Field(default_factory=list)
 
 
+class SetAutonomyBudgetRequest(BaseModel):
+    """Mirrors `AutonomyBudgetPolicy` (governance/autonomy_budget.py).
+    Unlike the authority ceiling, both fields are required -- there's
+    no "all-null means unrestricted" shape here; `DELETE` is how an org
+    removes the cap entirely, not `PUT` with empty fields."""
+
+    max_autonomous_actions: int = Field(..., ge=1)
+    window_minutes: int = Field(..., ge=1, le=10_080)  # up to 7 days
+
+
 class MFAVerifyRequest(BaseModel):
     code: str = Field(..., min_length=6, max_length=10)
 
@@ -1368,6 +1382,77 @@ async def set_authority_ceiling(
         "allowed_action_types": ceiling.allowed_action_types,
         "require_approval_for": sorted(ceiling.require_approval_for),
     }
+
+
+@app.get("/api/orgs/{org_id}/autonomy-budget", tags=["rbac"])
+@limiter.limit("30/minute")
+async def get_autonomy_budget(
+    request: Request,
+    org_id: str,
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, Any]:
+    """The org's Autonomy Budget (v3 authority-layer work) -- a rolling-
+    window cap on how many ALLOW/ALLOW_WITH_REDACTION decisions a
+    single identity may accrue before the gateway forces the next one
+    to REQUIRE_APPROVAL. `configured: false` (both other fields `null`)
+    means no budget is set for this org -- identical to behavior before
+    this feature existed."""
+    org = await _ready(_org_repo).get_org(org_id)
+    if not org:
+        raise HTTPException(404, "Organization not found")
+    policy = await _ready(_autonomy_budget_repo).get(org_id)
+    if policy is None:
+        return {"org_id": org_id, "configured": False, "max_autonomous_actions": None, "window_minutes": None}
+    return {
+        "org_id": org_id,
+        "configured": True,
+        "max_autonomous_actions": policy.max_autonomous_actions,
+        "window_minutes": policy.window_minutes,
+    }
+
+
+@app.put("/api/orgs/{org_id}/autonomy-budget", tags=["rbac"])
+@limiter.limit("10/minute")
+async def set_autonomy_budget(
+    request: Request,
+    org_id: str,
+    req: SetAutonomyBudgetRequest,
+    _auth: OrgContext = Depends(require_role(Role.OWNER)),
+) -> dict[str, Any]:
+    """Sets the org's autonomy budget -- every hosted MCP tool call
+    under this org is checked against it from the next call onward (no
+    restart needed, `mcp/governance_integration.py` fetches it fresh
+    per call)."""
+    org = await _ready(_org_repo).get_org(org_id)
+    if not org:
+        raise HTTPException(404, "Organization not found")
+    policy = AutonomyBudgetPolicy(
+        max_autonomous_actions=req.max_autonomous_actions, window_minutes=req.window_minutes
+    )
+    await _ready(_autonomy_budget_repo).set(org_id, policy)
+    return {
+        "org_id": org_id,
+        "configured": True,
+        "max_autonomous_actions": policy.max_autonomous_actions,
+        "window_minutes": policy.window_minutes,
+    }
+
+
+@app.delete("/api/orgs/{org_id}/autonomy-budget", tags=["rbac"])
+@limiter.limit("10/minute")
+async def delete_autonomy_budget(
+    request: Request,
+    org_id: str,
+    _auth: OrgContext = Depends(require_role(Role.OWNER)),
+) -> dict[str, Any]:
+    """Removes the org's autonomy budget entirely -- distinct from
+    `PUT` (which always requires both fields), the only way back to
+    "no cap configured."""
+    org = await _ready(_org_repo).get_org(org_id)
+    if not org:
+        raise HTTPException(404, "Organization not found")
+    await _ready(_autonomy_budget_repo).delete(org_id)
+    return {"org_id": org_id, "configured": False}
 
 
 @app.post("/api/orgs/{org_id}/keys", tags=["rbac"], status_code=201)

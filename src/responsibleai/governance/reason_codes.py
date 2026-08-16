@@ -108,6 +108,13 @@ class ReasonCode(StrEnum):
     # the allowed_targets/denied_targets pattern but for a memory
     # namespace rather than an action target.
     MEMORY_SCOPE_VIOLATION = "MEMORY_SCOPE_VIOLATION"
+    # Not in the original list; added for the Autonomy Budget
+    # (governance/autonomy_budget.py) -- no existing code covered "this
+    # identity has executed too many autonomous actions in the window
+    # and needs a human check-in," distinct from IDENTITY_QUARANTINED
+    # (a pattern of bad outcomes) and APPROVAL_REQUIRED (a caller- or
+    # ceiling-declared per-action-type requirement, not a volume cap).
+    AUTONOMY_BUDGET_EXCEEDED = "AUTONOMY_BUDGET_EXCEEDED"
 
 
 def format_reason(code: ReasonCode, /, **details: object) -> str:

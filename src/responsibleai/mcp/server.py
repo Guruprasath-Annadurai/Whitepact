@@ -388,6 +388,7 @@ def _build_http_app() -> Any:
             DelegationRepository,
             EvidenceRepository,
             OrgAuthorityCeilingRepository,
+            OrgAutonomyBudgetRepository,
             PolicyRepository,
             WebhookConfigRepository,
             WebhookDeliveryRepository,
@@ -419,6 +420,7 @@ def _build_http_app() -> Any:
             ceiling_repo=OrgAuthorityCeilingRepository(_db_engine),
             workflow_rule_repo=WorkflowRuleRepository(_db_engine),
             delegation_repo=DelegationRepository(_db_engine),
+            autonomy_budget_repo=OrgAutonomyBudgetRepository(_db_engine),
         )
     # Reuses the exact same RAI_OIDC_* / Settings.oidc_* config the
     # dashboard API's SSO login already reads (dashboard/app.py's own
