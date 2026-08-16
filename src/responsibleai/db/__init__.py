@@ -11,6 +11,11 @@ from responsibleai.db.approval_repository import (
     SelfApprovalError,
 )
 from responsibleai.db.audit_repository import AuditRepository
+from responsibleai.db.delegation_repository import (
+    DelegationEscalationError,
+    DelegationNotFoundError,
+    DelegationRepository,
+)
 from responsibleai.db.engine import DatabaseEngine, create_engine
 from responsibleai.db.eval_repository import EvalRepository
 from responsibleai.db.evidence_repository import EvidenceRepository
@@ -70,4 +75,7 @@ __all__ = [
     "WorkflowRuleAlreadyExistsError",
     "WorkflowRuleNotFoundError",
     "WorkflowRuleRepository",
+    "DelegationEscalationError",
+    "DelegationNotFoundError",
+    "DelegationRepository",
 ]

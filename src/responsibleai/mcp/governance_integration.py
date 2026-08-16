@@ -46,6 +46,7 @@ from typing import TYPE_CHECKING, Any
 from responsibleai.dashboard.prometheus import observe_governance_decision
 from responsibleai.db import (
     ApprovalRepository,
+    DelegationRepository,
     EvidenceRepository,
     OrgAuthorityCeilingRepository,
     PolicyRepository,
@@ -107,6 +108,11 @@ class GovernanceServices:
     # to `WhitePactRuntimeGateway.evaluate()`, identical to behavior
     # before the Workflow Authority Engine existed.
     workflow_rule_repo: WorkflowRuleRepository | None = None
+    # Optional, same pattern -- an identity that has never been granted
+    # a delegation via this graph (or no repo wired at all) is never
+    # subject to the continuous re-authorization check below, identical
+    # to behavior before the Delegation Graph existed.
+    delegation_repo: DelegationRepository | None = None
 
 
 @dataclass
@@ -231,6 +237,32 @@ async def apply_governance(
     )
     policy = await services.policy_repo.get_policy(ctx.org_id)
 
+    # Continuous re-authorization (Delegation Graph, v3 authority-layer
+    # work): "authorized once != authorized forever" -- checked fresh on
+    # every call, not trusted from whatever AuthorityContext was built
+    # above. `latest_delegation is None` means this identity has never
+    # been granted authority via this graph at all -- identical to
+    # behavior before this feature existed, so it falls through to the
+    # gateway's normal evaluation. A non-`None`-but-inactive delegation
+    # means a previously valid grant has since expired or been revoked;
+    # that's decided here, before the gateway even runs, since it's not
+    # something `AuthorityContext.permits()`/`constraint_violation()`
+    # (built from the ceiling/action-type grant, not this graph) can see.
+    delegation_denied_reason: str | None = None
+    if services.delegation_repo is not None:
+        latest_delegation = await services.delegation_repo.get_latest_delegation(
+            ctx.org_id, agent.agent_id
+        )
+        if latest_delegation is not None and not latest_delegation.is_active():
+            code = (
+                ReasonCode.AUTHORITY_REVOKED
+                if latest_delegation.revoked_at is not None
+                else ReasonCode.AUTHORITY_EXPIRED
+            )
+            delegation_denied_reason = format_reason(
+                code, delegation_id=latest_delegation.delegation_id
+            )
+
     # Workflow Authority Engine (v3 authority-layer work): does this
     # action, combined with the agent's own recent history, complete a
     # forbidden sequence the org has configured? Fetches the widest
@@ -252,15 +284,22 @@ async def apply_governance(
         )
 
     evaluate_started = time.monotonic()
-    decision = services.gateway.evaluate(
-        action,
-        authority,
-        policy=policy,
-        recent_violation_count=violation_count,
-        parent_authority=parent_authority,
-        recent_actions=recent_actions,
-        workflow_rules=workflow_rules,
-    )
+    if delegation_denied_reason is not None:
+        decision = DecisionResult(
+            decision=GovernanceDecision.DENY,
+            action_id=action.action_id,
+            reason_codes=[delegation_denied_reason],
+        )
+    else:
+        decision = services.gateway.evaluate(
+            action,
+            authority,
+            policy=policy,
+            recent_violation_count=violation_count,
+            parent_authority=parent_authority,
+            recent_actions=recent_actions,
+            workflow_rules=workflow_rules,
+        )
     observe_governance_decision(
         decision.decision.value,
         decision.risk_tier.value if decision.risk_tier is not None else None,

@@ -6,7 +6,7 @@ import asyncio
 import secrets
 import time
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, TypeVar
 from urllib.parse import quote
@@ -73,6 +73,8 @@ from responsibleai.db import (
     ApprovalRepository,
     AuditRepository,
     CostRepository,
+    DelegationEscalationError,
+    DelegationRepository,
     EvalRepository,
     EvidenceRepository,
     IncidentRepository,
@@ -221,6 +223,7 @@ _evidence_repo: EvidenceRepository | None = None
 _approval_repo: ApprovalRepository | None = None
 _ceiling_repo: OrgAuthorityCeilingRepository | None = None
 _workflow_rule_repo: WorkflowRuleRepository | None = None
+_delegation_repo: DelegationRepository | None = None
 _policy_repo: PolicyRepository | None = None
 _upstream_registry: UpstreamServerRepository | None = None
 _upstream_gateway: WhitePactRuntimeGateway = WhitePactRuntimeGateway()
@@ -272,7 +275,7 @@ async def lifespan(application: FastAPI):
     global _org_repo, _audit_repo, _incident_repo, _leaderboard_repo, _leaderboard_runner
     global _passport_repo, _public_incident_repo, _db_engine, _mcp_usage_repo
     global _evidence_repo, _approval_repo, _policy_repo, _upstream_registry, _ceiling_repo
-    global _workflow_rule_repo
+    global _workflow_rule_repo, _delegation_repo
     global _eval_repo, _comparator, _benchmark_runner, _dataset_scanner
     global _oidc_provider, _stripe_service, _plan_rate_limiter
 
@@ -318,6 +321,7 @@ async def lifespan(application: FastAPI):
     _upstream_registry = UpstreamServerRepository(_db_engine)
     _ceiling_repo = OrgAuthorityCeilingRepository(_db_engine)
     _workflow_rule_repo = WorkflowRuleRepository(_db_engine)
+    _delegation_repo = DelegationRepository(_db_engine)
     _guardrails   = GuardrailsEngine()
     _hallucination = HallucinationDetector()
     _compliance   = ComplianceEngine()
@@ -797,6 +801,26 @@ class WorkflowRuleCreateRequest(BaseModel):
     rule_id: str = Field(..., min_length=1, max_length=100)
     action_types: list[str] = Field(..., min_length=2, max_length=20)
     window_minutes: int = Field(..., ge=1, le=10_080)  # up to 7 days
+
+
+class DelegationGrantRequest(BaseModel):
+    """See governance/delegation.py's DelegationRecord. `from_identity_id`
+    omitted (or null) means a root grant -- checked against nothing
+    (there's no parent in the graph); set it to require the grant pass
+    validate_attenuation() against that identity's own currently active
+    delegation."""
+
+    to_identity_id: str = Field(..., min_length=1, max_length=200)
+    granted_action_types: list[str] = Field(..., min_length=1, max_length=200)
+    purpose: str = Field(..., min_length=1, max_length=2000)
+    from_identity_id: str | None = Field(default=None, max_length=200)
+    constraints: dict[str, Any] = Field(default_factory=dict)
+    require_approval_for: list[str] = Field(default_factory=list, max_length=200)
+    expires_in_minutes: int | None = Field(default=None, ge=1, le=525_600)  # up to 1 year
+
+
+class DelegationRevokeRequest(BaseModel):
+    reason: str = Field(..., min_length=1, max_length=2000)
 
 
 class SupplyChainToolRequest(BaseModel):
@@ -2745,6 +2769,90 @@ async def governance_remove_workflow_rule(
         "governance_workflow_rule_removed", rule_id=rule_id, org_id=_auth.org_id, removed_by=_auth.key_id,
     )
     return {"status": "removed", "rule_id": rule_id}
+
+
+@app.post("/api/governance/delegations", tags=["governance"], status_code=201)
+@limiter.limit("20/minute")
+async def governance_grant_delegation(
+    request: Request,
+    req: DelegationGrantRequest,
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, Any]:
+    """Grants authority via the Delegation Graph (v3 authority-layer
+    work, Core Invariant #2) -- ADMIN+ since it directly creates
+    authority another identity can act on. A `from_identity_id` grant
+    is checked against that identity's own currently active delegation
+    via validate_attenuation() (db/delegation_repository.py's grant());
+    a mismatch is a 422, not a silent narrowing."""
+    if not _auth.org_id:
+        raise HTTPException(400, "Delegations require an org-scoped API key, not a legacy flat key.")
+    expires_at = None
+    if req.expires_in_minutes is not None:
+        expires_at = datetime.now(UTC) + timedelta(minutes=req.expires_in_minutes)
+    try:
+        record = await _ready(_delegation_repo).grant(
+            _auth.org_id,
+            req.to_identity_id,
+            granted_action_types=frozenset(req.granted_action_types),
+            constraints=req.constraints,
+            require_approval_for=frozenset(req.require_approval_for),
+            purpose=req.purpose,
+            granted_by=_auth.key_id,
+            from_identity_id=req.from_identity_id,
+            expires_at=expires_at,
+        )
+    except DelegationEscalationError as exc:
+        raise HTTPException(422, str(exc)) from None
+    logger.info(
+        "governance_delegation_granted",
+        delegation_id=record.delegation_id,
+        to_identity_id=record.to_identity_id,
+        from_identity_id=record.from_identity_id,
+        org_id=_auth.org_id,
+        granted_by=_auth.key_id,
+    )
+    return await _ready(_delegation_repo).explain_authority(_auth.org_id, record.to_identity_id)
+
+
+@app.get("/api/governance/delegations/{identity_id}/chain", tags=["governance"])
+@limiter.limit("30/minute")
+async def governance_get_delegation_chain(
+    request: Request,
+    identity_id: str,
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
+) -> dict[str, Any]:
+    """The root-first authority chain behind `identity_id`'s current
+    authority -- empty if it has no active delegation."""
+    if not _auth.org_id:
+        raise HTTPException(400, "Delegations require an org-scoped API key, not a legacy flat key.")
+    return await _ready(_delegation_repo).explain_authority(_auth.org_id, identity_id)
+
+
+@app.post("/api/governance/delegations/{identity_id}/revoke", tags=["governance"])
+@limiter.limit("10/minute")
+async def governance_revoke_delegation(
+    request: Request,
+    identity_id: str,
+    req: DelegationRevokeRequest,
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, Any]:
+    """Cascading revocation (Core Invariant #11): revokes `identity_id`'s
+    own active delegation and every descendant's, transitively -- a
+    revoked identity can never leave a still-valid grant standing for
+    anyone it delegated to."""
+    if not _auth.org_id:
+        raise HTTPException(400, "Delegations require an org-scoped API key, not a legacy flat key.")
+    revoked_ids = await _ready(_delegation_repo).revoke_branch(
+        _auth.org_id, identity_id, revoked_by=_auth.key_id, reason=req.reason
+    )
+    logger.info(
+        "governance_delegation_revoked",
+        identity_id=identity_id,
+        revoked_count=len(revoked_ids),
+        org_id=_auth.org_id,
+        revoked_by=_auth.key_id,
+    )
+    return {"identity_id": identity_id, "revoked_delegation_ids": revoked_ids}
 
 
 @app.post("/api/governance/supplychain/scan", tags=["governance"])

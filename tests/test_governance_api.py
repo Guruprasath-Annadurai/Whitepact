@@ -882,3 +882,187 @@ class TestWorkflowRuleEndpoints:
             headers={"Authorization": f"Bearer {other_key}"},
         )
         assert r.json()["rules"] == []
+
+
+class TestDelegationEndpoints:
+    async def test_analyst_cannot_grant(self, client: AsyncClient, org_and_analyst_key) -> None:
+        _org_id, key = org_and_analyst_key
+        r = await client.post(
+            "/api/governance/delegations",
+            json={
+                "to_identity_id": "agent-1",
+                "granted_action_types": ["rai_scan"],
+                "purpose": "test",
+            },
+            headers={"Authorization": f"Bearer {key}"},
+        )
+        assert r.status_code == 403
+
+    async def test_admin_grants_root_delegation(
+        self, client: AsyncClient, org_and_admin_key
+    ) -> None:
+        _org_id, admin_key = org_and_admin_key
+        r = await client.post(
+            "/api/governance/delegations",
+            json={
+                "to_identity_id": "agent-1",
+                "granted_action_types": ["rai_scan"],
+                "purpose": "autopay",
+            },
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        assert r.status_code == 201, r.text
+        body = r.json()
+        assert body["identity_id"] == "agent-1"
+        assert body["currently_active"] is True
+        assert len(body["chain"]) == 1
+        assert body["chain"][0]["purpose"] == "autopay"
+
+    async def test_grant_exceeding_parent_authority_rejected(
+        self, client: AsyncClient, org_and_admin_key
+    ) -> None:
+        _org_id, admin_key = org_and_admin_key
+        headers = {"Authorization": f"Bearer {admin_key}"}
+        await client.post(
+            "/api/governance/delegations",
+            json={
+                "to_identity_id": "manager-1",
+                "granted_action_types": ["payment.execute"],
+                "constraints": {"max_value_usd": 500_000},
+                "purpose": "manager root grant",
+            },
+            headers=headers,
+        )
+        r = await client.post(
+            "/api/governance/delegations",
+            json={
+                "to_identity_id": "agent-1",
+                "from_identity_id": "manager-1",
+                "granted_action_types": ["payment.execute"],
+                "constraints": {"max_value_usd": 1_000_000},
+                "purpose": "escalation attempt",
+            },
+            headers=headers,
+        )
+        assert r.status_code == 422
+
+    async def test_chain_endpoint_shows_multi_hop_delegation(
+        self, client: AsyncClient, org_and_admin_key
+    ) -> None:
+        _org_id, admin_key = org_and_admin_key
+        headers = {"Authorization": f"Bearer {admin_key}"}
+        await client.post(
+            "/api/governance/delegations",
+            json={
+                "to_identity_id": "manager-1",
+                "granted_action_types": ["rai_scan"],
+                "purpose": "manager root grant",
+            },
+            headers=headers,
+        )
+        await client.post(
+            "/api/governance/delegations",
+            json={
+                "to_identity_id": "agent-1",
+                "from_identity_id": "manager-1",
+                "granted_action_types": ["rai_scan"],
+                "purpose": "delegated to agent",
+            },
+            headers=headers,
+        )
+        r = await client.get(
+            "/api/governance/delegations/agent-1/chain",
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["currently_active"] is True
+        assert [hop["to_identity_id"] for hop in body["chain"]] == ["manager-1", "agent-1"]
+
+    async def test_chain_empty_for_unknown_identity(
+        self, client: AsyncClient, org_and_analyst_key
+    ) -> None:
+        _org_id, key = org_and_analyst_key
+        r = await client.get(
+            "/api/governance/delegations/nobody/chain",
+            headers={"Authorization": f"Bearer {key}"},
+        )
+        assert r.status_code == 200
+        assert r.json() == {"identity_id": "nobody", "currently_active": False, "chain": []}
+
+    async def test_analyst_cannot_revoke(self, client: AsyncClient, org_and_analyst_key) -> None:
+        _org_id, key = org_and_analyst_key
+        r = await client.post(
+            "/api/governance/delegations/agent-1/revoke",
+            json={"reason": "test"},
+            headers={"Authorization": f"Bearer {key}"},
+        )
+        assert r.status_code == 403
+
+    async def test_admin_revokes_cascades_to_descendants(
+        self, client: AsyncClient, org_and_admin_key
+    ) -> None:
+        _org_id, admin_key = org_and_admin_key
+        headers = {"Authorization": f"Bearer {admin_key}"}
+        await client.post(
+            "/api/governance/delegations",
+            json={
+                "to_identity_id": "manager-1",
+                "granted_action_types": ["rai_scan"],
+                "purpose": "manager root grant",
+            },
+            headers=headers,
+        )
+        await client.post(
+            "/api/governance/delegations",
+            json={
+                "to_identity_id": "agent-1",
+                "from_identity_id": "manager-1",
+                "granted_action_types": ["rai_scan"],
+                "purpose": "delegated to agent",
+            },
+            headers=headers,
+        )
+        r = await client.post(
+            "/api/governance/delegations/manager-1/revoke",
+            json={"reason": "offboarded"},
+            headers=headers,
+        )
+        assert r.status_code == 200, r.text
+        assert len(r.json()["revoked_delegation_ids"]) == 2
+
+        chain = await client.get("/api/governance/delegations/agent-1/chain", headers=headers)
+        assert chain.json()["currently_active"] is False
+
+    async def test_delegations_scoped_to_caller_org(
+        self, client: AsyncClient, org_and_admin_key
+    ) -> None:
+        org_id, admin_key = org_and_admin_key
+        await client.post(
+            "/api/governance/delegations",
+            json={
+                "to_identity_id": "shared-name-agent",
+                "granted_action_types": ["rai_scan"],
+                "purpose": "org a's own grant",
+            },
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+
+        r = await client.post(
+            "/api/orgs",
+            json={"name": "Other Delegation Co", "slug": "other-delegation-co"},
+            headers=BOOTSTRAP_AUTH,
+        )
+        other_org_id = r.json()["id"]
+        r = await client.post(
+            f"/api/orgs/{other_org_id}/keys",
+            json={"name": "k", "role": "ADMIN"},
+            headers=BOOTSTRAP_AUTH,
+        )
+        other_key = r.json()["key"]
+
+        r = await client.get(
+            "/api/governance/delegations/shared-name-agent/chain",
+            headers={"Authorization": f"Bearer {other_key}"},
+        )
+        assert r.json()["currently_active"] is False

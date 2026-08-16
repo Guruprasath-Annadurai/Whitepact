@@ -385,6 +385,7 @@ def _build_http_app() -> Any:
     if settings.mcp_governance_enabled:
         from responsibleai.db import (
             ApprovalRepository,
+            DelegationRepository,
             EvidenceRepository,
             OrgAuthorityCeilingRepository,
             PolicyRepository,
@@ -412,6 +413,7 @@ def _build_http_app() -> Any:
             webhook_manager=_governance_webhook_manager,
             ceiling_repo=OrgAuthorityCeilingRepository(_db_engine),
             workflow_rule_repo=WorkflowRuleRepository(_db_engine),
+            delegation_repo=DelegationRepository(_db_engine),
         )
     # Reuses the exact same RAI_OIDC_* / Settings.oidc_* config the
     # dashboard API's SSO login already reads (dashboard/app.py's own

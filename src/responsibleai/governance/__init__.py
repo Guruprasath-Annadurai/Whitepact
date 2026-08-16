@@ -8,6 +8,7 @@ document."""
 from __future__ import annotations
 
 from responsibleai.governance.ceiling import OrgAuthorityCeiling
+from responsibleai.governance.delegation import DelegationRecord
 from responsibleai.governance.execution import (
     AuthorizationActionMismatchError,
     AuthorizationAlreadyConsumedError,
@@ -55,6 +56,7 @@ __all__ = [
     "AuthorizationOrganizationMismatchError",
     "DecisionNotExecutableError",
     "DecisionResult",
+    "DelegationRecord",
     "ExecutionAuthorization",
     "ExecutionNotAuthorizedError",
     "Executor",

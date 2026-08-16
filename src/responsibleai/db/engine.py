@@ -524,6 +524,35 @@ governance_policy_versions = Table(
 # see `governance/ceiling.py`'s `OrgAuthorityCeiling.to_authority_context()`.
 # All-null row (or no row at all) means "no ceiling configured" -- every
 # org before this table existed behaves identically.
+
+# v3 authority-layer work (Core Invariant #2, Delegation Graph): the
+# actual persisted graph of who delegated authority to whom -- distinct
+# from `AuthorityContext.delegation_chain` (an in-memory, per-call list).
+# `from_identity_id` null means a root grant. Enables
+# `DelegationRepository.get_authority_chain()`, `.explain_authority()`,
+# and `.revoke_branch()` (cascading revocation).
+governance_delegations = Table(
+    "governance_delegations",
+    metadata,
+    Column("id",                    String(36),  primary_key=True),
+    Column("org_id",                String(36),  nullable=False),
+    Column("from_identity_id",      String(200), nullable=True),
+    Column("to_identity_id",        String(200), nullable=False),
+    Column("granted_action_types",  Text,        nullable=False),  # JSON list
+    Column("constraints",           Text,        nullable=True),   # JSON dict or null
+    Column("require_approval_for",  Text,        nullable=True),   # JSON list or null
+    Column("purpose",               Text,        nullable=False),
+    Column("granted_by",            String(200), nullable=False),
+    Column("granted_at",            String(32),  nullable=False),
+    Column("expires_at",            String(32),  nullable=True),
+    Column("revoked_at",            String(32),  nullable=True),
+    Column("revoked_by",            String(200), nullable=True),
+    Column("revoke_reason",         Text,        nullable=True),
+    Index("idx_gdel_org",  "org_id"),
+    Index("idx_gdel_to",   "org_id", "to_identity_id"),
+    Index("idx_gdel_from", "org_id", "from_identity_id"),
+)
+
 governance_workflow_rules = Table(
     "governance_workflow_rules",
     metadata,

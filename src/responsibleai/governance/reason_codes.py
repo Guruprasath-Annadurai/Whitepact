@@ -93,6 +93,11 @@ class ReasonCode(StrEnum):
     # in this sequence was individually permitted, but the sequence
     # itself matches a forbidden composition."
     AUTHORITY_COMPOSITION_VIOLATION = "AUTHORITY_COMPOSITION_VIOLATION"
+    # Not in the original list; added for the Delegation Graph's
+    # cascading revocation (db/delegation_repository.py's
+    # revoke_branch()) -- distinct from AUTHORITY_EXPIRED (a natural
+    # time-based lapse) since this is a deliberate admin action.
+    AUTHORITY_REVOKED = "AUTHORITY_REVOKED"
 
 
 def format_reason(code: ReasonCode, /, **details: object) -> str:

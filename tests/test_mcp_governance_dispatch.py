@@ -56,6 +56,35 @@ async def governed_app(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.fixture()
+async def governed_app_with_key(monkeypatch: pytest.MonkeyPatch):
+    """Same as `governed_app`, but also yields the API key's own
+    `key_id` -- `apply_governance()` builds `AgentContext.agent_id` from
+    `ctx.key_id`, which the Delegation Graph tests need in order to
+    grant/revoke delegations against the exact identity a live MCP call
+    will present as."""
+    import responsibleai.db as db_module
+    from responsibleai.dashboard.config import get_settings
+    from responsibleai.mcp.server import _build_http_app
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "mcp_governance_enabled", True)
+
+    engine = create_engine(":memory:")
+    await engine.init()
+    monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
+
+    org_repo = OrgRepository(engine)
+    org = await org_repo.create_org("Governed Co", "governed-co", plan=Plan.ENTERPRISE)
+    key_rec, raw_key = await org_repo.create_key(org.id, "test-key", role=Role.ANALYST)
+
+    app = _build_http_app()
+    async with LifespanManager(app) as manager:
+        yield manager.app, raw_key, org.id, engine, key_rec.id
+
+    await engine.close()
+
+
+@pytest.fixture()
 async def ungoverned_app(monkeypatch: pytest.MonkeyPatch):
     """Same setup, but mcp_governance_enabled left at its False default
     — proves the feature genuinely changes nothing when off."""
@@ -522,3 +551,81 @@ class TestAuthoritySubsystemCrashFailsClosed:
         # never reached, i.e. execution never got past evaluate().
         records = await EvidenceRepository(engine).list_for_org(org_id)
         assert not any(r.action_type == "rai_health" for r in records)
+
+
+class TestDelegationGraphContinuousReauthorization:
+    """Continuous re-authorization (Delegation Graph, v3 authority-layer
+    work) enforced live on the real hosted MCP dispatch path --
+    `apply_governance()` checks the calling identity's own delegation
+    state fresh on every call, not just once. No delegation record at
+    all is the default (identical to before this feature existed);
+    a revoked one is denied before the gateway's normal pipeline even
+    runs."""
+
+    async def test_identity_never_delegated_unaffected(self, governed_app_with_key) -> None:
+        app, raw_key, _org_id, _engine, _key_id = governed_app_with_key
+        result = await _call(app, raw_key, "rai_health", {})
+        assert result.isError is not True
+        payload = json.loads(result.content[0].text)
+        assert "error" not in payload
+
+    async def test_active_delegation_allows_the_call(self, governed_app_with_key) -> None:
+        from responsibleai.db import DelegationRepository
+
+        app, raw_key, org_id, engine, key_id = governed_app_with_key
+        await DelegationRepository(engine).grant(
+            org_id,
+            key_id,
+            granted_action_types=frozenset({"rai_health"}),
+            purpose="test grant",
+            granted_by="owner-1",
+        )
+        result = await _call(app, raw_key, "rai_health", {})
+        assert result.isError is not True
+        payload = json.loads(result.content[0].text)
+        assert "error" not in payload
+
+    async def test_revoked_delegation_denies_the_call(self, governed_app_with_key) -> None:
+        from responsibleai.db import DelegationRepository
+
+        app, raw_key, org_id, engine, key_id = governed_app_with_key
+        repo = DelegationRepository(engine)
+        await repo.grant(
+            org_id,
+            key_id,
+            granted_action_types=frozenset({"rai_health"}),
+            purpose="test grant",
+            granted_by="owner-1",
+        )
+        await repo.revoke_branch(org_id, key_id, revoked_by="owner-1", reason="offboarded")
+
+        result = await _call(app, raw_key, "rai_health", {})
+        assert result.isError is not True
+        payload = json.loads(result.content[0].text)
+        assert payload["error"] == "governance_denied"
+        assert any(r.startswith("AUTHORITY_REVOKED") for r in payload["reason_codes"])
+
+        records = await EvidenceRepository(engine).list_for_org(org_id, decision="DENY")
+        assert any(r.action_type == "rai_health" for r in records)
+
+    async def test_expired_delegation_denies_the_call(self, governed_app_with_key) -> None:
+        from datetime import UTC, datetime, timedelta
+
+        from responsibleai.db import DelegationRepository
+
+        app, raw_key, org_id, engine, key_id = governed_app_with_key
+        past = datetime.now(UTC) - timedelta(minutes=1)
+        await DelegationRepository(engine).grant(
+            org_id,
+            key_id,
+            granted_action_types=frozenset({"rai_health"}),
+            purpose="test grant",
+            granted_by="owner-1",
+            expires_at=past,
+        )
+
+        result = await _call(app, raw_key, "rai_health", {})
+        assert result.isError is not True
+        payload = json.loads(result.content[0].text)
+        assert payload["error"] == "governance_denied"
+        assert any(r.startswith("AUTHORITY_EXPIRED") for r in payload["reason_codes"])
