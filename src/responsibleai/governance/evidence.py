@@ -88,6 +88,16 @@ class EvidenceRecord:
     model: str | None = None
     prev_hash: str | None = None
     hash: str | None = None
+    # ISO-8601, filled in by EvidenceRepository.record()/read back from
+    # the DB row -- distinct from evaluated_at (when the gateway made
+    # the decision): recorded_at is when it was actually persisted, and
+    # is part of the hash material (db/evidence_repository.py's
+    # _compute_entry_hash()), so an Evidence Bundle export (v3
+    # authority-layer work) needs it on the record itself to recompute
+    # hashes offline, without a second DB round-trip. None for any
+    # EvidenceRecord built but not yet persisted (e.g. straight out of
+    # build_evidence_record(), before .record() is called).
+    recorded_at: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -109,6 +119,7 @@ class EvidenceRecord:
             "provider": self.provider,
             "model": self.model,
             "evaluated_at": self.evaluated_at.isoformat(),
+            "recorded_at": self.recorded_at,
             "prev_hash": self.prev_hash,
             "hash": self.hash,
         }

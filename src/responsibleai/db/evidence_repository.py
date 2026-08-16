@@ -69,6 +69,7 @@ def _row_to_record(row: Any) -> EvidenceRecord:
         provider=row.provider,
         model=row.model,
         evaluated_at=datetime.fromisoformat(row.evaluated_at),
+        recorded_at=row.recorded_at,
         prev_hash=row.prev_hash,
         hash=row.entry_hash,
     )
@@ -154,6 +155,7 @@ class EvidenceRepository:
 
         evidence.prev_hash = prev_hash
         evidence.hash = entry_hash
+        evidence.recorded_at = recorded_at
         return evidence
 
     async def get(self, evidence_id: str) -> EvidenceRecord | None:
@@ -181,6 +183,36 @@ class EvidenceRepository:
         if decision is not None:
             query = query.where(governance_evidence.c.decision == decision)
         query = query.order_by(governance_evidence.c.recorded_at.desc()).limit(limit)
+        async with self._engine.raw.connect() as conn:
+            rows = (await conn.execute(query)).fetchall()
+        return [_row_to_record(r) for r in rows]
+
+    async def list_for_bundle(
+        self,
+        org_id: str | None,
+        *,
+        since: str | None = None,
+        until: str | None = None,
+        limit: int = 1000,
+    ) -> list[EvidenceRecord]:
+        """Chronological (ascending) slice of the org's evidence chain,
+        for Evidence Bundle export (`governance/evidence_bundle.py`) --
+        ascending order matches the actual chain-walk direction, unlike
+        `list_for_org()`'s "most recent first" UI ordering. `since`/
+        `until` are ISO-8601 `recorded_at` bounds, both optional and
+        inclusive; omitting both exports the org's entire chain (up to
+        `limit`)."""
+        org_filter = (
+            governance_evidence.c.org_id.is_(None)
+            if org_id is None
+            else governance_evidence.c.org_id == org_id
+        )
+        query = select(governance_evidence).where(org_filter)
+        if since is not None:
+            query = query.where(governance_evidence.c.recorded_at >= since)
+        if until is not None:
+            query = query.where(governance_evidence.c.recorded_at <= until)
+        query = query.order_by(governance_evidence.c.recorded_at.asc()).limit(limit)
         async with self._engine.raw.connect() as conn:
             rows = (await conn.execute(query)).fetchall()
         return [_row_to_record(r) for r in rows]

@@ -13,6 +13,12 @@ from responsibleai.governance.autonomy_budget import (
 )
 from responsibleai.governance.ceiling import OrgAuthorityCeiling
 from responsibleai.governance.delegation import DelegationRecord
+from responsibleai.governance.evidence_bundle import (
+    BundleVerificationResult,
+    EvidenceBundle,
+    build_evidence_bundle,
+    verify_evidence_bundle,
+)
 from responsibleai.governance.execution import (
     AuthorizationActionMismatchError,
     AuthorizationAlreadyConsumedError,
@@ -60,9 +66,11 @@ __all__ = [
     "AuthorizationAlreadyConsumedError",
     "AuthorizationExpiredError",
     "AuthorizationOrganizationMismatchError",
+    "BundleVerificationResult",
     "DecisionNotExecutableError",
     "DecisionResult",
     "DelegationRecord",
+    "EvidenceBundle",
     "ExecutionAuthorization",
     "ExecutionNotAuthorizedError",
     "Executor",
@@ -82,6 +90,7 @@ __all__ = [
     "WhitePactRuntimeGateway",
     "WorkflowSequenceRule",
     "authorize_execution",
+    "build_evidence_bundle",
     "check_composition_violation",
     "classify_action_risk",
     "enrich_agent_trust_state",
@@ -90,4 +99,5 @@ __all__ = [
     "recent_violation_count",
     "scan_memory_write",
     "validate_attenuation",
+    "verify_evidence_bundle",
 ]

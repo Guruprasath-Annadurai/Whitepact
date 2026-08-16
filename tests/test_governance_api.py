@@ -180,6 +180,105 @@ class TestEvidenceEndpoints:
         assert r.json()["evidence"] == []
 
 
+class TestEvidenceBundleEndpoints:
+    async def test_export_empty_bundle_for_new_org(
+        self, client: AsyncClient, org_and_analyst_key
+    ) -> None:
+        org_id, key = org_and_analyst_key
+        r = await client.get(
+            "/api/governance/evidence/bundle", headers={"Authorization": f"Bearer {key}"}
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["org_id"] == org_id
+        assert body["record_count"] == 0
+        assert body["records"] == []
+        assert "bundle_digest" in body
+
+    async def test_export_requires_auth(self, client: AsyncClient) -> None:
+        r = await client.get("/api/governance/evidence/bundle")
+        assert r.status_code == 401
+
+    async def test_export_bundle_with_seeded_records(
+        self, client: AsyncClient, org_and_analyst_key
+    ) -> None:
+        org_id, key = org_and_analyst_key
+        await _seed_evidence(org_id)
+        r = await client.get(
+            "/api/governance/evidence/bundle", headers={"Authorization": f"Bearer {key}"}
+        )
+        body = r.json()
+        assert body["record_count"] == 1
+        assert body["records"][0]["organization_id"] == org_id
+
+    async def test_exported_bundle_verifies_via_the_verify_endpoint(
+        self, client: AsyncClient, org_and_analyst_key
+    ) -> None:
+        """The actual offline-verifiability round trip -- export, then
+        verify the exact JSON that came back, exactly as an auditor
+        who downloaded the file would."""
+        org_id, key = org_and_analyst_key
+        headers = {"Authorization": f"Bearer {key}"}
+        await _seed_evidence(org_id)
+        await _seed_evidence(org_id, decision_target="rai_scan")
+
+        exported = await client.get("/api/governance/evidence/bundle", headers=headers)
+        bundle = exported.json()
+
+        r = await client.post(
+            "/api/governance/evidence/bundle/verify", json=bundle, headers=headers
+        )
+        assert r.status_code == 200, r.text
+        result = r.json()
+        assert result["valid"] is True
+        assert result["chain_intact"] is True
+        assert result["digest_matches"] is True
+        assert result["failure_reason"] is None
+
+    async def test_tampered_bundle_fails_verification(
+        self, client: AsyncClient, org_and_analyst_key
+    ) -> None:
+        org_id, key = org_and_analyst_key
+        headers = {"Authorization": f"Bearer {key}"}
+        await _seed_evidence(org_id)
+
+        exported = await client.get("/api/governance/evidence/bundle", headers=headers)
+        bundle = exported.json()
+        bundle["records"][0]["decision"] = "DENY"
+
+        r = await client.post(
+            "/api/governance/evidence/bundle/verify", json=bundle, headers=headers
+        )
+        assert r.status_code == 200, r.text
+        result = r.json()
+        assert result["valid"] is False
+        assert result["failure_reason"] is not None
+
+    async def test_bundle_scoped_to_caller_org(
+        self, client: AsyncClient, org_and_analyst_key
+    ) -> None:
+        org_id, key = org_and_analyst_key
+        await _seed_evidence(org_id)
+
+        r = await client.post(
+            "/api/orgs",
+            json={"name": "Other Bundle Co", "slug": "other-bundle-co"},
+            headers=BOOTSTRAP_AUTH,
+        )
+        other_org_id = r.json()["id"]
+        r = await client.post(
+            f"/api/orgs/{other_org_id}/keys",
+            json={"name": "k", "role": "ANALYST"},
+            headers=BOOTSTRAP_AUTH,
+        )
+        other_key = r.json()["key"]
+
+        r = await client.get(
+            "/api/governance/evidence/bundle", headers={"Authorization": f"Bearer {other_key}"}
+        )
+        assert r.json()["record_count"] == 0
+
+
 class TestApprovalEndpoints:
     async def test_list_pending_empty(self, client: AsyncClient, org_and_analyst_key) -> None:
         _org_id, key = org_and_analyst_key

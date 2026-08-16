@@ -113,6 +113,7 @@ from responsibleai.eval import (
 from responsibleai.governance.approval import ApprovalStatus
 from responsibleai.governance.autonomy_budget import AutonomyBudgetPolicy
 from responsibleai.governance.ceiling import OrgAuthorityCeiling
+from responsibleai.governance.evidence_bundle import build_evidence_bundle, verify_evidence_bundle
 from responsibleai.governance.gateway import WhitePactRuntimeGateway
 from responsibleai.governance.models import GovernanceDecision
 from responsibleai.governance.policy import PolicyRule
@@ -2564,6 +2565,59 @@ async def governance_verify_evidence(
         raise HTTPException(400, "Governance evidence requires an org-scoped API key, not a legacy flat key.")
     intact = await _ready(_evidence_repo).verify_chain(_auth.org_id)
     return {"org_id": _auth.org_id, "chain_intact": intact}
+
+
+@app.get("/api/governance/evidence/bundle", tags=["governance"])
+@limiter.limit("10/minute")
+async def governance_export_evidence_bundle(
+    request: Request,
+    since: str | None = Query(default=None, description="ISO-8601 recorded_at lower bound, inclusive."),
+    until: str | None = Query(default=None, description="ISO-8601 recorded_at upper bound, inclusive."),
+    limit: int = Query(default=1000, ge=1, le=10_000),
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
+) -> dict[str, Any]:
+    """Exports a self-contained, OFFLINE-verifiable Evidence Bundle
+    (v3 authority-layer work) -- download this JSON and hand it to an
+    auditor/regulator/insurer; POST it back to
+    /api/governance/evidence/bundle/verify (or call
+    governance.evidence_bundle.verify_evidence_bundle() directly, no
+    WhitePact credential needed) to confirm it wasn't tampered with,
+    with no further access to this API required. Omitting since/until
+    exports the org's entire chain (up to `limit`); a scoped export's
+    first record's prev_hash is an external anchor, not something the
+    bundle alone proves -- see that module's docstring."""
+    if not _auth.org_id:
+        raise HTTPException(400, "Governance evidence requires an org-scoped API key, not a legacy flat key.")
+    records = await _ready(_evidence_repo).list_for_bundle(
+        _auth.org_id, since=since, until=until, limit=limit
+    )
+    bundle = build_evidence_bundle(records, org_id=_auth.org_id)
+    return bundle.to_dict()
+
+
+@app.post("/api/governance/evidence/bundle/verify", tags=["governance"])
+@limiter.limit("10/minute")
+async def governance_verify_evidence_bundle(
+    request: Request,
+    bundle: dict[str, Any],
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
+) -> dict[str, Any]:
+    """Verifies an uploaded Evidence Bundle purely from its own
+    contents -- this endpoint is a convenience (so a caller doesn't
+    have to run the same Python locally), not a requirement: the whole
+    point of an Evidence Bundle is that
+    governance.evidence_bundle.verify_evidence_bundle() can run this
+    exact check completely offline, with no WhitePact API access at
+    all. Does not check the bundle's org_id against the caller's --
+    verifying a bundle you didn't originally export is a legitimate
+    use (an auditor checking a bundle handed to them by someone else)."""
+    result = verify_evidence_bundle(bundle)
+    return {
+        "valid": result.valid,
+        "chain_intact": result.chain_intact,
+        "digest_matches": result.digest_matches,
+        "failure_reason": result.failure_reason,
+    }
 
 
 @app.get("/api/governance/approvals", tags=["governance"])
