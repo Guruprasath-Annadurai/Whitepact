@@ -394,7 +394,7 @@ def _build_http_app() -> Any:
             WorkflowRuleRepository,
         )
         from responsibleai.governance import WhitePactRuntimeGateway
-        from responsibleai.integrations.client import TrustClient
+        from responsibleai.integrations.client import DEFAULT_CACHE_TTL_MINUTES, TrustClient
         from responsibleai.mcp.governance_integration import (
             GovernanceServices as RuntimeGovernanceServices,
         )
@@ -409,7 +409,12 @@ def _build_http_app() -> Any:
             evidence_repo=EvidenceRepository(_db_engine),
             approval_repo=ApprovalRepository(_db_engine),
             policy_repo=PolicyRepository(_db_engine),
-            trust_client=TrustClient(),
+            # Continuous MCP Trust: this is the hot governed-dispatch
+            # path, making a live Trust Index HTTP call on every
+            # governed call with a provider/model pair -- caching (with
+            # bounded, re-verified staleness; see client.py's
+            # TrustClient docstring) is worth it here specifically.
+            trust_client=TrustClient(cache_ttl_minutes=DEFAULT_CACHE_TTL_MINUTES),
             webhook_manager=_governance_webhook_manager,
             ceiling_repo=OrgAuthorityCeilingRepository(_db_engine),
             workflow_rule_repo=WorkflowRuleRepository(_db_engine),

@@ -384,6 +384,114 @@ class TestRequireApprovalQueuesNotExecutes:
         assert any(p.action_type == "rai_cost_estimate" for p in pending)
 
 
+class TestContinuousMcpTrust:
+    """Continuous MCP Trust (v3 authority-layer work) enforced live on
+    the real hosted MCP dispatch path -- the governed process's
+    TrustClient caches results (mcp/server.py opts in with
+    DEFAULT_CACHE_TTL_MINUTES), and a cached entry whose live re-fetch
+    fails is served stale=True, which the gateway downgrades to
+    REQUIRE_APPROVAL regardless of the score it carries."""
+
+    async def test_repeat_calls_within_ttl_hit_the_network_once(
+        self, governed_app, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import httpx as httpx_module
+        import respx
+
+        app, raw_key, _org_id, _engine = governed_app
+
+        with respx.mock(base_url="https://responsibleai-dashboard.onrender.com") as mock:
+            route = mock.get("/api/trust-index/check").mock(
+                return_value=httpx_module.Response(
+                    200,
+                    json={
+                        "model": "gpt-4o", "provider": "openai", "known": True,
+                        "trust_score": {"overall": 90.0}, "certified": True,
+                        "has_reported_incidents": False,
+                    },
+                )
+            )
+            for _ in range(3):
+                result = await _call(
+                    app, raw_key, "rai_cost_estimate",
+                    {"model": "gpt-4o", "provider": "openai", "input_tokens": 10, "output_tokens": 5},
+                )
+                assert json.loads(result.content[0].text).get("error") is None
+            assert route.call_count == 1
+
+    async def test_stale_cached_entry_after_failed_refetch_requires_approval(
+        self, governed_app, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import httpx as httpx_module
+        import respx
+
+        import responsibleai.mcp.governance_integration as gi_module
+        from responsibleai.integrations.client import TrustCheckResult
+
+        app, raw_key, org_id, engine = governed_app
+
+        # `GovernanceServices` (and its `trust_client`) is threaded
+        # through a per-request ContextVar, not a module-level handle
+        # -- capture it via the one real seam that sees it: wrap
+        # apply_governance() itself for the duration of this test.
+        captured: dict[str, object] = {}
+        real_apply_governance = gi_module.apply_governance
+
+        async def _capturing(name, arguments, ctx, services):
+            captured["services"] = services
+            return await real_apply_governance(name, arguments, ctx, services)
+
+        monkeypatch.setattr(gi_module, "apply_governance", _capturing)
+
+        with respx.mock(base_url="https://responsibleai-dashboard.onrender.com") as mock:
+            mock.get("/api/trust-index/check").mock(
+                return_value=httpx_module.Response(
+                    200,
+                    json={
+                        "model": "gpt-4o", "provider": "openai", "known": True,
+                        "trust_score": {"overall": 90.0}, "certified": True,
+                        "has_reported_incidents": False,
+                    },
+                )
+            )
+            result = await _call(
+                app, raw_key, "rai_cost_estimate",
+                {"model": "gpt-4o", "provider": "openai", "input_tokens": 10, "output_tokens": 5},
+            )
+            assert json.loads(result.content[0].text).get("error") is None
+
+        # Backdate the just-cached entry past the TTL so the next call
+        # attempts a live re-fetch -- then make that re-fetch fail.
+        from datetime import UTC, datetime, timedelta
+
+        trust_client = captured["services"].trust_client  # type: ignore[attr-defined]
+        key = ("gpt-4o", "openai")
+        cached = trust_client._cache[key]
+        trust_client._cache[key] = TrustCheckResult(
+            model=cached.model, provider=cached.provider, known=cached.known,
+            trust_score=cached.trust_score, certified=cached.certified,
+            has_reported_incidents=cached.has_reported_incidents,
+            checked_at=datetime.now(UTC) - timedelta(minutes=999),
+        )
+
+        with respx.mock(base_url="https://responsibleai-dashboard.onrender.com") as mock:
+            mock.get("/api/trust-index/check").mock(return_value=httpx_module.Response(500))
+            result = await _call(
+                app, raw_key, "rai_cost_estimate",
+                {"model": "gpt-4o", "provider": "openai", "input_tokens": 10, "output_tokens": 5},
+            )
+
+        assert result.isError is not True
+        payload = json.loads(result.content[0].text)
+        assert payload["error"] == "governance_approval_required"
+        assert any(r.startswith("TRUST_ASSESSMENT_STALE") for r in payload["reason_codes"])
+
+        from responsibleai.db import ApprovalRepository
+
+        pending = await ApprovalRepository(engine).list_pending(org_id)
+        assert any(p.action_type == "rai_cost_estimate" for p in pending)
+
+
 class TestRequireApprovalFiresWebhook:
     async def test_queued_approval_fires_a_registered_webhook(
         self,

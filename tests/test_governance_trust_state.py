@@ -19,7 +19,7 @@ from responsibleai.governance import (
     enrich_agent_trust_state,
 )
 from responsibleai.governance.gateway import LOW_TRUST_SCORE_THRESHOLD
-from responsibleai.integrations.client import TrustClient
+from responsibleai.integrations.client import TrustCheckResult, TrustClient
 
 
 def _identity() -> IdentityContext:
@@ -137,6 +137,76 @@ class TestGatewayLowTrustDowngrade:
         gateway, authority = self._gateway_authority()
         agent = AgentContext(identity=_identity(), provider="unknown-vendor", model="sketchy-model")
         agent = await enrich_agent_trust_state(agent, TrustClient("https://api.test"))
+        action = ActionRequest(
+            agent=agent, action_type="rai_scan", target="rai_scan",
+            arguments={"text": "Contact me at alice@example.com"},
+        )
+        result = gateway.evaluate(action, authority)
+        assert result.decision == GovernanceDecision.ALLOW_WITH_REDACTION
+
+
+class TestGatewayStaleTrustDowngrade:
+    """Continuous MCP Trust (v3 authority-layer work): a `trust_state`
+    served with `stale=True` (TrustClient attempted a live re-fetch and
+    it failed) downgrades an otherwise-ALLOW decision to
+    REQUIRE_APPROVAL, regardless of the score it carries -- the point
+    is that the data couldn't be freshly reverified just now, not what
+    it happens to say."""
+
+    def _gateway_authority(self) -> tuple[WhitePactRuntimeGateway, AuthorityContext]:
+        return (
+            WhitePactRuntimeGateway(),
+            AuthorityContext(delegated_by="org-1", granted_action_types=frozenset({"rai_scan"})),
+        )
+
+    def test_stale_high_score_still_downgrades(self) -> None:
+        gateway, authority = self._gateway_authority()
+        agent = AgentContext(identity=_identity(), provider="openai", model="gpt-4o")
+        agent.trust_state = TrustCheckResult(
+            model="gpt-4o", provider="openai", known=True,
+            trust_score={"overall": 95.0}, certified=True,
+            has_reported_incidents=False, stale=True,
+        )
+        action = ActionRequest(agent=agent, action_type="rai_scan", target="rai_scan", arguments={})
+        result = gateway.evaluate(action, authority)
+        assert result.decision == GovernanceDecision.REQUIRE_APPROVAL
+        assert any(code.startswith("TRUST_ASSESSMENT_STALE:") for code in result.reason_codes)
+
+    def test_stale_unknown_model_still_downgrades(self) -> None:
+        """Staleness fires even for an unknown model -- unlike the
+        low-trust-score check, this isn't about what the score says,
+        it's about whether the data was obtained fresh."""
+        gateway, authority = self._gateway_authority()
+        agent = AgentContext(identity=_identity(), provider="openai", model="obscure-model")
+        agent.trust_state = TrustCheckResult(
+            model="obscure-model", provider="openai", known=False,
+            trust_score=None, certified=False, has_reported_incidents=False, stale=True,
+        )
+        action = ActionRequest(agent=agent, action_type="rai_scan", target="rai_scan", arguments={})
+        result = gateway.evaluate(action, authority)
+        assert result.decision == GovernanceDecision.REQUIRE_APPROVAL
+        assert any(code.startswith("TRUST_ASSESSMENT_STALE:") for code in result.reason_codes)
+
+    def test_non_stale_result_unaffected(self) -> None:
+        gateway, authority = self._gateway_authority()
+        agent = AgentContext(identity=_identity(), provider="openai", model="gpt-4o")
+        agent.trust_state = TrustCheckResult(
+            model="gpt-4o", provider="openai", known=True,
+            trust_score={"overall": 95.0}, certified=True,
+            has_reported_incidents=False, stale=False,
+        )
+        action = ActionRequest(agent=agent, action_type="rai_scan", target="rai_scan", arguments={})
+        result = gateway.evaluate(action, authority)
+        assert result.decision == GovernanceDecision.ALLOW
+
+    def test_stale_never_overrides_pii_redaction(self) -> None:
+        gateway, authority = self._gateway_authority()
+        agent = AgentContext(identity=_identity(), provider="openai", model="gpt-4o")
+        agent.trust_state = TrustCheckResult(
+            model="gpt-4o", provider="openai", known=True,
+            trust_score={"overall": 95.0}, certified=True,
+            has_reported_incidents=False, stale=True,
+        )
         action = ActionRequest(
             agent=agent, action_type="rai_scan", target="rai_scan",
             arguments={"text": "Contact me at alice@example.com"},

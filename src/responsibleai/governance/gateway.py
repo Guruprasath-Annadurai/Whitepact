@@ -60,9 +60,13 @@ What ``evaluate()`` checks, in order:
    ``governance/trust_integration.py`` when the action names a
    third-party model/provider) — an otherwise-``ALLOW`` decision is
    downgraded to ``REQUIRE_APPROVAL`` when the Trust Index reports a
-   known model scoring below ``LOW_TRUST_SCORE_THRESHOLD``. Never
+   known model scoring below ``LOW_TRUST_SCORE_THRESHOLD``, *or* when
+   ``trust_state.stale`` is set (Continuous MCP Trust, v3
+   authority-layer work: ``TrustClient`` attempted a live re-fetch
+   before this call and it failed, so this decision would otherwise be
+   made on a result that couldn't be freshly reverified). Never
    escalates a redaction or a deny, and never fires for an unknown or
-   unscored model — see ``_apply_trust_state`` below.
+   unscored model — see ``_trust_reason`` below.
 
 No LLM call anywhere in this file — "prefer deterministic security
 controls over LLM-based controls where possible" applies to the
@@ -307,12 +311,12 @@ class WhitePactRuntimeGateway:
                 policy_version=policy_version,
             )
 
-        low_trust_reason = self._low_trust_reason(action)
-        if low_trust_reason is not None:
+        trust_reason = self._trust_reason(action)
+        if trust_reason is not None:
             return DecisionResult(
                 decision=GovernanceDecision.REQUIRE_APPROVAL,
                 action_id=action.action_id,
-                reason_codes=[*policy_reason_codes, low_trust_reason],
+                reason_codes=[*policy_reason_codes, trust_reason],
                 risk_tier=risk_tier,
                 policy_version=policy_version,
             )
@@ -326,14 +330,29 @@ class WhitePactRuntimeGateway:
         )
 
     @staticmethod
-    def _low_trust_reason(action: ActionRequest) -> str | None:
-        """None unless the Trust Index has scored this action's model as
-        both *known* and below ``LOW_TRUST_SCORE_THRESHOLD`` — an unknown
-        or unscored model is not treated as untrustworthy (same
-        fail-open-on-unknown reasoning ``TrustCheckResult.passes()``
-        documents), only a model with a real, low score escalates."""
+    def _trust_reason(action: ActionRequest) -> str | None:
+        """None unless the Trust Index check for this action's model
+        surfaced something worth a human looking at. Checks (first
+        match wins):
+
+        1. ``trust_state.stale`` (Continuous MCP Trust) — a live
+           re-fetch was attempted and failed, so this decision would
+           otherwise rest on a result ``TrustClient`` couldn't just
+           freshly reverify. Fires regardless of score, including for
+           an unknown model — staleness is about *how* the data was
+           obtained, not what it says.
+        2. A known model scoring below ``LOW_TRUST_SCORE_THRESHOLD`` —
+           an unknown or unscored model is not treated as untrustworthy
+           (same fail-open-on-unknown reasoning
+           ``TrustCheckResult.passes()`` documents), only a model with a
+           real, low score escalates.
+        """
         trust_state = action.agent.trust_state
-        if trust_state is None or not trust_state.known:
+        if trust_state is None:
+            return None
+        if trust_state.stale:
+            return format_reason(ReasonCode.TRUST_ASSESSMENT_STALE, model=trust_state.model)
+        if not trust_state.known:
             return None
         score = trust_state.overall_score
         if score is None or score >= LOW_TRUST_SCORE_THRESHOLD:
