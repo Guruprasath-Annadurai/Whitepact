@@ -27,6 +27,7 @@ from responsibleai.governance.models import (
     DecisionResult,
     GovernanceDecision,
     IdentityContext,
+    validate_attenuation,
 )
 from responsibleai.governance.policy import Policy, PolicyMatch, PolicyRule
 from responsibleai.governance.quarantine import (
@@ -67,4 +68,5 @@ __all__ = [
     "enrich_agent_trust_state",
     "format_reason",
     "recent_violation_count",
+    "validate_attenuation",
 ]

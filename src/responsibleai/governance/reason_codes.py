@@ -83,6 +83,11 @@ class ReasonCode(StrEnum):
     # action a human approved earlier — distinct from a real-time
     # ALLOW the gateway itself produced.
     RESUMED_AFTER_APPROVAL = "RESUMED_AFTER_APPROVAL"
+    # Not in the original list; added for the authority-attenuation
+    # invariant (`AuthorityContext`/`validate_attenuation()` in
+    # models.py) — no existing code covered "a delegated authority
+    # grants more than its own parent authority held."
+    DELEGATION_AUTHORITY_ESCALATION = "DELEGATION_AUTHORITY_ESCALATION"
 
 
 def format_reason(code: ReasonCode, /, **details: object) -> str:

@@ -191,12 +191,20 @@ class AuthorityContext:
         allowed_targets -> max_value_usd -> allowed_hours_utc — denies
         checked before allow-lists, narrowest scope first."""
         denied_targets = self.constraints.get("denied_targets")
-        if denied_targets and any(fnmatch.fnmatch(action.target, pattern) for pattern in denied_targets):
-            return format_reason(ReasonCode.TARGET_NOT_ALLOWED, target=action.target, rule="denied_targets")
+        if denied_targets and any(
+            fnmatch.fnmatch(action.target, pattern) for pattern in denied_targets
+        ):
+            return format_reason(
+                ReasonCode.TARGET_NOT_ALLOWED, target=action.target, rule="denied_targets"
+            )
 
         allowed_targets = self.constraints.get("allowed_targets")
-        if allowed_targets and not any(fnmatch.fnmatch(action.target, pattern) for pattern in allowed_targets):
-            return format_reason(ReasonCode.TARGET_NOT_ALLOWED, target=action.target, rule="allowed_targets")
+        if allowed_targets and not any(
+            fnmatch.fnmatch(action.target, pattern) for pattern in allowed_targets
+        ):
+            return format_reason(
+                ReasonCode.TARGET_NOT_ALLOWED, target=action.target, rule="allowed_targets"
+            )
 
         max_value_usd = self.constraints.get("max_value_usd")
         if max_value_usd is not None:
@@ -205,7 +213,10 @@ class AuthorityContext:
                     value = action.arguments[key]
                     if isinstance(value, int | float) and value > max_value_usd:
                         return format_reason(
-                            ReasonCode.VALUE_LIMIT_EXCEEDED, argument=key, value=value, limit=max_value_usd,
+                            ReasonCode.VALUE_LIMIT_EXCEEDED,
+                            argument=key,
+                            value=value,
+                            limit=max_value_usd,
                         )
                     break
 
@@ -213,7 +224,11 @@ class AuthorityContext:
         if allowed_hours_utc is not None:
             start, end = allowed_hours_utc
             current_hour = action.proposed_at.astimezone(UTC).hour
-            in_window = start <= current_hour < end if start <= end else current_hour >= start or current_hour < end
+            in_window = (
+                start <= current_hour < end
+                if start <= end
+                else current_hour >= start or current_hour < end
+            )
             if not in_window:
                 return format_reason(
                     ReasonCode.ACTION_NOT_ALLOWED,
@@ -232,6 +247,126 @@ class AuthorityContext:
             )
 
         return None
+
+    def validate_delegation_to(self, child: AuthorityContext) -> str | None:
+        """Convenience wrapper — see module-level `validate_attenuation()`
+        for what this actually checks and its documented limitations."""
+        return validate_attenuation(self, child)
+
+
+def validate_attenuation(parent: AuthorityContext, child: AuthorityContext) -> str | None:
+    """The authority-attenuation invariant: a delegated ``AuthorityContext``
+    must never grant more than the ``AuthorityContext`` that delegated it
+    held. ``None`` if ``child`` is attenuated (equal or narrower) relative
+    to ``parent``; otherwise a `format_reason()`-formatted string naming
+    the field that expanded.
+
+    This is deliberately checked between two already-constructed
+    ``AuthorityContext`` objects, not wired into a "spawn a child from a
+    parent" constructor — no such constructor exists yet in this
+    codebase, and inventing one wasn't part of the concrete, stated
+    requirement. Callers that build a delegated authority (a future
+    delegation-issuance endpoint, or an agent-management surface) should
+    call this before persisting/using the child authority they're about
+    to grant.
+
+    What is checked, one violation short-circuits (first one found wins,
+    same "narrowest scope first" convention as ``constraint_violation()``):
+
+    - ``granted_action_types``: child's must be a subset of parent's —
+      a delegated authority can never be granted an action type its
+      delegator didn't itself hold.
+    - ``constraints["max_value_usd"]``: child's limit (if parent has one)
+      must be set and must not exceed parent's. Parent having no limit
+      at all means parent is unconstrained here — nothing to attenuate.
+    - ``constraints["denied_targets"]``: every pattern the parent denied
+      must still be denied by the child — delegation can add denials,
+      never lift one.
+    - ``constraints["allowed_targets"]``: if parent restricts targets,
+      child must also restrict targets, and every child pattern must
+      already appear in parent's list. This is an exact-pattern-string
+      subset check, not full glob-algebra subset reasoning (e.g.
+      recognizing that ``"payment_a"`` is covered by ``"payment_*"``) —
+      a deliberately simple, honestly-scoped first version; a child
+      using a differently-worded but semantically-narrower pattern than
+      its parent's will incorrectly fail this check rather than pass.
+    - ``constraints["max_delegation_depth"]``: if parent sets one,
+      child's (if set) must not exceed it, and child must set one too —
+      leaving it unset where the parent constrained it would let the
+      child's own future re-delegation go unbounded.
+    - ``require_approval_for``: for every action type the parent both
+      granted and required approval for, if the child was also granted
+      that action type, the child must keep the approval requirement —
+      delegation can't silently drop a human-in-the-loop gate.
+
+    Explicitly **not** checked here (documented, not silently skipped):
+    ``constraints["allowed_hours_utc"]`` (comparing two time windows for
+    subset-ness, including UTC wraparound, is real interval math this
+    first version doesn't attempt) and ``delegation_chain`` identity/
+    depth consistency (already covered separately by
+    ``constraint_violation()``'s own ``max_delegation_depth`` check
+    against ``len(self.delegation_chain)`` at evaluation time).
+    """
+    if not child.granted_action_types <= parent.granted_action_types:
+        expanded = child.granted_action_types - parent.granted_action_types
+        return format_reason(
+            ReasonCode.DELEGATION_AUTHORITY_ESCALATION,
+            field="granted_action_types",
+            expanded=",".join(sorted(expanded)),
+        )
+
+    parent_max_value = parent.constraints.get("max_value_usd")
+    if parent_max_value is not None:
+        child_max_value = child.constraints.get("max_value_usd")
+        if child_max_value is None or child_max_value > parent_max_value:
+            return format_reason(
+                ReasonCode.DELEGATION_AUTHORITY_ESCALATION,
+                field="max_value_usd",
+                parent_limit=parent_max_value,
+                child_limit=child_max_value,
+            )
+
+    parent_denied = set(parent.constraints.get("denied_targets") or [])
+    child_denied = set(child.constraints.get("denied_targets") or [])
+    if not parent_denied <= child_denied:
+        lifted = parent_denied - child_denied
+        return format_reason(
+            ReasonCode.DELEGATION_AUTHORITY_ESCALATION,
+            field="denied_targets",
+            lifted=",".join(sorted(lifted)),
+        )
+
+    parent_allowed = parent.constraints.get("allowed_targets")
+    if parent_allowed is not None:
+        child_allowed = child.constraints.get("allowed_targets")
+        if child_allowed is None or not set(child_allowed) <= set(parent_allowed):
+            return format_reason(
+                ReasonCode.DELEGATION_AUTHORITY_ESCALATION,
+                field="allowed_targets",
+                child_allowed=",".join(sorted(child_allowed)) if child_allowed else "<unset>",
+            )
+
+    parent_max_depth = parent.constraints.get("max_delegation_depth")
+    if parent_max_depth is not None:
+        child_max_depth = child.constraints.get("max_delegation_depth")
+        if child_max_depth is None or child_max_depth > parent_max_depth:
+            return format_reason(
+                ReasonCode.DELEGATION_AUTHORITY_ESCALATION,
+                field="max_delegation_depth",
+                parent_limit=parent_max_depth,
+                child_limit=child_max_depth,
+            )
+
+    relevant_parent_approval = parent.require_approval_for & child.granted_action_types
+    if not relevant_parent_approval <= child.require_approval_for:
+        dropped = relevant_parent_approval - child.require_approval_for
+        return format_reason(
+            ReasonCode.DELEGATION_AUTHORITY_ESCALATION,
+            field="require_approval_for",
+            dropped=",".join(sorted(dropped)),
+        )
+
+    return None
 
 
 @dataclass
