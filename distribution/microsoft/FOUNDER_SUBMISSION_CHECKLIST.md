@@ -1,13 +1,65 @@
 # Microsoft Copilot certification — founder submission checklist
 
-Nothing in this checklist has been done. This lists exactly what a
-Microsoft-certified (Mode 2) connector submission requires, so the
+Nothing in the Mode 2 section below has been done. It lists exactly what
+a Microsoft-certified (Mode 2) connector submission requires, so the
 founder can decide whether it's worth pursuing, and do it without
 re-deriving these requirements from scratch.
 
 **Claude did not, and will not, do any of the following** — each needs an
 account, a legal identity, a payment, or a UI confirmation only the
 founder can provide.
+
+## Mode 3 (Independent Publisher connector) — real, solo-developer path, files built
+
+**Researched and confirmed 2026-08-16**: Microsoft's native "MCP server
+certification (preview)" pipeline (Mode 2, below) requires a verified
+publisher with a Microsoft Partner Center account and completed business
+verification — confirmed directly from Microsoft's own docs, no
+individual-developer exception. This remains blocked until Radtech LLP
+is incorporated.
+
+A separate, genuinely solo-developer-friendly path exists: the
+**Independent Publisher Connector Group** — free, no business entity, no
+Partner Center account, submitted via a GitHub pull request to
+`microsoft/PowerPlatformConnectors`. It certifies a standard OpenAPI
+2.0-based custom connector (not an MCP manifest directly), which becomes
+available in Power Platform / Copilot Studio as a premium connector with
+Microsoft's generic icon.
+
+**Files built 2026-08-16**, covering 5 of WhitePact's real, public,
+unauthenticated REST endpoints (health check, self-assess, verify,
+check, registry — deliberately excludes org-scoped/RBAC/billing
+endpoints, which are out of scope for an unauthenticated connector):
+
+- `independent-publisher-connector/apiDefinition.swagger.json` —
+  hand-authored Swagger 2.0 spec (validated with
+  `openapi-spec-validator`), pointed at the live
+  `responsibleai-dashboard.onrender.com` host
+- `independent-publisher-connector/apiProperties.json` — required
+  `iconBrandColor: "#da3b01"` per Independent Publisher rules
+- `independent-publisher-connector/readme.md` — follows Microsoft's
+  official Independent Publisher readme template exactly
+
+### Remaining steps (founder action — needs your own Power Platform account)
+
+1. Fork `microsoft/PowerPlatformConnectors` on GitHub.
+2. Create a new folder under `independent-publisher-connectors/WhitePact/`
+   in your fork and copy the three files above into it.
+3. Import the connector into your own Power Platform environment (Power
+   Apps → Data → Custom connectors → Import an OpenAPI file) and test it
+   — this needs a live Power Platform account, which Claude cannot
+   create or access.
+4. Take screenshots of the Test operations tab and of 3 unique
+   operations succeeding inside a Flow (per Microsoft's PR requirements).
+5. Open the pull request against `microsoft/PowerPlatformConnectors`,
+   title it `WhitePact Trust Index (Independent Publisher)`, paste in
+   the screenshots, and add the `independent-publisher-connector` label.
+6. This is a real, external, public PR submission — same category as
+   the `xai-org/plugin-marketplace` PR already submitted. Get explicit
+   confirmation before actually opening it, even after building
+   everything else.
+
+## Mode 2 (Microsoft-certified connector) — blocked
 
 ## 1. Partner Center account
 
