@@ -110,7 +110,23 @@ Even where enforcement is inline, it is not universal:
 - **Autonomy Budget**: counts `ALLOW`/`ALLOW_WITH_REDACTION` decisions
   recorded through this gateway, per `(org_id, agent_id)`. An agent that
   fans work out across multiple API keys/agent identities is not currently
-  aggregated into one shared budget.
+  aggregated into one shared budget. **A confirmed, real limitation, not a
+  hypothetical one**: the count-then-decide window
+  (`recent_autonomous_action_count()` reads, then the gateway decides,
+  then the caller records new evidence) has no lock around it, unlike
+  `EvidenceRepository`'s own hash-chain write (which does). A burst of
+  truly concurrent calls from the same identity, launched close enough
+  together that each reads the count before any of the others' evidence
+  commits, can jointly exceed the configured cap — reliably reproduced
+  (10 of 10 concurrent calls allowed against a budget of 3) in
+  `tests/test_concurrency.py::TestAutonomyBudgetConcurrency`. The budget
+  is a real, working control against *sustained* unsupervised volume
+  (the scenario it's built for — an agent looping over many sequential
+  calls); it is not currently a hard ceiling against a *concurrent burst*
+  from the same identity. Closing this window (an atomic count-and-reserve
+  operation, the same conditional-UPDATE pattern `ApprovalRepository.consume()`
+  already uses) is a scoped, well-understood fix not yet made — tracked
+  here rather than silently left undiscovered.
 - **Evidence Bundle**: exports and verifies exactly the `governance_evidence`
   rows this gateway wrote. It is not an audit trail for actions taken
   outside this governance layer.
