@@ -14,9 +14,10 @@
 > document as attorney-certified until it actually is.
 >
 > Data categories in Section 3 were cross-checked against what the live
-> hosted instance (`responsibleai-dashboard.onrender.com`,
-> `whitepact-mcp-http.onrender.com`) actually stores as of the date
-> below — a real spot-check, not an assumption.
+> hosted instance (`whitepact.com`, formerly reachable only at
+> `responsibleai-dashboard.onrender.com` — that URL still works
+> unchanged; `whitepact-mcp-http.onrender.com`) actually stores as of
+> the date below — a real spot-check, not an assumption.
 >
 > **Relationship to `PRIVACY.md`**: that document covers the
 > differential-privacy mathematical guarantees of the `PrivacyLabel`

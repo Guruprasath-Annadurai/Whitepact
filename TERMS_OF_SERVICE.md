@@ -49,14 +49,16 @@ model routing, drift monitoring, and audit logging, delivered as:
   infrastructure — the FREE tier and the primary way this platform is
   used today.
 - **A hosted MCP endpoint and hosted dashboard** — as of this version, a
-  Provider-operated hosted instance **is live**, at
-  `responsibleai-dashboard.onrender.com` (dashboard/REST API) and
+  Provider-operated hosted instance **is live**, at `whitepact.com`
+  (dashboard/REST API — the underlying `responsibleai-dashboard.onrender.com`
+  URL still resolves to the identical service) and
   `whitepact-mcp-http.onrender.com` (hosted MCP server, HTTP+SSE and
-  Streamable HTTP transports). Stated precisely rather than rounded up:
-  this is a **free-tier hosted instance** — no live-mode paid Stripe
-  Prices exist yet (see `FOUNDER_ACTION_CHECKLIST.md` Section 7), no
-  custom domain, and no enterprise SLA commitment is being made merely
-  because the infrastructure exists. See `SLA.md`'s Scope section for
+  Streamable HTTP transports, not yet on a custom domain). Stated
+  precisely rather than rounded up: this is a **free-tier hosted
+  instance** — no live-mode paid Stripe Prices exist yet (see
+  `FOUNDER_ACTION_CHECKLIST.md` Section 7), and no enterprise SLA
+  commitment is being made merely because the infrastructure exists or
+  a custom domain now points at it. See `SLA.md`'s Scope section for
   what uptime commitment, if any, actually applies today.
 
 Do not represent a **paid** hosted tier as available, or sign a customer

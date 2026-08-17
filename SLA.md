@@ -12,8 +12,10 @@ recommendations for what to design toward, not a commitment we can enforce
 on infrastructure we don't control.
 
 **Hosted (currently FREE tier only)**: a WhitePact-operated hosted instance
-is now live — `responsibleai-dashboard.onrender.com` (dashboard/API) and
-`whitepact-mcp-http.onrender.com` (MCP server), both on Postgres + Redis
+is now live — `whitepact.com` (dashboard/API, the underlying
+`responsibleai-dashboard.onrender.com` URL still resolves to the
+identical service) and `whitepact-mcp-http.onrender.com` (MCP server,
+not yet on a custom domain), both on Postgres + Redis
 (`docker-compose.prod.yml`'s stack), not SQLite/in-memory. Stated
 precisely: this is free-tier hosting on Render's free instance class —
 no PRO/ENTERPRISE live-mode billing exists yet (see
