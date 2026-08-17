@@ -168,7 +168,7 @@
       '<button class="btn btn-sm" id="rai-theme-toggle" title="Toggle theme">Theme</button>' +
       (loggedIn
         ? '<button class="btn btn-sm" id="rai-logout">Logout</button>'
-        : '<a class="btn btn-sm btn-primary" href="/login">Login</a>') +
+        : '<a class="btn btn-sm" href="/signup">Sign up</a><a class="btn btn-sm btn-primary" href="/login">Login</a>') +
       "</div>" +
       "</header>" +
       '<div class="rai-content" id="rai-page-content"></div>' +

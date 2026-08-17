@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sign up — ResponsibleAI</title>
+<link rel="stylesheet" href="/static/css/app.css" />
+<style>
+  body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+  .signup-card { width: 100%; max-width: 420px; padding: 2rem; }
+  .signup-brand { font-weight: 800; font-size: 1.3rem; text-align: center; margin-bottom: 0.35rem; }
+  .signup-subtitle { text-align: center; color: var(--muted); font-size: 0.85rem; margin-bottom: 1.5rem; }
+  .footer-note { text-align: center; font-size: 0.8rem; color: var(--muted); margin-top: 1.25rem; }
+  .footer-note a { color: inherit; }
+  /* Honeypot: visually hidden, but present in the DOM and tab order
+     skipped — a real browser never fills this, a scripted bot filling
+     every field does. */
+  .hp-field { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+  .key-box {
+    display: none;
+    background: var(--card-bg, var(--bg));
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1.25rem;
+  }
+  .key-box .key-label { font-size: 0.78rem; color: var(--muted); margin-bottom: 0.4rem; }
+  .key-box .key-value {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.85rem;
+    word-break: break-all;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.6rem 0.7rem;
+    margin-bottom: 0.6rem;
+  }
+  .key-warning { font-size: 0.78rem; color: var(--danger, #ef4444); margin-bottom: 0.75rem; }
+</style>
+</head>
+<body>
+
+<div class="card signup-card">
+  <div class="signup-brand">ResponsibleAI</div>
+  <div class="signup-subtitle">Create a workspace and get an API key in under a minute — no sales call.</div>
+
+  <form id="signup-form">
+    <div class="field">
+      <label for="org-name">Workspace name</label>
+      <input id="org-name" type="text" placeholder="Acme Corp" autocomplete="organization" required maxlength="200" />
+    </div>
+    <div class="field">
+      <label for="org-slug">Workspace URL</label>
+      <input id="org-slug" type="text" placeholder="acme-corp" autocomplete="off" required maxlength="100" pattern="[a-z0-9\-]+" />
+      <div class="hint">Lowercase letters, numbers, and hyphens only. Used to identify your workspace — not shown publicly.</div>
+    </div>
+    <div class="field">
+      <label for="signup-email">Email</label>
+      <input id="signup-email" type="email" placeholder="you@company.com" autocomplete="email" required maxlength="320" />
+    </div>
+    <div class="hp-field" aria-hidden="true">
+      <label for="website">Website</label>
+      <input id="website" name="website" type="text" tabindex="-1" autocomplete="off" />
+    </div>
+    <button type="submit" class="btn btn-primary" style="width:100%" id="submit-btn">Create workspace</button>
+  </form>
+
+  <div id="key-box" class="key-box">
+    <div class="key-label">Your API key — save it now, it will not be shown again:</div>
+    <div id="key-value" class="key-value"></div>
+    <div class="key-warning">This key grants full OWNER access to your new workspace.</div>
+    <button type="button" class="btn btn-primary" style="width:100%" id="continue-btn">Go to dashboard</button>
+  </div>
+
+  <div id="result" class="state-box error" style="display:none; padding: 0.75rem 0 0;"></div>
+
+  <div class="footer-note">
+    Already have a workspace? <a href="/login">Sign in</a>
+    &nbsp;·&nbsp; <a href="/trust">Trust Center</a>
+  </div>
+</div>
+
+<script src="/static/js/app.js"></script>
+<script>
+(function () {
+  RAI.theme.init();
+  const form = document.getElementById("signup-form");
+  const resultEl = document.getElementById("result");
+  const submitBtn = document.getElementById("submit-btn");
+  const keyBox = document.getElementById("key-box");
+  const keyValue = document.getElementById("key-value");
+  const continueBtn = document.getElementById("continue-btn");
+
+  const nameInput = document.getElementById("org-name");
+  const slugInput = document.getElementById("org-slug");
+  let slugTouched = false;
+  slugInput.addEventListener("input", function () { slugTouched = true; });
+  nameInput.addEventListener("input", function () {
+    if (slugTouched) return;
+    slugInput.value = nameInput.value
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9\s-]/g, "")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-")
+      .slice(0, 100);
+  });
+
+  const pageLoadedAt = Date.now();
+  let issuedKey = "";
+
+  function showError(message) {
+    resultEl.style.display = "block";
+    resultEl.textContent = message;
+  }
+
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    resultEl.style.display = "none";
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Creating…";
+
+    fetch("/api/signup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: nameInput.value.trim(),
+        slug: slugInput.value.trim(),
+        email: document.getElementById("signup-email").value.trim(),
+        website: document.getElementById("website").value,
+        page_loaded_at_ms: pageLoadedAt,
+      }),
+    })
+      .then(async function (res) {
+        let body = null;
+        try { body = await res.json(); } catch (e) { /* no body */ }
+        if (!res.ok) {
+          const message = (body && (body.detail || body.message)) || ("HTTP " + res.status);
+          throw new Error(typeof message === "string" ? message : "Signup failed");
+        }
+        return body;
+      })
+      .then(function (body) {
+        issuedKey = body.api_key;
+        keyValue.textContent = issuedKey;
+        form.style.display = "none";
+        keyBox.style.display = "block";
+      })
+      .catch(function (err) {
+        showError(String(err.message || err));
+      })
+      .finally(function () {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Create workspace";
+      });
+  });
+
+  continueBtn.addEventListener("click", function () {
+    RAI.auth.setToken(issuedKey);
+    window.location.href = "/";
+  });
+})();
+</script>
+
+</body>
+</html>

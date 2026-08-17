@@ -22,7 +22,7 @@ from fastapi.responses import (
     Response,
 )
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -55,6 +55,11 @@ from responsibleai.dashboard.prometheus import (
     observe_trust_score,
     observe_webhook_delivery,
     observe_websocket_connections,
+)
+from responsibleai.dashboard.signup_guard import (
+    SignupRateWindow,
+    dwell_time_ok,
+    is_disposable_email_domain,
 )
 from responsibleai.dashboard.telemetry import (
     record_cost,
@@ -190,6 +195,11 @@ if settings.redis_url:
     _limiter_kwargs["storage_uri"] = settings.redis_url
 
 limiter = Limiter(**_limiter_kwargs)
+
+# Site-wide cap on self-serve signups, independent of per-IP rate
+# limiting — see signup_guard.py's own docstring for why and its
+# honest single-process scope.
+_signup_window = SignupRateWindow(max_per_window=30, window_seconds=3600.0)
 
 # ── Audit log org/key attribution ──────────────────────────────────────────────
 # Deliberately NOT a ContextVar: AuditLogMiddleware is a BaseHTTPMiddleware,
@@ -893,6 +903,20 @@ class CreateOrgRequest(BaseModel):
     monthly_budget_usd: float = Field(10_000.0, ge=0.0)
 
 
+class SignupRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    slug: str = Field(..., min_length=1, max_length=100, pattern=r"^[a-z0-9\-]+$")
+    email: EmailStr
+    # Honeypot: rendered visually hidden on /signup — a real browser
+    # never fills it, a scripted bot filling every field does.
+    website: str = Field("", max_length=200)
+    # Client-reported epoch-ms timestamp of when the signup page
+    # rendered, used only for the minimum-dwell-time heuristic below —
+    # not a security boundary (trivially spoofable), just a cheap filter
+    # against unsophisticated bots that submit instantly.
+    page_loaded_at_ms: int = Field(..., ge=0)
+
+
 class CreateKeyRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     role: str = Field("ANALYST", pattern="^(OWNER|ADMIN|ANALYST|VIEWER)$")
@@ -958,6 +982,14 @@ class BillingPortalRequest(BaseModel):
 async def root() -> HTMLResponse:
     index = _static_dir / "index.html"
     return HTMLResponse(content=index.read_text())
+
+
+@app.get("/signup", response_class=HTMLResponse, include_in_schema=False)
+async def signup_page() -> HTMLResponse:
+    """Self-serve onboarding wizard: workspace name -> POST /api/signup
+    -> API key issued -> straight into the dashboard, no sales call."""
+    page = _static_dir / "signup.html"
+    return HTMLResponse(content=page.read_text())
 
 
 _LLMS_TXT = """\
@@ -1222,6 +1254,42 @@ async def prometheus_metrics() -> Response:
 
 
 # ── Organizations & RBAC ───────────────────────────────────────────────────────
+
+@app.post("/api/signup", tags=["rbac"], status_code=201)
+@limiter.limit("5/hour")
+async def signup(request: Request, req: SignupRequest) -> dict[str, Any]:
+    """Public, unauthenticated self-serve signup — creates a new
+    organization and issues its first OWNER-role API key in one call.
+
+    No CAPTCHA and no email-ownership verification: this deployment has
+    neither a CAPTCHA provider nor an outbound-email provider
+    configured. Hardened instead with what's deterministically checkable
+    without either: a honeypot field, a minimum client-side dwell time,
+    a disposable-email-domain blocklist, and a site-wide (not just
+    per-IP) rate window — see `signup_guard.py`'s own docstring for
+    exactly what each of those does and does not defend against.
+    """
+    if req.website:
+        raise HTTPException(400, "Signup failed. Please try again or contact support.")
+
+    if is_disposable_email_domain(req.email):
+        raise HTTPException(400, "Please sign up with a non-disposable email address.")
+
+    if not dwell_time_ok(req.page_loaded_at_ms):
+        raise HTTPException(400, "Signup failed. Please try again.")
+
+    if not _signup_window.allow():
+        raise HTTPException(429, "Too many signups right now. Please try again shortly.")
+
+    existing = await _ready(_org_repo).get_org_by_slug(req.slug)
+    if existing:
+        raise HTTPException(409, f"Workspace URL '{req.slug}' is already taken.")
+
+    org = await _ready(_org_repo).create_org(req.name, req.slug)
+    key_rec, raw_key = await _ready(_org_repo).create_key(org.id, "Default key", Role.OWNER)
+    logger.info("self_serve_signup", org_id=org.id, slug=req.slug)
+    return {"org": org.to_dict(), "api_key": raw_key, "key_id": key_rec.id}
+
 
 @app.post("/api/orgs", tags=["rbac"], status_code=201)
 @limiter.limit("10/minute")
