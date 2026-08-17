@@ -30,17 +30,16 @@ During this session's live-production debugging (a database-migration incident o
 
 - **Type**: Supabase/Postgres database password (pooler connection string).
 - **Location**: chat session transcript; local shell history on the founder's machine. **Not** committed to git, **not** present in any file in this repository.
-- **Status as of this document**: rotation was recommended twice during that session. **Not independently verified as completed** — this document cannot confirm rotation without the founder confirming it, and no confirmation was given before this report was written.
-- **Action required**: rotate the Supabase database password (Supabase dashboard → Database → Settings → Database Password → Reset), then update the `RAI_DATABASE_URL` environment variable on the `responsibleai-dashboard` Render service to match, if not already done.
+- **Status, updated 2026-08-17 (later same day)**: the founder rotated the Supabase database password and reported it done. **Independently verified by this session, not merely trusted**: attempted a direct connection using the exact old, previously-exposed password — rejected with `InvalidPasswordError: password authentication failed for user "postgres"`. The old credential is confirmed dead.
 
-This finding is called out explicitly per the instruction that no valid credential exposure be omitted from this report merely because it falls outside the specific tool's scan surface.
+This finding is called out explicitly per the instruction that no valid credential exposure be omitted from this report merely because it falls outside the specific tool's scan surface — and closed only once independently verified, not merely claimed.
 
 ## Remediation status
 
 | Finding class | Status |
 |---|---|
 | Git-history placeholder secrets (12 gitleaks hits) | No action needed — confirmed non-functional placeholders, not real credentials. |
-| Production DB password pasted into chat/shell (this session) | **ROTATION REQUIRED, not confirmed complete.** See above. |
+| Production DB password pasted into chat/shell (this session) | **RESOLVED, verified.** Password rotated; old credential independently confirmed rejected (`InvalidPasswordError`) by this session, not just taken on the founder's word. |
 
 ## Limitations, stated plainly
 
@@ -50,4 +49,4 @@ This finding is called out explicitly per the instruction that no valid credenti
 
 ## Final result
 
-**No valid, git-committed credential was found exposed in this repository's history.** The one real, live credential exposure identified during this audit occurred outside git (this session's own chat/shell activity) and requires the founder's confirmation that rotation has been completed before this criterion can be called fully closed.
+**No valid credential remains exposed.** Git history was clean from the start. The one real, live credential exposure identified during this audit (outside git — this session's own chat/shell activity) has been resolved: the founder rotated it, and this session independently confirmed the old password no longer authenticates. `no_leaked_credentials` is closed.

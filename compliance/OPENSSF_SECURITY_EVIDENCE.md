@@ -85,8 +85,8 @@
 **EVIDENCE / GAP**: See `compliance/OPENSSF_DYNAMIC_ANALYSIS.md` in full. This project's automated test suite (2035 tests, `pytest`) is the dynamic-analysis path OpenSSF's criterion accepts (vs. a fuzzer or web scanner) — but the ≥80% bar is specifically **branch** coverage, `covered_branches / num_branches`, isolated from statement coverage. Measured directly via `coverage.json` (not `coverage.py`'s own blended terminal percentage, which reads 84.89% and would have been an overclaim if cited as branch coverage): **72.82%** (1334/1832 branches) — 7.18 points below threshold. Tooling to measure and report this correctly is now permanent (`--cov-branch` in `pyproject.toml`'s `addopts`, `scripts/check_branch_coverage.py`, a CI step printing the real number every run) — the coverage percentage itself has not been artificially inflated to close the gap, and closing it for real requires new tests targeting the specific uncovered conditional branches (concentrated in `dashboard/app.py` and `mcp/tools.py`), not done in this pass.
 
 ### no_leaked_credentials
-**STATUS: NOT YET MET**
-**EVIDENCE**: See `compliance/OPENSSF_SECRET_SCAN.md` in full. **Git history itself is clean** — gitleaks scanned all 294 reachable commits across all branches/tags, found 12 hits, all confirmed documentation placeholders (`your-key-here`, `owner-key`, `abc123def456...`), zero real credentials. **What keeps this NOT YET MET**: a real, live production database password (Supabase Postgres) was pasted into this session's chat transcript and typed into the founder's local shell history during today's live-debugging work — outside git, but a real credential exposure per the honest spirit of this criterion. Rotation was recommended twice during that session but has not been confirmed complete as of this document. This criterion should not be marked MET until the founder confirms the Supabase database password has actually been rotated.
+**STATUS: MET**
+**EVIDENCE**: See `compliance/OPENSSF_SECRET_SCAN.md` in full. **Git history is clean** — gitleaks scanned all 294 reachable commits across all branches/tags, found 12 hits, all confirmed documentation placeholders (`your-key-here`, `owner-key`, `abc123def456...`), zero real credentials. **The one real exposure found (outside git)**: a production Supabase database password was pasted into this session's chat transcript and local shell history during earlier live-debugging work. **Resolved and independently verified, not just taken on the founder's word**: the founder rotated the password; this session then attempted a direct database connection using the exact old, previously-exposed password string and got `InvalidPasswordError: password authentication failed for user "postgres"` — the old credential is confirmed dead.
 
 ---
 
@@ -110,6 +110,6 @@
 | vulnerabilities_fixed_60_days | MET |
 | vulnerabilities_critical_fixed | MET |
 | dynamic_analysis | **NOT YET MET** (72.82% real branch coverage, need 80%) |
-| no_leaked_credentials | **NOT YET MET** (pending founder confirmation of DB password rotation) |
+| no_leaked_credentials | MET |
 
-**14 MET, 1 N/A, 2 NOT YET MET (of 17 criteria) — 15 of 17 eligible. Remaining two are real, disclosed gaps, not overclaims: `dynamic_analysis` needs genuine additional branch-coverage tests (~7 points, concentrated in `dashboard/app.py`/`mcp/tools.py`); `no_leaked_credentials` needs the founder's confirmation that the Supabase DB password has been rotated.**
+**15 MET, 1 N/A, 1 NOT YET MET (of 17 criteria) — 16 of 17 eligible. Remaining gap, disclosed not overclaimed: `dynamic_analysis` needs genuine additional branch-coverage tests (~7 points, concentrated in `dashboard/app.py`/`mcp/tools.py`).**
