@@ -175,7 +175,16 @@ packages = ["src/biasbuster", "src/privacylabel", "src/responsibleai", "src/whit
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths    = ["tests"]
-addopts      = "--cov=src/responsibleai --cov=src/biasbuster --cov=src/privacylabel --cov-report=term-missing --cov-report=html"
+addopts      = "--cov=src/responsibleai --cov=src/biasbuster --cov=src/privacylabel --cov-branch --cov-report=term-missing --cov-report=html --cov-report=json"
+
+# --cov-branch (OpenSSF dynamic_analysis): coverage.py's default terminal
+# "Cover" percentage with branch=True is a BLENDED statement+branch metric,
+# not pure branch coverage -- do not read that number as the OpenSSF
+# threshold. Pure branch coverage (covered_branches / num_branches, from
+# coverage.json's "totals") is what scripts/check_branch_coverage.py
+# computes and reports -- see compliance/OPENSSF_DYNAMIC_ANALYSIS.md for
+# the real, current number and why it is not yet gated as a hard CI
+# failure.
 
 [tool.ruff]
 target-version = "py311"

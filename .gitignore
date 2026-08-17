@@ -24,6 +24,7 @@ venv/
 htmlcov/
 .coverage
 coverage.xml
+coverage.json
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
