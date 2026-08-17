@@ -148,7 +148,7 @@ the ENTERPRISE tier name.
 | GitHub Issues | https://github.com/Guruprasath-Annadurai/ResponsibleAi/issues |
 | Email | annaduraiguruprasath7@gmail.com |
 | Status API | `GET /api/support/status` — public, no auth, real-time platform status |
-| Public status page | See "Uptime status page" below — not yet live |
+| Public status page | https://whitepact.com/status — live, no auth required |
 | SLA tiers API | `GET /api/support` — full tier details and contact info |
 | MCP usage (this org) | `GET /api/v1/billing/usage/mcp` — current billing-period call volume |
 | Billing plans | `GET /api/v1/billing/plans` — tools and pricing per tier |
@@ -157,12 +157,16 @@ the ENTERPRISE tier name.
 
 ## Uptime status page
 
-**Honest current state**: no public status page is live yet. `GET /api/health`
-and `GET /api/support` exist today and can be polled directly or wired into
-any external status-page tool (UptimeRobot, Better Uptime, statuspage.io) —
-that account setup is an operational step, not something the application
-ships with. This section will link the live page once one exists; until
-then, treat its absence as a known gap, not an oversight.
+**A public status page is live**: https://whitepact.com/status — no
+auth required, polls `GET /api/support/status` client-side for
+real-time platform/version/uptime data (not a static "all systems
+green" page). One honest limit, stated plainly: this is a
+**self-hosted, single-region status page**, not a third-party,
+independently-hosted one (UptimeRobot, Better Uptime, statuspage.io) —
+if this deployment itself goes fully down, its own status page goes
+down with it, the same failure mode any self-hosted status page has.
+Wiring an external, independently-hosted status monitor remains a
+separate operational step this application doesn't ship with.
 
 ---
 

@@ -31,16 +31,19 @@ Upstash).
 **Maps to**: `STRATEGY_ROADMAP.md` Phase 1 ("Get the first dollar").
 
 **What ships**:
-1. **Hosted instance hardened for real traffic** — custom domain + TLS
-   (`whitepact.com`, registered and wired to the Render dashboard
-   2026-08-17, DNS verified and certificate issued; the bare
-   `.onrender.com` URL still resolves unchanged), a public status page
-   linked from `SLA.md`, and the "no hosted instance is live yet"
-   caveat *properly* removed from
-   `SLA.md`/`TERMS_OF_SERVICE.md`/`PRIVACY_POLICY.md` (not just noted
-   as stale — actually rewritten to describe the real, current
-   free-tier-backed hosted offering honestly, now with its custom
-   domain).
+1. ~~**Hosted instance hardened for real traffic**~~ — **done, 2026-08-17**:
+   custom domain + TLS (`whitepact.com`, DNS-verified, certificate
+   issued; the bare `.onrender.com` URL still resolves unchanged), the
+   already-existing public status page (`https://whitepact.com/status`,
+   polling live `/api/support/status` data) linked properly from
+   `SLA.md` (it previously said no status page existed — it did, the
+   doc was just stale), and the "no hosted instance is live yet" caveat
+   properly rewritten out of
+   `SLA.md`/`TERMS_OF_SERVICE.md`/`PRIVACY_POLICY.md`. One honestly
+   named limit that remains: the status page is self-hosted and
+   single-region, not an independently-hosted third-party monitor — if
+   this deployment goes fully down, its own status page goes down with
+   it.
 2. **Self-serve onboarding wizard** — signup → API key → first trust
    score dashboard in under 15 minutes, zero sales call required. The
    single highest-leverage revenue unlock per `STRATEGY_ROADMAP.md`
