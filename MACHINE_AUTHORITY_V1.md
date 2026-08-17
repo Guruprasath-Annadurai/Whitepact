@@ -172,6 +172,32 @@ agnostic core (plain strings, no `a2a-sdk` dependency); an optional,
 explicitly best-effort duck-typed extraction helper pulls those strings out
 of real SDK objects when the `a2a` extra is installed.
 
+## Identity Bridge — Entra ID, Google Workspace, Okta, AWS
+
+`integrations/identity_bridge.py` maps each provider's own ID token claim
+shape into `IdentityContext` — `entra_claims_to_identity()`,
+`google_claims_to_identity()`, `okta_claims_to_identity()`,
+`aws_claims_to_identity()` — plus `map_groups_to_authority()`, which turns
+an IdP's group/role identifiers into a granted-action-types
+`AuthorityContext` via a caller-supplied mapping (this codebase has no
+opinion on what any given group *should* grant).
+
+**Honestly scoped, same discipline as everywhere else in this document**:
+these are pure claims-mapping functions over an already-validated JWT
+payload (they don't validate a token or call a network endpoint
+themselves — `auth/oidc.py::OIDCProvider` still does that). Each mapping
+is verified against that provider's own *publicly documented* ID token
+shape (`tests/test_identity_bridge.py`'s sample payloads) — not against a
+live tenant of any of these four providers, since this project has no
+real Entra/Google Workspace/Okta/AWS account to test against. Three real,
+named gaps: Entra's `groups` claim carries group *object GUIDs*, not
+names — resolving those needs a live Microsoft Graph API call, not made
+here; Google Workspace group membership isn't in the ID token at all —
+needs the Admin SDK Directory API, not implemented; AWS is covered for
+OIDC-issued tokens only (Cognito, IAM Identity Center) — the SigV4-signed
+`AssumeRoleWithWebIdentity`/STS mechanism is a different, non-bearer-JWT
+integration this module does not attempt.
+
 ## Verification
 
 - `tests/test_property_based.py` — Hypothesis property tests for the pure

@@ -166,6 +166,14 @@ print(result.decision)  # GovernanceDecision.ALLOW | ALLOW_WITH_REDACTION | REQU
   one of three explicit verdicts (`VERIFIED_FACT` / `INFERRED_SIGNAL` /
   `UNKNOWN`) — never a single opaque trust score — from typosquat detection,
   tool-description scanning, and known-incident cross-reference.
+- **Identity Bridge** (`integrations/identity_bridge.py`) — maps Entra ID,
+  Google Workspace, Okta, and AWS (Cognito / IAM Identity Center) ID token
+  claims into `IdentityContext`, plus `map_groups_to_authority()` to turn
+  IdP group membership into a granted-action-types `AuthorityContext`. See
+  `MACHINE_AUTHORITY_V1.md`'s Identity Bridge section for exactly what's
+  verified (claim-shape correctness against each provider's public docs)
+  versus not (live-tenant testing, Graph/Admin-SDK group-name resolution,
+  AWS's non-JWT SigV4 path).
 
 No governance decision is LLM-based; see
 `DETERMINISTIC_VS_PROBABILISTIC.md` for why.
