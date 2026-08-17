@@ -95,6 +95,20 @@ server {
     ssl_certificate     /etc/ssl/certs/your.crt;
     ssl_certificate_key /etc/ssl/private/your.key;
 
+    # TLS 1.2+ only, PFS-only (ephemeral-key) cipher suites -- nginx's
+    # own compiled-in defaults are not guaranteed to exclude older
+    # protocol versions or non-forward-secret ciphers, so these are
+    # stated explicitly rather than left to whatever ships with your
+    # distro's nginx build. TLS 1.3 (if your nginx/OpenSSL build
+    # supports it) is PFS by construction -- no cipher directive
+    # needed for it. This mirrors what the live reference deployment
+    # (Render's edge) was independently verified to negotiate during
+    # this project's own security review: TLS 1.3,
+    # TLS_AES_256_GCM_SHA384 -- see ENTERPRISE_SECURITY.md.
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
+    ssl_prefer_server_ciphers off;
+
     location / {
         proxy_pass http://127.0.0.1:8765;
         proxy_set_header Host $host;

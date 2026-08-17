@@ -50,9 +50,11 @@
 - **Regression tests added** (`tests/test_mfa.py::TestDigestAlgorithm`, 3 tests): lock in that TOTP deliberately uses SHA1 (not a digest-agnostic accident) — a code computed with SHA256 is proven to *not* verify against a SHA1-enrolled secret, and vice versa.
 
 ### crypto_pfs
-**STATUS: NOT YET MET**
-**EVIDENCE / GAP**: This application never terminates TLS itself — `ENTERPRISE_SECURITY.md` states plainly "TLS termination is the deployer's responsibility (reverse proxy / load balancer / ingress). The application itself speaks plain HTTP." In production this is Render's edge (confirmed via this session's own `curl -I https://whitepact.com`, which showed `strict-transport-security` and modern TLS termination) — but neither `DEPLOYMENT.md`'s example nginx config nor any other document in this repository explicitly specifies a minimum TLS version or PFS-capable cipher suite for a self-hosted deployer to configure. Outbound HTTPS calls this codebase itself makes (`httpx` to webhook URLs and OIDC JWKS endpoints) rely on Python/OpenSSL's modern defaults, which do negotiate PFS-capable (ECDHE) cipher suites in practice — but this is an unverified assumption about the runtime environment, not something this codebase tests or documents, so it cannot be honestly marked MET.
-**What would close this**: add an explicit "minimum TLS 1.2, PFS-capable cipher suites only" line to `DEPLOYMENT.md`'s nginx example and to `ENTERPRISE_SECURITY.md`'s encryption-in-transit section — not done in this pass (out of the scope actually requested, and a deployment-config change, not a code change this session can verify against a real deployer's proxy).
+**STATUS: MET** (closed during this pass)
+**EVIDENCE**:
+- **Production, verified empirically, not assumed**: connected directly to `whitepact.com:443` with Python's `ssl` module during this review — negotiated **TLS 1.3**, cipher `TLS_AES_256_GCM_SHA384`. TLS 1.3 removed static (non-ephemeral) key exchange from the protocol entirely, so this is PFS by construction, not a configuration choice that could silently regress.
+- **Outbound calls this codebase makes** (`auth/oidc.py`'s JWKS fetch, `webhooks/manager.py`'s delivery POSTs) use Python's default `ssl` context, whose `minimum_version` was confirmed (`ssl.create_default_context().minimum_version`) to already exclude TLS 1.0/1.1 — no non-PFS legacy protocol is reachable via this codebase's own HTTP client configuration.
+- **Self-hosted deployer guidance, previously silent, now explicit**: `DEPLOYMENT.md`'s nginx example now states `ssl_protocols TLSv1.2 TLSv1.3;` and an explicit PFS-only (`ECDHE-*`) cipher list, rather than relying on whatever a given nginx/OpenSSL build happens to default to. `ENTERPRISE_SECURITY.md`'s encryption-in-transit section cross-references both the verified production evidence and this explicit deployer requirement.
 
 ### crypto_password_storage
 **STATUS: N/A**
@@ -96,7 +98,7 @@
 | crypto_keylength | MET |
 | crypto_working | MET |
 | crypto_weaknesses | MET |
-| crypto_pfs | **NOT YET MET** |
+| crypto_pfs | MET |
 | crypto_password_storage | N/A |
 | crypto_random | MET |
 | delivery_mitm | MET |
@@ -105,4 +107,4 @@
 | vulnerabilities_critical_fixed | MET |
 | no_leaked_credentials | **NOT YET MET** (pending founder confirmation of DB password rotation) |
 
-**13 MET, 1 N/A, 2 NOT YET MET — 14 of 15 applicable criteria eligible.**
+**14 MET, 1 N/A, 1 NOT YET MET — 15 of 15 applicable criteria eligible pending one founder action (Supabase DB password rotation confirmation for `no_leaked_credentials`).**
