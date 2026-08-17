@@ -140,6 +140,47 @@ class TestWhitepactEnvVarPrecedence:
         assert settings.brand_name == "WhitePact"
 
 
+class TestOtelHeadersDict:
+    def test_empty_string_returns_empty_dict(self, fresh_settings_module) -> None:
+        settings = fresh_settings_module.Settings(otel_headers="")
+        assert settings.otel_headers_dict == {}
+
+    def test_single_pair_parsed(self, fresh_settings_module) -> None:
+        settings = fresh_settings_module.Settings(otel_headers="x-api-key=secret")
+        assert settings.otel_headers_dict == {"x-api-key": "secret"}
+
+    def test_multiple_pairs_parsed(self, fresh_settings_module) -> None:
+        settings = fresh_settings_module.Settings(otel_headers="a=1,b=2")
+        assert settings.otel_headers_dict == {"a": "1", "b": "2"}
+
+    def test_pair_without_equals_sign_is_skipped(self, fresh_settings_module) -> None:
+        settings = fresh_settings_module.Settings(otel_headers="a=1,not-a-pair,b=2")
+        assert settings.otel_headers_dict == {"a": "1", "b": "2"}
+
+
+class TestDbDir:
+    def test_memory_path_returns_current_dir(self, fresh_settings_module) -> None:
+        settings = fresh_settings_module.Settings(db_path=":memory:")
+        assert settings.db_dir == fresh_settings_module.Path(".")
+
+    def test_file_path_returns_parent_dir(self, fresh_settings_module, tmp_path) -> None:
+        db_file = tmp_path / "sub" / "data.db"
+        settings = fresh_settings_module.Settings(db_path=str(db_file))
+        assert settings.db_dir == db_file.parent
+
+
+class TestEnsureDbDir:
+    def test_creates_parent_dir_for_file_backed_db(self, fresh_settings_module, tmp_path) -> None:
+        db_file = tmp_path / "nested" / "data.db"
+        settings = fresh_settings_module.Settings(db_path=str(db_file))
+        fresh_settings_module._ensure_db_dir(settings)
+        assert db_file.parent.is_dir()
+
+    def test_memory_path_does_not_touch_filesystem(self, fresh_settings_module) -> None:
+        settings = fresh_settings_module.Settings(db_path=":memory:")
+        fresh_settings_module._ensure_db_dir(settings)  # must not raise
+
+
 class TestWarnDeprecatedEnvVars:
     def test_warns_when_only_legacy_var_is_set(self, fresh_settings_module) -> None:
         with pytest.warns(DeprecationWarning, match="RAI_DB_PATH.*WHITEPACT_DB_PATH"):

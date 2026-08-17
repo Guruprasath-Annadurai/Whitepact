@@ -1,7 +1,26 @@
 # OpenSSF `dynamic_analysis` — Branch Coverage Report
 
-**Date**: 2026-08-17
+**Date**: 2026-08-17 (initial measurement), updated 2026-08-17 (later same day, after remediation)
 **Tool**: `pytest` + `coverage.py` (via `pytest-cov`), the project's own automated test suite — OpenSSF's `dynamic_analysis` criterion accepts a fuzzer, a web application scanner, *or* an automated test suite with at least 80% branch coverage; this project uses the third path.
+
+## Update: threshold reached
+
+After the initial 72.82% measurement below, real tests (no exclusions, no skipped code) were added targeting the highest-missing-branch files: `billing/stripe_service.py` (0%→100%), `biasbuster/cli.py` (0%→100%), `db/eval_repository.py` (0%→100%), `dashboard/middleware.py` (25%→100%), `db/org_repository.py` (40%→100%), `eval/dataset_scanner.py` (71%→100%), `dashboard/config.py` (69%→92%), `dashboard/telemetry.py` (36%→100% functional, minor coverage.py one-liner-def artifacts remain), `auth/oidc.py` (38%→100%), and `dashboard/websocket_manager.py` (27%→100% functional).
+
+```
+Pure branch coverage:    80.19%  (1469/1832 branches)
+Blended stmt+branch %:   ~89% (coverage.py's own default 'Cover' column -- still NOT the same metric, see below)
+OpenSSF threshold:       80% (pure branch coverage)
+THRESHOLD MET, with 2249/2249 tests passing (up from 2035 before this remediation pass).
+```
+
+New test files added: `tests/test_stripe_service.py`, `tests/test_cli.py`, `tests/test_eval_repository.py`, `tests/test_middleware.py`, `tests/test_org_repository.py`, `tests/test_dataset_scanner.py`, `tests/test_telemetry.py`, `tests/test_oidc.py`, `tests/test_websocket_manager.py`, plus additions to `tests/test_config.py`. Every test exercises real conditional branches in the target file — no `# pragma: no cover` exclusions were added to inflate the number.
+
+`dashboard/app.py` (169 missing branches) and `mcp/tools.py` (65 missing branches) remain the largest sources of uncovered branches in the codebase and were deliberately left for a later pass — the 80% threshold was reached via the smaller, higher-value files first, consistent with the instruction to close the gap with legitimate tests rather than take the fastest path through the single largest file.
+
+The initial (now-superseded) 72.82% measurement is preserved below for the record.
+
+---
 
 ## The distinction that matters here
 
@@ -76,5 +95,12 @@ The 15 files with the most uncovered branches (of 498 total missing branches acr
 
 ## Result
 
-**Branch coverage: 72.82%**
-**Criterion `dynamic_analysis` eligible for MET: NO** — the tooling, CI visibility, and honest measurement are now in place; the coverage number itself has not yet reached 80% and was not artificially inflated to claim otherwise.
+**Branch coverage (superseded by the update above): 72.82%**
+**Criterion `dynamic_analysis` eligible for MET at that time: NO**
+
+## Current result (see update section at top of document)
+
+**Branch coverage: 80.19%** (1469/1832 branches, `coverage.json`'s `totals.covered_branches`/`totals.num_branches`)
+**Criterion `dynamic_analysis` eligible for MET: YES** — real automated test suite, ≥80% pure branch coverage (not blended statement+branch coverage), 2249/2249 tests passing, CI enforces `--cov-branch` and reports the number on every run via `scripts/check_branch_coverage.py`.
+
+`scripts/check_branch_coverage.py --fail` can now be enabled as a hard CI gate at 80% since the threshold is genuinely met; this was left informational-only during the remediation pass itself to avoid blocking mid-flight commits, and should be flipped on in a follow-up.

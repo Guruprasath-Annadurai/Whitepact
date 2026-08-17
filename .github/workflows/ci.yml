@@ -69,19 +69,17 @@ jobs:
             --cov-fail-under=80 \
             -q
 
-      - name: Report branch coverage (OpenSSF dynamic_analysis)
+      - name: Enforce branch coverage (OpenSSF dynamic_analysis)
         run: |
           # --cov-fail-under=80 above gates on the BLENDED statement+branch
           # percentage coverage.py's own terminal report prints -- not the
           # same metric as OpenSSF's dynamic_analysis criterion, which asks
           # for pure branch coverage (covered_branches / num_branches),
-          # isolated from statement coverage. This step reports that real
-          # number on every run so it stays visible, but does not fail the
-          # build on it yet -- see compliance/OPENSSF_DYNAMIC_ANALYSIS.md
-          # for the current gap and why it isn't a hard gate today. Once
-          # real branch coverage reaches 80% via genuine new tests, add
-          # `--fail` here to make this a real CI gate.
-          python scripts/check_branch_coverage.py --threshold 80
+          # isolated from statement coverage. Real pure branch coverage
+          # reached 80.19% via genuine new tests (see
+          # compliance/OPENSSF_DYNAMIC_ANALYSIS.md) -- this is now a real,
+          # hard-failing gate rather than informational-only.
+          python scripts/check_branch_coverage.py --threshold 80 --fail
 
       - name: Upload coverage to Codecov
         if: matrix.python-version == '3.12'
