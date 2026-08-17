@@ -8,6 +8,8 @@ from typing import Any
 
 import httpx
 
+from responsibleai.auth.crypto_policy import validate_rsa_key_size
+
 
 @dataclass(frozen=True)
 class JWTClaims:
@@ -122,6 +124,11 @@ class OIDCProvider:
             # A JWKS endpoint must never serve a private key; from_jwk's stub
             # allows both, so guard against a malicious/misconfigured endpoint.
             raise ValueError("JWKS signing key resolved to a private key, expected public")
+        # Reject a weak RSA key fail-closed, the same posture as the
+        # private-key check above -- a compromised or misconfigured JWKS
+        # endpoint serving e.g. a 512-bit key should never be trusted to
+        # verify a bearer token's signature. See crypto_policy.py.
+        validate_rsa_key_size(public_key)
         try:
             payload = pyjwt.decode(
                 token,

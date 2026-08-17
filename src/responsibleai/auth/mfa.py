@@ -19,6 +19,45 @@ since a key's `name` is the closest thing this model has to a "user" (e.g.
 
 Uses `pyotp` (opt-in via the `mfa` extra) rather than hand-rolling RFC 6238 —
 small, single-purpose, widely used, not worth re-implementing.
+
+**Deliberately uses HMAC-SHA1, not SHA-256/512 (OpenSSF `crypto_weaknesses`
+review note)**: `pyotp.TOTP(secret)` below is called with no `digest`
+argument, so it uses pyotp's default, HMAC-SHA1 — RFC 6238's own
+mandated default and the only digest the vast majority of real-world
+authenticator apps (Google Authenticator, Microsoft Authenticator, and
+many others) actually implement. RFC 6238 permits `algorithm=SHA256`/
+`SHA512` in the `otpauth://` provisioning URI, but a large share of
+deployed authenticator apps either ignore that parameter entirely or
+never shipped support for it — enrolling a user against a digest their
+app can't compute would silently and permanently lock them out, not a
+theoretical risk but the documented, widely-known state of the mobile
+TOTP-app ecosystem. This is a scoped, protocol-interoperability
+decision, not an oversight:
+
+- SHA-1's known weakness is *collision resistance* — the ability to
+  find two different inputs producing the same hash. HMAC's security as
+  a keyed pseudorandom function does not rely on collision resistance;
+  NIST SP 800-107 rev. 1 (§5.1) states HMAC-SHA1 remains an approved
+  MAC construction, distinct from SHA-1's separate, since-deprecated
+  role in unkeyed digital signatures. TOTP uses HMAC-SHA1 exactly as a
+  keyed PRF (the RFC 6238 algorithm truncates the HMAC output to a
+  6-digit code) — never as a collision-sensitive signature — so the
+  weakness that ended SHA-1's use elsewhere does not apply to this use.
+- **Scope limitation**: this reasoning applies to TOTP's specific,
+  narrow use of HMAC-SHA1 only. Every other keyed/signing use in this
+  codebase (webhook delivery signing, in `webhooks/manager.py`) already
+  uses HMAC-SHA256, not SHA1 — TOTP is the one deliberate, justified
+  exception, not a pattern.
+- **Migration strategy, if this is ever revisited**: `pyotp.TOTP()`
+  accepts a `digest=hashlib.sha256` argument, and `provisioning_uri()`
+  would need `algorithm="SHA256"` to match — but changing the default
+  for *existing* enrollments would break every already-enrolled user's
+  QR code/manual-entry secret without warning, since their authenticator
+  app has already computed codes assuming SHA1. Any future change here
+  needs to be additive (a new, explicit enrollment option, not a
+  changed default) and gated on confirming real target-app support —
+  not attempted in this pass, since this repository cannot verify
+  authenticator-app compatibility empirically.
 """
 
 from __future__ import annotations

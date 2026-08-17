@@ -12,6 +12,7 @@ from typing import Any, TypeVar
 from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (
@@ -22,7 +23,7 @@ from fastapi.responses import (
     Response,
 )
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -30,6 +31,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from responsibleai import __version__
 from responsibleai.auth import mfa
+from responsibleai.auth.crypto_policy import validate_webhook_secret
 from responsibleai.auth.oidc import OIDCProvider
 from responsibleai.billing import StripeBillingError, StripeNotConfiguredError, StripeService
 from responsibleai.compliance.engine import ComplianceEngine
@@ -517,9 +519,17 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # ty
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    # Pydantic's exc.errors() embeds the *raw* exception object in each
+    # error's "ctx" field (e.g. {"ctx": {"error": ValueError(...)}}) when
+    # the failure came from a @field_validator raising ValueError — not
+    # JSON-serializable on its own, and json.dumps() would 500 here
+    # rather than return the intended 422. jsonable_encoder() (FastAPI's
+    # own recommended tool for exactly this) stringifies anything it
+    # can't natively serialize, so the human-readable message still
+    # reaches the client instead of the response itself crashing.
     return JSONResponse(
         status_code=422,
-        content={"error": "validation_error", "detail": exc.errors()},
+        content={"error": "validation_error", "detail": jsonable_encoder(exc.errors())},
     )
 
 
@@ -872,6 +882,16 @@ class WebhookCreateRequest(BaseModel):
     secret: str = Field("", max_length=256)
     description: str = Field("", max_length=500)
     max_retries: int = Field(3, ge=1, le=5)
+
+    @field_validator("secret")
+    @classmethod
+    def _secret_meets_entropy_floor(cls, v: str) -> str:
+        # Empty is fine (unsigned deliveries, an explicit choice) --
+        # only a present-but-weak secret is rejected. See
+        # crypto_policy.py's own docstring for the NIST SP 800-107
+        # rationale behind the 32-character floor.
+        validate_webhook_secret(v)
+        return v
 
 
 class EvalCompareRequest(BaseModel):

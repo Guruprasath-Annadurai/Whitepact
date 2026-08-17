@@ -25,6 +25,42 @@ class TestSecretAndProvisioning:
         assert "secret=" + secret in uri
 
 
+class TestDigestAlgorithm:
+    """OpenSSF crypto_weaknesses review: locks in that TOTP deliberately
+    uses HMAC-SHA1 (RFC 6238's mandated default, and the only digest
+    most real authenticator apps implement) rather than accidentally
+    drifting to something else -- see auth/mfa.py's module docstring
+    for the full rationale (HMAC-SHA1's security as a keyed PRF is
+    independent of SHA-1's separate, unrelated collision-resistance
+    weakness)."""
+
+    def test_provisioning_uri_does_not_specify_a_non_default_algorithm(self) -> None:
+        secret = mfa.generate_secret()
+        uri = mfa.provisioning_uri(secret, account_name="ci-key")
+        # pyotp only emits an explicit algorithm= param when it's
+        # non-default (i.e. not SHA1) -- its absence here is the
+        # positive assertion that this enrollment used the default.
+        assert "algorithm=" not in uri
+
+    def test_verify_code_uses_default_sha1_digest(self) -> None:
+        secret = mfa.generate_secret()
+        # A code computed with the *default* pyotp.TOTP (SHA1) must
+        # verify -- proving mfa.verify_code() didn't silently switch
+        # digests.
+        code = pyotp.TOTP(secret).now()
+        assert mfa.verify_code(secret, code) is True
+
+    def test_verify_code_rejects_a_sha256_computed_code(self) -> None:
+        secret = mfa.generate_secret()
+        # A code computed with a *different* digest must NOT verify --
+        # proving mfa.verify_code() is actually pinned to SHA1, not
+        # digest-agnostic by accident. (A ~1-in-a-million coincidental
+        # 6-digit collision between the two digests is theoretically
+        # possible but not a realistic flake risk.)
+        sha256_code = pyotp.TOTP(secret, digest="sha256").now()
+        assert mfa.verify_code(secret, sha256_code) is False
+
+
 class TestVerifyCode:
     def test_valid_code_verifies(self) -> None:
         secret = mfa.generate_secret()

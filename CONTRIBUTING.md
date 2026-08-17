@@ -315,6 +315,49 @@ Comments are reserved for non-obvious *why* decisions.
 
 ---
 
+## Common vulnerability classes to avoid
+
+This project handles multi-tenant org data, API keys, and (in the
+governance layer) real authorization decisions — the following classes
+of error have caused real, avoidable incidents in comparable codebases
+and are worth checking for explicitly in review, not just relying on
+tooling to catch:
+
+- **SQL/injection**: every DB write in this codebase goes through
+  SQLAlchemy Core's parameterized `insert()`/`update()`/`select()` — never
+  build a query by string-formatting user input. `bandit` (run in CI)
+  flags raw string-built SQL; don't suppress that finding without a
+  documented reason.
+- **SSRF**: any code that fetches a caller-supplied URL (webhook
+  delivery, upstream MCP server registration) must go through
+  `webhooks/manager.py::validate_webhook_url()` or
+  `governance/upstream.py`'s equivalent guard — both resolve DNS and
+  reject loopback/link-local/cloud-metadata targets before the request
+  is made, not after.
+- **Authz bypass / confused deputy**: every authenticated endpoint
+  declares its required `Role` via `Depends(require_role(...))` — never
+  gate access with an `if` check inside the handler body alone, which is
+  easy to accidentally skip on one code path.
+- **Weak cryptographic keys/secrets**: any new caller-supplied
+  secret/key (a signing secret, an API credential) needs an explicit
+  minimum-strength check, the same way `auth/crypto_policy.py` enforces
+  one for webhook HMAC secrets and JWKS RSA keys — don't accept an
+  arbitrary-length string as a security-relevant secret with no floor.
+- **Timing side-channels on secret comparison**: compare hashed values
+  (`hmac.compare_digest`, or equality on a SHA-256 digest) rather than
+  Python's default `==` on a raw secret value where an attacker could
+  observe response timing.
+- **Logging secrets**: never `logger.info()`/`print()` a raw API key,
+  TOTP secret, or webhook signing secret — log the key's `id`/`name`
+  instead, the pattern every existing repository in `db/` already
+  follows.
+
+None of this replaces `ruff`, `mypy`, and `bandit` running in CI — it's
+the class of thing those tools don't always catch, worth a deliberate
+look during review.
+
+---
+
 ## Questions
 
 Open a [GitHub Discussion](https://github.com/Guruprasath-Annadurai/Whitepact/discussions)

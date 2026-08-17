@@ -533,6 +533,37 @@ class TestWebhooksAPI:
         r = await client.delete("/api/webhooks/does-not-exist")
         assert r.status_code == 404
 
+    async def test_rejects_weak_signing_secret(self, client):
+        r = await client.post(
+            "/api/webhooks",
+            json={
+                "url": "https://hooks.example.com/weak-secret",
+                "events": ["drift_alert"],
+                "secret": "short",
+            },
+        )
+        assert r.status_code == 422
+
+    async def test_accepts_empty_secret_unsigned(self, client):
+        r = await client.post(
+            "/api/webhooks",
+            json={"url": "https://hooks.example.com/no-secret", "events": ["drift_alert"], "secret": ""},
+        )
+        assert r.status_code == 200
+
+    async def test_accepts_strong_signing_secret(self, client):
+        import secrets
+
+        r = await client.post(
+            "/api/webhooks",
+            json={
+                "url": "https://hooks.example.com/strong-secret",
+                "events": ["drift_alert"],
+                "secret": secrets.token_urlsafe(32),
+            },
+        )
+        assert r.status_code == 200
+
     async def test_test_endpoint_fires_and_returns_delivery(self, client, respx_mock):
         create = await client.post(
             "/api/webhooks",
