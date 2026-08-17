@@ -170,6 +170,16 @@ print(result.decision)  # GovernanceDecision.ALLOW | ALLOW_WITH_REDACTION | REQU
 No governance decision is LLM-based; see
 `DETERMINISTIC_VS_PROBABILISTIC.md` for why.
 
+**See it end-to-end**: `examples/08_whitepact_enterprise_scenario.py` runs a
+full scenario (an org onboarding an autonomous finance agent) through all
+eight machine-authority invariants — ceiling, delegation, attenuation,
+approval quorum, workflow composition, autonomy budget, memory firewall,
+evidence bundle — against real code, no API keys required:
+
+```bash
+python examples/08_whitepact_enterprise_scenario.py
+```
+
 ---
 
 ## MCP Server — govern every AI call from Claude Code, Claude Desktop, or any MCP client
