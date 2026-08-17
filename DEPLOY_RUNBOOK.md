@@ -18,7 +18,9 @@
 >   discovered and fixed live during this deployment).
 > - **Rate-limit backend**: [Upstash](https://upstash.com) managed Redis
 >   (`rediss://` TLS endpoint), replacing the in-memory limiter.
-> - **Live URL**: `https://responsibleai-dashboard.onrender.com`
+> - **Live URL**: `https://whitepact.com` (custom domain, verified and
+>   TLS-issued 2026-08-17; `https://responsibleai-dashboard.onrender.com`
+>   still resolves to the same service and keeps working)
 >
 > **Why this instead of the VM path below**: Oracle Cloud's signup wanted
 > a credit card the founder didn't have; Google Cloud's billing setup was

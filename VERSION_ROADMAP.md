@@ -32,11 +32,15 @@ Upstash).
 
 **What ships**:
 1. **Hosted instance hardened for real traffic** — custom domain + TLS
-   (replacing the bare `.onrender.com` URL), a public status page linked
-   from `SLA.md`, and the "no hosted instance is live yet" caveat
-   *properly* removed from `SLA.md`/`TERMS_OF_SERVICE.md`/`PRIVACY_POLICY.md`
-   (not just noted as stale — actually rewritten to describe the real,
-   current free-tier-backed hosted offering honestly).
+   (`whitepact.com`, registered and wired to the Render dashboard
+   2026-08-17, DNS verified and certificate issued; the bare
+   `.onrender.com` URL still resolves unchanged), a public status page
+   linked from `SLA.md`, and the "no hosted instance is live yet"
+   caveat *properly* removed from
+   `SLA.md`/`TERMS_OF_SERVICE.md`/`PRIVACY_POLICY.md` (not just noted
+   as stale — actually rewritten to describe the real, current
+   free-tier-backed hosted offering honestly, now with its custom
+   domain).
 2. **Self-serve onboarding wizard** — signup → API key → first trust
    score dashboard in under 15 minutes, zero sales call required. The
    single highest-leverage revenue unlock per `STRATEGY_ROADMAP.md`

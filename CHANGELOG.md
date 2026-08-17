@@ -10,6 +10,10 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ### Added
 
+- Custom domain `whitepact.com` registered and wired to the hosted
+  dashboard on Render (DNS verified, TLS certificate issued
+  2026-08-17) — `https://responsibleai-dashboard.onrender.com` keeps
+  resolving to the same service unchanged.
 - Multi-approver quorum for `REQUIRE_APPROVAL` decisions on high-risk
   actions — configurable `required_approvals` (default 2 for HIGH
   risk tier), `governance_approval_votes` table, veto-on-any-DENY

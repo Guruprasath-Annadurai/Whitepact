@@ -134,8 +134,9 @@ category:
   on that release plus a GitHub OAuth namespace-verification step this
   session has no access to.
 - No hosted, WhitePact-operated MCP transport exists — the reference
-  deployment (`responsibleai-dashboard.onrender.com`) serves the
-  dashboard, not a publicly reachable MCP endpoint.
+  deployment (`whitepact.com`, `responsibleai-dashboard.onrender.com`
+  underneath) serves the dashboard, not a publicly reachable MCP
+  endpoint.
 - No named second person for independent risk oversight — `GOVERNANCE.md`
   Section 4 states this plainly; a hiring/advisor decision, not
   something a coding session can complete.

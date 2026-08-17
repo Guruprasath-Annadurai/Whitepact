@@ -48,7 +48,7 @@ names.
 | `ResponsibleAi` | 20 | GitHub-URL-casing variant in docs/badges |
 | `responsibleai-mcp` | 17 | The published MCP server console script |
 | `rai://` | 6 | MCP resource URI scheme (`src/responsibleai/mcp/resources.py`) |
-| `responsibleai.dev` | 3 | A domain referenced in docs that was never registered/deployed — see Section 13. `whitepact.com` is now registered (2026-08-17) but not yet wired to the hosted instance. |
+| `responsibleai.dev` | 3 | A domain referenced in docs that was never registered/deployed — see Section 13. `whitepact.com` is now registered and live (2026-08-17), wired to the hosted dashboard. |
 
 ---
 
@@ -1158,19 +1158,30 @@ Per the standing rule against fabricating implementation status:
   project has ever deployed anything to. This migration did not
   register a domain itself — that requires a real purchase and DNS
   control no session can perform. **Update, 2026-08-17**: the founder
-  has since registered `whitepact.com` directly (verified by this
-  session via a live DNS lookup — `whitepact.com`'s nameservers resolve
-  to Namecheap, with an existing `A` record, i.e. genuinely registered,
-  not merely reserved). It is **not yet wired to the hosted instance**
-  — the real hosted instance today is still
-  `responsibleai-dashboard.onrender.com`. Pointing `whitepact.com` at it
-  requires two things no session can do unattended: adding
-  `whitepact.com` as a custom domain in the Render dashboard for that
-  service, and creating the `A`/`CNAME` record Render's UI provides at
-  the domain's DNS host (Namecheap) to match — both need the founder's
-  own Render and Namecheap account access. Once done, `Settings`'s
-  CORS/cookie-domain config and every doc referencing the `.onrender.com`
-  URL become the next real update, tracked here, not yet started.
+  registered `whitepact.com` directly and wired it to the hosted
+  dashboard the same day — `A` record (apex) and `CNAME` (`www`) added
+  at Namecheap per Render's custom-domain instructions, both verified
+  by Render, TLS certificate issued. Confirmed live by this session via
+  a real HTTPS request to `https://whitepact.com` (200 response,
+  correct CSP/HSTS headers, `x-api-version: 1.2.3` matching this
+  deployment) — not just trusting the Render dashboard's own status
+  badge. `https://responsibleai-dashboard.onrender.com` keeps resolving
+  to the identical service, unchanged. One correction to the plan
+  stated here previously: this app has **no cookie-domain
+  configuration to update** — auth is bearer-token-based, not
+  cookie-session-based (`Settings.allowed_origins` is the only
+  domain-relevant setting, and it's an environment variable, not a
+  hardcoded value in this repo — the founder sets it at deploy time,
+  not something a doc sweep touches). Docs naming
+  `responsibleai-dashboard.onrender.com` as the canonical URL have been
+  updated to `whitepact.com` where safe to (`DEPLOY_RUNBOOK.md`,
+  `DEFINITION_OF_DONE.md`, `CHANGELOG.md`, `VERSION_ROADMAP.md`) —
+  `PRIVACY_POLICY.md`/`SLA.md`/`TERMS_OF_SERVICE.md` deliberately left
+  untouched, since they name the Service's address as part of a legal
+  notice and that's the founder's call, not a mechanical doc-sweep
+  edit. `whitepact-mcp-http.onrender.com` (the separate MCP server
+  deployment) is untouched by any of this — it's a different service,
+  not affected by today's DNS work.
 - No claim is made here that the MCP server identity change, the
   resource-URI dual-scheme serving, or the env-var precedence logic are
   implemented yet — Sections 5 and 6 describe the design; the code
