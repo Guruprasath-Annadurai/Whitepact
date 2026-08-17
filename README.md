@@ -781,6 +781,10 @@ mypy src/responsibleai src/biasbuster
 ## Further reading
 
 - [`SPEC.md`](SPEC.md) — the current architecture contract
+- [`MACHINE_AUTHORITY_PROBLEM.md`](MACHINE_AUTHORITY_PROBLEM.md) — the problem the v3 authority-layer work answers
+- [`MACHINE_AUTHORITY_V1.md`](MACHINE_AUTHORITY_V1.md) — inventory of the eight core machine-authority invariants (Delegation Graph, Autonomy Budget, Memory Firewall, Evidence Bundle, and more)
+- [`ENFORCEMENT_BOUNDARY.md`](ENFORCEMENT_BOUNDARY.md) — precisely where each invariant's authority stops: inline enforcement vs. voluntary chokepoint
+- [`LEGACY_TO_MACHINE_AUTHORITY_MAP.md`](LEGACY_TO_MACHINE_AUTHORITY_MAP.md) — mapping RBAC/OAuth/IAM concepts onto their WhitePact equivalents, for readers coming from traditional access control
 - [`MIGRATION_WHITEPACT_V2.md`](MIGRATION_WHITEPACT_V2.md) — phase-by-phase migration log, what's done and what's explicitly not
 - [`DEFINITION_OF_DONE.md`](DEFINITION_OF_DONE.md) — closing report: what's real today, what isn't, verifiable
 - [`THREAT_MODEL.md`](THREAT_MODEL.md) — threat model for the current attack surface
