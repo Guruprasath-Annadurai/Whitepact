@@ -48,7 +48,7 @@ names.
 | `ResponsibleAi` | 20 | GitHub-URL-casing variant in docs/badges |
 | `responsibleai-mcp` | 17 | The published MCP server console script |
 | `rai://` | 6 | MCP resource URI scheme (`src/responsibleai/mcp/resources.py`) |
-| `responsibleai.dev` | 3 | A domain referenced in docs that has never been registered/deployed — see Section 13 |
+| `responsibleai.dev` | 3 | A domain referenced in docs that was never registered/deployed — see Section 13. `whitepact.com` is now registered (2026-08-17) but not yet wired to the hosted instance. |
 
 ---
 
@@ -1155,12 +1155,22 @@ identity to evaluate against by design.
 Per the standing rule against fabricating implementation status:
 
 - `responsibleai.dev` (3 references in docs) is not a domain this
-  project has ever deployed anything to. This migration does not
-  register `whitepact.dev` or any other domain — that requires a real
-  purchase and DNS control this session cannot perform. References to
-  it in docs are corrected to say what's actually true (the real hosted
-  instance is `responsibleai-dashboard.onrender.com`, itself pending its
-  own rename decision, tracked separately).
+  project has ever deployed anything to. This migration did not
+  register a domain itself — that requires a real purchase and DNS
+  control no session can perform. **Update, 2026-08-17**: the founder
+  has since registered `whitepact.com` directly (verified by this
+  session via a live DNS lookup — `whitepact.com`'s nameservers resolve
+  to Namecheap, with an existing `A` record, i.e. genuinely registered,
+  not merely reserved). It is **not yet wired to the hosted instance**
+  — the real hosted instance today is still
+  `responsibleai-dashboard.onrender.com`. Pointing `whitepact.com` at it
+  requires two things no session can do unattended: adding
+  `whitepact.com` as a custom domain in the Render dashboard for that
+  service, and creating the `A`/`CNAME` record Render's UI provides at
+  the domain's DNS host (Namecheap) to match — both need the founder's
+  own Render and Namecheap account access. Once done, `Settings`'s
+  CORS/cookie-domain config and every doc referencing the `.onrender.com`
+  URL become the next real update, tracked here, not yet started.
 - No claim is made here that the MCP server identity change, the
   resource-URI dual-scheme serving, or the env-var precedence logic are
   implemented yet — Sections 5 and 6 describe the design; the code
@@ -1307,3 +1317,68 @@ doesn't exist). These are tracked separately and are
 not blocked on this document — they can proceed against the current
 `responsibleai` code paths and be renamed in step with whichever phase
 above actually executes the package migration.
+
+---
+
+## 16. Closing the 14-item gap list opened by Section 12's report (2026-08-17)
+
+Section 12's gap-closure work produced a follow-up 14-item list, tracked
+outside this document until now. All 14 are closed as of this date;
+`MACHINE_AUTHORITY_V1.md` and `ENFORCEMENT_BOUNDARY.md` are the
+authoritative, itemized record of what each one covers and where it
+honestly stops — this section is the pointer, not a restatement:
+
+- **Reason codes, policy versioning, approval expiry, authority value
+  limits/target patterns, the fail-closed test, `whitepact_*`
+  observability, the MCP Upstream Gateway, resume-after-approval, the
+  risk router, multi-approver quorum, delegation chains, and the
+  upstream discovery endpoint** — the twelve technical items, verified
+  in this session by direct code/test inspection (not restated from
+  memory): `format_reason()` has 31 live call sites and no bare
+  `reason_codes=["..."]` literals remain; `Policy.version` is a real
+  monotonic int; `ApprovalRequest.is_expired`/`ApprovalExpiredError`
+  are enforced in `ApprovalRepository.consume()`;
+  `governance/upstream_executor.py` and `governance/upstream_discovery.py`
+  sit at 96-98% test coverage; `tests/test_approval_execution_binding.py`
+  and `tests/test_mcp_governance_dispatch.py` both assert fail-closed
+  behavior on subsystem failure.
+- **The SOC2-alternative writeup and the CAIQ v4.0.3 questionnaire** —
+  `compliance/SOC2_ALTERNATIVE_PATH.md` and
+  `compliance/CAIQ_SELF_ASSESSMENT.md` (+ the completed `.xlsx`) exist
+  as real files, not claims.
+- **Real performance benchmarks, extended to the v3 authority layer** —
+  `BENCHMARKS.md`/`scripts/run_benchmarks.py` now cover
+  `validate_attenuation`, `constraint_violation`,
+  `check_composition_violation`, `scan_memory_write`,
+  `build_evidence_bundle`/`verify_evidence_bundle`, and the gateway with
+  an Autonomy Budget engaged — every number measured, not estimated.
+- **Concurrency/race tests** (`tests/test_concurrency.py`) — verified,
+  under real `asyncio.gather()` concurrency, that
+  `ApprovalRepository.consume()`'s conditional UPDATE,
+  `resolve()`'s unique-vote constraint, and `EvidenceRepository`'s
+  hash-chain lock all hold as claimed. Also found and documented a
+  real, reliably-reproducing gap: Autonomy Budget's
+  count-then-decide-then-record window has no lock, and a concurrent
+  burst can fully bypass the configured cap (10 of 10 concurrent calls
+  allowed against a budget of 3) — recorded in
+  `ENFORCEMENT_BOUNDARY.md`'s Autonomy Budget entry, not fixed in that
+  pass; still open as of this writing.
+- **The reference enterprise demo**
+  (`examples/08_whitepact_enterprise_scenario.py`) — walks all eight
+  machine-authority invariants through one real, live scenario against
+  real code, no API keys required.
+- **Identity Bridge adapters** (`integrations/identity_bridge.py`) —
+  claims-mapping for Entra ID, Google Workspace, Okta, and AWS
+  (Cognito/IAM Identity Center), verified against each provider's
+  publicly documented token shape (not a live tenant of any of them,
+  which this project has no access to) — see the module's own
+  docstring and `MACHINE_AUTHORITY_V1.md`'s Identity Bridge section for
+  the three named gaps (Entra group-name resolution, Google Workspace
+  group membership, AWS's non-JWT SigV4 path — none implemented, none
+  claimed).
+
+**Domain**: `whitepact.com` was registered by the founder on 2026-08-17
+(confirmed by this session via a live DNS lookup — real nameservers, a
+real `A` record). It is not yet wired to the hosted instance; see
+Section 13's updated bullet for exactly what that still requires and
+why it needs the founder's own Render/Namecheap account access.

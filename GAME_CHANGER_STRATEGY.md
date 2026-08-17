@@ -84,7 +84,7 @@ This wasn't available three years ago. It is now, specifically because:
 3. **The badge loop is underpriced in the current plan.** `VERSION_ROADMAP.md`
    pushes the public badge/registry to v4.0.0. That's backwards — the
    badge is the *acquisition* mechanism, not a late-stage feature. Every
-   company that embeds a "Trust Score: 87 — verify at responsibleai.dev"
+   company that embeds a "Trust Score: 87 — verify at whitepact.com"
    badge is doing outbound marketing for free, the way "Protected by
    Cloudflare" or "Deployed on Vercel" badges turned infrastructure
    vendors into default choices through sheer visibility. This should
