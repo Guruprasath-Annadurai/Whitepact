@@ -44,10 +44,16 @@ Upstash).
    single-region, not an independently-hosted third-party monitor — if
    this deployment goes fully down, its own status page goes down with
    it.
-2. **Self-serve onboarding wizard** — signup → API key → first trust
-   score dashboard in under 15 minutes, zero sales call required. The
-   single highest-leverage revenue unlock per `STRATEGY_ROADMAP.md`
-   Phase 1: removes the founder as a bottleneck in every sale.
+2. ~~**Self-serve onboarding wizard**~~ — **done, 2026-08-17**: `/signup`
+   (workspace name → email → API key issued → straight into the
+   dashboard) plus `POST /api/signup`, hardened with a honeypot field,
+   a minimum dwell-time check, a disposable-email blocklist, and a
+   site-wide signup rate window layered on the existing per-IP limit —
+   no CAPTCHA or email-ownership verification yet, named honestly as
+   the next hardening step if abuse becomes an observed problem, not
+   silently covered. The single highest-leverage revenue unlock per
+   `STRATEGY_ROADMAP.md` Phase 1: removes the founder as a bottleneck
+   in every sale.
 3. **Stripe billing verified end-to-end** — a real test purchase through
    checkout, not just unit tests against the billing API.
 4. **Persistent storage proven under real load** — the Render/Supabase/
