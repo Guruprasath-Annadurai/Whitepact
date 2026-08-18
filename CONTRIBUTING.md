@@ -22,6 +22,8 @@ that doesn't exist.
 - [Development Setup](#development-setup)
 - [Repository Layout](#repository-layout)
 - [Running Tests](#running-tests)
+- [Accessibility](#accessibility)
+- [Internationalization](#internationalization)
 - [Engineering Principles](#engineering-principles)
 - [Writing a New Bias Probe](#writing-a-new-bias-probe)
 - [Adding a Provider](#adding-a-provider)
@@ -140,6 +142,47 @@ level, not just "some tests." The CI badge at the top of `README.md`
 reflects whether the full suite passes on `main`; `coverage.json` (produced
 by any local `pytest` run, per `pyproject.toml`'s `addopts`) has the exact
 current numbers.
+
+---
+
+## Accessibility
+
+Dashboard pages (`src/responsibleai/dashboard/static/*.html`) target
+WCAG 2.1 AA and are checked by `pa11y-ci` on every CI run (hard gate) —
+see [`docs/ACCESSIBILITY.md`](docs/ACCESSIBILITY.md). If your PR touches a
+dashboard page:
+
+- New/changed form controls (`<input>`, `<select>`, `<textarea>`) need a
+  real accessible name — a `<label for="...">`, or `aria-label` for
+  compact filter UI where a visible label doesn't fit the design.
+- New colors used for text must meet 4.5:1 contrast against **both**
+  light and dark backgrounds — `color-scheme: light dark` means every
+  page's colors depend on the visitor's OS preference, and headless
+  Chrome resolves that differently by environment (a real bug this
+  project shipped once and CI caught — see `docs/ACCESSIBILITY.md`'s
+  "What was found and fixed" section for the story).
+- Run `npm install && npm run a11y` locally before pushing if you touched
+  a scanned page — see `.pa11yci.json` for the URL list.
+
+## Internationalization
+
+The shared dashboard shell (sidebar/topbar, loaded by every page via
+`RAI.shell()`) is wired through a real, tested i18n architecture — see
+[`docs/INTERNATIONALIZATION.md`](docs/INTERNATIONALIZATION.md). If your PR
+adds or changes a user-facing string in the shared shell (`app.js`'s
+`NAV`, or a topbar label):
+
+- Add the string as a key to `static/locales/en.json`, and add the
+  corresponding translation to every other locale file
+  (`static/locales/es.json`) — a Node test
+  (`tests/js/i18n.test.js`, run in CI as `i18n-tests`) fails the build on
+  a missing or stale key.
+- Reference the string via `RAI.i18n.t("your.key")`, never a literal
+  English string, in `app.js`.
+- Page-specific content (forms, tables, results) outside the shared shell
+  isn't wired through i18n yet — extending it is real, separate work; see
+  `docs/INTERNATIONALIZATION.md`'s "Extending translation coverage"
+  section before starting.
 
 ---
 
