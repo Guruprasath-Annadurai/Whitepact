@@ -23,6 +23,13 @@ public and dashboard page that renders meaningful static content.
   dashboard locally (auth disabled, in-memory DB — no seed data needed
   since these checks run against a page's real static markup, not
   API-populated content) and runs `npx pa11y-ci --config .pa11yci.json`.
+  `.pa11yci.json` passes `--no-sandbox` to the headless Chrome instance —
+  required because GitHub's `ubuntu-latest` runners restrict unprivileged
+  user namespaces, which Chrome's normal OS-level sandbox depends on
+  (a well-known, standard CI accommodation, not a project-specific
+  weakening). Safe here specifically because the browser only ever
+  navigates to this project's own local server rendering this project's
+  own static pages — never third-party or user-supplied content.
   This is a **hard CI gate** — a new violation fails the build.
 - **Local run**: `npm install && npm run a11y` (requires Node 18+; the
   dashboard must already be running on `http://127.0.0.1:8765`, e.g. via

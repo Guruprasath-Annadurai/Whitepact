@@ -2,7 +2,10 @@
   "defaults": {
     "standard": "WCAG2AA",
     "timeout": 30000,
-    "concurrency": 1
+    "concurrency": 1,
+    "chromeLaunchConfig": {
+      "args": ["--no-sandbox", "--disable-setuid-sandbox"]
+    }
   },
   "urls": [
     "http://127.0.0.1:8765/",
