@@ -899,49 +899,11 @@ TOOL_DEFS: list[types.Tool] = [
     ),
 ]
 
-# ── tool dispatch ─────────────────────────────────────────────────────────────
-
-async def dispatch_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
-    handlers: dict[str, Any] = {
-        "rai_scan":                 _handle_scan,
-        "rai_trust_score":          _handle_trust_score,
-        "rai_compliance":           _handle_compliance,
-        "rai_hallucination":        _handle_hallucination,
-        "rai_cost_estimate":        _handle_cost_estimate,
-        "rai_redteam_payloads":     _handle_redteam_payloads,
-        "rai_redteam_analyze":      _handle_redteam_analyze,
-        "rai_compare_models":       _handle_compare_models,
-        "rai_audit_summary":        _handle_audit_summary,
-        "rai_health":               _handle_health,
-        # new
-        "rai_bias_evaluate":        _handle_bias_evaluate,
-        "rai_drift_check":          _handle_drift_check,
-        "rai_passport_generate":    _handle_passport_generate,
-        "rai_budget_check":         _handle_budget_check,
-        "rai_policy_check":         _handle_policy_check,
-        "rai_stream_scan":          _handle_stream_scan,
-        "rai_benchmark":            _handle_benchmark,
-        "rai_benchmark_prompts":    _handle_benchmark_prompts,
-        "rai_model_route":          _handle_model_route,
-        "rai_pii_report":           _handle_pii_report,
-        "rai_incident_log":         _handle_incident_log,
-        "rai_eu_ai_act_classify":   _handle_eu_ai_act_classify,
-        "rai_iso42001_gap":         _handle_iso42001_gap,
-        "rai_executive_summary":    _handle_executive_summary,
-        "rai_org_status":           _handle_org_status,
-        "rai_webhook_status":       _handle_webhook_status,
-        "rai_check_trust":          _handle_check_trust,
-        "rai_memory_write_check":   _handle_memory_write_check,
-        "rai_memory_read_check":    _handle_memory_read_check,
-    }
-    handler = handlers.get(name)
-    if not handler:
-        return {"error": f"Unknown tool: {name}"}
-    try:
-        return await handler(args)
-    except Exception as exc:
-        return {"error": str(exc), "tool": name}
-
+# dispatch_tool() and its handler table are defined at the very end of this
+# file, after every _handle_* function below -- see "tool dispatch" section.
+# It has to come last: the table is built once at module-import time (not
+# rebuilt per call, unlike the old inline-dict version), which only works
+# once every name it references actually exists.
 
 # ── original handlers ─────────────────────────────────────────────────────────
 
@@ -2029,3 +1991,55 @@ async def _handle_webhook_status(args: dict[str, Any]) -> dict[str, Any]:
             "webhook_status": health_status,
         },
     }
+
+
+# ── tool dispatch ─────────────────────────────────────────────────────────────
+
+# Module-level, built once at import time: every entry is a reference to a
+# module-level async function above, so there's no per-request state to
+# close over. The previous version rebuilt this same ~29-entry dict fresh
+# inside dispatch_tool() on every single tool call -- pure waste, since the
+# mapping never changes at runtime. Has to live down here, after every
+# _handle_* function it references is actually defined.
+_TOOL_HANDLERS: dict[str, Any] = {
+    "rai_scan":                 _handle_scan,
+    "rai_trust_score":          _handle_trust_score,
+    "rai_compliance":           _handle_compliance,
+    "rai_hallucination":        _handle_hallucination,
+    "rai_cost_estimate":        _handle_cost_estimate,
+    "rai_redteam_payloads":     _handle_redteam_payloads,
+    "rai_redteam_analyze":      _handle_redteam_analyze,
+    "rai_compare_models":       _handle_compare_models,
+    "rai_audit_summary":        _handle_audit_summary,
+    "rai_health":               _handle_health,
+    # new
+    "rai_bias_evaluate":        _handle_bias_evaluate,
+    "rai_drift_check":          _handle_drift_check,
+    "rai_passport_generate":    _handle_passport_generate,
+    "rai_budget_check":         _handle_budget_check,
+    "rai_policy_check":         _handle_policy_check,
+    "rai_stream_scan":          _handle_stream_scan,
+    "rai_benchmark":            _handle_benchmark,
+    "rai_benchmark_prompts":    _handle_benchmark_prompts,
+    "rai_model_route":          _handle_model_route,
+    "rai_pii_report":           _handle_pii_report,
+    "rai_incident_log":         _handle_incident_log,
+    "rai_eu_ai_act_classify":   _handle_eu_ai_act_classify,
+    "rai_iso42001_gap":         _handle_iso42001_gap,
+    "rai_executive_summary":    _handle_executive_summary,
+    "rai_org_status":           _handle_org_status,
+    "rai_webhook_status":       _handle_webhook_status,
+    "rai_check_trust":          _handle_check_trust,
+    "rai_memory_write_check":   _handle_memory_write_check,
+    "rai_memory_read_check":    _handle_memory_read_check,
+}
+
+
+async def dispatch_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
+    handler = _TOOL_HANDLERS.get(name)
+    if not handler:
+        return {"error": f"Unknown tool: {name}"}
+    try:
+        return await handler(args)
+    except Exception as exc:
+        return {"error": str(exc), "tool": name}
