@@ -96,8 +96,12 @@ Two things a quarterly solo cadence cannot substitute for:
 - **A named advisor, fractional CISO, or co-founder with actual standing to
   push back.** This is a decision for the founder to make (who, when,
   compensated how) — not something a document or a process can create by
-  itself. Until that person exists, treat every review above as
-  self-assessment, not independent oversight, in any conversation with an
+  itself. `compliance/PROJECT_CONTINUITY_PLAN.md` lists exactly what that
+  person would need access to, so activating them is a checklist, not an
+  improvisation — but the checklist itself doesn't create the redundancy
+  until someone real holds that access. Until that person exists, treat
+  every review above as self-assessment, not independent oversight, in any
+  conversation with an
   enterprise buyer or an auditor.
 - **A board or equivalent oversight body**, which `compliance/SOC2_READINESS.md`
   correctly flags as something CC1 (Control Environment) will ask about

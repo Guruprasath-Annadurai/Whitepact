@@ -822,6 +822,7 @@ WhitePact holds two [OpenSSF](https://openssf.org/) self-certifications on its [
 - [`SLA.md`](SLA.md), [`ENTERPRISE_SECURITY.md`](ENTERPRISE_SECURITY.md), [`SECURITY.md`](SECURITY.md) — enterprise/security posture, stated honestly
 - [`compliance/SOC2_ALTERNATIVE_PATH.md`](compliance/SOC2_ALTERNATIVE_PATH.md) — real, free, independently verifiable trust signals for now; the honest path to a real SOC 2 when there's budget for one
 - [`docs/ACCESSIBILITY.md`](docs/ACCESSIBILITY.md), [`docs/INTERNATIONALIZATION.md`](docs/INTERNATIONALIZATION.md) — WCAG2AA accessibility approach and the dashboard's i18n architecture, both with real automated CI gates
+- [`compliance/PROJECT_CONTINUITY_PLAN.md`](compliance/PROJECT_CONTINUITY_PLAN.md) — the access/recovery checklist a second person would need if the founder became unavailable; stated honestly as a plan, not proof of bus-factor redundancy (no second person holds this access yet)
 
 ---
 
