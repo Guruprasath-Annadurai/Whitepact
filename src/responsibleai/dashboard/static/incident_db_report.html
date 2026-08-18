@@ -9,16 +9,20 @@
     color-scheme: light dark;
     --bg: #fafafa; --fg: #1a1a1a; --muted: #666;
     --card-bg: #ffffff; --card-border: #e5e5e5;
-    --accent: #2563eb; --green: #16a34a; --red: #dc2626; --code-bg: #f1f1f1;
+    --accent: #2563eb; --green: #15803d; --red: #dc2626;
+    --link: #2563eb;
+    --danger-text: #dc2626; --code-bg: #f1f1f1;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --bg: #0b0b0c; --fg: #e8e8e8; --muted: #999;
+      --link: #60a5fa; --danger-text: #f87171; --green: #16a34a; --amber: #d97706;
       --card-bg: #17181a; --card-border: #2a2a2c; --code-bg: #232427;
     }
   }
   :root[data-theme="dark"] {
     --bg: #0b0b0c; --fg: #e8e8e8; --muted: #999;
+      --link: #60a5fa; --danger-text: #f87171; --green: #16a34a; --amber: #d97706;
     --card-bg: #17181a; --card-border: #2a2a2c; --code-bg: #232427;
   }
   * { box-sizing: border-box; }
@@ -32,14 +36,14 @@
     display: flex; align-items: center; gap: 1.25rem; font-size: 0.85rem;
   }
   .site-nav a { color: var(--muted); text-decoration: none; }
-  .site-nav a:hover { color: var(--accent); }
+  .site-nav a:hover { color: var(--link); }
   .site-nav .brand { font-weight: 800; color: var(--fg); margin-right: auto; }
   header { margin-bottom: 1.75rem; }
   .brand { font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 0.5rem; }
   h1 { font-size: 1.6rem; margin: 0 0 0.5rem; letter-spacing: -0.02em; }
   .lede { color: var(--muted); font-size: 0.95rem; }
   .meta-links { margin-top: 0.75rem; font-size: 0.88rem; }
-  .meta-links a { color: var(--accent); text-decoration: none; }
+  .meta-links a { color: var(--link); text-decoration: none; }
 
   form { display: flex; flex-direction: column; gap: 1.1rem; }
   label { font-size: 0.85rem; font-weight: 600; margin-bottom: 0.35rem; display: block; }
@@ -61,7 +65,7 @@
     border: 1px solid var(--card-border); display: none;
   }
   .result.ok { display: block; background: rgba(22,163,74,0.08); border-color: rgba(22,163,74,0.3); color: var(--green); }
-  .result.error { display: block; background: rgba(220,38,38,0.08); border-color: rgba(220,38,38,0.3); color: var(--red); }
+  .result.error { display: block; background: rgba(220,38,38,0.08); border-color: rgba(220,38,38,0.3); color: var(--danger-text); }
   .note {
     background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 10px;
     padding: 1rem 1.25rem; font-size: 0.84rem; color: var(--muted); margin-bottom: 1.75rem;

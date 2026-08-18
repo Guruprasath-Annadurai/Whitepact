@@ -158,3 +158,40 @@ jobs:
             --set image.tag=ci-test \
             --debug \
             > /dev/null
+
+  accessibility:
+    name: Accessibility (WCAG2AA)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install project
+        run: pip install -e ".[dashboard]"
+
+      - name: Install pa11y-ci
+        run: npm ci
+
+      - name: Start dashboard (auth disabled, in-memory DB)
+        run: |
+          RAI_AUTH_ENABLED=false RAI_DB_PATH=:memory: \
+            nohup uvicorn responsibleai.dashboard.app:app --host 127.0.0.1 --port 8765 \
+            > dashboard.log 2>&1 &
+          for i in $(seq 1 20); do
+            curl -sf http://127.0.0.1:8765/ > /dev/null && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8765/ > /dev/null || (cat dashboard.log && exit 1)
+
+      - name: Run pa11y-ci against public/dashboard pages (docs/ACCESSIBILITY.md)
+        run: npx pa11y-ci --config .pa11yci.json

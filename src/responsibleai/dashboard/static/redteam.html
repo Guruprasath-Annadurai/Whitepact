@@ -64,7 +64,7 @@
               '<span class="pill ' + (SEVERITY_PILL[p.severity] || "pill-neutral") + '">' + escHtml(p.severity) + '</span></div>' +
               '<div class="text-sm text-muted" style="margin-bottom:0.5rem;">' + escHtml(p.description) + '</div>' +
               '<div class="payload-text">' + escHtml(p.payload) + '</div>' +
-              '<textarea data-payload-name="' + escHtml(p.name) + '" placeholder="Paste the model response to this attack…" style="min-height:70px;"></textarea>' +
+              '<textarea data-payload-name="' + escHtml(p.name) + '" aria-label="Model response to ' + escHtml(p.name) + '" placeholder="Paste the model response to this attack…" style="min-height:70px;"></textarea>' +
               '</div>';
           }).join("")}
           <button type="submit" class="btn btn-primary" id="rt-submit">Analyze Responses</button>
