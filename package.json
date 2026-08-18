@@ -1,0 +1,11 @@
+{
+  "name": "whitepact-a11y",
+  "private": true,
+  "description": "Dev-only manifest for accessibility tooling (pa11y-ci). Not published; the project itself is Python, distributed via PyPI as rai-governance-platform.",
+  "devDependencies": {
+    "pa11y-ci": "^4.0.1"
+  },
+  "scripts": {
+    "a11y": "pa11y-ci --config .pa11yci.json"
+  }
+}

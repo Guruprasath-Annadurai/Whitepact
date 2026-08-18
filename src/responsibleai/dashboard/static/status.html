@@ -13,11 +13,13 @@
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --bg: #0b0b0c; --fg: #e8e8e8; --muted: #999;
+      --link: #60a5fa; --danger-text: #f87171;
       --card-bg: #17181a; --card-border: #2a2a2c;
     }
   }
   :root[data-theme="dark"] {
     --bg: #0b0b0c; --fg: #e8e8e8; --muted: #999;
+      --link: #60a5fa; --danger-text: #f87171;
     --card-bg: #17181a; --card-border: #2a2a2c;
   }
   * { box-sizing: border-box; }
@@ -31,7 +33,7 @@
   }
   .site-nav { display: flex; align-items: center; gap: 1.25rem; font-size: 0.85rem; padding: 1.5rem 0 0; }
   .site-nav a { color: var(--muted); text-decoration: none; }
-  .site-nav a:hover { color: var(--accent); }
+  .site-nav a:hover { color: var(--link); }
   .site-nav .brand { font-weight: 800; color: var(--fg); margin-right: auto; }
   h1 { font-size: 1.5rem; margin: 1.5rem 0 0.25rem; }
   .subtitle { color: var(--muted); margin-bottom: 2rem; font-size: 0.9rem; }
@@ -79,7 +81,7 @@
 
   <footer>
     Last checked: <span id="checked-at">—</span> · Auto-refreshes every 30s.
-    See <a href="https://github.com/Guruprasath-Annadurai/ResponsibleAi/blob/main/SLA.md" target="_blank">SLA</a> for uptime commitments.
+    See <a href="https://github.com/Guruprasath-Annadurai/Whitepact/blob/main/SLA.md" target="_blank">SLA</a> for uptime commitments.
   </footer>
 
   <script>
