@@ -1,6 +1,7 @@
 # OSPS Baseline Level 1 — Branch Protection Controls
 
 **Date verified**: 2026-08-17
+**Updated**: 2026-08-18 — `required_status_checks.contexts` expanded from 4 to 8 (see "2026-08-18 update" below); this file's original body is left otherwise unchanged as a record of the initial baseline.
 **Repository**: `Guruprasath-Annadurai/Whitepact`
 **Default branch**: `main`
 **Method**: GitHub classic branch protection (`PUT /repos/{owner}/{repo}/branches/main/protection`), applied and then independently re-fetched via `GET` in a separate API call — not merely echoed back from the write request.
@@ -73,3 +74,28 @@ gh api repos/Guruprasath-Annadurai/Whitepact/rulesets
 | OSPS-AC-03.02 | **MET** |
 
 Both verified against a fresh `GET`, not assumed from the write request succeeding.
+
+---
+
+## 2026-08-18 update — required checks expanded from 4 to 8
+
+**Gap found**: `CONTRIBUTING.md`'s Accessibility section calls `pa11y-ci` "a hard gate," the DCO section says a missing sign-off "fails" the check, and the i18n test job exists specifically to block bad catalogs — but none of `dco-check`, `gitleaks`, `Accessibility (WCAG2AA)`, or `i18n unit tests` were actually present in `required_status_checks.contexts`. They ran on every PR and reported pass/fail, but GitHub would still allow a merge with any of them failing, because only the original 4 job names (`Lint · Type-check · Test (3.11)`/`(3.12)`, `Build distribution`, `Helm chart lint`) were wired as required. This is exactly the gap OpenSSF Silver item 18 (CI hardening) flags — a check that exists but isn't actually enforced is indistinguishable from no check at PR-merge time.
+
+**Fix applied**:
+
+```bash
+gh api -X PATCH repos/Guruprasath-Annadurai/Whitepact/branches/main/protection/required_status_checks \
+  -F strict=true \
+  -f 'contexts[]=Lint · Type-check · Test (3.11)' \
+  -f 'contexts[]=Lint · Type-check · Test (3.12)' \
+  -f 'contexts[]=Build distribution' \
+  -f 'contexts[]=Helm chart lint' \
+  -f 'contexts[]=dco-check' \
+  -f 'contexts[]=gitleaks' \
+  -f 'contexts[]=Accessibility (WCAG2AA)' \
+  -f 'contexts[]=i18n unit tests'
+```
+
+**Verified by independent `GET`** immediately after: `required_status_checks.contexts` now lists all 8 job names.
+
+**`dependency-review` deliberately excluded**: this job fails on every PR today because the repository's Dependency graph setting isn't enabled (a pre-existing, separate gap, tracked in this same document's original body and in `OPENSSF_SILVER_GAP_ANALYSIS.md` item 18) — making it required would block every PR unconditionally, which is worse than the current honestly-documented gap. Fix the underlying Dependency graph setting first, then add it as a required check in a follow-up, not the other way around.
