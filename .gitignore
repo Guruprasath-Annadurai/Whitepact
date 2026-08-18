@@ -16,6 +16,7 @@ venv/
 !.pa11yci.json
 !tsconfig.json
 !grafana/dashboards/*.json
+!src/responsibleai/dashboard/static/locales/*.json
 !server.json
 !plugins/**/*.json
 !distribution/**/*.json

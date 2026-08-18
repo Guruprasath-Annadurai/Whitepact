@@ -195,3 +195,18 @@ jobs:
 
       - name: Run pa11y-ci against public/dashboard pages (docs/ACCESSIBILITY.md)
         run: npx pa11y-ci --config .pa11yci.json
+
+  i18n-tests:
+    name: i18n unit tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run i18n unit tests (locale resolution, fallback, catalog integrity)
+        run: node --test tests/js/i18n.test.js

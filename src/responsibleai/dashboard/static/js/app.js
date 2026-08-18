@@ -4,33 +4,35 @@
 (function (global) {
   "use strict";
 
+  // Labels are i18n keys (resolved via RAI.i18n.t at render time), not
+  // literal English text -- see static/js/i18n.js and static/locales/*.json.
   const NAV = [
-    { group: "Overview", items: [
-      { id: "overview", label: "Dashboard", href: "/" },
+    { groupKey: "nav.group.overview", items: [
+      { id: "overview", labelKey: "nav.overview", href: "/" },
     ]},
-    { group: "Evaluate", items: [
-      { id: "evaluate", label: "Evaluate Model", href: "/evaluate" },
-      { id: "guardrails", label: "Guardrails", href: "/guardrails" },
-      { id: "hallucination", label: "Hallucination", href: "/hallucination" },
-      { id: "eval", label: "Compare & Benchmark", href: "/eval" },
-      { id: "redteam", label: "Red Team", href: "/redteam" },
+    { groupKey: "nav.group.evaluate", items: [
+      { id: "evaluate", labelKey: "nav.evaluate", href: "/evaluate" },
+      { id: "guardrails", labelKey: "nav.guardrails", href: "/guardrails" },
+      { id: "hallucination", labelKey: "nav.hallucination", href: "/hallucination" },
+      { id: "eval", labelKey: "nav.eval", href: "/eval" },
+      { id: "redteam", labelKey: "nav.redteam", href: "/redteam" },
     ]},
-    { group: "Cost & Trust", items: [
-      { id: "cost", label: "Cost Intelligence", href: "/cost" },
-      { id: "router", label: "Model Router", href: "/router" },
-      { id: "trust-scores", label: "Trust Scores", href: "/trust-scores" },
-      { id: "leaderboard", label: "Leaderboard", href: "/leaderboard" },
+    { groupKey: "nav.group.cost_trust", items: [
+      { id: "cost", labelKey: "nav.cost", href: "/cost" },
+      { id: "router", labelKey: "nav.router", href: "/router" },
+      { id: "trust-scores", labelKey: "nav.trust_scores", href: "/trust-scores" },
+      { id: "leaderboard", labelKey: "nav.leaderboard", href: "/leaderboard" },
     ]},
-    { group: "Governance", items: [
-      { id: "audit", label: "Audit Log", href: "/audit" },
-      { id: "incidents", label: "Incidents", href: "/incidents" },
-      { id: "incident-db", label: "Incident Database", href: "/incident-db" },
-      { id: "webhooks", label: "Webhooks", href: "/webhooks-manage" },
+    { groupKey: "nav.group.governance", items: [
+      { id: "audit", labelKey: "nav.audit", href: "/audit" },
+      { id: "incidents", labelKey: "nav.incidents", href: "/incidents" },
+      { id: "incident-db", labelKey: "nav.incident_db", href: "/incident-db" },
+      { id: "webhooks", labelKey: "nav.webhooks", href: "/webhooks-manage" },
     ]},
-    { group: "Account", items: [
-      { id: "organizations", label: "Organizations & Access", href: "/organizations" },
-      { id: "billing", label: "Billing", href: "/billing" },
-      { id: "settings", label: "Settings", href: "/settings" },
+    { groupKey: "nav.group.account", items: [
+      { id: "organizations", labelKey: "nav.organizations", href: "/organizations" },
+      { id: "billing", labelKey: "nav.billing", href: "/billing" },
+      { id: "settings", labelKey: "nav.settings", href: "/settings" },
     ]},
   ];
 
@@ -140,8 +142,9 @@
     },
   };
 
-  function shell(activeId) {
-    theme.init();
+  function renderChrome(activeId) {
+    const t = global.RAI.i18n.t;
+    const locale = global.RAI.i18n.getLocale();
 
     const shellEl = document.getElementById("rai-shell");
     if (!shellEl) return;
@@ -149,35 +152,69 @@
     const navHtml = NAV.map(function (group) {
       const items = group.items.map(function (item) {
         const cls = "rai-nav-item" + (item.id === activeId ? " active" : "");
-        return '<a class="' + cls + '" href="' + item.href + '"><span class="dot"></span>' + item.label + "</a>";
+        return '<a class="' + cls + '" href="' + item.href + '"><span class="dot"></span>' + t(item.labelKey) + "</a>";
       }).join("");
-      return '<div class="rai-nav-group"><div class="rai-nav-label">' + group.group + "</div>" + items + "</div>";
+      return '<div class="rai-nav-group"><div class="rai-nav-label">' + t(group.groupKey) + "</div>" + items + "</div>";
+    }).join("");
+
+    const localeOptions = global.RAI.i18n.SUPPORTED_LOCALES.map(function (code) {
+      const selected = code === locale ? " selected" : "";
+      return '<option value="' + code + '"' + selected + ">" + code.toUpperCase() + "</option>";
     }).join("");
 
     const loggedIn = auth.isLoggedIn();
-    shellEl.innerHTML =
-      '<div class="rai-app">' +
-      '<aside class="rai-sidebar" id="rai-sidebar">' +
-      '<div class="brand">ResponsibleAI</div>' +
-      "<nav>" + navHtml + "</nav>" +
-      "</aside>" +
-      '<div class="rai-main">' +
-      '<header class="rai-topbar">' +
-      '<button class="btn btn-icon" id="rai-nav-toggle" aria-label="Toggle navigation" title="Toggle navigation">&#9776;</button>' +
-      '<div class="actions">' +
-      '<button class="btn btn-sm" id="rai-theme-toggle" title="Toggle theme">Theme</button>' +
+    const topbarActionsHtml =
+      '<select class="btn btn-sm" id="rai-locale-select" aria-label="' + t("topbar.locale_label") + '" title="' + t("topbar.locale_label") + '">' + localeOptions + "</select>" +
+      '<button class="btn btn-sm" id="rai-theme-toggle" title="' + t("topbar.toggle_theme") + '">' + t("topbar.toggle_theme") + "</button>" +
       (loggedIn
-        ? '<button class="btn btn-sm" id="rai-logout">Logout</button>'
-        : '<a class="btn btn-sm" href="/signup">Sign up</a><a class="btn btn-sm btn-primary" href="/login">Login</a>') +
-      "</div>" +
-      "</header>" +
-      '<div class="rai-content" id="rai-page-content"></div>' +
-      "</div>" +
-      "</div>";
+        ? '<button class="btn btn-sm" id="rai-logout">' + t("topbar.logout") + "</button>"
+        : '<a class="btn btn-sm" href="/signup">' + t("topbar.signup") + '</a><a class="btn btn-sm btn-primary" href="/login">' + t("topbar.login") + "</a>");
+
+    const existingApp = shellEl.querySelector(".rai-app");
+
+    if (!existingApp) {
+      // First render for this page load: build the full chrome, including
+      // an empty #rai-page-content that the page's own inline <script>
+      // fills in synchronously right after calling RAI.shell(activeId) --
+      // that classic synchronous contract must keep working, so this
+      // branch runs entirely synchronously (see initSync() in i18n.js).
+      shellEl.innerHTML =
+        '<div class="rai-app">' +
+        '<aside class="rai-sidebar" id="rai-sidebar">' +
+        '<div class="brand">ResponsibleAI</div>' +
+        "<nav>" + navHtml + "</nav>" +
+        "</aside>" +
+        '<div class="rai-main">' +
+        '<header class="rai-topbar">' +
+        '<button class="btn btn-icon" id="rai-nav-toggle" aria-label="' + t("topbar.toggle_nav") + '" title="' + t("topbar.toggle_nav") + '">&#9776;</button>' +
+        '<div class="actions">' + topbarActionsHtml + "</div>" +
+        "</header>" +
+        '<div class="rai-content" id="rai-page-content"></div>' +
+        "</div>" +
+        "</div>";
+
+      document.getElementById("rai-nav-toggle").addEventListener("click", function () {
+        document.getElementById("rai-sidebar").classList.toggle("open");
+      });
+    } else {
+      // Re-render triggered by a locale switch: replace only the sidebar
+      // nav and topbar actions, never #rai-page-content -- so an in-
+      // progress form fill or loaded results table survives a language
+      // change instead of being silently wiped out.
+      existingApp.querySelector(".rai-sidebar nav").innerHTML = navHtml;
+      const toggleBtn = existingApp.querySelector("#rai-nav-toggle");
+      if (toggleBtn) {
+        toggleBtn.setAttribute("aria-label", t("topbar.toggle_nav"));
+        toggleBtn.setAttribute("title", t("topbar.toggle_nav"));
+      }
+      existingApp.querySelector(".rai-topbar .actions").innerHTML = topbarActionsHtml;
+    }
 
     document.getElementById("rai-theme-toggle").addEventListener("click", theme.toggle);
-    document.getElementById("rai-nav-toggle").addEventListener("click", function () {
-      document.getElementById("rai-sidebar").classList.toggle("open");
+    document.getElementById("rai-locale-select").addEventListener("change", function (e) {
+      global.RAI.i18n.setLocale(e.target.value).then(function () {
+        renderChrome(activeId);
+      });
     });
     const logoutBtn = document.getElementById("rai-logout");
     if (logoutBtn) {
@@ -186,9 +223,34 @@
         window.location.href = "/login";
       });
     }
+  }
+
+  function shell(activeId) {
+    theme.init();
+    const i18n = global.RAI.i18n;
+    // Synchronous: the default locale's catalog is embedded (no fetch), so
+    // this always resolves to a real, correctly-translated chrome on the
+    // very first paint -- never a flash of raw "nav.overview"-style keys.
+    // If the visitor's actual preferred locale isn't the default and its
+    // catalog isn't cached yet, this falls back to the default for now.
+    i18n.initSync();
+    renderChrome(activeId);
+
+    // Upgrade to the visitor's real preferred locale asynchronously if it
+    // differs from what initSync() could resolve synchronously. This never
+    // touches #rai-page-content (see the re-render branch above), so
+    // whatever the page's own script has already put there survives.
+    const detected = i18n.detectLocale();
+    if (detected !== i18n.getLocale()) {
+      i18n.setLocale(detected).then(function () {
+        renderChrome(activeId);
+      });
+    }
 
     branding.get().then(branding.apply);
   }
 
-  global.RAI = { shell, theme, auth, toast, fetchJSON, branding, NAV };
+  // Merge into any existing global.RAI (i18n.js, loaded first on every
+  // page, already attached .i18n there) rather than replacing it outright.
+  global.RAI = Object.assign(global.RAI || {}, { shell, theme, auth, toast, fetchJSON, branding, NAV });
 })(window);
