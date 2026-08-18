@@ -1,4 +1,9 @@
-# ResponsibleAI — Strategy & Phased Development Roadmap
+# WhitePact — Strategy & Phased Development Roadmap
+
+> See [`ROADMAP.md`](ROADMAP.md) for the canonical NOW/NEXT/LATER plan of
+> what actually ships when. This document covers the same ground from the
+> business/revenue side and is kept for that context, not as a competing
+> source of version-by-version scope.
 
 Written 2026-07-22, updated 2026-07-23. Posture: **Hybrid Phased** (harden the
 enterprise compliance core for near-term revenue, then fund the bigger

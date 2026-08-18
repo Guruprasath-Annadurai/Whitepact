@@ -4,17 +4,18 @@
   <a href="https://pypi.org/project/rai-governance-platform/"><img src="https://img.shields.io/pypi/v/rai-governance-platform" alt="PyPI version"/></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"/></a>
-  <a href="https://github.com/Guruprasath-Annadurai/Whitepact"><img src="https://img.shields.io/badge/tests-1725_passing-brightgreen.svg" alt="1725 tests passing"/></a>
   <a href="https://registry.modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP_Registry-listed-blue.svg" alt="Listed on the official MCP Registry"/></a>
   <a href="https://smithery.ai/server/guruprasathannadurai-official/whitepact"><img src="https://img.shields.io/badge/Smithery-listed-blue.svg" alt="Listed on Smithery"/></a>
   <a href="https://scorecard.dev/viewer/?uri=github.com/Guruprasath-Annadurai/Whitepact"><img src="https://api.scorecard.dev/projects/github.com/Guruprasath-Annadurai/Whitepact/badge" alt="OpenSSF Scorecard"/></a>
+  <a href="https://www.bestpractices.dev/projects/14112"><img src="https://www.bestpractices.dev/projects/14112/badge" alt="OpenSSF Best Practices"/></a>
+  <a href="https://www.bestpractices.dev/projects/14112"><img src="https://www.bestpractices.dev/projects/14112/baseline" alt="OpenSSF Baseline"/></a>
 </p>
 
 <p align="center"><strong>WhitePact — an independent runtime authority, governance, and assurance layer for autonomous systems: a five-way governance decision engine (ALLOW / ALLOW_WITH_REDACTION / REQUIRE_APPROVAL / DENY / QUARANTINE), trust scoring, bias detection, guardrails, hallucination detection, compliance mapping (NIST AI RMF / EU AI Act / ISO 42001), cost intelligence, drift monitoring, a public Trust Index / leaderboard / AI Incident Database, and an MCP server (27 tools, 20 resources) with LangChain, LangGraph, and Google ADK trust-gate integrations.</strong></p>
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│                        WhitePact  v1.2.2                                     │
+│                        WhitePact  v1.2.3                                     │
 │                                                                              │
 │  ┌──────────────┐  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐  │
 │  │ Governance   │  │ Trust Score │  │  Compliance  │  │  Guardrails      │  │
@@ -477,7 +478,8 @@ for fairness in [0.90, 0.88, 0.85, 0.72]:
 
 ## Governance Dashboard
 
-A production FastAPI application with a dark-mode SPA.
+A production FastAPI application with a dark-mode SPA. A live instance is
+hosted at **[whitepact.com](https://whitepact.com)**.
 
 ```bash
 # Development (auth off, SQLite in-memory)
@@ -760,7 +762,9 @@ cd Whitepact
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-# Full test suite (1,538 tests, 85% coverage, as of this writing)
+# Full test suite (run it to see the current test count and coverage —
+# see CONTRIBUTING.md's Running Tests section for why no number is
+# hardcoded here)
 pytest
 
 # Dashboard tests only
@@ -781,6 +785,8 @@ mypy src/responsibleai src/biasbuster
 
 ## Roadmap
 
+See [`ROADMAP.md`](ROADMAP.md) for the canonical NOW/NEXT/LATER plan. The list below is a historical, version-by-version changelog summary kept for reference.
+
 - [x] v0.1 — BiasBuster: gender probe, 4 providers, CLI, CI integration
 - [x] v0.2 — Racial / age / religious / occupational probes, HTML reporter, PrivacyLabel federated DP
 - [x] v0.3 — Cultural bias, intersectional analysis, DeepfakeDetector ensemble
@@ -793,6 +799,12 @@ mypy src/responsibleai src/biasbuster
 - [x] WhitePact migration (`1.2.0` → `1.2.2`) — governance decision core, MCP Streamable HTTP + OAuth/OIDC, risk tiering + policy engine, hash-chained evidence, approval workflow, multi-approver quorum + delegation chains, upstream MCP tool discovery, MCP trust/supply-chain scanner, HA Helm deployment, supply chain security (SBOM/provenance), release engineering, open source governance, live listings on the official MCP Registry and Smithery — see `MIGRATION_WHITEPACT_V2.md` for the full phase-by-phase log and what's still not done
 - [ ] v2.0 onward — see `VERSION_ROADMAP.md` for the phase-by-phase plan through v6.0
 - **Strategic direction** — `GAME_CHANGER_STRATEGY.md` lays out an infrastructure-first bet (free public trust registry, an agent-native trust-check primitive, AI-answer-engine citability) as an alternative to the enterprise-SaaS path, with `GAME_CHANGER_BUILD_PLAN.md` breaking it into concrete engineering phases against the current codebase
+
+---
+
+## Security & Open Source Assurance
+
+WhitePact holds two [OpenSSF](https://openssf.org/) self-certifications on its [bestpractices.dev project page](https://www.bestpractices.dev/projects/14112): the **Best Practices Passing** badge and **OSPS Baseline Level 1**. Both are voluntary, self-attested badges backed by real, inspectable evidence in this repository (see `compliance/OSPS_BASELINE_BRANCH_PROTECTION.md`, `compliance/OPENSSF_SECURITY_EVIDENCE.md`, `compliance/OPENSSF_SILVER_GAP_ANALYSIS.md`) — they are **not** an independent third-party audit, a penetration test, or equivalent to SOC 2 / ISO 27001 certification. None of those are claimed. See [`compliance/SOC2_ALTERNATIVE_PATH.md`](compliance/SOC2_ALTERNATIVE_PATH.md) for the honest path toward a real independent audit once there's budget for one.
 
 ---
 

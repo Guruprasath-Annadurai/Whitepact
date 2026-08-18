@@ -1,6 +1,19 @@
 # Architecture
 
-This document describes the internal design of the three components that make up ResponsibleAI: BiasBuster, PrivacyLabel, and DeepfakeDetector.
+> **[`SPEC.md`](SPEC.md) is the canonical, current architecture document**
+> for WhitePact as a whole — the Identity → Authority → Policy → Risk →
+> Workflow → Decision → Execution Permit → Execution → Evidence pipeline,
+> the governance decision core, and MCP as an adapter on top of that
+> pipeline (not the fundamental object; `SPEC.md` explains why). This
+> document predates the WhitePact rename and the governance/authority
+> layer entirely — it covers only the package-level internals of the
+> three components that existed before that work: BiasBuster,
+> PrivacyLabel, and DeepfakeDetector. Kept because that lower-level
+> detail (probe/provider/reporter layout) is still accurate and isn't
+> duplicated in `SPEC.md` — read `SPEC.md` first for anything about
+> governance, authority, or the platform as a whole.
+
+This document describes the internal design of the three components that make up the pre-WhitePact ResponsibleAI codebase: BiasBuster, PrivacyLabel, and DeepfakeDetector. It does not cover the governance/runtime-authority layer — see `SPEC.md` for that.
 
 ---
 

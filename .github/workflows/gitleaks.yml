@@ -1,0 +1,29 @@
+name: Gitleaks
+
+# Ongoing, automated secret scanning -- previously only a manual, one-time
+# pass (see compliance/OPENSSF_SECRET_SCAN.md). Runs on every PR against
+# the diff, plus a weekly full-history scan as a backstop.
+
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * 1"  # weekly, Monday 06:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
