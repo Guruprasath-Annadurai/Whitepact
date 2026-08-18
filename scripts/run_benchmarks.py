@@ -9,6 +9,7 @@ Usage: python scripts/run_benchmarks.py
 
 from __future__ import annotations
 
+import asyncio
 import platform
 import statistics
 import sys
@@ -18,6 +19,10 @@ sys.path.insert(0, "src")
 
 from datetime import UTC, datetime, timedelta
 
+from sqlalchemy.ext.asyncio import create_async_engine
+
+from responsibleai.db.audit_repository import AuditRepository
+from responsibleai.db.engine import DatabaseEngine, metadata
 from responsibleai.governance.autonomy_budget import AutonomyBudgetPolicy
 from responsibleai.governance.evidence import EvidenceRecord
 from responsibleai.governance.evidence_bundle import build_evidence_bundle, verify_evidence_bundle
@@ -37,6 +42,7 @@ from responsibleai.governance.workflow import (
 )
 from responsibleai.guardrails.engine import GuardrailsEngine
 from responsibleai.mcp.tools import TOOL_DEFS
+from responsibleai.rbac.models import AuditEntry
 from responsibleai.trust.score import TrustScoreEngine
 
 
@@ -59,6 +65,65 @@ def bench(name: str, fn, n: int) -> None:
     p99 = samples[int(len(samples) * 0.99)]
     mean = statistics.mean(samples)
     print(f"| `{name}` | {n} | {mean:.4f} | {p50:.4f} | {p95:.4f} | {p99:.4f} | {n / total:.0f} |")
+
+
+async def bench_async(name: str, fn, n: int) -> None:
+    """Same as bench(), but for an async callable -- used for the
+    DB-backed benchmarks below. BENCHMARKS.md previously stated no
+    database-backed paths were measured at all; this fills in the single
+    highest-traffic one (one write per API request, every request)."""
+    for _ in range(min(50, n)):
+        await fn()
+
+    samples = []
+    start_all = time.perf_counter()
+    for _ in range(n):
+        t0 = time.perf_counter()
+        await fn()
+        samples.append((time.perf_counter() - t0) * 1000)  # ms
+    total = time.perf_counter() - start_all
+
+    samples.sort()
+    p50 = samples[len(samples) // 2]
+    p95 = samples[int(len(samples) * 0.95)]
+    p99 = samples[int(len(samples) * 0.99)]
+    mean = statistics.mean(samples)
+    print(f"| `{name}` | {n} | {mean:.4f} | {p50:.4f} | {p95:.4f} | {p99:.4f} | {n / total:.0f} |")
+
+
+async def run_db_benchmarks() -> None:
+    """DB-backed benchmarks, SQLite in-memory -- deliberately labeled as
+    such below, since SQLite-in-memory is not representative of the
+    Postgres-over-network path a production deployment actually uses.
+    This measures the audit-log write itself (hash-chain compute +
+    single-row insert), which runs once per API request via
+    AuditLogMiddleware -- the only DB write on that shared hot path."""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(metadata.create_all)
+    db = DatabaseEngine(engine)
+    audit_repo = AuditRepository(db)
+
+    counter = {"n": 0}
+
+    async def write_one() -> None:
+        counter["n"] += 1
+        await audit_repo.write(AuditEntry(
+            endpoint="/api/bench",
+            method="POST",
+            org_id="bench-org",
+            key_id="bench-key",
+            status_code=200,
+            duration_ms=1.2,
+        ))
+
+    await bench_async(
+        "AuditRepository.write (SQLite in-memory, hash-chained insert)",
+        write_one,
+        500,
+    )
+
+    await engine.dispose()
 
 
 def main() -> None:
@@ -236,6 +301,8 @@ def main() -> None:
         ),
         2000,
     )
+
+    asyncio.run(run_db_benchmarks())
 
 
 if __name__ == "__main__":
