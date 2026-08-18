@@ -10,9 +10,68 @@ Silver criteria on bestpractices.dev live on a **self-service web form** tied to
 
 ---
 
+## Update log (2026-08-18)
+
+This document's item-by-item bodies below are left as originally written —
+they're the audit's evidence trail and shouldn't be silently rewritten.
+This log records what actually changed afterward, item by item, each
+closing the gap that item's original body described:
+
+- **Item 1 (DCO)**: now **MET**. `CONTRIBUTING.md` got a DCO section,
+  `.github/workflows/dco.yml` enforces sign-off on every PR, and it's
+  now a required branch-protection check (see item 18's update below).
+- **Item 5 (Access continuity)**: the plan-writing half is now **MET** —
+  `compliance/PROJECT_CONTINUITY_PLAN.md` exists. The underlying
+  bus-factor gap (items 6–7) is unchanged; see "What genuinely requires
+  you, specifically" at the end of this document.
+- **Item 8 (12-month roadmap)**: now **MET** — a canonical root
+  `ROADMAP.md` exists, linked from `README.md`.
+- **Item 9 (Architecture documentation)**: now **MET** — `ARCHITECTURE.md`
+  was fixed to reference current WhitePact architecture/`SPEC.md` rather
+  than stale pre-rename `ResponsibleAI`/`BiasBuster` branding.
+- **Item 10 (Security requirements documentation)**: now **MET** —
+  `ENTERPRISE_SECURITY.md` got an explicit "Summary: what you can expect
+  vs. what you cannot assume" section synthesizing the whole document
+  into Silver's two-list structure, including an explicit "no
+  independent penetration test has been performed" statement that
+  wasn't previously stated as its own claim.
+- **Item 12 (Documentation currentness)**: now **MET** — stale test
+  counts fixed, `scripts/check_doc_consistency.py` built and wired into
+  CI as a hard gate.
+- **Item 13 (Achievements displayed)**: now **MET** — both real earned
+  badges (Passing, OSPS Baseline Level 1) display in `README.md`.
+- **Item 14 (Accessibility)**: now **MET** — real WCAG2AA infrastructure,
+  `pa11y-ci` wired into CI, `docs/ACCESSIBILITY.md` written, a real
+  light-mode contrast bug found and fixed along the way. See
+  `docs/ACCESSIBILITY.md`.
+- **Item 15 (Internationalization)**: now **MET** — real message-catalog
+  i18n architecture (`en`/`es`), 27 passing tests, CI-gated. See
+  `docs/INTERNATIONALIZATION.md`.
+- **Item 17 (Contribution quality)**: now **MET** — `CONTRIBUTING.md`'s
+  Accessibility and Internationalization sections (added alongside items
+  14/15) were re-checked and confirmed accurate, current, and correctly
+  linked to real CI jobs; no further changes needed.
+- **Item 18 (CI hardening)**: now **MET** — Gitleaks, DCO, doc-consistency,
+  accessibility, and i18n CI jobs all exist (per items 1/12/14/15 above),
+  **and**, as of this update, all four are now actually enforced as
+  required branch-protection status checks alongside the original four
+  — previously they ran and reported pass/fail but a PR could still
+  merge regardless of their result, which defeats the point of a "hard
+  gate." See `compliance/OSPS_BASELINE_BRANCH_PROTECTION.md`'s
+  "2026-08-18 update" section for the exact command and verification.
+  `dependency-review` remains deliberately non-required — it fails on
+  every PR today due to a separate, pre-existing repository-setting gap
+  (Dependency graph not enabled), and making it required would block
+  every PR unconditionally rather than surface a real finding.
+
+Items 6–7 (a real second person, bus factor ≥ 2) are unchanged —
+founder action required, not something this update closes.
+
+---
+
 ## 1. Developer Certificate of Origin (DCO)
 
-**CURRENT STATUS: UNMET**
+**CURRENT STATUS: MET** (updated 2026-08-18 — see below; original UNMET finding preserved for record)
 
 **EVIDENCE**: `grep -ril "signed-off-by\|developer certificate"` across the whole repo returns nothing. `CONTRIBUTING.md` has no DCO section. `.github/PULL_REQUEST_TEMPLATE.md` has no sign-off checkbox. No CI job validates commit sign-offs. `git commit -s` is not mentioned or required anywhere.
 
@@ -68,7 +127,7 @@ Silver criteria on bestpractices.dev live on a **self-service web form** tied to
 
 ## 5. Access continuity
 
-**CURRENT STATUS: UNMET / FOUNDER ACTION REQUIRED**
+**CURRENT STATUS: PARTIAL — plan-writing MET, founder action still required for items 6-7** (updated 2026-08-18, see Update log above)
 
 **EVIDENCE**: `GOVERNANCE.md` Section 4 states plainly: "A named advisor, fractional CISO, or co-founder with actual standing to push back... is a decision for the founder to make... Until that person exists, treat every review above as self-assessment, not independent oversight." No `compliance/PROJECT_CONTINUITY_PLAN.md` exists.
 
@@ -110,7 +169,7 @@ Silver criteria on bestpractices.dev live on a **self-service web form** tied to
 
 ## 8. 12-month roadmap
 
-**CURRENT STATUS: PARTIAL**
+**CURRENT STATUS: MET** (updated 2026-08-18, see Update log above)
 
 **EVIDENCE**: README's `## Roadmap` section exists, but it's mostly a retrospective changelog of v0.1→v1.2 with `[ ] v2.0 onward — see VERSION_ROADMAP.md`. Two more roadmap-shaped documents exist at the root: `STRATEGY_ROADMAP.md` (last touched Jul 23, predates the WhitePact rename) and `GAME_CHANGER_STRATEGY.md`/`GAME_CHANGER_BUILD_PLAN.md`. `VERSION_ROADMAP.md` is current (Aug 17) and does cover a phase-by-phase plan through v6.0.
 
@@ -124,7 +183,7 @@ Silver criteria on bestpractices.dev live on a **self-service web form** tied to
 
 ## 9. Architecture documentation
 
-**CURRENT STATUS: PARTIAL**
+**CURRENT STATUS: MET** (updated 2026-08-18, see Update log above)
 
 **EVIDENCE**: `GOVERNANCE.md` itself states "`SPEC.md` is the current architecture contract." Root `ARCHITECTURE.md` (last touched Jun 13, before this session's WhitePact work began) opens with "This document describes the internal design of the three components that make up **ResponsibleAI**: BiasBuster, PrivacyLabel, and DeepfakeDetector" — 5 mentions of the old `ResponsibleAI`/`BiasBuster` branding, 0 mentions of WhitePact, no coverage of Identity→Authority→Policy→Risk→Workflow→Decision→Execution Permit→Execution→Evidence at all.
 
@@ -138,7 +197,7 @@ Silver criteria on bestpractices.dev live on a **self-service web form** tied to
 
 ## 10. Security requirements documentation
 
-**CURRENT STATUS: PARTIAL**
+**CURRENT STATUS: MET** (updated 2026-08-18, see Update log above)
 
 **EVIDENCE**: `ENTERPRISE_SECURITY.md`, `SECURITY.md`, and `THREAT_MODEL.md` collectively cover most of what's asked (tenant isolation, fail-closed behavior, auth/authz, crypto requirements, secret handling, auditability, replay prevention, revocation). `ENTERPRISE_SECURITY.md` was extended this session with a real, verified PFS paragraph (not assumed).
 
@@ -166,7 +225,7 @@ Silver criteria on bestpractices.dev live on a **self-service web form** tied to
 
 ## 12. Documentation currentness
 
-**CURRENT STATUS: UNMET**
+**CURRENT STATUS: MET** (updated 2026-08-18, see Update log above)
 
 **EVIDENCE — concrete drift found, not assumed**:
 - README's badge: `tests-1725_passing` — the actual current count is **2249** (confirmed this session via a fresh `pytest` run).
@@ -184,7 +243,7 @@ Silver criteria on bestpractices.dev live on a **self-service web form** tied to
 
 ## 13. OpenSSF achievements displayed
 
-**CURRENT STATUS: UNMET**
+**CURRENT STATUS: MET** (updated 2026-08-18, see Update log above)
 
 **EVIDENCE**: Independently verified via live fetch of `bestpractices.dev/en/projects/14112` and `.../baseline-1`: **Passing badge = genuinely achieved**, **OSPS Baseline Level 1 = genuinely achieved**. README currently shows only the OpenSSF **Scorecard** badge (`scorecard.dev`) — the Passing and Baseline Level 1 badges are both real and both missing from README.
 
@@ -203,7 +262,7 @@ Add a short, accurately-worded "Security & Open Source Assurance" section distin
 
 ## 14. Accessibility
 
-**CURRENT STATUS: UNMET**
+**CURRENT STATUS: MET** (updated 2026-08-18, see Update log above)
 
 **EVIDENCE**: No `docs/ACCESSIBILITY.md` exists. No accessibility tooling (`axe-core`, `pa11y`, Lighthouse CI) found in `pyproject.toml` or any `package.json` (none exists at the repo root). No automated accessibility test in CI. Dashboard has ~29 HTML pages under `src/responsibleai/dashboard/static/` — not audited page-by-page this pass.
 
@@ -217,7 +276,7 @@ Add a short, accurately-worded "Security & Open Source Assurance" section distin
 
 ## 15. Internationalization
 
-**CURRENT STATUS: UNMET**
+**CURRENT STATUS: MET** (updated 2026-08-18, see Update log above)
 
 **EVIDENCE**: `grep -rl "i18n\|gettext\|locale"` across `src/responsibleai/dashboard/static/` returns nothing. No message-catalog architecture, no locale abstraction, no pluralization/date-formatting abstraction anywhere in the frontend or backend user-facing strings.
 
@@ -245,7 +304,7 @@ Add a short, accurately-worded "Security & Open Source Assurance" section distin
 
 ## 17. Contribution quality
 
-**CURRENT STATUS: PARTIAL**
+**CURRENT STATUS: MET** (updated 2026-08-18, see Update log above)
 
 **EVIDENCE**: `CONTRIBUTING.md` is comprehensive and current (14.5KB, last touched Aug 17): setup, repo layout, running tests, engineering principles, PR guidelines, code style, a real "common vulnerability classes to avoid" security section, a questions/discussions pointer, and links to `CODE_OF_CONDUCT.md`/`GOVERNANCE.md`/`SECURITY.md`.
 
@@ -259,7 +318,7 @@ Add a short, accurately-worded "Security & Open Source Assurance" section distin
 
 ## 18. CI hardening
 
-**CURRENT STATUS: PARTIAL**
+**CURRENT STATUS: MET** (updated 2026-08-18, see Update log above)
 
 **EVIDENCE**: `.github/workflows/ci.yml` runs `ruff check`, `mypy`, dependency vulnerability scanning, the full `pytest` suite with coverage, and (as of this session's prior work) a hard `--fail` branch-coverage gate at 80%. `.github/workflows/security-scan.yml` runs Bandit and pip-audit separately. `.github/workflows/dependency-review.yml` exists but currently fails on every PR because the repo's Dependency graph setting isn't enabled (pre-existing, unrelated to Silver, noted in `compliance/OSPS_BASELINE_BRANCH_PROTECTION.md`).
 
@@ -275,30 +334,32 @@ Add a short, accurately-worded "Security & Open Source Assurance" section distin
 
 | # | Criterion | Status |
 |---|---|---|
-| 1 | DCO | **UNMET** |
+| 1 | DCO | MET (was UNMET) |
 | 2 | Governance model | MET |
 | 3 | Code of Conduct | MET |
 | 4 | Roles & responsibilities | MET |
-| 5 | Access continuity | **UNMET / FOUNDER ACTION** (plan-writing is buildable now) |
+| 5 | Access continuity | PARTIAL — plan MET, founder action still needed for 6-7 |
 | 6 | Real second-person continuity | **FOUNDER ACTION REQUIRED** |
 | 7 | Bus factor ≥ 2 | **FOUNDER ACTION REQUIRED** |
-| 8 | 12-month roadmap | PARTIAL |
-| 9 | Architecture documentation | PARTIAL |
-| 10 | Security requirements | PARTIAL |
+| 8 | 12-month roadmap | MET (was PARTIAL) |
+| 9 | Architecture documentation | MET (was PARTIAL) |
+| 10 | Security requirements | MET (was PARTIAL) |
 | 11 | Quick start | MET |
-| 12 | Documentation currentness | **UNMET** |
-| 13 | Achievements displayed | **UNMET** |
-| 14 | Accessibility | **UNMET** (real engineering work) |
-| 15 | Internationalization | **UNMET** (real engineering work) |
+| 12 | Documentation currentness | MET (was UNMET) |
+| 13 | Achievements displayed | MET (was UNMET) |
+| 14 | Accessibility | MET (was UNMET, real engineering work) |
+| 15 | Internationalization | MET (was UNMET, real engineering work) |
 | 16 | Password storage | N/A (correctly) |
-| 17 | Contribution quality | PARTIAL |
-| 18 | CI hardening | PARTIAL |
+| 17 | Contribution quality | MET (was PARTIAL) |
+| 18 | CI hardening | MET (was PARTIAL) |
 
-**5 MET, 1 N/A, 5 UNMET, 5 PARTIAL, 2 FOUNDER ACTION REQUIRED (of 18 reviewed).**
+**14 MET, 1 N/A, 1 PARTIAL (access continuity — plan done, bus factor pending), 2 FOUNDER ACTION REQUIRED (of 18 reviewed), as of the 2026-08-18 update log above.**
 
 ## What's genuinely buildable by engineering work alone (no second human needed)
 
 Items 1, 8, 9, 10 (verification), 12, 13, 17, 18 — DCO enforcement, canonical roadmap, architecture-doc consolidation, security-requirements checklist pass, doc-currency fixes + drift-check tooling, badge display, and CI hardening. Items 14–15 (accessibility, internationalization) are real, substantial engineering work, not quick fixes — each deserves its own focused pass.
+
+**Update (2026-08-18): all of the above are now done** — see the Update log at the top of this document for what changed and where. What's left in this category is item 5's remaining half (the plan itself is written; nobody holds the access it describes yet) — that boundary is exactly where "buildable by engineering work alone" ends and "founder action required" (items 6-7) begins.
 
 ## What genuinely requires you, specifically
 

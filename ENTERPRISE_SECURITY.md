@@ -94,4 +94,33 @@ All governance data (trust scores, cost/token usage, audit log, MCP tool call me
 - Penetration test reports — request current status directly; not published in this repo.
 - A signed Data Processing Agreement — a draft template with the current sub-processor list (Render, Supabase, Upstash, Stripe, customer's own OIDC/LLM choices) exists at `compliance/DPA_TEMPLATE.md`, explicitly marked as unreviewed by counsel; not something to treat as an executable contract yet.
 
+---
+
+## Summary: what you can expect vs. what you cannot assume
+
+Everything below is a pointer back into the sections above — nothing new
+is claimed here that isn't already stated with detail elsewhere in this
+document. This section exists so a security/procurement reviewer doesn't
+have to reconstruct the two lists themselves from prose.
+
+**You can expect:**
+
+- API keys are never stored in plaintext (SHA-256 hash only, shown once at creation) — see "Encryption at rest."
+- Stripe secrets, OIDC client secrets, and webhook HMAC secrets live only in environment variables, never in the database — see "Encryption at rest."
+- Webhook payloads are HMAC-SHA256 signed in transit, independent of storage encryption — see "Encryption at rest."
+- The live reference deployment (`whitepact.com`) negotiates TLS 1.3 with PFS-by-construction, independently verified during this review, not assumed — see "Encryption at rest."
+- Self-hosted deployments keep all data within your own infrastructure unless you explicitly configure an outbound integration (webhook, LLM provider call, Stripe, OTLP export) — see "Data residency."
+- `audit_log` entries are hash-chained and independently verifiable via `GET /api/audit/verify`, detecting any row edited or deleted directly against the database outside the application — see "Audit trail integrity."
+- Every governance-data table carries `org_id` and every repository method filters by it; a cross-tenant leak is treated as a security defect, not a feature gap — see "Multi-tenancy isolation."
+- SSO enforcement, once turned on for an org, disables that org's static API keys — a departed employee's key stops working the moment SSO is required, not just recommended — see "SSO / authentication."
+
+**You cannot assume:**
+
+- **No independent penetration test has been performed on this codebase, and none is claimed.** `compliance/INTERNAL_SECURITY_REVIEW.md` is a self-review by the same person who maintains the code — real, but not independent oversight. Request current pentest status directly; do not infer one exists from this document's thoroughness.
+- **No SOC 2 or ISO 27001 certification exists.** See `SLA.md` for the honest alternative-evidence path (`compliance/SOC2_ALTERNATIVE_PATH.md`) — self-attested OpenSSF badges are not equivalent to independent certification.
+- **The audit-log hash chain cannot detect an attacker with full database write access who recomputes the entire chain from scratch.** It defends against the far more common tamper scenario (a partial edit/delete against an otherwise-untouched chain), not a total-compromise scenario — see "Audit trail integrity." The chain is also process-local, not a single global chain across a multi-replica deployment.
+- **Encryption at rest is not guaranteed by the application for every deployment mode.** The SQLite default is plaintext-on-disk unless the host volume is encrypted; only the live reference deployment's managed Postgres (Supabase) and one PII column (`audit_log.ip_address`, opt-in) have encryption-at-rest guarantees this document actually stands behind — see "Encryption at rest."
+- **Any LLM provider you configure (OpenAI, Anthropic, Google, etc.) is a third-party dependency outside WhitePact's control.** Your API keys, your provider account, your provider's own data handling and retention terms apply to whatever you send it — WhitePact's cost-tracking and eval modules call these APIs only when you configure them to, but cannot alter or audit what the provider itself does with the request once sent. Provider outages, policy changes, or data-handling practices are a risk you inherit by choice of provider, not something this platform mitigates — see "Data residency."
+- **SAML is not supported**, only OIDC — see "SSO / authentication." Do not assume SAML compatibility without confirming first.
+
 This document is updated alongside the platform. If you find a claim here that's stale relative to the code, treat the code as ground truth and report the discrepancy per `SECURITY.md`.
