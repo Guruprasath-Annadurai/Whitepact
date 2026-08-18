@@ -120,15 +120,85 @@ this does not measure" below for the real gaps that remain.
   figure; the live deployment's actual Postgres-over-network latency for
   the same write is not measured here.
 
+## Concurrency: the audit-log write is a process-wide throughput ceiling
+
+Prompted by a real question — "does concurrent load change the picture
+for `AuditRepository.write()`?" — rather than assumed either way.
+[`scripts/loadtest_audit_write.py`](scripts/loadtest_audit_write.py) fires
+the same total write count at increasing concurrency levels (1 to 100
+simultaneous coroutines) against the same SQLite-in-memory setup used
+above.
+
+| Concurrency | Total writes | Wall clock (s) | Writes/sec |
+|---|---|---|---|
+| 1 | 200 | 0.1118 | 1,789 |
+| 5 | 200 | 0.1118 | 1,789 |
+| 10 | 200 | 0.1103 | 1,813 |
+| 25 | 250 | 0.1406 | 1,778 |
+| 50 | 500 | 0.2815 | 1,776 |
+| 100 | 1000 | 0.5570 | 1,795 |
+
+**Throughput is flat — ~1,780-1,810 writes/sec regardless of concurrency
+level.** This confirms, with real numbers rather than a guess from
+reading the code, that `AuditRepository.write()`'s `asyncio.Lock` fully
+serializes writes: the lock is held across both the hash-chain compute
+*and* the DB insert itself (real I/O), so 100 concurrent callers get
+exactly the same aggregate throughput as 1 — they just queue instead of
+running in parallel. Since every API request performs exactly one audit
+write via `AuditLogMiddleware`, this number is a hard ceiling on total
+request throughput for the whole process, not just for audit logging.
+
+**This is a real, load-bearing design tradeoff, not a bug to patch
+reflexively.** The hash chain's tamper-evidence guarantee
+(`entry_hash = sha256(prev_hash + fields)`) requires writes to be
+strictly ordered — two concurrent writers must not both read the same
+"previous hash" before either commits, or the chain breaks. Removing the
+lock, or narrowing its scope to exclude the DB insert, would either
+reintroduce that race or require a genuinely different scheme (e.g.
+batching writes into periodically-chained groups instead of chaining
+every individual row, or moving the ordering guarantee into the database
+itself via a monotonic sequence + periodic verification instead of
+write-time chaining). Any of those changes what the audit trail's
+integrity guarantee actually means for compliance purposes — a decision
+for whoever owns that guarantee, not something to change silently as a
+"performance fix."
+
+**In context:** ~1,800 writes/sec (SQLite in-memory, the cheapest
+possible case — no disk I/O, no network, no connection-pool contention)
+is far above this project's actual current traffic. This is documented
+so the ceiling is known and quantified ahead of time, not discovered
+under load in production. If the live deployment's real traffic ever
+approaches this range, revisit the write-time chaining design then, with
+real production numbers (Postgres-over-network, not SQLite-in-memory) —
+not before.
+
+**Re-running:**
+
+```bash
+source .venv/bin/activate
+python3 scripts/loadtest_audit_write.py
+```
+
 ## What this does not measure
 
 Stated honestly, so these numbers aren't mistaken for more than they are:
 
-- **No concurrency/load test.** All runs are single-threaded, sequential
-  calls. Real throughput under concurrent requests (the dashboard's actual
-  deployment shape, per `helm/rai-governance/`) depends on Python's GIL,
-  ASGI worker count, and database contention — none of which this
-  microbenchmark exercises.
+- **The concurrency section above is the one exception** — everything
+  else in this document remains a single-threaded, sequential
+  microbenchmark. Concurrent behavior for every *other* operation here
+  (guardrails scanning, trust scoring, the v3 authority primitives) is
+  still unmeasured; only the audit-log write path has been load-tested
+  so far, because it's the one write shared by every single API request
+  and therefore the one most worth checking first.
+- **Python's GIL and ASGI worker count still aren't exercised.** This
+  load test runs single-process, single-event-loop `asyncio.gather()` —
+  real concurrency under multiple ASGI worker processes (the dashboard's
+  actual deployment shape, per `helm/rai-governance/`) adds inter-process
+  considerations (each worker has its own in-memory `_last_hash`/lock,
+  so multi-worker deployments already have one independent chain per
+  worker process today — a pre-existing, separately-documented limitation
+  in `db/audit_repository.py`'s own module docstring, not something this
+  load test's single-process model would have caught).
 - **Only one database-backed path is benchmarked so far**
   (`AuditRepository.write()`, above, added this pass), and only against
   SQLite-in-memory, the cheapest case — no disk I/O, no network, no
