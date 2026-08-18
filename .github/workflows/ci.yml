@@ -81,6 +81,9 @@ jobs:
           # hard-failing gate rather than informational-only.
           python scripts/check_branch_coverage.py --threshold 80 --fail
 
+      - name: Check documentation consistency (OpenSSF Silver documentation_current)
+        run: python scripts/check_doc_consistency.py
+
       - name: Upload coverage to Codecov
         if: matrix.python-version == '3.12'
         uses: codecov/codecov-action@v4

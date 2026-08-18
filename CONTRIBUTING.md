@@ -17,6 +17,7 @@ that doesn't exist.
 
 ## Table of Contents
 
+- [Developer Certificate of Origin (DCO)](#developer-certificate-of-origin-dco)
 - [Getting Started](#getting-started)
 - [Development Setup](#development-setup)
 - [Repository Layout](#repository-layout)
@@ -29,6 +30,34 @@ that doesn't exist.
 - [Pull Request Guidelines](#pull-request-guidelines)
 - [Code Style](#code-style)
 - [Questions](#questions)
+
+---
+
+## Developer Certificate of Origin (DCO)
+
+Every commit in a pull request must be signed off, certifying you wrote it
+or otherwise have the right to submit it under this project's license, per
+the [Developer Certificate of Origin 1.1](https://developercertificate.org/).
+
+Sign off with `-s` on every commit:
+
+```bash
+git commit -s -m "Fix widget rendering on narrow viewports"
+```
+
+This appends a `Signed-off-by: Your Name <you@example.com>` trailer to the
+commit message, using the name and email from your `git config`. If you
+forgot on a commit already made, fix it with:
+
+```bash
+git commit --amend -s          # most recent commit
+git rebase --exec 'git commit --amend --no-edit -s' -i <base>   # a range
+```
+
+A CI check runs on every PR and fails if any commit is missing the trailer
+— see [`.github/workflows/dco.yml`](.github/workflows/dco.yml). This is
+enforced going forward only; existing history is not rewritten to add
+sign-offs retroactively.
 
 ---
 
@@ -103,9 +132,14 @@ pytest -k "gender"              # keyword filter
 pytest tests/test_mcp_server.py # MCP server tests
 ```
 
-Coverage is measured automatically. As of this writing the suite is
-1,538 tests at 85% coverage — new code should ship with tests that keep
-coverage at or above the current level, not just "some tests."
+Coverage is measured automatically — run `pytest` locally to see the
+current test count and coverage percentage rather than trusting a number
+written here, which goes stale the moment a test is added or removed. New
+code should ship with tests that keep coverage at or above the current
+level, not just "some tests." The CI badge at the top of `README.md`
+reflects whether the full suite passes on `main`; `coverage.json` (produced
+by any local `pytest` run, per `pyproject.toml`'s `addopts`) has the exact
+current numbers.
 
 ---
 

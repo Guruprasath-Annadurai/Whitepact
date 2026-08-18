@@ -24,3 +24,4 @@
 - [ ] New public APIs are added to the relevant `__init__.py`
 - [ ] If adding a new probe, it has a `default_threshold` and at least 4 `DEFAULT_TEMPLATES`
 - [ ] If adding a new DP mechanism, it includes the formal privacy cost in the docstring
+- [ ] Every commit is signed off (`git commit -s`) per [CONTRIBUTING.md](../CONTRIBUTING.md#developer-certificate-of-origin-dco) — the DCO check below will fail otherwise
