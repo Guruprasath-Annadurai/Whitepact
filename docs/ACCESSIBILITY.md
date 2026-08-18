@@ -13,7 +13,7 @@ public and dashboard page that renders meaningful static content.
 ## Automated checks
 
 - **Tool**: `pa11y-ci`, configured in `.pa11yci.json` (WCAG2AA standard).
-- **Scope**: 29 pages — every public page (`/`, `/signup`, `/status`,
+- **Scope**: 30 pages — every public page (`/`, `/signup`, `/status`,
   `/trust`, `/leaderboard`, `/registry`, `/assess`, `/incident-db`,
   `/incident-db/report`) plus every dashboard page served under `/static/`
   (login, settings, billing, audit log, red team, incidents, webhooks,
@@ -34,10 +34,21 @@ public and dashboard page that renders meaningful static content.
 - **Local run**: `npm install && npm run a11y` (requires Node 18+; the
   dashboard must already be running on `http://127.0.0.1:8765`, e.g. via
   `RAI_AUTH_ENABLED=false RAI_DB_PATH=:memory: uvicorn responsibleai.dashboard.app:app --port 8765`).
+- **Both color schemes matter.** `color-scheme: light dark` means every
+  page's colors depend on the visitor's OS preference. Headless Chrome
+  resolves this differently by environment — on macOS it follows the local
+  OS appearance setting; GitHub's Linux CI runners have no OS theme concept
+  and default to light. A remediation pass that only tested one scheme
+  (macOS defaulted to dark locally) shipped a real light-mode contrast bug
+  that CI caught on the very next run — see below. `pa11y-ci`'s config
+  doesn't expose per-scheme emulation directly, so both schemes were
+  verified with a one-off script using `page.emulateMediaFeatures([{name:
+  'prefers-color-scheme', value: '<scheme>'}])` via pa11y's Node API
+  before trusting either "0 errors" result.
 
 ## What was found and fixed (2026-08-18 remediation)
 
-A full scan against all 29 pages before this pass found real, concrete
+A full scan against all 30 pages before this pass found real, concrete
 issues — not zero, and not fixed by excluding pages from the scan:
 
 1. **Insufficient text contrast in dark mode.** The shared design system
@@ -52,7 +63,20 @@ issues — not zero, and not fixed by excluding pages from the scan:
    which stay unchanged for button backgrounds) with dark-mode-appropriate
    lighter values (`#60a5fa` / `#f87171`), verified against both the
    pure-dark background and card backgrounds (>6:1 in both cases).
-2. **Unlabeled form controls.** Several inputs, selects, and textareas had
+2. **Insufficient text contrast in light mode too — caught by CI, not the
+   first local pass.** `--green` (`#16a34a`) and `--amber` (`#d97706`),
+   used for status text and grade/severity badges, pass 4.5:1 against the
+   *dark* background (~6:1) but fail against the *light* one (as low as
+   3.05:1) — the reverse problem from item 1. The first local scan missed
+   this because this developer's Mac resolves `prefers-color-scheme` from
+   the OS appearance setting (dark), while GitHub's Linux CI runners have
+   no OS theme and default to light — so the first PR push genuinely
+   passed locally and failed in CI. Fixed by darkening the light-mode
+   values (`#15803d` / `#b45309`, ≥4.8:1 against both light backgrounds)
+   and adding dark-mode overrides restoring the original lighter values.
+   Re-verified by explicitly emulating both `prefers-color-scheme` values
+   via Puppeteer rather than trusting either environment's default.
+3. **Unlabeled form controls.** Several inputs, selects, and textareas had
    only a `placeholder` — not an accessible name — including the six
    dimension sliders on `/assess`, search/filter fields on `/registry`,
    `/incident-db`, `incidents.html`, and `audit.html`, and the per-payload
@@ -61,14 +85,15 @@ issues — not zero, and not fixed by excluding pages from the scan:
    provider-name fields) and `aria-label` for compact filter UI where a
    visible label isn't the right design (search boxes, severity/type
    selects).
-3. **Stale repository links.** Six public pages linked to the pre-rename
+4. **Stale repository links.** Six public pages linked to the pre-rename
    repository name (`Guruprasath-Annadurai/ResponsibleAi`, GitHub-redirected
    but not the canonical name) instead of `Guruprasath-Annadurai/Whitepact`
    — found and fixed alongside the accessibility work since it was in the
    same files.
 
-All 29 pages passed a fresh `pa11y-ci` run after these fixes, verified
-before this document was written — not assumed.
+All 30 pages passed a fresh `pa11y-ci` run and an explicit dual light/dark
+`prefers-color-scheme` scan after these fixes, verified before this
+document was written — not assumed.
 
 ## Supported interaction modes
 
