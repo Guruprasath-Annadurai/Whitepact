@@ -78,38 +78,35 @@ forward.
 
 ## 4. Current status
 
-- **Signing mechanism**: not yet configured on this machine/for this
-  founder. `git config --get gpg.format` and `git config --get
-  user.signingkey` are both unset; no SSH public keys exist under
-  `~/.ssh/*.pub`; no GPG secret keys are present (`gpg --list-secret-keys`
-  returns nothing). This was checked directly, not assumed.
-- **`security/release-signers.allowed`**: created as a placeholder with
-  the correct file format documented, containing **no key material** —
-  see that file's own header. Populating it with a real public key is
-  a founder action (Section 6 below).
-- **Release workflow gate**: added to `.github/workflows/publish.yml`
-  (a `verify-signed-tag` job that every other job now depends on) —
-  see `RELEASING.md` "Signing releases" for what it checks and why it
-  fails closed (rejects every tag, signed or not) until a real signer
-  is configured in `security/release-signers.allowed`. This is
-  intentional: an unconfigured allowed-signers file must not silently
-  accept an unsigned/unverifiable tag just because no policy violation
-  was detected — "no signer configured" is itself a failure state.
+- **Signing mechanism**: **configured, 2026-08-19.** A dedicated
+  ed25519 SSH signing key was generated on the founder's own machine
+  (`ssh-keygen -t ed25519 -f ~/.ssh/whitepact_release_signing`, never
+  transmitted anywhere) and Git configured globally to use it
+  (`gpg.format=ssh`, `user.signingkey`, `tag.gpgSign=true` — see
+  `RELEASING.md` "Signing releases"). The private key never leaves
+  `~/.ssh/` on the founder's machine; it is not in this repository, not
+  in any CI secret, and not logged anywhere.
+- **`security/release-signers.allowed`**: populated with the
+  corresponding **public** key
+  (`milchcreamfoods@gmail.com ssh-ed25519 AAAA...`). End-to-end
+  verification was run locally before this line was committed: a real
+  tag signed with the private key, verified with `git tag -v` against
+  this exact file, in a throwaway test repository — confirmed
+  `Good "git" signature for milchcreamfoods@gmail.com`.
+- **Release workflow gate**: `verify-signed-tag` job in
+  `.github/workflows/publish.yml`, tested against all 5 required
+  scenarios (signed-approved/unsigned/lightweight/tampered/unapproved-
+  signer) with throwaway keys before this feature was committed — see
+  the PR that introduced it for the transcript.
 
-## 5. What is required before the next release
+## 5. What was required before the next release — now done
 
-**FOUNDER ACTION REQUIRED**: generate an SSH signing key (or use an
-existing one, if the founder already has one for another purpose — a
-dedicated release-signing key is preferable but not required) and:
-
-1. Follow `RELEASING.md`'s "One-time setup: SSH tag signing" section.
-2. Add the resulting **public** key to `security/release-signers.allowed`.
-3. Commit that file (public key only — never the private key) and push.
-4. Cut the next release using `git tag -s` per the updated procedure.
-
-Until that happens, `version_tags_signed` remains **NOT MET** — this
-document does not claim otherwise. See `SECURITY_ASSURANCE_CASE.md`
-§2.21 for how this gap is reflected there.
+The founder action this section previously called out (generate a
+signing key, add the public half to `security/release-signers.allowed`)
+is complete as of 2026-08-19. The next release tag cut with `git tag -s`
+will be genuinely signed and verifiable — see `RELEASING.md` "Cutting a
+signed tag" for the exact commands, already in effect for every release
+from this point forward.
 
 ## 6. Revisiting this document
 

@@ -16,13 +16,6 @@
 # PEM block containing "PRIVATE KEY") into this file or anywhere else
 # in this repository.
 #
-# Status as of 2026-08-19 (see compliance/SIGNED_VERSION_TAGS.md):
-# NO SIGNER IS CONFIGURED YET. This file intentionally contains no
-# key material below this line. The release workflow's
-# `verify-signed-tag` job treats an empty/placeholder-only file as a
-# hard failure — every tag is rejected, not silently accepted,
-# until a real founder/maintainer public key is added here.
-#
 # To add yourself as an approved release signer:
 #   1. Generate or locate your SSH signing key (RELEASING.md "One-time
 #      setup: SSH tag signing" has the exact commands).
@@ -30,3 +23,5 @@
 #      key (the `.pub` file's contents) — never the private key.
 #   3. Open a PR. This file changing is itself a security-sensitive
 #      change and should be reviewed like one.
+
+milchcreamfoods@gmail.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAII2+KHF+G+SbJa/8gzrBggOntjYAg4/wPZZbexmYghsz release-signing
