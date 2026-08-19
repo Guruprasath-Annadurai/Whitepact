@@ -543,14 +543,17 @@ document hasn't thought hard enough about, not one that's fully solved.
   so no long-lived API token exists to be stolen and used to publish a
   substitute release independently of the workflow.
 - **Test/evidence**: `.github/workflows/publish.yml`.
-- **Residual risk**: **the Git version tag itself is not yet
-  cryptographically signed** — see
-  `compliance/SIGNED_VERSION_TAGS.md`. Artifact attestation proves "this
-  artifact came from this workflow run against this commit"; it does
-  not prove "a trusted human authorized cutting this release" the way
-  a signed tag would. These are two separate controls (see that
-  document for why they aren't the same thing) — this is a real,
-  currently-open gap, not resolved by the artifact attestation above.
+- **Residual risk**: as of v1.2.3 (2026-08-19), the Git version tag
+  itself **is** cryptographically signed and CI-verified before
+  build/publish — see `compliance/SIGNED_VERSION_TAGS.md`. The residual
+  gap is narrower now: every release *before* v1.2.3 (9 tags) predates
+  this control and was never signed, and is not retroactively signed
+  (rewriting a published tag would break reproducibility for anyone who
+  already fetched it). Artifact attestation and tag signing remain two
+  separate controls — proving "this artifact came from this workflow
+  run against this commit" is not the same claim as "a trusted human
+  authorized cutting this release" — both are now real for every
+  release from v1.2.3 onward.
 
 ### 2.22 Direct governance bypass
 
@@ -870,9 +873,13 @@ not softened for this document:
   own API key, account, and provider terms apply to whatever is sent —
   WhitePact cannot audit or alter what a provider does with a request
   once sent.
-- **Git version tags are not yet cryptographically signed.** See
-  `compliance/SIGNED_VERSION_TAGS.md` for the current, honest state and
-  what's required before this changes.
+- **Git version tags are signed as of v1.2.3 (2026-08-19); every tag
+  before it is not.** See `compliance/SIGNED_VERSION_TAGS.md` for the
+  full audit — 9 historical tags remain unsigned by design (not
+  rewritten), and every release from v1.2.3 onward is gated by
+  `.github/workflows/publish.yml`'s `verify-signed-tag` job, which
+  rejects a lightweight, unsigned, or unapproved-signer tag before any
+  build/publish step runs.
 - **Rate limiting is per-API-key, not per-organization** — an org with
   multiple keys can exceed an intended per-org ceiling by rotating
   between them (§2.24).
