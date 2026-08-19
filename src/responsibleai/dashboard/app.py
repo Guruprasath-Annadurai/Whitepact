@@ -33,6 +33,16 @@ from responsibleai import __version__
 from responsibleai.auth import mfa
 from responsibleai.auth.crypto_policy import validate_webhook_secret
 from responsibleai.auth.oidc import OIDCProvider
+from responsibleai.auth.saml import (
+    SAMLConfig,
+    SAMLError,
+    build_authn_request,
+    build_sp_metadata,
+    mint_session_token,
+    parse_and_validate_response,
+    peek_in_response_to,
+    validate_session_token,
+)
 from responsibleai.billing import StripeBillingError, StripeNotConfiguredError, StripeService
 from responsibleai.compliance.engine import ComplianceEngine
 from responsibleai.cost.analyzer import CostAnalyzer
@@ -255,6 +265,9 @@ _dataset_scanner: DatasetBiasScanner | None = None
 _oidc_provider: OIDCProvider | None = None
 _oidc_state_store: dict[str, float] = {}  # state → issued_at; cleared on use
 _OIDC_STATE_TTL = 300.0  # seconds — matches callback expiry window
+_saml_config: SAMLConfig | None = None
+_saml_request_store: dict[str, float] = {}  # AuthnRequest ID → issued_at; cleared on use
+_SAML_REQUEST_TTL = 300.0  # seconds — matches OIDC's state window
 _stripe_service: StripeService | None = None
 _plan_rate_limiter: PlanRateLimiter | None = None
 _pending_audit_writes: set[asyncio.Task[Any]] = set()
@@ -293,7 +306,7 @@ async def lifespan(application: FastAPI):
     global _evidence_repo, _approval_repo, _policy_repo, _upstream_registry, _ceiling_repo
     global _workflow_rule_repo, _delegation_repo, _autonomy_budget_repo
     global _eval_repo, _comparator, _benchmark_runner, _dataset_scanner
-    global _oidc_provider, _stripe_service, _plan_rate_limiter
+    global _oidc_provider, _saml_config, _stripe_service, _plan_rate_limiter
 
     setup_telemetry(
         service_name=settings.otel_service_name,
@@ -359,6 +372,22 @@ async def lifespan(application: FastAPI):
             client_id=settings.oidc_client_id,
             jwks_uri=settings.oidc_jwks_uri,
             skip_verification=settings.oidc_skip_verification,
+        )
+
+    if settings.saml_idp_entity_id:
+        if not settings.saml_session_secret:
+            raise RuntimeError(
+                "RAI_SAML_SESSION_SECRET must be set when RAI_SAML_IDP_ENTITY_ID is "
+                "configured — generate one with: "
+                'python -c "import secrets; print(secrets.token_urlsafe(32))"'
+            )
+        _saml_config = SAMLConfig(
+            idp_entity_id=settings.saml_idp_entity_id,
+            idp_sso_url=settings.saml_idp_sso_url,
+            idp_x509_cert=settings.saml_idp_x509_cert,
+            sp_entity_id=settings.saml_sp_entity_id,
+            acs_url=settings.saml_acs_url,
+            session_secret=settings.saml_session_secret,
         )
 
     if settings.stripe_secret_key:
@@ -608,6 +637,39 @@ async def _resolve_oidc_context(token: str) -> OrgContext | None:
     )
 
 
+async def _resolve_saml_context(token: str) -> OrgContext | None:
+    """Validate a WhitePact-minted post-SAML-login session token (see
+    auth/saml.py's module docstring for why this is a distinct token type
+    from the OIDC-forwarded JWT above) and map it to an OrgContext.
+
+    Cheap prefix check first (``wp_saml.``), same reasoning as the
+    ``rai_`` guard above: avoid attempting the wrong validation path on
+    every request when SAML isn't even configured.
+    """
+    if _saml_config is None or not token.startswith("wp_saml."):
+        return None
+    claims = validate_session_token(_saml_config, token)
+    if claims is None:
+        return None
+
+    org = await _org_repo.get_org(claims.org_id) if (_org_repo and claims.org_id) else None
+    role = Role.VIEWER
+    for raw_role in claims.roles:
+        candidate = role_from_str(raw_role)
+        if candidate.value == raw_role.upper():
+            role = candidate
+            break
+
+    return OrgContext(
+        key_id=f"saml:{claims.sub}",
+        role=role,
+        org_id=claims.org_id,
+        org_name=org.name if org else None,
+        is_legacy=False,
+        plan=org.plan if org else Plan.FREE,
+    )
+
+
 async def get_org_context(request: Request) -> OrgContext:
     """Resolve the presented Bearer credential to an OrgContext.
 
@@ -644,15 +706,24 @@ async def get_org_context(request: Request) -> OrgContext:
         request.state.audit_key_id = oidc_ctx.key_id
         return oidc_ctx
 
+    saml_ctx = await _resolve_saml_context(token)
+    if saml_ctx is not None:
+        if _plan_rate_limiter:
+            await _plan_rate_limiter.check(saml_ctx.org_id, saml_ctx.plan)
+        request.state.audit_org_id = saml_ctx.org_id
+        request.state.audit_key_id = saml_ctx.key_id
+        return saml_ctx
+
     if _org_repo:
         try:
             resolved_ctx = await _ready(_org_repo).authenticate(token)
         except SSORequiredError as exc:
+            sso_paths = [p for p, enabled in (("oidc", _oidc_provider), ("saml", _saml_config)) if enabled]
             raise HTTPException(
                 403,
                 detail=(
-                    f"Organization {exc.org_id} requires SSO login. "
-                    "Static API keys are disabled — authenticate via /api/auth/login/oidc."
+                    f"Organization {exc.org_id} requires SSO login. Static API keys are "
+                    f"disabled — authenticate via {' or '.join(f'/api/auth/login/{p}' for p in sso_paths) or '/api/auth/login/<provider>'}."
                 ),
             ) from None
         if resolved_ctx:
@@ -3652,6 +3723,14 @@ async def list_auth_providers() -> dict[str, Any]:
             "client_id": settings.oidc_client_id,
             "login_url": "/api/auth/login/oidc",
         })
+    if _saml_config:
+        providers.append({
+            "id": "saml",
+            "type": "saml",
+            "idp_entity_id": _saml_config.idp_entity_id,
+            "login_url": "/api/auth/login/saml",
+            "sp_metadata_url": "/api/auth/saml/metadata",
+        })
     providers.append({
         "id": "api_key",
         "type": "api_key",
@@ -3662,20 +3741,83 @@ async def list_auth_providers() -> dict[str, Any]:
 
 @app.get("/api/auth/login/{provider_id}", tags=["auth"])
 async def auth_login(provider_id: str, redirect_uri: str = "") -> JSONResponse:
-    """Initiate OAuth2 authorization code flow."""
-    if provider_id != "oidc" or not _oidc_provider:
-        raise HTTPException(404, f"Unknown or unconfigured provider: {provider_id!r}")
+    """Initiate SSO login — OAuth2 authorization code flow for ``oidc``,
+    or a SAML AuthnRequest redirect for ``saml``."""
+    if provider_id == "oidc":
+        if not _oidc_provider:
+            raise HTTPException(404, f"Unknown or unconfigured provider: {provider_id!r}")
+        state = secrets.token_urlsafe(32)
+        _oidc_state_store[state] = time.monotonic()
+        target_redirect = redirect_uri or settings.oidc_redirect_uri
+        url = _oidc_provider.authorization_url(
+            redirect_uri=target_redirect,
+            state=state,
+            scopes=settings.oidc_scopes,
+        )
+        return JSONResponse({"authorization_url": url, "state": state})
 
-    state = secrets.token_urlsafe(32)
-    _oidc_state_store[state] = time.monotonic()
+    if provider_id == "saml":
+        if not _saml_config:
+            raise HTTPException(404, f"Unknown or unconfigured provider: {provider_id!r}")
+        redirect_url, request_id = build_authn_request(_saml_config)
+        _saml_request_store[request_id] = time.monotonic()
+        return JSONResponse({"authorization_url": redirect_url, "request_id": request_id})
 
-    target_redirect = redirect_uri or settings.oidc_redirect_uri
-    url = _oidc_provider.authorization_url(
-        redirect_uri=target_redirect,
-        state=state,
-        scopes=settings.oidc_scopes,
-    )
-    return JSONResponse({"authorization_url": url, "state": state})
+    raise HTTPException(404, f"Unknown or unconfigured provider: {provider_id!r}")
+
+
+@app.get("/api/auth/saml/metadata", tags=["auth"])
+async def saml_sp_metadata() -> Response:
+    """SP metadata XML most IdPs need to configure the integration on
+    their side (or the equivalent fields typed in by hand)."""
+    if not _saml_config:
+        raise HTTPException(501, "SAML not configured")
+    return Response(content=build_sp_metadata(_saml_config), media_type="application/xml")
+
+
+@app.post("/api/auth/acs", tags=["auth"])
+@limiter.limit("20/minute")
+async def saml_acs(request: Request) -> Response:
+    """SAML Assertion Consumer Service — the IdP POSTs the SAMLResponse
+    here (HTTP-POST binding) after the user authenticates. Mirrors
+    auth_callback's shape: validate, mint WhitePact's own session token
+    (see auth/saml.py's module docstring for why SAML needs one), then
+    redirect the browser to /auth/complete with it in the URL fragment
+    (never sent to the server, unlike a query param, so it never lands in
+    access logs)."""
+    if not _saml_config:
+        raise HTTPException(501, "SAML not configured")
+
+    form = await request.form()
+    saml_response_raw = form.get("SAMLResponse")
+    if not saml_response_raw or not isinstance(saml_response_raw, str):
+        raise HTTPException(400, "Missing SAMLResponse")
+
+    # SP-initiated flow (we sent the AuthnRequest): the response's
+    # InResponseTo must be a known, single-use ID from our own store —
+    # that store-membership check IS the replay defense, not the value
+    # itself. IdP-initiated flow (user started from their IdP's app
+    # dashboard, no prior AuthnRequest exists) carries no InResponseTo at
+    # all, which is allowed: the signature and Conditions checks inside
+    # parse_and_validate_response still fully authenticate the assertion.
+    peeked_id = peek_in_response_to(saml_response_raw)
+    expected_request_id: str | None = None
+    if peeked_id is not None:
+        issued_at = _saml_request_store.pop(peeked_id, None)
+        if issued_at is None:
+            raise HTTPException(400, "Unknown or already-used SAML request ID")
+        if time.monotonic() - issued_at > _SAML_REQUEST_TTL:
+            raise HTTPException(400, "SAML AuthnRequest has expired (>5 min)")
+        expected_request_id = peeked_id
+
+    try:
+        claims = parse_and_validate_response(saml_response_raw, _saml_config, expected_request_id)
+    except SAMLError as e:
+        raise HTTPException(401, f"SAML assertion validation failed: {e}") from None
+
+    session_token = mint_session_token(_saml_config, claims)
+    fragment = f"token={quote(session_token)}&name={quote(claims.name or claims.email or claims.sub)}"
+    return RedirectResponse(url=f"/auth/complete#{fragment}", status_code=302)
 
 
 @app.get("/api/auth/callback", tags=["auth"])
