@@ -88,11 +88,21 @@ def _signed_response(
     sign_with_key: str | None = None,
     sign_with_cert: str | None = None,
     include_signature: bool = True,
+    include_conditions: bool = True,
+    name_id: str = "alice@enterprise.example",
+    subject_confirmation: str | None = None,
+    extra_attribute_xml: str = "",
 ) -> str:
     """Build a full, IdP-style SAMLResponse with the Assertion signed in
     its final document position (matching how real IdPs actually produce
     one) and return it base64-encoded, as it would arrive in the
-    SAMLResponse POST field."""
+    SAMLResponse POST field.
+
+    ``subject_confirmation`` is None (no SubjectConfirmation element at
+    all), "no_expiry" (element present, no NotOnOrAfter attribute), or a
+    literal NotOnOrAfter timestamp string (e.g. an already-expired one) --
+    covers the three real shapes IdPs send for this optional element.
+    """
     key_pem, cert_pem = idp_keypair
     key_pem = sign_with_key or key_pem
     cert_pem = sign_with_cert or cert_pem
@@ -106,8 +116,34 @@ def _signed_response(
     attr_xml = "".join(
         f'<saml:Attribute Name="{name}"><saml:AttributeValue>{value}</saml:AttributeValue></saml:Attribute>'
         for name, value in attributes.items()
-    )
+    ) + extra_attribute_xml
     in_response_attr = f'InResponseTo="{in_response_to}"' if in_response_to else ""
+
+    conditions_xml = (
+        f'<saml:Conditions NotBefore="{not_before}" NotOnOrAfter="{not_after}">'
+        f'<saml:AudienceRestriction><saml:Audience>{audience}</saml:Audience></saml:AudienceRestriction>'
+        f"</saml:Conditions>"
+        if include_conditions
+        else ""
+    )
+
+    if subject_confirmation is None:
+        confirmation_xml = ""
+    elif subject_confirmation == "no_expiry":
+        confirmation_xml = (
+            "<saml:SubjectConfirmation><saml:SubjectConfirmationData/></saml:SubjectConfirmation>"
+        )
+    else:
+        confirmation_xml = (
+            f'<saml:SubjectConfirmation><saml:SubjectConfirmationData '
+            f'NotOnOrAfter="{subject_confirmation}"/></saml:SubjectConfirmation>'
+        )
+
+    name_id_xml = (
+        f'<saml:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress">{name_id}</saml:NameID>'
+        if name_id
+        else '<saml:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"></saml:NameID>'
+    )
 
     full_xml = f"""<samlp:Response xmlns:samlp="{SAMLP_NS}" xmlns:saml="{SAML_NS}" ID="_resp1" Version="2.0" IssueInstant="{issue_instant}" {in_response_attr}>
   <saml:Issuer>test-idp</saml:Issuer>
@@ -115,11 +151,10 @@ def _signed_response(
   <saml:Assertion ID="_assertion123" Version="2.0" IssueInstant="{issue_instant}">
     <saml:Issuer>test-idp</saml:Issuer>
     <saml:Subject>
-      <saml:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress">alice@enterprise.example</saml:NameID>
+      {name_id_xml}
+      {confirmation_xml}
     </saml:Subject>
-    <saml:Conditions NotBefore="{not_before}" NotOnOrAfter="{not_after}">
-      <saml:AudienceRestriction><saml:Audience>{audience}</saml:Audience></saml:AudienceRestriction>
-    </saml:Conditions>
+    {conditions_xml}
     <saml:AttributeStatement>{attr_xml}</saml:AttributeStatement>
   </saml:Assertion>
 </samlp:Response>"""
@@ -255,6 +290,105 @@ class TestParseAndValidateResponseRejections:
         with pytest.raises(SAMLError, match="Success"):
             parse_and_validate_response(base64.b64encode(xml.encode()).decode(), config, expected_request_id=None)
 
+    def test_response_without_assertion_is_rejected(self, config: SAMLConfig):
+        xml = f"""<samlp:Response xmlns:samlp="{SAMLP_NS}" xmlns:saml="{SAML_NS}" ID="_r1" Version="2.0" IssueInstant="2026-01-01T00:00:00Z">
+  <saml:Issuer>test-idp</saml:Issuer>
+  <samlp:Status><samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/></samlp:Status>
+</samlp:Response>"""
+        resp = base64.b64encode(xml.encode()).decode()
+        with pytest.raises(SAMLError, match="no Assertion"):
+            parse_and_validate_response(resp, config, expected_request_id=None)
+
+    def test_cert_without_pem_headers_is_accepted(self, idp_keypair):
+        key_pem, cert_pem = idp_keypair
+        body_only = "\n".join(
+            line for line in cert_pem.strip().splitlines()
+            if "BEGIN CERTIFICATE" not in line and "END CERTIFICATE" not in line
+        )
+        headerless_config = SAMLConfig(
+            idp_entity_id="test-idp",
+            idp_sso_url="https://idp.example/sso",
+            idp_x509_cert=body_only,
+            sp_entity_id="https://whitepact.com/saml/metadata",
+            acs_url="http://localhost:8765/api/auth/acs",
+            session_secret="test-session-secret",
+        )
+        resp = _signed_response(idp_keypair)
+        claims = parse_and_validate_response(resp, headerless_config, expected_request_id="_wpREQ123")
+        assert claims.sub == "alice@enterprise.example"
+
+    def test_signxml_list_result_of_one_is_accepted(self, config: SAMLConfig, idp_keypair, monkeypatch):
+        import signxml
+
+        original_verify = signxml.XMLVerifier.verify
+
+        def fake_verify(self, *a, **kw):
+            return [original_verify(self, *a, **kw)]
+
+        monkeypatch.setattr(signxml.XMLVerifier, "verify", fake_verify)
+        resp = _signed_response(idp_keypair)
+        claims = parse_and_validate_response(resp, config, expected_request_id="_wpREQ123")
+        assert claims.sub == "alice@enterprise.example"
+
+    def test_signxml_list_result_of_two_is_rejected(self, config: SAMLConfig, idp_keypair, monkeypatch):
+        import signxml
+
+        original_verify = signxml.XMLVerifier.verify
+
+        def fake_verify(self, *a, **kw):
+            result = original_verify(self, *a, **kw)
+            return [result, result]
+
+        monkeypatch.setattr(signxml.XMLVerifier, "verify", fake_verify)
+        resp = _signed_response(idp_keypair)
+        with pytest.raises(SAMLError, match="Expected exactly one"):
+            parse_and_validate_response(resp, config, expected_request_id="_wpREQ123")
+
+    def test_no_conditions_element_is_accepted(self, config: SAMLConfig, idp_keypair):
+        resp = _signed_response(idp_keypair, include_conditions=False)
+        claims = parse_and_validate_response(resp, config, expected_request_id="_wpREQ123")
+        assert claims.sub == "alice@enterprise.example"
+
+    def test_subject_confirmation_without_expiry_is_accepted(self, config: SAMLConfig, idp_keypair):
+        resp = _signed_response(idp_keypair, subject_confirmation="no_expiry")
+        claims = parse_and_validate_response(resp, config, expected_request_id="_wpREQ123")
+        assert claims.sub == "alice@enterprise.example"
+
+    def test_expired_subject_confirmation_is_rejected(self, config: SAMLConfig, idp_keypair):
+        expired = (datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=10)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+        resp = _signed_response(idp_keypair, subject_confirmation=expired)
+        with pytest.raises(SAMLError, match="SubjectConfirmation has expired"):
+            parse_and_validate_response(resp, config, expected_request_id="_wpREQ123")
+
+    def test_empty_name_id_is_rejected(self, config: SAMLConfig, idp_keypair):
+        resp = _signed_response(idp_keypair, name_id="")
+        with pytest.raises(SAMLError, match="no Subject/NameID"):
+            parse_and_validate_response(resp, config, expected_request_id="_wpREQ123")
+
+    def test_attribute_without_name_is_ignored(self, config: SAMLConfig, idp_keypair):
+        resp = _signed_response(
+            idp_keypair,
+            extra_attribute_xml="<saml:Attribute><saml:AttributeValue>orphan</saml:AttributeValue></saml:Attribute>",
+        )
+        claims = parse_and_validate_response(resp, config, expected_request_id="_wpREQ123")
+        assert claims.sub == "alice@enterprise.example"
+        assert "orphan" not in claims.raw["attributes"].values()
+
+    def test_role_matched_via_later_attribute_name_variant(self, config: SAMLConfig, idp_keypair):
+        resp = _signed_response(
+            idp_keypair,
+            attributes={"email": "alice@enterprise.example", "groups": "eng-team"},
+        )
+        claims = parse_and_validate_response(resp, config, expected_request_id="_wpREQ123")
+        assert claims.roles == ["eng-team"]
+
+    def test_no_role_attribute_present_yields_empty_roles(self, config: SAMLConfig, idp_keypair):
+        resp = _signed_response(idp_keypair, attributes={"email": "alice@enterprise.example"})
+        claims = parse_and_validate_response(resp, config, expected_request_id="_wpREQ123")
+        assert claims.roles == []
+
 
 class TestPeekInResponseTo:
     def test_extracts_the_value(self, idp_keypair):
@@ -328,3 +462,17 @@ class TestSessionToken:
 
     def test_corrupted_payload_base64_is_rejected(self, config: SAMLConfig):
         assert validate_session_token(config, "wp_saml.%%%not-base64%%%.deadbeef") is None
+
+    def test_expired_session_token_is_rejected(self, config: SAMLConfig, idp_keypair, monkeypatch):
+        resp = _signed_response(idp_keypair)
+        claims = parse_and_validate_response(resp, config, expected_request_id="_wpREQ123")
+        import responsibleai.auth.saml as saml_module
+
+        # Mock time only while minting, so the token's `exp` lands in the
+        # past relative to the real clock validate_session_token reads
+        # afterward -- mocking both calls would make them agree and the
+        # token would never look expired.
+        with monkeypatch.context() as m:
+            m.setattr(saml_module.time, "time", lambda: 1_000_000_000.0)
+            token = mint_session_token(config, claims)
+        assert validate_session_token(config, token) is None
