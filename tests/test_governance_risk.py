@@ -24,7 +24,7 @@ class TestToolRiskTierCoverage:
         assert not stale, f"Risk tiers assigned to tools that no longer exist: {sorted(stale)}"
 
     def test_tier_count_matches_tool_count(self) -> None:
-        assert len(TOOL_RISK_TIERS) == len(TOOL_DEFS) == 29
+        assert len(TOOL_RISK_TIERS) == len(TOOL_DEFS) == 30
 
 
 class TestClassifyActionRisk:

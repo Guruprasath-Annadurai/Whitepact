@@ -48,6 +48,7 @@ TOOL_RISK_TIERS: dict[str, RiskTier] = {
     "rai_stream_scan": RiskTier.LOW,
     "rai_memory_write_check": RiskTier.LOW,
     "rai_memory_read_check": RiskTier.LOW,
+    "rai_causal_influence_check": RiskTier.LOW,
     # Trust/cost lookups
     "rai_trust_score": RiskTier.LOW,
     "rai_check_trust": RiskTier.LOW,

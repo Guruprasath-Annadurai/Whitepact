@@ -515,6 +515,56 @@ currently-discoverable tool list via the existing
 `discover_upstream_tools()` and persists the result), `POST
 .../override` (ADMIN, records an explicit tier override).
 
+### 4.3 Causal Influence Firewall **[TODAY, first version — Authority Everywhere Phase 7]**
+
+Before this section's work: `governance/memory_firewall.py` scanned
+exactly one kind of content — text about to be written to persistent
+memory — for prompt-injection patterns. A tool-call argument built from
+a prior tool's output, a sub-agent's returned result, or a scraped web
+page carries exactly the same "replayed as trusted context" risk memory
+does, and none of it was ever scanned unless it happened to also be a
+memory write.
+
+**[TODAY]**: `src/responsibleai/governance/causal_influence.py` is now
+the canonical home of the injection-pattern table (moved from
+`memory_firewall.py`, which delegates to it — same public API,
+generalized implementation, per Phase 0's "ABSORB INTO AUTHORITY LAYER"
+classification of that module). A caller declares a list of
+`ProvenanceEntry` objects (`kind`: `memory_read` / `tool_output` /
+`sub_agent_result` / `user_input` / `external_content`; `trust`:
+`TRUSTED` / `UNTRUSTED` / `UNKNOWN`; optional `content`/`source_id`) via
+the reserved `_provenance` key in an `ActionRequest`'s `arguments` —
+the same argument-driven, action-type-agnostic convention
+`AuthorityContext.constraints`' `memory_scope` already established.
+`analyze_causal_influence()` runs the shared pattern scan across every
+entry's content and separately tracks which entries are
+untrusted/unknown.
+
+**Honestly scoped, stated in the module's own docstring**: this
+platform does not sit inside an agent framework's reasoning loop and
+cannot observe on its own what upstream content actually shaped a given
+tool call — there is no runtime hook here to intercept an LLM's context
+window. Provenance must be *declared*; no caller declaring it (every
+caller before this module existed) means this check never fires,
+identical to prior behavior.
+
+**Wired into the request path**: `WhitePactRuntimeGateway._causal_influence_reasons()`
+runs alongside the existing memory-firewall check. A matched injection
+pattern in any provenance entry's content is a hard `DENY`
+(`ReasonCode.CAUSAL_INFLUENCE_VIOLATION`) — the same severity
+`MEMORY_FIREWALL_VIOLATION` already carries, generalized to any source.
+Untrusted/unknown provenance with no pattern match is a softer,
+non-blocking, evidence-visible marker
+(`ReasonCode.CAUSAL_INFLUENCE_UNTRUSTED_SOURCE`) attached to whatever
+decision the action otherwise receives (including a plain `ALLOW`) —
+never a reason to deny by itself in this first version, matching the
+Tool Trust Network's own deliberately bounded first-increment choice
+(§4.2) rather than also modulating risk tier.
+
+Exposed directly via the `rai_causal_influence_check` MCP tool for
+standalone pre-flight checks, independent of whether the caller routes
+through governed dispatch at all.
+
 ---
 
 ## 5. Multi-tenancy and organization boundary **[TODAY]**

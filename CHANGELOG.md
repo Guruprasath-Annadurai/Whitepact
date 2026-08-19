@@ -39,10 +39,24 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
   value itself. Stated honestly: this mediates and time-boxes access to
   an existing standing credential — it does not perform OAuth token
   exchange or mint a new, narrower upstream-side credential.
+- Causal Influence Firewall (Authority Everywhere Phase 7) —
+  `governance/causal_influence.py`: generalizes
+  `governance/memory_firewall.py`'s persistent-memory-only
+  injection-pattern scan to any upstream content a caller declares
+  causally shaped an action (a prior tool's output, a sub-agent's
+  result, external content) via a reserved `_provenance` argument key.
+  `memory_firewall.py`'s public API is unchanged, absorbed rather than
+  replaced (Phase 0's own classification) — its pattern table moved to
+  the new module as the canonical location. A matched pattern is a hard
+  `DENY` (`ReasonCode.CAUSAL_INFLUENCE_VIOLATION`); merely untrusted
+  provenance with no match is a softer, non-blocking, evidence-visible
+  marker (`ReasonCode.CAUSAL_INFLUENCE_UNTRUSTED_SOURCE`). New MCP tool
+  `rai_causal_influence_check` (30th tool).
 - See `docs/architecture/AUTHORITY_EVERYWHERE.md` and
-  `MIGRATION_WHITEPACT_V2.md` Sections 17-18 for the full design and
-  structured phase verdicts. 24 + 17 new tests
-  (`tests/test_tool_trust.py`, `tests/test_jit_credential.py`).
+  `MIGRATION_WHITEPACT_V2.md` Sections 17-19 for the full design and
+  structured phase verdicts. 24 + 17 + 26 new tests
+  (`tests/test_tool_trust.py`, `tests/test_jit_credential.py`,
+  `tests/test_causal_influence.py`).
 
 ## [1.2.3] — 2026-08-19
 

@@ -115,6 +115,21 @@ class ReasonCode(StrEnum):
     # (a pattern of bad outcomes) and APPROVAL_REQUIRED (a caller- or
     # ceiling-declared per-action-type requirement, not a volume cap).
     AUTONOMY_BUDGET_EXCEEDED = "AUTONOMY_BUDGET_EXCEEDED"
+    # Not in the original list; added for the Causal Influence Firewall
+    # (governance/causal_influence.py, Authority Everywhere Phase 7) --
+    # a caller-declared provenance entry's content matched a known
+    # injection pattern, the same severity memory_firewall's own
+    # MEMORY_FIREWALL_VIOLATION carries but generalized to any upstream
+    # source (tool output, sub-agent result, ...), not just memory.
+    CAUSAL_INFLUENCE_VIOLATION = "CAUSAL_INFLUENCE_VIOLATION"
+    # Not in the original list; added alongside CAUSAL_INFLUENCE_VIOLATION
+    # -- a softer, non-blocking signal: at least one declared provenance
+    # entry is UNTRUSTED/UNKNOWN but nothing in it matched an injection
+    # pattern. Attached to whatever decision the action would otherwise
+    # have received (including ALLOW), never on its own a reason to
+    # deny -- evidence-visible, not policy-enforced, per this phase's
+    # deliberately bounded first increment.
+    CAUSAL_INFLUENCE_UNTRUSTED_SOURCE = "CAUSAL_INFLUENCE_UNTRUSTED_SOURCE"
 
 
 def format_reason(code: ReasonCode, /, **details: object) -> str:
