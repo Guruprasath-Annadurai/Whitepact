@@ -10,6 +10,19 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ### Added
 
+- SAML 2.0 SSO support, independent of the existing OIDC integration —
+  `src/responsibleai/auth/saml.py` (AuthnRequest generation, signed-
+  response validation via `signxml`, XXE-safe XML parsing, WhitePact's
+  own short-lived post-login session token since SAML has no bearer-
+  token concept the way OIDC does). Supports both SP-initiated and
+  IdP-initiated login flows. New routes: `GET /api/auth/login/saml`,
+  `POST /api/auth/acs`, `GET /api/auth/saml/metadata`. Closes the
+  "SAML is not supported" gap `ENTERPRISE_SECURITY.md` previously
+  stated plainly. 31 new tests in `tests/test_saml.py`, including real
+  signed-assertion round trips and the security-critical rejection
+  paths (tampered assertion, wrong signing cert, unsigned assertion,
+  expired/not-yet-valid assertion, wrong audience, replayed/mismatched
+  request ID).
 - Custom domain `whitepact.com` registered and wired to the hosted
   dashboard on Render (DNS verified, TLS certificate issued
   2026-08-17) — `https://responsibleai-dashboard.onrender.com` keeps
