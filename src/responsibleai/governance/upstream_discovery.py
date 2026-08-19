@@ -66,7 +66,9 @@ class UpstreamToolDescriptor:
 
 
 async def _list_tools_for_server(
-    server: UpstreamServer, *, http_client_factory: _HTTPClientFactory,
+    server: UpstreamServer,
+    *,
+    http_client_factory: _HTTPClientFactory,
 ) -> list[UpstreamToolDescriptor]:
     from mcp import ClientSession
     from mcp.client.streamable_http import streamable_http_client
@@ -75,7 +77,9 @@ async def _list_tools_for_server(
         if server.auth_token:
             http_client.headers["Authorization"] = f"Bearer {server.auth_token}"
         async with streamable_http_client(server.url, http_client=http_client) as (
-            read_stream, write_stream, _get_session_id,
+            read_stream,
+            write_stream,
+            _get_session_id,
         ):
             async with ClientSession(read_stream, write_stream) as session:
                 await session.initialize()
@@ -108,7 +112,9 @@ async def discover_upstream_tools(
     factory = http_client_factory or _default_http_client_factory
     servers = [s for s in await registry.list_for_org(org_id) if s.enabled]
 
-    async def _one(server: UpstreamServer) -> tuple[str, list[UpstreamToolDescriptor] | None, str | None]:
+    async def _one(
+        server: UpstreamServer,
+    ) -> tuple[str, list[UpstreamToolDescriptor] | None, str | None]:
         try:
             validate_upstream_server_url(server.url)
             tools = await asyncio.wait_for(
@@ -121,7 +127,9 @@ async def discover_upstream_tools(
         except TimeoutError:
             return server.server_id, None, f"timed out after {DISCOVERY_TIMEOUT_SECONDS}s"
         except Exception as exc:  # noqa: BLE001 -- one server's failure must not sink discovery for the rest
-            _logger.warning("upstream_tool_discovery_failed server_id=%s error=%s", server.server_id, exc)
+            _logger.warning(
+                "upstream_tool_discovery_failed server_id=%s error=%s", server.server_id, exc
+            )
             return server.server_id, None, str(exc)
 
     results = await asyncio.gather(*(_one(s) for s in servers))

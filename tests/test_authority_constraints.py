@@ -27,8 +27,15 @@ def _agent() -> AgentContext:
     return AgentContext(identity=_identity(), organization_id="org-1", framework="test")
 
 
-def _action(target: str = "payment_tool", arguments: dict | None = None, proposed_at=None) -> ActionRequest:
-    kwargs = {"agent": _agent(), "action_type": "mcp_tool_call", "target": target, "arguments": arguments or {}}
+def _action(
+    target: str = "payment_tool", arguments: dict | None = None, proposed_at=None
+) -> ActionRequest:
+    kwargs = {
+        "agent": _agent(),
+        "action_type": "mcp_tool_call",
+        "target": target,
+        "arguments": arguments or {},
+    }
     if proposed_at is not None:
         kwargs["proposed_at"] = proposed_at
     return ActionRequest(**kwargs)
@@ -36,7 +43,9 @@ def _action(target: str = "payment_tool", arguments: dict | None = None, propose
 
 def _authority(**constraints) -> AuthorityContext:
     return AuthorityContext(
-        delegated_by="org-1", granted_action_types=frozenset({"mcp_tool_call"}), constraints=constraints,
+        delegated_by="org-1",
+        granted_action_types=frozenset({"mcp_tool_call"}),
+        constraints=constraints,
     )
 
 
@@ -114,8 +123,18 @@ class TestTimeWindow:
 
     def test_overnight_window_wraps_midnight(self) -> None:
         authority = _authority(allowed_hours_utc=[22, 6])
-        assert authority.constraint_violation(_action(proposed_at=datetime(2026, 8, 12, 23, 0, tzinfo=UTC))) is None
-        assert authority.constraint_violation(_action(proposed_at=datetime(2026, 8, 12, 12, 0, tzinfo=UTC))) is not None
+        assert (
+            authority.constraint_violation(
+                _action(proposed_at=datetime(2026, 8, 12, 23, 0, tzinfo=UTC))
+            )
+            is None
+        )
+        assert (
+            authority.constraint_violation(
+                _action(proposed_at=datetime(2026, 8, 12, 12, 0, tzinfo=UTC))
+            )
+            is not None
+        )
 
 
 class TestMemoryScope:

@@ -46,19 +46,28 @@ def _agent(org_id: str = "org-1") -> AgentContext:
 
 
 def _action(org_id: str = "org-1", text: str = "hello") -> ActionRequest:
-    return ActionRequest(agent=_agent(org_id), action_type="rai_scan", target="rai_scan", arguments={"text": text})
+    return ActionRequest(
+        agent=_agent(org_id), action_type="rai_scan", target="rai_scan", arguments={"text": text}
+    )
 
 
 def _allow_decision(action_id: str) -> DecisionResult:
     return DecisionResult(
-        decision=GovernanceDecision.ALLOW, action_id=action_id, risk_tier=RiskTier.MINIMAL,
+        decision=GovernanceDecision.ALLOW,
+        action_id=action_id,
+        risk_tier=RiskTier.MINIMAL,
     )
 
 
 class TestAuthorizeExecutionRefusesNonExecutableDecisions:
-    @pytest.mark.parametrize("decision_value", [
-        GovernanceDecision.DENY, GovernanceDecision.QUARANTINE, GovernanceDecision.REQUIRE_APPROVAL,
-    ])
+    @pytest.mark.parametrize(
+        "decision_value",
+        [
+            GovernanceDecision.DENY,
+            GovernanceDecision.QUARANTINE,
+            GovernanceDecision.REQUIRE_APPROVAL,
+        ],
+    )
     def test_only_allow_decisions_produce_an_authorization(self, decision_value) -> None:
         action = _action()
         decision = DecisionResult(decision=decision_value, action_id=action.action_id)
@@ -116,7 +125,9 @@ class TestExecutorRefusesInvalidAuthorization:
         # check from the digest check.
         cross_org_action.arguments = action.arguments
         executor = InternalToolExecutor()
-        with pytest.raises((AuthorizationOrganizationMismatchError, AuthorizationActionMismatchError)):
+        with pytest.raises(
+            (AuthorizationOrganizationMismatchError, AuthorizationActionMismatchError)
+        ):
             await executor.execute(authorization, cross_org_action)
 
     async def test_replay_is_refused(self) -> None:

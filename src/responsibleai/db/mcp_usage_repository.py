@@ -43,14 +43,16 @@ class McpUsageRepository:
     ) -> None:
         """Log one MCP tool invocation. Fire-and-forget from the caller's perspective."""
         async with self._engine.raw.begin() as conn:
-            await conn.execute(insert(mcp_tool_calls).values(
-                id=str(uuid.uuid4()),
-                org_id=org_id,
-                tool_name=tool_name,
-                tier=tier,
-                timestamp=_now(),
-                allowed=1 if allowed else 0,
-            ))
+            await conn.execute(
+                insert(mcp_tool_calls).values(
+                    id=str(uuid.uuid4()),
+                    org_id=org_id,
+                    tool_name=tool_name,
+                    tier=tier,
+                    timestamp=_now(),
+                    allowed=1 if allowed else 0,
+                )
+            )
 
     async def usage_this_month(self, org_id: str) -> dict[str, Any]:
         """Return this org's current billing-period MCP call volume."""

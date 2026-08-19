@@ -133,6 +133,7 @@ def _org_label(org_id: str | None) -> str:
 
 # ── Helpers called from app endpoints ─────────────────────────────────────────
 
+
 def observe_request(endpoint: str, status: int) -> None:
     requests_total.labels(endpoint=endpoint, status=str(status)).inc()
 
@@ -142,16 +143,27 @@ def observe_trust_score(model: str, provider: str, score: float, org_id: str | N
 
 
 def observe_cost(
-    model: str, provider: str, cost_usd: float, input_tok: int, output_tok: int, org_id: str | None = None,
+    model: str,
+    provider: str,
+    cost_usd: float,
+    input_tok: int,
+    output_tok: int,
+    org_id: str | None = None,
 ) -> None:
     org = _org_label(org_id)
     cost_usd_total.labels(model=model, provider=provider, org_id=org).inc(cost_usd)
-    tokens_total.labels(model=model, provider=provider, token_type="input", org_id=org).inc(input_tok)
-    tokens_total.labels(model=model, provider=provider, token_type="output", org_id=org).inc(output_tok)
+    tokens_total.labels(model=model, provider=provider, token_type="input", org_id=org).inc(
+        input_tok
+    )
+    tokens_total.labels(model=model, provider=provider, token_type="output", org_id=org).inc(
+        output_tok
+    )
 
 
 def observe_guardrail(blocked: bool, org_id: str | None = None) -> None:
-    guardrail_scans_total.labels(result="blocked" if blocked else "clean", org_id=_org_label(org_id)).inc()
+    guardrail_scans_total.labels(
+        result="blocked" if blocked else "clean", org_id=_org_label(org_id)
+    ).inc()
 
 
 def observe_drift_alert(severity: str, org_id: str | None = None) -> None:
@@ -164,16 +176,23 @@ def observe_websocket_connections(count: int) -> None:
 
 def observe_webhook_delivery(event: str, success: bool, org_id: str | None = None) -> None:
     webhook_deliveries_total.labels(
-        event=event, success=str(success).lower(), org_id=_org_label(org_id),
+        event=event,
+        success=str(success).lower(),
+        org_id=_org_label(org_id),
     ).inc()
 
 
 def observe_governance_decision(
-    decision: str, risk_tier: str | None, duration_seconds: float, org_id: str | None = None,
+    decision: str,
+    risk_tier: str | None,
+    duration_seconds: float,
+    org_id: str | None = None,
 ) -> None:
     org = _org_label(org_id)
     governance_decisions_total.labels(
-        decision=decision, risk_tier=risk_tier or "UNCLASSIFIED", org_id=org,
+        decision=decision,
+        risk_tier=risk_tier or "UNCLASSIFIED",
+        org_id=org,
     ).inc()
     governance_evaluation_seconds.labels(org_id=org).observe(duration_seconds)
 

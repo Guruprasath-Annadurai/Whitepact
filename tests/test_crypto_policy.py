@@ -73,9 +73,11 @@ class TestOIDCProviderRejectsWeakJWKSKey:
 
     async def test_weak_key_rejected_during_real_verification(self, monkeypatch) -> None:
         weak_private = rsa.generate_private_key(public_exponent=65537, key_size=1024)
-        jwk_dict = json.loads(pyjwt.algorithms.RSAAlgorithm(pyjwt.algorithms.RSAAlgorithm.SHA256).to_jwk(
-            weak_private.public_key()
-        ))
+        jwk_dict = json.loads(
+            pyjwt.algorithms.RSAAlgorithm(pyjwt.algorithms.RSAAlgorithm.SHA256).to_jwk(
+                weak_private.public_key()
+            )
+        )
         jwk_dict["kid"] = "weak-test-key"
 
         token = pyjwt.encode(
@@ -99,9 +101,11 @@ class TestOIDCProviderRejectsWeakJWKSKey:
 
     async def test_strong_key_passes_the_key_size_check(self, monkeypatch) -> None:
         strong_private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-        jwk_dict = json.loads(pyjwt.algorithms.RSAAlgorithm(pyjwt.algorithms.RSAAlgorithm.SHA256).to_jwk(
-            strong_private.public_key()
-        ))
+        jwk_dict = json.loads(
+            pyjwt.algorithms.RSAAlgorithm(pyjwt.algorithms.RSAAlgorithm.SHA256).to_jwk(
+                strong_private.public_key()
+            )
+        )
         jwk_dict["kid"] = "strong-test-key"
 
         token = pyjwt.encode(

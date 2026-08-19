@@ -52,13 +52,17 @@ class UpstreamServerNotAvailableError(Exception):
 
     def __init__(self, server_id: str) -> None:
         self.server_id = server_id
-        super().__init__(f"Upstream MCP server {server_id!r} is not available for this organization.")
+        super().__init__(
+            f"Upstream MCP server {server_id!r} is not available for this organization."
+        )
 
 
 class MalformedUpstreamTargetError(ValueError):
     def __init__(self, target: str) -> None:
         self.target = target
-        super().__init__(f"Malformed upstream target {target!r}; expected 'server_id{TARGET_SEPARATOR}tool_name'.")
+        super().__init__(
+            f"Malformed upstream target {target!r}; expected 'server_id{TARGET_SEPARATOR}tool_name'."
+        )
 
 
 def build_upstream_target(server_id: str, tool_name: str) -> str:
@@ -95,7 +99,9 @@ async def _call_upstream_tool(
         if auth_token:
             http_client.headers["Authorization"] = f"Bearer {auth_token}"
         async with streamable_http_client(url, http_client=http_client) as (
-            read_stream, write_stream, _get_session_id,
+            read_stream,
+            write_stream,
+            _get_session_id,
         ):
             async with ClientSession(read_stream, write_stream) as session:
                 await session.initialize()
@@ -147,6 +153,9 @@ class UpstreamMCPExecutor:
 
         factory = self._http_client_factory or _default_http_client_factory
         return await _call_upstream_tool(
-            server.url, tool_name, action.arguments,
-            http_client_factory=factory, auth_token=server.auth_token,
+            server.url,
+            tool_name,
+            action.arguments,
+            http_client_factory=factory,
+            auth_token=server.auth_token,
         )

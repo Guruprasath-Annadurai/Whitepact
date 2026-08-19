@@ -74,8 +74,14 @@ class TestPrivacyBudgetToDict:
     def test_to_dict_keys(self) -> None:
         b = PrivacyBudget(epsilon=0.5, delta=1e-6)
         d = b.to_dict()
-        for key in ("epsilon", "delta", "spent_epsilon", "spent_delta",
-                    "remaining_epsilon", "remaining_delta"):
+        for key in (
+            "epsilon",
+            "delta",
+            "spent_epsilon",
+            "spent_delta",
+            "remaining_epsilon",
+            "remaining_delta",
+        ):
             assert key in d
 
     def test_to_dict_values(self) -> None:

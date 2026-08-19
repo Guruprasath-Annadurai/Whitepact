@@ -99,9 +99,7 @@ class HallucinationDetector:
     ) -> None:
         total = consistency_weight + hedging_weight + unsupported_weight
         if not (0.999 < total < 1.001):
-            raise ValueError(
-                f"Weights must sum to 1.0; got {total:.4f}"
-            )
+            raise ValueError(f"Weights must sum to 1.0; got {total:.4f}")
         self._w_consistency = consistency_weight
         self._w_hedging = hedging_weight
         self._w_unsupported = unsupported_weight

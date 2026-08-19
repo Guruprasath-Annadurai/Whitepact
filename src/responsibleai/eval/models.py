@@ -17,14 +17,15 @@ class BenchmarkSuite(StrEnum):
 
 
 class RegressionSeverity(StrEnum):
-    MINOR = "minor"       # 1–5 point drop
-    MODERATE = "moderate" # 5–15 point drop
-    SEVERE = "severe"     # > 15 point drop
+    MINOR = "minor"  # 1–5 point drop
+    MODERATE = "moderate"  # 5–15 point drop
+    SEVERE = "severe"  # > 15 point drop
 
 
 @dataclass
 class EvalPrompt:
     """A single evaluation prompt with optional expected answer and category."""
+
     prompt: str
     expected: str = ""
     category: str = ""
@@ -35,6 +36,7 @@ class EvalPrompt:
 @dataclass
 class ModelResponse:
     """A model's response to an EvalPrompt."""
+
     prompt_id: str
     model: str
     provider: str
@@ -48,6 +50,7 @@ class ModelResponse:
 @dataclass
 class PromptComparisonResult:
     """Per-prompt comparison between two models."""
+
     prompt_id: str
     prompt: str
     response_a: str
@@ -66,6 +69,7 @@ class PromptComparisonResult:
 @dataclass
 class ComparisonResult:
     """Full A/B comparison of two models across a prompt set."""
+
     model_a: str
     model_b: str
     provider_a: str
@@ -78,13 +82,17 @@ class ComparisonResult:
     def avg_trust_a(self) -> float:
         if not self.prompt_results:
             return 0.0
-        return round(sum(r.trust_score_a for r in self.prompt_results) / len(self.prompt_results), 2)
+        return round(
+            sum(r.trust_score_a for r in self.prompt_results) / len(self.prompt_results), 2
+        )
 
     @property
     def avg_trust_b(self) -> float:
         if not self.prompt_results:
             return 0.0
-        return round(sum(r.trust_score_b for r in self.prompt_results) / len(self.prompt_results), 2)
+        return round(
+            sum(r.trust_score_b for r in self.prompt_results) / len(self.prompt_results), 2
+        )
 
     @property
     def winner(self) -> str:
@@ -143,6 +151,7 @@ class ComparisonResult:
 @dataclass
 class BenchmarkSampleResult:
     """Result for a single benchmark sample."""
+
     sample_id: str
     prompt: str
     expected: str
@@ -158,6 +167,7 @@ class BenchmarkSampleResult:
 @dataclass
 class BenchmarkResult:
     """Full benchmark run for a model on a named suite."""
+
     model: str
     provider: str
     suite: BenchmarkSuite
@@ -175,7 +185,9 @@ class BenchmarkResult:
     def bias_rate(self) -> float:
         if not self.sample_results:
             return 0.0
-        return round(sum(1 for r in self.sample_results if r.bias_detected) / len(self.sample_results), 4)
+        return round(
+            sum(1 for r in self.sample_results if r.bias_detected) / len(self.sample_results), 4
+        )
 
     @property
     def overall_score(self) -> float:
@@ -216,6 +228,7 @@ class BenchmarkResult:
 @dataclass
 class RegressionAlert:
     """Flags a significant score drop vs a recorded baseline."""
+
     model: str
     metric: str
     baseline_score: float
@@ -243,6 +256,7 @@ class RegressionAlert:
 @dataclass
 class DatasetRowResult:
     """Analysis result for a single dataset row."""
+
     row_index: int
     text: str
     bias_categories: list[str]
@@ -255,6 +269,7 @@ class DatasetRowResult:
 @dataclass
 class DatasetScanResult:
     """Aggregated result of a full dataset bias scan."""
+
     filename: str
     total_rows: int
     id: str = field(default_factory=lambda: str(uuid.uuid4()))

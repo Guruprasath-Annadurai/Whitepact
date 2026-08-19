@@ -46,7 +46,9 @@ class SSORequiredError(Exception):
 
     def __init__(self, org_id: str) -> None:
         self.org_id = org_id
-        super().__init__(f"Organization {org_id} requires SSO login — static API keys are disabled.")
+        super().__init__(
+            f"Organization {org_id} requires SSO login — static API keys are disabled."
+        )
 
 
 class OrgRepository:
@@ -72,14 +74,16 @@ class OrgRepository:
             plan=plan,
         )
         async with self._engine.raw.begin() as conn:
-            await conn.execute(insert(organizations).values(
-                id=org.id,
-                name=org.name,
-                slug=org.slug,
-                monthly_budget_usd=org.monthly_budget_usd,
-                created_at=org.created_at,
-                plan=org.plan.value,
-            ))
+            await conn.execute(
+                insert(organizations).values(
+                    id=org.id,
+                    name=org.name,
+                    slug=org.slug,
+                    monthly_budget_usd=org.monthly_budget_usd,
+                    created_at=org.created_at,
+                    plan=org.plan.value,
+                )
+            )
         return org
 
     async def set_plan(
@@ -118,23 +122,27 @@ class OrgRepository:
 
     async def get_org_by_stripe_customer(self, stripe_customer_id: str) -> Organization | None:
         async with self._engine.raw.connect() as conn:
-            row = (await conn.execute(
-                select(organizations).where(organizations.c.stripe_customer_id == stripe_customer_id)
-            )).fetchone()
+            row = (
+                await conn.execute(
+                    select(organizations).where(
+                        organizations.c.stripe_customer_id == stripe_customer_id
+                    )
+                )
+            ).fetchone()
         return self._row_to_org(row) if row else None
 
     async def get_org(self, org_id: str) -> Organization | None:
         async with self._engine.raw.connect() as conn:
-            row = (await conn.execute(
-                select(organizations).where(organizations.c.id == org_id)
-            )).fetchone()
+            row = (
+                await conn.execute(select(organizations).where(organizations.c.id == org_id))
+            ).fetchone()
         return self._row_to_org(row) if row else None
 
     async def get_org_by_slug(self, slug: str) -> Organization | None:
         async with self._engine.raw.connect() as conn:
-            row = (await conn.execute(
-                select(organizations).where(organizations.c.slug == slug)
-            )).fetchone()
+            row = (
+                await conn.execute(select(organizations).where(organizations.c.slug == slug))
+            ).fetchone()
         return self._row_to_org(row) if row else None
 
     async def list_orgs(self) -> list[Organization]:
@@ -144,9 +152,7 @@ class OrgRepository:
 
     async def delete_org(self, org_id: str) -> bool:
         async with self._engine.raw.begin() as conn:
-            result = await conn.execute(
-                delete(organizations).where(organizations.c.id == org_id)
-            )
+            result = await conn.execute(delete(organizations).where(organizations.c.id == org_id))
         return result.rowcount > 0
 
     # ── API Keys ──────────────────────────────────────────────────────────────
@@ -167,44 +173,48 @@ class OrgRepository:
             created_at=_now(),
         )
         async with self._engine.raw.begin() as conn:
-            await conn.execute(insert(org_api_keys).values(
-                id=key_rec.id,
-                org_id=org_id,
-                key_hash=_hash_key(raw),
-                name=name,
-                role=role.value,
-                created_at=key_rec.created_at,
-                revoked=0,
-            ))
+            await conn.execute(
+                insert(org_api_keys).values(
+                    id=key_rec.id,
+                    org_id=org_id,
+                    key_hash=_hash_key(raw),
+                    name=name,
+                    role=role.value,
+                    created_at=key_rec.created_at,
+                    revoked=0,
+                )
+            )
         return key_rec, raw
 
     async def revoke_key(self, key_id: str) -> bool:
         async with self._engine.raw.begin() as conn:
             result = await conn.execute(
-                update(org_api_keys)
-                .where(org_api_keys.c.id == key_id)
-                .values(revoked=1)
+                update(org_api_keys).where(org_api_keys.c.id == key_id).values(revoked=1)
             )
         return result.rowcount > 0
 
     async def list_keys(self, org_id: str) -> list[OrgApiKey]:
         async with self._engine.raw.connect() as conn:
-            rows = (await conn.execute(
-                select(org_api_keys)
-                .where(org_api_keys.c.org_id == org_id)
-                .where(org_api_keys.c.revoked == 0)
-            )).fetchall()
+            rows = (
+                await conn.execute(
+                    select(org_api_keys)
+                    .where(org_api_keys.c.org_id == org_id)
+                    .where(org_api_keys.c.revoked == 0)
+                )
+            ).fetchall()
         return [self._row_to_key(r) for r in rows]
 
     async def authenticate(self, raw_key: str) -> OrgContext | None:
         """Verify a raw key, update last_used_at, return OrgContext or None."""
         key_hash = _hash_key(raw_key)
         async with self._engine.raw.connect() as conn:
-            row = (await conn.execute(
-                select(org_api_keys)
-                .where(org_api_keys.c.key_hash == key_hash)
-                .where(org_api_keys.c.revoked == 0)
-            )).fetchone()
+            row = (
+                await conn.execute(
+                    select(org_api_keys)
+                    .where(org_api_keys.c.key_hash == key_hash)
+                    .where(org_api_keys.c.revoked == 0)
+                )
+            ).fetchone()
 
         if row is None:
             return None
@@ -242,9 +252,9 @@ class OrgRepository:
         Server-side use only (login/enroll flows) — never returned to a
         client as-is; OrgApiKey.to_dict() already omits those fields."""
         async with self._engine.raw.connect() as conn:
-            row = (await conn.execute(
-                select(org_api_keys).where(org_api_keys.c.id == key_id)
-            )).fetchone()
+            row = (
+                await conn.execute(select(org_api_keys).where(org_api_keys.c.id == key_id))
+            ).fetchone()
         return self._row_to_key(row) if row else None
 
     async def set_mfa_secret(self, key_id: str, secret: str) -> bool:

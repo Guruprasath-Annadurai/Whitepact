@@ -46,9 +46,7 @@ class TestPIIDetection:
         assert "ip_address" in cats
 
     def test_multiple_pii_categories_detected(self) -> None:
-        result = self.engine.scan(
-            "Email: user@example.com, phone: 555-123-4567"
-        )
+        result = self.engine.scan("Email: user@example.com, phone: 555-123-4567")
         cats = {f.category for f in result.pii_findings}
         assert "email" in cats
         assert "phone" in cats
@@ -65,9 +63,7 @@ class TestPIIDetection:
 
 class TestPIIRedaction:
     def setup_method(self) -> None:
-        self.engine = GuardrailsEngine(
-            GuardrailsPolicy(block_pii=True, redact_pii=True)
-        )
+        self.engine = GuardrailsEngine(GuardrailsPolicy(block_pii=True, redact_pii=True))
 
     def test_email_redacted(self) -> None:
         result = self.engine.scan("Contact user@example.com for help.")
@@ -152,9 +148,14 @@ class TestGuardrailsResultToDict:
         result = engine.scan("Contact user@example.com")
         d = result.to_dict()
         required = {
-            "is_blocked", "has_pii", "has_toxicity",
-            "pii_findings", "toxicity_findings",
-            "custom_pattern_matches", "block_reasons", "redacted_text",
+            "is_blocked",
+            "has_pii",
+            "has_toxicity",
+            "pii_findings",
+            "toxicity_findings",
+            "custom_pattern_matches",
+            "block_reasons",
+            "redacted_text",
         }
         assert required.issubset(d.keys())
 

@@ -61,7 +61,9 @@ def _probe_section(result: ProbeResult) -> str:
     ci_str = ""
     if result.confidence_interval:
         lo, hi = result.confidence_interval
-        ci_str = f" &nbsp;<span style='color:#888;font-size:12px;'>95% CI [{lo:.3f}, {hi:.3f}]</span>"
+        ci_str = (
+            f" &nbsp;<span style='color:#888;font-size:12px;'>95% CI [{lo:.3f}, {hi:.3f}]</span>"
+        )
 
     rows = ""
     for tr in result.template_results:
@@ -155,7 +157,7 @@ def _intersectional_section(report: IntersectionalReport) -> str:
             else ""
         )
         rows += f"""
-        <tr style="{'background:#FFF5F5;' if c.both_failing else ''}">
+        <tr style="{"background:#FFF5F5;" if c.both_failing else ""}">
           <td style="padding:8px;font-size:13px;font-family:monospace;">
             {html.escape(c.probe_a)}&nbsp;×&nbsp;{html.escape(c.probe_b)}
           </td>
@@ -176,9 +178,7 @@ def _intersectional_section(report: IntersectionalReport) -> str:
 
     summary = ""
     if report.co_failing_pairs:
-        pairs_str = ", ".join(
-            f"{a} &amp; {b}" for a, b in report.co_failing_pairs
-        )
+        pairs_str = ", ".join(f"{a} &amp; {b}" for a, b in report.co_failing_pairs)
         summary = f"""
         <div style="background:#FFF5F5;border:1px solid #F7C1C1;border-radius:6px;
                     padding:10px 14px;margin-bottom:12px;font-size:13px;">
@@ -238,7 +238,7 @@ def _build_html(suite: SuiteResult) -> str:
           </div>
           <div style="position:relative;background:#f0f0f0;border-radius:4px;height:14px;width:100%;">
             <div style="background:{color};width:{pct}%;height:14px;border-radius:4px;"></div>
-            <div style="position:absolute;top:-2px;left:{min(int(r.threshold*100),100)}%;
+            <div style="position:absolute;top:-2px;left:{min(int(r.threshold * 100), 100)}%;
                         width:2px;height:18px;background:#333;"></div>
           </div>
         </div>"""

@@ -86,7 +86,9 @@ class TestStreamableHttpTransport:
         async with (
             _asgi_http_client(app, raw_key) as http_client,
             streamable_http_client("/mcp", http_client=http_client) as (
-                read_stream, write_stream, _get_session_id,
+                read_stream,
+                write_stream,
+                _get_session_id,
             ),
         ):
             async with ClientSession(read_stream, write_stream) as session:
@@ -102,7 +104,9 @@ class TestStreamableHttpTransport:
         async with (
             _asgi_http_client(app, raw_key) as http_client,
             streamable_http_client("/mcp", http_client=http_client) as (
-                read_stream, write_stream, _get_session_id,
+                read_stream,
+                write_stream,
+                _get_session_id,
             ),
         ):
             async with ClientSession(read_stream, write_stream) as session:

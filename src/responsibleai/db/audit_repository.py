@@ -40,16 +40,18 @@ def _days_ago(days: int) -> str:
 
 
 def _compute_entry_hash(prev_hash: str, entry: AuditEntry) -> str:
-    material = "|".join([
-        prev_hash,
-        entry.id,
-        entry.timestamp,
-        entry.org_id or "",
-        entry.key_id or "",
-        entry.endpoint,
-        entry.method,
-        str(entry.status_code or ""),
-    ])
+    material = "|".join(
+        [
+            prev_hash,
+            entry.id,
+            entry.timestamp,
+            entry.org_id or "",
+            entry.key_id or "",
+            entry.endpoint,
+            entry.method,
+            str(entry.status_code or ""),
+        ]
+    )
     return hashlib.sha256(material.encode()).hexdigest()
 
 
@@ -67,12 +69,14 @@ class AuditRepository:
         if self._hydrated:
             return
         async with self._engine.raw.connect() as conn:
-            row = (await conn.execute(
-                select(audit_log.c.entry_hash)
-                .where(audit_log.c.entry_hash.is_not(None))
-                .order_by(audit_log.c.timestamp.desc())
-                .limit(1)
-            )).fetchone()
+            row = (
+                await conn.execute(
+                    select(audit_log.c.entry_hash)
+                    .where(audit_log.c.entry_hash.is_not(None))
+                    .order_by(audit_log.c.timestamp.desc())
+                    .limit(1)
+                )
+            ).fetchone()
         self._last_hash = row.entry_hash if row else None
         self._hydrated = True
 
@@ -88,21 +92,23 @@ class AuditRepository:
             entry.entry_hash = _compute_entry_hash(prev_hash, entry)
 
             async with self._engine.raw.begin() as conn:
-                await conn.execute(insert(audit_log).values(
-                    id=entry.id,
-                    timestamp=entry.timestamp,
-                    org_id=entry.org_id,
-                    key_id=entry.key_id,
-                    endpoint=entry.endpoint,
-                    method=entry.method,
-                    status_code=entry.status_code,
-                    ip_address=entry.ip_address,
-                    request_id=entry.request_id,
-                    duration_ms=entry.duration_ms,
-                    user_agent=entry.user_agent,
-                    entry_hash=entry.entry_hash,
-                    prev_hash=entry.prev_hash,
-                ))
+                await conn.execute(
+                    insert(audit_log).values(
+                        id=entry.id,
+                        timestamp=entry.timestamp,
+                        org_id=entry.org_id,
+                        key_id=entry.key_id,
+                        endpoint=entry.endpoint,
+                        method=entry.method,
+                        status_code=entry.status_code,
+                        ip_address=entry.ip_address,
+                        request_id=entry.request_id,
+                        duration_ms=entry.duration_ms,
+                        user_agent=entry.user_agent,
+                        entry_hash=entry.entry_hash,
+                        prev_hash=entry.prev_hash,
+                    )
+                )
             self._last_hash = entry.entry_hash
 
     async def verify_chain(self, days: int = 90) -> dict[str, Any]:
@@ -129,17 +135,24 @@ class AuditRepository:
                 continue
             checked += 1
             entry = AuditEntry(
-                id=r.id, timestamp=r.timestamp, org_id=r.org_id, key_id=r.key_id,
-                endpoint=r.endpoint, method=r.method, status_code=r.status_code,
+                id=r.id,
+                timestamp=r.timestamp,
+                org_id=r.org_id,
+                key_id=r.key_id,
+                endpoint=r.endpoint,
+                method=r.method,
+                status_code=r.status_code,
             )
             recomputed = _compute_entry_hash(expected_prev, entry)
             if r.prev_hash != expected_prev or recomputed != r.entry_hash:
-                broken_at.append({
-                    "id": r.id,
-                    "timestamp": r.timestamp,
-                    "expected_prev_hash": expected_prev,
-                    "stored_prev_hash": r.prev_hash,
-                })
+                broken_at.append(
+                    {
+                        "id": r.id,
+                        "timestamp": r.timestamp,
+                        "expected_prev_hash": expected_prev,
+                        "stored_prev_hash": r.prev_hash,
+                    }
+                )
             expected_prev = r.entry_hash
 
         return {
@@ -194,11 +207,7 @@ class AuditRepository:
 
     async def count(self, days: int = 30, org_id: str | None = None) -> int:
         cutoff = _days_ago(days)
-        stmt = (
-            select(func.count())
-            .select_from(audit_log)
-            .where(audit_log.c.timestamp >= cutoff)
-        )
+        stmt = select(func.count()).select_from(audit_log).where(audit_log.c.timestamp >= cutoff)
         if org_id:
             stmt = stmt.where(audit_log.c.org_id == org_id)
         async with self._engine.raw.connect() as conn:
@@ -209,9 +218,7 @@ class AuditRepository:
         """Delete entries older than *retention_days*. Returns deleted count."""
         cutoff = _days_ago(retention_days)
         async with self._engine.raw.begin() as conn:
-            result = await conn.execute(
-                delete(audit_log).where(audit_log.c.timestamp < cutoff)
-            )
+            result = await conn.execute(delete(audit_log).where(audit_log.c.timestamp < cutoff))
         return result.rowcount
 
     async def endpoint_summary(self, days: int = 7) -> list[dict[str, Any]]:

@@ -14,6 +14,7 @@ from privacylabel.providers.base import BaseLabelProvider, LabelRequest, LabelRe
 # Mock provider
 # ------------------------------------------------------------------
 
+
 class _MockProvider(BaseLabelProvider):
     def __init__(self, label: str = "positive", confidence: float = 0.9) -> None:
         self._label = label
@@ -40,6 +41,7 @@ class _MockProvider(BaseLabelProvider):
 # Helpers
 # ------------------------------------------------------------------
 
+
 def _write_jsonl(path: Path, records: list[dict]) -> None:
     with path.open("w") as f:
         for rec in records:
@@ -49,6 +51,7 @@ def _write_jsonl(path: Path, records: list[dict]) -> None:
 # ------------------------------------------------------------------
 # Tests
 # ------------------------------------------------------------------
+
 
 class TestFederatedClientInit:
     def test_default_budget(self) -> None:
@@ -69,10 +72,13 @@ class TestFederatedClientTrainRound:
     @pytest.mark.asyncio
     async def test_basic_round_returns_summary(self, tmp_path: Path) -> None:
         data = tmp_path / "data.jsonl"
-        _write_jsonl(data, [
-            {"id": "1", "text": "Patient report: normal."},
-            {"id": "2", "text": "Patient report: elevated."},
-        ])
+        _write_jsonl(
+            data,
+            [
+                {"id": "1", "text": "Patient report: normal."},
+                {"id": "2", "text": "Patient report: elevated."},
+            ],
+        )
         client = FederatedClient("node-1", _MockProvider())
         summary = await client.train_round(data)
         assert isinstance(summary, RoundSummary)
@@ -104,7 +110,9 @@ class TestFederatedClientTrainRound:
         data = tmp_path / "data.jsonl"
         _write_jsonl(data, [{"id": "1", "text": "Test."}])
         # total_epsilon == epsilon_per_round so budget is exhausted after exactly one round
-        client = FederatedClient("node-1", _MockProvider(), epsilon_per_round=0.1, total_epsilon=0.1)
+        client = FederatedClient(
+            "node-1", _MockProvider(), epsilon_per_round=0.1, total_epsilon=0.1
+        )
         await client.train_round(data)  # spends 0.1, now exhausted
         with pytest.raises(PrivacyBudgetExhaustedError):
             await client.train_round(data)

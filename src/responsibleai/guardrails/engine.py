@@ -29,31 +29,31 @@ class ToxicityCategory(StrEnum):
 
 
 _PII_PATTERNS: dict[PIICategory, str] = {
-    PIICategory.EMAIL: r'\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b',
-    PIICategory.PHONE: r'\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b',
-    PIICategory.SSN: r'\b\d{3}[- ]\d{2}[- ]\d{4}\b',
-    PIICategory.CREDIT_CARD: r'\b(?:\d{4}[-\s]?){3}\d{4}\b',
+    PIICategory.EMAIL: r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b",
+    PIICategory.PHONE: r"\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b",
+    PIICategory.SSN: r"\b\d{3}[- ]\d{2}[- ]\d{4}\b",
+    PIICategory.CREDIT_CARD: r"\b(?:\d{4}[-\s]?){3}\d{4}\b",
     PIICategory.IP_ADDRESS: (
-        r'\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}'
-        r'(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b'
+        r"\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}"
+        r"(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b"
     ),
     PIICategory.DATE_OF_BIRTH: (
-        r'\b(?:DOB|Date\s+of\s+Birth|Born)\s*:?\s*\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}\b'
+        r"\b(?:DOB|Date\s+of\s+Birth|Born)\s*:?\s*\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}\b"
     ),
 }
 
 _TOXICITY_PATTERNS: dict[ToxicityCategory, list[str]] = {
     ToxicityCategory.HATE_SPEECH: [
-        r'\b(?:racial\s+slur|bigot|neo.?nazi|white\s+supremac|antisemit)\b',
+        r"\b(?:racial\s+slur|bigot|neo.?nazi|white\s+supremac|antisemit)\b",
     ],
     ToxicityCategory.VIOLENCE: [
-        r'\b(?:kill\s+yourself|i\s+will\s+kill\s+you|bomb\s+threat|shoot\s+up|mass\s+shooting)\b',
+        r"\b(?:kill\s+yourself|i\s+will\s+kill\s+you|bomb\s+threat|shoot\s+up|mass\s+shooting)\b",
     ],
     ToxicityCategory.SELF_HARM: [
-        r'\b(?:how\s+to\s+commit\s+suicide|step.by.step.*self.harm|instructions.*self.harm)\b',
+        r"\b(?:how\s+to\s+commit\s+suicide|step.by.step.*self.harm|instructions.*self.harm)\b",
     ],
     ToxicityCategory.SEXUAL_EXPLICIT: [
-        r'\b(?:sexual\s+content\s+involving\s+minor|child\s+sexual\s+abuse\s+material|csam)\b',
+        r"\b(?:sexual\s+content\s+involving\s+minor|child\s+sexual\s+abuse\s+material|csam)\b",
     ],
 }
 
@@ -64,9 +64,7 @@ class GuardrailsPolicy:
 
     block_pii: bool = True
     block_toxicity: bool = True
-    pii_categories: list[PIICategory] = field(
-        default_factory=lambda: list(PIICategory)
-    )
+    pii_categories: list[PIICategory] = field(default_factory=lambda: list(PIICategory))
     toxicity_categories: list[ToxicityCategory] = field(
         default_factory=lambda: list(ToxicityCategory)
     )
@@ -112,12 +110,10 @@ class GuardrailsResult:
             "has_pii": self.has_pii,
             "has_toxicity": self.has_toxicity,
             "pii_findings": [
-                {"category": f.category, "start": f.start, "end": f.end}
-                for f in self.pii_findings
+                {"category": f.category, "start": f.start, "end": f.end} for f in self.pii_findings
             ],
             "toxicity_findings": [
-                {"category": f.category, "match": f.match}
-                for f in self.toxicity_findings
+                {"category": f.category, "match": f.match} for f in self.toxicity_findings
             ],
             "custom_pattern_matches": self.custom_pattern_matches,
             "block_reasons": self.block_reasons,
@@ -148,8 +144,7 @@ class GuardrailsEngine:
             if cat in self._policy.toxicity_categories
         }
         self._compiled_custom: list[re.Pattern[str]] = [
-            re.compile(p, re.IGNORECASE)
-            for p in self._policy.custom_blocked_patterns
+            re.compile(p, re.IGNORECASE) for p in self._policy.custom_blocked_patterns
         ]
 
     def scan(self, text: str) -> GuardrailsResult:
@@ -194,17 +189,13 @@ class GuardrailsEngine:
             for m in cp.finditer(text):
                 custom_matches.append(m.group())
         if custom_matches:
-            block_reasons.append(
-                f"Custom policy violation: {len(custom_matches)} match(es)"
-            )
+            block_reasons.append(f"Custom policy violation: {len(custom_matches)} match(es)")
 
         redacted: str | None = None
         if self._policy.redact_pii and pii_findings:
             redacted = text
             for finding in sorted(pii_findings, key=lambda f: f.start, reverse=True):
-                redacted = (
-                    redacted[: finding.start] + "[REDACTED]" + redacted[finding.end :]
-                )
+                redacted = redacted[: finding.start] + "[REDACTED]" + redacted[finding.end :]
 
         return GuardrailsResult(
             text=text,

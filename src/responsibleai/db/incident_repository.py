@@ -39,31 +39,33 @@ class IncidentRepository:
         """Persist a record built by `build_incident_record`. Returns the
         stored row as a dict (same shape `get`/`list` return)."""
         async with self._engine.raw.begin() as conn:
-            await conn.execute(insert(incidents).values(
-                id=record["incident_id"],
-                created_at=record["created_at"],
-                org_id=org_id,
-                source=record.get("source", "manual"),
-                incident_type=record["incident_type"],
-                severity=record["severity"],
-                siem_event_type=record["siem_event_type"],
-                model_name=record.get("model_name"),
-                provider=record.get("provider"),
-                description=record["description"],
-                evidence_hash=record["evidence_hash"],
-                evidence_keys=json.dumps(record.get("evidence_keys", [])),
-                mitigated=int(bool(record.get("mitigated", False))),
-                status=record["status"],
-                sla_resolution_hours=record["sla_resolution_hours"],
-                raw_payload=json.dumps(raw_payload) if raw_payload is not None else None,
-            ))
+            await conn.execute(
+                insert(incidents).values(
+                    id=record["incident_id"],
+                    created_at=record["created_at"],
+                    org_id=org_id,
+                    source=record.get("source", "manual"),
+                    incident_type=record["incident_type"],
+                    severity=record["severity"],
+                    siem_event_type=record["siem_event_type"],
+                    model_name=record.get("model_name"),
+                    provider=record.get("provider"),
+                    description=record["description"],
+                    evidence_hash=record["evidence_hash"],
+                    evidence_keys=json.dumps(record.get("evidence_keys", [])),
+                    mitigated=int(bool(record.get("mitigated", False))),
+                    status=record["status"],
+                    sla_resolution_hours=record["sla_resolution_hours"],
+                    raw_payload=json.dumps(raw_payload) if raw_payload is not None else None,
+                )
+            )
         return await self.get(record["incident_id"])  # type: ignore[return-value]
 
     async def get(self, incident_id: str) -> dict[str, Any] | None:
         async with self._engine.raw.connect() as conn:
-            row = (await conn.execute(
-                select(incidents).where(incidents.c.id == incident_id)
-            )).fetchone()
+            row = (
+                await conn.execute(select(incidents).where(incidents.c.id == incident_id))
+            ).fetchone()
         return self._row_to_dict(row) if row else None
 
     async def list(
@@ -97,9 +99,7 @@ class IncidentRepository:
     async def cleanup(self, retention_days: int = 365) -> int:
         cutoff = _days_ago(retention_days)
         async with self._engine.raw.begin() as conn:
-            result = await conn.execute(
-                delete(incidents).where(incidents.c.created_at < cutoff)
-            )
+            result = await conn.execute(delete(incidents).where(incidents.c.created_at < cutoff))
         return result.rowcount
 
     @staticmethod

@@ -57,13 +57,41 @@ if TYPE_CHECKING:
 # limitation, not an oversight.
 _CONFUSABLE_CHARS: dict[str, str] = {
     # Cyrillic lookalikes
-    "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "х": "x", "у": "y",
-    "А": "A", "В": "B", "Е": "E", "К": "K", "М": "M", "Н": "H", "О": "O",
-    "Р": "P", "С": "C", "Т": "T", "Х": "X",
+    "а": "a",
+    "е": "e",
+    "о": "o",
+    "р": "p",
+    "с": "c",
+    "х": "x",
+    "у": "y",
+    "А": "A",
+    "В": "B",
+    "Е": "E",
+    "К": "K",
+    "М": "M",
+    "Н": "H",
+    "О": "O",
+    "Р": "P",
+    "С": "C",
+    "Т": "T",
+    "Х": "X",
     # Greek lookalikes
-    "Α": "A", "Β": "B", "Ε": "E", "Ζ": "Z", "Η": "H", "Ι": "I", "Κ": "K",
-    "Μ": "M", "Ν": "N", "Ο": "O", "Ρ": "P", "Τ": "T", "Υ": "Y", "Χ": "X",
-    "ο": "o", "α": "a",
+    "Α": "A",
+    "Β": "B",
+    "Ε": "E",
+    "Ζ": "Z",
+    "Η": "H",
+    "Ι": "I",
+    "Κ": "K",
+    "Μ": "M",
+    "Ν": "N",
+    "Ο": "O",
+    "Ρ": "P",
+    "Τ": "T",
+    "Υ": "Y",
+    "Χ": "X",
+    "ο": "o",
+    "α": "a",
 }
 
 
@@ -133,7 +161,9 @@ class SupplyChainScanner:
         )
 
     async def _check_known_incidents(
-        self, manifest: McpServerManifest, incident_repo: PublicIncidentRepository,
+        self,
+        manifest: McpServerManifest,
+        incident_repo: PublicIncidentRepository,
     ) -> Finding:
         incidents = await incident_repo.check(manifest.name, manifest.publisher or "")
         if incidents:

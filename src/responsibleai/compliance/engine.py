@@ -63,9 +63,7 @@ class ComplianceReport:
 
     @property
     def warnings(self) -> list[ComplianceFinding]:
-        return [
-            f for f in self.findings if f.status == ComplianceStatus.PARTIALLY_COMPLIANT
-        ]
+        return [f for f in self.findings if f.status == ComplianceStatus.PARTIALLY_COMPLIANT]
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -121,19 +119,34 @@ _ISO_CONTROLS: list[tuple[str, str, str]] = [
 ]
 
 _EU_HIGH_RISK_KEYWORDS = [
-    "biometric", "critical infrastructure", "education", "employment",
-    "essential services", "credit scoring", "law enforcement", "border control",
-    "administration of justice", "medical", "healthcare", "recruitment",
-    "worker management", "public safety",
+    "biometric",
+    "critical infrastructure",
+    "education",
+    "employment",
+    "essential services",
+    "credit scoring",
+    "law enforcement",
+    "border control",
+    "administration of justice",
+    "medical",
+    "healthcare",
+    "recruitment",
+    "worker management",
+    "public safety",
 ]
 _EU_UNACCEPTABLE_KEYWORDS = [
-    "social scoring", "real-time biometric surveillance",
-    "subliminal manipulation", "exploit vulnerabilities of persons",
+    "social scoring",
+    "real-time biometric surveillance",
+    "subliminal manipulation",
+    "exploit vulnerabilities of persons",
     "emotion recognition in workplace",
 ]
 _EU_LIMITED_KEYWORDS = [
-    "chatbot", "customer service bot", "virtual assistant",
-    "support bot", "conversational ai",
+    "chatbot",
+    "customer service bot",
+    "virtual assistant",
+    "support bot",
+    "conversational ai",
 ]
 
 

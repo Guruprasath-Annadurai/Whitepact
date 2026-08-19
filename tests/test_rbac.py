@@ -7,6 +7,7 @@ from responsibleai.rbac.permissions import has_permission, has_plan, role_from_s
 
 # ── Role hierarchy ─────────────────────────────────────────────────────────────
 
+
 class TestRoleHierarchy:
     def test_owner_has_all_permissions(self):
         for role in Role:
@@ -52,6 +53,7 @@ class TestRoleHierarchy:
 
 # ── Plan hierarchy ───────────────────────────────────────────────────────────────
 
+
 class TestPlanHierarchy:
     def test_enterprise_satisfies_everything(self):
         for plan in Plan:
@@ -69,6 +71,7 @@ class TestPlanHierarchy:
 
 
 # ── role_from_str ──────────────────────────────────────────────────────────────
+
 
 class TestRoleFromStr:
     def test_valid_upper(self):
@@ -89,6 +92,7 @@ class TestRoleFromStr:
 
 # ── Organization model ─────────────────────────────────────────────────────────
 
+
 class TestOrganization:
     def test_to_dict_keys(self):
         org = Organization(name="Acme", slug="acme", created_at="2026-01-01T00:00:00Z")
@@ -106,6 +110,7 @@ class TestOrganization:
 
 
 # ── OrgApiKey model ────────────────────────────────────────────────────────────
+
 
 class TestOrgApiKey:
     def test_to_dict_no_raw_key(self):
@@ -126,6 +131,7 @@ class TestOrgApiKey:
 
 # ── OrgContext ─────────────────────────────────────────────────────────────────
 
+
 class TestOrgContext:
     def test_legacy_context(self):
         ctx = OrgContext(key_id="legacy", role=Role.OWNER, is_legacy=True)
@@ -141,12 +147,23 @@ class TestOrgContext:
 
 # ── AuditEntry ─────────────────────────────────────────────────────────────────
 
+
 class TestAuditEntry:
     def test_to_dict_keys(self):
         entry = AuditEntry(endpoint="/api/evaluate", method="POST")
         d = entry.to_dict()
-        expected = {"id", "timestamp", "org_id", "key_id", "endpoint",
-                    "method", "status_code", "ip_address", "request_id", "duration_ms"}
+        expected = {
+            "id",
+            "timestamp",
+            "org_id",
+            "key_id",
+            "endpoint",
+            "method",
+            "status_code",
+            "ip_address",
+            "request_id",
+            "duration_ms",
+        }
         assert expected <= d.keys()
 
     def test_id_auto_generated(self):

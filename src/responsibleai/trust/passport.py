@@ -90,7 +90,7 @@ class AIPassport:
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>AI Passport — {d['model']['name']}</title>
+<title>AI Passport — {d["model"]["name"]}</title>
 <style>
   *{{box-sizing:border-box;margin:0;padding:0}}
   body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
@@ -124,15 +124,15 @@ class AIPassport:
 </head>
 <body>
 <header>
-  <div class="brand">ResponsibleAI — AI Passport v{d['version']}</div>
+  <div class="brand">ResponsibleAI — AI Passport v{d["version"]}</div>
   <h1>Trust Certificate</h1>
-  <p class="sub">Model: <strong>{d['model']['name']}</strong>
-     &nbsp;·&nbsp; Provider: <strong>{d['model']['provider']}</strong></p>
+  <p class="sub">Model: <strong>{d["model"]["name"]}</strong>
+     &nbsp;·&nbsp; Provider: <strong>{d["model"]["provider"]}</strong></p>
   <div class="score-box">
-    <div class="score-num">{ts['trust_score']}</div>
+    <div class="score-num">{ts["trust_score"]}</div>
     <div class="score-meta">
-      <span class="grade">Grade {ts['grade']}</span>
-      <span class="risk-badge">{ts['risk']} RISK</span>
+      <span class="grade">Grade {ts["grade"]}</span>
+      <span class="risk-badge">{ts["risk"]} RISK</span>
     </div>
   </div>
 </header>
@@ -150,9 +150,9 @@ class AIPassport:
 {compliance_html}
 
 <h2>Verification</h2>
-<p class="meta">Passport ID: {d['passport_id']}</p>
-<p class="meta">Generated: {d['generated_at']}</p>
-<div class="hash" style="margin-top:8px">SHA-256: {d['verification_hash']}</div>
+<p class="meta">Passport ID: {d["passport_id"]}</p>
+<p class="meta">Generated: {d["generated_at"]}</p>
+<div class="hash" style="margin-top:8px">SHA-256: {d["verification_hash"]}</div>
 </body>
 </html>"""
 
@@ -161,8 +161,7 @@ def _dict_to_table(data: dict[str, Any], empty_msg: str) -> str:
     if not data:
         return f'<p style="font-size:13px;color:#9ca3af">{empty_msg}</p>'
     rows = "".join(
-        f"<tr><td>{k.replace('_', ' ').title()}</td><td>{v}</td></tr>"
-        for k, v in data.items()
+        f"<tr><td>{k.replace('_', ' ').title()}</td><td>{v}</td></tr>" for k, v in data.items()
     )
     return f"<table><tr><th>Field</th><th>Value</th></tr>{rows}</table>"
 

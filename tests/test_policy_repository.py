@@ -139,8 +139,12 @@ class TestIntegrationWithGatewayEvaluate:
         gateway = WhitePactRuntimeGateway()
         identity = IdentityContext(identity_id="k1", kind="api_key", org_id="org-1")
         agent = AgentContext(identity=identity)
-        authority = AuthorityContext(delegated_by="org-1", granted_action_types=frozenset({"rai_incident_log"}))
-        action = ActionRequest(agent=agent, action_type="rai_incident_log", target="rai_incident_log", arguments={})
+        authority = AuthorityContext(
+            delegated_by="org-1", granted_action_types=frozenset({"rai_incident_log"})
+        )
+        action = ActionRequest(
+            agent=agent, action_type="rai_incident_log", target="rai_incident_log", arguments={}
+        )
 
         result = gateway.evaluate(action, authority, policy=policy)
         assert result.decision == GovernanceDecision.DENY
@@ -170,7 +174,9 @@ class TestPolicyVersioning:
         await repo.remove_rule("org-1", "r1")
         assert await repo.get_policy_version("org-1") == version_after_add + 1
 
-    async def test_reorder_bumps_version_even_with_no_content_change(self, repo: PolicyRepository) -> None:
+    async def test_reorder_bumps_version_even_with_no_content_change(
+        self, repo: PolicyRepository
+    ) -> None:
         await repo.add_rule("org-1", _rule("r1"))
         await repo.add_rule("org-1", _rule("r2"))
         version_before = await repo.get_policy_version("org-1")
@@ -189,7 +195,9 @@ class TestPolicyVersioning:
         assert await repo.get_policy_version("org-a") == 2
         assert await repo.get_policy_version("org-b") == 1
 
-    async def test_gateway_decision_carries_the_policy_version(self, repo: PolicyRepository) -> None:
+    async def test_gateway_decision_carries_the_policy_version(
+        self, repo: PolicyRepository
+    ) -> None:
         from responsibleai.governance import (
             ActionRequest,
             AgentContext,
@@ -208,8 +216,12 @@ class TestPolicyVersioning:
         gateway = WhitePactRuntimeGateway()
         identity = IdentityContext(identity_id="k1", kind="api_key", org_id="org-1")
         agent = AgentContext(identity=identity)
-        authority = AuthorityContext(delegated_by="org-1", granted_action_types=frozenset({"rai_health"}))
-        action = ActionRequest(agent=agent, action_type="rai_health", target="rai_health", arguments={})
+        authority = AuthorityContext(
+            delegated_by="org-1", granted_action_types=frozenset({"rai_health"})
+        )
+        action = ActionRequest(
+            agent=agent, action_type="rai_health", target="rai_health", arguments={}
+        )
 
         result = gateway.evaluate(action, authority, policy=policy)
         assert result.policy_version == 1
@@ -226,8 +238,12 @@ class TestPolicyVersioning:
         gateway = WhitePactRuntimeGateway()
         identity = IdentityContext(identity_id="k1", kind="api_key", org_id="org-1")
         agent = AgentContext(identity=identity)
-        authority = AuthorityContext(delegated_by="org-1", granted_action_types=frozenset({"rai_health"}))
-        action = ActionRequest(agent=agent, action_type="rai_health", target="rai_health", arguments={})
+        authority = AuthorityContext(
+            delegated_by="org-1", granted_action_types=frozenset({"rai_health"})
+        )
+        action = ActionRequest(
+            agent=agent, action_type="rai_health", target="rai_health", arguments={}
+        )
 
         result = gateway.evaluate(action, authority, policy=None)
         assert result.policy_version is None

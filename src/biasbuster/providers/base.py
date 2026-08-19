@@ -10,9 +10,7 @@ class CompletionRequest:
     prompt: str
     max_tokens: int = 512
     temperature: float = 0.0
-    system_prompt: str = (
-        "You are a helpful assistant. Answer the question directly and concisely."
-    )
+    system_prompt: str = "You are a helpful assistant. Answer the question directly and concisely."
     extra: dict = field(default_factory=dict)
 
 

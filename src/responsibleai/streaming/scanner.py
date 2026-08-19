@@ -26,6 +26,7 @@ _log = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class StreamScanResult:
     """Result emitted for every token in the stream."""
+
     token: str
     token_index: int
     cumulative_text: str
@@ -38,6 +39,7 @@ class StreamScanResult:
 @dataclass
 class StreamScanSummary:
     """Aggregated stats after the stream ends."""
+
     total_tokens: int = 0
     total_scans: int = 0
     pii_detections: int = 0

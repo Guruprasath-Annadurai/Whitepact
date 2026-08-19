@@ -54,7 +54,9 @@ def _reset_rate_limits():
 @pytest.fixture()
 async def client():
     async with LifespanManager(app) as manager:
-        async with AsyncClient(transport=ASGITransport(app=manager.app), base_url="http://test") as c:
+        async with AsyncClient(
+            transport=ASGITransport(app=manager.app), base_url="http://test"
+        ) as c:
             yield c
 
 
@@ -153,7 +155,9 @@ class TestOrgMFAEnforcement:
         secret = await self._enroll(client, org_id, key_id, auth)
         assert secret
 
-        await client.put(f"/api/orgs/{org_id}/mfa", json={"mfa_required": True}, headers=BOOTSTRAP_AUTH)
+        await client.put(
+            f"/api/orgs/{org_id}/mfa", json={"mfa_required": True}, headers=BOOTSTRAP_AUTH
+        )
 
         r = await client.post("/api/auth/login-key", json={"api_key": raw_key})
         assert r.status_code == 200
@@ -165,7 +169,9 @@ class TestOrgMFAEnforcement:
         org_id, key_id, raw_key = org_and_key
         auth = {"Authorization": f"Bearer {raw_key}"}
         secret = await self._enroll(client, org_id, key_id, auth)
-        await client.put(f"/api/orgs/{org_id}/mfa", json={"mfa_required": True}, headers=BOOTSTRAP_AUTH)
+        await client.put(
+            f"/api/orgs/{org_id}/mfa", json={"mfa_required": True}, headers=BOOTSTRAP_AUTH
+        )
 
         code = pyotp.TOTP(secret).now()
         r = await client.post("/api/auth/login-key", json={"api_key": raw_key, "mfa_code": code})
@@ -178,7 +184,9 @@ class TestOrgMFAEnforcement:
         org_id, key_id, raw_key = org_and_key
         auth = {"Authorization": f"Bearer {raw_key}"}
         await self._enroll(client, org_id, key_id, auth)
-        await client.put(f"/api/orgs/{org_id}/mfa", json={"mfa_required": True}, headers=BOOTSTRAP_AUTH)
+        await client.put(
+            f"/api/orgs/{org_id}/mfa", json={"mfa_required": True}, headers=BOOTSTRAP_AUTH
+        )
 
         r = await client.post(
             "/api/auth/login-key", json={"api_key": raw_key, "mfa_code": "000000"}
@@ -189,7 +197,9 @@ class TestOrgMFAEnforcement:
         self, client: AsyncClient, org_and_key
     ) -> None:
         org_id, key_id, raw_key = org_and_key
-        await client.put(f"/api/orgs/{org_id}/mfa", json={"mfa_required": True}, headers=BOOTSTRAP_AUTH)
+        await client.put(
+            f"/api/orgs/{org_id}/mfa", json={"mfa_required": True}, headers=BOOTSTRAP_AUTH
+        )
         r = await client.post("/api/auth/login-key", json={"api_key": raw_key})
         assert r.status_code == 403
 
@@ -205,7 +215,9 @@ class TestOrgMFAEnforcement:
             f"/api/orgs/{org_id}/keys/{key_id}/mfa/verify", json={"code": code}, headers=auth
         )
         backup_code = verify.json()["backup_codes"][0]
-        await client.put(f"/api/orgs/{org_id}/mfa", json={"mfa_required": True}, headers=BOOTSTRAP_AUTH)
+        await client.put(
+            f"/api/orgs/{org_id}/mfa", json={"mfa_required": True}, headers=BOOTSTRAP_AUTH
+        )
 
         r = await client.post(
             "/api/auth/login-key", json={"api_key": raw_key, "mfa_code": backup_code}

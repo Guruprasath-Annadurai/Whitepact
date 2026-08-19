@@ -33,12 +33,14 @@ try:
     import torch.nn as nn
     from PIL import Image
     from torchvision import models, transforms
+
     _TORCH_AVAILABLE = True
 except ImportError:
     _TORCH_AVAILABLE = False
 
 try:
     import cv2
+
     _CV2_AVAILABLE = True
 except ImportError:
     _CV2_AVAILABLE = False
@@ -50,8 +52,8 @@ class DeepfakeResult:
 
     media_path: str
     is_fake: bool
-    confidence: float           # [0, 1] — how sure the ensemble is
-    ensemble_score: float       # raw fake-probability from ensemble
+    confidence: float  # [0, 1] — how sure the ensemble is
+    ensemble_score: float  # raw fake-probability from ensemble
     model_scores: dict[str, float] = field(default_factory=dict)
     affected_frames: list[int] = field(default_factory=list)
     frame_distribution: dict[str, int] = field(default_factory=dict)
@@ -137,14 +139,16 @@ class DeepfakeDetector:
                 "xception": self._build_xception(),
                 "efficientnet": self._build_efficientnet(),
             }
-            self._transforms = transforms.Compose([
-                transforms.Resize((224, 224)),
-                transforms.ToTensor(),
-                transforms.Normalize(
-                    mean=[0.485, 0.456, 0.406],
-                    std=[0.229, 0.224, 0.225],
-                ),
-            ])
+            self._transforms = transforms.Compose(
+                [
+                    transforms.Resize((224, 224)),
+                    transforms.ToTensor(),
+                    transforms.Normalize(
+                        mean=[0.485, 0.456, 0.406],
+                        std=[0.229, 0.224, 0.225],
+                    ),
+                ]
+            )
         else:
             self._models = {
                 "frequency_heuristic": _MockDetector(),
@@ -167,7 +171,8 @@ class DeepfakeDetector:
     def _build_efficientnet(self) -> nn.Module:
         model = models.efficientnet_b0(weights=None)
         model.classifier[1] = torch.nn.Linear(  # type: ignore[index]
-            model.classifier[1].in_features, 2  # type: ignore[union-attr]
+            model.classifier[1].in_features,
+            2,  # type: ignore[union-attr]
         )
         model.eval()
         return model
@@ -187,9 +192,7 @@ class DeepfakeDetector:
                 for name, model in self._models.items():
                     try:
                         output = model(tensor)
-                        fake_prob = float(
-                            torch.softmax(output, dim=1)[0, 1].item()
-                        )
+                        fake_prob = float(torch.softmax(output, dim=1)[0, 1].item())
                     except Exception:
                         fake_prob = 0.5
                     scores[name] = fake_prob
@@ -236,8 +239,7 @@ class DeepfakeDetector:
 
         model_scores = self._predict_image(image)
         ensemble_scores = [
-            ModelScore(model_name=k, fake_probability=v)
-            for k, v in model_scores.items()
+            ModelScore(model_name=k, fake_probability=v) for k, v in model_scores.items()
         ]
         is_fake, ensemble_score = self._voter.vote(ensemble_scores)
         confidence = self._voter.confidence(ensemble_score)

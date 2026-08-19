@@ -95,9 +95,7 @@ class NeutralAgeProvider(BaseProvider):
 
     async def complete(self, request: CompletionRequest) -> CompletionResponse:
         self.call_count += 1
-        return CompletionResponse(
-            text=self._RESPONSE, model=self.model_name, provider=self.name
-        )
+        return CompletionResponse(text=self._RESPONSE, model=self.model_name, provider=self.name)
 
 
 class TestNeutralizeAge:

@@ -9,7 +9,9 @@ class LabelRequest:
     """A single labeling request."""
 
     text: str
-    prompt_template: str = "Classify the following text into one of the appropriate categories:\n\n{text}\n\nLabel:"
+    prompt_template: str = (
+        "Classify the following text into one of the appropriate categories:\n\n{text}\n\nLabel:"
+    )
     max_tokens: int = 64
     temperature: float = 0.0
 

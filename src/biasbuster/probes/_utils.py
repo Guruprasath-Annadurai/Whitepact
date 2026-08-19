@@ -42,11 +42,22 @@ ALL_PROBE_NAMES: list[str] = (
 )
 
 _GENDER_PRONOUN_PATTERNS = [
-    r"\bhe\b", r"\bshe\b", r"\bthey\b",
-    r"\bhim\b", r"\bher\b", r"\bthem\b",
-    r"\bhis\b", r"\bhers\b", r"\btheir\b", r"\btheirs\b",
-    r"\bhimself\b", r"\bherself\b", r"\bthemselves\b",
-    r"\bmr\b", r"\bms\b", r"\bmx\b",
+    r"\bhe\b",
+    r"\bshe\b",
+    r"\bthey\b",
+    r"\bhim\b",
+    r"\bher\b",
+    r"\bthem\b",
+    r"\bhis\b",
+    r"\bhers\b",
+    r"\btheir\b",
+    r"\btheirs\b",
+    r"\bhimself\b",
+    r"\bherself\b",
+    r"\bthemselves\b",
+    r"\bmr\b",
+    r"\bms\b",
+    r"\bmx\b",
 ]
 
 

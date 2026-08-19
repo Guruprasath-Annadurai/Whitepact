@@ -100,8 +100,13 @@ def _result_from_response(model: str, provider: str, data: dict[str, Any]) -> Tr
 
 def _result_from_error(model: str, provider: str, exc: Exception) -> TrustCheckResult:
     return TrustCheckResult(
-        model=model, provider=provider, known=False, trust_score=None,
-        certified=False, has_reported_incidents=False, error=str(exc),
+        model=model,
+        provider=provider,
+        known=False,
+        trust_score=None,
+        certified=False,
+        has_reported_incidents=False,
+        error=str(exc),
     )
 
 

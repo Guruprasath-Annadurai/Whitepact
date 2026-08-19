@@ -21,18 +21,20 @@ logger = get_logger("middleware")
 # with nonces. Documented here rather than silently narrowed later: this
 # CSP still meaningfully restricts framing, object/embed, and outbound
 # connections even with that relaxation.
-_CONTENT_SECURITY_POLICY = "; ".join([
-    "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net",
-    "style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com",
-    "img-src 'self' data:",
-    "font-src 'self' data:",
-    "connect-src 'self'",
-    "object-src 'none'",
-    "frame-ancestors 'none'",
-    "base-uri 'self'",
-    "form-action 'self'",
-])
+_CONTENT_SECURITY_POLICY = "; ".join(
+    [
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net",
+        "style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com",
+        "img-src 'self' data:",
+        "font-src 'self' data:",
+        "connect-src 'self'",
+        "object-src 'none'",
+        "frame-ancestors 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+    ]
+)
 
 # Safe to set at the application layer even though TLS termination is the
 # deployer's job (DEPLOYMENT.md's nginx config): browsers ignore
@@ -107,7 +109,7 @@ def build_api_key_dependency(api_keys: list[str], enabled: bool):
                 detail="Missing or malformed Authorization header. Use: Bearer <api-key>",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        key = auth[len("Bearer "):]
+        key = auth[len("Bearer ") :]
         if key not in api_keys:
             raise HTTPException(
                 status_code=403,

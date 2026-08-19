@@ -41,7 +41,11 @@ def _make_probe_result(*, passed: bool, severity: str, divergent_pair) -> ProbeR
 
 
 def _make_suite(*, passed: bool, empty: bool = False, severity: str = "medium") -> SuiteResult:
-    results = [] if empty else [_make_probe_result(passed=passed, severity=severity, divergent_pair=("a", "b"))]
+    results = (
+        []
+        if empty
+        else [_make_probe_result(passed=passed, severity=severity, divergent_pair=("a", "b"))]
+    )
     return SuiteResult(provider_name="openai", model_name="gpt-4o", probe_results=results)
 
 
@@ -123,14 +127,14 @@ class TestRunCommand:
     def test_quiet_mode_prints_json_and_passes(self, runner, fake_runner_class, monkeypatch):
         monkeypatch.setenv("OPENAI_API_KEY", "sk-fake")
         fake_runner_class.suite = _make_suite(passed=True)
-        result = runner.invoke(
-            main, ["run", "--provider", "openai", "--quiet"]
-        )
+        result = runner.invoke(main, ["run", "--provider", "openai", "--quiet"])
         assert result.exit_code == 0
         parsed = json.loads(result.output)
         assert parsed["provider"] == "openai"
 
-    def test_non_quiet_mode_prints_rich_report_and_fails(self, runner, fake_runner_class, monkeypatch):
+    def test_non_quiet_mode_prints_rich_report_and_fails(
+        self, runner, fake_runner_class, monkeypatch
+    ):
         monkeypatch.setenv("OPENAI_API_KEY", "sk-fake")
         fake_runner_class.suite = _make_suite(passed=False, severity="high")
         result = runner.invoke(main, ["run", "--provider", "openai"])
@@ -149,9 +153,7 @@ class TestRunCommand:
         monkeypatch.setenv("OPENAI_API_KEY", "sk-fake")
         fake_runner_class.suite = _make_suite(passed=True)
         out = tmp_path / "report.json"
-        result = runner.invoke(
-            main, ["run", "--provider", "openai", "--quiet", "-o", str(out)]
-        )
+        result = runner.invoke(main, ["run", "--provider", "openai", "--quiet", "-o", str(out)])
         assert result.exit_code == 0
         assert out.exists()
 
@@ -161,9 +163,7 @@ class TestRunCommand:
         monkeypatch.setenv("OPENAI_API_KEY", "sk-fake")
         fake_runner_class.suite = _make_suite(passed=True)
         out = tmp_path / "report"
-        result = runner.invoke(
-            main, ["run", "--provider", "openai", "--quiet", "-o", str(out)]
-        )
+        result = runner.invoke(main, ["run", "--provider", "openai", "--quiet", "-o", str(out)])
         assert result.exit_code == 0
         assert (tmp_path / "report.json").exists()
 
@@ -178,7 +178,9 @@ class TestRunCommand:
         assert (tmp_path / "report.html").exists()
         assert not (tmp_path / "report.json").exists()
 
-    def test_output_both_saves_json_and_html(self, runner, fake_runner_class, monkeypatch, tmp_path):
+    def test_output_both_saves_json_and_html(
+        self, runner, fake_runner_class, monkeypatch, tmp_path
+    ):
         monkeypatch.setenv("OPENAI_API_KEY", "sk-fake")
         fake_runner_class.suite = _make_suite(passed=True)
         out = tmp_path / "report"

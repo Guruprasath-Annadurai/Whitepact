@@ -104,18 +104,14 @@ class FedAvgAggregator:
             If fewer than min_nodes updates have been submitted.
         """
         if len(self._pending) < self.min_nodes:
-            raise ValueError(
-                f"Need at least {self.min_nodes} updates, have {len(self._pending)}."
-            )
+            raise ValueError(f"Need at least {self.min_nodes} updates, have {len(self._pending)}.")
 
         updates = list(self._pending)
         self._pending.clear()
         self._current_round += 1
 
         if self.byzantine_robust:
-            global_grads = self._geometric_median(
-                [u.gradients for u in updates]
-            )
+            global_grads = self._geometric_median([u.gradients for u in updates])
             method = "geometric_median"
             outliers = 0
         else:
@@ -149,13 +145,12 @@ class FedAvgAggregator:
             weights = [u.num_samples / total_samples for u in updates]
 
         global_grads = sum(
-            w * u.gradients for w, u in zip(weights, updates, strict=False)  # type: ignore[misc]
+            w * u.gradients
+            for w, u in zip(weights, updates, strict=False)  # type: ignore[misc]
         )
         return np.asarray(global_grads), 0
 
-    def _geometric_median(
-        self, vectors: list[np.ndarray], tolerance: float = 1e-5
-    ) -> np.ndarray:
+    def _geometric_median(self, vectors: list[np.ndarray], tolerance: float = 1e-5) -> np.ndarray:
         """
         Approximate geometric median via the Weiszfeld algorithm.
 
@@ -169,17 +164,13 @@ class FedAvgAggregator:
         estimate = np.mean(stacked, axis=0)
 
         for _ in range(self.weiszfeld_iterations):
-            dists = np.array([
-                np.linalg.norm(estimate - v) for v in stacked
-            ])
+            dists = np.array([np.linalg.norm(estimate - v) for v in stacked])
             # Avoid division by zero: mask near-zero distances
             nonzero = dists > 1e-10
             if not np.any(nonzero):
                 break
             weights = np.where(nonzero, 1.0 / dists, 0.0)
-            new_estimate = np.sum(
-                stacked * weights[:, np.newaxis], axis=0
-            ) / np.sum(weights)
+            new_estimate = np.sum(stacked * weights[:, np.newaxis], axis=0) / np.sum(weights)
             if np.linalg.norm(new_estimate - estimate) < tolerance:
                 break
             estimate = new_estimate

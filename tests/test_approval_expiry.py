@@ -44,13 +44,16 @@ def approval_repo(engine):
 def _action() -> ActionRequest:
     identity = IdentityContext(identity_id="agent-key", kind="api_key", org_id="org-1")
     agent = AgentContext(identity=identity, framework="mcp-client")
-    return ActionRequest(agent=agent, action_type="payment", target="payments.execute", arguments={"amount": 1})
+    return ActionRequest(
+        agent=agent, action_type="payment", target="payments.execute", arguments={"amount": 1}
+    )
 
 
 async def _seed_pending(approval_repo: ApprovalRepository, action: ActionRequest):
     gateway = WhitePactRuntimeGateway()
     authority = AuthorityContext(
-        delegated_by="org-1", granted_action_types=frozenset({"payment"}),
+        delegated_by="org-1",
+        granted_action_types=frozenset({"payment"}),
         require_approval_for=frozenset({"payment"}),
     )
     decision = gateway.evaluate(action, authority)
@@ -63,18 +66,22 @@ class TestBuildApprovalRequestStampsExpiry:
         action = _action()
         gateway = WhitePactRuntimeGateway()
         authority = AuthorityContext(
-            delegated_by="org-1", granted_action_types=frozenset({"payment"}),
+            delegated_by="org-1",
+            granted_action_types=frozenset({"payment"}),
             require_approval_for=frozenset({"payment"}),
         )
         decision = gateway.evaluate(action, authority)
         approval = build_approval_request(action, decision)
-        assert approval.expires_at == approval.requested_at + timedelta(hours=DEFAULT_APPROVAL_TTL_HOURS)
+        assert approval.expires_at == approval.requested_at + timedelta(
+            hours=DEFAULT_APPROVAL_TTL_HOURS
+        )
 
     def test_is_expired_false_for_a_legacy_row_with_no_expiry(self) -> None:
         action = _action()
         gateway = WhitePactRuntimeGateway()
         authority = AuthorityContext(
-            delegated_by="org-1", granted_action_types=frozenset({"payment"}),
+            delegated_by="org-1",
+            granted_action_types=frozenset({"payment"}),
             require_approval_for=frozenset({"payment"}),
         )
         decision = gateway.evaluate(action, authority)
@@ -84,7 +91,9 @@ class TestBuildApprovalRequestStampsExpiry:
 
 
 class TestResolveRejectsExpired:
-    async def test_resolving_an_expired_pending_approval_raises(self, approval_repo: ApprovalRepository) -> None:
+    async def test_resolving_an_expired_pending_approval_raises(
+        self, approval_repo: ApprovalRepository
+    ) -> None:
         action = _action()
         approval = await _seed_pending(approval_repo, action)
         # Simulate time passing past the TTL by directly rewriting the
@@ -104,24 +113,34 @@ class TestResolveRejectsExpired:
 
         with pytest.raises(ApprovalExpiredError):
             await approval_repo.resolve(
-                approval.approval_id, resolved_by="human-approver-1", outcome=ApprovalStatus.APPROVED,
+                approval.approval_id,
+                resolved_by="human-approver-1",
+                outcome=ApprovalStatus.APPROVED,
             )
 
-    async def test_resolving_before_expiry_succeeds(self, approval_repo: ApprovalRepository) -> None:
+    async def test_resolving_before_expiry_succeeds(
+        self, approval_repo: ApprovalRepository
+    ) -> None:
         action = _action()
         approval = await _seed_pending(approval_repo, action)
         resolved = await approval_repo.resolve(
-            approval.approval_id, resolved_by="human-approver-1", outcome=ApprovalStatus.APPROVED,
+            approval.approval_id,
+            resolved_by="human-approver-1",
+            outcome=ApprovalStatus.APPROVED,
         )
         assert resolved.status == ApprovalStatus.APPROVED
 
 
 class TestConsumeRejectsExpired:
-    async def test_consuming_an_expired_approved_approval_raises(self, approval_repo: ApprovalRepository) -> None:
+    async def test_consuming_an_expired_approved_approval_raises(
+        self, approval_repo: ApprovalRepository
+    ) -> None:
         action = _action()
         approval = await _seed_pending(approval_repo, action)
         await approval_repo.resolve(
-            approval.approval_id, resolved_by="human-approver-1", outcome=ApprovalStatus.APPROVED,
+            approval.approval_id,
+            resolved_by="human-approver-1",
+            outcome=ApprovalStatus.APPROVED,
         )
 
         from sqlalchemy import update

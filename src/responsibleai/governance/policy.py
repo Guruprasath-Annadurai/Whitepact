@@ -28,11 +28,13 @@ from responsibleai.governance.risk import RiskTier
 # the actual matched span to redact, which a policy rule never sees) and
 # QUARANTINE (needs cross-request pattern state no rule here has access
 # to; see governance/models.py's module docstring).
-_RULE_EFFECTS = frozenset({
-    GovernanceDecision.ALLOW,
-    GovernanceDecision.REQUIRE_APPROVAL,
-    GovernanceDecision.DENY,
-})
+_RULE_EFFECTS = frozenset(
+    {
+        GovernanceDecision.ALLOW,
+        GovernanceDecision.REQUIRE_APPROVAL,
+        GovernanceDecision.DENY,
+    }
+)
 
 
 @dataclass(frozen=True)

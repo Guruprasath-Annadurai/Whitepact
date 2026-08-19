@@ -40,12 +40,20 @@ class TestDispatchCheckTrust:
     @respx.mock
     async def test_known_trustworthy_model_passes(self) -> None:
         respx.get("https://test.invalid/api/trust-index/check").mock(
-            return_value=httpx.Response(200, json={
-                "model": "gpt-4o", "provider": "openai", "known": True,
-                "trust_score": {"overall": 92.0, "grade": "A"}, "certified": True,
-                "has_reported_incidents": False, "passport_id": "p1",
-                "verify_url": "/api/trust-index/verify/p1", "recent_incidents": [],
-            })
+            return_value=httpx.Response(
+                200,
+                json={
+                    "model": "gpt-4o",
+                    "provider": "openai",
+                    "known": True,
+                    "trust_score": {"overall": 92.0, "grade": "A"},
+                    "certified": True,
+                    "has_reported_incidents": False,
+                    "passport_id": "p1",
+                    "verify_url": "/api/trust-index/verify/p1",
+                    "recent_incidents": [],
+                },
+            )
         )
         r = await dispatch_tool(
             "rai_check_trust", {"model_name": "gpt-4o", "provider": "openai", "min_score": 70}
@@ -58,14 +66,22 @@ class TestDispatchCheckTrust:
     @respx.mock
     async def test_low_score_fails_threshold(self) -> None:
         respx.get("https://test.invalid/api/trust-index/check").mock(
-            return_value=httpx.Response(200, json={
-                "model": "sketchy-tool", "provider": "unknown", "known": True,
-                "trust_score": {"overall": 15.0, "grade": "F"}, "certified": False,
-                "has_reported_incidents": True, "recent_incidents": [{"title": "leaked PII"}],
-            })
+            return_value=httpx.Response(
+                200,
+                json={
+                    "model": "sketchy-tool",
+                    "provider": "unknown",
+                    "known": True,
+                    "trust_score": {"overall": 15.0, "grade": "F"},
+                    "certified": False,
+                    "has_reported_incidents": True,
+                    "recent_incidents": [{"title": "leaked PII"}],
+                },
+            )
         )
         r = await dispatch_tool(
-            "rai_check_trust", {"model_name": "sketchy-tool", "provider": "unknown", "min_score": 70}
+            "rai_check_trust",
+            {"model_name": "sketchy-tool", "provider": "unknown", "min_score": 70},
         )
         assert r["passes"] is False
         assert r["has_reported_incidents"] is True
@@ -73,10 +89,17 @@ class TestDispatchCheckTrust:
     @respx.mock
     async def test_unknown_model_defaults_to_passing_fail_open(self) -> None:
         respx.get("https://test.invalid/api/trust-index/check").mock(
-            return_value=httpx.Response(200, json={
-                "model": "never-assessed", "provider": "nobody", "known": False,
-                "trust_score": None, "certified": False, "has_reported_incidents": False,
-            })
+            return_value=httpx.Response(
+                200,
+                json={
+                    "model": "never-assessed",
+                    "provider": "nobody",
+                    "known": False,
+                    "trust_score": None,
+                    "certified": False,
+                    "has_reported_incidents": False,
+                },
+            )
         )
         r = await dispatch_tool(
             "rai_check_trust", {"model_name": "never-assessed", "provider": "nobody"}
@@ -89,8 +112,6 @@ class TestDispatchCheckTrust:
         respx.get("https://test.invalid/api/trust-index/check").mock(
             side_effect=httpx.ConnectError("connection refused")
         )
-        r = await dispatch_tool(
-            "rai_check_trust", {"model_name": "x", "provider": "y"}
-        )
+        r = await dispatch_tool("rai_check_trust", {"model_name": "x", "provider": "y"})
         assert r["passes"] is True
         assert r["error"] is not None

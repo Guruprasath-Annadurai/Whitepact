@@ -38,6 +38,7 @@ def _entry(**kwargs) -> AuditEntry:
 
 # ── Write & read ───────────────────────────────────────────────────────────────
 
+
 class TestAuditWrite:
     async def test_write_single_entry(self, repo):
         await repo.write(_entry())
@@ -59,7 +60,16 @@ class TestAuditWrite:
         await repo.write(_entry(org_id="org1", key_id="k1"))
         entries = await repo.query(days=1)
         e = entries[0]
-        for field in ("id", "timestamp", "org_id", "key_id", "endpoint", "method", "status_code", "duration_ms"):
+        for field in (
+            "id",
+            "timestamp",
+            "org_id",
+            "key_id",
+            "endpoint",
+            "method",
+            "status_code",
+            "duration_ms",
+        ):
             assert field in e
 
     async def test_query_filters_by_org_id(self, repo):
@@ -107,6 +117,7 @@ class TestAuditWrite:
 
 # ── Cleanup ────────────────────────────────────────────────────────────────────
 
+
 class TestAuditCleanup:
     async def test_cleanup_removes_old_entries(self, repo):
         old_ts = (datetime.now(UTC) - timedelta(days=100)).isoformat()
@@ -131,6 +142,7 @@ class TestAuditCleanup:
 
 
 # ── Endpoint summary ───────────────────────────────────────────────────────────
+
 
 class TestEndpointSummary:
     async def test_summary_empty(self, repo):
@@ -163,6 +175,7 @@ class TestEndpointSummary:
 
 
 # ── Hash chain tamper-evidence ─────────────────────────────────────────────────
+
 
 class TestAuditHashChain:
     async def test_first_entry_chains_to_genesis(self, repo):
@@ -222,9 +235,7 @@ class TestAuditHashChain:
         from responsibleai.db.engine import audit_log
 
         async with db.raw.begin() as conn:
-            await conn.execute(
-                sa_delete(audit_log).where(audit_log.c.endpoint == "/api/b")
-            )
+            await conn.execute(sa_delete(audit_log).where(audit_log.c.endpoint == "/api/b"))
 
         result = await repo.verify_chain(days=1)
         assert result["intact"] is False

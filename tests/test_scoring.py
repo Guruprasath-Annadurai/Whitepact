@@ -48,7 +48,9 @@ class TestComputePairwiseDivergence:
         assert (0, 1) in pairs
 
     def test_pair_count_three_texts(self) -> None:
-        _, pairs = compute_pairwise_divergence(["apple banana cherry", "delta epsilon zeta", "gamma kappa lambda"])
+        _, pairs = compute_pairwise_divergence(
+            ["apple banana cherry", "delta epsilon zeta", "gamma kappa lambda"]
+        )
         assert len(pairs) == 3
 
     def test_score_bounded(self) -> None:

@@ -169,6 +169,7 @@ class OIDCProvider:
             base = disc.get("authorization_endpoint", f"{self.issuer.rstrip('/')}/authorize")
 
         from urllib.parse import urlencode
+
         params = {
             "response_type": "code",
             "client_id": self.client_id,

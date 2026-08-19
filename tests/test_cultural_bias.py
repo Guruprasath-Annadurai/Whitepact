@@ -100,7 +100,9 @@ class TestCulturalBiasProbeShape:
                 return "stub-1.0"
 
             async def complete(self, request: CompletionRequest) -> CompletionResponse:
-                return CompletionResponse(text="This is a professional response.", provider="stub", model="stub-1.0")
+                return CompletionResponse(
+                    text="This is a professional response.", provider="stub", model="stub-1.0"
+                )
 
         probe = CulturalBiasProbe(templates=DEFAULT_TEMPLATES[:2])
         result = await probe.run(_StubProvider())
@@ -120,7 +122,9 @@ class TestCulturalBiasProbeShape:
                 return "stub-1.0"
 
             async def complete(self, request: CompletionRequest) -> CompletionResponse:
-                return CompletionResponse(text="Generic response.", provider="stub", model="stub-1.0")
+                return CompletionResponse(
+                    text="Generic response.", provider="stub", model="stub-1.0"
+                )
 
         probe = CulturalBiasProbe(templates=[DEFAULT_TEMPLATES[0]])
         result = await probe.run(_StubProvider())
@@ -182,7 +186,9 @@ class TestCulturalBiasProbeShape:
                 return "stub-1.0"
 
             async def complete(self, request: CompletionRequest) -> CompletionResponse:
-                return CompletionResponse(text="Uniform response for testing.", provider="stub", model="stub-1.0")
+                return CompletionResponse(
+                    text="Uniform response for testing.", provider="stub", model="stub-1.0"
+                )
 
         probe = CulturalBiasProbe(templates=DEFAULT_TEMPLATES[:3])
         result = await probe.run(_StubProvider())
@@ -212,7 +218,9 @@ class TestCulturalBiasProbeIntegration:
                 return "neutral-1.0"
 
             async def complete(self, request: CompletionRequest) -> CompletionResponse:
-                return CompletionResponse(text=neutral_text, provider="neutral", model="neutral-1.0")
+                return CompletionResponse(
+                    text=neutral_text, provider="neutral", model="neutral-1.0"
+                )
 
         probe = CulturalBiasProbe(threshold=0.20)
         result = await probe.run(_NeutralProvider())

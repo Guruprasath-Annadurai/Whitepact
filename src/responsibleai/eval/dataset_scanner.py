@@ -126,7 +126,5 @@ class DatasetBiasScanner:
     @staticmethod
     def _detect_bias_categories(text: str) -> list[str]:
         return [
-            cat
-            for cat, patterns in _COMPILED_BIAS.items()
-            if any(p.search(text) for p in patterns)
+            cat for cat, patterns in _COMPILED_BIAS.items() if any(p.search(text) for p in patterns)
         ]

@@ -16,10 +16,10 @@ import numpy as np
 class VotingStrategy(StrEnum):
     """How to combine individual model scores into an ensemble decision."""
 
-    MEAN = "mean"            # Simple average
-    MAX = "max"              # Most suspicious model wins (conservative)
-    WEIGHTED = "weighted"    # Weighted by individual model AUC
-    MAJORITY = "majority"    # Majority vote on binary hard predictions
+    MEAN = "mean"  # Simple average
+    MAX = "max"  # Most suspicious model wins (conservative)
+    WEIGHTED = "weighted"  # Weighted by individual model AUC
+    MAJORITY = "majority"  # Majority vote on binary hard predictions
 
 
 @dataclass(frozen=True)
@@ -28,7 +28,7 @@ class ModelScore:
 
     model_name: str
     fake_probability: float  # 0.0 = definitely real, 1.0 = definitely fake
-    weight: float = 1.0      # For weighted ensemble
+    weight: float = 1.0  # For weighted ensemble
 
 
 class EnsembleVoter:

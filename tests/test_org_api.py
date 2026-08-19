@@ -34,6 +34,7 @@ async def org(repo):
 
 # ── Organization CRUD ─────────────────────────────────────────────────────────
 
+
 class TestOrganizationCRUD:
     async def test_create_org_returns_org(self, repo):
         org = await repo.create_org("Test Inc", "test-inc")
@@ -86,6 +87,7 @@ class TestOrganizationCRUD:
 
 # ── API Key management ─────────────────────────────────────────────────────────
 
+
 class TestApiKeyManagement:
     async def test_create_key_returns_tuple(self, repo, org):
         key_rec, raw = await repo.create_key(org.id, "ci-key", Role.ANALYST)
@@ -131,6 +133,7 @@ class TestApiKeyManagement:
 
 # ── Authentication ─────────────────────────────────────────────────────────────
 
+
 class TestAuthentication:
     async def test_authenticate_valid_key(self, repo, org):
         _, raw = await repo.create_key(org.id, "app-key", Role.ANALYST)
@@ -174,6 +177,7 @@ class TestAuthentication:
 
 
 # ── SSO enforcement ──────────────────────────────────────────────────────────────
+
 
 class TestSSOEnforcement:
     async def test_org_sso_required_defaults_false(self, org):

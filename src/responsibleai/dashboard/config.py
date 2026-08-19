@@ -337,7 +337,7 @@ class Settings(BaseSettings):
     leaderboard_azure_openai_endpoint: str | None = Field(
         default=None,
         description="Azure OpenAI resource endpoint, e.g. https://your-resource.openai.azure.com/ "
-                    "— required alongside the key; Azure OpenAI has no default shared endpoint.",
+        "— required alongside the key; Azure OpenAI has no default shared endpoint.",
     )
     leaderboard_azure_openai_api_version: str = Field(
         default="2024-10-21",

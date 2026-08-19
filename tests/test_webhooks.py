@@ -35,9 +35,7 @@ def _fake_public_dns(monkeypatch):
     def _fake_getaddrinfo(host, *args, **kwargs):
         return [(2, 1, 6, "", ("93.184.216.34", 0))]
 
-    monkeypatch.setattr(
-        "responsibleai.webhooks.manager.socket.getaddrinfo", _fake_getaddrinfo
-    )
+    monkeypatch.setattr("responsibleai.webhooks.manager.socket.getaddrinfo", _fake_getaddrinfo)
 
 
 @pytest.fixture()
@@ -64,6 +62,7 @@ def slack_config() -> WebhookConfig:
 
 
 # ── Registration ───────────────────────────────────────────────────────────────
+
 
 class TestRegistration:
     def test_register_returns_config(self, manager, generic_config):
@@ -93,7 +92,9 @@ class TestRegistration:
 
     def test_multiple_webhooks(self, manager):
         for i in range(5):
-            c = WebhookConfig(url=f"https://hooks.example.com/{i}", events=[WebhookEvent.DRIFT_ALERT])
+            c = WebhookConfig(
+                url=f"https://hooks.example.com/{i}", events=[WebhookEvent.DRIFT_ALERT]
+            )
             manager.register(c)
         assert len(manager.list_webhooks()) == 5
 
@@ -116,12 +117,15 @@ class TestRegistration:
 
 # ── Delivery ───────────────────────────────────────────────────────────────────
 
+
 class TestDelivery:
     @respx.mock
     async def test_successful_delivery(self, manager, generic_config):
         respx.post(generic_config.url).mock(return_value=httpx.Response(200))
         manager.register(generic_config)
-        deliveries = await manager.fire(WebhookEvent.DRIFT_ALERT, {"model": "gpt-4o", "delta": 10.0})
+        deliveries = await manager.fire(
+            WebhookEvent.DRIFT_ALERT, {"model": "gpt-4o", "delta": 10.0}
+        )
         assert len(deliveries) == 1
         assert deliveries[0].success is True
         assert deliveries[0].status_code == 200
@@ -181,6 +185,7 @@ class TestDelivery:
 
 # ── HMAC signing ───────────────────────────────────────────────────────────────
 
+
 class TestHMACSigning:
     @respx.mock
     async def test_signature_header_present(self, manager):
@@ -213,7 +218,9 @@ class TestHMACSigning:
         manager.register(c)
         await manager.fire(WebhookEvent.DRIFT_ALERT, {"model": "test"})
 
-        expected = "sha256=" + hmac.new(secret.encode(), captured["body"], hashlib.sha256).hexdigest()
+        expected = (
+            "sha256=" + hmac.new(secret.encode(), captured["body"], hashlib.sha256).hexdigest()
+        )
         assert captured["sig"] == expected
 
     @respx.mock
@@ -234,6 +241,7 @@ class TestHMACSigning:
 
 # ── Payload formatters ─────────────────────────────────────────────────────────
 
+
 class TestPayloadFormatters:
     def test_generic_payload_structure(self, manager):
         p = manager._format_payload(WebhookProvider.GENERIC, WebhookEvent.DRIFT_ALERT, {"delta": 5})
@@ -242,17 +250,23 @@ class TestPayloadFormatters:
         assert p["data"]["delta"] == 5
 
     def test_slack_payload_has_blocks(self, manager):
-        p = manager._format_payload(WebhookProvider.SLACK, WebhookEvent.DRIFT_ALERT, {"model": "gpt-4o"})
+        p = manager._format_payload(
+            WebhookProvider.SLACK, WebhookEvent.DRIFT_ALERT, {"model": "gpt-4o"}
+        )
         assert "blocks" in p
         assert any(b.get("type") == "header" for b in p["blocks"])
 
     def test_teams_payload_has_message_card(self, manager):
-        p = manager._format_payload(WebhookProvider.TEAMS, WebhookEvent.BUDGET_EXCEEDED, {"limit": 1000})
+        p = manager._format_payload(
+            WebhookProvider.TEAMS, WebhookEvent.BUDGET_EXCEEDED, {"limit": 1000}
+        )
         assert p["@type"] == "MessageCard"
         assert len(p["sections"]) > 0
 
     def test_pagerduty_payload_has_routing_key(self, manager):
-        p = manager._format_payload(WebhookProvider.PAGERDUTY, WebhookEvent.BUDGET_EXCEEDED, {"routing_key": "abc123"})
+        p = manager._format_payload(
+            WebhookProvider.PAGERDUTY, WebhookEvent.BUDGET_EXCEEDED, {"routing_key": "abc123"}
+        )
         assert "routing_key" in p
         assert p["payload"]["severity"] == "critical"
 
@@ -270,6 +284,7 @@ class TestPayloadFormatters:
 
 
 # ── Delivery log ───────────────────────────────────────────────────────────────
+
 
 class TestDeliveryLog:
     @respx.mock
@@ -310,6 +325,7 @@ class TestDeliveryLog:
 
 # ── Retry worker lifecycle ───────────────────────────────────────────────────────
 
+
 class TestRetryWorkerLifecycle:
     def test_start_without_repo_is_noop(self, manager):
         manager.start_retry_worker()
@@ -342,6 +358,7 @@ class TestRetryWorkerLifecycle:
 
 
 # ── Repo-backed persistence ──────────────────────────────────────────────────────
+
 
 class TestRepoBackedDelivery:
     @respx.mock
@@ -456,6 +473,7 @@ class TestRepoBackedDelivery:
 
 # ── SSRF guard ───────────────────────────────────────────────────────────────
 
+
 class TestSSRFGuard:
     def test_rejects_non_http_scheme(self):
         with pytest.raises(UnsafeWebhookURLError, match="scheme"):
@@ -502,8 +520,6 @@ class TestSSRFGuard:
         def _raise(host, *a, **k):
             raise socket_module.gaierror("nodename nor servname provided")
 
-        monkeypatch.setattr(
-            "responsibleai.webhooks.manager.socket.getaddrinfo", _raise
-        )
+        monkeypatch.setattr("responsibleai.webhooks.manager.socket.getaddrinfo", _raise)
         with pytest.raises(UnsafeWebhookURLError, match="could not resolve"):
             validate_webhook_url("http://does-not-exist.invalid/hook")

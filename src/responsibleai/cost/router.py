@@ -46,7 +46,9 @@ class ModelRouter:
     print(decision.recommended_model)   # → ollama/llama3.2
     """
 
-    def route(self, task_description: str, quality_requirement: str = "balanced") -> RoutingDecision:
+    def route(
+        self, task_description: str, quality_requirement: str = "balanced"
+    ) -> RoutingDecision:
         """
         Recommend a model for *task_description*.
 
@@ -70,8 +72,7 @@ class ModelRouter:
 
         pricing = get_pricing(provider, model)
         avg_cost_per_1k = (
-            pricing.input_cost_per_million / 1_000
-            + pricing.output_cost_per_million / 1_000
+            pricing.input_cost_per_million / 1_000 + pricing.output_cost_per_million / 1_000
         ) / 2
 
         gpt4o_cost_per_1k = _GPT4O_1K_COST
@@ -97,14 +98,16 @@ class ModelRouter:
         rows = []
         for key, pricing in MODEL_CATALOG.items():
             avg = (pricing.input_cost_per_million + pricing.output_cost_per_million) / 2
-            rows.append({
-                "key": key,
-                "provider": pricing.provider,
-                "model": pricing.model,
-                "input_cost_per_1m": pricing.input_cost_per_million,
-                "output_cost_per_1m": pricing.output_cost_per_million,
-                "avg_cost_per_1m": round(avg, 3),
-                "is_local": pricing.is_local,
-                "monthly_cost_at_1m_tokens": round(avg, 3),
-            })
+            rows.append(
+                {
+                    "key": key,
+                    "provider": pricing.provider,
+                    "model": pricing.model,
+                    "input_cost_per_1m": pricing.input_cost_per_million,
+                    "output_cost_per_1m": pricing.output_cost_per_million,
+                    "avg_cost_per_1m": round(avg, 3),
+                    "is_local": pricing.is_local,
+                    "monthly_cost_at_1m_tokens": round(avg, 3),
+                }
+            )
         return sorted(rows, key=lambda r: r["avg_cost_per_1m"])

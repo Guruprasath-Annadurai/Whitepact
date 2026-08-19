@@ -62,7 +62,7 @@ def _require_adk() -> None:
     if not _ADK_AVAILABLE:
         raise ImportError(
             "build_stdio_toolset/build_http_toolset require the 'adk' extra: "
-            "pip install \"rai-governance-platform[adk]\" (needs google-adk)."
+            'pip install "rai-governance-platform[adk]" (needs google-adk).'
         )
 
 
@@ -106,7 +106,9 @@ def build_http_toolset(
     _require_adk()
     return McpToolset(
         connection_params=StreamableHTTPConnectionParams(
-            url=url, headers=headers, timeout=timeout,
+            url=url,
+            headers=headers,
+            timeout=timeout,
         ),
         tool_filter=tool_filter,
         tool_name_prefix=RAI_TOOL_PREFIX,

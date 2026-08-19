@@ -104,8 +104,7 @@ class TrustScoreEngine:
         total = sum(self._weights.values())
         if not (0.999 < total < 1.001):
             raise ValueError(
-                f"Weights must sum to 1.0; got {total:.4f}. "
-                "Adjust weights so they total exactly 1."
+                f"Weights must sum to 1.0; got {total:.4f}. Adjust weights so they total exactly 1."
             )
         missing = set(_DIMENSIONS) - set(self._weights)
         if missing:
@@ -152,9 +151,7 @@ class TrustScoreEngine:
         }
         for name, val in dims.items():
             if not (0.0 <= val <= 1.0):
-                raise ValueError(
-                    f"Dimension '{name}' must be in [0, 1]; got {val}"
-                )
+                raise ValueError(f"Dimension '{name}' must be in [0, 1]; got {val}")
 
         overall = round(sum(self._weights[k] * v for k, v in dims.items()) * 100.0, 10)
         return TrustScore(
@@ -205,7 +202,9 @@ class TrustScoreEngine:
         robustness = (1.0 - min(hallucination_risk, 1.0)) if hallucination_risk is not None else 0.5
         security = security_pass_rate if security_pass_rate is not None else 0.5
         compliance = compliance_score if compliance_score is not None else 0.5
-        authenticity = (1.0 - deepfake_fake_probability) if deepfake_fake_probability is not None else 0.5
+        authenticity = (
+            (1.0 - deepfake_fake_probability) if deepfake_fake_probability is not None else 0.5
+        )
 
         return self.compute(
             fairness=fairness,

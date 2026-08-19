@@ -125,12 +125,14 @@ class TestAnthropicProviderComplete:
 class TestAnthropicProviderImportError:
     def test_raises_import_error_without_anthropic(self) -> None:
         import sys
+
         original = sys.modules.get("anthropic")
         sys.modules["anthropic"] = None  # type: ignore[assignment]
         try:
             import importlib
 
             import biasbuster.providers.anthropic_provider as mod
+
             importlib.reload(mod)
             with pytest.raises(ImportError, match="anthropic"):
                 mod.AnthropicProvider(api_key="sk-ant-test")
@@ -142,4 +144,5 @@ class TestAnthropicProviderImportError:
             import importlib
 
             import biasbuster.providers.anthropic_provider as mod
+
             importlib.reload(mod)

@@ -72,7 +72,9 @@ async def _record_evidence(
     except Exception:
         _logger.exception(
             "upstream_governance_evidence_write_failed action_id=%s decision=%s org_id=%s",
-            action.action_id, decision.decision.value, agent.organization_id,
+            action.action_id,
+            decision.decision.value,
+            agent.organization_id,
         )
         return False
     return True
@@ -105,11 +107,16 @@ async def apply_upstream_governance(
         display_name=ctx.org_name,
     )
     agent = AgentContext(
-        identity=identity, organization_id=ctx.org_id, agent_id=ctx.key_id, framework="upstream-gateway",
+        identity=identity,
+        organization_id=ctx.org_id,
+        agent_id=ctx.key_id,
+        framework="upstream-gateway",
     )
     target = build_upstream_target(server_id, tool_name)
     action = ActionRequest(agent=agent, action_type=ACTION_TYPE, target=target, arguments=arguments)
-    authority = AuthorityContext(delegated_by=ctx.org_id, granted_action_types=frozenset({ACTION_TYPE}))
+    authority = AuthorityContext(
+        delegated_by=ctx.org_id, granted_action_types=frozenset({ACTION_TYPE})
+    )
 
     # Registration IS the approval gate -- checked before the gateway
     # is even consulted, and denied with the reason code SPEC.md always
@@ -140,7 +147,9 @@ async def apply_upstream_governance(
     policy = await policy_repo.get_policy(ctx.org_id)
 
     evaluate_started = time.monotonic()
-    decision = gateway.evaluate(action, authority, policy=policy, recent_violation_count=violation_count)
+    decision = gateway.evaluate(
+        action, authority, policy=policy, recent_violation_count=violation_count
+    )
     observe_governance_decision(
         decision.decision.value,
         decision.risk_tier.value if decision.risk_tier is not None else None,
@@ -200,10 +209,18 @@ async def apply_upstream_governance(
             },
         )
 
-    final_arguments = decision.redacted_arguments if decision.decision == GovernanceDecision.ALLOW_WITH_REDACTION else arguments
+    final_arguments = (
+        decision.redacted_arguments
+        if decision.decision == GovernanceDecision.ALLOW_WITH_REDACTION
+        else arguments
+    )
     final_arguments = final_arguments or arguments
     final_action = ActionRequest(
-        agent=agent, action_type=ACTION_TYPE, target=target, arguments=final_arguments, action_id=action.action_id,
+        agent=agent,
+        action_type=ACTION_TYPE,
+        target=target,
+        arguments=final_arguments,
+        action_id=action.action_id,
     )
     authorization = authorize_execution(decision, final_action)
     result = await executor.execute(authorization, final_action)

@@ -33,6 +33,7 @@ async def _drain_audit_writes() -> None:
     if pending:
         await asyncio.gather(*pending, return_exceptions=True)
 
+
 BOOTSTRAP_AUTH = {"Authorization": "Bearer bootstrap-test-key"}
 
 
@@ -55,7 +56,9 @@ def _reset_rate_limits():
 @pytest.fixture()
 async def client():
     async with LifespanManager(app) as manager:
-        async with AsyncClient(transport=ASGITransport(app=manager.app), base_url="http://test") as c:
+        async with AsyncClient(
+            transport=ASGITransport(app=manager.app), base_url="http://test"
+        ) as c:
             yield c
 
 
@@ -64,7 +67,9 @@ async def _new_org_with_analyst_key(client: AsyncClient, slug: str) -> tuple[str
     assert r.status_code == 201, r.text
     org_id = r.json()["id"]
     r = await client.post(
-        f"/api/orgs/{org_id}/keys", json={"name": "analyst-key", "role": "ANALYST"}, headers=BOOTSTRAP_AUTH,
+        f"/api/orgs/{org_id}/keys",
+        json={"name": "analyst-key", "role": "ANALYST"},
+        headers=BOOTSTRAP_AUTH,
     )
     assert r.status_code == 201, r.text
     return org_id, r.json()["key"]
@@ -98,7 +103,12 @@ class TestCostSummaryIsolation:
 
         r = await client.post(
             "/api/cost/record",
-            json={"provider": "openai", "model": "gpt-4o", "input_tokens": 5000, "output_tokens": 2000},
+            json={
+                "provider": "openai",
+                "model": "gpt-4o",
+                "input_tokens": 5000,
+                "output_tokens": 2000,
+            },
             headers={"Authorization": f"Bearer {key_a}"},
         )
         assert r.status_code == 200, r.text
@@ -120,10 +130,14 @@ class TestAuditLogIsolation:
 
         # Generate an audited request in each org.
         await client.post(
-            "/api/scan", json={"text": "hello from org a"}, headers={"Authorization": f"Bearer {key_a}"},
+            "/api/scan",
+            json={"text": "hello from org a"},
+            headers={"Authorization": f"Bearer {key_a}"},
         )
         await client.post(
-            "/api/scan", json={"text": "hello from org b"}, headers={"Authorization": f"Bearer {key_b}"},
+            "/api/scan",
+            json={"text": "hello from org b"},
+            headers={"Authorization": f"Bearer {key_b}"},
         )
         await _drain_audit_writes()
 
@@ -134,7 +148,9 @@ class TestAuditLogIsolation:
         assert all(e["org_id"] == org_a for e in entries_a)
         assert not any(e["org_id"] == org_b for e in entries_a)
 
-    async def test_org_scoped_key_cannot_override_org_id_query_param(self, client: AsyncClient) -> None:
+    async def test_org_scoped_key_cannot_override_org_id_query_param(
+        self, client: AsyncClient
+    ) -> None:
         """An org-scoped (non-legacy) key must not be able to read another
         org's audit log by passing ?org_id=<other-org> — the endpoint's own
         comment says org-specific keys are force-scoped regardless of the
@@ -144,12 +160,15 @@ class TestAuditLogIsolation:
         org_b, key_b = await _new_org_with_analyst_key(client, "tenant-b-audit-override")
 
         await client.post(
-            "/api/scan", json={"text": "org b only"}, headers={"Authorization": f"Bearer {key_b}"},
+            "/api/scan",
+            json={"text": "org b only"},
+            headers={"Authorization": f"Bearer {key_b}"},
         )
         await _drain_audit_writes()
 
         r = await client.get(
-            f"/api/audit?org_id={org_b}", headers={"Authorization": f"Bearer {key_a}"},
+            f"/api/audit?org_id={org_b}",
+            headers={"Authorization": f"Bearer {key_a}"},
         )
         assert r.status_code == 200
         entries = r.json()["entries"]

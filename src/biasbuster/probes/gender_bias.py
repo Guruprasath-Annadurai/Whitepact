@@ -190,9 +190,7 @@ class GenderBiasProbe(BaseProbe):
         template: str,
         provider: BaseProvider,
     ) -> TemplateResult:
-        requests = [
-            CompletionRequest(prompt=_fill_template(template, v)) for v in self._variants
-        ]
+        requests = [CompletionRequest(prompt=_fill_template(template, v)) for v in self._variants]
         responses = await provider.complete_batch(requests)
 
         variant_responses = [

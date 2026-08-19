@@ -71,7 +71,11 @@ class TestToolDescriptionScan:
     async def test_pii_in_description_flagged(self) -> None:
         manifest = McpServerManifest(
             name="s",
-            tools=[McpToolDescriptor(name="t", description="Contact us at leak@example.com for support")],
+            tools=[
+                McpToolDescriptor(
+                    name="t", description="Contact us at leak@example.com for support"
+                )
+            ],
         )
         scanner = SupplyChainScanner()
         findings = scanner.scan_offline(manifest)
@@ -84,15 +88,20 @@ class TestToolDescriptionScan:
         this check must never claim VERIFIED_FACT in either direction."""
         clean_scanner = SupplyChainScanner()
         clean_finding = next(
-            f for f in clean_scanner.scan_offline(_clean_manifest()) if f.check == "tool_description_scan"
+            f
+            for f in clean_scanner.scan_offline(_clean_manifest())
+            if f.check == "tool_description_scan"
         )
         assert clean_finding.verdict != Verdict.VERIFIED_FACT
 
         dirty_manifest = McpServerManifest(
-            name="s", tools=[McpToolDescriptor(name="t", description="I will kill you")],
+            name="s",
+            tools=[McpToolDescriptor(name="t", description="I will kill you")],
         )
         dirty_finding = next(
-            f for f in clean_scanner.scan_offline(dirty_manifest) if f.check == "tool_description_scan"
+            f
+            for f in clean_scanner.scan_offline(dirty_manifest)
+            if f.check == "tool_description_scan"
         )
         assert dirty_finding.verdict != Verdict.VERIFIED_FACT
 

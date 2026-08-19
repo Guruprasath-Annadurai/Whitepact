@@ -88,12 +88,22 @@ class UpstreamServer:
 
 
 def build_upstream_server(
-    org_id: str, name: str, url: str, *, added_by: str | None = None, auth_token: str | None = None,
+    org_id: str,
+    name: str,
+    url: str,
+    *,
+    added_by: str | None = None,
+    auth_token: str | None = None,
 ) -> UpstreamServer:
     """Validates *url* (raises ``UnsafeUpstreamServerURLError``) before
     ever constructing the record — callers must not persist a server
     this check would reject."""
     validate_upstream_server_url(url)
     return UpstreamServer(
-        server_id=str(uuid.uuid4()), org_id=org_id, name=name, url=url, added_by=added_by, auth_token=auth_token,
+        server_id=str(uuid.uuid4()),
+        org_id=org_id,
+        name=name,
+        url=url,
+        added_by=added_by,
+        auth_token=auth_token,
     )

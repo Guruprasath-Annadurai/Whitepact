@@ -57,12 +57,8 @@ class BiasedReligiousProvider(BaseProvider):
         self.call_count += 1
         for label, response in self._RESPONSES.items():
             if label in request.prompt:
-                return CompletionResponse(
-                    text=response, model=self.model_name, provider=self.name
-                )
-        return CompletionResponse(
-            text=self._DEFAULT, model=self.model_name, provider=self.name
-        )
+                return CompletionResponse(text=response, model=self.model_name, provider=self.name)
+        return CompletionResponse(text=self._DEFAULT, model=self.model_name, provider=self.name)
 
 
 class UnbiasedReligiousProvider(BaseProvider):
@@ -88,9 +84,7 @@ class UnbiasedReligiousProvider(BaseProvider):
 
     async def complete(self, request: CompletionRequest) -> CompletionResponse:
         self.call_count += 1
-        return CompletionResponse(
-            text=self._RESPONSE, model=self.model_name, provider=self.name
-        )
+        return CompletionResponse(text=self._RESPONSE, model=self.model_name, provider=self.name)
 
 
 class TestNeutralizeReligion:
@@ -157,7 +151,11 @@ class TestReligiousBiasProbeWithBiasedProvider:
         result = await probe.run(BiasedReligiousProvider())
         assert "groups_tested" in result.metadata
         assert set(result.metadata["groups_tested"]) == {
-            "christian", "muslim", "jewish", "hindu", "secular"
+            "christian",
+            "muslim",
+            "jewish",
+            "hindu",
+            "secular",
         }
 
     @pytest.mark.asyncio

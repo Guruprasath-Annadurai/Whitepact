@@ -58,19 +58,25 @@ def _reset_rate_limits():
 @pytest.fixture()
 async def client():
     async with LifespanManager(app) as manager:
-        async with AsyncClient(transport=ASGITransport(app=manager.app), base_url="http://test") as c:
+        async with AsyncClient(
+            transport=ASGITransport(app=manager.app), base_url="http://test"
+        ) as c:
             yield c
 
 
 @pytest.fixture()
 async def org_and_admin_key(client: AsyncClient):
     r = await client.post(
-        "/api/orgs", json={"name": "Resume Test Co", "slug": "resume-test-co"}, headers=BOOTSTRAP_AUTH,
+        "/api/orgs",
+        json={"name": "Resume Test Co", "slug": "resume-test-co"},
+        headers=BOOTSTRAP_AUTH,
     )
     assert r.status_code == 201, r.text
     org_id = r.json()["id"]
     r = await client.post(
-        f"/api/orgs/{org_id}/keys", json={"name": "admin-key", "role": "ADMIN"}, headers=BOOTSTRAP_AUTH,
+        f"/api/orgs/{org_id}/keys",
+        json={"name": "admin-key", "role": "ADMIN"},
+        headers=BOOTSTRAP_AUTH,
     )
     assert r.status_code == 201, r.text
     return org_id, r.json()["key"]
@@ -87,11 +93,15 @@ async def _seed_dispatchable_approval(org_id: str, *, arguments: dict | None = N
     identity = IdentityContext(identity_id="k1", kind="api_key", org_id=org_id)
     agent = AgentContext(identity=identity, framework="mcp-client")
     authority = AuthorityContext(
-        delegated_by=org_id, granted_action_types=frozenset({"rai_health"}),
+        delegated_by=org_id,
+        granted_action_types=frozenset({"rai_health"}),
         require_approval_for=frozenset({"rai_health"}),
     )
     action = ActionRequest(
-        agent=agent, action_type="rai_health", target="rai_health", arguments=arguments or {},
+        agent=agent,
+        action_type="rai_health",
+        target="rai_health",
+        arguments=arguments or {},
     )
     decision = gw.evaluate(action, authority)
     assert decision.decision == GovernanceDecision.REQUIRE_APPROVAL
@@ -104,11 +114,15 @@ class TestBuildResumeAction:
         identity = IdentityContext(identity_id="k1", kind="api_key", org_id="org-1")
         agent = AgentContext(identity=identity, framework="mcp-client")
         authority = AuthorityContext(
-            delegated_by="org-1", granted_action_types=frozenset({"rai_scan"}),
+            delegated_by="org-1",
+            granted_action_types=frozenset({"rai_scan"}),
             require_approval_for=frozenset({"rai_scan"}),
         )
         original = ActionRequest(
-            agent=agent, action_type="rai_scan", target="rai_scan", arguments={"text": "hello"},
+            agent=agent,
+            action_type="rai_scan",
+            target="rai_scan",
+            arguments={"text": "hello"},
         )
         gw = WhitePactRuntimeGateway()
         decision = gw.evaluate(original, authority)
@@ -124,7 +138,8 @@ class TestBuildResumeAction:
         identity = IdentityContext(identity_id="k1", kind="api_key", org_id="org-1")
         agent = AgentContext(identity=identity, framework="mcp-client")
         authority = AuthorityContext(
-            delegated_by="org-1", granted_action_types=frozenset({"rai_scan"}),
+            delegated_by="org-1",
+            granted_action_types=frozenset({"rai_scan"}),
             require_approval_for=frozenset({"rai_scan"}),
         )
         action = ActionRequest(agent=agent, action_type="rai_scan", target="rai_scan")
@@ -138,39 +153,56 @@ class TestBuildResumeAction:
 
 class TestResumeApprovalEndToEnd:
     async def test_full_round_trip_actually_executes_the_tool(
-        self, client: AsyncClient, org_and_admin_key,
+        self,
+        client: AsyncClient,
+        org_and_admin_key,
     ) -> None:
         org_id, admin_key = org_and_admin_key
         headers = {"Authorization": f"Bearer {admin_key}"}
         approval_id = await _seed_dispatchable_approval(org_id)
 
         resolve = await client.post(
-            f"/api/governance/approvals/{approval_id}/resolve", json={"outcome": "APPROVED"}, headers=headers,
+            f"/api/governance/approvals/{approval_id}/resolve",
+            json={"outcome": "APPROVED"},
+            headers=headers,
         )
         assert resolve.status_code == 200
 
         execute = await client.post(
-            f"/api/governance/approvals/{approval_id}/execute", headers=headers,
+            f"/api/governance/approvals/{approval_id}/execute",
+            headers=headers,
         )
         assert execute.status_code == 200, execute.text
         body = execute.json()
         assert body["approval_id"] == approval_id
         assert body["result"]["status"] == "ok"  # rai_health's real handler ran
 
-    async def test_replay_after_execute_is_refused(self, client: AsyncClient, org_and_admin_key) -> None:
+    async def test_replay_after_execute_is_refused(
+        self, client: AsyncClient, org_and_admin_key
+    ) -> None:
         org_id, admin_key = org_and_admin_key
         headers = {"Authorization": f"Bearer {admin_key}"}
         approval_id = await _seed_dispatchable_approval(org_id)
-        await client.post(f"/api/governance/approvals/{approval_id}/resolve", json={"outcome": "APPROVED"}, headers=headers)
+        await client.post(
+            f"/api/governance/approvals/{approval_id}/resolve",
+            json={"outcome": "APPROVED"},
+            headers=headers,
+        )
 
-        first = await client.post(f"/api/governance/approvals/{approval_id}/execute", headers=headers)
+        first = await client.post(
+            f"/api/governance/approvals/{approval_id}/execute", headers=headers
+        )
         assert first.status_code == 200
 
-        second = await client.post(f"/api/governance/approvals/{approval_id}/execute", headers=headers)
+        second = await client.post(
+            f"/api/governance/approvals/{approval_id}/execute", headers=headers
+        )
         assert second.status_code == 409
 
     async def test_pending_not_yet_approved_cannot_be_executed(
-        self, client: AsyncClient, org_and_admin_key,
+        self,
+        client: AsyncClient,
+        org_and_admin_key,
     ) -> None:
         org_id, admin_key = org_and_admin_key
         headers = {"Authorization": f"Bearer {admin_key}"}
@@ -179,25 +211,37 @@ class TestResumeApprovalEndToEnd:
         r = await client.post(f"/api/governance/approvals/{approval_id}/execute", headers=headers)
         assert r.status_code == 409
 
-    async def test_denied_approval_cannot_be_executed(self, client: AsyncClient, org_and_admin_key) -> None:
+    async def test_denied_approval_cannot_be_executed(
+        self, client: AsyncClient, org_and_admin_key
+    ) -> None:
         org_id, admin_key = org_and_admin_key
         headers = {"Authorization": f"Bearer {admin_key}"}
         approval_id = await _seed_dispatchable_approval(org_id)
-        await client.post(f"/api/governance/approvals/{approval_id}/resolve", json={"outcome": "DENIED"}, headers=headers)
+        await client.post(
+            f"/api/governance/approvals/{approval_id}/resolve",
+            json={"outcome": "DENIED"},
+            headers=headers,
+        )
 
         r = await client.post(f"/api/governance/approvals/{approval_id}/execute", headers=headers)
         assert r.status_code == 409
 
-    async def test_execute_requires_admin_role(self, client: AsyncClient, org_and_admin_key) -> None:
+    async def test_execute_requires_admin_role(
+        self, client: AsyncClient, org_and_admin_key
+    ) -> None:
         org_id, admin_key = org_and_admin_key
         admin_headers = {"Authorization": f"Bearer {admin_key}"}
         approval_id = await _seed_dispatchable_approval(org_id)
         await client.post(
-            f"/api/governance/approvals/{approval_id}/resolve", json={"outcome": "APPROVED"}, headers=admin_headers,
+            f"/api/governance/approvals/{approval_id}/resolve",
+            json={"outcome": "APPROVED"},
+            headers=admin_headers,
         )
 
         r = await client.post(
-            f"/api/orgs/{org_id}/keys", json={"name": "analyst-key", "role": "ANALYST"}, headers=BOOTSTRAP_AUTH,
+            f"/api/orgs/{org_id}/keys",
+            json={"name": "analyst-key", "role": "ANALYST"},
+            headers=BOOTSTRAP_AUTH,
         )
         analyst_key = r.json()["key"]
 
@@ -207,7 +251,9 @@ class TestResumeApprovalEndToEnd:
         )
         assert r.status_code == 403
 
-    async def test_execute_unknown_id_returns_404(self, client: AsyncClient, org_and_admin_key) -> None:
+    async def test_execute_unknown_id_returns_404(
+        self, client: AsyncClient, org_and_admin_key
+    ) -> None:
         _org_id, admin_key = org_and_admin_key
         r = await client.post(
             "/api/governance/approvals/does-not-exist/execute",
@@ -215,10 +261,14 @@ class TestResumeApprovalEndToEnd:
         )
         assert r.status_code == 404
 
-    async def test_cross_org_execute_returns_404_not_403(self, client: AsyncClient, org_and_admin_key) -> None:
+    async def test_cross_org_execute_returns_404_not_403(
+        self, client: AsyncClient, org_and_admin_key
+    ) -> None:
         _org_id, admin_key = org_and_admin_key
         r = await client.post(
-            "/api/orgs", json={"name": "Other Resume Co", "slug": "other-resume-co"}, headers=BOOTSTRAP_AUTH,
+            "/api/orgs",
+            json={"name": "Other Resume Co", "slug": "other-resume-co"},
+            headers=BOOTSTRAP_AUTH,
         )
         other_org_id = r.json()["id"]
         other_approval_id = await _seed_dispatchable_approval(other_org_id)
@@ -230,14 +280,20 @@ class TestResumeApprovalEndToEnd:
         assert r.status_code == 404
 
     async def test_execution_writes_evidence_with_resumed_reason_code(
-        self, client: AsyncClient, org_and_admin_key,
+        self,
+        client: AsyncClient,
+        org_and_admin_key,
     ) -> None:
         from responsibleai.dashboard.app import _db_engine
 
         org_id, admin_key = org_and_admin_key
         headers = {"Authorization": f"Bearer {admin_key}"}
         approval_id = await _seed_dispatchable_approval(org_id)
-        await client.post(f"/api/governance/approvals/{approval_id}/resolve", json={"outcome": "APPROVED"}, headers=headers)
+        await client.post(
+            f"/api/governance/approvals/{approval_id}/resolve",
+            json={"outcome": "APPROVED"},
+            headers=headers,
+        )
         await client.post(f"/api/governance/approvals/{approval_id}/execute", headers=headers)
 
         records = await EvidenceRepository(_db_engine).list_for_org(org_id, decision="ALLOW")
@@ -272,7 +328,8 @@ class TestResumeApprovalDirectUnit:
         assert not hasattr(_Repo, "update_arguments")
 
     async def test_consume_still_enforces_mismatch_if_arguments_tampered_pre_reconstruction(
-        self, engine,
+        self,
+        engine,
     ) -> None:
         from responsibleai.db import ApprovalRepository as _ApprovalRepo
         from responsibleai.db import EvidenceRepository as _EvidenceRepo
@@ -281,15 +338,21 @@ class TestResumeApprovalDirectUnit:
         identity = IdentityContext(identity_id="k1", kind="api_key", org_id="org-1")
         agent = AgentContext(identity=identity, framework="mcp-client")
         authority = AuthorityContext(
-            delegated_by="org-1", granted_action_types=frozenset({"rai_scan"}),
+            delegated_by="org-1",
+            granted_action_types=frozenset({"rai_scan"}),
             require_approval_for=frozenset({"rai_scan"}),
         )
         action = ActionRequest(
-            agent=agent, action_type="rai_scan", target="rai_scan", arguments={"text": "original"},
+            agent=agent,
+            action_type="rai_scan",
+            target="rai_scan",
+            arguments={"text": "original"},
         )
         decision = WhitePactRuntimeGateway().evaluate(action, authority)
         approval = await repo.create(build_approval_request(action, decision))
-        await repo.resolve(approval.approval_id, resolved_by="human-1", outcome=ApprovalStatus.APPROVED)
+        await repo.resolve(
+            approval.approval_id, resolved_by="human-1", outcome=ApprovalStatus.APPROVED
+        )
 
         # Simulate tampering: overwrite the persisted digest directly so
         # a resume's reconstructed action no longer matches it.
@@ -320,7 +383,8 @@ class TestResumeApprovalDirectUnit:
         identity = IdentityContext(identity_id="k1", kind="api_key", org_id="org-1")
         agent = AgentContext(identity=identity, framework="mcp-client")
         authority = AuthorityContext(
-            delegated_by="org-1", granted_action_types=frozenset({"rai_scan"}),
+            delegated_by="org-1",
+            granted_action_types=frozenset({"rai_scan"}),
             require_approval_for=frozenset({"rai_scan"}),
         )
         action = ActionRequest(agent=agent, action_type="rai_scan", target="rai_scan")

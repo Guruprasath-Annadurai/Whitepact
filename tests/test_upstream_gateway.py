@@ -59,6 +59,7 @@ def _fake_public_dns(monkeypatch: pytest.MonkeyPatch) -> None:
     validate_upstream_server_url delegates to validate_webhook_url,
     which does a real socket.getaddrinfo() lookup; test hostnames
     aren't real DNS records."""
+
     def _fake_getaddrinfo(host, *args, **kwargs):
         return [(2, 1, 6, "", ("93.184.216.34", 0))]
 
@@ -127,7 +128,9 @@ class TestUpstreamServerRepository:
     def repo(self, engine):
         return UpstreamServerRepository(engine)
 
-    async def test_register_rejects_unsafe_url(self, repo: UpstreamServerRepository, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_register_rejects_unsafe_url(
+        self, repo: UpstreamServerRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         def _fake_getaddrinfo(host, *args, **kwargs):
             return [(2, 1, 6, "", ("127.0.0.1", 0))]
 
@@ -135,7 +138,9 @@ class TestUpstreamServerRepository:
         with pytest.raises(UnsafeUpstreamServerURLError):
             await repo.register("org-1", "evil-server", "http://internal/mcp")
 
-    async def test_register_and_get(self, repo: UpstreamServerRepository, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_register_and_get(
+        self, repo: UpstreamServerRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         _fake_public_dns(monkeypatch)
         server = await repo.register("org-1", "partner-tools", "https://partner.example.com/mcp")
         fetched = await repo.get(server.server_id)
@@ -144,7 +149,9 @@ class TestUpstreamServerRepository:
         assert fetched.org_id == "org-1"
         assert fetched.enabled is True
 
-    async def test_list_scoped_to_org(self, repo: UpstreamServerRepository, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_list_scoped_to_org(
+        self, repo: UpstreamServerRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         _fake_public_dns(monkeypatch)
         await repo.register("org-a", "a-server", "https://a.example.com/mcp")
         await repo.register("org-b", "b-server", "https://b.example.com/mcp")
@@ -156,7 +163,9 @@ class TestUpstreamServerRepository:
         with pytest.raises(UpstreamServerNotFoundError):
             await repo.remove("org-1", "does-not-exist")
 
-    async def test_set_enabled_toggles(self, repo: UpstreamServerRepository, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_set_enabled_toggles(
+        self, repo: UpstreamServerRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         _fake_public_dns(monkeypatch)
         server = await repo.register("org-1", "toggle-server", "https://toggle.example.com/mcp")
         disabled = await repo.set_enabled("org-1", server.server_id, False)
@@ -167,7 +176,10 @@ class TestUpstreamServerRepository:
 
 class TestRiskTierDefaultsHighForUpstreamCalls:
     def test_upstream_action_type_is_high_regardless_of_target(self) -> None:
-        assert classify_action_risk(ACTION_TYPE, build_upstream_target("srv-1", "anything")) == RiskTier.HIGH
+        assert (
+            classify_action_risk(ACTION_TYPE, build_upstream_target("srv-1", "anything"))
+            == RiskTier.HIGH
+        )
 
     def test_higher_than_an_unrecognized_internal_action_type(self) -> None:
         """The whole point of the HIGH default: an upstream call is
@@ -182,17 +194,25 @@ def _identity(org_id: str = "org-1") -> IdentityContext:
 
 
 def _agent(org_id: str = "org-1") -> AgentContext:
-    return AgentContext(identity=_identity(org_id), organization_id=org_id, framework="upstream-gateway")
+    return AgentContext(
+        identity=_identity(org_id), organization_id=org_id, framework="upstream-gateway"
+    )
 
 
-def _upstream_action(server_id: str = "srv-1", tool_name: str = "remote_tool", org_id: str = "org-1") -> ActionRequest:
+def _upstream_action(
+    server_id: str = "srv-1", tool_name: str = "remote_tool", org_id: str = "org-1"
+) -> ActionRequest:
     return ActionRequest(
-        agent=_agent(org_id), action_type=ACTION_TYPE, target=build_upstream_target(server_id, tool_name),
+        agent=_agent(org_id),
+        action_type=ACTION_TYPE,
+        target=build_upstream_target(server_id, tool_name),
     )
 
 
 def _allow_decision(action_id: str) -> DecisionResult:
-    return DecisionResult(decision=GovernanceDecision.ALLOW, action_id=action_id, risk_tier=RiskTier.HIGH)
+    return DecisionResult(
+        decision=GovernanceDecision.ALLOW, action_id=action_id, risk_tier=RiskTier.HIGH
+    )
 
 
 class _FakeRegistry:
@@ -207,7 +227,9 @@ class _FakeRegistry:
 
 
 class _FakeServer:
-    def __init__(self, org_id: str, url: str, enabled: bool = True, auth_token: str | None = None) -> None:
+    def __init__(
+        self, org_id: str, url: str, enabled: bool = True, auth_token: str | None = None
+    ) -> None:
         self.org_id = org_id
         self.url = url
         self.enabled = enabled
@@ -252,11 +274,14 @@ class TestUpstreamExecutorInvariants:
         cross_org_action.arguments = action.arguments
 
         executor = UpstreamMCPExecutor(registry)
-        with pytest.raises((AuthorizationOrganizationMismatchError, AuthorizationActionMismatchError)):
+        with pytest.raises(
+            (AuthorizationOrganizationMismatchError, AuthorizationActionMismatchError)
+        ):
             await executor.execute(authorization, cross_org_action)
 
     async def test_forged_authorization_with_correct_digest_still_bound_to_org(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from responsibleai.governance.approval import compute_action_digest
 
@@ -281,7 +306,9 @@ class TestUpstreamExecutorInvariants:
             await executor.execute(authorization, action)
 
     async def test_disabled_server_refused(self) -> None:
-        registry = _FakeRegistry({"srv-1": _FakeServer("org-1", "https://partner.example.com/mcp", enabled=False)})
+        registry = _FakeRegistry(
+            {"srv-1": _FakeServer("org-1", "https://partner.example.com/mcp", enabled=False)}
+        )
         action = _upstream_action()
         authorization = authorize_execution(_allow_decision(action.action_id), action)
         executor = UpstreamMCPExecutor(registry)
@@ -289,14 +316,18 @@ class TestUpstreamExecutorInvariants:
             await executor.execute(authorization, action)
 
     async def test_other_orgs_server_refused(self) -> None:
-        registry = _FakeRegistry({"srv-1": _FakeServer("org-OTHER", "https://partner.example.com/mcp")})
+        registry = _FakeRegistry(
+            {"srv-1": _FakeServer("org-OTHER", "https://partner.example.com/mcp")}
+        )
         action = _upstream_action(org_id="org-1")
         authorization = authorize_execution(_allow_decision(action.action_id), action)
         executor = UpstreamMCPExecutor(registry)
         with pytest.raises(UpstreamServerNotAvailableError):
             await executor.execute(authorization, action)
 
-    async def test_replay_is_refused_once_a_valid_call_actually_executes(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_replay_is_refused_once_a_valid_call_actually_executes(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """The core invariant, proven against a REAL second in-process
         MCP server (ASGI-transported, no real socket) -- a second
         execute() call with the same authorization must fail even
@@ -317,17 +348,27 @@ class TestUpstreamExecutorInvariants:
         await engine.init()
         monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
         org_repo = OrgRepository(engine)
-        upstream_org = await org_repo.create_org("Upstream Provider Co", "upstream-provider-co", plan=Plan.ENTERPRISE)
-        _key_rec, upstream_raw_key = await org_repo.create_key(upstream_org.id, "upstream-key", role=Role.ANALYST)
+        upstream_org = await org_repo.create_org(
+            "Upstream Provider Co", "upstream-provider-co", plan=Plan.ENTERPRISE
+        )
+        _key_rec, upstream_raw_key = await org_repo.create_key(
+            upstream_org.id, "upstream-key", role=Role.ANALYST
+        )
 
         upstream_app = _build_http_app()
 
         def _http_client_factory():
-            return httpx.AsyncClient(transport=ASGITransport(app=upstream_app), base_url="http://upstream-test")
+            return httpx.AsyncClient(
+                transport=ASGITransport(app=upstream_app), base_url="http://upstream-test"
+            )
 
-        registry = _FakeRegistry({
-            "srv-1": _FakeServer("org-1", "http://upstream-test/mcp", auth_token=upstream_raw_key),
-        })
+        registry = _FakeRegistry(
+            {
+                "srv-1": _FakeServer(
+                    "org-1", "http://upstream-test/mcp", auth_token=upstream_raw_key
+                ),
+            }
+        )
         executor = UpstreamMCPExecutor(registry, http_client_factory=_http_client_factory)
 
         action = _upstream_action(tool_name="rai_health")
@@ -360,30 +401,40 @@ def _reset_rate_limits():
 @pytest.fixture()
 async def client():
     async with LifespanManager(app) as manager:
-        async with AsyncClient(transport=ASGITransport(app=manager.app), base_url="http://test") as c:
+        async with AsyncClient(
+            transport=ASGITransport(app=manager.app), base_url="http://test"
+        ) as c:
             yield c
 
 
 @pytest.fixture()
 async def org_and_admin_key(client: AsyncClient):
     r = await client.post(
-        "/api/orgs", json={"name": "Upstream Test Co", "slug": "upstream-test-co"}, headers=BOOTSTRAP_AUTH,
+        "/api/orgs",
+        json={"name": "Upstream Test Co", "slug": "upstream-test-co"},
+        headers=BOOTSTRAP_AUTH,
     )
     assert r.status_code == 201, r.text
     org_id = r.json()["id"]
     r = await client.post(
-        f"/api/orgs/{org_id}/keys", json={"name": "admin-key", "role": "ADMIN"}, headers=BOOTSTRAP_AUTH,
+        f"/api/orgs/{org_id}/keys",
+        json={"name": "admin-key", "role": "ADMIN"},
+        headers=BOOTSTRAP_AUTH,
     )
     assert r.status_code == 201, r.text
     return org_id, r.json()["key"]
 
 
 class TestUpstreamRegistryRESTEndpoints:
-    async def test_register_requires_admin(self, client: AsyncClient, org_and_admin_key, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_register_requires_admin(
+        self, client: AsyncClient, org_and_admin_key, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         org_id, admin_key = org_and_admin_key
         _fake_public_dns(monkeypatch)
         r = await client.post(
-            f"/api/orgs/{org_id}/keys", json={"name": "analyst-key", "role": "ANALYST"}, headers=BOOTSTRAP_AUTH,
+            f"/api/orgs/{org_id}/keys",
+            json={"name": "analyst-key", "role": "ANALYST"},
+            headers=BOOTSTRAP_AUTH,
         )
         analyst_key = r.json()["key"]
         r = await client.post(
@@ -393,7 +444,9 @@ class TestUpstreamRegistryRESTEndpoints:
         )
         assert r.status_code == 403
 
-    async def test_register_rejects_unsafe_url(self, client: AsyncClient, org_and_admin_key, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_register_rejects_unsafe_url(
+        self, client: AsyncClient, org_and_admin_key, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         _org_id, admin_key = org_and_admin_key
 
         def _fake_getaddrinfo(host, *args, **kwargs):
@@ -408,7 +461,10 @@ class TestUpstreamRegistryRESTEndpoints:
         assert r.status_code == 422
 
     async def test_register_list_remove_round_trip(
-        self, client: AsyncClient, org_and_admin_key, monkeypatch: pytest.MonkeyPatch,
+        self,
+        client: AsyncClient,
+        org_and_admin_key,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _org_id, admin_key = org_and_admin_key
         _fake_public_dns(monkeypatch)
@@ -434,7 +490,9 @@ class TestUpstreamRegistryRESTEndpoints:
 
 
 class TestUpstreamCallEndToEnd:
-    async def test_call_to_unregistered_server_is_denied(self, client: AsyncClient, org_and_admin_key) -> None:
+    async def test_call_to_unregistered_server_is_denied(
+        self, client: AsyncClient, org_and_admin_key
+    ) -> None:
         _org_id, admin_key = org_and_admin_key
         r = await client.post(
             "/api/governance/upstream/servers/does-not-exist/call",
@@ -447,7 +505,10 @@ class TestUpstreamCallEndToEnd:
         assert any("UNAPPROVED_MCP_SERVER" in code for code in body["reason_codes"])
 
     async def test_call_to_disabled_server_is_denied(
-        self, client: AsyncClient, org_and_admin_key, monkeypatch: pytest.MonkeyPatch,
+        self,
+        client: AsyncClient,
+        org_and_admin_key,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         org_id, admin_key = org_and_admin_key
         _fake_public_dns(monkeypatch)
@@ -472,7 +533,10 @@ class TestUpstreamCallEndToEnd:
         assert body["error"] == "governance_denied"
 
     async def test_full_round_trip_actually_proxies_the_call(
-        self, client: AsyncClient, org_and_admin_key, monkeypatch: pytest.MonkeyPatch,
+        self,
+        client: AsyncClient,
+        org_and_admin_key,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Registers a server, monkeypatches UpstreamMCPExecutor's
         default HTTP client factory to point at a REAL second in-process
@@ -498,15 +562,23 @@ class TestUpstreamCallEndToEnd:
         await upstream_engine.init()
         upstream_org_repo = OrgRepository(upstream_engine)
         upstream_org = await upstream_org_repo.create_org(
-            "Upstream Provider Co", "upstream-provider-co-2", plan=Plan.ENTERPRISE,
+            "Upstream Provider Co",
+            "upstream-provider-co-2",
+            plan=Plan.ENTERPRISE,
         )
         _key_rec, upstream_raw_key = await upstream_org_repo.create_key(
-            upstream_org.id, "upstream-key", role=Role.ANALYST,
+            upstream_org.id,
+            "upstream-key",
+            role=Role.ANALYST,
         )
 
         r = await client.post(
             "/api/governance/upstream/servers",
-            json={"name": "real-upstream", "url": "http://upstream-test/mcp", "auth_token": upstream_raw_key},
+            json={
+                "name": "real-upstream",
+                "url": "http://upstream-test/mcp",
+                "auth_token": upstream_raw_key,
+            },
             headers=headers,
         )
         assert r.status_code == 201
@@ -516,10 +588,13 @@ class TestUpstreamCallEndToEnd:
         upstream_app = _build_http_app()
 
         def _fake_factory():
-            return httpx.AsyncClient(transport=ASGITransport(app=upstream_app), base_url="http://upstream-test")
+            return httpx.AsyncClient(
+                transport=ASGITransport(app=upstream_app), base_url="http://upstream-test"
+            )
 
         monkeypatch.setattr(
-            "responsibleai.governance.upstream_executor._default_http_client_factory", _fake_factory,
+            "responsibleai.governance.upstream_executor._default_http_client_factory",
+            _fake_factory,
         )
 
         async with LifespanManager(upstream_app):
@@ -542,16 +617,22 @@ class TestUpstreamCallEndToEnd:
         assert matching
         assert matching[0].risk_tier == "HIGH"
 
-    async def test_cross_org_server_id_denied(self, client: AsyncClient, org_and_admin_key, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_cross_org_server_id_denied(
+        self, client: AsyncClient, org_and_admin_key, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         _org_id, admin_key = org_and_admin_key
         _fake_public_dns(monkeypatch)
 
         r = await client.post(
-            "/api/orgs", json={"name": "Other Upstream Co", "slug": "other-upstream-co"}, headers=BOOTSTRAP_AUTH,
+            "/api/orgs",
+            json={"name": "Other Upstream Co", "slug": "other-upstream-co"},
+            headers=BOOTSTRAP_AUTH,
         )
         other_org_id = r.json()["id"]
         r = await client.post(
-            f"/api/orgs/{other_org_id}/keys", json={"name": "other-admin", "role": "ADMIN"}, headers=BOOTSTRAP_AUTH,
+            f"/api/orgs/{other_org_id}/keys",
+            json={"name": "other-admin", "role": "ADMIN"},
+            headers=BOOTSTRAP_AUTH,
         )
         other_admin_key = r.json()["key"]
         r = await client.post(
@@ -589,13 +670,22 @@ class TestResumeApprovalWorksForUpstreamOriginatedApprovals:
         engine = create_engine(":memory:")
         await engine.init()
         approval_repo = ApprovalRepository(engine)
-        approval = await approval_repo.create(ApprovalRequest(
-            action_id="a1", action_type=ACTION_TYPE, target=build_upstream_target("srv-1", "remote_tool"),
-            reason_codes=[], requested_at=_dt.now(UTC),
-            action_digest="x" * 64, organization_id="org-1", requested_by="k1",
-            arguments={"x": 1},
-        ))
-        await approval_repo.resolve(approval.approval_id, resolved_by="human-1", outcome=ApprovalStatus.APPROVED)
+        approval = await approval_repo.create(
+            ApprovalRequest(
+                action_id="a1",
+                action_type=ACTION_TYPE,
+                target=build_upstream_target("srv-1", "remote_tool"),
+                reason_codes=[],
+                requested_at=_dt.now(UTC),
+                action_digest="x" * 64,
+                organization_id="org-1",
+                requested_by="k1",
+                arguments={"x": 1},
+            )
+        )
+        await approval_repo.resolve(
+            approval.approval_id, resolved_by="human-1", outcome=ApprovalStatus.APPROVED
+        )
 
         with pytest.raises(ValueError, match="upstream_registry"):
             await resume_approval(
@@ -613,7 +703,8 @@ class TestUpstreamToolDiscovery:
     tools/list injection, see that module's docstring)."""
 
     async def test_discover_returns_real_tools_from_a_real_second_server(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from responsibleai.db import OrgRepository, create_engine
         from responsibleai.governance.upstream_discovery import discover_upstream_tools
@@ -626,10 +717,14 @@ class TestUpstreamToolDiscovery:
         await upstream_engine.init()
         upstream_org_repo = OrgRepository(upstream_engine)
         upstream_org = await upstream_org_repo.create_org(
-            "Discovery Provider Co", "discovery-provider-co", plan=Plan.ENTERPRISE,
+            "Discovery Provider Co",
+            "discovery-provider-co",
+            plan=Plan.ENTERPRISE,
         )
         _key_rec, upstream_raw_key = await upstream_org_repo.create_key(
-            upstream_org.id, "discovery-key", role=Role.ANALYST,
+            upstream_org.id,
+            "discovery-key",
+            role=Role.ANALYST,
         )
 
         import responsibleai.db as db_module
@@ -638,7 +733,9 @@ class TestUpstreamToolDiscovery:
         upstream_app = _build_http_app()
 
         def _http_client_factory():
-            return httpx.AsyncClient(transport=ASGITransport(app=upstream_app), base_url="http://upstream-test")
+            return httpx.AsyncClient(
+                transport=ASGITransport(app=upstream_app), base_url="http://upstream-test"
+            )
 
         # _FakeRegistry (used elsewhere in this file) only implements
         # get(); discover_upstream_tools also needs list_for_org(), so
@@ -647,12 +744,17 @@ class TestUpstreamToolDiscovery:
         await real_engine.init()
         real_registry = UpstreamServerRepository(real_engine)
         await real_registry.register(
-            "org-1", "real-upstream", "http://upstream-test/mcp", auth_token=upstream_raw_key,
+            "org-1",
+            "real-upstream",
+            "http://upstream-test/mcp",
+            auth_token=upstream_raw_key,
         )
 
         async with LifespanManager(upstream_app):
             tools, errors = await discover_upstream_tools(
-                real_registry, "org-1", http_client_factory=_http_client_factory,
+                real_registry,
+                "org-1",
+                http_client_factory=_http_client_factory,
             )
 
         assert errors == {}
@@ -665,7 +767,9 @@ class TestUpstreamToolDiscovery:
         await real_engine.close()
         await upstream_engine.close()
 
-    async def test_unreachable_server_reports_error_not_exception(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_unreachable_server_reports_error_not_exception(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from responsibleai.db import create_engine
         from responsibleai.governance.upstream_discovery import discover_upstream_tools
 
@@ -678,13 +782,18 @@ class TestUpstreamToolDiscovery:
         def _broken_factory():
             return httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(500)))
 
-        tools, errors = await discover_upstream_tools(registry, "org-1", http_client_factory=_broken_factory)
+        tools, errors = await discover_upstream_tools(
+            registry, "org-1", http_client_factory=_broken_factory
+        )
         assert tools == []
         assert len(errors) == 1
         await engine.close()
 
     async def test_rest_endpoint_returns_discovered_tools(
-        self, client: AsyncClient, org_and_admin_key, monkeypatch: pytest.MonkeyPatch,
+        self,
+        client: AsyncClient,
+        org_and_admin_key,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         org_id, admin_key = org_and_admin_key
         _fake_public_dns(monkeypatch)
@@ -699,15 +808,23 @@ class TestUpstreamToolDiscovery:
         await upstream_engine.init()
         upstream_org_repo = OrgRepository(upstream_engine)
         upstream_org = await upstream_org_repo.create_org(
-            "REST Discovery Co", "rest-discovery-co", plan=Plan.ENTERPRISE,
+            "REST Discovery Co",
+            "rest-discovery-co",
+            plan=Plan.ENTERPRISE,
         )
         _key_rec, upstream_raw_key = await upstream_org_repo.create_key(
-            upstream_org.id, "rest-discovery-key", role=Role.ANALYST,
+            upstream_org.id,
+            "rest-discovery-key",
+            role=Role.ANALYST,
         )
 
         r = await client.post(
             "/api/governance/upstream/servers",
-            json={"name": "rest-upstream", "url": "http://upstream-test/mcp", "auth_token": upstream_raw_key},
+            json={
+                "name": "rest-upstream",
+                "url": "http://upstream-test/mcp",
+                "auth_token": upstream_raw_key,
+            },
             headers=headers,
         )
         assert r.status_code == 201
@@ -716,10 +833,13 @@ class TestUpstreamToolDiscovery:
         upstream_app = _build_http_app()
 
         def _fake_factory():
-            return httpx.AsyncClient(transport=ASGITransport(app=upstream_app), base_url="http://upstream-test")
+            return httpx.AsyncClient(
+                transport=ASGITransport(app=upstream_app), base_url="http://upstream-test"
+            )
 
         monkeypatch.setattr(
-            "responsibleai.governance.upstream_discovery._default_http_client_factory", _fake_factory,
+            "responsibleai.governance.upstream_discovery._default_http_client_factory",
+            _fake_factory,
         )
 
         async with LifespanManager(upstream_app):
@@ -729,10 +849,13 @@ class TestUpstreamToolDiscovery:
         assert body["errors"] == {}
         assert any(t["tool_name"] == "rai_health" for t in body["tools"])
 
-    async def test_rest_endpoint_no_servers_returns_empty(self, client: AsyncClient, org_and_admin_key) -> None:
+    async def test_rest_endpoint_no_servers_returns_empty(
+        self, client: AsyncClient, org_and_admin_key
+    ) -> None:
         _org_id, admin_key = org_and_admin_key
         r = await client.get(
-            "/api/governance/upstream/tools", headers={"Authorization": f"Bearer {admin_key}"},
+            "/api/governance/upstream/tools",
+            headers={"Authorization": f"Bearer {admin_key}"},
         )
         assert r.status_code == 200
         assert r.json() == {"tools": [], "errors": {}}

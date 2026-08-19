@@ -125,8 +125,14 @@ class WebhookDeliveryRepository:
         candidate_ids = (
             select(webhook_deliveries.c.id)
             .where(
-                ((webhook_deliveries.c.status == "retrying") & (webhook_deliveries.c.next_retry_at <= now))
-                | ((webhook_deliveries.c.status == "claimed") & (webhook_deliveries.c.next_retry_at <= stale_claim_cutoff))
+                (
+                    (webhook_deliveries.c.status == "retrying")
+                    & (webhook_deliveries.c.next_retry_at <= now)
+                )
+                | (
+                    (webhook_deliveries.c.status == "claimed")
+                    & (webhook_deliveries.c.next_retry_at <= stale_claim_cutoff)
+                )
             )
             .order_by(webhook_deliveries.c.next_retry_at)
             .limit(50)
@@ -144,9 +150,7 @@ class WebhookDeliveryRepository:
     async def list(self, limit: int = 100) -> list[dict[str, Any]]:
         """Most-recent delivery log entries."""
         stmt = (
-            select(webhook_deliveries)
-            .order_by(webhook_deliveries.c.created_at.desc())
-            .limit(limit)
+            select(webhook_deliveries).order_by(webhook_deliveries.c.created_at.desc()).limit(limit)
         )
         async with self._engine.raw.connect() as conn:
             rows = (await conn.execute(stmt)).fetchall()
@@ -169,18 +173,18 @@ class WebhookDeliveryRepository:
     @staticmethod
     def _row_to_dict(row: Any) -> dict[str, Any]:
         return {
-            "id":            row.id,
-            "webhook_id":    row.webhook_id,
-            "event":         row.event,
-            "payload":       json.loads(row.payload),
-            "status":        row.status,
-            "attempts":      row.attempts,
-            "max_retries":   row.max_retries,
-            "status_code":   row.status_code,
-            "last_error":    row.last_error,
-            "created_at":    row.created_at,
+            "id": row.id,
+            "webhook_id": row.webhook_id,
+            "event": row.event,
+            "payload": json.loads(row.payload),
+            "status": row.status,
+            "attempts": row.attempts,
+            "max_retries": row.max_retries,
+            "status_code": row.status_code,
+            "last_error": row.last_error,
+            "created_at": row.created_at,
             "next_retry_at": row.next_retry_at,
-            "delivered_at":  row.delivered_at,
+            "delivered_at": row.delivered_at,
         }
 
 

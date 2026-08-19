@@ -31,20 +31,29 @@ def _client_returning(result: TrustCheckResult) -> MagicMock:
 def _async_return(value):
     async def _inner(*_args, **_kwargs):
         return value
+
     return _inner
 
 
 def _low_score_result(name: str) -> TrustCheckResult:
     return TrustCheckResult(
-        model=name, provider="unknown", known=True,
-        trust_score={"overall": 10.0}, certified=False, has_reported_incidents=False,
+        model=name,
+        provider="unknown",
+        known=True,
+        trust_score={"overall": 10.0},
+        certified=False,
+        has_reported_incidents=False,
     )
 
 
 def _high_score_result(name: str) -> TrustCheckResult:
     return TrustCheckResult(
-        model=name, provider="unknown", known=True,
-        trust_score={"overall": 95.0}, certified=True, has_reported_incidents=False,
+        model=name,
+        provider="unknown",
+        known=True,
+        trust_score={"overall": 95.0},
+        certified=True,
+        has_reported_incidents=False,
     )
 
 
@@ -70,8 +79,12 @@ class TestSyncWrapToolCall:
 
     def test_unknown_tool_passes_by_default(self) -> None:
         unknown = TrustCheckResult(
-            model="never-assessed", provider="unknown", known=False,
-            trust_score=None, certified=False, has_reported_incidents=False,
+            model="never-assessed",
+            provider="unknown",
+            known=False,
+            trust_score=None,
+            certified=False,
+            has_reported_incidents=False,
         )
         client = _client_returning(unknown)
         mw = TrustGateMiddleware(min_score=50, client=client)
@@ -81,8 +94,12 @@ class TestSyncWrapToolCall:
 
     def test_unknown_tool_blocked_when_require_known(self) -> None:
         unknown = TrustCheckResult(
-            model="never-assessed", provider="unknown", known=False,
-            trust_score=None, certified=False, has_reported_incidents=False,
+            model="never-assessed",
+            provider="unknown",
+            known=False,
+            trust_score=None,
+            certified=False,
+            has_reported_incidents=False,
         )
         client = _client_returning(unknown)
         mw = TrustGateMiddleware(min_score=0, require_known=True, client=client)
@@ -96,7 +113,9 @@ class TestSyncWrapToolCall:
     def test_provider_map_overrides_default_provider(self) -> None:
         client = _client_returning(_high_score_result("stripe-mcp"))
         mw = TrustGateMiddleware(
-            min_score=0, client=client, provider_map={"stripe-mcp": "stripe"},
+            min_score=0,
+            client=client,
+            provider_map={"stripe-mcp": "stripe"},
         )
         mw.wrap_tool_call(_FakeRequest("stripe-mcp"), lambda req: "OK")
         client.check.assert_called_once_with("stripe-mcp", "stripe")
@@ -131,4 +150,5 @@ class TestConstruction:
 
     def test_is_a_real_agent_middleware(self) -> None:
         from langchain.agents.middleware import AgentMiddleware
+
         assert isinstance(TrustGateMiddleware(), AgentMiddleware)

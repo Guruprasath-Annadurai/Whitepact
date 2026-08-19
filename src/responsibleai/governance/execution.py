@@ -118,7 +118,9 @@ class ExecutionAuthorization:
     nonce: str = field(default_factory=lambda: uuid.uuid4().hex)
     issued_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     expires_at: datetime = field(
-        default_factory=lambda: datetime.now(UTC) + timedelta(seconds=DEFAULT_AUTHORIZATION_TTL_SECONDS)
+        default_factory=lambda: (
+            datetime.now(UTC) + timedelta(seconds=DEFAULT_AUTHORIZATION_TTL_SECONDS)
+        )
     )
     consumed: bool = False
 
@@ -171,7 +173,9 @@ class Executor(Protocol):
     28, not built yet) would perform the identical checks before doing
     whatever's specific to that transport."""
 
-    async def execute(self, authorization: ExecutionAuthorization, action: ActionRequest) -> Any: ...
+    async def execute(
+        self, authorization: ExecutionAuthorization, action: ActionRequest
+    ) -> Any: ...
 
 
 def _validate_authorization(authorization: ExecutionAuthorization, action: ActionRequest) -> None:
@@ -200,7 +204,9 @@ class InternalToolExecutor:
 
     async def execute(self, authorization: ExecutionAuthorization, action: ActionRequest) -> Any:
         _validate_authorization(authorization, action)
-        authorization.consumed = True  # single-use — a second call now hits AuthorizationAlreadyConsumedError
+        authorization.consumed = (
+            True  # single-use — a second call now hits AuthorizationAlreadyConsumedError
+        )
 
         from responsibleai.mcp.tools import dispatch_tool
 

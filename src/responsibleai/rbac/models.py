@@ -17,6 +17,7 @@ class Role(StrEnum):
 
 class Plan(StrEnum):
     """Billing tier — gates which MCP tools and API endpoints an org can use."""
+
     FREE = "FREE"
     PRO = "PRO"
     ENTERPRISE = "ENTERPRISE"
@@ -86,6 +87,7 @@ class OrgApiKey:
 @dataclass
 class OrgContext:
     """Auth context injected into every authenticated request via Depends."""
+
     key_id: str
     role: Role
     org_id: str | None = None

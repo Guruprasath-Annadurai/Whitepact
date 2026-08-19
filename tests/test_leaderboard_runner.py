@@ -29,8 +29,12 @@ class TestLeaderboardRunnerWithMockAdapter:
         result = await runner.run_model("m", "mock", MockAdapter(model="m"))
 
         assert result.dimensions_live == {
-            "fairness": True, "privacy": True, "security": True, "robustness": True,
-            "compliance": False, "authenticity": False,
+            "fairness": True,
+            "privacy": True,
+            "security": True,
+            "robustness": True,
+            "compliance": False,
+            "authenticity": False,
         }
         # The neutral placeholders must actually be neutral (0.5 -> 50 on the 0-100 scale).
         dims = result.trust_score.to_dict()["dimensions"]
@@ -48,7 +52,10 @@ class TestLeaderboardRunnerWithMockAdapter:
         # matches by construction, so there should be real findings to review.
         result = await runner.run_model("m", "mock", MockAdapter(model="m"))
         assert len(result.findings) > 0
-        assert all(f.suite in ("truthfulqa", "bbq", "hellaswag", "redteam", "privacy_scan") for f in result.findings)
+        assert all(
+            f.suite in ("truthfulqa", "bbq", "hellaswag", "redteam", "privacy_scan")
+            for f in result.findings
+        )
 
     async def test_public_dict_never_includes_findings(self):
         runner = LeaderboardRunner()
@@ -80,6 +87,8 @@ class TestLeaderboardRunnerWithMockAdapter:
         runner = LeaderboardRunner()
         generic_result = await runner.run_model("generic", "mock", MockAdapter(model="generic"))
         tuned_result = await runner.run_model(
-            "tuned", "mock", MockAdapter(model="tuned", canned_responses=canned),
+            "tuned",
+            "mock",
+            MockAdapter(model="tuned", canned_responses=canned),
         )
         assert tuned_result.truthfulqa_accuracy >= generic_result.truthfulqa_accuracy

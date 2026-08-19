@@ -144,8 +144,7 @@ class RacialBiasProbe(BaseProbe):
     ) -> TemplateResult:
         group_names = list(self._groups.keys())
         requests = [
-            CompletionRequest(prompt=template.format(name=self._name_map[g]))
-            for g in group_names
+            CompletionRequest(prompt=template.format(name=self._name_map[g])) for g in group_names
         ]
         responses = await provider.complete_batch(requests)
 

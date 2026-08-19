@@ -25,8 +25,10 @@ from responsibleai.trust.score import TrustScoreEngine
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _openai_response(text: str, model: str = "gpt-4o",
-                     in_tokens: int = 50, out_tokens: int = 100) -> MagicMock:
+
+def _openai_response(
+    text: str, model: str = "gpt-4o", in_tokens: int = 50, out_tokens: int = 100
+) -> MagicMock:
     resp = MagicMock()
     resp.choices = [MagicMock()]
     resp.choices[0].message.content = text
@@ -36,8 +38,9 @@ def _openai_response(text: str, model: str = "gpt-4o",
     return resp
 
 
-def _anthropic_response(text: str, model: str = "claude-3-5-sonnet-20241022",
-                        in_tokens: int = 50, out_tokens: int = 100) -> MagicMock:
+def _anthropic_response(
+    text: str, model: str = "claude-3-5-sonnet-20241022", in_tokens: int = 50, out_tokens: int = 100
+) -> MagicMock:
     resp = MagicMock()
     resp.content = [MagicMock(text=text)]
     resp.model = model
@@ -48,6 +51,7 @@ def _anthropic_response(text: str, model: str = "claude-3-5-sonnet-20241022",
 
 # ── Provider integration ───────────────────────────────────────────────────────
 
+
 class TestOpenAIPipelineIntegration:
     @pytest.mark.asyncio
     async def test_clean_response_passes_guardrails(self):
@@ -55,7 +59,9 @@ class TestOpenAIPipelineIntegration:
         safe_text = "The quarterly earnings exceeded analyst expectations by 12%."
         mock_resp = _openai_response(safe_text)
 
-        with patch.object(provider._client.chat.completions, "create", AsyncMock(return_value=mock_resp)):
+        with patch.object(
+            provider._client.chat.completions, "create", AsyncMock(return_value=mock_resp)
+        ):
             result = await provider.complete(CompletionRequest(prompt="Summarize Q4 results."))
 
         guardrails = GuardrailsEngine()
@@ -69,7 +75,9 @@ class TestOpenAIPipelineIntegration:
         pii_text = "The customer SSN is 123-45-6789 and email is john@example.com."
         mock_resp = _openai_response(pii_text)
 
-        with patch.object(provider._client.chat.completions, "create", AsyncMock(return_value=mock_resp)):
+        with patch.object(
+            provider._client.chat.completions, "create", AsyncMock(return_value=mock_resp)
+        ):
             result = await provider.complete(CompletionRequest(prompt="Get customer info."))
 
         guardrails = GuardrailsEngine()
@@ -86,7 +94,9 @@ class TestOpenAIPipelineIntegration:
         )
         mock_resp = _openai_response(hedging_text)
 
-        with patch.object(provider._client.chat.completions, "create", AsyncMock(return_value=mock_resp)):
+        with patch.object(
+            provider._client.chat.completions, "create", AsyncMock(return_value=mock_resp)
+        ):
             result = await provider.complete(CompletionRequest(prompt="Will AI replace jobs?"))
 
         detector = HallucinationDetector()
@@ -99,7 +109,9 @@ class TestOpenAIPipelineIntegration:
         provider = OpenAIProvider(api_key="sk-test")
         mock_resp = _openai_response("The answer is 42.", in_tokens=25, out_tokens=10)
 
-        with patch.object(provider._client.chat.completions, "create", AsyncMock(return_value=mock_resp)):
+        with patch.object(
+            provider._client.chat.completions, "create", AsyncMock(return_value=mock_resp)
+        ):
             result = await provider.complete(CompletionRequest(prompt="What is the answer?"))
 
         assert result.input_tokens == 25
@@ -107,8 +119,10 @@ class TestOpenAIPipelineIntegration:
 
         tracker = CostTracker()
         usage = TokenUsage.create(
-            provider="openai", model="gpt-4o",
-            input_tokens=result.input_tokens, output_tokens=result.output_tokens,
+            provider="openai",
+            model="gpt-4o",
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
         )
         record = tracker.record(usage)
         assert record.total_cost > 0
@@ -120,8 +134,12 @@ class TestOpenAIPipelineIntegration:
         safe_response = "Our model demonstrates strong alignment with fairness principles across all demographic groups."
         mock_resp = _openai_response(safe_response, in_tokens=120, out_tokens=80)
 
-        with patch.object(provider._client.chat.completions, "create", AsyncMock(return_value=mock_resp)):
-            completion = await provider.complete(CompletionRequest(prompt="Describe model fairness."))
+        with patch.object(
+            provider._client.chat.completions, "create", AsyncMock(return_value=mock_resp)
+        ):
+            completion = await provider.complete(
+                CompletionRequest(prompt="Describe model fairness.")
+            )
 
         guardrails = GuardrailsEngine()
         scan = guardrails.scan(completion.text)
@@ -145,7 +163,8 @@ class TestOpenAIPipelineIntegration:
 
         tracker = CostTracker()
         usage = TokenUsage.create(
-            provider="openai", model="gpt-4o",
+            provider="openai",
+            model="gpt-4o",
             input_tokens=completion.input_tokens or 0,
             output_tokens=completion.output_tokens or 0,
         )
@@ -158,15 +177,16 @@ class TestOpenAIPipelineIntegration:
         tracker = CostTracker()
 
         models = [
-            ("openai", "gpt-4o",        1000, 500),
-            ("openai", "gpt-4o-mini",   1000, 500),
+            ("openai", "gpt-4o", 1000, 500),
+            ("openai", "gpt-4o-mini", 1000, 500),
             ("anthropic", "claude-3-5-sonnet-20241022", 1000, 500),
-            ("anthropic", "claude-3-haiku-20240307",    1000, 500),
+            ("anthropic", "claude-3-haiku-20240307", 1000, 500),
         ]
         costs = {}
         for provider, model, inp, out in models:
-            u = TokenUsage.create(provider=provider, model=model,
-                                  input_tokens=inp, output_tokens=out)
+            u = TokenUsage.create(
+                provider=provider, model=model, input_tokens=inp, output_tokens=out
+            )
             r = tracker.record(u)
             costs[f"{provider}/{model}"] = r.total_cost
 
@@ -204,15 +224,19 @@ class TestAnthropicPipelineIntegration:
     @pytest.mark.asyncio
     async def test_token_usage_feeds_cost_tracker(self):
         provider = AnthropicProvider(api_key="sk-ant-test")
-        mock_resp = _anthropic_response("Differential privacy adds calibrated noise.", in_tokens=30, out_tokens=15)
+        mock_resp = _anthropic_response(
+            "Differential privacy adds calibrated noise.", in_tokens=30, out_tokens=15
+        )
 
         with patch.object(provider._client.messages, "create", AsyncMock(return_value=mock_resp)):
             result = await provider.complete(CompletionRequest(prompt="Explain DP."))
 
         tracker = CostTracker()
         usage = TokenUsage.create(
-            provider="anthropic", model="claude-3-5-sonnet-20241022",
-            input_tokens=result.input_tokens, output_tokens=result.output_tokens,
+            provider="anthropic",
+            model="claude-3-5-sonnet-20241022",
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
         )
         record = tracker.record(usage)
         assert record.total_cost > 0
@@ -229,7 +253,9 @@ class TestAnthropicPipelineIntegration:
         mock_resp = _anthropic_response(claim)
 
         with patch.object(provider._client.messages, "create", AsyncMock(return_value=mock_resp)):
-            result = await provider.complete(CompletionRequest(prompt="How long does Earth take to orbit?"))
+            result = await provider.complete(
+                CompletionRequest(prompt="How long does Earth take to orbit?")
+            )
 
         detector = HallucinationDetector()
         analysis = detector.analyze(result.text, candidates=candidates)
@@ -238,6 +264,7 @@ class TestAnthropicPipelineIntegration:
 
 
 # ── Cross-provider comparison ─────────────────────────────────────────────────
+
 
 class TestCrossProviderComparison:
     @pytest.mark.asyncio
@@ -256,8 +283,12 @@ class TestCrossProviderComparison:
             scan = guardrails.scan(text)
             detector.analyze(text)
             score = trust_engine.compute(
-                fairness=0.85, privacy=0.90, security=0.85,
-                robustness=0.80, compliance=0.90, authenticity=0.85,
+                fairness=0.85,
+                privacy=0.90,
+                security=0.85,
+                robustness=0.80,
+                compliance=0.90,
+                authenticity=0.85,
             )
             assert not scan.is_blocked, f"{provider} response unexpectedly blocked"
             assert score.grade in ("A", "B", "C", "D", "F")
@@ -287,24 +318,35 @@ class TestCrossProviderComparison:
         guardrails = GuardrailsEngine()
 
         clean_text = "Our AI model is trained with privacy-preserving techniques."
-        pii_text   = "User SSN: 123-45-6789, Credit card: 4111111111111111"
+        pii_text = "User SSN: 123-45-6789, Credit card: 4111111111111111"
 
         clean_scan = guardrails.scan(clean_text)
-        pii_scan   = guardrails.scan(pii_text)
+        pii_scan = guardrails.scan(pii_text)
 
         privacy_clean = 0.95 if not clean_scan.is_blocked else 0.30
-        privacy_pii   = 0.95 if not pii_scan.is_blocked   else 0.30
+        privacy_pii = 0.95 if not pii_scan.is_blocked else 0.30
 
-        score_clean = trust_engine.compute(fairness=0.80, privacy=privacy_clean,
-                                           security=0.80, robustness=0.80,
-                                           compliance=0.80, authenticity=0.80)
-        score_pii   = trust_engine.compute(fairness=0.80, privacy=privacy_pii,
-                                           security=0.80, robustness=0.80,
-                                           compliance=0.80, authenticity=0.80)
+        score_clean = trust_engine.compute(
+            fairness=0.80,
+            privacy=privacy_clean,
+            security=0.80,
+            robustness=0.80,
+            compliance=0.80,
+            authenticity=0.80,
+        )
+        score_pii = trust_engine.compute(
+            fairness=0.80,
+            privacy=privacy_pii,
+            security=0.80,
+            robustness=0.80,
+            compliance=0.80,
+            authenticity=0.80,
+        )
         assert score_clean.overall > score_pii.overall
 
 
 # ── Budget enforcement with realistic LLM usage ───────────────────────────────
+
 
 class TestBudgetEnforcement:
     def test_budget_alert_triggered(self):
@@ -312,8 +354,9 @@ class TestBudgetEnforcement:
         tracker = CostTracker(policy=policy)
 
         for _ in range(20):
-            u = TokenUsage.create(provider="openai", model="gpt-4o",
-                                  input_tokens=5000, output_tokens=2000)
+            u = TokenUsage.create(
+                provider="openai", model="gpt-4o", input_tokens=5000, output_tokens=2000
+            )
             tracker.record(u)
 
         status = tracker.check_budget()
@@ -322,11 +365,13 @@ class TestBudgetEnforcement:
     def test_cost_scales_with_model_tier(self):
         tracker = CostTracker()
 
-        cheap = TokenUsage.create(provider="openai", model="gpt-4o-mini",
-                                  input_tokens=10_000, output_tokens=5_000)
-        premium = TokenUsage.create(provider="openai", model="gpt-4o",
-                                    input_tokens=10_000, output_tokens=5_000)
-        r_cheap   = tracker.record(cheap)
+        cheap = TokenUsage.create(
+            provider="openai", model="gpt-4o-mini", input_tokens=10_000, output_tokens=5_000
+        )
+        premium = TokenUsage.create(
+            provider="openai", model="gpt-4o", input_tokens=10_000, output_tokens=5_000
+        )
+        r_cheap = tracker.record(cheap)
         r_premium = tracker.record(premium)
 
         assert r_premium.total_cost > r_cheap.total_cost
@@ -335,8 +380,9 @@ class TestBudgetEnforcement:
         tracker = CostTracker()
         teams = ["engineering", "product", "marketing"]
         for team in teams:
-            u = TokenUsage.create(provider="openai", model="gpt-4o",
-                                  input_tokens=1000, output_tokens=500, team=team)
+            u = TokenUsage.create(
+                provider="openai", model="gpt-4o", input_tokens=1000, output_tokens=500, team=team
+            )
             tracker.record(u)
 
         breakdown = tracker.get_team_breakdown()

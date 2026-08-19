@@ -80,16 +80,20 @@ async def _needs_baseline_stamp(effective_db_url: str) -> bool:
         is_sqlite = "sqlite" in str(engine.raw.url)
         async with engine.raw.connect() as conn:
             if is_sqlite:
-                rows = await conn.execute(text(
-                    "SELECT name FROM sqlite_master WHERE type='table' "
-                    "AND name IN ('alembic_version', 'organizations')"
-                ))
+                rows = await conn.execute(
+                    text(
+                        "SELECT name FROM sqlite_master WHERE type='table' "
+                        "AND name IN ('alembic_version', 'organizations')"
+                    )
+                )
             else:
-                rows = await conn.execute(text(
-                    "SELECT table_name AS name FROM information_schema.tables "
-                    "WHERE table_schema = 'public' "
-                    "AND table_name IN ('alembic_version', 'organizations')"
-                ))
+                rows = await conn.execute(
+                    text(
+                        "SELECT table_name AS name FROM information_schema.tables "
+                        "WHERE table_schema = 'public' "
+                        "AND table_name IN ('alembic_version', 'organizations')"
+                    )
+                )
             present = {r.name for r in rows.fetchall()}
 
             has_version_row = False
@@ -119,7 +123,12 @@ def _migration_env(effective_db_url: str) -> dict[str, str]:
 
 async def _run_alembic(ini_path: Path, env: dict[str, str], *args: str) -> None:
     proc = await asyncio.create_subprocess_exec(
-        sys.executable, "-m", "alembic", "-c", str(ini_path), *args,
+        sys.executable,
+        "-m",
+        "alembic",
+        "-c",
+        str(ini_path),
+        *args,
         cwd=str(ini_path.parent),
         env=env,
         stdout=asyncio.subprocess.PIPE,

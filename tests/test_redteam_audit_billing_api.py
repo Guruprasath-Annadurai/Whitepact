@@ -21,11 +21,14 @@ from responsibleai.dashboard.app import app
 @pytest.fixture()
 async def client():
     async with LifespanManager(app) as manager:
-        async with AsyncClient(transport=ASGITransport(app=manager.app), base_url="http://test") as c:
+        async with AsyncClient(
+            transport=ASGITransport(app=manager.app), base_url="http://test"
+        ) as c:
             yield c
 
 
 # ── Red team endpoints ─────────────────────────────────────────────────────────
+
 
 class TestRedteamPayloadsEndpoint:
     @pytest.mark.asyncio
@@ -76,11 +79,14 @@ class TestRedteamAnalyzeEndpoint:
         pr = await client.get("/api/redteam/payloads")
         payloads = pr.json()["payloads"]
         responses = {p["name"]: "I cannot help with that." for p in payloads}
-        r = await client.post("/api/redteam/analyze", json={
-            "model_name": "test-model",
-            "provider": "test",
-            "responses": responses,
-        })
+        r = await client.post(
+            "/api/redteam/analyze",
+            json={
+                "model_name": "test-model",
+                "provider": "test",
+                "responses": responses,
+            },
+        )
         assert r.status_code == 200
 
     @pytest.mark.asyncio
@@ -88,22 +94,28 @@ class TestRedteamAnalyzeEndpoint:
         pr = await client.get("/api/redteam/payloads")
         payloads = pr.json()["payloads"]
         responses = {p["name"]: "I refuse that." for p in payloads}
-        r = await client.post("/api/redteam/analyze", json={
-            "model_name": "secure-model",
-            "provider": "test",
-            "responses": responses,
-        })
+        r = await client.post(
+            "/api/redteam/analyze",
+            json={
+                "model_name": "secure-model",
+                "provider": "test",
+                "responses": responses,
+            },
+        )
         d = r.json()
         assert "security_score" in d
         assert 0 <= d["security_score"] <= 100
 
     @pytest.mark.asyncio
     async def test_analyze_empty_responses(self, client: AsyncClient) -> None:
-        r = await client.post("/api/redteam/analyze", json={
-            "model_name": "m",
-            "provider": "p",
-            "responses": {},
-        })
+        r = await client.post(
+            "/api/redteam/analyze",
+            json={
+                "model_name": "m",
+                "provider": "p",
+                "responses": {},
+            },
+        )
         assert r.status_code == 200
         assert r.json()["total_attacks"] == 0
 
@@ -114,17 +126,21 @@ class TestRedteamAnalyzeEndpoint:
 
     @pytest.mark.asyncio
     async def test_report_includes_model_info(self, client: AsyncClient) -> None:
-        r = await client.post("/api/redteam/analyze", json={
-            "model_name": "gpt-4o",
-            "provider": "openai",
-            "responses": {},
-        })
+        r = await client.post(
+            "/api/redteam/analyze",
+            json={
+                "model_name": "gpt-4o",
+                "provider": "openai",
+                "responses": {},
+            },
+        )
         d = r.json()
         assert d["model"] == "gpt-4o"
         assert d["provider"] == "openai"
 
 
 # ── Audit log endpoints ────────────────────────────────────────────────────────
+
 
 class TestAuditEndpoints:
     @pytest.mark.asyncio
@@ -189,6 +205,7 @@ class TestAuditEndpoints:
 
 # ── Billing endpoints ──────────────────────────────────────────────────────────
 
+
 class TestBillingUsageEndpoint:
     @pytest.mark.asyncio
     async def test_billing_returns_200(self, client: AsyncClient) -> None:
@@ -235,6 +252,7 @@ class TestBillingUsageEndpoint:
 
 
 # ── Version check ──────────────────────────────────────────────────────────────
+
 
 class TestVersionBump:
     @pytest.mark.asyncio

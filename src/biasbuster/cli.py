@@ -83,7 +83,9 @@ def _build_provider(provider: str, model: str | None) -> object:
 
 
 def _print_suite_result(suite: SuiteResult) -> None:
-    color = SEVERITY_COLORS.get(suite.probe_results[0].severity if suite.probe_results else "none", "white")
+    color = SEVERITY_COLORS.get(
+        suite.probe_results[0].severity if suite.probe_results else "none", "white"
+    )
 
     console.print()
     console.print(
@@ -105,7 +107,7 @@ def _print_probe_result(result: ProbeResult) -> None:
 
     table = Table(
         title=f"[bold]{result.probe_name}[/]  [{sev_color}]{result.severity.upper()}[/]  "
-              f"score={result.overall_score:.4f}  threshold={result.threshold}",
+        f"score={result.overall_score:.4f}  threshold={result.threshold}",
         box=box.SIMPLE_HEAVY,
         show_lines=True,
         highlight=True,
@@ -174,9 +176,7 @@ def run(
         console.print(f"Available: {', '.join(PROBE_REGISTRY)}")
         sys.exit(1)
 
-    built_probes = [
-        PROBE_REGISTRY[name](threshold=threshold) for name in probe_names
-    ]
+    built_probes = [PROBE_REGISTRY[name](threshold=threshold) for name in probe_names]
     built_provider = _build_provider(provider, model)
 
     if not quiet:

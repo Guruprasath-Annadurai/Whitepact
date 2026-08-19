@@ -177,14 +177,9 @@ class WebhookManager:
 
     # ── Delivery ──────────────────────────────────────────────────────────────
 
-    async def fire(
-        self, event: WebhookEvent, data: dict[str, Any]
-    ) -> list[WebhookDelivery]:
+    async def fire(self, event: WebhookEvent, data: dict[str, Any]) -> list[WebhookDelivery]:
         """Deliver *event* to all matching, enabled webhooks concurrently."""
-        targets = [
-            c for c in self._configs.values()
-            if c.enabled and event in c.events
-        ]
+        targets = [c for c in self._configs.values() if c.enabled and event in c.events]
         if not targets:
             return []
 
@@ -209,7 +204,9 @@ class WebhookManager:
     ) -> WebhookDelivery:
         payload = self._format_payload(config.provider, event, data)
         delivery = WebhookDelivery(
-            webhook_id=config.id, event=event, payload=payload,
+            webhook_id=config.id,
+            event=event,
+            payload=payload,
         )
         if delivery_id:
             delivery.id = delivery_id
@@ -241,9 +238,7 @@ class WebhookManager:
                 body = json.dumps(payload).encode()
                 headers: dict[str, str] = {"Content-Type": "application/json"}
                 if config.secret:
-                    sig = hmac.new(
-                        config.secret.encode(), body, hashlib.sha256
-                    ).hexdigest()
+                    sig = hmac.new(config.secret.encode(), body, hashlib.sha256).hexdigest()
                     headers["X-RAI-Signature-256"] = f"sha256={sig}"
 
                 async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as http:
@@ -261,7 +256,10 @@ class WebhookManager:
                 delivery.last_error = error
                 logger.warning(
                     "webhook_delivery_failed webhook_id=%s event=%s attempt=%d error=%s",
-                    config.id, event.value, delivery.attempts, exc,
+                    config.id,
+                    event.value,
+                    delivery.attempts,
+                    exc,
                 )
 
             if self._repo:
@@ -295,7 +293,9 @@ class WebhookManager:
                         continue
                     asyncio.create_task(
                         self._deliver(
-                            cfg, event, row["payload"],
+                            cfg,
+                            event,
+                            row["payload"],
                             delivery_id=row["id"],
                             start_attempt=row["attempts"],
                         )
@@ -349,10 +349,7 @@ class WebhookManager:
         }
         emoji = _emoji.get(event, ":bell:")
         title = event.value.replace("_", " ").title()
-        fields = [
-            {"type": "mrkdwn", "text": f"*{k}*\n{v}"}
-            for k, v in list(data.items())[:6]
-        ]
+        fields = [{"type": "mrkdwn", "text": f"*{k}*\n{v}"} for k, v in list(data.items())[:6]]
         return {
             "blocks": [
                 {
@@ -392,9 +389,7 @@ class WebhookManager:
             ],
         }
 
-    def _pagerduty_payload(
-        self, event: WebhookEvent, data: dict[str, Any]
-    ) -> dict[str, Any]:
+    def _pagerduty_payload(self, event: WebhookEvent, data: dict[str, Any]) -> dict[str, Any]:
         severity = (
             "critical"
             if event in (WebhookEvent.BUDGET_EXCEEDED, WebhookEvent.GUARDRAIL_TRIGGERED)

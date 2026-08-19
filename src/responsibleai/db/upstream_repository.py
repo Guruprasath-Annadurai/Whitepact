@@ -44,7 +44,13 @@ class UpstreamServerRepository:
         self._engine = engine
 
     async def register(
-        self, org_id: str, name: str, url: str, *, added_by: str | None = None, auth_token: str | None = None,
+        self,
+        org_id: str,
+        name: str,
+        url: str,
+        *,
+        added_by: str | None = None,
+        auth_token: str | None = None,
     ) -> UpstreamServer:
         """Raises ``UnsafeUpstreamServerURLError`` (from
         ``validate_upstream_server_url``) before ever writing a row --
@@ -53,35 +59,46 @@ class UpstreamServerRepository:
         outright rather than merely warning."""
         validate_upstream_server_url(url)
         server = UpstreamServer(
-            server_id=str(uuid.uuid4()), org_id=org_id, name=name, url=url, added_by=added_by, auth_token=auth_token,
+            server_id=str(uuid.uuid4()),
+            org_id=org_id,
+            name=name,
+            url=url,
+            added_by=added_by,
+            auth_token=auth_token,
         )
         async with self._engine.raw.begin() as conn:
-            await conn.execute(insert(upstream_mcp_servers).values(
-                id=server.server_id,
-                org_id=server.org_id,
-                name=server.name,
-                url=server.url,
-                enabled=1,
-                auth_token=server.auth_token,
-                added_by=server.added_by,
-                created_at=server.created_at.isoformat(),
-            ))
+            await conn.execute(
+                insert(upstream_mcp_servers).values(
+                    id=server.server_id,
+                    org_id=server.org_id,
+                    name=server.name,
+                    url=server.url,
+                    enabled=1,
+                    auth_token=server.auth_token,
+                    added_by=server.added_by,
+                    created_at=server.created_at.isoformat(),
+                )
+            )
         return server
 
     async def get(self, server_id: str) -> UpstreamServer | None:
         async with self._engine.raw.connect() as conn:
-            row = (await conn.execute(
-                select(upstream_mcp_servers).where(upstream_mcp_servers.c.id == server_id)
-            )).fetchone()
+            row = (
+                await conn.execute(
+                    select(upstream_mcp_servers).where(upstream_mcp_servers.c.id == server_id)
+                )
+            ).fetchone()
         return _row_to_server(row) if row else None
 
     async def list_for_org(self, org_id: str) -> list[UpstreamServer]:
         async with self._engine.raw.connect() as conn:
-            rows = (await conn.execute(
-                select(upstream_mcp_servers)
-                .where(upstream_mcp_servers.c.org_id == org_id)
-                .order_by(upstream_mcp_servers.c.created_at.asc())
-            )).fetchall()
+            rows = (
+                await conn.execute(
+                    select(upstream_mcp_servers)
+                    .where(upstream_mcp_servers.c.org_id == org_id)
+                    .order_by(upstream_mcp_servers.c.created_at.asc())
+                )
+            ).fetchall()
         return [_row_to_server(r) for r in rows]
 
     async def remove(self, org_id: str, server_id: str) -> None:

@@ -81,7 +81,7 @@ def _load_fernet() -> Fernet | MultiFernet | None:
     except (ValueError, TypeError) as exc:
         raise ValueError(
             f"{_ENV_VAR} is set but contains an invalid Fernet key. Generate one with: "
-            "python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+            'python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
         ) from exc
     return fernets[0] if len(fernets) == 1 else MultiFernet(fernets)
 

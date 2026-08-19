@@ -27,7 +27,10 @@ class TestObserveGovernanceDecision:
         body, content_type = get_metrics_output()
         text = body.decode()
         assert "text/plain" in content_type
-        assert 'whitepact_decisions_total{decision="ALLOW",org_id="metrics-test-org",risk_tier="MINIMAL"}' in text
+        assert (
+            'whitepact_decisions_total{decision="ALLOW",org_id="metrics-test-org",risk_tier="MINIMAL"}'
+            in text
+        )
         assert "whitepact_evaluation_seconds" in text
 
     def test_unclassified_risk_tier_gets_a_real_label_not_empty(self) -> None:
@@ -100,7 +103,9 @@ class TestEndToEndDispatchEmitsMetrics:
                 headers={"Authorization": f"Bearer {raw_key}"},
             ) as http_client,
             streamable_http_client("/mcp", http_client=http_client) as (
-                read_stream, write_stream, _get_session_id,
+                read_stream,
+                write_stream,
+                _get_session_id,
             ),
         ):
             async with ClientSession(read_stream, write_stream) as session:
@@ -111,4 +116,7 @@ class TestEndToEndDispatchEmitsMetrics:
 
         body, _ = get_metrics_output()
         text = body.decode()
-        assert f'whitepact_decisions_total{{decision="ALLOW",org_id="{org_id}",risk_tier="MINIMAL"}}' in text
+        assert (
+            f'whitepact_decisions_total{{decision="ALLOW",org_id="{org_id}",risk_tier="MINIMAL"}}'
+            in text
+        )
