@@ -106,6 +106,7 @@ from responsibleai.db import (
     PublicIncidentRepository,
     SelfApprovalError,
     SSORequiredError,
+    ToolTrustRepository,
     TrustRepository,
     UpstreamServerNotFoundError,
     UpstreamServerRepository,
@@ -135,6 +136,12 @@ from responsibleai.governance.gateway import WhitePactRuntimeGateway
 from responsibleai.governance.models import GovernanceDecision
 from responsibleai.governance.policy import PolicyRule
 from responsibleai.governance.risk import RiskTier
+from responsibleai.governance.tool_trust import (
+    ToolTrustTier,
+    apply_admin_override,
+    compute_trust_score,
+    unscanned_score,
+)
 from responsibleai.governance.upstream import UnsafeUpstreamServerURLError
 from responsibleai.governance.upstream_discovery import discover_upstream_tools
 from responsibleai.governance.upstream_executor import (
@@ -254,6 +261,7 @@ _workflow_rule_repo: WorkflowRuleRepository | None = None
 _delegation_repo: DelegationRepository | None = None
 _policy_repo: PolicyRepository | None = None
 _upstream_registry: UpstreamServerRepository | None = None
+_tool_trust_repo: ToolTrustRepository | None = None
 _upstream_gateway: WhitePactRuntimeGateway = WhitePactRuntimeGateway()
 _db_engine: DatabaseEngine | None = None
 _ws_manager: ConnectionManager = ConnectionManager()
@@ -306,6 +314,7 @@ async def lifespan(application: FastAPI):
     global _org_repo, _audit_repo, _incident_repo, _leaderboard_repo, _leaderboard_runner
     global _passport_repo, _public_incident_repo, _db_engine, _mcp_usage_repo
     global _evidence_repo, _approval_repo, _policy_repo, _upstream_registry, _ceiling_repo
+    global _tool_trust_repo
     global _workflow_rule_repo, _delegation_repo, _autonomy_budget_repo
     global _eval_repo, _comparator, _benchmark_runner, _dataset_scanner
     global _oidc_provider, _saml_config, _stripe_service, _plan_rate_limiter
@@ -350,6 +359,7 @@ async def lifespan(application: FastAPI):
     _approval_repo = ApprovalRepository(_db_engine)
     _policy_repo = PolicyRepository(_db_engine)
     _upstream_registry = UpstreamServerRepository(_db_engine)
+    _tool_trust_repo = ToolTrustRepository(_db_engine)
     _ceiling_repo = OrgAuthorityCeilingRepository(_db_engine)
     _workflow_rule_repo = WorkflowRuleRepository(_db_engine)
     _delegation_repo = DelegationRepository(_db_engine)
@@ -960,6 +970,11 @@ class UpstreamServerRegisterRequest(BaseModel):
 class UpstreamToolCallRequest(BaseModel):
     tool_name: str = Field(..., min_length=1, max_length=200)
     arguments: dict[str, Any] = Field(default_factory=dict)
+
+
+class ToolTrustOverrideRequest(BaseModel):
+    tier: ToolTrustTier
+    reason: str = Field(..., min_length=1, max_length=2000)
 
 
 class WebhookCreateRequest(BaseModel):
@@ -3508,12 +3523,131 @@ async def upstream_call_tool(
             approval_repo=_ready(_approval_repo),
             upstream_registry=_ready(_upstream_registry),
             executor=executor,
+            tool_trust_repo=_ready(_tool_trust_repo),
         )
     except UpstreamServerNotAvailableError as exc:
         raise HTTPException(404, str(exc)) from None
     if not outcome.proceed:
         return outcome.blocked_response or {"error": "governance_blocked"}
     return {"server_id": server_id, "tool_name": req.tool_name, "result": outcome.result}
+
+
+# ── Tool Trust Network (Authority Everywhere Phase 8) ──────────────────────────
+# A continuously maintained, deterministic trust score per registered upstream
+# MCP server -- see governance/tool_trust.py for the scoring logic and
+# mcp/upstream_dispatch.py for how a BLOCKED tier gates a proxied call before
+# governance even evaluates it. Registration (above) answers "is this server
+# approved to exist in the registry"; this answers "should calls to it keep
+# being allowed right now."
+
+
+@app.get("/api/governance/upstream/servers/{server_id}/trust", tags=["governance"])
+@limiter.limit("30/minute")
+async def upstream_get_trust_score(
+    request: Request,
+    server_id: str,
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
+) -> dict[str, Any]:
+    if not _auth.org_id:
+        raise HTTPException(
+            400, "Upstream servers require an org-scoped API key, not a legacy flat key."
+        )
+    server = await _ready(_upstream_registry).get(server_id)
+    if server is None or server.org_id != _auth.org_id:
+        raise HTTPException(404, f"Upstream MCP server {server_id!r} not found.")
+    score = await _ready(_tool_trust_repo).get(server_id)
+    if score is None:
+        score = unscanned_score(server_id, _auth.org_id)
+    return score.to_dict()
+
+
+@app.post("/api/governance/upstream/servers/{server_id}/trust/scan", tags=["governance"])
+@limiter.limit("10/minute")
+async def upstream_scan_trust(
+    request: Request,
+    server_id: str,
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, Any]:
+    """Runs the MCP Trust/Supply-Chain Scanner against this server's
+    currently discoverable tool list and persists the resulting score --
+    ADMIN-role, since it changes what future calls to this server are
+    allowed to do. Reuses `upstream_discovery.discover_upstream_tools()`
+    (already built for the tool-listing endpoint) rather than a second
+    way of asking a server what it offers; a server that can't be
+    reached for discovery is reported as an error, not silently scored
+    as if it had zero tools."""
+    if not _auth.org_id:
+        raise HTTPException(
+            400, "Upstream servers require an org-scoped API key, not a legacy flat key."
+        )
+    server = await _ready(_upstream_registry).get(server_id)
+    if server is None or server.org_id != _auth.org_id:
+        raise HTTPException(404, f"Upstream MCP server {server_id!r} not found.")
+
+    all_tools, errors = await discover_upstream_tools(_ready(_upstream_registry), _auth.org_id)
+    if server_id in errors:
+        raise HTTPException(
+            502, f"Could not discover this server's tools to scan it: {errors[server_id]}"
+        )
+    server_tools = [t for t in all_tools if t.server_id == server_id]
+
+    manifest = McpServerManifest(
+        name=server.name,
+        tools=[
+            McpToolDescriptor(name=t.tool_name, description=t.description) for t in server_tools
+        ],
+    )
+    report = await _supplychain_scanner.scan(manifest, incident_repo=_public_incident_repo)
+    incident_finding = next((f for f in report.findings if f.check == "known_incidents"), None)
+    incident_count = len(incident_finding.detail.get("incidents", [])) if incident_finding else 0
+    score = compute_trust_score(server_id, _auth.org_id, report, incident_count=incident_count)
+    await _ready(_tool_trust_repo).upsert(score)
+    logger.info(
+        "upstream_server_trust_scanned",
+        server_id=server_id,
+        org_id=_auth.org_id,
+        score=score.score,
+        tier=score.tier.value,
+        scanned_by=_auth.key_id,
+    )
+    return score.to_dict()
+
+
+@app.post("/api/governance/upstream/servers/{server_id}/trust/override", tags=["governance"])
+@limiter.limit("10/minute")
+async def upstream_override_trust(
+    request: Request,
+    server_id: str,
+    req: ToolTrustOverrideRequest,
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, Any]:
+    """An explicit, audited admin decision that overrides whatever the
+    scan-derived tier currently is -- the only path that can force
+    BLOCKED (immediately stopping all future calls to this server) or
+    TRUSTED ahead of what a scan alone would grant. See
+    governance/tool_trust.py's apply_admin_override() docstring for why
+    every override requires a non-empty reason."""
+    if not _auth.org_id:
+        raise HTTPException(
+            400, "Upstream servers require an org-scoped API key, not a legacy flat key."
+        )
+    server = await _ready(_upstream_registry).get(server_id)
+    if server is None or server.org_id != _auth.org_id:
+        raise HTTPException(404, f"Upstream MCP server {server_id!r} not found.")
+
+    current = await _ready(_tool_trust_repo).get(server_id) or unscanned_score(
+        server_id, _auth.org_id
+    )
+    score = apply_admin_override(current, req.tier, admin_id=_auth.key_id, reason=req.reason)
+    await _ready(_tool_trust_repo).upsert(score)
+    logger.info(
+        "upstream_server_trust_overridden",
+        server_id=server_id,
+        org_id=_auth.org_id,
+        tier=score.tier.value,
+        overridden_by=_auth.key_id,
+    )
+    return score.to_dict()
 
 
 # ── WebSocket live dashboard ───────────────────────────────────────────────────

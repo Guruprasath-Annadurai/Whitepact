@@ -1393,3 +1393,49 @@ honestly stops — this section is the pointer, not a restatement:
 real `A` record). It is not yet wired to the hosted instance; see
 Section 13's updated bullet for exactly what that still requires and
 why it needs the founder's own Render/Namecheap account access.
+
+## 17. Tool Trust Network and Execution Permit v2 (Authority Everywhere Phases 8-9, 2026-08-19)
+
+The first implementation phases of `docs/architecture/AUTHORITY_EVERYWHERE.md`
+(the target-architecture doc, itself Phases 1-2 of that plan) to touch
+real code — chosen ahead of strict numeric order per that document's
+own Phase 2 verdict, prioritizing revenue-relevant destination-trust and
+permit-integrity work over further principal-identity generalization
+(which already has a working enterprise-grade OIDC/SAML/MFA
+implementation).
+
+- **Tool Trust Network** (`governance/tool_trust.py`,
+  `db/tool_trust_repository.py`, migration `0024`) — see SPEC.md
+  Section 4.2 for the full design. In one sentence: a deterministic
+  0-100 trust score per registered upstream MCP server, computed from
+  the existing supply-chain scanner's findings plus incident history,
+  with an audited admin-override escape hatch, gating calls to a
+  `BLOCKED` server before governance is even consulted
+  (`mcp/upstream_dispatch.py`).
+- **Execution Permit v2** (`governance/execution.py`,
+  `governance/upstream_executor.py`) — `ExecutionAuthorization` gained
+  an optional `target_fingerprint`, closing a real gap: `action_digest`
+  never captured what an upstream target string (`server_id::tool_name`)
+  currently *resolves to* (URL, enabled state, credential presence), so
+  a server's registration drifting between decision and execution
+  couldn't previously be caught by the permit itself.
+  `AuthorizationTargetDriftError` refuses execution on a mismatch. The
+  drift check runs as an explicit step after `_validate_authorization()`
+  and after the target is resolved — deliberately not folded into
+  `_validate_authorization()` itself, since that function's four
+  existing checks must keep their original precedence over a
+  target-specific check that needs a lookup the function doesn't do.
+  `InternalToolExecutor` is unaffected (no external target to resolve).
+- Naming: `ReasonCode.UNTRUSTED_MCP_SERVER` was already reserved in
+  `reason_codes.py` from earlier work and unused until this phase — no
+  new reason code was needed.
+- Not built in this phase (explicitly, per the plan's own phase-gating):
+  JIT Credential Broker (Phase 10), Causal Influence Firewall
+  generalization (Phase 7), risk-tier modulation by trust tier (a
+  natural extension of the Tool Trust gate, deferred as a separate
+  future increment), any UI page for viewing/managing trust scores
+  (REST API only).
+- Verification: 24 new tests (`tests/test_tool_trust.py`) plus the full
+  existing `test_upstream_gateway.py`/`test_executor_bypass_invariant.py`
+  suites re-run clean (69 passed together); full repo suite 2332 passed;
+  `mypy`/`ruff` clean on every touched file.

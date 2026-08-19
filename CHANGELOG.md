@@ -8,6 +8,31 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ## [Unreleased]
 
+### Added
+
+- Tool Trust Network (Authority Everywhere Phase 8) —
+  `governance/tool_trust.py`: a deterministic 0-100 trust score per
+  org-registered upstream MCP server, derived from the existing
+  supply-chain scanner's findings plus incident history, with an
+  audited admin-override path. A `BLOCKED` tier now denies a proxied
+  call before governance is even consulted
+  (`mcp/upstream_dispatch.py`), using the previously-reserved
+  `ReasonCode.UNTRUSTED_MCP_SERVER`. New DB table `tool_trust_scores`
+  (migration `0024`) and REST endpoints under
+  `/api/governance/upstream/servers/{id}/trust` (`GET`, `POST .../scan`,
+  `POST .../override`).
+- Execution Permit v2 (Authority Everywhere Phase 9) —
+  `ExecutionAuthorization` gained an optional `target_fingerprint`,
+  closing a real gap where an upstream target string's *resolved*
+  config (URL, enabled state, credential presence) could drift between
+  a governance decision and its execution without the action digest
+  changing. `AuthorizationTargetDriftError` now refuses execution on a
+  mismatch (`governance/execution.py`, `governance/upstream_executor.py`).
+- See `docs/architecture/AUTHORITY_EVERYWHERE.md` and
+  `MIGRATION_WHITEPACT_V2.md` Section 17 for the full design and
+  structured phase verdicts. 24 new tests
+  (`tests/test_tool_trust.py`).
+
 ## [1.2.3] — 2026-08-19
 
 ### Added
