@@ -8,6 +8,8 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ## [Unreleased]
 
+## [1.2.3] — 2026-08-19
+
 ### Added
 
 - SAML 2.0 SSO support, independent of the existing OIDC integration —
@@ -61,6 +63,25 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 - `whitepact-mcp-http` — a second Render web service hosting the
   Streamable HTTP MCP transport publicly for the first time; the
   dashboard service alone never served `/mcp`.
+- `SECURITY_ASSURANCE_CASE.md` — OpenSSF Best Practices Silver's
+  `assurance_case` criterion: 12 defensible security claims, a
+  24-entry threat model (asset/attacker/attack/trust boundary/control/
+  test/residual risk), an explicit trust-boundary diagram, secure-
+  design-principle citations, a common-implementation-weaknesses
+  matrix, a supply-chain argument, and an evidence matrix — every
+  control cross-checked against current source, not copied from prior
+  docs.
+- Signed Git release tags (`version_tags_signed`) — `verify-signed-tag`
+  job in `.github/workflows/publish.yml` rejects lightweight tags,
+  unsigned tags, invalid signatures, and unapproved signers before any
+  build/publish step runs. `compliance/SIGNED_VERSION_TAGS.md` audits
+  all prior release tags (none were signed) and documents the new
+  policy; `security/release-signers.allowed` holds the approved public
+  signing key; `VERIFY_RELEASE.md` documents both the tag-signature and
+  the artifact-provenance verification paths for users.
+- `ruff format --check` is now a hard CI gate alongside `ruff check`
+  (`.github/workflows/ci.yml`) — the coding-standard check previously
+  only covered linting, not formatting.
 
 ### Fixed
 
