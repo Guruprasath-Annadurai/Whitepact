@@ -653,6 +653,29 @@ tool_trust_scores = Table(
     Index("idx_tts_org", "org_id"),
 )
 
+# JIT Credential Broker (Authority Everywhere Phase 10): an audit trail
+# of credential *issuance* events -- never the credential value itself.
+# One row per JITCredential actually issued by
+# governance/jit_credential.py's issue_jit_credential(), recorded by
+# UpstreamMCPExecutor.execute() regardless of whether the proxied call
+# that used it succeeded. See db/credential_issuance_repository.py.
+credential_issuances = Table(
+    "credential_issuances",
+    metadata,
+    Column("credential_id", String(36), primary_key=True),
+    Column("authorization_id", String(36), nullable=False),
+    Column("action_id", String(36), nullable=False),
+    Column("server_id", String(36), nullable=False),
+    Column("org_id", String(36), nullable=True),
+    Column("agent_id", String(200), nullable=True),
+    Column("had_credential", Integer, nullable=False),  # server had a standing auth_token or not
+    Column("issued_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("consumed_at", String(32), nullable=True),
+    Index("idx_ci_org", "org_id"),
+    Index("idx_ci_server", "server_id"),
+)
+
 
 class DatabaseEngine:
     """Async database engine wrapping SQLAlchemy — SQLite or PostgreSQL.

@@ -1439,3 +1439,50 @@ implementation).
   existing `test_upstream_gateway.py`/`test_executor_bypass_invariant.py`
   suites re-run clean (69 passed together); full repo suite 2332 passed;
   `mypy`/`ruff` clean on every touched file.
+
+## 18. JIT Credential Broker (Authority Everywhere Phase 10, 2026-08-19)
+
+- **JIT Credential Broker** (`governance/jit_credential.py`,
+  `db/credential_issuance_repository.py`, migration `0025`) — see
+  SPEC.md Section 3.4 (immediately after the Execution Permit v2 entry)
+  for the full design. In one sentence: `UpstreamMCPExecutor` no longer
+  reads `UpstreamServer.auth_token` directly; it must obtain a
+  single-use, time-boxed `JITCredential` bound to the exact,
+  already-validated `ExecutionAuthorization` for this call, with every
+  issuance and consumption recorded to an audit trail that never stores
+  the secret value itself.
+- **Honest scope, stated plainly** (also in the module's own
+  docstring, since this is easy to overclaim): this is not OAuth token
+  exchange and does not ask any upstream server to mint a new, narrower
+  credential — most third-party MCP servers have no such protocol.
+  What's real: the standing credential an org already configured is no
+  longer handed to the executor wholesale; access to it is mediated,
+  time-boxed (default 15s, capped by the permit's own remaining TTL —
+  `min(authorization.expires_at, now + ttl_seconds)`), single-use, and
+  logged. That is a genuine narrowing of "how" the credential is
+  accessed, not a claim that the credential itself became scoped-down.
+- A real ordering bug was caught and fixed during development, not
+  after: the first implementation marked the `ExecutionAuthorization`
+  consumed *before* calling `issue_jit_credential()`, which itself
+  correctly refuses to issue against an already-consumed authorization
+  — a self-inflicted contradiction caught by the existing
+  `test_upstream_gateway.py` suite failing immediately. Fixed by
+  issuing the credential first, then marking the authorization
+  consumed. `tests/test_jit_credential.py` has a named regression test
+  for this exact ordering.
+- Not built in this phase: real upstream token-exchange support (would
+  require a specific upstream server protocol to exist first — no
+  speculative groundwork laid for one); any change to how a standing
+  credential is originally registered (`UpstreamServerRegisterRequest`
+  is unchanged); a UI for viewing the credential-issuance audit log
+  (data model and persistence only, per this project's established
+  "REST first, UI later if warranted" pattern for governance internals).
+- Verification: 17 new tests (`tests/test_jit_credential.py`), including
+  a real end-to-end REST round trip (real in-process second MCP server,
+  real credential, real authenticated call) proving both that the
+  credential actually authenticates the proxied call and that the
+  resulting audit row never contains the token value. Full existing
+  `test_upstream_gateway.py`/`test_tool_trust.py`/
+  `test_executor_bypass_invariant.py` suites re-run clean (86 passed
+  together); full repo suite 2349 passed; `mypy`/`ruff` clean on every
+  touched file.

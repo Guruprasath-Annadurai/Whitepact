@@ -11,6 +11,7 @@ from responsibleai.db.approval_repository import (
     SelfApprovalError,
 )
 from responsibleai.db.audit_repository import AuditRepository
+from responsibleai.db.credential_issuance_repository import CredentialIssuanceRepository
 from responsibleai.db.delegation_repository import (
     DelegationEscalationError,
     DelegationNotFoundError,
@@ -58,6 +59,7 @@ __all__ = [
     "TrustRepository",
     "OrgRepository",
     "AuditRepository",
+    "CredentialIssuanceRepository",
     "EvalRepository",
     "EvidenceRepository",
     "WebhookConfigRepository",
