@@ -119,6 +119,7 @@ from __future__ import annotations
 from typing import Any
 
 from responsibleai.governance.autonomy_budget import AutonomyBudgetPolicy
+from responsibleai.governance.causal_influence import analyze_causal_influence, parse_provenance
 from responsibleai.governance.memory_firewall import scan_memory_write
 from responsibleai.governance.models import (
     ActionRequest,
@@ -321,6 +322,16 @@ class WhitePactRuntimeGateway:
         if memory_firewall_reason is not None:
             hard_block_reasons.append(memory_firewall_reason)
 
+        causal_block_reason, causal_untrusted_reason = self._causal_influence_reasons(action)
+        if causal_block_reason is not None:
+            hard_block_reasons.append(causal_block_reason)
+        elif causal_untrusted_reason is not None:
+            # Softer, non-blocking signal -- attached to whatever
+            # decision this action ends up with below (including a
+            # plain ALLOW), never a reason on its own to deny. See
+            # _causal_influence_reasons()'s own docstring.
+            policy_reason_codes.append(causal_untrusted_reason)
+
         if hard_block_reasons:
             return DecisionResult(
                 decision=GovernanceDecision.DENY,
@@ -407,6 +418,47 @@ class WhitePactRuntimeGateway:
             ReasonCode.MEMORY_FIREWALL_VIOLATION,
             patterns=",".join(result.matched_patterns),
         )
+
+    @staticmethod
+    def _causal_influence_reasons(action: ActionRequest) -> tuple[str | None, str | None]:
+        """Causal Influence Firewall (``governance/causal_influence.py``,
+        Authority Everywhere Phase 7) — generalizes
+        ``_memory_firewall_reason`` above from "memory writes only" to
+        any provenance a caller declares via the reserved
+        ``_provenance`` argument key (same argument-driven,
+        action-type-agnostic pattern ``AuthorityContext.constraints``'
+        ``memory_scope`` already uses: absent key, this never fires,
+        identical to every caller before this existed).
+
+        Returns ``(hard_block_reason, informational_untrusted_reason)``
+        — at most one is non-``None``. A matched injection pattern in
+        any provenance entry's content is always DENY-worthy on its own
+        and takes precedence; mere untrusted/unknown provenance with no
+        pattern match is a softer, evidence-visible marker the caller
+        (``_decide_from_scan``) attaches to whatever decision this
+        action otherwise receives, never a block by itself."""
+        provenance = parse_provenance(action.arguments.get("_provenance"))
+        if not provenance:
+            return None, None
+        result = analyze_causal_influence(provenance)
+        if result.is_blocked:
+            return (
+                format_reason(
+                    ReasonCode.CAUSAL_INFLUENCE_VIOLATION,
+                    patterns=",".join(result.matched_patterns),
+                    sources=",".join(kind.value for kind in result.matched_entry_kinds),
+                ),
+                None,
+            )
+        if result.has_untrusted_influence:
+            return (
+                None,
+                format_reason(
+                    ReasonCode.CAUSAL_INFLUENCE_UNTRUSTED_SOURCE,
+                    sources=",".join(kind.value for kind in result.untrusted_entry_kinds),
+                ),
+            )
+        return None, None
 
     @staticmethod
     def _trust_reason(action: ActionRequest) -> str | None:

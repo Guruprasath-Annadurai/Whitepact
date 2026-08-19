@@ -1486,3 +1486,54 @@ implementation).
   `test_executor_bypass_invariant.py` suites re-run clean (86 passed
   together); full repo suite 2349 passed; `mypy`/`ruff` clean on every
   touched file.
+
+## 19. Causal Influence Firewall (Authority Everywhere Phase 7, 2026-08-19)
+
+- **Causal Influence Firewall** (`governance/causal_influence.py`) —
+  see SPEC.md Section 4.3 for the full design. In one sentence:
+  generalizes `governance/memory_firewall.py`'s persistent-memory-only
+  injection-pattern scan to any upstream content a caller declares
+  causally shaped the current action (a prior tool's output, a
+  sub-agent's result, external content) via a reserved `_provenance`
+  argument key — the same argument-driven convention
+  `AuthorityContext.constraints`' `memory_scope` already established.
+- **`memory_firewall.py` absorbed, not replaced** — Phase 0's own
+  classification of that module. Its public API
+  (`scan_memory_write`/`MemoryFirewallResult`) is byte-for-byte
+  unchanged; the pattern table and matching logic moved to
+  `causal_influence.py` as the canonical location, and
+  `memory_firewall.py` now delegates. Every existing caller
+  (`mcp/tools.py`'s `rai_memory_write_check`, `gateway.py`'s
+  memory-write hard-block check) keeps working with zero code changes
+  on their end — proven by the full pre-existing
+  `test_memory_firewall.py` suite passing unmodified.
+- **Two distinct signals, not one** — a matched injection pattern in
+  any provenance entry is a hard `DENY`
+  (`ReasonCode.CAUSAL_INFLUENCE_VIOLATION`); untrusted/unknown
+  provenance with no pattern match is a softer, non-blocking,
+  evidence-visible marker (`ReasonCode.CAUSAL_INFLUENCE_UNTRUSTED_SOURCE`)
+  attached to whatever decision the action otherwise receives —
+  deliberately not collapsed into one signal, and deliberately not
+  escalating risk tier or blocking on untrusted-influence alone in this
+  first increment, matching the Tool Trust Network's own bounded-scope
+  precedent (Section 17).
+- New MCP tool `rai_causal_influence_check` (30th tool — every
+  hardcoded tool-count assertion across the test suite and `server.json`
+  updated from 29 to 30: `test_mcp_server.py`, `test_mcp_http_transport.py`,
+  `test_mcp_oauth.py`, `test_server_json.py`, `test_governance_risk.py`).
+- **Honestly scoped, stated in the module's own docstring**: this
+  platform cannot observe, on its own, what upstream content actually
+  influenced a given tool call — there is no runtime hook to intercept
+  an LLM's context window. Provenance must be declared by the caller;
+  not a claim of automatic taint tracking.
+- Not built in this phase: risk-tier modulation by untrusted-influence
+  presence (deferred, same reasoning as Tool Trust's own deferred
+  increment); any UI for provenance/causal-influence data (REST/MCP
+  tool only); real taint *propagation* across multiple hops (a caller
+  declares provenance once, per action — chaining "this action's output
+  becomes the next action's provenance" is the caller's own
+  responsibility, not tracked automatically).
+- Verification: 26 new tests (`tests/test_causal_influence.py`) plus
+  the full pre-existing `test_memory_firewall.py` suite (12 tests)
+  re-run clean and unmodified; full repo suite 2375 passed; `mypy`/`ruff`
+  clean on every touched file.
