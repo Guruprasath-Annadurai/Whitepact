@@ -259,6 +259,34 @@ permit itself. `InternalToolExecutor` is unaffected — its target
 (`action_type`) has no external resolution step, so it never sets a
 fingerprint.
 
+**[TODAY, first version — "JIT Credential Broker" / Authority
+Everywhere Phase 10]** (not to be confused with this section's own
+"Phase 10" label below, from the original SPEC numbering):
+`governance/jit_credential.py` — `UpstreamMCPExecutor` no longer reads
+`UpstreamServer.auth_token` directly. It asks `issue_jit_credential()`
+for a `JITCredential` bound to the exact, already-validated
+`ExecutionAuthorization`, whose own expiry is
+`min(authorization.expires_at, now + ttl_seconds)` — a credential can
+never outlive the permit that produced it, only expire sooner
+(defaulting to 15 seconds). `consume_jit_credential()` is the one place
+the token is ever read for actual use, single-use, raising
+`CredentialAlreadyConsumedError`/`CredentialExpiredError` on reuse or
+staleness. Every issuance and consumption is recorded to
+`credential_issuances` (migration `0025`,
+`db/credential_issuance_repository.py`) — metadata only (who, which
+server, when, whether a credential existed at all), never the secret
+value itself.
+
+Stated honestly, as this module's own docstring does: this does not
+perform OAuth token exchange or ask an upstream server to mint a
+narrower-scoped credential on demand — most third-party MCP servers
+have no such protocol. What it narrows is *access* to the existing
+standing credential: "held indefinitely by whatever code path can
+reach the DB row" becomes "issued once, per permit, time-boxed, and
+logged." If a future upstream server supports real token exchange,
+this is the module that would grow that capability without changing
+any caller.
+
 ### 3.5 Policy **[TODAY, first version — Phase 10]**
 
 Machine-enforceable organizational rules governing actions. The "small,

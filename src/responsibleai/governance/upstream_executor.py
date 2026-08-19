@@ -27,6 +27,7 @@ from responsibleai.governance.execution import (
     _validate_authorization,
     check_target_fingerprint,
 )
+from responsibleai.governance.jit_credential import consume_jit_credential, issue_jit_credential
 from responsibleai.governance.models import ActionRequest
 from responsibleai.governance.risk import UPSTREAM_ACTION_TYPE
 from responsibleai.governance.upstream import validate_upstream_server_url
@@ -34,6 +35,7 @@ from responsibleai.governance.upstream import validate_upstream_server_url
 ACTION_TYPE = UPSTREAM_ACTION_TYPE
 
 if TYPE_CHECKING:
+    from responsibleai.db.credential_issuance_repository import CredentialIssuanceRepository
     from responsibleai.db.upstream_repository import UpstreamServerRepository
     from responsibleai.governance.upstream import UpstreamServer
 
@@ -150,6 +152,7 @@ class UpstreamMCPExecutor:
         registry: UpstreamServerRepository,
         *,
         http_client_factory: _HTTPClientFactory | None = None,
+        credential_issuance_repo: CredentialIssuanceRepository | None = None,
     ) -> None:
         self._registry = registry
         # Resolved at call time (execute()), not bound here as a default
@@ -160,6 +163,13 @@ class UpstreamMCPExecutor:
         # fake") would silently have no effect. None here just means
         # "use whatever the module-level name currently points to."
         self._http_client_factory = http_client_factory
+        # Optional -- audit persistence for the JIT Credential Broker
+        # (Phase 10). None is a valid, backward-compatible configuration
+        # (e.g. an executor used only in a unit test with no DB): the
+        # credential is still issued and consumed correctly, it just
+        # isn't recorded anywhere. Every call site this platform itself
+        # controls (dashboard/app.py) does supply one.
+        self._credential_issuance_repo = credential_issuance_repo
 
     async def execute(self, authorization: ExecutionAuthorization, action: ActionRequest) -> Any:
         # Same precedence InternalToolExecutor uses: the authorization's
@@ -180,7 +190,28 @@ class UpstreamMCPExecutor:
         # this must be a separate step from _validate_authorization().
         check_target_fingerprint(authorization, compute_upstream_target_fingerprint(server))
 
+        # JIT Credential Broker (Phase 10) -- the executor no longer
+        # reads server.auth_token directly. It asks
+        # governance/jit_credential.py for a single-use, time-boxed
+        # credential bound to this exact authorization, records that
+        # issuance (fail-open, audit-only), then consumes it for
+        # exactly this one call. See jit_credential.py's module
+        # docstring for what this does and does not narrow. Issued
+        # *before* the authorization itself is marked consumed below --
+        # issue_jit_credential() requires a still-valid authorization,
+        # by design (a credential's trust rests on the permit's
+        # validity at issuance time).
+        credential = issue_jit_credential(authorization, server_id, server)
+        if self._credential_issuance_repo is not None:
+            await self._credential_issuance_repo.record_issued(
+                credential, action_id=action.action_id, agent_id=action.agent.agent_id
+            )
+
         authorization.consumed = True  # single-use, same as InternalToolExecutor
+
+        auth_token = consume_jit_credential(credential)
+        if self._credential_issuance_repo is not None:
+            await self._credential_issuance_repo.record_consumed(credential.credential_id)
 
         # Re-checked immediately before dispatch, not just at
         # registration -- DNS can resolve differently between the two
@@ -193,5 +224,5 @@ class UpstreamMCPExecutor:
             tool_name,
             action.arguments,
             http_client_factory=factory,
-            auth_token=server.auth_token,
+            auth_token=auth_token,
         )

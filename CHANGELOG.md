@@ -28,10 +28,21 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
   a governance decision and its execution without the action digest
   changing. `AuthorizationTargetDriftError` now refuses execution on a
   mismatch (`governance/execution.py`, `governance/upstream_executor.py`).
+- JIT Credential Broker (Authority Everywhere Phase 10) —
+  `governance/jit_credential.py`: `UpstreamMCPExecutor` no longer reads
+  `UpstreamServer.auth_token` directly; it must obtain a single-use,
+  time-boxed `JITCredential` bound to the exact, already-validated
+  `ExecutionAuthorization` for this call (expiry capped at the permit's
+  own remaining TTL), with every issuance and consumption recorded to
+  a new audit trail (`credential_issuances`, migration `0025`,
+  `db/credential_issuance_repository.py`) that never stores the secret
+  value itself. Stated honestly: this mediates and time-boxes access to
+  an existing standing credential — it does not perform OAuth token
+  exchange or mint a new, narrower upstream-side credential.
 - See `docs/architecture/AUTHORITY_EVERYWHERE.md` and
-  `MIGRATION_WHITEPACT_V2.md` Section 17 for the full design and
-  structured phase verdicts. 24 new tests
-  (`tests/test_tool_trust.py`).
+  `MIGRATION_WHITEPACT_V2.md` Sections 17-18 for the full design and
+  structured phase verdicts. 24 + 17 new tests
+  (`tests/test_tool_trust.py`, `tests/test_jit_credential.py`).
 
 ## [1.2.3] — 2026-08-19
 

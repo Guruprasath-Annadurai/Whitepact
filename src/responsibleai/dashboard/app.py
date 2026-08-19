@@ -90,6 +90,7 @@ from responsibleai.db import (
     ApprovalRepository,
     AuditRepository,
     CostRepository,
+    CredentialIssuanceRepository,
     DelegationEscalationError,
     DelegationRepository,
     EvalRepository,
@@ -262,6 +263,7 @@ _delegation_repo: DelegationRepository | None = None
 _policy_repo: PolicyRepository | None = None
 _upstream_registry: UpstreamServerRepository | None = None
 _tool_trust_repo: ToolTrustRepository | None = None
+_credential_issuance_repo: CredentialIssuanceRepository | None = None
 _upstream_gateway: WhitePactRuntimeGateway = WhitePactRuntimeGateway()
 _db_engine: DatabaseEngine | None = None
 _ws_manager: ConnectionManager = ConnectionManager()
@@ -314,7 +316,7 @@ async def lifespan(application: FastAPI):
     global _org_repo, _audit_repo, _incident_repo, _leaderboard_repo, _leaderboard_runner
     global _passport_repo, _public_incident_repo, _db_engine, _mcp_usage_repo
     global _evidence_repo, _approval_repo, _policy_repo, _upstream_registry, _ceiling_repo
-    global _tool_trust_repo
+    global _tool_trust_repo, _credential_issuance_repo
     global _workflow_rule_repo, _delegation_repo, _autonomy_budget_repo
     global _eval_repo, _comparator, _benchmark_runner, _dataset_scanner
     global _oidc_provider, _saml_config, _stripe_service, _plan_rate_limiter
@@ -360,6 +362,7 @@ async def lifespan(application: FastAPI):
     _policy_repo = PolicyRepository(_db_engine)
     _upstream_registry = UpstreamServerRepository(_db_engine)
     _tool_trust_repo = ToolTrustRepository(_db_engine)
+    _credential_issuance_repo = CredentialIssuanceRepository(_db_engine)
     _ceiling_repo = OrgAuthorityCeilingRepository(_db_engine)
     _workflow_rule_repo = WorkflowRuleRepository(_db_engine)
     _delegation_repo = DelegationRepository(_db_engine)
@@ -3510,7 +3513,9 @@ async def upstream_call_tool(
         raise HTTPException(
             400, "Upstream calls require an org-scoped API key, not a legacy flat key."
         )
-    executor = UpstreamMCPExecutor(_ready(_upstream_registry))
+    executor = UpstreamMCPExecutor(
+        _ready(_upstream_registry), credential_issuance_repo=_ready(_credential_issuance_repo)
+    )
     try:
         outcome = await apply_upstream_governance(
             server_id,
