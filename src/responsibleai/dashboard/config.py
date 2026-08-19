@@ -252,6 +252,41 @@ class Settings(BaseSettings):
         default=False,
         description="Skip JWT signature verification (test/dev only — never use in production).",
     )
+
+    # SAML 2.0 Single Sign-On (optional — separate from OIDC above; some
+    # enterprise IdPs support only one or the other, so both are wired
+    # independently rather than one being built on top of the other).
+    saml_idp_entity_id: str | None = Field(
+        default=None,
+        description="The identity provider's SAML entity ID. Setting this is what enables the SAML routes.",
+    )
+    saml_idp_sso_url: str = Field(
+        default="",
+        description="The identity provider's SSO redirect-binding URL (where AuthnRequests are sent).",
+    )
+    saml_idp_x509_cert: str = Field(
+        default="",
+        description="The identity provider's signing certificate, PEM-encoded (with or without the BEGIN/END header lines). Used to verify every SAMLResponse's signature.",
+    )
+    saml_sp_entity_id: str = Field(
+        default="https://whitepact.com/saml/metadata",
+        description="This service provider's own SAML entity ID, advertised in SP metadata and checked as the Audience on every assertion.",
+    )
+    saml_acs_url: str = Field(
+        default="http://localhost:8765/api/auth/acs",
+        description="The Assertion Consumer Service URL registered with the IdP — where it POSTs the SAMLResponse back.",
+    )
+    saml_session_secret: str = Field(
+        default="",
+        description=(
+            "HMAC secret WhitePact uses to sign its own short-lived session "
+            "token after a successful SAML login (SAML itself has no bearer-"
+            "token concept — the assertion is a one-time browser ceremony, "
+            "not a repeatable API credential, so the SP mints its own). "
+            "Required if saml_idp_entity_id is set; generate with "
+            "`python -c \"import secrets; print(secrets.token_urlsafe(32))\"`."
+        ),
+    )
     openai_apps_challenge_token: str | None = Field(
         default=None,
         description=(

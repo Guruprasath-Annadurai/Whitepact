@@ -139,7 +139,7 @@ Last reviewed: 2026-07-23 · Platform version: 1.2.0
 | Question | Answer |
 |---|---|
 | Is role-based access control (RBAC) implemented? | Yes — four strictly hierarchical roles (`OWNER > ADMIN > ANALYST > VIEWER`), enforced via `require_role()` on every endpoint. |
-| Is SSO supported? | OIDC (OAuth2 Authorization Code flow) — yes. SAML — no, explicitly not supported (see `ENTERPRISE_SECURITY.md`). |
+| Is SSO supported? | Yes — OIDC (OAuth2 Authorization Code flow) and SAML 2.0, independently configurable (see `ENTERPRISE_SECURITY.md`). |
 | Can SSO be enforced (blocking password/API-key fallback)? | Yes — `PUT /api/orgs/{id}/sso` disables static API-key auth for that org once SSO is configured, closing the departed-employee-static-key backdoor. |
 | Is least-privilege access enforced for cross-tenant operations? | Yes — org-scoped keys can only act within their own org; only legacy super-admin flat keys can cross org boundaries, and every such action is itself logged in the audit trail. |
 | Is multi-factor authentication (MFA) supported? | Yes, two ways. For SSO-based auth, MFA is delegated to your OIDC identity provider (Okta, Azure AD, etc.), where it belongs. For static API-key auth, TOTP MFA (RFC 6238) is available at the one interactive human login step (`POST /api/auth/login-key`) — an org can require it via `PUT /api/orgs/{id}/mfa`, and each key enrolls its own secret with single-use backup codes (`auth/mfa.py`). This does not, and cannot, extend to machine-to-machine API calls — there's no human present at request time to hold a second factor; those continue to authenticate on the key alone, same as before. |
