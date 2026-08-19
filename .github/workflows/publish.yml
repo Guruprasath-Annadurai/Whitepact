@@ -11,9 +11,70 @@ permissions:
   attestations: write  # actions/attest-build-provenance (Phase 15)
 
 jobs:
+  # OpenSSF Best Practices `version_tags_signed` -- a signed build
+  # pipeline that runs on any pushed tag proves the *pipeline* is
+  # trustworthy once triggered, not that a trusted human actually
+  # intended to cut this release. This job is that second, separate
+  # check: it verifies the triggering Git tag is annotated, carries a
+  # valid SSH signature, and was signed by a key listed in
+  # security/release-signers.allowed -- before anything gets built or
+  # published. See compliance/SIGNED_VERSION_TAGS.md for why this is a
+  # distinct control from the build-provenance attestation below, and
+  # RELEASING.md for the founder-facing signing setup.
+  verify-signed-tag:
+    name: Verify signed release tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # need the full tag object, not a shallow/blobless clone
+
+      - name: Reject lightweight tags, verify SSH signature against approved signers
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          echo "Verifying tag: $TAG"
+
+          # 1. Lightweight tags point directly at a commit object and
+          # carry no signature at all -- reject before even attempting
+          # verification, since `git tag -v` on a lightweight tag can
+          # be misleadingly silent rather than a clear failure.
+          TYPE="$(git cat-file -t "$TAG")"
+          if [ "$TYPE" != "tag" ]; then
+            echo "::error::Tag '$TAG' is a lightweight tag (git cat-file -t reports '$TYPE', expected 'tag'). Release tags must be annotated and signed: git tag -s $TAG -m '...'"
+            exit 1
+          fi
+
+          # 2. SSH-format signature verification against a
+          # repository-controlled, PR-reviewed allow-list of approved
+          # signers' PUBLIC keys -- never a private key, never a
+          # secret, safe to read straight from the checked-out tree.
+          git config gpg.format ssh
+          git config gpg.ssh.allowedSignersFile "${GITHUB_WORKSPACE}/security/release-signers.allowed"
+
+          # 3. An allowed-signers file with no real key in it must fail
+          # closed, not silently pass every tag as "no policy
+          # violation found" -- "nobody is approved yet" is itself a
+          # failure state for a release gate.
+          if ! grep -qE '^[^#[:space:]]+[[:space:]]+ssh-' security/release-signers.allowed; then
+            echo "::error::No approved release signer is configured in security/release-signers.allowed yet. See compliance/SIGNED_VERSION_TAGS.md Section 5 -- founder action required before any tag can pass this gate."
+            exit 1
+          fi
+
+          # 4. The actual verification -- fails on a missing signature,
+          # an invalid signature, or a signature from a key not present
+          # in the allowed-signers file.
+          if ! git tag -v "$TAG"; then
+            echo "::error::Tag '$TAG' failed signature verification -- missing signature, invalid signature, or signed by a key not listed in security/release-signers.allowed."
+            exit 1
+          fi
+
+          echo "Tag '$TAG' is annotated, signed, and verified against an approved release signer."
+
   publish:
     name: Build & publish
     runs-on: ubuntu-latest
+    needs: verify-signed-tag
     environment: pypi
 
     steps:

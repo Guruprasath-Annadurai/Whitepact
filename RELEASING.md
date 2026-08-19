@@ -37,12 +37,24 @@ entry).
    Leave a fresh empty `[Unreleased]` section above it for the next
    round of changes.
 4. Open a PR with just those changes. Once merged to `main`:
-5. Tag the merge commit and push the tag:
+5. Tag the merge commit with an **annotated, signed** tag and push it:
    ```bash
-   git tag vX.Y.Z
+   git tag -s vX.Y.Z -m "WhitePact vX.Y.Z"
+   git tag -v vX.Y.Z          # confirm it verifies locally before pushing
    git push origin vX.Y.Z
    ```
+   **Never use `git tag vX.Y.Z` (no `-s`) for a release** — that
+   creates an unsigned lightweight tag, which
+   `.github/workflows/publish.yml`'s `verify-signed-tag` job now
+   rejects before anything builds or publishes. See "Signing releases"
+   below for the one-time setup this requires, and
+   `compliance/SIGNED_VERSION_TAGS.md` for why this is a distinct
+   control from the build-provenance attestation in step 6.
 6. Pushing a `v*` tag triggers `.github/workflows/publish.yml`, which:
+   - **First verifies the tag itself is annotated, signed, and signed
+     by an approved release signer** (`verify-signed-tag` job) —
+     nothing below this point runs for a lightweight, unsigned, or
+     unapproved-signer tag.
    - Builds the wheel and sdist, verifies them with `twine check`.
    - Generates a CycloneDX SBOM from the actual built artifact's
      installed dependency closure (Phase 15).
@@ -54,6 +66,58 @@ entry).
    - Creates a GitHub Release for the tag, attaching the built
      artifacts and the SBOM, with auto-generated notes pointing back
      at the `CHANGELOG.md` entry.
+
+## Signing releases
+
+Every important release tag (major, minor, and public security-fix
+releases) must be an **annotated, cryptographically signed** Git tag —
+enforced by `.github/workflows/publish.yml`'s `verify-signed-tag` job,
+which runs before anything is built or published and fails closed on a
+lightweight tag, a missing signature, an invalid signature, or a
+signature from a key not on the approved-signers list. See
+`compliance/SIGNED_VERSION_TAGS.md` for the audit of existing tags (all
+unsigned, from before this policy existed — not rewritten, see that
+document for why) and current status.
+
+### One-time setup: SSH tag signing
+
+Git supports signing tags with an SSH key (`gpg.format=ssh`), not just
+GPG — this is the preferred method here because it reuses a key type
+most maintainers already have for Git/GitHub access, with no separate
+GPG keyring to manage. If you already have an established, secure GPG
+signing setup instead, that's also acceptable — the verification job
+supports either; adjust the `git config gpg.format` step accordingly if
+you use GPG.
+
+```bash
+# If you don't already have an SSH key you want to dedicate to signing,
+# generate one (ed25519, not RSA -- shorter, and the modern default):
+ssh-keygen -t ed25519 -C "release-signing" -f ~/.ssh/whitepact_release_signing
+
+# Tell Git to sign with SSH, using this key, and to sign tags by default:
+git config --global gpg.format ssh
+git config --global user.signingkey ~/.ssh/whitepact_release_signing.pub
+git config --global tag.gpgSign true
+```
+
+Then add the **public** key (`~/.ssh/whitepact_release_signing.pub`'s
+contents — never the private key) as a line in
+[`security/release-signers.allowed`](security/release-signers.allowed),
+in the format that file's own header documents, and open a PR. The
+`verify-signed-tag` job reads this file to decide who counts as an
+approved release signer — a tag signed by a key not listed there fails
+the gate exactly like an unsigned one.
+
+### Cutting a signed tag
+
+```bash
+git tag -s vX.Y.Z -m "WhitePact vX.Y.Z"
+git tag -v vX.Y.Z      # verify locally before pushing
+git push origin vX.Y.Z
+```
+
+**Never `git tag vX.Y.Z` without `-s` for a release** — see "Cutting a
+release" step 5 above.
 
 ## What this does *not* automate
 
