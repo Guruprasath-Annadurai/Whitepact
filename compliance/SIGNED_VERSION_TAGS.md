@@ -99,14 +99,29 @@ forward.
   signer) with throwaway keys before this feature was committed — see
   the PR that introduced it for the transcript.
 
-## 5. What was required before the next release — now done
+## 5. `v1.2.3` — the first genuinely signed release tag
 
-The founder action this section previously called out (generate a
-signing key, add the public half to `security/release-signers.allowed`)
-is complete as of 2026-08-19. The next release tag cut with `git tag -s`
-will be genuinely signed and verifiable — see `RELEASING.md` "Cutting a
-signed tag" for the exact commands, already in effect for every release
-from this point forward.
+Cut and pushed 2026-08-19 with the newly-configured key. The first
+attempt caught a real bug in the verification job itself
+(`actions/checkout` resolved the tag-push trigger to its dereferenced
+commit SHA, making a genuinely signed, annotated tag look lightweight
+to `git cat-file -t` in CI — see the fix commit for detail); no
+artifact was published under that first attempt, the tag was deleted
+and re-cut cleanly after the fix landed. The second attempt's
+`verify-signed-tag` job passed for real:
+
+- Tag object type: `tag` (annotated)
+- Signature: valid SSH signature from
+  `milchcreamfoods@gmail.com`'s key, verified against
+  `security/release-signers.allowed`
+- Result: `Good "git" signature for milchcreamfoods@gmail.com`
+- Release: <https://github.com/Guruprasath-Annadurai/Whitepact/releases/tag/v1.2.3>,
+  build provenance and SBOM attached, published to PyPI via Trusted
+  Publishing
+
+`version_tags_signed` is genuinely **MET** as of this release. Every
+release from this point forward uses the same `git tag -s` procedure
+(`RELEASING.md` "Cutting a signed tag"), gated by the same CI check.
 
 ## 6. Revisiting this document
 
