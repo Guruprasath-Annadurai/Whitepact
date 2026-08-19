@@ -242,6 +242,23 @@ before it reaches Evidence storage in practice, not just in the field
 comment above — `EvidenceRecord` stores only `argument_keys`, never
 values (Section 3.7).
 
+**[TODAY, extended — "Execution Permit v2" / Authority Everywhere Phase
+9]**: for `UpstreamMCPExecutor` specifically, `ExecutionAuthorization`
+now also carries an optional `target_fingerprint` — a hash of the
+resolved upstream server's URL, enabled state, and whether a credential
+is attached, computed once when the gateway makes its decision
+(`mcp/upstream_dispatch.py`) and recomputed immediately before dispatch
+(`governance/upstream_executor.py`). A mismatch raises
+`AuthorizationTargetDriftError` and the call is refused — this closes a
+real gap the original binding left open: `action_digest` covers the
+action's own shape (agent, action_type, the target *string*
+`server_id::tool_name`, arguments) but never captured what that target
+string currently *resolves to*, so a server's registration changing
+between decision and execution could not previously be detected by the
+permit itself. `InternalToolExecutor` is unaffected — its target
+(`action_type`) has no external resolution step, so it never sets a
+fingerprint.
+
 ### 3.5 Policy **[TODAY, first version — Phase 10]**
 
 Machine-enforceable organizational rules governing actions. The "small,
@@ -429,6 +446,46 @@ this scanner's existence. Exposed via `POST
 /api/governance/supplychain/scan` (not org-scoped: the checks are
 either pure or query the public, org-agnostic incident database, so
 there's no per-org data to isolate).
+
+### 4.2 Tool Trust Network **[TODAY, first version — Authority Everywhere Phase 8]**
+
+Section 4.1's scanner produces a report a human has to read, and
+`governance/upstream.py`'s registry ("registration is the approval
+step") never changes once an admin approves a server. Neither answers
+"should calls to this specific server keep being allowed *right now*"
+— a question that can change after registration without the
+registration itself changing (a later scan finds a typosquat pattern,
+an incident gets filed, an admin revokes trust).
+
+**[TODAY]**: `src/responsibleai/governance/tool_trust.py` —
+`compute_trust_score()` turns one `SupplyChainReport` into a
+deterministic `ToolTrustScore` (0-100, one of `TRUSTED` / `PROVISIONAL`
+/ `UNTRUSTED` / `BLOCKED`): a `70`-baseline, minus a large penalty for a
+`VERIFIED_FACT` confusable-character hit, a capped penalty per flagged
+tool description, and a large penalty per known incident. A server that
+has never been scanned is `PROVISIONAL`, capped below `TRUSTED` — trust
+cannot accrue from silence. `apply_admin_override()` is the one path
+that can force `BLOCKED` (immediately) or `TRUSTED` (ahead of a scan),
+always attributed to an admin id and a non-empty reason. Persisted via
+`ToolTrustRepository` (`tool_trust_scores` table, migration `0024`).
+
+**Wired into the request path**: `mcp/upstream_dispatch.py`'s
+`apply_upstream_governance()` checks the server's current tier
+immediately after the registration check and before the gateway is even
+consulted — a `BLOCKED` tier is denied with the (previously reserved,
+now used) `ReasonCode.UNTRUSTED_MCP_SERVER`, the same shape
+`UNAPPROVED_MCP_SERVER` already used. `TRUSTED`/`PROVISIONAL`/
+`UNTRUSTED` all still pass through to the existing risk-based decision
+path unchanged in this first version — modulating risk tier by trust
+tier is a natural next increment, not built here, per this project's
+own discipline against building ahead of a stated requirement.
+
+REST surface (all under `/api/governance/upstream/servers/{server_id}/trust`):
+`GET` (ANALYST+, returns the current score or an unscanned default),
+`POST .../scan` (ADMIN, runs the scanner against the server's
+currently-discoverable tool list via the existing
+`discover_upstream_tools()` and persists the result), `POST
+.../override` (ADMIN, records an explicit tier override).
 
 ---
 

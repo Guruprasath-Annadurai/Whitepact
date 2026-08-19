@@ -17,11 +17,16 @@ for no benefit outside this one executor.
 
 from __future__ import annotations
 
+import hashlib
 from typing import TYPE_CHECKING, Any, Protocol
 
 import httpx
 
-from responsibleai.governance.execution import ExecutionAuthorization, _validate_authorization
+from responsibleai.governance.execution import (
+    ExecutionAuthorization,
+    _validate_authorization,
+    check_target_fingerprint,
+)
 from responsibleai.governance.models import ActionRequest
 from responsibleai.governance.risk import UPSTREAM_ACTION_TYPE
 from responsibleai.governance.upstream import validate_upstream_server_url
@@ -30,6 +35,7 @@ ACTION_TYPE = UPSTREAM_ACTION_TYPE
 
 if TYPE_CHECKING:
     from responsibleai.db.upstream_repository import UpstreamServerRepository
+    from responsibleai.governance.upstream import UpstreamServer
 
 TARGET_SEPARATOR = "::"
 
@@ -74,6 +80,24 @@ def parse_upstream_target(target: str) -> tuple[str, str]:
     if not sep or not server_id or not tool_name:
         raise MalformedUpstreamTargetError(target)
     return server_id, tool_name
+
+
+def compute_upstream_target_fingerprint(server: UpstreamServer) -> str:
+    """Execution Permit v2 (Authority Everywhere Phase 9): a hash of
+    everything about *server* that would change what actually happens
+    if a call is proxied to it — its URL, whether it's enabled, and
+    whether a credential is attached (not the credential value itself;
+    ``ExecutionAuthorization`` must never carry a secret). ``server_id``
+    is deliberately excluded — it's already covered by
+    ``action.target``, and a permit should catch the config *behind* an
+    unchanged server_id drifting, not merely restate the ID. Computed
+    fresh both when the gateway authorizes a call
+    (``mcp/upstream_dispatch.py``) and again immediately before dispatch
+    (this module's own ``execute()``) — a mismatch means the server's
+    registration changed in between, and the permit no longer describes
+    what it originally authorized."""
+    payload = f"{server.url}|{server.enabled}|{server.auth_token is not None}"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 class _HTTPClientFactory(Protocol):
@@ -138,13 +162,25 @@ class UpstreamMCPExecutor:
         self._http_client_factory = http_client_factory
 
     async def execute(self, authorization: ExecutionAuthorization, action: ActionRequest) -> Any:
+        # Same precedence InternalToolExecutor uses: the authorization's
+        # own shape (consumed/expired/org/action-match) is checked
+        # before anything about the target is even looked up, so a
+        # stale or forged authorization is rejected on its own terms
+        # rather than on an incidental "server not found."
         _validate_authorization(authorization, action)
-        authorization.consumed = True  # single-use, same as InternalToolExecutor
 
         server_id, tool_name = parse_upstream_target(action.target)
         server = await self._registry.get(server_id)
         if server is None or server.org_id != action.agent.organization_id or not server.enabled:
             raise UpstreamServerNotAvailableError(server_id)
+
+        # Execution Permit v2 -- only after the target actually resolves
+        # can it be compared against what was fingerprinted at decision
+        # time; see check_target_fingerprint()'s own docstring for why
+        # this must be a separate step from _validate_authorization().
+        check_target_fingerprint(authorization, compute_upstream_target_fingerprint(server))
+
+        authorization.consumed = True  # single-use, same as InternalToolExecutor
 
         # Re-checked immediately before dispatch, not just at
         # registration -- DNS can resolve differently between the two

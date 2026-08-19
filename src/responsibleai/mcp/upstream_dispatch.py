@@ -19,6 +19,7 @@ from typing import Any
 
 from responsibleai.dashboard.prometheus import observe_governance_decision
 from responsibleai.db import ApprovalRepository, EvidenceRepository, PolicyRepository
+from responsibleai.db.tool_trust_repository import ToolTrustRepository
 from responsibleai.db.upstream_repository import UpstreamServerRepository
 from responsibleai.governance import (
     ActionRequest,
@@ -36,10 +37,12 @@ from responsibleai.governance import (
 from responsibleai.governance.approval import build_approval_request
 from responsibleai.governance.evidence import build_evidence_record
 from responsibleai.governance.risk import classify_action_risk
+from responsibleai.governance.tool_trust import ToolTrustTier, unscanned_score
 from responsibleai.governance.upstream_executor import (
     ACTION_TYPE,
     UpstreamMCPExecutor,
     build_upstream_target,
+    compute_upstream_target_fingerprint,
 )
 from responsibleai.rbac.models import OrgContext
 
@@ -92,6 +95,7 @@ async def apply_upstream_governance(
     approval_repo: ApprovalRepository,
     upstream_registry: UpstreamServerRepository,
     executor: UpstreamMCPExecutor,
+    tool_trust_repo: ToolTrustRepository,
 ) -> UpstreamGovernanceOutcome:
     """Evaluate and, if governance allows it, execute one proxied call
     to an org-registered upstream MCP server. Requires an org-scoped
@@ -137,6 +141,45 @@ async def apply_upstream_governance(
                 "message": (
                     "The named upstream MCP server is not registered, is disabled, "
                     "or belongs to a different organization."
+                ),
+                "action_id": decision.action_id,
+                "reason_codes": decision.reason_codes,
+            },
+        )
+
+    # Tool Trust Network (Authority Everywhere Phase 8) -- the
+    # destination's own trust standing, independent of who is asking.
+    # Registration answers "is this server approved to exist in this
+    # org's registry at all"; this answers "should calls to it keep
+    # being allowed *right now*," which can change after registration
+    # (a scan finds a typosquat pattern, an incident gets filed, an
+    # admin revokes trust) without the registration itself changing.
+    # Only BLOCKED is gated here -- TRUSTED/PROVISIONAL/UNTRUSTED all
+    # still pass through to the existing risk-based decision path; see
+    # governance/tool_trust.py's module docstring for why this first
+    # increment stays binary rather than also modulating risk tier.
+    trust_score = await tool_trust_repo.get(server_id) or unscanned_score(server_id, ctx.org_id)
+    if trust_score.tier is ToolTrustTier.BLOCKED:
+        decision = DecisionResult(
+            decision=GovernanceDecision.DENY,
+            action_id=action.action_id,
+            reason_codes=[
+                format_reason(
+                    ReasonCode.UNTRUSTED_MCP_SERVER,
+                    server_id=server_id,
+                    trust_score=trust_score.score,
+                )
+            ],
+            risk_tier=classify_action_risk(action.action_type, action.target),
+        )
+        await _record_evidence(evidence_repo, action, agent, authority, decision)
+        return UpstreamGovernanceOutcome(
+            proceed=False,
+            blocked_response={
+                "error": "governance_denied",
+                "message": (
+                    "This upstream MCP server is blocked by its current tool trust "
+                    "score. Contact your org admin to review its trust standing."
                 ),
                 "action_id": decision.action_id,
                 "reason_codes": decision.reason_codes,
@@ -222,6 +265,11 @@ async def apply_upstream_governance(
         arguments=final_arguments,
         action_id=action.action_id,
     )
-    authorization = authorize_execution(decision, final_action)
+    # Execution Permit v2 -- fingerprint the server config this
+    # decision was actually made against, so UpstreamMCPExecutor.execute()
+    # can detect if that config drifts before the permit is consumed.
+    authorization = authorize_execution(
+        decision, final_action, target_fingerprint=compute_upstream_target_fingerprint(server)
+    )
     result = await executor.execute(authorization, final_action)
     return UpstreamGovernanceOutcome(proceed=True, result=result)

@@ -626,6 +626,33 @@ upstream_mcp_servers = Table(
     Index("idx_ums_org", "org_id"),
 )
 
+# Tool Trust Network (Authority Everywhere Phase 8): one row per
+# org-registered upstream MCP server, holding its current trust score
+# and tier -- see governance/tool_trust.py for how the score is
+# computed (from a supply-chain scan + incident history) and how an
+# admin override is layered on top. No row for a server means it has
+# never been scanned; governance/tool_trust.py's unscanned_score()
+# defines what that server is treated as until a scan runs.
+tool_trust_scores = Table(
+    "tool_trust_scores",
+    metadata,
+    Column("server_id", String(36), primary_key=True),
+    Column("org_id", String(36), nullable=False),
+    Column("score", Integer, nullable=False),
+    Column("tier", String(20), nullable=False),
+    Column("has_been_scanned", Integer, nullable=False, server_default="0"),
+    Column("incident_count", Integer, nullable=False, server_default="0"),
+    Column("scan_report_id", String(36), nullable=True),
+    Column("scan_summary", Text, nullable=True),
+    Column("last_scanned_at", String(32), nullable=True),
+    Column("admin_override_tier", String(20), nullable=True),
+    Column("admin_override_by", String(200), nullable=True),
+    Column("admin_override_reason", Text, nullable=True),
+    Column("admin_override_at", String(32), nullable=True),
+    Column("updated_at", String(32), nullable=False),
+    Index("idx_tts_org", "org_id"),
+)
+
 
 class DatabaseEngine:
     """Async database engine wrapping SQLAlchemy — SQLite or PostgreSQL.

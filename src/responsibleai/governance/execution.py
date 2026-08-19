@@ -97,6 +97,29 @@ class AuthorizationOrganizationMismatchError(ExecutionNotAuthorizedError):
         )
 
 
+class AuthorizationTargetDriftError(ExecutionNotAuthorizedError):
+    """Execution Permit v2 (Authority Everywhere Phase 9): the resolved
+    identity of *where this action actually goes* has changed since the
+    decision was made. ``action_digest`` binds to the action's own
+    shape (agent, action_type, target string, arguments) but never
+    captured anything about what a target *string* like
+    ``server_id::tool_name`` currently resolves to -- an upstream
+    server's URL, enabled state, or credential can change between
+    decision time and execution time without the action digest moving
+    at all, since ``UpstreamServer.server_id`` stays the same. A permit
+    that was granted against one resolved target must not silently
+    authorize execution against a different one that now sits behind
+    the same target string."""
+
+    def __init__(self, authorization_id: str) -> None:
+        self.authorization_id = authorization_id
+        super().__init__(
+            f"ExecutionAuthorization {authorization_id!r} was granted against a different "
+            "resolved target than the one now being executed against (target configuration "
+            "drifted between authorization and execution)."
+        )
+
+
 @dataclass
 class ExecutionAuthorization:
     """What `authorize_execution()` hands an executor — the structural
@@ -109,11 +132,21 @@ class ExecutionAuthorization:
     executor did cross a process boundary and this got signed; keeping
     it here now means that change doesn't require touching every
     caller's field list later.
+
+    `target_fingerprint` is Execution Permit v2 (Authority Everywhere
+    Phase 9): an optional, executor-supplied hash of whatever the
+    action's target string currently resolves to — `None` for executors
+    with no external resolution step (`InternalToolExecutor`: the
+    action_type *is* the identity, already fully covered by
+    `action_digest`). When set, `execute()` must recompute the same
+    fingerprint from the target as it exists *right now* and refuse to
+    run on any mismatch — see `AuthorizationTargetDriftError`.
     """
 
     action_digest: str
     organization_id: str | None
     decision: GovernanceDecision
+    target_fingerprint: str | None = None
     authorization_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     nonce: str = field(default_factory=lambda: uuid.uuid4().hex)
     issued_at: datetime = field(default_factory=lambda: datetime.now(UTC))
@@ -137,6 +170,7 @@ def authorize_execution(
     action: ActionRequest,
     *,
     ttl_seconds: int = DEFAULT_AUTHORIZATION_TTL_SECONDS,
+    target_fingerprint: str | None = None,
 ) -> ExecutionAuthorization:
     """Turn a gateway decision into an `ExecutionAuthorization` — the
     only place one is ever constructed. Raises `DecisionNotExecutableError`
@@ -153,6 +187,14 @@ def authorize_execution(
     `ALLOW_WITH_REDACTION`, that means the caller passes an `ActionRequest`
     built from `decision.redacted_arguments`, not the original
     arguments, so the digest binds to what the executor will really run.
+
+    *target_fingerprint* is Execution Permit v2 (Phase 9) — pass it when
+    the caller already resolved the action's target to something
+    concrete (e.g. `upstream_executor.compute_upstream_target_fingerprint()`
+    for an `UpstreamServer`) at decision time, so `execute()` can detect
+    drift between that resolution and what the target resolves to when
+    the permit is actually consumed. Leave `None` when there's nothing
+    to resolve (internal tools).
     """
     if decision.decision not in (GovernanceDecision.ALLOW, GovernanceDecision.ALLOW_WITH_REDACTION):
         raise DecisionNotExecutableError(decision.decision)
@@ -161,6 +203,7 @@ def authorize_execution(
         action_digest=compute_action_digest(action),
         organization_id=action.agent.organization_id,
         decision=decision.decision,
+        target_fingerprint=target_fingerprint,
         expires_at=datetime.now(UTC) + timedelta(seconds=ttl_seconds),
     )
 
@@ -182,7 +225,12 @@ def _validate_authorization(authorization: ExecutionAuthorization, action: Actio
     """Shared validation every `Executor.execute()` implementation
     must run first — pulled out as its own function so a future
     executor can't accidentally reimplement (and get wrong) the same
-    four checks."""
+    four checks. Deliberately does not check `target_fingerprint` (see
+    `check_target_fingerprint()`) — that check needs the *current*
+    resolved target, which an executor can only produce after it has
+    already looked the target up, and this function's four checks must
+    still run (and take precedence) even when that lookup hasn't
+    happened yet."""
     if authorization.consumed:
         raise AuthorizationAlreadyConsumedError(authorization.authorization_id)
     if authorization.is_expired:
@@ -191,6 +239,22 @@ def _validate_authorization(authorization: ExecutionAuthorization, action: Actio
         raise AuthorizationOrganizationMismatchError(authorization.authorization_id)
     if not authorization.matches_action(action):
         raise AuthorizationActionMismatchError(authorization.authorization_id)
+
+
+def check_target_fingerprint(
+    authorization: ExecutionAuthorization, current_target_fingerprint: str | None
+) -> None:
+    """Execution Permit v2's drift check — call this *after*
+    `_validate_authorization()` has already passed and *after* the
+    executor has resolved *action.target* to something concrete (e.g.
+    an `UpstreamServer`). Skipped entirely when
+    `authorization.target_fingerprint is None` (nothing was resolved at
+    decision time — `InternalToolExecutor`'s case), so an executor that
+    never sets a fingerprint never needs to call this at all."""
+    if authorization.target_fingerprint is None:
+        return
+    if authorization.target_fingerprint != current_target_fingerprint:
+        raise AuthorizationTargetDriftError(authorization.authorization_id)
 
 
 class InternalToolExecutor:
