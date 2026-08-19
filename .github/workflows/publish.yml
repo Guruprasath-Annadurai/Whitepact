@@ -35,6 +35,17 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           echo "Verifying tag: $TAG"
 
+          # actions/checkout resolves a tag-push trigger to its
+          # dereferenced commit SHA (GITHUB_SHA), not the annotated tag
+          # object itself -- the local ref it creates for $TAG can end
+          # up pointing straight at that commit, indistinguishable from
+          # a lightweight tag to `git cat-file -t`, even though the
+          # pushed ref on origin genuinely is an annotated, signed tag
+          # object. Force-fetch the real tag object explicitly before
+          # inspecting it, rather than trusting whatever local ref
+          # checkout happened to set up.
+          git fetch origin "refs/tags/${TAG}:refs/tags/${TAG}" --force
+
           # 1. Lightweight tags point directly at a commit object and
           # carry no signature at all -- reject before even attempting
           # verification, since `git tag -v` on a lightweight tag can
