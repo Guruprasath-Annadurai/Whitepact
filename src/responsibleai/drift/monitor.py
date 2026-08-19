@@ -160,9 +160,17 @@ class TrustDriftMonitor:
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
-                    model_name, provider, score.overall, score.grade, score.risk_level,
-                    score.fairness, score.privacy, score.security,
-                    score.robustness, score.compliance, score.authenticity,
+                    model_name,
+                    provider,
+                    score.overall,
+                    score.grade,
+                    score.risk_level,
+                    score.fairness,
+                    score.privacy,
+                    score.security,
+                    score.robustness,
+                    score.compliance,
+                    score.authenticity,
                     json.dumps(metadata or {}),
                     datetime.now(UTC).isoformat(),
                 ),
@@ -178,12 +186,16 @@ class TrustDriftMonitor:
         # Identify which dimensions degraded most
         dims = ["fairness", "privacy", "security", "robustness", "compliance", "authenticity"]
         current_vals = {
-            "fairness": score.fairness, "privacy": score.privacy,
-            "security": score.security, "robustness": score.robustness,
-            "compliance": score.compliance, "authenticity": score.authenticity,
+            "fairness": score.fairness,
+            "privacy": score.privacy,
+            "security": score.security,
+            "robustness": score.robustness,
+            "compliance": score.compliance,
+            "authenticity": score.authenticity,
         }
         degraded = [
-            d for d in dims
+            d
+            for d in dims
             if current_vals[d] < previous[d] - 0.05  # >5% drop
         ]
 

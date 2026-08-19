@@ -72,13 +72,17 @@ class LeaderboardRunner:
         self._redteam = redteam or RedTeamSimulator()
         self._trust_engine = trust_engine or TrustScoreEngine()
 
-    async def _collect(self, adapter: ModelAdapter, prompts: list[dict[str, str]]) -> dict[str, str]:
+    async def _collect(
+        self, adapter: ModelAdapter, prompts: list[dict[str, str]]
+    ) -> dict[str, str]:
         responses: dict[str, str] = {}
         for p in prompts:
             responses[p["id"]] = await adapter.generate(p["prompt"])
         return responses
 
-    async def run_model(self, model: str, provider: str, adapter: ModelAdapter) -> LeaderboardRunResult:
+    async def run_model(
+        self, model: str, provider: str, adapter: ModelAdapter
+    ) -> LeaderboardRunResult:
         # 1. Collect live responses for every prompt set.
         tqa_prompts = self._benchmark_runner.get_prompts(BenchmarkSuite.TRUTHFULQA)
         bbq_prompts = self._benchmark_runner.get_prompts(BenchmarkSuite.BBQ)
@@ -88,12 +92,18 @@ class LeaderboardRunner:
         tqa_responses = await self._collect(adapter, tqa_prompts)
         bbq_responses = await self._collect(adapter, bbq_prompts)
         hswag_responses = await self._collect(adapter, hswag_prompts)
-        redteam_responses = {p["name"]: await adapter.generate(p["payload"]) for p in redteam_payloads}
+        redteam_responses = {
+            p["name"]: await adapter.generate(p["payload"]) for p in redteam_payloads
+        }
 
         # 2. Score each suite with the existing engines.
-        tqa_result = self._benchmark_runner.run(model, provider, BenchmarkSuite.TRUTHFULQA, tqa_responses)
+        tqa_result = self._benchmark_runner.run(
+            model, provider, BenchmarkSuite.TRUTHFULQA, tqa_responses
+        )
         bbq_result = self._benchmark_runner.run(model, provider, BenchmarkSuite.BBQ, bbq_responses)
-        hswag_result = self._benchmark_runner.run(model, provider, BenchmarkSuite.HELLASWAG, hswag_responses)
+        hswag_result = self._benchmark_runner.run(
+            model, provider, BenchmarkSuite.HELLASWAG, hswag_responses
+        )
         redteam_report = self._redteam.analyze_responses(model, provider, redteam_responses)
 
         # 3. Hallucination risk, averaged across every generative (non-bias) response.
@@ -114,7 +124,9 @@ class LeaderboardRunner:
             **{f"hellaswag:{k}": v for k, v in hswag_responses.items()},
             **{f"redteam:{k}": v for k, v in redteam_responses.items()},
         }
-        guardrail_scans = {key: self._guardrails.scan(text) for key, text in all_responses.items() if text}
+        guardrail_scans = {
+            key: self._guardrails.scan(text) for key, text in all_responses.items() if text
+        }
         pii_leak_count = sum(1 for r in guardrail_scans.values() if r.has_pii)
         pii_leak_rate = pii_leak_count / len(guardrail_scans) if guardrail_scans else 0.0
 
@@ -136,44 +148,69 @@ class LeaderboardRunner:
         findings: list[DiagnosticFinding] = []
         for r in tqa_result.sample_results:
             if not r.correct:
-                findings.append(DiagnosticFinding(
-                    suite="truthfulqa", sample_id=r.sample_id, category=r.category or "general",
-                    failure_reason="Response did not contain any expected factual keyword — "
-                                    "likely repeated a common misconception.",
-                    severity="n/a", prompt_excerpt=_excerpt(r.prompt),
-                ))
+                findings.append(
+                    DiagnosticFinding(
+                        suite="truthfulqa",
+                        sample_id=r.sample_id,
+                        category=r.category or "general",
+                        failure_reason="Response did not contain any expected factual keyword — "
+                        "likely repeated a common misconception.",
+                        severity="n/a",
+                        prompt_excerpt=_excerpt(r.prompt),
+                    )
+                )
         for r in bbq_result.sample_results:
             if r.bias_detected:
-                findings.append(DiagnosticFinding(
-                    suite="bbq", sample_id=r.sample_id, category=r.category or "general",
-                    failure_reason="Response matched a known bias pattern for this category.",
-                    severity="high", prompt_excerpt=_excerpt(r.prompt),
-                ))
+                findings.append(
+                    DiagnosticFinding(
+                        suite="bbq",
+                        sample_id=r.sample_id,
+                        category=r.category or "general",
+                        failure_reason="Response matched a known bias pattern for this category.",
+                        severity="high",
+                        prompt_excerpt=_excerpt(r.prompt),
+                    )
+                )
         for r in hswag_result.sample_results:
             if not r.correct:
-                findings.append(DiagnosticFinding(
-                    suite="hellaswag", sample_id=r.sample_id, category=r.category or "general",
-                    failure_reason="Response didn't match the expected commonsense continuation.",
-                    severity="n/a", prompt_excerpt=_excerpt(r.prompt),
-                ))
+                findings.append(
+                    DiagnosticFinding(
+                        suite="hellaswag",
+                        sample_id=r.sample_id,
+                        category=r.category or "general",
+                        failure_reason="Response didn't match the expected commonsense continuation.",
+                        severity="n/a",
+                        prompt_excerpt=_excerpt(r.prompt),
+                    )
+                )
         for attack_result in redteam_report.attack_results:
             if attack_result.is_vulnerable:
                 vector = attack_result.vector
-                findings.append(DiagnosticFinding(
-                    suite="redteam", sample_id=vector.name, category=vector.category.value,
-                    failure_reason=f"Vulnerable to {vector.category.value} attack "
-                                    f"(signals: {', '.join(attack_result.vulnerability_signals) or 'refusal language absent'}).",
-                    severity=attack_result.severity, prompt_excerpt=_excerpt(vector.payload),
-                ))
+                findings.append(
+                    DiagnosticFinding(
+                        suite="redteam",
+                        sample_id=vector.name,
+                        category=vector.category.value,
+                        failure_reason=f"Vulnerable to {vector.category.value} attack "
+                        f"(signals: {', '.join(attack_result.vulnerability_signals) or 'refusal language absent'}).",
+                        severity=attack_result.severity,
+                        prompt_excerpt=_excerpt(vector.payload),
+                    )
+                )
         for key, scan in guardrail_scans.items():
             if scan.has_pii:
                 suite, _, sample_id = key.partition(":")
                 categories = sorted({f.category for f in scan.pii_findings})
-                findings.append(DiagnosticFinding(
-                    suite="privacy_scan", sample_id=f"{suite}:{sample_id}", category=", ".join(categories) or "pii",
-                    failure_reason="Response contained apparent PII in its output.",
-                    severity="high", prompt_excerpt=_excerpt(all_responses[key]),
-                ))
+                findings.append(
+                    DiagnosticFinding(
+                        suite="privacy_scan",
+                        sample_id=f"{suite}:{sample_id}",
+                        category=", ".join(categories) or "pii",
+                        failure_reason="Response contained apparent PII in its output.",
+                        severity="high",
+                        prompt_excerpt=_excerpt(all_responses[key]),
+                    )
+                )
 
         return LeaderboardRunResult(
             model=model,

@@ -47,5 +47,8 @@ async def recent_violation_count(
     otherwise have resolved to."""
     since = (datetime.now(UTC) - timedelta(minutes=window_minutes)).isoformat()
     return await evidence_repo.count_recent(
-        org_id, agent_id, GovernanceDecision.DENY.value, since=since,
+        org_id,
+        agent_id,
+        GovernanceDecision.DENY.value,
+        since=since,
     )

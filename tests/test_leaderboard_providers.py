@@ -67,6 +67,7 @@ class TestGoogleAdapter:
         # a key is present but the package genuinely isn't importable.
         try:
             import google.generativeai  # noqa: F401
+
             pytest.skip("google-generativeai is installed in this environment")
         except ImportError:
             pass
@@ -77,21 +78,29 @@ class TestGoogleAdapter:
 class TestAzureOpenAIAdapter:
     def test_raises_without_api_key(self):
         with pytest.raises(ProviderNotConfiguredError, match="AZURE_OPENAI_API_KEY"):
-            AzureOpenAIAdapter(model="prod-gpt4o", api_key=None, endpoint="https://x.openai.azure.com/")
+            AzureOpenAIAdapter(
+                model="prod-gpt4o", api_key=None, endpoint="https://x.openai.azure.com/"
+            )
 
     def test_raises_without_endpoint(self):
-        with pytest.raises(ProviderNotConfiguredError, match="RAI_LEADERBOARD_AZURE_OPENAI_ENDPOINT"):
+        with pytest.raises(
+            ProviderNotConfiguredError, match="RAI_LEADERBOARD_AZURE_OPENAI_ENDPOINT"
+        ):
             AzureOpenAIAdapter(model="prod-gpt4o", api_key="fake-key", endpoint=None)
 
     def test_constructs_with_key_and_endpoint(self):
         adapter = AzureOpenAIAdapter(
-            model="prod-gpt4o", api_key="fake-key", endpoint="https://x.openai.azure.com/",
+            model="prod-gpt4o",
+            api_key="fake-key",
+            endpoint="https://x.openai.azure.com/",
         )
         assert adapter.model == "prod-gpt4o"
 
     def test_defaults_api_version_when_not_supplied(self):
         adapter = AzureOpenAIAdapter(
-            model="prod-gpt4o", api_key="fake-key", endpoint="https://x.openai.azure.com/",
+            model="prod-gpt4o",
+            api_key="fake-key",
+            endpoint="https://x.openai.azure.com/",
         )
         assert adapter._client is not None  # constructed without raising
 
@@ -115,7 +124,8 @@ class TestGetAdapterFactory:
 
     def test_azure_openai_provider_uses_supplied_key_and_endpoint(self):
         adapter = get_adapter(
-            "azure-openai", "prod-gpt4o",
+            "azure-openai",
+            "prod-gpt4o",
             api_keys={"azure-openai": "fake-key"},
             azure_openai_endpoint="https://x.openai.azure.com/",
         )
@@ -125,7 +135,8 @@ class TestGetAdapterFactory:
     def test_azure_openai_provider_without_endpoint_raises(self):
         with pytest.raises(ProviderNotConfiguredError, match="ENDPOINT"):
             get_adapter(
-                "azure-openai", "prod-gpt4o",
+                "azure-openai",
+                "prod-gpt4o",
                 api_keys={"azure-openai": "fake-key"},
             )
 

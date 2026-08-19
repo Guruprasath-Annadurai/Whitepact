@@ -45,7 +45,9 @@ def setup_telemetry(
 
             headers = otlp_headers or {}
             span_exporter = OTLPSpanExporter(endpoint=f"{otlp_endpoint}/v1/traces", headers=headers)
-            metric_exporter = OTLPMetricExporter(endpoint=f"{otlp_endpoint}/v1/metrics", headers=headers)
+            metric_exporter = OTLPMetricExporter(
+                endpoint=f"{otlp_endpoint}/v1/metrics", headers=headers
+            )
 
             tracer_provider.add_span_processor(BatchSpanProcessor(span_exporter))
             meter_provider_kwargs["metric_readers"] = [
@@ -72,12 +74,14 @@ def setup_telemetry(
 def _register_fastapi_instrumentation() -> None:
     try:
         from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
         FastAPIInstrumentor().instrument()
     except ImportError:
         pass
 
     try:
         from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+
         HTTPXClientInstrumentor().instrument()
     except ImportError:
         pass
@@ -89,6 +93,7 @@ def get_tracer():
         return _tracer
     try:
         from opentelemetry import trace
+
         return trace.get_tracer("responsibleai")
     except ImportError:
         return _NoOpTracer()
@@ -100,6 +105,7 @@ def get_meter():
         return _meter
     try:
         from opentelemetry import metrics
+
         return metrics.get_meter("responsibleai")
     except ImportError:
         return _NoOpMeter()
@@ -173,16 +179,27 @@ class _NoOpTracer:
 
 
 class _NoOpSpan:
-    def set_attribute(self, *_): pass
-    def set_status(self, *_): pass
+    def set_attribute(self, *_):
+        pass
+
+    def set_status(self, *_):
+        pass
 
 
 class _NoOpMeter:
-    def create_histogram(self, *_, **__): return _NoOpInstrument()
-    def create_counter(self, *_, **__): return _NoOpInstrument()
-    def create_gauge(self, *_, **__): return _NoOpInstrument()
+    def create_histogram(self, *_, **__):
+        return _NoOpInstrument()
+
+    def create_counter(self, *_, **__):
+        return _NoOpInstrument()
+
+    def create_gauge(self, *_, **__):
+        return _NoOpInstrument()
 
 
 class _NoOpInstrument:
-    def record(self, *_, **__): pass
-    def add(self, *_, **__): pass
+    def record(self, *_, **__):
+        pass
+
+    def add(self, *_, **__):
+        pass

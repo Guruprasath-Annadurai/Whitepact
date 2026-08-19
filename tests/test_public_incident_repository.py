@@ -43,8 +43,11 @@ class TestSubmission:
 
     async def test_submit_stores_reporter_and_evidence(self, repo):
         r = await _submit(
-            repo, reporter_name="alice", reporter_contact="alice@example.com",
-            evidence={"urls": ["https://example.com"]}, tags=["jailbreak", "roleplay"],
+            repo,
+            reporter_name="alice",
+            reporter_contact="alice@example.com",
+            evidence={"urls": ["https://example.com"]},
+            tags=["jailbreak", "roleplay"],
         )
         assert r["reporter_name"] == "alice"
         assert r["reporter_contact"] == "alice@example.com"

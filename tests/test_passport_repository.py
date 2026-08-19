@@ -62,7 +62,9 @@ class TestCertification:
         passport = _make_passport()
         await repo.create(passport, org_id=None, source="self_assessment")
 
-        certified = await repo.certify(passport.passport_id, certified_by="ResponsibleAI Certification Team")
+        certified = await repo.certify(
+            passport.passport_id, certified_by="ResponsibleAI Certification Team"
+        )
         assert certified["certified"] is True
         assert certified["certified_by"] == "ResponsibleAI Certification Team"
         assert certified["certified_at"] is not None
@@ -76,6 +78,7 @@ class TestCertification:
         assert stored["certified"] is False
         assert stored["certified_by"] is None
         assert stored["certified_at"] is None
+
 
 class TestGetLatestByModel:
     async def test_unknown_model_returns_none(self, repo):

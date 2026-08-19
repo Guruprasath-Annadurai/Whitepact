@@ -44,8 +44,12 @@ class TestTrustScoreCompute:
 
     def test_all_ones_gives_grade_a(self) -> None:
         score = self.engine.compute(
-            fairness=1.0, privacy=1.0, security=1.0,
-            robustness=1.0, compliance=1.0, authenticity=1.0,
+            fairness=1.0,
+            privacy=1.0,
+            security=1.0,
+            robustness=1.0,
+            compliance=1.0,
+            authenticity=1.0,
         )
         assert score.overall == pytest.approx(100.0)
         assert score.grade == "A"
@@ -53,8 +57,12 @@ class TestTrustScoreCompute:
 
     def test_all_zeros_gives_grade_f(self) -> None:
         score = self.engine.compute(
-            fairness=0.0, privacy=0.0, security=0.0,
-            robustness=0.0, compliance=0.0, authenticity=0.0,
+            fairness=0.0,
+            privacy=0.0,
+            security=0.0,
+            robustness=0.0,
+            compliance=0.0,
+            authenticity=0.0,
         )
         assert score.overall == pytest.approx(0.0)
         assert score.grade == "F"
@@ -66,28 +74,81 @@ class TestTrustScoreCompute:
 
     def test_grade_boundaries(self) -> None:
         engine = self.engine
-        assert engine.compute(fairness=0.9, privacy=0.9, security=0.9,
-                              robustness=0.9, compliance=0.9, authenticity=0.9).grade == "A"
-        assert engine.compute(fairness=0.8, privacy=0.8, security=0.8,
-                              robustness=0.8, compliance=0.8, authenticity=0.8).grade == "B"
-        assert engine.compute(fairness=0.7, privacy=0.7, security=0.7,
-                              robustness=0.7, compliance=0.7, authenticity=0.7).grade == "C"
-        assert engine.compute(fairness=0.6, privacy=0.6, security=0.6,
-                              robustness=0.6, compliance=0.6, authenticity=0.6).grade == "D"
-        assert engine.compute(fairness=0.5, privacy=0.5, security=0.5,
-                              robustness=0.5, compliance=0.5, authenticity=0.5).grade == "F"
+        assert (
+            engine.compute(
+                fairness=0.9,
+                privacy=0.9,
+                security=0.9,
+                robustness=0.9,
+                compliance=0.9,
+                authenticity=0.9,
+            ).grade
+            == "A"
+        )
+        assert (
+            engine.compute(
+                fairness=0.8,
+                privacy=0.8,
+                security=0.8,
+                robustness=0.8,
+                compliance=0.8,
+                authenticity=0.8,
+            ).grade
+            == "B"
+        )
+        assert (
+            engine.compute(
+                fairness=0.7,
+                privacy=0.7,
+                security=0.7,
+                robustness=0.7,
+                compliance=0.7,
+                authenticity=0.7,
+            ).grade
+            == "C"
+        )
+        assert (
+            engine.compute(
+                fairness=0.6,
+                privacy=0.6,
+                security=0.6,
+                robustness=0.6,
+                compliance=0.6,
+                authenticity=0.6,
+            ).grade
+            == "D"
+        )
+        assert (
+            engine.compute(
+                fairness=0.5,
+                privacy=0.5,
+                security=0.5,
+                robustness=0.5,
+                compliance=0.5,
+                authenticity=0.5,
+            ).grade
+            == "F"
+        )
 
     def test_risk_level_low(self) -> None:
         score = self.engine.compute(
-            fairness=0.9, privacy=0.9, security=0.9,
-            robustness=0.9, compliance=0.9, authenticity=0.9,
+            fairness=0.9,
+            privacy=0.9,
+            security=0.9,
+            robustness=0.9,
+            compliance=0.9,
+            authenticity=0.9,
         )
         assert score.risk_level == "LOW"
 
     def test_risk_level_critical(self) -> None:
         score = self.engine.compute(
-            fairness=0.1, privacy=0.1, security=0.1,
-            robustness=0.1, compliance=0.1, authenticity=0.1,
+            fairness=0.1,
+            privacy=0.1,
+            security=0.1,
+            robustness=0.1,
+            compliance=0.1,
+            authenticity=0.1,
         )
         assert score.risk_level == "CRITICAL"
 
@@ -101,15 +162,23 @@ class TestTrustScoreCompute:
 
     def test_passed_at_70(self) -> None:
         score = self.engine.compute(
-            fairness=0.7, privacy=0.7, security=0.7,
-            robustness=0.7, compliance=0.7, authenticity=0.7,
+            fairness=0.7,
+            privacy=0.7,
+            security=0.7,
+            robustness=0.7,
+            compliance=0.7,
+            authenticity=0.7,
         )
         assert score.passed
 
     def test_failed_below_70(self) -> None:
         score = self.engine.compute(
-            fairness=0.5, privacy=0.5, security=0.5,
-            robustness=0.5, compliance=0.5, authenticity=0.5,
+            fairness=0.5,
+            privacy=0.5,
+            security=0.5,
+            robustness=0.5,
+            compliance=0.5,
+            authenticity=0.5,
         )
         assert not score.passed
 
@@ -122,7 +191,12 @@ class TestTrustScoreCompute:
         assert "dimensions" in d
         assert "timestamp" in d
         assert set(d["dimensions"].keys()) == {
-            "fairness", "privacy", "security", "robustness", "compliance", "authenticity"
+            "fairness",
+            "privacy",
+            "security",
+            "robustness",
+            "compliance",
+            "authenticity",
         }
 
     def test_trust_score_frozen(self) -> None:

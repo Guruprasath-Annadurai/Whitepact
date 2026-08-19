@@ -125,9 +125,7 @@ class StripeService:
         if not self._webhook_secret:
             raise StripeBillingError("STRIPE_WEBHOOK_SECRET is not configured.")
         try:
-            return self._stripe.Webhook.construct_event(
-                payload, sig_header, self._webhook_secret
-            )
+            return self._stripe.Webhook.construct_event(payload, sig_header, self._webhook_secret)
         except Exception as exc:  # signature or payload error
             raise StripeBillingError(f"Webhook verification failed: {exc}") from exc
 

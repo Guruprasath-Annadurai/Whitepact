@@ -36,11 +36,17 @@ class TestEnrichAgentTrustState:
     @respx.mock
     async def test_populates_trust_state_when_provider_and_model_set(self) -> None:
         respx.get("https://api.test/api/trust-index/check").mock(
-            return_value=httpx.Response(200, json={
-                "model": "gpt-4o", "provider": "openai", "known": True,
-                "trust_score": {"overall": 88.0}, "certified": True,
-                "has_reported_incidents": False,
-            })
+            return_value=httpx.Response(
+                200,
+                json={
+                    "model": "gpt-4o",
+                    "provider": "openai",
+                    "known": True,
+                    "trust_score": {"overall": 88.0},
+                    "certified": True,
+                    "has_reported_incidents": False,
+                },
+            )
         )
         agent = AgentContext(identity=_identity(), provider="openai", model="gpt-4o")
         client = TrustClient("https://api.test")
@@ -79,10 +85,17 @@ class TestGatewayLowTrustDowngrade:
     @respx.mock
     async def test_unknown_model_allows_normally(self) -> None:
         respx.get("https://api.test/api/trust-index/check").mock(
-            return_value=httpx.Response(200, json={
-                "model": "totally-obscure-model", "provider": "openai", "known": False,
-                "trust_score": None, "certified": False, "has_reported_incidents": False,
-            })
+            return_value=httpx.Response(
+                200,
+                json={
+                    "model": "totally-obscure-model",
+                    "provider": "openai",
+                    "known": False,
+                    "trust_score": None,
+                    "certified": False,
+                    "has_reported_incidents": False,
+                },
+            )
         )
         gateway, authority = self._gateway_authority()
         agent = AgentContext(identity=_identity(), provider="openai", model="totally-obscure-model")
@@ -94,10 +107,17 @@ class TestGatewayLowTrustDowngrade:
     @respx.mock
     async def test_high_trust_score_allows_normally(self) -> None:
         respx.get("https://api.test/api/trust-index/check").mock(
-            return_value=httpx.Response(200, json={
-                "model": "gpt-4o", "provider": "openai", "known": True,
-                "trust_score": {"overall": 90.0}, "certified": True, "has_reported_incidents": False,
-            })
+            return_value=httpx.Response(
+                200,
+                json={
+                    "model": "gpt-4o",
+                    "provider": "openai",
+                    "known": True,
+                    "trust_score": {"overall": 90.0},
+                    "certified": True,
+                    "has_reported_incidents": False,
+                },
+            )
         )
         gateway, authority = self._gateway_authority()
         agent = AgentContext(identity=_identity(), provider="openai", model="gpt-4o")
@@ -110,10 +130,17 @@ class TestGatewayLowTrustDowngrade:
     async def test_low_trust_score_downgrades_allow_to_require_approval(self) -> None:
         assert LOW_TRUST_SCORE_THRESHOLD == 40.0
         respx.get("https://api.test/api/trust-index/check").mock(
-            return_value=httpx.Response(200, json={
-                "model": "sketchy-model", "provider": "unknown-vendor", "known": True,
-                "trust_score": {"overall": 15.0}, "certified": False, "has_reported_incidents": True,
-            })
+            return_value=httpx.Response(
+                200,
+                json={
+                    "model": "sketchy-model",
+                    "provider": "unknown-vendor",
+                    "known": True,
+                    "trust_score": {"overall": 15.0},
+                    "certified": False,
+                    "has_reported_incidents": True,
+                },
+            )
         )
         gateway, authority = self._gateway_authority()
         agent = AgentContext(identity=_identity(), provider="unknown-vendor", model="sketchy-model")
@@ -129,16 +156,25 @@ class TestGatewayLowTrustDowngrade:
         ALLOW_WITH_REDACTION/DENY — those already carry their own,
         higher-priority handling."""
         respx.get("https://api.test/api/trust-index/check").mock(
-            return_value=httpx.Response(200, json={
-                "model": "sketchy-model", "provider": "unknown-vendor", "known": True,
-                "trust_score": {"overall": 5.0}, "certified": False, "has_reported_incidents": True,
-            })
+            return_value=httpx.Response(
+                200,
+                json={
+                    "model": "sketchy-model",
+                    "provider": "unknown-vendor",
+                    "known": True,
+                    "trust_score": {"overall": 5.0},
+                    "certified": False,
+                    "has_reported_incidents": True,
+                },
+            )
         )
         gateway, authority = self._gateway_authority()
         agent = AgentContext(identity=_identity(), provider="unknown-vendor", model="sketchy-model")
         agent = await enrich_agent_trust_state(agent, TrustClient("https://api.test"))
         action = ActionRequest(
-            agent=agent, action_type="rai_scan", target="rai_scan",
+            agent=agent,
+            action_type="rai_scan",
+            target="rai_scan",
             arguments={"text": "Contact me at alice@example.com"},
         )
         result = gateway.evaluate(action, authority)
@@ -163,9 +199,13 @@ class TestGatewayStaleTrustDowngrade:
         gateway, authority = self._gateway_authority()
         agent = AgentContext(identity=_identity(), provider="openai", model="gpt-4o")
         agent.trust_state = TrustCheckResult(
-            model="gpt-4o", provider="openai", known=True,
-            trust_score={"overall": 95.0}, certified=True,
-            has_reported_incidents=False, stale=True,
+            model="gpt-4o",
+            provider="openai",
+            known=True,
+            trust_score={"overall": 95.0},
+            certified=True,
+            has_reported_incidents=False,
+            stale=True,
         )
         action = ActionRequest(agent=agent, action_type="rai_scan", target="rai_scan", arguments={})
         result = gateway.evaluate(action, authority)
@@ -179,8 +219,13 @@ class TestGatewayStaleTrustDowngrade:
         gateway, authority = self._gateway_authority()
         agent = AgentContext(identity=_identity(), provider="openai", model="obscure-model")
         agent.trust_state = TrustCheckResult(
-            model="obscure-model", provider="openai", known=False,
-            trust_score=None, certified=False, has_reported_incidents=False, stale=True,
+            model="obscure-model",
+            provider="openai",
+            known=False,
+            trust_score=None,
+            certified=False,
+            has_reported_incidents=False,
+            stale=True,
         )
         action = ActionRequest(agent=agent, action_type="rai_scan", target="rai_scan", arguments={})
         result = gateway.evaluate(action, authority)
@@ -191,9 +236,13 @@ class TestGatewayStaleTrustDowngrade:
         gateway, authority = self._gateway_authority()
         agent = AgentContext(identity=_identity(), provider="openai", model="gpt-4o")
         agent.trust_state = TrustCheckResult(
-            model="gpt-4o", provider="openai", known=True,
-            trust_score={"overall": 95.0}, certified=True,
-            has_reported_incidents=False, stale=False,
+            model="gpt-4o",
+            provider="openai",
+            known=True,
+            trust_score={"overall": 95.0},
+            certified=True,
+            has_reported_incidents=False,
+            stale=False,
         )
         action = ActionRequest(agent=agent, action_type="rai_scan", target="rai_scan", arguments={})
         result = gateway.evaluate(action, authority)
@@ -203,12 +252,18 @@ class TestGatewayStaleTrustDowngrade:
         gateway, authority = self._gateway_authority()
         agent = AgentContext(identity=_identity(), provider="openai", model="gpt-4o")
         agent.trust_state = TrustCheckResult(
-            model="gpt-4o", provider="openai", known=True,
-            trust_score={"overall": 95.0}, certified=True,
-            has_reported_incidents=False, stale=True,
+            model="gpt-4o",
+            provider="openai",
+            known=True,
+            trust_score={"overall": 95.0},
+            certified=True,
+            has_reported_incidents=False,
+            stale=True,
         )
         action = ActionRequest(
-            agent=agent, action_type="rai_scan", target="rai_scan",
+            agent=agent,
+            action_type="rai_scan",
+            target="rai_scan",
             arguments={"text": "Contact me at alice@example.com"},
         )
         result = gateway.evaluate(action, authority)

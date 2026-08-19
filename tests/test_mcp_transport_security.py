@@ -162,7 +162,8 @@ class TestDnsRebindingProtectionIntegration:
         app, _raw_key = await app_factory()
         async with await _raw_client(app) as client:
             response = await client.post(
-                "/mcp", json={"jsonrpc": "2.0", "method": "ping", "id": 1},
+                "/mcp",
+                json={"jsonrpc": "2.0", "method": "ping", "id": 1},
             )
         # No auth header -- rejected by our own auth check (401), not by
         # DNS rebinding protection (which would be 421). Proves the
@@ -173,7 +174,8 @@ class TestDnsRebindingProtectionIntegration:
         app, _raw_key = await app_factory()
         async with await _raw_client(app) as client:
             response = await client.post(
-                "/mcp", json={"jsonrpc": "2.0", "method": "ping", "id": 1},
+                "/mcp",
+                json={"jsonrpc": "2.0", "method": "ping", "id": 1},
             )
         assert response.status_code == 401
 

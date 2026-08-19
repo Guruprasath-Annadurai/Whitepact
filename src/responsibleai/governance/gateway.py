@@ -186,7 +186,10 @@ class WhitePactRuntimeGateway:
 
         if workflow_rules:
             composition_reason = check_composition_violation(
-                recent_actions or [], action.action_type, action.proposed_at, workflow_rules,
+                recent_actions or [],
+                action.action_type,
+                action.proposed_at,
+                workflow_rules,
             )
             if composition_reason is not None:
                 return DecisionResult(

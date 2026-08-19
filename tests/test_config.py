@@ -23,12 +23,15 @@ def fresh_settings_module(monkeypatch: pytest.MonkeyPatch):
     are actually picked up (Settings() re-reads os.environ on construction,
     but the module-level get_settings() cache would otherwise mask this)."""
     import responsibleai.dashboard.config as config_module
+
     importlib.reload(config_module)
     return config_module
 
 
 class TestApiKeysEnvParsing:
-    def test_comma_separated_string_does_not_crash(self, monkeypatch, fresh_settings_module) -> None:
+    def test_comma_separated_string_does_not_crash(
+        self, monkeypatch, fresh_settings_module
+    ) -> None:
         monkeypatch.setenv("RAI_API_KEYS", "key1,key2,key3")
         settings = fresh_settings_module.Settings()
         assert settings.api_keys == ["key1", "key2", "key3"]
@@ -50,7 +53,9 @@ class TestApiKeysEnvParsing:
 
 
 class TestAllowedOriginsEnvParsing:
-    def test_comma_separated_string_does_not_crash(self, monkeypatch, fresh_settings_module) -> None:
+    def test_comma_separated_string_does_not_crash(
+        self, monkeypatch, fresh_settings_module
+    ) -> None:
         monkeypatch.setenv("RAI_ALLOWED_ORIGINS", "https://a.example.com,https://b.example.com")
         settings = fresh_settings_module.Settings()
         assert settings.allowed_origins == ["https://a.example.com", "https://b.example.com"]
@@ -65,7 +70,9 @@ class TestAllowedOriginsEnvParsing:
 
 
 class TestOidcScopesEnvParsing:
-    def test_comma_separated_string_does_not_crash(self, monkeypatch, fresh_settings_module) -> None:
+    def test_comma_separated_string_does_not_crash(
+        self, monkeypatch, fresh_settings_module
+    ) -> None:
         monkeypatch.setenv("RAI_OIDC_SCOPES", "openid,email")
         settings = fresh_settings_module.Settings()
         assert settings.oidc_scopes == ["openid", "email"]
@@ -131,7 +138,9 @@ class TestWhitepactEnvVarPrecedence:
         settings = fresh_settings_module.Settings()
         assert settings.db_path == "/tmp/new.db"
 
-    def test_precedence_holds_for_a_second_unrelated_field(self, monkeypatch, fresh_settings_module) -> None:
+    def test_precedence_holds_for_a_second_unrelated_field(
+        self, monkeypatch, fresh_settings_module
+    ) -> None:
         # Not just db_path — the precedence is a source-ordering rule that
         # applies uniformly across all fields, not a per-field special case.
         monkeypatch.setenv("RAI_BRAND_NAME", "LegacyBrand")
@@ -202,7 +211,8 @@ class TestWarnDeprecatedEnvVars:
         assert found == []
 
     def test_unrelated_rai_prefixed_var_that_is_not_a_real_field_is_ignored(
-        self, fresh_settings_module,
+        self,
+        fresh_settings_module,
     ) -> None:
         # Scoped to Settings.model_fields, not a blind RAI_ scan — a typo'd
         # or unrelated variable shouldn't be reported as "a legacy setting
@@ -216,7 +226,9 @@ class TestWarnDeprecatedEnvVars:
         assert found == ["RAI_DB_PATH"]
 
     def test_get_settings_triggers_the_scan_on_first_call_only(
-        self, monkeypatch, fresh_settings_module,
+        self,
+        monkeypatch,
+        fresh_settings_module,
     ) -> None:
         monkeypatch.setenv("RAI_DB_PATH", ":memory:")
         with pytest.warns(DeprecationWarning):

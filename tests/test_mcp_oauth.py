@@ -89,7 +89,8 @@ async def _list_tools_over_mcp(app, token: str) -> list:
     method) leaves the StreamableHTTPSessionManager waiting on a response
     stream that a plain httpx.post never drives to completion."""
     async with streamable_http_client(
-        "/mcp", http_client=_asgi_http_client(app, token),
+        "/mcp",
+        http_client=_asgi_http_client(app, token),
     ) as (read_stream, write_stream, _get_session_id):
         async with ClientSession(read_stream, write_stream) as session:
             await session.initialize()
@@ -135,7 +136,8 @@ class TestOidcJwtAuth:
         app = await build(oidc_issuer="https://idp.example.com")
         token = _make_jwt({"sub": "user-2", "org_id": "org-does-not-exist", "roles": []})
         async with streamable_http_client(
-            "/mcp", http_client=_asgi_http_client(app, token),
+            "/mcp",
+            http_client=_asgi_http_client(app, token),
         ) as (read_stream, write_stream, _get_session_id):
             async with ClientSession(read_stream, write_stream) as session:
                 await session.initialize()
@@ -183,7 +185,8 @@ class TestWwwAuthenticateHeader:
         app = await build(oidc_issuer="https://idp.example.com")
         async with await _raw_client(app) as client:
             response = await client.post(
-                "/mcp", json={"jsonrpc": "2.0", "method": "ping", "id": 1},
+                "/mcp",
+                json={"jsonrpc": "2.0", "method": "ping", "id": 1},
             )
         assert response.status_code == 401
         www_auth = response.headers.get("www-authenticate", "")
@@ -195,7 +198,8 @@ class TestWwwAuthenticateHeader:
         app = await build(oidc_issuer=None)
         async with await _raw_client(app) as client:
             response = await client.post(
-                "/mcp", json={"jsonrpc": "2.0", "method": "ping", "id": 1},
+                "/mcp",
+                json={"jsonrpc": "2.0", "method": "ping", "id": 1},
             )
         assert response.status_code == 401
         assert "www-authenticate" not in {k.lower() for k in response.headers}

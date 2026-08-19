@@ -76,18 +76,22 @@ class TestCreateCheckoutSession:
             )
 
     async def test_rejects_unconfigured_price(self, fake_stripe_module):
-        svc = StripeService(
-            secret_key="sk_test_fake", webhook_secret="whsec_fake", price_ids={}
-        )
+        svc = StripeService(secret_key="sk_test_fake", webhook_secret="whsec_fake", price_ids={})
         with pytest.raises(StripeBillingError, match="No Stripe price"):
             await svc.create_checkout_session(
                 "org-1", "a@b.com", Plan.PRO, "https://ok", "https://cancel"
             )
 
     async def test_uses_existing_customer_id_when_provided(self, service, fake_stripe_module):
-        fake_stripe_module.checkout.Session.create.return_value = SimpleNamespace(url="https://checkout")
+        fake_stripe_module.checkout.Session.create.return_value = SimpleNamespace(
+            url="https://checkout"
+        )
         url = await service.create_checkout_session(
-            "org-1", "a@b.com", Plan.PRO, "https://ok", "https://cancel",
+            "org-1",
+            "a@b.com",
+            Plan.PRO,
+            "https://ok",
+            "https://cancel",
             existing_customer_id="cus_123",
         )
         assert url == "https://checkout"
@@ -96,7 +100,9 @@ class TestCreateCheckoutSession:
         assert "customer_email" not in kwargs
 
     async def test_uses_org_email_when_no_existing_customer(self, service, fake_stripe_module):
-        fake_stripe_module.checkout.Session.create.return_value = SimpleNamespace(url="https://checkout")
+        fake_stripe_module.checkout.Session.create.return_value = SimpleNamespace(
+            url="https://checkout"
+        )
         await service.create_checkout_session(
             "org-1", "a@b.com", Plan.PRO, "https://ok", "https://cancel"
         )
@@ -105,7 +111,9 @@ class TestCreateCheckoutSession:
         assert "customer" not in kwargs
 
     async def test_no_customer_field_when_neither_provided(self, service, fake_stripe_module):
-        fake_stripe_module.checkout.Session.create.return_value = SimpleNamespace(url="https://checkout")
+        fake_stripe_module.checkout.Session.create.return_value = SimpleNamespace(
+            url="https://checkout"
+        )
         await service.create_checkout_session(
             "org-1", None, Plan.PRO, "https://ok", "https://cancel"
         )
@@ -116,7 +124,9 @@ class TestCreateCheckoutSession:
 
 class TestCreateBillingPortalSession:
     async def test_returns_hosted_url(self, service, fake_stripe_module):
-        fake_stripe_module.billing_portal.Session.create.return_value = SimpleNamespace(url="https://portal")
+        fake_stripe_module.billing_portal.Session.create.return_value = SimpleNamespace(
+            url="https://portal"
+        )
         url = await service.create_billing_portal_session("cus_123", "https://return")
         assert url == "https://portal"
 
@@ -183,7 +193,9 @@ class TestExtractPlanUpdate:
         assert service.extract_plan_update(_event("checkout.session.completed", obj)) is None
 
     def test_checkout_completed_none_when_missing_plan(self, service):
-        obj = SimpleNamespace(metadata={"org_id": "org-1"}, client_reference_id=None, customer="cus_1")
+        obj = SimpleNamespace(
+            metadata={"org_id": "org-1"}, client_reference_id=None, customer="cus_1"
+        )
         assert service.extract_plan_update(_event("checkout.session.completed", obj)) is None
 
     def test_checkout_completed_none_when_missing_customer(self, service):
@@ -242,7 +254,11 @@ class TestExtractPlanUpdate:
 
     def test_subscription_updated_none_when_missing_org_id(self, service):
         obj = SimpleNamespace(
-            metadata={"plan": "PRO"}, customer="cus_1", id="sub_1", current_period_end=None, status="active"
+            metadata={"plan": "PRO"},
+            customer="cus_1",
+            id="sub_1",
+            current_period_end=None,
+            status="active",
         )
         assert service.extract_plan_update(_event("customer.subscription.updated", obj)) is None
 

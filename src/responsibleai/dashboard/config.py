@@ -284,7 +284,7 @@ class Settings(BaseSettings):
             "token concept — the assertion is a one-time browser ceremony, "
             "not a repeatable API credential, so the SP mints its own). "
             "Required if saml_idp_entity_id is set; generate with "
-            "`python -c \"import secrets; print(secrets.token_urlsafe(32))\"`."
+            '`python -c "import secrets; print(secrets.token_urlsafe(32))"`.'
         ),
     )
     openai_apps_challenge_token: str | None = Field(
@@ -372,7 +372,7 @@ class Settings(BaseSettings):
     leaderboard_azure_openai_endpoint: str | None = Field(
         default=None,
         description="Azure OpenAI resource endpoint, e.g. https://your-resource.openai.azure.com/ "
-                    "— required alongside the key; Azure OpenAI has no default shared endpoint.",
+        "— required alongside the key; Azure OpenAI has no default shared endpoint.",
     )
     leaderboard_azure_openai_api_version: str = Field(
         default="2024-10-21",

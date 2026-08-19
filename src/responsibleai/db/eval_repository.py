@@ -48,9 +48,7 @@ class EvalRepository:
 
     async def get_run(self, run_id: str) -> dict[str, Any] | None:
         async with self._engine.raw.connect() as conn:
-            row = (await conn.execute(
-                select(eval_runs).where(eval_runs.c.id == run_id)
-            )).fetchone()
+            row = (await conn.execute(select(eval_runs).where(eval_runs.c.id == run_id))).fetchone()
         if row is None:
             return None
         return {**dict(row._mapping), "payload": json.loads(row.payload)}
@@ -63,15 +61,20 @@ class EvalRepository:
         limit: int = 50,
         offset: int = 0,
     ) -> list[dict[str, Any]]:
-        q = select(
-            eval_runs.c.id,
-            eval_runs.c.run_type,
-            eval_runs.c.model,
-            eval_runs.c.provider,
-            eval_runs.c.suite,
-            eval_runs.c.org_id,
-            eval_runs.c.created_at,
-        ).order_by(eval_runs.c.created_at.desc()).limit(limit).offset(offset)
+        q = (
+            select(
+                eval_runs.c.id,
+                eval_runs.c.run_type,
+                eval_runs.c.model,
+                eval_runs.c.provider,
+                eval_runs.c.suite,
+                eval_runs.c.org_id,
+                eval_runs.c.created_at,
+            )
+            .order_by(eval_runs.c.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
         if run_type:
             q = q.where(eval_runs.c.run_type == run_type)
         if model:
@@ -84,9 +87,7 @@ class EvalRepository:
 
     async def delete_run(self, run_id: str) -> bool:
         async with self._engine.raw.begin() as conn:
-            result = await conn.execute(
-                delete(eval_runs).where(eval_runs.c.id == run_id)
-            )
+            result = await conn.execute(delete(eval_runs).where(eval_runs.c.id == run_id))
         return result.rowcount > 0
 
     # ── Baselines ─────────────────────────────────────────────────────────────
@@ -101,13 +102,15 @@ class EvalRepository:
     ) -> None:
         updated_at = datetime.now(UTC).isoformat()
         async with self._engine.raw.begin() as conn:
-            existing = (await conn.execute(
-                select(eval_baselines.c.id).where(
-                    eval_baselines.c.model == model,
-                    eval_baselines.c.suite == suite,
-                    eval_baselines.c.metric == metric,
+            existing = (
+                await conn.execute(
+                    select(eval_baselines.c.id).where(
+                        eval_baselines.c.model == model,
+                        eval_baselines.c.suite == suite,
+                        eval_baselines.c.metric == metric,
+                    )
                 )
-            )).fetchone()
+            ).fetchone()
             if existing:
                 await conn.execute(
                     eval_baselines.update()
@@ -129,9 +132,9 @@ class EvalRepository:
 
     async def get_baselines(self, model: str) -> dict[str, float]:
         async with self._engine.raw.connect() as conn:
-            rows = (await conn.execute(
-                select(eval_baselines).where(eval_baselines.c.model == model)
-            )).fetchall()
+            rows = (
+                await conn.execute(select(eval_baselines).where(eval_baselines.c.model == model))
+            ).fetchall()
         return {f"{r.suite}:{r.metric}": r.score for r in rows}
 
     async def delete_baselines(self, model: str) -> int:

@@ -201,9 +201,7 @@ class MockAdapter(ModelAdapter):
     to the persisted run so it can't be confused with a live result.
     """
 
-    _DEFAULT_RESPONSE = (
-        "I don't have enough verified information to answer that confidently."
-    )
+    _DEFAULT_RESPONSE = "I don't have enough verified information to answer that confidently."
 
     def __init__(
         self,

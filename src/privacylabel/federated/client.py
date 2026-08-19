@@ -134,9 +134,7 @@ class FederatedClient:
         records = self._load_local_data(Path(data_path))
         batch = await self._label_data(records)
         gradients = self._compute_gradients(batch)
-        private_gradients = self._dp.privatise_gradients(
-            gradients, clip_norm=self._gradient_clip
-        )
+        private_gradients = self._dp.privatise_gradients(gradients, clip_norm=self._gradient_clip)
         # Budget accounting: Gaussian mechanism cost ≈ ε per round
         self.budget.consume(
             epsilon_cost=self._dp.epsilon,

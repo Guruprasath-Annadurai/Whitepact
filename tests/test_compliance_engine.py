@@ -162,8 +162,14 @@ class TestMultiFrameworkEvaluation:
         report = self.engine.evaluate()
         d = report.to_dict()
         required = {
-            "compliance_score", "overall_status", "frameworks_evaluated",
-            "total_controls", "violations", "warnings", "findings", "timestamp",
+            "compliance_score",
+            "overall_status",
+            "frameworks_evaluated",
+            "total_controls",
+            "violations",
+            "warnings",
+            "findings",
+            "timestamp",
         }
         assert required.issubset(d.keys())
 

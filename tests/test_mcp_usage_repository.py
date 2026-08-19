@@ -78,10 +78,16 @@ class TestUsageThisMonth:
 
         last_month = (datetime.now(UTC).replace(day=1) - timedelta(days=1)).isoformat()
         async with db.raw.begin() as conn:
-            await conn.execute(insert(mcp_tool_calls).values(
-                id="old-call", org_id="org-1", tool_name="rai_scan",
-                tier="PRO", timestamp=last_month, allowed=1,
-            ))
+            await conn.execute(
+                insert(mcp_tool_calls).values(
+                    id="old-call",
+                    org_id="org-1",
+                    tool_name="rai_scan",
+                    tier="PRO",
+                    timestamp=last_month,
+                    allowed=1,
+                )
+            )
         usage = await repo.usage_this_month("org-1")
         assert usage["total_calls"] == 0
 
@@ -101,10 +107,16 @@ class TestCountSince:
 
         old_ts = (datetime.now(UTC) - timedelta(days=40)).isoformat()
         async with db.raw.begin() as conn:
-            await conn.execute(insert(mcp_tool_calls).values(
-                id="old-call", org_id="org-1", tool_name="rai_scan",
-                tier="PRO", timestamp=old_ts, allowed=1,
-            ))
+            await conn.execute(
+                insert(mcp_tool_calls).values(
+                    id="old-call",
+                    org_id="org-1",
+                    tool_name="rai_scan",
+                    tier="PRO",
+                    timestamp=old_ts,
+                    allowed=1,
+                )
+            )
         await repo.record_call("org-1", "rai_scan", "PRO", allowed=True)
         since = (datetime.now(UTC) - timedelta(days=1)).isoformat()
         count = await repo.count_since("org-1", since)

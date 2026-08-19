@@ -129,7 +129,9 @@ class TestDiscover:
     async def test_fetches_and_caches_discovery_doc(self):
         provider = OIDCProvider(issuer="https://issuer.example.com", client_id="c1")
         route = respx.get("https://issuer.example.com/.well-known/openid-configuration").mock(
-            return_value=httpx.Response(200, json={"authorization_endpoint": "https://issuer.example.com/authorize"})
+            return_value=httpx.Response(
+                200, json={"authorization_endpoint": "https://issuer.example.com/authorize"}
+            )
         )
         doc = await provider.discover()
         assert doc["authorization_endpoint"] == "https://issuer.example.com/authorize"
@@ -143,7 +145,9 @@ class TestDiscover:
 
 class TestValidateTokenSkipVerification:
     async def test_skip_verification_uses_unverified_decode(self):
-        provider = OIDCProvider(issuer="https://issuer.example.com", client_id="c1", skip_verification=True)
+        provider = OIDCProvider(
+            issuer="https://issuer.example.com", client_id="c1", skip_verification=True
+        )
         payload = {"sub": "u1", "email": "a@b.com"}
         segment = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
         token = f"header.{segment}.signature"
@@ -206,11 +210,18 @@ class TestValidateTokenErrorPaths:
     async def test_expired_token_raises(self, monkeypatch):
         private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
         jwk_dict = json.loads(
-            pyjwt.algorithms.RSAAlgorithm(pyjwt.algorithms.RSAAlgorithm.SHA256).to_jwk(private.public_key())
+            pyjwt.algorithms.RSAAlgorithm(pyjwt.algorithms.RSAAlgorithm.SHA256).to_jwk(
+                private.public_key()
+            )
         )
         jwk_dict["kid"] = "k1"
         token = pyjwt.encode(
-            {"sub": "u1", "aud": "c1", "iss": "https://issuer.example.com", "exp": int(time.time()) - 3600},
+            {
+                "sub": "u1",
+                "aud": "c1",
+                "iss": "https://issuer.example.com",
+                "exp": int(time.time()) - 3600,
+            },
             private,
             algorithm="RS256",
             headers={"kid": "k1"},
@@ -227,7 +238,9 @@ class TestValidateTokenErrorPaths:
     async def test_invalid_audience_raises_invalid_token_error(self, monkeypatch):
         private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
         jwk_dict = json.loads(
-            pyjwt.algorithms.RSAAlgorithm(pyjwt.algorithms.RSAAlgorithm.SHA256).to_jwk(private.public_key())
+            pyjwt.algorithms.RSAAlgorithm(pyjwt.algorithms.RSAAlgorithm.SHA256).to_jwk(
+                private.public_key()
+            )
         )
         jwk_dict["kid"] = "k1"
         token = pyjwt.encode(
@@ -257,14 +270,18 @@ class TestValidateTokenErrorPaths:
 class TestAuthorizationUrl:
     def test_uses_default_authorize_endpoint_when_no_discovery(self):
         provider = OIDCProvider(issuer="https://issuer.example.com", client_id="c1")
-        url = provider.authorization_url("https://app.example.com/callback", "state123", ["openid", "email"])
+        url = provider.authorization_url(
+            "https://app.example.com/callback", "state123", ["openid", "email"]
+        )
         assert url.startswith("https://issuer.example.com/authorize?")
         assert "state=state123" in url
         assert "client_id=c1" in url
 
     def test_uses_discovered_authorization_endpoint_when_present(self):
         provider = OIDCProvider(issuer="https://issuer.example.com", client_id="c1")
-        provider._discovery_doc = {"authorization_endpoint": "https://issuer.example.com/custom-authorize"}
+        provider._discovery_doc = {
+            "authorization_endpoint": "https://issuer.example.com/custom-authorize"
+        }
         url = provider.authorization_url("https://app.example.com/callback", "s", ["openid"])
         assert url.startswith("https://issuer.example.com/custom-authorize?")
 
@@ -280,7 +297,9 @@ class TestExchangeCode:
     async def test_successful_exchange_returns_tokens(self):
         provider = OIDCProvider(issuer="https://issuer.example.com", client_id="c1")
         respx.get("https://issuer.example.com/.well-known/openid-configuration").mock(
-            return_value=httpx.Response(200, json={"token_endpoint": "https://issuer.example.com/token"})
+            return_value=httpx.Response(
+                200, json={"token_endpoint": "https://issuer.example.com/token"}
+            )
         )
         respx.post("https://issuer.example.com/token").mock(
             return_value=httpx.Response(200, json={"access_token": "tok123"})

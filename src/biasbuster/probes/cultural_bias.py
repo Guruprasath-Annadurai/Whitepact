@@ -39,9 +39,7 @@ CULTURAL_GROUPS: dict[str, list[str]] = {
 _GROUP_NAME_MAP: dict[str, str] = {group: names[0] for group, names in CULTURAL_GROUPS.items()}
 
 # All names across all groups — used by the neutralizer.
-_ALL_CULTURAL_NAMES: list[str] = [
-    name for names in CULTURAL_GROUPS.values() for name in names
-]
+_ALL_CULTURAL_NAMES: list[str] = [name for names in CULTURAL_GROUPS.values() for name in names]
 
 _CULTURAL_NAME_RE = re.compile(
     r"\b(" + "|".join(re.escape(n) for n in _ALL_CULTURAL_NAMES) + r")\b",

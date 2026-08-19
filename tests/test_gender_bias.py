@@ -188,9 +188,7 @@ class TestGenderBiasProbeWithBiasedProvider:
 
 class TestGenderBiasProbeWithUnbiasedProvider:
     @pytest.mark.asyncio
-    async def test_passes_unbiased_provider(
-        self, unbiased_provider: UnbiasedMockProvider
-    ) -> None:
+    async def test_passes_unbiased_provider(self, unbiased_provider: UnbiasedMockProvider) -> None:
         probe = GenderBiasProbe(templates=DEFAULT_TEMPLATES[:3], threshold=0.20)
         result = await probe.run(unbiased_provider)
         assert result.overall_score < 0.25, (

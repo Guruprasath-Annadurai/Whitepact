@@ -44,12 +44,14 @@ class LeaderboardRepository:
         (model, provider) pair already exists — idempotent by design so a
         deploy script can re-register the full model list every run."""
         async with self._engine.raw.connect() as conn:
-            existing = (await conn.execute(
-                select(leaderboard_models).where(
-                    leaderboard_models.c.model == model,
-                    leaderboard_models.c.provider == provider,
+            existing = (
+                await conn.execute(
+                    select(leaderboard_models).where(
+                        leaderboard_models.c.model == model,
+                        leaderboard_models.c.provider == provider,
+                    )
                 )
-            )).fetchone()
+            ).fetchone()
 
         if existing:
             async with self._engine.raw.begin() as conn:
@@ -62,20 +64,29 @@ class LeaderboardRepository:
 
         row_id = str(uuid.uuid4())
         async with self._engine.raw.begin() as conn:
-            await conn.execute(insert(leaderboard_models).values(
-                id=row_id, model=model, provider=provider, display_name=display_name,
-                adapter=adapter, active=int(active), added_at=_now(),
-            ))
+            await conn.execute(
+                insert(leaderboard_models).values(
+                    id=row_id,
+                    model=model,
+                    provider=provider,
+                    display_name=display_name,
+                    adapter=adapter,
+                    active=int(active),
+                    added_at=_now(),
+                )
+            )
         return await self.get_model(model, provider)  # type: ignore[return-value]
 
     async def get_model(self, model: str, provider: str) -> dict[str, Any] | None:
         async with self._engine.raw.connect() as conn:
-            row = (await conn.execute(
-                select(leaderboard_models).where(
-                    leaderboard_models.c.model == model,
-                    leaderboard_models.c.provider == provider,
+            row = (
+                await conn.execute(
+                    select(leaderboard_models).where(
+                        leaderboard_models.c.model == model,
+                        leaderboard_models.c.provider == provider,
+                    )
                 )
-            )).fetchone()
+            ).fetchone()
         return self._model_to_dict(row) if row else None
 
     async def list_models(self, active_only: bool = False) -> list[dict[str, Any]]:
@@ -90,7 +101,9 @@ class LeaderboardRepository:
         async with self._engine.raw.begin() as conn:
             result = await conn.execute(
                 update(leaderboard_models)
-                .where(leaderboard_models.c.model == model, leaderboard_models.c.provider == provider)
+                .where(
+                    leaderboard_models.c.model == model, leaderboard_models.c.provider == provider
+                )
                 .values(active=int(active))
             )
         return result.rowcount > 0
@@ -98,58 +111,81 @@ class LeaderboardRepository:
     @staticmethod
     def _model_to_dict(r: Any) -> dict[str, Any]:
         return {
-            "id": r.id, "model": r.model, "provider": r.provider,
-            "display_name": r.display_name, "adapter": r.adapter,
-            "active": bool(r.active), "added_at": r.added_at,
+            "id": r.id,
+            "model": r.model,
+            "provider": r.provider,
+            "display_name": r.display_name,
+            "adapter": r.adapter,
+            "active": bool(r.active),
+            "added_at": r.added_at,
         }
 
     # ── Runs ─────────────────────────────────────────────────────────────────
 
     async def create_run(self, result: LeaderboardRunResult) -> dict[str, Any]:
         async with self._engine.raw.begin() as conn:
-            await conn.execute(insert(leaderboard_runs).values(
-                id=result.id, model=result.model, provider=result.provider,
-                created_at=result.created_at, methodology_version=result.methodology_version,
-                overall_score=result.trust_score.overall, grade=result.trust_score.grade,
-                risk_level=result.trust_score.risk_level,
-                fairness=result.trust_score.fairness, privacy=result.trust_score.privacy,
-                security=result.trust_score.security, robustness=result.trust_score.robustness,
-                compliance=result.trust_score.compliance, authenticity=result.trust_score.authenticity,
-                dimensions_live=json.dumps(result.dimensions_live),
-                truthfulqa_accuracy=result.truthfulqa_accuracy, bbq_bias_rate=result.bbq_bias_rate,
-                hellaswag_accuracy=result.hellaswag_accuracy, security_score=result.security_score,
-                privacy_pii_leak_rate=result.privacy_pii_leak_rate,
-                avg_hallucination_risk=result.avg_hallucination_risk,
-                sample_size=result.sample_size,
-                findings=json.dumps([f.to_dict() for f in result.findings]),
-            ))
+            await conn.execute(
+                insert(leaderboard_runs).values(
+                    id=result.id,
+                    model=result.model,
+                    provider=result.provider,
+                    created_at=result.created_at,
+                    methodology_version=result.methodology_version,
+                    overall_score=result.trust_score.overall,
+                    grade=result.trust_score.grade,
+                    risk_level=result.trust_score.risk_level,
+                    fairness=result.trust_score.fairness,
+                    privacy=result.trust_score.privacy,
+                    security=result.trust_score.security,
+                    robustness=result.trust_score.robustness,
+                    compliance=result.trust_score.compliance,
+                    authenticity=result.trust_score.authenticity,
+                    dimensions_live=json.dumps(result.dimensions_live),
+                    truthfulqa_accuracy=result.truthfulqa_accuracy,
+                    bbq_bias_rate=result.bbq_bias_rate,
+                    hellaswag_accuracy=result.hellaswag_accuracy,
+                    security_score=result.security_score,
+                    privacy_pii_leak_rate=result.privacy_pii_leak_rate,
+                    avg_hallucination_risk=result.avg_hallucination_risk,
+                    sample_size=result.sample_size,
+                    findings=json.dumps([f.to_dict() for f in result.findings]),
+                )
+            )
         return await self.get_run(result.id)  # type: ignore[return-value]
 
     async def get_run(self, run_id: str) -> dict[str, Any] | None:
         async with self._engine.raw.connect() as conn:
-            row = (await conn.execute(
-                select(leaderboard_runs).where(leaderboard_runs.c.id == run_id)
-            )).fetchone()
+            row = (
+                await conn.execute(select(leaderboard_runs).where(leaderboard_runs.c.id == run_id))
+            ).fetchone()
         return self._run_to_dict(row) if row else None
 
     async def latest_run(self, model: str, provider: str) -> dict[str, Any] | None:
         async with self._engine.raw.connect() as conn:
-            row = (await conn.execute(
-                select(leaderboard_runs)
-                .where(leaderboard_runs.c.model == model, leaderboard_runs.c.provider == provider)
-                .order_by(leaderboard_runs.c.created_at.desc())
-                .limit(1)
-            )).fetchone()
+            row = (
+                await conn.execute(
+                    select(leaderboard_runs)
+                    .where(
+                        leaderboard_runs.c.model == model, leaderboard_runs.c.provider == provider
+                    )
+                    .order_by(leaderboard_runs.c.created_at.desc())
+                    .limit(1)
+                )
+            ).fetchone()
         return self._run_to_dict(row) if row else None
 
     async def history(self, model: str, provider: str, limit: int = 30) -> list[dict[str, Any]]:
         async with self._engine.raw.connect() as conn:
-            rows = (await conn.execute(
-                select(leaderboard_runs)
-                .where(leaderboard_runs.c.model == model, leaderboard_runs.c.provider == provider)
-                .order_by(leaderboard_runs.c.created_at.desc())
-                .limit(limit)
-            )).fetchall()
+            rows = (
+                await conn.execute(
+                    select(leaderboard_runs)
+                    .where(
+                        leaderboard_runs.c.model == model, leaderboard_runs.c.provider == provider
+                    )
+                    .order_by(leaderboard_runs.c.created_at.desc())
+                    .limit(limit)
+                )
+            ).fetchall()
         return [self._run_to_dict(r) for r in rows]
 
     async def ranked_leaderboard(self) -> list[dict[str, Any]]:
@@ -168,18 +204,28 @@ class LeaderboardRepository:
     @staticmethod
     def _run_to_dict(r: Any) -> dict[str, Any]:
         return {
-            "id": r.id, "model": r.model, "provider": r.provider, "created_at": r.created_at,
+            "id": r.id,
+            "model": r.model,
+            "provider": r.provider,
+            "created_at": r.created_at,
             "methodology_version": r.methodology_version,
-            "overall_score": r.overall_score, "grade": r.grade, "risk_level": r.risk_level,
+            "overall_score": r.overall_score,
+            "grade": r.grade,
+            "risk_level": r.risk_level,
             "dimensions": {
-                "fairness": round(r.fairness * 100, 2), "privacy": round(r.privacy * 100, 2),
-                "security": round(r.security * 100, 2), "robustness": round(r.robustness * 100, 2),
-                "compliance": round(r.compliance * 100, 2), "authenticity": round(r.authenticity * 100, 2),
+                "fairness": round(r.fairness * 100, 2),
+                "privacy": round(r.privacy * 100, 2),
+                "security": round(r.security * 100, 2),
+                "robustness": round(r.robustness * 100, 2),
+                "compliance": round(r.compliance * 100, 2),
+                "authenticity": round(r.authenticity * 100, 2),
             },
             "dimensions_live": json.loads(r.dimensions_live),
             "raw_metrics": {
-                "truthfulqa_accuracy": r.truthfulqa_accuracy, "bbq_bias_rate": r.bbq_bias_rate,
-                "hellaswag_accuracy": r.hellaswag_accuracy, "security_score": r.security_score,
+                "truthfulqa_accuracy": r.truthfulqa_accuracy,
+                "bbq_bias_rate": r.bbq_bias_rate,
+                "hellaswag_accuracy": r.hellaswag_accuracy,
+                "security_score": r.security_score,
                 "privacy_pii_leak_rate": r.privacy_pii_leak_rate,
                 "avg_hallucination_risk": r.avg_hallucination_risk,
             },

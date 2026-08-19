@@ -32,9 +32,7 @@ class TestHedgingDetection:
         self.detector = HallucinationDetector()
 
     def test_confident_text_low_hedging(self) -> None:
-        result = self.detector.analyze(
-            "The Eiffel Tower is located in Paris, France."
-        )
+        result = self.detector.analyze("The Eiffel Tower is located in Paris, France.")
         assert result.hedging_score < 0.3
 
     def test_heavily_hedged_text_high_hedging(self) -> None:
@@ -139,9 +137,13 @@ class TestHallucinationRisk:
         result = self.detector.analyze("Test text.")
         d = result.to_dict()
         expected_keys = {
-            "hallucination_risk", "risk_level", "consistency_score",
-            "hedging_score", "unsupported_claims_count",
-            "unsupported_claims_sample", "num_candidates",
+            "hallucination_risk",
+            "risk_level",
+            "consistency_score",
+            "hedging_score",
+            "unsupported_claims_count",
+            "unsupported_claims_sample",
+            "num_candidates",
         }
         assert expected_keys.issubset(d.keys())
 

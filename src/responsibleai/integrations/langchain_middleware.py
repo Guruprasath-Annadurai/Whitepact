@@ -51,7 +51,7 @@ def _require_langchain() -> None:
     if not _LANGCHAIN_AVAILABLE:
         raise ImportError(
             "TrustGateMiddleware requires the 'langchain' extra: "
-            "pip install \"rai-governance-platform[langchain]\" (needs langchain>=1.0 "
+            'pip install "rai-governance-platform[langchain]" (needs langchain>=1.0 '
             "for the wrap_tool_call middleware hook)."
         )
 

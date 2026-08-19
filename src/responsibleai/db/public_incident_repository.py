@@ -36,16 +36,18 @@ def _now() -> str:
 
 
 def _compute_entry_hash(prev_hash: str, record: dict[str, Any]) -> str:
-    material = "|".join([
-        prev_hash,
-        record["public_id"],
-        record["title"],
-        record["incident_type"],
-        record["severity"],
-        record["affected_model"],
-        record["affected_provider"],
-        record["published_at"],
-    ])
+    material = "|".join(
+        [
+            prev_hash,
+            record["public_id"],
+            record["title"],
+            record["incident_type"],
+            record["severity"],
+            record["affected_model"],
+            record["affected_provider"],
+            record["published_at"],
+        ]
+    )
     return hashlib.sha256(material.encode()).hexdigest()
 
 
@@ -62,12 +64,14 @@ class PublicIncidentRepository:
         if self._hydrated:
             return
         async with self._engine.raw.connect() as conn:
-            row = (await conn.execute(
-                select(public_incident_reports.c.entry_hash)
-                .where(public_incident_reports.c.entry_hash.is_not(None))
-                .order_by(public_incident_reports.c.published_at.desc())
-                .limit(1)
-            )).fetchone()
+            row = (
+                await conn.execute(
+                    select(public_incident_reports.c.entry_hash)
+                    .where(public_incident_reports.c.entry_hash.is_not(None))
+                    .order_by(public_incident_reports.c.published_at.desc())
+                    .limit(1)
+                )
+            ).fetchone()
         self._last_hash = row.entry_hash if row else None
         self._hydrated = True
 
@@ -90,35 +94,44 @@ class PublicIncidentRepository:
     ) -> dict[str, Any]:
         internal_id = str(uuid.uuid4())
         async with self._engine.raw.begin() as conn:
-            await conn.execute(insert(public_incident_reports).values(
-                id=internal_id,
-                status="PENDING_REVIEW",
-                title=title,
-                description=description,
-                incident_type=incident_type,
-                severity=severity,
-                affected_model=affected_model,
-                affected_provider=affected_provider,
-                affected_version=affected_version,
-                reporter_name=reporter_name,
-                reporter_contact=reporter_contact,
-                evidence=json.dumps(evidence or {}),
-                tags=json.dumps(tags or []),
-                submitted_at=_now(),
-            ))
+            await conn.execute(
+                insert(public_incident_reports).values(
+                    id=internal_id,
+                    status="PENDING_REVIEW",
+                    title=title,
+                    description=description,
+                    incident_type=incident_type,
+                    severity=severity,
+                    affected_model=affected_model,
+                    affected_provider=affected_provider,
+                    affected_version=affected_version,
+                    reporter_name=reporter_name,
+                    reporter_contact=reporter_contact,
+                    evidence=json.dumps(evidence or {}),
+                    tags=json.dumps(tags or []),
+                    submitted_at=_now(),
+                )
+            )
         return await self.get_by_internal_id(internal_id)  # type: ignore[return-value]
 
     # ── Lookup ───────────────────────────────────────────────────────────────
 
     async def get_by_internal_id(self, internal_id: str) -> dict[str, Any] | None:
         async with self._engine.raw.connect() as conn:
-            row = (await conn.execute(
-                select(public_incident_reports).where(public_incident_reports.c.id == internal_id)
-            )).fetchone()
+            row = (
+                await conn.execute(
+                    select(public_incident_reports).where(
+                        public_incident_reports.c.id == internal_id
+                    )
+                )
+            ).fetchone()
         return self._row_to_dict(row) if row else None
 
     async def get_by_public_id(
-        self, public_id: str, *, redact_reporter: bool = True,
+        self,
+        public_id: str,
+        *,
+        redact_reporter: bool = True,
     ) -> dict[str, Any] | None:
         """Defaults to redacting reporter_contact — this is the lookup path
         the public detail page and API use. Admin call sites that genuinely
@@ -126,20 +139,26 @@ class PublicIncidentRepository:
         explicitly; the safe default protects against a future public call
         site forgetting to redact."""
         async with self._engine.raw.connect() as conn:
-            row = (await conn.execute(
-                select(public_incident_reports).where(public_incident_reports.c.public_id == public_id)
-            )).fetchone()
+            row = (
+                await conn.execute(
+                    select(public_incident_reports).where(
+                        public_incident_reports.c.public_id == public_id
+                    )
+                )
+            ).fetchone()
         return self._row_to_dict(row, redact_reporter=redact_reporter) if row else None
 
     async def list_pending(self, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
         async with self._engine.raw.connect() as conn:
-            rows = (await conn.execute(
-                select(public_incident_reports)
-                .where(public_incident_reports.c.status == "PENDING_REVIEW")
-                .order_by(public_incident_reports.c.submitted_at.asc())
-                .limit(limit)
-                .offset(offset)
-            )).fetchall()
+            rows = (
+                await conn.execute(
+                    select(public_incident_reports)
+                    .where(public_incident_reports.c.status == "PENDING_REVIEW")
+                    .order_by(public_incident_reports.c.submitted_at.asc())
+                    .limit(limit)
+                    .offset(offset)
+                )
+            ).fetchall()
         return [self._row_to_dict(r) for r in rows]
 
     async def list_published(
@@ -169,10 +188,12 @@ class PublicIncidentRepository:
             stmt = stmt.where(public_incident_reports.c.affected_provider.ilike(f"%{provider}%"))
         if search:
             like = f"%{search}%"
-            stmt = stmt.where(or_(
-                public_incident_reports.c.title.ilike(like),
-                public_incident_reports.c.description.ilike(like),
-            ))
+            stmt = stmt.where(
+                or_(
+                    public_incident_reports.c.title.ilike(like),
+                    public_incident_reports.c.description.ilike(like),
+                )
+            )
         async with self._engine.raw.connect() as conn:
             rows = (await conn.execute(stmt)).fetchall()
         return [self._row_to_dict(r, redact_reporter=True) for r in rows]
@@ -207,32 +228,40 @@ class PublicIncidentRepository:
             public_id = await self._next_public_id()
             published_at = _now()
             prev_hash = self._last_hash or _GENESIS_HASH
-            entry_hash = _compute_entry_hash(prev_hash, {
-                "public_id": public_id,
-                "title": existing["title"],
-                "incident_type": existing["incident_type"],
-                "severity": existing["severity"],
-                "affected_model": existing["affected_model"],
-                "affected_provider": existing["affected_provider"],
-                "published_at": published_at,
-            })
+            entry_hash = _compute_entry_hash(
+                prev_hash,
+                {
+                    "public_id": public_id,
+                    "title": existing["title"],
+                    "incident_type": existing["incident_type"],
+                    "severity": existing["severity"],
+                    "affected_model": existing["affected_model"],
+                    "affected_provider": existing["affected_provider"],
+                    "published_at": published_at,
+                },
+            )
 
             async with self._engine.raw.begin() as conn:
                 await conn.execute(
                     update(public_incident_reports)
                     .where(public_incident_reports.c.id == internal_id)
                     .values(
-                        status="PUBLISHED", public_id=public_id,
-                        reviewed_at=published_at, reviewed_by=reviewed_by,
+                        status="PUBLISHED",
+                        public_id=public_id,
+                        reviewed_at=published_at,
+                        reviewed_by=reviewed_by,
                         published_at=published_at,
-                        entry_hash=entry_hash, prev_hash=prev_hash,
+                        entry_hash=entry_hash,
+                        prev_hash=prev_hash,
                     )
                 )
             self._last_hash = entry_hash
 
         return await self.get_by_internal_id(internal_id)
 
-    async def reject(self, internal_id: str, reviewed_by: str, reason: str) -> dict[str, Any] | None:
+    async def reject(
+        self, internal_id: str, reviewed_by: str, reason: str
+    ) -> dict[str, Any] | None:
         existing = await self.get_by_internal_id(internal_id)
         if existing is None or existing["status"] != "PENDING_REVIEW":
             return None
@@ -241,14 +270,19 @@ class PublicIncidentRepository:
                 update(public_incident_reports)
                 .where(public_incident_reports.c.id == internal_id)
                 .values(
-                    status="REJECTED", reviewed_at=_now(), reviewed_by=reviewed_by,
+                    status="REJECTED",
+                    reviewed_at=_now(),
+                    reviewed_by=reviewed_by,
                     rejection_reason=reason,
                 )
             )
         return await self.get_by_internal_id(internal_id)
 
     async def update_status(
-        self, public_id: str, new_status: str, reviewed_by: str,
+        self,
+        public_id: str,
+        new_status: str,
+        reviewed_by: str,
     ) -> dict[str, Any] | None:
         """Post-publish lifecycle transition (e.g. PUBLISHED -> RESOLVED or
         -> DISPUTED). Never touches entry_hash/prev_hash — the disclosed
@@ -284,18 +318,27 @@ class PublicIncidentRepository:
         checked = 0
         for r in rows:
             checked += 1
-            recomputed = _compute_entry_hash(expected_prev, {
-                "public_id": r.public_id, "title": r.title, "incident_type": r.incident_type,
-                "severity": r.severity, "affected_model": r.affected_model,
-                "affected_provider": r.affected_provider, "published_at": r.published_at,
-            })
-            if r.prev_hash != expected_prev or recomputed != r.entry_hash:
-                broken_at.append({
+            recomputed = _compute_entry_hash(
+                expected_prev,
+                {
                     "public_id": r.public_id,
+                    "title": r.title,
+                    "incident_type": r.incident_type,
+                    "severity": r.severity,
+                    "affected_model": r.affected_model,
+                    "affected_provider": r.affected_provider,
                     "published_at": r.published_at,
-                    "expected_prev_hash": expected_prev,
-                    "stored_prev_hash": r.prev_hash,
-                })
+                },
+            )
+            if r.prev_hash != expected_prev or recomputed != r.entry_hash:
+                broken_at.append(
+                    {
+                        "public_id": r.public_id,
+                        "published_at": r.published_at,
+                        "expected_prev_hash": expected_prev,
+                        "stored_prev_hash": r.prev_hash,
+                    }
+                )
             expected_prev = r.entry_hash
 
         return {
@@ -315,12 +358,14 @@ class PublicIncidentRepository:
         year = datetime.now(UTC).year
         prefix = f"RAI-{year}-"
         async with self._engine.raw.connect() as conn:
-            row = (await conn.execute(
-                select(public_incident_reports.c.public_id)
-                .where(public_incident_reports.c.public_id.like(f"{prefix}%"))
-                .order_by(public_incident_reports.c.public_id.desc())
-                .limit(1)
-            )).fetchone()
+            row = (
+                await conn.execute(
+                    select(public_incident_reports.c.public_id)
+                    .where(public_incident_reports.c.public_id.like(f"{prefix}%"))
+                    .order_by(public_incident_reports.c.public_id.desc())
+                    .limit(1)
+                )
+            ).fetchone()
         if row is None or row.public_id is None:
             next_seq = 1
         else:

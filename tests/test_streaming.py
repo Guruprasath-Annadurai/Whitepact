@@ -25,6 +25,7 @@ def scanner_no_stop() -> StreamingScanner:
 
 # ── Basic behaviour ────────────────────────────────────────────────────────────
 
+
 class TestStreamingScanner:
     async def test_yields_all_tokens_clean_stream(self, scanner):
         tokens = ["Hello", " world", "!"]

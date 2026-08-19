@@ -77,20 +77,25 @@ async def _seed_approved(approval_repo: ApprovalRepository, action: ActionReques
     exactly what a caller does before ever calling consume()."""
     gateway = WhitePactRuntimeGateway()
     authority = AuthorityContext(
-        delegated_by="org-1", granted_action_types=frozenset({"payment"}),
+        delegated_by="org-1",
+        granted_action_types=frozenset({"payment"}),
         require_approval_for=frozenset({"payment"}),
     )
     decision = gateway.evaluate(action, authority)
     assert decision.decision == GovernanceDecision.REQUIRE_APPROVAL
     approval = await approval_repo.create(build_approval_request(action, decision))
     resolved = await approval_repo.resolve(
-        approval.approval_id, resolved_by="human-approver-1", outcome=ApprovalStatus.APPROVED,
+        approval.approval_id,
+        resolved_by="human-approver-1",
+        outcome=ApprovalStatus.APPROVED,
     )
     return resolved.approval_id
 
 
 class TestMutationInvariant:
-    async def test_matching_action_consumes_successfully(self, approval_repo: ApprovalRepository) -> None:
+    async def test_matching_action_consumes_successfully(
+        self, approval_repo: ApprovalRepository
+    ) -> None:
         action = _payment_action(50_000)
         approval_id = await _seed_approved(approval_repo, action)
         consumed = await approval_repo.consume(approval_id, action=action)
@@ -112,12 +117,16 @@ class TestMutationInvariant:
         with pytest.raises(ApprovalActionMismatchError):
             await approval_repo.consume(approval_id, action=mutated)
 
-    async def test_changed_beneficiary_argument_is_rejected(self, approval_repo: ApprovalRepository) -> None:
+    async def test_changed_beneficiary_argument_is_rejected(
+        self, approval_repo: ApprovalRepository
+    ) -> None:
         original = _payment_action(50_000)
         approval_id = await _seed_approved(approval_repo, original)
 
         mutated = ActionRequest(
-            agent=_agent(), action_type="payment", target="payments.execute",
+            agent=_agent(),
+            action_type="payment",
+            target="payments.execute",
             arguments={"amount_inr": 50_000, "beneficiary": "attacker-controlled-account"},
         )
         with pytest.raises(ApprovalActionMismatchError):
@@ -132,15 +141,21 @@ class TestMutationInvariant:
         from responsibleai.governance.approval import ApprovalRequest
 
         approval = ApprovalRequest(
-            action_id="a1", action_type="payment", target="payments.execute",
-            reason_codes=[], requested_at=datetime.now(UTC), action_digest="",
+            action_id="a1",
+            action_type="payment",
+            target="payments.execute",
+            reason_codes=[],
+            requested_at=datetime.now(UTC),
+            action_digest="",
         )
         action = _payment_action(50_000)
         assert approval.matches_action(action) is False
 
 
 class TestReplayProtection:
-    async def test_second_consume_of_same_action_fails(self, approval_repo: ApprovalRepository) -> None:
+    async def test_second_consume_of_same_action_fails(
+        self, approval_repo: ApprovalRepository
+    ) -> None:
         action = _payment_action(50_000)
         approval_id = await _seed_approved(approval_repo, action)
 
@@ -150,11 +165,14 @@ class TestReplayProtection:
         with pytest.raises(ApprovalNotApprovedError):
             await approval_repo.consume(approval_id, action=action)
 
-    async def test_consuming_pending_approval_fails(self, approval_repo: ApprovalRepository) -> None:
+    async def test_consuming_pending_approval_fails(
+        self, approval_repo: ApprovalRepository
+    ) -> None:
         action = _payment_action(50_000)
         gateway = WhitePactRuntimeGateway()
         authority = AuthorityContext(
-            delegated_by="org-1", granted_action_types=frozenset({"payment"}),
+            delegated_by="org-1",
+            granted_action_types=frozenset({"payment"}),
             require_approval_for=frozenset({"payment"}),
         )
         decision = gateway.evaluate(action, authority)
@@ -167,13 +185,16 @@ class TestReplayProtection:
         action = _payment_action(50_000)
         gateway = WhitePactRuntimeGateway()
         authority = AuthorityContext(
-            delegated_by="org-1", granted_action_types=frozenset({"payment"}),
+            delegated_by="org-1",
+            granted_action_types=frozenset({"payment"}),
             require_approval_for=frozenset({"payment"}),
         )
         decision = gateway.evaluate(action, authority)
         approval = await approval_repo.create(build_approval_request(action, decision))
         await approval_repo.resolve(
-            approval.approval_id, resolved_by="human-approver-1", outcome=ApprovalStatus.DENIED,
+            approval.approval_id,
+            resolved_by="human-approver-1",
+            outcome=ApprovalStatus.DENIED,
         )
 
         with pytest.raises(ApprovalNotApprovedError):
@@ -181,11 +202,14 @@ class TestReplayProtection:
 
 
 class TestSelfApprovalProtection:
-    async def test_requester_cannot_resolve_own_approval(self, approval_repo: ApprovalRepository) -> None:
+    async def test_requester_cannot_resolve_own_approval(
+        self, approval_repo: ApprovalRepository
+    ) -> None:
         action = _payment_action(50_000)  # requested_by == "agent-key"
         gateway = WhitePactRuntimeGateway()
         authority = AuthorityContext(
-            delegated_by="org-1", granted_action_types=frozenset({"payment"}),
+            delegated_by="org-1",
+            granted_action_types=frozenset({"payment"}),
             require_approval_for=frozenset({"payment"}),
         )
         decision = gateway.evaluate(action, authority)
@@ -193,21 +217,26 @@ class TestSelfApprovalProtection:
 
         with pytest.raises(SelfApprovalError):
             await approval_repo.resolve(
-                approval.approval_id, resolved_by="agent-key", outcome=ApprovalStatus.APPROVED,
+                approval.approval_id,
+                resolved_by="agent-key",
+                outcome=ApprovalStatus.APPROVED,
             )
 
     async def test_different_identity_can_resolve(self, approval_repo: ApprovalRepository) -> None:
         action = _payment_action(50_000)
         gateway = WhitePactRuntimeGateway()
         authority = AuthorityContext(
-            delegated_by="org-1", granted_action_types=frozenset({"payment"}),
+            delegated_by="org-1",
+            granted_action_types=frozenset({"payment"}),
             require_approval_for=frozenset({"payment"}),
         )
         decision = gateway.evaluate(action, authority)
         approval = await approval_repo.create(build_approval_request(action, decision))
 
         resolved = await approval_repo.resolve(
-            approval.approval_id, resolved_by="human-approver-1", outcome=ApprovalStatus.APPROVED,
+            approval.approval_id,
+            resolved_by="human-approver-1",
+            outcome=ApprovalStatus.APPROVED,
         )
         assert resolved.status == ApprovalStatus.APPROVED
 
@@ -216,18 +245,24 @@ class TestComputeActionDigest:
     def test_identical_actions_produce_identical_digests(self) -> None:
         a = _payment_action(50_000)
         b = ActionRequest(
-            agent=_agent(), action_type="payment", target="payments.execute",
+            agent=_agent(),
+            action_type="payment",
+            target="payments.execute",
             arguments={"amount_inr": 50_000, "beneficiary": "acme-vendor"},
         )
         assert compute_action_digest(a) == compute_action_digest(b)
 
     def test_argument_order_does_not_affect_digest(self) -> None:
         a = ActionRequest(
-            agent=_agent(), action_type="payment", target="payments.execute",
+            agent=_agent(),
+            action_type="payment",
+            target="payments.execute",
             arguments={"amount_inr": 50_000, "beneficiary": "acme-vendor"},
         )
         b = ActionRequest(
-            agent=_agent(), action_type="payment", target="payments.execute",
+            agent=_agent(),
+            action_type="payment",
+            target="payments.execute",
             arguments={"beneficiary": "acme-vendor", "amount_inr": 50_000},
         )
         assert compute_action_digest(a) == compute_action_digest(b)

@@ -17,9 +17,11 @@ from responsibleai import __version__
 
 # ── OIDC module unit tests ────────────────────────────────────────────────────
 
+
 class TestJWTClaims:
     def test_from_payload_basic(self) -> None:
         from responsibleai.auth.oidc import JWTClaims
+
         p = {"sub": "user-1", "email": "a@b.com", "name": "Alice", "roles": ["admin"]}
         c = JWTClaims.from_payload(p)
         assert c.sub == "user-1"
@@ -29,22 +31,26 @@ class TestJWTClaims:
 
     def test_roles_as_string_coerced_to_list(self) -> None:
         from responsibleai.auth.oidc import JWTClaims
+
         c = JWTClaims.from_payload({"sub": "x", "roles": "viewer"})
         assert isinstance(c.roles, list)
         assert "viewer" in c.roles
 
     def test_groups_fallback(self) -> None:
         from responsibleai.auth.oidc import JWTClaims
+
         c = JWTClaims.from_payload({"sub": "x", "groups": ["ops"]})
         assert "ops" in c.roles
 
     def test_org_id_from_tenant_id(self) -> None:
         from responsibleai.auth.oidc import JWTClaims
+
         c = JWTClaims.from_payload({"sub": "x", "tenant_id": "t-42"})
         assert c.org_id == "t-42"
 
     def test_missing_optional_fields(self) -> None:
         from responsibleai.auth.oidc import JWTClaims
+
         c = JWTClaims.from_payload({"sub": "bare"})
         assert c.email is None
         assert c.name is None
@@ -53,12 +59,14 @@ class TestJWTClaims:
 
     def test_raw_payload_preserved(self) -> None:
         from responsibleai.auth.oidc import JWTClaims
+
         p = {"sub": "u", "custom_field": "xyz"}
         c = JWTClaims.from_payload(p)
         assert c.raw["custom_field"] == "xyz"
 
     def test_claims_frozen(self) -> None:
         from responsibleai.auth.oidc import JWTClaims
+
         c = JWTClaims.from_payload({"sub": "u"})
         with pytest.raises(AttributeError):
             c.sub = "other"  # type: ignore[misc]
@@ -66,13 +74,16 @@ class TestJWTClaims:
 
 class TestOIDCProviderUnverified:
     def _make_jwt(self, payload: dict) -> str:
-        header = base64.urlsafe_b64encode(json.dumps({"alg": "RS256"}).encode()).decode().rstrip("=")
+        header = (
+            base64.urlsafe_b64encode(json.dumps({"alg": "RS256"}).encode()).decode().rstrip("=")
+        )
         body = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
         return f"{header}.{body}.fakesig"
 
     @pytest.mark.asyncio
     async def test_decode_unverified_basic(self) -> None:
         from responsibleai.auth.oidc import OIDCProvider
+
         token = self._make_jwt({"sub": "user-99", "email": "x@y.com"})
         p = OIDCProvider("https://example.com", "client-id", skip_verification=True)
         claims = await p.validate_token(token)
@@ -82,6 +93,7 @@ class TestOIDCProviderUnverified:
     @pytest.mark.asyncio
     async def test_malformed_jwt_raises(self) -> None:
         from responsibleai.auth.oidc import OIDCProvider
+
         p = OIDCProvider("https://example.com", "client-id", skip_verification=True)
         with pytest.raises(ValueError, match="Malformed JWT"):
             await p.validate_token("notajwt")
@@ -89,12 +101,14 @@ class TestOIDCProviderUnverified:
     @pytest.mark.asyncio
     async def test_bad_base64_raises(self) -> None:
         from responsibleai.auth.oidc import OIDCProvider
+
         p = OIDCProvider("https://example.com", "client-id", skip_verification=True)
         with pytest.raises(ValueError):
             await p.validate_token("aaa.!!!.bbb")
 
     def test_authorization_url_contains_client_id(self) -> None:
         from responsibleai.auth.oidc import OIDCProvider
+
         p = OIDCProvider("https://idp.example.com", "my-client", skip_verification=True)
         url = p.authorization_url("https://app/cb", "state-xyz", ["openid", "email"])
         assert "my-client" in url
@@ -103,6 +117,7 @@ class TestOIDCProviderUnverified:
 
     def test_authorization_url_contains_redirect_uri(self) -> None:
         from responsibleai.auth.oidc import OIDCProvider
+
         p = OIDCProvider("https://idp.example.com", "c", skip_verification=True)
         url = p.authorization_url("https://myapp/callback", "s", ["openid"])
         assert "myapp" in url or "redirect_uri" in url
@@ -111,11 +126,13 @@ class TestOIDCProviderUnverified:
 class TestAsyncJWKSClient:
     def test_constructor_sets_uri(self) -> None:
         from responsibleai.auth.oidc import AsyncJWKSClient
+
         c = AsyncJWKSClient("https://example.com/.well-known/jwks.json")
         assert c._uri == "https://example.com/.well-known/jwks.json"
 
     def test_initial_state_empty(self) -> None:
         from responsibleai.auth.oidc import AsyncJWKSClient
+
         c = AsyncJWKSClient("https://example.com/jwks")
         assert c._keys == []
         assert c._fetched_at == 0.0
@@ -123,9 +140,11 @@ class TestAsyncJWKSClient:
 
 # ── API versioning tests ───────────────────────────────────────────────────────
 
+
 @pytest.fixture()
 async def client():
     from responsibleai.dashboard.app import app
+
     async with LifespanManager(app):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             yield c
@@ -192,6 +211,7 @@ class TestAPIVersionEndpoint:
 
 # ── Support endpoints ─────────────────────────────────────────────────────────
 
+
 class TestSupportEndpoints:
     @pytest.mark.asyncio
     async def test_support_info_200(self, client: AsyncClient) -> None:
@@ -242,6 +262,7 @@ class TestSupportEndpoints:
 
 # ── SSO / auth endpoints ───────────────────────────────────────────────────────
 
+
 class TestAuthProviderEndpoints:
     @pytest.mark.asyncio
     async def test_list_providers_200(self, client: AsyncClient) -> None:
@@ -283,14 +304,22 @@ class TestAuthProviderEndpoints:
 
 # ── Python SDK model tests ────────────────────────────────────────────────────
 
+
 class TestPythonSDKModels:
     def test_trust_score_from_dict(self) -> None:
         from sdk.python.rai_client.models import TrustScore
+
         d = {
             "overall": 82.5,
             "grade": "B",
-            "dimensions": {"fairness": 0.85, "privacy": 0.90, "security": 0.80,
-                           "robustness": 0.75, "compliance": 0.88, "authenticity": 0.82},
+            "dimensions": {
+                "fairness": 0.85,
+                "privacy": 0.90,
+                "security": 0.80,
+                "robustness": 0.75,
+                "compliance": 0.88,
+                "authenticity": 0.82,
+            },
             "model_name": "gpt-4o",
             "provider": "openai",
         }
@@ -301,8 +330,13 @@ class TestPythonSDKModels:
 
     def test_guardrail_scan_from_dict(self) -> None:
         from sdk.python.rai_client.models import GuardrailScan
-        d = {"is_blocked": True, "pii_findings": [{"category": "EMAIL", "value": "a@b.com", "start": 0, "end": 7}],
-             "toxicity_score": 0.0, "redacted_text": "[REDACTED]"}
+
+        d = {
+            "is_blocked": True,
+            "pii_findings": [{"category": "EMAIL", "value": "a@b.com", "start": 0, "end": 7}],
+            "toxicity_score": 0.0,
+            "redacted_text": "[REDACTED]",
+        }
         scan = GuardrailScan.from_dict(d)
         assert scan.is_blocked
         assert len(scan.pii_findings) == 1
@@ -310,23 +344,43 @@ class TestPythonSDKModels:
 
     def test_cost_record_from_dict(self) -> None:
         from sdk.python.rai_client.models import CostRecord
-        d = {"request_id": "r1", "provider": "openai", "model": "gpt-4o",
-             "input_cost_usd": 0.005, "output_cost_usd": 0.015, "total_cost_usd": 0.020}
+
+        d = {
+            "request_id": "r1",
+            "provider": "openai",
+            "model": "gpt-4o",
+            "input_cost_usd": 0.005,
+            "output_cost_usd": 0.015,
+            "total_cost_usd": 0.020,
+        }
         r = CostRecord.from_dict(d)
         assert r.total_cost == 0.020
         assert r.provider == "openai"
 
     def test_eval_compare_result_from_dict(self) -> None:
         from sdk.python.rai_client.models import EvalCompareResult
-        d = {"winner": "model_a", "score_a": 75.0, "score_b": 68.0,
-             "model_a": "gpt-4o", "model_b": "claude-3", "prompts_evaluated": 5}
+
+        d = {
+            "winner": "model_a",
+            "score_a": 75.0,
+            "score_b": 68.0,
+            "model_a": "gpt-4o",
+            "model_b": "claude-3",
+            "prompts_evaluated": 5,
+        }
         r = EvalCompareResult.from_dict(d)
         assert r.winner == "model_a"
         assert r.score_a == 75.0
 
     def test_hallucination_analysis_from_dict(self) -> None:
         from sdk.python.rai_client.models import HallucinationAnalysis
-        d = {"hallucination_risk": 0.1, "risk_level": "low", "hedging_score": 0.05, "consistency_score": 0.95}
+
+        d = {
+            "hallucination_risk": 0.1,
+            "risk_level": "low",
+            "hedging_score": 0.05,
+            "consistency_score": 0.95,
+        }
         a = HallucinationAnalysis.from_dict(d)
         assert a.risk_level == "low"
         assert a.consistency_score == 0.95
@@ -334,30 +388,36 @@ class TestPythonSDKModels:
 
 # ── Config OIDC settings ───────────────────────────────────────────────────────
 
+
 class TestSettingsOIDC:
     def test_oidc_defaults_to_none(self) -> None:
         from responsibleai.dashboard.config import Settings
+
         s = Settings()
         assert s.oidc_issuer is None
         assert s.oidc_client_id == ""
 
     def test_oidc_scopes_default(self) -> None:
         from responsibleai.dashboard.config import Settings
+
         s = Settings()
         assert "openid" in s.oidc_scopes
 
     def test_oidc_scopes_parsed_from_string(self) -> None:
         from responsibleai.dashboard.config import Settings
+
         s = Settings(oidc_scopes="openid,email,profile,groups")
         assert "groups" in s.oidc_scopes
         assert len(s.oidc_scopes) == 4
 
     def test_oidc_redirect_uri_default(self) -> None:
         from responsibleai.dashboard.config import Settings
+
         s = Settings()
         assert "callback" in s.oidc_redirect_uri
 
     def test_oidc_skip_verification_default_false(self) -> None:
         from responsibleai.dashboard.config import Settings
+
         s = Settings()
         assert s.oidc_skip_verification is False

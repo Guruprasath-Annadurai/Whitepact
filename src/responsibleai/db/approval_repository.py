@@ -83,7 +83,9 @@ class ApprovalNotApprovedError(Exception):
     def __init__(self, approval_id: str, status: str) -> None:
         self.approval_id = approval_id
         self.status = status
-        super().__init__(f"Approval {approval_id!r} is not APPROVED (status={status}); cannot consume.")
+        super().__init__(
+            f"Approval {approval_id!r} is not APPROVED (status={status}); cannot consume."
+        )
 
 
 class AlreadyVotedError(Exception):
@@ -136,7 +138,9 @@ def _row_to_request(row: Any) -> ApprovalRequest:
         requested_by=row.requested_by,
         status=ApprovalStatus(row.status),
         requested_at=datetime.fromisoformat(row.requested_at),
-        expires_at=datetime.fromisoformat(row.expires_at) if getattr(row, "expires_at", None) else None,
+        expires_at=datetime.fromisoformat(row.expires_at)
+        if getattr(row, "expires_at", None)
+        else None,
         arguments=json.loads(row.arguments) if getattr(row, "arguments", None) else None,
         required_approvals=getattr(row, "required_approvals", None) or 1,
         resolved_by=row.resolved_by,
@@ -166,23 +170,27 @@ class ApprovalRepository:
         never requires a webhook subsystem to function.
         """
         async with self._engine.raw.begin() as conn:
-            await conn.execute(insert(governance_approvals).values(
-                id=approval.approval_id,
-                org_id=approval.organization_id,
-                action_id=approval.action_id,
-                evidence_id=evidence_id,
-                action_type=approval.action_type,
-                target=approval.target,
-                action_digest=approval.action_digest,
-                reason_codes=json.dumps(approval.reason_codes),
-                risk_tier=approval.risk_tier,
-                status=approval.status.value,
-                requested_by=approval.requested_by,
-                requested_at=approval.requested_at.isoformat(),
-                expires_at=approval.expires_at.isoformat() if approval.expires_at else None,
-                arguments=json.dumps(approval.arguments) if approval.arguments is not None else None,
-                required_approvals=approval.required_approvals,
-            ))
+            await conn.execute(
+                insert(governance_approvals).values(
+                    id=approval.approval_id,
+                    org_id=approval.organization_id,
+                    action_id=approval.action_id,
+                    evidence_id=evidence_id,
+                    action_type=approval.action_type,
+                    target=approval.target,
+                    action_digest=approval.action_digest,
+                    reason_codes=json.dumps(approval.reason_codes),
+                    risk_tier=approval.risk_tier,
+                    status=approval.status.value,
+                    requested_by=approval.requested_by,
+                    requested_at=approval.requested_at.isoformat(),
+                    expires_at=approval.expires_at.isoformat() if approval.expires_at else None,
+                    arguments=json.dumps(approval.arguments)
+                    if approval.arguments is not None
+                    else None,
+                    required_approvals=approval.required_approvals,
+                )
+            )
 
         if webhook_manager is not None:
             from responsibleai.webhooks.models import WebhookEvent
@@ -193,9 +201,11 @@ class ApprovalRepository:
 
     async def get(self, approval_id: str) -> ApprovalRequest | None:
         async with self._engine.raw.connect() as conn:
-            row = (await conn.execute(
-                select(governance_approvals).where(governance_approvals.c.id == approval_id)
-            )).fetchone()
+            row = (
+                await conn.execute(
+                    select(governance_approvals).where(governance_approvals.c.id == approval_id)
+                )
+            ).fetchone()
         return _row_to_request(row) if row else None
 
     async def list_pending(self, org_id: str | None, *, limit: int = 100) -> list[ApprovalRequest]:
@@ -250,7 +260,9 @@ class ApprovalRepository:
         if current.is_resolved:
             raise ApprovalAlreadyResolvedError(approval_id, current.status.value)
         if current.is_expired:
-            raise ApprovalExpiredError(approval_id, current.expires_at.isoformat() if current.expires_at else None)
+            raise ApprovalExpiredError(
+                approval_id, current.expires_at.isoformat() if current.expires_at else None
+            )
         # Section 26: the identity that proposed the action cannot also
         # be the one who resolves its own approval requirement — checked
         # even though today's REST layer requires ADMIN role to resolve,
@@ -267,14 +279,16 @@ class ApprovalRepository:
         vote_id = str(uuid.uuid4())
         try:
             async with self._engine.raw.begin() as conn:
-                await conn.execute(insert(governance_approval_votes).values(
-                    id=vote_id,
-                    approval_id=approval_id,
-                    resolver_identity_id=resolved_by,
-                    outcome=outcome.value,
-                    notes=notes,
-                    resolved_at=resolved_at,
-                ))
+                await conn.execute(
+                    insert(governance_approval_votes).values(
+                        id=vote_id,
+                        approval_id=approval_id,
+                        resolver_identity_id=resolved_by,
+                        outcome=outcome.value,
+                        notes=notes,
+                        resolved_at=resolved_at,
+                    )
+                )
         except IntegrityError as exc:
             # Lost a race with a concurrent vote from the same identity
             # between the read above and this INSERT -- the DB's own
@@ -287,7 +301,9 @@ class ApprovalRepository:
             # A veto: one DENIED vote closes the approval regardless of
             # how many APPROVED votes it may already have (partial
             # consent isn't consent -- SPEC.md's quorum decision).
-            return await self._finalize(approval_id, current, outcome, resolved_by, resolved_at, notes)
+            return await self._finalize(
+                approval_id, current, outcome, resolved_by, resolved_at, notes
+            )
 
         approved_votes = await self._count_votes(approval_id, ApprovalStatus.APPROVED)
         if approved_votes < current.required_approvals:
@@ -331,7 +347,8 @@ class ApprovalRepository:
         if result.rowcount == 0:
             refreshed = await self.get(approval_id)
             raise ApprovalAlreadyResolvedError(
-                approval_id, refreshed.status.value if refreshed else "UNKNOWN",
+                approval_id,
+                refreshed.status.value if refreshed else "UNKNOWN",
             )
 
         current.status = outcome
@@ -342,21 +359,25 @@ class ApprovalRepository:
 
     async def _get_vote(self, approval_id: str, resolver_identity_id: str) -> ApprovalVote | None:
         async with self._engine.raw.connect() as conn:
-            row = (await conn.execute(
-                select(governance_approval_votes)
-                .where(governance_approval_votes.c.approval_id == approval_id)
-                .where(governance_approval_votes.c.resolver_identity_id == resolver_identity_id)
-            )).fetchone()
+            row = (
+                await conn.execute(
+                    select(governance_approval_votes)
+                    .where(governance_approval_votes.c.approval_id == approval_id)
+                    .where(governance_approval_votes.c.resolver_identity_id == resolver_identity_id)
+                )
+            ).fetchone()
         return _row_to_vote(row) if row else None
 
     async def _count_votes(self, approval_id: str, outcome: ApprovalStatus) -> int:
         async with self._engine.raw.connect() as conn:
-            result = (await conn.execute(
-                select(func.count())
-                .select_from(governance_approval_votes)
-                .where(governance_approval_votes.c.approval_id == approval_id)
-                .where(governance_approval_votes.c.outcome == outcome.value)
-            )).scalar()
+            result = (
+                await conn.execute(
+                    select(func.count())
+                    .select_from(governance_approval_votes)
+                    .where(governance_approval_votes.c.approval_id == approval_id)
+                    .where(governance_approval_votes.c.outcome == outcome.value)
+                )
+            ).scalar()
         return int(result or 0)
 
     async def list_votes(self, approval_id: str) -> list[ApprovalVote]:
@@ -365,11 +386,13 @@ class ApprovalRepository:
         carry (it only reflects the single vote that closed, or is
         closing, the approval)."""
         async with self._engine.raw.connect() as conn:
-            rows = (await conn.execute(
-                select(governance_approval_votes)
-                .where(governance_approval_votes.c.approval_id == approval_id)
-                .order_by(governance_approval_votes.c.resolved_at.asc())
-            )).fetchall()
+            rows = (
+                await conn.execute(
+                    select(governance_approval_votes)
+                    .where(governance_approval_votes.c.approval_id == approval_id)
+                    .order_by(governance_approval_votes.c.resolved_at.asc())
+                )
+            ).fetchall()
         return [_row_to_vote(r) for r in rows]
 
     async def consume(self, approval_id: str, *, action: ActionRequest) -> ApprovalRequest:
@@ -407,7 +430,9 @@ class ApprovalRepository:
         if current.status is not ApprovalStatus.APPROVED:
             raise ApprovalNotApprovedError(approval_id, current.status.value)
         if current.is_expired:
-            raise ApprovalExpiredError(approval_id, current.expires_at.isoformat() if current.expires_at else None)
+            raise ApprovalExpiredError(
+                approval_id, current.expires_at.isoformat() if current.expires_at else None
+            )
         if not current.matches_action(action):
             raise ApprovalActionMismatchError(approval_id)
 
@@ -427,7 +452,8 @@ class ApprovalRepository:
             # gets this, not a silently-successful double execution.
             refreshed = await self.get(approval_id)
             raise ApprovalNotApprovedError(
-                approval_id, refreshed.status.value if refreshed else "UNKNOWN",
+                approval_id,
+                refreshed.status.value if refreshed else "UNKNOWN",
             )
 
         current.status = ApprovalStatus.CONSUMED

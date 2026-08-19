@@ -107,21 +107,28 @@ def _signed_response(
     key_pem = sign_with_key or key_pem
     cert_pem = sign_with_cert or cert_pem
 
-    attributes = attributes or {"email": "alice@enterprise.example", "roles": "ADMIN", "org_id": "org-acme"}
+    attributes = attributes or {
+        "email": "alice@enterprise.example",
+        "roles": "ADMIN",
+        "org_id": "org-acme",
+    }
     now = datetime.datetime.now(datetime.UTC)
     not_before = (now + not_before_offset).strftime("%Y-%m-%dT%H:%M:%SZ")
     not_after = (now + not_after_offset).strftime("%Y-%m-%dT%H:%M:%SZ")
     issue_instant = now.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    attr_xml = "".join(
-        f'<saml:Attribute Name="{name}"><saml:AttributeValue>{value}</saml:AttributeValue></saml:Attribute>'
-        for name, value in attributes.items()
-    ) + extra_attribute_xml
+    attr_xml = (
+        "".join(
+            f'<saml:Attribute Name="{name}"><saml:AttributeValue>{value}</saml:AttributeValue></saml:Attribute>'
+            for name, value in attributes.items()
+        )
+        + extra_attribute_xml
+    )
     in_response_attr = f'InResponseTo="{in_response_to}"' if in_response_to else ""
 
     conditions_xml = (
         f'<saml:Conditions NotBefore="{not_before}" NotOnOrAfter="{not_after}">'
-        f'<saml:AudienceRestriction><saml:Audience>{audience}</saml:Audience></saml:AudienceRestriction>'
+        f"<saml:AudienceRestriction><saml:Audience>{audience}</saml:Audience></saml:AudienceRestriction>"
         f"</saml:Conditions>"
         if include_conditions
         else ""
@@ -135,7 +142,7 @@ def _signed_response(
         )
     else:
         confirmation_xml = (
-            f'<saml:SubjectConfirmation><saml:SubjectConfirmationData '
+            f"<saml:SubjectConfirmation><saml:SubjectConfirmationData "
             f'NotOnOrAfter="{subject_confirmation}"/></saml:SubjectConfirmation>'
         )
 
@@ -210,12 +217,16 @@ class TestParseAndValidateResponseHappyPath:
         assert claims.roles == ["ADMIN"]
         assert claims.org_id == "org-acme"
 
-    def test_idp_initiated_flow_with_no_in_response_to_is_accepted(self, config: SAMLConfig, idp_keypair):
+    def test_idp_initiated_flow_with_no_in_response_to_is_accepted(
+        self, config: SAMLConfig, idp_keypair
+    ):
         resp = _signed_response(idp_keypair, in_response_to="")
         claims = parse_and_validate_response(resp, config, expected_request_id=None)
         assert claims.sub == "alice@enterprise.example"
 
-    def test_email_falls_back_to_name_id_when_it_looks_like_an_email(self, config: SAMLConfig, idp_keypair):
+    def test_email_falls_back_to_name_id_when_it_looks_like_an_email(
+        self, config: SAMLConfig, idp_keypair
+    ):
         resp = _signed_response(idp_keypair, attributes={})
         claims = parse_and_validate_response(resp, config, expected_request_id="_wpREQ123")
         assert claims.email == "alice@enterprise.example"
@@ -232,10 +243,14 @@ class TestParseAndValidateResponseRejections:
     def test_wrong_signing_cert_is_rejected(self, config: SAMLConfig, idp_keypair):
         other_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
         other_key_pem = other_key.private_bytes(
-            serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
         ).decode()
         other_cert_pem = _make_cert(other_key)
-        resp = _signed_response(idp_keypair, sign_with_key=other_key_pem, sign_with_cert=other_cert_pem)
+        resp = _signed_response(
+            idp_keypair, sign_with_key=other_key_pem, sign_with_cert=other_cert_pem
+        )
         with pytest.raises(SAMLError, match="signature"):
             parse_and_validate_response(resp, config, expected_request_id="_wpREQ123")
 
@@ -283,12 +298,18 @@ class TestParseAndValidateResponseRejections:
 
     def test_missing_status_success_is_rejected(self, config: SAMLConfig, idp_keypair):
         resp = _signed_response(idp_keypair)
-        xml = base64.b64decode(resp).decode().replace(
-            "urn:oasis:names:tc:SAML:2.0:status:Success",
-            "urn:oasis:names:tc:SAML:2.0:status:Requester",
+        xml = (
+            base64.b64decode(resp)
+            .decode()
+            .replace(
+                "urn:oasis:names:tc:SAML:2.0:status:Success",
+                "urn:oasis:names:tc:SAML:2.0:status:Requester",
+            )
         )
         with pytest.raises(SAMLError, match="Success"):
-            parse_and_validate_response(base64.b64encode(xml.encode()).decode(), config, expected_request_id=None)
+            parse_and_validate_response(
+                base64.b64encode(xml.encode()).decode(), config, expected_request_id=None
+            )
 
     def test_response_without_assertion_is_rejected(self, config: SAMLConfig):
         xml = f"""<samlp:Response xmlns:samlp="{SAMLP_NS}" xmlns:saml="{SAML_NS}" ID="_r1" Version="2.0" IssueInstant="2026-01-01T00:00:00Z">
@@ -302,7 +323,8 @@ class TestParseAndValidateResponseRejections:
     def test_cert_without_pem_headers_is_accepted(self, idp_keypair):
         key_pem, cert_pem = idp_keypair
         body_only = "\n".join(
-            line for line in cert_pem.strip().splitlines()
+            line
+            for line in cert_pem.strip().splitlines()
             if "BEGIN CERTIFICATE" not in line and "END CERTIFICATE" not in line
         )
         headerless_config = SAMLConfig(
@@ -314,10 +336,14 @@ class TestParseAndValidateResponseRejections:
             session_secret="test-session-secret",
         )
         resp = _signed_response(idp_keypair)
-        claims = parse_and_validate_response(resp, headerless_config, expected_request_id="_wpREQ123")
+        claims = parse_and_validate_response(
+            resp, headerless_config, expected_request_id="_wpREQ123"
+        )
         assert claims.sub == "alice@enterprise.example"
 
-    def test_signxml_list_result_of_one_is_accepted(self, config: SAMLConfig, idp_keypair, monkeypatch):
+    def test_signxml_list_result_of_one_is_accepted(
+        self, config: SAMLConfig, idp_keypair, monkeypatch
+    ):
         import signxml
 
         original_verify = signxml.XMLVerifier.verify
@@ -330,7 +356,9 @@ class TestParseAndValidateResponseRejections:
         claims = parse_and_validate_response(resp, config, expected_request_id="_wpREQ123")
         assert claims.sub == "alice@enterprise.example"
 
-    def test_signxml_list_result_of_two_is_rejected(self, config: SAMLConfig, idp_keypair, monkeypatch):
+    def test_signxml_list_result_of_two_is_rejected(
+        self, config: SAMLConfig, idp_keypair, monkeypatch
+    ):
         import signxml
 
         original_verify = signxml.XMLVerifier.verify
@@ -446,7 +474,7 @@ class TestSessionToken:
         resp = _signed_response(idp_keypair)
         claims = parse_and_validate_response(resp, config, expected_request_id="_wpREQ123")
         token = mint_session_token(config, claims)
-        payload_part, sig_part = token[len("wp_saml."):].rsplit(".", 1)
+        payload_part, sig_part = token[len("wp_saml.") :].rsplit(".", 1)
         tampered = f"wp_saml.{payload_part}." + ("0" if sig_part[0] != "0" else "1") + sig_part[1:]
         assert validate_session_token(config, tampered) is None
 
@@ -454,7 +482,9 @@ class TestSessionToken:
         resp = _signed_response(idp_keypair)
         claims = parse_and_validate_response(resp, config, expected_request_id="_wpREQ123")
         token = mint_session_token(config, claims)
-        wrong_secret_config = SAMLConfig(**{**config.__dict__, "session_secret": "a-different-secret"})
+        wrong_secret_config = SAMLConfig(
+            **{**config.__dict__, "session_secret": "a-different-secret"}
+        )
         assert validate_session_token(wrong_secret_config, token) is None
 
     def test_malformed_token_body_is_rejected(self, config: SAMLConfig):

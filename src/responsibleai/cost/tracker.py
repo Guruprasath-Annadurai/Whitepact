@@ -102,10 +102,17 @@ class CostTracker:
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
-                    usage.request_id, usage.provider, usage.model,
-                    usage.team, usage.application,
-                    usage.input_tokens, usage.output_tokens, usage.cached_tokens,
-                    input_cost, output_cost, total_cost,
+                    usage.request_id,
+                    usage.provider,
+                    usage.model,
+                    usage.team,
+                    usage.application,
+                    usage.input_tokens,
+                    usage.output_tokens,
+                    usage.cached_tokens,
+                    input_cost,
+                    output_cost,
+                    total_cost,
                     usage.prompt_hash,
                     json.dumps(usage.metadata),
                     usage.timestamp.isoformat(),
@@ -127,7 +134,9 @@ class CostTracker:
     def total_cost(self, days: int | None = None) -> float:
         """Total cost (USD) over the last *days* days, or all time if None."""
         if days is None:
-            row = self._conn.execute("SELECT COALESCE(SUM(total_cost),0) FROM token_usage").fetchone()
+            row = self._conn.execute(
+                "SELECT COALESCE(SUM(total_cost),0) FROM token_usage"
+            ).fetchone()
         else:
             row = self._conn.execute(
                 "SELECT COALESCE(SUM(total_cost),0) FROM token_usage "
@@ -195,8 +204,12 @@ class CostTracker:
             (f"-{days} days",),
         ).fetchall()
         return [
-            {"date": r["day"], "cost_usd": round(r["cost"], 4),
-             "tokens": r["tokens"], "requests": r["requests"]}
+            {
+                "date": r["day"],
+                "cost_usd": round(r["cost"], 4),
+                "tokens": r["tokens"],
+                "requests": r["requests"],
+            }
             for r in rows
         ]
 
@@ -233,7 +246,11 @@ class CostTracker:
     def check_budget(self) -> BudgetStatus:
         """Check current spend against the configured budget policy."""
         spent = self.total_cost(30)  # last 30 days
-        pct = (spent / self._policy.monthly_limit_usd * 100) if self._policy.monthly_limit_usd > 0 else 0.0
+        pct = (
+            (spent / self._policy.monthly_limit_usd * 100)
+            if self._policy.monthly_limit_usd > 0
+            else 0.0
+        )
         return BudgetStatus(
             total_spent_usd=spent,
             monthly_limit_usd=self._policy.monthly_limit_usd,

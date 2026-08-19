@@ -124,7 +124,9 @@ async def client():
 
     limiter.reset()
     async with LifespanManager(app) as manager:
-        async with AsyncClient(transport=ASGITransport(app=manager.app), base_url="http://test") as c:
+        async with AsyncClient(
+            transport=ASGITransport(app=manager.app), base_url="http://test"
+        ) as c:
             yield c
 
 
@@ -149,7 +151,9 @@ class TestProvidersList:
         assert "saml" not in ids
 
     @pytest.mark.asyncio
-    async def test_saml_present_when_configured(self, client: AsyncClient, configured_saml: SAMLConfig) -> None:
+    async def test_saml_present_when_configured(
+        self, client: AsyncClient, configured_saml: SAMLConfig
+    ) -> None:
         r = await client.get("/api/auth/providers")
         providers = {p["id"]: p for p in r.json()["providers"]}
         assert "saml" in providers
@@ -216,7 +220,9 @@ class TestSamlAcs:
     ) -> None:
         from responsibleai.dashboard import app as app_module
 
-        app_module._saml_request_store["_req1"] = time.monotonic() - app_module._SAML_REQUEST_TTL - 1
+        app_module._saml_request_store["_req1"] = (
+            time.monotonic() - app_module._SAML_REQUEST_TTL - 1
+        )
         resp = _signed_response(idp_keypair, in_response_to="_req1")
         r = await client.post("/api/auth/acs", data={"SAMLResponse": resp}, follow_redirects=False)
         assert r.status_code == 400
@@ -270,7 +276,9 @@ class TestResolveSamlContext:
     async def test_get_org_context_rejects_garbage_saml_token(
         self, client: AsyncClient, configured_saml: SAMLConfig
     ) -> None:
-        r = await client.get("/api/auth/session", headers={"Authorization": "Bearer wp_saml.garbage.garbage"})
+        r = await client.get(
+            "/api/auth/session", headers={"Authorization": "Bearer wp_saml.garbage.garbage"}
+        )
         assert r.status_code == 401
 
     @pytest.mark.asyncio
@@ -282,5 +290,7 @@ class TestResolveSamlContext:
         # this exercises the get_org_context code path with _saml_config
         # set, which is what determines whether "saml" appears in the
         # SSORequiredError provider list built at line 721 of app.py.
-        r = await client.get("/api/auth/session", headers={"Authorization": "Bearer rai_totally_unknown_key"})
+        r = await client.get(
+            "/api/auth/session", headers={"Authorization": "Bearer rai_totally_unknown_key"}
+        )
         assert r.status_code == 401

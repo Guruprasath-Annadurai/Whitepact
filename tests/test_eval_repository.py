@@ -46,7 +46,11 @@ class TestSaveAndGetRun:
 
     async def test_get_run_returns_full_payload(self, repo):
         run_id = await repo.save_run(
-            "benchmark", "claude-3", {"score": 0.8, "notes": "x"}, provider="anthropic", suite="truthfulqa"
+            "benchmark",
+            "claude-3",
+            {"score": 0.8, "notes": "x"},
+            provider="anthropic",
+            suite="truthfulqa",
         )
         run = await repo.get_run(run_id)
         assert run["run_type"] == "benchmark"

@@ -32,6 +32,7 @@ def _uid() -> str:
 
 # ── create ────────────────────────────────────────────────────────────────────
 
+
 class TestCreate:
     async def test_create_stores_row(self, repo):
         did = _uid()
@@ -56,6 +57,7 @@ class TestCreate:
 
 
 # ── record_attempt ────────────────────────────────────────────────────────────
+
 
 class TestRecordAttempt:
     async def test_success_marks_delivered(self, repo):
@@ -94,6 +96,7 @@ class TestRecordAttempt:
 
 # ── pending_retries ───────────────────────────────────────────────────────────
 
+
 class TestPendingRetries:
     async def test_empty_initially(self, repo):
         rows = await repo.pending_retries()
@@ -108,6 +111,7 @@ class TestPendingRetries:
         from sqlalchemy import update
 
         from responsibleai.db.engine import webhook_deliveries
+
         past = "2000-01-01T00:00:00+00:00"
         async with repo._engine.raw.begin() as conn:
             await conn.execute(
@@ -126,6 +130,7 @@ class TestPendingRetries:
         from sqlalchemy import update
 
         from responsibleai.db.engine import webhook_deliveries
+
         future = "2099-01-01T00:00:00+00:00"
         async with repo._engine.raw.begin() as conn:
             await conn.execute(
@@ -152,6 +157,7 @@ class TestPendingRetries:
         from sqlalchemy import update
 
         from responsibleai.db.engine import webhook_deliveries
+
         past = "2000-01-01T00:00:00+00:00"
         async with repo._engine.raw.begin() as conn:
             await conn.execute(
@@ -176,6 +182,7 @@ class TestPendingRetries:
         from sqlalchemy import update
 
         from responsibleai.db.engine import webhook_deliveries
+
         stale = "2000-01-01T00:00:00+00:00"
         async with repo._engine.raw.begin() as conn:
             await conn.execute(
@@ -198,6 +205,7 @@ class TestPendingRetries:
         from sqlalchemy import update
 
         from responsibleai.db.engine import webhook_deliveries
+
         recent = datetime.now(UTC).isoformat()
         async with repo._engine.raw.begin() as conn:
             await conn.execute(
@@ -211,6 +219,7 @@ class TestPendingRetries:
 
 
 # ── list + stats ──────────────────────────────────────────────────────────────
+
 
 class TestListAndStats:
     async def test_list_empty(self, repo):
@@ -244,6 +253,7 @@ class TestListAndStats:
 
 # ── webhook config persistence (registrations, not deliveries) ──────────────
 
+
 class TestWebhookConfigRepository:
     """WebhookManager used to hold registrations only in memory — they
     vanished on every restart. This covers the DB-backed replacement."""
@@ -251,10 +261,12 @@ class TestWebhookConfigRepository:
     @pytest.fixture()
     async def config_repo(self, db_engine):
         from responsibleai.db.webhook_repository import WebhookConfigRepository
+
         return WebhookConfigRepository(db_engine)
 
     def _config(self, **overrides):
         from responsibleai.webhooks.models import WebhookConfig, WebhookEvent, WebhookProvider
+
         defaults = dict(
             url="https://hooks.example.com/generic",
             events=[WebhookEvent.TRUST_SCORE_CHANGED],
@@ -283,6 +295,7 @@ class TestWebhookConfigRepository:
 
     async def test_events_round_trip(self, config_repo):
         from responsibleai.webhooks.models import WebhookEvent
+
         cfg = self._config(events=[WebhookEvent.DRIFT_ALERT, WebhookEvent.BUDGET_EXCEEDED])
         await config_repo.create(cfg)
         loaded = await config_repo.list_all()
@@ -316,6 +329,7 @@ class TestWebhookConfigRepository:
 
     async def test_manager_load_configs_repopulates_registry(self, config_repo):
         from responsibleai.webhooks.manager import WebhookManager
+
         cfg = self._config()
         await config_repo.create(cfg)
 
@@ -368,6 +382,7 @@ class TestWebhookConfigRepository:
 
     async def test_list_webhooks_filters_by_org(self):
         from responsibleai.webhooks.manager import WebhookManager
+
         manager = WebhookManager()
         manager.register(self._config(org_id="org-a"))
         manager.register(self._config(org_id="org-b"))
@@ -380,11 +395,13 @@ class TestWebhookConfigRepository:
 
 # ── per-org rate limit key function ──────────────────────────────────────────
 
+
 class TestRateLimitKeyFunction:
     """Rate limit key must isolate by Bearer token, fall back to IP."""
 
     def _make_request(self, auth_header: str | None = None, client_ip: str = "1.2.3.4"):
         from unittest.mock import MagicMock
+
         req = MagicMock()
         req.headers = {}
         if auth_header:
@@ -397,6 +414,7 @@ class TestRateLimitKeyFunction:
         import hashlib
 
         from responsibleai.dashboard.app import _get_rate_limit_key
+
         req = self._make_request("Bearer mytoken123")
         key = _get_rate_limit_key(req)
         assert key.startswith("key:")
@@ -405,24 +423,28 @@ class TestRateLimitKeyFunction:
 
     def test_different_tokens_produce_different_keys(self):
         from responsibleai.dashboard.app import _get_rate_limit_key
+
         req1 = self._make_request("Bearer token_org_a")
         req2 = self._make_request("Bearer token_org_b")
         assert _get_rate_limit_key(req1) != _get_rate_limit_key(req2)
 
     def test_same_token_produces_same_key(self):
         from responsibleai.dashboard.app import _get_rate_limit_key
+
         req1 = self._make_request("Bearer stable_token")
         req2 = self._make_request("Bearer stable_token")
         assert _get_rate_limit_key(req1) == _get_rate_limit_key(req2)
 
     def test_no_auth_falls_back_to_ip(self):
         from responsibleai.dashboard.app import _get_rate_limit_key
+
         req = self._make_request(None, client_ip="10.0.0.1")
         key = _get_rate_limit_key(req)
         assert not key.startswith("key:")
 
     def test_non_bearer_falls_back_to_ip(self):
         from responsibleai.dashboard.app import _get_rate_limit_key
+
         req = self._make_request("Basic dXNlcjpwYXNz")
         key = _get_rate_limit_key(req)
         assert not key.startswith("key:")
@@ -430,9 +452,11 @@ class TestRateLimitKeyFunction:
 
 # ── migration file sanity ─────────────────────────────────────────────────────
 
+
 class TestMigrationFile:
     def test_initial_migration_exists(self):
         from pathlib import Path
+
         versions = Path(__file__).resolve().parents[1] / "migrations" / "versions"
         files = list(versions.glob("*.py"))
         assert len(files) >= 1
@@ -441,9 +465,8 @@ class TestMigrationFile:
         pytest.importorskip("alembic", reason="alembic not installed")
         import importlib.util
         from pathlib import Path
-        f = next(
-            (Path(__file__).resolve().parents[1] / "migrations" / "versions").glob("0001*.py")
-        )
+
+        f = next((Path(__file__).resolve().parents[1] / "migrations" / "versions").glob("0001*.py"))
         spec = importlib.util.spec_from_file_location("migration_0001", f)
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
@@ -454,10 +477,12 @@ class TestMigrationFile:
 
     def test_alembic_ini_exists(self):
         from pathlib import Path
+
         ini = Path(__file__).resolve().parents[1] / "alembic.ini"
         assert ini.exists()
 
     def test_env_py_exists(self):
         from pathlib import Path
+
         env = Path(__file__).resolve().parents[1] / "migrations" / "env.py"
         assert env.exists()

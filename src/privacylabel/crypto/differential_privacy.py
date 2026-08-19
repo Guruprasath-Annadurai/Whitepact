@@ -44,9 +44,7 @@ class DifferentialPrivacy:
     # Laplace mechanism  (ε, 0)-DP
     # ------------------------------------------------------------------
 
-    def laplace_mechanism(
-        self, value: np.ndarray, sensitivity: float = 1.0
-    ) -> np.ndarray:
+    def laplace_mechanism(self, value: np.ndarray, sensitivity: float = 1.0) -> np.ndarray:
         """
         Add calibrated Laplace noise to achieve (ε, 0)-DP.
 
@@ -75,9 +73,7 @@ class DifferentialPrivacy:
     # Gaussian mechanism  (ε, δ)-DP  with δ > 0
     # ------------------------------------------------------------------
 
-    def gaussian_mechanism(
-        self, value: np.ndarray, sensitivity: float = 1.0
-    ) -> np.ndarray:
+    def gaussian_mechanism(self, value: np.ndarray, sensitivity: float = 1.0) -> np.ndarray:
         """
         Add calibrated Gaussian noise to achieve (ε, δ)-DP.
 
@@ -108,9 +104,7 @@ class DifferentialPrivacy:
     # Exponential mechanism  (ε, 0)-DP
     # ------------------------------------------------------------------
 
-    def exponential_mechanism(
-        self, scores: np.ndarray, sensitivity: float = 1.0
-    ) -> int:
+    def exponential_mechanism(self, scores: np.ndarray, sensitivity: float = 1.0) -> int:
         """
         Privately select an element by score using the exponential mechanism.
 
@@ -164,9 +158,7 @@ class DifferentialPrivacy:
     # Gradient privatisation  (for federated learning)
     # ------------------------------------------------------------------
 
-    def privatise_gradients(
-        self, gradients: np.ndarray, clip_norm: float = 1.0
-    ) -> np.ndarray:
+    def privatise_gradients(self, gradients: np.ndarray, clip_norm: float = 1.0) -> np.ndarray:
         """
         Apply DP-SGD gradient privatisation.
 

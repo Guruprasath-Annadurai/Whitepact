@@ -48,8 +48,9 @@ except ImportError:  # pragma: no cover - exercised only when extra isn't instal
     def interrupt(value: Any) -> Any:  # type: ignore[misc]
         raise ImportError(
             "make_trust_gate_node requires the 'langgraph' extra: "
-            "pip install \"rai-governance-platform[langgraph]\" (needs langgraph>=1.0)."
+            'pip install "rai-governance-platform[langgraph]" (needs langgraph>=1.0).'
         )
+
 
 from responsibleai.integrations.client import TrustCheckResult, TrustClient
 
@@ -63,7 +64,7 @@ def _require_langgraph() -> None:
     if not _LANGGRAPH_AVAILABLE:
         raise ImportError(
             "make_trust_gate_node requires the 'langgraph' extra: "
-            "pip install \"rai-governance-platform[langgraph]\" (needs langgraph>=1.0)."
+            'pip install "rai-governance-platform[langgraph]" (needs langgraph>=1.0).'
         )
 
 
@@ -126,13 +127,15 @@ def make_trust_gate_node(
         if result.passes(min_score=min_score, require_known=require_known):
             return {"trust_gate_status": "approved", "trust_check": summary}
 
-        decision = interrupt({
-            "reason": "trust_gate_below_threshold",
-            "tool_call": tool_call,
-            "trust_check": summary,
-            "min_score": min_score,
-            "require_known": require_known,
-        })
+        decision = interrupt(
+            {
+                "reason": "trust_gate_below_threshold",
+                "tool_call": tool_call,
+                "trust_check": summary,
+                "min_score": min_score,
+                "require_known": require_known,
+            }
+        )
         status: TrustGateStatus = "approved" if decision == "approve" else "rejected"
         return {"trust_gate_status": status, "trust_check": summary}
 

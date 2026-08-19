@@ -63,8 +63,12 @@ class TestPassportToDict:
     def test_to_dict_has_required_keys(self) -> None:
         d = _make_passport().to_dict()
         required = {
-            "passport_id", "version", "model", "trust_score",
-            "generated_at", "verification_hash",
+            "passport_id",
+            "version",
+            "model",
+            "trust_score",
+            "generated_at",
+            "verification_hash",
         }
         assert required.issubset(d.keys())
 
@@ -98,8 +102,12 @@ class TestPassportToHtml:
     def test_html_contains_trust_score(self) -> None:
         engine = TrustScoreEngine()
         trust_score = engine.compute(
-            fairness=1.0, privacy=1.0, security=1.0,
-            robustness=1.0, compliance=1.0, authenticity=1.0,
+            fairness=1.0,
+            privacy=1.0,
+            security=1.0,
+            robustness=1.0,
+            compliance=1.0,
+            authenticity=1.0,
         )
         html = PassportGenerator().generate("m", "p", trust_score).to_html()
         assert "100" in html

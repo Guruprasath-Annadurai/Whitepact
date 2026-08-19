@@ -221,7 +221,9 @@ def parse_and_validate_response(
     if expected_request_id is not None:
         in_response_to = root.get("InResponseTo")
         if in_response_to != expected_request_id:
-            raise SAMLError("InResponseTo does not match the AuthnRequest we sent (possible replay)")
+            raise SAMLError(
+                "InResponseTo does not match the AuthnRequest we sent (possible replay)"
+            )
 
     assertion = root.find(".//saml:Assertion", _NSMAP)
     if assertion is None:
@@ -361,8 +363,8 @@ def build_sp_metadata(config: SAMLConfig) -> str:
         f'entityID="{config.sp_entity_id}">'
         f'<md:SPSSODescriptor AuthnRequestsSigned="false" WantAssertionsSigned="true" '
         f'protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">'
-        f'<md:NameIDFormat>urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress</md:NameIDFormat>'
-        f'<md:AssertionConsumerService '
+        f"<md:NameIDFormat>urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress</md:NameIDFormat>"
+        f"<md:AssertionConsumerService "
         f'Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" '
         f'Location="{config.acs_url}" index="0" isDefault="true"/>'
         f"</md:SPSSODescriptor>"
@@ -381,8 +383,12 @@ def mint_session_token(config: SAMLConfig, claims: SAMLAssertionClaims) -> str:
         "org_id": claims.org_id,
         "exp": time.time() + _SESSION_TTL_SECONDS,
     }
-    payload_b64 = base64.urlsafe_b64encode(json.dumps(payload).encode("utf-8")).decode("ascii").rstrip("=")
-    signature = hmac.new(config.session_secret.encode("utf-8"), payload_b64.encode("ascii"), hashlib.sha256).hexdigest()
+    payload_b64 = (
+        base64.urlsafe_b64encode(json.dumps(payload).encode("utf-8")).decode("ascii").rstrip("=")
+    )
+    signature = hmac.new(
+        config.session_secret.encode("utf-8"), payload_b64.encode("ascii"), hashlib.sha256
+    ).hexdigest()
     return f"{_SESSION_TOKEN_PREFIX}{payload_b64}.{signature}"
 
 
@@ -392,7 +398,7 @@ def validate_session_token(config: SAMLConfig, token: str) -> SAMLAssertionClaim
     fall through to other auth methods without a try/except per call."""
     if not token.startswith(_SESSION_TOKEN_PREFIX):
         return None
-    body = token[len(_SESSION_TOKEN_PREFIX):]
+    body = token[len(_SESSION_TOKEN_PREFIX) :]
     try:
         payload_b64, signature = body.rsplit(".", 1)
     except ValueError:

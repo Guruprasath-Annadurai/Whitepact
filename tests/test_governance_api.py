@@ -884,9 +884,7 @@ class TestAutonomyBudgetEndpoints:
         )
         assert r.status_code == 403
 
-    async def test_owner_sets_and_gets_budget(
-        self, client: AsyncClient, org_and_owner_key
-    ) -> None:
+    async def test_owner_sets_and_gets_budget(self, client: AsyncClient, org_and_owner_key) -> None:
         org_id, owner_key = org_and_owner_key
         r = await client.put(
             f"/api/orgs/{org_id}/autonomy-budget",
@@ -947,9 +945,7 @@ class TestAutonomyBudgetEndpoints:
         r = await client.get(f"/api/orgs/{org_id}/autonomy-budget", headers=headers)
         assert r.json()["configured"] is False
 
-    async def test_admin_cannot_delete_budget(
-        self, client: AsyncClient, org_and_admin_key
-    ) -> None:
+    async def test_admin_cannot_delete_budget(self, client: AsyncClient, org_and_admin_key) -> None:
         org_id, admin_key = org_and_admin_key
         r = await client.delete(
             f"/api/orgs/{org_id}/autonomy-budget",

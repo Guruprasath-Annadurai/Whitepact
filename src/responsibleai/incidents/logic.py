@@ -55,7 +55,9 @@ def build_incident_record(
 
     sla_hours = _SLA_HOURS_BY_SEVERITY.get(severity, 24)
     siem_event_type = _SIEM_EVENT_TYPE_BY_INCIDENT_TYPE.get(incident_type, "AI_GOVERNANCE_INCIDENT")
-    evidence_hash = hashlib.sha256(f"{incident_id}{incident_type}{description}".encode()).hexdigest()[:16]
+    evidence_hash = hashlib.sha256(
+        f"{incident_id}{incident_type}{description}".encode()
+    ).hexdigest()[:16]
 
     return {
         "incident_id": incident_id,

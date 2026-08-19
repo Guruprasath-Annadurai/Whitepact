@@ -108,9 +108,7 @@ class UnbiasedMockProvider(MockProvider):
         for first_name in ["James", "Mary", "Alex"]:
             if first_name in request.prompt:
                 text = self._TEMPLATE.format(name=first_name)
-                return CompletionResponse(
-                    text=text, model=self.model_name, provider=self.name
-                )
+                return CompletionResponse(text=text, model=self.model_name, provider=self.name)
 
         return CompletionResponse(
             text=self._TEMPLATE.format(name="the engineer"),

@@ -15,6 +15,7 @@ from responsibleai.trust.score import TrustScoreEngine
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
+
 @pytest.fixture()
 async def db():
     engine = create_engine(":memory:")
@@ -37,8 +38,10 @@ async def trust_repo(db):
 @pytest.fixture()
 def usage() -> TokenUsage:
     return TokenUsage.create(
-        provider="openai", model="gpt-4o",
-        input_tokens=1000, output_tokens=500,
+        provider="openai",
+        model="gpt-4o",
+        input_tokens=1000,
+        output_tokens=500,
     )
 
 
@@ -46,12 +49,17 @@ def usage() -> TokenUsage:
 def score():
     engine = TrustScoreEngine()
     return engine.compute(
-        fairness=0.80, privacy=0.85, security=0.82,
-        robustness=0.78, compliance=0.90, authenticity=0.88,
+        fairness=0.80,
+        privacy=0.85,
+        security=0.82,
+        robustness=0.78,
+        compliance=0.90,
+        authenticity=0.88,
     )
 
 
 # ── CostRepository ────────────────────────────────────────────────────────────
+
 
 class TestCostRepository:
     async def test_record_returns_cost_record(self, cost_repo, usage):
@@ -70,10 +78,12 @@ class TestCostRepository:
         assert await cost_repo.total_cost() == 0.0
 
     async def test_total_cost_accumulates(self, cost_repo):
-        u1 = TokenUsage.create(provider="openai", model="gpt-4o",
-                               input_tokens=1000, output_tokens=500)
-        u2 = TokenUsage.create(provider="openai", model="gpt-4o",
-                               input_tokens=2000, output_tokens=1000)
+        u1 = TokenUsage.create(
+            provider="openai", model="gpt-4o", input_tokens=1000, output_tokens=500
+        )
+        u2 = TokenUsage.create(
+            provider="openai", model="gpt-4o", input_tokens=2000, output_tokens=1000
+        )
         await cost_repo.record(u1)
         await cost_repo.record(u2)
         total = await cost_repo.total_cost()
@@ -97,8 +107,15 @@ class TestCostRepository:
         assert await cost_repo.request_count() == 1
 
     async def test_model_breakdown(self, cost_repo):
-        u1 = TokenUsage.create(provider="openai",    model="gpt-4o",      input_tokens=1000, output_tokens=500)
-        u2 = TokenUsage.create(provider="anthropic", model="claude-3-5-sonnet-20241022", input_tokens=500, output_tokens=200)
+        u1 = TokenUsage.create(
+            provider="openai", model="gpt-4o", input_tokens=1000, output_tokens=500
+        )
+        u2 = TokenUsage.create(
+            provider="anthropic",
+            model="claude-3-5-sonnet-20241022",
+            input_tokens=500,
+            output_tokens=200,
+        )
         await cost_repo.record(u1)
         await cost_repo.record(u2)
         breakdown = await cost_repo.get_model_breakdown()
@@ -107,10 +124,12 @@ class TestCostRepository:
         assert any("anthropic" in k for k in breakdown)
 
     async def test_team_breakdown(self, cost_repo):
-        u1 = TokenUsage.create(provider="openai", model="gpt-4o",
-                               input_tokens=500, output_tokens=200, team="eng")
-        u2 = TokenUsage.create(provider="openai", model="gpt-4o",
-                               input_tokens=300, output_tokens=100, team="marketing")
+        u1 = TokenUsage.create(
+            provider="openai", model="gpt-4o", input_tokens=500, output_tokens=200, team="eng"
+        )
+        u2 = TokenUsage.create(
+            provider="openai", model="gpt-4o", input_tokens=300, output_tokens=100, team="marketing"
+        )
         await cost_repo.record(u1)
         await cost_repo.record(u2)
         breakdown = await cost_repo.get_team_breakdown()
@@ -135,10 +154,15 @@ class TestCostRepository:
         assert "cost_usd" in daily[0]
 
     async def test_different_providers(self, cost_repo):
-        providers = [("openai", "gpt-4o"), ("anthropic", "claude-3-5-sonnet-20241022"), ("google", "gemini-1.5-pro")]
+        providers = [
+            ("openai", "gpt-4o"),
+            ("anthropic", "claude-3-5-sonnet-20241022"),
+            ("google", "gemini-1.5-pro"),
+        ]
         for provider, model in providers:
-            u = TokenUsage.create(provider=provider, model=model,
-                                  input_tokens=100, output_tokens=50)
+            u = TokenUsage.create(
+                provider=provider, model=model, input_tokens=100, output_tokens=50
+            )
             await cost_repo.record(u)
         count = await cost_repo.request_count()
         assert count == 3
@@ -152,6 +176,7 @@ class TestCostRepository:
 
 # ── TrustRepository ───────────────────────────────────────────────────────────
 
+
 class TestTrustRepository:
     async def test_record_no_alert_on_first(self, trust_repo, score):
         alert = await trust_repo.record("model-a", "openai", score)
@@ -159,20 +184,44 @@ class TestTrustRepository:
 
     async def test_record_no_alert_small_drop(self, trust_repo):
         engine = TrustScoreEngine()
-        s1 = engine.compute(fairness=0.9, privacy=0.9, security=0.9,
-                            robustness=0.9, compliance=0.9, authenticity=0.9)
-        s2 = engine.compute(fairness=0.88, privacy=0.88, security=0.88,
-                            robustness=0.88, compliance=0.88, authenticity=0.88)
+        s1 = engine.compute(
+            fairness=0.9,
+            privacy=0.9,
+            security=0.9,
+            robustness=0.9,
+            compliance=0.9,
+            authenticity=0.9,
+        )
+        s2 = engine.compute(
+            fairness=0.88,
+            privacy=0.88,
+            security=0.88,
+            robustness=0.88,
+            compliance=0.88,
+            authenticity=0.88,
+        )
         await trust_repo.record("m", "p", s1)
         alert = await trust_repo.record("m", "p", s2)
         assert alert is None
 
     async def test_record_alert_on_large_drop(self, trust_repo):
         engine = TrustScoreEngine()
-        s_high = engine.compute(fairness=0.95, privacy=0.95, security=0.95,
-                                robustness=0.95, compliance=0.95, authenticity=0.95)
-        s_low  = engine.compute(fairness=0.50, privacy=0.50, security=0.50,
-                                robustness=0.50, compliance=0.50, authenticity=0.50)
+        s_high = engine.compute(
+            fairness=0.95,
+            privacy=0.95,
+            security=0.95,
+            robustness=0.95,
+            compliance=0.95,
+            authenticity=0.95,
+        )
+        s_low = engine.compute(
+            fairness=0.50,
+            privacy=0.50,
+            security=0.50,
+            robustness=0.50,
+            compliance=0.50,
+            authenticity=0.50,
+        )
         await trust_repo.record("drift-model", "acme", s_high)
         alert = await trust_repo.record("drift-model", "acme", s_low)
         assert alert is not None
@@ -198,8 +247,18 @@ class TestTrustRepository:
     async def test_history_record_has_expected_fields(self, trust_repo, score):
         await trust_repo.record("m", "p", score)
         record = (await trust_repo.history("m", "p"))[0]
-        for field in ("overall", "grade", "risk_level", "fairness", "privacy",
-                      "security", "robustness", "compliance", "authenticity", "recorded_at"):
+        for field in (
+            "overall",
+            "grade",
+            "risk_level",
+            "fairness",
+            "privacy",
+            "security",
+            "robustness",
+            "compliance",
+            "authenticity",
+            "recorded_at",
+        ):
             assert field in record
 
     async def test_trend_insufficient_data(self, trust_repo, score):
@@ -210,8 +269,9 @@ class TestTrustRepository:
     async def test_trend_improving(self, trust_repo):
         engine = TrustScoreEngine()
         for v in [0.60, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95]:
-            s = engine.compute(fairness=v, privacy=v, security=v,
-                               robustness=v, compliance=v, authenticity=v)
+            s = engine.compute(
+                fairness=v, privacy=v, security=v, robustness=v, compliance=v, authenticity=v
+            )
             await trust_repo.record("upward", "p", s)
         trend = await trust_repo.trend("upward", "p")
         assert trend["direction"] in ("improving", "stable")
@@ -221,8 +281,9 @@ class TestTrustRepository:
     async def test_trend_degrading(self, trust_repo):
         engine = TrustScoreEngine()
         for v in [0.95, 0.88, 0.80, 0.70, 0.60, 0.50]:
-            s = engine.compute(fairness=v, privacy=v, security=v,
-                               robustness=v, compliance=v, authenticity=v)
+            s = engine.compute(
+                fairness=v, privacy=v, security=v, robustness=v, compliance=v, authenticity=v
+            )
             await trust_repo.record("downward", "p", s)
         trend = await trust_repo.trend("downward", "p")
         assert trend["direction"] in ("degrading", "stable")
@@ -242,10 +303,22 @@ class TestTrustRepository:
 
     async def test_model_isolation(self, trust_repo, score):
         engine = TrustScoreEngine()
-        s_high = engine.compute(fairness=0.95, privacy=0.95, security=0.95,
-                                robustness=0.95, compliance=0.95, authenticity=0.95)
-        s_low  = engine.compute(fairness=0.50, privacy=0.50, security=0.50,
-                                robustness=0.50, compliance=0.50, authenticity=0.50)
+        s_high = engine.compute(
+            fairness=0.95,
+            privacy=0.95,
+            security=0.95,
+            robustness=0.95,
+            compliance=0.95,
+            authenticity=0.95,
+        )
+        s_low = engine.compute(
+            fairness=0.50,
+            privacy=0.50,
+            security=0.50,
+            robustness=0.50,
+            compliance=0.50,
+            authenticity=0.50,
+        )
         await trust_repo.record("model-x", "p", s_high)
         await trust_repo.record("model-x", "p", s_low)
         hist_x = await trust_repo.history("model-x", "p")
@@ -256,6 +329,7 @@ class TestTrustRepository:
 
 # ── Engine ────────────────────────────────────────────────────────────────────
 
+
 class TestCreateEngine:
     async def test_memory_url(self):
         engine = create_engine(":memory:")
@@ -265,6 +339,7 @@ class TestCreateEngine:
     def test_postgresql_url_format(self):
         pytest.importorskip("asyncpg", reason="asyncpg not installed")
         from responsibleai.db.engine import create_engine as ce
+
         engine = ce("postgresql://user:pass@localhost/db")
         url_str = str(engine.raw.url)
         assert "postgresql+asyncpg" in url_str

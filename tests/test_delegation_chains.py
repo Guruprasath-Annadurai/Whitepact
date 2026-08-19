@@ -32,7 +32,9 @@ def _action(target: str = "rai_health") -> ActionRequest:
 
 class TestDelegationChainValidation:
     def test_empty_chain_is_the_default_and_valid(self) -> None:
-        authority = AuthorityContext(delegated_by="org-1", granted_action_types=frozenset({"mcp_tool_call"}))
+        authority = AuthorityContext(
+            delegated_by="org-1", granted_action_types=frozenset({"mcp_tool_call"})
+        )
         assert authority.delegation_chain == ()
 
     def test_chain_ending_in_delegated_by_is_valid(self) -> None:
@@ -111,7 +113,9 @@ class TestDelegationChainInEvidence:
 
     def test_no_chain_set_means_empty_list_in_evidence(self) -> None:
         gw = WhitePactRuntimeGateway()
-        authority = AuthorityContext(delegated_by="org-1", granted_action_types=frozenset({"mcp_tool_call"}))
+        authority = AuthorityContext(
+            delegated_by="org-1", granted_action_types=frozenset({"mcp_tool_call"})
+        )
         action = _action()
         decision = gw.evaluate(action, authority)
         evidence = build_evidence_record(action, action.agent, authority, decision)

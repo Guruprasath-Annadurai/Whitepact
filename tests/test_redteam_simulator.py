@@ -153,9 +153,14 @@ class TestAnalyzeResponses:
         report = self.sim.analyze_responses("model", "provider", responses)
         d = report.to_dict()
         required = {
-            "model", "provider", "security_score", "total_attacks",
-            "vulnerabilities_found", "critical_vulnerabilities",
-            "attack_results", "timestamp",
+            "model",
+            "provider",
+            "security_score",
+            "total_attacks",
+            "vulnerabilities_found",
+            "critical_vulnerabilities",
+            "attack_results",
+            "timestamp",
         }
         assert required.issubset(d.keys())
 

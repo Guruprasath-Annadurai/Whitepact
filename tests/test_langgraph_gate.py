@@ -43,10 +43,16 @@ def _build_graph(node):
 
 class TestApprovedPath:
     def test_high_score_passes_without_interrupting(self) -> None:
-        client = _client_returning(TrustCheckResult(
-            model="good-tool", provider="unknown", known=True,
-            trust_score={"overall": 95.0}, certified=True, has_reported_incidents=False,
-        ))
+        client = _client_returning(
+            TrustCheckResult(
+                model="good-tool",
+                provider="unknown",
+                known=True,
+                trust_score={"overall": 95.0},
+                certified=True,
+                has_reported_incidents=False,
+            )
+        )
         graph = _build_graph(make_trust_gate_node(min_score=50, client=client))
         config = {"configurable": {"thread_id": "t-approved"}}
 
@@ -68,10 +74,16 @@ class TestNoToolCall:
 
 class TestBlockedPathInterruptAndResume:
     def _low_score_client(self) -> MagicMock:
-        return _client_returning(TrustCheckResult(
-            model="risky-tool", provider="unknown", known=True,
-            trust_score={"overall": 5.0}, certified=False, has_reported_incidents=True,
-        ))
+        return _client_returning(
+            TrustCheckResult(
+                model="risky-tool",
+                provider="unknown",
+                known=True,
+                trust_score={"overall": 5.0},
+                certified=False,
+                has_reported_incidents=True,
+            )
+        )
 
     def test_low_score_pauses_with_an_interrupt(self) -> None:
         graph = _build_graph(make_trust_gate_node(min_score=50, client=self._low_score_client()))
@@ -117,10 +129,16 @@ class TestWithoutCheckpointer:
         checkpointer is required for the pause/resume cycle to actually
         work end-to-end (see TestBlockedPathInterruptAndResume above,
         which does configure one)."""
-        client = _client_returning(TrustCheckResult(
-            model="risky-tool", provider="unknown", known=True,
-            trust_score={"overall": 5.0}, certified=False, has_reported_incidents=False,
-        ))
+        client = _client_returning(
+            TrustCheckResult(
+                model="risky-tool",
+                provider="unknown",
+                known=True,
+                trust_score={"overall": 5.0},
+                certified=False,
+                has_reported_incidents=False,
+            )
+        )
         builder = StateGraph(_State)
         builder.add_node("trust_gate", make_trust_gate_node(min_score=50, client=client))
         builder.add_edge(START, "trust_gate")

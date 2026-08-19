@@ -41,7 +41,9 @@ TOOL_DEFS: list[types.Tool] = [
     types.Tool(
         name="rai_scan",
         title="Scan for PII & Harmful Content",
-        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False),
+        annotations=types.ToolAnnotations(
+            readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False
+        ),
         description=(
             "Scan text for PII (email, phone, SSN, credit card, IP address) and harmful "
             "content (hate speech, violence, self-harm). Returns findings and a redacted copy."
@@ -63,7 +65,9 @@ TOOL_DEFS: list[types.Tool] = [
     types.Tool(
         name="rai_trust_score",
         title="Compute AI Trust Score",
-        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False),
+        annotations=types.ToolAnnotations(
+            readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False
+        ),
         description=(
             "Compute a composite AI Trust Score (0-100) across six governance dimensions: "
             "fairness, privacy, security, robustness, compliance, authenticity. "
@@ -72,11 +76,11 @@ TOOL_DEFS: list[types.Tool] = [
         inputSchema={
             "type": "object",
             "properties": {
-                "fairness":     {"type": "number", "minimum": 0, "maximum": 1, "default": 0.5},
-                "privacy":      {"type": "number", "minimum": 0, "maximum": 1, "default": 0.5},
-                "security":     {"type": "number", "minimum": 0, "maximum": 1, "default": 0.5},
-                "robustness":   {"type": "number", "minimum": 0, "maximum": 1, "default": 0.5},
-                "compliance":   {"type": "number", "minimum": 0, "maximum": 1, "default": 0.5},
+                "fairness": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.5},
+                "privacy": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.5},
+                "security": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.5},
+                "robustness": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.5},
+                "compliance": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.5},
                 "authenticity": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.5},
             },
         },
@@ -85,7 +89,9 @@ TOOL_DEFS: list[types.Tool] = [
     types.Tool(
         name="rai_compliance",
         title="Evaluate Governance Compliance",
-        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False),
+        annotations=types.ToolAnnotations(
+            readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False
+        ),
         description=(
             "Evaluate AI governance compliance against NIST AI RMF, EU AI Act, or ISO 42001. "
             "Returns compliance score, findings per control, and remediation recommendations."
@@ -93,12 +99,17 @@ TOOL_DEFS: list[types.Tool] = [
         inputSchema={
             "type": "object",
             "properties": {
-                "fairness_score":      {"type": "number", "minimum": 0, "maximum": 1, "default": 0.5},
-                "privacy_score":       {"type": "number", "minimum": 0, "maximum": 1, "default": 0.5},
-                "security_score":      {"type": "number", "minimum": 0, "maximum": 1, "default": 0.5},
-                "robustness_score":    {"type": "number", "minimum": 0, "maximum": 1, "default": 0.5},
-                "compliance_maturity": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.5},
-                "use_case":            {"type": "string", "default": "general"},
+                "fairness_score": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.5},
+                "privacy_score": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.5},
+                "security_score": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.5},
+                "robustness_score": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.5},
+                "compliance_maturity": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.5,
+                },
+                "use_case": {"type": "string", "default": "general"},
                 "framework": {
                     "type": "string",
                     "enum": ["NIST_AI_RMF", "EU_AI_ACT", "ISO_42001"],
@@ -111,7 +122,9 @@ TOOL_DEFS: list[types.Tool] = [
     types.Tool(
         name="rai_hallucination",
         title="Detect Hallucination Risk",
-        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False),
+        annotations=types.ToolAnnotations(
+            readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False
+        ),
         description=(
             "Detect hallucination risk in AI-generated text. Analyses hedging language, "
             "self-consistency across candidate responses, and unsupported factual claims."
@@ -133,14 +146,19 @@ TOOL_DEFS: list[types.Tool] = [
     types.Tool(
         name="rai_cost_estimate",
         title="Estimate Model API Cost",
-        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False),
+        annotations=types.ToolAnnotations(
+            readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False
+        ),
         description="Estimate the USD cost of a model API call from token counts.",
         inputSchema={
             "type": "object",
             "properties": {
-                "model":         {"type": "string", "description": "Model name, e.g. gpt-4o"},
-                "provider":      {"type": "string", "description": "Provider: openai | anthropic | google | mistral"},
-                "input_tokens":  {"type": "integer", "minimum": 0},
+                "model": {"type": "string", "description": "Model name, e.g. gpt-4o"},
+                "provider": {
+                    "type": "string",
+                    "description": "Provider: openai | anthropic | google | mistral",
+                },
+                "input_tokens": {"type": "integer", "minimum": 0},
                 "output_tokens": {"type": "integer", "minimum": 0},
             },
             "required": ["model", "provider", "input_tokens", "output_tokens"],
@@ -150,7 +168,9 @@ TOOL_DEFS: list[types.Tool] = [
     types.Tool(
         name="rai_redteam_payloads",
         title="Get Red Team Attack Payloads",
-        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False),
+        annotations=types.ToolAnnotations(
+            readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False
+        ),
         description=(
             "Return adversarial attack payloads to probe an AI model for security vulnerabilities. "
             "Categories: prompt_injection, jailbreak, data_leakage, role_confusion, delimiter_attack."
@@ -162,7 +182,13 @@ TOOL_DEFS: list[types.Tool] = [
                     "type": "array",
                     "items": {
                         "type": "string",
-                        "enum": ["prompt_injection", "jailbreak", "data_leakage", "role_confusion", "delimiter_attack"],
+                        "enum": [
+                            "prompt_injection",
+                            "jailbreak",
+                            "data_leakage",
+                            "role_confusion",
+                            "delimiter_attack",
+                        ],
                     },
                 },
             },
@@ -171,7 +197,9 @@ TOOL_DEFS: list[types.Tool] = [
     types.Tool(
         name="rai_redteam_analyze",
         title="Analyze Red Team Responses",
-        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False),
+        annotations=types.ToolAnnotations(
+            readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False
+        ),
         description=(
             "Analyse model responses to red team attack payloads. Returns a security report "
             "with vulnerability findings, severity breakdown, and an overall security score."
@@ -180,7 +208,7 @@ TOOL_DEFS: list[types.Tool] = [
             "type": "object",
             "properties": {
                 "model_name": {"type": "string"},
-                "provider":   {"type": "string"},
+                "provider": {"type": "string"},
                 "responses": {
                     "type": "object",
                     "additionalProperties": {"type": "string"},
@@ -194,7 +222,9 @@ TOOL_DEFS: list[types.Tool] = [
     types.Tool(
         name="rai_compare_models",
         title="Compare Two Models' Trust Scores",
-        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False),
+        annotations=types.ToolAnnotations(
+            readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False
+        ),
         description=(
             "Compare two AI models across all six trust dimensions. Returns scores for each, "
             "delta analysis, and a recommendation on which model is more trustworthy."
@@ -202,24 +232,30 @@ TOOL_DEFS: list[types.Tool] = [
         inputSchema={
             "type": "object",
             "properties": {
-                "model_a":    {"type": "string"},
+                "model_a": {"type": "string"},
                 "provider_a": {"type": "string"},
                 "scores_a": {
                     "type": "object",
                     "properties": {
-                        "fairness": {"type": "number"}, "privacy": {"type": "number"},
-                        "security": {"type": "number"}, "robustness": {"type": "number"},
-                        "compliance": {"type": "number"}, "authenticity": {"type": "number"},
+                        "fairness": {"type": "number"},
+                        "privacy": {"type": "number"},
+                        "security": {"type": "number"},
+                        "robustness": {"type": "number"},
+                        "compliance": {"type": "number"},
+                        "authenticity": {"type": "number"},
                     },
                 },
-                "model_b":    {"type": "string"},
+                "model_b": {"type": "string"},
                 "provider_b": {"type": "string"},
                 "scores_b": {
                     "type": "object",
                     "properties": {
-                        "fairness": {"type": "number"}, "privacy": {"type": "number"},
-                        "security": {"type": "number"}, "robustness": {"type": "number"},
-                        "compliance": {"type": "number"}, "authenticity": {"type": "number"},
+                        "fairness": {"type": "number"},
+                        "privacy": {"type": "number"},
+                        "security": {"type": "number"},
+                        "robustness": {"type": "number"},
+                        "compliance": {"type": "number"},
+                        "authenticity": {"type": "number"},
                     },
                 },
             },
@@ -229,7 +265,9 @@ TOOL_DEFS: list[types.Tool] = [
     types.Tool(
         name="rai_audit_summary",
         title="Get Governance Capability Summary",
-        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False),
+        annotations=types.ToolAnnotations(
+            readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False
+        ),
         description=(
             "Return a governance capability summary including supported tools, frameworks, "
             "and available attack vectors. Full audit log access requires the REST endpoint."
@@ -244,16 +282,19 @@ TOOL_DEFS: list[types.Tool] = [
     types.Tool(
         name="rai_health",
         title="Check Governance Engine Health",
-        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False),
+        annotations=types.ToolAnnotations(
+            readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False
+        ),
         description="Check the status and module availability of the ResponsibleAI governance engine.",
         inputSchema={"type": "object", "properties": {}},
     ),
-
     # ── NEW: Bias Evaluation ──────────────────────────────────────────────────
     types.Tool(
         name="rai_bias_evaluate",
         title="Evaluate Demographic Bias",
-        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False),
+        annotations=types.ToolAnnotations(
+            readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False
+        ),
         description=(
             "Evaluate demographic bias across six probe dimensions: gender, racial, age, "
             "religious, occupational, and cultural. Provide paired response samples for each "
@@ -264,7 +305,7 @@ TOOL_DEFS: list[types.Tool] = [
             "type": "object",
             "properties": {
                 "model_name": {"type": "string", "description": "Model under evaluation"},
-                "provider":   {"type": "string", "description": "Model provider"},
+                "provider": {"type": "string", "description": "Model provider"},
                 "probe_responses": {
                     "type": "object",
                     "description": (
@@ -272,12 +313,16 @@ TOOL_DEFS: list[types.Tool] = [
                         "Each list must have at least 2 responses to compute divergence."
                     ),
                     "properties": {
-                        "gender":       {"type": "array", "items": {"type": "string"}, "minItems": 2},
-                        "racial":       {"type": "array", "items": {"type": "string"}, "minItems": 2},
-                        "age":          {"type": "array", "items": {"type": "string"}, "minItems": 2},
-                        "religious":    {"type": "array", "items": {"type": "string"}, "minItems": 2},
-                        "occupational": {"type": "array", "items": {"type": "string"}, "minItems": 2},
-                        "cultural":     {"type": "array", "items": {"type": "string"}, "minItems": 2},
+                        "gender": {"type": "array", "items": {"type": "string"}, "minItems": 2},
+                        "racial": {"type": "array", "items": {"type": "string"}, "minItems": 2},
+                        "age": {"type": "array", "items": {"type": "string"}, "minItems": 2},
+                        "religious": {"type": "array", "items": {"type": "string"}, "minItems": 2},
+                        "occupational": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "minItems": 2,
+                        },
+                        "cultural": {"type": "array", "items": {"type": "string"}, "minItems": 2},
                     },
                 },
                 "threshold": {
@@ -291,12 +336,13 @@ TOOL_DEFS: list[types.Tool] = [
             "required": ["model_name", "provider", "probe_responses"],
         },
     ),
-
     # ── NEW: Drift Check ──────────────────────────────────────────────────────
     types.Tool(
         name="rai_drift_check",
         title="Check Trust Score Drift",
-        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False),
+        annotations=types.ToolAnnotations(
+            readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False
+        ),
         description=(
             "Detect trust score drift between a baseline evaluation and a current evaluation. "
             "Returns drift delta per dimension, overall drift severity "
@@ -305,15 +351,18 @@ TOOL_DEFS: list[types.Tool] = [
         inputSchema={
             "type": "object",
             "properties": {
-                "model_name":     {"type": "string"},
-                "provider":       {"type": "string"},
+                "model_name": {"type": "string"},
+                "provider": {"type": "string"},
                 "baseline_score": {
                     "type": "object",
                     "description": "Previous trust dimension scores (0-1 each)",
                     "properties": {
-                        "fairness": {"type": "number"}, "privacy": {"type": "number"},
-                        "security": {"type": "number"}, "robustness": {"type": "number"},
-                        "compliance": {"type": "number"}, "authenticity": {"type": "number"},
+                        "fairness": {"type": "number"},
+                        "privacy": {"type": "number"},
+                        "security": {"type": "number"},
+                        "robustness": {"type": "number"},
+                        "compliance": {"type": "number"},
+                        "authenticity": {"type": "number"},
                         "overall": {"type": "number"},
                     },
                 },
@@ -321,9 +370,12 @@ TOOL_DEFS: list[types.Tool] = [
                     "type": "object",
                     "description": "Current trust dimension scores (0-1 each)",
                     "properties": {
-                        "fairness": {"type": "number"}, "privacy": {"type": "number"},
-                        "security": {"type": "number"}, "robustness": {"type": "number"},
-                        "compliance": {"type": "number"}, "authenticity": {"type": "number"},
+                        "fairness": {"type": "number"},
+                        "privacy": {"type": "number"},
+                        "security": {"type": "number"},
+                        "robustness": {"type": "number"},
+                        "compliance": {"type": "number"},
+                        "authenticity": {"type": "number"},
                         "overall": {"type": "number"},
                     },
                 },
@@ -336,12 +388,13 @@ TOOL_DEFS: list[types.Tool] = [
             "required": ["model_name", "provider", "baseline_score", "current_score"],
         },
     ),
-
     # ── NEW: AI Passport ──────────────────────────────────────────────────────
     types.Tool(
         name="rai_passport_generate",
         title="Generate AI Passport",
-        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False),
+        annotations=types.ToolAnnotations(
+            readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False
+        ),
         description=(
             "Generate a verifiable AI Passport for a model — a tamper-evident governance card "
             "containing trust scores, compliance status, bias summary, and a cryptographic "
@@ -351,32 +404,36 @@ TOOL_DEFS: list[types.Tool] = [
             "type": "object",
             "properties": {
                 "model_name": {"type": "string"},
-                "provider":   {"type": "string"},
+                "provider": {"type": "string"},
                 "trust_dimensions": {
                     "type": "object",
                     "description": "Trust dimension scores (0-1 each)",
                     "properties": {
-                        "fairness": {"type": "number"}, "privacy": {"type": "number"},
-                        "security": {"type": "number"}, "robustness": {"type": "number"},
-                        "compliance": {"type": "number"}, "authenticity": {"type": "number"},
+                        "fairness": {"type": "number"},
+                        "privacy": {"type": "number"},
+                        "security": {"type": "number"},
+                        "robustness": {"type": "number"},
+                        "compliance": {"type": "number"},
+                        "authenticity": {"type": "number"},
                     },
                 },
                 "use_case": {"type": "string", "default": "general"},
-                "bias_summary":        {"type": "object", "additionalProperties": True},
-                "security_summary":    {"type": "object", "additionalProperties": True},
-                "compliance_summary":  {"type": "object", "additionalProperties": True},
-                "privacy_summary":     {"type": "object", "additionalProperties": True},
+                "bias_summary": {"type": "object", "additionalProperties": True},
+                "security_summary": {"type": "object", "additionalProperties": True},
+                "compliance_summary": {"type": "object", "additionalProperties": True},
+                "privacy_summary": {"type": "object", "additionalProperties": True},
                 "hallucination_summary": {"type": "object", "additionalProperties": True},
             },
             "required": ["model_name", "provider", "trust_dimensions"],
         },
     ),
-
     # ── NEW: Budget Check ─────────────────────────────────────────────────────
     types.Tool(
         name="rai_budget_check",
         title="Check AI Spending Against Budget",
-        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False),
+        annotations=types.ToolAnnotations(
+            readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False
+        ),
         description=(
             "Evaluate current AI spending against monthly budget limits. Returns consumption "
             "percentage, alert status, per-team and per-model breakdown, and projected month-end spend. "
@@ -385,11 +442,16 @@ TOOL_DEFS: list[types.Tool] = [
         inputSchema={
             "type": "object",
             "properties": {
-                "total_spent_usd":     {"type": "number", "minimum": 0},
-                "monthly_limit_usd":   {"type": "number", "minimum": 0, "default": 10000.0},
-                "alert_threshold_pct": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.80},
-                "days_elapsed":        {"type": "integer", "minimum": 1, "maximum": 31, "default": 15},
-                "days_in_month":       {"type": "integer", "minimum": 28, "maximum": 31, "default": 30},
+                "total_spent_usd": {"type": "number", "minimum": 0},
+                "monthly_limit_usd": {"type": "number", "minimum": 0, "default": 10000.0},
+                "alert_threshold_pct": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.80,
+                },
+                "days_elapsed": {"type": "integer", "minimum": 1, "maximum": 31, "default": 15},
+                "days_in_month": {"type": "integer", "minimum": 28, "maximum": 31, "default": 30},
                 "team_breakdown": {
                     "type": "object",
                     "description": "team_name → USD spent",
@@ -404,12 +466,13 @@ TOOL_DEFS: list[types.Tool] = [
             "required": ["total_spent_usd"],
         },
     ),
-
     # ── NEW: Policy Check ─────────────────────────────────────────────────────
     types.Tool(
         name="rai_policy_check",
         title="Check Text Against Governance Policy",
-        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False),
+        annotations=types.ToolAnnotations(
+            readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False
+        ),
         description=(
             "Evaluate text or a model response against a governance policy. Checks for: "
             "prohibited topics, required disclaimers, output length limits, language restrictions, "
@@ -453,12 +516,13 @@ TOOL_DEFS: list[types.Tool] = [
             "required": ["text", "policy"],
         },
     ),
-
     # ── NEW: Stream Scan ──────────────────────────────────────────────────────
     types.Tool(
         name="rai_stream_scan",
         title="Scan Streaming Text Chunks",
-        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False),
+        annotations=types.ToolAnnotations(
+            readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False
+        ),
         description=(
             "Scan a list of text chunks (as would arrive from an LLM streaming response) for PII "
             "and harmful content. Simulates the StreamingScanner guardrail without a live stream. "
@@ -487,12 +551,13 @@ TOOL_DEFS: list[types.Tool] = [
             "required": ["chunks"],
         },
     ),
-
     # ── NEW: Benchmark ────────────────────────────────────────────────────────
     types.Tool(
         name="rai_benchmark",
         title="Evaluate Responses Against Benchmark",
-        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False),
+        annotations=types.ToolAnnotations(
+            readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False
+        ),
         description=(
             "Evaluate pre-collected model responses against a standard benchmark suite. "
             "Suites: truthfulqa (factual accuracy), bbq (bias in questions), hellaswag (reasoning). "
@@ -502,7 +567,7 @@ TOOL_DEFS: list[types.Tool] = [
             "type": "object",
             "properties": {
                 "model_name": {"type": "string"},
-                "provider":   {"type": "string"},
+                "provider": {"type": "string"},
                 "suite": {
                     "type": "string",
                     "enum": ["truthfulqa", "bbq", "hellaswag"],
@@ -520,7 +585,9 @@ TOOL_DEFS: list[types.Tool] = [
     types.Tool(
         name="rai_benchmark_prompts",
         title="Get Benchmark Question Set",
-        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False),
+        annotations=types.ToolAnnotations(
+            readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False
+        ),
         description=(
             "Return the question set for a benchmark suite. Use to collect model responses "
             "before calling rai_benchmark. Suites: truthfulqa, bbq, hellaswag."
@@ -536,12 +603,13 @@ TOOL_DEFS: list[types.Tool] = [
             },
         },
     ),
-
     # ── NEW: Model Routing ────────────────────────────────────────────────────
     types.Tool(
         name="rai_model_route",
         title="Recommend Optimal Model",
-        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False),
+        annotations=types.ToolAnnotations(
+            readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False
+        ),
         description=(
             "Recommend the optimal AI model for a task based on complexity analysis and cost-quality "
             "tradeoff. Returns recommended model, alternative, estimated cost per 1K tokens, and "
@@ -568,12 +636,13 @@ TOOL_DEFS: list[types.Tool] = [
             },
         },
     ),
-
     # ── NEW: PII Report ───────────────────────────────────────────────────────
     types.Tool(
         name="rai_pii_report",
         title="Generate PII Audit Report",
-        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False),
+        annotations=types.ToolAnnotations(
+            readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False
+        ),
         description=(
             "Generate a detailed PII audit report for a document or corpus. Classifies findings "
             "by PII category (email, phone, SSN, credit card, IP, address), counts occurrences, "
@@ -603,12 +672,13 @@ TOOL_DEFS: list[types.Tool] = [
             "required": ["texts"],
         },
     ),
-
     # ── NEW: Incident Log ─────────────────────────────────────────────────────
     types.Tool(
         name="rai_incident_log",
         title="Build Governance Incident Record",
-        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False),
+        annotations=types.ToolAnnotations(
+            readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False
+        ),
         description=(
             "Create a structured governance incident record. Used by Security Engineers and "
             "AI Risk Analysts to log AI safety events (PII leaks, jailbreak attempts, bias triggers, "
@@ -619,12 +689,24 @@ TOOL_DEFS: list[types.Tool] = [
             "properties": {
                 "incident_type": {
                     "type": "string",
-                    "enum": ["pii_leak", "jailbreak_attempt", "bias_trigger", "hallucination", "policy_violation", "cost_overrun", "drift_alert", "other"],
+                    "enum": [
+                        "pii_leak",
+                        "jailbreak_attempt",
+                        "bias_trigger",
+                        "hallucination",
+                        "policy_violation",
+                        "cost_overrun",
+                        "drift_alert",
+                        "other",
+                    ],
                 },
-                "severity":    {"type": "string", "enum": ["low", "medium", "high", "critical"]},
-                "model_name":  {"type": "string"},
-                "provider":    {"type": "string"},
-                "description": {"type": "string", "description": "Human-readable incident description"},
+                "severity": {"type": "string", "enum": ["low", "medium", "high", "critical"]},
+                "model_name": {"type": "string"},
+                "provider": {"type": "string"},
+                "description": {
+                    "type": "string",
+                    "description": "Human-readable incident description",
+                },
                 "evidence": {
                     "type": "object",
                     "description": "Supporting data: prompt, response, scan results, etc.",
@@ -635,12 +717,13 @@ TOOL_DEFS: list[types.Tool] = [
             "required": ["incident_type", "severity", "description"],
         },
     ),
-
     # ── NEW: EU AI Act Classification ─────────────────────────────────────────
     types.Tool(
         name="rai_eu_ai_act_classify",
         title="Classify EU AI Act Risk Tier",
-        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False),
+        annotations=types.ToolAnnotations(
+            readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False
+        ),
         description=(
             "Classify an AI system into an EU AI Act risk tier: UNACCEPTABLE, HIGH, LIMITED, or MINIMAL. "
             "Evaluates deployment context, capabilities, and affected populations against Annex III "
@@ -657,29 +740,42 @@ TOOL_DEFS: list[types.Tool] = [
                 "deployment_sector": {
                     "type": "string",
                     "enum": [
-                        "critical_infrastructure", "education", "employment",
-                        "essential_services", "law_enforcement", "migration",
-                        "administration_of_justice", "democratic_processes",
-                        "biometric_identification", "general_purpose", "other"
+                        "critical_infrastructure",
+                        "education",
+                        "employment",
+                        "essential_services",
+                        "law_enforcement",
+                        "migration",
+                        "administration_of_justice",
+                        "democratic_processes",
+                        "biometric_identification",
+                        "general_purpose",
+                        "other",
                     ],
                 },
                 "affects_natural_persons": {"type": "boolean", "default": True},
-                "is_fully_automated":      {"type": "boolean", "default": False},
+                "is_fully_automated": {"type": "boolean", "default": False},
                 "processes_biometric_data": {"type": "boolean", "default": False},
                 "used_for_emotion_recognition": {"type": "boolean", "default": False},
                 "real_time_remote_biometric": {"type": "boolean", "default": False},
-                "social_scoring_purpose":  {"type": "boolean", "default": False},
-                "trust_score_overall":     {"type": "number", "minimum": 0, "maximum": 100, "default": 70},
+                "social_scoring_purpose": {"type": "boolean", "default": False},
+                "trust_score_overall": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100,
+                    "default": 70,
+                },
             },
             "required": ["system_description", "deployment_sector"],
         },
     ),
-
     # ── NEW: ISO 42001 Gap Analysis ───────────────────────────────────────────
     types.Tool(
         name="rai_iso42001_gap",
         title="Run ISO 42001 Gap Analysis",
-        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False),
+        annotations=types.ToolAnnotations(
+            readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False
+        ),
         description=(
             "Perform an ISO/IEC 42001:2023 AI Management System gap analysis. Evaluates maturity "
             "across all 10 clauses: Context, Leadership, Planning, Support, Operation, Performance "
@@ -690,27 +786,38 @@ TOOL_DEFS: list[types.Tool] = [
             "type": "object",
             "properties": {
                 "org_name": {"type": "string", "default": "Organisation"},
-                "has_ai_policy":           {"type": "boolean", "default": False},
-                "has_risk_assessment":     {"type": "boolean", "default": False},
-                "has_impact_assessment":   {"type": "boolean", "default": False},
-                "has_data_governance":     {"type": "boolean", "default": False},
-                "has_training_programme":  {"type": "boolean", "default": False},
-                "has_audit_trail":         {"type": "boolean", "default": False},
-                "has_incident_process":    {"type": "boolean", "default": False},
-                "has_supplier_controls":   {"type": "boolean", "default": False},
-                "has_monitoring_metrics":  {"type": "boolean", "default": False},
+                "has_ai_policy": {"type": "boolean", "default": False},
+                "has_risk_assessment": {"type": "boolean", "default": False},
+                "has_impact_assessment": {"type": "boolean", "default": False},
+                "has_data_governance": {"type": "boolean", "default": False},
+                "has_training_programme": {"type": "boolean", "default": False},
+                "has_audit_trail": {"type": "boolean", "default": False},
+                "has_incident_process": {"type": "boolean", "default": False},
+                "has_supplier_controls": {"type": "boolean", "default": False},
+                "has_monitoring_metrics": {"type": "boolean", "default": False},
                 "has_continual_improvement": {"type": "boolean", "default": False},
-                "trust_score_overall":     {"type": "number", "minimum": 0, "maximum": 100, "default": 70},
-                "compliance_maturity":     {"type": "number", "minimum": 0, "maximum": 1, "default": 0.5},
+                "trust_score_overall": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100,
+                    "default": 70,
+                },
+                "compliance_maturity": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.5,
+                },
             },
         },
     ),
-
     # ── NEW: Executive Summary ────────────────────────────────────────────────
     types.Tool(
         name="rai_executive_summary",
         title="Generate Executive Governance Summary",
-        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False),
+        annotations=types.ToolAnnotations(
+            readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False
+        ),
         description=(
             "Generate a board-ready executive AI governance summary. Synthesises trust grades, "
             "compliance posture, cost intelligence, risk incidents, and drift trends into a "
@@ -720,16 +827,16 @@ TOOL_DEFS: list[types.Tool] = [
         inputSchema={
             "type": "object",
             "properties": {
-                "org_name":            {"type": "string", "default": "Organisation"},
-                "report_period":       {"type": "string", "default": "Q2 2026"},
-                "models_evaluated":    {"type": "integer", "minimum": 0, "default": 0},
-                "avg_trust_score":     {"type": "number", "minimum": 0, "maximum": 100, "default": 75},
-                "compliance_score":    {"type": "number", "minimum": 0, "maximum": 100, "default": 70},
-                "total_cost_usd":      {"type": "number", "minimum": 0, "default": 0},
-                "monthly_budget_usd":  {"type": "number", "minimum": 0, "default": 10000},
-                "open_incidents":      {"type": "integer", "minimum": 0, "default": 0},
-                "drift_alerts":        {"type": "integer", "minimum": 0, "default": 0},
-                "bias_failures":       {"type": "integer", "minimum": 0, "default": 0},
+                "org_name": {"type": "string", "default": "Organisation"},
+                "report_period": {"type": "string", "default": "Q2 2026"},
+                "models_evaluated": {"type": "integer", "minimum": 0, "default": 0},
+                "avg_trust_score": {"type": "number", "minimum": 0, "maximum": 100, "default": 75},
+                "compliance_score": {"type": "number", "minimum": 0, "maximum": 100, "default": 70},
+                "total_cost_usd": {"type": "number", "minimum": 0, "default": 0},
+                "monthly_budget_usd": {"type": "number", "minimum": 0, "default": 10000},
+                "open_incidents": {"type": "integer", "minimum": 0, "default": 0},
+                "drift_alerts": {"type": "integer", "minimum": 0, "default": 0},
+                "bias_failures": {"type": "integer", "minimum": 0, "default": 0},
                 "frameworks": {
                     "type": "array",
                     "items": {"type": "string"},
@@ -744,12 +851,13 @@ TOOL_DEFS: list[types.Tool] = [
             },
         },
     ),
-
     # ── NEW: Org Status ───────────────────────────────────────────────────────
     types.Tool(
         name="rai_org_status",
         title="Get Organization Governance Status",
-        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False),
+        annotations=types.ToolAnnotations(
+            readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False
+        ),
         description=(
             "Return a structured governance status snapshot for an organisation. Summarises "
             "active models, trust grade distribution, compliance coverage, open risks, and "
@@ -769,18 +877,19 @@ TOOL_DEFS: list[types.Tool] = [
                     "items": {"type": "string"},
                     "default": [],
                 },
-                "open_incidents":   {"type": "integer", "minimum": 0, "default": 0},
-                "budget_pct_used":  {"type": "number", "minimum": 0, "maximum": 100, "default": 0},
-                "drift_alerts":     {"type": "integer", "minimum": 0, "default": 0},
+                "open_incidents": {"type": "integer", "minimum": 0, "default": 0},
+                "budget_pct_used": {"type": "number", "minimum": 0, "maximum": 100, "default": 0},
+                "drift_alerts": {"type": "integer", "minimum": 0, "default": 0},
             },
         },
     ),
-
     # ── NEW: Trust Check (agent-native — checks someone else's model/tool) ─────
     types.Tool(
         name="rai_check_trust",
         title="Check Public Trust Index Score",
-        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False),
+        annotations=types.ToolAnnotations(
+            readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False
+        ),
         description=(
             "Check the public, independently-verifiable Trust Index score, certification "
             "status, and reported-incident history for a named AI model or tool BEFORE "
@@ -796,23 +905,30 @@ TOOL_DEFS: list[types.Tool] = [
         inputSchema={
             "type": "object",
             "properties": {
-                "model_name": {"type": "string", "description": "Exact model or tool name, e.g. 'gpt-4o'"},
-                "provider":   {"type": "string", "description": "Exact provider name, e.g. 'openai'"},
+                "model_name": {
+                    "type": "string",
+                    "description": "Exact model or tool name, e.g. 'gpt-4o'",
+                },
+                "provider": {"type": "string", "description": "Exact provider name, e.g. 'openai'"},
                 "min_score": {
-                    "type": "number", "minimum": 0, "maximum": 100, "default": 0,
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100,
+                    "default": 0,
                     "description": "Minimum acceptable overall trust score (0-100). The response's "
-                                   "'passes' field reflects this threshold.",
+                    "'passes' field reflects this threshold.",
                 },
             },
             "required": ["model_name", "provider"],
         },
     ),
-
     # ── NEW: Webhook Status ───────────────────────────────────────────────────
     types.Tool(
         name="rai_webhook_status",
         title="Check Webhook Delivery Health",
-        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False),
+        annotations=types.ToolAnnotations(
+            readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False
+        ),
         description=(
             "Check webhook delivery health and generate a structured status report. "
             "Takes delivery statistics and returns health grade, failure analysis, dead-letter "
@@ -822,19 +938,19 @@ TOOL_DEFS: list[types.Tool] = [
         inputSchema={
             "type": "object",
             "properties": {
-                "total_deliveries":  {"type": "integer", "minimum": 0, "default": 0},
-                "successful":        {"type": "integer", "minimum": 0, "default": 0},
-                "failed":            {"type": "integer", "minimum": 0, "default": 0},
+                "total_deliveries": {"type": "integer", "minimum": 0, "default": 0},
+                "successful": {"type": "integer", "minimum": 0, "default": 0},
+                "failed": {"type": "integer", "minimum": 0, "default": 0},
                 "dead_letter_count": {"type": "integer", "minimum": 0, "default": 0},
-                "avg_latency_ms":    {"type": "number", "minimum": 0, "default": 0},
+                "avg_latency_ms": {"type": "number", "minimum": 0, "default": 0},
                 "endpoints": {
                     "type": "array",
                     "items": {
                         "type": "object",
                         "properties": {
-                            "url":             {"type": "string"},
-                            "success_rate":    {"type": "number"},
-                            "last_success":    {"type": "string"},
+                            "url": {"type": "string"},
+                            "success_rate": {"type": "number"},
+                            "last_success": {"type": "string"},
                             "consecutive_failures": {"type": "integer"},
                         },
                     },
@@ -842,12 +958,13 @@ TOOL_DEFS: list[types.Tool] = [
             },
         },
     ),
-
     # ── NEW: Memory Authority / Memory Firewall ───────────────────────────────
     types.Tool(
         name="rai_memory_write_check",
         title="Check Memory Write for Injection Patterns",
-        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False),
+        annotations=types.ToolAnnotations(
+            readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False
+        ),
         description=(
             "Gate a write to PERSISTENT agent memory (a vector DB, conversation log, or "
             "similar long-term store your own system owns -- WhitePact does not host a "
@@ -865,7 +982,10 @@ TOOL_DEFS: list[types.Tool] = [
         inputSchema={
             "type": "object",
             "properties": {
-                "content": {"type": "string", "description": "The text about to be written to memory."},
+                "content": {
+                    "type": "string",
+                    "description": "The text about to be written to memory.",
+                },
                 "memory_scope": {
                     "type": "string",
                     "description": "The memory namespace this write targets, e.g. 'org:acme:agent:bot1'.",
@@ -877,7 +997,9 @@ TOOL_DEFS: list[types.Tool] = [
     types.Tool(
         name="rai_memory_read_check",
         title="Check Memory Read Scope Authorization",
-        annotations=types.ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False),
+        annotations=types.ToolAnnotations(
+            readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False
+        ),
         description=(
             "Gate a read from persistent agent memory. Standalone, this tool only echoes "
             "back the requested scope (there's no content to scan for a read) -- its real "
@@ -907,6 +1029,7 @@ TOOL_DEFS: list[types.Tool] = [
 
 # ── original handlers ─────────────────────────────────────────────────────────
 
+
 async def _handle_scan(args: dict[str, Any]) -> dict[str, Any]:
     text = str(args.get("text", ""))
     redact = bool(args.get("redact", True))
@@ -920,8 +1043,7 @@ async def _handle_scan(args: dict[str, Any]) -> dict[str, Any]:
             for f in result.pii_findings
         ],
         "toxicity_findings": [
-            {"category": f.category, "match": f.match}
-            for f in result.toxicity_findings
+            {"category": f.category, "match": f.match} for f in result.toxicity_findings
         ],
         "block_reasons": result.block_reasons,
         "redacted_text": result.redacted_text if redact else None,
@@ -1063,14 +1185,14 @@ async def _handle_audit_summary(args: dict[str, Any]) -> dict[str, Any]:
 
 async def _handle_health(args: dict[str, Any]) -> dict[str, Any]:
     modules = {
-        "guardrails":    "ok" if _guardrails is not None else "unavailable",
-        "trust_score":   "ok" if _trust_engine is not None else "unavailable",
+        "guardrails": "ok" if _guardrails is not None else "unavailable",
+        "trust_score": "ok" if _trust_engine is not None else "unavailable",
         "hallucination": "ok" if _hallucination is not None else "unavailable",
-        "compliance":    "ok" if _compliance is not None else "unavailable",
-        "redteam":       "ok" if _redteam is not None else "unavailable",
-        "passport":      "ok" if _passport_gen is not None else "unavailable",
-        "benchmark":     "ok" if _benchmark_runner is not None else "unavailable",
-        "model_router":  "ok" if _model_router is not None else "unavailable",
+        "compliance": "ok" if _compliance is not None else "unavailable",
+        "redteam": "ok" if _redteam is not None else "unavailable",
+        "passport": "ok" if _passport_gen is not None else "unavailable",
+        "benchmark": "ok" if _benchmark_runner is not None else "unavailable",
+        "model_router": "ok" if _model_router is not None else "unavailable",
     }
     return {
         "status": "ok",
@@ -1081,6 +1203,7 @@ async def _handle_health(args: dict[str, Any]) -> dict[str, Any]:
 
 
 # ── new handlers ──────────────────────────────────────────────────────────────
+
 
 async def _handle_bias_evaluate(args: dict[str, Any]) -> dict[str, Any]:
     model_name = str(args.get("model_name", "unknown"))
@@ -1129,7 +1252,10 @@ async def _handle_bias_evaluate(args: dict[str, Any]) -> dict[str, Any]:
 
         probe_results[probe_name] = {
             "bias_score": bias_score,
-            "confidence_interval": [round(max(0, bias_score - ci_half), 4), round(min(1, bias_score + ci_half), 4)],
+            "confidence_interval": [
+                round(max(0, bias_score - ci_half), 4),
+                round(min(1, bias_score + ci_half), 4),
+            ],
             "length_asymmetry": round(length_score, 4),
             "toxicity_divergence": round(toxicity_score, 4),
             "vocabulary_divergence": round(vocab_divergence, 4),
@@ -1159,11 +1285,15 @@ async def _handle_bias_evaluate(args: dict[str, Any]) -> dict[str, Any]:
         "probes_failed": co_failures,
         "intersectional_amplification": intersectional_amplification,
         "interpretation": (
-            "MINIMAL" if overall_score <= 0.10 else
-            "LOW" if overall_score <= 0.20 else
-            "MODERATE" if overall_score <= 0.35 else
-            "HIGH" if overall_score <= 0.60 else
-            "SEVERE"
+            "MINIMAL"
+            if overall_score <= 0.10
+            else "LOW"
+            if overall_score <= 0.20
+            else "MODERATE"
+            if overall_score <= 0.35
+            else "HIGH"
+            if overall_score <= 0.60
+            else "SEVERE"
         ),
     }
 
@@ -1183,25 +1313,30 @@ async def _handle_drift_check(args: dict[str, Any]) -> dict[str, Any]:
         c = float(current.get(d, 0.5))
         dim_drift[d] = round((c - b) * 100, 2)
 
-    baseline_overall = float(baseline.get("overall", sum(float(baseline.get(d, 0.5)) for d in _dims) / 6 * 100))
-    current_overall = float(current.get("overall", sum(float(current.get(d, 0.5)) for d in _dims) / 6 * 100))
+    baseline_overall = float(
+        baseline.get("overall", sum(float(baseline.get(d, 0.5)) for d in _dims) / 6 * 100)
+    )
+    current_overall = float(
+        current.get("overall", sum(float(current.get(d, 0.5)) for d in _dims) / 6 * 100)
+    )
     overall_delta = round(current_overall - baseline_overall, 2)
 
     abs_delta = abs(overall_delta)
     severity = (
-        "NONE" if abs_delta < 2.0 else
-        "LOW" if abs_delta < 5.0 else
-        "MEDIUM" if abs_delta < 10.0 else
-        "HIGH" if abs_delta < 20.0 else
-        "CRITICAL"
+        "NONE"
+        if abs_delta < 2.0
+        else "LOW"
+        if abs_delta < 5.0
+        else "MEDIUM"
+        if abs_delta < 10.0
+        else "HIGH"
+        if abs_delta < 20.0
+        else "CRITICAL"
     )
 
     alert_triggered = overall_delta < 0 and abs_delta >= alert_threshold
 
-    worst_dims = sorted(
-        [(d, v) for d, v in dim_drift.items() if v < 0],
-        key=lambda x: x[1]
-    )
+    worst_dims = sorted([(d, v) for d, v in dim_drift.items() if v < 0], key=lambda x: x[1])
 
     return {
         "model_name": model_name,
@@ -1210,14 +1345,19 @@ async def _handle_drift_check(args: dict[str, Any]) -> dict[str, Any]:
         "severity": severity,
         "alert_triggered": alert_triggered,
         "alert_threshold": alert_threshold,
-        "direction": "improving" if overall_delta > 0 else "degrading" if overall_delta < 0 else "stable",
+        "direction": "improving"
+        if overall_delta > 0
+        else "degrading"
+        if overall_delta < 0
+        else "stable",
         "dimension_drift": dim_drift,
         "worst_dimensions": [{"dimension": d, "delta": v} for d, v in worst_dims[:3]],
         "recommendation": (
-            "No action required." if severity == "NONE" else
-            f"Monitor {model_name} — {severity} drift detected. Re-evaluate within 24h."
-            if severity in ("LOW", "MEDIUM") else
-            f"URGENT: {model_name} shows {severity} trust degradation ({overall_delta:.1f} pts). "
+            "No action required."
+            if severity == "NONE"
+            else f"Monitor {model_name} — {severity} drift detected. Re-evaluate within 24h."
+            if severity in ("LOW", "MEDIUM")
+            else f"URGENT: {model_name} shows {severity} trust degradation ({overall_delta:.1f} pts). "
             "Rollback or block deployment pending investigation."
         ),
     }
@@ -1279,7 +1419,15 @@ async def _handle_budget_check(args: dict[str, Any]) -> dict[str, Any]:
     top_teams = sorted(team_breakdown.items(), key=lambda x: x[1], reverse=True)[:5]
     top_models = sorted(model_breakdown.items(), key=lambda x: x[1], reverse=True)[:5]
 
-    status = "EXCEEDED" if is_exceeded else "CRITICAL" if pct_used >= 90 else "WARNING" if alert_triggered else "OK"
+    status = (
+        "EXCEEDED"
+        if is_exceeded
+        else "CRITICAL"
+        if pct_used >= 90
+        else "WARNING"
+        if alert_triggered
+        else "OK"
+    )
 
     return {
         "status": status,
@@ -1298,9 +1446,11 @@ async def _handle_budget_check(args: dict[str, Any]) -> dict[str, Any]:
         "top_teams_by_spend": [{"team": t, "spent_usd": round(v, 2)} for t, v in top_teams],
         "top_models_by_spend": [{"model": m, "spent_usd": round(v, 2)} for m, v in top_models],
         "recommendation": (
-            "Budget exceeded — pause non-critical AI workloads immediately." if is_exceeded else
-            f"On track to overspend by ${projected_overage:.0f}. Review top spenders." if projected_overage > 0 else
-            "Budget on track."
+            "Budget exceeded — pause non-critical AI workloads immediately."
+            if is_exceeded
+            else f"On track to overspend by ${projected_overage:.0f}. Review top spenders."
+            if projected_overage > 0
+            else "Budget on track."
         ),
     }
 
@@ -1315,48 +1465,56 @@ async def _handle_policy_check(args: dict[str, Any]) -> dict[str, Any]:
     blocked_topics: list[str] = policy.get("blocked_topics", [])
     for topic in blocked_topics:
         if topic.lower() in text.lower():
-            violations.append({
-                "rule": "blocked_topic",
-                "value": topic,
-                "message": f"Blocked topic '{topic}' detected in output.",
-                "remediation": f"Remove or rephrase content related to '{topic}'.",
-            })
+            violations.append(
+                {
+                    "rule": "blocked_topic",
+                    "value": topic,
+                    "message": f"Blocked topic '{topic}' detected in output.",
+                    "remediation": f"Remove or rephrase content related to '{topic}'.",
+                }
+            )
         else:
             passed_rules.append(f"blocked_topic:{topic}")
 
     required_disclaimers: list[str] = policy.get("required_disclaimers", [])
     for disc in required_disclaimers:
         if disc.lower() not in text.lower():
-            violations.append({
-                "rule": "missing_disclaimer",
-                "value": disc,
-                "message": f"Required disclaimer '{disc}' missing from output.",
-                "remediation": f"Add '{disc}' to the model output.",
-            })
+            violations.append(
+                {
+                    "rule": "missing_disclaimer",
+                    "value": disc,
+                    "message": f"Required disclaimer '{disc}' missing from output.",
+                    "remediation": f"Add '{disc}' to the model output.",
+                }
+            )
         else:
             passed_rules.append(f"required_disclaimer:{disc}")
 
     max_length = policy.get("max_length_chars")
     if max_length is not None:
         if len(text) > max_length:
-            violations.append({
-                "rule": "length_limit",
-                "value": len(text),
-                "message": f"Output length {len(text)} chars exceeds limit of {max_length}.",
-                "remediation": "Truncate or summarise the model output.",
-            })
+            violations.append(
+                {
+                    "rule": "length_limit",
+                    "value": len(text),
+                    "message": f"Output length {len(text)} chars exceeds limit of {max_length}.",
+                    "remediation": "Truncate or summarise the model output.",
+                }
+            )
         else:
             passed_rules.append("length_limit")
 
     blocked_keywords: list[str] = policy.get("blocked_keywords", [])
     for kw in blocked_keywords:
         if kw.lower() in text.lower():
-            violations.append({
-                "rule": "blocked_keyword",
-                "value": kw,
-                "message": f"Blocked keyword '{kw}' found in output.",
-                "remediation": f"Filter or rephrase to remove '{kw}'.",
-            })
+            violations.append(
+                {
+                    "rule": "blocked_keyword",
+                    "value": kw,
+                    "message": f"Blocked keyword '{kw}' found in output.",
+                    "remediation": f"Filter or rephrase to remove '{kw}'.",
+                }
+            )
         else:
             passed_rules.append(f"blocked_keyword:{kw}")
 
@@ -1364,12 +1522,14 @@ async def _handle_policy_check(args: dict[str, Any]) -> dict[str, Any]:
         scan = _guardrails.scan(text)
         if scan.has_pii:
             categories = list({f.category for f in scan.pii_findings})
-            violations.append({
-                "rule": "pii_clean",
-                "value": categories,
-                "message": f"PII detected: {', '.join(categories)}.",
-                "remediation": "Redact PII before returning output to end users.",
-            })
+            violations.append(
+                {
+                    "rule": "pii_clean",
+                    "value": categories,
+                    "message": f"PII detected: {', '.join(categories)}.",
+                    "remediation": "Redact PII before returning output to end users.",
+                }
+            )
         else:
             passed_rules.append("pii_clean")
 
@@ -1414,15 +1574,17 @@ async def _handle_stream_scan(args: dict[str, Any]) -> dict[str, Any]:
 
         should_stop = hard_stop and pii_detected
 
-        chunk_results.append({
-            "chunk_index": i,
-            "chunk": chunk,
-            "scan_triggered": scan_triggered,
-            "pii_detected": pii_detected,
-            "toxicity_detected": toxicity_detected,
-            "pii_categories": categories,
-            "should_stop": should_stop,
-        })
+        chunk_results.append(
+            {
+                "chunk_index": i,
+                "chunk": chunk,
+                "scan_triggered": scan_triggered,
+                "pii_detected": pii_detected,
+                "toxicity_detected": toxicity_detected,
+                "pii_categories": categories,
+                "should_stop": should_stop,
+            }
+        )
 
         if should_stop and stopped_at is None:
             stopped_at = i
@@ -1440,8 +1602,8 @@ async def _handle_stream_scan(args: dict[str, Any]) -> dict[str, Any]:
         "chunk_results": chunk_results,
         "recommendation": (
             f"Stream halted at chunk {stopped_at} — PII detected. Do not return prior chunks to client."
-            if stopped_at is not None else
-            "Stream clean — no PII or toxicity detected."
+            if stopped_at is not None
+            else "Stream clean — no PII or toxicity detected."
         ),
     }
 
@@ -1540,18 +1702,26 @@ async def _handle_pii_report(args: dict[str, Any]) -> dict[str, Any]:
 
     pct_with_pii = (total_docs_with_pii / len(texts) * 100) if texts else 0
     privacy_risk = (
-        "CRITICAL" if pct_with_pii >= 50 else
-        "HIGH" if pct_with_pii >= 25 else
-        "MEDIUM" if pct_with_pii >= 10 else
-        "LOW" if total_pii > 0 else
-        "NONE"
+        "CRITICAL"
+        if pct_with_pii >= 50
+        else "HIGH"
+        if pct_with_pii >= 25
+        else "MEDIUM"
+        if pct_with_pii >= 10
+        else "LOW"
+        if total_pii > 0
+        else "NONE"
     )
 
     gdpr_categories = {"email", "phone", "ssn", "credit_card", "address"}
     found_gdpr = set(category_counts) & gdpr_categories
     gdpr_articles = []
     if found_gdpr:
-        gdpr_articles = ["Art. 5 (data minimisation)", "Art. 25 (data protection by design)", "Art. 32 (security of processing)"]
+        gdpr_articles = [
+            "Art. 5 (data minimisation)",
+            "Art. 25 (data protection by design)",
+            "Art. 32 (security of processing)",
+        ]
 
     return {
         "context": context,
@@ -1564,7 +1734,9 @@ async def _handle_pii_report(args: dict[str, Any]) -> dict[str, Any]:
         "gdpr_relevant_categories": list(found_gdpr),
         "applicable_gdpr_articles": gdpr_articles,
         "remediation": {
-            "immediate": "Redact all PII before storing or transmitting this data." if total_pii > 0 else "No immediate action required.",
+            "immediate": "Redact all PII before storing or transmitting this data."
+            if total_pii > 0
+            else "No immediate action required.",
             "process": "Implement automated PII scanning in your data pipeline using the rai_scan guardrail.",
             "audit": "Document PII findings in your GDPR Records of Processing Activities (RoPA).",
         },
@@ -1664,9 +1836,17 @@ async def _handle_eu_ai_act_classify(args: dict[str, Any]) -> dict[str, Any]:
             "Document decommissioning plan within 30 days of Act enforcement.",
         ]
         conformity = "PROHIBITED — No conformity path available."
-    elif sector in ("biometric_identification",) or (biometric and fully_automated and affects_persons):
+    elif sector in ("biometric_identification",) or (
+        biometric and fully_automated and affects_persons
+    ):
         risk_tier = "HIGH"
-        articles = ["Article 6", "Annex III — High-Risk AI Systems", "Article 10 (data governance)", "Article 12 (logging)", "Article 13 (transparency)"]
+        articles = [
+            "Article 6",
+            "Annex III — High-Risk AI Systems",
+            "Article 10 (data governance)",
+            "Article 12 (logging)",
+            "Article 13 (transparency)",
+        ]
         required_actions = [
             "Register system in EU database before deployment (Article 51).",
             "Conduct fundamental rights impact assessment.",
@@ -1675,9 +1855,24 @@ async def _handle_eu_ai_act_classify(args: dict[str, Any]) -> dict[str, Any]:
             "Maintain technical documentation (Annex IV) for 10 years.",
         ]
         conformity = "THIRD-PARTY CONFORMITY ASSESSMENT required (Annex VI)."
-    elif sector in ("critical_infrastructure", "education", "employment", "essential_services", "law_enforcement", "migration", "administration_of_justice", "democratic_processes"):
+    elif sector in (
+        "critical_infrastructure",
+        "education",
+        "employment",
+        "essential_services",
+        "law_enforcement",
+        "migration",
+        "administration_of_justice",
+        "democratic_processes",
+    ):
         risk_tier = "HIGH"
-        articles = ["Article 6(2)", f"Annex III — Point applicable to {sector}", "Article 9 (risk management)", "Article 14 (human oversight)", "Article 15 (accuracy/robustness)"]
+        articles = [
+            "Article 6(2)",
+            f"Annex III — Point applicable to {sector}",
+            "Article 9 (risk management)",
+            "Article 14 (human oversight)",
+            "Article 15 (accuracy/robustness)",
+        ]
         required_actions = [
             "Implement risk management system (Article 9).",
             "Ensure human oversight measures (Article 14).",
@@ -1740,17 +1935,35 @@ async def _handle_iso42001_gap(args: dict[str, Any]) -> dict[str, Any]:
     compliance_maturity = float(args.get("compliance_maturity", 0.5))
 
     clauses = {
-        "4_context":          ("Context of the Organisation",       bool(args.get("has_ai_policy", False))),
-        "5_leadership":       ("Leadership and Commitment",          bool(args.get("has_ai_policy", False))),
-        "6_planning":         ("Planning (Risk and Opportunity)",    bool(args.get("has_risk_assessment", False))),
-        "7_support":          ("Support (Resources, Awareness)",     bool(args.get("has_training_programme", False))),
-        "8_operation":        ("Operation (AI Development/Deploy)",  bool(args.get("has_impact_assessment", False))),
-        "8_data":             ("Operation — Data Governance",        bool(args.get("has_data_governance", False))),
-        "9_evaluation":       ("Performance Evaluation",             bool(args.get("has_monitoring_metrics", False))),
-        "9_audit":            ("Internal Audit",                     bool(args.get("has_audit_trail", False))),
-        "10_improvement":     ("Improvement — Corrective Action",    bool(args.get("has_incident_process", False))),
-        "supply_chain":       ("Annex B — Supply Chain Controls",    bool(args.get("has_supplier_controls", False))),
-        "continual_improve":  ("Annex C — Continual Improvement",   bool(args.get("has_continual_improvement", False))),
+        "4_context": ("Context of the Organisation", bool(args.get("has_ai_policy", False))),
+        "5_leadership": ("Leadership and Commitment", bool(args.get("has_ai_policy", False))),
+        "6_planning": (
+            "Planning (Risk and Opportunity)",
+            bool(args.get("has_risk_assessment", False)),
+        ),
+        "7_support": (
+            "Support (Resources, Awareness)",
+            bool(args.get("has_training_programme", False)),
+        ),
+        "8_operation": (
+            "Operation (AI Development/Deploy)",
+            bool(args.get("has_impact_assessment", False)),
+        ),
+        "8_data": ("Operation — Data Governance", bool(args.get("has_data_governance", False))),
+        "9_evaluation": ("Performance Evaluation", bool(args.get("has_monitoring_metrics", False))),
+        "9_audit": ("Internal Audit", bool(args.get("has_audit_trail", False))),
+        "10_improvement": (
+            "Improvement — Corrective Action",
+            bool(args.get("has_incident_process", False)),
+        ),
+        "supply_chain": (
+            "Annex B — Supply Chain Controls",
+            bool(args.get("has_supplier_controls", False)),
+        ),
+        "continual_improve": (
+            "Annex C — Continual Improvement",
+            bool(args.get("has_continual_improvement", False)),
+        ),
     }
 
     met = [(k, v[0]) for k, v in clauses.items() if v[1]]
@@ -1779,25 +1992,24 @@ async def _handle_iso42001_gap(args: dict[str, Any]) -> dict[str, Any]:
                 "clause_id": k,
                 "clause_name": n,
                 "status": "GAP",
-                "remediation": (
-                    f"Implement {n} framework. Assign owner and set 90-day milestone."
-                ),
+                "remediation": (f"Implement {n} framework. Assign owner and set 90-day milestone."),
             }
             for k, n in gaps
         ],
         "priority_actions": [
-            f"PRIORITY {i+1}: Close gap in '{n}' ({k})" for i, (k, n) in enumerate(priority_gaps)
+            f"PRIORITY {i + 1}: Close gap in '{n}' ({k})" for i, (k, n) in enumerate(priority_gaps)
         ],
         "trust_score_alignment": {
             "score": trust_score,
             "aligned": trust_score >= 70,
-            "note": "Trust Score >= 70 supports ISO 42001 Clause 9 performance evaluation evidence." if trust_score >= 70 else
-                    "Improve Trust Score to >= 70 before pursuing certification.",
+            "note": "Trust Score >= 70 supports ISO 42001 Clause 9 performance evaluation evidence."
+            if trust_score >= 70
+            else "Improve Trust Score to >= 70 before pursuing certification.",
         },
         "certification_path": (
             "Engage an accredited CB (Certification Body) for stage 1 audit."
-            if cert_ready else
-            f"Close {gap_count} gaps first. Estimated {estimated_months} months to certification readiness."
+            if cert_ready
+            else f"Close {gap_count} gaps first. Estimated {estimated_months} months to certification readiness."
         ),
     }
 
@@ -1826,16 +2038,23 @@ async def _handle_executive_summary(args: dict[str, Any]) -> dict[str, Any]:
     incident_rag = "GREEN" if open_incidents == 0 else "AMBER" if open_incidents <= 3 else "RED"
 
     trust_grade = (
-        "A" if avg_trust >= 90 else
-        "B" if avg_trust >= 80 else
-        "C" if avg_trust >= 70 else
-        "D" if avg_trust >= 60 else "F"
+        "A"
+        if avg_trust >= 90
+        else "B"
+        if avg_trust >= 80
+        else "C"
+        if avg_trust >= 70
+        else "D"
+        if avg_trust >= 60
+        else "F"
     )
 
     overall_posture = (
-        "STRONG" if all(r == "GREEN" for r in [trust_rag, compliance_rag, cost_rag, incident_rag]) else
-        "ADEQUATE" if "RED" not in [trust_rag, compliance_rag, cost_rag, incident_rag] else
-        "AT RISK"
+        "STRONG"
+        if all(r == "GREEN" for r in [trust_rag, compliance_rag, cost_rag, incident_rag])
+        else "ADEQUATE"
+        if "RED" not in [trust_rag, compliance_rag, cost_rag, incident_rag]
+        else "AT RISK"
     )
 
     return {
@@ -1849,10 +2068,22 @@ async def _handle_executive_summary(args: dict[str, Any]) -> dict[str, Any]:
             f"{'No open incidents.' if open_incidents == 0 else f'{open_incidents} open incident(s) require attention.'}"
         ),
         "rag_dashboard": {
-            "trust_posture":      {"status": trust_rag,      "value": f"{avg_trust:.0f}/100 (Grade {trust_grade})"},
-            "compliance_posture": {"status": compliance_rag, "value": f"{compliance_score:.0f}/100"},
-            "cost_control":       {"status": cost_rag,       "value": f"${total_cost:,.0f} of ${budget:,.0f} ({budget_pct:.0f}%)"},
-            "incident_status":    {"status": incident_rag,   "value": f"{open_incidents} open incidents"},
+            "trust_posture": {
+                "status": trust_rag,
+                "value": f"{avg_trust:.0f}/100 (Grade {trust_grade})",
+            },
+            "compliance_posture": {
+                "status": compliance_rag,
+                "value": f"{compliance_score:.0f}/100",
+            },
+            "cost_control": {
+                "status": cost_rag,
+                "value": f"${total_cost:,.0f} of ${budget:,.0f} ({budget_pct:.0f}%)",
+            },
+            "incident_status": {
+                "status": incident_rag,
+                "value": f"{open_incidents} open incidents",
+            },
         },
         "key_metrics": {
             "models_evaluated": models_eval,
@@ -1866,15 +2097,20 @@ async def _handle_executive_summary(args: dict[str, Any]) -> dict[str, Any]:
             "ai_spend_usd": round(total_cost, 2),
             "budget_utilisation_pct": round(budget_pct, 1),
         },
-        "top_risks": top_risks or (
+        "top_risks": top_risks
+        or (
             ["No specific risks identified — maintain current controls."]
-            if overall_posture == "STRONG" else
-            ["Review open incidents", "Address compliance gaps", "Monitor trust score drift"]
+            if overall_posture == "STRONG"
+            else ["Review open incidents", "Address compliance gaps", "Monitor trust score drift"]
         ),
         "recommended_board_actions": (
             ["Approve AI governance programme expansion.", "Set next review for following quarter."]
-            if overall_posture == "STRONG" else
-            ["Review and close open incidents.", "Increase compliance investment.", "Commission external audit if posture remains AT RISK."]
+            if overall_posture == "STRONG"
+            else [
+                "Review and close open incidents.",
+                "Increase compliance investment.",
+                "Commission external audit if posture remains AT RISK.",
+            ]
         ),
     }
 
@@ -1896,9 +2132,11 @@ async def _handle_org_status(args: dict[str, Any]) -> dict[str, Any]:
     failing = grade_dist["D"] + grade_dist["F"]
 
     health = (
-        "HEALTHY" if open_incidents == 0 and drift_alerts == 0 and failing == 0 else
-        "DEGRADED" if open_incidents <= 2 and drift_alerts <= 1 else
-        "AT_RISK"
+        "HEALTHY"
+        if open_incidents == 0 and drift_alerts == 0 and failing == 0
+        else "DEGRADED"
+        if open_incidents <= 2 and drift_alerts <= 1
+        else "AT_RISK"
     )
 
     return {
@@ -1920,7 +2158,11 @@ async def _handle_org_status(args: dict[str, Any]) -> dict[str, Any]:
             "open_incidents": open_incidents,
             "drift_alerts": drift_alerts,
             "budget_pct_used": round(budget_pct, 1),
-            "budget_status": "OK" if budget_pct <= 80 else "WARNING" if budget_pct <= 100 else "EXCEEDED",
+            "budget_status": "OK"
+            if budget_pct <= 80
+            else "WARNING"
+            if budget_pct <= 100
+            else "EXCEEDED",
         },
         "mcp_capabilities": {
             "tools_available": len(TOOL_DEFS),
@@ -1939,16 +2181,27 @@ async def _handle_webhook_status(args: dict[str, Any]) -> dict[str, Any]:
 
     success_rate = (successful / total * 100) if total > 0 else 100.0
     health_grade = (
-        "A" if success_rate >= 99 else
-        "B" if success_rate >= 95 else
-        "C" if success_rate >= 90 else
-        "D" if success_rate >= 80 else
-        "F"
+        "A"
+        if success_rate >= 99
+        else "B"
+        if success_rate >= 95
+        else "C"
+        if success_rate >= 90
+        else "D"
+        if success_rate >= 80
+        else "F"
     )
-    health_status = "HEALTHY" if health_grade in ("A", "B") else "DEGRADED" if health_grade == "C" else "UNHEALTHY"
+    health_status = (
+        "HEALTHY"
+        if health_grade in ("A", "B")
+        else "DEGRADED"
+        if health_grade == "C"
+        else "UNHEALTHY"
+    )
 
     problematic_endpoints = [
-        ep for ep in endpoints
+        ep
+        for ep in endpoints
         if ep.get("consecutive_failures", 0) >= 3 or ep.get("success_rate", 1.0) < 0.90
     ]
 
@@ -1977,17 +2230,30 @@ async def _handle_webhook_status(args: dict[str, Any]) -> dict[str, Any]:
             for ep in problematic_endpoints
         ],
         "recommendations": [
-            r for r in [
+            r
+            for r in [
                 "Investigate and replay dead-letter queue events." if dlq_count > 0 else None,
-                f"Fix {len(problematic_endpoints)} endpoint(s) with high failure rates." if problematic_endpoints else None,
+                f"Fix {len(problematic_endpoints)} endpoint(s) with high failure rates."
+                if problematic_endpoints
+                else None,
                 "Review webhook delivery logs for error patterns." if failed > 0 else None,
-                "Enable webhook retry with exponential backoff if not already configured." if health_grade in ("D", "F") else None,
-                "All webhook endpoints healthy." if health_status == "HEALTHY" and dlq_count == 0 else None,
+                "Enable webhook retry with exponential backoff if not already configured."
+                if health_grade in ("D", "F")
+                else None,
+                "All webhook endpoints healthy."
+                if health_status == "HEALTHY" and dlq_count == 0
+                else None,
             ]
             if r
         ],
         "siem_integration": {
-            "recommended_events": ["trust_score_alert", "bias_detected", "pii_leak", "jailbreak_attempt", "drift_alert"],
+            "recommended_events": [
+                "trust_score_alert",
+                "bias_detected",
+                "pii_leak",
+                "jailbreak_attempt",
+                "drift_alert",
+            ],
             "webhook_status": health_status,
         },
     }
@@ -2002,36 +2268,36 @@ async def _handle_webhook_status(args: dict[str, Any]) -> dict[str, Any]:
 # mapping never changes at runtime. Has to live down here, after every
 # _handle_* function it references is actually defined.
 _TOOL_HANDLERS: dict[str, Any] = {
-    "rai_scan":                 _handle_scan,
-    "rai_trust_score":          _handle_trust_score,
-    "rai_compliance":           _handle_compliance,
-    "rai_hallucination":        _handle_hallucination,
-    "rai_cost_estimate":        _handle_cost_estimate,
-    "rai_redteam_payloads":     _handle_redteam_payloads,
-    "rai_redteam_analyze":      _handle_redteam_analyze,
-    "rai_compare_models":       _handle_compare_models,
-    "rai_audit_summary":        _handle_audit_summary,
-    "rai_health":               _handle_health,
+    "rai_scan": _handle_scan,
+    "rai_trust_score": _handle_trust_score,
+    "rai_compliance": _handle_compliance,
+    "rai_hallucination": _handle_hallucination,
+    "rai_cost_estimate": _handle_cost_estimate,
+    "rai_redteam_payloads": _handle_redteam_payloads,
+    "rai_redteam_analyze": _handle_redteam_analyze,
+    "rai_compare_models": _handle_compare_models,
+    "rai_audit_summary": _handle_audit_summary,
+    "rai_health": _handle_health,
     # new
-    "rai_bias_evaluate":        _handle_bias_evaluate,
-    "rai_drift_check":          _handle_drift_check,
-    "rai_passport_generate":    _handle_passport_generate,
-    "rai_budget_check":         _handle_budget_check,
-    "rai_policy_check":         _handle_policy_check,
-    "rai_stream_scan":          _handle_stream_scan,
-    "rai_benchmark":            _handle_benchmark,
-    "rai_benchmark_prompts":    _handle_benchmark_prompts,
-    "rai_model_route":          _handle_model_route,
-    "rai_pii_report":           _handle_pii_report,
-    "rai_incident_log":         _handle_incident_log,
-    "rai_eu_ai_act_classify":   _handle_eu_ai_act_classify,
-    "rai_iso42001_gap":         _handle_iso42001_gap,
-    "rai_executive_summary":    _handle_executive_summary,
-    "rai_org_status":           _handle_org_status,
-    "rai_webhook_status":       _handle_webhook_status,
-    "rai_check_trust":          _handle_check_trust,
-    "rai_memory_write_check":   _handle_memory_write_check,
-    "rai_memory_read_check":    _handle_memory_read_check,
+    "rai_bias_evaluate": _handle_bias_evaluate,
+    "rai_drift_check": _handle_drift_check,
+    "rai_passport_generate": _handle_passport_generate,
+    "rai_budget_check": _handle_budget_check,
+    "rai_policy_check": _handle_policy_check,
+    "rai_stream_scan": _handle_stream_scan,
+    "rai_benchmark": _handle_benchmark,
+    "rai_benchmark_prompts": _handle_benchmark_prompts,
+    "rai_model_route": _handle_model_route,
+    "rai_pii_report": _handle_pii_report,
+    "rai_incident_log": _handle_incident_log,
+    "rai_eu_ai_act_classify": _handle_eu_ai_act_classify,
+    "rai_iso42001_gap": _handle_iso42001_gap,
+    "rai_executive_summary": _handle_executive_summary,
+    "rai_org_status": _handle_org_status,
+    "rai_webhook_status": _handle_webhook_status,
+    "rai_check_trust": _handle_check_trust,
+    "rai_memory_write_check": _handle_memory_write_check,
+    "rai_memory_read_check": _handle_memory_read_check,
 }
 
 

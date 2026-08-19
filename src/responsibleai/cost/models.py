@@ -12,7 +12,7 @@ from typing import Any
 class ModelPricing:
     provider: str
     model: str
-    input_cost_per_million: float   # USD per 1M input tokens
+    input_cost_per_million: float  # USD per 1M input tokens
     output_cost_per_million: float  # USD per 1M output tokens
     is_local: bool = False
 
@@ -28,17 +28,17 @@ class ModelPricing:
 # Pricing as of July 2026 (USD per 1M tokens)
 MODEL_CATALOG: dict[str, ModelPricing] = {
     # OpenAI
-    "openai/gpt-4o":              ModelPricing("openai",     "gpt-4o",              2.50,   10.00),
-    "openai/gpt-4o-mini":         ModelPricing("openai",     "gpt-4o-mini",         0.15,    0.60),
-    "openai/gpt-4-turbo":         ModelPricing("openai",     "gpt-4-turbo",        10.00,   30.00),
-    "openai/gpt-3.5-turbo":       ModelPricing("openai",     "gpt-3.5-turbo",       0.50,    1.50),
+    "openai/gpt-4o": ModelPricing("openai", "gpt-4o", 2.50, 10.00),
+    "openai/gpt-4o-mini": ModelPricing("openai", "gpt-4o-mini", 0.15, 0.60),
+    "openai/gpt-4-turbo": ModelPricing("openai", "gpt-4-turbo", 10.00, 30.00),
+    "openai/gpt-3.5-turbo": ModelPricing("openai", "gpt-3.5-turbo", 0.50, 1.50),
     # Anthropic
-    "anthropic/claude-opus-4":    ModelPricing("anthropic",  "claude-opus-4",      15.00,   75.00),
-    "anthropic/claude-sonnet-4":  ModelPricing("anthropic",  "claude-sonnet-4",     3.00,   15.00),
-    "anthropic/claude-haiku-4":   ModelPricing("anthropic",  "claude-haiku-4",      0.80,    4.00),
+    "anthropic/claude-opus-4": ModelPricing("anthropic", "claude-opus-4", 15.00, 75.00),
+    "anthropic/claude-sonnet-4": ModelPricing("anthropic", "claude-sonnet-4", 3.00, 15.00),
+    "anthropic/claude-haiku-4": ModelPricing("anthropic", "claude-haiku-4", 0.80, 4.00),
     # Google
-    "google/gemini-1.5-pro":      ModelPricing("google",     "gemini-1.5-pro",      3.50,   10.50),
-    "google/gemini-1.5-flash":    ModelPricing("google",     "gemini-1.5-flash",    0.075,   0.30),
+    "google/gemini-1.5-pro": ModelPricing("google", "gemini-1.5-pro", 3.50, 10.50),
+    "google/gemini-1.5-flash": ModelPricing("google", "gemini-1.5-flash", 0.075, 0.30),
     # Azure OpenAI Service — Microsoft prices deployments at parity with the
     # public OpenAI API for the same underlying model, so these mirror the
     # "openai/*" rows above rather than being independently sourced. A real
@@ -46,22 +46,22 @@ MODEL_CATALOG: dict[str, ModelPricing] = {
     # "gpt-4o"), so get_pricing()'s provider-level fallback below is what
     # actually resolves cost for most azure-openai lookups, not an exact key
     # match on this table.
-    "azure-openai/gpt-4o":        ModelPricing("azure-openai", "gpt-4o",             2.50,   10.00),
-    "azure-openai/gpt-4o-mini":   ModelPricing("azure-openai", "gpt-4o-mini",        0.15,    0.60),
-    "azure-openai/gpt-4-turbo":   ModelPricing("azure-openai", "gpt-4-turbo",       10.00,   30.00),
-    "azure-openai/gpt-3.5-turbo": ModelPricing("azure-openai", "gpt-3.5-turbo",      0.50,    1.50),
+    "azure-openai/gpt-4o": ModelPricing("azure-openai", "gpt-4o", 2.50, 10.00),
+    "azure-openai/gpt-4o-mini": ModelPricing("azure-openai", "gpt-4o-mini", 0.15, 0.60),
+    "azure-openai/gpt-4-turbo": ModelPricing("azure-openai", "gpt-4-turbo", 10.00, 30.00),
+    "azure-openai/gpt-3.5-turbo": ModelPricing("azure-openai", "gpt-3.5-turbo", 0.50, 1.50),
     # Mistral
-    "mistral/mistral-large":      ModelPricing("mistral",    "mistral-large",       2.00,    6.00),
-    "mistral/mistral-small":      ModelPricing("mistral",    "mistral-small",       0.20,    0.60),
-    "mistral/mistral-7b":         ModelPricing("mistral",    "mistral-7b",          0.08,    0.25),
+    "mistral/mistral-large": ModelPricing("mistral", "mistral-large", 2.00, 6.00),
+    "mistral/mistral-small": ModelPricing("mistral", "mistral-small", 0.20, 0.60),
+    "mistral/mistral-7b": ModelPricing("mistral", "mistral-7b", 0.08, 0.25),
     # Cohere
-    "cohere/command-r-plus":      ModelPricing("cohere",     "command-r-plus",      3.00,   15.00),
-    "cohere/command-r":           ModelPricing("cohere",     "command-r",           0.50,    1.50),
+    "cohere/command-r-plus": ModelPricing("cohere", "command-r-plus", 3.00, 15.00),
+    "cohere/command-r": ModelPricing("cohere", "command-r", 0.50, 1.50),
     # Local / self-hosted (zero cost)
-    "ollama/llama3.2":            ModelPricing("ollama",     "llama3.2",            0.0,     0.0,  True),
-    "ollama/mistral":             ModelPricing("ollama",     "mistral",             0.0,     0.0,  True),
-    "ollama/phi3":                ModelPricing("ollama",     "phi3",                0.0,     0.0,  True),
-    "ollama/gemma2":              ModelPricing("ollama",     "gemma2",              0.0,     0.0,  True),
+    "ollama/llama3.2": ModelPricing("ollama", "llama3.2", 0.0, 0.0, True),
+    "ollama/mistral": ModelPricing("ollama", "mistral", 0.0, 0.0, True),
+    "ollama/phi3": ModelPricing("ollama", "phi3", 0.0, 0.0, True),
+    "ollama/gemma2": ModelPricing("ollama", "gemma2", 0.0, 0.0, True),
 }
 
 _UNKNOWN_PRICING = ModelPricing("unknown", "unknown", 0.0, 0.0)
@@ -110,6 +110,7 @@ class TokenUsage:
         org_id: str | None = None,
     ) -> TokenUsage:
         import uuid
+
         prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:16] if prompt else ""
         return cls(
             request_id=str(uuid.uuid4()),
@@ -201,8 +202,8 @@ class BudgetStatus:
 
 @dataclass(frozen=True)
 class WasteFinding:
-    category: str          # duplicate_request / model_overkill / prompt_bloat / verbose_response
-    severity: str          # low / medium / high
+    category: str  # duplicate_request / model_overkill / prompt_bloat / verbose_response
+    severity: str  # low / medium / high
     description: str
     estimated_savings_usd: float
     recommendation: str
@@ -215,7 +216,7 @@ class PromptEfficiencyResult:
     reduction_pct: float
     estimated_monthly_savings_usd: float
     waste_findings: list[WasteFinding]
-    efficiency_score: float    # 0-100
+    efficiency_score: float  # 0-100
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -240,12 +241,12 @@ class PromptEfficiencyResult:
 @dataclass(frozen=True)
 class RoutingDecision:
     task_description: str
-    complexity: str                 # simple / medium / complex / high_risk
+    complexity: str  # simple / medium / complex / high_risk
     recommended_provider: str
     recommended_model: str
     alternative_provider: str
     alternative_model: str
-    estimated_cost_usd: float       # per 1K tokens
+    estimated_cost_usd: float  # per 1K tokens
     estimated_savings_vs_gpt4o: float  # USD per 1K tokens
     reasoning: str
 

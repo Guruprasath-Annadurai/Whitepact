@@ -37,6 +37,7 @@ async def client():
 
 # ── Health & Metrics ──────────────────────────────────────────────────────────
 
+
 class TestHealth:
     async def test_health_ok(self, client):
         r = await client.get("/api/health")
@@ -83,12 +84,18 @@ class TestHealth:
 
 # ── Evaluate ──────────────────────────────────────────────────────────────────
 
+
 class TestEvaluate:
     async def test_evaluate_returns_trust_score(self, client):
         payload = {
-            "model_name": "gpt-4o", "provider": "openai",
-            "fairness": 0.80, "privacy": 0.85, "security": 0.82,
-            "robustness": 0.78, "compliance": 0.90, "authenticity": 0.88,
+            "model_name": "gpt-4o",
+            "provider": "openai",
+            "fairness": 0.80,
+            "privacy": 0.85,
+            "security": 0.82,
+            "robustness": 0.78,
+            "compliance": 0.90,
+            "authenticity": 0.88,
         }
         r = await client.post("/api/evaluate", json=payload)
         assert r.status_code == 200
@@ -119,11 +126,19 @@ class TestEvaluate:
 
     async def test_drift_alert_on_score_drop(self, client):
         for score in [0.90, 0.65]:
-            await client.post("/api/evaluate", json={
-                "model_name": "drift-test", "provider": "acme",
-                "fairness": score, "privacy": score, "security": score,
-                "robustness": score, "compliance": score, "authenticity": score,
-            })
+            await client.post(
+                "/api/evaluate",
+                json={
+                    "model_name": "drift-test",
+                    "provider": "acme",
+                    "fairness": score,
+                    "privacy": score,
+                    "security": score,
+                    "robustness": score,
+                    "compliance": score,
+                    "authenticity": score,
+                },
+            )
         r = await client.get("/api/trust-score/drift-test/acme")
         d = r.json()
         assert "trend" in d
@@ -131,6 +146,7 @@ class TestEvaluate:
 
 
 # ── Models list ───────────────────────────────────────────────────────────────
+
 
 class TestModels:
     async def test_models_returns_list(self, client):
@@ -144,6 +160,7 @@ class TestModels:
 
 
 # ── Guardrails ────────────────────────────────────────────────────────────────
+
 
 class TestScan:
     async def test_clean_text_not_blocked(self, client):
@@ -171,11 +188,13 @@ class TestScan:
 
 # ── Hallucination ─────────────────────────────────────────────────────────────
 
+
 class TestHallucination:
     async def test_basic_analysis(self, client):
-        r = await client.post("/api/hallucination", json={
-            "text": "The capital of France is Paris, founded in 250 BC."
-        })
+        r = await client.post(
+            "/api/hallucination",
+            json={"text": "The capital of France is Paris, founded in 250 BC."},
+        )
         assert r.status_code == 200
         d = r.json()
         assert "hallucination_risk" in d
@@ -187,22 +206,31 @@ class TestHallucination:
         assert r.status_code == 400
 
     async def test_with_candidates(self, client):
-        r = await client.post("/api/hallucination", json={
-            "text": "AI will replace all jobs by 2025.",
-            "candidates": ["AI will automate some tasks.", "AI creates new job categories."],
-        })
+        r = await client.post(
+            "/api/hallucination",
+            json={
+                "text": "AI will replace all jobs by 2025.",
+                "candidates": ["AI will automate some tasks.", "AI creates new job categories."],
+            },
+        )
         assert r.status_code == 200
         assert r.json()["consistency_score"] >= 0
 
 
 # ── Cost ──────────────────────────────────────────────────────────────────────
 
+
 class TestCost:
     async def test_record_usage(self, client):
-        r = await client.post("/api/cost/record", json={
-            "provider": "openai", "model": "gpt-4o",
-            "input_tokens": 500, "output_tokens": 200,
-        })
+        r = await client.post(
+            "/api/cost/record",
+            json={
+                "provider": "openai",
+                "model": "gpt-4o",
+                "input_tokens": 500,
+                "output_tokens": 200,
+            },
+        )
         assert r.status_code == 200
         d = r.json()
         assert "total_cost_usd" in d
@@ -220,28 +248,39 @@ class TestCost:
         assert r.status_code == 400
 
     async def test_analyze_prompt(self, client):
-        r = await client.post("/api/cost/analyze", json={
-            "prompt": "As an AI language model, please note that I want you to classify this email.",
-            "provider": "openai", "model": "gpt-4o",
-        })
+        r = await client.post(
+            "/api/cost/analyze",
+            json={
+                "prompt": "As an AI language model, please note that I want you to classify this email.",
+                "provider": "openai",
+                "model": "gpt-4o",
+            },
+        )
         assert r.status_code == 200
         d = r.json()
         assert "efficiency_score" in d
         assert "waste_findings" in d
 
     async def test_route_task(self, client):
-        r = await client.post("/api/cost/route", json={
-            "task_description": "Classify this email as spam or not spam",
-        })
+        r = await client.post(
+            "/api/cost/route",
+            json={
+                "task_description": "Classify this email as spam or not spam",
+            },
+        )
         assert r.status_code == 200
         d = r.json()
         assert d["complexity"] == "simple"
         assert "recommended_model" in d
 
     async def test_route_invalid_quality(self, client):
-        r = await client.post("/api/cost/route", json={
-            "task_description": "test", "quality_requirement": "invalid",
-        })
+        r = await client.post(
+            "/api/cost/route",
+            json={
+                "task_description": "test",
+                "quality_requirement": "invalid",
+            },
+        )
         assert r.status_code == 422
 
     async def test_model_pricing(self, client):
@@ -251,6 +290,7 @@ class TestCost:
 
 
 # ── Drift ─────────────────────────────────────────────────────────────────────
+
 
 class TestDrift:
     async def test_drift_no_data(self, client):
@@ -262,6 +302,7 @@ class TestDrift:
 
 
 # ── Security headers ──────────────────────────────────────────────────────────
+
 
 class TestSecurityHeaders:
     async def test_security_headers_present(self, client):
@@ -293,6 +334,7 @@ class TestSecurityHeaders:
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
+
 class TestConfig:
     def test_config_defaults(self):
         s = Settings(
@@ -322,6 +364,7 @@ class TestConfig:
 
 
 # ── Branding (white-label) ────────────────────────────────────────────────────
+
 
 class TestBranding:
     async def test_default_branding(self, client):
@@ -353,16 +396,20 @@ class TestBranding:
 
 # ── Incidents ─────────────────────────────────────────────────────────────────
 
+
 class TestIncidentsCRUD:
     async def test_create_incident_persists_and_round_trips(self, client):
-        r = await client.post("/api/incidents", json={
-            "incident_type": "pii_leak",
-            "severity": "high",
-            "model_name": "gpt-4",
-            "provider": "openai",
-            "description": "Email address leaked in a completion.",
-            "evidence": {"prompt_id": "abc123"},
-        })
+        r = await client.post(
+            "/api/incidents",
+            json={
+                "incident_type": "pii_leak",
+                "severity": "high",
+                "model_name": "gpt-4",
+                "provider": "openai",
+                "description": "Email address leaked in a completion.",
+                "evidence": {"prompt_id": "abc123"},
+            },
+        )
         assert r.status_code == 201
         created = r.json()
         assert created["incident_type"] == "pii_leak"
@@ -384,9 +431,13 @@ class TestIncidentsCRUD:
         assert d["mitigated"] is False
 
     async def test_create_incident_rejects_bad_severity(self, client):
-        r = await client.post("/api/incidents", json={
-            "severity": "apocalyptic", "description": "x",
-        })
+        r = await client.post(
+            "/api/incidents",
+            json={
+                "severity": "apocalyptic",
+                "description": "x",
+            },
+        )
         assert r.status_code == 422
 
     async def test_list_incidents_returns_created_ones(self, client):
@@ -397,7 +448,9 @@ class TestIncidentsCRUD:
         assert any(i["description"] == "listed incident" for i in d["incidents"])
 
     async def test_list_incidents_filters_by_severity(self, client):
-        await client.post("/api/incidents", json={"severity": "critical", "description": "crit one"})
+        await client.post(
+            "/api/incidents", json={"severity": "critical", "description": "crit one"}
+        )
         r = await client.get("/api/incidents", params={"severity": "critical"})
         assert r.status_code == 200
         assert all(i["severity"] == "critical" for i in r.json()["incidents"])
@@ -414,12 +467,14 @@ class TestAlertsWebhookBridge:
 
     async def test_rejects_missing_bearer_token(self, client, monkeypatch):
         from responsibleai.dashboard import app as app_module
+
         monkeypatch.setattr(app_module.settings, "alerts_webhook_token", "expected-token")
         r = await client.post("/api/alerts/webhook", json={"alerts": []})
         assert r.status_code == 401
 
     async def test_creates_incident_from_firing_alert(self, client, monkeypatch):
         from responsibleai.dashboard import app as app_module
+
         monkeypatch.setattr(app_module.settings, "alerts_webhook_token", "expected-token")
 
         payload = {
@@ -455,6 +510,7 @@ class TestAlertsWebhookBridge:
 
 
 # ── Webhooks ──────────────────────────────────────────────────────────────────
+
 
 class TestWebhooksAPI:
     """End-to-end coverage of POST/GET/DELETE /api/webhooks at the FastAPI
@@ -547,7 +603,11 @@ class TestWebhooksAPI:
     async def test_accepts_empty_secret_unsigned(self, client):
         r = await client.post(
             "/api/webhooks",
-            json={"url": "https://hooks.example.com/no-secret", "events": ["drift_alert"], "secret": ""},
+            json={
+                "url": "https://hooks.example.com/no-secret",
+                "events": ["drift_alert"],
+                "secret": "",
+            },
         )
         assert r.status_code == 200
 
@@ -567,7 +627,10 @@ class TestWebhooksAPI:
     async def test_test_endpoint_fires_and_returns_delivery(self, client, respx_mock):
         create = await client.post(
             "/api/webhooks",
-            json={"url": "https://hooks.example.com/test-target", "events": ["trust_score_changed"]},
+            json={
+                "url": "https://hooks.example.com/test-target",
+                "events": ["trust_score_changed"],
+            },
         )
         webhook_id = create.json()["id"]
         respx_mock.post("https://hooks.example.com/test-target").mock(
@@ -579,6 +642,7 @@ class TestWebhooksAPI:
 
 
 # ── Leaderboard ───────────────────────────────────────────────────────────────
+
 
 class TestLeaderboardPublicRead:
     async def test_empty_leaderboard_returns_empty_list(self, client):
@@ -625,7 +689,8 @@ class TestLeaderboardAdminAndRun:
 
     async def test_run_specific_model_not_registered_404s(self, client):
         r = await client.post(
-            "/api/leaderboard/run", params={"model": "ghost", "provider": "mock"},
+            "/api/leaderboard/run",
+            params={"model": "ghost", "provider": "mock"},
         )
         assert r.status_code == 404
 
@@ -698,13 +763,22 @@ class TestLeaderboardPlanGate:
 
 # ── Trust Index ───────────────────────────────────────────────────────────────
 
+
 class TestTrustIndexAssessAndVerify:
     async def test_assess_returns_scored_citable_passport(self, client):
-        r = await client.post("/api/trust-index/assess", json={
-            "model_name": "acme-bot", "provider": "acme",
-            "fairness": 0.9, "privacy": 0.85, "security": 0.8,
-            "robustness": 0.75, "compliance": 0.7, "authenticity": 0.6,
-        })
+        r = await client.post(
+            "/api/trust-index/assess",
+            json={
+                "model_name": "acme-bot",
+                "provider": "acme",
+                "fairness": 0.9,
+                "privacy": 0.85,
+                "security": 0.8,
+                "robustness": 0.75,
+                "compliance": 0.7,
+                "authenticity": 0.6,
+            },
+        )
         assert r.status_code == 201
         d = r.json()
         assert d["model"] == {"name": "acme-bot", "provider": "acme"}
@@ -713,22 +787,35 @@ class TestTrustIndexAssessAndVerify:
         assert d["verify_url"] == f"/api/trust-index/verify/{d['passport_id']}"
 
     async def test_assess_uses_neutral_defaults_when_omitted(self, client):
-        r = await client.post("/api/trust-index/assess", json={
-            "model_name": "x", "provider": "y",
-        })
+        r = await client.post(
+            "/api/trust-index/assess",
+            json={
+                "model_name": "x",
+                "provider": "y",
+            },
+        )
         assert r.status_code == 201
         assert r.json()["trust_score"]["overall"] == 50.0
 
     async def test_assess_rejects_out_of_range_dimension(self, client):
-        r = await client.post("/api/trust-index/assess", json={
-            "model_name": "x", "provider": "y", "fairness": 1.5,
-        })
+        r = await client.post(
+            "/api/trust-index/assess",
+            json={
+                "model_name": "x",
+                "provider": "y",
+                "fairness": 1.5,
+            },
+        )
         assert r.status_code == 422
 
     async def test_verify_round_trips_an_assessed_passport(self, client):
-        assess = await client.post("/api/trust-index/assess", json={
-            "model_name": "verify-me", "provider": "acme",
-        })
+        assess = await client.post(
+            "/api/trust-index/assess",
+            json={
+                "model_name": "verify-me",
+                "provider": "acme",
+            },
+        )
         passport_id = assess.json()["passport_id"]
 
         r = await client.get(f"/api/trust-index/verify/{passport_id}")
@@ -744,11 +831,19 @@ class TestTrustIndexAssessAndVerify:
     async def test_evaluate_endpoint_persists_a_verifiable_passport(self, client):
         """POST /api/evaluate used to generate a passport and discard it —
         confirm it's now persisted and independently verifiable."""
-        r = await client.post("/api/evaluate", json={
-            "model_name": "eval-model", "provider": "openai",
-            "fairness": 0.8, "privacy": 0.8, "security": 0.8,
-            "robustness": 0.8, "compliance": 0.8, "authenticity": 0.8,
-        })
+        r = await client.post(
+            "/api/evaluate",
+            json={
+                "model_name": "eval-model",
+                "provider": "openai",
+                "fairness": 0.8,
+                "privacy": 0.8,
+                "security": 0.8,
+                "robustness": 0.8,
+                "compliance": 0.8,
+                "authenticity": 0.8,
+            },
+        )
         assert r.status_code == 200
         d = r.json()
         assert "verify_url" in d
@@ -770,12 +865,20 @@ class TestTrustIndexRegistry:
         assert r.json() == {"registry": [], "limit": 50, "offset": 0}
 
     async def test_includes_self_assessed_and_certified(self, client):
-        a = await client.post("/api/trust-index/assess", json={
-            "model_name": "registry-self", "provider": "acme",
-        })
-        b = await client.post("/api/trust-index/assess", json={
-            "model_name": "registry-certified", "provider": "acme",
-        })
+        a = await client.post(
+            "/api/trust-index/assess",
+            json={
+                "model_name": "registry-self",
+                "provider": "acme",
+            },
+        )
+        b = await client.post(
+            "/api/trust-index/assess",
+            json={
+                "model_name": "registry-certified",
+                "provider": "acme",
+            },
+        )
         await client.post(f"/api/trust-index/certify/{b.json()['passport_id']}", json={})
 
         r = await client.get("/api/trust-index/registry")
@@ -785,9 +888,13 @@ class TestTrustIndexRegistry:
 
     async def test_respects_limit(self, client):
         for i in range(3):
-            await client.post("/api/trust-index/assess", json={
-                "model_name": f"registry-limit-{i}", "provider": "acme",
-            })
+            await client.post(
+                "/api/trust-index/assess",
+                json={
+                    "model_name": f"registry-limit-{i}",
+                    "provider": "acme",
+                },
+            )
         r = await client.get("/api/trust-index/registry", params={"limit": 2})
         assert len(r.json()["registry"]) == 2
 
@@ -819,9 +926,13 @@ class TestPublicPagesLoad:
 
 class TestTrustIndexCertification:
     async def test_certify_marks_passport_certified(self, client):
-        assess = await client.post("/api/trust-index/assess", json={
-            "model_name": "cert-me", "provider": "acme",
-        })
+        assess = await client.post(
+            "/api/trust-index/assess",
+            json={
+                "model_name": "cert-me",
+                "provider": "acme",
+            },
+        )
         passport_id = assess.json()["passport_id"]
 
         r = await client.post(f"/api/trust-index/certify/{passport_id}", json={})
@@ -834,9 +945,13 @@ class TestTrustIndexCertification:
         assert verify.json()["certified"] is True
 
     async def test_certify_custom_certifier_name(self, client):
-        assess = await client.post("/api/trust-index/assess", json={
-            "model_name": "cert-me-2", "provider": "acme",
-        })
+        assess = await client.post(
+            "/api/trust-index/assess",
+            json={
+                "model_name": "cert-me-2",
+                "provider": "acme",
+            },
+        )
         passport_id = assess.json()["passport_id"]
 
         r = await client.post(
@@ -850,9 +965,13 @@ class TestTrustIndexCertification:
         assert r.status_code == 404
 
     async def test_certified_directory_lists_only_certified(self, client):
-        assess = await client.post("/api/trust-index/assess", json={
-            "model_name": "listed-model", "provider": "acme",
-        })
+        assess = await client.post(
+            "/api/trust-index/assess",
+            json={
+                "model_name": "listed-model",
+                "provider": "acme",
+            },
+        )
         passport_id = assess.json()["passport_id"]
         await client.post(f"/api/trust-index/certify/{passport_id}", json={})
 
@@ -885,11 +1004,19 @@ class TestTrustIndexCheck:
         assert "Self-assess for free" in d["message"]
 
     async def test_check_returns_latest_self_assessed_score(self, client):
-        await client.post("/api/trust-index/assess", json={
-            "model_name": "checkable-tool", "provider": "acme",
-            "fairness": 0.9, "privacy": 0.9, "security": 0.9,
-            "robustness": 0.9, "compliance": 0.9, "authenticity": 0.9,
-        })
+        await client.post(
+            "/api/trust-index/assess",
+            json={
+                "model_name": "checkable-tool",
+                "provider": "acme",
+                "fairness": 0.9,
+                "privacy": 0.9,
+                "security": 0.9,
+                "robustness": 0.9,
+                "compliance": 0.9,
+                "authenticity": 0.9,
+            },
+        )
         r = await client.get(
             "/api/trust-index/check", params={"model": "checkable-tool", "provider": "acme"}
         )
@@ -901,17 +1028,28 @@ class TestTrustIndexCheck:
         assert d["verify_url"] == f"/api/trust-index/verify/{d['passport_id']}"
 
     async def test_check_prefers_certified_over_more_recent_self_assessment(self, client):
-        first = await client.post("/api/trust-index/assess", json={
-            "model_name": "dual-history", "provider": "acme", "fairness": 0.2,
-        })
+        first = await client.post(
+            "/api/trust-index/assess",
+            json={
+                "model_name": "dual-history",
+                "provider": "acme",
+                "fairness": 0.2,
+            },
+        )
         await client.post(
-            f"/api/trust-index/certify/{first.json()['passport_id']}", json={},
+            f"/api/trust-index/certify/{first.json()['passport_id']}",
+            json={},
         )
         # A later, uncertified self-assessment for the same model+provider —
         # the certified record should still win.
-        await client.post("/api/trust-index/assess", json={
-            "model_name": "dual-history", "provider": "acme", "fairness": 0.9,
-        })
+        await client.post(
+            "/api/trust-index/assess",
+            json={
+                "model_name": "dual-history",
+                "provider": "acme",
+                "fairness": 0.9,
+            },
+        )
 
         r = await client.get(
             "/api/trust-index/check", params={"model": "dual-history", "provider": "acme"}
@@ -921,9 +1059,13 @@ class TestTrustIndexCheck:
         assert d["passport_id"] == first.json()["passport_id"]
 
     async def test_check_exact_match_only_no_fuzzy(self, client):
-        await client.post("/api/trust-index/assess", json={
-            "model_name": "Exact-Name", "provider": "acme",
-        })
+        await client.post(
+            "/api/trust-index/assess",
+            json={
+                "model_name": "Exact-Name",
+                "provider": "acme",
+            },
+        )
         r = await client.get(
             "/api/trust-index/check", params={"model": "exact-name", "provider": "acme"}
         )
@@ -936,9 +1078,13 @@ class TestTrustIndexCheck:
 
 class TestTrustIndexBadge:
     async def test_badge_renders_svg_for_self_assessed(self, client):
-        assess = await client.post("/api/trust-index/assess", json={
-            "model_name": "badge-me", "provider": "acme",
-        })
+        assess = await client.post(
+            "/api/trust-index/assess",
+            json={
+                "model_name": "badge-me",
+                "provider": "acme",
+            },
+        )
         passport_id = assess.json()["passport_id"]
 
         r = await client.get(f"/api/trust-index/badge/{passport_id}.svg")
@@ -948,9 +1094,13 @@ class TestTrustIndexBadge:
         assert "<svg" in r.text
 
     async def test_badge_renders_certified_after_certification(self, client):
-        assess = await client.post("/api/trust-index/assess", json={
-            "model_name": "badge-me-2", "provider": "acme",
-        })
+        assess = await client.post(
+            "/api/trust-index/assess",
+            json={
+                "model_name": "badge-me-2",
+                "provider": "acme",
+            },
+        )
         passport_id = assess.json()["passport_id"]
         await client.post(f"/api/trust-index/certify/{passport_id}", json={})
 
@@ -969,9 +1119,13 @@ class TestTrustIndexBadge:
         # certified status (never model_name), so this can't be an XSS vector
         # via the badge specifically, but confirm it doesn't crash the SVG
         # renderer either.
-        assess = await client.post("/api/trust-index/assess", json={
-            "model_name": "<script>alert(1)</script>", "provider": "acme",
-        })
+        assess = await client.post(
+            "/api/trust-index/assess",
+            json={
+                "model_name": "<script>alert(1)</script>",
+                "provider": "acme",
+            },
+        )
         passport_id = assess.json()["passport_id"]
         r = await client.get(f"/api/trust-index/badge/{passport_id}.svg")
         assert r.status_code == 200
@@ -992,9 +1146,11 @@ class TestTrustIndexBadge:
 _INCIDENT_PAYLOAD = {
     "title": "Jailbreak via nested roleplay framing",
     "description": "A multi-turn nested roleplay prompt reliably bypassed the model's "
-                    "safety training and produced disallowed content.",
-    "affected_model": "test-model", "affected_provider": "test-provider",
-    "incident_type": "jailbreak", "severity": "high",
+    "safety training and produced disallowed content.",
+    "affected_model": "test-model",
+    "affected_provider": "test-provider",
+    "incident_type": "jailbreak",
+    "severity": "high",
 }
 
 
@@ -1094,7 +1250,9 @@ class TestIncidentDBModerationWorkflow:
         assert r.status_code == 404
 
     async def test_reject_unknown_id_404s(self, client):
-        r = await client.post("/api/incident-db/does-not-exist/reject", json={"reason": "not a real report"})
+        r = await client.post(
+            "/api/incident-db/does-not-exist/reject", json={"reason": "not a real report"}
+        )
         assert r.status_code == 404
 
     async def test_reject_requires_a_reason(self, client):
@@ -1120,7 +1278,9 @@ class TestIncidentDBModerationWorkflow:
         approved = await client.post(f"/api/incident-db/{internal_id}/approve")
         public_id = approved.json()["public_id"]
 
-        r = await client.post(f"/api/incident-db/{public_id}/status", json={"status": "PENDING_REVIEW"})
+        r = await client.post(
+            f"/api/incident-db/{public_id}/status", json={"status": "PENDING_REVIEW"}
+        )
         assert r.status_code == 422
 
 
@@ -1130,18 +1290,26 @@ class TestIncidentDBCheckEndpoint:
         internal_id = seeded["id"]
         await client.post(f"/api/incident-db/{internal_id}/approve")
 
-        r = await client.get("/api/incident-db/check", params={
-            "model": "test-model", "provider": "test-provider",
-        })
+        r = await client.get(
+            "/api/incident-db/check",
+            params={
+                "model": "test-model",
+                "provider": "test-provider",
+            },
+        )
         assert r.status_code == 200
         d = r.json()
         assert d["has_reported_incidents"] is True
         assert len(d["incidents"]) == 1
 
     async def test_check_no_match(self, client):
-        r = await client.get("/api/incident-db/check", params={
-            "model": "totally-unknown-model", "provider": "nobody",
-        })
+        r = await client.get(
+            "/api/incident-db/check",
+            params={
+                "model": "totally-unknown-model",
+                "provider": "nobody",
+            },
+        )
         assert r.status_code == 200
         assert r.json()["has_reported_incidents"] is False
 

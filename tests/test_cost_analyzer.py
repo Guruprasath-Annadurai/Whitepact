@@ -18,10 +18,16 @@ class TestClassifyTaskComplexity:
         assert classify_task_complexity("give financial advice for my portfolio") == "high_risk"
 
     def test_complex_analysis(self):
-        assert classify_task_complexity("analyze customer churn and compare retention strategies") == "complex"
+        assert (
+            classify_task_complexity("analyze customer churn and compare retention strategies")
+            == "complex"
+        )
 
     def test_complex_debug(self):
-        assert classify_task_complexity("debug this production outage and optimize the query") == "complex"
+        assert (
+            classify_task_complexity("debug this production outage and optimize the query")
+            == "complex"
+        )
 
     def test_medium_summarize(self):
         assert classify_task_complexity("summarize this 10-page report") == "medium"

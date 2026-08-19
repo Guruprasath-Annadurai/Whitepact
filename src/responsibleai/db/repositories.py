@@ -33,34 +33,39 @@ class CostRepository:
 
     async def record(self, usage: TokenUsage) -> CostRecord:
         pricing = get_pricing(usage.provider, usage.model)
-        input_cost  = pricing.cost_for(usage.input_tokens, 0)
+        input_cost = pricing.cost_for(usage.input_tokens, 0)
         output_cost = pricing.cost_for(0, usage.output_tokens)
-        total_cost  = input_cost + output_cost
+        total_cost = input_cost + output_cost
 
         async with self._engine.raw.begin() as conn:
             await conn.execute(
-                token_usage.insert().prefix_with("OR IGNORE").values(
-                    request_id    = usage.request_id,
-                    org_id        = usage.org_id,
-                    provider      = usage.provider,
-                    model         = usage.model,
-                    team          = usage.team,
-                    application   = usage.application,
-                    input_tokens  = usage.input_tokens,
-                    output_tokens = usage.output_tokens,
-                    cached_tokens = usage.cached_tokens,
-                    input_cost    = input_cost,
-                    output_cost   = output_cost,
-                    total_cost    = total_cost,
-                    prompt_hash   = usage.prompt_hash,
-                    metadata      = json.dumps(usage.metadata),
-                    recorded_at   = usage.timestamp.isoformat(),
+                token_usage.insert()
+                .prefix_with("OR IGNORE")
+                .values(
+                    request_id=usage.request_id,
+                    org_id=usage.org_id,
+                    provider=usage.provider,
+                    model=usage.model,
+                    team=usage.team,
+                    application=usage.application,
+                    input_tokens=usage.input_tokens,
+                    output_tokens=usage.output_tokens,
+                    cached_tokens=usage.cached_tokens,
+                    input_cost=input_cost,
+                    output_cost=output_cost,
+                    total_cost=total_cost,
+                    prompt_hash=usage.prompt_hash,
+                    metadata=json.dumps(usage.metadata),
+                    recorded_at=usage.timestamp.isoformat(),
                 )
             )
 
         return CostRecord(
-            usage=usage, pricing=pricing,
-            input_cost=input_cost, output_cost=output_cost, total_cost=total_cost,
+            usage=usage,
+            pricing=pricing,
+            input_cost=input_cost,
+            output_cost=output_cost,
+            total_cost=total_cost,
         )
 
     async def total_cost(self, days: int | None = None, org_id: str | None = None) -> float:
@@ -73,7 +78,9 @@ class CostRepository:
             result = await conn.execute(stmt)
             return float(result.scalar() or 0.0)
 
-    async def total_tokens(self, days: int | None = None, org_id: str | None = None) -> dict[str, int]:
+    async def total_tokens(
+        self, days: int | None = None, org_id: str | None = None
+    ) -> dict[str, int]:
         stmt = select(
             func.coalesce(func.sum(token_usage.c.input_tokens), 0),
             func.coalesce(func.sum(token_usage.c.output_tokens), 0),
@@ -96,7 +103,9 @@ class CostRepository:
         async with self._engine.raw.connect() as conn:
             return int((await conn.execute(stmt)).scalar() or 0)
 
-    async def get_model_breakdown(self, days: int | None = None, org_id: str | None = None) -> dict[str, float]:
+    async def get_model_breakdown(
+        self, days: int | None = None, org_id: str | None = None
+    ) -> dict[str, float]:
         model_col = (token_usage.c.provider + text("'/'") + token_usage.c.model).label("key")
         stmt = (
             select(model_col, func.coalesce(func.sum(token_usage.c.total_cost), 0.0).label("cost"))
@@ -111,9 +120,14 @@ class CostRepository:
             rows = (await conn.execute(stmt)).fetchall()
         return {r[0]: round(float(r[1]), 6) for r in rows}
 
-    async def get_team_breakdown(self, days: int | None = None, org_id: str | None = None) -> dict[str, float]:
+    async def get_team_breakdown(
+        self, days: int | None = None, org_id: str | None = None
+    ) -> dict[str, float]:
         stmt = (
-            select(token_usage.c.team, func.coalesce(func.sum(token_usage.c.total_cost), 0.0).label("cost"))
+            select(
+                token_usage.c.team,
+                func.coalesce(func.sum(token_usage.c.total_cost), 0.0).label("cost"),
+            )
             .group_by(token_usage.c.team)
             .order_by(text("cost DESC"))
         )
@@ -139,7 +153,9 @@ class CostRepository:
             model_breakdown=await self.get_model_breakdown(30, org_id=org_id),
         )
 
-    async def get_daily_costs(self, days: int = 30, org_id: str | None = None) -> list[dict[str, Any]]:
+    async def get_daily_costs(
+        self, days: int = 30, org_id: str | None = None
+    ) -> list[dict[str, Any]]:
         cutoff = _days_ago_iso(days)
         stmt = (
             select(
@@ -157,8 +173,12 @@ class CostRepository:
         async with self._engine.raw.connect() as conn:
             rows = (await conn.execute(stmt)).fetchall()
         return [
-            {"date": r[0], "cost_usd": round(float(r[1]), 4),
-             "tokens": int(r[2]), "requests": int(r[3])}
+            {
+                "date": r[0],
+                "cost_usd": round(float(r[1]), 4),
+                "tokens": int(r[2]),
+                "requests": int(r[3]),
+            }
             for r in rows
         ]
 
@@ -187,19 +207,19 @@ class TrustRepository:
         async with self._engine.raw.begin() as conn:
             await conn.execute(
                 trust_scores.insert().values(
-                    org_id       = org_id,
-                    model_name   = model_name,
-                    provider     = provider,
-                    overall      = score.overall,
-                    grade        = score.grade,
-                    risk_level   = score.risk_level,
-                    fairness     = score.fairness,
-                    privacy      = score.privacy,
-                    security     = score.security,
-                    robustness   = score.robustness,
-                    compliance   = score.compliance,
-                    authenticity = score.authenticity,
-                    recorded_at  = now,
+                    org_id=org_id,
+                    model_name=model_name,
+                    provider=provider,
+                    overall=score.overall,
+                    grade=score.grade,
+                    risk_level=score.risk_level,
+                    fairness=score.fairness,
+                    privacy=score.privacy,
+                    security=score.security,
+                    robustness=score.robustness,
+                    compliance=score.compliance,
+                    authenticity=score.authenticity,
+                    recorded_at=now,
                 )
             )
 
@@ -228,8 +248,7 @@ class TrustRepository:
         stmt = (
             select(trust_scores)
             .where(
-                (trust_scores.c.model_name == model_name) &
-                (trust_scores.c.provider == provider)
+                (trust_scores.c.model_name == model_name) & (trust_scores.c.provider == provider)
             )
             .order_by(trust_scores.c.recorded_at.desc())
             .limit(limit)
@@ -240,15 +259,23 @@ class TrustRepository:
             rows = (await conn.execute(stmt)).fetchall()
         return [
             {
-                "overall": r.overall, "grade": r.grade, "risk_level": r.risk_level,
-                "fairness": r.fairness, "privacy": r.privacy, "security": r.security,
-                "robustness": r.robustness, "compliance": r.compliance,
-                "authenticity": r.authenticity, "recorded_at": r.recorded_at,
+                "overall": r.overall,
+                "grade": r.grade,
+                "risk_level": r.risk_level,
+                "fairness": r.fairness,
+                "privacy": r.privacy,
+                "security": r.security,
+                "robustness": r.robustness,
+                "compliance": r.compliance,
+                "authenticity": r.authenticity,
+                "recorded_at": r.recorded_at,
             }
             for r in reversed(rows)
         ]
 
-    async def trend(self, model_name: str, provider: str, org_id: str | None = None) -> dict[str, Any]:
+    async def trend(
+        self, model_name: str, provider: str, org_id: str | None = None
+    ) -> dict[str, Any]:
         history = await self.history(model_name, provider, limit=30, org_id=org_id)
         if len(history) < 2:
             return {"error": "insufficient_data", "points": len(history)}
@@ -288,8 +315,7 @@ class TrustRepository:
         stmt = (
             select(trust_scores.c.overall)
             .where(
-                (trust_scores.c.model_name == model_name) &
-                (trust_scores.c.provider == provider)
+                (trust_scores.c.model_name == model_name) & (trust_scores.c.provider == provider)
             )
             .order_by(trust_scores.c.recorded_at.desc())
             .offset(1)
@@ -304,5 +330,6 @@ class TrustRepository:
 
 def _days_ago_iso(days: int) -> str:
     from datetime import timedelta
+
     dt = datetime.now(UTC) - timedelta(days=days)
     return dt.isoformat()

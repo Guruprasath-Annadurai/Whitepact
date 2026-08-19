@@ -5,9 +5,9 @@ from __future__ import annotations
 from responsibleai.eval.models import BenchmarkResult, RegressionAlert, RegressionSeverity
 
 _SEVERITY_THRESHOLDS = [
-    (RegressionSeverity.SEVERE,   0.15),
+    (RegressionSeverity.SEVERE, 0.15),
     (RegressionSeverity.MODERATE, 0.05),
-    (RegressionSeverity.MINOR,    0.01),
+    (RegressionSeverity.MINOR, 0.01),
 ]
 
 
@@ -31,8 +31,8 @@ class RegressionDetector:
         prefix = result.suite.value
         if model not in self._baselines:
             self._baselines[model] = {}
-        self._baselines[model][f"{prefix}:accuracy"]     = result.accuracy
-        self._baselines[model][f"{prefix}:bias_rate"]    = result.bias_rate
+        self._baselines[model][f"{prefix}:accuracy"] = result.accuracy
+        self._baselines[model][f"{prefix}:bias_rate"] = result.bias_rate
         self._baselines[model][f"{prefix}:overall_score"] = result.overall_score
 
     def get_baselines(self, model: str) -> dict[str, float]:
@@ -58,8 +58,8 @@ class RegressionDetector:
 
         prefix = result.suite.value
         checks = [
-            (f"{prefix}:accuracy",      result.accuracy,      False),
-            (f"{prefix}:bias_rate",     result.bias_rate,     True),
+            (f"{prefix}:accuracy", result.accuracy, False),
+            (f"{prefix}:bias_rate", result.bias_rate, True),
             (f"{prefix}:overall_score", result.overall_score, False),
         ]
 

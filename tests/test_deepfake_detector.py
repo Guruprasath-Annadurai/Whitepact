@@ -128,6 +128,7 @@ class TestDeepfakeDetectorImageAsync:
             import io
 
             from PIL import Image as PILImage
+
             img = PILImage.new("RGB", (224, 224), color=(100, 150, 200))
             buf = io.BytesIO()
             img.save(buf, format="JPEG")
@@ -149,6 +150,7 @@ class TestDeepfakeDetectorImageAsync:
             import io
 
             from PIL import Image as PILImage
+
             img = PILImage.new("RGB", (224, 224))
             buf = io.BytesIO()
             img.save(buf, format="JPEG")

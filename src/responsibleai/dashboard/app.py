@@ -183,6 +183,7 @@ logger = get_logger("app")
 
 # ── Per-org rate limiter ───────────────────────────────────────────────────────
 
+
 def _get_rate_limit_key(request: Request) -> str:
     """Rate limit by API key (per org / per key) when present, IP address otherwise.
 
@@ -191,6 +192,7 @@ def _get_rate_limit_key(request: Request) -> str:
     (common in cloud-hosted or NAT environments).
     """
     import hashlib as _hashlib
+
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Bearer "):
         token = auth[7:].strip()
@@ -332,10 +334,10 @@ async def lifespan(application: FastAPI):
     _plan_rate_limiter = PlanRateLimiter(redis_url=settings.redis_url)
 
     policy = BudgetPolicy(monthly_limit_usd=settings.monthly_budget_usd)
-    _cost_repo    = CostRepository(_db_engine, policy=policy)
-    _trust_repo   = TrustRepository(_db_engine, alert_threshold=settings.alert_threshold)
-    _org_repo     = OrgRepository(_db_engine)
-    _audit_repo   = AuditRepository(_db_engine)
+    _cost_repo = CostRepository(_db_engine, policy=policy)
+    _trust_repo = TrustRepository(_db_engine, alert_threshold=settings.alert_threshold)
+    _org_repo = OrgRepository(_db_engine)
+    _audit_repo = AuditRepository(_db_engine)
     _incident_repo = IncidentRepository(_db_engine)
     _leaderboard_repo = LeaderboardRepository(_db_engine)
     _leaderboard_runner = LeaderboardRunner()
@@ -352,19 +354,19 @@ async def lifespan(application: FastAPI):
     _workflow_rule_repo = WorkflowRuleRepository(_db_engine)
     _delegation_repo = DelegationRepository(_db_engine)
     _autonomy_budget_repo = OrgAutonomyBudgetRepository(_db_engine)
-    _guardrails   = GuardrailsEngine()
+    _guardrails = GuardrailsEngine()
     _hallucination = HallucinationDetector()
-    _compliance   = ComplianceEngine()
+    _compliance = ComplianceEngine()
     _cost_analyzer = CostAnalyzer()
-    _router       = ModelRouter()
-    _eval_repo    = EvalRepository(_db_engine)
-    _comparator   = ModelComparator(
+    _router = ModelRouter()
+    _eval_repo = EvalRepository(_db_engine)
+    _comparator = ModelComparator(
         trust_engine=_trust_engine,
         guardrails=_guardrails,
         hallucination=_hallucination,
     )
     _benchmark_runner = BenchmarkRunner(guardrails=_guardrails)
-    _dataset_scanner  = DatasetBiasScanner(guardrails=_guardrails)
+    _dataset_scanner = DatasetBiasScanner(guardrails=_guardrails)
 
     if settings.oidc_issuer:
         _oidc_provider = OIDCProvider(
@@ -418,8 +420,10 @@ async def lifespan(application: FastAPI):
     _ws_manager.start()
 
     auth_status = "enabled" if (settings.auth_enabled and settings.api_keys) else "disabled"
-    db_backend   = "postgresql" if (settings.database_url or "").startswith("postgresql") else "sqlite"
-    rl_backend   = "redis" if settings.redis_url else "memory"
+    db_backend = (
+        "postgresql" if (settings.database_url or "").startswith("postgresql") else "sqlite"
+    )
+    rl_backend = "redis" if settings.redis_url else "memory"
     logger.info(
         "startup_complete",
         version=__version__,
@@ -482,6 +486,7 @@ app = FastAPI(
 
 
 # ── Audit log middleware ───────────────────────────────────────────────────────
+
 
 class AuditLogMiddleware(BaseHTTPMiddleware):
     """Capture every HTTP request as an audit log entry.
@@ -547,7 +552,9 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # ty
 
 
 @app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+async def validation_exception_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
     # Pydantic's exc.errors() embeds the *raw* exception object in each
     # error's "ctx" field (e.g. {"ctx": {"error": ValueError(...)}}) when
     # the failure came from a @field_validator raising ValueError — not
@@ -564,6 +571,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 # ── API version header middleware ─────────────────────────────────────────────
 
+
 class APIVersionMiddleware(BaseHTTPMiddleware):
     """Stamps every response with X-API-Version and routes /api/v1/* → /api/*."""
 
@@ -571,7 +579,7 @@ class APIVersionMiddleware(BaseHTTPMiddleware):
         # Transparent rewrite: /api/v1/foo → /api/foo
         path = request.url.path
         if path.startswith("/api/v1/"):
-            new_path = "/api/" + path[len("/api/v1/"):]
+            new_path = "/api/" + path[len("/api/v1/") :]
             request.scope["path"] = new_path
             request.scope["raw_path"] = new_path.encode()
 
@@ -603,6 +611,7 @@ app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
 
 
 # ── Auth / RBAC dependencies ───────────────────────────────────────────────────
+
 
 async def _resolve_oidc_context(token: str) -> OrgContext | None:
     """Validate an OIDC-issued Bearer JWT and map its claims to an OrgContext.
@@ -718,7 +727,9 @@ async def get_org_context(request: Request) -> OrgContext:
         try:
             resolved_ctx = await _ready(_org_repo).authenticate(token)
         except SSORequiredError as exc:
-            sso_paths = [p for p, enabled in (("oidc", _oidc_provider), ("saml", _saml_config)) if enabled]
+            sso_paths = [
+                p for p, enabled in (("oidc", _oidc_provider), ("saml", _saml_config)) if enabled
+            ]
             raise HTTPException(
                 403,
                 detail=(
@@ -738,6 +749,7 @@ async def get_org_context(request: Request) -> OrgContext:
 
 def require_role(min_role: Role):
     """FastAPI dependency factory — enforces minimum role level."""
+
     async def _dep(ctx: OrgContext = Depends(get_org_context)) -> OrgContext:
         if not has_permission(ctx.role, min_role):
             raise HTTPException(
@@ -745,6 +757,7 @@ def require_role(min_role: Role):
                 detail=f"Requires {min_role.value} role or higher. Your role: {ctx.role.value}",
             )
         return ctx
+
     return _dep
 
 
@@ -755,6 +768,7 @@ def require_plan(min_plan: Plan):
     than an endpoint's RBAC role — a VIEWER on an ENTERPRISE org can read the
     diagnostic, an OWNER on a FREE org cannot.
     """
+
     async def _dep(ctx: OrgContext = Depends(get_org_context)) -> OrgContext:
         if not has_plan(ctx.plan, min_plan):
             raise HTTPException(
@@ -765,10 +779,12 @@ def require_plan(min_plan: Plan):
                 ),
             )
         return ctx
+
     return _dep
 
 
 # ── Request / Response models ──────────────────────────────────────────────────
+
 
 class EvaluateRequest(BaseModel):
     model_name: str = Field(..., min_length=1, max_length=100)
@@ -850,7 +866,7 @@ class IncidentReportRequest(BaseModel):
     incident_type: str = Field(
         "other",
         pattern="^(jailbreak|data_leak|harmful_output|misinformation|bias|"
-                "prompt_injection|privacy_violation|safety_failure|other)$",
+        "prompt_injection|privacy_violation|safety_failure|other)$",
     )
     severity: str = Field("medium", pattern="^(critical|high|medium|low)$")
     affected_model: str = Field(..., min_length=1, max_length=100)
@@ -1069,6 +1085,7 @@ class BillingPortalRequest(BaseModel):
 
 # ── Root / HTML ────────────────────────────────────────────────────────────────
 
+
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 async def root() -> HTMLResponse:
     index = _static_dir / "index.html"
@@ -1228,8 +1245,10 @@ def _page_route(path: str, filename: str) -> None:
     Centralized so every simple page follows the exact same pattern — one
     typo'd filename here breaks one page instead of a copy-pasted mistake
     breaking many."""
+
     async def _handler() -> HTMLResponse:
         return HTMLResponse(content=(_static_dir / filename).read_text())
+
     app.get(path, response_class=HTMLResponse, include_in_schema=False)(_handler)
 
 
@@ -1256,6 +1275,7 @@ for _path, _filename in [
 
 # ── Branding (white-label) ───────────────────────────────────────────────────────
 
+
 @app.get("/api/branding", tags=["ops"])
 async def branding() -> dict[str, Any]:
     """Public, unauthenticated — the frontend shell fetches this on every
@@ -1268,6 +1288,7 @@ async def branding() -> dict[str, Any]:
 
 # ── Health & Ops ───────────────────────────────────────────────────────────────
 
+
 @app.get("/api/health", tags=["ops"])
 async def health() -> JSONResponse:
     db_ok = True
@@ -1277,7 +1298,9 @@ async def health() -> JSONResponse:
     except Exception:
         db_ok = False
 
-    db_backend = "postgresql" if (settings.database_url or "").startswith("postgresql") else "sqlite"
+    db_backend = (
+        "postgresql" if (settings.database_url or "").startswith("postgresql") else "sqlite"
+    )
     rl_backend = "redis" if settings.redis_url else "memory"
     orgs_count = len(await _ready(_org_repo).list_orgs()) if _org_repo else 0
 
@@ -1297,12 +1320,31 @@ async def health() -> JSONResponse:
             "orgs": orgs_count,
         },
         "modules": [
-            "trust_score", "ai_passport", "guardrails", "hallucination",
-            "compliance", "redteam", "cost_tracker", "cost_analyzer",
-            "model_router", "drift_monitor", "websockets", "webhooks",
-            "prometheus", "rbac", "orgs", "audit_log",
-            "eval_compare", "eval_benchmarks", "eval_regression", "dataset_scan",
-            "sso_oidc", "api_versioning", "support", "mcp_server", "billing",
+            "trust_score",
+            "ai_passport",
+            "guardrails",
+            "hallucination",
+            "compliance",
+            "redteam",
+            "cost_tracker",
+            "cost_analyzer",
+            "model_router",
+            "drift_monitor",
+            "websockets",
+            "webhooks",
+            "prometheus",
+            "rbac",
+            "orgs",
+            "audit_log",
+            "eval_compare",
+            "eval_benchmarks",
+            "eval_regression",
+            "dataset_scan",
+            "sso_oidc",
+            "api_versioning",
+            "support",
+            "mcp_server",
+            "billing",
         ],
         "api_versions": ["1.0", "1.1"],
         "stable_since": "1.0.0",
@@ -1312,7 +1354,9 @@ async def health() -> JSONResponse:
 
 @app.get("/api/metrics", tags=["ops"])
 @limiter.limit("60/minute")
-async def metrics(request: Request, _auth: OrgContext = Depends(require_role(Role.ANALYST))) -> dict[str, Any]:
+async def metrics(
+    request: Request, _auth: OrgContext = Depends(require_role(Role.ANALYST))
+) -> dict[str, Any]:
     total_requests = _REQUEST_COUNTER["total"]
     errors = _REQUEST_COUNTER["errors"]
     total_cost = await _ready(_cost_repo).total_cost(30) if _cost_repo else 0.0
@@ -1322,7 +1366,9 @@ async def metrics(request: Request, _auth: OrgContext = Depends(require_role(Rol
         "total_requests": total_requests,
         "error_count": errors,
         "error_rate_pct": round(errors / max(total_requests, 1) * 100, 2),
-        "db_backend": "postgresql" if (settings.database_url or "").startswith("postgresql") else "sqlite",
+        "db_backend": "postgresql"
+        if (settings.database_url or "").startswith("postgresql")
+        else "sqlite",
         "rate_limit_backend": "redis" if settings.redis_url else "memory",
         "otel_enabled": bool(settings.otel_endpoint),
         "auth_enabled": settings.auth_enabled and bool(settings.api_keys),
@@ -1345,6 +1391,7 @@ async def prometheus_metrics() -> Response:
 
 
 # ── Organizations & RBAC ───────────────────────────────────────────────────────
+
 
 @app.post("/api/signup", tags=["rbac"], status_code=201)
 @limiter.limit("5/hour")
@@ -1562,7 +1609,12 @@ async def get_autonomy_budget(
         raise HTTPException(404, "Organization not found")
     policy = await _ready(_autonomy_budget_repo).get(org_id)
     if policy is None:
-        return {"org_id": org_id, "configured": False, "max_autonomous_actions": None, "window_minutes": None}
+        return {
+            "org_id": org_id,
+            "configured": False,
+            "max_autonomous_actions": None,
+            "window_minutes": None,
+        }
     return {
         "org_id": org_id,
         "configured": True,
@@ -1677,7 +1729,7 @@ async def enroll_mfa(
         "secret": secret,
         "provisioning_uri": mfa.provisioning_uri(secret, account_name=key.name),
         "message": "Scan or enter this into your authenticator app, then POST the "
-                   "6-digit code to .../mfa/verify to activate MFA on this key.",
+        "6-digit code to .../mfa/verify to activate MFA on this key.",
     }
 
 
@@ -1727,6 +1779,7 @@ async def disable_mfa(
 
 
 # ── Billing (Stripe) ───────────────────────────────────────────────────────────
+
 
 @app.get("/api/billing/plans", tags=["billing"])
 @limiter.limit("60/minute")
@@ -1865,6 +1918,7 @@ async def stripe_webhook(request: Request) -> dict[str, Any]:
 
 # ── Model Evaluation Framework ────────────────────────────────────────────────
 
+
 @app.post("/api/eval/compare", tags=["eval"], status_code=201)
 @limiter.limit("20/minute")
 async def eval_compare(
@@ -1971,7 +2025,9 @@ async def eval_benchmark_prompts(
     try:
         s = BenchmarkSuite(suite)
     except ValueError:
-        raise HTTPException(400, f"Unknown suite: {suite}. Valid: truthfulqa, bbq, hellaswag") from None
+        raise HTTPException(
+            400, f"Unknown suite: {suite}. Valid: truthfulqa, bbq, hellaswag"
+        ) from None
     prompts = _ready(_benchmark_runner).get_prompts(s)
     return {"suite": suite, "prompts": prompts, "count": len(prompts)}
 
@@ -2037,6 +2093,7 @@ async def eval_results(
 
 
 # ── Audit log ─────────────────────────────────────────────────────────────────
+
 
 @app.get("/api/audit-log", tags=["rbac"])
 @limiter.limit("30/minute")
@@ -2120,8 +2177,10 @@ async def create_incident(
     )
     stored = await _ready(_incident_repo).create(record, org_id=_auth.org_id)
     logger.info(
-        "incident_created", incident_id=stored["incident_id"],
-        severity=stored["severity"], incident_type=stored["incident_type"],
+        "incident_created",
+        incident_id=stored["incident_id"],
+        severity=stored["severity"],
+        incident_type=stored["incident_type"],
         org_id=_auth.org_id,
     )
     return stored
@@ -2147,8 +2206,12 @@ async def list_incidents(
     else:
         scoped_org_id = None
     incidents_list = await _ready(_incident_repo).list(
-        org_id=scoped_org_id, severity=severity, status=status,
-        days=days, limit=limit, offset=offset,
+        org_id=scoped_org_id,
+        severity=severity,
+        status=status,
+        days=days,
+        limit=limit,
+        offset=offset,
     )
     return {"incidents": incidents_list, "limit": limit, "offset": offset}
 
@@ -2213,8 +2276,10 @@ async def alerts_webhook(request: Request) -> dict[str, Any]:
         stored = await _ready(_incident_repo).create(record, org_id=None, raw_payload=alert)
         created.append(stored["incident_id"])
         logger.info(
-            "incident_created_from_alert", incident_id=stored["incident_id"],
-            alertname=alertname, severity=severity,
+            "incident_created_from_alert",
+            incident_id=stored["incident_id"],
+            alertname=alertname,
+            severity=severity,
         )
 
     return {"received": True, "incidents_created": created, "alerts_skipped": skipped}
@@ -2228,6 +2293,7 @@ async def alerts_webhook(request: Request) -> dict[str, Any]:
 # product this feature funds itself with. See compliance/LEADERBOARD_METHODOLOGY.md
 # for the published scoring methodology and STRATEGY_ROADMAP.md's Tier-1
 # feature #1 for why this exists.
+
 
 def _leaderboard_super_admin_check(_auth: OrgContext) -> None:
     if not (_auth.is_legacy and _auth.role == Role.OWNER):
@@ -2258,14 +2324,18 @@ async def get_leaderboard(request: Request) -> dict[str, Any]:
 @app.get("/api/leaderboard/{model}/{provider}/history", tags=["leaderboard"])
 @limiter.limit("60/minute")
 async def get_leaderboard_history(
-    request: Request, model: str, provider: str, limit: int = Query(default=30, ge=1, le=200),
+    request: Request,
+    model: str,
+    provider: str,
+    limit: int = Query(default=30, ge=1, le=200),
 ) -> dict[str, Any]:
     """Public, unauthenticated. Trend over time for one model."""
     rows = await _ready(_leaderboard_repo).history(model, provider, limit=limit)
     if not rows:
         raise HTTPException(404, "No leaderboard runs found for this model/provider.")
     return {
-        "model": model, "provider": provider,
+        "model": model,
+        "provider": provider,
         "history": [_strip_diagnostic_fields(row) for row in rows],
     }
 
@@ -2273,7 +2343,9 @@ async def get_leaderboard_history(
 @app.get("/api/leaderboard/{model}/{provider}/diagnostic", tags=["leaderboard"])
 @limiter.limit("30/minute")
 async def get_leaderboard_diagnostic(
-    request: Request, model: str, provider: str,
+    request: Request,
+    model: str,
+    provider: str,
     _auth: OrgContext = Depends(require_plan(Plan.PRO)),
 ) -> dict[str, Any]:
     """PRO/ENTERPRISE only — the paid deep-dive: every specific prompt that
@@ -2287,7 +2359,8 @@ async def get_leaderboard_diagnostic(
 @app.get("/api/leaderboard/models", tags=["leaderboard"])
 @limiter.limit("30/minute")
 async def list_leaderboard_models(
-    request: Request, _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+    request: Request,
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, Any]:
     _leaderboard_super_admin_check(_auth)
     return {"models": await _ready(_leaderboard_repo).list_models()}
@@ -2296,14 +2369,18 @@ async def list_leaderboard_models(
 @app.post("/api/leaderboard/models", tags=["leaderboard"], status_code=201)
 @limiter.limit("10/minute")
 async def register_leaderboard_model(
-    request: Request, req: LeaderboardModelRegisterRequest,
+    request: Request,
+    req: LeaderboardModelRegisterRequest,
     _auth: OrgContext = Depends(require_role(Role.OWNER)),
 ) -> dict[str, Any]:
     _leaderboard_super_admin_check(_auth)
     adapter_name = req.provider if req.provider != "mock" else "mock"
     stored = await _ready(_leaderboard_repo).register_model(
-        model=req.model, provider=req.provider, display_name=req.display_name,
-        adapter=adapter_name, active=req.active,
+        model=req.model,
+        provider=req.provider,
+        display_name=req.display_name,
+        adapter=adapter_name,
+        active=req.active,
     )
     logger.info("leaderboard_model_registered", model=req.model, provider=req.provider)
     return stored
@@ -2340,19 +2417,33 @@ async def run_leaderboard_eval(
     for t in targets:
         try:
             adapter = get_adapter(
-                t["adapter"], t["model"], settings.leaderboard_api_keys,
+                t["adapter"],
+                t["model"],
+                settings.leaderboard_api_keys,
                 azure_openai_endpoint=settings.leaderboard_azure_openai_endpoint,
                 azure_openai_api_version=settings.leaderboard_azure_openai_api_version,
             )
             result = await _ready(_leaderboard_runner).run_model(t["model"], t["provider"], adapter)
             stored = await _ready(_leaderboard_repo).create_run(result)
-            completed.append({"model": t["model"], "provider": t["provider"], "run_id": stored["id"],
-                               "overall_score": stored["overall_score"]})
-            logger.info("leaderboard_run_completed", model=t["model"], provider=t["provider"],
-                        overall_score=stored["overall_score"])
+            completed.append(
+                {
+                    "model": t["model"],
+                    "provider": t["provider"],
+                    "run_id": stored["id"],
+                    "overall_score": stored["overall_score"],
+                }
+            )
+            logger.info(
+                "leaderboard_run_completed",
+                model=t["model"],
+                provider=t["provider"],
+                overall_score=stored["overall_score"],
+            )
         except ProviderNotConfiguredError as exc:
             failed.append({"model": t["model"], "provider": t["provider"], "reason": str(exc)})
-            logger.warning("leaderboard_run_skipped", model=t["model"], provider=t["provider"], reason=str(exc))
+            logger.warning(
+                "leaderboard_run_skipped", model=t["model"], provider=t["provider"], reason=str(exc)
+            )
 
     return {"runs_completed": completed, "runs_failed": failed}
 
@@ -2364,6 +2455,7 @@ async def run_leaderboard_eval(
 # Certification (POST /certify) is the paid, audited product this funds itself
 # with — a self-reported score and a certified one are never conflated; every
 # verify response says which one it is. See compliance/TRUST_INDEX_SPEC.md.
+
 
 def _trust_index_super_admin_check(_auth: OrgContext) -> None:
     if not (_auth.is_legacy and _auth.role == Role.OWNER):
@@ -2377,20 +2469,30 @@ async def trust_index_assess(request: Request, req: TrustIndexAssessRequest) -> 
     Index standard and get back a durable, independently-verifiable record.
     No org context required: self-assessment doesn't need an account."""
     score = _ready(_trust_engine).compute(
-        fairness=req.fairness, privacy=req.privacy, security=req.security,
-        robustness=req.robustness, compliance=req.compliance, authenticity=req.authenticity,
+        fairness=req.fairness,
+        privacy=req.privacy,
+        security=req.security,
+        robustness=req.robustness,
+        compliance=req.compliance,
+        authenticity=req.authenticity,
     )
     passport = _ready(_passport_gen).generate(
-        model_name=req.model_name, provider=req.provider, trust_score=score,
+        model_name=req.model_name,
+        provider=req.provider,
+        trust_score=score,
     )
     stored = await _ready(_passport_repo).create(passport, org_id=None, source="self_assessment")
-    logger.info("trust_index_self_assessment", model=req.model_name, provider=req.provider,
-                overall_score=score.overall)
+    logger.info(
+        "trust_index_self_assessment",
+        model=req.model_name,
+        provider=req.provider,
+        overall_score=score.overall,
+    )
     return {
         **stored,
         "citation": f"Scored {score.overall}/100 (Grade {score.grade}) under the "
-                    f"ResponsibleAI Trust Index v{passport.version} — self-reported, not certified. "
-                    f"Verify at /api/trust-index/verify/{passport.passport_id}",
+        f"ResponsibleAI Trust Index v{passport.version} — self-reported, not certified. "
+        f"Verify at /api/trust-index/verify/{passport.passport_id}",
         "verify_url": f"/api/trust-index/verify/{passport.passport_id}",
     }
 
@@ -2402,7 +2504,9 @@ async def trust_index_verify(request: Request, passport_id: str) -> dict[str, An
     who sees a cited score can check it's real here, not just trust the claim."""
     record = await _ready(_passport_repo).get(passport_id)
     if record is None:
-        raise HTTPException(404, "No Trust Passport found with this ID — the cited score cannot be verified.")
+        raise HTTPException(
+            404, "No Trust Passport found with this ID — the cited score cannot be verified."
+        )
     return record
 
 
@@ -2448,7 +2552,9 @@ async def trust_index_check(
     unauthenticated agent framework ask "is this trustworthy" for free."""
     passport = await _ready(_passport_repo).get_latest_by_model(model, provider)
     incidents = await _ready(_public_incident_repo).list_published(
-        model=model, provider=provider, limit=5,
+        model=model,
+        provider=provider,
+        limit=5,
     )
     base = {
         "model": model,
@@ -2465,7 +2571,7 @@ async def trust_index_check(
             "passport_id": None,
             "verify_url": None,
             "message": "No Trust Index assessment on file for this model/provider. "
-                       "Self-assess for free at POST /api/trust-index/assess.",
+            "Self-assess for free at POST /api/trust-index/assess.",
         }
     return {
         **base,
@@ -2512,7 +2618,9 @@ async def trust_index_certified_directory(
 @app.post("/api/trust-index/certify/{passport_id}", tags=["trust-index"])
 @limiter.limit("10/minute")
 async def trust_index_certify(
-    request: Request, passport_id: str, req: TrustIndexCertifyRequest,
+    request: Request,
+    passport_id: str,
+    req: TrustIndexCertifyRequest,
     _auth: OrgContext = Depends(require_role(Role.OWNER)),
 ) -> dict[str, Any]:
     """Super-admin only. Certification is a human-reviewed attestation, same
@@ -2538,6 +2646,7 @@ async def trust_index_certify(
 # real programmatic/CI use, same free-browse/paid-integration split as the
 # leaderboard's diagnostic tier.
 
+
 def _incident_db_super_admin_check(_auth: OrgContext) -> None:
     if not (_auth.is_legacy and _auth.role == Role.OWNER):
         raise HTTPException(403, "AI Incident Database moderation requires super-admin access")
@@ -2552,19 +2661,29 @@ async def incident_db_report(request: Request, req: IncidentReportRequest) -> di
     per IP) since this is the one endpoint on this feature with no auth gate
     at all."""
     stored = await _ready(_public_incident_repo).submit(
-        title=req.title, description=req.description, incident_type=req.incident_type,
-        severity=req.severity, affected_model=req.affected_model, affected_provider=req.affected_provider,
-        affected_version=req.affected_version, reporter_name=req.reporter_name,
+        title=req.title,
+        description=req.description,
+        incident_type=req.incident_type,
+        severity=req.severity,
+        affected_model=req.affected_model,
+        affected_provider=req.affected_provider,
+        affected_version=req.affected_version,
+        reporter_name=req.reporter_name,
         reporter_contact=req.reporter_contact,
         evidence={"urls": req.evidence_urls, "reproduction_steps": req.reproduction_steps},
         tags=req.tags,
     )
-    logger.info("incident_db_report_submitted", internal_id=stored["id"],
-                model=req.affected_model, provider=req.affected_provider, severity=req.severity)
+    logger.info(
+        "incident_db_report_submitted",
+        internal_id=stored["id"],
+        model=req.affected_model,
+        provider=req.affected_provider,
+        severity=req.severity,
+    )
     return {
         **stored,
         "message": "Report received and is pending review. It will not appear in the "
-                    "public database until a moderator approves it.",
+        "public database until a moderator approves it.",
     }
 
 
@@ -2583,8 +2702,13 @@ async def incident_db_list(
     """Public, unauthenticated. Published incidents only — free to browse,
     like the CVE database, no account required."""
     rows = await _ready(_public_incident_repo).list_published(
-        severity=severity, incident_type=incident_type, model=model, provider=provider,
-        search=search, limit=limit, offset=offset,
+        severity=severity,
+        incident_type=incident_type,
+        model=model,
+        provider=provider,
+        search=search,
+        limit=limit,
+        offset=offset,
     )
     return {"incidents": rows, "limit": limit, "offset": offset}
 
@@ -2603,7 +2727,8 @@ async def incident_db_check(
     deploy gate without false positives from partial name matches."""
     rows = await _ready(_public_incident_repo).check(model, provider)
     return {
-        "model": model, "provider": provider,
+        "model": model,
+        "provider": provider,
         "has_reported_incidents": len(rows) > 0,
         "incidents": rows,
     }
@@ -2635,13 +2760,16 @@ async def incident_db_pending(
 @app.post("/api/incident-db/{internal_id}/approve", tags=["incident-db"])
 @limiter.limit("30/minute")
 async def incident_db_approve(
-    request: Request, internal_id: str,
+    request: Request,
+    internal_id: str,
     _auth: OrgContext = Depends(require_role(Role.OWNER)),
 ) -> dict[str, Any]:
     _incident_db_super_admin_check(_auth)
     updated = await _ready(_public_incident_repo).approve(internal_id, reviewed_by=_auth.key_id)
     if updated is None:
-        raise HTTPException(404, "No pending report found with this ID (already reviewed, or doesn't exist).")
+        raise HTTPException(
+            404, "No pending report found with this ID (already reviewed, or doesn't exist)."
+        )
     logger.info("incident_db_published", public_id=updated["public_id"], internal_id=internal_id)
     return updated
 
@@ -2649,13 +2777,19 @@ async def incident_db_approve(
 @app.post("/api/incident-db/{internal_id}/reject", tags=["incident-db"])
 @limiter.limit("30/minute")
 async def incident_db_reject(
-    request: Request, internal_id: str, req: IncidentRejectRequest,
+    request: Request,
+    internal_id: str,
+    req: IncidentRejectRequest,
     _auth: OrgContext = Depends(require_role(Role.OWNER)),
 ) -> dict[str, Any]:
     _incident_db_super_admin_check(_auth)
-    updated = await _ready(_public_incident_repo).reject(internal_id, reviewed_by=_auth.key_id, reason=req.reason)
+    updated = await _ready(_public_incident_repo).reject(
+        internal_id, reviewed_by=_auth.key_id, reason=req.reason
+    )
     if updated is None:
-        raise HTTPException(404, "No pending report found with this ID (already reviewed, or doesn't exist).")
+        raise HTTPException(
+            404, "No pending report found with this ID (already reviewed, or doesn't exist)."
+        )
     logger.info("incident_db_rejected", internal_id=internal_id, reason=req.reason)
     return updated
 
@@ -2663,14 +2797,18 @@ async def incident_db_reject(
 @app.post("/api/incident-db/{public_id}/status", tags=["incident-db"])
 @limiter.limit("30/minute")
 async def incident_db_update_status(
-    request: Request, public_id: str, req: IncidentStatusUpdateRequest,
+    request: Request,
+    public_id: str,
+    req: IncidentStatusUpdateRequest,
     _auth: OrgContext = Depends(require_role(Role.OWNER)),
 ) -> dict[str, Any]:
     """Post-publish lifecycle transition only (e.g. mark RESOLVED once a
     provider patches the issue) — never touches the hash-chained disclosure
     facts."""
     _incident_db_super_admin_check(_auth)
-    updated = await _ready(_public_incident_repo).update_status(public_id, req.status, reviewed_by=_auth.key_id)
+    updated = await _ready(_public_incident_repo).update_status(
+        public_id, req.status, reviewed_by=_auth.key_id
+    )
     if updated is None:
         raise HTTPException(404, "No published incident found with this ID.")
     return updated
@@ -2696,6 +2834,7 @@ async def incident_db_get(request: Request, public_id: str) -> dict[str, Any]:
 # same reason (there is no "this org's" evidence/approvals for a key that
 # isn't scoped to an org).
 
+
 @app.get("/api/governance/evidence", tags=["governance"])
 @limiter.limit("30/minute")
 async def governance_list_evidence(
@@ -2705,8 +2844,12 @@ async def governance_list_evidence(
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
 ) -> dict[str, Any]:
     if not _auth.org_id:
-        raise HTTPException(400, "Governance evidence requires an org-scoped API key, not a legacy flat key.")
-    records = await _ready(_evidence_repo).list_for_org(_auth.org_id, limit=limit, decision=decision)
+        raise HTTPException(
+            400, "Governance evidence requires an org-scoped API key, not a legacy flat key."
+        )
+    records = await _ready(_evidence_repo).list_for_org(
+        _auth.org_id, limit=limit, decision=decision
+    )
     return {"evidence": [r.to_dict() for r in records], "limit": limit}
 
 
@@ -2721,7 +2864,9 @@ async def governance_verify_evidence(
     /api/incident-db/verify offers for the public registry, scoped here
     to the caller's own org rather than public."""
     if not _auth.org_id:
-        raise HTTPException(400, "Governance evidence requires an org-scoped API key, not a legacy flat key.")
+        raise HTTPException(
+            400, "Governance evidence requires an org-scoped API key, not a legacy flat key."
+        )
     intact = await _ready(_evidence_repo).verify_chain(_auth.org_id)
     return {"org_id": _auth.org_id, "chain_intact": intact}
 
@@ -2730,8 +2875,12 @@ async def governance_verify_evidence(
 @limiter.limit("10/minute")
 async def governance_export_evidence_bundle(
     request: Request,
-    since: str | None = Query(default=None, description="ISO-8601 recorded_at lower bound, inclusive."),
-    until: str | None = Query(default=None, description="ISO-8601 recorded_at upper bound, inclusive."),
+    since: str | None = Query(
+        default=None, description="ISO-8601 recorded_at lower bound, inclusive."
+    ),
+    until: str | None = Query(
+        default=None, description="ISO-8601 recorded_at upper bound, inclusive."
+    ),
     limit: int = Query(default=1000, ge=1, le=10_000),
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
 ) -> dict[str, Any]:
@@ -2746,7 +2895,9 @@ async def governance_export_evidence_bundle(
     first record's prev_hash is an external anchor, not something the
     bundle alone proves -- see that module's docstring."""
     if not _auth.org_id:
-        raise HTTPException(400, "Governance evidence requires an org-scoped API key, not a legacy flat key.")
+        raise HTTPException(
+            400, "Governance evidence requires an org-scoped API key, not a legacy flat key."
+        )
     records = await _ready(_evidence_repo).list_for_bundle(
         _auth.org_id, since=since, until=until, limit=limit
     )
@@ -2787,7 +2938,9 @@ async def governance_list_pending_approvals(
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
 ) -> dict[str, Any]:
     if not _auth.org_id:
-        raise HTTPException(400, "Governance approvals require an org-scoped API key, not a legacy flat key.")
+        raise HTTPException(
+            400, "Governance approvals require an org-scoped API key, not a legacy flat key."
+        )
     pending = await _ready(_approval_repo).list_pending(_auth.org_id, limit=limit)
     return {"pending": [p.to_dict() for p in pending], "limit": limit}
 
@@ -2805,7 +2958,9 @@ async def governance_resolve_approval(
     proceeds is a materially different responsibility than viewing the
     record of past decisions."""
     if not _auth.org_id:
-        raise HTTPException(400, "Governance approvals require an org-scoped API key, not a legacy flat key.")
+        raise HTTPException(
+            400, "Governance approvals require an org-scoped API key, not a legacy flat key."
+        )
     existing = await _ready(_approval_repo).get(approval_id)
     if existing is None:
         raise HTTPException(404, "No approval request found with this ID.")
@@ -2832,8 +2987,11 @@ async def governance_resolve_approval(
         raise HTTPException(409, str(exc)) from None
     observe_governance_approval(req.outcome, org_id=_auth.org_id)
     logger.info(
-        "governance_approval_resolved", approval_id=approval_id,
-        outcome=req.outcome, resolved_by=_auth.key_id, org_id=_auth.org_id,
+        "governance_approval_resolved",
+        approval_id=approval_id,
+        outcome=req.outcome,
+        resolved_by=_auth.key_id,
+        org_id=_auth.org_id,
         status=resolved.status.value,
     )
     return resolved.to_dict()
@@ -2852,7 +3010,9 @@ async def governance_list_approval_votes(
     closed (or is closing) it, not the full history for a quorum > 1
     approval."""
     if not _auth.org_id:
-        raise HTTPException(400, "Governance approvals require an org-scoped API key, not a legacy flat key.")
+        raise HTTPException(
+            400, "Governance approvals require an org-scoped API key, not a legacy flat key."
+        )
     approval = await _ready(_approval_repo).get(approval_id)
     if approval is None or approval.organization_id != _auth.org_id:
         raise HTTPException(404, "No approval request found with this ID.")
@@ -2880,7 +3040,9 @@ async def governance_execute_approval(
     is at least as privileged as approving it.
     """
     if not _auth.org_id:
-        raise HTTPException(400, "Governance approvals require an org-scoped API key, not a legacy flat key.")
+        raise HTTPException(
+            400, "Governance approvals require an org-scoped API key, not a legacy flat key."
+        )
     try:
         result = await resume_approval(
             approval_id,
@@ -2900,7 +3062,9 @@ async def governance_execute_approval(
         # this endpoint existed.
         raise HTTPException(422, str(exc)) from None
     logger.info(
-        "governance_approval_executed", approval_id=approval_id, org_id=_auth.org_id,
+        "governance_approval_executed",
+        approval_id=approval_id,
+        org_id=_auth.org_id,
     )
     return {"approval_id": approval_id, "result": result}
 
@@ -2928,7 +3092,9 @@ async def governance_get_policy(
     what an org actually configured, queryable and editable without a
     deploy."""
     if not _auth.org_id:
-        raise HTTPException(400, "Governance policy requires an org-scoped API key, not a legacy flat key.")
+        raise HTTPException(
+            400, "Governance policy requires an org-scoped API key, not a legacy flat key."
+        )
     policy = await _ready(_policy_repo).get_policy(_auth.org_id)
     return {"org_id": _auth.org_id, "rules": [_policy_rule_to_dict(r) for r in policy.rules]}
 
@@ -2946,7 +3112,9 @@ async def governance_add_policy_rule(
     the evaluation order; use POST /api/governance/policy/reorder to
     change that."""
     if not _auth.org_id:
-        raise HTTPException(400, "Governance policy requires an org-scoped API key, not a legacy flat key.")
+        raise HTTPException(
+            400, "Governance policy requires an org-scoped API key, not a legacy flat key."
+        )
     try:
         rule = PolicyRule(
             rule_id=req.rule_id,
@@ -2962,7 +3130,12 @@ async def governance_add_policy_rule(
     if any(r.rule_id == rule.rule_id for r in existing.rules):
         raise HTTPException(409, f"Rule {rule.rule_id!r} already exists for this org.")
     await _ready(_policy_repo).add_rule(_auth.org_id, rule)
-    logger.info("governance_policy_rule_added", rule_id=rule.rule_id, org_id=_auth.org_id, added_by=_auth.key_id)
+    logger.info(
+        "governance_policy_rule_added",
+        rule_id=rule.rule_id,
+        org_id=_auth.org_id,
+        added_by=_auth.key_id,
+    )
     return _policy_rule_to_dict(rule)
 
 
@@ -2974,12 +3147,19 @@ async def governance_remove_policy_rule(
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, str]:
     if not _auth.org_id:
-        raise HTTPException(400, "Governance policy requires an org-scoped API key, not a legacy flat key.")
+        raise HTTPException(
+            400, "Governance policy requires an org-scoped API key, not a legacy flat key."
+        )
     try:
         await _ready(_policy_repo).remove_rule(_auth.org_id, rule_id)
     except PolicyRuleNotFoundError as exc:
         raise HTTPException(404, str(exc)) from None
-    logger.info("governance_policy_rule_removed", rule_id=rule_id, org_id=_auth.org_id, removed_by=_auth.key_id)
+    logger.info(
+        "governance_policy_rule_removed",
+        rule_id=rule_id,
+        org_id=_auth.org_id,
+        removed_by=_auth.key_id,
+    )
     return {"status": "removed", "rule_id": rule_id}
 
 
@@ -2991,7 +3171,9 @@ async def governance_reorder_policy(
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, Any]:
     if not _auth.org_id:
-        raise HTTPException(400, "Governance policy requires an org-scoped API key, not a legacy flat key.")
+        raise HTTPException(
+            400, "Governance policy requires an org-scoped API key, not a legacy flat key."
+        )
     try:
         await _ready(_policy_repo).reorder(_auth.org_id, req.rule_ids)
     except ValueError as exc:
@@ -3020,7 +3202,9 @@ async def governance_get_workflow_rules(
     tool call via governance/workflow.py's check_composition_violation().
     """
     if not _auth.org_id:
-        raise HTTPException(400, "Workflow rules require an org-scoped API key, not a legacy flat key.")
+        raise HTTPException(
+            400, "Workflow rules require an org-scoped API key, not a legacy flat key."
+        )
     rules = await _ready(_workflow_rule_repo).get_rules(_auth.org_id)
     return {"org_id": _auth.org_id, "rules": [_workflow_rule_to_dict(r) for r in rules]}
 
@@ -3036,16 +3220,23 @@ async def governance_add_workflow_rule(
     rule) — it changes what future action sequences this org's own
     agents are allowed to complete."""
     if not _auth.org_id:
-        raise HTTPException(400, "Workflow rules require an org-scoped API key, not a legacy flat key.")
+        raise HTTPException(
+            400, "Workflow rules require an org-scoped API key, not a legacy flat key."
+        )
     rule = WorkflowSequenceRule(
-        rule_id=req.rule_id, action_types=tuple(req.action_types), window_minutes=req.window_minutes,
+        rule_id=req.rule_id,
+        action_types=tuple(req.action_types),
+        window_minutes=req.window_minutes,
     )
     try:
         await _ready(_workflow_rule_repo).add_rule(_auth.org_id, rule)
     except WorkflowRuleAlreadyExistsError as exc:
         raise HTTPException(409, str(exc)) from None
     logger.info(
-        "governance_workflow_rule_added", rule_id=rule.rule_id, org_id=_auth.org_id, added_by=_auth.key_id,
+        "governance_workflow_rule_added",
+        rule_id=rule.rule_id,
+        org_id=_auth.org_id,
+        added_by=_auth.key_id,
     )
     return _workflow_rule_to_dict(rule)
 
@@ -3058,13 +3249,18 @@ async def governance_remove_workflow_rule(
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, str]:
     if not _auth.org_id:
-        raise HTTPException(400, "Workflow rules require an org-scoped API key, not a legacy flat key.")
+        raise HTTPException(
+            400, "Workflow rules require an org-scoped API key, not a legacy flat key."
+        )
     try:
         await _ready(_workflow_rule_repo).remove_rule(_auth.org_id, rule_id)
     except WorkflowRuleNotFoundError as exc:
         raise HTTPException(404, str(exc)) from None
     logger.info(
-        "governance_workflow_rule_removed", rule_id=rule_id, org_id=_auth.org_id, removed_by=_auth.key_id,
+        "governance_workflow_rule_removed",
+        rule_id=rule_id,
+        org_id=_auth.org_id,
+        removed_by=_auth.key_id,
     )
     return {"status": "removed", "rule_id": rule_id}
 
@@ -3083,7 +3279,9 @@ async def governance_grant_delegation(
     via validate_attenuation() (db/delegation_repository.py's grant());
     a mismatch is a 422, not a silent narrowing."""
     if not _auth.org_id:
-        raise HTTPException(400, "Delegations require an org-scoped API key, not a legacy flat key.")
+        raise HTTPException(
+            400, "Delegations require an org-scoped API key, not a legacy flat key."
+        )
     expires_at = None
     if req.expires_in_minutes is not None:
         expires_at = datetime.now(UTC) + timedelta(minutes=req.expires_in_minutes)
@@ -3122,7 +3320,9 @@ async def governance_get_delegation_chain(
     """The root-first authority chain behind `identity_id`'s current
     authority -- empty if it has no active delegation."""
     if not _auth.org_id:
-        raise HTTPException(400, "Delegations require an org-scoped API key, not a legacy flat key.")
+        raise HTTPException(
+            400, "Delegations require an org-scoped API key, not a legacy flat key."
+        )
     return await _ready(_delegation_repo).explain_authority(_auth.org_id, identity_id)
 
 
@@ -3139,7 +3339,9 @@ async def governance_revoke_delegation(
     revoked identity can never leave a still-valid grant standing for
     anyone it delegated to."""
     if not _auth.org_id:
-        raise HTTPException(400, "Delegations require an org-scoped API key, not a legacy flat key.")
+        raise HTTPException(
+            400, "Delegations require an org-scoped API key, not a legacy flat key."
+        )
     revoked_ids = await _ready(_delegation_repo).revoke_branch(
         _auth.org_id, identity_id, revoked_by=_auth.key_id, reason=req.reason
     )
@@ -3182,6 +3384,7 @@ async def governance_supplychain_scan(
 # governance/upstream.py, governance/upstream_executor.py,
 # mcp/upstream_dispatch.py.
 
+
 @app.post("/api/governance/upstream/servers", tags=["governance"], status_code=201)
 @limiter.limit("10/minute")
 async def upstream_register_server(
@@ -3195,14 +3398,25 @@ async def upstream_register_server(
     unspecified addresses, cloud-metadata endpoint) before anything is
     persisted."""
     if not _auth.org_id:
-        raise HTTPException(400, "Upstream servers require an org-scoped API key, not a legacy flat key.")
+        raise HTTPException(
+            400, "Upstream servers require an org-scoped API key, not a legacy flat key."
+        )
     try:
         server = await _ready(_upstream_registry).register(
-            _auth.org_id, req.name, req.url, added_by=_auth.key_id, auth_token=req.auth_token,
+            _auth.org_id,
+            req.name,
+            req.url,
+            added_by=_auth.key_id,
+            auth_token=req.auth_token,
         )
     except UnsafeUpstreamServerURLError as exc:
         raise HTTPException(422, str(exc)) from None
-    logger.info("upstream_server_registered", server_id=server.server_id, org_id=_auth.org_id, added_by=_auth.key_id)
+    logger.info(
+        "upstream_server_registered",
+        server_id=server.server_id,
+        org_id=_auth.org_id,
+        added_by=_auth.key_id,
+    )
     return server.to_dict()
 
 
@@ -3213,7 +3427,9 @@ async def upstream_list_servers(
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
 ) -> dict[str, Any]:
     if not _auth.org_id:
-        raise HTTPException(400, "Upstream servers require an org-scoped API key, not a legacy flat key.")
+        raise HTTPException(
+            400, "Upstream servers require an org-scoped API key, not a legacy flat key."
+        )
     servers = await _ready(_upstream_registry).list_for_org(_auth.org_id)
     return {"servers": [s.to_dict() for s in servers]}
 
@@ -3232,7 +3448,9 @@ async def upstream_list_tools(
     appears in `errors`, not as a 500 for the whole request -- one
     broken registration must not hide every other server's tools."""
     if not _auth.org_id:
-        raise HTTPException(400, "Upstream servers require an org-scoped API key, not a legacy flat key.")
+        raise HTTPException(
+            400, "Upstream servers require an org-scoped API key, not a legacy flat key."
+        )
     tools, errors = await discover_upstream_tools(_ready(_upstream_registry), _auth.org_id)
     return {"tools": [t.to_dict() for t in tools], "errors": errors}
 
@@ -3245,12 +3463,16 @@ async def upstream_remove_server(
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, str]:
     if not _auth.org_id:
-        raise HTTPException(400, "Upstream servers require an org-scoped API key, not a legacy flat key.")
+        raise HTTPException(
+            400, "Upstream servers require an org-scoped API key, not a legacy flat key."
+        )
     try:
         await _ready(_upstream_registry).remove(_auth.org_id, server_id)
     except UpstreamServerNotFoundError as exc:
         raise HTTPException(404, str(exc)) from None
-    logger.info("upstream_server_removed", server_id=server_id, org_id=_auth.org_id, removed_by=_auth.key_id)
+    logger.info(
+        "upstream_server_removed", server_id=server_id, org_id=_auth.org_id, removed_by=_auth.key_id
+    )
     return {"status": "removed", "server_id": server_id}
 
 
@@ -3270,11 +3492,16 @@ async def upstream_call_tool(
     ANALYST+ tier as internal governed tool calls: real authorization
     happens in the governance pipeline, not the REST role check."""
     if not _auth.org_id:
-        raise HTTPException(400, "Upstream calls require an org-scoped API key, not a legacy flat key.")
+        raise HTTPException(
+            400, "Upstream calls require an org-scoped API key, not a legacy flat key."
+        )
     executor = UpstreamMCPExecutor(_ready(_upstream_registry))
     try:
         outcome = await apply_upstream_governance(
-            server_id, req.tool_name, req.arguments, _auth,
+            server_id,
+            req.tool_name,
+            req.arguments,
+            _auth,
             gateway=_upstream_gateway,
             evidence_repo=_ready(_evidence_repo),
             policy_repo=_ready(_policy_repo),
@@ -3290,6 +3517,7 @@ async def upstream_call_tool(
 
 
 # ── WebSocket live dashboard ───────────────────────────────────────────────────
+
 
 @app.websocket("/ws/dashboard")
 async def websocket_dashboard(
@@ -3327,6 +3555,7 @@ async def websocket_dashboard(
 
 # ── Webhooks CRUD ──────────────────────────────────────────────────────────────
 
+
 @app.post("/api/webhooks", tags=["webhooks"])
 @limiter.limit("30/minute")
 async def create_webhook(
@@ -3343,10 +3572,12 @@ async def create_webhook(
     except UnsafeWebhookURLError as exc:
         raise HTTPException(400, f"Invalid webhook URL: {exc}") from exc
     config = WebhookConfig(
-        url=req.url, events=events,
+        url=req.url,
+        events=events,
         org_id=_auth.org_id,
         provider=WebhookProvider(req.provider),
-        secret=req.secret, description=req.description,
+        secret=req.secret,
+        description=req.description,
         max_retries=req.max_retries,
     )
     await _webhook_manager.register_and_persist(config)
@@ -3419,6 +3650,7 @@ async def test_webhook(
 
 # ── Trust & Evaluation ─────────────────────────────────────────────────────────
 
+
 @app.post("/api/evaluate", tags=["trust"])
 @limiter.limit(settings.rate_limit_evaluate)
 async def evaluate_model(
@@ -3427,57 +3659,85 @@ async def evaluate_model(
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
 ) -> dict[str, Any]:
     score = _ready(_trust_engine).compute(
-        fairness=req.fairness, privacy=req.privacy, security=req.security,
-        robustness=req.robustness, compliance=req.compliance, authenticity=req.authenticity,
+        fairness=req.fairness,
+        privacy=req.privacy,
+        security=req.security,
+        robustness=req.robustness,
+        compliance=req.compliance,
+        authenticity=req.authenticity,
     )
     compliance_report = _ready(_compliance).evaluate(
-        fairness_score=req.fairness, privacy_score=req.privacy,
-        security_score=req.security, robustness_score=req.robustness,
-        compliance_maturity=req.compliance, use_case=req.use_case,
+        fairness_score=req.fairness,
+        privacy_score=req.privacy,
+        security_score=req.security,
+        robustness_score=req.robustness,
+        compliance_maturity=req.compliance,
+        use_case=req.use_case,
     )
     passport = _ready(_passport_gen).generate(
-        model_name=req.model_name, provider=req.provider, trust_score=score,
+        model_name=req.model_name,
+        provider=req.provider,
+        trust_score=score,
         compliance_summary={"overall": round(compliance_report.compliance_score * 100, 1)},
     )
     await _ready(_passport_repo).create(passport, org_id=_auth.org_id, source="evaluate")
     drift_alert = None
     if req.record_drift:
-        drift_alert = await _ready(_trust_repo).record(req.model_name, req.provider, score, org_id=_auth.org_id)
+        drift_alert = await _ready(_trust_repo).record(
+            req.model_name, req.provider, score, org_id=_auth.org_id
+        )
 
     observe_trust_score(req.model_name, req.provider, score.overall, org_id=_auth.org_id)
     record_evaluation(req.model_name, req.provider, score.overall, score.grade)
 
-    await _ws_manager.broadcast({
-        "type": "trust_score",
-        "data": {
-            "model": req.model_name, "provider": req.provider,
-            "score": score.overall, "grade": score.grade,
-            "timestamp": datetime.now(UTC).isoformat(),
-        },
-    })
+    await _ws_manager.broadcast(
+        {
+            "type": "trust_score",
+            "data": {
+                "model": req.model_name,
+                "provider": req.provider,
+                "score": score.overall,
+                "grade": score.grade,
+                "timestamp": datetime.now(UTC).isoformat(),
+            },
+        }
+    )
 
     if drift_alert:
         observe_drift_alert(drift_alert.get("severity", "LOW"), org_id=_auth.org_id)
         deliveries = await _webhook_manager.fire(
             WebhookEvent.DRIFT_ALERT,
-            {"model": req.model_name, "provider": req.provider,
-             "delta": drift_alert.get("delta"), "severity": drift_alert.get("severity"),
-             "score": score.overall},
+            {
+                "model": req.model_name,
+                "provider": req.provider,
+                "delta": drift_alert.get("delta"),
+                "severity": drift_alert.get("severity"),
+                "score": score.overall,
+            },
         )
         for d in deliveries:
             observe_webhook_delivery(WebhookEvent.DRIFT_ALERT.value, d.success, org_id=_auth.org_id)
-        await _ws_manager.broadcast({
-            "type": "drift_alert",
-            "data": {**drift_alert, "model": req.model_name, "provider": req.provider},
-        })
+        await _ws_manager.broadcast(
+            {
+                "type": "drift_alert",
+                "data": {**drift_alert, "model": req.model_name, "provider": req.provider},
+            }
+        )
 
-    logger.info("evaluation", model=req.model_name, provider=req.provider,
-                score=score.overall, grade=score.grade)
+    logger.info(
+        "evaluation",
+        model=req.model_name,
+        provider=req.provider,
+        score=score.overall,
+        grade=score.grade,
+    )
     return {
         "trust_score": score.to_dict(),
         "compliance": {
             "overall_score": round(compliance_report.compliance_score * 100, 2),
-            "eu_ai_act_tier": compliance_report.eu_ai_act_tier.value if compliance_report.eu_ai_act_tier else None,
+            "eu_ai_act_tier": compliance_report.eu_ai_act_tier.value
+            if compliance_report.eu_ai_act_tier
+            else None,
             "violations": len(compliance_report.violations),
             "frameworks_evaluated": len(compliance_report.frameworks),
         },
@@ -3499,7 +3759,9 @@ async def get_trust_history(
 ) -> dict[str, Any]:
     if limit < 1 or limit > 365:
         raise HTTPException(400, "limit must be between 1 and 365")
-    history = await _ready(_trust_repo).history(model_name, provider, limit=limit, org_id=_auth.org_id)
+    history = await _ready(_trust_repo).history(
+        model_name, provider, limit=limit, org_id=_auth.org_id
+    )
     trend = await _ready(_trust_repo).trend(model_name, provider, org_id=_auth.org_id)
     return {"model": model_name, "provider": provider, "history": history, "trend": trend}
 
@@ -3515,6 +3777,7 @@ async def list_models(
 
 # ── Guardrails ─────────────────────────────────────────────────────────────────
 
+
 @app.post("/api/scan", tags=["guardrails"])
 @limiter.limit("200/minute")
 async def scan_text(
@@ -3528,17 +3791,24 @@ async def scan_text(
     record_guardrail_scan(blocked, len(result.pii_findings))
 
     if blocked:
-        await _ws_manager.broadcast({
-            "type": "guardrail",
-            "data": {"blocked": True, "pii_count": len(result.pii_findings),
-                     "timestamp": datetime.now(UTC).isoformat()},
-        })
+        await _ws_manager.broadcast(
+            {
+                "type": "guardrail",
+                "data": {
+                    "blocked": True,
+                    "pii_count": len(result.pii_findings),
+                    "timestamp": datetime.now(UTC).isoformat(),
+                },
+            }
+        )
         deliveries = await _webhook_manager.fire(
             WebhookEvent.GUARDRAIL_TRIGGERED,
             {"pii_count": len(result.pii_findings), "block_reasons": result.block_reasons},
         )
         for d in deliveries:
-            observe_webhook_delivery(WebhookEvent.GUARDRAIL_TRIGGERED.value, d.success, org_id=_auth.org_id)
+            observe_webhook_delivery(
+                WebhookEvent.GUARDRAIL_TRIGGERED.value, d.success, org_id=_auth.org_id
+            )
 
     return {
         "is_blocked": blocked,
@@ -3547,13 +3817,13 @@ async def scan_text(
         "block_reasons": result.block_reasons,
         "redacted_text": result.redacted_text,
         "pii_findings": [
-            {"category": f.category, "start": f.start, "end": f.end}
-            for f in result.pii_findings
+            {"category": f.category, "start": f.start, "end": f.end} for f in result.pii_findings
         ],
     }
 
 
 # ── Hallucination ──────────────────────────────────────────────────────────────
+
 
 @app.post("/api/hallucination", tags=["hallucination"])
 @limiter.limit("100/minute")
@@ -3579,6 +3849,7 @@ async def analyze_hallucination(
 
 # ── Cost Intelligence ──────────────────────────────────────────────────────────
 
+
 @app.post("/api/cost/record", tags=["cost"])
 @limiter.limit("500/minute")
 async def record_usage(
@@ -3587,33 +3858,54 @@ async def record_usage(
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
 ) -> dict[str, Any]:
     usage = TokenUsage.create(
-        provider=req.provider, model=req.model,
-        input_tokens=req.input_tokens, output_tokens=req.output_tokens,
-        team=req.team, application=req.application,
+        provider=req.provider,
+        model=req.model,
+        input_tokens=req.input_tokens,
+        output_tokens=req.output_tokens,
+        team=req.team,
+        application=req.application,
         org_id=_auth.org_id,
     )
     cost_record = await _ready(_cost_repo).record(usage)
-    observe_cost(req.model, req.provider, cost_record.total_cost, req.input_tokens, req.output_tokens, org_id=_auth.org_id)
-    record_cost(req.provider, req.model, cost_record.total_cost, req.input_tokens + req.output_tokens)
+    observe_cost(
+        req.model,
+        req.provider,
+        cost_record.total_cost,
+        req.input_tokens,
+        req.output_tokens,
+        org_id=_auth.org_id,
+    )
+    record_cost(
+        req.provider, req.model, cost_record.total_cost, req.input_tokens + req.output_tokens
+    )
 
-    await _ws_manager.broadcast({
-        "type": "cost_update",
-        "data": {"model": req.model, "provider": req.provider,
-                 "cost_usd": cost_record.total_cost,
-                 "tokens": req.input_tokens + req.output_tokens,
-                 "timestamp": datetime.now(UTC).isoformat()},
-    })
+    await _ws_manager.broadcast(
+        {
+            "type": "cost_update",
+            "data": {
+                "model": req.model,
+                "provider": req.provider,
+                "cost_usd": cost_record.total_cost,
+                "tokens": req.input_tokens + req.output_tokens,
+                "timestamp": datetime.now(UTC).isoformat(),
+            },
+        }
+    )
 
     budget = await _ready(_cost_repo).check_budget(org_id=_auth.org_id)
     if budget.is_exceeded:
         deliveries = await _webhook_manager.fire(
             WebhookEvent.BUDGET_EXCEEDED,
-            {"monthly_limit_usd": budget.monthly_limit_usd,
-             "total_spent_usd": budget.total_spent_usd,
-             "overage_usd": round(budget.total_spent_usd - budget.monthly_limit_usd, 4)},
+            {
+                "monthly_limit_usd": budget.monthly_limit_usd,
+                "total_spent_usd": budget.total_spent_usd,
+                "overage_usd": round(budget.total_spent_usd - budget.monthly_limit_usd, 4),
+            },
         )
         for d in deliveries:
-            observe_webhook_delivery(WebhookEvent.BUDGET_EXCEEDED.value, d.success, org_id=_auth.org_id)
+            observe_webhook_delivery(
+                WebhookEvent.BUDGET_EXCEEDED.value, d.success, org_id=_auth.org_id
+            )
 
     return cost_record.to_dict()
 
@@ -3647,8 +3939,10 @@ async def analyze_prompt(
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
 ) -> dict[str, Any]:
     result = _ready(_cost_analyzer).analyze_prompt_efficiency(
-        prompt=req.prompt, response=req.response,
-        provider=req.provider, model=req.model,
+        prompt=req.prompt,
+        response=req.response,
+        provider=req.provider,
+        model=req.model,
         monthly_requests=req.monthly_requests,
     )
     return result.to_dict()
@@ -3676,6 +3970,7 @@ async def model_pricing(
 
 # ── Drift ──────────────────────────────────────────────────────────────────────
 
+
 @app.get("/api/drift/{model_name}/{provider}", tags=["drift"])
 @limiter.limit("120/minute")
 async def get_drift_trend(
@@ -3690,6 +3985,7 @@ async def get_drift_trend(
 
 
 # ── API versioning ─────────────────────────────────────────────────────────────
+
 
 @app.get("/api/version", tags=["ops"])
 async def api_version() -> dict[str, Any]:
@@ -3711,31 +4007,38 @@ async def api_version() -> dict[str, Any]:
 
 # ── SSO / OAuth2 / OIDC ───────────────────────────────────────────────────────
 
+
 @app.get("/api/auth/providers", tags=["auth"])
 async def list_auth_providers() -> dict[str, Any]:
     """List configured authentication providers."""
     providers = []
     if settings.oidc_issuer:
-        providers.append({
-            "id": "oidc",
-            "type": "oidc",
-            "issuer": settings.oidc_issuer,
-            "client_id": settings.oidc_client_id,
-            "login_url": "/api/auth/login/oidc",
-        })
+        providers.append(
+            {
+                "id": "oidc",
+                "type": "oidc",
+                "issuer": settings.oidc_issuer,
+                "client_id": settings.oidc_client_id,
+                "login_url": "/api/auth/login/oidc",
+            }
+        )
     if _saml_config:
-        providers.append({
-            "id": "saml",
-            "type": "saml",
-            "idp_entity_id": _saml_config.idp_entity_id,
-            "login_url": "/api/auth/login/saml",
-            "sp_metadata_url": "/api/auth/saml/metadata",
-        })
-    providers.append({
-        "id": "api_key",
-        "type": "api_key",
-        "description": "Static API key via Authorization: Bearer <key>",
-    })
+        providers.append(
+            {
+                "id": "saml",
+                "type": "saml",
+                "idp_entity_id": _saml_config.idp_entity_id,
+                "login_url": "/api/auth/login/saml",
+                "sp_metadata_url": "/api/auth/saml/metadata",
+            }
+        )
+    providers.append(
+        {
+            "id": "api_key",
+            "type": "api_key",
+            "description": "Static API key via Authorization: Bearer <key>",
+        }
+    )
     return {"providers": providers, "count": len(providers)}
 
 
@@ -3816,7 +4119,9 @@ async def saml_acs(request: Request) -> Response:
         raise HTTPException(401, f"SAML assertion validation failed: {e}") from None
 
     session_token = mint_session_token(_saml_config, claims)
-    fragment = f"token={quote(session_token)}&name={quote(claims.name or claims.email or claims.sub)}"
+    fragment = (
+        f"token={quote(session_token)}&name={quote(claims.name or claims.email or claims.sub)}"
+    )
     return RedirectResponse(url=f"/auth/complete#{fragment}", status_code=302)
 
 
@@ -3854,7 +4159,9 @@ async def auth_callback(
         raise HTTPException(401, f"Token validation failed: {e}") from None
 
     access_token = tokens.get("access_token") or ""
-    fragment = f"token={quote(access_token)}&name={quote(claims.name or claims.email or claims.sub)}"
+    fragment = (
+        f"token={quote(access_token)}&name={quote(claims.name or claims.email or claims.sub)}"
+    )
     return RedirectResponse(url=f"/auth/complete#{fragment}", status_code=302)
 
 
@@ -3914,9 +4221,7 @@ async def login_with_key(request: Request, req: LoginKeyRequest) -> dict[str, An
         if mfa.verify_code(key.mfa_secret, req.mfa_code):
             return {"ok": True, "mfa_required": True}
 
-        remaining = mfa.verify_and_consume_backup_code(
-            key.mfa_backup_codes or [], req.mfa_code
-        )
+        remaining = mfa.verify_and_consume_backup_code(key.mfa_backup_codes or [], req.mfa_code)
         if remaining is not None:
             await _ready(_org_repo).consume_backup_code(ctx.key_id, remaining)
             return {"ok": True, "mfa_required": True, "backup_code_used": True}
@@ -3943,6 +4248,7 @@ async def auth_session(_auth: OrgContext = Depends(get_org_context)) -> dict[str
 
 
 # ── Support tier ───────────────────────────────────────────────────────────────
+
 
 @app.get("/api/support", tags=["support"])
 async def support_info() -> dict[str, Any]:
@@ -4000,6 +4306,7 @@ async def platform_status() -> dict[str, Any]:
 
 # ── Audit log ──────────────────────────────────────────────────────────────────
 
+
 @app.get("/api/audit", tags=["audit"])
 @limiter.limit("60/minute")
 async def list_audit_entries(
@@ -4023,7 +4330,9 @@ async def list_audit_entries(
         scoped_org_id = org_id
     else:
         scoped_org_id = None
-    rows = await _ready(_audit_repo).query(org_id=scoped_org_id, endpoint=endpoint, days=days, limit=limit, offset=offset)
+    rows = await _ready(_audit_repo).query(
+        org_id=scoped_org_id, endpoint=endpoint, days=days, limit=limit, offset=offset
+    )
     total = await _ready(_audit_repo).count(days=days, org_id=scoped_org_id)
     return {
         "entries": rows,
@@ -4055,19 +4364,42 @@ async def export_audit_log(
     rows = await _ready(_audit_repo).query(org_id=scoped_org_id, days=days, limit=5000)
     import csv as _csv
     import io as _io
+
     buf = _io.StringIO()
     writer = _csv.writer(buf)
-    writer.writerow(["id", "timestamp", "org_id", "key_id", "endpoint", "method",
-                     "status_code", "ip_address", "request_id", "duration_ms",
-                     "entry_hash", "prev_hash"])
+    writer.writerow(
+        [
+            "id",
+            "timestamp",
+            "org_id",
+            "key_id",
+            "endpoint",
+            "method",
+            "status_code",
+            "ip_address",
+            "request_id",
+            "duration_ms",
+            "entry_hash",
+            "prev_hash",
+        ]
+    )
     for r in rows:
-        writer.writerow([
-            r.get("id", ""), r.get("timestamp", ""), r.get("org_id", ""),
-            r.get("key_id", ""), r.get("endpoint", ""), r.get("method", ""),
-            r.get("status_code", ""), r.get("ip_address", ""),
-            r.get("request_id", ""), r.get("duration_ms", ""),
-            r.get("entry_hash", ""), r.get("prev_hash", ""),
-        ])
+        writer.writerow(
+            [
+                r.get("id", ""),
+                r.get("timestamp", ""),
+                r.get("org_id", ""),
+                r.get("key_id", ""),
+                r.get("endpoint", ""),
+                r.get("method", ""),
+                r.get("status_code", ""),
+                r.get("ip_address", ""),
+                r.get("request_id", ""),
+                r.get("duration_ms", ""),
+                r.get("entry_hash", ""),
+                r.get("prev_hash", ""),
+            ]
+        )
     return Response(
         content=buf.getvalue(),
         media_type="text/csv",
@@ -4106,6 +4438,7 @@ async def audit_endpoint_summary(
 
 # ── Red team ───────────────────────────────────────────────────────────────────
 
+
 @app.get("/api/redteam/payloads", tags=["redteam"])
 async def get_redteam_payloads(
     categories: list[str] | None = Query(None, description="Filter by attack category"),
@@ -4141,6 +4474,7 @@ async def analyze_redteam_responses(
 
 
 # ── Billing / revenue metering ─────────────────────────────────────────────────
+
 
 @app.get("/api/billing/usage", tags=["billing"])
 async def billing_usage(

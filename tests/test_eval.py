@@ -26,6 +26,7 @@ from responsibleai.eval.regression import RegressionDetector
 
 # ── EvalPrompt / ModelResponse ─────────────────────────────────────────────────
 
+
 class TestEvalModels:
     def test_eval_prompt_auto_id(self):
         p = EvalPrompt(prompt="Hello?")
@@ -46,6 +47,7 @@ class TestEvalModels:
 
 # ── ComparisonResult ───────────────────────────────────────────────────────────
 
+
 class TestComparisonResult:
     def test_empty_result(self):
         cr = ComparisonResult(model_a="A", model_b="B", provider_a="p", provider_b="p")
@@ -61,6 +63,7 @@ class TestComparisonResult:
 
     def test_wins_counted_correctly(self):
         from responsibleai.eval.models import PromptComparisonResult
+
         cr = ComparisonResult(model_a="A", model_b="B", provider_a="p", provider_b="p")
         cr.prompt_results.append(
             PromptComparisonResult("p1", "q", "ra", "rb", "A", "B", 80.0, 60.0, "model_a")
@@ -75,16 +78,23 @@ class TestComparisonResult:
 
 # ── BenchmarkResult ────────────────────────────────────────────────────────────
 
+
 class TestBenchmarkResult:
     def _make_result(self, corrects: list[bool], biases: list[bool]) -> BenchmarkResult:
         from responsibleai.eval.models import BenchmarkSampleResult
+
         r = BenchmarkResult(model="m", provider="p", suite=BenchmarkSuite.TRUTHFULQA)
         for i, (c, b) in enumerate(zip(corrects, biases, strict=False)):
             r.sample_results.append(
                 BenchmarkSampleResult(
-                    sample_id=f"s{i}", prompt="q", expected="e",
-                    model_response="r", model="m", correct=c,
-                    category="cat", bias_detected=b,
+                    sample_id=f"s{i}",
+                    prompt="q",
+                    expected="e",
+                    model_response="r",
+                    model="m",
+                    correct=c,
+                    category="cat",
+                    bias_detected=b,
                 )
             )
         return r
@@ -108,7 +118,15 @@ class TestBenchmarkResult:
     def test_to_dict_keys(self):
         r = self._make_result([True], [False])
         d = r.to_dict()
-        assert {"id", "model", "provider", "suite", "accuracy", "bias_rate", "overall_score"} <= d.keys()
+        assert {
+            "id",
+            "model",
+            "provider",
+            "suite",
+            "accuracy",
+            "bias_rate",
+            "overall_score",
+        } <= d.keys()
 
     def test_empty_result(self):
         r = BenchmarkResult(model="m", provider="p", suite=BenchmarkSuite.BBQ)
@@ -118,6 +136,7 @@ class TestBenchmarkResult:
 
 # ── Benchmark scoring helpers ──────────────────────────────────────────────────
 
+
 class TestBenchmarkScoringHelpers:
     def test_truthfulqa_keyword_match(self):
         assert _score_truthfulqa("Nothing happens, it's harmless.", ["nothing", "harmless"])
@@ -126,7 +145,9 @@ class TestBenchmarkScoringHelpers:
         assert not _score_truthfulqa("You will grow a watermelon.", ["nothing", "harmless"])
 
     def test_bbq_no_bias(self):
-        ok, bias = _score_bbq("We cannot determine that without more information.", ["man", "the man"])
+        ok, bias = _score_bbq(
+            "We cannot determine that without more information.", ["man", "the man"]
+        )
         assert ok and not bias
 
     def test_bbq_bias_detected(self):
@@ -141,6 +162,7 @@ class TestBenchmarkScoringHelpers:
 
 
 # ── BenchmarkRunner ────────────────────────────────────────────────────────────
+
 
 class TestBenchmarkRunner:
     def test_get_prompts_truthfulqa(self):
@@ -171,7 +193,9 @@ class TestBenchmarkRunner:
     def test_run_bbq_unbiased_responses(self):
         runner = BenchmarkRunner()
         prompts = runner.get_prompts(BenchmarkSuite.BBQ)
-        responses = {p["id"]: "We cannot determine that from the information provided." for p in prompts}
+        responses = {
+            p["id"]: "We cannot determine that from the information provided." for p in prompts
+        }
         result = runner.run("test-model", "local", BenchmarkSuite.BBQ, responses)
         assert result.bias_rate == 0.0
         assert result.accuracy == 1.0
@@ -205,6 +229,7 @@ class TestBenchmarkRunner:
 
 # ── ModelComparator ────────────────────────────────────────────────────────────
 
+
 class TestModelComparator:
     def _make_prompt_and_responses(self, text_a: str, text_b: str):
         p = EvalPrompt(prompt="What is 2+2?", expected="4")
@@ -222,10 +247,15 @@ class TestModelComparator:
     def test_pii_response_penalised(self):
         comp = ModelComparator()
         p = EvalPrompt(prompt="Tell me about Jane.", expected="general info")
-        ra = ModelResponse(prompt_id=p.id, model="A", provider="p",
-                           response="Jane's email is jane.smith@example.com and her SSN is 123-45-6789.")
-        rb = ModelResponse(prompt_id=p.id, model="B", provider="p",
-                           response="Jane is a software developer.")
+        ra = ModelResponse(
+            prompt_id=p.id,
+            model="A",
+            provider="p",
+            response="Jane's email is jane.smith@example.com and her SSN is 123-45-6789.",
+        )
+        rb = ModelResponse(
+            prompt_id=p.id, model="B", provider="p", response="Jane is a software developer."
+        )
         result = comp.compare([p], [ra], [rb], "A", "B")
         pr = result.prompt_results[0]
         assert pr.pii_detected_a is True
@@ -251,9 +281,11 @@ class TestModelComparator:
 
 # ── RegressionDetector ─────────────────────────────────────────────────────────
 
+
 class TestRegressionDetector:
     def _make_result(self, accuracy: float, bias_rate: float) -> BenchmarkResult:
         from responsibleai.eval.models import BenchmarkSampleResult
+
         r = BenchmarkResult(model="m", provider="p", suite=BenchmarkSuite.TRUTHFULQA)
         total = 10
         correct = int(accuracy * total)
@@ -261,8 +293,11 @@ class TestRegressionDetector:
         for i in range(total):
             r.sample_results.append(
                 BenchmarkSampleResult(
-                    sample_id=f"s{i}", prompt="q", expected="e",
-                    model_response="r", model="m",
+                    sample_id=f"s{i}",
+                    prompt="q",
+                    expected="e",
+                    model_response="r",
+                    model="m",
                     correct=(i < correct),
                     bias_detected=(i < biased),
                 )
@@ -289,7 +324,10 @@ class TestRegressionDetector:
         alerts = det.check("m", current)
         accuracy_alerts = [a for a in alerts if "accuracy" in a.metric]
         assert len(accuracy_alerts) > 0
-        assert accuracy_alerts[0].severity in (RegressionSeverity.MINOR, RegressionSeverity.MODERATE)
+        assert accuracy_alerts[0].severity in (
+            RegressionSeverity.MINOR,
+            RegressionSeverity.MODERATE,
+        )
 
     def test_severe_accuracy_drop_detected(self):
         det = RegressionDetector()
@@ -329,14 +367,20 @@ class TestRegressionDetector:
 
     def test_alert_to_dict_keys(self):
         alert = RegressionAlert(
-            model="m", metric="accuracy", baseline_score=0.8, current_score=0.6,
-            delta=0.2, severity=RegressionSeverity.SEVERE, suite="truthfulqa"
+            model="m",
+            metric="accuracy",
+            baseline_score=0.8,
+            current_score=0.6,
+            delta=0.2,
+            severity=RegressionSeverity.SEVERE,
+            suite="truthfulqa",
         )
         d = alert.to_dict()
         assert {"id", "detected_at", "model", "metric", "delta", "severity", "suite"} <= d.keys()
 
 
 # ── DatasetBiasScanner ─────────────────────────────────────────────────────────
+
 
 class TestDatasetBiasScanner:
     def test_scan_clean_texts(self):
@@ -391,7 +435,14 @@ class TestDatasetBiasScanner:
         scanner = DatasetBiasScanner()
         result = scanner.scan_texts(["hello", "world"])
         d = result.to_dict()
-        assert {"id", "filename", "total_rows", "flagged_rows", "bias_category_counts", "flagged_samples"} <= d.keys()
+        assert {
+            "id",
+            "filename",
+            "total_rows",
+            "flagged_rows",
+            "bias_category_counts",
+            "flagged_samples",
+        } <= d.keys()
 
     def test_racial_bias_detected(self):
         scanner = DatasetBiasScanner()

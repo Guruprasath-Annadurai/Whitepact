@@ -36,9 +36,7 @@ class GenderedProvider(BaseProvider):
         self.call_count += 1
         for job, response in self._RESPONSES.items():
             if job in request.prompt.lower():
-                return CompletionResponse(
-                    text=response, model=self.model_name, provider=self.name
-                )
+                return CompletionResponse(text=response, model=self.model_name, provider=self.name)
         return CompletionResponse(text=self._DEFAULT, model=self.model_name, provider=self.name)
 
 

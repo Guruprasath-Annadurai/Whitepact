@@ -84,9 +84,7 @@ class TestOpenAIProviderComplete:
         provider = OpenAIProvider(api_key="sk-test")
         create = AsyncMock(return_value=_mock_response())
         with patch.object(provider._client.chat.completions, "create", create):
-            await provider.complete(
-                CompletionRequest(prompt="Hello", system_prompt="Be concise.")
-            )
+            await provider.complete(CompletionRequest(prompt="Hello", system_prompt="Be concise."))
         messages = create.call_args.kwargs["messages"]
         system_msgs = [m for m in messages if m["role"] == "system"]
         assert len(system_msgs) == 1
@@ -106,7 +104,9 @@ class TestOpenAIProviderComplete:
         provider = OpenAIProvider(api_key="sk-test")
         resp = _mock_response()
         resp.choices[0].message.content = None
-        with patch.object(provider._client.chat.completions, "create", AsyncMock(return_value=resp)):
+        with patch.object(
+            provider._client.chat.completions, "create", AsyncMock(return_value=resp)
+        ):
             result = await provider.complete(CompletionRequest(prompt="Hello"))
         assert result.text == ""
 
@@ -115,7 +115,9 @@ class TestOpenAIProviderComplete:
         provider = OpenAIProvider(api_key="sk-test")
         resp = _mock_response()
         resp.usage = None
-        with patch.object(provider._client.chat.completions, "create", AsyncMock(return_value=resp)):
+        with patch.object(
+            provider._client.chat.completions, "create", AsyncMock(return_value=resp)
+        ):
             result = await provider.complete(CompletionRequest(prompt="Hello"))
         assert result.input_tokens is None
         assert result.output_tokens is None
@@ -132,12 +134,14 @@ class TestOpenAIProviderComplete:
 class TestOpenAIProviderImportError:
     def test_raises_import_error_without_openai(self) -> None:
         import sys
+
         original = sys.modules.get("openai")
         sys.modules["openai"] = None  # type: ignore[assignment]
         try:
             import importlib
 
             import biasbuster.providers.openai_provider as mod
+
             importlib.reload(mod)
             with pytest.raises(ImportError, match="openai"):
                 mod.OpenAIProvider(api_key="sk-test")
@@ -149,4 +153,5 @@ class TestOpenAIProviderImportError:
             import importlib
 
             import biasbuster.providers.openai_provider as mod
+
             importlib.reload(mod)

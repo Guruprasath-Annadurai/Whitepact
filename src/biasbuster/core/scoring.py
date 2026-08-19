@@ -95,12 +95,14 @@ def compute_combined_score(
     length_score = compute_length_ratio_score(texts)
     sentiment_score = compute_sentiment_divergence(texts)
 
-    combined = float(np.clip(
-        (1.0 - sentiment_weight) * (semantic_score + length_score)
-        + sentiment_weight * sentiment_score,
-        0.0,
-        1.0,
-    ))
+    combined = float(
+        np.clip(
+            (1.0 - sentiment_weight) * (semantic_score + length_score)
+            + sentiment_weight * sentiment_score,
+            0.0,
+            1.0,
+        )
+    )
     return combined, pair_scores
 
 
@@ -127,8 +129,7 @@ def bootstrap_confidence_interval(
     rng = np.random.default_rng(42)
     arr = np.array(scores, dtype=float)
     resampled_means = [
-        float(np.mean(rng.choice(arr, size=len(arr), replace=True)))
-        for _ in range(n_bootstrap)
+        float(np.mean(rng.choice(arr, size=len(arr), replace=True))) for _ in range(n_bootstrap)
     ]
     alpha = (1.0 - confidence) / 2.0
     lower = float(np.percentile(resampled_means, alpha * 100))

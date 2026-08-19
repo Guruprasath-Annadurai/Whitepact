@@ -47,10 +47,14 @@ class TestStdioUnrestricted:
         assert "error" not in payload
 
     async def test_no_context_allows_enterprise_tool(self):
-        result = await mcp_server._call_tool("rai_passport_generate", {
-            "model_name": "gpt-4o", "provider": "openai",
-            "trust_dimensions": {"fairness": 0.8},
-        })
+        result = await mcp_server._call_tool(
+            "rai_passport_generate",
+            {
+                "model_name": "gpt-4o",
+                "provider": "openai",
+                "trust_dimensions": {"fairness": 0.8},
+            },
+        )
         payload = result[1]
         assert "error" not in payload
 
@@ -102,10 +106,14 @@ class TestTierGating:
         ctx = OrgContext(key_id="k1", role=Role.ANALYST, org_id="org-1", plan=Plan.ENTERPRISE)
         tokens = _set_context(ctx, usage_repo)
         try:
-            result = await mcp_server._call_tool("rai_bias_evaluate", {
-                "model_name": "gpt-4o", "provider": "openai",
-                "probe_responses": {"gender": ["a response", "b response"]},
-            })
+            result = await mcp_server._call_tool(
+                "rai_bias_evaluate",
+                {
+                    "model_name": "gpt-4o",
+                    "provider": "openai",
+                    "probe_responses": {"gender": ["a response", "b response"]},
+                },
+            )
         finally:
             _reset_context(tokens)
         payload = result[1]
@@ -147,7 +155,9 @@ class TestQuotaEnforcement:
         assert payload["error"] == "quota_exceeded"
 
     async def test_enterprise_plan_unlimited_quota(self, usage_repo, monkeypatch):
-        monkeypatch.setattr(mcp_server, "monthly_quota", lambda plan: None if plan == Plan.ENTERPRISE else 1)
+        monkeypatch.setattr(
+            mcp_server, "monthly_quota", lambda plan: None if plan == Plan.ENTERPRISE else 1
+        )
         ctx = OrgContext(key_id="k1", role=Role.ANALYST, org_id="org-1", plan=Plan.ENTERPRISE)
         tokens = _set_context(ctx, usage_repo)
         try:

@@ -41,9 +41,7 @@ class TestPublicApiIdentity:
         import tomllib
         from pathlib import Path
 
-        pyproject = tomllib.loads(
-            (Path(__file__).parent.parent / "pyproject.toml").read_text()
-        )
+        pyproject = tomllib.loads((Path(__file__).parent.parent / "pyproject.toml").read_text())
         assert whitepact.__version__ == pyproject["project"]["version"]
 
 
@@ -54,8 +52,12 @@ class TestFunctionalEquivalence:
     def test_trust_score_engine_works_via_whitepact_import(self) -> None:
         engine = whitepact.TrustScoreEngine()
         score = engine.compute(
-            fairness=0.9, privacy=0.9, security=0.9,
-            robustness=0.9, compliance=0.9, authenticity=0.9,
+            fairness=0.9,
+            privacy=0.9,
+            security=0.9,
+            robustness=0.9,
+            compliance=0.9,
+            authenticity=0.9,
         )
         assert score.overall == 90.0
         assert score.grade == "A"
@@ -80,8 +82,6 @@ class TestPackageMetadata:
         import tomllib
         from pathlib import Path
 
-        pyproject = tomllib.loads(
-            (Path(__file__).parent.parent / "pyproject.toml").read_text()
-        )
+        pyproject = tomllib.loads((Path(__file__).parent.parent / "pyproject.toml").read_text())
         packages = pyproject["tool"]["hatch"]["build"]["targets"]["wheel"]["packages"]
         assert "src/whitepact" in packages
