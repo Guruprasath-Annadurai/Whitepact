@@ -254,6 +254,57 @@ UI or API) — callers construct `AuthorityContext` directly in code
 today. RBAC roles remain the only authority signal enforced
 automatically anywhere in the codebase.
 
+#### 3.3.1 Authority Passport **[TODAY, first version — Authority Everywhere Phase 5]**
+
+`docs/architecture/AUTHORITY_EVERYWHERE.md`'s lifecycle table (row 3)
+named this gap: `OrgAuthorityCeiling` above is a real subset of what a
+full "portable, provable" credential needs, but it's an in-process
+object, not something a principal can hold, export, or have
+independently re-verified later. The Phase 2 naming-collision
+resolution reserved **"Authority Passport"** for exactly this concept
+(distinct from the already-shipped `trust/passport.py`'s `AIPassport`
+— a *model's* Trust Index certification, unrelated to principal
+authority).
+
+`governance/authority_passport.py`'s `AuthorityPassport` is a portable
+snapshot of what a principal was authorized to do at issuance,
+exported from either the org's current `OrgAuthorityCeiling`
+(`build_authority_passport_from_ceiling()`) or an active
+`DelegationRecord` (`build_authority_passport_from_delegation()`).
+Issued via `POST /api/governance/authority-passports` (ADMIN+, since
+exporting a portable credential exports real usable authority),
+revocable independent of its source (`POST .../{id}/revoke`), and
+persisted append-only (`db/authority_passport_repository.py`,
+migration `0029`) — "latest issued, still-active passport wins" per
+principal, the same resolution `DelegationRepository`/
+`IntentContractRepository` already use.
+
+**"Independently verifiable" without cryptographic signing**:
+`GET /api/governance/authority-passports/{id}` always re-fetches the
+live source (the org's current ceiling, or the specific delegation the
+passport was exported from) and compares — `verify_passport()` returns
+`VALID`, `DRIFTED` (the source has since changed), `SOURCE_NOT_FOUND`
+(the source is gone/revoked), `REVOKED`, or `EXPIRED`. This never
+trusts the passport's own stored fields alone — the same "integrity by
+linkage to an already-real source" pattern `governance/attestation.py`
+already established against `EvidenceRecord`'s hash chain, generalized
+here to a ceiling/delegation row. **Deliberately not cryptographically
+signed**, for the identical reason `attestation.py`/`execution.py`
+already state: a live signing key in the running server process is a
+real secret-management burden with no infrastructure built for it, and
+a forged passport would need the same DB write access that could also
+rewrite its own source row.
+
+**Not built here**: wiring a *presented* passport into
+`WhitePactRuntimeGateway.evaluate()`'s live per-call authority
+resolution as an alternative to the ceiling/delegation lookup
+`mcp/governance_integration.py` already performs fresh on every call —
+deciding how much to trust an externally-presented credential versus
+re-deriving authority is real, separate integration work with its own
+threat model. Today `AuthorityPassport` is the portable, exportable,
+independently verifiable *representation* of a principal's authority,
+not yet a new input to the hot governance-decision path.
+
 ### 3.4 Action **[TODAY — Phase 8]**
 
 A proposed operation an agent wants to execute. Conceptually:

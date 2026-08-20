@@ -1779,3 +1779,71 @@ answers).
   `tests/test_governance_api.py` (declare, fetch active, cross-org
   isolation); full repo suite 2451 passed (up from 2416); `mypy`/`ruff`
   clean on every touched file.
+
+## 23. Authority Passport (Authority Everywhere Phase 5, 2026-08-20)
+
+Closes `docs/architecture/AUTHORITY_EVERYWHERE.md`'s lifecycle row 3
+gap: `governance/ceiling.py`'s `OrgAuthorityCeiling` is a real subset
+of a full portable credential, but it's an in-process object with no
+export/issuance/revocation/verification story of its own. The Phase 2
+naming-collision resolution reserved "Authority Passport" for this
+concept specifically to avoid colliding with the already-shipped
+`trust/passport.py` (`AIPassport` — a *model's* Trust Index
+certification, unrelated to principal authority).
+
+- **Domain model** (`governance/authority_passport.py`) —
+  `AuthorityPassport`: a snapshot of a principal's authorized bounds at
+  issuance, exported from either the org's current `OrgAuthorityCeiling`
+  (`build_authority_passport_from_ceiling()`) or an active
+  `DelegationRecord` (`build_authority_passport_from_delegation()`).
+  Revocation (`revoked_at`/`revoked_by`/`revoke_reason`) is tracked on
+  the passport itself, independent of its source — an org can revoke
+  one exported passport without touching the underlying ceiling or
+  delegation.
+- **Verification without signing** — `verify_passport()` re-fetches the
+  live source (the caller passes a freshly-fetched `ceiling` or
+  `delegation` object) and compares every claimed field, returning
+  `VALID`/`DRIFTED`/`SOURCE_NOT_FOUND`/`REVOKED`/`EXPIRED`. Same
+  "integrity by linkage to an already-real, DB-backed source" pattern
+  `attestation.py` established against `EvidenceRecord`'s hash chain,
+  generalized to a ceiling/delegation row. **Deliberately not
+  cryptographically signed** — identical reasoning to
+  `attestation.py`/`execution.py`: no live signing-key infrastructure
+  exists, and a forged passport would need the same DB write access
+  that could also rewrite its own source row, so an in-process
+  signature wouldn't verify anything a forger couldn't already fake.
+- **DB layer** (`db/authority_passport_repository.py`, migration
+  `0029`) — `issue()`/`get()`/`get_active_for_principal()`/`revoke()`.
+  "Latest issued, still-active passport wins" per principal, matching
+  `DelegationRepository`/`IntentContractRepository`'s own resolution.
+  Index names `idx_ap_org`/`idx_ap_principal` — two candidate prefixes
+  (`idx_gap_*`, then `idx_pass_*`) were already taken by
+  `governance_approvals`' own indexes from migration `0011`, caught
+  both times by the migration test suite (`sqlite3.OperationalError:
+  index ... already exists`) during development, not left as a silent
+  collision.
+- **REST endpoints** (`dashboard/app.py`) —
+  `POST /api/governance/authority-passports` (ADMIN+, same tier as a
+  delegation grant since exporting a portable credential exports real
+  usable authority, unlike Intent Contract's narrowing-only ANALYST+),
+  `GET /api/governance/authority-passports/{id}` (fetches + verifies
+  against the live source in one response), and
+  `POST .../{id}/revoke` (ADMIN+).
+- Not built in this phase: wiring a *presented* passport into
+  `WhitePactRuntimeGateway.evaluate()`'s live per-call authority
+  resolution as an alternative to the fresh ceiling/delegation lookup
+  `mcp/governance_integration.py` already performs on every call —
+  deciding how much to trust an externally-presented credential versus
+  re-deriving authority fresh is real, separate integration work with
+  its own threat model. `AuthorityPassport.to_authority_context()`
+  exists and is tested, but nothing in the hot dispatch path calls it
+  yet.
+- Verification: 35 new tests across `tests/test_authority_passport.py`
+  (unit: `is_active()`, both builder functions, all five
+  `verify_passport()` branches, DB repository) and a
+  `TestAuthorityPassportEndpoints` class added to
+  `tests/test_governance_api.py` (issue from ceiling/delegation, role
+  checks, drift detection after a live ceiling change, revocation,
+  cross-org isolation); full repo suite 2486 passed (up from 2451);
+  `mypy`/`ruff check`/`ruff format --check` clean on every touched
+  file.

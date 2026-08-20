@@ -11,6 +11,10 @@ from responsibleai.db.approval_repository import (
     SelfApprovalError,
 )
 from responsibleai.db.audit_repository import AuditRepository
+from responsibleai.db.authority_passport_repository import (
+    AuthorityPassportNotFoundError,
+    AuthorityPassportRepository,
+)
 from responsibleai.db.credential_issuance_repository import CredentialIssuanceRepository
 from responsibleai.db.delegation_repository import (
     DelegationEscalationError,
@@ -71,6 +75,8 @@ __all__ = [
     "WebhookDeliveryRepository",
     "McpUsageRepository",
     "IncidentRepository",
+    "AuthorityPassportNotFoundError",
+    "AuthorityPassportRepository",
     "IntentContractRepository",
     "LeaderboardRepository",
     "PassportRepository",
