@@ -1537,3 +1537,87 @@ implementation).
   the full pre-existing `test_memory_firewall.py` suite (12 tests)
   re-run clean and unmodified; full repo suite 2375 passed; `mypy`/`ruff`
   clean on every touched file.
+
+## 20. Outcome Observation, Reconciliation, and Attestation (Authority Everywhere Phases 12-14, 2026-08-20)
+
+The final three stages of the Authority Everywhere lifecycle doc's
+canonical pipeline (`docs/architecture/AUTHORITY_EVERYWHERE.md`) that
+had no implementation at all — closes the honestly-stated gap
+`governance/evidence.py`'s own module docstring names: "this package
+has no visibility into whether/how an allowed action was actually
+executed."
+
+- **Outcome Observation** (`governance/outcome.py`,
+  `db/outcome_repository.py`, migration `0026`) — `OutcomeRecord`
+  (`SUCCEEDED`/`FAILED`/`ERRORED`, optional minimal `result_summary`,
+  never a raw result dump) linked to its authorizing `EvidenceRecord`.
+  Auto-recorded, fail-open, at every governed-execution call site:
+  `apply_governance()`, `resume_approval()` (both
+  `mcp/governance_integration.py`), and `apply_upstream_governance()`
+  (`mcp/upstream_dispatch.py`) — `_record_evidence()` in the latter now
+  returns the persisted `EvidenceRecord` (was previously a bare `bool`)
+  so callers can link an outcome to it via `evidence.evidence_id`. A
+  manual-reporting REST endpoint
+  (`POST /api/governance/evidence/{id}/outcome`) covers callers whose
+  execution happens outside a governed dispatch call entirely.
+- **Reconciliation** (`governance/reconciliation.py`) —
+  `reconcile_outcome()` is deliberately narrower than the name might
+  suggest: the strongest mutation invariant is already enforced
+  *synchronously* before execution
+  (`ExecutionAuthorization.matches_action()`/`check_target_fingerprint()`
+  from Phase 9) — this module doesn't re-check that. What it adds:
+  detecting when a decision that authorized execution never got an
+  outcome reported at all (`MISSING_OUTCOME` — a real anomaly signal
+  nothing else in this codebase currently surfaces), a defensive
+  action-id-mismatch check, and correctly excluding
+  DENY/QUARANTINE/REQUIRE_APPROVAL from ever being flagged as missing
+  an outcome (`NOT_APPLICABLE` — nothing executed for those).
+- **Attestation** (`governance/attestation.py`,
+  `GET /api/governance/evidence/{id}/attestation`) — packages one
+  evidence entry's decision + outcome + reconciliation status into one
+  exportable record. **Not cryptographically signed**, stated in the
+  module's own docstring: the identical "don't invent cryptography for
+  a threat model that doesn't exist yet" reasoning `execution.py`
+  already established for `ExecutionAuthorization` (Section 8),
+  generalized — an automated per-action signing key sitting in the
+  server process is a real secret-management burden with no
+  infrastructure built for it yet, and integrity today is by linkage to
+  the already-real `EvidenceRecord` hash chain instead, made explicit in
+  every response via an `integrity_note` field rather than left
+  implicit or overclaimed.
+- **Two real, non-obvious test-isolation bugs found and fixed while
+  building this phase's tests** (recorded here since they're a real
+  gotcha, not this feature's own logic bug): (1) `dashboard/app.py`
+  imports `create_engine` at module load time
+  (`from responsibleai.db import create_engine`), binding an
+  independent name into its own namespace — monkeypatching
+  `responsibleai.db.create_engine` alone (the pattern
+  `test_mcp_governance_dispatch.py` established, which works because
+  `mcp/server.py` imports it lazily *inside* `_build_http_app()`) never
+  reaches that already-bound reference, so a test running both a
+  governed-MCP app and the dashboard app against "the same" engine
+  silently got two disconnected empty databases instead. (2)
+  `dashboard/config.get_settings()` lazily caches a module-level
+  `_settings` singleton — patching an already-imported `settings`
+  object works only as long as nothing resets that cache in between; a
+  test combining `_build_http_app()` (which calls `get_settings()`
+  fresh) with the dashboard app needs to pin
+  `config_module._settings = settings` explicitly, not just patch
+  attributes on the imported name, or full-suite run order can silently
+  desync the two. Both fixed in
+  `tests/test_outcome_reconciliation_attestation.py`'s `governed_mcp`
+  fixture; documented here in case a future test hits the same class of
+  bug.
+- Not built in this phase: outcome-content verification (checking that
+  a tool's result plausibly matches its risk tier or arguments — real,
+  separate, per-tool-domain work); any UI for outcome/attestation data
+  (REST only); published external chain-checkpoint commitments (the
+  concrete next step that would make attestation verification meaningful
+  even against a fully compromised DB, not attempted here).
+- Verification: 20 new tests
+  (`tests/test_outcome_reconciliation_attestation.py`), including a
+  real MCP protocol round trip proving auto-recording end-to-end and a
+  real REST round trip proving the attestation/manual-report endpoints;
+  full repo suite 2395 passed (up from 2375, net of the 20 new plus
+  migration-count assertion updates); `mypy`/`ruff` clean on every
+  touched file.

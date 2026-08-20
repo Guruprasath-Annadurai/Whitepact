@@ -676,6 +676,24 @@ credential_issuances = Table(
     Index("idx_ci_server", "server_id"),
 )
 
+# Outcome Observation (Authority Everywhere Phase 12): what actually
+# happened when a governed action's permit was consumed, linked to the
+# governance_evidence row that authorized the attempt. See
+# governance/outcome.py and db/outcome_repository.py.
+governance_outcomes = Table(
+    "governance_outcomes",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("evidence_id", String(36), nullable=False),
+    Column("action_id", String(36), nullable=False),
+    Column("org_id", String(36), nullable=True),
+    Column("status", String(16), nullable=False),
+    Column("result_summary", Text, nullable=True),
+    Column("observed_at", String(32), nullable=False),
+    Index("idx_go_evidence", "evidence_id"),
+    Index("idx_go_org", "org_id"),
+)
+
 
 class DatabaseEngine:
     """Async database engine wrapping SQLAlchemy — SQLite or PostgreSQL.
