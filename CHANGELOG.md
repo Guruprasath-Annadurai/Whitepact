@@ -66,12 +66,29 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
   not a new signature scheme. New endpoints
   `POST /api/governance/evidence/{id}/outcome` (manual reporting) and
   `GET /api/governance/evidence/{id}/attestation`.
+- Verified Principal (Authority Everywhere Phase 3) —
+  `auth/verifiable_credential.py`: `VerifiableCredentialProvider`
+  verifies a Bearer JWT-VC presentation against an admin-configured
+  trusted-issuer allowlist (`Settings.vc_trusted_issuers`), reusing
+  `auth/oidc.py`'s JWKS-fetch and weak/private-key-rejection machinery.
+  Lets a non-human principal — a service account, or another
+  organization's attested agent — authenticate to the hosted MCP
+  server (`mcp/server.py`'s `_authenticate`) alongside the existing
+  static-API-key and OIDC paths. Verified principals resolve to a new
+  `IdentityContext` kind (`"vc"`, `governance/models.py`) via a
+  field-names-only `PrincipalClaim` (`governance/principal.py`) and are
+  logged to a new append-only `verified_principals` audit table
+  (migration `0027`). Not built: DID resolution, JSON-LD proofs,
+  OpenID4VP presentation exchange, or revocation-list checking — see
+  the module's own docstring for the full scoping.
 - See `docs/architecture/AUTHORITY_EVERYWHERE.md` and
-  `MIGRATION_WHITEPACT_V2.md` Sections 17-20 for the full design and
-  structured phase verdicts. 24 + 17 + 26 + 20 new tests
+  `MIGRATION_WHITEPACT_V2.md` Sections 17-21 for the full design and
+  structured phase verdicts. 24 + 17 + 26 + 20 + 21 new tests
   (`tests/test_tool_trust.py`, `tests/test_jit_credential.py`,
   `tests/test_causal_influence.py`,
-  `tests/test_outcome_reconciliation_attestation.py`).
+  `tests/test_outcome_reconciliation_attestation.py`,
+  `tests/test_verifiable_credential.py` +
+  `tests/test_mcp_verified_principal.py`).
 
 ## [1.2.3] — 2026-08-19
 

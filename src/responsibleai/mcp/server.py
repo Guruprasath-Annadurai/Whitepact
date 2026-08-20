@@ -370,8 +370,18 @@ def _build_http_app() -> Any:
     from starlette.types import Receive, Scope, Send
 
     from responsibleai.auth.oidc import OIDCProvider
+    from responsibleai.auth.verifiable_credential import (
+        VerifiableCredentialProvider,
+        looks_like_vc_jwt,
+    )
     from responsibleai.dashboard.config import get_settings
-    from responsibleai.db import McpUsageRepository, OrgRepository, create_engine
+    from responsibleai.db import (
+        McpUsageRepository,
+        OrgRepository,
+        PrincipalRepository,
+        create_engine,
+    )
+    from responsibleai.governance.principal import build_principal_claim
     from responsibleai.rbac.models import Plan, Role
     from responsibleai.rbac.permissions import role_from_str
 
@@ -441,6 +451,22 @@ def _build_http_app() -> Any:
         if settings.oidc_issuer
         else None
     )
+    # Verified Principal (Authority Everywhere Phase 3) — a Bearer VC-JWT
+    # authenticates a non-human principal (service account, external
+    # attested agent) rather than a human IdP session; see
+    # auth/verifiable_credential.py's module docstring for scope. Empty
+    # `vc_trusted_issuers` (the default) disables this path entirely, the
+    # same "unset config -> feature off" posture `_oidc_provider` above
+    # already uses.
+    _vc_provider = (
+        VerifiableCredentialProvider(
+            trusted_issuers=settings.vc_trusted_issuers,
+            skip_verification=settings.vc_skip_verification,
+        )
+        if settings.vc_trusted_issuers
+        else None
+    )
+    _principal_repo = PrincipalRepository(_db_engine)
     transport_security = _build_transport_security()
     sse = SseServerTransport("/messages/", security_settings=transport_security)
     # stateless=True: each POST to /mcp is authenticated and dispatched
@@ -503,6 +529,58 @@ def _build_http_app() -> Any:
             plan=org.plan if org else Plan.FREE,
         )
 
+    async def _resolve_vc_context(token: str) -> OrgContext | None:
+        """Verified Principal (Authority Everywhere Phase 3): validate a
+        Bearer VC-JWT presentation and map it to an OrgContext, the same
+        shape `_resolve_oidc_context` produces so every downstream
+        governance call site (`IdentityContext.from_org_context`, RBAC,
+        rate limiting) works unchanged. `looks_like_vc_jwt` decides
+        *whether to attempt* VC verification without trusting anything
+        it reads — full verification happens inside
+        `validate_presentation`. Runs only after `_resolve_oidc_context`
+        has already returned `None` for this token (see `_authenticate`),
+        so an OIDC-issued JWT from this deployment's own IdP is never
+        misrouted here even if it happens to carry a `vc` claim."""
+        if _vc_provider is None or token.startswith("rai_"):
+            return None
+        if not looks_like_vc_jwt(token):
+            return None
+        try:
+            claims = await _vc_provider.validate_presentation(token)
+        except ValueError:
+            return None
+
+        try:
+            claim = build_principal_claim(claims)
+            await _principal_repo.record(claim)
+        except Exception:
+            # Audit-trail write only -- the principal is already fully
+            # verified by this point (see auth/verifiable_credential.py);
+            # a DB failure here must not block an otherwise-valid
+            # authentication, matching OutcomeRecord's fail-open posture.
+            _logger.exception(
+                "verified_principal_audit_write_failed principal_sub=%s issuer=%s",
+                claims.sub,
+                claims.issuer,
+            )
+
+        org = await _org_repo.get_org(claims.org_id) if claims.org_id else None
+        role = Role.VIEWER
+        for raw_role in claims.roles:
+            candidate = role_from_str(raw_role)
+            if candidate.value == raw_role.upper():
+                role = candidate
+                break
+
+        return OrgContext(
+            key_id=f"vc:{claims.sub}",
+            role=role,
+            org_id=claims.org_id,
+            org_name=org.name if org else None,
+            is_legacy=False,
+            plan=org.plan if org else Plan.FREE,
+        )
+
     async def _authenticate(request: Request) -> OrgContext | None:
         if settings.mcp_http_allow_unauthenticated_demo:
             # DANGER — demo/recording use only, see config.py's field
@@ -528,6 +606,9 @@ def _build_http_app() -> Any:
         oidc_ctx = await _resolve_oidc_context(raw_key)
         if oidc_ctx is not None:
             return oidc_ctx
+        vc_ctx = await _resolve_vc_context(raw_key)
+        if vc_ctx is not None:
+            return vc_ctx
         return await _org_repo.authenticate(raw_key)
 
     def _protected_resource_metadata_url(request: Request) -> str:

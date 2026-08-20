@@ -253,6 +253,22 @@ class Settings(BaseSettings):
         description="Skip JWT signature verification (test/dev only — never use in production).",
     )
 
+    # Verified Principal (Authority Everywhere Phase 3) — Verifiable
+    # Credential (JWT-VC) bearer auth for non-human principals (service
+    # accounts, external attested agents). Separate from OIDC above: an
+    # OIDC issuer is one trusted party (this deployment's own IdP); a VC
+    # deployment may need to trust several credential issuers at once,
+    # hence a list rather than a single issuer/client_id pair.
+    vc_trusted_issuers: Annotated[list[str], NoDecode] = Field(
+        default=[],
+        description="Comma-separated list of trusted Verifiable Credential issuer URLs. "
+        "Empty (default) disables Verified Principal auth entirely.",
+    )
+    vc_skip_verification: bool = Field(
+        default=False,
+        description="Skip VC-JWT signature verification (test/dev only — never use in production).",
+    )
+
     # SAML 2.0 Single Sign-On (optional — separate from OIDC above; some
     # enterprise IdPs support only one or the other, so both are wired
     # independently rather than one being built on top of the other).
@@ -421,6 +437,13 @@ class Settings(BaseSettings):
     def _parse_keys(cls, v: Any) -> list[str]:
         if isinstance(v, str):
             return [k.strip() for k in v.split(",") if k.strip()]
+        return list(v) if v else []
+
+    @field_validator("vc_trusted_issuers", mode="before")
+    @classmethod
+    def _parse_vc_trusted_issuers(cls, v: Any) -> list[str]:
+        if isinstance(v, str):
+            return [i.strip() for i in v.split(",") if i.strip()]
         return list(v) if v else []
 
     @field_validator("allowed_origins", mode="before")
