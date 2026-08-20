@@ -333,6 +333,48 @@ logged." If a future upstream server supports real token exchange,
 this is the module that would grow that capability without changing
 any caller.
 
+#### 3.4.1 Intent Contract **[TODAY, first version — Authority Everywhere Phase 4]**
+
+`docs/architecture/AUTHORITY_EVERYWHERE.md`'s lifecycle table (row 2)
+named this gap: `ActionRequest` states what's being done, not what was
+*promised* up front — there was no way to declare a goal and its bounds
+before an agent starts taking actions, so nothing could check "does
+this action still match what this task was supposed to be," only "is
+this action individually allowed."
+
+`governance/intent.py`'s `IntentContract` closes this for one task at a
+time: an agent (or its human operator, via
+`POST /api/governance/intent-contracts`) declares a `goal` string plus
+optional bounds — `max_value_usd`, `allowed_targets`/`denied_targets`,
+`allowed_action_types` — before starting a task. Every subsequent
+action from that `agent_id` is checked against the most recently
+declared, still-active contract
+(`IntentContractRepository.get_active_for_agent()`) via
+`WhitePactRuntimeGateway.evaluate()`'s new optional `intent` parameter,
+checked immediately after the existing authority-attenuation check and
+before `authority.permits()` — a violation is a `DENY` with reason code
+`INTENT_VIOLATED`, before the org's own delegated-authority checks even
+run.
+
+**Deliberately distinct from `AuthorityContext.constraint_violation()`**
+(§3.3): that checks what the *organization* delegated to the agent's
+authority grant, set once by an admin and rarely revisited; this checks
+what the *agent itself* promised for the current task. An agent can
+hold broad org-granted authority and still choose (or be required) to
+declare a narrower intent per task — the two checks are independent
+gates, not a replacement for each other.
+
+**Deliberately not built**: goal *understanding* — `goal` is a free-text
+string, stored and surfaced for audit/attestation review, never
+machine-parsed to check whether an action's target/arguments are
+semantically related to it. That would require interpreting free-text
+intent against arbitrary tool arguments, real, separate, model-assisted
+work this phase doesn't attempt. Also not built: any REST/MCP
+endpoint on the dashboard's human-login surface beyond the two REST
+endpoints above — declaring intent for a non-MCP action (e.g. a direct
+REST-driven governed operation) isn't wired to check it, since no such
+call site fetches an `IntentContract` today.
+
 ### 3.5 Policy **[TODAY, first version — Phase 10]**
 
 Machine-enforceable organizational rules governing actions. The "small,

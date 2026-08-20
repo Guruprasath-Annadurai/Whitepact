@@ -48,6 +48,7 @@ from responsibleai.db import (
     ApprovalRepository,
     DelegationRepository,
     EvidenceRepository,
+    IntentContractRepository,
     OrgAuthorityCeilingRepository,
     OrgAutonomyBudgetRepository,
     OutcomeRepository,
@@ -127,6 +128,11 @@ class GovernanceServices:
     # OutcomeRecord is ever persisted, and Reconciliation/Attestation
     # simply see "no outcome reported" for every evidence entry.
     outcome_repo: OutcomeRepository | None = None
+    # Optional, same pattern -- an agent with no declared Intent
+    # Contract (or no repo wired at all) never gets an `intent` passed
+    # to `WhitePactRuntimeGateway.evaluate()`, identical to behavior
+    # before Intent Contracts existed.
+    intent_repo: IntentContractRepository | None = None
 
 
 @dataclass
@@ -317,6 +323,18 @@ async def apply_governance(
             window_minutes=autonomy_budget.window_minutes,
         )
 
+    # Intent Contract (Authority Everywhere Phase 4): the goal/bounds
+    # this agent itself declared for its current task, if any --
+    # `None` for any agent that has never called
+    # `POST /api/governance/intent-contracts` (or whose latest
+    # declaration has since expired), identical to behavior before
+    # this feature existed.
+    intent_contract = (
+        await services.intent_repo.get_active_for_agent(ctx.org_id, agent.agent_id)
+        if services.intent_repo is not None
+        else None
+    )
+
     evaluate_started = time.monotonic()
     if delegation_denied_reason is not None:
         decision = DecisionResult(
@@ -335,6 +353,7 @@ async def apply_governance(
             workflow_rules=workflow_rules,
             autonomy_budget=autonomy_budget,
             recent_autonomous_action_count=autonomous_action_count,
+            intent=intent_contract,
         )
     observe_governance_decision(
         decision.decision.value,

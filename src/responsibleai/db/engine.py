@@ -709,6 +709,24 @@ verified_principals = Table(
     Index("idx_vp_org", "org_id"),
 )
 
+governance_intent_contracts = Table(
+    "governance_intent_contracts",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("org_id", String(36), nullable=False),
+    Column("agent_id", String(200), nullable=False),
+    Column("goal", Text, nullable=False),
+    Column("max_value_usd", Float, nullable=True),
+    Column("allowed_targets", Text, nullable=True),  # JSON list or null
+    Column("denied_targets", Text, nullable=True),  # JSON list or null
+    Column("allowed_action_types", Text, nullable=True),  # JSON list or null
+    Column("declared_at", String(32), nullable=False),
+    Column("valid_from", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=True),
+    Index("idx_gic_org", "org_id"),
+    Index("idx_gic_agent", "org_id", "agent_id"),
+)
+
 
 class DatabaseEngine:
     """Async database engine wrapping SQLAlchemy — SQLite or PostgreSQL.

@@ -81,14 +81,28 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
   (migration `0027`). Not built: DID resolution, JSON-LD proofs,
   OpenID4VP presentation exchange, or revocation-list checking — see
   the module's own docstring for the full scoping.
+- Intent Contract (Authority Everywhere Phase 4) —
+  `governance/intent.py`: `IntentContract` lets an agent declare a
+  `goal` plus optional bounds (`max_value_usd`, `allowed_targets`/
+  `denied_targets`, `allowed_action_types`) before starting a task;
+  `WhitePactRuntimeGateway.evaluate()` gained an optional `intent`
+  parameter, checked before the org's own delegated-authority checks,
+  denying (`INTENT_VIOLATED`) any subsequent action from that agent
+  that strays outside what it promised. New `verified_principals`-style
+  append-only table `governance_intent_contracts` (migration `0028`,
+  `db/intent_repository.py`, "latest declared, still-active contract
+  wins" resolution). New endpoints
+  `POST /api/governance/intent-contracts` and
+  `GET /api/governance/intent-contracts/{agent_id}/active`.
 - See `docs/architecture/AUTHORITY_EVERYWHERE.md` and
-  `MIGRATION_WHITEPACT_V2.md` Sections 17-21 for the full design and
-  structured phase verdicts. 24 + 17 + 26 + 20 + 21 new tests
+  `MIGRATION_WHITEPACT_V2.md` Sections 17-22 for the full design and
+  structured phase verdicts. 24 + 17 + 26 + 20 + 21 + 35 new tests
   (`tests/test_tool_trust.py`, `tests/test_jit_credential.py`,
   `tests/test_causal_influence.py`,
   `tests/test_outcome_reconciliation_attestation.py`,
   `tests/test_verifiable_credential.py` +
-  `tests/test_mcp_verified_principal.py`).
+  `tests/test_mcp_verified_principal.py`,
+  `tests/test_intent_contract.py` + `tests/test_mcp_intent_contract.py`).
 
 ## [1.2.3] — 2026-08-19
 
