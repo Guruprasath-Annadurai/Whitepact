@@ -1621,3 +1621,93 @@ executed."
   full repo suite 2395 passed (up from 2375, net of the 20 new plus
   migration-count assertion updates); `mypy`/`ruff` clean on every
   touched file.
+
+## 21. Verified Principal (Authority Everywhere Phase 3, 2026-08-20)
+
+The first Authority Everywhere phase to touch a lifecycle stage
+unrelated to what Phases 7-14 already built: `docs/architecture/AUTHORITY_EVERYWHERE.md`'s
+row 1 ("Verified Principal") gap — `auth/oidc.py`/`auth/saml.py` verify
+*human* identities via an enterprise IdP, with no path for a *non-human*
+principal (a service account, or another organization's attested
+agent) to present its own cryptographic credential.
+
+- **VC-JWT verification** (`auth/verifiable_credential.py`) —
+  `VerifiableCredentialProvider.validate_presentation()` reuses
+  `auth/oidc.py`'s exact `AsyncJWKSClient` / `kid`-resolution /
+  private-key-rejection / weak-RSA-key-rejection machinery
+  (`validate_rsa_key_size`), generalized from one configured OIDC
+  issuer to an admin-configured trusted-issuer allowlist
+  (`Settings.vc_trusted_issuers`) — a credential's issuer is just
+  another entity publishing a JWKS at
+  `<issuer>/.well-known/jwks.json`. An unlisted `iss` is rejected
+  before any network call or crypto verification happens. Deliberately
+  scoped to JWT-VC only: no DID resolution (`did:key`/`did:web`), no
+  JSON-LD proof formats, no revocation-list checking, and not the full
+  OpenID4VP presentation-exchange protocol — none of those libraries
+  are dependencies of this codebase today, and each is real, separate
+  work. `looks_like_vc_jwt()` is an unverified peek at a token's
+  payload used only to decide *which* verifier to try (does it carry a
+  `vc` claim) — mirrors the same "peek header for `kid`, verify
+  everything afterward" posture `OIDCProvider.validate_token()` already
+  uses; nothing about routing is ever trusted as verification.
+- **Governance-layer representation** (`governance/principal.py`) —
+  `PrincipalClaim` is deliberately a different object from
+  `VerifiableCredentialClaims`, mirroring the existing `auth/*` vs.
+  `governance/*` split in this codebase: it discards the raw JWT
+  payload and keeps only `claim_keys` (field names the presented
+  credential's `credentialSubject` carried, never their values) — same
+  "never raw values" discipline `EvidenceRecord.argument_keys` and
+  `OutcomeRecord.result_summary` already apply, chosen because this
+  record may be queried long after the credential itself expires.
+  `IdentityContext.from_principal_claim()` (`governance/models.py`)
+  produces `kind="vc"`, a new value in the same vocabulary
+  `from_org_context()` already established — no existing kind changes.
+  Confirmed no existing `governance/*.py` file imports from `auth/*`
+  before adding this one import (`governance/models.py` -> `governance/principal.py`,
+  both governance-layer), keeping the category boundary real rather
+  than just asserted.
+- **DB layer** (`db/principal_repository.py`, migration `0027`) — an
+  append-only `verified_principals` audit log, the same role
+  `OutcomeRepository` plays for execution outcomes: by the time a
+  `PrincipalClaim` exists, the credential is already fully
+  cryptographically verified, so this table is an audit trail, not a
+  security gate, and its write is fail-open (logged via
+  `_logger.exception(...)`, never blocks an otherwise-valid
+  authentication).
+- **Wiring** (`mcp/server.py`) — `_resolve_vc_context()` sits alongside
+  the existing `_resolve_oidc_context()` in `_authenticate()`, tried
+  second (after OIDC, before falling through to a static API key), and
+  produces the same `OrgContext` shape so every downstream governance
+  call site (`IdentityContext.from_org_context`, RBAC, plan/quota
+  gating, rate limiting) works completely unchanged — `key_id` is
+  prefixed `vc:` rather than `oidc:`, the same disambiguation
+  `_resolve_oidc_context` already uses. `Settings.vc_trusted_issuers`
+  empty (the default) disables the entire path, same "unset config ->
+  feature off" posture the OIDC provider already uses. Scoped to the
+  hosted MCP server (`mcp/server.py`) only in this phase, not the
+  dashboard REST API's own OIDC login path
+  (`dashboard/app.py`) — the MCP surface is the actual agent-facing
+  adapter (Phase 1's category lock names this as *the* adapter
+  boundary), while the dashboard REST API is a human/org login surface
+  where "non-human principal" doesn't apply; wiring it there too is
+  possible but out of scope here.
+- Not built in this phase: DID resolution, JSON-LD proof formats,
+  OpenID4VP presentation exchange, revocation-list checking (see
+  `auth/verifiable_credential.py`'s module docstring for the full
+  list), dashboard REST API wiring, and any verification-method-aware
+  branching in `governance/ceiling.py`/`governance/delegation.py` (a
+  verified principal resolves to a plain `identity_id` string today,
+  identical to an API-key or OIDC identity for delegation/ceiling
+  purposes — whether it *should* get a different authority ceiling is
+  a real, separate policy question, not answered here).
+- Verification: 21 new tests across
+  `tests/test_verifiable_credential.py` (unit: JWKS/JWT verification
+  paths, weak-key and private-key rejection reusing the existing
+  `test_crypto_policy.py` pattern, `PrincipalClaim` construction,
+  `IdentityContext.from_principal_claim`) and
+  `tests/test_mcp_verified_principal.py` (a real MCP protocol round
+  trip authenticating via a VC-JWT bearer token, proving the audit
+  trail is written, untrusted-issuer rejection, and that a plain
+  OIDC-shaped JWT is never misrouted to the VC path); full repo suite
+  2416 passed (up from 2395); `mypy`/`ruff` clean on every touched
+  file.

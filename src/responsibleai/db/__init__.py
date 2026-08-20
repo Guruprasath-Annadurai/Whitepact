@@ -29,6 +29,7 @@ from responsibleai.db.org_repository import OrgRepository, SSORequiredError
 from responsibleai.db.outcome_repository import OutcomeRepository
 from responsibleai.db.passport_repository import PassportRepository
 from responsibleai.db.policy_repository import PolicyRepository, PolicyRuleNotFoundError
+from responsibleai.db.principal_repository import PrincipalRepository
 from responsibleai.db.public_incident_repository import PublicIncidentRepository
 from responsibleai.db.repositories import CostRepository, TrustRepository
 from responsibleai.db.tool_trust_repository import ToolTrustRepository
@@ -60,6 +61,7 @@ __all__ = [
     "TrustRepository",
     "OrgRepository",
     "OutcomeRepository",
+    "PrincipalRepository",
     "AuditRepository",
     "CredentialIssuanceRepository",
     "EvalRepository",

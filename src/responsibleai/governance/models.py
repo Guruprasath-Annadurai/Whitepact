@@ -36,6 +36,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
+from responsibleai.governance.principal import PrincipalClaim
 from responsibleai.governance.reason_codes import ReasonCode, format_reason
 from responsibleai.governance.risk import RiskTier
 from responsibleai.integrations.client import TrustCheckResult
@@ -91,6 +92,25 @@ class IdentityContext:
             org_id=ctx.org_id,
             display_name=ctx.org_name,
             org_context=ctx,
+        )
+
+    @classmethod
+    def from_principal_claim(cls, claim: PrincipalClaim) -> IdentityContext:
+        """Authority Everywhere Phase 3 — the Verified Principal path:
+        a non-human principal (service account, external attested
+        agent) authenticated via a Verifiable Credential rather than an
+        API key or OIDC token. `kind="vc"` is a new value in the
+        vocabulary `from_org_context()` already established; nothing
+        about the existing `"human"|"api_key"|"agent"|"oidc"|"workload"`
+        kinds changes. No `org_context` — a verified principal need not
+        correspond to an `OrgContext` row at all (e.g. an external
+        org's attested agent has no API key in this deployment's org
+        table)."""
+        return cls(
+            identity_id=f"vc:{claim.principal_id}",
+            kind="vc",
+            org_id=claim.org_id,
+            display_name=claim.credential_type,
         )
 
 

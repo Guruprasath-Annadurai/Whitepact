@@ -175,11 +175,57 @@ support exists (`src/responsibleai/auth/` — see `sso` extra in
 generalizes `OrgContext` as described — `IdentityContext.from_org_context()`
 maps a real `OrgContext` (from a static API key or an OIDC JWT, see
 `mcp/server.py`'s `_authenticate`) into the broader vocabulary, without
-modifying `OrgContext` itself. What remains genuinely unimplemented: a
-workload-identity kind (SPIFFE/SPIRE-style) has no real issuer or
-verification path anywhere in this codebase — `IdentityContext.kind`
-accepts the string `"workload"`, but nothing produces or validates one
-today, so treat that specific kind as aspirational, not working.
+modifying `OrgContext` itself. A non-human principal (service account,
+external attested agent) now has a second, real path in —
+`IdentityContext.from_principal_claim()`, kind `"vc"` — see §3.2.1.
+What remains genuinely unimplemented: a SPIFFE/SPIRE-style workload
+identity has no real issuer or verification path anywhere in this
+codebase — `IdentityContext.kind` accepts the string `"workload"`, but
+nothing produces or validates one today, so treat that specific kind as
+aspirational, not working.
+
+#### 3.2.1 Verified Principal **[TODAY, first version — Authority Everywhere Phase 3]**
+
+`docs/architecture/AUTHORITY_EVERYWHERE.md`'s lifecycle table named this
+gap directly: §3.2 above verifies *human* identities via an enterprise
+IdP, but has no path for a *non-human* principal — a service account,
+or another organization's attested agent — to present its own
+cryptographic credential and be recognized as the actor behind a
+governed action.
+
+`auth/verifiable_credential.py`'s `VerifiableCredentialProvider` closes
+this for one concrete, real shape: a **JWT-VC bearer presentation**,
+verified against an admin-configured trusted-issuer allowlist
+(`Settings.vc_trusted_issuers`) using the exact same JWKS-fetch,
+`kid`-resolution, private-key-rejection, and weak-RSA-key-rejection
+machinery `auth/oidc.py`'s `OIDCProvider` already established — a
+credential issuer is just another entity publishing a JWKS at
+`<issuer>/.well-known/jwks.json`. `mcp/server.py`'s `_authenticate`
+tries this path (`_resolve_vc_context`) after the existing OIDC path,
+routed by an unverified peek for a `vc` claim (`looks_like_vc_jwt`) that
+is never trusted for anything beyond which verifier to invoke — full
+verification always happens afterward. A successful verification is
+logged, append-only, to `verified_principals`
+(`db/principal_repository.py`, migration `0027`) via a governance-layer
+`PrincipalClaim` (`governance/principal.py`) that deliberately discards
+the raw credential payload — field names only, same "never raw values"
+discipline `EvidenceRecord.argument_keys` and `OutcomeRecord.result_summary`
+already apply.
+
+**Deliberately not built**: DID resolution (`did:key`, `did:web`),
+JSON-LD proof formats (`Ed25519Signature2020` etc.), the full
+OpenID4VP authorization-request/response presentation-exchange
+protocol, or revocation-list checking against a presented credential's
+issuer — none of the libraries the first three would need are
+dependencies of this codebase today, and revocation-status checking is
+a real, separate protocol this phase doesn't attempt. A credential
+presented as a JSON-LD proof or resolved via a DID document is
+rejected outright, not silently accepted with weaker checks. Whether a
+verified principal should receive a *different* authority ceiling than
+an API-key identity (§3.3 below) is also unanswered — `PrincipalClaim`
+resolves to an `identity_id` string that plugs into the existing
+delegation/ceiling chain unchanged, with no verification-method-aware
+branching yet.
 
 ### 3.3 Authority **[TODAY, minimal — Phase 8]**
 

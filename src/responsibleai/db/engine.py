@@ -694,6 +694,21 @@ governance_outcomes = Table(
     Index("idx_go_org", "org_id"),
 )
 
+verified_principals = Table(
+    "verified_principals",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("principal_id", String(255), nullable=False),
+    Column("org_id", String(36), nullable=True),
+    Column("issuer", String(255), nullable=False),
+    Column("credential_type", String(128), nullable=False),
+    Column("holder_kind", String(32), nullable=False),
+    Column("claim_keys", Text, nullable=False),
+    Column("verified_at", String(32), nullable=False),
+    Index("idx_vp_principal", "principal_id"),
+    Index("idx_vp_org", "org_id"),
+)
+
 
 class DatabaseEngine:
     """Async database engine wrapping SQLAlchemy — SQLite or PostgreSQL.
