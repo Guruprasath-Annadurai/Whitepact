@@ -18,7 +18,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from responsibleai.dashboard.prometheus import observe_governance_decision
-from responsibleai.db import ApprovalRepository, EvidenceRepository, PolicyRepository
+from responsibleai.db import (
+    ApprovalRepository,
+    EvidenceRepository,
+    OutcomeRepository,
+    PolicyRepository,
+)
 from responsibleai.db.tool_trust_repository import ToolTrustRepository
 from responsibleai.db.upstream_repository import UpstreamServerRepository
 from responsibleai.governance import (
@@ -35,7 +40,8 @@ from responsibleai.governance import (
     recent_violation_count,
 )
 from responsibleai.governance.approval import build_approval_request
-from responsibleai.governance.evidence import build_evidence_record
+from responsibleai.governance.evidence import EvidenceRecord, build_evidence_record
+from responsibleai.governance.outcome import OutcomeStatus, build_outcome_record
 from responsibleai.governance.risk import classify_action_risk
 from responsibleai.governance.tool_trust import ToolTrustTier, unscanned_score
 from responsibleai.governance.upstream_executor import (
@@ -62,12 +68,15 @@ async def _record_evidence(
     agent: AgentContext,
     authority: AuthorityContext,
     decision: DecisionResult,
-) -> bool:
+) -> EvidenceRecord | None:
     """Same fail-closed contract as apply_governance()'s inline
-    version: True if recorded, False (and logged) on failure. Not
-    shared as a common helper with governance_integration.py --
-    duplicating six lines is cheaper than coupling two independently-
-    evolving call sites to one shared function for this little logic.
+    version: the persisted `EvidenceRecord` if recorded, `None` (and
+    logged) on failure. Not shared as a common helper with
+    governance_integration.py -- duplicating six lines is cheaper than
+    coupling two independently-evolving call sites to one shared
+    function for this little logic. Returns the record itself (not
+    just a bool) so a caller past this point can link an
+    OutcomeRecord to it via `evidence.evidence_id` (Phase 12).
     """
     evidence = build_evidence_record(action, agent, authority, decision)
     try:
@@ -79,8 +88,8 @@ async def _record_evidence(
             decision.decision.value,
             agent.organization_id,
         )
-        return False
-    return True
+        return None
+    return evidence
 
 
 async def apply_upstream_governance(
@@ -96,6 +105,7 @@ async def apply_upstream_governance(
     upstream_registry: UpstreamServerRepository,
     executor: UpstreamMCPExecutor,
     tool_trust_repo: ToolTrustRepository,
+    outcome_repo: OutcomeRepository | None = None,
 ) -> UpstreamGovernanceOutcome:
     """Evaluate and, if governance allows it, execute one proxied call
     to an org-registered upstream MCP server. Requires an org-scoped
@@ -200,7 +210,8 @@ async def apply_upstream_governance(
         org_id=ctx.org_id,
     )
 
-    if not await _record_evidence(evidence_repo, action, agent, authority, decision):
+    evidence = await _record_evidence(evidence_repo, action, agent, authority, decision)
+    if evidence is None:
         return UpstreamGovernanceOutcome(
             proceed=False,
             blocked_response={
@@ -271,5 +282,47 @@ async def apply_upstream_governance(
     authorization = authorize_execution(
         decision, final_action, target_fingerprint=compute_upstream_target_fingerprint(server)
     )
-    result = await executor.execute(authorization, final_action)
+    try:
+        result = await executor.execute(authorization, final_action)
+    except Exception:
+        await _record_outcome(
+            outcome_repo, evidence.evidence_id, action.action_id, OutcomeStatus.ERRORED, ctx.org_id
+        )
+        raise
+    status = (
+        OutcomeStatus.FAILED
+        if isinstance(result, dict) and result.get("is_error")
+        else OutcomeStatus.SUCCEEDED
+    )
+    await _record_outcome(outcome_repo, evidence.evidence_id, action.action_id, status, ctx.org_id)
     return UpstreamGovernanceOutcome(proceed=True, result=result)
+
+
+async def _record_outcome(
+    outcome_repo: OutcomeRepository | None,
+    evidence_id: str,
+    action_id: str,
+    status: OutcomeStatus,
+    org_id: str | None,
+) -> None:
+    """Outcome Observation (Phase 12) -- fail-open, same reasoning as
+    `governance_integration.py`'s own helper of the same name: the
+    proxied call has already executed by the time this runs, so a
+    write failure here is a lost secondary observation, not something
+    to block on. `status` uses the upstream result's own `is_error`
+    field (`UpstreamMCPExecutor`'s result shape), unlike the internal-
+    tool path which has no single standardized error field across all
+    27 tools."""
+    if outcome_repo is None:
+        return
+    try:
+        await outcome_repo.record(
+            build_outcome_record(evidence_id, action_id, status, organization_id=org_id)
+        )
+    except Exception:
+        _logger.exception(
+            "upstream_governance_outcome_write_failed evidence_id=%s action_id=%s status=%s",
+            evidence_id,
+            action_id,
+            status.value,
+        )

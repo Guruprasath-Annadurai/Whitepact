@@ -101,6 +101,7 @@ from responsibleai.db import (
     OrgAuthorityCeilingRepository,
     OrgAutonomyBudgetRepository,
     OrgRepository,
+    OutcomeRepository,
     PassportRepository,
     PolicyRepository,
     PolicyRuleNotFoundError,
@@ -130,11 +131,13 @@ from responsibleai.eval import (
     RegressionDetector,
 )
 from responsibleai.governance.approval import ApprovalStatus
+from responsibleai.governance.attestation import build_attestation_record
 from responsibleai.governance.autonomy_budget import AutonomyBudgetPolicy
 from responsibleai.governance.ceiling import OrgAuthorityCeiling
 from responsibleai.governance.evidence_bundle import build_evidence_bundle, verify_evidence_bundle
 from responsibleai.governance.gateway import WhitePactRuntimeGateway
 from responsibleai.governance.models import GovernanceDecision
+from responsibleai.governance.outcome import OutcomeStatus, build_outcome_record
 from responsibleai.governance.policy import PolicyRule
 from responsibleai.governance.risk import RiskTier
 from responsibleai.governance.tool_trust import (
@@ -264,6 +267,7 @@ _policy_repo: PolicyRepository | None = None
 _upstream_registry: UpstreamServerRepository | None = None
 _tool_trust_repo: ToolTrustRepository | None = None
 _credential_issuance_repo: CredentialIssuanceRepository | None = None
+_outcome_repo: OutcomeRepository | None = None
 _upstream_gateway: WhitePactRuntimeGateway = WhitePactRuntimeGateway()
 _db_engine: DatabaseEngine | None = None
 _ws_manager: ConnectionManager = ConnectionManager()
@@ -316,7 +320,7 @@ async def lifespan(application: FastAPI):
     global _org_repo, _audit_repo, _incident_repo, _leaderboard_repo, _leaderboard_runner
     global _passport_repo, _public_incident_repo, _db_engine, _mcp_usage_repo
     global _evidence_repo, _approval_repo, _policy_repo, _upstream_registry, _ceiling_repo
-    global _tool_trust_repo, _credential_issuance_repo
+    global _tool_trust_repo, _credential_issuance_repo, _outcome_repo
     global _workflow_rule_repo, _delegation_repo, _autonomy_budget_repo
     global _eval_repo, _comparator, _benchmark_runner, _dataset_scanner
     global _oidc_provider, _saml_config, _stripe_service, _plan_rate_limiter
@@ -363,6 +367,7 @@ async def lifespan(application: FastAPI):
     _upstream_registry = UpstreamServerRepository(_db_engine)
     _tool_trust_repo = ToolTrustRepository(_db_engine)
     _credential_issuance_repo = CredentialIssuanceRepository(_db_engine)
+    _outcome_repo = OutcomeRepository(_db_engine)
     _ceiling_repo = OrgAuthorityCeilingRepository(_db_engine)
     _workflow_rule_repo = WorkflowRuleRepository(_db_engine)
     _delegation_repo = DelegationRepository(_db_engine)
@@ -978,6 +983,11 @@ class UpstreamToolCallRequest(BaseModel):
 class ToolTrustOverrideRequest(BaseModel):
     tier: ToolTrustTier
     reason: str = Field(..., min_length=1, max_length=2000)
+
+
+class OutcomeReportRequest(BaseModel):
+    status: OutcomeStatus
+    result_summary: str | None = Field(default=None, max_length=2000)
 
 
 class WebhookCreateRequest(BaseModel):
@@ -2948,6 +2958,65 @@ async def governance_verify_evidence_bundle(
     }
 
 
+@app.post("/api/governance/evidence/{evidence_id}/outcome", tags=["governance"])
+@limiter.limit("60/minute")
+async def governance_report_outcome(
+    request: Request,
+    evidence_id: str,
+    req: OutcomeReportRequest,
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
+) -> dict[str, Any]:
+    """Outcome Observation (Authority Everywhere Phase 12) -- for a
+    governed action whose execution happens outside the synchronous
+    request that made the decision (a caller doing its own async
+    execution against a result WhitePact already authorized). The
+    internal MCP dispatch path and the upstream proxy path both record
+    an outcome automatically already; this endpoint exists for every
+    other caller."""
+    if not _auth.org_id:
+        raise HTTPException(
+            400, "Governance evidence requires an org-scoped API key, not a legacy flat key."
+        )
+    evidence = await _ready(_evidence_repo).get(evidence_id)
+    if evidence is None or evidence.organization_id != _auth.org_id:
+        raise HTTPException(404, f"Evidence record {evidence_id!r} not found.")
+    outcome = await _ready(_outcome_repo).record(
+        build_outcome_record(
+            evidence_id,
+            evidence.action_id,
+            req.status,
+            organization_id=_auth.org_id,
+            result_summary=req.result_summary,
+        )
+    )
+    return outcome.to_dict()
+
+
+@app.get("/api/governance/evidence/{evidence_id}/attestation", tags=["governance"])
+@limiter.limit("30/minute")
+async def governance_get_attestation(
+    request: Request,
+    evidence_id: str,
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
+) -> dict[str, Any]:
+    """Attestation (Authority Everywhere Phase 14) -- the packaged
+    Decision -> Outcome -> Reconciliation statement for one evidence
+    entry. Not cryptographically signed; see
+    governance/attestation.py's module docstring for why, and verify
+    `evidence_hash` against /api/governance/evidence/verify's chain
+    check instead."""
+    if not _auth.org_id:
+        raise HTTPException(
+            400, "Governance evidence requires an org-scoped API key, not a legacy flat key."
+        )
+    evidence = await _ready(_evidence_repo).get(evidence_id)
+    if evidence is None or evidence.organization_id != _auth.org_id:
+        raise HTTPException(404, f"Evidence record {evidence_id!r} not found.")
+    outcome = await _ready(_outcome_repo).get_for_evidence(evidence_id)
+    attestation = build_attestation_record(evidence, outcome)
+    return attestation.to_dict()
+
+
 @app.get("/api/governance/approvals", tags=["governance"])
 @limiter.limit("30/minute")
 async def governance_list_pending_approvals(
@@ -3067,6 +3136,7 @@ async def governance_execute_approval(
             approval_repo=_ready(_approval_repo),
             evidence_repo=_ready(_evidence_repo),
             org_id=_auth.org_id,
+            outcome_repo=_ready(_outcome_repo),
         )
     except ApprovalNotFoundError as exc:
         raise HTTPException(404, str(exc)) from None
@@ -3529,6 +3599,7 @@ async def upstream_call_tool(
             upstream_registry=_ready(_upstream_registry),
             executor=executor,
             tool_trust_repo=_ready(_tool_trust_repo),
+            outcome_repo=_ready(_outcome_repo),
         )
     except UpstreamServerNotAvailableError as exc:
         raise HTTPException(404, str(exc)) from None

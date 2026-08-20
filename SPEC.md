@@ -386,12 +386,65 @@ low-trust downgrade's reason code (`trust_state:low_score:N`) is the
 current way to see it in `reason_codes`. `deterministic_checks` /
 `probabilistic_checks` are not broken out as separate structured
 fields, `reason_codes` carries what a `GuardrailsResult`/`Policy` match
-found instead; `execution_result_metadata` is not populated (this
-package has no visibility into whether an allowed action was actually
-executed); `human_identity` is populated from
-`AgentContext.identity.identity_id`, since no concept of "the human
+found instead; `execution_result_metadata` is not populated as a field
+*on* `EvidenceRecord` itself, but the gap it names — "no visibility into
+whether an allowed action was actually executed" — is now closed by a
+separate, linked record; see 3.7.1 below. `human_identity` is populated
+from `AgentContext.identity.identity_id`, since no concept of "the human
 behind the agent, distinct from the API key/OIDC identity that
 authorized it" exists yet.
+
+#### 3.7.1 Outcome, Reconciliation, and Attestation **[TODAY, first version — Authority Everywhere Phases 12-14]**
+
+Closes the gap 3.7 names honestly above: `EvidenceRecord` records the
+*decision*, never whether the executor's own attempt to carry it out
+actually succeeded.
+
+**Outcome Observation (Phase 12)** — `src/responsibleai/governance/outcome.py`'s
+`OutcomeRecord` (`SUCCEEDED` / `FAILED` / `ERRORED`, plus an optional,
+deliberately minimal `result_summary` — never the raw result payload,
+same "field names/shapes, never values" discipline `argument_keys`
+already applies) is linked to its authorizing `EvidenceRecord` via
+`evidence_id`. Auto-recorded, fail-open (the action already executed by
+the time this write happens — there is nothing left to block on a
+failure), at both governed-execution call sites:
+`mcp/governance_integration.py`'s `apply_governance()` and
+`resume_approval()`, and `mcp/upstream_dispatch.py`'s
+`apply_upstream_governance()`. Persisted via `OutcomeRepository`
+(`governance_outcomes` table, migration `0026`). A caller whose
+execution happens outside a governed dispatch call entirely can report
+one manually via `POST /api/governance/evidence/{evidence_id}/outcome`.
+
+**Reconciliation (Phase 13)** — `governance/reconciliation.py`'s
+`reconcile_outcome()` is honestly narrower than it might sound: the
+strongest invariant ("the action that executed was byte-identical to
+what governance authorized") is already structurally enforced
+*synchronously, before* execution by `ExecutionAuthorization.matches_action()`
+and, for upstream calls, `check_target_fingerprint()` — an
+`OutcomeRecord` can only exist for an action that already passed those.
+What this adds: `RECONCILED` (an outcome exists and its `action_id`
+agrees with the evidence's), `MISSING_OUTCOME` (a decision that
+authorized execution never got an outcome reported at all — a real,
+useful anomaly signal), `ACTION_MISMATCH` (a defensive check nothing
+else catches), and `NOT_APPLICABLE` (DENY/QUARANTINE/REQUIRE_APPROVAL —
+never expected to have an outcome).
+
+**Attestation (Phase 14)** — `governance/attestation.py`'s
+`AttestationRecord` packages one evidence entry's decision, outcome
+status, and reconciliation status into one exportable statement.
+**Deliberately not cryptographically signed** — stated in the module's
+own docstring, generalizing the identical reasoning
+`ExecutionAuthorization` already gives (3.4): an automated per-action
+signature would need a live signing key sitting in the running server
+process, a real secret-management/rotation burden this project has no
+infrastructure for, and a forged record would need the same DB write
+access that could also rewrite the evidence hash chain itself — a
+signature only helps once chain checkpoints are also committed
+somewhere external, which isn't built here. Integrity today is by
+linkage to `EvidenceRecord.hash` (verifiable via the existing
+`GET /api/governance/evidence/verify` chain check), stated explicitly
+in every `to_dict()` output's `integrity_note` field rather than left
+implicit. Exposed via `GET /api/governance/evidence/{evidence_id}/attestation`.
 
 ---
 

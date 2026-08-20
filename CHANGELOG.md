@@ -52,11 +52,26 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
   provenance with no match is a softer, non-blocking, evidence-visible
   marker (`ReasonCode.CAUSAL_INFLUENCE_UNTRUSTED_SOURCE`). New MCP tool
   `rai_causal_influence_check` (30th tool).
+- Outcome Observation, Reconciliation, and Attestation (Authority
+  Everywhere Phases 12-14) — `governance/outcome.py`: an
+  `OutcomeRecord` (`SUCCEEDED`/`FAILED`/`ERRORED`) is now auto-recorded,
+  fail-open, for every governed action's execution attempt, linked to
+  its authorizing `EvidenceRecord` (new `governance_outcomes` table,
+  migration `0026`). `governance/reconciliation.py` flags a decision
+  that authorized execution but never got an outcome reported
+  (`MISSING_OUTCOME`). `governance/attestation.py` packages
+  decision + outcome + reconciliation into one exportable record —
+  **not cryptographically signed**, stated in its own docstring:
+  integrity is by linkage to the existing `EvidenceRecord` hash chain,
+  not a new signature scheme. New endpoints
+  `POST /api/governance/evidence/{id}/outcome` (manual reporting) and
+  `GET /api/governance/evidence/{id}/attestation`.
 - See `docs/architecture/AUTHORITY_EVERYWHERE.md` and
-  `MIGRATION_WHITEPACT_V2.md` Sections 17-19 for the full design and
-  structured phase verdicts. 24 + 17 + 26 new tests
+  `MIGRATION_WHITEPACT_V2.md` Sections 17-20 for the full design and
+  structured phase verdicts. 24 + 17 + 26 + 20 new tests
   (`tests/test_tool_trust.py`, `tests/test_jit_credential.py`,
-  `tests/test_causal_influence.py`).
+  `tests/test_causal_influence.py`,
+  `tests/test_outcome_reconciliation_attestation.py`).
 
 ## [1.2.3] — 2026-08-19
 

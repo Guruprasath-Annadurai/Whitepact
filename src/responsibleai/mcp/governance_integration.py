@@ -50,6 +50,7 @@ from responsibleai.db import (
     EvidenceRepository,
     OrgAuthorityCeilingRepository,
     OrgAutonomyBudgetRepository,
+    OutcomeRepository,
     PolicyRepository,
     WorkflowRuleRepository,
 )
@@ -76,6 +77,7 @@ from responsibleai.governance.approval import (
     build_resume_action,
 )
 from responsibleai.governance.evidence import build_evidence_record
+from responsibleai.governance.outcome import OutcomeStatus, build_outcome_record
 from responsibleai.integrations.client import TrustClient
 from responsibleai.rbac.models import OrgContext
 
@@ -120,6 +122,11 @@ class GovernanceServices:
     # passed to `WhitePactRuntimeGateway.evaluate()`, identical to
     # behavior before the Autonomy Budget existed.
     autonomy_budget_repo: OrgAutonomyBudgetRepository | None = None
+    # Optional, same pattern -- when unset, `_executor.execute()` still
+    # runs exactly as before Outcome Observation existed; no
+    # OutcomeRecord is ever persisted, and Reconciliation/Attestation
+    # simply see "no outcome reported" for every evidence entry.
+    outcome_repo: OutcomeRepository | None = None
 
 
 @dataclass
@@ -432,8 +439,59 @@ async def apply_governance(
         action_id=action.action_id,
     )
     authorization = authorize_execution(decision, final_action)
-    result = await _executor.execute(authorization, final_action)
+    try:
+        result = await _executor.execute(authorization, final_action)
+    except Exception:
+        await _record_outcome(
+            services,
+            evidence.evidence_id,
+            action.action_id,
+            OutcomeStatus.ERRORED,
+            organization_id=agent.organization_id,
+        )
+        raise
+    status = (
+        OutcomeStatus.FAILED
+        if isinstance(result, dict) and result.get("error")
+        else OutcomeStatus.SUCCEEDED
+    )
+    await _record_outcome(
+        services,
+        evidence.evidence_id,
+        action.action_id,
+        status,
+        organization_id=agent.organization_id,
+    )
     return GovernanceOutcome(proceed=True, arguments=final_arguments, result=result)
+
+
+async def _record_outcome(
+    services: GovernanceServices,
+    evidence_id: str,
+    action_id: str,
+    status: OutcomeStatus,
+    *,
+    organization_id: str | None,
+) -> None:
+    """Outcome Observation (Phase 12) -- fail-open, unlike evidence
+    recording above: the action has already executed by the time this
+    runs, so there is nothing left to "close" on a write failure, only
+    a secondary observation that didn't get recorded. Logged loudly,
+    never raised, and a no-op entirely when no `outcome_repo` is wired
+    (every caller before this phase existed)."""
+    if services.outcome_repo is None:
+        return
+    try:
+        await services.outcome_repo.record(
+            build_outcome_record(evidence_id, action_id, status, organization_id=organization_id)
+        )
+    except Exception:
+        _logger.exception(
+            "governance_outcome_write_failed evidence_id=%s action_id=%s status=%s",
+            evidence_id,
+            action_id,
+            status.value,
+        )
 
 
 def _agent_from_approval(approval: ApprovalRequest) -> AgentContext:
@@ -462,6 +520,7 @@ async def resume_approval(
     evidence_repo: EvidenceRepository,
     org_id: str,
     upstream_registry: Any = None,
+    outcome_repo: OutcomeRepository | None = None,
 ) -> dict[str, Any]:
     """The REQUIRE_APPROVAL -> resume-execution pipeline: given an
     approval a human has already resolved APPROVED, reconstruct the
@@ -530,9 +589,11 @@ async def resume_approval(
         delegated_by=org_id, granted_action_types=frozenset({action.action_type})
     )
     evidence = build_evidence_record(action, agent, authority, decision)
+    evidence_recorded = True
     try:
         await evidence_repo.record(evidence)
     except Exception:
+        evidence_recorded = False
         # Unlike apply_governance()'s pre-execution fail-closed
         # handling, the action has ALREADY executed by this point --
         # there's nothing left to block. Log loudly (a missing evidence
@@ -545,5 +606,29 @@ async def resume_approval(
             action.action_id,
             org_id,
         )
+
+    # Outcome Observation (Phase 12) -- only attempted when the evidence
+    # write actually succeeded, so an OutcomeRecord never references a
+    # non-existent evidence_id. Same fail-open reasoning as the evidence
+    # write just above: the action already executed, there's nothing to
+    # block on a secondary telemetry write failing.
+    if evidence_recorded and outcome_repo is not None:
+        status = (
+            OutcomeStatus.FAILED
+            if isinstance(result, dict) and result.get("error")
+            else OutcomeStatus.SUCCEEDED
+        )
+        try:
+            await outcome_repo.record(
+                build_outcome_record(
+                    evidence.evidence_id, action.action_id, status, organization_id=org_id
+                )
+            )
+        except Exception:
+            _logger.exception(
+                "resume_approval_outcome_write_failed approval_id=%s action_id=%s",
+                approval.approval_id,
+                action.action_id,
+            )
 
     return result
