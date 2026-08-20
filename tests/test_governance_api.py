@@ -1273,3 +1273,111 @@ class TestDelegationEndpoints:
             headers={"Authorization": f"Bearer {other_key}"},
         )
         assert r.json()["currently_active"] is False
+
+
+class TestIntentContractEndpoints:
+    async def test_declare_requires_org_scoped_key(
+        self, client: AsyncClient, org_and_analyst_key
+    ) -> None:
+        _org_id, key = org_and_analyst_key
+        r = await client.post(
+            "/api/governance/intent-contracts",
+            json={"agent_id": "agent-1", "goal": "deploy the new release"},
+            headers={"Authorization": f"Bearer {key}"},
+        )
+        assert r.status_code == 201, r.text
+        body = r.json()
+        assert body["agent_id"] == "agent-1"
+        assert body["goal"] == "deploy the new release"
+        assert body["max_value_usd"] is None
+        assert "contract_id" in body
+
+    async def test_declare_with_full_bounds(self, client: AsyncClient, org_and_analyst_key) -> None:
+        _org_id, key = org_and_analyst_key
+        r = await client.post(
+            "/api/governance/intent-contracts",
+            json={
+                "agent_id": "agent-1",
+                "goal": "process refunds under $500",
+                "max_value_usd": 500,
+                "allowed_targets": ["refund_*"],
+                "denied_targets": ["admin_*"],
+                "allowed_action_types": ["mcp_tool_call"],
+                "expires_in_minutes": 60,
+            },
+            headers={"Authorization": f"Bearer {key}"},
+        )
+        assert r.status_code == 201, r.text
+        body = r.json()
+        assert body["max_value_usd"] == 500
+        assert body["allowed_targets"] == ["refund_*"]
+        assert body["denied_targets"] == ["admin_*"]
+        assert body["allowed_action_types"] == ["mcp_tool_call"]
+        assert body["expires_at"] is not None
+
+    async def test_get_active_when_none_declared(
+        self, client: AsyncClient, org_and_analyst_key
+    ) -> None:
+        _org_id, key = org_and_analyst_key
+        r = await client.get(
+            "/api/governance/intent-contracts/never-declared-agent/active",
+            headers={"Authorization": f"Bearer {key}"},
+        )
+        assert r.status_code == 200
+        assert r.json() == {
+            "agent_id": "never-declared-agent",
+            "has_active_contract": False,
+        }
+
+    async def test_get_active_reflects_latest_declaration(
+        self, client: AsyncClient, org_and_analyst_key
+    ) -> None:
+        _org_id, key = org_and_analyst_key
+        headers = {"Authorization": f"Bearer {key}"}
+        await client.post(
+            "/api/governance/intent-contracts",
+            json={"agent_id": "agent-2", "goal": "first task"},
+            headers=headers,
+        )
+        await client.post(
+            "/api/governance/intent-contracts",
+            json={"agent_id": "agent-2", "goal": "second task"},
+            headers=headers,
+        )
+        r = await client.get(
+            "/api/governance/intent-contracts/agent-2/active",
+            headers=headers,
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["has_active_contract"] is True
+        assert body["goal"] == "second task"
+
+    async def test_cross_org_agent_not_visible(
+        self, client: AsyncClient, org_and_analyst_key
+    ) -> None:
+        _org_id, key = org_and_analyst_key
+        await client.post(
+            "/api/governance/intent-contracts",
+            json={"agent_id": "shared-agent-name", "goal": "org a's own task"},
+            headers={"Authorization": f"Bearer {key}"},
+        )
+
+        r = await client.post(
+            "/api/orgs",
+            json={"name": "Other Intent Co", "slug": "other-intent-co"},
+            headers=BOOTSTRAP_AUTH,
+        )
+        other_org_id = r.json()["id"]
+        r = await client.post(
+            f"/api/orgs/{other_org_id}/keys",
+            json={"name": "k", "role": "ANALYST"},
+            headers=BOOTSTRAP_AUTH,
+        )
+        other_key = r.json()["key"]
+
+        r = await client.get(
+            "/api/governance/intent-contracts/shared-agent-name/active",
+            headers={"Authorization": f"Bearer {other_key}"},
+        )
+        assert r.json()["has_active_contract"] is False

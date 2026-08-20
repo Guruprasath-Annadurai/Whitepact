@@ -130,6 +130,14 @@ class ReasonCode(StrEnum):
     # deny -- evidence-visible, not policy-enforced, per this phase's
     # deliberately bounded first increment.
     CAUSAL_INFLUENCE_UNTRUSTED_SOURCE = "CAUSAL_INFLUENCE_UNTRUSTED_SOURCE"
+    # Not in the original list; added for the Intent Contract
+    # (governance/intent.py, Authority Everywhere Phase 4) -- an action
+    # violates the declared goal/bounds (target, value, action type, or
+    # time window) the calling agent committed to up front, distinct
+    # from AuthorityContext.constraint_violation()'s codes above since
+    # those check what the *organization* delegated, not what the agent
+    # itself *promised* for this specific task.
+    INTENT_VIOLATED = "INTENT_VIOLATED"
 
 
 def format_reason(code: ReasonCode, /, **details: object) -> str:

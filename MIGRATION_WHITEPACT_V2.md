@@ -1711,3 +1711,71 @@ agent) to present its own cryptographic credential.
   OIDC-shaped JWT is never misrouted to the VC path); full repo suite
   2416 passed (up from 2395); `mypy`/`ruff` clean on every touched
   file.
+
+## 22. Intent Contract (Authority Everywhere Phase 4, 2026-08-20)
+
+Closes `docs/architecture/AUTHORITY_EVERYWHERE.md`'s lifecycle row 2
+gap: `ActionRequest` states what's being done, not what was *promised*
+up front — nothing let an agent declare a goal and its bounds before
+starting a task, so nothing could check "does this action still match
+what this task was supposed to be," only "is this action individually
+allowed" (the org-delegated-authority question §3.3/Phase 8 already
+answers).
+
+- **Domain model** (`governance/intent.py`) — `IntentContract` (`goal`,
+  optional `max_value_usd`/`allowed_targets`/`denied_targets`/
+  `allowed_action_types`, `valid_from`/`expires_at`).
+  `intent_violation(action)` mirrors `AuthorityContext.constraint_violation()`'s
+  exact ordering (denied -> allowed -> action-type -> value), deliberately
+  reusing that convention rather than inventing a new one, and is checked
+  independently — an agent's own declared intent is a narrower,
+  per-task promise, distinct from what the *organization* delegated to
+  its authority grant. New `ReasonCode.INTENT_VIOLATED`.
+- **Gateway wiring** (`governance/gateway.py`) — `evaluate()` gained an
+  optional `intent: IntentContract | None = None` parameter, checked
+  immediately after the existing parent-authority attenuation check
+  (step 0) and before `authority.permits()` (step 1) — a violation is a
+  `DENY` before the org's own delegated-authority checks even run,
+  following the exact same additive, backward-compatible pattern
+  `parent_authority`/`workflow_rules`/`autonomy_budget` already
+  established. No `intent` supplied (every caller before this existed)
+  — skipped entirely, identical to prior behavior.
+- **DB layer** (`db/intent_repository.py`, migration `0028`) —
+  `IntentContractRepository.declare()`/`get_active_for_agent()`/`get()`.
+  "Latest declared, still-active contract wins" per agent, the same
+  resolution `DelegationRepository.get_latest_delegation()` already
+  uses for "what does this identity currently hold" — a new
+  declaration doesn't delete or overwrite an older one (both persist as
+  an audit trail of what an agent committed to over time).
+- **Dispatch-path wiring** (`mcp/governance_integration.py`) —
+  `apply_governance()` fetches the calling agent's active contract (if
+  `GovernanceServices.intent_repo` is configured) alongside the
+  existing ceiling/workflow-rule/autonomy-budget fetches, and passes it
+  into `gateway.evaluate()`. `mcp/server.py` wires
+  `IntentContractRepository(_db_engine)` into `GovernanceServices`
+  construction when `mcp_governance_enabled` is on.
+- **REST endpoints** (`dashboard/app.py`) —
+  `POST /api/governance/intent-contracts` (ANALYST+ — declaring intent
+  only ever narrows what an agent can do, never expands it, unlike a
+  delegation grant which is ADMIN+) and
+  `GET /api/governance/intent-contracts/{agent_id}/active` (`200` with
+  `has_active_contract: false` when none is declared or the latest has
+  expired — a normal state, not an error).
+- Not built in this phase: goal *understanding* (semantically checking
+  an action's target/arguments against the free-text `goal` string —
+  real, separate, model-assisted work); wiring into the dashboard's own
+  human-login REST-driven governed operations (only the MCP dispatch
+  path consults an `IntentContract` today, matching Phase 1's
+  category-lock naming of the MCP adapter as the actual agent-facing
+  surface); any verification-method-aware interaction with `ceiling.py`
+  or `delegation.py` (an Intent Contract is an independent gate, not
+  merged into either).
+- Verification: 35 new tests across `tests/test_intent_contract.py`
+  (unit: `is_active()`/`intent_violation()` branches, gateway wiring,
+  DB repository), `tests/test_mcp_intent_contract.py` (a real MCP
+  protocol round trip proving a declared contract blocks/allows a
+  governed tool call, and that an expired contract stops being
+  enforced), and a `TestIntentContractEndpoints` class added to
+  `tests/test_governance_api.py` (declare, fetch active, cross-org
+  isolation); full repo suite 2451 passed (up from 2416); `mypy`/`ruff`
+  clean on every touched file.

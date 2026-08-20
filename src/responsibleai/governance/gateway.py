@@ -22,6 +22,15 @@ What ``evaluate()`` checks, in order:
    permit. No ``parent_authority`` supplied (every caller before this
    existed, and any caller not tracking a delegation chain today) —
    this step is skipped entirely, identical to pre-existing behavior.
+0.5. **Intent Contract** (optional — only when a caller passes
+   ``intent``, Authority Everywhere Phase 4) — does this action stay
+   within the goal/bounds the calling agent itself declared for this
+   task, per ``IntentContract.intent_violation()``? Distinct from step
+   0 (which checks the delegated authority chain) and step 3b below
+   (which checks org-granted constraints) — this checks what the agent
+   *promised*, not what the org *delegated*. No ``intent`` supplied
+   (every caller before this existed, and any caller with no declared
+   contract for this agent) — skipped entirely.
 1. **Authority** — does ``AuthorityContext`` actually grant this
    ``action_type``? Deterministic, no model call.
 2. **Caller-declared approval requirements** — did the caller mark this
@@ -120,6 +129,7 @@ from typing import Any
 
 from responsibleai.governance.autonomy_budget import AutonomyBudgetPolicy
 from responsibleai.governance.causal_influence import analyze_causal_influence, parse_provenance
+from responsibleai.governance.intent import IntentContract
 from responsibleai.governance.memory_firewall import scan_memory_write
 from responsibleai.governance.models import (
     ActionRequest,
@@ -168,6 +178,7 @@ class WhitePactRuntimeGateway:
         workflow_rules: list[WorkflowSequenceRule] | None = None,
         autonomy_budget: AutonomyBudgetPolicy | None = None,
         recent_autonomous_action_count: int = 0,
+        intent: IntentContract | None = None,
     ) -> DecisionResult:
         risk_tier = classify_action_risk(action.action_type, action.target)
 
@@ -207,6 +218,16 @@ class WhitePactRuntimeGateway:
                     decision=GovernanceDecision.DENY,
                     action_id=action.action_id,
                     reason_codes=[escalation_reason],
+                    risk_tier=risk_tier,
+                )
+
+        if intent is not None:
+            intent_reason = intent.intent_violation(action)
+            if intent_reason is not None:
+                return DecisionResult(
+                    decision=GovernanceDecision.DENY,
+                    action_id=action.action_id,
+                    reason_codes=[intent_reason],
                     risk_tier=risk_tier,
                 )
 

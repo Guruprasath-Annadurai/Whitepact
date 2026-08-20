@@ -96,6 +96,7 @@ from responsibleai.db import (
     EvalRepository,
     EvidenceRepository,
     IncidentRepository,
+    IntentContractRepository,
     LeaderboardRepository,
     McpUsageRepository,
     OrgAuthorityCeilingRepository,
@@ -136,6 +137,7 @@ from responsibleai.governance.autonomy_budget import AutonomyBudgetPolicy
 from responsibleai.governance.ceiling import OrgAuthorityCeiling
 from responsibleai.governance.evidence_bundle import build_evidence_bundle, verify_evidence_bundle
 from responsibleai.governance.gateway import WhitePactRuntimeGateway
+from responsibleai.governance.intent import build_intent_contract
 from responsibleai.governance.models import GovernanceDecision
 from responsibleai.governance.outcome import OutcomeStatus, build_outcome_record
 from responsibleai.governance.policy import PolicyRule
@@ -268,6 +270,7 @@ _upstream_registry: UpstreamServerRepository | None = None
 _tool_trust_repo: ToolTrustRepository | None = None
 _credential_issuance_repo: CredentialIssuanceRepository | None = None
 _outcome_repo: OutcomeRepository | None = None
+_intent_repo: IntentContractRepository | None = None
 _upstream_gateway: WhitePactRuntimeGateway = WhitePactRuntimeGateway()
 _db_engine: DatabaseEngine | None = None
 _ws_manager: ConnectionManager = ConnectionManager()
@@ -321,7 +324,7 @@ async def lifespan(application: FastAPI):
     global _passport_repo, _public_incident_repo, _db_engine, _mcp_usage_repo
     global _evidence_repo, _approval_repo, _policy_repo, _upstream_registry, _ceiling_repo
     global _tool_trust_repo, _credential_issuance_repo, _outcome_repo
-    global _workflow_rule_repo, _delegation_repo, _autonomy_budget_repo
+    global _workflow_rule_repo, _delegation_repo, _autonomy_budget_repo, _intent_repo
     global _eval_repo, _comparator, _benchmark_runner, _dataset_scanner
     global _oidc_provider, _saml_config, _stripe_service, _plan_rate_limiter
 
@@ -372,6 +375,7 @@ async def lifespan(application: FastAPI):
     _workflow_rule_repo = WorkflowRuleRepository(_db_engine)
     _delegation_repo = DelegationRepository(_db_engine)
     _autonomy_budget_repo = OrgAutonomyBudgetRepository(_db_engine)
+    _intent_repo = IntentContractRepository(_db_engine)
     _guardrails = GuardrailsEngine()
     _hallucination = HallucinationDetector()
     _compliance = ComplianceEngine()
@@ -946,6 +950,20 @@ class DelegationGrantRequest(BaseModel):
     from_identity_id: str | None = Field(default=None, max_length=200)
     constraints: dict[str, Any] = Field(default_factory=dict)
     require_approval_for: list[str] = Field(default_factory=list, max_length=200)
+    expires_in_minutes: int | None = Field(default=None, ge=1, le=525_600)  # up to 1 year
+
+
+class IntentContractDeclareRequest(BaseModel):
+    """See governance/intent.py's IntentContract. Declared once per
+    task; applies to every subsequent action from `agent_id` until it
+    expires or a newer contract is declared for the same agent."""
+
+    agent_id: str = Field(..., min_length=1, max_length=200)
+    goal: str = Field(..., min_length=1, max_length=2000)
+    max_value_usd: float | None = Field(default=None, ge=0)
+    allowed_targets: list[str] | None = Field(default=None, max_length=200)
+    denied_targets: list[str] | None = Field(default=None, max_length=200)
+    allowed_action_types: list[str] | None = Field(default=None, max_length=200)
     expires_in_minutes: int | None = Field(default=None, ge=1, le=525_600)  # up to 1 year
 
 
@@ -3441,6 +3459,72 @@ async def governance_revoke_delegation(
         revoked_by=_auth.key_id,
     )
     return {"identity_id": identity_id, "revoked_delegation_ids": revoked_ids}
+
+
+@app.post("/api/governance/intent-contracts", tags=["governance"], status_code=201)
+@limiter.limit("30/minute")
+async def governance_declare_intent(
+    request: Request,
+    req: IntentContractDeclareRequest,
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
+) -> dict[str, Any]:
+    """Declares an Intent Contract (Authority Everywhere Phase 4) for
+    `agent_id` -- ANALYST+ since, unlike delegation grants, this
+    narrows what an agent can do rather than expanding it (an agent
+    declaring an overly broad contract gains nothing beyond its
+    existing authority; `intent_violation()` only ever adds a DENY,
+    never an ALLOW). A new declaration doesn't revoke the previous one
+    -- both are preserved as an audit trail -- but only the most
+    recently declared, still-active contract is consulted per call
+    (`IntentContractRepository.get_active_for_agent()`)."""
+    if not _auth.org_id:
+        raise HTTPException(
+            400, "Intent contracts require an org-scoped API key, not a legacy flat key."
+        )
+    expires_at = None
+    if req.expires_in_minutes is not None:
+        expires_at = datetime.now(UTC) + timedelta(minutes=req.expires_in_minutes)
+    contract = build_intent_contract(
+        _auth.org_id,
+        req.agent_id,
+        req.goal,
+        max_value_usd=req.max_value_usd,
+        allowed_targets=req.allowed_targets,
+        denied_targets=req.denied_targets,
+        allowed_action_types=req.allowed_action_types,
+        expires_at=expires_at,
+    )
+    await _ready(_intent_repo).declare(contract)
+    logger.info(
+        "governance_intent_contract_declared",
+        contract_id=contract.contract_id,
+        agent_id=req.agent_id,
+        org_id=_auth.org_id,
+        declared_by=_auth.key_id,
+    )
+    return contract.to_dict()
+
+
+@app.get("/api/governance/intent-contracts/{agent_id}/active", tags=["governance"])
+@limiter.limit("60/minute")
+async def governance_get_active_intent(
+    request: Request,
+    agent_id: str,
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
+) -> dict[str, Any]:
+    """The currently active Intent Contract for `agent_id`, or a
+    `has_active_contract: false` marker if none is declared or the
+    latest declaration has expired -- 200, not 404, since "no contract"
+    is a normal, expected state (identical to behavior before this
+    feature existed), not an error."""
+    if not _auth.org_id:
+        raise HTTPException(
+            400, "Intent contracts require an org-scoped API key, not a legacy flat key."
+        )
+    contract = await _ready(_intent_repo).get_active_for_agent(_auth.org_id, agent_id)
+    if contract is None:
+        return {"agent_id": agent_id, "has_active_contract": False}
+    return {"has_active_contract": True, **contract.to_dict()}
 
 
 @app.post("/api/governance/supplychain/scan", tags=["governance"])
