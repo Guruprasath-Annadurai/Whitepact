@@ -94,15 +94,30 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
   wins" resolution). New endpoints
   `POST /api/governance/intent-contracts` and
   `GET /api/governance/intent-contracts/{agent_id}/active`.
+- Authority Passport (Authority Everywhere Phase 5) —
+  `governance/authority_passport.py`: `AuthorityPassport` exports a
+  principal's authorized bounds from either the org's current
+  `OrgAuthorityCeiling` or an active `DelegationRecord` into a
+  portable, revocable, independently verifiable credential.
+  `verify_passport()` re-checks a passport against its live source on
+  every fetch (`VALID`/`DRIFTED`/`SOURCE_NOT_FOUND`/`REVOKED`/`EXPIRED`)
+  — **not cryptographically signed**, same reasoning `attestation.py`
+  already gives for its own records. New append-only
+  `governance_authority_passports` table (migration `0029`,
+  `db/authority_passport_repository.py`). New endpoints
+  `POST /api/governance/authority-passports` (ADMIN+),
+  `GET /api/governance/authority-passports/{id}` (fetch + verify), and
+  `POST .../{id}/revoke`.
 - See `docs/architecture/AUTHORITY_EVERYWHERE.md` and
-  `MIGRATION_WHITEPACT_V2.md` Sections 17-22 for the full design and
-  structured phase verdicts. 24 + 17 + 26 + 20 + 21 + 35 new tests
+  `MIGRATION_WHITEPACT_V2.md` Sections 17-23 for the full design and
+  structured phase verdicts. 24 + 17 + 26 + 20 + 21 + 35 + 35 new tests
   (`tests/test_tool_trust.py`, `tests/test_jit_credential.py`,
   `tests/test_causal_influence.py`,
   `tests/test_outcome_reconciliation_attestation.py`,
   `tests/test_verifiable_credential.py` +
   `tests/test_mcp_verified_principal.py`,
-  `tests/test_intent_contract.py` + `tests/test_mcp_intent_contract.py`).
+  `tests/test_intent_contract.py` + `tests/test_mcp_intent_contract.py`,
+  `tests/test_authority_passport.py`).
 
 ## [1.2.3] — 2026-08-19
 

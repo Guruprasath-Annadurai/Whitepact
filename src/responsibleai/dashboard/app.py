@@ -8,7 +8,7 @@ import time
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar
 from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
@@ -89,6 +89,8 @@ from responsibleai.db import (
     ApprovalNotFoundError,
     ApprovalRepository,
     AuditRepository,
+    AuthorityPassportNotFoundError,
+    AuthorityPassportRepository,
     CostRepository,
     CredentialIssuanceRepository,
     DelegationEscalationError,
@@ -133,6 +135,11 @@ from responsibleai.eval import (
 )
 from responsibleai.governance.approval import ApprovalStatus
 from responsibleai.governance.attestation import build_attestation_record
+from responsibleai.governance.authority_passport import (
+    build_authority_passport_from_ceiling,
+    build_authority_passport_from_delegation,
+    verify_passport,
+)
 from responsibleai.governance.autonomy_budget import AutonomyBudgetPolicy
 from responsibleai.governance.ceiling import OrgAuthorityCeiling
 from responsibleai.governance.evidence_bundle import build_evidence_bundle, verify_evidence_bundle
@@ -271,6 +278,7 @@ _tool_trust_repo: ToolTrustRepository | None = None
 _credential_issuance_repo: CredentialIssuanceRepository | None = None
 _outcome_repo: OutcomeRepository | None = None
 _intent_repo: IntentContractRepository | None = None
+_authority_passport_repo: AuthorityPassportRepository | None = None
 _upstream_gateway: WhitePactRuntimeGateway = WhitePactRuntimeGateway()
 _db_engine: DatabaseEngine | None = None
 _ws_manager: ConnectionManager = ConnectionManager()
@@ -325,6 +333,7 @@ async def lifespan(application: FastAPI):
     global _evidence_repo, _approval_repo, _policy_repo, _upstream_registry, _ceiling_repo
     global _tool_trust_repo, _credential_issuance_repo, _outcome_repo
     global _workflow_rule_repo, _delegation_repo, _autonomy_budget_repo, _intent_repo
+    global _authority_passport_repo
     global _eval_repo, _comparator, _benchmark_runner, _dataset_scanner
     global _oidc_provider, _saml_config, _stripe_service, _plan_rate_limiter
 
@@ -376,6 +385,7 @@ async def lifespan(application: FastAPI):
     _delegation_repo = DelegationRepository(_db_engine)
     _autonomy_budget_repo = OrgAutonomyBudgetRepository(_db_engine)
     _intent_repo = IntentContractRepository(_db_engine)
+    _authority_passport_repo = AuthorityPassportRepository(_db_engine)
     _guardrails = GuardrailsEngine()
     _hallucination = HallucinationDetector()
     _compliance = ComplianceEngine()
@@ -965,6 +975,21 @@ class IntentContractDeclareRequest(BaseModel):
     denied_targets: list[str] | None = Field(default=None, max_length=200)
     allowed_action_types: list[str] | None = Field(default=None, max_length=200)
     expires_in_minutes: int | None = Field(default=None, ge=1, le=525_600)  # up to 1 year
+
+
+class AuthorityPassportIssueRequest(BaseModel):
+    """See governance/authority_passport.py's AuthorityPassport.
+    `source` selects what to export: the org's current
+    `OrgAuthorityCeiling` ("org_ceiling") or `principal_id`'s currently
+    active `DelegationRecord` ("delegation")."""
+
+    principal_id: str = Field(..., min_length=1, max_length=200)
+    source: Literal["org_ceiling", "delegation"]
+    expires_in_minutes: int | None = Field(default=None, ge=1, le=525_600)  # up to 1 year
+
+
+class AuthorityPassportRevokeRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=2000)
 
 
 class DelegationRevokeRequest(BaseModel):
@@ -3525,6 +3550,120 @@ async def governance_get_active_intent(
     if contract is None:
         return {"agent_id": agent_id, "has_active_contract": False}
     return {"has_active_contract": True, **contract.to_dict()}
+
+
+@app.post("/api/governance/authority-passports", tags=["governance"], status_code=201)
+@limiter.limit("20/minute")
+async def governance_issue_authority_passport(
+    request: Request,
+    req: AuthorityPassportIssueRequest,
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, Any]:
+    """Issues an Authority Passport (Authority Everywhere Phase 5) --
+    ADMIN+, like a delegation grant, since exporting a portable
+    credential is exporting real usable authority (unlike an Intent
+    Contract, which only ever narrows). `source` picks what to export
+    from; the passport is a snapshot at issuance time -- see
+    `governance/authority_passport.py`'s module docstring for why this
+    is deliberately not cryptographically signed."""
+    if not _auth.org_id:
+        raise HTTPException(
+            400, "Authority passports require an org-scoped API key, not a legacy flat key."
+        )
+    expires_at = None
+    if req.expires_in_minutes is not None:
+        expires_at = datetime.now(UTC) + timedelta(minutes=req.expires_in_minutes)
+
+    if req.source == "org_ceiling":
+        ceiling = await _ready(_ceiling_repo).get(_auth.org_id)
+        if ceiling is None:
+            raise HTTPException(404, "No authority ceiling configured for this organization.")
+        passport = build_authority_passport_from_ceiling(
+            ceiling, req.principal_id, expires_at=expires_at
+        )
+    else:
+        delegation = await _ready(_delegation_repo).get_active_delegation(
+            _auth.org_id, req.principal_id
+        )
+        if delegation is None:
+            raise HTTPException(
+                404, f"No active delegation found for principal {req.principal_id!r}."
+            )
+        passport = build_authority_passport_from_delegation(delegation, expires_at=expires_at)
+
+    await _ready(_authority_passport_repo).issue(passport)
+    logger.info(
+        "governance_authority_passport_issued",
+        passport_id=passport.passport_id,
+        principal_id=req.principal_id,
+        source=req.source,
+        org_id=_auth.org_id,
+        issued_by=_auth.key_id,
+    )
+    return passport.to_dict()
+
+
+@app.get("/api/governance/authority-passports/{passport_id}", tags=["governance"])
+@limiter.limit("60/minute")
+async def governance_get_authority_passport(
+    request: Request,
+    passport_id: str,
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
+) -> dict[str, Any]:
+    """Fetches a passport and re-verifies it against its live source in
+    the same response -- never trusts the passport's own stored fields
+    alone, per `verify_passport()`'s "integrity by linkage" design."""
+    if not _auth.org_id:
+        raise HTTPException(
+            400, "Authority passports require an org-scoped API key, not a legacy flat key."
+        )
+    passport = await _ready(_authority_passport_repo).get(passport_id)
+    if passport is None or passport.organization_id != _auth.org_id:
+        raise HTTPException(404, "Authority passport not found.")
+
+    ceiling = None
+    delegation = None
+    if passport.source == "org_ceiling":
+        ceiling = await _ready(_ceiling_repo).get(_auth.org_id)
+    elif passport.source == "delegation":
+        delegation = await _ready(_delegation_repo).get_active_delegation(
+            _auth.org_id, passport.principal_id
+        )
+    result = verify_passport(passport, ceiling=ceiling, delegation=delegation)
+    return {
+        **passport.to_dict(),
+        "verification": {"status": result.status.value, "detail": result.detail},
+    }
+
+
+@app.post("/api/governance/authority-passports/{passport_id}/revoke", tags=["governance"])
+@limiter.limit("20/minute")
+async def governance_revoke_authority_passport(
+    request: Request,
+    passport_id: str,
+    req: AuthorityPassportRevokeRequest,
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, Any]:
+    if not _auth.org_id:
+        raise HTTPException(
+            400, "Authority passports require an org-scoped API key, not a legacy flat key."
+        )
+    existing = await _ready(_authority_passport_repo).get(passport_id)
+    if existing is None or existing.organization_id != _auth.org_id:
+        raise HTTPException(404, "Authority passport not found.")
+    try:
+        revoked = await _ready(_authority_passport_repo).revoke(
+            passport_id, revoked_by=_auth.key_id, reason=req.reason
+        )
+    except AuthorityPassportNotFoundError:
+        raise HTTPException(404, "Authority passport not found.") from None
+    logger.info(
+        "governance_authority_passport_revoked",
+        passport_id=passport_id,
+        org_id=_auth.org_id,
+        revoked_by=_auth.key_id,
+    )
+    return revoked.to_dict()
 
 
 @app.post("/api/governance/supplychain/scan", tags=["governance"])

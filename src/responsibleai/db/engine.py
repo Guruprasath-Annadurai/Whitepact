@@ -727,6 +727,29 @@ governance_intent_contracts = Table(
     Index("idx_gic_agent", "org_id", "agent_id"),
 )
 
+governance_authority_passports = Table(
+    "governance_authority_passports",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("org_id", String(36), nullable=False),
+    Column("principal_id", String(200), nullable=False),
+    Column("source", String(32), nullable=False),
+    Column("source_id", String(200), nullable=False),
+    Column("granted_action_types", Text, nullable=False),  # JSON list
+    Column("max_value_usd", Float, nullable=True),
+    Column("allowed_targets", Text, nullable=True),  # JSON list or null
+    Column("denied_targets", Text, nullable=True),  # JSON list or null
+    Column("require_approval_for", Text, nullable=True),  # JSON list or null
+    Column("max_delegation_depth", Integer, nullable=True),
+    Column("issued_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=True),
+    Column("revoked_at", String(32), nullable=True),
+    Column("revoked_by", String(200), nullable=True),
+    Column("revoke_reason", Text, nullable=True),
+    Index("idx_ap_org", "org_id"),
+    Index("idx_ap_principal", "org_id", "principal_id"),
+)
+
 
 class DatabaseEngine:
     """Async database engine wrapping SQLAlchemy — SQLite or PostgreSQL.

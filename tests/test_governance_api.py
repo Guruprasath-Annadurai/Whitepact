@@ -1381,3 +1381,211 @@ class TestIntentContractEndpoints:
             headers={"Authorization": f"Bearer {other_key}"},
         )
         assert r.json()["has_active_contract"] is False
+
+
+class TestAuthorityPassportEndpoints:
+    async def _set_ceiling(self, org_id: str, **kwargs) -> None:
+        from responsibleai.dashboard.app import _db_engine
+        from responsibleai.db import OrgAuthorityCeilingRepository
+        from responsibleai.governance import OrgAuthorityCeiling
+
+        await OrgAuthorityCeilingRepository(_db_engine).set(
+            OrgAuthorityCeiling(org_id=org_id, **kwargs)
+        )
+
+    async def _grant_delegation(
+        self, client: AsyncClient, admin_key: str, to_identity_id: str
+    ) -> None:
+        r = await client.post(
+            "/api/governance/delegations",
+            json={
+                "to_identity_id": to_identity_id,
+                "granted_action_types": ["rai_scan"],
+                "purpose": "test",
+            },
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        assert r.status_code == 201, r.text
+
+    async def test_analyst_cannot_issue(self, client: AsyncClient, org_and_analyst_key) -> None:
+        _org_id, key = org_and_analyst_key
+        r = await client.post(
+            "/api/governance/authority-passports",
+            json={"principal_id": "agent-1", "source": "org_ceiling"},
+            headers={"Authorization": f"Bearer {key}"},
+        )
+        assert r.status_code == 403
+
+    async def test_issue_from_ceiling_requires_ceiling_configured(
+        self, client: AsyncClient, org_and_admin_key
+    ) -> None:
+        _org_id, admin_key = org_and_admin_key
+        r = await client.post(
+            "/api/governance/authority-passports",
+            json={"principal_id": "agent-1", "source": "org_ceiling"},
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        assert r.status_code == 404
+
+    async def test_issue_from_ceiling(self, client: AsyncClient, org_and_admin_key) -> None:
+        org_id, admin_key = org_and_admin_key
+        await self._set_ceiling(org_id, max_value_usd=500, allowed_action_types=["rai_scan"])
+        r = await client.post(
+            "/api/governance/authority-passports",
+            json={"principal_id": "agent-1", "source": "org_ceiling"},
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        assert r.status_code == 201, r.text
+        body = r.json()
+        assert body["principal_id"] == "agent-1"
+        assert body["source"] == "org_ceiling"
+        assert body["max_value_usd"] == 500
+        assert body["granted_action_types"] == ["rai_scan"]
+
+    async def test_issue_from_delegation_requires_active_delegation(
+        self, client: AsyncClient, org_and_admin_key
+    ) -> None:
+        _org_id, admin_key = org_and_admin_key
+        r = await client.post(
+            "/api/governance/authority-passports",
+            json={"principal_id": "agent-1", "source": "delegation"},
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        assert r.status_code == 404
+
+    async def test_issue_from_delegation(self, client: AsyncClient, org_and_admin_key) -> None:
+        _org_id, admin_key = org_and_admin_key
+        await self._grant_delegation(client, admin_key, "agent-1")
+        r = await client.post(
+            "/api/governance/authority-passports",
+            json={"principal_id": "agent-1", "source": "delegation"},
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        assert r.status_code == 201, r.text
+        body = r.json()
+        assert body["source"] == "delegation"
+        assert body["granted_action_types"] == ["rai_scan"]
+
+    async def test_get_passport_verifies_against_live_source(
+        self, client: AsyncClient, org_and_admin_key, org_and_analyst_key
+    ) -> None:
+        org_id, admin_key = org_and_admin_key
+        _org_id2, analyst_key = org_and_analyst_key
+        await self._set_ceiling(org_id, max_value_usd=500)
+        r = await client.post(
+            "/api/governance/authority-passports",
+            json={"principal_id": "agent-1", "source": "org_ceiling"},
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        passport_id = r.json()["passport_id"]
+
+        r = await client.get(
+            f"/api/governance/authority-passports/{passport_id}",
+            headers={"Authorization": f"Bearer {analyst_key}"},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["verification"]["status"] == "VALID"
+
+    async def test_get_passport_flags_drift_after_ceiling_narrowed(
+        self, client: AsyncClient, org_and_admin_key
+    ) -> None:
+        org_id, admin_key = org_and_admin_key
+        headers = {"Authorization": f"Bearer {admin_key}"}
+        await self._set_ceiling(org_id, max_value_usd=500)
+        r = await client.post(
+            "/api/governance/authority-passports",
+            json={"principal_id": "agent-1", "source": "org_ceiling"},
+            headers=headers,
+        )
+        passport_id = r.json()["passport_id"]
+
+        await self._set_ceiling(org_id, max_value_usd=100)  # narrowed since issuance
+
+        r = await client.get(f"/api/governance/authority-passports/{passport_id}", headers=headers)
+        assert r.json()["verification"]["status"] == "DRIFTED"
+
+    async def test_get_unknown_passport_404(self, client: AsyncClient, org_and_analyst_key) -> None:
+        _org_id, key = org_and_analyst_key
+        r = await client.get(
+            "/api/governance/authority-passports/does-not-exist",
+            headers={"Authorization": f"Bearer {key}"},
+        )
+        assert r.status_code == 404
+
+    async def test_revoke_passport(self, client: AsyncClient, org_and_admin_key) -> None:
+        org_id, admin_key = org_and_admin_key
+        headers = {"Authorization": f"Bearer {admin_key}"}
+        await self._set_ceiling(org_id, max_value_usd=500)
+        r = await client.post(
+            "/api/governance/authority-passports",
+            json={"principal_id": "agent-1", "source": "org_ceiling"},
+            headers=headers,
+        )
+        passport_id = r.json()["passport_id"]
+
+        r = await client.post(
+            f"/api/governance/authority-passports/{passport_id}/revoke",
+            json={"reason": "rotated"},
+            headers=headers,
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["revoked_at"] is not None
+        assert r.json()["revoke_reason"] == "rotated"
+
+        r = await client.get(f"/api/governance/authority-passports/{passport_id}", headers=headers)
+        assert r.json()["verification"]["status"] == "REVOKED"
+
+    async def test_analyst_cannot_revoke(self, client: AsyncClient, org_and_admin_key) -> None:
+        org_id, admin_key = org_and_admin_key
+        await self._set_ceiling(org_id, max_value_usd=500)
+        r = await client.post(
+            "/api/governance/authority-passports",
+            json={"principal_id": "agent-1", "source": "org_ceiling"},
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        passport_id = r.json()["passport_id"]
+
+        r = await client.post(
+            f"/api/orgs/{org_id}/keys",
+            json={"name": "analyst-key-2", "role": "ANALYST"},
+            headers=BOOTSTRAP_AUTH,
+        )
+        analyst_key = r.json()["key"]
+
+        r = await client.post(
+            f"/api/governance/authority-passports/{passport_id}/revoke",
+            json={},
+            headers={"Authorization": f"Bearer {analyst_key}"},
+        )
+        assert r.status_code == 403
+
+    async def test_cross_org_passport_not_visible(
+        self, client: AsyncClient, org_and_admin_key
+    ) -> None:
+        org_id, admin_key = org_and_admin_key
+        await self._set_ceiling(org_id, max_value_usd=500)
+        r = await client.post(
+            "/api/governance/authority-passports",
+            json={"principal_id": "agent-1", "source": "org_ceiling"},
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        passport_id = r.json()["passport_id"]
+
+        r = await client.post(
+            "/api/orgs",
+            json={"name": "Other Passport Co", "slug": "other-passport-co"},
+            headers=BOOTSTRAP_AUTH,
+        )
+        other_org_id = r.json()["id"]
+        r = await client.post(
+            f"/api/orgs/{other_org_id}/keys",
+            json={"name": "k", "role": "ANALYST"},
+            headers=BOOTSTRAP_AUTH,
+        )
+        other_key = r.json()["key"]
+
+        r = await client.get(
+            f"/api/governance/authority-passports/{passport_id}",
+            headers={"Authorization": f"Bearer {other_key}"},
+        )
+        assert r.status_code == 404
