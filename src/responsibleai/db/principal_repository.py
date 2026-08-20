@@ -57,7 +57,9 @@ class PrincipalRepository:
             )
         return claim
 
-    async def get_recent_for_principal(self, principal_id: str, limit: int = 20) -> list[PrincipalClaim]:
+    async def get_recent_for_principal(
+        self, principal_id: str, limit: int = 20
+    ) -> list[PrincipalClaim]:
         async with self._engine.raw.connect() as conn:
             rows = (
                 await conn.execute(
