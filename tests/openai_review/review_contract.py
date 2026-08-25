@@ -116,9 +116,13 @@ REVIEW_CONTRACT: dict[str, Any] = {
             "expected_arguments": {},
             "expected_result_contract": {
                 "note": (
-                    "ORIGINAL EXPECTATION (org id/plan tier/usage, needing a live demo org) "
-                    "IS NOT ACHIEVABLE by this tool -- confirmed 2026-08-25, see notes."
+                    "RESOLVED 2026-08-25 for the hosted, authenticated case: on the hosted "
+                    "MCP transport with a real API key, org_id/plan/usage are now real, "
+                    "live data -- see tests/test_mcp_org_status_live.py. On the self-hosted "
+                    "stdio transport there is genuinely no org account to look up; that "
+                    "remains the structurally correct behavior, not a gap."
                 ),
+                "required_keys_when_authenticated": ["org_id", "plan", "usage"],
                 "corrected_arguments": {
                     "model_grades": {"gpt-4o": "A", "claude": "B"},
                     "open_incidents": 2,
@@ -129,13 +133,14 @@ REVIEW_CONTRACT: dict[str, Any] = {
             },
             "automatable": True,
             "notes": (
-                "CONFIRMED, most severe finding: rai_org_status has no org-id parameter and "
-                "no database/auth lookup at all -- every field is caller-supplied. The "
-                "original submitted test case describes a capability (live org lookup) this "
-                "tool has never had, demo credentials or not. Tool description corrected to "
-                "state this explicitly; test asserts the corrected (achievable) contract, not "
-                "the original one. Real live-org wiring is flagged as separate follow-up "
-                "work, not done in this pass."
+                "Originally CONFIRMED as the most severe finding of the 2026-08-25 audit: "
+                "rai_org_status had no org-id parameter and no database/auth lookup at all. "
+                "Fixed the same day by wiring the handler to the hosted transport's real "
+                "authenticated org context (mcp/server.py's `_current_org` ContextVar) and "
+                "usage-quota repository, verified with a real MCP protocol round trip against "
+                "a real org/API key (tests/test_mcp_org_status_live.py). The self-hosted "
+                "stdio path still has no org context to fall back on by design -- there, the "
+                "corrected (caller-supplied-only) contract below still applies."
             ),
         },
     ],

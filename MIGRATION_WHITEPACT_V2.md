@@ -1910,3 +1910,68 @@ decision, per the row's own framing, rather than rebuilding anything.
   a test filename is already taken before writing to it, the same
   "Read before Write" discipline this whole codebase already expects
   for source files.
+
+## 25. `rai_org_status` live-org wiring (2026-08-25, follow-up to the OpenAI review contract hardening pass)
+
+Closes the real, most-severe finding recorded in
+`compliance/OPENAI_PLUGIN_SUBMISSION_PREP.md`'s TC-P5 write-up: at
+first audit, `rai_org_status` had no org-id parameter and no
+auth/database lookup at all, so its documented "look up my org's real
+plan/usage" behavior was never achievable, demo credentials or not.
+
+- **The fix** (`mcp/tools.py`'s `_handle_org_status()`) — a new
+  `_real_org_status_fields()` helper reads `mcp/server.py`'s
+  `_current_org`/`_current_usage_repo` ContextVars, already populated
+  on every authenticated hosted-transport request by `_call_tool()`
+  before dispatch, and merges in real `org_id`, `org_name`, `plan`,
+  and `usage.calls_this_month`/`monthly_quota`/`quota_status` (via
+  `McpUsageRepository.count_since()` and `licensing.monthly_quota()`
+  — the exact same infrastructure already backing quota enforcement,
+  not new plumbing). Lazy-imports from `mcp.server` inside the
+  function rather than at module level — `server.py` imports
+  `TOOL_DEFS`/`dispatch_tool` from `tools.py` at module level, so a
+  top-level import the other direction would be circular; by the time
+  `_handle_org_status()` actually runs, `server.py` has always already
+  finished importing.
+- **Additive, not a replacement**: the existing caller-supplied rollup
+  (`model_grades`, `active_frameworks`, `open_incidents`,
+  `budget_pct_used`, `drift_alerts` → `health_status`/`models`/
+  `compliance`/`operations`) is completely unchanged and still the
+  only source for those fields — there is no separate per-org store
+  of governance metrics yet, so that part of the tool's behavior was
+  never the actual gap.
+- **Self-hosted stdio is unaffected, correctly** — `_current_org`
+  is never set on that transport, so `.get()` returns `None` and
+  `_real_org_status_fields()` returns `{}`: no `org_id`/`plan`/`usage`
+  keys appear in the response at all, rather than `None`-filled
+  placeholders that would look like real (empty) data. Verified
+  directly: `test_dispatch_tool_direct_call_with_no_context_has_no_org_fields`.
+  This is not a remaining gap — a deployment with no hosted account
+  structurally has no org to look up, and the tool now says so by
+  omission rather than fabrication.
+- Verified with a real MCP protocol round trip against a real
+  org/API key, not just the handler in isolation
+  (`tests/test_mcp_org_status_live.py`, 5 tests): `org_id`/`plan`
+  match the real created org exactly, `usage.calls_this_month`
+  correctly counts real prior tool calls in the billing period
+  (including the `rai_org_status` call itself), caller-supplied
+  metrics still merge in alongside the real fields, and
+  `quota_status`/`monthly_quota` match `licensing.monthly_quota()`'s
+  own answer for the org's real plan rather than a hardcoded
+  expectation.
+- **A real test-setup mistake found and fixed during development**:
+  the first draft of the test fixture used `Plan.PRO`, and every
+  authenticated-path test failed with `KeyError` on `org_id`/`usage`
+  — not because the fix was broken, but because `rai_org_status` is
+  gated in `ENTERPRISE_TOOLS` (`mcp/licensing.py`), so a PRO-tier key
+  never reaches the handler at all (blocked upstream with
+  `upgrade_required`). Fixed by using `Plan.ENTERPRISE` in the
+  fixture; recorded here since it's a real "which plan can even call
+  this tool" gotcha worth remembering for future tests in this file.
+- `tests/openai_review/review_contract.py`'s TC-P5 entry and
+  `compliance/OPENAI_PLUGIN_SUBMISSION_PREP.md`'s write-up both
+  updated same-day to record the fix rather than leaving the
+  "confirmed severe gap" framing stale.
+- Full repo suite verified passing after this change (see commit for
+  exact count); `mypy`/`ruff check`/`ruff format --check` clean on
+  every touched file.

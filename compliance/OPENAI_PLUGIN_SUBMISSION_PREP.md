@@ -85,31 +85,33 @@ Realistic prompts a ChatGPT user would type that map cleanly to a tool:
   general-purpose (not test-specific) day-of-week/month/number contradiction check plus an
   additive `hallucination_detected` field to `mcp/tools.py`'s `_handle_hallucination`.
 
-**5. Org status — CONFIRMED CONTRACT MISMATCH, corrected 2026-08-25**
+**5. Org status — CONFIRMED CONTRACT MISMATCH found 2026-08-25, RESOLVED same day**
 - Original prompt/expectation (as submitted 2026-08-13): *"What's the current status of my
   WhitePact organization?"* → `rai_org_status` → JSON with org id, plan tier, usage/quota
   summary, requiring a demo API key tied to a demo org.
-- **This does not match what the tool actually does, and never did.** `rai_org_status` has no
+- **Found not to match what the tool actually did.** At first audit, `rai_org_status` had no
   org id parameter, no auth/database lookup, and no connection whatsoever to a real org's
-  plan/billing/usage records — every one of its fields (`model_grades`, `active_frameworks`,
-  `open_incidents`, `budget_pct_used`, `drift_alerts`) is caller-supplied, and all are
-  optional. Calling it with no arguments (exactly what "what's my org's status" with no
-  supplied data would produce) returns a rollup of all-default/empty values — a fabricated,
-  misleadingly clean "HEALTHY" status, not the real org's state. **This is the single highest-
-  confidence, most severe finding of the 2026-08-25 hardening pass** — if OpenAI's reviewer
-  ran this exact submitted case, there is no code path by which it could have produced the
-  documented result, demo credentials or not.
-- **Corrected test case** (what the tool can honestly do today): User prompt: *"Here's our
-  current governance snapshot — models graded gpt-4o:A, claude:B, 2 open incidents, 45% of
-  budget used, active frameworks NIST_AI_RMF — summarize our status."* → `rai_org_status` →
-  JSON with `health_status`, `models.grade_distribution`, `operations.budget_status`, etc.,
-  all derived from the supplied numbers.
-- **Not fixed in this pass** (real, separate, larger work): wiring `rai_org_status` to the
-  authenticated caller's real `OrgContext`/`OrgRepository` state on the hosted MCP transport
-  (the `_current_org` ContextVar already carries `org_id`/`plan` at dispatch time — ADR-adjacent
-  work, but requires deciding what a self-hosted stdio caller with no org context sees, and a
-  security review of what's safe to expose per-org). Flagged as a recommended follow-up, not
-  attempted here to avoid scope creep into an unrelated architecture change.
+  plan/billing/usage records — every field was caller-supplied and optional. Calling it with
+  no arguments (exactly what "what's my org's status" with no supplied data would produce)
+  returned a rollup of all-default/empty values — a fabricated, misleadingly clean "HEALTHY"
+  status, not the real org's state. This was the single highest-confidence, most severe
+  finding of the 2026-08-25 hardening pass.
+- **Fixed the same day**: `mcp/tools.py`'s `_handle_org_status()` now reads `mcp/server.py`'s
+  `_current_org`/`_current_usage_repo` ContextVars — already populated on every authenticated
+  hosted-transport request — and merges in real `org_id`, `plan`, and `usage.calls_this_month`/
+  `monthly_quota`/`quota_status` alongside the existing caller-supplied rollup. Verified with a
+  real MCP protocol round trip against a real org/API key
+  (`tests/test_mcp_org_status_live.py`): `org_id` matches the real org, `plan` matches the
+  real plan, and `usage.calls_this_month` correctly counts real prior calls in the billing
+  period. The self-hosted stdio transport has `_current_org.get()` return `None` (it's never
+  set on that transport) and correctly still returns the caller-supplied-only rollup with no
+  `org_id`/`plan`/`usage` fields at all — not a gap, the structurally correct answer for a
+  deployment with no hosted account.
+- **Corrected test case** (what the tool does when *no* auth context exists, e.g. self-hosted
+  stdio): User prompt: *"Here's our current governance snapshot — models graded gpt-4o:A,
+  claude:B, 2 open incidents, 45% of budget used, active frameworks NIST_AI_RMF — summarize
+  our status."* → `rai_org_status` → JSON with `health_status`, `models.grade_distribution`,
+  `operations.budget_status`, etc., all derived from the supplied numbers.
 
 ### Negative (3)
 

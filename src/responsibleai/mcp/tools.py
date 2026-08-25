@@ -882,16 +882,15 @@ TOOL_DEFS: list[types.Tool] = [
             readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False
         ),
         description=(
-            "Compute a structured governance status rollup FROM caller-supplied metrics "
-            "(model grades, active frameworks, open incidents, budget usage, drift alerts) -- "
-            "it does not look up or fetch any organization's real data on its own; every "
-            "field it returns is derived from what you pass in. Use this when the caller "
-            "(or a prior step) already has these governance metrics and wants them turned "
-            "into a health rollup (grade distribution, health status, budget status). "
-            "Do NOT use this to answer 'what is my org's current status/plan/usage' with no "
-            "data supplied -- it has no live connection to org billing, plan tier, or usage "
-            "records; calling it with no arguments returns a rollup of all-default/empty "
-            "values, not real account state."
+            "Compute a structured governance status rollup. The health/grade/compliance "
+            "fields (models, compliance, operations) are always derived FROM caller-supplied "
+            "metrics (model grades, active frameworks, open incidents, budget usage, drift "
+            "alerts) -- there is no separate store of these tracked per-org yet, so calling "
+            "with none supplied rolls up empty/default values, not fabricated data. The "
+            "org_id/plan/usage fields are different: on the hosted MCP transport with an "
+            "authenticated caller, these reflect the real, live org record and this month's "
+            "real call count against quota -- absent (not present in the response at all) on "
+            "the self-hosted stdio transport, where there is no org account to look up."
         ),
         inputSchema={
             "type": "object",
@@ -2293,6 +2292,56 @@ async def _handle_executive_summary(args: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+async def _real_org_status_fields(caller_org_name: str) -> dict[str, Any]:
+    """When called on the hosted MCP transport with an authenticated
+    org context, returns the real org_id/plan/usage-quota data the
+    original OpenAI submission's test case documented -- closing the
+    gap flagged in compliance/OPENAI_PLUGIN_SUBMISSION_PREP.md's
+    corrected TC-P5 write-up. `{}` (no real fields merged in) on the
+    self-hosted stdio transport, where there is genuinely no org
+    context to look up -- that's not a bug, it's the structurally
+    correct answer for a deployment with no hosted account at all.
+
+    Lazy-imports from mcp.server rather than importing at module level:
+    server.py imports TOOL_DEFS/dispatch_tool from this module, so a
+    top-level import here would be circular. By the time this function
+    actually runs, server.py has always already finished importing
+    (nothing can reach _handle_org_status without going through
+    dispatch_tool, which only exists once server.py's own import of
+    this module has completed)."""
+    from responsibleai.mcp.licensing import monthly_quota
+    from responsibleai.mcp.server import _current_org, _current_usage_repo, _month_start_iso
+
+    ctx = _current_org.get()
+    if ctx is None or not ctx.org_id:
+        return {}
+
+    usage_repo = _current_usage_repo.get()
+    quota = monthly_quota(ctx.plan)
+    used = None
+    if usage_repo is not None:
+        used = await usage_repo.count_since(ctx.org_id, _month_start_iso())
+
+    return {
+        "org_id": ctx.org_id,
+        "org_name": ctx.org_name or caller_org_name,
+        "plan": ctx.plan.value,
+        "usage": {
+            "calls_this_month": used,
+            "monthly_quota": quota,
+            "quota_status": (
+                "UNLIMITED"
+                if quota is None
+                else "UNKNOWN"
+                if used is None
+                else "EXCEEDED"
+                if used >= quota
+                else "OK"
+            ),
+        },
+    }
+
+
 async def _handle_org_status(args: dict[str, Any]) -> dict[str, Any]:
     org_name = str(args.get("org_name", "default"))
     model_grades: dict[str, str] = args.get("model_grades", {})
@@ -2346,6 +2395,7 @@ async def _handle_org_status(args: dict[str, Any]) -> dict[str, Any]:
             "tools_available": len(TOOL_DEFS),
             "version": __version__,
         },
+        **await _real_org_status_fields(org_name),
     }
 
 
