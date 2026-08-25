@@ -3486,6 +3486,58 @@ async def governance_revoke_delegation(
     return {"identity_id": identity_id, "revoked_delegation_ids": revoked_ids}
 
 
+@app.get("/api/governance/delegations/{identity_id}/descendants", tags=["governance"])
+@limiter.limit("30/minute")
+async def governance_get_delegation_descendants(
+    request: Request,
+    identity_id: str,
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
+) -> dict[str, Any]:
+    """Authority Everywhere Phase 6: every identity currently,
+    transitively delegated-from `identity_id` -- the forward-direction
+    counterpart to `.../chain` (which looks backward, to the root).
+    Built from each identity's current parentage, not a raw historical
+    walk -- an identity re-delegated under a different parent since
+    only shows up under its current one."""
+    if not _auth.org_id:
+        raise HTTPException(
+            400, "Delegations require an org-scoped API key, not a legacy flat key."
+        )
+    descendants = await _ready(_delegation_repo).get_descendants(_auth.org_id, identity_id)
+    return {
+        "identity_id": identity_id,
+        "descendant_count": len(descendants),
+        "descendants": [
+            {
+                "identity_id": d.to_identity_id,
+                "delegation_id": d.delegation_id,
+                "from_identity_id": d.from_identity_id,
+                "granted_action_types": sorted(d.granted_action_types),
+                "is_active": d.is_active(),
+            }
+            for d in descendants
+        ],
+    }
+
+
+@app.get("/api/governance/delegations/graph", tags=["governance"])
+@limiter.limit("15/minute")
+async def governance_get_delegation_graph(
+    request: Request,
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
+) -> dict[str, Any]:
+    """Authority Everywhere Phase 6: the org's full delegation forest
+    as a first-class, queryable object -- every root grant and
+    everything transitively delegated from it, not just one identity's
+    own chain. A snapshot at request time, rebuilt fresh, not cached."""
+    if not _auth.org_id:
+        raise HTTPException(
+            400, "Delegations require an org-scoped API key, not a legacy flat key."
+        )
+    graph = await _ready(_delegation_repo).get_org_graph(_auth.org_id)
+    return graph.to_dict()
+
+
 @app.post("/api/governance/intent-contracts", tags=["governance"], status_code=201)
 @limiter.limit("30/minute")
 async def governance_declare_intent(

@@ -305,6 +305,37 @@ threat model. Today `AuthorityPassport` is the portable, exportable,
 independently verifiable *representation* of a principal's authority,
 not yet a new input to the hot governance-decision path.
 
+#### 3.3.2 Delegation Graph as a first-class object **[TODAY, first version — Authority Everywhere Phase 6]**
+
+`docs/architecture/AUTHORITY_EVERYWHERE.md`'s lifecycle table (row 4)
+already credited `governance/delegation.py` + `db/delegation_repository.py`
+with being "a working delegation graph today" — `validate_attenuation()`
+enforces `CHILD AUTHORITY ⊆ PARENT AUTHORITY` at grant time, and
+`get_authority_chain()`/`revoke_branch()` already walk the structure
+correctly. What was missing: every existing query was *pairwise* (one
+identity's own backward chain to its root, or a mutation that walked
+forward only to revoke) — there was no way to ask "what does the whole
+graph look like right now" independent of any single decision.
+
+`governance/delegation_graph.py`'s `DelegationGraph`/`DelegationGraphNode`
+close that gap: `DelegationRepository.get_org_graph()` builds the
+org-wide forest (every root grant and everything transitively
+delegated from it), and `get_descendants()` is the public, read-only,
+forward-direction counterpart to `revoke_branch()`'s internal BFS.
+Both are built from each identity's *current* state
+(`get_latest_delegation()`), not a raw historical-row walk — an
+identity re-delegated under a new parent shows up under that parent
+only, not duplicated or left stale under the old one. New endpoints
+`GET /api/governance/delegations/{identity_id}/descendants` and
+`GET /api/governance/delegations/graph`.
+
+**Deliberately unchanged**: no new invariant, no new migration, no
+change to `grant()`/`revoke_branch()`/`validate_attenuation()`'s
+existing behavior — this phase is a read-only export of state that
+was always reconstructable from the existing `governance_delegations`
+table, exactly matching the lifecycle table's own framing ("package
+it," not "rebuild it").
+
 ### 3.4 Action **[TODAY — Phase 8]**
 
 A proposed operation an agent wants to execute. Conceptually:

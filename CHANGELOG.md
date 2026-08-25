@@ -108,16 +108,29 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
   `POST /api/governance/authority-passports` (ADMIN+),
   `GET /api/governance/authority-passports/{id}` (fetch + verify), and
   `POST .../{id}/revoke`.
+- Delegation Graph as a first-class object (Authority Everywhere
+  Phase 6) — `governance/delegation_graph.py`: `DelegationGraph`/
+  `DelegationGraphNode` package the already-correct delegation logic
+  (`validate_attenuation()`, `revoke_branch()`) into a queryable
+  org-wide forest, independent of any single decision. New
+  `DelegationRepository.get_org_graph()` (the full forest) and
+  `get_descendants()` (public, read-only, forward-direction
+  counterpart to `revoke_branch()`'s internal traversal), both built
+  from each identity's current state so a re-delegated identity shows
+  up under its new parent only. New endpoints
+  `GET /api/governance/delegations/{identity_id}/descendants` and
+  `GET /api/governance/delegations/graph`. No new invariant, no new
+  migration — pure read-only export of existing state.
 - See `docs/architecture/AUTHORITY_EVERYWHERE.md` and
-  `MIGRATION_WHITEPACT_V2.md` Sections 17-23 for the full design and
-  structured phase verdicts. 24 + 17 + 26 + 20 + 21 + 35 + 35 new tests
-  (`tests/test_tool_trust.py`, `tests/test_jit_credential.py`,
+  `MIGRATION_WHITEPACT_V2.md` Sections 17-24 for the full design and
+  structured phase verdicts. 24 + 17 + 26 + 20 + 21 + 35 + 35 + 18 new
+  tests (`tests/test_tool_trust.py`, `tests/test_jit_credential.py`,
   `tests/test_causal_influence.py`,
   `tests/test_outcome_reconciliation_attestation.py`,
   `tests/test_verifiable_credential.py` +
   `tests/test_mcp_verified_principal.py`,
   `tests/test_intent_contract.py` + `tests/test_mcp_intent_contract.py`,
-  `tests/test_authority_passport.py`).
+  `tests/test_authority_passport.py`, `tests/test_delegation_org_graph.py`).
 
 ### Fixed
 
