@@ -1975,3 +1975,87 @@ plan/usage" behavior was never achievable, demo credentials or not.
 - Full repo suite verified passing after this change (see commit for
   exact count); `mypy`/`ruff check`/`ruff format --check` clean on
   every touched file.
+
+## 26. WhitePact Heart / Sovereignty Kernel — Phases H0-H1 (2026-08-25)
+
+Begins a new, separate, deliberately-scoped-down initiative: a small
+trusted-computing-base layer beneath the existing governance/authority
+code, answering "why does this machine have the legitimate right to
+exercise this authority at all" — logically prior to
+`WhitePactRuntimeGateway.evaluate()`, not one more check inside it.
+Per the master prompt's own 18-phase structure and phase-gate
+discipline, only Phases H0 and H1 are complete here; H2-H17 are real,
+substantial, separately-scoped work (authority lattice, root of
+authority, consent proof, purpose binding, revocation epoch, the Heart
+veto itself, formal/property/adversarial verification, performance
+benchmarking, enterprise hardening) not attempted in this pass — see
+each phase's own gate report for an honest PASS/FAIL rather than
+claiming completion this session doesn't have evidence for.
+
+- **Phase H0** (`docs/heart/HEART_CURRENT_STATE.md`) — full audit of
+  existing authority infrastructure before writing any Heart code, per
+  the master prompt's own "inspect before touching source" instruction.
+  Classifies every relevant existing component (REUSE/EXTEND/REFACTOR/
+  ABSORB/OUTSIDE HEART/LEGACY). Headline finding: the codebase has
+  strong existing precedent for deterministic-only decisions,
+  documented non-signing rationale, per-org hash chains, and honest
+  gap-listing — but **no root-of-trust concept, no unified revocation
+  epoch, no immutable historically-versioned policy/constitution
+  object, and no `NO_ROOT_AUTHORITY`-class reason code** exist
+  anywhere today. That is genuinely new territory for later Heart
+  phases, not duplicated work.
+- **Phase H1** (`governance/constitution.py`) — `AuthorityConstitutionVersion`:
+  a versioned, canonicalized, historically-immutable set of the
+  fifteen constitutional laws (H1-H15) from the master prompt,
+  distinct from the existing, deliberately org-mutable `Policy`
+  (`governance/policy.py`). `_CONSTITUTION_HISTORY` is a
+  `MappingProxyType`, not a plain dict — mutation attempts raise
+  `TypeError`, a real enforced guarantee, not a code-review convention.
+  `canonical_digest` (SHA-256 over canonical JSON of version/laws/
+  ratified_at/description) reuses `governance/approval.py`'s existing
+  canonicalization discipline rather than inventing a second one.
+  **Deliberately not cryptographically signed** — full reasoning in
+  `docs/heart/HEART_SIGNING_DECISION.md`, generalizing the identical
+  "no signing while everything stays in one process/trust boundary"
+  rule `execution.py` and `authority_passport.py` already established,
+  with the constitution's own stronger case (it's a source-code
+  constant, not even a DB row) spelled out explicitly.
+- **Scope discipline**: this phase does *not* wire `constitution_version`
+  into `DecisionResult`/`EvidenceRecord`, does not modify
+  `WhitePactRuntimeGateway.evaluate()` in any way, and does not build
+  anything that evaluates real inputs against these laws yet — Phase
+  H1's job per the master prompt is the constitution *object* only;
+  a Heart veto that actually consults it is Phase H11, gated on
+  Phases H2-H10 existing first (root authority, consent, purpose
+  binding, delegation, non-delegable authority, lifetime, revocation,
+  conflict resolution all need to exist before a veto can meaningfully
+  evaluate against them).
+- Verification: 22 new tests (`tests/test_constitution.py`) — unit
+  tests for the ratified `CONSTITUTION_V1` shape, registry lookup/
+  immutability, `explain_constitution()`, and Hypothesis property
+  tests (reusing `tests/test_property_based.py`'s established pattern)
+  proving digest determinism and sensitivity to every input field.
+  Full repo suite verified passing; `mypy`/`ruff check`/
+  `ruff format --check` clean on every touched file.
+
+**HEART INVARIANTS: PASS** (for the H1 scope only — constitution is
+versioned, canonicalized, historically immutable, explainable,
+testable, exactly as required; no invariant claimed beyond what H1
+actually builds).
+**SECURITY: PASS** (no signing gap — reasoned explicitly, not silently
+skipped; no live decision path touched, so no new attack surface
+introduced this phase).
+**ENTERPRISE READINESS: 2/10** (H1 of 17 phases; the constitution
+object exists but nothing yet consults it — this number reflects how
+much of the full Heart mission remains, not a quality judgment on
+what's built so far).
+**REMAINING RISKS**:
+1. No formal (TLA+/Alloy) verification exists or is claimed — later
+   phases must not silently start asserting formal guarantees that
+   were never actually built.
+2. The fifteen laws are declared but not yet evaluated against any
+   real input — H1 alone cannot prevent any real authority escalation.
+3. No wiring into `EvidenceRecord`/`DecisionResult` yet, so no real
+   decision today is stamped with a constitution version — that
+   remains true until a much later phase actually needs it.
+**VERDICT: MOVE TO NEXT HEART PHASE** (H2 — Authority Lattice).

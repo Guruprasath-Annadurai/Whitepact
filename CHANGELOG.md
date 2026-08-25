@@ -10,6 +10,29 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ### Added
 
+- WhitePact Heart / Sovereignty Kernel, Phases H0-H1 (2026-08-25) — a
+  new, deliberately small trusted-computing-base layer beneath the
+  existing governance code, answering "why does this machine have the
+  legitimate right to exercise this authority at all," logically prior
+  to `WhitePactRuntimeGateway.evaluate()`. Phase H0
+  (`docs/heart/HEART_CURRENT_STATE.md`) audits every existing
+  authority component before any new code, confirming no root-of-trust
+  concept, unified revocation epoch, or immutable versioned
+  constitution exists today. Phase H1
+  (`governance/constitution.py`): `AuthorityConstitutionVersion` — a
+  versioned, canonicalized, historically-immutable set of fifteen
+  constitutional laws (H1-H15), distinct from the existing,
+  deliberately org-mutable `Policy`. `_CONSTITUTION_HISTORY` is a
+  `MappingProxyType` — mutation attempts raise `TypeError`, a real
+  enforced guarantee. Deliberately not cryptographically signed
+  (`docs/heart/HEART_SIGNING_DECISION.md`). This phase ships the
+  constitution object only — no wiring into the live decision path,
+  no change to any existing governance behavior. 22 new tests
+  (`tests/test_constitution.py`, including Hypothesis property tests).
+  Phases H2-H17 (authority lattice, root of authority, consent proof,
+  purpose binding, revocation epoch, the Heart veto itself, formal/
+  adversarial verification, performance, enterprise hardening) are
+  real, separately-scoped future work, not claimed complete here.
 - Tool Trust Network (Authority Everywhere Phase 8) —
   `governance/tool_trust.py`: a deterministic 0-100 trust score per
   org-registered upstream MCP server, derived from the existing
