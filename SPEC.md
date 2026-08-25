@@ -127,7 +127,7 @@ wiring only ever applies to org-scoped Streamable HTTP/SSE calls).
 
 ---
 
-## 2.5 The WhitePact Heart (Sovereignty Kernel) **[TODAY, first version — Phases H0-H5]**
+## 2.5 The WhitePact Heart (Sovereignty Kernel) **[TODAY, first version — Phases H0-H6]**
 
 A new, deliberately small trusted-computing-base layer answering one
 question, and only one: *why does this machine have the legitimate
@@ -263,18 +263,45 @@ matching is deliberately exact-string, never semantic — mirroring
 rephrased purpose requires a fresh `ConsentProof`, not a judgment call
 about how "close enough" two purpose strings are.
 
+**[TODAY, Phase H6]**: `governance/delegation_kernel.py`'s
+`validate_delegation_legitimacy()` — composes the three independent
+Heart legitimacy checks from H3-H5 (root, consent, purpose) with a
+`DelegationRecord`'s own active/revoked/expired state into one
+verdict. Per `docs/heart/HEART_CURRENT_STATE.md` §3, `DelegationRecord`
+and `DelegationRepository` (`grant()`, `get_active_delegation()`,
+`get_authority_chain()`, `revoke_branch()`, `get_org_graph()`,
+`get_descendants()`) are already real, tested, and exactly what a
+delegation kernel needs operationally — this phase does not rebuild
+any of that, nor `DelegationGraph`/`DelegationGraphNode`'s existing
+org-wide read-model (Authority Everywhere Phase 6). What was missing
+is the Heart-level question none of those answer: even a
+well-formed, correctly-attenuated delegation says nothing about
+whether the delegator's own authority traces to a legitimate root, was
+actually consented to, and stays bound to its declared purpose.
+Ordering (`ROOT_NOT_LEGITIMATE` → `CONSENT_NOT_LEGITIMATE` →
+`PURPOSE_NOT_BOUND` → `DELEGATION_NOT_ACTIVE`) mirrors the same
+"upstream legitimacy before an object's own local state" principle H4
+and H5 already established. Honestly documented limitation: since
+`DelegationRecord` has no field linking it to a specific
+`root_id`/`consent_id`/`binding_id` (it predates the Heart and is not
+schema-changed by this phase, per its own REUSE classification), this
+module cannot cross-check that the three results supplied actually
+*pertain* to the delegation in question — callers are responsible for
+that correspondence.
+
 **Not built yet**: the unified `RevocationEpoch`, `SovereigntyVeto`,
 `LegitimacyEnvelope`, and the `SovereigntyKernel.evaluate()` entry
-point are all later, separate phases (H6-H13) — `AuthorityEnvelope`,
-`RootAuthorityRecord`, `ConsentProof`, and `PurposeBinding` exist and
-are tested, but nothing in the live decision path constructs or
-consults any of them yet; `WhitePactRuntimeGateway.evaluate()`
-continues to use `AuthorityContext`/`validate_attenuation()` exactly as
-before, unchanged in every way except the H2 gap fix. No DB
-persistence layer exists yet for `RootAuthorityRecord`, `ConsentProof`,
-or `PurposeBinding` either — these phases ship the record types and
-their validation semantics only, mirroring how H1's constitution and
-H2's lattice shipped pure objects without live wiring.
+point are all later, separate phases (H7-H13) — `AuthorityEnvelope`,
+`RootAuthorityRecord`, `ConsentProof`, `PurposeBinding`, and the
+delegation-legitimacy composition exist and are tested, but nothing in
+the live decision path constructs or consults any of them yet;
+`WhitePactRuntimeGateway.evaluate()` continues to use
+`AuthorityContext`/`validate_attenuation()` exactly as before,
+unchanged in every way except the H2 gap fix. No DB persistence layer
+exists yet for `RootAuthorityRecord`, `ConsentProof`, or
+`PurposeBinding` either — these phases ship the record types and their
+validation semantics only, mirroring how H1's constitution and H2's
+lattice shipped pure objects without live wiring.
 
 ## 3. Core entities
 

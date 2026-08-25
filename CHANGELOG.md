@@ -106,6 +106,28 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
   (`tests/test_purpose_binding.py`, including 3 Hypothesis property
   tests), 100% branch coverage on the new module. No DB persistence
   layer and no wiring into the live decision path yet.
+- WhitePact Heart Phase H6 — Delegation Kernel (2026-08-26)
+  (`governance/delegation_kernel.py`, new file) — composes the three
+  independent Heart legitimacy checks from H3-H5 (root, consent,
+  purpose) with a `DelegationRecord`'s own active/revoked/expired
+  state into one verdict (`DelegationLegitimacyStatus`). Reuses
+  `DelegationRecord`/`DelegationRepository`/`DelegationGraph` as-is,
+  per `docs/heart/HEART_CURRENT_STATE.md` §3's REUSE classification —
+  no delegation data model changes. The genuinely new piece: even a
+  well-formed, correctly-attenuated delegation says nothing about
+  whether the delegator's own authority traces to a legitimate root,
+  was actually consented to, and stays bound to its declared purpose;
+  this module is the composition point for those three answers.
+  Ordering (root → consent → purpose → the delegation's own state)
+  mirrors H4/H5's established "upstream legitimacy before local state"
+  principle. Documents an honest limitation: `DelegationRecord` has no
+  field cross-referencing the specific root/consent/purpose objects
+  behind it, so this module cannot verify the three results supplied
+  actually pertain to the delegation in question — that's the
+  caller's responsibility, stated explicitly rather than assumed. 12
+  new tests (`tests/test_delegation_kernel.py`, including 2 Hypothesis
+  property tests), 100% branch coverage on the new module. No DB
+  persistence layer and no wiring into the live decision path yet.
 - Tool Trust Network (Authority Everywhere Phase 8) —
   `governance/tool_trust.py`: a deterministic 0-100 trust score per
   org-registered upstream MCP server, derived from the existing
