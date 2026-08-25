@@ -33,6 +33,7 @@ from sqlalchemy import insert, select, update
 
 from responsibleai.db.engine import DatabaseEngine, governance_delegations
 from responsibleai.governance.delegation import DelegationRecord
+from responsibleai.governance.delegation_graph import DelegationGraph, DelegationGraphNode
 from responsibleai.governance.models import validate_attenuation
 
 
@@ -297,3 +298,100 @@ class DelegationRepository:
                 for hop in chain
             ],
         }
+
+    async def _all_to_identity_ids(self, org_id: str) -> set[str]:
+        """Every identity that has ever received a delegation via this
+        graph for *org_id* -- the complete node set a graph query needs
+        to walk, regardless of how many times each was re-granted."""
+        async with self._engine.raw.connect() as conn:
+            rows = (
+                await conn.execute(
+                    select(governance_delegations.c.to_identity_id).where(
+                        governance_delegations.c.org_id == org_id
+                    )
+                )
+            ).fetchall()
+        return {r.to_identity_id for r in rows}
+
+    async def _current_parent_map(
+        self, org_id: str
+    ) -> tuple[dict[str | None, list[str]], dict[str, DelegationRecord]]:
+        """Builds the graph from *current* state, not raw historical
+        rows: for every identity that has ever received a delegation,
+        resolves its `get_latest_delegation()` (regardless of whether
+        it's still active -- an inactive node still belongs in the
+        graph, just flagged inactive) and groups children by their
+        latest record's `from_identity_id`. Self-correcting for
+        history: an identity re-delegated from a new parent after its
+        original grant shows up under its *current* parent only, not
+        both -- `_direct_children()`'s raw-row walk (used by
+        `revoke_branch()`, which cares about historical rows for
+        cascading revocation) would not have this property, which is
+        why this is a separate implementation rather than a reuse."""
+        identity_ids = await self._all_to_identity_ids(org_id)
+        latest_by_id: dict[str, DelegationRecord] = {}
+        parent_map: dict[str | None, list[str]] = {}
+        for identity_id in identity_ids:
+            latest = await self.get_latest_delegation(org_id, identity_id)
+            if latest is None:
+                continue
+            latest_by_id[identity_id] = latest
+            parent_map.setdefault(latest.from_identity_id, []).append(identity_id)
+        return parent_map, latest_by_id
+
+    def _build_node(
+        self,
+        identity_id: str,
+        parent_map: dict[str | None, list[str]],
+        latest_by_id: dict[str, DelegationRecord],
+        seen: set[str],
+    ) -> DelegationGraphNode:
+        seen.add(identity_id)
+        children = []
+        for child_id in parent_map.get(identity_id, []):
+            if child_id in seen:
+                continue  # defensive: a cycle should never exist in valid data
+            children.append(self._build_node(child_id, parent_map, latest_by_id, seen))
+        return DelegationGraphNode(
+            identity_id=identity_id,
+            delegation=latest_by_id.get(identity_id),
+            children=tuple(children),
+        )
+
+    async def get_org_graph(self, org_id: str) -> DelegationGraph:
+        """The full, org-wide delegation forest (Authority Everywhere
+        Phase 6) -- every root grant and everything transitively
+        delegated from it, built from each identity's *current* state,
+        not a raw historical-row walk. A snapshot at call time; rebuild
+        for a fresh read rather than caching."""
+        parent_map, latest_by_id = await self._current_parent_map(org_id)
+        seen: set[str] = set()
+        roots = [
+            self._build_node(root_id, parent_map, latest_by_id, seen)
+            for root_id in parent_map.get(None, [])
+        ]
+        return DelegationGraph(organization_id=org_id, roots=tuple(roots))
+
+    async def get_descendants(self, org_id: str, identity_id: str) -> list[DelegationRecord]:
+        """Every identity currently, transitively delegated-from
+        *identity_id* -- the public, read-only counterpart to
+        ``revoke_branch()``'s internal traversal, built from current
+        parentage (see ``_current_parent_map()``) rather than raw
+        historical rows. Returns each descendant's own latest
+        delegation record (active or not -- callers filter on
+        ``.is_active()`` themselves, matching every other read method
+        in this repository)."""
+        parent_map, latest_by_id = await self._current_parent_map(org_id)
+        descendants: list[DelegationRecord] = []
+        seen: set[str] = {identity_id}
+        queue = list(parent_map.get(identity_id, []))
+        while queue:
+            current = queue.pop(0)
+            if current in seen:
+                continue
+            seen.add(current)
+            record = latest_by_id.get(current)
+            if record is not None:
+                descendants.append(record)
+            queue.extend(parent_map.get(current, []))
+        return descendants

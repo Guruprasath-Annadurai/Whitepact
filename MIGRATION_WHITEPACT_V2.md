@@ -1847,3 +1847,66 @@ certification, unrelated to principal authority).
   cross-org isolation); full repo suite 2486 passed (up from 2451);
   `mypy`/`ruff check`/`ruff format --check` clean on every touched
   file.
+
+## 24. Delegation Graph as a first-class object (Authority Everywhere Phase 6, 2026-08-25)
+
+Closes `docs/architecture/AUTHORITY_EVERYWHERE.md`'s lifecycle row 4
+gap — already credited as "a working delegation graph today," this
+phase packages it into something queryable independent of a single
+decision, per the row's own framing, rather than rebuilding anything.
+
+- **Domain model** (`governance/delegation_graph.py`) —
+  `DelegationGraphNode` (recursive tree node: `identity_id`, its own
+  current `DelegationRecord` if any, `children`) and `DelegationGraph`
+  (the org-wide forest: `roots`, `all_identity_ids()`, `find()`,
+  `to_dict()`). A snapshot at build time, not a live/cached view —
+  matches every other authority-layer read in this codebase's
+  "recompute, don't cache" posture.
+- **Repository additions** (`db/delegation_repository.py`) —
+  `get_org_graph(org_id)` (the full forest) and
+  `get_descendants(org_id, identity_id)` (the public, read-only,
+  forward-direction counterpart to `revoke_branch()`'s internal BFS).
+  Both built from `_current_parent_map()`, which resolves each
+  identity's *current* `get_latest_delegation()` rather than walking
+  raw historical rows (`_direct_children()`, used internally by
+  `revoke_branch()` for cascading revocation, keeps its existing
+  historical-row behavior unchanged — a re-delegated identity showing
+  up under its new parent only, not duplicated, is a correctness
+  property only the read-path graph builder needs). Verified
+  empirically with a real 3-level, 2-root tree, cascading revocation,
+  and a re-delegation-under-a-new-parent scenario before writing the
+  test suite.
+- **REST endpoints** (`dashboard/app.py`) —
+  `GET /api/governance/delegations/{identity_id}/descendants` and
+  `GET /api/governance/delegations/graph` (both ANALYST+, matching the
+  existing `.../chain` endpoint's tier — these are reads, not grants).
+- Not built in this phase: no new invariant, no new migration, no
+  change to `grant()`/`revoke_branch()`/`validate_attenuation()` — pure
+  read-only export of state already reconstructable from the existing
+  `governance_delegations` table.
+- Verification: 18 new tests — `tests/test_delegation_org_graph.py` (13:
+  node/graph unit tests, multi-level multi-root forest construction,
+  empty-org, cascading-revocation reflection, re-delegation-under-new-
+  parent) and 5 new cases appended to `TestDelegationEndpoints` in
+  `tests/test_governance_api.py` (descendants of a multi-level tree,
+  leaf-identity empty descendants, full-forest graph shape, empty-org
+  graph, cross-org isolation); `mypy`/`ruff check`/`ruff format --check`
+  clean on every touched file.
+- **A real self-caught mistake during development, documented as a
+  gotcha**: `tests/test_delegation_graph.py` already existed (31 tests,
+  covering the *base* delegation graph from the original v3
+  authority-layer work — `grant()`, attenuation enforcement,
+  `get_authority_chain()`, `revoke_branch()`, `explain_authority()`).
+  The first draft of this phase's new test file reused that exact
+  filename without checking first, silently overwriting all 31
+  original tests. Caught by comparing `pytest --collect-only` counts
+  between this branch and `main` before committing (2502 collected vs.
+  an expected 2533, not the 2515+18 math) rather than trusting the
+  "N passed" summary alone — a full-suite pass count going *down*
+  after *adding* tests is the tell. Fixed by restoring the original
+  file from git history (`git show HEAD:tests/test_delegation_graph.py`)
+  and placing the new tests in `tests/test_delegation_org_graph.py`
+  instead. Recorded here as a standing reminder: always check whether
+  a test filename is already taken before writing to it, the same
+  "Read before Write" discipline this whole codebase already expects
+  for source files.

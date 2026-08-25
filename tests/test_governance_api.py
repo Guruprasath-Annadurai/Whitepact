@@ -1274,6 +1274,131 @@ class TestDelegationEndpoints:
         )
         assert r.json()["currently_active"] is False
 
+    async def test_descendants_of_multi_level_tree(
+        self, client: AsyncClient, org_and_admin_key
+    ) -> None:
+        _org_id, admin_key = org_and_admin_key
+        headers = {"Authorization": f"Bearer {admin_key}"}
+        await client.post(
+            "/api/governance/delegations",
+            json={
+                "to_identity_id": "manager-1",
+                "granted_action_types": ["rai_scan"],
+                "purpose": "root",
+            },
+            headers=headers,
+        )
+        await client.post(
+            "/api/governance/delegations",
+            json={
+                "to_identity_id": "agent-1",
+                "from_identity_id": "manager-1",
+                "granted_action_types": ["rai_scan"],
+                "purpose": "delegated",
+            },
+            headers=headers,
+        )
+        r = await client.get("/api/governance/delegations/manager-1/descendants", headers=headers)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["descendant_count"] == 1
+        assert body["descendants"][0]["identity_id"] == "agent-1"
+
+    async def test_descendants_of_leaf_identity_is_empty(
+        self, client: AsyncClient, org_and_admin_key
+    ) -> None:
+        _org_id, admin_key = org_and_admin_key
+        headers = {"Authorization": f"Bearer {admin_key}"}
+        await client.post(
+            "/api/governance/delegations",
+            json={
+                "to_identity_id": "solo-agent",
+                "granted_action_types": ["rai_scan"],
+                "purpose": "root",
+            },
+            headers=headers,
+        )
+        r = await client.get("/api/governance/delegations/solo-agent/descendants", headers=headers)
+        assert r.status_code == 200
+        assert r.json() == {
+            "identity_id": "solo-agent",
+            "descendant_count": 0,
+            "descendants": [],
+        }
+
+    async def test_org_graph_reflects_full_forest(
+        self, client: AsyncClient, org_and_admin_key
+    ) -> None:
+        org_id, admin_key = org_and_admin_key
+        headers = {"Authorization": f"Bearer {admin_key}"}
+        await client.post(
+            "/api/governance/delegations",
+            json={
+                "to_identity_id": "manager-1",
+                "granted_action_types": ["rai_scan"],
+                "purpose": "root a",
+            },
+            headers=headers,
+        )
+        await client.post(
+            "/api/governance/delegations",
+            json={
+                "to_identity_id": "manager-2",
+                "granted_action_types": ["rai_scan"],
+                "purpose": "root b",
+            },
+            headers=headers,
+        )
+        r = await client.get("/api/governance/delegations/graph", headers=headers)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["organization_id"] == org_id
+        assert body["root_count"] == 2
+        assert body["total_identity_count"] == 2
+
+    async def test_empty_org_graph(self, client: AsyncClient, org_and_analyst_key) -> None:
+        _org_id, key = org_and_analyst_key
+        r = await client.get(
+            "/api/governance/delegations/graph", headers={"Authorization": f"Bearer {key}"}
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["root_count"] == 0
+        assert body["roots"] == []
+
+    async def test_graph_scoped_to_caller_org_not_visible_across_orgs(
+        self, client: AsyncClient, org_and_admin_key
+    ) -> None:
+        _org_id, admin_key = org_and_admin_key
+        await client.post(
+            "/api/governance/delegations",
+            json={
+                "to_identity_id": "org-a-agent",
+                "granted_action_types": ["rai_scan"],
+                "purpose": "root",
+            },
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+
+        r = await client.post(
+            "/api/orgs",
+            json={"name": "Other Graph Co", "slug": "other-graph-co"},
+            headers=BOOTSTRAP_AUTH,
+        )
+        other_org_id = r.json()["id"]
+        r = await client.post(
+            f"/api/orgs/{other_org_id}/keys",
+            json={"name": "k", "role": "ANALYST"},
+            headers=BOOTSTRAP_AUTH,
+        )
+        other_key = r.json()["key"]
+
+        r = await client.get(
+            "/api/governance/delegations/graph",
+            headers={"Authorization": f"Bearer {other_key}"},
+        )
+        assert r.json()["root_count"] == 0
+
 
 class TestIntentContractEndpoints:
     async def test_declare_requires_org_scoped_key(
