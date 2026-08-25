@@ -46,6 +46,30 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
   proof, purpose binding, revocation epoch, the Heart veto itself,
   formal/adversarial verification, performance, enterprise hardening)
   are real, separately-scoped future work, not claimed complete here.
+- WhitePact Heart Phase H3 — Root of Authority (2026-08-26)
+  (`governance/root_authority.py`, new file) — the first executable
+  form of constitutional laws H1 ("every machine authority has a
+  legitimate root") and H2 ("machines cannot originate authority").
+  `RootType` distinguishes terminal roots (`HUMAN`, `ORGANIZATION`)
+  from non-terminal ones (`SERVICE_PRINCIPAL`, `WORKLOAD_IDENTITY`)
+  that must chain, via `authority_source`, to a terminal root.
+  `validate_root_chain()` walks that chain against an abstract
+  `RootResolver` (no `db.*` dependency, continuing H1/H2's
+  TCB-minimization discipline), returning an explicit
+  `RootValidationStatus` for every failure mode —
+  `ROOT_TYPE_CANNOT_SELF_ORIGINATE`, `SOURCE_NOT_FOUND`,
+  `CYCLE_DETECTED`, `CHAIN_TOO_DEEP`, `REVOKED`, `NOT_YET_VALID`,
+  `EXPIRED` — never silently treating an unresolved or invalid chain
+  as legitimate. A real bug found during self-review before any test
+  existed: the first draft conflated an intermediate ancestor's
+  *type* with its *temporal validity* when deciding a failure status,
+  which would have misreported a revoked ancestor with a status
+  implying its type was the defect rather than its revocation — fixed
+  and permanently regression-tested. 34 new tests
+  (`tests/test_root_authority.py`, including 4 Hypothesis property
+  tests), 100% branch coverage on the new module. No DB persistence
+  layer and no wiring into the live decision path yet — ships the
+  validated domain object and algorithm only, same pattern as H1/H2.
 - Tool Trust Network (Authority Everywhere Phase 8) —
   `governance/tool_trust.py`: a deterministic 0-100 trust score per
   org-registered upstream MCP server, derived from the existing

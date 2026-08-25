@@ -2169,3 +2169,119 @@ revocation/the veto itself all remain unbuilt).
    possible today since nothing consumes `AuthorityEnvelope` outside
    this module yet, but worth remembering once something does.
 **VERDICT: MOVE TO NEXT HEART PHASE** (H3 — Root of Authority).
+
+## 28. WhitePact Heart Phase H3 — Root of Authority (2026-08-26)
+
+- **Domain model** (`governance/root_authority.py`, new file) —
+  `RootType` distinguishes two *terminal* types (`HUMAN`,
+  `ORGANIZATION` — legitimate origins in their own right, needing no
+  further chain) from two *non-terminal* types (`SERVICE_PRINCIPAL`,
+  `WORKLOAD_IDENTITY` — must trace, via `authority_source`, to a
+  terminal root). This is the first executable form of constitutional
+  laws H1 ("every machine authority has a legitimate root") and H2
+  ("machines cannot originate authority") — previously documented
+  intent only, per `docs/heart/HEART_CURRENT_STATE.md`.
+- **`RootAuthorityRecord`** — frozen dataclass with a `canonical_digest`
+  computed the same way as `governance/constitution.py`'s
+  `AuthorityConstitutionVersion` and `governance/approval.py`'s
+  approvals: SHA-256 over canonical JSON of every field that defines
+  what the record asserts. `subject_id` is deliberately opaque (the
+  same `identity_id`/`sub` claim already used elsewhere in this
+  codebase) — this module verifies authority provenance, not identity;
+  see the module's own docstring for why it must never become a
+  surveillance identity database. Not cryptographically signed, for
+  the identical reasoning `docs/heart/HEART_SIGNING_DECISION.md`
+  already gives for the constitution: signing is load-bearing only
+  once a record crosses a process/trust boundary, which this phase
+  does not yet build.
+- **`validate_root_chain(record, resolve)`** — walks `authority_source`
+  pointers against an abstract `RootResolver` Protocol (no `db.*`
+  dependency baked in, continuing the TCB-minimization discipline
+  H1/H2 already established) until reaching a terminal root, with
+  every failure mode explicit and never silently treated as valid:
+  `ROOT_TYPE_CANNOT_SELF_ORIGINATE` (non-terminal type, no
+  `authority_source`), `SOURCE_NOT_FOUND` (dangling pointer),
+  `CYCLE_DETECTED` (a `seen` set catches both self-reference and
+  longer cycles), `CHAIN_TOO_DEEP` (a defensive circuit breaker at 32
+  hops — a legitimate chain should never be long), and
+  `REVOKED`/`NOT_YET_VALID`/`EXPIRED` for any node — including the
+  record itself and any intermediate ancestor, not just the walk's
+  final resolved node — that fails its own `is_temporally_valid()`
+  check.
+- **A real bug found during self-review (not by an external tool) and
+  fixed before any test existed** — the first draft of the loop body
+  handling a resolved `source` that failed `is_temporally_valid()`
+  branched on `source.is_terminal()` to choose between
+  `SOURCE_NOT_HUMAN_OR_ORG` and `ROOT_TYPE_CANNOT_SELF_ORIGINATE`.
+  Neither status correctly describes a revoked, not-yet-valid, or
+  expired ancestor — that is a problem with the ancestor's *temporal
+  state*, entirely orthogonal to its *type*. A `SERVICE_PRINCIPAL`
+  chaining to a revoked `ORGANIZATION` root would have been
+  misreported with a status implying the type itself was the defect,
+  not the revocation — actionable-information loss in exactly the
+  kind of security-relevant error path where the caller needs to know
+  *why* to decide what to do next (re-verify the source vs. reject the
+  type entirely). Fixed by checking `source.revoked_at`/`source.not_before`/
+  expiry directly and returning `REVOKED`/`NOT_YET_VALID`/`EXPIRED`
+  with an accurate `detail` message. Verified empirically (9 scenarios,
+  including this exact case) before any test was written — see
+  `TestValidateRootChainWalking::test_revoked_intermediate_ancestor_invalidates_chain`
+  for the permanent regression test.
+- **Verification**: 34 new tests in `tests/test_root_authority.py` —
+  unit coverage for every `RootValidationStatus` branch (terminal
+  HUMAN/ORGANIZATION immediate-VALID, multi-hop chains to a terminal
+  root, no-source non-terminal roots, dangling sources, 2-node and
+  self-referential cycles, chain-too-deep, and revoked/not-yet-valid/
+  expired at both the leaf and an intermediate ancestor) plus 4
+  Hypothesis property tests reusing the established pattern from
+  `tests/test_property_based.py`/`tests/test_authority_lattice.py`:
+  a chain of arbitrary depth terminating at a HUMAN/ORGANIZATION root
+  is always VALID; a cycle of any length (1-8 nodes) is always
+  detected; a non-terminal type with no `authority_source` is never
+  valid; and a chain that never reaches a terminal root always
+  terminates in `SOURCE_NOT_FOUND` or `CHAIN_TOO_DEEP`, never loops
+  forever or falsely reports VALID. `root_authority.py` at 100% branch
+  coverage. `mypy`/`ruff check`/`ruff format --check` clean on the new
+  file.
+- **Not built in this phase**: any wiring from a real OIDC/SAML/VC
+  verification event into a persisted `RootAuthorityRecord` (that
+  integration work waits for a Heart veto, H11, to have something to
+  consult these records for); a DB persistence layer/repository for
+  `RootAuthorityRecord` (deliberately deferred — this phase, like H1's
+  constitution and H2's lattice, ships pure domain objects and
+  validation semantics only, not live wiring); and nothing in
+  `WhitePactRuntimeGateway.evaluate()` or any other live decision path
+  constructs or consults a `RootAuthorityRecord` yet.
+
+**HEART INVARIANTS: PASS** (every non-terminal root's legitimacy
+traces to a terminal HUMAN/ORGANIZATION root or fails explicitly and
+loudly; no path returns VALID for an unresolved, cyclic, too-deep, or
+temporally-invalid chain — property-verified, not just example-tested).
+**SECURITY: PASS, with one real bug caught and fixed via self-review
+before merge** (the ancestor-temporal-state-vs-type conflation above —
+a real actionable-information-loss defect in a security-relevant error
+path, caught by rereading the code rather than by an external tool,
+which is itself worth naming honestly: this phase did not have a
+property test or adversarial input catch it, self-review did).
+**ENTERPRISE READINESS: 4/10** (H3 of 17 — root-of-authority now
+exists, validates, and is tested, but nothing in the live decision
+path uses it yet, no real IdP/VC issuance wiring exists, no DB
+persistence layer exists, and consent proof/purpose binding/
+revocation epoch/the veto itself all remain unbuilt).
+**REMAINING RISKS**:
+1. `RootAuthorityRecord` is not yet wired into any live decision — H3
+   alone changes no runtime behavior; it ships a validated domain
+   object other Heart phases will need to consult.
+2. No persistence layer exists yet, so there is no real mechanism yet
+   to look up a `root_id` at runtime — `RootResolver` is exercised only
+   against in-memory dicts in this phase's tests. A future phase (or
+   this one, revisited) will need a `db/root_authority_repository.py`
+   once something in the live path needs to actually resolve a chain
+   against real data, not just validate an in-memory one.
+3. No real OIDC/SAML/VC verification event has been wired to actually
+   *produce* a `RootAuthorityRecord` — `build_root_authority_record()`
+   is a pure constructor; nothing calls it from a real authentication
+   flow yet. Until that wiring exists, this phase is honestly a
+   validated data model and algorithm, not yet a working root-of-trust
+   subsystem in production.
+**VERDICT: MOVE TO NEXT HEART PHASE** (H4 — Consent Proof).
