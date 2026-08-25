@@ -176,6 +176,46 @@ class TestApprovalRequirementEscalation:
         assert validate_attenuation(parent, child) is None
 
 
+class TestAllowedHoursUtcEscalation:
+    """Heart Phase H2: closes a documented gap this function's own
+    docstring used to name -- `allowed_hours_utc` was never
+    attenuation-checked before. See `governance/authority_lattice.py`
+    for the general-purpose lattice this same logic also backs."""
+
+    def test_narrower_window_passes(self) -> None:
+        parent = _authority(allowed_hours_utc=(22, 6))
+        child = _authority(allowed_hours_utc=(23, 5))
+        assert validate_attenuation(parent, child) is None
+
+    def test_identical_window_passes(self) -> None:
+        parent = _authority(allowed_hours_utc=(9, 17))
+        child = _authority(allowed_hours_utc=(9, 17))
+        assert validate_attenuation(parent, child) is None
+
+    def test_wider_wraparound_window_denied(self) -> None:
+        """The exact real-world scenario this gap allowed: a parent
+        restricted to 22:00-06:00 delegating a child that claims
+        20:00-06:00 -- two extra hours (20, 21) the parent never held."""
+        parent = _authority(allowed_hours_utc=(22, 6))
+        child = _authority(allowed_hours_utc=(20, 6))
+        reason = validate_attenuation(parent, child)
+        assert reason is not None
+        assert reason.startswith("DELEGATION_AUTHORITY_ESCALATION")
+        assert "allowed_hours_utc" in reason
+
+    def test_unset_child_window_denied_when_parent_constrains(self) -> None:
+        parent = _authority(allowed_hours_utc=(9, 17))
+        child = _authority()
+        reason = validate_attenuation(parent, child)
+        assert reason is not None
+        assert "allowed_hours_utc" in reason
+
+    def test_unconstrained_parent_lets_child_set_anything(self) -> None:
+        parent = _authority()
+        child = _authority(allowed_hours_utc=(0, 23))
+        assert validate_attenuation(parent, child) is None
+
+
 class TestMethodWrapper:
     def test_validate_delegation_to_matches_function(self) -> None:
         parent = _authority(max_value_usd=500_000)
