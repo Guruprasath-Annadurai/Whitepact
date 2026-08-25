@@ -70,6 +70,23 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
   tests), 100% branch coverage on the new module. No DB persistence
   layer and no wiring into the live decision path yet — ships the
   validated domain object and algorithm only, same pattern as H1/H2.
+- WhitePact Heart Phase H4 — Consent Proof (2026-08-26)
+  (`governance/consent_proof.py`, new file) — a structured,
+  digest-bound record that a specific human (or otherwise-legitimate
+  root) actually consented to a specific grant of authority, for a
+  specific purpose, distinguishable from mere authentication.
+  `ConsentMethod` names how consent was captured (explicit UI action,
+  signed document, recorded verbal consent, authenticated API call, or
+  standing delegated policy) with no default value. `validate_consent_proof()`
+  composes with Phase H3 by taking an already-computed
+  `RootValidationResult` as a parameter rather than resolving the root
+  chain itself, keeping zero runtime dependency on `root_authority.py`.
+  Root legitimacy is checked before the proof's own temporal state, so
+  an illegitimate root is never masked by also reporting independent
+  expiry. 21 new tests (`tests/test_consent_proof.py`, including 3
+  Hypothesis property tests), 100% branch coverage on the new module.
+  No DB persistence layer and no wiring into the live decision path
+  yet — ships the validated domain object and algorithm only.
 - Tool Trust Network (Authority Everywhere Phase 8) —
   `governance/tool_trust.py`: a deterministic 0-100 trust score per
   org-registered upstream MCP server, derived from the existing
