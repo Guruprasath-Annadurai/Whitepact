@@ -127,7 +127,7 @@ wiring only ever applies to org-scoped Streamable HTTP/SSE calls).
 
 ---
 
-## 2.5 The WhitePact Heart (Sovereignty Kernel) **[TODAY, first version — Phases H0-H2]**
+## 2.5 The WhitePact Heart (Sovereignty Kernel) **[TODAY, first version — Phases H0-H3]**
 
 A new, deliberately small trusted-computing-base layer answering one
 question, and only one: *why does this machine have the legitimate
@@ -198,14 +198,38 @@ through the new lattice module, which stays dependency-free of
 escalation case (parent `22:00-06:00`, child `20:00-06:00`, two extra
 hours) that now correctly denies.
 
-**Not built yet**: `RootAuthorityRecord`, `ConsentProof`,
-`PurposeBinding`, the unified `RevocationEpoch`, `SovereigntyVeto`,
-`LegitimacyEnvelope`, and the `SovereigntyKernel.evaluate()` entry
-point are all later, separate phases (H3-H13) — `AuthorityEnvelope`
-exists and is tested, but nothing in the live decision path constructs
-or consults one yet; `WhitePactRuntimeGateway.evaluate()` continues to
-use `AuthorityContext`/`validate_attenuation()` exactly as before,
-unchanged in every way except the one gap fix above.
+**[TODAY, Phase H3]**: `governance/root_authority.py`'s
+`RootAuthorityRecord` and `validate_root_chain()` — the first
+executable form of constitutional laws H1 ("every machine authority
+has a legitimate root") and H2 ("machines cannot originate authority").
+`RootType` distinguishes two terminal types (`HUMAN`, `ORGANIZATION` —
+legitimate roots needing no further chain) from two non-terminal types
+(`SERVICE_PRINCIPAL`, `WORKLOAD_IDENTITY` — must chain, via
+`authority_source`, to a terminal root). `validate_root_chain()` walks
+that chain against an abstract `RootResolver` (no `db.*` dependency,
+per the Heart TCB-minimization principle already established in H1/H2)
+with explicit, never-silent handling of every failure mode:
+`ROOT_TYPE_CANNOT_SELF_ORIGINATE` (non-terminal, no source),
+`SOURCE_NOT_FOUND` (dangling pointer), `CYCLE_DETECTED`,
+`CHAIN_TOO_DEEP` (depth-bounded circuit breaker at 32 hops), and
+`REVOKED`/`NOT_YET_VALID`/`EXPIRED` for any ancestor — including
+intermediate ones — that fails its own temporal validity check.
+`subject_id` is deliberately opaque (an identity_id, not a name or
+email) — this module verifies authority provenance, not identity.
+Not cryptographically signed, for the same reasoning as `governance/
+constitution.py` (see `docs/heart/HEART_SIGNING_DECISION.md`).
+
+**Not built yet**: `ConsentProof`, `PurposeBinding`, the unified
+`RevocationEpoch`, `SovereigntyVeto`, `LegitimacyEnvelope`, and the
+`SovereigntyKernel.evaluate()` entry point are all later, separate
+phases (H4-H13) — `AuthorityEnvelope` and `RootAuthorityRecord` exist
+and are tested, but nothing in the live decision path constructs or
+consults either one yet; `WhitePactRuntimeGateway.evaluate()` continues
+to use `AuthorityContext`/`validate_attenuation()` exactly as before,
+unchanged in every way except the H2 gap fix. No DB persistence layer
+exists yet for `RootAuthorityRecord` either — this phase ships the
+record type and its validation semantics only, mirroring how H1's
+constitution and H2's lattice shipped pure objects without live wiring.
 
 ## 3. Core entities
 
