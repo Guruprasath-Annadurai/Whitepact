@@ -127,6 +127,57 @@ wiring only ever applies to org-scoped Streamable HTTP/SSE calls).
 
 ---
 
+## 2.5 The WhitePact Heart (Sovereignty Kernel) **[TODAY, first version — Phase H1]**
+
+A new, deliberately small trusted-computing-base layer answering one
+question, and only one: *why does this machine have the legitimate
+right to exercise this authority at all* — logically prior to
+everything in Section 3 below, which governs *how* an already-granted
+authority gets checked against a specific proposed action.
+
+**Canonical relationship**: `EXECUTABLE_AUTHORITY ⊆ BRAIN_AUTHORITY ⊆
+HEART_AUTHORITY`. The Heart bounds the maximum legitimate authority
+available to the existing gateway/policy/risk pipeline (the "Brain")
+below — it does not replace, evaluate intelligence about, or make
+suspicion judgments the way `WhitePactRuntimeGateway` already does.
+Architecturally, the Heart sits *before* `WhitePactRuntimeGateway.evaluate()`
+is ever called, not as one more check inside its existing
+first-match-wins chain — see `docs/heart/HEART_CURRENT_STATE.md` §8
+for why.
+
+**Foundational law**: machines may exercise authority; machines may
+never originate it. Every machine authority must trace to a legitimate
+human- or organization-established root — no model, memory entry,
+tool output, or prior ALLOW decision may manufacture missing
+authority.
+
+**[TODAY]**: `governance/constitution.py`'s `AuthorityConstitutionVersion`
+— a versioned, immutable, digestible set of fifteen constitutional
+laws (H1-H15) protecting the integrity of the authority mechanism
+itself, distinct from the existing, deliberately org-mutable `Policy`
+(§3.5). `CONSTITUTION_V1` ratifies all fifteen founding laws;
+`_CONSTITUTION_HISTORY` is a `MappingProxyType` — a real, enforced
+immutability guarantee, not a convention — so a historical
+`constitution_version` reference can never silently mean something
+different later. Deliberately not cryptographically signed in this
+phase; full reasoning in `docs/heart/HEART_SIGNING_DECISION.md`.
+
+**Full audit of what's reused vs. genuinely new** (root-of-authority,
+consent proof, purpose binding, revocation epoch, the Heart veto
+itself, and how each maps onto — or deliberately doesn't duplicate —
+the existing `AuthorityContext`/`validate_attenuation`/`DelegationRepository`/
+`IntentContract`/`AuthorityPassport` infrastructure documented in
+Section 3 below): see `docs/heart/HEART_CURRENT_STATE.md`.
+
+**Not built in this phase**: `RootAuthorityRecord`, `ConsentProof`,
+`PurposeBinding`, the unified `RevocationEpoch`, the authority lattice
+extension (`AuthorityEnvelope`), `SovereigntyVeto`, `LegitimacyEnvelope`,
+and the `SovereigntyKernel.evaluate()` entry point are all later,
+separate phases (H2-H13) — this phase ships the constitution object
+and its registry only, with no wiring into the live decision path yet.
+No existing behavior changes; `WhitePactRuntimeGateway.evaluate()` and
+every other governance module in Section 3 are unmodified.
+
 ## 3. Core entities
 
 ### 3.1 Agent **[TODAY — Phase 8]**
