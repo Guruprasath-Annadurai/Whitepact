@@ -127,7 +127,7 @@ wiring only ever applies to org-scoped Streamable HTTP/SSE calls).
 
 ---
 
-## 2.5 The WhitePact Heart (Sovereignty Kernel) **[TODAY, first version — Phases H0-H3]**
+## 2.5 The WhitePact Heart (Sovereignty Kernel) **[TODAY, first version — Phases H0-H4]**
 
 A new, deliberately small trusted-computing-base layer answering one
 question, and only one: *why does this machine have the legitimate
@@ -219,17 +219,40 @@ email) — this module verifies authority provenance, not identity.
 Not cryptographically signed, for the same reasoning as `governance/
 constitution.py` (see `docs/heart/HEART_SIGNING_DECISION.md`).
 
-**Not built yet**: `ConsentProof`, `PurposeBinding`, the unified
-`RevocationEpoch`, `SovereigntyVeto`, `LegitimacyEnvelope`, and the
+**[TODAY, Phase H4]**: `governance/consent_proof.py`'s `ConsentProof`
+and `validate_consent_proof()` — a structured, digest-bound record
+that a specific human (or otherwise-legitimate root) actually
+consented to a specific grant of authority, for a specific purpose,
+distinguishable from mere authentication (`docs/heart/HEART_CURRENT_STATE.md`
+§4 confirms no such concept existed before this phase).
+`ConsentMethod` names how consent was actually captured (explicit UI
+action, signed document, recorded verbal consent, an authenticated API
+call, or a standing delegated policy) — never inferred, never
+defaulted. `validate_consent_proof()` composes with Phase H3: it takes
+an already-computed `RootValidationResult` for the claimed
+`consenting_root_id` as a parameter rather than resolving the root
+chain itself, keeping this module dependency-free of `root_authority.py`
+at runtime (only imported under `TYPE_CHECKING`) — continuing the
+TCB-minimization discipline H1-H3 already established. A consent proof
+is only `VALID` when the passed-in root result is both for the exact
+claimed root (`ROOT_MISMATCH` otherwise) and itself legitimate
+(`ROOT_NOT_LEGITIMATE` otherwise), AND the proof itself is temporally
+valid (`REVOKED`/`NOT_YET_VALID`/`EXPIRED` otherwise) — root legitimacy
+is checked first, so an illegitimate root is never masked by also
+reporting the consent's own, independent expiry.
+
+**Not built yet**: `PurposeBinding`, the unified `RevocationEpoch`,
+`SovereigntyVeto`, `LegitimacyEnvelope`, and the
 `SovereigntyKernel.evaluate()` entry point are all later, separate
-phases (H4-H13) — `AuthorityEnvelope` and `RootAuthorityRecord` exist
-and are tested, but nothing in the live decision path constructs or
-consults either one yet; `WhitePactRuntimeGateway.evaluate()` continues
-to use `AuthorityContext`/`validate_attenuation()` exactly as before,
-unchanged in every way except the H2 gap fix. No DB persistence layer
-exists yet for `RootAuthorityRecord` either — this phase ships the
-record type and its validation semantics only, mirroring how H1's
-constitution and H2's lattice shipped pure objects without live wiring.
+phases (H5-H13) — `AuthorityEnvelope`, `RootAuthorityRecord`, and
+`ConsentProof` exist and are tested, but nothing in the live decision
+path constructs or consults any of them yet; `WhitePactRuntimeGateway.evaluate()`
+continues to use `AuthorityContext`/`validate_attenuation()` exactly as
+before, unchanged in every way except the H2 gap fix. No DB
+persistence layer exists yet for `RootAuthorityRecord` or `ConsentProof`
+either — these phases ship the record types and their validation
+semantics only, mirroring how H1's constitution and H2's lattice
+shipped pure objects without live wiring.
 
 ## 3. Core entities
 

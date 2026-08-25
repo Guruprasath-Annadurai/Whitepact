@@ -2285,3 +2285,98 @@ revocation epoch/the veto itself all remain unbuilt).
    validated data model and algorithm, not yet a working root-of-trust
    subsystem in production.
 **VERDICT: MOVE TO NEXT HEART PHASE** (H4 — Consent Proof).
+
+## 29. WhitePact Heart Phase H4 — Consent Proof (2026-08-26)
+
+- **Domain model** (`governance/consent_proof.py`, new file) —
+  `ConsentProof`: a structured, digest-bound record that a specific
+  human (or otherwise-legitimate root) actually consented to a
+  specific grant of authority, for a specific purpose. Confirmed
+  genuinely new by `docs/heart/HEART_CURRENT_STATE.md` §4
+  (`ConsentProof (Phase H4) | *(none)* | NEW`) — `DelegationRecord.purpose`
+  is free text, not a structured, verifiable consent object, and
+  nothing distinguishes *authentication* (proving who someone is) from
+  *consent* (proving they actually agreed to this specific grant).
+  `ConsentMethod` enumerates how consent was actually captured
+  (`EXPLICIT_UI_ACTION`, `SIGNED_DOCUMENT`, `VERBAL_RECORDED`,
+  `API_AUTHENTICATED_REQUEST`, `DELEGATED_POLICY`) -- deliberately no
+  default value, forcing callers to state the method honestly rather
+  than reach for a vague fallback. `canonical_digest` computed the
+  same way `governance/root_authority.py`'s `RootAuthorityRecord`
+  already computes its own (SHA-256 over canonical JSON of every
+  asserting field).
+- **Composes with H3 without depending on it at runtime** —
+  `validate_consent_proof(proof, root_validation)` takes an
+  already-computed `RootValidationResult` (Phase H3) for the claimed
+  `consenting_root_id` as a parameter, rather than calling
+  `validate_root_chain()` itself. `root_authority` is imported only
+  under `TYPE_CHECKING`, so `consent_proof.py` has zero runtime
+  dependency on `root_authority.py` -- the same pattern
+  `authority_lattice.py` already established for staying usable
+  standalone, continuing the Heart's TCB-minimization discipline
+  across every phase so far.
+- **Root legitimacy is checked before the proof's own temporal
+  state** -- `validate_consent_proof()` checks, in order: (1) does
+  `root_validation.root_id` match `proof.consenting_root_id`
+  (`ROOT_MISMATCH` if not -- catches a caller accidentally passing the
+  wrong root's validation result), (2) is `root_validation.is_valid`
+  (`ROOT_NOT_LEGITIMATE` if not), (3) is the proof itself temporally
+  valid (`REVOKED`/`NOT_YET_VALID`/`EXPIRED` if not). This ordering is
+  deliberate and tested
+  (`test_root_legitimacy_is_checked_before_temporal_state`): an
+  illegitimate root is the more fundamental problem and must not be
+  masked by also reporting the consent's own, independently-expired
+  state -- a caller debugging a denial should learn "the root itself
+  is bad" before "and also this happened to expire."
+- **Verification**: 21 new tests in `tests/test_consent_proof.py` --
+  unit coverage for every `ConsentValidationStatus` branch (VALID via
+  both HUMAN and ORGANIZATION-backed roots, `ROOT_MISMATCH`,
+  `ROOT_NOT_LEGITIMATE` via both a revoked root and a
+  chain-validation failure, `REVOKED`/`NOT_YET_VALID`/`EXPIRED` on the
+  proof itself, and the root-checked-before-temporal-state ordering)
+  plus 3 Hypothesis property tests reusing the established pattern:
+  a fresh proof backed by any valid terminal root and any
+  `ConsentMethod` is always VALID; a revoked root never yields a valid
+  consent regardless of root type; a mismatched claimed root_id never
+  yields a valid consent for arbitrary generated strings.
+  `consent_proof.py` at 100% branch coverage. `mypy`/`ruff check`/
+  `ruff format --check` clean on both new files.
+- **Not built in this phase**: any wiring from a real consent-capture
+  UI/flow into a persisted `ConsentProof`; a DB persistence layer/
+  repository for `ConsentProof`; and nothing in
+  `WhitePactRuntimeGateway.evaluate()` or any other live decision path
+  constructs or consults a `ConsentProof` yet -- the same scope
+  discipline H1-H3 already held to.
+
+**HEART INVARIANTS: PASS** (a `ConsentProof` can only validate when
+both its own temporal state is valid AND the root backing it is
+independently, verifiably legitimate -- property-verified across
+generated root types, methods, and mismatched root_ids, not just
+hand-picked examples).
+**SECURITY: PASS** (no path returns VALID for a proof backed by a
+revoked/illegitimate root or for a proof whose claimed root_id doesn't
+match the root_validation actually supplied -- both are property-tested
+invariants, not just asserted in prose).
+**ENTERPRISE READINESS: 5/10** (H4 of 17 -- root-of-authority and
+consent-proof now both exist, validate, and are tested, and compose
+correctly with each other, but nothing in the live decision path uses
+either yet, no real IdP/consent-capture wiring exists, no DB
+persistence layer exists for either type, and purpose binding/
+revocation epoch/the veto itself all remain unbuilt).
+**REMAINING RISKS**:
+1. `ConsentProof` is not yet wired into any live decision -- H4 alone
+   changes no runtime behavior; it ships a validated domain object
+   other Heart phases (and eventually the live decision path) will
+   need to consult.
+2. No persistence layer exists yet for `ConsentProof`, mirroring the
+   same gap already named for `RootAuthorityRecord` in H3's remaining
+   risks -- both will likely need repositories at the same time, once
+   something in the live path needs to actually look either one up.
+3. No real consent-capture flow (a UI prompt, a signed-document
+   upload, a recorded call) produces a `ConsentProof` yet --
+   `build_consent_proof()` is a pure constructor with no caller from a
+   real consent-capture flow. Until that wiring exists, this phase is
+   honestly a validated data model and algorithm, not yet a working
+   consent-verification subsystem in production -- the identical
+   caveat H3 named for root-of-trust, now true of consent as well.
+**VERDICT: MOVE TO NEXT HEART PHASE** (H5 — Purpose Binding).
