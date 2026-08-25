@@ -11,7 +11,7 @@
   <a href="https://www.bestpractices.dev/projects/14112"><img src="https://www.bestpractices.dev/projects/14112/baseline" alt="OpenSSF Baseline"/></a>
 </p>
 
-<p align="center"><strong>WhitePact — an independent runtime authority, governance, and assurance layer for autonomous systems: a five-way governance decision engine (ALLOW / ALLOW_WITH_REDACTION / REQUIRE_APPROVAL / DENY / QUARANTINE), trust scoring, bias detection, guardrails, hallucination detection, compliance mapping (NIST AI RMF / EU AI Act / ISO 42001), cost intelligence, drift monitoring, a public Trust Index / leaderboard / AI Incident Database, and an MCP server (27 tools, 20 resources) with LangChain, LangGraph, and Google ADK trust-gate integrations.</strong></p>
+<p align="center"><strong>WhitePact — an independent runtime authority, governance, and assurance layer for autonomous systems: a five-way governance decision engine (ALLOW / ALLOW_WITH_REDACTION / REQUIRE_APPROVAL / DENY / QUARANTINE), trust scoring, bias detection, guardrails, hallucination detection, compliance mapping (NIST AI RMF / EU AI Act / ISO 42001), cost intelligence, drift monitoring, a public Trust Index / leaderboard / AI Incident Database, and an MCP server (30 tools, 20 resources) with LangChain, LangGraph, and Google ADK trust-gate integrations.</strong></p>
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -27,7 +27,7 @@
 │  └──────────────┘  └─────────────┘  └──────────────┘  └──────────────────┘  │
 │  ┌──────────────┐  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐  │
 │  │ AI Passport  │  │  BiasBuster │  │ PrivacyLabel │  │  MCP Server      │  │
-│  │ SHA-256 cert │  │ 6 probes+CI │  │  Federated   │  │  27 tools/HTTP   │  │
+│  │ SHA-256 cert │  │ 6 probes+CI │  │  Federated   │  │  30 tools/HTTP   │  │
 │  └──────────────┘  └─────────────┘  └──────────────┘  └──────────────────┘  │
 │  ┌──────────────────────────────────────────────────────────────────────────┐ │
 │  │   Governance Dashboard — FastAPI · Per-org rate limit · Alembic · OTEL  │ │
@@ -193,7 +193,7 @@ python examples/08_whitepact_enterprise_scenario.py
 
 ## MCP Server — govern every AI call from Claude Code, Claude Desktop, or any MCP client
 
-The MCP (Model Context Protocol) server exposes WhitePact as **27 tools and
+The MCP (Model Context Protocol) server exposes WhitePact as **30 tools and
 20 resources** (10 canonical resource URIs, dual-advertised under both
 `whitepact://` and `rai://` schemes — see `MIGRATION_WHITEPACT_V2.md`) to any
 MCP-compatible client — Claude Code, Claude Desktop, Cursor, Windsurf, or your
@@ -330,7 +330,7 @@ aspirational, all verified live:
   directly from the repo — see `plugins/whitepact/README.md`.
 - **Smithery** — listed as
   [`guruprasathannadurai-official/whitepact`](https://smithery.ai/server/guruprasathannadurai-official/whitepact),
-  27 tools and 20 resources discovered against the hosted Streamable
+  30 tools and 20 resources discovered against the hosted Streamable
   HTTP transport (`whitepact-mcp-http.onrender.com/mcp`, a separate
   Render service from the main dashboard). This deployment has no
   OAuth authorization server configured — only static Bearer API

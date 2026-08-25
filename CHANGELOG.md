@@ -119,6 +119,47 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
   `tests/test_intent_contract.py` + `tests/test_mcp_intent_contract.py`,
   `tests/test_authority_passport.py`).
 
+### Fixed
+
+- MCP review-contract hardening pass (2026-08-25), prompted by a
+  reported OpenAI Plugins Directory review outcome for the 2026-08-13
+  submission that **this repository has no corroborating record of**
+  (no rejection notice, reviewer feedback, or outcome of any kind is
+  documented anywhere in this codebase or its git history — see
+  `compliance/OPENAI_PLUGIN_SUBMISSION_PREP.md` for the full,
+  evidence-based writeup). Independently of that unresolved question,
+  auditing the actual submitted test contract against the live tools
+  surfaced three real, reproducible contract mismatches, now fixed:
+  - `rai_trust_score` documented `score`/`risk_tier` field names that
+    the tool never returned (it returned `trust_score`/`risk`) —
+    fixed additively; both name pairs now present, neither renamed.
+  - `rai_hallucination` had no way to compare a response against a
+    stated source at all — the exact submitted test case ("source
+    says Tuesday, response says Wednesday"), run verbatim, produced
+    `risk_level: "low"`, the opposite of its documented result. Fixed
+    with a new optional `source` argument and a bounded,
+    general-purpose (not test-specific) day-of-week/month/number
+    contradiction check, plus an additive `hallucination_detected`
+    field.
+  - `rai_org_status` was documented as looking up a real org's plan
+    tier and usage via a demo API key; it has no such capability —
+    every field is caller-supplied, with no org-id or auth parameter
+    at all. Tool description corrected to state this explicitly;
+    real live-org wiring is flagged as separate, unattempted follow-up
+    work, not silently implied as working.
+  - Also hardened `rai_compliance`/`rai_eu_ai_act_classify`'s
+    descriptions (both claimed EU AI Act coverage with genuinely
+    different input shapes — a real tool-routing collision risk) and
+    corrected 8 stale "27 tools" references (actual count: 30) across
+    `README.md` and the submission prep doc.
+  - New regression suite `tests/openai_review/` (29 tests) encodes the
+    full submitted test contract — including a direct regression test
+    for the empirically-reproduced hallucination failure — as a
+    permanent, machine-checked artifact
+    (`tests/openai_review/review_contract.json` is the single source
+    of truth). 2515 tests passed full-suite (up from 2486); `mypy`/
+    `ruff` clean.
+
 ## [1.2.3] — 2026-08-19
 
 ### Added

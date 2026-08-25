@@ -15,7 +15,7 @@
 |---|---|
 | Plugin name | WhitePact |
 | Short description | AI governance MCP server — trust scoring, guardrails, hallucination/bias detection, and NIST AI RMF / EU AI Act / ISO 42001 compliance checks for any LLM agent. |
-| Long description | WhitePact gives any LLM agent runtime AI-governance controls: PII/harm scanning, composite trust scoring across six dimensions, hallucination and bias evaluation, red-team payload generation, and compliance checks against major frameworks (NIST AI RMF, EU AI Act, ISO 42001). All 27 tools are read-only, non-destructive, and operate purely on caller-supplied input — no external network calls, no state mutation from the MCP layer itself. Self-hosted (stdio, free, MIT-licensed) or hosted (HTTP/SSE, Bearer-key authenticated). |
+| Long description | WhitePact gives any LLM agent runtime AI-governance controls: PII/harm scanning, composite trust scoring across six dimensions, hallucination and bias evaluation, red-team payload generation, and compliance checks against major frameworks (NIST AI RMF, EU AI Act, ISO 42001). All 30 tools are read-only, non-destructive, and operate purely on caller-supplied input — no external network calls, no state mutation from the MCP layer itself. Self-hosted (stdio, free, MIT-licensed) or hosted (HTTP/SSE, Bearer-key authenticated). |
 | Category | Developer Tools / AI Safety & Compliance (whichever single category the form allows — pick Developer Tools if forced to choose one) |
 | Website | https://github.com/Guruprasath-Annadurai/Whitepact |
 | Support URL | *(use whatever real support contact exists today — a GitHub Issues link is honest and functional: https://github.com/Guruprasath-Annadurai/Whitepact/issues)* |
@@ -49,7 +49,16 @@ Realistic prompts a ChatGPT user would type that map cleanly to a tool:
 **2. Trust score**
 - User prompt: *"Compute a trust score with fairness 0.8, privacy 0.9, security 0.7, robustness 0.85, compliance 0.9, authenticity 0.95."*
 - Expected tool: `rai_trust_score`
-- Expected result shape: JSON with numeric `score` (0-100), `grade` (A-F), `risk_tier` (LOW/MEDIUM/HIGH/CRITICAL).
+- Expected result shape: JSON with numeric `score` (0-100) *and* `trust_score` (identical value,
+  the field's original/stable name), `grade` (A-F), `risk_tier` (LOW/MEDIUM/HIGH/CRITICAL) *and*
+  `risk` (identical value, the field's original/stable name).
+  **Corrected 2026-08-25**: this document originally named only `score`/`risk_tier`, which did
+  not match the tool's actual, tested output field names (`trust_score`/`risk` — see
+  `tests/test_mcp_server.py`). `mcp/tools.py`'s `_handle_trust_score` now additively returns
+  both names side by side; this was a genuine, reproducible documentation/implementation
+  contract mismatch, not merely a prep-doc typo, and is a plausible contributor to a reviewer
+  or ChatGPT expecting the literal field name `score`/`risk_tier` seeing something it didn't
+  recognize.
 - Fixture data: none — all inputs are user-supplied numbers.
 
 **3. EU AI Act classification**
@@ -61,21 +70,53 @@ Realistic prompts a ChatGPT user would type that map cleanly to a tool:
 **4. Hallucination check**
 - User prompt: *"Check this response for hallucination: source says 'the meeting is Tuesday,' response says 'the meeting is Wednesday.'"*
 - Expected tool: `rai_hallucination`
-- Expected result shape: JSON with `hallucination_detected: true` and a confidence/explanation field.
-- Fixture data: none.
+- Expected result shape: JSON with `hallucination_detected: true`, `hallucination_risk` (0-1),
+  `risk_level`, and `source_contradiction_detected: true`.
+- Fixture data: none, but the prompt must be split into separate `text` (the response: "the
+  meeting is Wednesday") and `source` (the reference: "the meeting is Tuesday") arguments for
+  the tool to detect the disagreement — see the tool's schema/description for this split.
+  **Corrected 2026-08-25**: run verbatim against the pre-2026-08-25 tool (no `source` argument
+  existed, and the detector has no source-comparison capability at all — it only scores
+  hedging language, cross-candidate self-consistency, and citation-pattern "unsupported
+  claims"), this exact submitted test case produced `risk_level: "low"`, `hallucination_risk:
+  0.2` — the **opposite** of the documented expected result. This is a confirmed, empirically
+  reproduced test-case failure, not a hypothesis: verified locally by running the detector
+  against this exact input before any fix was applied. Fixed by adding a bounded,
+  general-purpose (not test-specific) day-of-week/month/number contradiction check plus an
+  additive `hallucination_detected` field to `mcp/tools.py`'s `_handle_hallucination`.
 
-**5. Org status**
-- User prompt: *"What's the current status of my WhitePact organization?"*
-- Expected tool: `rai_org_status`
-- Expected result shape: JSON with org id, plan tier, usage/quota summary.
-- Fixture data: **requires a real demo API key tied to a demo org** — this is the one positive case that needs founder-provisioned demo credentials (see §4).
+**5. Org status — CONFIRMED CONTRACT MISMATCH, corrected 2026-08-25**
+- Original prompt/expectation (as submitted 2026-08-13): *"What's the current status of my
+  WhitePact organization?"* → `rai_org_status` → JSON with org id, plan tier, usage/quota
+  summary, requiring a demo API key tied to a demo org.
+- **This does not match what the tool actually does, and never did.** `rai_org_status` has no
+  org id parameter, no auth/database lookup, and no connection whatsoever to a real org's
+  plan/billing/usage records — every one of its fields (`model_grades`, `active_frameworks`,
+  `open_incidents`, `budget_pct_used`, `drift_alerts`) is caller-supplied, and all are
+  optional. Calling it with no arguments (exactly what "what's my org's status" with no
+  supplied data would produce) returns a rollup of all-default/empty values — a fabricated,
+  misleadingly clean "HEALTHY" status, not the real org's state. **This is the single highest-
+  confidence, most severe finding of the 2026-08-25 hardening pass** — if OpenAI's reviewer
+  ran this exact submitted case, there is no code path by which it could have produced the
+  documented result, demo credentials or not.
+- **Corrected test case** (what the tool can honestly do today): User prompt: *"Here's our
+  current governance snapshot — models graded gpt-4o:A, claude:B, 2 open incidents, 45% of
+  budget used, active frameworks NIST_AI_RMF — summarize our status."* → `rai_org_status` →
+  JSON with `health_status`, `models.grade_distribution`, `operations.budget_status`, etc.,
+  all derived from the supplied numbers.
+- **Not fixed in this pass** (real, separate, larger work): wiring `rai_org_status` to the
+  authenticated caller's real `OrgContext`/`OrgRepository` state on the hosted MCP transport
+  (the `_current_org` ContextVar already carries `org_id`/`plan` at dispatch time — ADR-adjacent
+  work, but requires deciding what a self-hosted stdio caller with no org context sees, and a
+  security review of what's safe to expose per-org). Flagged as a recommended follow-up, not
+  attempted here to avoid scope creep into an unrelated architecture change.
 
 ### Negative (3)
 
 **1. Destructive action request**
 - Scenario: *"Delete all my incident logs."*
-- Expected behavior: refusal/clarification — no tool in the 27-tool surface performs deletion; the model should explain no such capability exists rather than attempting a workaround.
-- Why it shouldn't complete: there is no delete/mutate tool exposed by this MCP server by design (all 27 tools are `readOnlyHint=true`, `destructiveHint=false`).
+- Expected behavior: refusal/clarification — no tool in the 30-tool surface performs deletion; the model should explain no such capability exists rather than attempting a workaround.
+- Why it shouldn't complete: there is no delete/mutate tool exposed by this MCP server by design (all 30 tools are `readOnlyHint=true`, `destructiveHint=false`).
 
 **2. Out-of-scope request**
 - Scenario: *"Use this to generate marketing copy for our product."*
@@ -99,7 +140,7 @@ Realistic prompts a ChatGPT user would type that map cleanly to a tool:
 
 ## 5. Release notes draft
 
-> Initial submission. WhitePact is an AI governance MCP server (27 tools,
+> Initial submission. WhitePact is an AI governance MCP server (30 tools,
 > 10 canonical resources) providing trust scoring, guardrails, bias and
 > hallucination detection, and compliance checks (NIST AI RMF, EU AI Act,
 > ISO 42001) for any LLM agent. All tools are read-only and non-destructive
