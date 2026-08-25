@@ -10,7 +10,7 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ### Added
 
-- WhitePact Heart / Sovereignty Kernel, Phases H0-H1 (2026-08-25) — a
+- WhitePact Heart / Sovereignty Kernel, Phases H0-H2 (2026-08-25) — a
   new, deliberately small trusted-computing-base layer beneath the
   existing governance code, answering "why does this machine have the
   legitimate right to exercise this authority at all," logically prior
@@ -25,14 +25,27 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
   deliberately org-mutable `Policy`. `_CONSTITUTION_HISTORY` is a
   `MappingProxyType` — mutation attempts raise `TypeError`, a real
   enforced guarantee. Deliberately not cryptographically signed
-  (`docs/heart/HEART_SIGNING_DECISION.md`). This phase ships the
-  constitution object only — no wiring into the live decision path,
-  no change to any existing governance behavior. 22 new tests
-  (`tests/test_constitution.py`, including Hypothesis property tests).
-  Phases H2-H17 (authority lattice, root of authority, consent proof,
-  purpose binding, revocation epoch, the Heart veto itself, formal/
-  adversarial verification, performance, enterprise hardening) are
-  real, separately-scoped future work, not claimed complete here.
+  (`docs/heart/HEART_SIGNING_DECISION.md`). Phase H2
+  (`governance/authority_lattice.py`): `AuthorityEnvelope` — fifteen
+  explicit authority dimensions with deterministic `compare_envelopes()`
+  (`LEGITIMATE_SUBSET`/`ESCALATION`/`UNREPRESENTABLE_CONSTRAINT`, never
+  a bare boolean) and `intersect_envelopes()` (never widens through
+  union). Also closes a real, previously-documented gap in existing,
+  live-used code: `validate_attenuation()` (`governance/models.py`)
+  never checked `allowed_hours_utc` for attenuation — fixed directly.
+  A second real bug — a naive hour-window-intersection reconstruction
+  that could silently widen access for disjoint wraparound overlaps —
+  was caught by a Hypothesis property test on its first run and fixed
+  with a self-verifying construction before merge. These phases ship
+  the constitution and lattice objects only — no wiring into the live
+  decision path beyond the one attenuation fix, no other change to
+  existing governance behavior. 60 new tests total
+  (`tests/test_constitution.py`, `tests/test_authority_lattice.py`,
+  5 new cases in `tests/test_authority_attenuation.py`), including
+  Hypothesis property tests. Phases H3-H17 (root of authority, consent
+  proof, purpose binding, revocation epoch, the Heart veto itself,
+  formal/adversarial verification, performance, enterprise hardening)
+  are real, separately-scoped future work, not claimed complete here.
 - Tool Trust Network (Authority Everywhere Phase 8) —
   `governance/tool_trust.py`: a deterministic 0-100 trust score per
   org-registered upstream MCP server, derived from the existing

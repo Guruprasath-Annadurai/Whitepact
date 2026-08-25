@@ -296,6 +296,18 @@ class AuthorityContext:
         return validate_attenuation(self, child)
 
 
+def _hours_in_window(start: int, end: int) -> frozenset[int]:
+    """The exact set of UTC hours (0-23) a `(start, end)`
+    `allowed_hours_utc` window covers, mirroring
+    `AuthorityContext.constraint_violation()`'s own `in_window` logic
+    exactly (`[start, end)`, wrapping past midnight when `start > end`)
+    -- used only to turn the pair into something subset-comparable,
+    never to duplicate the runtime window-membership check itself."""
+    if start <= end:
+        return frozenset(range(start, end))
+    return frozenset(range(start, 24)) | frozenset(range(0, end))
+
+
 def validate_attenuation(parent: AuthorityContext, child: AuthorityContext) -> str | None:
     """The authority-attenuation invariant: a delegated ``AuthorityContext``
     must never grant more than the ``AuthorityContext`` that delegated it
@@ -340,14 +352,18 @@ def validate_attenuation(parent: AuthorityContext, child: AuthorityContext) -> s
       granted and required approval for, if the child was also granted
       that action type, the child must keep the approval requirement —
       delegation can't silently drop a human-in-the-loop gate.
+    - ``constraints["allowed_hours_utc"]`` (Heart Phase H2, closing a
+      documented gap this function's own docstring used to name): if
+      the parent restricts the hours an action may run, the child's
+      window (if set) must cover no hour the parent's doesn't, correctly
+      accounting for UTC wraparound (e.g. parent ``(22, 6)`` covers
+      22:00-06:00; a child claiming ``(20, 6)`` illegally adds hour 20).
+      Parent having no window at all means parent is unconstrained here.
 
     Explicitly **not** checked here (documented, not silently skipped):
-    ``constraints["allowed_hours_utc"]`` (comparing two time windows for
-    subset-ness, including UTC wraparound, is real interval math this
-    first version doesn't attempt) and ``delegation_chain`` identity/
-    depth consistency (already covered separately by
-    ``constraint_violation()``'s own ``max_delegation_depth`` check
-    against ``len(self.delegation_chain)`` at evaluation time).
+    ``delegation_chain`` identity/depth consistency (already covered
+    separately by ``constraint_violation()``'s own ``max_delegation_depth``
+    check against ``len(self.delegation_chain)`` at evaluation time).
     """
     if not child.granted_action_types <= parent.granted_action_types:
         expanded = child.granted_action_types - parent.granted_action_types
@@ -407,6 +423,19 @@ def validate_attenuation(parent: AuthorityContext, child: AuthorityContext) -> s
             field="require_approval_for",
             dropped=",".join(sorted(dropped)),
         )
+
+    parent_hours = parent.constraints.get("allowed_hours_utc")
+    if parent_hours is not None:
+        child_hours = child.constraints.get("allowed_hours_utc")
+        parent_window = _hours_in_window(*parent_hours)
+        child_window = _hours_in_window(*child_hours) if child_hours is not None else None
+        if child_window is None or not child_window <= parent_window:
+            return format_reason(
+                ReasonCode.DELEGATION_AUTHORITY_ESCALATION,
+                field="allowed_hours_utc",
+                parent_window=f"{parent_hours[0]}-{parent_hours[1]}",
+                child_window=f"{child_hours[0]}-{child_hours[1]}" if child_hours else "<unset>",
+            )
 
     return None
 

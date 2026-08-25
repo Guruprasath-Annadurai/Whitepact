@@ -127,7 +127,7 @@ wiring only ever applies to org-scoped Streamable HTTP/SSE calls).
 
 ---
 
-## 2.5 The WhitePact Heart (Sovereignty Kernel) **[TODAY, first version — Phase H1]**
+## 2.5 The WhitePact Heart (Sovereignty Kernel) **[TODAY, first version — Phases H0-H2]**
 
 A new, deliberately small trusted-computing-base layer answering one
 question, and only one: *why does this machine have the legitimate
@@ -169,14 +169,43 @@ the existing `AuthorityContext`/`validate_attenuation`/`DelegationRepository`/
 `IntentContract`/`AuthorityPassport` infrastructure documented in
 Section 3 below): see `docs/heart/HEART_CURRENT_STATE.md`.
 
-**Not built in this phase**: `RootAuthorityRecord`, `ConsentProof`,
-`PurposeBinding`, the unified `RevocationEpoch`, the authority lattice
-extension (`AuthorityEnvelope`), `SovereigntyVeto`, `LegitimacyEnvelope`,
-and the `SovereigntyKernel.evaluate()` entry point are all later,
-separate phases (H2-H13) — this phase ships the constitution object
-and its registry only, with no wiring into the live decision path yet.
-No existing behavior changes; `WhitePactRuntimeGateway.evaluate()` and
-every other governance module in Section 3 are unmodified.
+**[TODAY, Phase H2]**: `governance/authority_lattice.py`'s
+`AuthorityEnvelope` — an explicit authority representation across
+fifteen dimensions (action types, targets, resources, data scope,
+max/max-total value, frequency, time window, environment,
+jurisdiction, delegation depth, approval requirements, allowed/denied
+tools, recipient restrictions), generalizing the informal dict-based
+comparisons `AuthorityContext` already performs. `compare_envelopes()`
+returns one of three outcomes — `LEGITIMATE_SUBSET`, `ESCALATION`, or
+`UNREPRESENTABLE_CONSTRAINT` — never a bare boolean, so "fits within
+the parent" and "this constraint isn't representable in the lattice"
+stay distinguishable (constitutional law H10). `intersect_envelopes()`
+combines multiple envelopes (root/org/intent/delegation/constitution/
+context) via per-dimension intersection only — no operation in this
+module can widen authority through union. `authority_context_to_envelope()`
+raises `UnrepresentableConstraintError` rather than silently dropping
+an `AuthorityContext.constraints` key the envelope has no dimension
+for (e.g. `memory_scope`).
+
+**A real, documented gap closed in the same phase**:
+`validate_attenuation()` (`governance/models.py`) never checked
+`constraints["allowed_hours_utc"]` for attenuation — its own docstring
+said so, explicitly, since Phase 8. A delegated child could previously
+claim a *wider* time window than its parent held, uncaught. Fixed by
+extending the existing, live-used function directly (not routed
+through the new lattice module, which stays dependency-free of
+`governance.models` at runtime by design) — verified with a real
+escalation case (parent `22:00-06:00`, child `20:00-06:00`, two extra
+hours) that now correctly denies.
+
+**Not built yet**: `RootAuthorityRecord`, `ConsentProof`,
+`PurposeBinding`, the unified `RevocationEpoch`, `SovereigntyVeto`,
+`LegitimacyEnvelope`, and the `SovereigntyKernel.evaluate()` entry
+point are all later, separate phases (H3-H13) — `AuthorityEnvelope`
+exists and is tested, but nothing in the live decision path constructs
+or consults one yet; `WhitePactRuntimeGateway.evaluate()` continues to
+use `AuthorityContext`/`validate_attenuation()` exactly as before,
+unchanged in every way except the one gap fix above.
 
 ## 3. Core entities
 

@@ -2059,3 +2059,113 @@ what's built so far).
    decision today is stamped with a constitution version — that
    remains true until a much later phase actually needs it.
 **VERDICT: MOVE TO NEXT HEART PHASE** (H2 — Authority Lattice).
+
+## 27. WhitePact Heart Phase H2 — Authority Lattice (2026-08-25)
+
+- **Domain model** (`governance/authority_lattice.py`) —
+  `AuthorityEnvelope`: fifteen explicit dimensions (action_types,
+  targets, denied_targets, resources, data_scope, max_value,
+  max_total_value, frequency, allowed_hours_utc, environment,
+  jurisdiction, delegation_depth, approval_requirements, allowed_tools,
+  denied_tools, recipient_restrictions), every one defaulting to `None`
+  ("unconstrained"), matching `OrgAuthorityCeiling`'s own convention
+  rather than inventing a different one. `compare_envelopes(parent,
+  child)` returns `LatticeComparisonResult` with one of three
+  `LatticeComparisonStatus` values — `LEGITIMATE_SUBSET`, `ESCALATION`,
+  or `UNREPRESENTABLE_CONSTRAINT` — checked per-dimension, first
+  violation wins, same convention `validate_attenuation()` already
+  uses.
+- **Effective authority never widens** — `intersect_envelopes(*envelopes)`
+  combines any number of envelopes via per-dimension intersection:
+  allow-lists intersect (`set &`), deny-lists/approval-requirements
+  union (a restriction from any source still holds), numeric ceilings
+  take the minimum, hour windows intersect via a self-verifying
+  brute-force search (see the real bug fixed below). Order-independent
+  and associative — property-tested
+  (`test_intersecting_result_is_always_legitimate_subset_of_every_input`)
+  to hold for arbitrary combinations of inputs, not just the examples
+  written by hand.
+- **`UNREPRESENTABLE_CONSTRAINT` is real, not decorative** —
+  `authority_context_to_envelope()` raises `UnrepresentableConstraintError`
+  when `AuthorityContext.constraints` contains a key outside the five
+  this module maps (e.g. `memory_scope`, which `constraint_violation()`
+  *does* enforce today). `compare_authority_contexts()` surfaces this
+  as a proper `LatticeComparisonResult`, never lets a constraint
+  silently vanish during conversion — the exact behavior constitutional
+  law H10 ("unknown required legitimacy is not authority") requires.
+- **A real, documented gap in existing, live-used code, closed** —
+  `validate_attenuation()`'s own docstring (`governance/models.py`)
+  had explicitly named `allowed_hours_utc` as unchecked since it was
+  first written. Extended the function directly with a
+  `_hours_in_window()` helper (converts a `(start, end)` pair,
+  correctly handling midnight wraparound, into the exact `frozenset[int]`
+  of covered hours) and a subset check. Verified empirically before
+  writing tests: a parent restricted to `(22, 6)` delegating a child
+  claiming `(20, 6)` (two illegally-added hours) now correctly returns
+  `DELEGATION_AUTHORITY_ESCALATION`; equal and narrower windows still
+  pass. 5 new regression tests in the existing
+  `tests/test_authority_attenuation.py` (not a new file — extending
+  established test coverage for established, live code).
+- **A second real bug found and fixed via property testing, before
+  any code review would have caught it by hand**: the first draft of
+  `_intersect_hours()` reconstructed an intersected window as
+  `(min(overlap), max(overlap) + 1)`, silently assuming the overlap of
+  two wraparound windows is always one contiguous block. It isn't —
+  `(3, 2)` (03:00 to 01:59 next day) intersected with `(1, 0)` (01:00
+  to 23:59) leaves `{1, 3, 4, ..., 23}`, excluding hour 2 in the
+  middle, which the naive reconstruction silently included anyway
+  (a real authority-widening bug). Hypothesis's
+  `test_hours_intersection_never_covers_an_hour_outside_either_window`
+  caught this on its first run, with a shrunk minimal failing example.
+  Fixed by brute-forcing all 576 `(start, end)` candidates and keeping
+  only one whose `_hours_in_window()` output exactly equals the true
+  overlap, falling back to `(0, 0)` (deny all -- the safe direction)
+  when no single window can represent a genuinely non-contiguous
+  overlap exactly. Small enough to be cheap (not a hot path) and
+  correct by construction rather than by argument.
+- **Adapters, not a fork** — `authority_context_to_envelope()`/
+  `envelope_to_authority_context()` let `AuthorityEnvelope` and the
+  existing, live `AuthorityContext` coexist without a second,
+  incompatible authority representation. `WhitePactRuntimeGateway.evaluate()`
+  and every existing governance module continue to use
+  `AuthorityContext` exactly as before — nothing in the live decision
+  path constructs or consults an `AuthorityEnvelope` yet.
+- Verification: 38 new tests total — 33 in
+  `tests/test_authority_lattice.py` (allowlist/denylist/numeric/hours
+  comparison branches, intersection-never-widens including the
+  disjoint-hours-window case, adapter round-trips, the
+  `UnrepresentableConstraintError` path, and 5 Hypothesis property
+  tests reusing `tests/test_property_based.py`'s established pattern)
+  plus 5 in `tests/test_authority_attenuation.py` for the
+  `allowed_hours_utc` fix. Full repo suite passing (see commit for
+  exact count); `mypy`/`ruff check`/`ruff format --check` clean on
+  every touched file.
+
+**HEART INVARIANTS: PASS** (child<=parent holds per-dimension;
+intersection never widens, property-verified across generated inputs,
+not just hand-picked examples).
+**SECURITY: PASS, with one real bug caught and fixed before merge**
+(the hours-window widening bug above — exactly the kind of subtle
+interval-math error a "never widen" invariant needs property testing,
+not just example tests, to catch).
+**ENTERPRISE READINESS: 3/10** (H2 of 17 — the lattice exists,
+compares, and intersects correctly, but nothing in the live decision
+path uses it yet, and root authority/consent/purpose binding/
+revocation/the veto itself all remain unbuilt).
+**REMAINING RISKS**:
+1. `AuthorityEnvelope` is not yet wired into any live decision --
+   H2 alone changes no runtime behavior except the `allowed_hours_utc`
+   attenuation fix.
+2. Hour-window intersection is honestly incomplete for genuinely
+   disjoint (non-single-window) overlaps -- falls back to fully deny
+   rather than representing a multi-block window, since the type is a
+   single `(start, end)` pair. A future phase needing exact
+   multi-block hour representation would need to widen the type, not
+   work around this limitation.
+3. `UnrepresentableConstraintError` currently only guards the
+   `AuthorityContext -> AuthorityEnvelope` direction; nothing yet
+   guards a hypothetical reverse gap (a Heart-only dimension silently
+   ignored by code still reading only `AuthorityContext`) -- not
+   possible today since nothing consumes `AuthorityEnvelope` outside
+   this module yet, but worth remembering once something does.
+**VERDICT: MOVE TO NEXT HEART PHASE** (H3 — Root of Authority).
