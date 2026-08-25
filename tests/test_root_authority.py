@@ -228,7 +228,11 @@ class TestValidateRootChainWalking:
 
     def test_not_yet_valid_intermediate_ancestor(self) -> None:
         org = build_root_authority_record(
-            "org1", RootType.ORGANIZATION, "issuer", "saml", not_before=datetime.now(UTC) + timedelta(days=1)
+            "org1",
+            RootType.ORGANIZATION,
+            "issuer",
+            "saml",
+            not_before=datetime.now(UTC) + timedelta(days=1),
         )
         sp = build_root_authority_record(
             "sp1", RootType.SERVICE_PRINCIPAL, "issuer", "jwt", authority_source=org.root_id
@@ -239,7 +243,11 @@ class TestValidateRootChainWalking:
 
     def test_expired_intermediate_ancestor(self) -> None:
         org = build_root_authority_record(
-            "org1", RootType.ORGANIZATION, "issuer", "saml", expires_at=datetime.now(UTC) - timedelta(days=1)
+            "org1",
+            RootType.ORGANIZATION,
+            "issuer",
+            "saml",
+            expires_at=datetime.now(UTC) - timedelta(days=1),
         )
         sp = build_root_authority_record(
             "sp1", RootType.SERVICE_PRINCIPAL, "issuer", "jwt", authority_source=org.root_id
@@ -253,7 +261,11 @@ class TestValidateRootChainWalking:
         once a resolved ancestor is checked mid-walk, not at the leaf --
         verify a 3-hop chain still catches an expired ancestor at hop 2."""
         org = build_root_authority_record(
-            "org1", RootType.ORGANIZATION, "issuer", "saml", expires_at=datetime.now(UTC) - timedelta(days=1)
+            "org1",
+            RootType.ORGANIZATION,
+            "issuer",
+            "saml",
+            expires_at=datetime.now(UTC) - timedelta(days=1),
         )
         sp1 = build_root_authority_record(
             "sp1", RootType.SERVICE_PRINCIPAL, "issuer", "jwt", authority_source=org.root_id
@@ -289,7 +301,11 @@ class TestRootAuthorityProperties:
         current = root
         for i in range(depth):
             current = build_root_authority_record(
-                f"sp{i}", RootType.SERVICE_PRINCIPAL, "issuer", "jwt", authority_source=current.root_id
+                f"sp{i}",
+                RootType.SERVICE_PRINCIPAL,
+                "issuer",
+                "jwt",
+                authority_source=current.root_id,
             )
             store[current.root_id] = current
         result = validate_root_chain(current, _resolver(store))
@@ -327,7 +343,11 @@ class TestRootAuthorityProperties:
         current = prev
         for i in range(depth):
             nxt = build_root_authority_record(
-                f"sp{i}", RootType.SERVICE_PRINCIPAL, "issuer", "jwt", authority_source=current.root_id
+                f"sp{i}",
+                RootType.SERVICE_PRINCIPAL,
+                "issuer",
+                "jwt",
+                authority_source=current.root_id,
             )
             store[current.root_id] = current
             current = nxt
