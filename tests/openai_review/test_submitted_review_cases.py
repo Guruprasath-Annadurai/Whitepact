@@ -177,19 +177,22 @@ class TestPositiveCaseTCP4Hallucination:
 
 
 class TestPositiveCaseTCP5OrgStatus:
-    async def test_original_submitted_contract_is_not_achievable(self) -> None:
-        """Documents, rather than hides, the confirmed capability gap:
-        calling with no arguments (what "what's my org's status" with no
-        supplied data implies) returns a fabricated all-default rollup,
-        never real account state -- there is no org_id/auth parameter at
-        all. This test exists so the gap cannot silently regress back
-        into looking "fixed" by accident."""
+    async def test_no_context_calling_convention_still_uses_supplied_data_only(self) -> None:
+        """The schema still has no org_id/api_key parameter -- real org
+        data comes from the hosted transport's authenticated request
+        context (mcp/server.py's `_current_org`), not a caller-supplied
+        argument; see tests/test_mcp_org_status_live.py for the
+        authenticated path. A direct dispatch_tool() call outside any
+        request context (what this test exercises) has no such context,
+        so it still returns the caller-supplied-only rollup -- this
+        test exists so that fallback behavior cannot silently regress."""
         tool = next(t for t in TOOL_DEFS if t.name == "rai_org_status")
         assert "org_id" not in tool.inputSchema["properties"]
         assert "api_key" not in tool.inputSchema["properties"]
         result = await dispatch_tool("rai_org_status", {})
+        assert "org_id" not in result  # no request context -> no real org data
         assert result["models"]["total"] == 0
-        assert result["health_status"] == "HEALTHY"  # misleadingly "healthy" with zero data
+        assert result["health_status"] == "HEALTHY"  # correct default, not fabricated
 
     async def test_corrected_contract_with_supplied_data(self) -> None:
         case = next(c for c in CONTRACT["positive"] if c["review_test_id"] == "TC-P5")

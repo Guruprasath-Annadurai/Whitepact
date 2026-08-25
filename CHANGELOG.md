@@ -155,11 +155,11 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
     contradiction check, plus an additive `hallucination_detected`
     field.
   - `rai_org_status` was documented as looking up a real org's plan
-    tier and usage via a demo API key; it has no such capability —
-    every field is caller-supplied, with no org-id or auth parameter
-    at all. Tool description corrected to state this explicitly;
-    real live-org wiring is flagged as separate, unattempted follow-up
-    work, not silently implied as working.
+    tier and usage via a demo API key; at first audit it had no such
+    capability at all — every field was caller-supplied, no org-id or
+    auth parameter existed. Tool description corrected to state this
+    explicitly at the time; **wired for real the same day** — see the
+    dedicated entry below.
   - Also hardened `rai_compliance`/`rai_eu_ai_act_classify`'s
     descriptions (both claimed EU AI Act coverage with genuinely
     different input shapes — a real tool-routing collision risk) and
@@ -169,9 +169,24 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
     full submitted test contract — including a direct regression test
     for the empirically-reproduced hallucination failure — as a
     permanent, machine-checked artifact
-    (`tests/openai_review/review_contract.json` is the single source
+    (`tests/openai_review/review_contract.py` is the single source
     of truth). 2515 tests passed full-suite (up from 2486); `mypy`/
     `ruff` clean.
+- `rai_org_status` live-org wiring (2026-08-25, same-day follow-up to
+  the finding above) — on the hosted MCP transport with an
+  authenticated caller, `_handle_org_status()` now reads
+  `mcp/server.py`'s `_current_org`/`_current_usage_repo` ContextVars
+  (already populated on every authenticated request) and merges in
+  real `org_id`, `plan`, and `usage.calls_this_month`/`monthly_quota`/
+  `quota_status` alongside the existing caller-supplied rollup.
+  Verified with a real MCP protocol round trip against a real org/API
+  key (`tests/test_mcp_org_status_live.py`) — `org_id` and `plan`
+  match the real org, and `usage.calls_this_month` correctly counts
+  real prior calls in the billing period, not a fabricated number. The
+  self-hosted stdio transport has no org context by design and
+  correctly still returns the caller-supplied-only rollup, with no
+  `org_id`/`plan`/`usage` fields present at all — a structural
+  absence, not a placeholder.
 
 ## [1.2.3] — 2026-08-19
 
