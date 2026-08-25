@@ -127,7 +127,7 @@ wiring only ever applies to org-scoped Streamable HTTP/SSE calls).
 
 ---
 
-## 2.5 The WhitePact Heart (Sovereignty Kernel) **[TODAY, first version — Phases H0-H6]**
+## 2.5 The WhitePact Heart (Sovereignty Kernel) **[TODAY, first version — Phases H0-H7]**
 
 A new, deliberately small trusted-computing-base layer answering one
 question, and only one: *why does this machine have the legitimate
@@ -289,19 +289,45 @@ module cannot cross-check that the three results supplied actually
 *pertain* to the delegation in question — callers are responsible for
 that correspondence.
 
+**[TODAY, Phase H7]**: `governance/non_delegable_authority.py`'s
+`check_non_delegable_authority()` — the executable form of
+constitutional law H11 ("non-delegable authority remains
+non-delegable"). Every prior Heart phase (H3-H6) answers "is this
+grant legitimate" — a question about *provenance*. This phase answers
+a logically prior one: is this *category* of authority even the kind
+of thing that can be delegated at all, regardless of how legitimate
+its root, consent, and purpose are. A fixed, Heart-owned (not
+org-configurable) registry maps action-type `fnmatch` patterns (same
+mechanism `IntentContract.denied_targets` already uses) to one of two
+severities: `NON_DELEGABLE` (can never appear in any delegated grant —
+amending the constitution, issuing/revoking a root of authority,
+overriding a Heart veto) or `HUMAN_RESERVED` (may be delegated to
+*initiate*, but execution must always require a human in the loop,
+unconditionally — a constitutional floor beneath the org-configurable
+`require_approval_for`). Deliberately narrow: only meta-level
+operations that would let a delegate undermine the Heart's own
+guarantees are reserved; ordinary business-domain action types stay
+governed by existing, org-mutable `Policy`. When both severities match
+a requested action-type set, `NON_DELEGABLE` is always reported first
+(property-verified).
+
 **Not built yet**: the unified `RevocationEpoch`, `SovereigntyVeto`,
 `LegitimacyEnvelope`, and the `SovereigntyKernel.evaluate()` entry
-point are all later, separate phases (H7-H13) — `AuthorityEnvelope`,
-`RootAuthorityRecord`, `ConsentProof`, `PurposeBinding`, and the
-delegation-legitimacy composition exist and are tested, but nothing in
-the live decision path constructs or consults any of them yet;
-`WhitePactRuntimeGateway.evaluate()` continues to use
-`AuthorityContext`/`validate_attenuation()` exactly as before,
-unchanged in every way except the H2 gap fix. No DB persistence layer
-exists yet for `RootAuthorityRecord`, `ConsentProof`, or
-`PurposeBinding` either — these phases ship the record types and their
-validation semantics only, mirroring how H1's constitution and H2's
-lattice shipped pure objects without live wiring.
+point are all later, separate phases (H8-H13) — `AuthorityEnvelope`,
+`RootAuthorityRecord`, `ConsentProof`, `PurposeBinding`, the
+delegation-legitimacy composition, and the non-delegable registry
+exist and are tested, but nothing in the live decision path constructs
+or consults any of them yet; `WhitePactRuntimeGateway.evaluate()`
+continues to use `AuthorityContext`/`validate_attenuation()` exactly as
+before, unchanged in every way except the H2 gap fix. No DB
+persistence layer exists yet for `RootAuthorityRecord`, `ConsentProof`,
+or `PurposeBinding` either — these phases ship the record types and
+their validation semantics only, mirroring how H1's constitution and
+H2's lattice shipped pure objects without live wiring. No
+execution-time enforcement turns a `HUMAN_RESERVED` finding into an
+actual mandatory-approval gate yet, and no org-configurable extension
+mechanism exists for adding organization-specific `HUMAN_RESERVED`
+action types on top of the fixed built-in set.
 
 ## 3. Core entities
 

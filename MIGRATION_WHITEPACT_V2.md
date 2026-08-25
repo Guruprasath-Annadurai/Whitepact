@@ -2609,3 +2609,120 @@ the veto itself all remain unbuilt).
    those results get produced from stored data in the first place.
 **VERDICT: MOVE TO NEXT HEART PHASE** (H7 — Non-Delegable and
 Human-Reserved Authority).
+
+## 32. WhitePact Heart Phase H7 — Non-Delegable and Human-Reserved Authority (2026-08-26)
+
+- **The gap this closes** (`governance/non_delegable_authority.py`,
+  new file) — every Heart phase so far (H3-H6) answers "is this
+  specific grant of authority legitimate," a question about
+  *provenance*. None answer a logically prior question: is this
+  *category* of authority even the kind of thing that can be
+  delegated at all, regardless of how legitimate its root, consent,
+  and purpose are. A `DelegationRecord` granting "amend the WhitePact
+  constitution" could pass every H2-H6 check (correctly attenuated,
+  root-legitimate, consented-to, purpose-bound) and still be something
+  no delegated authority may ever hold -- constitutional laws H1/H2
+  say machines may exercise authority but never originate it, and a
+  delegate that could rewrite the constitution could originate
+  whatever authority it wanted.
+- **Two severities, not one** -- `NonDelegableScope.NON_DELEGABLE`
+  (can never appear in any delegated grant, at any depth: amending the
+  constitution, issuing/revoking a root of authority, overriding a
+  Heart veto, revoking another party's consent on their behalf) vs.
+  `NonDelegableScope.HUMAN_RESERVED` (may be delegated to *initiate*,
+  but execution must always require a human in the loop,
+  unconditionally -- a constitutional floor beneath the
+  org-configurable `require_approval_for` an org's own policy could
+  otherwise drop). `check_non_delegable_authority()` surfaces a
+  `HUMAN_RESERVED` finding; it does not yet enforce it -- that's
+  explicitly deferred, named in this phase's own remaining risks.
+- **Fixed, Heart-owned, deliberately narrow registry** -- the exact
+  "WhitePact constitution vs. customer policy" distinction
+  `governance/constitution.py`'s own docstring already establishes.
+  Only meta-level operations that would let a delegate undermine the
+  Heart's own guarantees are reserved (all namespaced `heart.*` plus
+  one deliberately generic `legal.attestation.sign` example); ordinary
+  business-domain action types (payments, deployments, data access)
+  stay governed by the existing, org-mutable `Policy`/
+  `AuthorityContext.require_approval_for` machinery, untouched by this
+  phase.
+- **Pattern matching reuses `fnmatch`** -- the same mechanism
+  `IntentContract.denied_targets`/`allowed_targets` (`intent.py`)
+  already uses, rather than inventing a second pattern language for
+  this codebase to maintain.
+- **Severity ordering is deliberate and property-tested** -- when a
+  requested action-type set matches both a `NON_DELEGABLE` and a
+  `HUMAN_RESERVED` pattern, `NON_DELEGABLE` is always reported, never
+  masked by a weaker finding that happened to be checked first
+  (`test_non_delegable_reported_before_human_reserved_when_both_present`,
+  plus a Hypothesis property test over arbitrary combinations of all
+  three category types). Within one severity, matching is
+  deterministic (sorted action types, fixed registry order), verified
+  directly (`test_same_input_always_yields_same_result`).
+- **Verification**: 13 new tests in `tests/test_non_delegable_authority.py`
+  -- every registered `NON_DELEGABLE` and `HUMAN_RESERVED` pattern
+  individually caught, wildcard matching, mixed-with-ordinary-actions
+  cases, both severity-ordering tests, determinism, plus 3 Hypothesis
+  property tests: arbitrary combinations of only ordinary action types
+  never violate; any `NON_DELEGABLE` presence always wins regardless
+  of what else (ordinary or `HUMAN_RESERVED`) is also present;
+  `HUMAN_RESERVED` without any `NON_DELEGABLE` presence always reports
+  `HUMAN_RESERVED`. `non_delegable_authority.py` at 100% branch
+  coverage. `mypy`/`ruff check`/`ruff format --check` clean on both
+  new files.
+- **Deliberately standalone this phase, not wired into
+  `validate_delegation_legitimacy()` (H6) yet** -- unlike H4/H5/H6,
+  which compose by taking an upstream phase's already-computed result
+  as a parameter, this phase's check operates directly on a
+  `frozenset[str]` of action types with no upstream `Result` object
+  needed. Extending H6's already-merged, tested
+  `validate_delegation_legitimacy()` to also call this function was
+  considered and deliberately deferred to keep this phase's PR
+  self-contained and avoid re-touching merged, working code without a
+  concrete caller driving the change -- a future phase (or the
+  eventual live wiring) is the natural place to make that connection.
+- **Not built in this phase**: an org-configurable extension mechanism
+  for adding organization-specific `HUMAN_RESERVED` action types on
+  top of the fixed built-in set (a real, plausible future need, left
+  for when it's concretely needed rather than spec'd speculatively);
+  any execution-time enforcement that actually turns a
+  `HUMAN_RESERVED` finding into a mandatory approval gate; and nothing
+  in `WhitePactRuntimeGateway.evaluate()` or `validate_delegation_legitimacy()`
+  constructs or consults a `NonDelegableViolation` yet.
+
+**HEART INVARIANTS: PASS** (no combination of action types containing
+a `NON_DELEGABLE` pattern is ever reported as anything other than
+`NON_DELEGABLE`, and `HUMAN_RESERVED` is never silently dropped when
+present without a stronger violation -- both property-verified across
+generated combinations, not just hand-picked examples).
+**SECURITY: PASS** (the registry itself is fixed and code-defined, not
+reachable through any runtime/org-configurable path in this phase, so
+there is no way for a caller to weaken or bypass it short of editing
+this module's source).
+**ENTERPRISE READINESS: 7/10** (H7 of 17 -- unchanged from H6's score:
+this phase adds a real, tested, standalone safety mechanism, but it is
+not yet wired into the delegation kernel or any live decision path, so
+it does not yet change what WhitePact actually enforces in production;
+authority lifetime, the revocation kernel, conflict resolution, and
+the veto itself all remain unbuilt).
+**REMAINING RISKS**:
+1. `check_non_delegable_authority()` is not called from
+   `validate_delegation_legitimacy()` (H6) or anywhere else yet -- a
+   `DelegationRecord` granting a `NON_DELEGABLE` action type today
+   would still pass H6's legitimacy check, since nothing currently
+   calls this phase's function during delegation. This is the direct
+   consequence of the "deliberately standalone" scoping decision above
+   and must be closed before this phase provides any real protection.
+2. `HUMAN_RESERVED` is a signal only -- no code path anywhere
+   currently forces human execution when one is found. An org could
+   today configure `require_approval_for` to skip approval for an
+   action type this registry marks `HUMAN_RESERVED`, and nothing would
+   stop it, because nothing consults this registry at execution time.
+3. The registry is fixed at seven entries chosen for defensibility and
+   direct grounding in this codebase's own Heart vocabulary
+   (constitution, root authority, veto, consent) rather than
+   exhaustiveness -- it is very likely incomplete for a real
+   production deployment and should be revisited once more Heart
+   phases (especially H11's veto and H12's legitimacy envelope) define
+   more of what "the Heart's own guarantees" concretely are.
+**VERDICT: MOVE TO NEXT HEART PHASE** (H8 — Authority Lifetime).
