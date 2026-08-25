@@ -2488,3 +2488,124 @@ unbuilt).
    oversight, but worth revisiting if it proves too rigid once real
    usage exists.
 **VERDICT: MOVE TO NEXT HEART PHASE** (H6 — Delegation Kernel).
+
+## 31. WhitePact Heart Phase H6 — Delegation Kernel (2026-08-26)
+
+- **Reuses, does not rebuild** (`governance/delegation_kernel.py`,
+  new file) — per `docs/heart/HEART_CURRENT_STATE.md` §3,
+  `DelegationRecord` (`governance/delegation.py`) already has "everything
+  Phase H6 needs: parent pointer, attenuation-checked grant, expiry,
+  revocation fields," and `DelegationRepository`
+  (`db/delegation_repository.py`) already provides `grant()`,
+  `get_active_delegation()`, `get_authority_chain()`,
+  `revoke_branch()`, `get_org_graph()`, `get_descendants()` -- real,
+  tested, operational primitives. `DelegationGraph`/`DelegationGraphNode`
+  (Authority Everywhere Phase 6) already provide the org-wide,
+  queryable shape of the delegation forest. None of it is rebuilt.
+- **The genuinely new piece**: `validate_delegation_legitimacy()`
+  composes the three independent Heart legitimacy checks (H3 root, H4
+  consent, H5 purpose) with a `DelegationRecord`'s own
+  active/revoked/expired state into one verdict
+  (`DelegationLegitimacyStatus`: `LEGITIMATE`, `ROOT_NOT_LEGITIMATE`,
+  `CONSENT_NOT_LEGITIMATE`, `PURPOSE_NOT_BOUND`,
+  `DELEGATION_NOT_ACTIVE`). Even a perfectly well-formed,
+  correctly-attenuated `DelegationRecord` (`validate_attenuation()`
+  already enforces `child ⊆ parent` at grant time, unrelated to this
+  phase) says nothing about whether the delegator's own authority
+  traces to a legitimate root, was actually consented to, and stays
+  bound to its declared purpose -- this phase is the single
+  composition point for those three answers.
+- **TCB-minimization, continued** -- takes fully-resolved
+  `RootValidationResult`/`ConsentValidationResult`/
+  `PurposeBindingValidationResult` objects as parameters; never
+  resolves a root chain, validates a consent proof, or validates a
+  purpose binding itself. `DelegationRecord` is imported only under
+  `TYPE_CHECKING`, so `delegation_kernel.py` has zero runtime
+  dependency on any of the four modules it composes.
+- **Ordering mirrors H4/H5's own established principle** -- root
+  legitimacy checked first, then consent, then purpose, then the
+  delegation's own local state last, so the most foundational,
+  upstream problem always surfaces first
+  (`test_root_failure_reported_before_consent_and_purpose_failure`,
+  `test_delegation_own_state_checked_last`).
+- **An honest, documented limitation** -- `DelegationRecord` has no
+  field linking it to a specific `RootAuthorityRecord.root_id`,
+  `ConsentProof.consent_id`, or `PurposeBinding.binding_id` (it
+  predates the Heart and is not schema-changed by this phase, per its
+  REUSE classification). Unlike H5's `validate_purpose_binding()`,
+  which can and does cross-check `consent_ref` against a supplied
+  `ConsentProof.consent_id`, this module cannot verify that the three
+  results supplied actually *pertain* to the specific delegation in
+  question -- that correspondence is the caller's responsibility. This
+  is stated explicitly in the module docstring rather than silently
+  assumed to be checked.
+- **Verification**: 12 new tests in `tests/test_delegation_kernel.py`
+  -- unit coverage for every `DelegationLegitimacyStatus` branch
+  (LEGITIMATE, `ROOT_NOT_LEGITIMATE` via both a revoked root and a
+  non-terminal root with no source, `CONSENT_NOT_LEGITIMATE`,
+  `PURPOSE_NOT_BOUND`, `DELEGATION_NOT_ACTIVE` via both revoked and
+  expired, a not-yet-expired delegation staying LEGITIMATE, and the
+  two ordering tests) plus 2 Hypothesis property tests: any legitimate
+  chain with a matching, active delegation is always LEGITIMATE for
+  arbitrary generated purpose strings; an illegitimate root (either
+  non-terminal type with no source) never yields a legitimate
+  delegation. `delegation_kernel.py` at 100% branch coverage.
+  `mypy`/`ruff check`/`ruff format --check` clean on both new files.
+  One real test-authoring bug caught before merge: an early draft of
+  `test_purpose_mismatch_denies_delegation` built a `ConsentProof`
+  against a freshly-constructed `RootAuthorityRecord` with a different
+  `root_id` than the `RootValidationResult` it was checked against --
+  the test itself would have exercised `ROOT_MISMATCH`, not the
+  `PURPOSE_MISMATCH` path it was named for. Caught by the test
+  actually failing on first run (asserted `PURPOSE_NOT_BOUND`, got
+  `CONSENT_NOT_LEGITIMATE`), not by inspection -- fixed by reusing
+  `root_result.root_id` directly instead of constructing an unrelated
+  root record.
+- **Not built in this phase**: any wiring from a real delegation-grant
+  flow that resolves the three composed results for a specific
+  `DelegationRecord`; any `DelegationRecord` schema change to carry
+  cross-references to the root/consent/purpose objects behind it; and
+  nothing in `WhitePactRuntimeGateway.evaluate()` or any other live
+  decision path constructs or consults a `DelegationLegitimacyResult`
+  yet -- the same scope discipline H1-H5 already held to.
+
+**HEART INVARIANTS: PASS** (a delegation can only be LEGITIMATE when
+all three upstream Heart checks are valid AND the delegation record
+itself is currently active -- property-verified across generated
+purpose strings and illegitimate root types, not just hand-picked
+examples).
+**SECURITY: PASS** (no path returns LEGITIMATE for a delegation backed
+by an illegitimate root, consent, or purpose, or for a
+revoked/expired delegation record regardless of how legitimate its
+upstream chain is).
+**ENTERPRISE READINESS: 7/10** (H6 of 17 -- root-of-authority,
+consent-proof, purpose-binding, and delegation-legitimacy composition
+now all exist, validate, and compose correctly across four phases, but
+nothing in the live decision path uses any of them yet, no real
+delegation-grant flow resolves the three composed results in
+production, no DB persistence layer exists for the H3-H5 record
+types, `DelegationRecord` has no cross-reference fields to the objects
+this phase composes, and non-delegable/human-reserved authority,
+authority lifetime, the revocation kernel, conflict resolution, and
+the veto itself all remain unbuilt).
+**REMAINING RISKS**:
+1. `validate_delegation_legitimacy()` is not yet wired into any live
+   decision -- H6 alone changes no runtime behavior; it ships a
+   composition function other Heart phases (and eventually the live
+   decision path) will need to call.
+2. The documented cross-reference gap (§ above) is a real, current
+   limitation, not a hypothetical one -- a caller could accidentally
+   supply a legitimate root/consent/purpose chain for the *wrong*
+   delegation and this module would not catch it. Closing this
+   properly requires a `DelegationRecord` schema change (adding
+   `root_ref`/`consent_ref`/`purpose_binding_ref` fields), which this
+   phase deliberately did not make, honoring H0's REUSE classification
+   -- a future phase should revisit this once real wiring surfaces the
+   need concretely, rather than speculatively widening the schema now.
+3. No persistence layer exists yet for `RootAuthorityRecord`,
+   `ConsentProof`, or `PurposeBinding` (named in H3-H5's own remaining
+   risks) -- this phase does not change that; the delegation kernel
+   composes their in-memory validation results, it doesn't solve how
+   those results get produced from stored data in the first place.
+**VERDICT: MOVE TO NEXT HEART PHASE** (H7 — Non-Delegable and
+Human-Reserved Authority).
