@@ -128,6 +128,25 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
   new tests (`tests/test_delegation_kernel.py`, including 2 Hypothesis
   property tests), 100% branch coverage on the new module. No DB
   persistence layer and no wiring into the live decision path yet.
+- WhitePact Heart Phase H7 — Non-Delegable and Human-Reserved
+  Authority (2026-08-26) (`governance/non_delegable_authority.py`,
+  new file) — the executable form of constitutional law H11
+  ("non-delegable authority remains non-delegable"). A fixed,
+  Heart-owned registry maps action-type `fnmatch` patterns (reusing
+  `IntentContract`'s own pattern-matching mechanism) to
+  `NON_DELEGABLE` (can never appear in any delegated grant — amending
+  the constitution, issuing/revoking a root of authority, overriding a
+  Heart veto) or `HUMAN_RESERVED` (may be delegated to initiate, but
+  execution must always require a human in the loop, unconditionally).
+  Deliberately narrow — only meta-level operations that would let a
+  delegate undermine the Heart's own guarantees are reserved; ordinary
+  business-domain action types stay governed by existing org policy.
+  `NON_DELEGABLE` always wins when both severities match, property-
+  verified. 13 new tests (`tests/test_non_delegable_authority.py`,
+  including 3 Hypothesis property tests), 100% branch coverage.
+  Deliberately standalone this phase — not yet called from H6's
+  `validate_delegation_legitimacy()` or any live decision path, named
+  explicitly as a remaining risk.
 - Tool Trust Network (Authority Everywhere Phase 8) —
   `governance/tool_trust.py`: a deterministic 0-100 trust score per
   org-registered upstream MCP server, derived from the existing
