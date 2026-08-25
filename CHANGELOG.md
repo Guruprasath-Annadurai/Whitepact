@@ -87,6 +87,25 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
   Hypothesis property tests), 100% branch coverage on the new module.
   No DB persistence layer and no wiring into the live decision path
   yet — ships the validated domain object and algorithm only.
+- WhitePact Heart Phase H5 — Purpose Binding (2026-08-26)
+  (`governance/purpose_binding.py`, new file) — the executable form of
+  constitutional law H4 ("authority remains bound to purpose").
+  Absorbs the existing `governance/intent.py` `IntentContract` by
+  reference (`intent_ref`) rather than duplicating its purpose-scoping
+  logic, per `docs/heart/HEART_CURRENT_STATE.md` §4. The genuinely new
+  piece: ties a declared `IntentContract` to the exact `ConsentProof`
+  (Phase H4) that authorized it via `consent_ref`, with purpose
+  matching required to be exact-string (never semantic), mirroring
+  `IntentContract.goal`'s own "never machine-parsed" precedent.
+  `validate_purpose_binding()` composes with H4 by taking an
+  already-computed `ConsentValidationResult` as a parameter, keeping
+  zero runtime dependency on `consent_proof.py`/`intent.py`. Check
+  ordering (`CONSENT_MISMATCH` before `PURPOSE_MISMATCH` before
+  `INTENT_MISMATCH`) is deliberate and tested, so the most fundamental
+  problem always surfaces first. 17 new tests
+  (`tests/test_purpose_binding.py`, including 3 Hypothesis property
+  tests), 100% branch coverage on the new module. No DB persistence
+  layer and no wiring into the live decision path yet.
 - Tool Trust Network (Authority Everywhere Phase 8) —
   `governance/tool_trust.py`: a deterministic 0-100 trust score per
   org-registered upstream MCP server, derived from the existing

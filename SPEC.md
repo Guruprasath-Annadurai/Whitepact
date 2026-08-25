@@ -127,7 +127,7 @@ wiring only ever applies to org-scoped Streamable HTTP/SSE calls).
 
 ---
 
-## 2.5 The WhitePact Heart (Sovereignty Kernel) **[TODAY, first version — Phases H0-H4]**
+## 2.5 The WhitePact Heart (Sovereignty Kernel) **[TODAY, first version — Phases H0-H5]**
 
 A new, deliberately small trusted-computing-base layer answering one
 question, and only one: *why does this machine have the legitimate
@@ -241,18 +241,40 @@ valid (`REVOKED`/`NOT_YET_VALID`/`EXPIRED` otherwise) — root legitimacy
 is checked first, so an illegitimate root is never masked by also
 reporting the consent's own, independent expiry.
 
-**Not built yet**: `PurposeBinding`, the unified `RevocationEpoch`,
-`SovereigntyVeto`, `LegitimacyEnvelope`, and the
-`SovereigntyKernel.evaluate()` entry point are all later, separate
-phases (H5-H13) — `AuthorityEnvelope`, `RootAuthorityRecord`, and
-`ConsentProof` exist and are tested, but nothing in the live decision
-path constructs or consults any of them yet; `WhitePactRuntimeGateway.evaluate()`
+**[TODAY, Phase H5]**: `governance/purpose_binding.py`'s
+`PurposeBinding` and `validate_purpose_binding()` — the executable
+form of constitutional law H4 ("authority remains bound to purpose").
+Per `docs/heart/HEART_CURRENT_STATE.md` §4, this phase deliberately
+**absorbs** the existing `governance/intent.py` `IntentContract`
+rather than reimplementing a second purpose-scoping mechanism —
+`PurposeBinding` wraps it by reference (`intent_ref` = a
+`contract_id`), never duplicating its `allowed_action_types`/
+`allowed_targets`/`max_value_usd` machinery. What `PurposeBinding`
+adds is the piece that didn't exist before: tying a declared intent to
+the exact `ConsentProof` (Phase H4) that authorized it, via
+`consent_ref`, so authority consented to for one purpose cannot be
+silently exercised under a different declared intent later.
+`validate_purpose_binding()` composes with H4 the same way H4 composed
+with H3: it takes an already-computed `ConsentValidationResult` as a
+parameter rather than re-deriving it, and both `ConsentProof` and
+`IntentContract` are imported only under `TYPE_CHECKING`. Purpose
+matching is deliberately exact-string, never semantic — mirroring
+`IntentContract.goal`'s own "never machine-parsed" precedent — so a
+rephrased purpose requires a fresh `ConsentProof`, not a judgment call
+about how "close enough" two purpose strings are.
+
+**Not built yet**: the unified `RevocationEpoch`, `SovereigntyVeto`,
+`LegitimacyEnvelope`, and the `SovereigntyKernel.evaluate()` entry
+point are all later, separate phases (H6-H13) — `AuthorityEnvelope`,
+`RootAuthorityRecord`, `ConsentProof`, and `PurposeBinding` exist and
+are tested, but nothing in the live decision path constructs or
+consults any of them yet; `WhitePactRuntimeGateway.evaluate()`
 continues to use `AuthorityContext`/`validate_attenuation()` exactly as
 before, unchanged in every way except the H2 gap fix. No DB
-persistence layer exists yet for `RootAuthorityRecord` or `ConsentProof`
-either — these phases ship the record types and their validation
-semantics only, mirroring how H1's constitution and H2's lattice
-shipped pure objects without live wiring.
+persistence layer exists yet for `RootAuthorityRecord`, `ConsentProof`,
+or `PurposeBinding` either — these phases ship the record types and
+their validation semantics only, mirroring how H1's constitution and
+H2's lattice shipped pure objects without live wiring.
 
 ## 3. Core entities
 

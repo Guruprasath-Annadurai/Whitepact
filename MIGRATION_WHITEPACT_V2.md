@@ -2380,3 +2380,111 @@ revocation epoch/the veto itself all remain unbuilt).
    consent-verification subsystem in production -- the identical
    caveat H3 named for root-of-trust, now true of consent as well.
 **VERDICT: MOVE TO NEXT HEART PHASE** (H5 — Purpose Binding).
+
+## 30. WhitePact Heart Phase H5 — Purpose Binding (2026-08-26)
+
+- **Absorbs, does not duplicate** (`governance/purpose_binding.py`,
+  new file) — per `docs/heart/HEART_CURRENT_STATE.md` §4,
+  `governance/intent.py`'s `IntentContract` already implements almost
+  everything "purpose binding" needs (`allowed_action_types`,
+  `allowed_targets`/`denied_targets`, `max_value_usd`,
+  `intent_violation()`). `PurposeBinding` wraps `IntentContract` by
+  reference (`intent_ref` = its `contract_id`) rather than
+  reimplementing a second, parallel purpose-scoping mechanism -- the
+  master prompt's own explicit instruction against duplicating a
+  working feature, followed the same way H2's lattice absorbed rather
+  than replaced `AuthorityContext`, and H5's own nearest-existing-analog
+  entry in the H0 audit called for.
+- **The genuinely new piece**: tying a declared `IntentContract` to
+  the exact `ConsentProof` (Phase H4) that authorized it, via
+  `consent_ref`. Before this phase, nothing connected "the agent
+  declared this goal" to "and a legitimate party actually consented to
+  that exact purpose" -- an agent could declare any `IntentContract.goal`
+  string with no link back to what was actually consented to.
+  `PurposeBinding.purpose` must match `ConsentProof.purpose`,
+  verbatim, closing that gap.
+- **Composes with H4 without depending on it at runtime, same pattern
+  H4 used for H3** -- `validate_purpose_binding()` takes an
+  already-computed `ConsentValidationResult` as a parameter rather
+  than calling `validate_consent_proof()` itself; `ConsentProof`/
+  `ConsentValidationResult` (`consent_proof.py`) and `IntentContract`
+  (`intent.py`) are imported only under `TYPE_CHECKING`, so
+  `purpose_binding.py` has zero runtime dependency on either module --
+  continuing the TCB-minimization discipline every Heart phase so far
+  has held to.
+- **Deliberately no semantic purpose matching** -- exactly like
+  `IntentContract.goal`'s own explicit "never machine-parsed" stance
+  (`intent.py`'s docstring), `validate_purpose_binding()` never judges
+  whether two *different* purpose strings are "close enough."
+  Matching is exact-string only, verified with a dedicated case-
+  sensitivity test and a Hypothesis property test over arbitrary
+  distinct string pairs. A caller wanting a binding under a rephrased
+  purpose must obtain a fresh `ConsentProof` -- silently accepting
+  "close enough" is exactly the purpose-drift constitutional law H4
+  exists to prevent.
+- **Check ordering is deliberate and tested** -- `CONSENT_MISMATCH`
+  (wrong consent referenced entirely) is reported before
+  `PURPOSE_MISMATCH`, and `PURPOSE_MISMATCH` before `INTENT_MISMATCH`,
+  so the most fundamental problem always surfaces first rather than
+  being masked by a later, more superficial-looking failure
+  (`test_consent_mismatch_reported_before_purpose_mismatch`,
+  `test_purpose_mismatch_reported_before_intent_mismatch`) -- the same
+  "check the more fundamental thing first" principle H4 already
+  established for root-legitimacy-before-temporal-state.
+- **Verification**: 17 new tests in `tests/test_purpose_binding.py` --
+  unit coverage for every `PurposeBindingStatus` branch (VALID,
+  `CONSENT_MISMATCH` via both a wrong `consent_ref` and a
+  `consent_validation` describing a different consent than the
+  `consent_proof` supplied, `CONSENT_NOT_LEGITIMATE` via a revoked
+  root, `PURPOSE_MISMATCH` including a dedicated case-sensitivity
+  case, `INTENT_MISMATCH`, `INTENT_NOT_ACTIVE` via both not-yet-valid
+  and expired, and the two ordering tests) plus 3 Hypothesis property
+  tests: any matching purpose/refs combination is always VALID when
+  consent is legitimate (arbitrary generated purpose strings); any
+  mismatched purpose pair never yields VALID; any bogus
+  `consent_ref` not matching the proof never yields VALID.
+  `purpose_binding.py` at 100% branch coverage. `mypy`/`ruff check`/
+  `ruff format --check` clean on both new files.
+- **Not built in this phase**: any wiring from a real authorization
+  flow that constructs a `PurposeBinding` from a live `ConsentProof` +
+  `IntentContract` pair; a DB persistence layer/repository for
+  `PurposeBinding`; and nothing in `WhitePactRuntimeGateway.evaluate()`
+  or any other live decision path constructs or consults a
+  `PurposeBinding` yet -- the same scope discipline H1-H4 already held
+  to.
+
+**HEART INVARIANTS: PASS** (a `PurposeBinding` can only validate when
+it references the exact consent and intent objects supplied, that
+consent is independently legitimate, and the declared purpose matches
+the consented purpose verbatim -- property-verified across generated
+purpose strings and mismatched refs, not just hand-picked examples).
+**SECURITY: PASS** (no path returns VALID for a binding whose declared
+purpose differs from what was actually consented to, or that
+references a consent/intent object other than the ones supplied --
+both are property-tested invariants).
+**ENTERPRISE READINESS: 6/10** (H5 of 17 -- root-of-authority,
+consent-proof, and purpose-binding now exist, validate, and compose
+correctly across all three phases, but nothing in the live decision
+path uses any of them yet, no real consent-capture or intent-
+declaration wiring feeds a `PurposeBinding` in production, no DB
+persistence layer exists for any of the three types, and the
+delegation kernel/revocation epoch/the veto itself all remain
+unbuilt).
+**REMAINING RISKS**:
+1. `PurposeBinding` is not yet wired into any live decision -- H5
+   alone changes no runtime behavior; it ships a validated domain
+   object other Heart phases (and eventually the live decision path)
+   will need to consult.
+2. No persistence layer exists yet for `PurposeBinding`, mirroring the
+   same gap already named for `RootAuthorityRecord` (H3) and
+   `ConsentProof` (H4) -- all three will likely need repositories at
+   the same time, once something in the live path needs to actually
+   look any of them up.
+3. Exact-string purpose matching is honestly rigid -- a legitimately
+   rephrased purpose (same intent, different wording) requires a
+   brand-new `ConsentProof`, which may prove operationally heavy once
+   real consent-capture flows exist. This is a deliberate, documented
+   trade-off (matching `IntentContract.goal`'s own precedent), not an
+   oversight, but worth revisiting if it proves too rigid once real
+   usage exists.
+**VERDICT: MOVE TO NEXT HEART PHASE** (H6 — Delegation Kernel).
