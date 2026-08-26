@@ -115,6 +115,11 @@ from responsibleai.governance.heart_veto import (
     apply_heart_veto,
     enforce_heart_veto,
 )
+from responsibleai.governance.identity_authority_adapter import (
+    build_root_authority_record_from_identity,
+    build_root_authority_record_from_principal_claim,
+    identity_context_to_root_type,
+)
 from responsibleai.governance.legitimacy_envelope import (
     LegitimacyEnvelope,
     build_legitimacy_envelope,
@@ -270,7 +275,10 @@ __all__ = [
     "envelope_to_authority_context",
     "explain_constitution",
     "format_reason",
+    "build_root_authority_record_from_identity",
+    "build_root_authority_record_from_principal_claim",
     "get_constitution_version",
+    "identity_context_to_root_type",
     "intersect_envelopes",
     "recent_autonomous_action_count",
     "recent_violation_count",
