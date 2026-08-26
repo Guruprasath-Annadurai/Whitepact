@@ -10,6 +10,29 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ### Added
 
+- Heart → WhitePact Production Integration, Phase 1 — Authority
+  Contract (2026-08-26) (`docs/heart-production/`, new initiative,
+  distinct from the completed Heart library initiative) — Phase 0
+  (`docs/heart-production/00_CURRENT_RUNTIME_MAP.md`) audits the
+  current live decision path with file:line citations: confirms
+  `AuthorityContext` is synthesized fresh from authentication alone on
+  every governed call (`mcp/governance_integration.py:247-252`), never
+  from a proof of legitimate authority — authentication is being used
+  as authorization today. Identifies the exact Heart insertion point:
+  the continuous delegation re-check block already ahead of
+  `gateway.evaluate()` in `apply_governance()`. Phase 1
+  (`governance/authority_grant.py`, `docs/heart-production/01_AUTHORITY_CONTRACT.md`):
+  `AuthorityGrant` — the canonical boundary object bundling the
+  Heart's `AuthorityEnvelope` (what's granted, H2) and
+  `LegitimacyEnvelope` (why it's legitimate, H12) with minimal
+  request-context, with every field classified as an authenticated
+  fact, user-provided claim, or verified authorization fact.
+  `effective_authority`/`legitimacy` are never derived from the
+  unverified `requested_*` fields. `to_authority_context()` reuses the
+  existing H2 `envelope_to_authority_context()` adapter unmodified —
+  `gateway.evaluate()` itself is not touched. 12 new tests (2
+  Hypothesis property tests), 100% coverage, exported from
+  `governance/__init__.py`.
 - WhitePact Heart / Sovereignty Kernel, Phases H0-H2 (2026-08-25) — a
   new, deliberately small trusted-computing-base layer beneath the
   existing governance code, answering "why does this machine have the

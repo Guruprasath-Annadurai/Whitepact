@@ -155,6 +155,14 @@ class TestHeartSymbolsAreExported:
             assert hasattr(governance, name)
             assert name in governance.__all__
 
+    def test_authority_grant_symbols_exported(self) -> None:
+        """Production Integration Phase 1's AuthorityGrant (the boundary
+        object between the Heart and WhitePact's live decision path)
+        is exported the same way every Heart symbol already is."""
+        for name in ("AuthorityGrant", "build_authority_grant", "DEFAULT_GRANT_TTL_SECONDS"):
+            assert hasattr(governance, name)
+            assert name in governance.__all__
+
 
 class TestEndToEndUsageViaPackageImport:
     """A caller using only `from responsibleai.governance import ...`
