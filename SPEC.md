@@ -127,7 +127,7 @@ wiring only ever applies to org-scoped Streamable HTTP/SSE calls).
 
 ---
 
-## 2.5 The WhitePact Heart (Sovereignty Kernel) **[TODAY, first version — Phases H0-H15]**
+## 2.5 The WhitePact Heart (Sovereignty Kernel) **[TODAY, first version — Phases H0-H16]**
 
 A new, deliberately small trusted-computing-base layer answering one
 question, and only one: *why does this machine have the legitimate
@@ -484,6 +484,22 @@ supplies — a TCB-minimization consequence, not a bug, since the
 module deliberately has no live database dependency to independently
 verify against).
 
+**[TODAY, Phase H16]**: `docs/heart/HEART_PERFORMANCE.md` — the first
+latency/throughput baseline for the Heart's hot paths, measured on one
+development machine (explicitly not a tuned SLA). `evaluate()` (H13)
+and `validate_root_chain()` (H3) are both fast and roughly
+constant-cost for realistic inputs (~17us/call, ~58,000 calls/sec
+single-threaded) — the dominant cost is Python call/object overhead,
+not the comparison logic itself. One real, documented scaling
+characteristic found: `check_non_delegable_authority()` (H7) is
+O(action_types × registry size) in the worst case, ~4.35ms for a
+1000-entry action-type set with no match (~250x slower than
+`evaluate()`) — not a bug, since no code path currently constructs
+action-type sets anywhere near that size, but flagged for future
+callers. Explicitly does not measure concurrent throughput, any
+live-path (DB/network) latency, or memory usage — all deferred,
+consistent with every phase's own scope discipline.
+
 **Not built yet**: no DB persistence layer exists yet for
 `RootAuthorityRecord`, `ConsentProof`, `PurposeBinding`, or
 `LegitimacyEnvelope` — this Heart, even now end-to-end wireable for a
@@ -497,10 +513,10 @@ organization-specific `HUMAN_RESERVED` action types on top of the
 fixed built-in set, and none of the five existing revocation
 mechanisms actually call `bump_epoch()` yet. The root/consent
 cross-reference gap (only the delegation-level identity/purpose gap
-was closed this phase) remains unverified, named explicitly rather
-than silently left implicit. The remaining Heart phases (H16-H17:
-performance and enterprise hardening) are further verification and
-hardening work on what now exists, not new authority primitives.
+was closed in H15) remains unverified, named explicitly rather than
+silently left implicit. The one remaining Heart phase (H17: enterprise
+hardening) is further hardening work on what now exists, not a new
+authority primitive.
 
 ## 3. Core entities
 
