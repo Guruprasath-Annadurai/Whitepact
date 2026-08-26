@@ -3653,3 +3653,87 @@ real request).
    isolation and via `evaluate()`, not against
    `WhitePactRuntimeGateway.evaluate()` or any production code path.
 **VERDICT: MOVE TO NEXT HEART PHASE** (H16 — Performance).
+
+## 41. WhitePact Heart Phase H16 — Performance (2026-08-26)
+
+- **First-ever baseline, not a tuned SLA** (`docs/heart/HEART_PERFORMANCE.md`,
+  new file; `tests/test_heart_performance.py`, new file) — every prior
+  Heart phase built and tested correctness; nothing measured cost.
+  Measured on one development machine, explicitly documented as such
+  rather than presented as a production guarantee, following H9's own
+  established "first measurement, not a tuned SLA" precedent for
+  `revoke_branch()`'s latency test.
+- **`evaluate()` (H13) and `validate_root_chain()` (H3) are fast and
+  roughly constant-cost** — ~17.3us/call for a full legitimate chain
+  through `evaluate()` (root + consent + purpose + delegation, ~57,900
+  calls/sec single-threaded), ~12.4us/call for an empty-input call,
+  ~16.6us/call for a full 32-hop `validate_root_chain()` walk (the
+  maximum depth before `CHAIN_TOO_DEEP`). The near-equal cost of a
+  full chain vs. an empty one confirms the dominant cost is Python
+  function-call/object-construction overhead, not the actual
+  comparison logic (simple field comparisons, set operations, short
+  string comparisons throughout H3-H10).
+- **One real, documented scaling characteristic found, not a bug** --
+  `check_non_delegable_authority()` (H7) is O(`action_types` ×
+  `registry size`) in the worst case (no match, every action type
+  checked against every one of the registry's 7 patterns): ~4.35ms for
+  a 1000-entry `action_types` set with no match, roughly 250x slower
+  than `evaluate()` itself. The registry is deliberately small and
+  fixed (H7's own design), and no code path in this codebase currently
+  constructs `action_types` sets anywhere near 1000 entries -- a
+  realistic `DelegationRecord.granted_action_types` is a handful of
+  specific permissions. Documented explicitly in
+  `HEART_PERFORMANCE.md` so a future caller passing an unusually large
+  action-type set knows what to expect rather than discovering it as a
+  surprise, and verified that an early match (sorting first in the
+  iteration order) short-circuits quickly regardless of overall set
+  size (`test_early_match_is_fast_regardless_of_set_size`).
+- **Verification**: 5 new tests in `tests/test_heart_performance.py`
+  -- full-chain and empty-input `evaluate()` latency at 1000-call
+  scale, deep-chain `validate_root_chain()` latency at 500-call scale,
+  the large-action-type-set worst case at 50-call scale, and the
+  early-match-is-fast case. Bounds are generous (10-250x measured
+  baseline) to absorb CI variance while still catching a genuine
+  order-of-magnitude regression, matching H9's established latency-test
+  philosophy exactly. `mypy`/`ruff check`/`ruff format --check` clean
+  on both new files.
+- **Not built in this phase**: any concurrent/multi-threaded throughput
+  measurement (every Heart record type is a frozen dataclass with no
+  shared mutable state, almost certainly safe to call concurrently,
+  but this phase does not measure or prove that claim under real
+  load); any live-path (database, network) latency measurement, since
+  no such path exists yet for any Heart record type; and no memory
+  profiling. All three named explicitly as out of scope rather than
+  silently assumed fine.
+
+**HEART INVARIANTS: PASS** (no correctness invariant was touched by
+this phase -- performance measurement is purely additive, verified by
+the full existing H3-H15 suite passing unchanged alongside the 5 new
+tests).
+**SECURITY: PASS** (the one scaling characteristic found, while real,
+does not constitute a denial-of-service vector at any currently
+reachable code path, since nothing in this codebase constructs
+`action_types` sets at the scale where it would matter -- documented
+as a characteristic to watch, not remediated, since there is nothing
+concrete to remediate yet).
+**ENTERPRISE READINESS: 9/10** (H16 of 17, unchanged from H13-H15:
+this phase adds real, useful operational visibility -- a first
+baseline where none existed -- but does not itself change correctness,
+security posture, or live-path behavior, so it does not move the
+needle on "does this run in production" independent of how well
+the un-wired logic now performs).
+**REMAINING RISKS**:
+1. The baseline is single-machine, single-threaded, and covers zero
+   live I/O -- a real production deployment's actual latency profile
+   will be dominated by whatever resolves `RootAuthorityRecord`/
+   `ConsentProof`/etc. from real storage, not by anything measured
+   here, once that wiring exists.
+2. `check_non_delegable_authority()`'s scaling characteristic is
+   documented but not mitigated -- if a future caller does end up
+   constructing very large `action_types` sets, this becomes a real
+   latency concern worth revisiting (e.g. converting the registry scan
+   to a precompiled matcher) rather than a purely theoretical one.
+3. No memory profiling was performed -- an assumption ("small frozen
+   dataclasses are unlikely to be a memory concern"), not a
+   measurement, named honestly as such.
+**VERDICT: MOVE TO NEXT HEART PHASE** (H17 — Enterprise Hardening).

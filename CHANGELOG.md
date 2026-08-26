@@ -298,6 +298,22 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
   `sovereignty_kernel.py` all remain at 100% coverage.
   `docs/heart/HEART_INVARIANTS.md` updated to reflect the narrowed
   (not eliminated) H6 cross-reference gap.
+- WhitePact Heart Phase H16 — Performance (2026-08-26)
+  (`docs/heart/HEART_PERFORMANCE.md`, `tests/test_heart_performance.py`,
+  new files) — the first latency/throughput baseline for the Heart's
+  hot paths, measured on one development machine (explicitly not a
+  tuned SLA). `evaluate()` (H13) and `validate_root_chain()` (H3) are
+  fast and roughly constant-cost (~17us/call, ~58,000 calls/sec
+  single-threaded) — the dominant cost is Python call overhead, not
+  the comparison logic. One real, documented scaling characteristic
+  found (not a bug): `check_non_delegable_authority()` (H7) is
+  O(action_types × registry size) in the worst case, ~4.35ms for a
+  1000-entry action-type set with no match — not currently reachable
+  by any code path in this codebase, but flagged for future callers.
+  5 new tests with generous (10-250x baseline) regression-guard
+  bounds, matching H9's own established latency-test philosophy.
+  Explicitly does not measure concurrent throughput, live-path (DB/
+  network) latency, or memory usage.
 - Tool Trust Network (Authority Everywhere Phase 8) —
   `governance/tool_trust.py`: a deterministic 0-100 trust score per
   org-registered upstream MCP server, derived from the existing
