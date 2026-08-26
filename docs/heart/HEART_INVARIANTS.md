@@ -57,7 +57,8 @@ an example-based unit test that happens to touch it).
 |---|---|
 | A legitimate chain with an active delegation is always LEGITIMATE, for arbitrary purpose strings | `test_legitimate_chain_with_active_delegation_always_legitimate` (property-tested) |
 | An illegitimate root never yields a legitimate delegation | `test_illegitimate_root_never_yields_legitimate_delegation` (property-tested) |
-| **UNVERIFIED**: the referenced root/consent/purpose results actually pertain to the delegation in question | No test — `DelegationRecord` has no cross-reference fields to verify this against (documented limitation, H6) |
+| A delegation for the wrong identity or the wrong purpose is rejected (`DELEGATION_MISMATCH`) when the caller supplies `expected_subject_identity_id`/`expected_purpose` | `test_mismatched_identity_alone_is_caught`, `test_mismatched_purpose_alone_is_caught` (H15 — fixes a real vulnerability H15's gauntlet found and demonstrated end-to-end via `evaluate()`) |
+| **PARTIALLY UNVERIFIED (narrowed by H15)**: the referenced root/consent results actually pertain to the delegation in question | No test — `DelegationRecord` still has no `root_id`/`consent_id` cross-reference fields (identity/purpose are now cross-checked per the row above; root/consent are not) |
 
 ## Non-Delegable Authority (H7)
 
@@ -129,6 +130,16 @@ immediate neighbor. Verified in `tests/test_heart_formal_properties.py`.
 | Adding any single blocking condition to an otherwise-legitimate full chain always flips the result to illegitimate — denial is monotonic, never maskable by additional legitimate inputs | `test_any_single_blocking_condition_added_to_legitimate_chain_always_denies` (property-tested) |
 | Every canonical-digest function (root, consent, purpose binding, legitimacy envelope, constitution) is sensitive to every one of its own input fields — no field is silently excluded from the digest | `test_digest_is_sensitive_to_every_field` (parametrized across all five digest functions and every one of their fields) |
 | `is_legitimate` is a pure function of the supplied verdicts — identical verdict inputs always produce identical `is_legitimate`, independent of the non-deterministic identity fields (`envelope_id`, `issued_at`, `canonical_digest`) that differ on every call | `test_is_legitimate_is_pure_given_identical_verdicts` (property-tested) |
+
+## Adversarial Gauntlet Findings (H15)
+
+| Finding | Verdict | Test |
+|---|---|---|
+| A `DelegationRecord` for a completely unrelated identity/purpose could ride on an unrelated legitimate chain to `LEGITIMATE`, end-to-end via `evaluate()` | CONFIRMED VULNERABILITY, fixed | `test_delegation_for_wrong_identity_and_purpose_is_now_rejected_end_to_end` |
+| The non-delegable registry (H7) could be bypassed by relabeling a reserved action type's case (e.g. `HEART.VETO.OVERRIDE`) | CONFIRMED VULNERABILITY, fixed | `test_uppercase_reserved_action_type_is_now_caught` |
+| Root chain depth boundary (32) is exact, no off-by-one | CONFIRMED PROTECTION | `test_exactly_at_max_depth_is_still_valid`, `test_one_hop_over_max_depth_is_chain_too_deep` |
+| Purpose matching resists whitespace/Unicode homoglyph tricks | CONFIRMED PROTECTION | `test_trailing_whitespace_does_not_match`, `test_unicode_homoglyph_does_not_match` |
+| Revocation-epoch checking trusts its `current` input, with no independent verification | ACCEPTED DESIGN TRADEOFF (TCB-minimization consequence, not a bug) | `test_caller_supplied_stale_current_epoch_is_trusted_as_is` |
 
 ## What Phase H14 explicitly does NOT claim
 

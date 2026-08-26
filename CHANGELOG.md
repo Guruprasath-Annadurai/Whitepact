@@ -272,6 +272,32 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
   `ruff format --check` clean. No new `src/` module — verification
   work only. Explicitly not formal (TLA+/Coq-grade) verification,
   stated plainly rather than approximated by property testing alone.
+- WhitePact Heart Phase H15 — Adversarial Heart Gauntlet (2026-08-26)
+  (`tests/test_heart_adversarial_gauntlet.py`, new file) — deliberately
+  attacked the Heart's own assumptions and found two real
+  vulnerabilities, both fixed. **Cross-reference confusion**: a
+  `DelegationRecord` for a completely unrelated identity and purpose,
+  supplied alongside a genuinely legitimate but unrelated root/consent/
+  purpose chain, validated as `LEGITIMATE` end-to-end via `evaluate()`
+  (H13) — fixed by adding optional `expected_subject_identity_id`/
+  `expected_purpose` cross-reference parameters to
+  `validate_delegation_legitimacy()` (`governance/delegation_kernel.py`,
+  H6), producing a new `DELEGATION_MISMATCH` status, now wired from
+  `evaluate()`; backward-compatible (both default to `None`).
+  **Case-relabeling bypass**: `check_non_delegable_authority()`
+  (`governance/non_delegable_authority.py`, H7) relied on
+  `fnmatch.fnmatch()`'s platform-dependent case sensitivity, so a
+  request for `"HEART.VETO.OVERRIDE"` silently evaded the all-lowercase
+  registry — fixed by explicitly `.casefold()`-ing both sides before
+  comparison. Also confirms three protections hold (exact chain-depth
+  boundary, purpose-matching resistance to whitespace/Unicode
+  homoglyph tricks) and names one accepted design tradeoff
+  (revocation-epoch checking trusts its caller-supplied `current`
+  input, a deliberate TCB-minimization consequence, not a bug). 13
+  new tests; `delegation_kernel.py`/`non_delegable_authority.py`/
+  `sovereignty_kernel.py` all remain at 100% coverage.
+  `docs/heart/HEART_INVARIANTS.md` updated to reflect the narrowed
+  (not eliminated) H6 cross-reference gap.
 - Tool Trust Network (Authority Everywhere Phase 8) —
   `governance/tool_trust.py`: a deterministic 0-100 trust score per
   org-registered upstream MCP server, derived from the existing

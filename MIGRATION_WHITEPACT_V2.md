@@ -3507,3 +3507,149 @@ un-wired logic has been verified).
    each invariant, not a proof that holds for literally every possible
    input, and the ledger says so explicitly rather than overclaiming.
 **VERDICT: MOVE TO NEXT HEART PHASE** (H15 — Adversarial Heart Gauntlet).
+
+## 40. WhitePact Heart Phase H15 — Adversarial Heart Gauntlet (2026-08-26)
+
+This phase deliberately attacked the Heart's own assumptions rather
+than only re-confirming what prior phases already tested. Two real
+vulnerabilities were found and fixed; three protections were confirmed
+as designed; one behavior was confirmed as an accepted, documented
+tradeoff rather than a bug.
+
+### Finding 1 (CONFIRMED VULNERABILITY, fixed): cross-reference confusion
+
+A `DelegationRecord` for a completely unrelated identity and purpose,
+supplied alongside a genuinely legitimate but unrelated root/consent/
+purpose chain, validated as `LEGITIMATE` end-to-end via
+`governance/sovereignty_kernel.py`'s `evaluate()` (H13) -- exactly the
+class of attack the H6/H10 "honest, documented limitation" sections
+already warned was possible, now concretely demonstrated rather than
+left theoretical. Reproduced directly: a legitimate root/consent/
+purpose chain for `agent-A`/`purpose-A`, combined with a
+`DelegationRecord` for `agent-EVIL`/`"COMPLETELY UNRELATED PURPOSE"`,
+returned `is_legitimate=True` before this phase's fix.
+
+**Fixed** by adding optional `expected_subject_identity_id`/
+`expected_purpose` parameters to `governance/delegation_kernel.py`'s
+`validate_delegation_legitimacy()` (H6), checked first (before root/
+consent/purpose/active-state), producing a new
+`DelegationLegitimacyStatus.DELEGATION_MISMATCH` when
+`delegation.to_identity_id`/`delegation.purpose` don't match what the
+caller expected. `governance/sovereignty_kernel.py`'s `evaluate()`
+(H13) now supplies both from its own `subject_identity_id` parameter
+and the validated `purpose_binding.purpose`. Both new parameters
+default to `None` (skip the check) for backward compatibility --
+verified directly (`test_backward_compatible_when_cross_reference_params_omitted`).
+
+This does **not** close the full cross-reference gap H6/H10 originally
+documented -- root/consent still cannot be cross-checked against the
+delegation, since `DelegationRecord` has no `root_id`/`consent_id`
+fields and this phase deliberately did not add a schema migration for
+those (a larger, separate change). Only the two fields
+`DelegationRecord` already carries (`to_identity_id`, `purpose`) are
+now cross-checked. The remaining, narrower gap is named explicitly in
+this section and in `docs/heart/HEART_INVARIANTS.md`, not silently
+left as "the entire gap was closed."
+
+### Finding 2 (CONFIRMED VULNERABILITY, fixed): case-relabeling bypass
+
+`governance/non_delegable_authority.py`'s `check_non_delegable_authority()`
+(H7) used `fnmatch.fnmatch()` directly, whose case sensitivity is
+platform-dependent (`fnmatch` normalizes via `os.path.normcase`, a
+no-op on POSIX/this deployment's actual platform, lowercasing only on
+Windows). A request for `"HEART.VETO.OVERRIDE"` -- the exact same
+meaning as the registered `"heart.veto.override"` pattern, merely
+relabeled in uppercase -- silently evaded the all-lowercase registry:
+`check_non_delegable_authority(frozenset({"HEART.VETO.OVERRIDE"}))`
+returned `None` (no violation) before this phase's fix, empirically
+confirmed before writing any test.
+
+**Fixed** by explicitly `.casefold()`-ing both `action_type` and
+`pattern` before the `fnmatch.fnmatch()` comparison, independent of
+platform -- `casefold()` chosen over `.lower()` since it's the
+correct Unicode-aware case-folding primitive for this kind of
+comparison, not merely ASCII lowercasing. Verified: uppercase and
+mixed-case reserved action types (`NON_DELEGABLE` and `HUMAN_RESERVED`
+scopes both) are now caught; ordinary, non-reserved action types
+(including uppercase ones) are still correctly not flagged, confirming
+the fix didn't introduce false positives.
+
+### Confirmed protections (no fix needed)
+
+- **Chain-depth boundary is exact** -- a 32-hop chain (the documented
+  `_MAX_CHAIN_DEPTH`) is `VALID`; a 33-hop chain is `CHAIN_TOO_DEEP`.
+  No off-by-one in either direction, confirmed directly rather than
+  assumed from the boundary constant's own value.
+- **Purpose matching resists lookalike attacks** -- a purpose string
+  differing only by trailing whitespace, or by a single Cyrillic
+  homoglyph character (а vs. a) substituted for a Latin one, is
+  correctly reported `PURPOSE_MISMATCH`, not silently treated as a
+  match. Confirms H5's "exact-string, never semantic" design decision
+  holds even against adversarially-chosen near-identical strings, not
+  just obviously-different ones.
+
+### Accepted design tradeoff (not a bug)
+
+- **Revocation-epoch checking trusts its `current` input** --
+  `check_revocation_epoch()` (H9) has no way to independently verify
+  that the `current: RevocationEpoch` a caller supplies is actually
+  the true current epoch; a caller (malicious or merely using stale
+  cached state) supplying a fabricated `current` equal to `issued_at`
+  will get `CURRENT` even if the real epoch has since advanced. This
+  is not a bug in the function -- it is the direct, deliberate
+  consequence of H9's own TCB-minimization design (no live database
+  dependency baked into the module), the same tradeoff every other
+  Heart phase's abstract-input pattern makes. Real safety depends
+  entirely on whoever eventually wires this into a live decision path
+  sourcing `current` from an actually-trustworthy epoch store --
+  exactly the kind of live-wiring every phase since H3 has deferred.
+  Named explicitly here as a reminder for whenever that wiring lands.
+- **Verification**: 13 new tests in `tests/test_heart_adversarial_gauntlet.py`
+  -- 4 for the cross-reference confusion fix (end-to-end via
+  `evaluate()`, identity-only mismatch, purpose-only mismatch,
+  backward compatibility), 4 for the case-relabeling fix (uppercase,
+  mixed-case, `HUMAN_RESERVED`-scope uppercase, no false positives on
+  ordinary actions), 2 for the chain-depth boundary, 2 for purpose
+  lookalike resistance, 1 for the revocation-epoch trust boundary.
+  `delegation_kernel.py`, `non_delegable_authority.py`, and
+  `sovereignty_kernel.py` all remain at 100% coverage once the
+  gauntlet tests are included (the two new `DELEGATION_MISMATCH`
+  branches were previously uncovered until this phase's tests were
+  added). `mypy`/`ruff check`/`ruff format --check` clean on all
+  touched files. `docs/heart/HEART_INVARIANTS.md` updated: the H6 row
+  narrowed from a blanket "UNVERIFIED" to specifically "root/consent
+  still uncross-checkable (identity/purpose now are)."
+
+**HEART INVARIANTS: PASS, strengthened** (the ledger's H6 row is now
+narrower and more precisely true than before this phase; no new
+invariant regression was introduced by either fix, confirmed by the
+full existing H3-H14 suite passing unchanged alongside the new tests).
+**SECURITY: PASS, with two real vulnerabilities found and fixed this
+phase** -- this is the most concrete security value any single Heart
+phase has produced since H2's hour-window bug and H3's revoked-ancestor
+bug: not a theoretical gap named in prose, but a demonstrated exploit
+with a before/after empirical confirmation, now closed with a targeted,
+backward-compatible fix and a permanent regression test for each.
+**ENTERPRISE READINESS: 9/10** (H15 of 17, unchanged from H13/H14:
+this phase found and fixed real bugs, which is exactly what an
+adversarial-testing phase should produce, but "found real bugs" and
+"is wired into production" are different axes -- the Heart still has
+no live caller, so this phase's genuine security value has not yet
+translated into a change in what WhitePact actually enforces for a
+real request).
+**REMAINING RISKS**:
+1. The root/consent cross-reference gap (as opposed to the now-fixed
+   identity/purpose gap) is still open -- `DelegationRecord` still has
+   no way to prove which `RootAuthorityRecord`/`ConsentProof` it
+   actually traces back to. Closing this needs a real schema
+   migration, deliberately not attempted in this phase.
+2. This gauntlet, however genuinely adversarial in spirit, is still a
+   curated set of scenarios chosen by one reviewer (this session), not
+   an exhaustive or independently red-teamed audit -- a real
+   production deployment should still commission independent security
+   review before relying on this phase's findings as sufficient.
+3. Neither fix has been exercised against a live decision path, since
+   none exists yet -- both are verified against the Heart modules in
+   isolation and via `evaluate()`, not against
+   `WhitePactRuntimeGateway.evaluate()` or any production code path.
+**VERDICT: MOVE TO NEXT HEART PHASE** (H16 — Performance).

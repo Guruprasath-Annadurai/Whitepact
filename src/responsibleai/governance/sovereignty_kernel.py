@@ -142,7 +142,13 @@ def evaluate(
 
     delegation_result = (
         validate_delegation_legitimacy(
-            delegation, root_result, consent_result, purpose_result, now=now
+            delegation,
+            root_result,
+            consent_result,
+            purpose_result,
+            expected_subject_identity_id=subject_identity_id,
+            expected_purpose=purpose_binding.purpose if purpose_binding is not None else None,
+            now=now,
         )
         if delegation is not None
         and root_result is not None
