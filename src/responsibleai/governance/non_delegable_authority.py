@@ -137,11 +137,25 @@ def check_non_delegable_authority(action_types: frozenset[str]) -> NonDelegableV
     whichever happened to match first. Within one severity level,
     `action_types` are checked in sorted order and `_REGISTRY` patterns
     in their fixed definition order, so the result is deterministic
-    for a given input regardless of set iteration order."""
+    for a given input regardless of set iteration order.
+
+    **Matching is deliberately case-insensitive** -- `fnmatch.fnmatch()`'s
+    own case-sensitivity is platform-dependent (normalizes via
+    `os.path.normcase`, a no-op on POSIX, lowercasing on Windows), which
+    Phase H15's adversarial gauntlet found meant a request for
+    `"HEART.VETO.OVERRIDE"` was silently *not* caught by the
+    all-lowercase `_REGISTRY` patterns on this codebase's actual
+    deployment platform -- a real, trivial case-relabeling bypass of a
+    security-critical deny-list. Both `action_type` and `pattern` are
+    explicitly `.casefold()`-ed before comparison here, independent of
+    platform, closing that gap outright rather than depending on
+    `fnmatch`'s own, inconsistent case behavior."""
     for scope in (NonDelegableScope.NON_DELEGABLE, NonDelegableScope.HUMAN_RESERVED):
         for action_type in sorted(action_types):
             for pattern, (pattern_scope, reason) in _REGISTRY.items():
-                if pattern_scope is scope and fnmatch.fnmatch(action_type, pattern):
+                if pattern_scope is scope and fnmatch.fnmatch(
+                    action_type.casefold(), pattern.casefold()
+                ):
                     return NonDelegableViolation(
                         action_type=action_type,
                         matched_pattern=pattern,

@@ -32,21 +32,29 @@ itself. `DelegationRecord` (`governance/delegation.py`) is imported
 only under `TYPE_CHECKING`, so `delegation_kernel.py` has zero runtime
 dependency on any of the four modules it composes.
 
-**An honest, documented limitation, not silently glossed over**:
-`DelegationRecord` has no field linking it to a specific
-`RootAuthorityRecord.root_id`, `ConsentProof.consent_id`, or
-`PurposeBinding.binding_id` — it predates the Heart (Authority
-Everywhere Phase 8) and per the H0 audit's own REUSE classification is
-not being schema-changed by this phase. This module therefore cannot
-cross-check that the `root_validation`/`consent_validation`/
-`purpose_validation` supplied actually *pertain* to this specific
-`delegation` the way `validate_purpose_binding()` cross-checks
-`consent_ref` against a supplied `ConsentProof.consent_id` (Phase H5).
-Callers are responsible for supplying the three results that actually
-correspond to this delegation's grantor and purpose — this module
-composes their verdicts, it does not (and, without a `DelegationRecord`
-schema change, cannot) verify that correspondence itself. This is
-named explicitly here rather than implied to be checked.
+**A partial cross-reference check, added in Phase H15**: `DelegationRecord`
+has no field linking it to a specific `RootAuthorityRecord.root_id` or
+`ConsentProof.consent_id` — it predates the Heart (Authority Everywhere
+Phase 8) and per the H0 audit's own REUSE classification is not being
+schema-changed by this phase. This module still cannot cross-check
+that `root_validation`/`consent_validation` actually pertain to this
+specific `delegation`. It *can*, however, cross-check the two fields
+`DelegationRecord` already carries that any caller with the surrounding
+context (an identity, a validated purpose) can compare against:
+`to_identity_id` and `purpose`. `validate_delegation_legitimacy()`'s
+optional `expected_subject_identity_id`/`expected_purpose` parameters
+do exactly that, closing a real, concretely-demonstrated gap Phase
+H15's adversarial gauntlet found: a `DelegationRecord` for a
+completely unrelated identity and purpose, supplied alongside a
+genuinely legitimate but unrelated root/consent/purpose chain,
+previously validated as `LEGITIMATE` end-to-end via
+`governance/sovereignty_kernel.py`'s `evaluate()`, since nothing
+anywhere in the chain checked that the delegation being evaluated was
+the delegation the chain was actually about. Both parameters are
+optional and default to `None` (skip the check, exactly the prior
+behavior) for backward compatibility with existing callers that don't
+have this context to supply. The remaining, narrower gap (root/consent
+still uncross-checkable) is unchanged and still named honestly.
 
 **Not built here**: any wiring from a real delegation-grant flow that
 resolves the three composed results for a specific `DelegationRecord`,
@@ -73,6 +81,7 @@ if TYPE_CHECKING:
 
 class DelegationLegitimacyStatus(StrEnum):
     LEGITIMATE = "LEGITIMATE"
+    DELEGATION_MISMATCH = "DELEGATION_MISMATCH"
     ROOT_NOT_LEGITIMATE = "ROOT_NOT_LEGITIMATE"
     CONSENT_NOT_LEGITIMATE = "CONSENT_NOT_LEGITIMATE"
     PURPOSE_NOT_BOUND = "PURPOSE_NOT_BOUND"
@@ -96,18 +105,43 @@ def validate_delegation_legitimacy(
     consent_validation: ConsentValidationResult,
     purpose_validation: PurposeBindingValidationResult,
     *,
+    expected_subject_identity_id: str | None = None,
+    expected_purpose: str | None = None,
     now: datetime | None = None,
 ) -> DelegationLegitimacyResult:
     """Composes the three independent Heart legitimacy checks with
     `delegation`'s own active/revoked/expired state into one verdict.
-    Order: root legitimacy (`ROOT_NOT_LEGITIMATE`) -> consent
-    legitimacy (`CONSENT_NOT_LEGITIMATE`) -> purpose binding
-    (`PURPOSE_NOT_BOUND`) -> the delegation's own current state
-    (`DELEGATION_NOT_ACTIVE`) -- the most foundational, upstream
-    problem is always surfaced first, mirroring the same ordering
-    principle Phases H4 and H5 already established (a downstream
-    object's own local state is checked last, after every upstream
-    legitimacy question is answered)."""
+    Order: cross-reference match (`DELEGATION_MISMATCH`, only checked
+    when the caller supplies `expected_subject_identity_id`/
+    `expected_purpose` -- see module docstring) -> root legitimacy
+    (`ROOT_NOT_LEGITIMATE`) -> consent legitimacy
+    (`CONSENT_NOT_LEGITIMATE`) -> purpose binding (`PURPOSE_NOT_BOUND`)
+    -> the delegation's own current state (`DELEGATION_NOT_ACTIVE`) --
+    the most foundational, upstream problem is always surfaced first,
+    mirroring the same ordering principle Phases H4 and H5 already
+    established (a downstream object's own local state is checked
+    last, after every upstream legitimacy question is answered)."""
+    if (
+        expected_subject_identity_id is not None
+        and delegation.to_identity_id != expected_subject_identity_id
+    ):
+        return DelegationLegitimacyResult(
+            DelegationLegitimacyStatus.DELEGATION_MISMATCH,
+            delegation.delegation_id,
+            detail=(
+                f"delegation.to_identity_id={delegation.to_identity_id!r} does not match "
+                f"expected_subject_identity_id={expected_subject_identity_id!r}"
+            ),
+        )
+    if expected_purpose is not None and delegation.purpose != expected_purpose:
+        return DelegationLegitimacyResult(
+            DelegationLegitimacyStatus.DELEGATION_MISMATCH,
+            delegation.delegation_id,
+            detail=(
+                f"delegation.purpose={delegation.purpose!r} does not match "
+                f"expected_purpose={expected_purpose!r}"
+            ),
+        )
     if not root_validation.is_valid:
         return DelegationLegitimacyResult(
             DelegationLegitimacyStatus.ROOT_NOT_LEGITIMATE,

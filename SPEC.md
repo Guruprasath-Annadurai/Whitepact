@@ -127,7 +127,7 @@ wiring only ever applies to org-scoped Streamable HTTP/SSE calls).
 
 ---
 
-## 2.5 The WhitePact Heart (Sovereignty Kernel) **[TODAY, first version — Phases H0-H14]**
+## 2.5 The WhitePact Heart (Sovereignty Kernel) **[TODAY, first version — Phases H0-H15]**
 
 A new, deliberately small trusted-computing-base layer answering one
 question, and only one: *why does this machine have the legitimate
@@ -461,6 +461,29 @@ and `is_legitimate` is a pure function of the supplied verdicts,
 independent of the non-deterministic identity fields every issued
 record carries.
 
+**[TODAY, Phase H15]**: `tests/test_heart_adversarial_gauntlet.py` — a
+curated set of deliberately adversarial scenarios attacking the
+Heart's own assumptions, which found and fixed **two real
+vulnerabilities**: (1) a *cross-reference confusion* attack, where a
+`DelegationRecord` for a completely unrelated identity and purpose,
+supplied alongside a genuinely legitimate but unrelated root/consent/
+purpose chain, validated as `LEGITIMATE` end-to-end via `evaluate()`
+(H13) — fixed by adding optional `expected_subject_identity_id`/
+`expected_purpose` cross-reference parameters to
+`validate_delegation_legitimacy()` (H6), now wired from `evaluate()`,
+producing a new `DELEGATION_MISMATCH` status; (2) a *case-relabeling
+bypass* of the non-delegable registry (H7), where `fnmatch.fnmatch()`'s
+platform-dependent case sensitivity meant a request for
+`"HEART.VETO.OVERRIDE"` silently evaded the all-lowercase registry —
+fixed by explicitly `.casefold()`-ing both sides before comparison.
+Also confirms three protections hold as designed (root chain depth
+boundary is exact at 32, purpose matching resists whitespace/Unicode
+homoglyph tricks) and names one accepted design tradeoff explicitly
+(revocation-epoch checking trusts whatever "current" epoch a caller
+supplies — a TCB-minimization consequence, not a bug, since the
+module deliberately has no live database dependency to independently
+verify against).
+
 **Not built yet**: no DB persistence layer exists yet for
 `RootAuthorityRecord`, `ConsentProof`, `PurposeBinding`, or
 `LegitimacyEnvelope` — this Heart, even now end-to-end wireable for a
@@ -472,10 +495,12 @@ objects `evaluate()` accepts. No execution-time enforcement turns a
 yet, no org-configurable extension mechanism exists for adding
 organization-specific `HUMAN_RESERVED` action types on top of the
 fixed built-in set, and none of the five existing revocation
-mechanisms actually call `bump_epoch()` yet. The remaining Heart
-phases (H15-H17: the adversarial gauntlet, performance, and enterprise
-hardening) are further verification and hardening work on what now
-exists, not new authority primitives.
+mechanisms actually call `bump_epoch()` yet. The root/consent
+cross-reference gap (only the delegation-level identity/purpose gap
+was closed this phase) remains unverified, named explicitly rather
+than silently left implicit. The remaining Heart phases (H16-H17:
+performance and enterprise hardening) are further verification and
+hardening work on what now exists, not new authority primitives.
 
 ## 3. Core entities
 
