@@ -220,6 +220,24 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
   Hypothesis property tests), 100% branch coverage. Not yet wired into
   any live decision path — the veto has no teeth in production until
   something calls `enforce_heart_veto()`.
+- WhitePact Heart Phase H12 — Legitimacy Envelope (2026-08-26)
+  (`governance/legitimacy_envelope.py`, new file) — the single,
+  portable, digestible artifact that packages the Heart's final
+  verdict (H11's `HeartVetoRecord`) into an exportable object with an
+  identity (`envelope_id`), context (`organization_id`/
+  `subject_identity_id`), a timestamp, and a `canonical_digest` — the
+  same shape every other Heart record type (H1, H3, H4, H5) already
+  has. Wraps the already-final `HeartVetoRecord` rather than
+  re-embedding the seven individual upstream H3-H9 results, since the
+  veto already is H10's precedence-resolved answer. `explain()`
+  reuses the established deterministic-explanation pattern
+  (`explain_constitution()`, `explain_authority()`) — a plain
+  structured dict, never an LLM call. 13 new tests
+  (`tests/test_legitimacy_envelope.py`, including 3 Hypothesis
+  property tests), 100% branch coverage. Completes the full H3-H12
+  chain of individually-tested, individually-composable Heart
+  primitives; only the entry point (H13) remains before this
+  first-version Heart is minimally end-to-end wireable.
 - Tool Trust Network (Authority Everywhere Phase 8) —
   `governance/tool_trust.py`: a deterministic 0-100 trust score per
   org-registered upstream MCP server, derived from the existing
