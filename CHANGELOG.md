@@ -238,6 +238,23 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
   chain of individually-tested, individually-composable Heart
   primitives; only the entry point (H13) remains before this
   first-version Heart is minimally end-to-end wireable.
+- WhitePact Heart Phase H13 — Sovereignty Kernel Entry Point
+  (2026-08-26) (`governance/sovereignty_kernel.py`, new file) — the
+  first, and so far only, place in this codebase that actually calls
+  the H3-H12 Heart functions together, for one real request, and
+  returns one `LegitimacyEnvelope`. `evaluate()` runs whichever of the
+  applicable H3-H9 checks the supplied inputs (root/consent/intent/
+  purpose_binding/delegation/requested_action_types/revocation epoch)
+  make possible, skipping any whose prerequisites are missing, then
+  composes them via H10, applies the H11 veto, and wraps the result in
+  H12's envelope. Partial input is a first-class case, not degraded
+  behavior. The default `RootResolver` fails closed. 18 new tests
+  (`tests/test_sovereignty_kernel.py`, including 3 Hypothesis property
+  tests), 100% statement coverage. One real test-authoring bug caught
+  by the test itself failing on first run, fixed before merge. The
+  Heart's full H3-H13 chain is now, for the first time, minimally
+  end-to-end wireable in one call — still not wired into any live
+  decision path.
 - Tool Trust Network (Authority Everywhere Phase 8) —
   `governance/tool_trust.py`: a deterministic 0-100 trust score per
   org-registered upstream MCP server, derived from the existing

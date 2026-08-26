@@ -3275,3 +3275,129 @@ first-version Heart is minimally end-to-end wireable).
    first documented and every subsequent composing phase has
    inherited rather than independently solved.
 **VERDICT: MOVE TO NEXT HEART PHASE** (H13 — Sovereignty Kernel Entry Point).
+
+## 38. WhitePact Heart Phase H13 — Sovereignty Kernel Entry Point (2026-08-26)
+
+- **The one module allowed to break every prior phase's own rule**
+  (`governance/sovereignty_kernel.py`, new file) — H1-H12 each
+  deliberately avoided calling any other Heart module at runtime,
+  taking upstream results as parameters instead. That discipline
+  existed specifically so this phase could wire everything together
+  without circularity; `evaluate()` is the one Heart function that
+  imports and calls H3-H12's real functions directly, by design.
+- **What it does**: for one `(organization_id, subject_identity_id)`
+  decision, given whichever of `root`/`consent`/`intent`/
+  `purpose_binding`/`delegation`/`requested_action_types`/
+  `revocation_issued_at`+`revocation_current` a caller supplies, it
+  runs `validate_root_chain()` (H3), `validate_consent_proof()` (H4),
+  `validate_purpose_binding()` (H5), `validate_delegation_legitimacy()`
+  (H6), `check_non_delegable_authority()` (H7), and
+  `check_revocation_epoch()` (H9) -- each only when its own
+  prerequisites are present -- composes the results via
+  `resolve_authority_conflicts()` (H10), applies `apply_heart_veto()`
+  (H11), and returns a `LegitimacyEnvelope` (H12). One call, one
+  envelope.
+- **Partial input is a first-class case** -- a caller supplying only
+  `root` and `consent` (no purpose/delegation) gets a verdict based on
+  what was actually checked, exactly mirroring H10's own "`None` means
+  not evaluated, never failed" contract; `evaluate()` is simply the
+  thing that produces those optional H10 inputs from real domain
+  objects. Verified directly (`TestEvaluatePartialInputs`): consent
+  without root, purpose binding without intent, delegation without
+  purpose, and revocation-issued-at without revocation-current are
+  each independently skipped rather than treated as failures.
+- **No new authority-widening surface, no new resolution logic** --
+  `evaluate()` contains no independent judgment calls; every actual
+  decision (what counts as legitimate, what precedence order applies,
+  what a veto means) was already made in H3-H10. This phase is
+  orchestration only, deliberately kept that way so its own
+  correctness reduces to "did it call the right functions with the
+  right arguments," not a new thing to independently verify.
+- **`RootResolver` mypy gotcha, documented for future reference** --
+  the default no-op resolver (`_default_resolver()`) initially failed
+  mypy with `Incompatible return value type` even though the function
+  was structurally identical to `RootResolver.__call__`'s signature.
+  Root cause, confirmed via a minimal repro: mypy's structural
+  matching for a `Protocol` with a single `__call__` method requires
+  the implementing function's parameter *name* to match the
+  Protocol's declared parameter name (`root_id`), not just its
+  position and type -- a plain Callable with a differently-named
+  parameter (the original draft used `_root_id`) is not accepted where
+  a `RootResolver` is expected, in both direct-assignment and
+  ternary-expression contexts (return-statement context alone worked).
+  Fixed by renaming the parameter to `root_id` to match exactly. This
+  is now the second real, non-obvious mypy/Protocol interaction this
+  session has hit and resolved by isolating a minimal reproduction
+  rather than guessing.
+- **Verification**: 18 new tests in `tests/test_sovereignty_kernel.py`
+  -- no-inputs baseline, a full legitimate chain, multi-hop
+  `root_resolver` chain walking, the safe-default-resolver case (a
+  `SERVICE_PRINCIPAL` root with an `authority_source` but no supplied
+  resolver correctly fails rather than being silently treated as
+  legitimate), every individual blocking condition
+  (`NON_DELEGABLE`/`HUMAN_RESERVED`-non-blocking/`ROOT_NOT_LEGITIMATE`/
+  `CONSENT_NOT_LEGITIMATE`/`PURPOSE_NOT_BOUND`/
+  `DELEGATION_NOT_LEGITIMATE`/`REVOKED`), and four partial-input
+  skip-gracefully cases, plus 3 Hypothesis property tests: a full
+  legitimate chain is always legitimate for arbitrary generated
+  purpose strings; an illegitimate root of either non-terminal type
+  always blocks regardless of other inputs; any number of epoch
+  advances always blocks. `sovereignty_kernel.py` at 100% statement
+  coverage. `mypy`/`ruff check`/`ruff format --check` clean on both
+  new files. One real test-authoring bug caught by the test itself
+  failing on first run: an early draft of `test_consent_not_legitimate_blocks`
+  revoked the *root*, not the consent, so `ROOT_NOT_LEGITIMATE`
+  correctly won per H10's precedence instead of the
+  `CONSENT_NOT_LEGITIMATE` the test was named for -- fixed by revoking
+  only the `ConsentProof`, leaving the root legitimate, isolating the
+  actual condition under test.
+- **Not built in this phase**: any resolution of real, persisted state
+  into the domain objects `evaluate()` accepts (no
+  `db/root_authority_repository.py`, `db/consent_proof_repository.py`,
+  etc. exist); and no wiring of `evaluate()` into
+  `WhitePactRuntimeGateway.evaluate()` or any other live decision
+  path. This Heart is now, for the first time, minimally end-to-end
+  wireable for a single call given already-constructed domain objects
+  -- it is still not wired into anything that runs in production.
+
+**HEART INVARIANTS: PASS** (a full legitimate chain is always
+legitimate, an illegitimate root always blocks, and any revocation
+epoch advance always blocks, all property-verified across generated
+inputs; every individual blocking condition H10 itself defines is
+independently exercised end-to-end through `evaluate()`, not just at
+the unit level of each H3-H9 module in isolation).
+**SECURITY: PASS** (the default `RootResolver` fails closed --
+`SOURCE_NOT_FOUND` for any non-terminal root with no supplied
+resolver, never silently treated as legitimate -- and every blocking
+condition from every composed phase correctly propagates through the
+full orchestration to the final envelope, verified directly rather
+than assumed from the individual H3-H12 unit tests alone).
+**ENTERPRISE READINESS: 9/10** (H13 of 17 -- the Heart's full H3-H13
+chain now exists, is individually and end-to-end tested, and is for
+the first time minimally wireable in one call; the score moves up from
+H11-H12's 8/10 specifically because this phase closes the "does the
+whole thing actually work together" question empirically, not just
+compositionally on paper; still not wired into any live decision path,
+and the remaining four phases -- H14 formal/property assurance, H15
+adversarial gauntlet, H16 performance, H17 enterprise hardening -- are
+verification and hardening work on what already exists, not new
+authority primitives, so a perfect score is deliberately withheld
+until they land).
+**REMAINING RISKS**:
+1. `evaluate()` has no real caller in production -- H13 alone changes
+   no runtime behavior; it makes the Heart's H3-H13 chain callable in
+   one shot, for the first time, but nothing calls it yet.
+2. No persistence layer exists for any of the domain objects
+   `evaluate()` accepts -- a real integration would need
+   `db/root_authority_repository.py` (at minimum, for `RootResolver`
+   to do anything beyond in-memory testing) plus repositories for
+   `ConsentProof` and `PurposeBinding`, none of which exist yet, named
+   as remaining risks in H3/H4/H5 respectively and still true here.
+3. `evaluate()`'s orchestration logic itself has not been
+   adversarially tested -- H15's gauntlet is the natural place to
+   throw deliberately malformed, contradictory, or boundary-case
+   input combinations at this specific function (e.g. a `delegation`
+   supplied without a matching `root`/`consent`/`purpose`, verified
+   here only for the "skip gracefully" happy path, not for adversarial
+   attempts to exploit that skip behavior).
+**VERDICT: MOVE TO NEXT HEART PHASE** (H14 — Formal and Property-Based Assurance).

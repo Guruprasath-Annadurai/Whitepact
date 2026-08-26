@@ -127,7 +127,7 @@ wiring only ever applies to org-scoped Streamable HTTP/SSE calls).
 
 ---
 
-## 2.5 The WhitePact Heart (Sovereignty Kernel) **[TODAY, first version — Phases H0-H12]**
+## 2.5 The WhitePact Heart (Sovereignty Kernel) **[TODAY, first version — Phases H0-H13]**
 
 A new, deliberately small trusted-computing-base layer answering one
 question, and only one: *why does this machine have the legitimate
@@ -420,28 +420,41 @@ established deterministic-explanation pattern
 `db/delegation_repository.py`'s `explain_authority()`) — a plain,
 structured dict, never an LLM call.
 
-**Not built yet**: the `SovereigntyKernel.evaluate()` entry point is
-the one remaining phase (H13) — `AuthorityEnvelope`, `RootAuthorityRecord`,
-`ConsentProof`, `PurposeBinding`, the delegation-legitimacy
-composition, the non-delegable registry, the lifetime-staleness check,
-the revocation-epoch primitive, the conflict resolver, the veto, and
-now the legitimacy envelope itself all exist and are tested, but
-nothing in the live decision path constructs or consults any of them
-yet; `WhitePactRuntimeGateway.evaluate()` continues to use
-`AuthorityContext`/`validate_attenuation()` exactly as before,
-unchanged in every way except the H2 gap fix. No DB persistence layer
-exists yet for `RootAuthorityRecord`, `ConsentProof`, `PurposeBinding`,
-or `LegitimacyEnvelope` either — these phases ship the record types
-and their validation semantics only, mirroring how H1's constitution
-and H2's lattice shipped pure objects without live wiring. No
-execution-time enforcement turns a `HUMAN_RESERVED` finding (H7) into
-an actual mandatory-approval gate yet, no org-configurable extension
-mechanism exists for adding organization-specific `HUMAN_RESERVED`
-action types on top of the fixed built-in set, none of the five
-existing revocation mechanisms actually call `bump_epoch()` yet, and
-nothing in the live decision path calls `enforce_heart_veto()` or
-constructs a `LegitimacyEnvelope` — the whole chain has no teeth in
-production until `SovereigntyKernel.evaluate()` (H13) wires it in.
+**[TODAY, Phase H13]**: `governance/sovereignty_kernel.py`'s
+`evaluate()` — the first, and so far only, place in this codebase that
+actually calls the H3-H12 Heart functions together, for one real
+request, and returns one `LegitimacyEnvelope`. Given whichever of
+root/consent/purpose/delegation/requested-action-types/revocation-
+epoch inputs a caller supplies for one `(organization_id,
+subject_identity_id)` decision, it runs the applicable H3-H9 checks
+(skipping any whose prerequisites weren't supplied — partial input is
+a first-class case, not degraded behavior, mirroring H10's own
+"`None` means not evaluated, never failed" design), composes their
+verdicts via H10, applies H11's veto, and wraps the result in H12's
+envelope. This is the one Heart module allowed — required — to import
+and call H3-H12's real functions directly, since every phase before it
+deliberately avoided doing so specifically so this wiring could exist
+without circularity. Still deliberately does not resolve anything from
+a database — accepts already-constructed domain objects (and, for
+root-chain walking, an abstract `RootResolver` callable) rather than
+looking anything up, exactly like every prior phase's own "not built
+here."
+
+**Not built yet**: no DB persistence layer exists yet for
+`RootAuthorityRecord`, `ConsentProof`, `PurposeBinding`, or
+`LegitimacyEnvelope` — this Heart, even now end-to-end wireable for a
+single call, still has no live caller anywhere in
+`WhitePactRuntimeGateway.evaluate()` or any other production decision
+path, and no code resolves real persisted state into the domain
+objects `evaluate()` accepts. No execution-time enforcement turns a
+`HUMAN_RESERVED` finding (H7) into an actual mandatory-approval gate
+yet, no org-configurable extension mechanism exists for adding
+organization-specific `HUMAN_RESERVED` action types on top of the
+fixed built-in set, and none of the five existing revocation
+mechanisms actually call `bump_epoch()` yet. The remaining Heart
+phases (H14-H17: formal/property assurance, the adversarial gauntlet,
+performance, and enterprise hardening) are verification and hardening
+work on what now exists, not new authority primitives.
 
 ## 3. Core entities
 
