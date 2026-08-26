@@ -3401,3 +3401,109 @@ until they land).
    here only for the "skip gracefully" happy path, not for adversarial
    attempts to exploit that skip behavior).
 **VERDICT: MOVE TO NEXT HEART PHASE** (H14 — Formal and Property-Based Assurance).
+
+## 39. WhitePact Heart Phase H14 — Formal and Property-Based Assurance (2026-08-26)
+
+- **An honest ledger, not a claimed proof** (`docs/heart/HEART_INVARIANTS.md`,
+  new file) — catalogs every invariant claimed by Phases H1-H13, each
+  paired with the specific test that verifies it, sourced by actually
+  reading every property test in the codebase rather than restating
+  what each phase's own docs already claimed. Two rows are marked
+  `UNVERIFIED` explicitly: the H6/H10 cross-reference gaps already
+  documented at their own phases, repeated here for visibility in one
+  place. A closing section ("What Phase H14 explicitly does NOT
+  claim") states plainly that this is property-based sampling, not
+  formal proof, and that nothing here has been exercised against any
+  live decision path.
+- **Cross-cutting property tests spanning the full chain**
+  (`tests/test_heart_formal_properties.py`, new file) — every prior
+  phase's property tests exercise that phase in isolation or composed
+  with at most its immediate neighbor (H4 with H3, H5 with H4, etc.).
+  Nothing before this phase verified a property across the *entire*
+  H3-H13 chain at once. Four such properties, each genuinely new:
+  1. **Orchestration consistency** -- `evaluate()` (H13) never
+     diverges from manually composing `resolve_authority_conflicts()`
+     (H10) + `apply_heart_veto()` (H11) from the same underlying
+     results, for both the legitimate and blocking cases, verified
+     with Hypothesis-generated purpose strings and root types.
+  2. **Monotonic denial** -- adding any single blocking condition
+     (a `NON_DELEGABLE` action type, a revocation epoch advance of
+     arbitrary magnitude) to an otherwise-fully-legitimate chain
+     always flips the result to illegitimate; a legitimate input
+     present alongside a genuinely blocking one can never mask it.
+  3. **Digest completeness** -- every one of the five canonical-digest
+     functions across the Heart (`compute_root_digest`,
+     `compute_consent_digest`, `compute_purpose_binding_digest`,
+     `compute_legitimacy_envelope_digest`, `compute_constitution_digest`)
+     is individually verified sensitive to every one of its own input
+     fields, by perturbing exactly one field at a time against a fixed
+     baseline and confirming the digest changes -- a genuinely useful
+     check that would have caught, for example, a forgotten field in
+     any digest payload (the exact class of bug the digest functions'
+     own docstrings already warn about being "complete over these
+     fields").
+  4. **Verdict purity** -- `is_legitimate` is a pure function of the
+     supplied verdicts: two `evaluate()` calls with identical inputs
+     produce identical `is_legitimate` and `veto_reason`, even though
+     every issued record's identity fields (`envelope_id`,
+     `issued_at`, `canonical_digest`) are freshly generated and
+     therefore always differ between calls -- confirming the Heart's
+     non-determinism is confined to record identity, never to the
+     actual authority decision.
+- **A real mypy interaction resolved, documented for reuse** -- the
+  digest-sensitivity tests initially failed mypy with 34 `arg-type`
+  errors from unpacking a loosely-typed `dict[str, object]` as
+  `**kwargs` into strictly-typed digest functions. Fixed by explicitly
+  annotating each baseline dict as `dict[str, Any]` rather than
+  scattering `# type: ignore` comments across every call site -- a
+  cleaner fix once the actual cause (mypy inferring an overly narrow
+  or overly wide dict value type from a literal, depending on which
+  fields were present) was isolated.
+- **Verification**: 12 new tests in `tests/test_heart_formal_properties.py`
+  -- 2 orchestration-consistency tests (1 property-tested), 3
+  monotonic-denial tests (1 property-tested over 1-5 epoch bumps), 5
+  digest-sensitivity tests (one per canonical-digest function, each
+  exhaustively perturbing every field), 2 verdict-purity tests (1
+  property-tested). `mypy`/`ruff check`/`ruff format --check` clean on
+  both new files. This phase adds no new `src/` module -- it is
+  verification work on the already-shipped H3-H13 chain, consistent
+  with the master spec's own framing of H14 as an assurance phase, not
+  a new-primitive phase.
+- **Not built in this phase**: any actual formal-methods tooling
+  (TLA+, a model checker, a proof assistant) -- explicitly out of
+  scope and stated as such rather than silently approximated by
+  property testing alone; and no live-path exercise of any invariant
+  in this ledger, consistent with every prior phase's own deferral.
+
+**HEART INVARIANTS: PASS** (all four new cross-cutting properties hold
+across every Hypothesis-sampled case; the ledger itself is now the
+authoritative, single-place record of every invariant this session has
+claimed since H1, with honest `UNVERIFIED` markers where a claim
+exists without a corresponding test).
+**SECURITY: PASS** (the digest-completeness property is specifically
+security-relevant -- a digest function silently excluding a field
+would let two meaningfully different records collide on the same
+digest, undermining every downstream use of "compare digests to detect
+mutation" this session's H8 phase already built on top of these exact
+functions; this phase confirms none of the five actually has that
+gap).
+**ENTERPRISE READINESS: 9/10** (H14 of 17, unchanged from H13: this
+phase strengthens confidence in what already exists rather than adding
+new capability, so it does not on its own move the needle on "does
+WhitePact enforce this in production" -- that question remains
+unanswered until real wiring exists, independent of how thoroughly the
+un-wired logic has been verified).
+**REMAINING RISKS**:
+1. No formal-methods tooling was used -- "formal and property-based
+   assurance" in this phase's own title is honestly only the
+   property-based half; a reader expecting TLA+-grade proof should not
+   infer it from this phase's completion.
+2. The invariants ledger is a snapshot as of this phase -- any future
+   change to an H1-H13 module's behavior needs a corresponding ledger
+   update, which nothing currently enforces automatically (no CI check
+   verifies the ledger stays in sync with the actual test suite).
+3. Property tests sample a large but finite space (Hypothesis's
+   default ~100 examples per property); this is strong evidence for
+   each invariant, not a proof that holds for literally every possible
+   input, and the ledger says so explicitly rather than overclaiming.
+**VERDICT: MOVE TO NEXT HEART PHASE** (H15 — Adversarial Heart Gauntlet).

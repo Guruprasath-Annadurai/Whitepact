@@ -255,6 +255,23 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
   Heart's full H3-H13 chain is now, for the first time, minimally
   end-to-end wireable in one call — still not wired into any live
   decision path.
+- WhitePact Heart Phase H14 — Formal and Property-Based Assurance
+  (2026-08-26) (`docs/heart/HEART_INVARIANTS.md`,
+  `tests/test_heart_formal_properties.py`, new files) — an honest
+  ledger of every invariant claimed by Phases H1-H13, each paired with
+  the test that verifies it, with unverified claims (the H6/H10
+  cross-reference gaps) marked explicitly rather than omitted. Adds 4
+  cross-cutting property tests spanning the full H3-H13 chain that no
+  single phase's own tests could exercise: `evaluate()` is always
+  consistent with manually composing H10+H11; denial is monotonic
+  (adding any blocking condition to a legitimate chain always flips
+  the result); every canonical-digest function across the Heart is
+  sensitive to every one of its own fields; `is_legitimate` is a pure
+  function of the supplied verdicts, independent of each record's
+  non-deterministic identity fields. 12 new tests, `mypy`/`ruff check`/
+  `ruff format --check` clean. No new `src/` module — verification
+  work only. Explicitly not formal (TLA+/Coq-grade) verification,
+  stated plainly rather than approximated by property testing alone.
 - Tool Trust Network (Authority Everywhere Phase 8) —
   `governance/tool_trust.py`: a deterministic 0-100 trust score per
   org-registered upstream MCP server, derived from the existing
