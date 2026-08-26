@@ -127,7 +127,7 @@ wiring only ever applies to org-scoped Streamable HTTP/SSE calls).
 
 ---
 
-## 2.5 The WhitePact Heart (Sovereignty Kernel) **[TODAY, first version — Phases H0-H8]**
+## 2.5 The WhitePact Heart (Sovereignty Kernel) **[TODAY, first version — Phases H0-H9]**
 
 A new, deliberately small trusted-computing-base layer answering one
 question, and only one: *why does this machine have the legitimate
@@ -338,13 +338,40 @@ four Heart verdict types. Deliberately never re-runs validation itself
 — a caller receiving a stale result is responsible for re-invoking the
 relevant H3-H6 function.
 
-**Not built yet**: the unified `RevocationEpoch`, `SovereigntyVeto`,
-`LegitimacyEnvelope`, and the `SovereigntyKernel.evaluate()` entry
-point are all later, separate phases (H9-H13) — `AuthorityEnvelope`,
-`RootAuthorityRecord`, `ConsentProof`, `PurposeBinding`, the
-delegation-legitimacy composition, the non-delegable registry, and the
-lifetime-staleness check exist and are tested, but nothing in the live
-decision path constructs or consults any of them yet;
+**[TODAY, Phase H9]**: `governance/revocation_kernel.py`'s
+`RevocationEpoch`/`check_revocation_epoch()` — the thin, additive
+primitive `docs/heart/HEART_CURRENT_STATE.md` §6 specifies for closing
+the one confirmed real gap in this codebase's revocation story: five
+independent revocation mechanisms exist (delegation cascading
+revocation, delegation expiry, Authority Passport revocation, Authority
+Passport drift detection, API key revocation), none sharing a counter.
+A `RevocationEpoch` is a monotonically increasing counter per
+`(organization_id, scope)`; `check_revocation_epoch()` compares an
+issuance-time epoch against the current one, turning "has anything
+been revoked since I was issued" into one integer comparison
+(`REVOKED_SINCE_ISSUANCE`) instead of five separate live re-checks.
+None of the five existing mechanisms are refactored — each keeps its
+exact existing logic; this phase does not decide what bumps which
+scope's epoch, deliberately deferred integration work. This phase also
+closes a second, concrete gap the same audit section named: cascading
+revocation (`revoke_branch()`) had no dedicated concurrency test or
+latency measurement, unlike the grant side. `tests/test_concurrency.py`
+now includes both, with one genuine, honest race-condition finding —
+concurrent `revoke_branch()` calls on the same identity can each
+report having revoked it (a check-then-act race on `revoked_ids`,
+mirroring the already-documented autonomy-budget gap) even though the
+database itself ends up correctly, terminally revoked — and one
+confirmed protection (a `grant()` racing a `revoke_branch()` of its
+parent is correctly rejected with `DelegationEscalationError`, not
+silently allowed to create an orphaned active child).
+
+**Not built yet**: the unified `SovereigntyVeto`, `LegitimacyEnvelope`,
+and the `SovereigntyKernel.evaluate()` entry point are all later,
+separate phases (H10-H13) — `AuthorityEnvelope`, `RootAuthorityRecord`,
+`ConsentProof`, `PurposeBinding`, the delegation-legitimacy
+composition, the non-delegable registry, the lifetime-staleness check,
+and the revocation-epoch primitive exist and are tested, but nothing
+in the live decision path constructs or consults any of them yet;
 `WhitePactRuntimeGateway.evaluate()` continues to use
 `AuthorityContext`/`validate_attenuation()` exactly as before,
 unchanged in every way except the H2 gap fix. No DB persistence layer
@@ -353,9 +380,10 @@ exists yet for `RootAuthorityRecord`, `ConsentProof`, or
 validation semantics only, mirroring how H1's constitution and H2's
 lattice shipped pure objects without live wiring. No execution-time
 enforcement turns a `HUMAN_RESERVED` finding (H7) into an actual
-mandatory-approval gate yet, and no org-configurable extension
-mechanism exists for adding organization-specific `HUMAN_RESERVED`
-action types on top of the fixed built-in set.
+mandatory-approval gate yet, no org-configurable extension mechanism
+exists for adding organization-specific `HUMAN_RESERVED` action types
+on top of the fixed built-in set, and none of the five existing
+revocation mechanisms actually call `bump_epoch()` yet.
 
 ## 3. Core entities
 
