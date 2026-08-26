@@ -203,6 +203,23 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
   of them. 18 new tests (`tests/test_authority_conflict_resolver.py`,
   including 2 Hypothesis property tests), 100% branch coverage. Not
   yet wired into any live decision path with real inputs.
+- WhitePact Heart Phase H11 — Heart Veto (2026-08-26)
+  (`governance/heart_veto.py`, new file) — the first Heart module
+  whose entire purpose is to have real teeth rather than only report a
+  status. `apply_heart_veto()` derives a `HeartVetoRecord` from an
+  already-computed `ConflictResolutionResult` (H10) — any status other
+  than `LEGITIMATE` vetoes. `enforce_heart_veto()` raises
+  `HeartVetoError` for a vetoed record and is a no-op otherwise, with
+  no parameter of any kind that could suppress, downgrade, or bypass a
+  veto — verified structurally by inspecting the function's actual
+  signature, not just claimed in a docstring. A vetoed record can only
+  become not-vetoed by re-running `apply_heart_veto()` against a
+  genuinely different, freshly-legitimate `ConflictResolutionResult`.
+  `human_reserved` (H7) passes through unchanged regardless of veto
+  outcome. 17 new tests (`tests/test_heart_veto.py`, including 3
+  Hypothesis property tests), 100% branch coverage. Not yet wired into
+  any live decision path — the veto has no teeth in production until
+  something calls `enforce_heart_veto()`.
 - Tool Trust Network (Authority Everywhere Phase 8) —
   `governance/tool_trust.py`: a deterministic 0-100 trust score per
   org-registered upstream MCP server, derived from the existing
