@@ -2726,3 +2726,118 @@ the veto itself all remain unbuilt).
    phases (especially H11's veto and H12's legitimacy envelope) define
    more of what "the Heart's own guarantees" concretely are.
 **VERDICT: MOVE TO NEXT HEART PHASE** (H8 — Authority Lifetime).
+
+## 33. WhitePact Heart Phase H8 — Authority Lifetime (2026-08-26)
+
+- **The gap this closes** (`governance/authority_lifetime.py`, new
+  file) — every object-level expiry check in this codebase
+  (`RootAuthorityRecord.is_temporally_valid()`,
+  `ConsentProof.is_temporally_valid()`, `IntentContract.is_active()`,
+  `DelegationRecord.is_active()`) answers "is this object still valid
+  right now." None of the four Phase H3-H6 *verdict* types
+  (`RootValidationResult`, `ConsentValidationResult`,
+  `PurposeBindingValidationResult`, `DelegationLegitimacyResult`)
+  carry an evaluation timestamp at all -- nothing currently stops a
+  caller from computing one once and treating it as permanently true,
+  which is exactly the gap constitutional law H13 names: a verdict
+  that was VALID an hour ago is not evidence it is VALID now, only
+  that it *was*.
+- **Two independent kinds of staleness** -- `STALE_BY_AGE` (H13): a
+  verdict older than its `LifetimeWindow.max_age_seconds` must be
+  re-evaluated regardless of what it originally said, generalizing the
+  existing, live "continuous re-authorization" pattern already
+  documented in `MACHINE_AUTHORITY_V1.md` §2 (a delegation is checked
+  fresh on every governed call, not cached from grant time) from one
+  object type to all four Heart verdict types. `STALE_BY_MUTATION`
+  (H14): even a verdict computed moments ago is stale if the
+  underlying object's `canonical_digest` (every Heart record type from
+  H1/H3/H4/H5 already computes one) has changed since evaluation --
+  checked *before* age, since a materially mutated object invalidates
+  a verdict regardless of how recently it was computed, mirroring the
+  same "most fundamental problem first" ordering H4-H7 already
+  established.
+- **Deliberately never re-runs validation itself** --
+  `check_lifetime()` answers "is this verdict still safe to trust,"
+  not "what would a fresh evaluation say." It never calls
+  `validate_root_chain()`/`validate_consent_proof()`/
+  `validate_purpose_binding()`/`validate_delegation_legitimacy()`,
+  keeping this module dependency-free of all four -- unlike H3-H7,
+  this phase has no `TYPE_CHECKING`-only imports at all, since it
+  operates purely on primitives (`datetime`, `str` digests) rather
+  than any Heart record type directly.
+- **Named default windows are suggestions, not enforced** --
+  `ROOT_AUTHORITY_LIFETIME_WINDOW` (24h), `CONSENT_PROOF_LIFETIME_WINDOW`
+  (24h), `PURPOSE_BINDING_LIFETIME_WINDOW` (1h),
+  `DELEGATION_LEGITIMACY_LIFETIME_WINDOW` (5min) reflect how
+  frequently each artifact type is expected to change -- shortest for
+  delegation (matches the existing continuous-reauthorization
+  precedent), longest for root authority (changes rarest). A caller
+  may supply any `LifetimeWindow`; nothing requires the presets.
+- **A real test-authoring bug caught by the property test itself, not
+  by inspection** -- the first draft of `test_age_boundary_is_strict`
+  asserted against the Hypothesis-generated `age` input directly, but
+  `timedelta(seconds=age)` rounds to microsecond precision, so the
+  age `check_lifetime()` actually measures can differ from the
+  generated float by a sub-microsecond amount. Hypothesis's shrinker
+  found `max_age=age=1.13671875` failing exactly at the boundary --
+  fixed by asserting against `result.age_seconds` (the value the
+  function itself measured) rather than the raw input, which tests the
+  real invariant (status matches measured age vs. max_age) without
+  chasing float-rounding noise.
+- **Verification**: 16 new tests in `tests/test_authority_lifetime.py`
+  -- fresh/exact-boundary/stale-by-age/stale-by-mutation/mutation-
+  priority-over-age/partial-digest-skips-mutation-check cases, named
+  window ordering and positivity checks, plus 3 Hypothesis property
+  tests: the age boundary is strict for arbitrary generated
+  `max_age`/`age` pairs; mismatched digests always yield
+  `STALE_BY_MUTATION` regardless of age; matching digests never cause
+  mutation-staleness. `authority_lifetime.py` at 100% branch coverage.
+  `mypy`/`ruff check`/`ruff format --check` clean on both new files.
+- **Not built in this phase**: any wiring that actually attaches an
+  evaluation timestamp and digest to a `RootValidationResult`/
+  `ConsentValidationResult`/`PurposeBindingValidationResult`/
+  `DelegationLegitimacyResult` at the point they're computed (all four
+  types remain exactly as H3-H6 defined them -- this phase does not
+  retroactively add fields to already-merged types); any caller that
+  actually invokes `check_lifetime()` and re-validates on
+  `STALE_BY_AGE`/`STALE_BY_MUTATION`; and nothing in
+  `WhitePactRuntimeGateway.evaluate()` or any other live decision path
+  constructs or consults a `LifetimeCheckResult` yet.
+
+**HEART INVARIANTS: PASS** (a verdict older than its window is always
+`STALE_BY_AGE` unless its digest also mismatches, in which case
+`STALE_BY_MUTATION` is reported instead -- both invariants
+property-verified across generated ages, windows, and digest pairs,
+not just hand-picked examples).
+**SECURITY: PASS** (no path reports `FRESH` for a verdict whose
+underlying object has materially mutated, regardless of how recently
+it was evaluated -- a property-tested invariant, not merely asserted
+in prose).
+**ENTERPRISE READINESS: 7/10** (H8 of 17, unchanged from H6/H7's
+score: this phase adds a real, tested, standalone staleness-detection
+mechanism, but -- exactly like H7 -- nothing yet calls it, and none of
+the four Phase H3-H6 verdict types carry the timestamp/digest fields
+this phase's function needs a caller to supply, so it cannot yet
+change what WhitePact actually enforces in production; the revocation
+kernel, conflict resolution, and the veto itself all remain unbuilt).
+**REMAINING RISKS**:
+1. `check_lifetime()` is not called from `validate_delegation_legitimacy()`
+   (H6) or anywhere else yet -- the same "deliberately standalone this
+   phase" scoping decision H7 made, for the same reason (avoid
+   re-touching merged, tested code without a concrete caller driving
+   the change). A verdict computed via any H3-H6 function today has no
+   automatic staleness check applied to it anywhere.
+2. None of `RootValidationResult`/`ConsentValidationResult`/
+   `PurposeBindingValidationResult`/`DelegationLegitimacyResult`
+   actually carry an `evaluated_at` timestamp or the relevant
+   `canonical_digest` today -- a caller wanting to use
+   `check_lifetime()` must track both externally itself. Retrofitting
+   these fields onto four already-merged, tested types is real,
+   deferred work, not done speculatively in this phase.
+3. The named default windows (24h/24h/1h/5min) are defensible
+   first-pass estimates grounded in how each artifact type is expected
+   to change, not derived from any real production usage data --
+   should be revisited once real callers exist to observe actual
+   staleness-related incidents or false-positive re-validation
+   overhead.
+**VERDICT: MOVE TO NEXT HEART PHASE** (H9 — Revocation Kernel).

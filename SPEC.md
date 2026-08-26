@@ -127,7 +127,7 @@ wiring only ever applies to org-scoped Streamable HTTP/SSE calls).
 
 ---
 
-## 2.5 The WhitePact Heart (Sovereignty Kernel) **[TODAY, first version — Phases H0-H7]**
+## 2.5 The WhitePact Heart (Sovereignty Kernel) **[TODAY, first version — Phases H0-H8]**
 
 A new, deliberately small trusted-computing-base layer answering one
 question, and only one: *why does this machine have the legitimate
@@ -311,21 +311,49 @@ governed by existing, org-mutable `Policy`. When both severities match
 a requested action-type set, `NON_DELEGABLE` is always reported first
 (property-verified).
 
+**[TODAY, Phase H8]**: `governance/authority_lifetime.py`'s
+`check_lifetime()` — the executable form of constitutional laws H13
+("historical authorization does not imply current authorization") and
+H14 ("material authority mutation requires reauthorization"). Every
+object-level expiry check in this codebase (`RootAuthorityRecord.is_temporally_valid()`,
+`ConsentProof.is_temporally_valid()`, `IntentContract.is_active()`,
+`DelegationRecord.is_active()`) answers "is this object still valid
+right now" — none of the four Phase H3-H6 *verdict* types
+(`RootValidationResult`, `ConsentValidationResult`,
+`PurposeBindingValidationResult`, `DelegationLegitimacyResult`) carry
+an evaluation timestamp, so nothing stops a caller from computing one
+once and treating it as permanently true. `check_lifetime()` answers
+two independent staleness questions: `STALE_BY_AGE` (a verdict older
+than its `LifetimeWindow.max_age_seconds`, checked second) and
+`STALE_BY_MUTATION` (the underlying object's `canonical_digest` has
+changed since evaluation, checked first — a materially mutated object
+invalidates a verdict regardless of how recently it was computed).
+Named default windows (`ROOT_AUTHORITY_LIFETIME_WINDOW` 24h,
+`CONSENT_PROOF_LIFETIME_WINDOW` 24h, `PURPOSE_BINDING_LIFETIME_WINDOW`
+1h, `DELEGATION_LEGITIMACY_LIFETIME_WINDOW` 5min) are suggestions, not
+enforced — generalizing the existing, live "continuous
+re-authorization" pattern (`MACHINE_AUTHORITY_V1.md` §2: a delegation
+is checked fresh on every governed call) from one object type to all
+four Heart verdict types. Deliberately never re-runs validation itself
+— a caller receiving a stale result is responsible for re-invoking the
+relevant H3-H6 function.
+
 **Not built yet**: the unified `RevocationEpoch`, `SovereigntyVeto`,
 `LegitimacyEnvelope`, and the `SovereigntyKernel.evaluate()` entry
-point are all later, separate phases (H8-H13) — `AuthorityEnvelope`,
+point are all later, separate phases (H9-H13) — `AuthorityEnvelope`,
 `RootAuthorityRecord`, `ConsentProof`, `PurposeBinding`, the
-delegation-legitimacy composition, and the non-delegable registry
-exist and are tested, but nothing in the live decision path constructs
-or consults any of them yet; `WhitePactRuntimeGateway.evaluate()`
-continues to use `AuthorityContext`/`validate_attenuation()` exactly as
-before, unchanged in every way except the H2 gap fix. No DB
-persistence layer exists yet for `RootAuthorityRecord`, `ConsentProof`,
-or `PurposeBinding` either — these phases ship the record types and
-their validation semantics only, mirroring how H1's constitution and
-H2's lattice shipped pure objects without live wiring. No
-execution-time enforcement turns a `HUMAN_RESERVED` finding into an
-actual mandatory-approval gate yet, and no org-configurable extension
+delegation-legitimacy composition, the non-delegable registry, and the
+lifetime-staleness check exist and are tested, but nothing in the live
+decision path constructs or consults any of them yet;
+`WhitePactRuntimeGateway.evaluate()` continues to use
+`AuthorityContext`/`validate_attenuation()` exactly as before,
+unchanged in every way except the H2 gap fix. No DB persistence layer
+exists yet for `RootAuthorityRecord`, `ConsentProof`, or
+`PurposeBinding` either — these phases ship the record types and their
+validation semantics only, mirroring how H1's constitution and H2's
+lattice shipped pure objects without live wiring. No execution-time
+enforcement turns a `HUMAN_RESERVED` finding (H7) into an actual
+mandatory-approval gate yet, and no org-configurable extension
 mechanism exists for adding organization-specific `HUMAN_RESERVED`
 action types on top of the fixed built-in set.
 
