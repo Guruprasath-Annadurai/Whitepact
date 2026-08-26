@@ -2977,3 +2977,112 @@ Heart API, and formal/adversarial verification all remain unbuilt).
    does not prescribe one, since doing so before any real caller exists
    risks guessing wrong and needing to change it later anyway.
 **VERDICT: MOVE TO NEXT HEART PHASE** (H10 — Authority Conflict Resolver).
+
+## 35. WhitePact Heart Phase H10 — Authority Conflict Resolver (2026-08-26)
+
+- **The gap this closes** (`governance/authority_conflict_resolver.py`,
+  new file) — every Heart phase so far (H3-H9) built one independent
+  check. Nothing decided what a caller holding several of their
+  results at once should conclude when they conflict -- e.g. a root
+  that's VALID but a revocation epoch that shows
+  `REVOKED_SINCE_ISSUANCE`, or a delegation that's `LEGITIMATE` but a
+  `NonDelegableViolation` present for the same request. Silently
+  picking "whichever check I happened to look at first" would make the
+  final answer depend on call order, not severity --
+  `resolve_authority_conflicts()` fixes one deterministic precedence
+  order instead, generalizing the "most fundamental problem surfaces
+  first" principle H4-H9 each established *within* their own phase to
+  now operate *across* all seven of them together.
+- **Fixed precedence, most severe/foundational first**: `NON_DELEGABLE`
+  (H7) > `REVOKED` (H9) > `ROOT_NOT_LEGITIMATE` (H3) >
+  `CONSENT_NOT_LEGITIMATE` (H4) > `PURPOSE_NOT_BOUND` (H5) >
+  `DELEGATION_NOT_LEGITIMATE` (H6) > `STALE` (H8) > `LEGITIMATE`.
+  `STALE` is deliberately checked last among the blocking reasons --
+  a stale verdict is "cannot currently confirm," a strictly less
+  informative answer than a confirmed illegitimacy from any of 1-6, so
+  if anything more severe already fired that's the more useful thing
+  to surface to a caller deciding what to do next.
+- **Every input is optional, `None` means "not evaluated," never
+  "failed"** -- a caller that only computed root and consent for a
+  given request (not purpose, delegation, lifetime, or revocation)
+  gets a verdict based on what it actually checked, not penalized for
+  what it didn't. `resolve_authority_conflicts()` with zero arguments
+  returns `LEGITIMATE` -- the honest, minimal claim "nothing supplied
+  says otherwise," not a false-positive claim of thorough verification.
+- **`human_reserved` is a separate, non-blocking signal, not a
+  status** -- a `NonDelegableViolation` scoped `HUMAN_RESERVED` (H7)
+  does not itself deny (that authority may be delegated to initiate,
+  per H7's own definition) but is still surfaced on the result
+  alongside whatever the overall `status` ends up being, so a future
+  phase's execution-time enforcement (explicitly deferred by H7) has
+  something to act on.
+- **TCB-minimization, continued** -- all seven possible inputs
+  (`NonDelegableViolation`, `RevocationEpochCheckResult`,
+  `RootValidationResult`, `ConsentValidationResult`,
+  `PurposeBindingValidationResult`, `DelegationLegitimacyResult`,
+  `LifetimeCheckResult`) are imported only under `TYPE_CHECKING`; this
+  module never calls any of the seven Phase H3-H9 functions itself,
+  the same "abstract input, not a live call into another module"
+  pattern every Heart phase has used since H4.
+- **Verification**: 18 new tests in `tests/test_authority_conflict_resolver.py`
+  -- no-inputs baseline, every-check-passing-together, every individual
+  blocking status (`NON_DELEGABLE`, `REVOKED` via both
+  `REVOKED_SINCE_ISSUANCE` and `SCOPE_MISMATCH`,
+  `ROOT_NOT_LEGITIMATE`, `CONSENT_NOT_LEGITIMATE`,
+  `PURPOSE_NOT_BOUND`, `DELEGATION_NOT_LEGITIMATE`, `STALE`), the
+  `human_reserved` non-blocking signal alone and alongside other
+  legitimate checks, and four explicit precedence-ordering tests
+  proving each level beats the ones below it, plus 2 Hypothesis
+  property tests: `NON_DELEGABLE` always wins regardless of which
+  other (even entirely legitimate) inputs are also present; an
+  illegitimate root of either non-terminal type always blocks when no
+  higher-precedence failure is present. `authority_conflict_resolver.py`
+  at 100% branch coverage. `mypy`/`ruff check`/`ruff format --check`
+  clean on both new files.
+- **Not built in this phase**: any wiring that actually calls all
+  seven H3-H9 functions for a real request and feeds their results
+  into `resolve_authority_conflicts()`; and nothing in
+  `WhitePactRuntimeGateway.evaluate()` or any other live decision path
+  constructs or consults a `ConflictResolutionResult` yet -- this
+  phase ships the resolution logic only, the same scope discipline
+  every Heart phase (H1-H9) has held to.
+
+**HEART INVARIANTS: PASS** (the precedence order is total and
+deterministic across all seven inputs -- for any combination of
+supplied results, exactly one status is returned, and it is always the
+most severe one present, property-verified for the two most
+consequential precedence relationships: `NON_DELEGABLE` over
+everything, and root-legitimacy failures over anything with lower
+precedence).
+**SECURITY: PASS** (no combination of inputs can produce `LEGITIMATE`
+when a `NON_DELEGABLE` violation, a non-`CURRENT` revocation check, or
+any of the four legitimacy failures is present -- fail-closed by
+construction, not by convention).
+**ENTERPRISE READINESS: 7/10** (H10 of 17, unchanged from H6-H9: this
+phase adds the real, tested composition logic that finally ties all of
+H3-H9 together into one deterministic answer, but nothing yet calls it
+with real, live-computed inputs, so it does not yet change what
+WhitePact enforces in production; the Heart veto, the legitimacy
+envelope, and the Heart API itself all remain unbuilt).
+**REMAINING RISKS**:
+1. `resolve_authority_conflicts()` is not called from anywhere with
+   real inputs yet -- H10 alone changes no runtime behavior; it ships
+   the composition logic every future integration (and the eventual
+   `SovereigntyKernel.evaluate()`, Phase H13) will need.
+2. The precedence order itself (`NON_DELEGABLE` > `REVOKED` > root >
+   consent > purpose > delegation > `STALE`) is a considered,
+   documented design decision grounded in each phase's own severity,
+   but has not been validated against any real production incident or
+   adversarial scenario -- Phase H15's adversarial gauntlet is the
+   natural place to stress-test whether this exact ordering holds up
+   under deliberately crafted conflicting inputs, not assumed correct
+   here.
+3. This module composes seven independent verdicts but does not
+   itself verify that they all pertain to the *same* underlying
+   request/identity/delegation -- exactly the same honestly-documented
+   cross-reference gap H6 already named for `validate_delegation_legitimacy()`,
+   now present here across a wider set of composed objects. A caller
+   could technically supply a root result for one identity and a
+   consent result for an unrelated one; this module has no way to
+   detect that without the schema changes H6 already deferred.
+**VERDICT: MOVE TO NEXT HEART PHASE** (H11 — Heart Veto).
