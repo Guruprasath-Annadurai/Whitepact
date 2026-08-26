@@ -19,7 +19,12 @@ reachable, via `from responsibleai.governance import ...`.
 `sovereignty_kernel` itself is exported as the module (not its bare
 `evaluate` function) to avoid a needlessly generic top-level name and
 to match the `sk.evaluate(...)` import convention this session's own
-Heart test suites already established."""
+Heart test suites already established.
+
+**Production Integration Phase 1** (`docs/heart-production/`) adds
+`AuthorityGrant` (`governance/authority_grant.py`) — the boundary
+object between the Heart and WhitePact's live decision path, exported
+here for the same reason every Heart symbol already is."""
 
 from __future__ import annotations
 
@@ -28,6 +33,11 @@ from responsibleai.governance.authority_conflict_resolver import (
     ConflictResolutionResult,
     ConflictResolutionStatus,
     resolve_authority_conflicts,
+)
+from responsibleai.governance.authority_grant import (
+    DEFAULT_GRANT_TTL_SECONDS,
+    AuthorityGrant,
+    build_authority_grant,
 )
 from responsibleai.governance.authority_lattice import (
     AuthorityEnvelope,
@@ -165,6 +175,7 @@ from responsibleai.governance.workflow import (
 __all__ = [
     "CONSENT_PROOF_LIFETIME_WINDOW",
     "CONSTITUTION_V1",
+    "DEFAULT_GRANT_TTL_SECONDS",
     "DELEGATION_LEGITIMACY_LIFETIME_WINDOW",
     "PURPOSE_BINDING_LIFETIME_WINDOW",
     "QUARANTINE_VIOLATION_THRESHOLD",
@@ -175,6 +186,7 @@ __all__ = [
     "AuthorityConstitutionVersion",
     "AuthorityContext",
     "AuthorityEnvelope",
+    "AuthorityGrant",
     "AutonomyBudgetPolicy",
     "AuthorizationActionMismatchError",
     "AuthorizationAlreadyConsumedError",
@@ -237,6 +249,7 @@ __all__ = [
     "apply_heart_veto",
     "authority_context_to_envelope",
     "authorize_execution",
+    "build_authority_grant",
     "build_consent_proof",
     "build_constitution_version",
     "build_evidence_bundle",

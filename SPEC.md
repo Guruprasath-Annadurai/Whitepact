@@ -129,6 +129,16 @@ wiring only ever applies to org-scoped Streamable HTTP/SSE calls).
 
 ## 2.5 The WhitePact Heart (Sovereignty Kernel) **[TODAY, first version — Phases H0-H17, complete]**
 
+> **A separate, in-progress initiative** — "Heart → WhitePact
+> Production Integration" (`docs/heart-production/`) — is now wiring
+> this library into the live decision path described below. See
+> `docs/heart-production/00_CURRENT_RUNTIME_MAP.md` for the current
+> (pre-integration) runtime audit and `01_AUTHORITY_CONTRACT.md` for
+> the production boundary contract (`governance/authority_grant.py`).
+> Nothing in this section changes until that initiative actually wires
+> something in — this note exists so a reader of this section knows
+> integration work is underway, not already done.
+
 A new, deliberately small trusted-computing-base layer answering one
 question, and only one: *why does this machine have the legitimate
 right to exercise this authority at all* — logically prior to
