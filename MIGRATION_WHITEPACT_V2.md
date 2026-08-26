@@ -2841,3 +2841,139 @@ kernel, conflict resolution, and the veto itself all remain unbuilt).
    staleness-related incidents or false-positive re-validation
    overhead.
 **VERDICT: MOVE TO NEXT HEART PHASE** (H9 — Revocation Kernel).
+
+## 34. WhitePact Heart Phase H9 — Revocation Kernel (2026-08-26)
+
+- **The primitive** (`governance/revocation_kernel.py`, new file) —
+  `docs/heart/HEART_CURRENT_STATE.md` §6 confirmed, by grep, that no
+  unifying revocation-state primitive exists today: five independent
+  mechanisms (delegation cascading revocation, delegation expiry,
+  Authority Passport revocation, Authority Passport drift detection,
+  API key revocation), each scoped correctly to its own object type,
+  none sharing a counter. `RevocationEpoch` is exactly the "thin,
+  additive concept" that audit section itself specified: a
+  monotonically increasing counter per `(organization_id, scope)`.
+  `check_revocation_epoch(issued_at, current)` turns "has anything
+  been revoked since I was issued" into one integer comparison
+  (`REVOKED_SINCE_ISSUANCE` if `current.epoch > issued_at.epoch`,
+  `SCOPE_MISMATCH` if the org/scope differ, `CURRENT` otherwise)
+  instead of five separate live re-checks against each mechanism.
+- **Not a refactor** -- per the audit's own classification, none of
+  the five existing mechanisms are touched or replaced; each keeps its
+  exact current revocation logic. This phase does not decide what
+  bumps which scope's epoch either -- that wiring (deciding, e.g.,
+  that `revoke_branch()` should call `bump_epoch()` on a
+  `("org-1", "delegation")` scope) is deliberately deferred
+  integration work, the same scope discipline every Heart phase
+  (H1-H8) has held to.
+- **Verification**: 15 new tests in `tests/test_revocation_kernel.py`
+  -- default-zero epoch, `bump_epoch()` monotonicity and field
+  preservation, every `RevocationEpochCheckStatus` branch (`CURRENT`
+  via identical and equal-but-distinct epochs, `REVOKED_SINCE_ISSUANCE`
+  via single and multiple bumps, `SCOPE_MISMATCH` via org-only,
+  scope-only, and both-differing cases, and mismatch taking priority
+  even when epoch values happen to be equal), plus 3 Hypothesis
+  property tests: an epoch bumped any number of times is always
+  `CURRENT` against itself; any additional bump after issuance is
+  always `REVOKED_SINCE_ISSUANCE` regardless of how many bumps came
+  before issuance; any org/scope difference always yields
+  `SCOPE_MISMATCH` regardless of epoch values. `revocation_kernel.py`
+  at 100% branch coverage. `mypy`/`ruff check`/`ruff format --check`
+  clean on both new files.
+- **The second half of this phase**: `docs/heart/HEART_CURRENT_STATE.md`
+  §3 named a second, concrete gap in the same audit -- cascading
+  revocation (`revoke_branch()`) "has no latency measurement and no
+  dedicated race-condition test," unlike the grant side
+  (`TestDelegationGrantConcurrency`). This phase adds both directly to
+  `tests/test_concurrency.py` (4 new tests, extending the existing
+  file rather than creating a new one, following the file's own
+  established pattern), with results reported honestly rather than
+  assumed:
+  - **A genuine, confirmed race-condition finding**
+    (`test_concurrent_revoke_branch_on_the_same_identity_leaves_it_revoked`)
+    -- `revoke_branch()`'s `active = await get_active_delegation()` is
+    a plain read with no lock, so multiple concurrent callers racing
+    to revoke the *same* identity can each read it as still active
+    before any of their `UPDATE`s land, and each includes it in its
+    own `revoked_ids` return list. Empirically, all 5 concurrent calls
+    in the test report having revoked it (summed `revoked_ids` is 5,
+    not 1) -- the exact same check-then-act shape
+    `TestAutonomyBudgetConcurrency` already documented on the
+    autonomy-budget path. The database itself still ends up correctly,
+    terminally revoked (not corrupted), but the docstring's "skipped,
+    not re-touched" language does not hold under this exact race for
+    the *return value*.
+  - **A hypothesized gap that turned out not to exist, confirmed by
+    forcing the interleaving directly**
+    (`test_grant_racing_revoke_branch_is_correctly_rejected`) -- the
+    initial hypothesis was that a `grant()` for a brand-new child,
+    timed to land after `revoke_branch()` already read that node's
+    children but before the walk finished, could create an orphaned
+    active child under a revoked parent. Forcing exactly that
+    interleaving (via a monkeypatched `_direct_children()` with
+    `asyncio.Event` synchronization) showed this is **not** possible:
+    `revoke_branch()` commits a node's own revocation *before* reading
+    its children, so by the time the forced interleaving reaches the
+    concurrent `grant()`'s own parent-liveness check, the parent is
+    already revoked in the database and `grant()` correctly raises
+    `DelegationEscalationError`. Kept as a regression test in case a
+    future refactor reorders `revoke_branch()`'s revoke-then-read
+    sequence.
+  - **A latency measurement, where none existed before**
+    (`test_revoke_branch_completes_promptly_for_a_wide_tree`) -- times
+    `revoke_branch()` across a 101-node tree (1 root + 100 direct
+    children), asserting completion under a generous, explicitly
+    non-tuned bound (5s) chosen to catch a real algorithmic regression
+    (e.g. accidentally reintroduced O(n²) traversal) without flaking
+    under normal CI variance.
+  - Plus one baseline test mirroring the grant side's own pattern
+    (`test_concurrent_revoke_branch_on_independent_trees_both_succeed`).
+  `test_concurrency.py`: 7 baseline tests -> 11 (4 new). `mypy`/
+  `ruff check`/`ruff format --check` clean.
+- **Not built in this phase**: any wiring that makes any of the five
+  existing revocation mechanisms actually call `bump_epoch()`; any
+  fix for the `revoke_branch()` return-value race just found and
+  documented (a real, live gap, named explicitly rather than silently
+  left implicit); and nothing in `WhitePactRuntimeGateway.evaluate()`
+  or any other live decision path constructs or consults a
+  `RevocationEpoch` yet.
+
+**HEART INVARIANTS: PASS** (an epoch that has advanced since issuance
+is always reported `REVOKED_SINCE_ISSUANCE` regardless of how many
+prior bumps happened before issuance, and any org/scope mismatch is
+always caught regardless of epoch values -- both property-verified
+across generated combinations, not just hand-picked examples).
+**SECURITY: PASS, with one honest, documented gap** (the
+`revoke_branch()` return-value race found and reported above is real
+and current, but does not corrupt the underlying revocation state --
+the database always ends up correctly revoked; only the per-call
+`revoked_ids` accounting is affected under concurrent calls to the
+same identity, a narrower and less severe finding than a data
+corruption bug would be).
+**ENTERPRISE READINESS: 7/10** (H9 of 17, unchanged from H6-H8: this
+phase adds a real, tested primitive plus two genuinely valuable,
+honestly-reported test additions to already-live code, but the
+primitive is not wired into any of the five existing revocation
+mechanisms yet, so it does not yet change what WhitePact actually
+enforces in production; the Heart veto, conflict resolution, the
+Heart API, and formal/adversarial verification all remain unbuilt).
+**REMAINING RISKS**:
+1. `RevocationEpoch` is not wired into any of the five existing
+   revocation mechanisms yet -- H9 alone changes no runtime behavior
+   for any of them; it ships a primitive future integration work will
+   need.
+2. The `revoke_branch()` return-value race found in this phase is real
+   and unfixed -- a caller that relies on `len(revoked_ids)` to count
+   distinct delegations revoked (rather than merely checking "is it
+   now inactive") could be misled under concurrent calls to the same
+   identity. Not fixed in this phase, consistent with this phase's
+   scope (finding and honestly documenting gaps, not necessarily
+   fixing every one found, mirroring how `TestAutonomyBudgetConcurrency`'s
+   own finding from an earlier session was documented, not silently
+   patched, either).
+3. The revocation-epoch scope-naming convention (what string goes in
+   `scope`, e.g. `"delegation"` vs. `"delegation:org-1"`) is left
+   entirely to a future integration decision -- this phase deliberately
+   does not prescribe one, since doing so before any real caller exists
+   risks guessing wrong and needing to change it later anyway.
+**VERDICT: MOVE TO NEXT HEART PHASE** (H10 — Authority Conflict Resolver).

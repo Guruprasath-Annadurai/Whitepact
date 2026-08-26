@@ -167,6 +167,26 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
   the property test's own shrinker (float-rounding noise at an exact
   boundary), not by inspection. Deliberately standalone — not yet
   called from any H3-H6 function or live decision path.
+- WhitePact Heart Phase H9 — Revocation Kernel (2026-08-26)
+  (`governance/revocation_kernel.py`, new file) — `RevocationEpoch`, a
+  monotonically increasing counter per `(organization_id, scope)`
+  closing the one confirmed gap in this codebase's revocation story:
+  five independent mechanisms (delegation cascading revocation and
+  expiry, Authority Passport revocation and drift detection, API key
+  revocation) share no counter. `check_revocation_epoch()` turns "has
+  anything been revoked since I was issued" into one integer
+  comparison. None of the five existing mechanisms are refactored;
+  this phase does not decide what bumps which scope's epoch, deferred
+  as integration work. 15 new tests (`tests/test_revocation_kernel.py`,
+  including 3 Hypothesis property tests), 100% branch coverage. Also
+  closes a second named gap: `revoke_branch()`'s cascading revocation
+  had no dedicated concurrency test or latency measurement. 4 new
+  tests added to `tests/test_concurrency.py`, including one genuine
+  race-condition finding (concurrent `revoke_branch()` calls on the
+  same identity can each report having revoked it, though the database
+  itself ends up correctly revoked) and one confirmed protection (a
+  `grant()` racing its parent's `revoke_branch()` is correctly
+  rejected, not allowed to orphan an active child).
 - Tool Trust Network (Authority Everywhere Phase 8) —
   `governance/tool_trust.py`: a deterministic 0-100 trust score per
   org-registered upstream MCP server, derived from the existing
