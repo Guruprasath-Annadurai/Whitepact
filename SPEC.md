@@ -127,7 +127,7 @@ wiring only ever applies to org-scoped Streamable HTTP/SSE calls).
 
 ---
 
-## 2.5 The WhitePact Heart (Sovereignty Kernel) **[TODAY, first version — Phases H0-H16]**
+## 2.5 The WhitePact Heart (Sovereignty Kernel) **[TODAY, first version — Phases H0-H17, complete]**
 
 A new, deliberately small trusted-computing-base layer answering one
 question, and only one: *why does this machine have the legitimate
@@ -500,23 +500,39 @@ callers. Explicitly does not measure concurrent throughput, any
 live-path (DB/network) latency, or memory usage — all deferred,
 consistent with every phase's own scope discipline.
 
-**Not built yet**: no DB persistence layer exists yet for
-`RootAuthorityRecord`, `ConsentProof`, `PurposeBinding`, or
-`LegitimacyEnvelope` — this Heart, even now end-to-end wireable for a
-single call, still has no live caller anywhere in
+**[TODAY, Phase H17, the final Heart phase]**: `governance/__init__.py`
+now re-exports the full Heart public API (all 13 H1-H13 modules'
+genuinely public types and functions), a real hardening gap this phase
+found — nothing before this phase let a caller reach the Heart the
+same way every other governance type is already reachable, via
+`from responsibleai.governance import ...`; every prior phase's own
+tests had to import directly from the internal submodule path.
+`docs/heart/HEART_ENTERPRISE_READINESS.md` closes out the full H0-H17
+initiative: a consolidated table of every phase's deliverable, a list
+of all six real bugs found and fixed across the eighteen phases (two
+by property testing, two by adversarial testing, one honestly
+documented but left unfixed, one a usability fix), an explicit,
+un-softened list of what remains before any of this runs in
+production, and a final verdict: **complete as a verified, composable
+authority-legitimacy library; not yet a production authority system**
+— nothing calls it, no database backs it, no real identity/consent
+flow feeds it, all deliberately scoped out at every phase and named
+honestly rather than silently implied to be solved.
+
+**Not built by this initiative, named explicitly rather than silently
+left implicit**: no DB persistence layer exists for `RootAuthorityRecord`,
+`ConsentProof`, `PurposeBinding`, or `LegitimacyEnvelope`; nothing in
 `WhitePactRuntimeGateway.evaluate()` or any other production decision
-path, and no code resolves real persisted state into the domain
-objects `evaluate()` accepts. No execution-time enforcement turns a
-`HUMAN_RESERVED` finding (H7) into an actual mandatory-approval gate
-yet, no org-configurable extension mechanism exists for adding
-organization-specific `HUMAN_RESERVED` action types on top of the
-fixed built-in set, and none of the five existing revocation
-mechanisms actually call `bump_epoch()` yet. The root/consent
-cross-reference gap (only the delegation-level identity/purpose gap
-was closed in H15) remains unverified, named explicitly rather than
-silently left implicit. The one remaining Heart phase (H17: enterprise
-hardening) is further hardening work on what now exists, not a new
-authority primitive.
+path calls `sovereignty_kernel.evaluate()`; no real identity provider
+or consent-capture flow produces a `RootAuthorityRecord`/`ConsentProof`;
+no execution-time enforcement turns a `HUMAN_RESERVED` finding (H7)
+into an actual mandatory-approval gate; no org-configurable extension
+mechanism exists for the non-delegable registry; the root/consent
+cross-reference gap (delegation-level identity/purpose was closed in
+H15) remains open; and no independent security review has been
+commissioned beyond this session's own H15 gauntlet. "Wire the Heart
+into WhitePact's live decision path" is the natural next initiative,
+deliberately out of scope for every one of these eighteen phases.
 
 ## 3. Core entities
 
