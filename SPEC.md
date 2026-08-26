@@ -127,7 +127,7 @@ wiring only ever applies to org-scoped Streamable HTTP/SSE calls).
 
 ---
 
-## 2.5 The WhitePact Heart (Sovereignty Kernel) **[TODAY, first version — Phases H0-H10]**
+## 2.5 The WhitePact Heart (Sovereignty Kernel) **[TODAY, first version — Phases H0-H11]**
 
 A new, deliberately small trusted-computing-base layer answering one
 question, and only one: *why does this machine have the legitimate
@@ -387,14 +387,31 @@ execution-time enforcement to act on). Deliberately never calls any of
 the seven H3-H9 functions itself, keeping zero runtime dependency on
 any of them (all seven imports are `TYPE_CHECKING`-only).
 
-**Not built yet**: the unified `SovereigntyVeto`, `LegitimacyEnvelope`,
-and the `SovereigntyKernel.evaluate()` entry point are all later,
-separate phases (H11-H13) — `AuthorityEnvelope`, `RootAuthorityRecord`,
+**[TODAY, Phase H11]**: `governance/heart_veto.py`'s
+`apply_heart_veto()`/`enforce_heart_veto()` — the executable form of
+constitutional law H12 ("Heart veto cannot be overridden"), and the
+first Heart module whose entire purpose is to have real teeth rather
+than only report a status. `apply_heart_veto()` derives a
+`HeartVetoRecord` from an already-computed `ConflictResolutionResult`
+(H10) — any `status` other than `LEGITIMATE` vetoes. `enforce_heart_veto()`
+is the sharp edge: it raises `HeartVetoError` for a `VETOED` record and
+is a no-op otherwise, with **no parameter of any kind** that could
+suppress, downgrade, or bypass a veto — verified structurally (its
+signature has exactly one parameter), not merely claimed in a
+docstring. A `VETOED` record can only become `NOT_VETOED` by re-running
+`apply_heart_veto()` against a genuinely different, freshly-legitimate
+`ConflictResolutionResult`. `human_reserved` (H7) passes through
+unchanged regardless of veto outcome — the binary allow/deny decision
+and the human-reserved signal are orthogonal.
+
+**Not built yet**: `LegitimacyEnvelope` and the
+`SovereigntyKernel.evaluate()` entry point are the two remaining
+phases (H12-H13) — `AuthorityEnvelope`, `RootAuthorityRecord`,
 `ConsentProof`, `PurposeBinding`, the delegation-legitimacy
 composition, the non-delegable registry, the lifetime-staleness check,
-the revocation-epoch primitive, and the conflict resolver exist and
-are tested, but nothing in the live decision path constructs or
-consults any of them yet; `WhitePactRuntimeGateway.evaluate()`
+the revocation-epoch primitive, the conflict resolver, and the veto
+itself exist and are tested, but nothing in the live decision path
+constructs or consults any of them yet; `WhitePactRuntimeGateway.evaluate()`
 continues to use `AuthorityContext`/`validate_attenuation()` exactly as
 before, unchanged in every way except the H2 gap fix. No DB
 persistence layer exists yet for `RootAuthorityRecord`, `ConsentProof`,
@@ -404,8 +421,10 @@ H2's lattice shipped pure objects without live wiring. No
 execution-time enforcement turns a `HUMAN_RESERVED` finding (H7) into
 an actual mandatory-approval gate yet, no org-configurable extension
 mechanism exists for adding organization-specific `HUMAN_RESERVED`
-action types on top of the fixed built-in set, and none of the five
-existing revocation mechanisms actually call `bump_epoch()` yet.
+action types on top of the fixed built-in set, none of the five
+existing revocation mechanisms actually call `bump_epoch()` yet, and
+nothing in the live decision path calls `enforce_heart_veto()` — the
+veto has no teeth in production until something does.
 
 ## 3. Core entities
 

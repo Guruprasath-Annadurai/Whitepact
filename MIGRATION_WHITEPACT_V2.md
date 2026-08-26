@@ -3086,3 +3086,103 @@ envelope, and the Heart API itself all remain unbuilt).
    consent result for an unrelated one; this module has no way to
    detect that without the schema changes H6 already deferred.
 **VERDICT: MOVE TO NEXT HEART PHASE** (H11 — Heart Veto).
+
+## 36. WhitePact Heart Phase H11 — Heart Veto (2026-08-26)
+
+- **The first Heart module whose whole purpose is to have real teeth**
+  (`governance/heart_veto.py`, new file) — every Heart phase before
+  this one (H1-H10) produced *data*: a validation result, a
+  comparison, a resolution. Nothing stopped anything from happening on
+  the basis of that data; a caller could compute a non-`LEGITIMATE`
+  `ConflictResolutionResult` (H10) and still proceed, since nothing
+  forced a decision. `apply_heart_veto()` turns that report into a
+  `HeartVetoRecord` (still data — any non-`LEGITIMATE` status vetoes,
+  a strict function of H10's own precedence, not a re-derivation of
+  it), and `enforce_heart_veto()` is the sharp edge: `HeartVetoError`
+  for a `VETOED` record, a no-op otherwise.
+- **H12 ("cannot be overridden") is enforced by the function's own
+  signature, not a comment promising it** — `enforce_heart_veto(record)`
+  takes exactly one parameter. No `force=True`, no `override_authority`,
+  no bypass reason, no exception subclass this module provides that a
+  caller could catch and silently continue past. Verified structurally
+  (`test_enforce_has_no_override_parameters` inspects the actual
+  function signature via `inspect.signature()`), not just asserted in
+  a docstring. A `VETOED` record can only become `NOT_VETOED` by
+  re-running `apply_heart_veto()` against a genuinely different,
+  freshly-legitimate `ConflictResolutionResult` -- never by acting on
+  the same one twice with different arguments, because there are no
+  other arguments to vary.
+- **The veto's only real decision was already made in H10** --
+  `apply_heart_veto()` does not re-derive which of the (up to) seven
+  independent Heart checks matters most; it trusts H10's own
+  deterministic precedence completely. This keeps the veto itself
+  trivially simple (a one-line conditional) and therefore trivially
+  auditable -- the interesting judgment call already happened, and
+  happened once, in H10.
+- **`human_reserved` (H7) passes through unchanged, orthogonal to the
+  veto decision** -- a vetoed record and a not-vetoed record can each
+  independently carry `human_reserved=True`, property-verified across
+  every `ConflictResolutionStatus` and both boolean values.
+- **TCB-minimization, continued** -- `ConflictResolutionResult` (H10)
+  is imported only under `TYPE_CHECKING`; this module never calls
+  `resolve_authority_conflicts()` itself.
+- **Verification**: 17 new tests in `tests/test_heart_veto.py` --
+  legitimate-is-not-vetoed (with no leaked reason/detail), every
+  non-`LEGITIMATE` status individually parametrized and confirmed
+  vetoed with its reason/detail preserved, `human_reserved`
+  preservation on both outcomes, `enforce_heart_veto()`'s raise/no-op
+  behavior including the exact exception message content, the
+  structural no-override-parameter check, plus 3 Hypothesis property
+  tests: vetoed if and only if not legitimate, for every generated
+  status; `human_reserved` always preserved regardless of status or
+  its own boolean value; `enforce_heart_veto()` raises exactly when
+  `is_vetoed` is true, for every generated status. `heart_veto.py` at
+  100% branch coverage. `mypy`/`ruff check`/`ruff format --check`
+  clean on both new files.
+- **Not built in this phase**: any wiring that calls
+  `enforce_heart_veto()` from `WhitePactRuntimeGateway.evaluate()` or
+  any other live decision path. This phase ships the veto's data shape
+  and enforcement primitive only -- the veto has no teeth in
+  production until something in the live path actually calls
+  `enforce_heart_veto()`; this phase makes sure that when something
+  does, there is no way to build an override into that call.
+
+**HEART INVARIANTS: PASS** (a record is vetoed if and only if its
+source `ConflictResolutionResult` was not legitimate, and
+`enforce_heart_veto()` raises exactly when a record is vetoed -- both
+property-verified across every possible `ConflictResolutionStatus`,
+not just hand-picked examples).
+**SECURITY: PASS** (`enforce_heart_veto()`'s signature contains no
+override mechanism, verified by inspecting the actual function object
+rather than trusting the docstring -- the strongest form of assurance
+this session's testing discipline can currently offer for "cannot be
+overridden" without a full formal-verification pass, which remains
+Phase H14's separate, later scope).
+**ENTERPRISE READINESS: 8/10** (H11 of 17 -- the veto mechanism now
+exists, is tested, and has a real, structurally-enforced no-override
+guarantee, the highest-confidence security property any Heart phase
+has shipped so far; the score moves up from H6-H10's steady 7/10
+specifically because this phase, unlike most of its predecessors, adds
+an artifact with actual behavioral teeth rather than only a reporting
+function -- though it still isn't wired into any live decision path,
+so it doesn't yet change production behavior; the legitimacy envelope
+and the Heart API itself remain unbuilt).
+**REMAINING RISKS**:
+1. `enforce_heart_veto()` is not called from anywhere in the live
+   decision path yet -- H11 alone changes no runtime behavior. The
+   veto exists and cannot structurally be overridden once invoked, but
+   nothing invokes it in production.
+2. This phase verifies "no override parameter exists in this
+   function's signature" -- a real, meaningful, but narrower guarantee
+   than "no code path anywhere in the codebase can suppress a Heart
+   veto once wired in." A future integration point (e.g. a
+   try/except HeartVetoError that swallows the exception and proceeds
+   anyway) could still defeat the intent at the call site, even though
+   this module itself offers no sanctioned way to do so. Phase H14's
+   formal verification work is the natural place to reason about that
+   broader guarantee.
+3. Like H10, this module trusts that the `ConflictResolutionResult` it
+   receives actually corresponds to the request being decided --  it
+   inherits, rather than independently re-verifies, whatever
+   cross-reference gap already exists in what produced that result.
+**VERDICT: MOVE TO NEXT HEART PHASE** (H12 — Legitimacy Envelope).
