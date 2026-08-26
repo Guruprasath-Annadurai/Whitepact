@@ -3186,3 +3186,92 @@ and the Heart API itself remain unbuilt).
    inherits, rather than independently re-verifies, whatever
    cross-reference gap already exists in what produced that result.
 **VERDICT: MOVE TO NEXT HEART PHASE** (H12 — Legitimacy Envelope).
+
+## 37. WhitePact Heart Phase H12 — Legitimacy Envelope (2026-08-26)
+
+- **The natural last stop before the Heart's own entry point**
+  (`governance/legitimacy_envelope.py`, new file) — Phases H3-H11 each
+  answer one question and hand a caller a result object to reason
+  about further, but none of them is, by itself, "the thing you'd hand
+  to an auditor, log alongside a decision, or attach to an
+  `ExecutionAuthorization`." A `HeartVetoRecord` (H11) is the final,
+  most-severe verdict, but has no identity of its own -- nothing
+  distinguishes one from a structurally identical one computed for a
+  different identity five minutes later. `LegitimacyEnvelope` gives
+  that verdict exactly the identity, timestamp, and `canonical_digest`
+  every other Heart record type (H1's `AuthorityConstitutionVersion`,
+  H3's `RootAuthorityRecord`, H4's `ConsentProof`, H5's
+  `PurposeBinding`) already has, nothing more.
+- **Wraps the final verdict, not the seven upstream results** --
+  `LegitimacyEnvelope.heart_veto` embeds exactly one thing, the
+  already-final `HeartVetoRecord`, rather than the individual
+  `RootValidationResult`/`ConsentValidationResult`/etc. it was derived
+  from. This is deliberate: the `HeartVetoRecord` already *is* H10's
+  precedence-resolved answer, so re-embedding the seven inputs would
+  duplicate information the veto already summarizes, not add anything
+  a reader of the envelope actually needs.
+- **`explain()` reuses the established deterministic-explanation
+  pattern** -- `governance/constitution.py`'s `explain_constitution()`
+  and `db/delegation_repository.py`'s `explain_authority()` both
+  return a plain, structured dict, never an LLM call; `explain()`
+  follows the identical convention rather than inventing a third shape
+  for "explain what this record means."
+- **TCB-minimization, continued** -- `HeartVetoRecord` (H11) is
+  imported only under `TYPE_CHECKING`; `build_legitimacy_envelope()`
+  takes an already-computed one as a parameter rather than calling
+  `apply_heart_veto()` itself.
+- **Verification**: 13 new tests in `tests/test_legitimacy_envelope.py`
+  -- construction from both legitimate and vetoed verdicts, envelope
+  identity/context fields, distinct IDs and digests for repeated calls
+  with identical inputs, digest determinism and digest-changes-on-
+  status-difference, `to_dict()` round-tripping including the nested
+  `heart_veto` sub-dict, `explain()` for both outcomes plus its
+  identity-field inclusion, plus 3 Hypothesis property tests:
+  `is_legitimate` always matches the negation of the wrapped veto's
+  `is_vetoed` across every generated status/human_reserved/org/subject
+  combination; `explain()`'s `vetoed` field always matches the veto's
+  own `is_vetoed`; `human_reserved` always passes through to
+  `explain()` regardless of its boolean value. `legitimacy_envelope.py`
+  at 100% branch coverage. `mypy`/`ruff check`/`ruff format --check`
+  clean on both new files.
+- **Not built in this phase**: `SovereigntyKernel.evaluate()` itself
+  (Phase H13) -- the actual end-to-end wiring that would resolve all
+  seven H3-H9 checks for a real request, compose them via H10, apply
+  the H11 veto, and wrap the result in a `LegitimacyEnvelope` here.
+  Every Heart phase so far has deliberately deferred this kind of
+  live-request wiring, and this phase is no exception; no DB
+  persistence layer exists for `LegitimacyEnvelope` either.
+
+**HEART INVARIANTS: PASS** (an envelope's `is_legitimate` always
+matches the negation of its wrapped veto's `is_vetoed`, and every
+field `explain()`/`to_dict()` reports is a faithful, unmodified
+reflection of the wrapped `HeartVetoRecord` -- property-verified
+across every generated status and boolean combination).
+**SECURITY: PASS** (the envelope adds no new authority-widening
+surface -- it is a strict, read-only packaging of an already-computed
+verdict; nothing in this module can change what the underlying veto
+said).
+**ENTERPRISE READINESS: 8/10** (H12 of 17, unchanged from H11: this
+phase completes the full H3-H12 chain of individually-tested,
+individually-composable Heart primitives, but the chain as a whole
+still has no live caller -- the score reflects that every piece now
+exists and interoperates correctly, not that production behavior has
+changed; only the Heart's own entry point, H13, remains before this
+first-version Heart is minimally end-to-end wireable).
+**REMAINING RISKS**:
+1. No code anywhere yet actually produces a `LegitimacyEnvelope` from
+   a real request -- H12 alone changes no runtime behavior. Phase H13
+   is the natural (and now final-before-verification-phases) place
+   this gets wired together for the first time.
+2. No persistence layer exists for `LegitimacyEnvelope`, mirroring the
+   same gap already named for `RootAuthorityRecord` (H3), `ConsentProof`
+   (H4), and `PurposeBinding` (H5) -- all four will likely need
+   repositories once something in the live path needs to look any of
+   them up after issuance rather than only at issuance time.
+3. Like every phase since H10, this module trusts that the
+   `HeartVetoRecord` it receives actually pertains to the identity
+   named in `subject_identity_id` -- it has no way to verify that
+   correspondence itself, the same class of cross-reference gap H6
+   first documented and every subsequent composing phase has
+   inherited rather than independently solved.
+**VERDICT: MOVE TO NEXT HEART PHASE** (H13 — Sovereignty Kernel Entry Point).

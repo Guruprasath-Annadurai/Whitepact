@@ -127,7 +127,7 @@ wiring only ever applies to org-scoped Streamable HTTP/SSE calls).
 
 ---
 
-## 2.5 The WhitePact Heart (Sovereignty Kernel) **[TODAY, first version — Phases H0-H11]**
+## 2.5 The WhitePact Heart (Sovereignty Kernel) **[TODAY, first version — Phases H0-H12]**
 
 A new, deliberately small trusted-computing-base layer answering one
 question, and only one: *why does this machine have the legitimate
@@ -404,27 +404,44 @@ docstring. A `VETOED` record can only become `NOT_VETOED` by re-running
 unchanged regardless of veto outcome — the binary allow/deny decision
 and the human-reserved signal are orthogonal.
 
-**Not built yet**: `LegitimacyEnvelope` and the
-`SovereigntyKernel.evaluate()` entry point are the two remaining
-phases (H12-H13) — `AuthorityEnvelope`, `RootAuthorityRecord`,
+**[TODAY, Phase H12]**: `governance/legitimacy_envelope.py`'s
+`LegitimacyEnvelope`/`build_legitimacy_envelope()` — the single,
+portable, digestible artifact that packages the Heart's final verdict
+(H11's `HeartVetoRecord`) about one identity's authority, at one point
+in time, into an exportable object with an identity (`envelope_id`),
+context (`organization_id`/`subject_identity_id`), a timestamp
+(`issued_at`), and a `canonical_digest` — the same shape every other
+Heart record type (H1, H3, H4, H5) already has. Does not re-derive the
+veto or embed the seven individual upstream H3-H9 results; wraps
+exactly the already-final `HeartVetoRecord`, since that record already
+*is* H10's precedence-resolved answer. `explain()` mirrors the
+established deterministic-explanation pattern
+(`governance/constitution.py`'s `explain_constitution()`,
+`db/delegation_repository.py`'s `explain_authority()`) — a plain,
+structured dict, never an LLM call.
+
+**Not built yet**: the `SovereigntyKernel.evaluate()` entry point is
+the one remaining phase (H13) — `AuthorityEnvelope`, `RootAuthorityRecord`,
 `ConsentProof`, `PurposeBinding`, the delegation-legitimacy
 composition, the non-delegable registry, the lifetime-staleness check,
-the revocation-epoch primitive, the conflict resolver, and the veto
-itself exist and are tested, but nothing in the live decision path
-constructs or consults any of them yet; `WhitePactRuntimeGateway.evaluate()`
-continues to use `AuthorityContext`/`validate_attenuation()` exactly as
-before, unchanged in every way except the H2 gap fix. No DB
-persistence layer exists yet for `RootAuthorityRecord`, `ConsentProof`,
-or `PurposeBinding` either — these phases ship the record types and
-their validation semantics only, mirroring how H1's constitution and
-H2's lattice shipped pure objects without live wiring. No
+the revocation-epoch primitive, the conflict resolver, the veto, and
+now the legitimacy envelope itself all exist and are tested, but
+nothing in the live decision path constructs or consults any of them
+yet; `WhitePactRuntimeGateway.evaluate()` continues to use
+`AuthorityContext`/`validate_attenuation()` exactly as before,
+unchanged in every way except the H2 gap fix. No DB persistence layer
+exists yet for `RootAuthorityRecord`, `ConsentProof`, `PurposeBinding`,
+or `LegitimacyEnvelope` either — these phases ship the record types
+and their validation semantics only, mirroring how H1's constitution
+and H2's lattice shipped pure objects without live wiring. No
 execution-time enforcement turns a `HUMAN_RESERVED` finding (H7) into
 an actual mandatory-approval gate yet, no org-configurable extension
 mechanism exists for adding organization-specific `HUMAN_RESERVED`
 action types on top of the fixed built-in set, none of the five
 existing revocation mechanisms actually call `bump_epoch()` yet, and
-nothing in the live decision path calls `enforce_heart_veto()` — the
-veto has no teeth in production until something does.
+nothing in the live decision path calls `enforce_heart_veto()` or
+constructs a `LegitimacyEnvelope` — the whole chain has no teeth in
+production until `SovereigntyKernel.evaluate()` (H13) wires it in.
 
 ## 3. Core entities
 
