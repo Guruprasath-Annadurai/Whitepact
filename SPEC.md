@@ -127,7 +127,7 @@ wiring only ever applies to org-scoped Streamable HTTP/SSE calls).
 
 ---
 
-## 2.5 The WhitePact Heart (Sovereignty Kernel) **[TODAY, first version — Phases H0-H13]**
+## 2.5 The WhitePact Heart (Sovereignty Kernel) **[TODAY, first version — Phases H0-H14]**
 
 A new, deliberately small trusted-computing-base layer answering one
 question, and only one: *why does this machine have the legitimate
@@ -440,6 +440,27 @@ root-chain walking, an abstract `RootResolver` callable) rather than
 looking anything up, exactly like every prior phase's own "not built
 here."
 
+**[TODAY, Phase H14]**: `docs/heart/HEART_INVARIANTS.md` — an honest
+ledger of every invariant claimed by Phases H1-H13, each paired with
+the specific test that verifies it, and every claim without a test
+marked `UNVERIFIED` rather than silently omitted. Explicitly **not**
+formal verification in the TLA+/Coq/model-checker sense — every
+property is checked against Hypothesis-generated inputs across a large
+sampled space, not proven for all possible inputs. `tests/test_heart_formal_properties.py`
+adds cross-cutting property tests spanning the full H3-H13 chain that
+no single phase's own tests could exercise: `evaluate()`'s (H13)
+result is always consistent with manually composing
+`resolve_authority_conflicts()` (H10) + `apply_heart_veto()` (H11)
+from the same underlying results; denial is monotonic (adding any
+single blocking condition to an otherwise-legitimate chain always
+flips the result, never masked by legitimate inputs present
+alongside it); every canonical-digest function across the Heart
+(root, consent, purpose binding, legitimacy envelope, constitution)
+is sensitive to every one of its own fields, individually verified;
+and `is_legitimate` is a pure function of the supplied verdicts,
+independent of the non-deterministic identity fields every issued
+record carries.
+
 **Not built yet**: no DB persistence layer exists yet for
 `RootAuthorityRecord`, `ConsentProof`, `PurposeBinding`, or
 `LegitimacyEnvelope` — this Heart, even now end-to-end wireable for a
@@ -452,9 +473,9 @@ yet, no org-configurable extension mechanism exists for adding
 organization-specific `HUMAN_RESERVED` action types on top of the
 fixed built-in set, and none of the five existing revocation
 mechanisms actually call `bump_epoch()` yet. The remaining Heart
-phases (H14-H17: formal/property assurance, the adversarial gauntlet,
-performance, and enterprise hardening) are verification and hardening
-work on what now exists, not new authority primitives.
+phases (H15-H17: the adversarial gauntlet, performance, and enterprise
+hardening) are further verification and hardening work on what now
+exists, not new authority primitives.
 
 ## 3. Core entities
 
