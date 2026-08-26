@@ -187,6 +187,22 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
   itself ends up correctly revoked) and one confirmed protection (a
   `grant()` racing its parent's `revoke_branch()` is correctly
   rejected, not allowed to orphan an active child).
+- WhitePact Heart Phase H10 — Authority Conflict Resolver (2026-08-26)
+  (`governance/authority_conflict_resolver.py`, new file) —
+  `resolve_authority_conflicts()`, the single point that decides, when
+  several of the independent Phase H3-H9 legitimacy checks are
+  available for the same authority decision and they disagree, which
+  verdict wins. Fixed precedence, most severe first: `NON_DELEGABLE`
+  (H7) → `REVOKED` (H9) → `ROOT_NOT_LEGITIMATE` (H3) →
+  `CONSENT_NOT_LEGITIMATE` (H4) → `PURPOSE_NOT_BOUND` (H5) →
+  `DELEGATION_NOT_LEGITIMATE` (H6) → `STALE` (H8) → `LEGITIMATE`. Every
+  input is optional — `None` means "not evaluated," never "failed."
+  `human_reserved` is a separate, non-blocking signal surfaced
+  alongside the overall status. Deliberately never calls any of the
+  seven H3-H9 functions itself, keeping zero runtime dependency on any
+  of them. 18 new tests (`tests/test_authority_conflict_resolver.py`,
+  including 2 Hypothesis property tests), 100% branch coverage. Not
+  yet wired into any live decision path with real inputs.
 - Tool Trust Network (Authority Everywhere Phase 8) —
   `governance/tool_trust.py`: a deterministic 0-100 trust score per
   org-registered upstream MCP server, derived from the existing

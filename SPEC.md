@@ -127,7 +127,7 @@ wiring only ever applies to org-scoped Streamable HTTP/SSE calls).
 
 ---
 
-## 2.5 The WhitePact Heart (Sovereignty Kernel) **[TODAY, first version — Phases H0-H9]**
+## 2.5 The WhitePact Heart (Sovereignty Kernel) **[TODAY, first version — Phases H0-H10]**
 
 A new, deliberately small trusted-computing-base layer answering one
 question, and only one: *why does this machine have the legitimate
@@ -365,25 +365,47 @@ confirmed protection (a `grant()` racing a `revoke_branch()` of its
 parent is correctly rejected with `DelegationEscalationError`, not
 silently allowed to create an orphaned active child).
 
+**[TODAY, Phase H10]**: `governance/authority_conflict_resolver.py`'s
+`resolve_authority_conflicts()` — the single point that decides, when
+several of the independent Phase H3-H9 legitimacy checks are available
+for the same authority decision and they disagree, which verdict wins
+and in what deterministic order, rather than depending on which check
+a caller happened to run or read first. Fixed precedence, most
+severe/foundational first: `NON_DELEGABLE` (H7) → `REVOKED` (H9,
+`REVOKED_SINCE_ISSUANCE` or `SCOPE_MISMATCH` both fail closed) →
+`ROOT_NOT_LEGITIMATE` (H3) → `CONSENT_NOT_LEGITIMATE` (H4) →
+`PURPOSE_NOT_BOUND` (H5) → `DELEGATION_NOT_LEGITIMATE` (H6) → `STALE`
+(H8, checked last among blocking reasons — "cannot currently confirm"
+is less informative than a confirmed illegitimacy) → `LEGITIMATE`.
+Every one of the seven inputs is optional; `None` means "not
+evaluated," never "failed," so a caller that only computed a subset of
+the Heart's checks for a given request isn't penalized for what it
+didn't compute. `human_reserved` is a separate, non-blocking boolean
+signal (H7's `HUMAN_RESERVED` scope doesn't itself deny — it may be
+delegated to *initiate* — but is still surfaced for a future
+execution-time enforcement to act on). Deliberately never calls any of
+the seven H3-H9 functions itself, keeping zero runtime dependency on
+any of them (all seven imports are `TYPE_CHECKING`-only).
+
 **Not built yet**: the unified `SovereigntyVeto`, `LegitimacyEnvelope`,
 and the `SovereigntyKernel.evaluate()` entry point are all later,
-separate phases (H10-H13) — `AuthorityEnvelope`, `RootAuthorityRecord`,
+separate phases (H11-H13) — `AuthorityEnvelope`, `RootAuthorityRecord`,
 `ConsentProof`, `PurposeBinding`, the delegation-legitimacy
 composition, the non-delegable registry, the lifetime-staleness check,
-and the revocation-epoch primitive exist and are tested, but nothing
-in the live decision path constructs or consults any of them yet;
-`WhitePactRuntimeGateway.evaluate()` continues to use
-`AuthorityContext`/`validate_attenuation()` exactly as before,
-unchanged in every way except the H2 gap fix. No DB persistence layer
-exists yet for `RootAuthorityRecord`, `ConsentProof`, or
-`PurposeBinding` either — these phases ship the record types and their
-validation semantics only, mirroring how H1's constitution and H2's
-lattice shipped pure objects without live wiring. No execution-time
-enforcement turns a `HUMAN_RESERVED` finding (H7) into an actual
-mandatory-approval gate yet, no org-configurable extension mechanism
-exists for adding organization-specific `HUMAN_RESERVED` action types
-on top of the fixed built-in set, and none of the five existing
-revocation mechanisms actually call `bump_epoch()` yet.
+the revocation-epoch primitive, and the conflict resolver exist and
+are tested, but nothing in the live decision path constructs or
+consults any of them yet; `WhitePactRuntimeGateway.evaluate()`
+continues to use `AuthorityContext`/`validate_attenuation()` exactly as
+before, unchanged in every way except the H2 gap fix. No DB
+persistence layer exists yet for `RootAuthorityRecord`, `ConsentProof`,
+or `PurposeBinding` either — these phases ship the record types and
+their validation semantics only, mirroring how H1's constitution and
+H2's lattice shipped pure objects without live wiring. No
+execution-time enforcement turns a `HUMAN_RESERVED` finding (H7) into
+an actual mandatory-approval gate yet, no org-configurable extension
+mechanism exists for adding organization-specific `HUMAN_RESERVED`
+action types on top of the fixed built-in set, and none of the five
+existing revocation mechanisms actually call `bump_epoch()` yet.
 
 ## 3. Core entities
 
