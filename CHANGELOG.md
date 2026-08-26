@@ -147,6 +147,26 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
   Deliberately standalone this phase — not yet called from H6's
   `validate_delegation_legitimacy()` or any live decision path, named
   explicitly as a remaining risk.
+- WhitePact Heart Phase H8 — Authority Lifetime (2026-08-26)
+  (`governance/authority_lifetime.py`, new file) — the executable form
+  of constitutional laws H13 ("historical authorization does not
+  imply current authorization") and H14 ("material authority mutation
+  requires reauthorization"). None of the four Phase H3-H6 verdict
+  types carry an evaluation timestamp, so nothing stops a caller from
+  treating a computed verdict as permanently true. `check_lifetime()`
+  answers two independent staleness questions: `STALE_BY_MUTATION`
+  (the underlying object's `canonical_digest` changed since
+  evaluation, checked first) and `STALE_BY_AGE` (older than a
+  `LifetimeWindow`, checked second) — generalizing the existing, live
+  "continuous re-authorization" pattern from one object type to all
+  four Heart verdict types. Named default windows (24h/24h/1h/5min for
+  root/consent/purpose/delegation) are suggestions, not enforced.
+  Deliberately never re-runs validation itself. 16 new tests
+  (`tests/test_authority_lifetime.py`, including 3 Hypothesis property
+  tests), 100% branch coverage. One real test-authoring bug caught by
+  the property test's own shrinker (float-rounding noise at an exact
+  boundary), not by inspection. Deliberately standalone — not yet
+  called from any H3-H6 function or live decision path.
 - Tool Trust Network (Authority Everywhere Phase 8) —
   `governance/tool_trust.py`: a deterministic 0-100 trust score per
   org-registered upstream MCP server, derived from the existing
