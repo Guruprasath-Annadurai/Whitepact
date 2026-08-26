@@ -314,6 +314,27 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
   bounds, matching H9's own established latency-test philosophy.
   Explicitly does not measure concurrent throughput, live-path (DB/
   network) latency, or memory usage.
+- WhitePact Heart Phase H17 — Enterprise Hardening (2026-08-26, FINAL
+  PHASE — completes the WhitePact Heart / Sovereignty Kernel
+  initiative, H0-H17) — found and fixed a real hardening gap: none of
+  the 13 Heart modules (H1-H13) were re-exported from
+  `governance/__init__.py`, inconsistent with every other governance
+  type in the package. Fixed by adding all 13 modules' public API to
+  `governance/__init__.py`'s imports and `__all__`, with
+  `sovereignty_kernel` exported as a module (matching the `sk.evaluate(...)`
+  convention this session's own test suites already used). Adds
+  `docs/heart/HEART_ENTERPRISE_READINESS.md`, the closing document for
+  the full initiative: a table of every phase's deliverable, a list of
+  all six real bugs found and fixed across H0-H17, an explicit list of
+  everything not done (no live wiring, no persistence layer, no real
+  identity/consent integration, no formal verification, the still-open
+  root/consent cross-reference gap), and a final verdict — complete as
+  a verified, composable authority-legitimacy library; not yet a
+  production authority system. 15 new tests in
+  `tests/test_governance_package_exports.py` confirming every Heart
+  symbol is reachable via package-level imports and a full Heart
+  decision works end-to-end without touching internal submodule
+  paths. No import cycle introduced.
 - Tool Trust Network (Authority Everywhere Phase 8) —
   `governance/tool_trust.py`: a deterministic 0-100 trust score per
   org-registered upstream MCP server, derived from the existing
