@@ -17,6 +17,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
+from responsibleai.governance.crypto.provider import WrappedKeyStore
 from responsibleai.governance.crypto.types import (
     DecryptionError,
     KeyId,
@@ -109,7 +110,7 @@ class LocalEnvelopeKeyProvider:
         self,
         root_key: bytes,
         environment: str,
-        store: InMemoryWrappedKeyStore | None = None,
+        store: WrappedKeyStore | None = None,
     ) -> None:
         if len(root_key) != _ROOT_KEY_SIZE_BYTES:
             raise ValueError(

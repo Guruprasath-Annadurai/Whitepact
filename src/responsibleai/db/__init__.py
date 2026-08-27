@@ -16,6 +16,7 @@ from responsibleai.db.authority_passport_repository import (
     AuthorityPassportRepository,
 )
 from responsibleai.db.credential_issuance_repository import CredentialIssuanceRepository
+from responsibleai.db.crypto_key_repository import CryptoKeyRepository
 from responsibleai.db.delegation_repository import (
     DelegationEscalationError,
     DelegationNotFoundError,
@@ -96,4 +97,5 @@ __all__ = [
     "DelegationNotFoundError",
     "DelegationRepository",
     "OrgAutonomyBudgetRepository",
+    "CryptoKeyRepository",
 ]

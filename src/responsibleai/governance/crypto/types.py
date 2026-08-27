@@ -135,6 +135,25 @@ class KeyRevokedError(CryptoError):
         super().__init__(f"Key {key_id.to_string()!r} is revoked and cannot be used")
 
 
+class KeyVersionConflictError(CryptoError):
+    """A `WrappedKeyStore.put()` was attempted for a `KeyId` that
+    already has a record. A correct `KeyProvider` never triggers this
+    under sequential use (it always computes the next version via
+    `get_max_version()` first) — this is the DB-backed store's own
+    concurrency-safety guarantee (a `UNIQUE`/primary-key constraint on
+    `key_id`) turning the race "two callers rotate the same
+    purpose/tenant/environment at once" into a hard, typed error
+    instead of one caller's write silently overwriting the other's
+    wrapped DEK."""
+
+    def __init__(self, key_id: KeyId) -> None:
+        self.key_id = key_id
+        super().__init__(
+            f"A key record already exists for {key_id.to_string()!r} — "
+            "concurrent rotation/generation race"
+        )
+
+
 class EnvelopeFormatError(CryptoError):
     """An encrypted envelope is structurally malformed — truncated,
     missing its KeyId prefix, or otherwise not well-formed — as

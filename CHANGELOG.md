@@ -10,6 +10,33 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ### Added
 
+- Enterprise Neural Phase 2 Step 2 — Persistent Key Store (2026-08-28)
+  (`db/crypto_key_repository.py`, migration `0030`) — `CryptoKeyRepository`,
+  a DB-backed `WrappedKeyStore` (`governance/crypto/provider.py`)
+  replacing Step 1's `InMemoryWrappedKeyStore` for real deployments.
+  `key_id` (the canonical `KeyId.to_string()` encoding) is the table's
+  primary key, so a concurrent write racing to generate the same
+  purpose/tenant/environment/version now hits a real database
+  uniqueness constraint and raises `KeyVersionConflictError` instead
+  of silently overwriting — closing the concurrency-safety residual
+  risk Step 1's report flagged. Fixed a real bug caught by `mypy`
+  before merge: `LocalEnvelopeKeyProvider`'s `store` constructor
+  parameter was over-narrowed to `InMemoryWrappedKeyStore | None`
+  instead of the `WrappedKeyStore` Protocol, which would have
+  rejected any conforming store (including this one) at the type level
+  — defeating the entire point of the abstraction Step 1 built.
+  15 new tests (repository CRUD/query contract, tenant/environment
+  isolation, and end-to-end `LocalEnvelopeKeyProvider` behavior wired
+  onto the DB-backed store, including persistence across separate
+  repository instances against the same DB — simulating a process
+  restart), 100% coverage on the new repository. Migration verified to
+  apply and reverse cleanly via a real `alembic upgrade head` /
+  `downgrade -1` / `upgrade head` cycle against a fresh SQLite DB, not
+  just via the test suite's `metadata.create_all()` path. Exported
+  from `db/__init__.py`. Nothing in the existing codebase writes to
+  this table yet — wiring `db/encryption.py`, `webhooks/manager.py`,
+  and `auth/saml.py` onto this provider is still a later Phase 2 step.
+
 - Enterprise Neural Phase 2 Step 1 — Cryptographic Foundation, Key
   Management package (2026-08-28) (`governance/crypto/`, new
   subpackage; see `docs/enterprise-neural/02_PHASE2_DESIGN.md` for the

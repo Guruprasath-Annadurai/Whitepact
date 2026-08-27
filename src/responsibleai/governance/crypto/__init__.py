@@ -8,12 +8,18 @@ keys come from" — every call site (`db/encryption.py`,
 `KeyProvider` Protocol here, never directly on a concrete provider, so
 a future `AWSKMSKeyProvider`/`VaultTransitKeyProvider` (documented, not
 built this phase — see the design doc Sec 3.8) can be substituted
-without touching business logic. This is Step 1 of the design doc's
-implementation sequencing (Sec 7): the package, the Protocol, one
-production-capable provider (`LocalEnvelopeKeyProvider`), and the
-envelope format. Wiring existing call sites onto it, and the
-`crypto_keys` migration for a persistent `WrappedKeyStore`, are later
-steps.
+without touching business logic. Step 1 of the design doc's
+implementation sequencing (Sec 7) shipped the package, the Protocol,
+one production-capable provider (`LocalEnvelopeKeyProvider`), and the
+envelope format. Step 2 adds the persistent `WrappedKeyStore`
+(`db/crypto_key_repository.py`, `CryptoKeyRepository`, migration
+`0030`) — this package itself doesn't import the DB layer (no
+circular dependency: `db/` already imports from `governance/`), so
+`CryptoKeyRepository` lives in `db/`, not here, structurally
+satisfying `WrappedKeyStore` without this package needing to know
+persistence exists. Wiring existing call sites
+(`db/encryption.py`, `webhooks/manager.py`, `auth/saml.py`) onto this
+provider is still a later step.
 """
 
 from __future__ import annotations
@@ -38,6 +44,7 @@ from responsibleai.governance.crypto.types import (
     KeyPurpose,
     KeyRevokedError,
     KeyStatus,
+    KeyVersionConflictError,
     WrappedKeyRecord,
 )
 
@@ -52,6 +59,7 @@ __all__ = [
     "KeyPurpose",
     "KeyRevokedError",
     "KeyStatus",
+    "KeyVersionConflictError",
     "LocalEnvelopeKeyProvider",
     "WrappedKeyRecord",
     "WrappedKeyStore",
