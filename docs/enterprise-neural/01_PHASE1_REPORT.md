@@ -1,19 +1,22 @@
 # Phase 1 — Secure SDLC + Software Supply Chain
 
-STATUS: **WAITING_FOR_FINAL_GATE** — not yet PASS. PR #50's required
-checks are not all green: `dependency-review` is failing because GitHub
-Dependency Graph is not enabled at the repository level (confirmed not a
-dependency vulnerability — a repo configuration prerequisite the
-workflow depends on). CI (`Lint · Type-check · Test`, 3.11/3.12) had not
-finished at last check. CodeQL's first real run is confirmed **clean**:
-zero CodeQL alerts (`gh api repos/.../code-scanning/alerts`) — every
-currently-open alert is a pre-existing Scorecard finding
-(`PinnedDependenciesID`, `TokenPermissionsID`, etc., all predating this
-PR, none from CodeQL). Per explicit instruction: the Dependency Review
-workflow itself is not being weakened, skipped, or marked
-continue-on-error to work around this — waiting on Dependency Graph to be
-enabled repo-side, then a rerun. This report will be updated to PASS only
-once every required check is genuinely green.
+STATUS: **PASS**, genuinely — not assumed. Sequence: `dependency-review`
+initially failed because GitHub Dependency Graph was not enabled at the
+repository level (confirmed not a dependency vulnerability — a repo
+config prerequisite). Left the workflow untouched (no skip, no
+continue-on-error) and waited for the repo owner to enable Dependency
+Graph in Settings → Security → Code security and analysis, then re-ran
+the specific failed run (`gh run rerun <id> --failed`) — it passed
+cleanly on rerun. All 12 checks on PR #50 are green:
+`Lint · Type-check · Test` (3.11, 3.12), `Build distribution`,
+`Helm chart lint`, `Accessibility (WCAG2AA)`, `i18n unit tests`,
+`dco-check`, `gitleaks`, `dependency-review`, `CodeQL`,
+`CodeQL analysis (python)`, `CodeQL analysis (javascript-typescript)`.
+CodeQL findings verified directly via the code-scanning alerts API
+(`gh api repos/.../code-scanning/alerts`), not inferred from a green
+check: **0 open CodeQL alerts**. All currently-open code-scanning alerts
+on the repo are pre-existing Scorecard findings (`PinnedDependenciesID`,
+`TokenPermissionsID`, etc.) unrelated to this PR.
 
 ## Objective
 
@@ -178,9 +181,31 @@ misconfiguration" — not yet true; deferred to a follow-up slice of Phase 1
 (Trivy or Grype against the built image, Checkov or `helm template` +
 `kube-score`/`kubesec` against the chart). Not implemented this pass to
 keep this phase's diff reviewable as one coherent change rather than
-bundling unrelated scanner additions.
+bundling unrelated scanner additions. Tracked as a residual risk, not
+blocking Phase 1 PASS — the gap existed before this phase and this phase
+did not claim to close it.
 
 "All required reviews are enforced" — not true; see Known Limitations.
+
+## Final gate evidence (PR #50)
+
+| Check | Result |
+|---|---|
+| Lint · Type-check · Test (3.11) | pass |
+| Lint · Type-check · Test (3.12) | pass |
+| Build distribution | pass |
+| Helm chart lint | pass |
+| Accessibility (WCAG2AA) | pass |
+| i18n unit tests | pass |
+| dco-check | pass |
+| gitleaks | pass |
+| dependency-review | pass (after Dependency Graph enabled + rerun) |
+| CodeQL (python) | pass, 0 open alerts |
+| CodeQL (javascript-typescript) | pass, 0 open alerts |
+
+PR #50 remains **unmerged** per explicit instruction — it is the
+cumulative Enterprise Neural review branch, held for the final
+independent Codex review, not merged phase-by-phase.
 
 ## Residual risks
 
