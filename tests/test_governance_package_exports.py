@@ -127,6 +127,22 @@ class TestHeartSymbolsAreExported:
         assert "sovereignty_kernel" in governance.__all__
         assert hasattr(governance.sovereignty_kernel, "evaluate")
 
+    def test_crypto_module_exported(self) -> None:
+        """Enterprise Neural Phase 2's key-management subpackage is
+        exported the same way `sovereignty_kernel` already is."""
+        assert hasattr(governance, "crypto")
+        assert "crypto" in governance.__all__
+        for name in (
+            "KeyId",
+            "KeyPurpose",
+            "KeyStatus",
+            "KeyProvider",
+            "LocalEnvelopeKeyProvider",
+            "encrypt_envelope",
+            "decrypt_envelope",
+        ):
+            assert hasattr(governance.crypto, name)
+
     def test_constitution_symbols_exported(self) -> None:
         for name in (
             "ConstitutionalLawCode",

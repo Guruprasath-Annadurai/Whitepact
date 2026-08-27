@@ -10,6 +10,35 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ### Added
 
+- Enterprise Neural Phase 2 Step 1 — Cryptographic Foundation, Key
+  Management package (2026-08-28) (`governance/crypto/`, new
+  subpackage; see `docs/enterprise-neural/02_PHASE2_DESIGN.md` for the
+  full design) — `KeyId`/`KeyPurpose`/`KeyStatus` key-hierarchy
+  vocabulary, the `KeyProvider` Protocol every future call site
+  (`db/encryption.py`, `webhooks/manager.py`, `auth/saml.py`) is meant
+  to depend on rather than a concrete provider, and the one
+  production-capable implementation this phase builds:
+  `LocalEnvelopeKeyProvider` — real envelope encryption (HKDF-derived
+  per-purpose/tenant KEK wraps random DEKs via AES-256-GCM), not a
+  fake KMS. Self-describing encrypted envelope format
+  (`governance/crypto/envelope.py`) binds its `KeyId` into the AEAD
+  authentication tag, so tampering with the embedded key identity
+  breaks decryption the same as tampering with ciphertext. Two real
+  bugs found and fixed during property testing before merge: a
+  `KeyId` string encoding where an actual tenant named `"-"` or
+  containing a NUL byte collided with reserved sentinels, and a
+  version-numbering bug where retiring or revoking a key outside of
+  `rotate()` could cause the next `get_encryption_key()`/`rotate()`
+  call to silently regenerate and overwrite an existing key version's
+  wrapped DEK. 47 new tests (2 Hypothesis property tests, explicit
+  misuse-test coverage for corrupted ciphertext, tampered AAD, wrong
+  tenant/purpose keys, revoked/retired-key distinction, malformed
+  envelopes, and no-secret-leakage-in-errors), 100% coverage on the
+  new package, exported from `governance/__init__.py` as `crypto`.
+  Wiring existing call sites onto this provider and the persistent
+  `crypto_keys`-table-backed `WrappedKeyStore` are later Phase 2 steps
+  — this step ships only the package, Protocol, and the in-memory
+  store (explicitly non-persistent, documented as dev/test-only).
 - Heart → WhitePact Production Integration, Phase 2 — Identity
   Adapter (2026-08-26) (`governance/identity_authority_adapter.py`)
   — the boundary between real, already-live authentication (static
