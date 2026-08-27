@@ -17,9 +17,13 @@ envelope format. Step 2 adds the persistent `WrappedKeyStore`
 circular dependency: `db/` already imports from `governance/`), so
 `CryptoKeyRepository` lives in `db/`, not here, structurally
 satisfying `WrappedKeyStore` without this package needing to know
-persistence exists. Wiring existing call sites
-(`db/encryption.py`, `webhooks/manager.py`, `auth/saml.py`) onto this
-provider is still a later step.
+persistence exists. Step 3 wired `db/encryption.py`'s field-level
+encryption onto this package. Step 4 adds `signing.py`'s canonical
+`sign()`/`verify()` and wires `auth/saml.py`'s session-token signing
+onto it — deliberately *not* `webhooks/manager.py`, see `signing.py`'s
+own module docstring for why a webhook's HMAC secret doesn't fit this
+package's rotation model the way a self-verified SAML session token
+does.
 """
 
 from __future__ import annotations
@@ -35,6 +39,7 @@ from responsibleai.governance.crypto.local_envelope import (
     LocalEnvelopeKeyProvider,
 )
 from responsibleai.governance.crypto.provider import KeyProvider, WrappedKeyStore
+from responsibleai.governance.crypto.signing import sign, verify
 from responsibleai.governance.crypto.types import (
     CryptoError,
     DecryptionError,
@@ -67,4 +72,6 @@ __all__ = [
     "decrypt_envelope",
     "encode_envelope",
     "encrypt_envelope",
+    "sign",
+    "verify",
 ]

@@ -10,6 +10,25 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ### Added
 
+- Enterprise Neural Phase 2 Step 4 — Canonical Signing + SAML Session
+  Key Rotation (2026-08-28) (`governance/crypto/signing.py`,
+  `auth/saml.py`) — `sign()`/`verify()`, an HMAC-SHA256 helper binding
+  `KeyId` into the signed material, and SAML session-token signing
+  (`mint_session_token`/`validate_session_token`) wired onto it via
+  `configure_session_signing_key()`, alongside the legacy
+  `SAMLConfig.session_secret` path. **Scope correction from the
+  original design doc**, found by reading `webhooks/manager.py`'s
+  actual secret-sharing model before implementing: the design doc's
+  Sec 3.11 treated webhook payload signing the same as SAML session
+  signing, but a webhook's HMAC secret is shared with an external
+  receiver (Slack, PagerDuty, a customer endpoint) — WhitePact
+  rotating it internally without the receiver rotating in lockstep
+  would silently break their signature verification. Webhook signing
+  is deliberately **not** wired onto this scheme; SAML session tokens
+  (signed and verified entirely within this codebase) are a correct
+  fit. 6 new tests, 100% coverage on the new module. Full suite: 2954
+  passed, 0 failed.
+
 - Enterprise Neural Phase 2 Step 3 — Field Encryption Dual-Scheme
   Wiring (2026-08-28) (`db/encryption.py`) — `EncryptedString` now
   supports the new `governance/crypto`-based envelope scheme
