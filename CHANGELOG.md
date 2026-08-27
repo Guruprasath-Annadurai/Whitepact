@@ -10,6 +10,21 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ### Added
 
+- Heart → WhitePact Production Integration, Phase 2 — Identity
+  Adapter (2026-08-26) (`governance/identity_authority_adapter.py`)
+  — the boundary between real, already-live authentication (static
+  API key, OIDC JWT, VC-JWT) and the Heart's own `RootAuthorityRecord`
+  vocabulary. Deliberately conservative, fail-safe mapping:
+  `IdentityContext.kind` `"human"`/`"api_key"` (org-admin-provisioned)
+  map to a terminal `RootType`; every other kind — including the
+  ambiguous `"oidc"` (no discriminator today between human-SSO and
+  machine client-credentials tokens) — maps to a non-terminal type
+  requiring a resolvable `authority_source` chain before
+  `validate_root_chain()` (H3) will ever report `VALID`. Producing a
+  record here proves nothing about legitimate authority by itself —
+  authentication is not authority, the separation this whole phase
+  exists to keep explicit. 19 new tests (4 Hypothesis property tests),
+  100% coverage, exported from `governance/__init__.py`.
 - Heart → WhitePact Production Integration, Phase 1 — Authority
   Contract (2026-08-26) (`docs/heart-production/`, new initiative,
   distinct from the completed Heart library initiative) — Phase 0

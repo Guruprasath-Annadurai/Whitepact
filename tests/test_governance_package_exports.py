@@ -163,6 +163,18 @@ class TestHeartSymbolsAreExported:
             assert hasattr(governance, name)
             assert name in governance.__all__
 
+    def test_identity_authority_adapter_symbols_exported(self) -> None:
+        """Production Integration Phase 2's identity->root-authority
+        adapter is exported the same way every Heart symbol already
+        is."""
+        for name in (
+            "identity_context_to_root_type",
+            "build_root_authority_record_from_identity",
+            "build_root_authority_record_from_principal_claim",
+        ):
+            assert hasattr(governance, name)
+            assert name in governance.__all__
+
 
 class TestEndToEndUsageViaPackageImport:
     """A caller using only `from responsibleai.governance import ...`
