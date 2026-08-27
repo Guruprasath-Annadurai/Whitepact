@@ -1,7 +1,19 @@
 # Phase 1 — Secure SDLC + Software Supply Chain
 
-STATUS: **PASS** (scoped to what changed this phase; see "Claims still
-unsupported" for what remains deliberately unaddressed and why)
+STATUS: **WAITING_FOR_FINAL_GATE** — not yet PASS. PR #50's required
+checks are not all green: `dependency-review` is failing because GitHub
+Dependency Graph is not enabled at the repository level (confirmed not a
+dependency vulnerability — a repo configuration prerequisite the
+workflow depends on). CI (`Lint · Type-check · Test`, 3.11/3.12) had not
+finished at last check. CodeQL's first real run is confirmed **clean**:
+zero CodeQL alerts (`gh api repos/.../code-scanning/alerts`) — every
+currently-open alert is a pre-existing Scorecard finding
+(`PinnedDependenciesID`, `TokenPermissionsID`, etc., all predating this
+PR, none from CodeQL). Per explicit instruction: the Dependency Review
+workflow itself is not being weakened, skipped, or marked
+continue-on-error to work around this — waiting on Dependency Graph to be
+enabled repo-side, then a rerun. This report will be updated to PASS only
+once every required check is genuinely green.
 
 ## Objective
 
@@ -155,7 +167,9 @@ This report; `PROGRESS_LEDGER.md` (to be updated alongside this report).
 ## Claims now supported by evidence
 
 "WhitePact runs both pattern-based (Bandit) and semantic/dataflow-aware
-(CodeQL) static analysis on every change to `main`."
+(CodeQL) static analysis on every change to `main`." — CodeQL's first run
+against PR #50 is confirmed clean (zero findings) via the code-scanning
+alerts API, not merely "the workflow executed."
 
 ## Claims still unsupported
 

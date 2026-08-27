@@ -7,7 +7,7 @@ without evidence (test output, file paths, commit SHA).
 | Phase | Name | Status | Commit | Test Result | Security Result | Residual Risk |
 |---|---|---|---|---|---|---|
 | 0 | Security Constitution + Current-State Audit | **PASS** (foundation track) | uncommitted | N/A (audit only, no code) | N/A | Neural/BCI track has zero existing code — treated as separate go/no-go, not yet started (see report §7) |
-| 1 | Secure SDLC + Software Supply Chain | **PASS** (scoped; container/IaC scan + review-count gap deferred, see report) | uncommitted | N/A (CI-only change) | CodeQL added, first run pending | Container/IaC scanning still absent; `required_approving_review_count: 0` accepted as founder-led-project reality, not fixed |
+| 1 | Secure SDLC + Software Supply Chain | **WAITING_FOR_FINAL_GATE** — `dependency-review` failing on Dependency Graph not enabled (repo config, not a vuln); CI/CodeQL pending or clean, see report | f6cacd8 (PR #50) | CI pending at last check | CodeQL: 0 findings (confirmed via code-scanning API). dependency-review: blocked on repo setting. | Container/IaC scanning still absent; `required_approving_review_count: 0` accepted as founder-led-project reality, not fixed |
 | 2 | Cryptographic Foundation + Key Management | NOT STARTED | — | — | — | — |
 | 3 | Zero-Trust Identity + Tenant Isolation | NOT STARTED (merges with `docs/heart-production/` Phase 3+) | — | — | — | — |
 | 4 | Neural Data Privacy Architecture | NOT STARTED — blocked on explicit go-ahead (net-new scope, see Phase 0 report §2, §7) | — | — | — | — |
