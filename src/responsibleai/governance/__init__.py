@@ -60,6 +60,10 @@ from responsibleai.governance.authority_lifetime import (
     LifetimeWindow,
     check_lifetime,
 )
+from responsibleai.governance.authority_resolver import (
+    AuthorityResolutionError,
+    AuthorityResolver,
+)
 from responsibleai.governance.autonomy_budget import (
     AutonomyBudgetPolicy,
     recent_autonomous_action_count,
@@ -95,9 +99,11 @@ from responsibleai.governance.evidence_bundle import (
     verify_evidence_bundle,
 )
 from responsibleai.governance.execution import (
+    AuthorityGrantMismatchError,
     AuthorizationActionMismatchError,
     AuthorizationAlreadyConsumedError,
     AuthorizationExpiredError,
+    AuthorizationHeartBindingError,
     AuthorizationOrganizationMismatchError,
     AuthorizationTargetDriftError,
     DecisionNotExecutableError,
@@ -192,12 +198,16 @@ __all__ = [
     "AuthorityContext",
     "AuthorityEnvelope",
     "AuthorityGrant",
+    "AuthorityResolutionError",
+    "AuthorityResolver",
     "AutonomyBudgetPolicy",
     "AuthorizationActionMismatchError",
     "AuthorizationAlreadyConsumedError",
     "AuthorizationExpiredError",
+    "AuthorizationHeartBindingError",
     "AuthorizationOrganizationMismatchError",
     "AuthorizationTargetDriftError",
+    "AuthorityGrantMismatchError",
     "BundleVerificationResult",
     "ConflictResolutionResult",
     "ConflictResolutionStatus",

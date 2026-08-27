@@ -33,17 +33,25 @@ def _now() -> str:
 
 
 def _compute_entry_hash(prev_hash: str | None, record: dict[str, Any]) -> str:
-    material = "|".join(
-        [
-            prev_hash or _GENESIS_HASH,
-            record["id"],
-            record["org_id"] or "",
-            record["action_id"],
-            record["decision"],
-            record["evaluated_at"],
-            record["recorded_at"],
-        ]
-    )
+    parts = [
+        prev_hash or _GENESIS_HASH,
+        record["id"],
+        record["org_id"] or "",
+        record["action_id"],
+        record["decision"],
+        record["evaluated_at"],
+        record["recorded_at"],
+    ]
+    # Preserve verification of evidence written before Heart integration;
+    # Heart-bound entries extend the material with both new digests.
+    if record.get("authority_grant_digest") or record.get("legitimacy_digest"):
+        parts.extend(
+            [
+                record.get("authority_grant_digest") or "",
+                record.get("legitimacy_digest") or "",
+            ]
+        )
+    material = "|".join(parts)
     return hashlib.sha256(material.encode()).hexdigest()
 
 
@@ -63,6 +71,8 @@ def _row_to_record(row: Any) -> EvidenceRecord:
         else [],
         risk_tier=row.risk_tier,
         policy_version=getattr(row, "policy_version", None),
+        authority_grant_digest=getattr(row, "authority_grant_digest", None),
+        legitimacy_digest=getattr(row, "legitimacy_digest", None),
         decision=row.decision,
         reason_codes=json.loads(row.reason_codes),
         framework=row.framework,
@@ -120,6 +130,8 @@ class EvidenceRepository:
                 "decision": evidence.decision,
                 "evaluated_at": evidence.evaluated_at.isoformat(),
                 "recorded_at": recorded_at,
+                "authority_grant_digest": evidence.authority_grant_digest,
+                "legitimacy_digest": evidence.legitimacy_digest,
             }
             entry_hash = _compute_entry_hash(prev_hash, hashable)
 
@@ -140,6 +152,8 @@ class EvidenceRepository:
                         else None,
                         risk_tier=evidence.risk_tier,
                         policy_version=evidence.policy_version,
+                        authority_grant_digest=evidence.authority_grant_digest,
+                        legitimacy_digest=evidence.legitimacy_digest,
                         decision=evidence.decision,
                         reason_codes=json.dumps(evidence.reason_codes),
                         framework=evidence.framework,
@@ -163,6 +177,18 @@ class EvidenceRepository:
             row = (
                 await conn.execute(
                     select(governance_evidence).where(governance_evidence.c.id == evidence_id)
+                )
+            ).fetchone()
+        return _row_to_record(row) if row else None
+
+    async def get_for_org(self, org_id: str, evidence_id: str) -> EvidenceRecord | None:
+        """Return evidence only when it belongs to *org_id*."""
+        async with self._engine.raw.connect() as conn:
+            row = (
+                await conn.execute(
+                    select(governance_evidence)
+                    .where(governance_evidence.c.id == evidence_id)
+                    .where(governance_evidence.c.org_id == org_id)
                 )
             ).fetchone()
         return _row_to_record(row) if row else None

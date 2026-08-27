@@ -85,7 +85,7 @@ class TestAnthropicProviderComplete:
         create = AsyncMock(return_value=_mock_response())
         with patch.object(provider._client.messages, "create", create):
             await provider.complete(CompletionRequest(prompt="Hello", temperature=0.5))
-        assert create.call_args.kwargs["temperature"] == 0.5
+        assert create.call_args.kwargs["extra_body"]["temperature"] == 0.5
 
     @pytest.mark.asyncio
     async def test_max_tokens_forwarded(self) -> None:

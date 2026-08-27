@@ -45,7 +45,7 @@ OpenAI's Plugins Directory submission is tracked separately in
 
 ## Shared facts (do not repeat per-platform)
 
-- **Endpoint**: `https://whitepact-mcp-http.onrender.com/mcp` (Streamable
+- **Endpoint template**: `https://YOUR_WHITEPACT_HOST/mcp` (Streamable
   HTTP, preferred). Legacy SSE at `.../sse` — still served today, but new
   integrations should use Streamable HTTP.
 - **Auth**: every remote connection uses a Bearer API key

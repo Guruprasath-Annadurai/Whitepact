@@ -23,8 +23,8 @@ repository as though it were Mistral's own process.
 ## Endpoint (if/when a real submission path is confirmed)
 
 ```
-Streamable HTTP: https://whitepact-mcp-http.onrender.com/mcp
-Legacy SSE:       https://whitepact-mcp-http.onrender.com/sse
+Streamable HTTP: https://YOUR_WHITEPACT_HOST/mcp
+Legacy SSE:       https://YOUR_WHITEPACT_HOST/sse
 ```
 
 ## Authentication

@@ -22,12 +22,21 @@ from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
 
 from responsibleai import __version__
-from responsibleai.dashboard.app import app
+from responsibleai.dashboard.app import app, settings
 from responsibleai.dashboard.config import Settings
 
 
 @pytest.fixture()
-async def client():
+async def client(monkeypatch: pytest.MonkeyPatch):
+    # The app/settings singleton may have been imported by an auth-enabled
+    # test module during collection.  Make this suite's documented no-auth
+    # mode explicit per test instead of relying on import-order-sensitive
+    # os.environ.setdefault calls above.
+    monkeypatch.setattr(settings, "auth_enabled", False)
+    monkeypatch.setattr(settings, "production_mode", False)
+    monkeypatch.setattr(settings, "db_path", ":memory:")
+    monkeypatch.setattr(settings, "database_url", None)
+    monkeypatch.setattr(settings, "auto_migrate", False)
     async with LifespanManager(app) as manager:
         async with AsyncClient(
             transport=ASGITransport(app=manager.app), base_url="http://test"
@@ -39,6 +48,28 @@ async def client():
 
 
 class TestHealth:
+    async def test_liveness_does_not_depend_on_database(self, client, monkeypatch):
+        import responsibleai.dashboard.app as app_module
+
+        async def _boom(*args, **kwargs):
+            raise RuntimeError("db unreachable")
+
+        monkeypatch.setattr(app_module._db_engine, "ping", _boom)
+        r = await client.get("/api/live")
+        assert r.status_code == 200
+        assert r.json()["status"] == "alive"
+
+    async def test_readiness_checks_database(self, client, monkeypatch):
+        import responsibleai.dashboard.app as app_module
+
+        async def _boom(*args, **kwargs):
+            raise RuntimeError("db unreachable")
+
+        monkeypatch.setattr(app_module._db_engine, "ping", _boom)
+        r = await client.get("/api/ready")
+        assert r.status_code == 503
+        assert r.json()["status"] == "degraded"
+
     async def test_health_ok(self, client):
         r = await client.get("/api/health")
         assert r.status_code == 200
@@ -62,7 +93,7 @@ class TestHealth:
         async def _boom(*args, **kwargs):
             raise RuntimeError("db unreachable")
 
-        monkeypatch.setattr(app_module._cost_repo, "request_count", _boom)
+        monkeypatch.setattr(app_module._db_engine, "ping", _boom)
         r = await client.get("/api/health")
         assert r.status_code == 503
         assert r.json()["status"] == "degraded"

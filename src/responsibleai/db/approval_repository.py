@@ -208,6 +208,22 @@ class ApprovalRepository:
             ).fetchone()
         return _row_to_request(row) if row else None
 
+    async def get_for_org(self, org_id: str, approval_id: str) -> ApprovalRequest | None:
+        """Return an approval only when it belongs to *org_id*.
+
+        Tenant-facing call paths must use this method instead of fetching a
+        globally unique ID and applying an in-memory ownership check.
+        """
+        async with self._engine.raw.connect() as conn:
+            row = (
+                await conn.execute(
+                    select(governance_approvals)
+                    .where(governance_approvals.c.id == approval_id)
+                    .where(governance_approvals.c.org_id == org_id)
+                )
+            ).fetchone()
+        return _row_to_request(row) if row else None
+
     async def list_pending(self, org_id: str | None, *, limit: int = 100) -> list[ApprovalRequest]:
         org_filter = (
             governance_approvals.c.org_id.is_(None)

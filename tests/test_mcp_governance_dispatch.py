@@ -85,6 +85,83 @@ async def governed_app_with_key(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.fixture()
+async def heart_governed_app(monkeypatch: pytest.MonkeyPatch):
+    """Real hosted MCP app with the persisted Heart path enabled."""
+    import responsibleai.db as db_module
+    from responsibleai.dashboard.config import get_settings
+    from responsibleai.db import (
+        AuthorityPassportRepository,
+        ConsentProofRepository,
+        IntentContractRepository,
+        OrgAuthorityCeilingRepository,
+        PurposeBindingRepository,
+        RootAuthorityRepository,
+    )
+    from responsibleai.governance import OrgAuthorityCeiling
+    from responsibleai.governance.authority_passport import (
+        build_authority_passport_from_ceiling,
+    )
+    from responsibleai.governance.consent_proof import (
+        ConsentMethod,
+        build_consent_proof,
+    )
+    from responsibleai.governance.intent import build_intent_contract
+    from responsibleai.governance.purpose_binding import build_purpose_binding
+    from responsibleai.governance.root_authority import (
+        RootType,
+        build_root_authority_record,
+    )
+    from responsibleai.mcp.server import _build_http_app
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "mcp_governance_enabled", True)
+    monkeypatch.setattr(settings, "heart_enforcement_enabled", True)
+
+    engine = create_engine(":memory:")
+    await engine.init()
+    monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
+    org_repo = OrgRepository(engine)
+    org = await org_repo.create_org("Heart Co", "heart-co", plan=Plan.ENTERPRISE)
+    key_rec, raw_key = await org_repo.create_key(org.id, "heart-key", role=Role.ANALYST)
+
+    root = build_root_authority_record(
+        key_rec.id,
+        RootType.ORGANIZATION,
+        "org-repository",
+        "api-key-hash",
+        organization_id=org.id,
+    )
+    consent = build_consent_proof(
+        key_rec.id,
+        root.root_id,
+        key_rec.id,
+        "Use approved governance tools",
+        "govern models",
+        ConsentMethod.API_AUTHENTICATED_REQUEST,
+    )
+    intent = build_intent_contract(
+        org.id,
+        key_rec.id,
+        "govern models",
+        allowed_action_types=["rai_health"],
+    )
+    binding = build_purpose_binding("govern models", intent.contract_id, consent.consent_id)
+    ceiling = OrgAuthorityCeiling(org_id=org.id, allowed_action_types=["rai_health"])
+    passport = build_authority_passport_from_ceiling(ceiling, key_rec.id)
+    await RootAuthorityRepository(engine).issue(org.id, root)
+    await ConsentProofRepository(engine).issue(org.id, consent)
+    await IntentContractRepository(engine).declare(intent)
+    await PurposeBindingRepository(engine).bind(org.id, key_rec.id, binding)
+    await OrgAuthorityCeilingRepository(engine).set(ceiling)
+    await AuthorityPassportRepository(engine).issue(passport)
+
+    app = _build_http_app()
+    async with LifespanManager(app) as manager:
+        yield manager.app, raw_key, org.id, engine, consent
+    await engine.close()
+
+
+@pytest.fixture()
 async def ungoverned_app(monkeypatch: pytest.MonkeyPatch):
     """Same setup, but mcp_governance_enabled left at its False default
     — proves the feature genuinely changes nothing when off."""
@@ -155,6 +232,30 @@ class TestAllowPassesThrough:
         await _call(app, raw_key, "rai_health", {})
         records = await EvidenceRepository(engine).list_for_org(org_id, decision="ALLOW")
         assert any(r.action_type == "rai_health" for r in records)
+
+
+class TestHeartProductionDispatch:
+    async def test_legitimate_persisted_authority_executes(self, heart_governed_app) -> None:
+        app, raw_key, org_id, engine, _consent = heart_governed_app
+        result = await _call(app, raw_key, "rai_health", {})
+        payload = json.loads(result.content[0].text)
+        assert payload.get("error") is None
+        records = await EvidenceRepository(engine).list_for_org(org_id, decision="ALLOW")
+        record = next(record for record in records if record.action_type == "rai_health")
+        assert record.authority_grant_digest
+        assert record.legitimacy_digest
+
+    async def test_revoked_consent_blocks_before_execution(self, heart_governed_app) -> None:
+        from responsibleai.db import ConsentProofRepository
+
+        app, raw_key, org_id, engine, consent = heart_governed_app
+        await ConsentProofRepository(engine).revoke(
+            org_id, consent.consent_id, revoked_by="admin-1"
+        )
+        result = await _call(app, raw_key, "rai_health", {})
+        payload = json.loads(result.content[0].text)
+        assert payload["error"] == "governance_denied"
+        assert any("HEART_VETO" in reason for reason in payload["reason_codes"])
 
 
 class TestPiiRedactionBeforeDispatch:

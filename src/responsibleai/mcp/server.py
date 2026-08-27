@@ -70,6 +70,8 @@ import json
 import logging
 import os
 import sys
+import time
+import uuid
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -94,7 +96,9 @@ if TYPE_CHECKING:
     from responsibleai.mcp.governance_integration import GovernanceServices
     from responsibleai.webhooks.manager import WebhookManager
 
-_log_level = os.environ.get("RAI_MCP_LOG_LEVEL", "WARNING").upper()
+_log_level = os.environ.get(
+    "WHITEPACT_MCP_LOG_LEVEL", os.environ.get("RAI_MCP_LOG_LEVEL", "WARNING")
+).upper()
 logging.basicConfig(level=getattr(logging, _log_level, logging.WARNING))
 _logger = logging.getLogger("responsibleai.mcp")
 
@@ -267,7 +271,7 @@ async def _run_stdio() -> None:
 
 def main() -> None:
     """CLI entry point: whitepact-mcp / responsibleai-mcp (stdio, self-hosted)."""
-    _logger.info("starting %s v1.2.0 (stdio)", server.name)
+    _logger.info("starting %s v%s (stdio)", server.name, __version__)
     _log_invocation_name("stdio server")
     asyncio.run(_run_stdio())
 
@@ -277,6 +281,18 @@ def main() -> None:
 
 def _split_csv(raw: str) -> list[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def _env_value(preferred: str, legacy: str, default: str | None = None) -> str | None:
+    """Read a renamed setting with deterministic precedence.
+
+    ``WHITEPACT_*`` is the public namespace.  ``RAI_*`` remains supported
+    for existing deployments, but can never override an explicitly set
+    preferred value.
+    """
+    if preferred in os.environ:
+        return os.environ[preferred]
+    return os.environ.get(legacy, default)
 
 
 def _env_bool(name: str, *, default: bool) -> bool:
@@ -298,11 +314,20 @@ def _build_transport_security() -> Any:
     """
     from mcp.server.transport_security import TransportSecuritySettings
 
-    allowed_hosts = _split_csv(os.environ.get("RAI_MCP_HTTP_ALLOWED_HOSTS", ""))
-    allowed_origins = _split_csv(os.environ.get("RAI_MCP_HTTP_ALLOWED_ORIGINS", ""))
-    enabled = _env_bool(
+    allowed_hosts = _split_csv(
+        _env_value("WHITEPACT_MCP_HTTP_ALLOWED_HOSTS", "RAI_MCP_HTTP_ALLOWED_HOSTS", "") or ""
+    )
+    allowed_origins = _split_csv(
+        _env_value("WHITEPACT_MCP_HTTP_ALLOWED_ORIGINS", "RAI_MCP_HTTP_ALLOWED_ORIGINS", "") or ""
+    )
+    enabled_raw = _env_value(
+        "WHITEPACT_MCP_HTTP_DNS_REBINDING_PROTECTION",
         "RAI_MCP_HTTP_DNS_REBINDING_PROTECTION",
-        default=bool(allowed_hosts or allowed_origins),
+    )
+    enabled = (
+        bool(allowed_hosts or allowed_origins)
+        if enabled_raw is None
+        else enabled_raw.strip().lower() in ("1", "true", "yes", "on")
     )
     return TransportSecuritySettings(
         enable_dns_rebinding_protection=enabled,
@@ -312,7 +337,7 @@ def _build_transport_security() -> Any:
 
 
 class _AuthFailureLimiter:
-    """Per-process sliding-window limiter on failed Bearer-auth attempts,
+    """Sliding-window limiter on failed Bearer-auth attempts,
     keyed by client IP — blocks credential-stuffing/brute-force probing of
     `/mcp` and `/sse` before it reaches `OrgRepository.authenticate`'s
     database round trip. Deliberately separate from `PlanRateLimiter`
@@ -320,19 +345,29 @@ class _AuthFailureLimiter:
     authenticated tool calls against a billing plan; this one guards the
     auth boundary itself and has no concept of an org or plan yet.
 
-    In-memory, so this is per-replica, not cluster-wide — same documented
-    limitation as everything else in this codebase that isn't backed by
-    Postgres/Redis (see `DatabaseEngine`'s docstring). A determined
-    attacker distributing requests across replicas isn't stopped by this
-    alone; it's a real speed bump against the common single-source case,
-    not a claim of distributed rate limiting.
+    Redis is used when configured, making the budget cluster-wide across
+    MCP replicas. Development can still use the in-memory fallback.
     """
 
-    def __init__(self, max_failures: int, window_seconds: float) -> None:
+    def __init__(
+        self, max_failures: int, window_seconds: float, redis_url: str | None = None
+    ) -> None:
         self._max_failures = max_failures
         self._window_seconds = window_seconds
         self._failures: dict[str, list[float]] = {}
         self._lock = asyncio.Lock()
+        self._redis_url = redis_url
+        self._redis: Any = None
+
+    async def _get_redis(self) -> Any:
+        if self._redis is None:
+            import redis.asyncio as redis_asyncio
+
+            self._redis = redis_asyncio.from_url(self._redis_url)
+        return self._redis
+
+    def _redis_key(self, key: str) -> str:
+        return f"whitepact:mcp:auth-failures:{key}"
 
     def _prune(self, key: str, now: float) -> list[float]:
         attempts = [t for t in self._failures.get(key, []) if now - t < self._window_seconds]
@@ -340,14 +375,42 @@ class _AuthFailureLimiter:
         return attempts
 
     async def is_blocked(self, key: str) -> bool:
+        if self._redis_url:
+            now = time.time()
+            client = await self._get_redis()
+            redis_key = self._redis_key(key)
+            async with client.pipeline(transaction=True) as pipe:
+                pipe.zremrangebyscore(redis_key, "-inf", now - self._window_seconds)
+                pipe.zcard(redis_key)
+                _removed, count = await pipe.execute()
+            return int(count) >= self._max_failures
         async with self._lock:
             now = asyncio.get_running_loop().time()
             return len(self._prune(key, now)) >= self._max_failures
 
     async def record_failure(self, key: str) -> None:
+        if self._redis_url:
+            now = time.time()
+            client = await self._get_redis()
+            redis_key = self._redis_key(key)
+            async with client.pipeline(transaction=True) as pipe:
+                pipe.zremrangebyscore(redis_key, "-inf", now - self._window_seconds)
+                pipe.zadd(redis_key, {f"{now}:{uuid.uuid4()}": now})
+                pipe.expire(redis_key, max(1, int(self._window_seconds) + 1))
+                await pipe.execute()
+            return
         async with self._lock:
             now = asyncio.get_running_loop().time()
             self._prune(key, now).append(now)
+
+    async def ping(self) -> None:
+        if self._redis_url:
+            client = await self._get_redis()
+            await client.ping()
+
+    async def close(self) -> None:
+        if self._redis is not None:
+            await self._redis.aclose()
 
 
 def _build_http_app() -> Any:
@@ -369,18 +432,22 @@ def _build_http_app() -> Any:
     from starlette.routing import Mount, Route
     from starlette.types import Receive, Scope, Send
 
-    from responsibleai.auth.oidc import OIDCProvider
+    from responsibleai.auth.oidc import (
+        OIDCProvider,
+        validate_mcp_authorization_server_metadata,
+    )
     from responsibleai.auth.verifiable_credential import (
         VerifiableCredentialProvider,
         looks_like_vc_jwt,
     )
-    from responsibleai.dashboard.config import get_settings
+    from responsibleai.dashboard.config import get_settings, production_readiness_problems
     from responsibleai.db import (
         McpUsageRepository,
         OrgRepository,
         PrincipalRepository,
         create_engine,
     )
+    from responsibleai.db.migrate import schema_is_at_head
     from responsibleai.governance.principal import build_principal_claim
     from responsibleai.rbac.models import Plan, Role
     from responsibleai.rbac.permissions import role_from_str
@@ -395,6 +462,8 @@ def _build_http_app() -> Any:
     if settings.mcp_governance_enabled:
         from responsibleai.db import (
             ApprovalRepository,
+            AuthorityPassportRepository,
+            ConsentProofRepository,
             DelegationRepository,
             EvidenceRepository,
             IntentContractRepository,
@@ -402,11 +471,14 @@ def _build_http_app() -> Any:
             OrgAutonomyBudgetRepository,
             OutcomeRepository,
             PolicyRepository,
+            PurposeBindingRepository,
+            RootAuthorityRepository,
             WebhookConfigRepository,
             WebhookDeliveryRepository,
             WorkflowRuleRepository,
         )
         from responsibleai.governance import WhitePactRuntimeGateway
+        from responsibleai.governance.authority_resolver import AuthorityResolver
         from responsibleai.integrations.client import DEFAULT_CACHE_TTL_MINUTES, TrustClient
         from responsibleai.mcp.governance_integration import (
             GovernanceServices as RuntimeGovernanceServices,
@@ -428,6 +500,18 @@ def _build_http_app() -> Any:
             # bounded, re-verified staleness; see client.py's
             # TrustClient docstring) is worth it here specifically.
             trust_client=TrustClient(cache_ttl_minutes=DEFAULT_CACHE_TTL_MINUTES),
+            authority_resolver=AuthorityResolver(
+                roots=RootAuthorityRepository(_db_engine),
+                consents=ConsentProofRepository(_db_engine),
+                bindings=PurposeBindingRepository(_db_engine),
+                intents=IntentContractRepository(_db_engine),
+                passports=AuthorityPassportRepository(_db_engine),
+                delegations=DelegationRepository(_db_engine),
+                ceilings=OrgAuthorityCeilingRepository(_db_engine),
+            )
+            if settings.heart_enforcement_enabled
+            else None,
+            heart_enforcement_required=settings.heart_enforcement_enabled,
             webhook_manager=_governance_webhook_manager,
             ceiling_repo=OrgAuthorityCeilingRepository(_db_engine),
             workflow_rule_repo=WorkflowRuleRepository(_db_engine),
@@ -449,6 +533,9 @@ def _build_http_app() -> Any:
             client_id=settings.oidc_client_id,
             jwks_uri=settings.oidc_jwks_uri,
             skip_verification=settings.oidc_skip_verification,
+            audience=settings.mcp_oauth_resource_uri or settings.oidc_client_id,
+            required_scopes=tuple(settings.mcp_oauth_scopes),
+            validate_unverified_claims=True,
         )
         if settings.oidc_issuer
         else None
@@ -480,13 +567,51 @@ def _build_http_app() -> Any:
         security_settings=transport_security,
     )
     auth_limiter = _AuthFailureLimiter(
-        max_failures=int(os.environ.get("RAI_MCP_HTTP_AUTH_MAX_FAILURES", "10")),
-        window_seconds=float(os.environ.get("RAI_MCP_HTTP_AUTH_WINDOW_SECONDS", "60")),
+        max_failures=int(
+            _env_value(
+                "WHITEPACT_MCP_HTTP_AUTH_MAX_FAILURES",
+                "RAI_MCP_HTTP_AUTH_MAX_FAILURES",
+                "10",
+            )
+            or "10"
+        ),
+        window_seconds=float(
+            _env_value(
+                "WHITEPACT_MCP_HTTP_AUTH_WINDOW_SECONDS",
+                "RAI_MCP_HTTP_AUTH_WINDOW_SECONDS",
+                "60",
+            )
+            or "60"
+        ),
+        redis_url=settings.redis_url,
     )
 
     @asynccontextmanager
     async def _lifespan(_app: Starlette) -> Any:
+        production_problems = production_readiness_problems(settings, component="mcp")
+        if production_problems:
+            _logger.error("production_configuration_rejected problems=%s", production_problems)
+            raise RuntimeError(
+                "Startup aborted: unsafe production configuration: "
+                + " | ".join(production_problems)
+            )
+        if settings.production_mode and _oidc_provider is not None:
+            try:
+                metadata = await _oidc_provider.discover()
+                validate_mcp_authorization_server_metadata(
+                    metadata, expected_issuer=settings.oidc_issuer or ""
+                )
+            except Exception as exc:
+                raise RuntimeError(
+                    "Startup aborted: MCP authorization-server discovery is not OAuth 2.1 safe"
+                ) from exc
         await _db_engine.init()
+        if settings.production_mode and not await schema_is_at_head(settings.effective_db_url):
+            raise RuntimeError(
+                "Startup aborted: database schema is not at the repository Alembic head. "
+                "Run `alembic upgrade head` as the deployment migration step."
+            )
+        await auth_limiter.ping()
         if _governance_webhook_manager is not None:
             await _governance_webhook_manager.load_configs()
             _governance_webhook_manager.start_retry_worker()
@@ -496,6 +621,8 @@ def _build_http_app() -> Any:
         finally:
             if _governance_webhook_manager is not None:
                 _governance_webhook_manager.stop_retry_worker()
+            await auth_limiter.close()
+            await _db_engine.close()
 
     def _client_key(request: Request) -> str:
         return request.client.host if request.client else "unknown"
@@ -514,7 +641,11 @@ def _build_http_app() -> Any:
         except ValueError:
             return None
 
-        org = await _org_repo.get_org(claims.org_id) if claims.org_id else None
+        if not claims.org_id:
+            return None
+        org = await _org_repo.get_org(claims.org_id)
+        if org is None:
+            return None
         role = Role.VIEWER
         for raw_role in claims.roles:
             candidate = role_from_str(raw_role)
@@ -526,9 +657,9 @@ def _build_http_app() -> Any:
             key_id=f"oidc:{claims.sub}",
             role=role,
             org_id=claims.org_id,
-            org_name=org.name if org else None,
+            org_name=org.name,
             is_legacy=False,
-            plan=org.plan if org else Plan.FREE,
+            plan=org.plan,
         )
 
     async def _resolve_vc_context(token: str) -> OrgContext | None:
@@ -645,7 +776,8 @@ def _build_http_app() -> Any:
                 # unconditionally would tell every client "use OAuth" even
                 # for deployments that only support static API keys.
                 headers["WWW-Authenticate"] = (
-                    f'Bearer resource_metadata="{_protected_resource_metadata_url(request)}"'
+                    f'Bearer resource_metadata="{_protected_resource_metadata_url(request)}", '
+                    f'scope="{" ".join(settings.mcp_oauth_scopes)}"'
                 )
             return None, JSONResponse(
                 {"error": "unauthorized", "message": "Provide a valid Bearer API key."},
@@ -706,16 +838,26 @@ def _build_http_app() -> Any:
 
     handle_streamable_http = _StreamableHttpEndpoint()
 
+    async def liveness(request: Request) -> JSONResponse:
+        return JSONResponse({"status": "alive", "version": __version__})
+
     async def health(request: Request) -> JSONResponse:
+        db_ok = True
+        try:
+            await _db_engine.ping()
+        except Exception:
+            db_ok = False
         return JSONResponse(
             {
-                "status": "ok",
+                "status": "ok" if db_ok else "degraded",
                 # "transport" (singular) is kept for existing consumers of this
                 # diagnostics endpoint; "transports" is the new, complete list.
                 "transport": "http+sse",
                 "transports": ["streamable-http", "http+sse"],
                 "tools": len(TOOL_DEFS),
-            }
+                "checks": {"database": "ok" if db_ok else "error"},
+            },
+            status_code=200 if db_ok else 503,
         )
 
     async def protected_resource_metadata(request: Request) -> JSONResponse:
@@ -724,11 +866,15 @@ def _build_http_app() -> Any:
         keys, and there's no Authorization Server to point a client at."""
         if _oidc_provider is None:
             return JSONResponse({"error": "not_found"}, status_code=404)
-        resource_url = str(request.url.replace(path="/mcp", query=""))
+        resource_url = settings.mcp_oauth_resource_uri or str(
+            request.url.replace(path="/mcp", query="")
+        )
         return JSONResponse(
             {
                 "resource": resource_url,
                 "authorization_servers": [settings.oidc_issuer],
+                "scopes_supported": settings.mcp_oauth_scopes,
+                "resource_documentation": settings.mcp_oauth_resource_documentation,
                 "bearer_methods_supported": ["header"],
             }
         )
@@ -749,7 +895,10 @@ def _build_http_app() -> Any:
                 "serverInfo": {"name": "whitepact", "version": __version__},
                 "authentication": {
                     "required": True,
-                    "schemes": ["apiKey"],
+                    "schemes": (["oauth2", "apiKey"] if _oidc_provider else ["apiKey"]),
+                    "oauth_protected_resource_metadata": (
+                        "/.well-known/oauth-protected-resource" if _oidc_provider else None
+                    ),
                 },
                 "tools": [
                     t.model_dump(mode="json", exclude_none=True, by_alias=True) for t in TOOL_DEFS
@@ -774,6 +923,8 @@ def _build_http_app() -> Any:
 
     app = Starlette(
         routes=[
+            Route("/live", endpoint=liveness),
+            Route("/ready", endpoint=health),
             Route("/health", endpoint=health),
             Route("/mcp", endpoint=handle_streamable_http),
             Route("/sse", endpoint=handle_sse),
@@ -798,9 +949,9 @@ def main_http() -> None:
     # boundary is the Bearer-key auth plus RAI_MCP_HTTP_ALLOWED_ORIGINS /
     # RAI_MCP_HTTP_ALLOWED_HOSTS enforced in _build_http_app(), not the bind
     # address -- see THREAT_MODEL.md.
-    host = os.environ.get("RAI_MCP_HTTP_HOST", "0.0.0.0")  # nosec B104
-    port = int(os.environ.get("RAI_MCP_HTTP_PORT", "8766"))
-    _logger.info("starting %s v1.2.0 (http+sse) on %s:%s", server.name, host, port)
+    host = _env_value("WHITEPACT_MCP_HTTP_HOST", "RAI_MCP_HTTP_HOST", "0.0.0.0") or "0.0.0.0"  # nosec B104
+    port = int(_env_value("WHITEPACT_MCP_HTTP_PORT", "RAI_MCP_HTTP_PORT", "8766") or "8766")
+    _logger.info("starting %s v%s (http+sse) on %s:%s", server.name, __version__, host, port)
     _log_invocation_name("http+sse server")
     uvicorn.run(_build_http_app(), host=host, port=port)
 

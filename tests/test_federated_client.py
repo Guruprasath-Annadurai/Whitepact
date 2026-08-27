@@ -196,3 +196,29 @@ class TestProviderBase:
         resp = LabelResponse(label="pos", confidence=0.9, model="m", provider="p")
         assert resp.label == "pos"
         assert resp.input_tokens is None
+
+
+class TestFederatedProviderBoundary:
+    @pytest.mark.asyncio
+    async def test_rejects_non_string_provider_label(self) -> None:
+        provider = _MockProvider()
+
+        async def malformed_batch(_texts):
+            return [{"label": 42, "confidence": 0.9}]
+
+        provider.batch_label = malformed_batch  # type: ignore[method-assign]
+        client = FederatedClient("node-1", provider)
+        with pytest.raises(ValueError, match="non-string label"):
+            await client._label_data([{"id": "1", "text": "hello"}])
+
+    @pytest.mark.asyncio
+    async def test_rejects_non_numeric_provider_confidence(self) -> None:
+        provider = _MockProvider()
+
+        async def malformed_batch(_texts):
+            return [{"label": "positive", "confidence": "high"}]
+
+        provider.batch_label = malformed_batch  # type: ignore[method-assign]
+        client = FederatedClient("node-1", provider)
+        with pytest.raises(ValueError, match="non-numeric confidence"):
+            await client._label_data([{"id": "1", "text": "hello"}])

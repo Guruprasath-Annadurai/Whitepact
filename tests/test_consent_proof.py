@@ -50,7 +50,10 @@ class TestConsentProofRecord:
             proof.scope_description,
             proof.purpose,
             proof.consent_method,
+            proof.evidence_refs,
             proof.consented_at,
+            proof.not_before,
+            proof.expires_at,
         )
         assert proof.canonical_digest == expected
 

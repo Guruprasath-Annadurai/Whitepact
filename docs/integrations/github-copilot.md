@@ -12,7 +12,7 @@
 ## Endpoint
 
 ```
-https://whitepact-mcp-http.onrender.com/mcp
+https://YOUR_WHITEPACT_HOST/mcp
 ```
 
 Streamable HTTP. Use this over the legacy `/sse` endpoint for new setups.
@@ -26,7 +26,7 @@ custom headers on remote MCP server registration.
 
 ```bash
 copilot mcp add --transport http --header "Authorization: Bearer <YOUR_WHITEPACT_API_KEY>" whitepact \
-  https://whitepact-mcp-http.onrender.com/mcp
+  https://YOUR_WHITEPACT_HOST/mcp
 ```
 
 **Verified live 2026-08-15** against GitHub Copilot CLI v1.0.80
@@ -93,7 +93,7 @@ Expected: one tool call to `rai_scan`, a redacted copy returned, no writes.
 
 ## Security notes
 
-All 27 tools are read-only (`readOnlyHint=True`, `destructiveHint=False`).
+All 30 tools are read-only (`readOnlyHint=True`, `destructiveHint=False`).
 Copilot's own per-call approval UI still applies — WhitePact does not
 disable client-side approval prompts.
 

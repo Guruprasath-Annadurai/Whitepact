@@ -13,7 +13,7 @@ at the Streamable HTTP endpoint directly — no Microsoft review process is
 required for this mode, it's tenant-admin bring-your-own, same pattern as
 Microsoft's own MCP docs describe.
 
-- Endpoint: `https://whitepact-mcp-http.onrender.com/mcp`
+- Endpoint: `https://YOUR_WHITEPACT_HOST/mcp` (verified candidate deployment)
 - Auth: Bearer API key, configured as the connector's outbound auth
 - Setup: Copilot Studio → Custom connectors → add MCP server URL +
   header. Exact menu path depends on the admin's tenant configuration

@@ -20,7 +20,7 @@
 > needing real legal work (Sections 6, 7, 8, 10), so you're not paying
 > for time spent re-deriving what's already here.
 
-Last reviewed: 2026-07-23 · Platform version: 1.2.0
+Last reviewed: 2026-08-27 · Platform version: 1.2.4rc1
 
 ---
 
@@ -34,9 +34,8 @@ This Data Processing Agreement ("DPA") is entered into between:
   ResponsibleAI project ("Processor").
 
 This DPA applies to Processor's processing of personal data on behalf of
-Customer in connection with Customer's use of the ResponsibleAI platform,
-whether self-hosted by Customer or (if applicable) accessed via a
-Processor-hosted instance.
+Customer in connection with Customer's use of a Processor-hosted WhitePact
+instance or another explicitly Processor-controlled data flow.
 
 **Self-hosted deployments**: for the majority of deployments — where
 Customer runs the platform entirely within Customer's own infrastructure

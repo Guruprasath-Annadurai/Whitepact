@@ -16,7 +16,7 @@ updateStrategy:
 image:
   repository: ghcr.io/guruprasath-annadurai/responsibleai
   pullPolicy: IfNotPresent
-  tag: "1.0.0"
+  tag: "1.2.4rc1"
 
 imagePullSecrets: []
 nameOverride: ""
@@ -89,7 +89,7 @@ pdb:
 ## Liveness / readiness probes
 livenessProbe:
   httpGet:
-    path: /api/health
+    path: /api/live
     port: 8765
   initialDelaySeconds: 15
   periodSeconds: 20
@@ -97,7 +97,7 @@ livenessProbe:
 
 readinessProbe:
   httpGet:
-    path: /api/health
+    path: /api/ready
     port: 8765
   initialDelaySeconds: 5
   periodSeconds: 10
@@ -118,8 +118,21 @@ affinity:
                   - rai-governance
           topologyKey: kubernetes.io/hostname
 
-## Application configuration — maps to RAI_* env vars
+## Application configuration — maps to preferred WHITEPACT_* env vars
 config:
+  ## Existing Secret containing WHITEPACT_DATABASE_URL and
+  ## WHITEPACT_REDIS_URL. Recommended for production.
+  existingSecret: ""
+  ## Fail closed on unsafe production-only settings.
+  productionMode: false
+  ## Set true whenever more than one process/replica serves traffic.
+  multiReplica: true
+  ## Disable when multiReplica=true and run migrations as a release job.
+  autoMigrate: false
+  ## Enforce the Heart governance path for hosted MCP calls.
+  mcpGovernanceEnabled: true
+  ## Resolve hosted calls through persisted Heart legitimacy state.
+  heartEnforcementEnabled: true
   ## Set to false to allow unauthenticated access (development only)
   authEnabled: true
   ## Comma-separated static API keys (prefer DB-backed keys for production)
@@ -136,17 +149,32 @@ config:
   databaseUrl: ""
   ## Redis URL for distributed rate limiting
   redisUrl: ""
+  ## Canonical hosted MCP OAuth audience/resource identifier.
+  mcpOauthResourceUri: ""
+  ## OAuth scopes required on every hosted MCP access token.
+  mcpOauthScopes: "mcp:tools"
+  mcpOauthResourceDocumentation: "https://github.com/Guruprasath-Annadurai/ResponsibleAi/blob/main/MIGRATION_WHITEPACT_V2.md"
   ## OpenTelemetry OTLP endpoint
   otelEndpoint: ""
+
+## Run schema migrations exactly once before each install/upgrade. Required
+## when config.autoMigrate=false (the production multi-replica default).
+migrations:
+  enabled: false
+  backoffLimit: 2
+  activeDeadlineSeconds: 600
 
 ## OIDC / SSO configuration (optional)
 oidc:
   enabled: false
   issuer: ""
   clientId: ""
+  ## Prefer existingSecret in production. This inline value is for local
+  ## chart evaluation only and is rendered into a Kubernetes Secret.
+  clientSecret: ""
   redirectUri: ""
   scopes: "openid,email,profile"
-  ## Secret name containing OIDC_CLIENT_SECRET key
+  ## Secret name containing WHITEPACT_OIDC_CLIENT_SECRET
   existingSecret: ""
 
 ## Persistent storage for SQLite (ignored when databaseUrl is set)
@@ -210,14 +238,14 @@ mcp:
     minAvailable: 1
   livenessProbe:
     httpGet:
-      path: /health
+      path: /live
       port: 8766
     initialDelaySeconds: 15
     periodSeconds: 20
     failureThreshold: 3
   readinessProbe:
     httpGet:
-      path: /health
+      path: /ready
       port: 8766
     initialDelaySeconds: 5
     periodSeconds: 10

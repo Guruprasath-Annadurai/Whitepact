@@ -152,6 +152,39 @@ class TestBuildResumeAction:
 
 
 class TestResumeApprovalEndToEnd:
+    async def test_heart_veto_is_rechecked_before_approval_is_consumed(
+        self,
+        client: AsyncClient,
+        org_and_admin_key,
+    ) -> None:
+        from responsibleai.dashboard.app import _approval_repo, _evidence_repo
+        from responsibleai.governance.authority_resolver import AuthorityResolutionError
+
+        class RevokedHeartResolver:
+            async def resolve(self, *args, **kwargs):
+                raise AuthorityResolutionError("HEART_VETO", "consent was revoked")
+
+        org_id, admin_key = org_and_admin_key
+        approval_id = await _seed_dispatchable_approval(org_id)
+        await client.post(
+            f"/api/governance/approvals/{approval_id}/resolve",
+            json={"outcome": "APPROVED"},
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+
+        with pytest.raises(ValueError, match="consent was revoked"):
+            await resume_approval(
+                approval_id,
+                approval_repo=_approval_repo,
+                evidence_repo=_evidence_repo,
+                org_id=org_id,
+                authority_resolver=RevokedHeartResolver(),
+                heart_enforcement_required=True,
+            )
+        unchanged = await _approval_repo.get(approval_id)
+        assert unchanged is not None
+        assert unchanged.status is ApprovalStatus.APPROVED
+
     async def test_full_round_trip_actually_executes_the_tool(
         self,
         client: AsyncClient,

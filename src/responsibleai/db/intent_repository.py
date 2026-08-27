@@ -104,12 +104,19 @@ class IntentContractRepository:
         contract = _row_to_record(row)
         return contract if contract.is_active() else None
 
-    async def get(self, contract_id: str) -> IntentContract | None:
+    async def get(self, org_id: str, contract_id: str) -> IntentContract | None:
+        """Fetch one contract only when it belongs to ``org_id``.
+
+        Tenant scope is part of the repository contract, not a convention
+        left to HTTP callers.  This prevents future internal consumers from
+        turning a globally unique contract id into a cross-tenant read.
+        """
         async with self._engine.raw.connect() as conn:
             row = (
                 await conn.execute(
                     select(governance_intent_contracts).where(
-                        governance_intent_contracts.c.id == contract_id
+                        governance_intent_contracts.c.org_id == org_id,
+                        governance_intent_contracts.c.id == contract_id,
                     )
                 )
             ).fetchone()

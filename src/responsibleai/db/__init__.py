@@ -24,6 +24,13 @@ from responsibleai.db.delegation_repository import (
 from responsibleai.db.engine import DatabaseEngine, create_engine
 from responsibleai.db.eval_repository import EvalRepository
 from responsibleai.db.evidence_repository import EvidenceRepository
+from responsibleai.db.heart_repository import (
+    ConsentProofRepository,
+    HeartRecordIntegrityError,
+    HeartRecordNotFoundError,
+    PurposeBindingRepository,
+    RootAuthorityRepository,
+)
 from responsibleai.db.incident_repository import IncidentRepository
 from responsibleai.db.intent_repository import IntentContractRepository
 from responsibleai.db.leaderboard_repository import LeaderboardRepository
@@ -75,6 +82,11 @@ __all__ = [
     "WebhookDeliveryRepository",
     "McpUsageRepository",
     "IncidentRepository",
+    "ConsentProofRepository",
+    "HeartRecordIntegrityError",
+    "HeartRecordNotFoundError",
+    "PurposeBindingRepository",
+    "RootAuthorityRepository",
     "AuthorityPassportNotFoundError",
     "AuthorityPassportRepository",
     "IntentContractRepository",

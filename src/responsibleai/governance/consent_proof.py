@@ -91,7 +91,10 @@ def compute_consent_digest(
     scope_description: str,
     purpose: str,
     consent_method: ConsentMethod,
+    evidence_refs: tuple[str, ...],
     consented_at: datetime,
+    not_before: datetime | None,
+    expires_at: datetime | None,
 ) -> str:
     """SHA-256 over the canonical JSON of every field that defines what
     this consent act actually asserts. Complete over these fields --
@@ -106,7 +109,10 @@ def compute_consent_digest(
         "scope_description": scope_description,
         "purpose": purpose,
         "consent_method": consent_method.value,
+        "evidence_refs": list(evidence_refs),
         "consented_at": consented_at.isoformat(),
+        "not_before": not_before.isoformat() if not_before else None,
+        "expires_at": expires_at.isoformat() if expires_at else None,
     }
     return hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
 
@@ -193,7 +199,10 @@ def build_consent_proof(
         scope_description,
         purpose,
         consent_method,
+        evidence_refs,
         consented_at,
+        not_before,
+        expires_at,
     )
     return ConsentProof(
         consent_id=consent_id,

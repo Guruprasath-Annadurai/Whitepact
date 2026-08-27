@@ -68,6 +68,18 @@ class IncidentRepository:
             ).fetchone()
         return self._row_to_dict(row) if row else None
 
+    async def get_for_org(self, org_id: str, incident_id: str) -> dict[str, Any] | None:
+        """Return an incident only when it is owned by *org_id*."""
+        async with self._engine.raw.connect() as conn:
+            row = (
+                await conn.execute(
+                    select(incidents)
+                    .where(incidents.c.id == incident_id)
+                    .where(incidents.c.org_id == org_id)
+                )
+            ).fetchone()
+        return self._row_to_dict(row) if row else None
+
     async def list(
         self,
         org_id: str | None = None,

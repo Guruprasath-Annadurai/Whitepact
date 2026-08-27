@@ -12,7 +12,7 @@ short_description: >-
 description: >-
   WhitePact is an AI governance MCP server: trust scoring, PII/harmful
   content guardrails, hallucination detection, and compliance checks
-  (NIST AI RMF, EU AI Act, ISO 42001) for any LLM agent. All 27 tools are
+  (NIST AI RMF, EU AI Act, ISO 42001) for any LLM agent. All 30 tools are
   read-only -- WhitePact evaluates and reports, it does not act on an
   agent's behalf.
 
@@ -21,14 +21,15 @@ documentation: https://github.com/Guruprasath-Annadurai/Whitepact#readme
 repository: https://github.com/Guruprasath-Annadurai/Whitepact
 
 mcp_endpoint:
-  streamable_http: https://whitepact-mcp-http.onrender.com/mcp
-  legacy_sse: https://whitepact-mcp-http.onrender.com/sse
-  server_card: https://whitepact-mcp-http.onrender.com/.well-known/mcp/server-card.json
-  health: https://whitepact-mcp-http.onrender.com/health
+  deployment_status: external_gate_unverified
+  streamable_http: https://YOUR_WHITEPACT_HOST/mcp
+  legacy_sse: https://YOUR_WHITEPACT_HOST/sse
+  server_card: https://YOUR_WHITEPACT_HOST/.well-known/mcp/server-card.json
+  health: https://YOUR_WHITEPACT_HOST/health
 
-# Real, currently-reachable (verified 200 live, 2026-08-13) but not on a
-# branded domain yet -- swapping to a dedicated domain is a founder
-# action noted in FOUNDER_ACTIONS.md, not a content gap.
+# Candidate deployment target only. The endpoint timed out during the
+# 2026-08-27 RC check; do not submit or advertise it as live until the
+# deployment evidence in compliance/ENTERPRISE_RC_GATE_REGISTER.md exists.
 support: mailto:annaduraiguruprasath7@gmail.com
 privacy: https://raw.githubusercontent.com/Guruprasath-Annadurai/Whitepact/main/PRIVACY_POLICY.md
 terms: https://raw.githubusercontent.com/Guruprasath-Annadurai/Whitepact/main/TERMS_OF_SERVICE.md
@@ -40,6 +41,7 @@ icon: null # TODO_FOUNDER_ACTION_REQUIRED: point at the canonical logo asset pat
 
 version: "1.2.2" # published PyPI package version
 listing_version: "1.2.3" # MCP Registry listing version
+candidate_version: "1.2.4rc1" # source candidate; not published yet
 
 transport:
   primary: streamable-http
@@ -47,11 +49,11 @@ transport:
   self_hosted: stdio
 
 auth:
-  type: apiKey
+  type: oauth2_or_apiKey
   scheme: Bearer
-  oauth_authorization_server: null # not deployed -- static Bearer keys only
+  oauth_authorization_server: null # external deployment/IdP gate
 
 tools:
-  count: 27
+  count: 30
   all_read_only: true
   all_non_destructive: true

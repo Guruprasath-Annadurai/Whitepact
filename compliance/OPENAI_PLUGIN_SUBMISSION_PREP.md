@@ -135,7 +135,7 @@ Realistic prompts a ChatGPT user would type that map cleanly to a tool:
 ## 4. What's still founder-only (cannot be prepped further from here)
 
 - **Developer identity verification** in the OpenAI Platform Dashboard — needs your login.
-- **Domain verification**: the portal generates a token at submission time to place at `whitepact-mcp-http.onrender.com/.well-known/openai-apps-challenge` — the route can only be built once the real token exists (starting the submission flow generates it).
+- **Domain verification**: the portal generates a token at submission time to place at `YOUR_WHITEPACT_HOST/.well-known/openai-apps-challenge` — choose and verify the production host first; the route can only be finalized once the real token exists.
 - **Demo API key / demo org**: `rai_org_status`'s positive test case needs a real key a reviewer can use without MFA/SMS/email confirmation. Creating this means adding a new org record to the live production database — I can do this via the existing signup flow if you want, but it's a real persistent record on your live system, so I'm holding it for your go-ahead rather than doing it unprompted.
 - **Privacy policy + terms**: both currently draft-only per their own stated caveats (§1) — this is the same blocker flagged for the Claude submission, now confirmed to block OpenAI too.
 - **Availability (countries/regions)**: a business decision, not a technical one — no existing doc states a position on this.

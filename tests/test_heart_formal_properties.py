@@ -158,7 +158,11 @@ class TestDigestSensitivity:
             "issuer": "iss",
             "verification_method": "oidc",
             "authority_source": None,
+            "jurisdiction": "IN",
+            "evidence_refs": ("event:1",),
             "issued_at": now,
+            "not_before": now,
+            "expires_at": now.replace(year=now.year + 1),
         }
         baseline = compute_root_digest(**base)
         perturbations = {
@@ -169,7 +173,11 @@ class TestDigestSensitivity:
             "issuer": "iss2",
             "verification_method": "saml",
             "authority_source": "src1",
+            "jurisdiction": "EU",
+            "evidence_refs": ("event:2",),
             "issued_at": now.replace(year=now.year + 1),
+            "not_before": now.replace(day=min(now.day + 1, 28)),
+            "expires_at": now.replace(year=now.year + 2),
         }
         for field, new_value in perturbations.items():
             perturbed = {**base, field: new_value}
@@ -187,7 +195,10 @@ class TestDigestSensitivity:
             "scope_description": "s",
             "purpose": "p",
             "consent_method": ConsentMethod.EXPLICIT_UI_ACTION,
+            "evidence_refs": ("consent:1",),
             "consented_at": now,
+            "not_before": now,
+            "expires_at": now.replace(year=now.year + 1),
         }
         baseline = compute_consent_digest(**base)
         perturbations = {
@@ -198,7 +209,10 @@ class TestDigestSensitivity:
             "scope_description": "s2",
             "purpose": "p2",
             "consent_method": ConsentMethod.SIGNED_DOCUMENT,
+            "evidence_refs": ("consent:2",),
             "consented_at": now.replace(year=now.year + 1),
+            "not_before": now.replace(day=min(now.day + 1, 28)),
+            "expires_at": now.replace(year=now.year + 2),
         }
         for field, new_value in perturbations.items():
             perturbed = {**base, field: new_value}

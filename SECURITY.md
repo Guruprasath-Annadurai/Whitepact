@@ -37,6 +37,10 @@ You will receive an acknowledgement within **48 hours** and a resolution timelin
 
 In scope:
 - All code under `src/` (biasbuster, privacylabel, responsibleai)
+- Authentication, OAuth/OIDC, tenant-isolation, authorization, approval,
+  evidence, and Heart enforcement bypasses
+- Hosted dashboard, REST API, MCP Streamable HTTP/SSE transports, deployment
+  manifests, release workflows, and supply-chain controls
 - Prompt injection vulnerabilities in the RedTeam simulator test logic
 - Privacy violations in the federated learning or differential privacy stack
 - PII leakage through the guardrails engine

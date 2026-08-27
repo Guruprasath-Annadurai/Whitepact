@@ -21,7 +21,7 @@ what the live server actually accepts). Two more constraints:
 ## Endpoint
 
 ```
-https://whitepact-mcp-http.onrender.com/mcp
+https://YOUR_WHITEPACT_HOST/mcp
 ```
 
 ## Authentication

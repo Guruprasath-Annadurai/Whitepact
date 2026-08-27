@@ -1,0 +1,36 @@
+# Enterprise production overlay. Supply secrets through your secret manager or
+# --set-string; the placeholder values below intentionally fail application
+# readiness until replaced with real TLS endpoints and credentials.
+replicaCount: 2
+
+config:
+  existingSecret: "whitepact-runtime"
+  productionMode: true
+  multiReplica: true
+  autoMigrate: false
+  authEnabled: true
+  mcpGovernanceEnabled: true
+  heartEnforcementEnabled: true
+  databaseUrl: ""
+  redisUrl: ""
+  mcpOauthResourceUri: ""
+  mcpOauthScopes: "mcp:tools"
+
+migrations:
+  enabled: true
+
+oidc:
+  enabled: true
+  issuer: ""
+  clientId: ""
+  existingSecret: ""
+
+mcp:
+  enabled: true
+  replicaCount: 2
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80

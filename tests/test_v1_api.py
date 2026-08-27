@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 
 import pytest
 from asgi_lifespan import LifespanManager
@@ -160,11 +161,12 @@ class TestAPIVersionEndpoint:
     async def test_version_body(self, client: AsyncClient) -> None:
         r = await client.get("/api/version")
         d = r.json()
-        expected_major, expected_minor, expected_patch = (
-            int(part) for part in __version__.split(".")[:3]
-        )
+        version_match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(.*)", __version__)
+        assert version_match is not None
+        expected_major, expected_minor, expected_patch = map(int, version_match.group(1, 2, 3))
         assert d["version"] == __version__
-        assert d["stable"] is True
+        assert d["stable"] is (version_match.group(4) == "")
+        assert d["prerelease"] == (version_match.group(4) or None)
         assert d["major"] == expected_major
         assert d["minor"] == expected_minor
         assert d["patch"] == expected_patch

@@ -20,7 +20,7 @@ field that Kiro doesn't have):
 {
   "mcpServers": {
     "whitepact": {
-      "url": "https://whitepact-mcp-http.onrender.com/mcp",
+      "url": "https://YOUR_WHITEPACT_HOST/mcp",
       "transport": "http",
       "headers": {
         "Authorization": "Bearer <YOUR_WHITEPACT_API_KEY>"

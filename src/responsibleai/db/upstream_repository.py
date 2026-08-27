@@ -90,6 +90,18 @@ class UpstreamServerRepository:
             ).fetchone()
         return _row_to_server(row) if row else None
 
+    async def get_for_org(self, org_id: str, server_id: str) -> UpstreamServer | None:
+        """Return an upstream server only within the caller's tenant."""
+        async with self._engine.raw.connect() as conn:
+            row = (
+                await conn.execute(
+                    select(upstream_mcp_servers)
+                    .where(upstream_mcp_servers.c.id == server_id)
+                    .where(upstream_mcp_servers.c.org_id == org_id)
+                )
+            ).fetchone()
+        return _row_to_server(row) if row else None
+
     async def list_for_org(self, org_id: str) -> list[UpstreamServer]:
         async with self._engine.raw.connect() as conn:
             rows = (
@@ -121,6 +133,6 @@ class UpstreamServerRepository:
             )
         if result.rowcount == 0:
             raise UpstreamServerNotFoundError(server_id)
-        server = await self.get(server_id)
+        server = await self.get_for_org(org_id, server_id)
         assert server is not None  # just updated it, in the same org
         return server

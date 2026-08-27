@@ -222,10 +222,22 @@ class TestAuthorityPassportRepository:
             repo = AuthorityPassportRepository(engine)
             passport = build_authority_passport_from_ceiling(_ceiling(max_value_usd=500), "agent-1")
             await repo.issue(passport)
-            fetched = await repo.get(passport.passport_id)
+            fetched = await repo.get("org-1", passport.passport_id)
             assert fetched is not None
             assert fetched.max_value_usd == 500
             assert fetched.principal_id == "agent-1"
+        finally:
+            await engine.close()
+
+    async def test_get_never_crosses_tenant_boundary(self) -> None:
+        engine = await self._engine()
+        try:
+            repo = AuthorityPassportRepository(engine)
+            passport = build_authority_passport_from_ceiling(_ceiling(), "agent-1")
+            await repo.issue(passport)
+
+            assert await repo.get("org-2", passport.passport_id) is None
+            assert await repo.get("org-1", passport.passport_id) is not None
         finally:
             await engine.close()
 
@@ -258,7 +270,7 @@ class TestAuthorityPassportRepository:
             passport = build_authority_passport_from_ceiling(_ceiling(), "agent-1")
             await repo.issue(passport)
             revoked = await repo.revoke(
-                passport.passport_id, revoked_by="admin-1", reason="rotated"
+                "org-1", passport.passport_id, revoked_by="admin-1", reason="rotated"
             )
             assert revoked.revoked_at is not None
             assert revoked.revoked_by == "admin-1"
@@ -275,9 +287,27 @@ class TestAuthorityPassportRepository:
         try:
             repo = AuthorityPassportRepository(engine)
             try:
-                await repo.revoke("does-not-exist", revoked_by="admin-1")
+                await repo.revoke("org-1", "does-not-exist", revoked_by="admin-1")
                 raise AssertionError("expected AuthorityPassportNotFoundError")
             except AuthorityPassportNotFoundError:
                 pass
+        finally:
+            await engine.close()
+
+    async def test_revoke_never_crosses_tenant_boundary(self) -> None:
+        from responsibleai.db import AuthorityPassportNotFoundError
+
+        engine = await self._engine()
+        try:
+            repo = AuthorityPassportRepository(engine)
+            passport = build_authority_passport_from_ceiling(_ceiling(), "agent-1")
+            await repo.issue(passport)
+
+            try:
+                await repo.revoke("org-2", passport.passport_id, revoked_by="admin-2")
+                raise AssertionError("expected AuthorityPassportNotFoundError")
+            except AuthorityPassportNotFoundError:
+                pass
+            assert (await repo.get("org-1", passport.passport_id)).is_active() is True
         finally:
             await engine.close()

@@ -31,6 +31,28 @@ class TestMCPToolDefs:
             assert tool.inputSchema is not None
             assert tool.inputSchema.get("type") == "object"
 
+    def test_all_tool_schemas_are_valid_and_advertise_object_outputs(self) -> None:
+        from jsonschema.validators import Draft202012Validator
+
+        from responsibleai.mcp.tools import TOOL_DEFS
+
+        for tool in TOOL_DEFS:
+            Draft202012Validator.check_schema(tool.inputSchema)
+            assert tool.outputSchema is not None, tool.name
+            Draft202012Validator.check_schema(tool.outputSchema)
+            assert tool.outputSchema.get("type") == "object"
+
+    def test_annotations_match_actual_external_side_effects(self) -> None:
+        from responsibleai.mcp.tools import TOOL_DEFS
+
+        tools = {tool.name: tool for tool in TOOL_DEFS}
+        for name, tool in tools.items():
+            assert tool.annotations is not None
+            assert tool.annotations.readOnlyHint is True
+            assert tool.annotations.destructiveHint is False
+            assert tool.annotations.idempotentHint is True
+            assert tool.annotations.openWorldHint is (name == "rai_check_trust")
+
     def test_expected_tool_names(self) -> None:
         from responsibleai.mcp.tools import TOOL_DEFS
 

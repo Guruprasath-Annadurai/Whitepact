@@ -17,7 +17,12 @@ import pytest
 import respx
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from responsibleai.auth.oidc import AsyncJWKSClient, JWTClaims, OIDCProvider
+from responsibleai.auth.oidc import (
+    AsyncJWKSClient,
+    JWTClaims,
+    OIDCProvider,
+    validate_mcp_authorization_server_metadata,
+)
 
 
 class TestJWTClaimsFromPayload:
@@ -141,6 +146,56 @@ class TestDiscover:
         doc2 = await provider.discover()
         assert doc2 is doc
         assert route.call_count == 1
+
+    @respx.mock
+    async def test_discovery_jwks_uri_replaces_nonstandard_fallback(self):
+        provider = OIDCProvider(issuer="https://issuer.example.com", client_id="c1")
+        respx.get("https://issuer.example.com/.well-known/openid-configuration").mock(
+            return_value=httpx.Response(
+                200, json={"jwks_uri": "https://issuer.example.com/oauth2/keys"}
+            )
+        )
+        await provider.discover()
+        assert provider._jwks._uri == "https://issuer.example.com/oauth2/keys"
+
+
+class TestMcpAuthorizationServerMetadata:
+    def test_accepts_oauth_21_pkce_metadata(self):
+        validate_mcp_authorization_server_metadata(
+            {
+                "issuer": "https://issuer.example.com",
+                "authorization_endpoint": "https://issuer.example.com/authorize",
+                "token_endpoint": "https://issuer.example.com/token",
+                "jwks_uri": "https://issuer.example.com/jwks",
+                "code_challenge_methods_supported": ["S256"],
+                "token_endpoint_auth_methods_supported": ["none", "private_key_jwt"],
+            },
+            expected_issuer="https://issuer.example.com",
+        )
+
+    @pytest.mark.parametrize(
+        "mutation",
+        [
+            {"issuer": "https://attacker.example"},
+            {"authorization_endpoint": "http://issuer.example.com/authorize"},
+            {"code_challenge_methods_supported": ["plain"]},
+            {"token_endpoint_auth_methods_supported": []},
+        ],
+    )
+    def test_rejects_unsafe_metadata(self, mutation):
+        metadata = {
+            "issuer": "https://issuer.example.com",
+            "authorization_endpoint": "https://issuer.example.com/authorize",
+            "token_endpoint": "https://issuer.example.com/token",
+            "jwks_uri": "https://issuer.example.com/jwks",
+            "code_challenge_methods_supported": ["S256"],
+            "token_endpoint_auth_methods_supported": ["none"],
+        }
+        metadata.update(mutation)
+        with pytest.raises(ValueError, match="Unsafe MCP"):
+            validate_mcp_authorization_server_metadata(
+                metadata, expected_issuer="https://issuer.example.com"
+            )
 
 
 class TestValidateTokenSkipVerification:

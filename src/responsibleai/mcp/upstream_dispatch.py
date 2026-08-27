@@ -68,6 +68,9 @@ async def _record_evidence(
     agent: AgentContext,
     authority: AuthorityContext,
     decision: DecisionResult,
+    *,
+    authority_grant_digest: str | None = None,
+    legitimacy_digest: str | None = None,
 ) -> EvidenceRecord | None:
     """Same fail-closed contract as apply_governance()'s inline
     version: the persisted `EvidenceRecord` if recorded, `None` (and
@@ -78,7 +81,14 @@ async def _record_evidence(
     just a bool) so a caller past this point can link an
     OutcomeRecord to it via `evidence.evidence_id` (Phase 12).
     """
-    evidence = build_evidence_record(action, agent, authority, decision)
+    evidence = build_evidence_record(
+        action,
+        agent,
+        authority,
+        decision,
+        authority_grant_digest=authority_grant_digest,
+        legitimacy_digest=legitimacy_digest,
+    )
     try:
         await evidence_repo.record(evidence)
     except Exception:
@@ -106,6 +116,8 @@ async def apply_upstream_governance(
     executor: UpstreamMCPExecutor,
     tool_trust_repo: ToolTrustRepository,
     outcome_repo: OutcomeRepository | None = None,
+    authority_resolver: Any = None,
+    heart_enforcement_required: bool = False,
 ) -> UpstreamGovernanceOutcome:
     """Evaluate and, if governance allows it, execute one proxied call
     to an org-registered upstream MCP server. Requires an org-scoped
@@ -131,12 +143,13 @@ async def apply_upstream_governance(
     authority = AuthorityContext(
         delegated_by=ctx.org_id, granted_action_types=frozenset({ACTION_TYPE})
     )
+    grant = None
 
     # Registration IS the approval gate -- checked before the gateway
     # is even consulted, and denied with the reason code SPEC.md always
     # had reserved for exactly this case.
-    server = await upstream_registry.get(server_id)
-    if server is None or server.org_id != ctx.org_id or not server.enabled:
+    server = await upstream_registry.get_for_org(ctx.org_id, server_id)
+    if server is None or not server.enabled:
         decision = DecisionResult(
             decision=GovernanceDecision.DENY,
             action_id=action.action_id,
@@ -199,10 +212,39 @@ async def apply_upstream_governance(
     violation_count = await recent_violation_count(evidence_repo, ctx.org_id, agent.agent_id)
     policy = await policy_repo.get_policy(ctx.org_id)
 
+    authority_resolution_denied_reason: str | None = None
+    if authority_resolver is not None:
+        from responsibleai.governance.authority_resolver import AuthorityResolutionError
+
+        requested_purpose = arguments.get("purpose")
+        try:
+            grant = await authority_resolver.resolve(
+                identity,
+                action_type=ACTION_TYPE,
+                target=target,
+                purpose=requested_purpose if isinstance(requested_purpose, str) else None,
+            )
+            authority = grant.to_authority_context()
+        except AuthorityResolutionError as exc:
+            authority_resolution_denied_reason = str(exc)
+            authority = AuthorityContext(delegated_by=ctx.org_id, granted_action_types=frozenset())
+    elif heart_enforcement_required:
+        authority_resolution_denied_reason = (
+            "HEART_RESOLVER_UNAVAILABLE: production Heart enforcement has no resolver"
+        )
+        authority = AuthorityContext(delegated_by=ctx.org_id, granted_action_types=frozenset())
+
     evaluate_started = time.monotonic()
-    decision = gateway.evaluate(
-        action, authority, policy=policy, recent_violation_count=violation_count
-    )
+    if authority_resolution_denied_reason is not None:
+        decision = DecisionResult(
+            decision=GovernanceDecision.DENY,
+            action_id=action.action_id,
+            reason_codes=[authority_resolution_denied_reason],
+        )
+    else:
+        decision = gateway.evaluate(
+            action, authority, policy=policy, recent_violation_count=violation_count
+        )
     observe_governance_decision(
         decision.decision.value,
         decision.risk_tier.value if decision.risk_tier is not None else None,
@@ -210,7 +252,15 @@ async def apply_upstream_governance(
         org_id=ctx.org_id,
     )
 
-    evidence = await _record_evidence(evidence_repo, action, agent, authority, decision)
+    evidence = await _record_evidence(
+        evidence_repo,
+        action,
+        agent,
+        authority,
+        decision,
+        authority_grant_digest=grant.canonical_digest if grant is not None else None,
+        legitimacy_digest=(grant.legitimacy.canonical_digest if grant is not None else None),
+    )
     if evidence is None:
         return UpstreamGovernanceOutcome(
             proceed=False,
@@ -280,7 +330,11 @@ async def apply_upstream_governance(
     # decision was actually made against, so UpstreamMCPExecutor.execute()
     # can detect if that config drifts before the permit is consumed.
     authorization = authorize_execution(
-        decision, final_action, target_fingerprint=compute_upstream_target_fingerprint(server)
+        decision,
+        final_action,
+        target_fingerprint=compute_upstream_target_fingerprint(server),
+        authority_grant=grant,
+        require_heart=heart_enforcement_required,
     )
     try:
         result = await executor.execute(authorization, final_action)

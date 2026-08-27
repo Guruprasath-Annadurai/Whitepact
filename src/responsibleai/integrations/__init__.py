@@ -12,5 +12,6 @@ not another "evaluate your own model's output" tool.
 """
 
 from responsibleai.integrations.client import TrustCheckResult, TrustClient
+from responsibleai.integrations.gemini_mcp_bridge import GeminiMCPBridge
 
-__all__ = ["TrustCheckResult", "TrustClient"]
+__all__ = ["GeminiMCPBridge", "TrustCheckResult", "TrustClient"]

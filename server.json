@@ -44,34 +44,6 @@
       ]
     }
   ],
-  "remotes": [
-    {
-      "type": "streamable-http",
-      "url": "https://whitepact-mcp-http.onrender.com/mcp",
-      "headers": [
-        {
-          "name": "Authorization",
-          "description": "Bearer API key for the hosted WhitePact MCP server. Obtain one from the WhitePact dashboard (Settings → API Keys) after creating a free org.",
-          "isRequired": true,
-          "isSecret": true,
-          "placeholder": "Bearer <your-api-key>"
-        }
-      ]
-    },
-    {
-      "type": "sse",
-      "url": "https://whitepact-mcp-http.onrender.com/sse",
-      "headers": [
-        {
-          "name": "Authorization",
-          "description": "Bearer API key for the hosted WhitePact MCP server. Obtain one from the WhitePact dashboard (Settings → API Keys) after creating a free org.",
-          "isRequired": true,
-          "isSecret": true,
-          "placeholder": "Bearer <your-api-key>"
-        }
-      ]
-    }
-  ],
   "_meta": {
     "io.modelcontextprotocol.registry/publisher-provided": {
       "tool_count": 30,

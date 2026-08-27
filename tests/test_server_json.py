@@ -10,6 +10,8 @@ import json
 import tomllib
 from pathlib import Path
 
+from packaging.version import Version
+
 _REPO_ROOT = Path(__file__).parent.parent
 
 
@@ -17,8 +19,8 @@ def _load_server_json() -> dict:
     return json.loads((_REPO_ROOT / "server.json").read_text())
 
 
-def _version_tuple(v: str) -> tuple[int, ...]:
-    return tuple(int(part) for part in v.split("."))
+def _version_tuple(v: str) -> Version:
+    return Version(v)
 
 
 class TestServerJsonShape:

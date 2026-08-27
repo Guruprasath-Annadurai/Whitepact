@@ -60,7 +60,11 @@ class TestRootAuthorityRecord:
             record.issuer,
             record.verification_method,
             record.authority_source,
+            record.jurisdiction,
+            record.evidence_refs,
             record.issued_at,
+            record.not_before,
+            record.expires_at,
         )
         assert record.canonical_digest == expected
 

@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import time
 
 import httpx
 import pytest
@@ -28,6 +29,20 @@ def _make_jwt(payload: dict) -> str:
     header = base64.urlsafe_b64encode(json.dumps({"alg": "RS256"}).encode()).decode().rstrip("=")
     body = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
     return f"{header}.{body}.fakesig"
+
+
+def _oauth_payload(org_id: str, **overrides) -> dict:
+    payload = {
+        "sub": "user-1",
+        "iss": "https://idp.example.com",
+        "aud": "https://mcp.whitepact.test/mcp",
+        "exp": int(time.time()) + 300,
+        "org_id": org_id,
+        "roles": ["ANALYST"],
+        "scope": "mcp:tools openid email",
+    }
+    payload.update(overrides)
+    return payload
 
 
 @pytest.fixture()
@@ -56,6 +71,8 @@ async def mcp_app(monkeypatch: pytest.MonkeyPatch):
             oidc_issuer=oidc_issuer,
             oidc_client_id=oidc_client_id,
             oidc_skip_verification=True,
+            mcp_oauth_resource_uri="https://mcp.whitepact.test/mcp",
+            mcp_oauth_scopes=["mcp:tools"],
         )
         monkeypatch.setattr(config_module, "get_settings", lambda: settings)
         app = _build_http_app()
@@ -102,7 +119,7 @@ class TestOidcJwtAuth:
     async def test_valid_jwt_authenticates_mcp(self, mcp_app) -> None:
         build, org_id, _raw_key = mcp_app
         app = await build(oidc_issuer="https://idp.example.com")
-        token = _make_jwt({"sub": "user-1", "org_id": org_id, "roles": ["ANALYST"]})
+        token = _make_jwt(_oauth_payload(org_id))
         tools = await _list_tools_over_mcp(app, token)
         assert len(tools) == 30
 
@@ -118,32 +135,45 @@ class TestOidcJwtAuth:
         rejecting it outright."""
         build, org_id, _raw_key = mcp_app
         app = await build(oidc_issuer="https://idp.example.com")
-        token = _make_jwt({"sub": "user-1", "org_id": org_id, "roles": ["ANALYST"]})
+        token = _make_jwt(_oauth_payload(org_id))
         async with await _raw_client(app) as client:
             with pytest.raises(TimeoutError):
                 async with asyncio.timeout(0.5):
                     await client.get("/sse", headers={"Authorization": f"Bearer {token}"})
 
-    async def test_unknown_org_id_falls_back_to_free_plan(self, mcp_app) -> None:
-        """A JWT with an org_id the DB doesn't know about still
-        authenticates (identity is proven by the token signature/issuer,
-        not by DB membership) but gets no elevated plan. A FREE-plan
-        context has zero hosted quota (see mcp/licensing.py), so `rai_health`
-        -- otherwise free -- comes back as `hosted_access_unavailable`
-        rather than a 401/429: proof auth succeeded and plan-gating, not
-        rejection, is what's shaping the response."""
+    async def test_unknown_org_id_is_rejected(self, mcp_app) -> None:
         build, _org_id, _raw_key = mcp_app
         app = await build(oidc_issuer="https://idp.example.com")
-        token = _make_jwt({"sub": "user-2", "org_id": "org-does-not-exist", "roles": []})
-        async with streamable_http_client(
-            "/mcp",
-            http_client=_asgi_http_client(app, token),
-        ) as (read_stream, write_stream, _get_session_id):
-            async with ClientSession(read_stream, write_stream) as session:
-                await session.initialize()
-                result = await session.call_tool("rai_health", {})
-        payload = json.loads(result.content[0].text)
-        assert payload["error"] == "hosted_access_unavailable"
+        token = _make_jwt(_oauth_payload("org-does-not-exist", sub="user-2"))
+        async with await _raw_client(app) as client:
+            response = await client.post(
+                "/mcp",
+                json={"jsonrpc": "2.0", "method": "ping", "id": 1},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert response.status_code == 401
+
+    @pytest.mark.parametrize(
+        "claim_overrides",
+        [
+            {"aud": "https://another-service.example/mcp"},
+            {"scope": "openid email"},
+            {"exp": 1},
+            {"iss": "https://attacker.example"},
+            {"sub": ""},
+        ],
+    )
+    async def test_invalid_oauth_security_claim_is_rejected(self, mcp_app, claim_overrides) -> None:
+        build, org_id, _raw_key = mcp_app
+        app = await build(oidc_issuer="https://idp.example.com")
+        token = _make_jwt(_oauth_payload(org_id, **claim_overrides))
+        async with await _raw_client(app) as client:
+            response = await client.post(
+                "/mcp",
+                json={"jsonrpc": "2.0", "method": "ping", "id": 1},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert response.status_code == 401
 
     async def test_static_api_key_still_works_when_oidc_configured(self, mcp_app) -> None:
         """rai_-prefixed tokens are never treated as JWTs, even with OIDC
@@ -169,7 +199,7 @@ class TestOidcJwtAuth:
         static key — no OIDC provider exists to try it against."""
         build, org_id, _raw_key = mcp_app
         app = await build(oidc_issuer=None)
-        token = _make_jwt({"sub": "user-1", "org_id": org_id, "roles": ["ANALYST"]})
+        token = _make_jwt(_oauth_payload(org_id))
         async with await _raw_client(app) as client:
             response = await client.post(
                 "/mcp",
@@ -192,6 +222,7 @@ class TestWwwAuthenticateHeader:
         www_auth = response.headers.get("www-authenticate", "")
         assert "resource_metadata=" in www_auth
         assert "/.well-known/oauth-protected-resource" in www_auth
+        assert 'scope="mcp:tools"' in www_auth
 
     async def test_401_has_no_hint_when_oidc_not_configured(self, mcp_app) -> None:
         build, _org_id, _raw_key = mcp_app
@@ -214,7 +245,9 @@ class TestProtectedResourceMetadata:
         assert response.status_code == 200
         payload = response.json()
         assert payload["authorization_servers"] == ["https://idp.example.com"]
-        assert payload["resource"].endswith("/mcp")
+        assert payload["resource"] == "https://mcp.whitepact.test/mcp"
+        assert payload["scopes_supported"] == ["mcp:tools"]
+        assert payload["resource_documentation"].startswith("https://")
 
     async def test_404_when_oidc_not_configured(self, mcp_app) -> None:
         build, _org_id, _raw_key = mcp_app

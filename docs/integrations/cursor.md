@@ -14,7 +14,7 @@ its contents into your own `~/.cursor/mcp.json` (global) or a project's
 ## Endpoint
 
 ```
-https://whitepact-mcp-http.onrender.com/mcp
+https://YOUR_WHITEPACT_HOST/mcp
 ```
 
 Streamable HTTP, per Cursor's documented remote MCP support.

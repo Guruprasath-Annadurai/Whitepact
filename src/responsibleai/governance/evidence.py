@@ -77,6 +77,8 @@ class EvidenceRecord:
     # exactly which persisted policy version this decision was
     # evaluated against (Policy.version's docstring).
     policy_version: int | None = None
+    authority_grant_digest: str | None = None
+    legitimacy_digest: str | None = None
     # AuthorityContext.delegation_chain, carried through for the audit
     # trail -- who delegated to whom, through however many hops, not
     # just the immediate grantor authority_delegated_by already
@@ -113,6 +115,8 @@ class EvidenceRecord:
             "delegation_chain": self.delegation_chain,
             "risk_tier": self.risk_tier,
             "policy_version": self.policy_version,
+            "authority_grant_digest": self.authority_grant_digest,
+            "legitimacy_digest": self.legitimacy_digest,
             "decision": self.decision,
             "reason_codes": self.reason_codes,
             "framework": self.framework,
@@ -130,6 +134,9 @@ def build_evidence_record(
     agent: AgentContext,
     authority: AuthorityContext,
     decision: DecisionResult,
+    *,
+    authority_grant_digest: str | None = None,
+    legitimacy_digest: str | None = None,
 ) -> EvidenceRecord:
     """Assemble an `EvidenceRecord` from a completed decision. Pure —
     no I/O, no hashing, callable from a sync context (matching
@@ -151,6 +158,8 @@ def build_evidence_record(
         organization_id=agent.organization_id,
         risk_tier=decision.risk_tier.value if isinstance(decision.risk_tier, RiskTier) else None,
         policy_version=decision.policy_version,
+        authority_grant_digest=authority_grant_digest,
+        legitimacy_digest=legitimacy_digest,
         framework=agent.framework,
         provider=agent.provider,
         model=agent.model,

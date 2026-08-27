@@ -151,6 +151,11 @@ class DelegationRepository:
             ).fetchone()
         return _row_to_record(row) if row is not None else None
 
+    async def get_for_org(self, org_id: str, delegation_id: str) -> DelegationRecord | None:
+        """Tenant-scoped lookup for authorization decisions."""
+        record = await self.get(delegation_id)
+        return record if record is not None and record.org_id == org_id else None
+
     async def get_latest_delegation(self, org_id: str, identity_id: str) -> DelegationRecord | None:
         """The most recently granted delegation for *identity_id*,
         regardless of whether it's still active -- ``None`` means this

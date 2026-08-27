@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "whitepact": {
-      "serverUrl": "https://whitepact-mcp-http.onrender.com/mcp",
+      "serverUrl": "https://YOUR_WHITEPACT_HOST/mcp",
       "headers": {
         "Authorization": "Bearer <YOUR_WHITEPACT_API_KEY>"
       }

@@ -6,8 +6,7 @@
   Bearer-auth attempts against both hosted transports.
 
 See MIGRATION_WHITEPACT_V2.md's transport security section for the
-rationale (why DNS rebinding protection defaults to disabled, why the
-rate limiter is in-memory and per-process).
+rationale. The limiter uses Redis when configured and memory in development.
 """
 
 from __future__ import annotations
@@ -23,6 +22,7 @@ from responsibleai.mcp.server import (
     _AuthFailureLimiter,
     _build_transport_security,
     _env_bool,
+    _env_value,
     _split_csv,
 )
 from responsibleai.rbac.models import Plan, Role
@@ -53,6 +53,23 @@ class TestEnvBool:
         assert _env_bool("RAI_TEST_FLAG", default=True) is False
 
 
+class TestEnvValue:
+    def test_preferred_whitepact_name_wins(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("WHITEPACT_TEST_SETTING", "preferred")
+        monkeypatch.setenv("RAI_TEST_SETTING", "legacy")
+        assert _env_value("WHITEPACT_TEST_SETTING", "RAI_TEST_SETTING", "default") == "preferred"
+
+    def test_legacy_name_remains_compatible(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("WHITEPACT_TEST_SETTING", raising=False)
+        monkeypatch.setenv("RAI_TEST_SETTING", "legacy")
+        assert _env_value("WHITEPACT_TEST_SETTING", "RAI_TEST_SETTING", "default") == "legacy"
+
+    def test_default_when_both_are_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("WHITEPACT_TEST_SETTING", raising=False)
+        monkeypatch.delenv("RAI_TEST_SETTING", raising=False)
+        assert _env_value("WHITEPACT_TEST_SETTING", "RAI_TEST_SETTING", "default") == "default"
+
+
 class TestBuildTransportSecurity:
     def test_disabled_by_default_with_no_allowlists(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("RAI_MCP_HTTP_ALLOWED_HOSTS", raising=False)
@@ -75,8 +92,65 @@ class TestBuildTransportSecurity:
         settings = _build_transport_security()
         assert settings.enable_dns_rebinding_protection is False
 
+    def test_preferred_whitepact_allowlist_wins(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("WHITEPACT_MCP_HTTP_ALLOWED_HOSTS", "preferred.example")
+        monkeypatch.setenv("RAI_MCP_HTTP_ALLOWED_HOSTS", "legacy.example")
+        settings = _build_transport_security()
+        assert settings.allowed_hosts == ["preferred.example"]
+
 
 class TestAuthFailureLimiter:
+    class _FakeRedis:
+        def __init__(self) -> None:
+            self.sets: dict[str, dict[str, float]] = {}
+            self.commands: list[tuple] = []
+
+        def pipeline(self, transaction=True):
+            self.commands = []
+            return self
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        def zremrangebyscore(self, key, minimum, maximum):
+            self.commands.append(("remove", key, float(maximum)))
+            return self
+
+        def zcard(self, key):
+            self.commands.append(("count", key))
+            return self
+
+        def zadd(self, key, values):
+            self.commands.append(("add", key, values))
+            return self
+
+        def expire(self, key, seconds):
+            self.commands.append(("expire", key, seconds))
+            return self
+
+        async def execute(self):
+            results = []
+            for command in self.commands:
+                operation, key, *args = command
+                values = self.sets.setdefault(key, {})
+                if operation == "remove":
+                    cutoff = args[0]
+                    removed = [member for member, score in values.items() if score <= cutoff]
+                    for member in removed:
+                        values.pop(member)
+                    results.append(len(removed))
+                elif operation == "count":
+                    results.append(len(values))
+                elif operation == "add":
+                    values.update(args[0])
+                    results.append(len(args[0]))
+                else:
+                    results.append(True)
+            return results
+
     async def test_not_blocked_before_threshold(self) -> None:
         limiter = _AuthFailureLimiter(max_failures=3, window_seconds=60)
         for _ in range(2):
@@ -101,6 +175,20 @@ class TestAuthFailureLimiter:
         assert await limiter.is_blocked("1.2.3.4") is True
         await asyncio.sleep(0.1)
         assert await limiter.is_blocked("1.2.3.4") is False
+
+    async def test_redis_backend_is_shared_across_replicas(self, monkeypatch) -> None:
+        redis = self._FakeRedis()
+        first = _AuthFailureLimiter(2, 60, redis_url="redis://test")
+        second = _AuthFailureLimiter(2, 60, redis_url="redis://test")
+
+        async def shared_redis():
+            return redis
+
+        monkeypatch.setattr(first, "_get_redis", shared_redis)
+        monkeypatch.setattr(second, "_get_redis", shared_redis)
+        await first.record_failure("1.2.3.4")
+        await second.record_failure("1.2.3.4")
+        assert await first.is_blocked("1.2.3.4") is True
 
 
 @pytest.fixture()

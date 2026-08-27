@@ -8,6 +8,7 @@ the standalone policy function in isolation.
 from __future__ import annotations
 
 import json
+import time
 
 import jwt as pyjwt
 import pytest
@@ -81,7 +82,12 @@ class TestOIDCProviderRejectsWeakJWKSKey:
         jwk_dict["kid"] = "weak-test-key"
 
         token = pyjwt.encode(
-            {"sub": "user-1", "aud": "test-client", "iss": "https://issuer.example.com"},
+            {
+                "sub": "user-1",
+                "aud": "test-client",
+                "iss": "https://issuer.example.com",
+                "exp": int(time.time()) + 300,
+            },
             weak_private,
             algorithm="RS256",
             headers={"kid": "weak-test-key"},
@@ -109,7 +115,12 @@ class TestOIDCProviderRejectsWeakJWKSKey:
         jwk_dict["kid"] = "strong-test-key"
 
         token = pyjwt.encode(
-            {"sub": "user-1", "aud": "test-client", "iss": "https://issuer.example.com"},
+            {
+                "sub": "user-1",
+                "aud": "test-client",
+                "iss": "https://issuer.example.com",
+                "exp": int(time.time()) + 300,
+            },
             strong_private,
             algorithm="RS256",
             headers={"kid": "strong-test-key"},
