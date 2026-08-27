@@ -77,7 +77,20 @@ def encode_envelope(envelope: bytes) -> str:
 
 
 def decode_envelope(encoded: str) -> bytes:
+    """Decode a base64-encoded envelope, strictly.
+
+    `base64.urlsafe_b64decode` alone is not strict: by default it
+    silently discards any character outside the base64 alphabet
+    instead of rejecting the input, which makes plenty of arbitrary
+    non-base64 text (e.g. an IP address string) "successfully" decode
+    to meaningless bytes rather than raising — a real bug caught during
+    Phase 2 Step 3's `db/encryption.py` wiring, where exactly this
+    silent-acceptance behavior let plaintext strings fall through to
+    the decrypt path instead of correctly failing the format check.
+    `base64.b64decode(..., validate=True)` is strict, but only accepts
+    the standard `+`/`/` alphabet, not `-`/`_` — translate first."""
     try:
-        return base64.urlsafe_b64decode(encoded.encode("ascii"))
+        translated = encoded.translate(str.maketrans("-_", "+/"))
+        return base64.b64decode(translated, validate=True)
     except (binascii.Error, ValueError) as exc:
         raise EnvelopeFormatError(f"Envelope is not valid base64: {exc}") from exc

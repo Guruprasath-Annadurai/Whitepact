@@ -10,6 +10,30 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ### Added
 
+- Enterprise Neural Phase 2 Step 3 — Field Encryption Dual-Scheme
+  Wiring (2026-08-28) (`db/encryption.py`) — `EncryptedString` now
+  supports the new `governance/crypto`-based envelope scheme
+  alongside legacy `RAI_FIELD_ENCRYPTION_KEY` Fernet, activated via
+  `configure_field_encryption_key()`. Format detection uses an
+  explicit, versioned string prefix (`"wpcrypto2:"`), not a
+  structural guess. Two real bugs found and fixed before merge: the
+  first design attempt detected format by decoding stored values as
+  base64 and checking a byte — running the full regression suite
+  surfaced 12 failures, because base32 TOTP secrets
+  (`pyotp.random_base32()`) use an alphabet that's a strict subset of
+  base64's at a block-aligned length, so genuine plaintext TOTP
+  secrets "successfully" decoded as base64 and were misidentified as
+  ciphertext, breaking every MFA flow. Replaced with the explicit
+  prefix. Separately, `governance/crypto/envelope.py`'s
+  `decode_envelope()` was found to decode leniently
+  (`validate=False`, Python's base64 default) rather than strictly,
+  silently discarding invalid characters instead of rejecting
+  malformed input — fixed to decode strictly. 13 new/updated tests,
+  100% coverage on `db/encryption.py`. Full suite: 2949 passed, 0
+  failed. Application-startup wiring to actually activate the new
+  scheme in production is explicitly out of scope for this step — see
+  `docs/enterprise-neural/02_PHASE2_STEP3_REPORT.md`.
+
 - Enterprise Neural Phase 2 Step 2 — Persistent Key Store (2026-08-28)
   (`db/crypto_key_repository.py`, migration `0030`) — `CryptoKeyRepository`,
   a DB-backed `WrappedKeyStore` (`governance/crypto/provider.py`)

@@ -374,6 +374,20 @@ class TestEnvelope:
         with pytest.raises(EnvelopeFormatError):
             decode_envelope("not valid base64 !!! ###")
 
+    def test_decode_envelope_rejects_plaintext_a_lenient_decoder_would_silently_accept(
+        self,
+    ) -> None:
+        """Regression guard: `base64.urlsafe_b64decode` alone defaults
+        to `validate=False`, which silently discards invalid
+        characters instead of raising -- so a plaintext string like an
+        IP address ("203.0.113.5") "successfully" decodes to
+        meaningless bytes rather than being rejected. Found during
+        Enterprise Neural Phase 2 Step 3's `db/encryption.py` wiring,
+        where this exact leniency let plaintext fall through to the
+        decrypt path. `decode_envelope` must reject it strictly."""
+        with pytest.raises(EnvelopeFormatError):
+            decode_envelope("203.0.113.5")
+
     async def test_wrong_key_id_expectation_is_rejected(self) -> None:
         """A caller that resolved the wrong purpose/tenant DEK for the
         envelope it's decrypting is caught by the embedded-KeyId check,
