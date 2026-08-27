@@ -10,6 +10,28 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ### Added
 
+- Enterprise Neural Phase 2 Step 5 — Generalized Rotation Script,
+  Phase 2 complete (2026-08-28)
+  (`scripts/rotate_field_encryption_key.py`) — the existing legacy
+  Fernet rotation script now also supports migrating to, or rotating
+  within, the new `governance/crypto` scheme via `RAI_ROOT_KEY`,
+  reusing its original sweep logic unchanged (proof Step 3's
+  dual-scheme `EncryptedString` design needed zero changes to support
+  this). A real data-corruption risk was found and fixed before this
+  landed: running the migration without also keeping the legacy
+  `RAI_FIELD_ENCRYPTION_KEY` set would silently re-encrypt
+  still-undecrypted legacy ciphertext as if it were plaintext,
+  double-wrapping it. A pre-flight check now refuses to proceed when
+  it detects this condition. 11 new tests plus full manual CLI
+  verification against a real `alembic`-migrated database (both the
+  refusal and success paths). Full suite: 2965 passed, 0 failed. This
+  closes Phase 2 (Cryptographic Foundation + Key Management) — all 5
+  implementation steps complete; see
+  `docs/enterprise-neural/02_PHASE2_STEP5_REPORT.md`'s final verdict
+  for what the phase does and does not deliver (the key-management
+  foundation is real and tested; nothing in the running application
+  activates it yet — that remains a separate, unscheduled step).
+
 - Enterprise Neural Phase 2 Step 4 — Canonical Signing + SAML Session
   Key Rotation (2026-08-28) (`governance/crypto/signing.py`,
   `auth/saml.py`) — `sign()`/`verify()`, an HMAC-SHA256 helper binding
