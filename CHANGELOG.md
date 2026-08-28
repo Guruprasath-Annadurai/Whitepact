@@ -10,6 +10,29 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ### Added
 
+- Enterprise Neural Phase 14 — Resilience + Fail-Closed Operations
+  Matrix (2026-08-28) (`tests/test_resilience_fail_closed_matrix.py`)
+  — audit-driven, not a rebuild: `THREAT_MODEL.md` already documents
+  evidence-write failures failing closed and Trust Index lookups
+  failing open, deliberately asymmetric; `TestAuthoritySubsystemCrashFailsClosed`
+  already proved `WhitePactRuntimeGateway.evaluate()` crashes fail
+  closed too, by simple exception propagation (no try/except needed —
+  a crash structurally prevents evidence being written or the executor
+  being reached). Auditing `apply_governance()` in full found six more
+  repository dependencies called before `evaluate()`
+  (`ceiling_repo`, `policy_repo`, `delegation_repo`,
+  `workflow_rule_repo`, `autonomy_budget_repo`, `intent_repo`) relying
+  on the identical propagation mechanism, none individually
+  regression-tested for it. This phase generalizes the existing crash
+  test's exact pattern across all six, parametrized: a crash in any
+  one never produces the tool's real payload and never fabricates an
+  evidence record. Two dependencies (`recent_*_count()` helper calls,
+  `evidence_repo.list_recent_actions()`) are only reached under
+  additional preconditions the shared parametrized sweep can't cover
+  without separate setup — named as a residual gap, not silently
+  assumed covered. 6 new tests; full suite 3132 passed, 1 skipped, 0
+  failed.
+
 - Enterprise Neural Phase 13 — Immutable Audit + Evidence Anchoring
   Evidence (2026-08-28) (`tests/test_evidence_chain_anchoring.py`) —
   audit-driven, not a rebuild: `ENTERPRISE_SECURITY.md` already
