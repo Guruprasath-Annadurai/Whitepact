@@ -10,6 +10,22 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ### Added
 
+- Enterprise Neural Phase 4 — Neural Data Classification + Consent
+  Policy (2026-08-28) (`governance/neural/`, new subpackage; see
+  `docs/enterprise-neural/04_PHASE4_DESIGN.md`) — the N0-N5
+  `NeuralDataClass` classification vocabulary, `NeuralPayload` (a
+  mandatory-classification wrapper whose `__repr__` never renders raw
+  payload bytes, closing the accidental-log-leak class of risk), the
+  8-category `ConsentCategory`/`ConsentRecord` model (no blanket "I
+  agree" — each category granted/revoked independently), and
+  `evaluate_neural_data_flow()`, a fail-closed consent policy
+  evaluator (missing or revoked consent → DENY, "latest version wins"
+  resolution). 26 new tests (2 Hypothesis property tests), 100%
+  coverage, exported from `governance/__init__.py` as `neural`. This
+  is Step 1 of Phase 4's build — the Neural Vault persistence layer
+  and end-to-end leakage tests remain. Net-new product surface: zero
+  neural/BCI code existed before this phase.
+
 - Enterprise Neural Phase 2 Step 5 — Generalized Rotation Script,
   Phase 2 complete (2026-08-28)
   (`scripts/rotate_field_encryption_key.py`) — the existing legacy

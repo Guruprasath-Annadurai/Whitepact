@@ -10,7 +10,7 @@ without evidence (test output, file paths, commit SHA).
 | 1 | Secure SDLC + Software Supply Chain | **PASS** — all 12 PR #50 checks green, CodeQL 0 findings verified via API | dd070de (PR #50, unmerged — cumulative review branch) | All checks pass | CodeQL: 0 open alerts. All required gates (CI, CodeQL, dependency-review, Gitleaks, DCO) green. | Container/IaC scanning still absent; `required_approving_review_count: 0` accepted as founder-led-project reality, not fixed |
 | 2 | Cryptographic Foundation + Key Management | **PASS — all 5/5 implementation steps complete.** Design audit PASS; Steps 1-5 PASS. See `02_PHASE2_STEP5_REPORT.md`'s final verdict: real, tested key-management foundation delivered and wired into field encryption + SAML session signing; webhook signing correctly excluded (two-party secret, see Step 4); **not yet activated in any running deployment** — app-startup wiring remains a separate, unscheduled step | pending (uncommitted at ledger update time) | 100/100 new tests pass (Steps 1-5 combined), 100% coverage on all directly-covered modules; full suite 2965 passed, 0 failed | 8 real bugs found and fixed pre-commit across Steps 1-3 and 5 (KeyId sentinel collision, version-numbering overwrite, LocalEnvelopeKeyProvider.store type over-narrowing, TOTP/base64 format-detection collision, decode_envelope lenient decoding, legacy-ciphertext double-wrapping in the rotation script) plus 1 design correction (Step 4, webhook signing scope) | Application-startup wiring absent across all call sites — this is Phase 2's single largest residual risk, spanning every step's report; webhook secret rotation remains unsolved by design (needs a different, receiver-coordinated approach, out of this phase's scope) |
 | 3 | Zero-Trust Identity + Tenant Isolation | NOT STARTED (merges with `docs/heart-production/` Phase 3+) | — | — | — | — |
-| 4 | Neural Data Privacy Architecture | NOT STARTED — blocked on explicit go-ahead (net-new scope, see Phase 0 report §2, §7) | — | — | — | — |
+| 4 | Neural Data Privacy Architecture | **IN PROGRESS** — go-ahead given; design PASS, Step 1/4 PASS (`governance/neural/` classification vocabulary + fail-closed consent policy). Neural Vault persistence, retention/export/delete, and end-to-end leakage tests remain | pending (uncommitted at ledger update time) | 26/26 new tests pass, 100% coverage; full suite 2992 passed, 0 failed | No bugs found this step (scope kept tight — pure types + one policy function, no I/O) | No persistence layer yet; downstream phases (5-7) will produce the real data this phase's leakage-test claims can't yet be verified against |
 | 5 | Universal BCI Device + Trust Layer | NOT STARTED — same block as Phase 4 | — | — | — | — |
 | 6 | Neural Signal Integrity + Decoder Safety | NOT STARTED — same block | — | — | — | — |
 | 7 | Neural Intent Attestation + Action Binding | NOT STARTED — same block | — | — | — | — |
@@ -28,13 +28,11 @@ without evidence (test output, file paths, commit SHA).
 
 **Note on Phases 4–7, 16 (the neural/BCI track):** Phase 0's audit found
 zero existing neural/BCI code in the repository — these phases are a
-distinct, large, net-new product initiative, not hardening. Per the
-directive's own working-behavior rule ("if a decision materially changes
-the WhitePact constitutional model, STOP and flag it before
-implementation"), these remain NOT STARTED pending your explicit
-confirmation to begin building the neural product surface, tracked
-separately from the security-foundation phases (1–3, 8, 10–15, 17–18)
-which apply to the existing platform regardless of that decision.
+distinct, large, net-new product initiative, not hardening. Explicit
+go-ahead given to proceed through Phases 4–18 (excluding 3, tracked via
+`docs/heart-production/`, and 9, deferred pending separate unsynced
+Codex work on WhitePact) — work is now proceeding phase-by-phase with
+the same design-then-implement-then-report rigor established in Phase 2.
 
 **Note on Phase 9:** merged into the already-in-progress
 `docs/heart-production/` initiative per your prior direction — tracked

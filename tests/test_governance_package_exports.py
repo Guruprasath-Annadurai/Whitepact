@@ -143,6 +143,21 @@ class TestHeartSymbolsAreExported:
         ):
             assert hasattr(governance.crypto, name)
 
+    def test_neural_module_exported(self) -> None:
+        """Enterprise Neural Phase 4's data-classification/consent
+        subpackage is exported the same way `crypto` already is."""
+        assert hasattr(governance, "neural")
+        assert "neural" in governance.__all__
+        for name in (
+            "NeuralDataClass",
+            "NeuralPayload",
+            "ConsentCategory",
+            "ConsentRecord",
+            "ConsentStatus",
+            "evaluate_neural_data_flow",
+        ):
+            assert hasattr(governance.neural, name)
+
     def test_constitution_symbols_exported(self) -> None:
         for name in (
             "ConstitutionalLawCode",
