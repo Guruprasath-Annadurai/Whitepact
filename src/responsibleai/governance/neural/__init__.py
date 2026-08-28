@@ -11,15 +11,31 @@ the device trust/capability contract (`device.py`) — `DeviceTrustLevel`,
 Protocol. Phase 6 (`docs/enterprise-neural/06_PHASE6_DESIGN.md`) adds
 the typed decision contract (`decision.py`) — `NeuralDecision`,
 `NeuralDecisionStatus`, and misuse-rejection logic (NaN/Inf, expiry,
-staleness, context mismatch). No concrete BCI hardware integration or
+staleness, context mismatch). Phase 7
+(`docs/enterprise-neural/07_PHASE7_DESIGN.md`) adds intent attestation
+(`attestation.py`) — `NeuralIntentAttestation`, minted/verified via
+`governance/crypto`'s existing signing primitives, binding a decision to
+an exact proposed action so that mutating any security-relevant field
+invalidates the attestation. No concrete BCI hardware integration or
 decoder exists yet — see `device.py`/`decision.py`'s own module
 docstrings for why building either now (no real device, vendor SDK, or
 trained model to validate against) would be exactly the kind of
-prototype capability fabrication the master directive prohibits.
+prototype capability fabrication the master directive prohibits;
+`attestation.py` is more buildable, since it's a pure transformation
+over already-typed objects, not hardware/model-dependent.
 """
 
 from __future__ import annotations
 
+from responsibleai.governance.neural.attestation import (
+    NeuralAttestationRejectReason,
+    NeuralAttestationStatus,
+    NeuralAttestationVerificationResult,
+    NeuralIntentAttestation,
+    compute_neural_action_digest,
+    mint_neural_intent_attestation,
+    verify_neural_intent_attestation,
+)
 from responsibleai.governance.neural.decision import (
     NeuralDecision,
     NeuralDecisionStatus,
@@ -62,10 +78,14 @@ __all__ = [
     "ConsentRequiredError",
     "ConsentStatus",
     "DeviceTrustLevel",
+    "NeuralAttestationRejectReason",
+    "NeuralAttestationStatus",
+    "NeuralAttestationVerificationResult",
     "NeuralCapabilityManifest",
     "NeuralDataClass",
     "NeuralDecision",
     "NeuralDecisionStatus",
+    "NeuralIntentAttestation",
     "NeuralPayload",
     "NeuralPolicyDecision",
     "NeuralPolicyReason",
@@ -73,9 +93,12 @@ __all__ = [
     "NeuralPrivacyError",
     "NeuralVaultEntry",
     "classify_decision_status",
+    "compute_neural_action_digest",
     "evaluate_neural_data_flow",
     "is_expired",
     "is_stale_decoder",
     "matches_context",
     "max_capability_state_for_trust_level",
+    "mint_neural_intent_attestation",
+    "verify_neural_intent_attestation",
 ]

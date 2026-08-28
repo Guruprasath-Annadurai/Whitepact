@@ -24,6 +24,7 @@ class KeyPurpose(StrEnum):
     WEBHOOK_SIGNING = "webhook_signing"
     SESSION_SIGNING = "session_signing"
     AUDIT_ANCHOR = "audit_anchor"
+    NEURAL_ATTESTATION = "neural_attestation"
 
 
 class KeyStatus(StrEnum):

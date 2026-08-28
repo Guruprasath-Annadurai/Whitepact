@@ -10,6 +10,26 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ### Added
 
+- Enterprise Neural Phase 7 — Neural Intent Attestation + Action
+  Binding (2026-08-28) (`governance/neural/attestation.py`) —
+  `NeuralIntentAttestation`, minted and verified via
+  `governance/crypto`'s existing signing primitives (a new
+  `KeyPurpose.NEURAL_ATTESTATION` value, additive), implementing the
+  directive's mutation-invalidates-authorization property literally:
+  `verify_neural_intent_attestation` compares the attestation's stored
+  action digest against the digest of what's actually about to
+  execute and rejects on any mismatch — changing the amount, the
+  recipient, or the purpose after attestation invalidates it.
+  Fail-closed verification order (signature → expiry → mutation →
+  embedded decision status), so a forged attestation never reaches the
+  later checks. Unlike Phases 5/6, this is fully implemented and
+  tested end-to-end (not merely a typed contract) — attestation is a
+  pure transformation over already-typed objects, not hardware- or
+  model-dependent. 24 new tests (2 Hypothesis property tests,
+  including the literal ₹1,000→₹100,000 and recipient-A→B scenarios
+  the directive names), 100% coverage. Full suite: 3095 passed, 0
+  failed.
+
 - Enterprise Neural Phase 6 — Neural Signal Integrity + Decoder Safety
   (2026-08-28) (`governance/neural/decision.py`) — `NeuralDecision`
   (every field the directive requires: schema version, calibrated
