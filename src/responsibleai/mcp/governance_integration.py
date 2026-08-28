@@ -62,6 +62,7 @@ from responsibleai.governance import (
     DecisionResult,
     GovernanceDecision,
     IdentityContext,
+    IdentityKind,
     InternalToolExecutor,
     ReasonCode,
     RiskTier,
@@ -172,7 +173,7 @@ async def apply_governance(
 
     identity = IdentityContext(
         identity_id=ctx.key_id,
-        kind="oidc" if ctx.key_id.startswith("oidc:") else "api_key",
+        kind=IdentityKind.OIDC if ctx.key_id.startswith("oidc:") else IdentityKind.ORGANIZATION,
         org_id=ctx.org_id,
         display_name=ctx.org_name,
     )
@@ -524,7 +525,7 @@ def _agent_from_approval(approval: ApprovalRequest) -> AgentContext:
     raising and blocking an otherwise-valid resume."""
     identity = IdentityContext(
         identity_id=approval.requested_by or "unknown",
-        kind="api_key",
+        kind=IdentityKind.ORGANIZATION,
         org_id=approval.organization_id,
     )
     return AgentContext(

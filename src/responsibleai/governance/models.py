@@ -50,6 +50,43 @@ from responsibleai.rbac.models import OrgContext
 _VALUE_ARGUMENT_KEYS = ("amount_usd", "value_usd", "amount")
 
 
+class IdentityKind(StrEnum):
+    """Zero-Trust Identity, Phase 1 (`docs/heart-production/03_ZERO_TRUST_IDENTITY.md`):
+    the closed set of principal types WhitePact's governance pipeline
+    can authenticate, replacing `IdentityContext.kind`'s previously
+    unconstrained `str`. Values are unchanged from the informal string
+    literals every construction site already used (`"human"`,
+    `"api_key"`, `"oidc"`, `"vc"`, `"agent"`, `"workload"`) plus four
+    genuinely new kinds this codebase had no type for at all
+    (`DEVICE`, `BCI_SESSION`, `TOOL`, `SERVICE`) -- a type-safety
+    upgrade and vocabulary completion, not a behavior change. Every
+    existing caller passing a plain string literal continues to work
+    identically (`StrEnum` members compare and hash equal to their
+    string value), verified in `tests/test_identity_kind.py`.
+
+    **What this phase does not resolve, named honestly**: `OIDC` and
+    `VERIFIED_CREDENTIAL` describe an authentication *mechanism*, not a
+    pure identity *type* -- `identity_authority_adapter.py`'s own
+    docstring already documents `"oidc"` as ambiguous (a human via SSO
+    and a machine via client-credentials both produce `kind="oidc"`
+    today, with no discriminator). Fully separating mechanism from
+    type would mean adding a real signal (e.g. a token's `azp`/client
+    type) this codebase doesn't capture yet -- out of this phase's
+    scope, left as a documented remaining gap rather than silently
+    designed around."""
+
+    HUMAN = "human"
+    ORGANIZATION = "api_key"
+    OIDC = "oidc"
+    VERIFIED_CREDENTIAL = "vc"
+    AGENT = "agent"
+    WORKLOAD = "workload"
+    DEVICE = "device"
+    BCI_SESSION = "bci_session"
+    TOOL = "tool"
+    SERVICE = "service"
+
+
 class GovernanceDecision(StrEnum):
     """SPEC.md Section 3.6 — the five outcomes a governed action can
     receive. The single most consequential net-new piece of Phase 8:
@@ -74,7 +111,7 @@ class IdentityContext:
     with no API key at all)."""
 
     identity_id: str
-    kind: str  # "human" | "api_key" | "agent" | "oidc" | "workload"
+    kind: IdentityKind
     org_id: str | None = None
     display_name: str | None = None
     org_context: OrgContext | None = None
@@ -88,7 +125,7 @@ class IdentityContext:
         uses, it doesn't invent new trust."""
         return cls(
             identity_id=ctx.key_id,
-            kind="oidc" if ctx.key_id.startswith("oidc:") else "api_key",
+            kind=IdentityKind.OIDC if ctx.key_id.startswith("oidc:") else IdentityKind.ORGANIZATION,
             org_id=ctx.org_id,
             display_name=ctx.org_name,
             org_context=ctx,
@@ -108,7 +145,7 @@ class IdentityContext:
         table)."""
         return cls(
             identity_id=f"vc:{claim.principal_id}",
-            kind="vc",
+            kind=IdentityKind.VERIFIED_CREDENTIAL,
             org_id=claim.org_id,
             display_name=claim.credential_type,
         )

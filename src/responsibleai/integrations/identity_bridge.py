@@ -54,7 +54,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from responsibleai.governance.models import AuthorityContext, IdentityContext
+from responsibleai.governance.models import AuthorityContext, IdentityContext, IdentityKind
 
 
 @dataclass(frozen=True)
@@ -72,7 +72,7 @@ class BridgeIdentity:
     groups: tuple[str, ...] = field(default_factory=tuple)
     raw: dict[str, Any] = field(default_factory=dict)
 
-    def to_identity_context(self, *, kind: str = "oidc") -> IdentityContext:
+    def to_identity_context(self, *, kind: IdentityKind = IdentityKind.OIDC) -> IdentityContext:
         return IdentityContext(
             identity_id=self.identity_id,
             kind=kind,

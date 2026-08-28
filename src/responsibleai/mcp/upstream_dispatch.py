@@ -33,6 +33,7 @@ from responsibleai.governance import (
     DecisionResult,
     GovernanceDecision,
     IdentityContext,
+    IdentityKind,
     ReasonCode,
     WhitePactRuntimeGateway,
     authorize_execution,
@@ -116,7 +117,7 @@ async def apply_upstream_governance(
 
     identity = IdentityContext(
         identity_id=ctx.key_id,
-        kind="oidc" if ctx.key_id.startswith("oidc:") else "api_key",
+        kind=IdentityKind.OIDC if ctx.key_id.startswith("oidc:") else IdentityKind.ORGANIZATION,
         org_id=ctx.org_id,
         display_name=ctx.org_name,
     )

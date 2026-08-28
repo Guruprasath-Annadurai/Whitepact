@@ -147,6 +147,7 @@ from responsibleai.governance.models import (
     DecisionResult,
     GovernanceDecision,
     IdentityContext,
+    IdentityKind,
     validate_attenuation,
 )
 from responsibleai.governance.non_delegable_authority import (
@@ -235,6 +236,7 @@ __all__ = [
     "HeartVetoRecord",
     "HeartVetoStatus",
     "IdentityContext",
+    "IdentityKind",
     "InternalToolExecutor",
     "LatticeComparisonResult",
     "LatticeComparisonStatus",
