@@ -183,7 +183,14 @@ class LocalFileAnchorProvider:
     async def publish(self, anchor_id: str, payload: bytes) -> str:
         path = self._path_for(anchor_id)
         try:
-            fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o444)
+            # 0o400: owner read-only, no group/other access -- an
+            # anchor file carries org_id/bundle_id/signature (not key
+            # material), but still has no reason to be world-readable.
+            # The already-open fd retains write access from O_WRONLY
+            # regardless of this mode (permission bits govern future
+            # opens, not the current one), so the write below still
+            # succeeds.
+            fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o400)
         except FileExistsError as exc:
             raise AnchorAlreadyPublishedError(anchor_id) from exc
         try:
