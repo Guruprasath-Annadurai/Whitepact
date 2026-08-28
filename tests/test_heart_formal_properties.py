@@ -15,7 +15,7 @@ for all possible inputs by a proof assistant. See the ledger's own
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from hypothesis import given
@@ -176,7 +176,7 @@ class TestDigestSensitivity:
             "jurisdiction": "EU",
             "evidence_refs": ("event:2",),
             "issued_at": now.replace(year=now.year + 1),
-            "not_before": now.replace(day=min(now.day + 1, 28)),
+            "not_before": now + timedelta(hours=1),
             "expires_at": now.replace(year=now.year + 2),
         }
         for field, new_value in perturbations.items():
@@ -211,7 +211,7 @@ class TestDigestSensitivity:
             "consent_method": ConsentMethod.SIGNED_DOCUMENT,
             "evidence_refs": ("consent:2",),
             "consented_at": now.replace(year=now.year + 1),
-            "not_before": now.replace(day=min(now.day + 1, 28)),
+            "not_before": now + timedelta(hours=1),
             "expires_at": now.replace(year=now.year + 2),
         }
         for field, new_value in perturbations.items():
