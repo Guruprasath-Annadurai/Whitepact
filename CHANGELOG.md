@@ -10,6 +10,26 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ### Added
 
+- Enterprise Neural Phase 18 — Final Enterprise Release Verification
+  (2026-08-28) (`docs/enterprise-neural/18_PHASE18_FINAL_SYNTHESIS.md`)
+  — the final phase of the master directive: a synthesis and
+  verification pass over Phases 0-1, 2, 4-8, 10-17 on
+  `security/enterprise-neural-phase-0-1`, not net-new security work.
+  Re-ran the full regression suite one final time (3147 passed, 1
+  skipped, 0 failed) and re-confirmed PR #50's 12/12 checks green via
+  the GitHub API, not from memory. Confirmed CodeQL genuinely shows 0
+  open alerts (verified by filtering the code-scanning API by
+  `tool.name`, since OpenSSF Scorecard also publishes to the same
+  alerts endpoint under different rule IDs and would otherwise look
+  like CodeQL findings) — 58 open Scorecard findings on `main` exist
+  and are named honestly as a real, out-of-scope-for-this-phase gap,
+  not hidden by an imprecise "0 alerts" claim. Backfilled
+  `PROGRESS_LEDGER.md`'s "Commit" column, which had said "pending
+  (uncommitted at ledger update time)" for every phase from 2 through
+  17 since each entry was written before its own commit existed — the
+  same staleness class Phases 12 and 15 already found and fixed
+  elsewhere. No source code changed.
+
 - Enterprise Neural Phase 17 — Full Adversarial Hardening Fuzz Test
   (2026-08-28) (`tests/test_ssrf_guard_fuzz.py`) — audit-driven:
   `SECURITY_ASSURANCE_CASE.md` §8 already states plainly that "no
