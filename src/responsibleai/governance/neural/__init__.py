@@ -22,7 +22,13 @@ docstrings for why building either now (no real device, vendor SDK, or
 trained model to validate against) would be exactly the kind of
 prototype capability fabrication the master directive prohibits;
 `attestation.py` is more buildable, since it's a pure transformation
-over already-typed objects, not hardware/model-dependent.
+over already-typed objects, not hardware/model-dependent. Phase 16
+(`docs/enterprise-neural/16_PHASE16_DESIGN.md`) adds the scientific
+evidence contract (`evidence.py`) — `NeuralCapabilityEvidence`,
+`NeuralEvidenceType`, and `evaluate_capability_validation_claim()`,
+the fail-closed check that a `CapabilityState.VALIDATED` claim is
+backed by actual measured evidence, not merely a sufficiently trusted
+device transport (`device.py`'s own ceiling covers only the latter).
 """
 
 from __future__ import annotations
@@ -50,6 +56,14 @@ from responsibleai.governance.neural.device import (
     DeviceTrustLevel,
     NeuralCapabilityManifest,
     max_capability_state_for_trust_level,
+)
+from responsibleai.governance.neural.evidence import (
+    NeuralCapabilityEvidence,
+    NeuralEvidenceDecision,
+    NeuralEvidenceReason,
+    NeuralEvidenceResult,
+    NeuralEvidenceType,
+    evaluate_capability_validation_claim,
 )
 from responsibleai.governance.neural.policy import (
     NeuralPolicyDecision,
@@ -81,10 +95,15 @@ __all__ = [
     "NeuralAttestationRejectReason",
     "NeuralAttestationStatus",
     "NeuralAttestationVerificationResult",
+    "NeuralCapabilityEvidence",
     "NeuralCapabilityManifest",
     "NeuralDataClass",
     "NeuralDecision",
     "NeuralDecisionStatus",
+    "NeuralEvidenceDecision",
+    "NeuralEvidenceReason",
+    "NeuralEvidenceResult",
+    "NeuralEvidenceType",
     "NeuralIntentAttestation",
     "NeuralPayload",
     "NeuralPolicyDecision",
@@ -94,6 +113,7 @@ __all__ = [
     "NeuralVaultEntry",
     "classify_decision_status",
     "compute_neural_action_digest",
+    "evaluate_capability_validation_claim",
     "evaluate_neural_data_flow",
     "is_expired",
     "is_stale_decoder",

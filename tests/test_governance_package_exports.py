@@ -197,6 +197,19 @@ class TestHeartSymbolsAreExported:
         ):
             assert hasattr(governance.neural, name)
 
+    def test_neural_evidence_symbols_exported(self) -> None:
+        """Enterprise Neural Phase 16's scientific evidence contract is
+        exported from the same `neural` module."""
+        for name in (
+            "NeuralCapabilityEvidence",
+            "NeuralEvidenceType",
+            "NeuralEvidenceDecision",
+            "NeuralEvidenceReason",
+            "NeuralEvidenceResult",
+            "evaluate_capability_validation_claim",
+        ):
+            assert hasattr(governance.neural, name)
+
     def test_crypto_neural_attestation_key_purpose_exported(self) -> None:
         """Enterprise Neural Phase 7 adds KeyPurpose.NEURAL_ATTESTATION
         to the existing governance/crypto/ enum."""

@@ -10,6 +10,27 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ### Added
 
+- Enterprise Neural Phase 16 — Scientific Evidence System (2026-08-28)
+  (`governance/neural/evidence.py`) — closes a real, previously-
+  unenforced gap: `device.py`'s own docstring quotes the master
+  directive directly ("WhitePact's own measured capability evidence
+  determines what WhitePact labels validated"), but nothing checked
+  it — a sufficiently trusted device (`TRUST_A`/`TRUST_B`/`TRUST_C`)
+  could claim `CapabilityState.VALIDATED` for any capability with zero
+  supporting evidence. `NeuralEvidenceType` distinguishes evidence by
+  who measured it (`WHITEPACT_MEASURED`/`INDEPENDENT_THIRD_PARTY`/
+  `REGULATORY_CLEARANCE` qualify; `VENDOR_SELF_REPORTED` deliberately
+  does not, on its own). `evaluate_capability_validation_claim()` is
+  fail-closed: a `VALIDATED` claim with no matching evidence record,
+  or only vendor-self-reported ones, is DENY. No concrete device,
+  decoder, or study is fabricated — same discipline as Phases 5-6's
+  typed-contract-only scope. 13 new tests (12 in
+  `tests/test_neural_evidence.py` including a Hypothesis property test
+  that no quantity of vendor-only evidence can ever produce ALLOW, 1
+  export regression guard), 100% coverage, exported from
+  `governance/neural/__init__.py`. Full suite 3145 passed, 1 skipped,
+  0 failed.
+
 - Enterprise Neural Phase 14 — Resilience + Fail-Closed Operations
   Matrix (2026-08-28) (`tests/test_resilience_fail_closed_matrix.py`)
   — audit-driven, not a rebuild: `THREAT_MODEL.md` already documents
