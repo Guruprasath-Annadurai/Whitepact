@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """FastAPI middleware: request ID, logging, security headers, auth."""
 
 from __future__ import annotations

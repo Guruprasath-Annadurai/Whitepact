@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for the WhitePact Authority Constitution (Heart Phase H1) --
 `governance/constitution.py`'s `AuthorityConstitutionVersion`,
 `compute_constitution_digest()`, and the ratified-version registry.

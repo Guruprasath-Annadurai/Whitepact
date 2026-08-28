@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for the JIT Credential Broker (Authority Everywhere Phase 10).
 
 Covers: the pure issue/consume functions in

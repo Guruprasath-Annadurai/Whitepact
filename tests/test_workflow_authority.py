@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for the Workflow Authority Engine (governance/workflow.py):
 `check_composition_violation()`, its wiring into
 `WhitePactRuntimeGateway.evaluate()`, `EvidenceRepository.list_recent_actions()`,

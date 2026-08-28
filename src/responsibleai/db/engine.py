@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Async SQLAlchemy engine factory — SQLite for dev/test, PostgreSQL for production."""
 
 from __future__ import annotations

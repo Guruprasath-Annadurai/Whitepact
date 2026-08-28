@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Framework-agnostic HTTP client for the public Trust Index check
 endpoint (`GET /api/trust-index/check`) — the one primitive every
 agent-framework integration in this package is built on.

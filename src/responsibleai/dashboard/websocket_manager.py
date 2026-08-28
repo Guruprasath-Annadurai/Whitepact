@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """WebSocket connection manager for live dashboard updates.
 
 Enterprise features:

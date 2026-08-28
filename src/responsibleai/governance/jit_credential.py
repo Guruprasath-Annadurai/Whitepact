@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """JIT Credential Broker (Authority Everywhere Phase 10) — the step
 between "an `ExecutionAuthorization` says this action may run" and "the
 executor actually holds a credential for the destination."

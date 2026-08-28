@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for the self-serve signup wizard (`POST /api/signup`) and its
 anti-abuse guard (`dashboard/signup_guard.py`).
 

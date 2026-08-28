@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """
 WhitePact MCP Server (governance tools for Claude Code and MCP-compatible
 AI assistants) — the governance engine behind WhitePact's runtime

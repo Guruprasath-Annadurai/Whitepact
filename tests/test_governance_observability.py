@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for whitepact_* observability metrics (v3 authority-layer work,
 Task #138): WhitePactRuntimeGateway.evaluate() decisions and approval
 resolutions are now visible on the existing /metrics Prometheus

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for dashboard.websocket_manager.ConnectionManager -- previously
 entirely untested. Uses lightweight fake WebSocket objects (async accept/
 send_json) instead of a real FastAPI WebSocket, since the manager only ever

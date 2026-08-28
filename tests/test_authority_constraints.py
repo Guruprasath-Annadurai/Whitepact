@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for `AuthorityContext.constraint_violation()` (v3 authority-layer
 work, Task #136): the authority model's first real granularity beyond
 action-type membership — value limits, target patterns, time windows.

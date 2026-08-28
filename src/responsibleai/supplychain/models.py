@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Domain models for the MCP Trust/Supply-Chain Scanner (SPEC.md
 Section 7, Phase 13). SPEC.md's one hard requirement for this
 subsystem: it "must distinguish VERIFIED FACT / INFERRED SIGNAL /

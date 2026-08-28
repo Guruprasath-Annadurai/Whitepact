@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Decision -> execution binding and the executor abstraction — closes
 the gap the WhitePact v3 authority-layer review flagged as the highest
 priority after the approval-mutation fix: nothing previously stopped a

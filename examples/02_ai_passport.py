@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """
 Example 02 — AI Passport Generator
 Run: python examples/02_ai_passport.py

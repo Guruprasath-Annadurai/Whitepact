@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for Heart Phase H11 — Heart Veto (`governance/heart_veto.py`).
 
 Covers `apply_heart_veto()`'s derivation from every

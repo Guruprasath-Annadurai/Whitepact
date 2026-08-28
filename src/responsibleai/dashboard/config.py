@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Runtime configuration — every value overridable via env var or .env file."""
 
 from __future__ import annotations

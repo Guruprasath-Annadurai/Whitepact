@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for dashboard.telemetry -- previously entirely untested. Uses the
 real `opentelemetry` packages (installed in this environment) for the happy
 paths, and `sys.modules` injection to force ImportError for the graceful-

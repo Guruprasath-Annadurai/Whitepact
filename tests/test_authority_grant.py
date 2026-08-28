@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for Heart Production Integration Phase 1 — the Authority
 Contract (`governance/authority_grant.py`).
 

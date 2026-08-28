@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Authority Conflict Resolver (Heart Phase H10) — the single point
 that decides, when multiple independent Heart legitimacy checks
 (Phases H3-H9) are available for the same authority decision and they

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for `auth/crypto_policy.py` (OpenSSF `crypto_keylength`):
 webhook signing secret entropy floor, and RSA JWKS key-size rejection,
 including an end-to-end check that a weak key served by a JWKS endpoint

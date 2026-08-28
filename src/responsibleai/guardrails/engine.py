@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """
 Guardrails Engine — PII detection, toxicity filtering, and policy enforcement.
 

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """The policy engine — SPEC.md Section 3.5: "a small, strongly typed
 internal model first — not an LLM, not necessarily OPA/Rego on day
 one." This is that first version: an ordered list of deterministic

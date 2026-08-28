@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for dashboard.middleware -- previously untested in isolation (only
 exercised incidentally through full app.py integration tests, which never
 hit every branch). Builds minimal Starlette/FastAPI apps directly around

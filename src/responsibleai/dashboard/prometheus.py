@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Prometheus metrics definitions and helpers.
 
 Exposes a /metrics endpoint compatible with any Prometheus scraper

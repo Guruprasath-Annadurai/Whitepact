@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for the `whitepact` compatibility alias package.
 
 MIGRATION_WHITEPACT_V2.md Section 3: `import whitepact` must re-export

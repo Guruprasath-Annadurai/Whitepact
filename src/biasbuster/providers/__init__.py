@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 from biasbuster.providers.base import BaseProvider, CompletionRequest, CompletionResponse
 from biasbuster.providers.huggingface_provider import HuggingFaceProvider, OllamaProvider
 from biasbuster.providers.openai_provider import OpenAIProvider

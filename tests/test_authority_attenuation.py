@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for `validate_attenuation()` — the authority-attenuation
 invariant: a delegated `AuthorityContext` must never grant more than
 the `AuthorityContext` that delegated it held. See `governance/models.py`

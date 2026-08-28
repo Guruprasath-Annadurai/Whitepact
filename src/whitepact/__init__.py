@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """WhitePact — compatibility alias for the ResponsibleAI governance engine.
 
 See MIGRATION_WHITEPACT_V2.md Section 3. `import whitepact` re-exports

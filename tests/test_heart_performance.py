@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Heart Phase H16 — Performance.
 
 First-ever latency/throughput measurements for the Heart's hot paths:

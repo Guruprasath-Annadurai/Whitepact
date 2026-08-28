@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Stripe billing integration — converts MCP/API plan tiers into recurring revenue.
 
 Design intent

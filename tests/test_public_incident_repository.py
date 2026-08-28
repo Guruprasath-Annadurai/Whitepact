@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for PublicIncidentRepository — the public, crowd-reported, moderated
 AI Incident Database (compliance-adjacent: the "CVE database for AI failures")."""
 

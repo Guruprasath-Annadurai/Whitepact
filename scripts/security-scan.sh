@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 # Free automated vulnerability scan via OWASP ZAP baseline scan.
 #
 # This is NOT a substitute for a paid third-party penetration test — it's

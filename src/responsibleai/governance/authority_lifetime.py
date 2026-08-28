@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Authority Lifetime (Heart Phase H8) — the executable form of
 constitutional laws H6 ("expiry overrides previous authorization"),
 H13 ("historical authorization does not imply current authorization"),

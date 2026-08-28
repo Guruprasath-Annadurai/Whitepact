@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Async repository for the JIT Credential Broker's audit trail
 (``credential_issuances``) -- see ``governance/jit_credential.py`` for
 what issues a ``JITCredential`` in the first place. This repository

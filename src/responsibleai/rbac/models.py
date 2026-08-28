@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """RBAC domain models — Organizations, API keys, roles, audit entries."""
 
 from __future__ import annotations

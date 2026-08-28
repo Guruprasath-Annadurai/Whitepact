@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for auth.verifiable_credential and governance.principal --
 Verified Principal (Authority Everywhere Phase 3). Mirrors test_oidc.py
 and test_crypto_policy.py's TestOIDCProviderRejectsWeakJWKSKey patterns

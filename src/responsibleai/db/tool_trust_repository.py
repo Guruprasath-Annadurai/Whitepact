@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Async repository for the Tool Trust Network's persisted scores
 (``tool_trust_scores``) -- see ``governance/tool_trust.py`` for how a
 ``ToolTrustScore`` is computed. This repository only ever persists

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for A2ATrustGate (src/responsibleai/integrations/a2a_adapter.py)
 -- the outbound agent-to-agent governance gate. The core gate has no
 `a2a-sdk` dependency (plain strings in, structured decision out), so

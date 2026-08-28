@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Async repository for the public AI Incident Database — a CVE-style,
 crowd-reported, moderated registry of publicly disclosed AI failures across
 any model or provider. Distinct from `IncidentRepository` (db/incident_repository.py),

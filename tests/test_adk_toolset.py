@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for the Google ADK McpToolset factories — the "free integration"
 from GAME_CHANGER_BUILD_PLAN.md Phase B. Verifies the factories build a
 real, correctly-configured McpToolset against the actual installed

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """AI Passport — verifiable trust certification artifact."""
 
 from __future__ import annotations

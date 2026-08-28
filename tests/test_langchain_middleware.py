@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for TrustGateMiddleware — the LangChain wrap_tool_call adapter
 described in GAME_CHANGER_BUILD_PLAN.md Phase B. Requires the real
 `langchain` package (the `langchain` extra / dev dependency) since the

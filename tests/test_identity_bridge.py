@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for the Identity Bridge adapters (`integrations/identity_bridge.py`).
 
 Sample payloads below are shaped to match each provider's own published

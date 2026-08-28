@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Opt-in field-level encryption for individual PII/secret columns.
 
 Encryption at rest for the *whole database* is the deployer's

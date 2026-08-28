@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Example 08 — WhitePact Enterprise Scenario (v3 authority layer, end-to-end)
 
 Every step below calls real code from `governance/` and `db/` — nothing

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Async repository for persisted Outcome Observations
 (``governance_outcomes``) -- see ``governance/outcome.py`` for what
 constructs an ``OutcomeRecord`` in the first place. Append-only, same

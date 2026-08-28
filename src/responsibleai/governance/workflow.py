@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Workflow Authority: detects an authority-composition violation — a
 sequence of individually-permitted actions that becomes dangerous only
 in combination (e.g. ``beneficiary.create`` -> ``payment.limit.raise``

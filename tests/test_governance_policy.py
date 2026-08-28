@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for the policy engine (SPEC.md Section 3.5, Phase 10):
 `governance/policy.py`'s `PolicyRule` matching and `Policy`'s
 first-match-wins evaluation.

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Wires `WhitePactRuntimeGateway` into the live, hosted-MCP-transport
 tool-call dispatch path — closes the gap MIGRATION_WHITEPACT_V2.md
 flagged: `dispatch_tool()` used to be unchanged by any of the

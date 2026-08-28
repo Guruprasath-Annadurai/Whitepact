@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Async repository for ``AutonomyBudgetPolicy`` (v3 authority-layer
 work) -- one row per org, fetched by ``mcp/governance_integration.py``
 on every hosted MCP tool call and passed to

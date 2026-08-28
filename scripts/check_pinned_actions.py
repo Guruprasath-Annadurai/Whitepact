@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Fail CI if a GitHub Actions dependency is not pinned to a full commit SHA.
 
 OpenSSF Scorecard's Pinned-Dependencies check treats movable tags such as

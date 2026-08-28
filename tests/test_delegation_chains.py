@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for delegation chains on AuthorityContext (v3 authority-layer
 work, Task #143): "authority model remains coarse... no delegation
 chains" from the gap reports. Deliberately NOT a transitive-permission

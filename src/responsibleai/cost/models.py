@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Data models for Cost Intelligence."""
 
 from __future__ import annotations

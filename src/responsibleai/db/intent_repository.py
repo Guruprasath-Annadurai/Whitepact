@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Async repository for Intent Contracts (Authority Everywhere Phase 4)
 -- persists ``IntentContract``s declared via
 ``POST /api/governance/intent-contracts`` and resolves, per agent, the

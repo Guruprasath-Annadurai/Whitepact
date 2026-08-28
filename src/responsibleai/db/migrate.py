@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Automatic schema migration at startup.
 
 `DatabaseEngine.init()` only calls `metadata.create_all()`, which is

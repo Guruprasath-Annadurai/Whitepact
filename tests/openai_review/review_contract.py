@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Single source of truth for the submitted OpenAI Plugins Directory
 test cases (see compliance/OPENAI_PLUGIN_SUBMISSION_PREP.md §3 for the
 prose version this mirrors). test_submitted_review_cases.py asserts

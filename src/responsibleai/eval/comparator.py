@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """A/B model comparator — evaluates two response sets on identical prompts."""
 
 from __future__ import annotations

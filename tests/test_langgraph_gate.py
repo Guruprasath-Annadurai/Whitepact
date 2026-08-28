@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for make_trust_gate_node — the LangGraph interrupt()-based gate
 described in GAME_CHANGER_BUILD_PLAN.md Phase B. Runs against a real
 compiled LangGraph graph with a real checkpointer, not a mocked

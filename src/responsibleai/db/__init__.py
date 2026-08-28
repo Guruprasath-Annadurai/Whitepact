@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Async database layer — supports SQLite (default) and PostgreSQL."""
 
 from responsibleai.db.approval_repository import (

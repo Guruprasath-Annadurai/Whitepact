@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for EvalRepository -- previously entirely untested (0% branch
 coverage). Real DB-backed behavior against a fresh in-memory engine per
 test, covering both branches of every conditional in the module."""

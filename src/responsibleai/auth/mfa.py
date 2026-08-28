@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """TOTP (RFC 6238) multi-factor auth for the dashboard login flow.
 
 Scope, stated plainly: this platform authenticates via bearer API keys and

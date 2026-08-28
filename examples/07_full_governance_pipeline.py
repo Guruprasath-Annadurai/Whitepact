@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """
 Example 07 — Full Governance Pipeline (end-to-end)
 Simulates a complete AI governance evaluation cycle without requiring any API keys.

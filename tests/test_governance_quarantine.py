@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for cross-request violation-pattern tracking — proving
 `GovernanceDecision.QUARANTINE` is actually reachable (governance/
 quarantine.py + WhitePactRuntimeGateway.evaluate()'s

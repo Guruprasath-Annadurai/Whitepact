@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Delegation Graph domain model (Core Invariant #2): the persisted
 record of who delegated authority to whom, distinct from
 ``AuthorityContext.delegation_chain`` (an in-memory, per-call ordered

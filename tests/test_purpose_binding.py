@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for Heart Phase H5 — Purpose Binding (`governance/purpose_binding.py`).
 
 Covers every `PurposeBindingStatus` branch of `validate_purpose_binding()`

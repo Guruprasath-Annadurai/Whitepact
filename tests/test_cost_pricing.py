@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for the model pricing catalog (cost/models.py) — in particular
 the Azure OpenAI entries, since get_pricing()'s exact-match vs.
 provider-fallback distinction matters more there than anywhere else in

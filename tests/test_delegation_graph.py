@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for the Delegation Graph (Core Invariant #2, v3 authority-layer
 work): `DelegationRecord` (governance/delegation.py) and
 `DelegationRepository` (db/delegation_repository.py) -- persisted

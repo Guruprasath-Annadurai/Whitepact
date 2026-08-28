@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """OpenAI Plugins Directory submission — release-critical regression
 suite. Asserts every automatable case from review_contract.py against
 the real MCP tool handlers via dispatch_tool(), exactly as they would

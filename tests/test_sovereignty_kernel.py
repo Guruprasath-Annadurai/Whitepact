@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for Heart Phase H13 — Sovereignty Kernel Entry Point
 (`governance/sovereignty_kernel.py`).
 

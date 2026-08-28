@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for multi-approver quorum (v3 authority-layer work, Task
 #142): "no multi-approver quorum or delegation-chain approval" was
 flagged repeatedly in this session's gap reports. Closes the quorum

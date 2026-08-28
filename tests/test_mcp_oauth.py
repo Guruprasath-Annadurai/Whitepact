@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for the hosted MCP transports' OAuth/OIDC resource-server auth:
 a Bearer JWT issued by the org's configured OIDC provider authenticates
 `/mcp` and `/sse` exactly like the dashboard API already accepts it,

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for automatic schema migration at startup (db/migrate.py).
 
 Guarded with importorskip("alembic") — the subprocess this module shells

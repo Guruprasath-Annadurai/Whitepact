@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Async repository for the MCP Upstream Gateway's registry
 (``upstream_mcp_servers``) -- org-scoped CRUD over approved external
 MCP servers. See ``governance/upstream.py`` for the SSRF validation this

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Real MCP protocol round-trip tests for Verified Principal
 (Authority Everywhere Phase 3): a Bearer VC-JWT presentation
 authenticates `/mcp` exactly like an OIDC JWT already does (see

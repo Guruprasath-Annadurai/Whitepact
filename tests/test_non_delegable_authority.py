@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for Heart Phase H7 — Non-Delegable and Human-Reserved
 Authority (`governance/non_delegable_authority.py`).
 

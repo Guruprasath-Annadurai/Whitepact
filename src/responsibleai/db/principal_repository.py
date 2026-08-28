@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Async repository for persisted Verified Principal authentications
 (``verified_principals``) -- see ``governance/principal.py`` for what
 constructs a ``PrincipalClaim`` in the first place. Append-only audit

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for the embeddable Trust Passport badge SVG generator."""
 
 from __future__ import annotations

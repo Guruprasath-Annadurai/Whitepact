@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for OrgRepository -- exercised only incidentally by other tests
 before this file existed, leaving several branches (set_plan's optional
 fields, get_org_by_slug/stripe_customer misses, authenticate's SSO/legacy

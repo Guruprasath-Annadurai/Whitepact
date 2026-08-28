@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Memory Firewall (v3 authority-layer work, "Memory Authority"): a
 deterministic scan for prompt-injection patterns aimed specifically at
 persistent agent memory -- distinct from ``GuardrailsEngine``'s

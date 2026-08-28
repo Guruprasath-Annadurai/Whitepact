@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Async repository for multi-tenant org, API key, and RBAC data.
 
 Key security decisions:

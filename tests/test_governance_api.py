@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """End-to-end HTTP tests for the /api/governance/* endpoints (evidence
 listing/verification, approval listing/resolution) against a real
 auth-enabled app instance — see test_mfa_login_flow.py's module

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Documentation-currency checker (OpenSSF Silver, documentation_current).
 
 Validates a small set of high-value invariants that are cheap to check and

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Root of Authority (Heart Phase H3) — the first place this codebase
 implements constitutional laws H1 ("every machine authority has a
 legitimate root") and H2 ("machines cannot originate authority") as

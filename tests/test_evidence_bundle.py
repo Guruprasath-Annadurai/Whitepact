@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for the Evidence Bundle (governance/evidence_bundle.py):
 `build_evidence_bundle()`, `verify_evidence_bundle()`, and
 `EvidenceRepository.list_for_bundle()` -- the self-contained, offline-

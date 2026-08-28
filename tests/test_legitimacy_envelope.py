@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for Heart Phase H12 — Legitimacy Envelope
 (`governance/legitimacy_envelope.py`).
 

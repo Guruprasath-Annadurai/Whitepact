@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for Delegation Graph as a first-class object (Authority
 Everywhere Phase 6) -- `governance/delegation_graph.py`'s
 `DelegationGraph`/`DelegationGraphNode`, and

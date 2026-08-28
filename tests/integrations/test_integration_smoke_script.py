@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for scripts/integration_smoke.py -- the cross-platform onboarding
 preflight script.
 

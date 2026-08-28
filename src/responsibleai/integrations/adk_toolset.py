@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Google ADK MCPToolset wiring for the ResponsibleAI MCP server — the
 "free integration" from GAME_CHANGER_BUILD_PLAN.md Phase B.
 

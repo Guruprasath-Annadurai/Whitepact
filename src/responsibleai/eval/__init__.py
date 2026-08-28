@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 from responsibleai.eval.benchmarks import BenchmarkRunner
 from responsibleai.eval.comparator import ModelComparator
 from responsibleai.eval.dataset_scanner import DatasetBiasScanner

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Real, locally-executed performance benchmarks for BENCHMARKS.md.
 
 Not a synthetic/theoretical estimate — every number in BENCHMARKS.md is

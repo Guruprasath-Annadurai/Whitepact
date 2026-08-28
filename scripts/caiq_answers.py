@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Answer set for the CSA STAR Level 1 CAIQ v4.0.3 questionnaire,
 grounded in the real, current state of the WhitePact/ResponsibleAI
 codebase and its existing compliance docs (compliance/CAIQ_SELF_ASSESSMENT.md,

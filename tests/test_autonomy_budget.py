@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for the Autonomy Budget (governance/autonomy_budget.py):
 `recent_autonomous_action_count()`, its wiring into
 `WhitePactRuntimeGateway.evaluate()`, and `OrgAutonomyBudgetRepository`.

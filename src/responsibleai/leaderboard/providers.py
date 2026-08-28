@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Model adapters — the thin, swappable layer that actually calls a live LLM
 provider to collect responses for a leaderboard run.
 

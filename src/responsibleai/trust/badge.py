@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Embeddable SVG trust badges for a Trust Passport.
 
 The free/paid split this supports (see `STRATEGY_ROADMAP.md` Part 0, Item 3):

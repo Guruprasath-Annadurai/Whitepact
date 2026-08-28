@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for McpUsageRepository — MCP tool call metering for PRO/ENTERPRISE billing."""
 
 from __future__ import annotations

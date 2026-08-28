@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Async repository for persisted approval requests (SPEC.md's
 `Decision.REQUIRE_APPROVAL` made actionable, Phase 11).
 

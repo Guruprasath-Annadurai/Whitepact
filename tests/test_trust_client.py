@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for TrustClient — the framework-agnostic HTTP client every
 agent-framework integration in src/responsibleai/integrations/ builds on."""
 

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """``OrgAuthorityCeiling`` — a structural authority ceiling no per-call
 ``AuthorityContext`` built for an org can ever exceed, enforced via
 ``validate_attenuation()`` as the live ``parent_authority`` on every

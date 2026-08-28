@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """v1.0 — Production Hardening tests.
 
 Covers: API versioning middleware, OIDC module, support endpoints,

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """``UpstreamMCPExecutor`` — the ``Executor`` (``governance/execution.py``)
 that proxies one governed tool call to a registered external MCP
 server, via the real MCP Python SDK client (the same one this project's

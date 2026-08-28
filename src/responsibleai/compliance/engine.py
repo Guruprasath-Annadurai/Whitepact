@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """
 Compliance Engine — evaluate AI systems against major governance frameworks.
 

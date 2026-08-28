@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Async repository for persisted governance policy rules (gap-closure
 work tracked in MIGRATION_WHITEPACT_V2.md Section 8.2: policy rules
 previously existed only as in-code `PolicyRule`/`Policy` objects built

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Outcome Observation (Authority Everywhere Phase 12) — what actually
 happened when a governed action executed, captured independently of
 what was authorized.

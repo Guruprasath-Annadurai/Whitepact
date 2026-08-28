@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Delegation Graph as a first-class object (Authority Everywhere
 Phase 6) — a queryable representation of the *whole* delegation
 structure (who delegated to whom, transitively, right now), not just

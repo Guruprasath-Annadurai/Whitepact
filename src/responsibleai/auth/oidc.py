@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """OIDC / OAuth2 JWT validation — async JWKS caching, claims extraction."""
 
 from __future__ import annotations

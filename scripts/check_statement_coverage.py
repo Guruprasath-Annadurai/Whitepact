@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """OpenSSF Gold ``test_statement_coverage90`` gate.
 
 coverage.py's terminal ``Cover`` percentage is blended with branch coverage

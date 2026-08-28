@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """The MCP Trust/Supply-Chain Scanner — SPEC.md Section 7, Phase 13.
 See scanner.py's module docstring for the three checks and exactly
 what each one can and can't honestly claim."""

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """DB-backed webhook delivery log and config storage.
 
 Delivery log persistence lets retries survive restarts (WebhookDeliveryRepository,

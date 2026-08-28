@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for AgentContext.trust_state population (governance/
 trust_integration.py) and WhitePactRuntimeGateway's consultation of it —
 closing the gap where the field existed but nothing populated or

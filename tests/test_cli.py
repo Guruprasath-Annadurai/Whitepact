@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for the biasbuster CLI -- previously entirely untested (0% branch
 coverage). Uses click's CliRunner plus a monkeypatched BiasBusterRunner.run
 so no real provider network call ever happens; real providers are only

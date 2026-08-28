@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Re-encrypt every field-encrypted column under the current *first* key in
 RAI_FIELD_ENCRYPTION_KEY, so the old key(s) after it can be safely dropped.
 

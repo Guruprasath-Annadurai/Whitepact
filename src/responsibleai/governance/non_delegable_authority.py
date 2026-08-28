@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Non-Delegable and Human-Reserved Authority (Heart Phase H7) — the
 executable form of constitutional law H11 ("non-delegable authority
 remains non-delegable").

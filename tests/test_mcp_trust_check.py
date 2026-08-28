@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for the rai_check_trust MCP tool — the agent-native primitive
 described in GAME_CHANGER_BUILD_PLAN.md Phase B. Unlike every other rai_*
 tool, dispatch here makes an HTTP call (the MCP server is stateless and

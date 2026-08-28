@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for opt-in field-level encryption (db/encryption.py) and its
 application to audit_log.ip_address."""
 

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """LangGraph trust-gate node — the "actually stops a bad call" reference
 integration from GAME_CHANGER_BUILD_PLAN.md Phase B.
 

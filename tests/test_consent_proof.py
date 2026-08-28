@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for Heart Phase H4 — Consent Proof (`governance/consent_proof.py`).
 
 Covers every `ConsentValidationStatus` branch of `validate_consent_proof()`

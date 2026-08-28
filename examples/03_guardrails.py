@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """
 Example 03 — Guardrails Engine (PII + Toxicity)
 Run: python examples/03_guardrails.py

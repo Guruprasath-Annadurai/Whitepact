@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """The WhitePact Gauntlet: a single, live, end-to-end adversarial test
 proving the invariants built across this v3 authority-layer build
 (Delegation Graph, Org Authority Ceiling, Workflow Authority Engine,

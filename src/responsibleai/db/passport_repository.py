@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Async repository for persisted Trust Passports — the citable, verifiable
 artifact behind the open Trust Index standard (compliance/TRUST_INDEX_SPEC.md).
 

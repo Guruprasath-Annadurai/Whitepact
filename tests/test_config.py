@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for responsibleai.dashboard.config.Settings — env var parsing.
 
 Regression coverage for a real startup-crashing bug found while building

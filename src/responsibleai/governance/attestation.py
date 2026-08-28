@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Attestation (Authority Everywhere Phase 14) — the packaged, final
 statement of one action's Decision -> Outcome -> Reconciliation chain.
 

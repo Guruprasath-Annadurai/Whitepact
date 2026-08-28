@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """SAML 2.0 service-provider support — AuthnRequest generation, signed-
 response validation, and WhitePact's own post-login session token.
 

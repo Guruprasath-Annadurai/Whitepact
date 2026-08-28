@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for PolicyRepository — persisted governance policy rules
 (previously code-only PolicyRule/Policy objects, now a real DB table).
 """

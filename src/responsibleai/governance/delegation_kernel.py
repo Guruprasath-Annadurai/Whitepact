@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Delegation Kernel (Heart Phase H6) — combines the three independent
 legitimacy checks Phases H3-H5 already established (root, consent,
 purpose) with a `DelegationRecord`'s own state into one composed

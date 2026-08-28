@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Evidence Bundle (v3 authority-layer work): a self-contained,
 OFFLINE-verifiable export of an org's governance evidence chain (or a
 scoped time-range slice of it) -- the actual deliverable an auditor,

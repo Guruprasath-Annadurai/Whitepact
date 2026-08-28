@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Dataset-level bias and PII scanner for CSV / JSONL uploads."""
 
 from __future__ import annotations

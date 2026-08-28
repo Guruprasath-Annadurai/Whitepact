@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Intent Contract (Authority Everywhere Phase 4) — the stated goal and
 declared bounds an agent commits to *before* it starts taking actions,
 so later checks can ask "does this action still match what was

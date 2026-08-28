@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for Heart Phase H6 — Delegation Kernel
 (`governance/delegation_kernel.py`).
 

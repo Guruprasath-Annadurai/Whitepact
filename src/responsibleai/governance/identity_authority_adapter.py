@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Identity → Heart Root-Authority Adapter (Heart → WhitePact
 Production Integration, Phase 2).
 

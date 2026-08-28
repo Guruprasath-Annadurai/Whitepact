@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Async repository for persisted, hash-chained governance evidence
 (SPEC.md Section 3.7, Phase 12). Same hash-chaining technique as
 `public_incident_repository.py` and `audit_repository.py` — sha256 over

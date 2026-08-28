@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Real, concurrent load test for the hosted WhitePact dashboard
 (v2.0.0 roadmap item: "persistent storage proven under real load").
 

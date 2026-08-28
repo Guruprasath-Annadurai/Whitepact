@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for the MCP Upstream Gateway (v3 authority-layer work, Task
 #139) -- the largest gap flagged across this session's reports:
 WhitePact governed its own 27 in-process tools but had no way to proxy

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """ResponsibleAI MCP Server — governance tools for Claude Code and MCP-compatible AI assistants.
 
 No eager imports here on purpose: `mcp/tools.py`, `mcp/resources.py`, and

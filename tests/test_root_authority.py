@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for Heart Phase H3 — Root of Authority (`governance/root_authority.py`).
 
 Covers every `RootValidationStatus` branch of `validate_root_chain()` plus

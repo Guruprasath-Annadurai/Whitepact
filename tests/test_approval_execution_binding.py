@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for the execution-binding invariants an approval must enforce
 (WhitePact v3 authority-layer spec, Sections 24/25/26/51):
 

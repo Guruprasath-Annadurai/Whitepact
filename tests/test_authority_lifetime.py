@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for Heart Phase H8 — Authority Lifetime
 (`governance/authority_lifetime.py`).
 

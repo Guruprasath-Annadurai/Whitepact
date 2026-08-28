@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Drift guard for server.json (MCP registry manifest, Phase 17): its
 version and tool/resource counts must stay in sync with the real
 source of truth (pyproject.toml, TOOL_DEFS, RESOURCE_DEFS) the same
