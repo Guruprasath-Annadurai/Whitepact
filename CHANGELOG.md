@@ -10,6 +10,30 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ### Added
 
+- Enterprise Neural Phase 13 — Immutable Audit + Evidence Anchoring
+  Evidence (2026-08-28) (`tests/test_evidence_chain_anchoring.py`) —
+  audit-driven, not a rebuild: `ENTERPRISE_SECURITY.md` already
+  documents that no hash chain alone can defend against an attacker
+  with full DB write access recomputing the entire chain from
+  scratch — only external anchoring (periodic publication to
+  write-once storage) can. `governance/evidence_bundle.py`'s
+  offline-verifiable, digest-bearing bundle export (already real,
+  already tested, already API-exposed) already provides exactly the
+  artifact such an anchor needs; only the choice of *where* to publish
+  it is a real, cloud/infra-specific gap, correctly out of scope
+  without an explicit target named. This phase makes the underlying
+  claim concrete and reproducible rather than leaving it as prose: (1)
+  a full-chain-regeneration attack, simulated by writing directly to
+  `governance_evidence` and recomputing every downstream hash, passes
+  `EvidenceRepository.verify_chain()` — proving the documented
+  limitation is real; (2) a bundle digest captured before the attack
+  differs from one captured after, for the identical record range —
+  proving the mitigation actually works; (3) a negative control
+  confirms two exports of unchanged content produce the identical
+  digest, so (1) and (2) aren't artifacts of unrelated digest
+  instability. 3 new tests; full suite 3126 passed, 1 skipped, 0
+  failed.
+
 - Enterprise Neural Phase 12 — Platform + Network + Service Isolation
   (2026-08-28) (`mcp/server.py`'s `platform_isolation_problems()`) —
   audit-driven: `THREAT_MODEL.md` already documented DNS rebinding
