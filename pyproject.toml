@@ -174,6 +174,23 @@ Changelog  = "https://github.com/Guruprasath-Annadurai/Whitepact/blob/main/CHANG
 [tool.hatch.build.targets.wheel]
 packages = ["src/biasbuster", "src/privacylabel", "src/responsibleai", "src/whitepact"]
 
+# CPU-only wheels for torch/torchvision: this project uses them only as an
+# optional accuracy booster for DeepfakeDetector (`[deepfake]` extra), which
+# already runs in heuristic-only mode when they're absent -- see
+# tests/test_deepfake_detector.py's own UserWarning. The default CUDA-enabled
+# wheels drag in nvidia-* packages under LicenseRef-NVIDIA-Proprietary plus
+# several other non-allowlisted licenses, which fails
+# .github/workflows/dependency-review.yml's license gate. CPU wheels have no
+# such transitive dependencies.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+torchvision = [{ index = "pytorch-cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths    = ["tests"]

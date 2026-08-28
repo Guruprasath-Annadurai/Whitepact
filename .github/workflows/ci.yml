@@ -43,6 +43,10 @@ jobs:
 
       - name: Install dependencies
         run: |
+          # PYSEC-2026-3447: setup-python's bundled setuptools predates the
+          # fix (83.0.0). Upgrade explicitly before installing this project
+          # so pip-audit below scans a patched version, not the base image's.
+          pip install --upgrade "setuptools>=83.0.0"
           pip install -e ".[dev,openai,anthropic,sso,sentiment]"
 
       - name: Lint with ruff
