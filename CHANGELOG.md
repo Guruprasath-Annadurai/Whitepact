@@ -10,6 +10,24 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ### Added
 
+- Enterprise Neural Phase 10 — Brain Policy + Risk Engine Evidence
+  (2026-08-28) (`tests/test_brain_policy_risk_boundary.py`) —
+  audit-driven, not a rebuild: SPEC.md §2.5 already names "the Brain"
+  as the existing `governance/gateway.py` risk-classification +
+  policy-evaluation pipeline, and `gateway.py`'s own docstring already
+  labels those steps "Phase 9" (`risk.py`) and "Phase 10"
+  (`policy.py`) — real, persisted (`db/policy_repository.py`), tested
+  (41 pre-existing direct tests), and unconditionally wired into both
+  live governed-call paths (`mcp/governance_integration.py`,
+  `mcp/upstream_dispatch.py`). This phase adds regression-tested
+  evidence: `Policy.evaluate()` has exactly one call site
+  (`gateway.py`); `classify_action_risk()` has exactly the three
+  audited call sites; every `DecisionResult` the gateway produces
+  carries a real `RiskTier`; a matching `Policy` rule actually gates
+  the outcome through the real gateway; and an attacker-controlled
+  `ActionRequest.arguments` payload shaped to look like a risk/policy
+  override has zero effect on either. 13 new tests, 100% coverage on
+  the exercised modules; full suite 3114 passed, 0 failed.
 - Enterprise Neural Phase 8 — LLM + Agent Security Boundary Evidence
   (2026-08-28) (`tests/test_llm_agent_security_boundary.py`) —
   audit-driven, not a rebuild: most of the directive's "LLM must never
