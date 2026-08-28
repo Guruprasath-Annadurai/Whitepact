@@ -158,6 +158,18 @@ class TestHeartSymbolsAreExported:
         ):
             assert hasattr(governance.neural, name)
 
+    def test_neural_device_symbols_exported(self) -> None:
+        """Enterprise Neural Phase 5's device trust/capability contract
+        is exported from the same `neural` module."""
+        for name in (
+            "DeviceTrustLevel",
+            "CapabilityState",
+            "NeuralCapabilityManifest",
+            "BCIDeviceAdapter",
+            "max_capability_state_for_trust_level",
+        ):
+            assert hasattr(governance.neural, name)
+
     def test_constitution_symbols_exported(self) -> None:
         for name in (
             "ConstitutionalLawCode",

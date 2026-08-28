@@ -10,6 +10,20 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ### Added
 
+- Enterprise Neural Phase 5 — BCI Device Trust + Capability Contract
+  (2026-08-28) (`governance/neural/device.py`) — `DeviceTrustLevel`
+  (TRUST_A-D), `CapabilityState` (VALIDATED/EXPERIMENTAL/UNAVAILABLE),
+  `NeuralCapabilityManifest` (validates channel count, sampling rate,
+  and a trust-capability ceiling at construction — a `TRUST_D`
+  device's manifest cannot claim any capability `VALIDATED`, since an
+  unverified transport gives no basis for that measured-confidence
+  claim), and the `BCIDeviceAdapter` `Protocol`. Deliberately adds
+  **no** BrainFlow/LSL/vendor-SDK dependency and **no concrete device
+  adapter** — with no real device or vendor decision to validate
+  against, building one now would be exactly the kind of fabricated
+  capability claim the directive prohibits. 18 new tests (3 Hypothesis
+  property tests), 100% coverage. Full suite: 3028 passed, 0 failed.
+
 - Enterprise Neural Phase 4 Step 2 — Neural Vault Persistence
   (2026-08-28) (`db/neural_vault_repository.py`, migration `0031`) —
   `NeuralConsentRepository` (append-only consent ledger, revocation
