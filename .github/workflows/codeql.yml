@@ -1,0 +1,52 @@
+name: CodeQL
+
+# Enterprise Neural Phase 1 (secure SDLC / supply chain) -- Bandit
+# (security-scan.yml) covers pattern-based Python SAST; CodeQL adds
+# semantic, dataflow-aware analysis (taint tracking across function
+# boundaries, e.g. injection sinks reachable from untrusted input) that
+# pattern matching alone misses. Free for public repositories, GitHub-
+# native, results land directly in the Security tab / code scanning
+# alerts alongside Scorecard's SARIF upload.
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  schedule:
+    - cron: "38 5 * * 3" # weekly, offset from Scorecard/security-scan cron slots
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: CodeQL analysis
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ["python", "javascript-typescript"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-extended
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"

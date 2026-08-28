@@ -311,6 +311,33 @@ def _build_transport_security() -> Any:
     )
 
 
+def platform_isolation_problems(transport_security_enabled: bool) -> list[str]:
+    """Return a human-readable problem per hosted-transport isolation
+    setting left at its unsafe default. Empty list means no known
+    platform-isolation gap for the current configuration. Pure function
+    (no I/O), same pattern as `dashboard.config.multi_replica_problems()`
+    — unit-testable without booting a real ASGI app, and callers decide
+    whether an empty result means "log nothing" or "log success."
+
+    Currently checks exactly one condition: DNS rebinding protection
+    (`_build_transport_security()`) staying at its backward-compatible
+    default of disabled because no deployer-configured allowlist exists
+    yet — see `THREAT_MODEL.md` §1's "DNS rebinding" entry. Not a hard
+    startup failure (an empty allowlist with protection force-enabled
+    would reject every request) — informational, like
+    `multi_replica_problems()`'s own non-blocking precedent.
+    """
+    problems = []
+    if not transport_security_enabled:
+        problems.append(
+            "DNS rebinding protection is disabled for the hosted MCP HTTP/SSE "
+            "transport — set RAI_MCP_HTTP_ALLOWED_HOSTS and/or "
+            "RAI_MCP_HTTP_ALLOWED_ORIGINS to enable it. See THREAT_MODEL.md "
+            "Section 1."
+        )
+    return problems
+
+
 class _AuthFailureLimiter:
     """Per-process sliding-window limiter on failed Bearer-auth attempts,
     keyed by client IP — blocks credential-stuffing/brute-force probing of
@@ -470,6 +497,11 @@ def _build_http_app() -> Any:
     )
     _principal_repo = PrincipalRepository(_db_engine)
     transport_security = _build_transport_security()
+    isolation_problems = platform_isolation_problems(
+        transport_security.enable_dns_rebinding_protection
+    )
+    if isolation_problems:
+        _logger.warning("platform_isolation_misconfigured: %s", "; ".join(isolation_problems))
     sse = SseServerTransport("/messages/", security_settings=transport_security)
     # stateless=True: each POST to /mcp is authenticated and dispatched
     # independently, mirroring the legacy /sse transport's per-connection

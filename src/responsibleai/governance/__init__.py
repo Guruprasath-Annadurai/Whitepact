@@ -24,11 +24,26 @@ Heart test suites already established.
 **Production Integration Phase 1** (`docs/heart-production/`) adds
 `AuthorityGrant` (`governance/authority_grant.py`) — the boundary
 object between the Heart and WhitePact's live decision path, exported
-here for the same reason every Heart symbol already is."""
+here for the same reason every Heart symbol already is.
+
+**Enterprise Neural Phase 2** (`docs/enterprise-neural/`) adds the
+`crypto` subpackage — key hierarchy, the `KeyProvider` Protocol, and
+`LocalEnvelopeKeyProvider` (`governance/crypto/`) — exported as a
+module, the same `sovereignty_kernel`-style convention above, since its
+public surface is a dozen names better reached as `crypto.KeyId`
+etc. than flattened individually into this file's own `__all__`.
+
+**Enterprise Neural Phase 4** adds the `neural` subpackage —
+`NeuralDataClass`/`NeuralPayload` classification, per-category
+`ConsentRecord`, and the fail-closed `evaluate_neural_data_flow` policy
+evaluator (`governance/neural/`) — exported as a module, same
+convention. Net-new product surface (Phases 5-7's BCI device adapters,
+decoders, and intent attestation don't exist yet); see
+`docs/enterprise-neural/04_PHASE4_DESIGN.md`."""
 
 from __future__ import annotations
 
-from responsibleai.governance import sovereignty_kernel
+from responsibleai.governance import crypto, neural, sovereignty_kernel
 from responsibleai.governance.authority_conflict_resolver import (
     ConflictResolutionResult,
     ConflictResolutionStatus,
@@ -269,6 +284,7 @@ __all__ = [
     "classify_action_risk",
     "compare_authority_contexts",
     "compare_envelopes",
+    "crypto",
     "current_constitution",
     "enforce_heart_veto",
     "enrich_agent_trust_state",
@@ -280,6 +296,7 @@ __all__ = [
     "get_constitution_version",
     "identity_context_to_root_type",
     "intersect_envelopes",
+    "neural",
     "recent_autonomous_action_count",
     "recent_violation_count",
     "resolve_authority_conflicts",

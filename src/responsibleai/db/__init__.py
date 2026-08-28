@@ -16,6 +16,7 @@ from responsibleai.db.authority_passport_repository import (
     AuthorityPassportRepository,
 )
 from responsibleai.db.credential_issuance_repository import CredentialIssuanceRepository
+from responsibleai.db.crypto_key_repository import CryptoKeyRepository
 from responsibleai.db.delegation_repository import (
     DelegationEscalationError,
     DelegationNotFoundError,
@@ -28,6 +29,11 @@ from responsibleai.db.incident_repository import IncidentRepository
 from responsibleai.db.intent_repository import IntentContractRepository
 from responsibleai.db.leaderboard_repository import LeaderboardRepository
 from responsibleai.db.mcp_usage_repository import McpUsageRepository
+from responsibleai.db.neural_vault_repository import (
+    NeuralConsentRepository,
+    NeuralVaultEntryNotFoundError,
+    NeuralVaultRepository,
+)
 from responsibleai.db.org_authority_ceiling_repository import OrgAuthorityCeilingRepository
 from responsibleai.db.org_autonomy_budget_repository import OrgAutonomyBudgetRepository
 from responsibleai.db.org_repository import OrgRepository, SSORequiredError
@@ -96,4 +102,8 @@ __all__ = [
     "DelegationNotFoundError",
     "DelegationRepository",
     "OrgAutonomyBudgetRepository",
+    "CryptoKeyRepository",
+    "NeuralConsentRepository",
+    "NeuralVaultEntryNotFoundError",
+    "NeuralVaultRepository",
 ]

@@ -29,6 +29,21 @@ covers *the element actually being trusted*. ``signxml.XMLVerifier`` binds
 the signature to its ``Reference`` URI and returns only the specific
 verified subtree; every claim extracted below reads from that returned
 subtree, never from the original untrusted document.
+
+**Enterprise Neural Phase 2 Step 4**
+(``docs/enterprise-neural/02_PHASE2_DESIGN.md`` Sec 3.11): session-token
+signing (``mint_session_token``/``validate_session_token``) now supports
+the ``governance/crypto``-based key-rotation scheme alongside the legacy
+``SAMLConfig.session_secret`` HMAC, activated via
+``configure_session_signing_key()``. Unlike ``db/encryption.py``'s
+equivalent wiring, this doesn't need an explicit format marker to tell
+the two schemes apart on verification — an HMAC mismatch is unambiguous,
+so trying the new key first and falling back to the legacy secret is
+safe. This is *not* the same wiring applied to ``webhooks/manager.py``'s
+payload signing — see ``governance/crypto/signing.py``'s module
+docstring for why a webhook's HMAC secret (shared with an external
+receiver) doesn't fit this rotation model the way a self-verified
+session token does.
 """
 
 from __future__ import annotations
@@ -37,6 +52,7 @@ import base64
 import hashlib
 import hmac
 import json
+import threading
 import time
 import zlib
 from dataclasses import dataclass, field
@@ -44,6 +60,10 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote, urlencode
 from uuid import uuid4
+
+from responsibleai.governance.crypto import KeyId, KeyPurpose
+from responsibleai.governance.crypto import sign as _crypto_sign
+from responsibleai.governance.crypto import verify as _crypto_verify
 
 if TYPE_CHECKING:
     from lxml import etree
@@ -87,6 +107,46 @@ _ORG_ATTR_NAMES = ("org_id", "organization", "tenant_id")
 _CLOCK_SKEW_SECONDS = 120
 _SESSION_TOKEN_PREFIX = "wp_saml."  # noqa: S105 -- not a secret, a format tag
 _SESSION_TTL_SECONDS = 3600
+
+# Enterprise Neural Phase 2 Step 4
+# (docs/enterprise-neural/02_PHASE2_DESIGN.md Sec 3.11,
+# docs/enterprise-neural/02_PHASE2_STEP4_REPORT.md): session tokens are
+# signed and verified entirely within this codebase -- no external
+# party depends on the exact secret value -- unlike webhook HMAC
+# secrets (see governance/crypto/signing.py's own docstring), this is
+# a correct fit for the KeyProvider-based rotation model. Same
+# constraint as db/encryption.py's field-encryption wiring: these
+# functions are called synchronously, so an async KeyProvider
+# resolution must happen once, up front, at application startup.
+_active_session_signing_key: tuple[KeyId, bytes] | None = None
+_active_session_signing_key_lock = threading.Lock()
+
+
+def configure_session_signing_key(key_id: KeyId, dek: bytes) -> None:
+    """Install the key used to sign new session tokens and verify
+    tokens signed under it. See the constant block above for why this
+    is a plain synchronous setter."""
+    if key_id.purpose is not KeyPurpose.SESSION_SIGNING:
+        raise ValueError(
+            f"configure_session_signing_key requires a KeyId with "
+            f"purpose=SESSION_SIGNING, got {key_id.purpose!r}"
+        )
+    global _active_session_signing_key
+    with _active_session_signing_key_lock:
+        _active_session_signing_key = (key_id, dek)
+
+
+def clear_session_signing_key() -> None:
+    """Revert to the legacy `SAMLConfig.session_secret`-only path.
+    Primarily for tests."""
+    global _active_session_signing_key
+    with _active_session_signing_key_lock:
+        _active_session_signing_key = None
+
+
+def _get_active_session_signing_key() -> tuple[KeyId, bytes] | None:
+    with _active_session_signing_key_lock:
+        return _active_session_signing_key
 
 
 class SAMLError(ValueError):
@@ -374,7 +434,14 @@ def build_sp_metadata(config: SAMLConfig) -> str:
 
 def mint_session_token(config: SAMLConfig, claims: SAMLAssertionClaims) -> str:
     """WhitePact's own post-login bearer token — see module docstring for
-    why this exists instead of forwarding the (already-consumed) assertion."""
+    why this exists instead of forwarding the (already-consumed) assertion.
+
+    Signs with the new `governance/crypto`-based key when
+    `configure_session_signing_key()` has been called (matching every
+    other Phase 2 call site's "new writes always use the current key"
+    rule), falling back to legacy `config.session_secret` HMAC
+    otherwise — unchanged behavior for any deployment that hasn't
+    activated the new scheme."""
     payload = {
         "sub": claims.sub,
         "email": claims.email,
@@ -386,16 +453,32 @@ def mint_session_token(config: SAMLConfig, claims: SAMLAssertionClaims) -> str:
     payload_b64 = (
         base64.urlsafe_b64encode(json.dumps(payload).encode("utf-8")).decode("ascii").rstrip("=")
     )
-    signature = hmac.new(
-        config.session_secret.encode("utf-8"), payload_b64.encode("ascii"), hashlib.sha256
-    ).hexdigest()
+    active = _get_active_session_signing_key()
+    if active is not None:
+        key_id, dek = active
+        signature = _crypto_sign(dek, key_id, payload_b64.encode("ascii"))
+    else:
+        signature = hmac.new(
+            config.session_secret.encode("utf-8"), payload_b64.encode("ascii"), hashlib.sha256
+        ).hexdigest()
     return f"{_SESSION_TOKEN_PREFIX}{payload_b64}.{signature}"
 
 
 def validate_session_token(config: SAMLConfig, token: str) -> SAMLAssertionClaims | None:
     """Validate a token minted by mint_session_token. Returns None (not a
     raise) for "this isn't a SAML session token at all" so callers can
-    fall through to other auth methods without a try/except per call."""
+    fall through to other auth methods without a try/except per call.
+
+    Tries the new-scheme key first (if configured), falling back to
+    legacy `config.session_secret` — safe to try both, unlike this
+    module's encryption-side siblings: an HMAC mismatch is unambiguous
+    (no "successfully decodes to garbage" risk), so there's no need for
+    an explicit format marker the way `db/encryption.py`'s new scheme
+    needed one. This also means a token minted under a since-rotated
+    new-scheme key stops validating once that key is no longer the
+    active one — an accepted limitation for a token with only a
+    1-hour TTL to begin with, not a rotation-history/multi-key-try
+    mechanism like the legacy Fernet path's `MultiFernet`."""
     if not token.startswith(_SESSION_TOKEN_PREFIX):
         return None
     body = token[len(_SESSION_TOKEN_PREFIX) :]
@@ -404,10 +487,17 @@ def validate_session_token(config: SAMLConfig, token: str) -> SAMLAssertionClaim
     except ValueError:
         return None
 
-    expected_signature = hmac.new(
-        config.session_secret.encode("utf-8"), payload_b64.encode("ascii"), hashlib.sha256
-    ).hexdigest()
-    if not hmac.compare_digest(expected_signature, signature):
+    valid = False
+    active = _get_active_session_signing_key()
+    if active is not None:
+        key_id, dek = active
+        valid = _crypto_verify(dek, key_id, payload_b64.encode("ascii"), signature)
+    if not valid:
+        expected_signature = hmac.new(
+            config.session_secret.encode("utf-8"), payload_b64.encode("ascii"), hashlib.sha256
+        ).hexdigest()
+        valid = hmac.compare_digest(expected_signature, signature)
+    if not valid:
         return None
 
     try:

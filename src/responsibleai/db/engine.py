@@ -750,6 +750,68 @@ governance_authority_passports = Table(
     Index("idx_ap_principal", "org_id", "principal_id"),
 )
 
+governance_crypto_keys = Table(
+    "governance_crypto_keys",
+    metadata,
+    # Canonical KeyId.to_string() encoding (governance/crypto/types.py)
+    # -- collision-free by construction, so it doubles as the primary
+    # key rather than needing a separate synthetic id column.
+    Column("key_id", String(300), primary_key=True),
+    Column("purpose", String(32), nullable=False),
+    # "" (not NULL) represents "no tenant" -- the same wire encoding
+    # KeyId.to_string() itself already uses, reused here rather than a
+    # nullable column, since a composite PRIMARY KEY cannot contain a
+    # nullable column in standard SQL and this avoids needing one.
+    Column("tenant_id", String(200), nullable=False),
+    Column("environment", String(32), nullable=False),
+    Column("version", Integer, nullable=False),
+    Column("wrapped_dek", Text, nullable=False),  # base64, never plaintext DEK material
+    Column("status", String(16), nullable=False),  # active | retired | revoked
+    Column("created_at", String(32), nullable=False),
+    Index(
+        "idx_crypto_keys_lookup",
+        "purpose",
+        "tenant_id",
+        "environment",
+        "status",
+        "version",
+    ),
+)
+
+governance_neural_consent = Table(
+    "governance_neural_consent",
+    metadata,
+    Column("consent_id", String(64), primary_key=True),
+    Column("subject_id", String(200), nullable=False),
+    Column("organization_id", String(36), nullable=True),
+    Column("category", String(32), nullable=False),
+    Column("status", String(16), nullable=False),
+    Column("version", Integer, nullable=False),
+    Column("granted_at", String(32), nullable=False),
+    Column("revoked_at", String(32), nullable=True),
+    Index("idx_neural_consent_subject_category", "subject_id", "category"),
+)
+
+governance_neural_vault_index = Table(
+    "governance_neural_vault_index",
+    metadata,
+    Column("entry_id", String(64), primary_key=True),
+    Column("subject_id", String(200), nullable=False),
+    Column("session_id", String(200), nullable=False),
+    Column("data_class", String(32), nullable=False),
+    Column("device_reference", String(200), nullable=True),
+    Column("captured_at", String(32), nullable=False),
+    Column("retention_expires_at", String(32), nullable=True),
+    Column("deleted_at", String(32), nullable=True),
+    # Populated only when a subject has separately, explicitly
+    # consented to cross-device sync -- NULL is the default, expected
+    # state, not a partial record. See governance/neural/types.py's
+    # NeuralVaultEntry docstring.
+    Column("encrypted_sync_copy", Text, nullable=True),
+    Index("idx_neural_vault_subject", "subject_id"),
+    Index("idx_neural_vault_subject_session", "subject_id", "session_id"),
+)
+
 
 class DatabaseEngine:
     """Async database engine wrapping SQLAlchemy — SQLite or PostgreSQL.

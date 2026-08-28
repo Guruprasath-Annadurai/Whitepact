@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import base64
 import datetime
+import os
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -29,11 +30,14 @@ from responsibleai.auth.saml import (
     SAMLError,
     build_authn_request,
     build_sp_metadata,
+    clear_session_signing_key,
+    configure_session_signing_key,
     mint_session_token,
     parse_and_validate_response,
     peek_in_response_to,
     validate_session_token,
 )
+from responsibleai.governance.crypto import KeyId, KeyPurpose
 
 
 def _make_cert(key: rsa.RSAPrivateKey) -> str:
@@ -75,6 +79,15 @@ def config(idp_keypair: tuple[str, str]) -> SAMLConfig:
         acs_url="http://localhost:8765/api/auth/acs",
         session_secret="test-session-secret",
     )
+
+
+@pytest.fixture(autouse=True)
+def _reset_session_signing_key():
+    """`_active_session_signing_key` is process-global state in
+    auth/saml.py -- reset it around every test in this module."""
+    clear_session_signing_key()
+    yield
+    clear_session_signing_key()
 
 
 def _signed_response(
@@ -506,3 +519,63 @@ class TestSessionToken:
             m.setattr(saml_module.time, "time", lambda: 1_000_000_000.0)
             token = mint_session_token(config, claims)
         assert validate_session_token(config, token) is None
+
+
+def _session_signing_key_id(version: int = 1) -> KeyId:
+    return KeyId(
+        purpose=KeyPurpose.SESSION_SIGNING, tenant_id=None, version=version, environment="test"
+    )
+
+
+class TestConfigureSessionSigningKey:
+    def test_rejects_wrong_purpose(self):
+        wrong_purpose_key_id = KeyId(
+            purpose=KeyPurpose.WEBHOOK_SIGNING, tenant_id=None, version=1, environment="test"
+        )
+        with pytest.raises(ValueError, match="SESSION_SIGNING"):
+            configure_session_signing_key(wrong_purpose_key_id, os.urandom(32))
+
+
+class TestSessionTokenNewScheme:
+    """Enterprise Neural Phase 2 Step 4 -- the governance/crypto-based
+    session-signing scheme coexisting with legacy
+    SAMLConfig.session_secret."""
+
+    def test_round_trips_when_new_scheme_configured(self, config: SAMLConfig, idp_keypair):
+        configure_session_signing_key(_session_signing_key_id(), os.urandom(32))
+        resp = _signed_response(idp_keypair)
+        claims = parse_and_validate_response(resp, config, expected_request_id="_wpREQ123")
+        token = mint_session_token(config, claims)
+        resolved = validate_session_token(config, token)
+        assert resolved is not None
+        assert resolved.sub == "alice@enterprise.example"
+
+    def test_legacy_token_still_validates_after_new_scheme_activated(
+        self, config: SAMLConfig, idp_keypair
+    ):
+        resp = _signed_response(idp_keypair)
+        claims = parse_and_validate_response(resp, config, expected_request_id="_wpREQ123")
+        legacy_token = mint_session_token(config, claims)  # minted before activation
+
+        configure_session_signing_key(_session_signing_key_id(), os.urandom(32))
+        resolved = validate_session_token(config, legacy_token)
+        assert resolved is not None
+        assert resolved.sub == "alice@enterprise.example"
+
+    def test_new_scheme_tampered_token_is_rejected(self, config: SAMLConfig, idp_keypair):
+        configure_session_signing_key(_session_signing_key_id(), os.urandom(32))
+        resp = _signed_response(idp_keypair)
+        claims = parse_and_validate_response(resp, config, expected_request_id="_wpREQ123")
+        token = mint_session_token(config, claims)
+        payload_part, sig_part = token[len("wp_saml.") :].rsplit(".", 1)
+        tampered = f"wp_saml.{payload_part}." + ("0" if sig_part[0] != "0" else "1") + sig_part[1:]
+        assert validate_session_token(config, tampered) is None
+
+    def test_clear_reverts_to_legacy_only_path(self, config: SAMLConfig, idp_keypair):
+        configure_session_signing_key(_session_signing_key_id(), os.urandom(32))
+        clear_session_signing_key()
+        resp = _signed_response(idp_keypair)
+        claims = parse_and_validate_response(resp, config, expected_request_id="_wpREQ123")
+        token = mint_session_token(config, claims)
+        resolved = validate_session_token(config, token)
+        assert resolved is not None
