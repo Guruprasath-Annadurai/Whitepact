@@ -10,6 +10,22 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ### Added
 
+- Enterprise Neural Phase 6 — Neural Signal Integrity + Decoder Safety
+  (2026-08-28) (`governance/neural/decision.py`) — `NeuralDecision`
+  (every field the directive requires: schema version, calibrated
+  probability, uncertainty, signal quality, decoder/calibration
+  identity+version+hash, subject/session/device context, expiry) with
+  `__post_init__` rejecting NaN, +/-Infinity, out-of-range confidence
+  values, and non-increasing expiry unconditionally.
+  `NeuralDecisionStatus` (VALID/AMBIGUOUS/REJECTED) and
+  `classify_decision_status()` (checks uncertainty before probability,
+  so genuine uncertainty is AMBIGUOUS rather than a misleading
+  REJECTED), plus `is_expired`/`matches_context`/`is_stale_decoder`.
+  Deliberately **no decoder** — same reasoning as Phase 5: no real
+  trained model or device signal exists to validate one against. 40
+  new tests (3 Hypothesis property tests), 100% coverage. Full suite:
+  3069 passed, 0 failed.
+
 - Enterprise Neural Phase 5 — BCI Device Trust + Capability Contract
   (2026-08-28) (`governance/neural/device.py`) — `DeviceTrustLevel`
   (TRUST_A-D), `CapabilityState` (VALIDATED/EXPERIMENTAL/UNAVAILABLE),

@@ -8,14 +8,26 @@ adapters, decoders, intent attestation) produce and consume data
 through. Phase 5 (`docs/enterprise-neural/05_PHASE5_DESIGN.md`) adds
 the device trust/capability contract (`device.py`) — `DeviceTrustLevel`,
 `CapabilityState`, `NeuralCapabilityManifest`, and the `BCIDeviceAdapter`
-Protocol. No concrete BCI hardware integration exists yet — see
-`device.py`'s own module docstring for why building one now (no real
-device or vendor SDK to validate against) would be exactly the kind of
+Protocol. Phase 6 (`docs/enterprise-neural/06_PHASE6_DESIGN.md`) adds
+the typed decision contract (`decision.py`) — `NeuralDecision`,
+`NeuralDecisionStatus`, and misuse-rejection logic (NaN/Inf, expiry,
+staleness, context mismatch). No concrete BCI hardware integration or
+decoder exists yet — see `device.py`/`decision.py`'s own module
+docstrings for why building either now (no real device, vendor SDK, or
+trained model to validate against) would be exactly the kind of
 prototype capability fabrication the master directive prohibits.
 """
 
 from __future__ import annotations
 
+from responsibleai.governance.neural.decision import (
+    NeuralDecision,
+    NeuralDecisionStatus,
+    classify_decision_status,
+    is_expired,
+    is_stale_decoder,
+    matches_context,
+)
 from responsibleai.governance.neural.device import (
     BCIDeviceAdapter,
     CapabilityState,
@@ -52,12 +64,18 @@ __all__ = [
     "DeviceTrustLevel",
     "NeuralCapabilityManifest",
     "NeuralDataClass",
+    "NeuralDecision",
+    "NeuralDecisionStatus",
     "NeuralPayload",
     "NeuralPolicyDecision",
     "NeuralPolicyReason",
     "NeuralPolicyResult",
     "NeuralPrivacyError",
     "NeuralVaultEntry",
+    "classify_decision_status",
     "evaluate_neural_data_flow",
+    "is_expired",
+    "is_stale_decoder",
+    "matches_context",
     "max_capability_state_for_trust_level",
 ]

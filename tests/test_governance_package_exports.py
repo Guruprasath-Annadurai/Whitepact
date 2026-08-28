@@ -170,6 +170,19 @@ class TestHeartSymbolsAreExported:
         ):
             assert hasattr(governance.neural, name)
 
+    def test_neural_decision_symbols_exported(self) -> None:
+        """Enterprise Neural Phase 6's typed decision contract is
+        exported from the same `neural` module."""
+        for name in (
+            "NeuralDecision",
+            "NeuralDecisionStatus",
+            "classify_decision_status",
+            "is_expired",
+            "matches_context",
+            "is_stale_decoder",
+        ):
+            assert hasattr(governance.neural, name)
+
     def test_constitution_symbols_exported(self) -> None:
         for name in (
             "ConstitutionalLawCode",
