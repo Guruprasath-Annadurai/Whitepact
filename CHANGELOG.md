@@ -10,6 +10,30 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ### Added
 
+- Enterprise Neural Phase 11 — Citadel Execution Containment Evidence
+  (2026-08-28) (`tests/test_citadel_execution_containment.py`) —
+  audit-driven, not a rebuild: Phase 0's audit flagged execution-permit
+  binding as "partially implemented... not yet a general Citadel-style
+  containment boundary"; since then, Execution Permit v2 and the JIT
+  Credential Broker generalized `ExecutionAuthorization` well beyond
+  MCP-mediated internal tool calls to `UpstreamMCPExecutor`
+  (target-fingerprint drift detection, per-call narrowly-scoped
+  credentials, DNS re-validation before dispatch) — already real,
+  already tested. This phase adds regression-tested evidence: every
+  concrete `Executor` implementation calls the shared
+  `_validate_authorization()` (exactly two call sites, both known);
+  `check_target_fingerprint()` has exactly one call site
+  (`upstream_executor.py` — `InternalToolExecutor` correctly never
+  calls it); a fresh authorization with no target fingerprint never
+  raises `AuthorizationTargetDriftError` through the real
+  `InternalToolExecutor`; and the shared replay/mismatch protections
+  hold identically on both executors, proven independently rather than
+  assumed to transfer. Also confirms `mcp/server.py`'s second
+  `dispatch_tool()` call site is the already-documented, correctly
+  out-of-scope ungoverned-stdio-transport path (Phase 8 Gap 1 / Phase
+  10 Gap 2), not a new bypass. 7 new tests; full suite 3121 passed, 1
+  skipped, 0 failed.
+
 - Enterprise Neural Phase 10 — Brain Policy + Risk Engine Evidence
   (2026-08-28) (`tests/test_brain_policy_risk_boundary.py`) —
   audit-driven, not a rebuild: SPEC.md §2.5 already names "the Brain"
