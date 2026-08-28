@@ -750,6 +750,64 @@ governance_authority_passports = Table(
     Index("idx_ap_principal", "org_id", "principal_id"),
 )
 
+governance_root_authority_records = Table(
+    "governance_root_authority_records",
+    metadata,
+    # Heart Phase H3 (governance/root_authority.py) `RootAuthorityRecord`,
+    # persisted here for Heart Production Integration Phase 3. Purely
+    # additive storage: `root_authority.py`'s validation semantics
+    # (`validate_root_chain()`) are unchanged and unaware this table
+    # exists -- callers resolve rows through this repository and pass
+    # already-reconstructed `RootAuthorityRecord` objects in, per the
+    # Heart's TCB-minimization discipline (see 00_CURRENT_RUNTIME_MAP.md).
+    Column("root_id", String(36), primary_key=True),
+    Column("subject_id", String(255), nullable=False),
+    Column("root_type", String(32), nullable=False),
+    Column("organization_id", String(36), nullable=True),
+    Column("issuer", String(255), nullable=False),
+    Column("verification_method", String(128), nullable=False),
+    Column("authority_source", String(36), nullable=True),  # another root_id, or null
+    Column("jurisdiction", String(64), nullable=True),
+    Column("evidence_refs", Text, nullable=False),  # JSON list
+    Column("issued_at", String(32), nullable=False),
+    Column("not_before", String(32), nullable=True),
+    Column("expires_at", String(32), nullable=True),
+    Column("revoked_at", String(32), nullable=True),
+    Column("revoked_by", String(200), nullable=True),
+    Column("revoke_reason", Text, nullable=True),
+    Column("canonical_digest", String(64), nullable=False),
+    Index("idx_rar_subject", "subject_id"),
+    Index("idx_rar_org", "organization_id"),
+    Index("idx_rar_source", "authority_source"),
+)
+
+governance_consent_proofs = Table(
+    "governance_consent_proofs",
+    metadata,
+    # Heart Phase H4 (governance/consent_proof.py) `ConsentProof`,
+    # persisted here for Heart Production Integration Phase 3. Same
+    # additive-storage-only discipline as `governance_root_authority_records`
+    # above -- `consent_proof.py`'s `validate_consent_proof()` is
+    # unchanged and stays free of any dependency on this table.
+    Column("consent_id", String(36), primary_key=True),
+    Column("subject_id", String(255), nullable=False),
+    Column("consenting_root_id", String(36), nullable=False),
+    Column("grantee_id", String(200), nullable=False),
+    Column("scope_description", Text, nullable=False),
+    Column("purpose", Text, nullable=False),
+    Column("consent_method", String(32), nullable=False),
+    Column("evidence_refs", Text, nullable=False),  # JSON list
+    Column("consented_at", String(32), nullable=False),
+    Column("not_before", String(32), nullable=True),
+    Column("expires_at", String(32), nullable=True),
+    Column("revoked_at", String(32), nullable=True),
+    Column("revoked_by", String(200), nullable=True),
+    Column("revoke_reason", Text, nullable=True),
+    Column("canonical_digest", String(64), nullable=False),
+    Index("idx_cp_grantee", "grantee_id"),
+    Index("idx_cp_consenting_root", "consenting_root_id"),
+)
+
 governance_crypto_keys = Table(
     "governance_crypto_keys",
     metadata,
