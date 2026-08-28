@@ -233,7 +233,7 @@ class Settings(BaseSettings):
             "Hex-encoded 32-byte (AES-256) root key for the envelope-"
             "encryption crypto foundation (governance/crypto/). "
             "REQUIRED when enterprise_mode=true. Generate with: "
-            "python -c \"import secrets; print(secrets.token_hex(32))\". "
+            'python -c "import secrets; print(secrets.token_hex(32))". '
             "Never logged -- only the resulting KeyId (purpose/tenant/"
             "version/environment, never key material) is ever logged "
             "by db/crypto_activation.py."
