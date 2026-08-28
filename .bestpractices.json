@@ -8,17 +8,23 @@
   "contributors_unassociated_status": "Unmet",
   "contributors_unassociated_justification": "The project does not currently have at least two unassociated significant contributors meeting the OpenSSF Gold definition. This is an organizational maturity requirement and cannot be satisfied by documentation or automation alone. Contributor history: https://github.com/Guruprasath-Annadurai/Whitepact/graphs/contributors",
 
-  "copyright_per_file_status": "Unmet",
-  "copyright_per_file_justification": "The repository has an MIT LICENSE with a project copyright notice, but source files do not yet consistently contain per-file copyright statements. This remains a technical Gold requirement. Root license: https://github.com/Guruprasath-Annadurai/Whitepact/blob/main/LICENSE",
+  "copyright_per_file_status": "Met",
+  "copyright_per_file_justification": "Tracked first-party source files under src/, tests/, scripts/, and examples/ carry a copyright statement matching WhitePact's MIT LICENSE, and CI enforces that new tracked source files keep the required header. Evidence: https://github.com/Guruprasath-Annadurai/Whitepact/blob/security/openssf-hardening/compliance/OPENSSF_SOURCE_LICENSES.md",
 
-  "license_per_file_status": "Unmet",
-  "license_per_file_justification": "The repository is MIT licensed, but source files do not yet consistently carry per-file SPDX-License-Identifier statements. This remains a technical Gold requirement. Root license: https://github.com/Guruprasath-Annadurai/Whitepact/blob/main/LICENSE",
+  "license_per_file_status": "Met",
+  "license_per_file_justification": "Tracked first-party source files under src/, tests/, scripts/, and examples/ carry SPDX-License-Identifier: MIT, and the OpenSSF policy workflow fails if a tracked source file is missing the required identifier. Evidence: https://github.com/Guruprasath-Annadurai/Whitepact/blob/security/openssf-hardening/compliance/OPENSSF_SOURCE_LICENSES.md",
 
   "repo_distributed_status": "Met",
   "repo_distributed_justification": "WhitePact uses Git, a distributed version-control system, and the authoritative public repository is hosted at https://github.com/Guruprasath-Annadurai/Whitepact",
 
   "small_tasks_status": "Met",
   "small_tasks_justification": "WhitePact publicly identifies bounded starter work for new and casual contributors with explicit scope, constraints, and acceptance criteria. Example: https://github.com/Guruprasath-Annadurai/Whitepact/issues/53",
+
+  "require_2FA_status": "Unmet",
+  "require_2FA_justification": "Repository code cannot prove the maintainer's account-level two-factor authentication configuration. This remains pending owner/account evidence and will not be marked Met from documentation alone.",
+
+  "secure_2FA_status": "Unmet",
+  "secure_2FA_justification": "Repository code cannot prove that the maintainer uses a cryptographic second factor such as TOTP, passkey, or security key. This remains pending owner/account evidence.",
 
   "code_review_standards_status": "Met",
   "code_review_standards_justification": "WhitePact documents what reviewers must check, security-sensitive review expectations, and technical acceptance criteria. The document explicitly distinguishes review standards from the separate two-person-review history requirement: https://github.com/Guruprasath-Annadurai/Whitepact/blob/main/docs/CODE_REVIEW.md",
@@ -27,7 +33,7 @@
   "two_person_review_justification": "WhitePact is currently maintained primarily by one person and cannot honestly demonstrate that at least 50% of proposed modifications before release were reviewed by a different person. This will only be marked Met after real independent review history satisfies the criterion. Review standard: https://github.com/Guruprasath-Annadurai/Whitepact/blob/main/docs/CODE_REVIEW.md",
 
   "build_reproducible_status": "Met",
-  "build_reproducible_justification": "WhitePact CI builds the wheel and source distribution twice from the same source revision with SOURCE_DATE_EPOCH fixed to the commit timestamp, then compares SHA-256 digests. The first GitHub run completed successfully with byte-for-byte identical artifacts. Workflow evidence: https://github.com/Guruprasath-Annadurai/Whitepact/blob/main/.github/workflows/reproducible-build.yml",
+  "build_reproducible_justification": "WhitePact CI builds the wheel and source distribution twice from the same source revision with SOURCE_DATE_EPOCH fixed to the commit timestamp, then compares SHA-256 digests. The reproducible-build gate has completed successfully with byte-for-byte identical artifacts. Workflow evidence: https://github.com/Guruprasath-Annadurai/Whitepact/blob/main/.github/workflows/reproducible-build.yml",
 
   "test_invocation_status": "Met",
   "test_invocation_justification": "The full automated Python test suite is invoked using the standard pytest command; CONTRIBUTING.md documents the exact commands and CI runs pytest directly: https://github.com/Guruprasath-Annadurai/Whitepact/blob/main/CONTRIBUTING.md#running-tests",
@@ -36,13 +42,19 @@
   "test_continuous_integration_justification": "GitHub Actions runs linting, typing, dependency auditing, tests with coverage, builds, Helm validation, accessibility checks, i18n checks, and a reproducible-build gate for pull requests and relevant pushes. CI: https://github.com/Guruprasath-Annadurai/Whitepact/blob/main/.github/workflows/ci.yml",
 
   "test_branch_coverage80_status": "Met",
-  "test_branch_coverage80_justification": "WhitePact measures pure branch coverage with coverage.py/pytest-cov and has documented a verified 80.19% pure branch-coverage result with an 80% CI gate: https://github.com/Guruprasath-Annadurai/Whitepact/blob/main/compliance/OPENSSF_DYNAMIC_ANALYSIS.md",
+  "test_branch_coverage80_justification": "GitHub CI independently measured pure branch coverage at 82.32% (1928/2342 branches), above the 80% threshold, and CI enforces the threshold with a hard-failing gate. Evidence run: https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/33198911431",
+
+  "test_statement_coverage90_status": "Met",
+  "test_statement_coverage90_justification": "GitHub CI independently measured pure statement coverage at 92.29% (10630/11518 statements), above the OpenSSF Gold 90% threshold, using coverage.json rather than the blended coverage.py percentage. CI enforces the 90% statement threshold. Evidence run: https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/33198911431",
 
   "crypto_used_network_status": "Met",
   "crypto_used_network_justification": "Production deployment documentation requires secure HTTPS/TLS transport at the trusted ingress/reverse-proxy boundary; insecure public transport is not the documented production configuration: https://github.com/Guruprasath-Annadurai/Whitepact/blob/main/DEPLOYMENT.md",
 
   "crypto_tls12_status": "Met",
-  "crypto_tls12_justification": "WhitePact's documented production deployment supports TLS 1.2 and TLS 1.3 and the reference deployment has been verified to negotiate TLS 1.3. Deployment evidence: https://github.com/Guruprasath-Annadurai/Whitepact/blob/main/DEPLOYMENT.md",
+  "crypto_tls12_justification": "WhitePact's documented production deployment supports TLS 1.2 and TLS 1.3. Deployment evidence: https://github.com/Guruprasath-Annadurai/Whitepact/blob/main/DEPLOYMENT.md",
+
+  "hardened_site_status": "Unmet",
+  "hardened_site_justification": "The application implements CSP, HSTS and related security middleware, but the public whitepact.com response headers have not yet been independently verified from a reachable external environment. This remains Unmet until live evidence exists.",
 
   "security_review_status": "Met",
   "security_review_justification": "WhitePact has a documented human security review/assurance process covering the security boundary, threat model, known gaps, and implemented mitigations. This is explicitly self-conducted and is not represented as an independent penetration test: https://github.com/Guruprasath-Annadurai/Whitepact/blob/main/compliance/INTERNAL_SECURITY_REVIEW.md",
@@ -51,7 +63,7 @@
   "hardening_justification": "The application implements defense-in-depth hardening including CSP/HSTS and related response headers, rate limiting, RBAC, tenant isolation, SSRF defenses, security scanning, and security regression tests. Security middleware evidence: https://github.com/Guruprasath-Annadurai/Whitepact/blob/main/src/responsibleai/dashboard/middleware.py",
 
   "dynamic_analysis_status": "Met",
-  "dynamic_analysis_justification": "WhitePact executes its production code through an automated pytest suite with pure branch coverage at or above the OpenSSF 80% dynamic-analysis threshold and enforces the branch threshold in CI: https://github.com/Guruprasath-Annadurai/Whitepact/blob/main/compliance/OPENSSF_DYNAMIC_ANALYSIS.md",
+  "dynamic_analysis_justification": "WhitePact executes its production code through an automated pytest suite with pure branch coverage above the OpenSSF 80% dynamic-analysis threshold and enforces the branch threshold in CI. Evidence run: https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/33198911431",
 
   "dynamic_analysis_enable_assertions_status": "Met",
   "dynamic_analysis_enable_assertions_justification": "The automated pytest suite uses extensive runtime assertions across governance, authorization, API, MCP, persistence, and security behavior during CI testing: https://github.com/Guruprasath-Annadurai/Whitepact/blob/main/.github/workflows/ci.yml"

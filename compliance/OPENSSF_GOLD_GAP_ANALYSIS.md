@@ -2,7 +2,8 @@
 
 **Project:** WhitePact  
 **Badge project:** 14112  
-**Current earned level:** Silver  
+**Current earned Metal level:** Silver  
+**Current earned Baseline level:** Baseline Level 1  
 **Purpose:** keep the path to Gold evidence-based. A criterion is not marked Met merely because code or documentation can be added; organizational and historical requirements must be satisfied by real project history.
 
 ## Current Gold blockers
@@ -17,41 +18,52 @@
 
 These three criteria must remain Unmet until real people and real review history satisfy them.
 
+## Account / external-evidence blockers
+
+| Criterion | Current status | Why it remains open |
+|---|---|---|
+| `require_2FA` | **Needs account-level evidence** | Repository files cannot prove the maintainer's real GitHub 2FA state. Do not mark Met without owner/account evidence. |
+| `secure_2FA` | **Needs account-level evidence** | Requires evidence of a cryptographic second factor such as TOTP, passkey, or security key. Repository code cannot prove this. |
+| `hardened_site` | **Needs live-site evidence** | Application middleware implements security headers, but `whitepact.com` must be checked from a reachable external environment before claiming the live site satisfies the Gold header requirement. |
+
 ## Technical Gold work
 
 | Criterion | Status | Evidence / next action |
 |---|---|---|
 | `achieve_silver` | **Met** | WhitePact has earned the OpenSSF Best Practices Silver badge. |
-| `copyright_per_file` | **Unmet** | The root MIT `LICENSE` has a copyright notice, but source files do not yet consistently carry per-file copyright statements. A later low-conflict licensing pass should add/enforce them. |
-| `license_per_file` | **Unmet** | Source files do not yet consistently contain `SPDX-License-Identifier: MIT`. A later low-conflict licensing pass should add/enforce SPDX metadata without colliding with large in-flight feature branches. |
+| `copyright_per_file` | **Met on this hardening branch** | Tracked first-party source files under `src/`, `tests/`, `scripts/`, and `examples/` carry a copyright statement matching the root MIT `LICENSE`. `scripts/manage_license_headers.py --check` is enforced by the OpenSSF Policy Guard. |
+| `license_per_file` | **Met on this hardening branch** | The same tracked first-party source files carry `SPDX-License-Identifier: MIT`, enforced by CI. See `compliance/OPENSSF_SOURCE_LICENSES.md`. |
 | `repo_distributed` | **Met** | Git/GitHub is the authoritative distributed source repository. |
-| `require_2FA` | **Needs account-level evidence** | GitHub operates a mandatory-2FA program for eligible code contributors, but this personal repository cannot use an organization-level 2FA enforcement switch. Do not mark Met solely from a repository file. |
-| `secure_2FA` | **Needs account-level evidence** | Requires evidence that cryptographic 2FA such as TOTP, passkey, security key, or equivalent is actually used/required; repository code cannot prove the maintainer's authentication method. |
-| `code_review_standards` | **Met after this hardening branch** | `docs/CODE_REVIEW.md` defines review scope, security review checks, and acceptance criteria while explicitly not claiming independent review history. |
-| `test_invocation` | **Met** | `CONTRIBUTING.md#running-tests` documents standard `pytest` invocation. The live badge entry needs the missing URL field corrected. |
+| `code_review_standards` | **Met** | `docs/CODE_REVIEW.md` defines review scope, security review checks, and acceptance criteria while explicitly not claiming independent review history. |
+| `test_invocation` | **Met** | `CONTRIBUTING.md#running-tests` documents standard `pytest` invocation. |
 | `test_continuous_integration` | **Met** | `.github/workflows/ci.yml` runs automated tests and quality gates. |
-| `test_branch_coverage80` | **Met** | `compliance/OPENSSF_DYNAMIC_ANALYSIS.md` documents verified 80.19% pure branch coverage and CI enforces an 80% branch threshold. |
-| `test_statement_coverage90` | **Not yet claimed** | Existing evidence proves the Silver 80% requirement and 80.19% branch coverage, but does not contain a current independently captured pure statement-coverage value at or above 90%. Measure first; add real tests if below 90%. |
+| `test_branch_coverage80` | **Met** | GitHub CI run 33198911431 measured **82.32% pure branch coverage (1928/2342)** and the CI gate requires at least 80%. |
+| `test_statement_coverage90` | **Met** | GitHub CI run 33198911431 measured **92.29% pure statement coverage (10630/11518)** and the CI gate requires at least 90%. |
 | `crypto_used_network` | **Met** | Production deployment documentation requires HTTPS/TLS at the trusted ingress boundary. |
-| `crypto_tls12` | **Met** | Production documentation supports TLS 1.2/1.3. |
-| `hardened_site` | **Needs live-site evidence** | Gold requires CSP, HSTS, X-Content-Type-Options and X-Frame-Options on the project website/repository/download site. GitHub is known-good; `whitepact.com` must be checked live before claiming Met. |
+| `crypto_tls12` | **Met** | Production documentation requires modern TLS support; live-site negotiation should be captured with the hardened-site evidence. |
 | `security_review` | **Met as self-review** | WhitePact documents a human internal security review and clearly states that it is not an independent penetration test. Gold permits project-member review; independent assessment remains a separate enterprise assurance goal. |
 | `hardening` | **Met** | Dashboard security middleware and other defense-in-depth controls are documented and tested. |
-| `dynamic_analysis` | **Met** | Automated tests with >=80% pure branch coverage satisfy the project's selected dynamic-analysis route. |
+| `dynamic_analysis` | **Met** | Automated tests exceed the 80% pure branch-coverage route required by the project's selected dynamic-analysis path. |
 | `dynamic_analysis_enable_assertions` | **Met** | Pytest assertions are executed throughout CI across security and runtime behavior. |
 
 ## OpenSSF Scorecard hardening in this branch
 
-The `security/openssf-hardening` branch addresses repository-side Scorecard findings without changing WhitePact runtime behavior:
+The `security/openssf-hardening` branch addresses repository-side Scorecard findings without changing WhitePact runtime feature logic:
 
 - GitHub Actions are pinned to full immutable commit SHAs.
 - Workflow `GITHUB_TOKEN` permissions are reduced to least privilege, including moving release write/OIDC permissions to the publishing job only.
-- Dependabot is enabled for GitHub Actions and Python dependencies.
-- `scripts/check_pinned_actions.py` and `.github/workflows/openssf-policy.yml` prevent movable action tags from being reintroduced.
+- Dependabot is enabled for GitHub Actions, Python, and Docker dependencies.
+- Python, Postgres, and Redis container inputs are pinned to immutable Docker Hub index digests.
+- `scripts/check_pinned_actions.py` and `.github/workflows/openssf-policy.yml` prevent movable Action tags from being reintroduced.
+- `scripts/manage_license_headers.py` and the OpenSSF policy workflow prevent first-party source license/copyright metadata from regressing.
 - Existing DCO, Gitleaks, dependency-review, Scorecard, SAST/dependency scan, release provenance, SBOM and signed-tag controls remain intact.
+
+## Remaining Scorecard limitation
+
+Hash-pinned Actions and container images materially improve `Pinned-Dependencies`, but Scorecard can still flag shell `pip install` commands that do not use a hash-locked requirements workflow. Fully eliminating those findings requires a coherent hash-locked Python bootstrap/dependency process; do not invent package hashes or mark this solved until the real installation paths use verified locks.
 
 ## Why Gold is deliberately not claimed yet
 
-Gold is not a code-completion badge. Several criteria measure project governance and independent participation. WhitePact should earn those through actual community growth and review history rather than create fake maintainers, reviewers, or contributors.
+Gold is not a code-completion badge. Several criteria measure project governance and independent participation. WhitePact should earn those through actual community growth and review history rather than create fake maintainers, reviewers, or contributors. Account and live-deployment criteria also remain explicitly open until evidence exists.
 
-The repository can be hardened immediately; the Gold badge should change only when the public evidence supports every MUST criterion.
+The repository can be technically hardened immediately; the Gold badge should change only when the public evidence supports every MUST criterion.
