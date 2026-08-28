@@ -44,6 +44,17 @@ decoders, and intent attestation don't exist yet); see
 from __future__ import annotations
 
 from responsibleai.governance import crypto, neural, sovereignty_kernel
+from responsibleai.governance.audit_anchor import (
+    AnchorAlreadyPublishedError,
+    AnchorRecord,
+    AnchorVerificationResult,
+    AnchorVerificationStatus,
+    AuditAnchorProvider,
+    LocalFileAnchorProvider,
+    build_and_sign_anchor,
+    publish_anchor,
+    verify_anchor_from_provider,
+)
 from responsibleai.governance.authority_conflict_resolver import (
     ConflictResolutionResult,
     ConflictResolutionStatus,
@@ -204,6 +215,11 @@ __all__ = [
     "ROOT_AUTHORITY_LIFETIME_WINDOW",
     "ActionRequest",
     "AgentContext",
+    "AnchorAlreadyPublishedError",
+    "AnchorRecord",
+    "AnchorVerificationResult",
+    "AnchorVerificationStatus",
+    "AuditAnchorProvider",
     "AuthorityConstitutionVersion",
     "AuthorityContext",
     "AuthorityEnvelope",
@@ -244,6 +260,7 @@ __all__ = [
     "LifetimeCheckResult",
     "LifetimeStatus",
     "LifetimeWindow",
+    "LocalFileAnchorProvider",
     "MemoryFirewallResult",
     "NonDelegableScope",
     "NonDelegableViolation",
@@ -271,6 +288,7 @@ __all__ = [
     "apply_heart_veto",
     "authority_context_to_envelope",
     "authorize_execution",
+    "build_and_sign_anchor",
     "build_authority_grant",
     "build_consent_proof",
     "build_constitution_version",
@@ -299,6 +317,7 @@ __all__ = [
     "identity_context_to_root_type",
     "intersect_envelopes",
     "neural",
+    "publish_anchor",
     "recent_autonomous_action_count",
     "recent_violation_count",
     "resolve_authority_conflicts",
@@ -309,5 +328,6 @@ __all__ = [
     "validate_delegation_legitimacy",
     "validate_purpose_binding",
     "validate_root_chain",
+    "verify_anchor_from_provider",
     "verify_evidence_bundle",
 ]
