@@ -79,7 +79,7 @@ class TestPolicyEvaluateSingleCallSite:
 
 
 class TestClassifyActionRiskKnownCallSites:
-    def test_classify_action_risk_has_only_the_three_audited_call_sites(self) -> None:
+    def test_classify_action_risk_has_only_the_four_audited_call_sites(self) -> None:
         """Per `10_PHASE10_DESIGN.md`'s audit: `classify_action_risk()`
         is called from `gateway.py` (the gated evaluation itself) and
         two documented pre-gateway short-circuit paths in
@@ -87,12 +87,20 @@ class TestClassifyActionRiskKnownCallSites:
         tier) that still need a risk_tier value for evidence
         consistency on an early exit. A new call site would mean risk
         tiering is happening somewhere this audit doesn't account
-        for."""
+        for.
+
+        Deliberately updated for Security Remediation Gap 2
+        (`REMEDIATION_GAP2_STDIO_GOVERNANCE.md`): `mcp/server.py`'s
+        `_call_tool()` now also calls `classify_action_risk()`, gated
+        behind `enterprise_mode`, to decide whether a self-hosted stdio
+        call is privileged enough to block -- a fourth, legitimate,
+        intentional call site, not a silently-broken guard."""
         defining_file = _SRC_ROOT / "governance" / "risk.py"
         hits = _call_sites(r"\bclassify_action_risk\(", defining_file)
         known = {
             _SRC_ROOT / "governance" / "gateway.py",
             _SRC_ROOT / "mcp" / "upstream_dispatch.py",
+            _SRC_ROOT / "mcp" / "server.py",
         }
         unexpected = [h for h in hits if h not in known]
         assert unexpected == [], (

@@ -241,6 +241,35 @@ async def _call_tool(
         assert outcome.result is not None, "governed ALLOW outcome must carry an execution result"
         return _text_and_structured(outcome.result)
 
+    # Security Remediation Gap 2: `ctx is None` here means this is a
+    # genuinely self-hosted stdio call -- a hosted-HTTP request always
+    # has `ctx` set by its own auth middleware before reaching this
+    # point. In enterprise_mode (see Gap 1's Settings.enterprise_mode,
+    # reused deliberately rather than duplicated), stdio may only
+    # execute MINIMAL/LOW risk-tier tools -- the explicit "local
+    # development-only capability set" per
+    # docs/enterprise-neural/REMEDIATION_GAP2_STDIO_GOVERNANCE.md.
+    # Default (enterprise_mode=false) behavior is completely unchanged.
+    if ctx is None:
+        from responsibleai.dashboard.config import get_settings
+        from responsibleai.governance.risk import RiskTier, classify_action_risk
+
+        if get_settings().enterprise_mode:
+            risk_tier = classify_action_risk("mcp_tool_call", name)
+            if risk_tier not in (RiskTier.MINIMAL, RiskTier.LOW):
+                error = {
+                    "error": "stdio_privileged_execution_blocked",
+                    "message": (
+                        f"Tool {name!r} is classified {risk_tier.value!r} risk. "
+                        "Enterprise mode restricts the self-hosted stdio "
+                        "transport to MINIMAL/LOW risk tools only -- it has no "
+                        "organizational identity to evaluate authority/policy "
+                        "against, so privileged tools require the governed "
+                        "hosted HTTP/SSE transport instead."
+                    ),
+                }
+                return _text_and_structured(error)
+
     result = await dispatch_tool(name, call_arguments)
     return _text_and_structured(result)
 
