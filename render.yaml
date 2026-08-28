@@ -1,0 +1,116 @@
+# Reproducible hosted production topology. Import this Blueprint into a
+# Render Pro (or higher) workspace; secret values marked sync:false are
+# entered in Render and never committed to this repository.
+previews:
+  generation: manual
+
+services:
+  - type: keyvalue
+    name: whitepact-redis
+    plan: starter
+    region: oregon
+    ipAllowList: []
+    maxmemoryPolicy: noeviction
+    persistenceMode: journal-snapshot
+
+  - type: web
+    name: responsibleai-dashboard
+    runtime: docker
+    plan: standard
+    region: oregon
+    numInstances: 2
+    autoDeployTrigger: checksPass
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/ready
+    preDeployCommand: alembic upgrade head
+    maxShutdownDelaySeconds: 60
+    envVars:
+      - key: WHITEPACT_DATABASE_URL
+        fromDatabase:
+          name: whitepact-postgres
+          property: connectionString
+      - key: WHITEPACT_REDIS_URL
+        fromService:
+          type: keyvalue
+          name: whitepact-redis
+          property: connectionString
+      - key: WHITEPACT_PORT
+        value: "10000"
+      - key: WHITEPACT_PRODUCTION_MODE
+        value: "true"
+      - key: WHITEPACT_MULTI_REPLICA
+        value: "true"
+      - key: WHITEPACT_AUTO_MIGRATE
+        value: "false"
+      - key: WHITEPACT_AUTH_ENABLED
+        value: "true"
+      - key: WHITEPACT_HEART_ENFORCEMENT_ENABLED
+        value: "true"
+      - key: WHITEPACT_ALLOW_ALL_ORIGINS
+        value: "false"
+      - key: WHITEPACT_LOG_JSON
+        value: "true"
+      - key: WHITEPACT_API_KEYS
+        sync: false
+      - key: WHITEPACT_ALLOWED_ORIGINS
+        sync: false
+
+  - type: web
+    name: whitepact-mcp-http
+    runtime: docker
+    plan: standard
+    region: oregon
+    numInstances: 2
+    autoDeployTrigger: checksPass
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: responsibleai-mcp-http
+    healthCheckPath: /ready
+    maxShutdownDelaySeconds: 60
+    envVars:
+      - key: WHITEPACT_DATABASE_URL
+        fromDatabase:
+          name: whitepact-postgres
+          property: connectionString
+      - key: WHITEPACT_REDIS_URL
+        fromService:
+          type: keyvalue
+          name: whitepact-redis
+          property: connectionString
+      - key: WHITEPACT_PRODUCTION_MODE
+        value: "true"
+      - key: WHITEPACT_MULTI_REPLICA
+        value: "true"
+      - key: WHITEPACT_AUTO_MIGRATE
+        value: "false"
+      - key: WHITEPACT_MCP_GOVERNANCE_ENABLED
+        value: "true"
+      - key: WHITEPACT_HEART_ENFORCEMENT_ENABLED
+        value: "true"
+      - key: WHITEPACT_OIDC_ISSUER
+        sync: false
+      - key: WHITEPACT_MCP_OAUTH_RESOURCE_URI
+        value: "https://whitepact-mcp-http.onrender.com/mcp"
+      - key: WHITEPACT_MCP_OAUTH_SCOPES
+        value: "mcp:tools"
+      - key: WHITEPACT_MCP_HTTP_HOST
+        value: "0.0.0.0"
+      - key: WHITEPACT_MCP_HTTP_PORT
+        value: "10000"
+      - key: WHITEPACT_MCP_HTTP_ALLOWED_HOSTS
+        value: "whitepact-mcp-http.onrender.com"
+      - key: WHITEPACT_MCP_HTTP_ALLOWED_ORIGINS
+        sync: false
+
+databases:
+  - name: whitepact-postgres
+    plan: pro-4gb
+    region: oregon
+    postgresMajorVersion: "17"
+    databaseName: whitepact
+    user: whitepact
+    connectionPool: pgbouncer
+    highAvailability:
+      enabled: true
+    ipAllowList: []

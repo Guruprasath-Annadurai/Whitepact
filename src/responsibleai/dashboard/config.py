@@ -33,6 +33,15 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    production_mode: bool = Field(
+        default=False,
+        description=(
+            "Enable fail-closed production safety checks at startup. This "
+            "must be true in hosted production deployments; development "
+            "defaults remain permissive so local and test workflows work."
+        ),
+    )
+
     @classmethod
     def settings_customise_sources(
         cls,
@@ -182,6 +191,14 @@ class Settings(BaseSettings):
             "cover once enabled."
         ),
     )
+    heart_enforcement_enabled: bool = Field(
+        default=False,
+        description=(
+            "Resolve every hosted MCP call through persisted Heart root, consent, "
+            "purpose, and authority state before the runtime gateway. Required in "
+            "production; disabled by default for backward-compatible development."
+        ),
+    )
 
     # Redis (optional — falls back to in-memory rate limiting)
     redis_url: str | None = Field(
@@ -326,6 +343,22 @@ class Settings(BaseSettings):
             "Never leave this true in a long-running deployment."
         ),
     )
+    mcp_oauth_resource_uri: str = Field(
+        default="",
+        description=(
+            "Canonical HTTPS resource identifier for the hosted MCP endpoint, "
+            "for example https://mcp.example.com/mcp. Used as the OAuth token "
+            "audience and returned from RFC 9728 metadata."
+        ),
+    )
+    mcp_oauth_scopes: Annotated[list[str], NoDecode] = Field(
+        default=["mcp:tools"],
+        description="Comma-separated OAuth scopes required on every hosted MCP access token.",
+    )
+    mcp_oauth_resource_documentation: str = Field(
+        default="https://github.com/Guruprasath-Annadurai/ResponsibleAi/blob/main/MIGRATION_WHITEPACT_V2.md",
+        description="Public documentation URL advertised in protected-resource metadata.",
+    )
 
     # Stripe billing (optional — leave unset to disable paid-tier checkout)
     stripe_secret_key: str | None = Field(
@@ -425,12 +458,12 @@ class Settings(BaseSettings):
             "azure-openai": self.leaderboard_azure_openai_api_key,
         }
 
-    @field_validator("oidc_scopes", mode="before")
+    @field_validator("oidc_scopes", "mcp_oauth_scopes", mode="before")
     @classmethod
     def _parse_scopes(cls, v: Any) -> list[str]:
         if isinstance(v, str):
             return [s.strip() for s in v.split(",") if s.strip()]
-        return list(v) if v else ["openid", "email", "profile"]
+        return list(v) if v else []
 
     @field_validator("api_keys", mode="before")
     @classmethod
@@ -500,6 +533,66 @@ def multi_replica_problems(db_backend: str, rate_limit_backend: str) -> list[str
             "the configured limit. Set RAI_REDIS_URL to share counters "
             "across replicas."
         )
+    return problems
+
+
+def production_readiness_problems(settings: Settings, *, component: str) -> list[str]:
+    """Return unsafe settings that must prevent a production process starting.
+
+    The checks are component-aware because the dashboard and hosted MCP server
+    share one Settings model but expose different attack surfaces. Development
+    mode deliberately returns no problems; setting ``production_mode`` is the
+    explicit opt-in to the fail-closed contract.
+    """
+    if not settings.production_mode:
+        return []
+    if component not in {"dashboard", "mcp"}:
+        raise ValueError(f"Unknown production component: {component}")
+
+    db_backend = (
+        "postgresql"
+        if (settings.database_url or "").startswith(("postgresql://", "postgres://"))
+        else "sqlite"
+    )
+    rate_limit_backend = "redis" if settings.redis_url else "memory"
+    problems: list[str] = []
+
+    if settings.multi_replica:
+        problems.extend(multi_replica_problems(db_backend, rate_limit_backend))
+        if settings.auto_migrate:
+            problems.append(
+                "Automatic database migrations are unsafe with multiple replicas. "
+                "Set RAI_AUTO_MIGRATE=false and run migrations as a single release step."
+            )
+
+    if settings.oidc_issuer and settings.oidc_skip_verification:
+        problems.append("OIDC signature verification cannot be skipped in production.")
+    if settings.vc_trusted_issuers and settings.vc_skip_verification:
+        problems.append(
+            "Verifiable Credential signature verification cannot be skipped in production."
+        )
+    if not settings.heart_enforcement_enabled:
+        problems.append("Heart authority enforcement must be enabled in production.")
+
+    if component == "dashboard":
+        if not settings.auth_enabled:
+            problems.append("Dashboard authentication must be enabled in production.")
+        if settings.allow_all_origins:
+            problems.append(
+                "Allowing all CORS origins is unsafe in production; configure explicit origins."
+            )
+    else:
+        if not settings.mcp_governance_enabled:
+            problems.append("Hosted MCP governance dispatch must be enabled in production.")
+        if settings.mcp_http_allow_unauthenticated_demo:
+            problems.append("Unauthenticated MCP demo access cannot be enabled in production.")
+        if not settings.oidc_issuer:
+            problems.append("Hosted MCP OAuth requires an OIDC/OAuth authorization server.")
+        if not settings.mcp_oauth_resource_uri.startswith("https://"):
+            problems.append("Hosted MCP OAuth resource URI must be an explicit HTTPS URL.")
+        if not settings.mcp_oauth_scopes:
+            problems.append("Hosted MCP OAuth must require at least one scope.")
+
     return problems
 
 

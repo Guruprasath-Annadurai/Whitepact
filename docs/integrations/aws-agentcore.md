@@ -14,7 +14,7 @@ Enterprise Agent
       ↓
 AgentCore Gateway
       ↓
-WhitePact MCP  (https://whitepact-mcp-http.onrender.com/mcp)
+WhitePact MCP  (https://YOUR_WHITEPACT_HOST/mcp)
       ↓
 Governed execution (WhitePact Core — unchanged, unaware of AgentCore)
 ```
@@ -27,7 +27,7 @@ inside WhitePact, and none should — see `PLATFORM_COMPATIBILITY.md`'s
 ## Endpoint
 
 ```
-https://whitepact-mcp-http.onrender.com/mcp
+https://YOUR_WHITEPACT_HOST/mcp
 ```
 
 ## Authentication

@@ -19,7 +19,7 @@ built and run in Copilot Studio.
 - Produces compliance gap reports against EU AI Act and ISO 42001
   (`rai_eu_ai_act_classify`, `rai_iso42001_gap`).
 
-All 27 tools are read-only against the calling agent's own state — none
+All 30 tools are read-only against the calling agent's own state — none
 of them mutate the agent's environment. WhitePact evaluates and reports;
 it does not act.
 

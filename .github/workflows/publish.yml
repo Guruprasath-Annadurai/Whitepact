@@ -6,9 +6,11 @@ on:
       - "v*"
 
 permissions:
-  contents: write  # create the GitHub Release (Phase 16) -- was read-only before
-  id-token: write  # trusted publishing to PyPI + build provenance attestation, no secret token needed
-  attestations: write  # actions/attest-build-provenance (Phase 15)
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   # OpenSSF Best Practices `version_tags_signed` -- a signed build
@@ -24,8 +26,11 @@ jobs:
   verify-signed-tag:
     name: Verify signed release tag
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0  # need the full tag object, not a shallow/blobless clone
 
@@ -87,18 +92,26 @@ jobs:
     runs-on: ubuntu-latest
     needs: verify-signed-tag
     environment: pypi
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
           cache: "pip"
 
       - name: Install build tools
-        run: pip install build twine
+        run: pip install build==1.5.0 twine==7.0.0 cyclonedx-bom==7.3.1
+
+      - name: Verify tag matches package version
+        run: python scripts/check_release_version.py "${GITHUB_REF_NAME}"
 
       - name: Build wheel and sdist
         run: python -m build
@@ -113,10 +126,9 @@ jobs:
       - name: Generate SBOM (CycloneDX)
         run: |
           python -m venv /tmp/sbom-venv
-          /tmp/sbom-venv/bin/pip install --upgrade pip
-          /tmp/sbom-venv/bin/pip install dist/*.whl
-          /tmp/sbom-venv/bin/pip install cyclonedx-bom
-          /tmp/sbom-venv/bin/cyclonedx-py environment \
+          /tmp/sbom-venv/bin/pip install --require-hashes -r requirements-production.lock
+          /tmp/sbom-venv/bin/pip install --no-deps dist/*.whl
+          cyclonedx-py environment \
             --pyproject pyproject.toml \
             --of json \
             -o sbom.cyclonedx.json \
@@ -128,19 +140,19 @@ jobs:
       # substituted in between. Verify with:
       #   gh attestation verify dist/<file> --owner Guruprasath-Annadurai
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-path: "dist/*"
 
       - name: Publish to PyPI (trusted publisher)
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
 
       # Phase 16 (release engineering) -- a GitHub Release previously
       # never got created by this workflow; the tag existed, PyPI got
       # the package, but there was no single place linking a version to
       # its changelog entry, its SBOM, and its build provenance.
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: |
             dist/*

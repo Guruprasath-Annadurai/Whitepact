@@ -159,6 +159,15 @@ class TestUpstreamServerRepository:
         assert len(org_a_servers) == 1
         assert org_a_servers[0].name == "a-server"
 
+    async def test_get_for_org_enforces_tenant_boundary(
+        self, repo: UpstreamServerRepository, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _fake_public_dns(monkeypatch)
+        server = await repo.register("org-a", "a-server", "https://a.example.com/mcp")
+
+        assert await repo.get_for_org("org-a", server.server_id) is not None
+        assert await repo.get_for_org("org-b", server.server_id) is None
+
     async def test_remove_unknown_raises(self, repo: UpstreamServerRepository) -> None:
         with pytest.raises(UpstreamServerNotFoundError):
             await repo.remove("org-1", "does-not-exist")

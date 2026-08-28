@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import secrets
 import time
 from contextlib import asynccontextmanager
@@ -48,7 +49,11 @@ from responsibleai.compliance.engine import ComplianceEngine
 from responsibleai.cost.analyzer import CostAnalyzer
 from responsibleai.cost.models import BudgetPolicy, TokenUsage
 from responsibleai.cost.router import ModelRouter
-from responsibleai.dashboard.config import get_settings, multi_replica_problems
+from responsibleai.dashboard.config import (
+    get_settings,
+    multi_replica_problems,
+    production_readiness_problems,
+)
 from responsibleai.dashboard.logging_config import configure_logging, get_logger
 from responsibleai.dashboard.middleware import (
     RequestIDMiddleware,
@@ -91,12 +96,14 @@ from responsibleai.db import (
     AuditRepository,
     AuthorityPassportNotFoundError,
     AuthorityPassportRepository,
+    ConsentProofRepository,
     CostRepository,
     CredentialIssuanceRepository,
     DelegationEscalationError,
     DelegationRepository,
     EvalRepository,
     EvidenceRepository,
+    HeartRecordNotFoundError,
     IncidentRepository,
     IntentContractRepository,
     LeaderboardRepository,
@@ -109,6 +116,8 @@ from responsibleai.db import (
     PolicyRepository,
     PolicyRuleNotFoundError,
     PublicIncidentRepository,
+    PurposeBindingRepository,
+    RootAuthorityRepository,
     SelfApprovalError,
     SSORequiredError,
     ToolTrustRepository,
@@ -123,7 +132,7 @@ from responsibleai.db import (
     create_engine,
 )
 from responsibleai.db.engine import DatabaseEngine
-from responsibleai.db.migrate import MigrationError, run_migrations_or_raise
+from responsibleai.db.migrate import MigrationError, run_migrations_or_raise, schema_is_at_head
 from responsibleai.eval import (
     BenchmarkRunner,
     BenchmarkSuite,
@@ -136,19 +145,28 @@ from responsibleai.eval import (
 from responsibleai.governance.approval import ApprovalStatus
 from responsibleai.governance.attestation import build_attestation_record
 from responsibleai.governance.authority_passport import (
+    PassportStatus,
     build_authority_passport_from_ceiling,
     build_authority_passport_from_delegation,
     verify_passport,
 )
+from responsibleai.governance.authority_resolver import AuthorityResolver
 from responsibleai.governance.autonomy_budget import AutonomyBudgetPolicy
 from responsibleai.governance.ceiling import OrgAuthorityCeiling
+from responsibleai.governance.consent_proof import ConsentMethod, build_consent_proof
 from responsibleai.governance.evidence_bundle import build_evidence_bundle, verify_evidence_bundle
 from responsibleai.governance.gateway import WhitePactRuntimeGateway
 from responsibleai.governance.intent import build_intent_contract
 from responsibleai.governance.models import GovernanceDecision
 from responsibleai.governance.outcome import OutcomeStatus, build_outcome_record
 from responsibleai.governance.policy import PolicyRule
+from responsibleai.governance.purpose_binding import build_purpose_binding
 from responsibleai.governance.risk import RiskTier
+from responsibleai.governance.root_authority import (
+    RootType,
+    build_root_authority_record,
+    validate_root_chain,
+)
 from responsibleai.governance.tool_trust import (
     ToolTrustTier,
     apply_admin_override,
@@ -279,6 +297,10 @@ _credential_issuance_repo: CredentialIssuanceRepository | None = None
 _outcome_repo: OutcomeRepository | None = None
 _intent_repo: IntentContractRepository | None = None
 _authority_passport_repo: AuthorityPassportRepository | None = None
+_heart_root_repo: RootAuthorityRepository | None = None
+_heart_consent_repo: ConsentProofRepository | None = None
+_heart_binding_repo: PurposeBindingRepository | None = None
+_authority_resolver: AuthorityResolver | None = None
 _upstream_gateway: WhitePactRuntimeGateway = WhitePactRuntimeGateway()
 _db_engine: DatabaseEngine | None = None
 _ws_manager: ConnectionManager = ConnectionManager()
@@ -333,9 +355,17 @@ async def lifespan(application: FastAPI):
     global _evidence_repo, _approval_repo, _policy_repo, _upstream_registry, _ceiling_repo
     global _tool_trust_repo, _credential_issuance_repo, _outcome_repo
     global _workflow_rule_repo, _delegation_repo, _autonomy_budget_repo, _intent_repo
-    global _authority_passport_repo
+    global _authority_passport_repo, _authority_resolver
+    global _heart_root_repo, _heart_consent_repo, _heart_binding_repo
     global _eval_repo, _comparator, _benchmark_runner, _dataset_scanner
     global _oidc_provider, _saml_config, _stripe_service, _plan_rate_limiter
+
+    production_problems = production_readiness_problems(settings, component="dashboard")
+    if production_problems:
+        logger.error("production_configuration_rejected", problems=production_problems)
+        raise RuntimeError(
+            "Startup aborted: unsafe production configuration: " + " | ".join(production_problems)
+        )
 
     setup_telemetry(
         service_name=settings.otel_service_name,
@@ -358,6 +388,11 @@ async def lifespan(application: FastAPI):
 
     _db_engine = create_engine(settings.effective_db_url)
     await _db_engine.init()
+    if settings.production_mode and not await schema_is_at_head(settings.effective_db_url):
+        raise RuntimeError(
+            "Startup aborted: database schema is not at the repository Alembic head. "
+            "Run `alembic upgrade head` as the deployment migration step."
+        )
     _plan_rate_limiter = PlanRateLimiter(redis_url=settings.redis_url)
 
     policy = BudgetPolicy(monthly_limit_usd=settings.monthly_budget_usd)
@@ -386,6 +421,18 @@ async def lifespan(application: FastAPI):
     _autonomy_budget_repo = OrgAutonomyBudgetRepository(_db_engine)
     _intent_repo = IntentContractRepository(_db_engine)
     _authority_passport_repo = AuthorityPassportRepository(_db_engine)
+    _heart_root_repo = RootAuthorityRepository(_db_engine)
+    _heart_consent_repo = ConsentProofRepository(_db_engine)
+    _heart_binding_repo = PurposeBindingRepository(_db_engine)
+    _authority_resolver = AuthorityResolver(
+        roots=_heart_root_repo,
+        consents=_heart_consent_repo,
+        bindings=_heart_binding_repo,
+        intents=_intent_repo,
+        passports=_authority_passport_repo,
+        delegations=_delegation_repo,
+        ceilings=_ceiling_repo,
+    )
     _guardrails = GuardrailsEngine()
     _hallucination = HallucinationDetector()
     _compliance = ComplianceEngine()
@@ -992,6 +1039,41 @@ class AuthorityPassportRevokeRequest(BaseModel):
     reason: str | None = Field(default=None, max_length=2000)
 
 
+class HeartRootIssueRequest(BaseModel):
+    subject_id: str = Field(..., min_length=1, max_length=200)
+    root_type: RootType
+    issuer: str = Field(..., min_length=1, max_length=500)
+    verification_method: str = Field(..., min_length=1, max_length=500)
+    authority_source: str | None = Field(default=None, max_length=200)
+    jurisdiction: str | None = Field(default=None, max_length=100)
+    evidence_refs: list[str] = Field(default_factory=list, max_length=50)
+    not_before: datetime | None = None
+    expires_at: datetime | None = None
+
+
+class HeartConsentIssueRequest(BaseModel):
+    subject_id: str = Field(..., min_length=1, max_length=200)
+    consenting_root_id: str = Field(..., min_length=1, max_length=200)
+    grantee_id: str = Field(..., min_length=1, max_length=200)
+    scope_description: str = Field(..., min_length=1, max_length=5000)
+    purpose: str = Field(..., min_length=1, max_length=2000)
+    consent_method: ConsentMethod
+    evidence_refs: list[str] = Field(default_factory=list, max_length=50)
+    not_before: datetime | None = None
+    expires_at: datetime | None = None
+
+
+class HeartPurposeBindingRequest(BaseModel):
+    principal_id: str = Field(..., min_length=1, max_length=200)
+    purpose: str = Field(..., min_length=1, max_length=2000)
+    intent_ref: str = Field(..., min_length=1, max_length=200)
+    consent_ref: str = Field(..., min_length=1, max_length=200)
+
+
+class HeartRevokeRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=2000)
+
+
 class DelegationRevokeRequest(BaseModel):
     reason: str = Field(..., min_length=1, max_length=2000)
 
@@ -1360,12 +1442,25 @@ async def branding() -> dict[str, Any]:
 # ── Health & Ops ───────────────────────────────────────────────────────────────
 
 
+@app.get("/api/live", tags=["ops"])
+async def liveness() -> JSONResponse:
+    """Process-only liveness probe; dependencies must not trigger restarts."""
+    return JSONResponse(
+        {
+            "status": "alive",
+            "version": __version__,
+            "uptime_seconds": round(time.monotonic() - _START_TIME, 1),
+        }
+    )
+
+
 @app.get("/api/health", tags=["ops"])
+@app.get("/api/ready", tags=["ops"])
 async def health() -> JSONResponse:
+    """Dependency-aware readiness probe; /api/health remains an alias."""
     db_ok = True
     try:
-        if _cost_repo:
-            await _ready(_cost_repo).request_count()
+        await _ready(_db_engine).ping()
     except Exception:
         db_ok = False
 
@@ -1373,7 +1468,12 @@ async def health() -> JSONResponse:
         "postgresql" if (settings.database_url or "").startswith("postgresql") else "sqlite"
     )
     rl_backend = "redis" if settings.redis_url else "memory"
-    orgs_count = len(await _ready(_org_repo).list_orgs()) if _org_repo else 0
+    orgs_count = 0
+    if db_ok and _org_repo:
+        try:
+            orgs_count = len(await _ready(_org_repo).list_orgs())
+        except Exception:
+            db_ok = False
 
     body = {
         "status": "healthy" if db_ok else "degraded",
@@ -3020,8 +3120,8 @@ async def governance_report_outcome(
         raise HTTPException(
             400, "Governance evidence requires an org-scoped API key, not a legacy flat key."
         )
-    evidence = await _ready(_evidence_repo).get(evidence_id)
-    if evidence is None or evidence.organization_id != _auth.org_id:
+    evidence = await _ready(_evidence_repo).get_for_org(_auth.org_id, evidence_id)
+    if evidence is None:
         raise HTTPException(404, f"Evidence record {evidence_id!r} not found.")
     outcome = await _ready(_outcome_repo).record(
         build_outcome_record(
@@ -3052,8 +3152,8 @@ async def governance_get_attestation(
         raise HTTPException(
             400, "Governance evidence requires an org-scoped API key, not a legacy flat key."
         )
-    evidence = await _ready(_evidence_repo).get(evidence_id)
-    if evidence is None or evidence.organization_id != _auth.org_id:
+    evidence = await _ready(_evidence_repo).get_for_org(_auth.org_id, evidence_id)
+    if evidence is None:
         raise HTTPException(404, f"Evidence record {evidence_id!r} not found.")
     outcome = await _ready(_outcome_repo).get_for_evidence(evidence_id)
     attestation = build_attestation_record(evidence, outcome)
@@ -3091,12 +3191,8 @@ async def governance_resolve_approval(
         raise HTTPException(
             400, "Governance approvals require an org-scoped API key, not a legacy flat key."
         )
-    existing = await _ready(_approval_repo).get(approval_id)
+    existing = await _ready(_approval_repo).get_for_org(_auth.org_id, approval_id)
     if existing is None:
-        raise HTTPException(404, "No approval request found with this ID.")
-    if existing.organization_id != _auth.org_id:
-        # Same 404 as "doesn't exist" -- not 403 -- so this endpoint never
-        # confirms *anything* about another org's approval IDs existing.
         raise HTTPException(404, "No approval request found with this ID.")
     try:
         resolved = await _ready(_approval_repo).resolve(
@@ -3143,8 +3239,8 @@ async def governance_list_approval_votes(
         raise HTTPException(
             400, "Governance approvals require an org-scoped API key, not a legacy flat key."
         )
-    approval = await _ready(_approval_repo).get(approval_id)
-    if approval is None or approval.organization_id != _auth.org_id:
+    approval = await _ready(_approval_repo).get_for_org(_auth.org_id, approval_id)
+    if approval is None:
         raise HTTPException(404, "No approval request found with this ID.")
     votes = await _ready(_approval_repo).list_votes(approval_id)
     return {
@@ -3180,6 +3276,10 @@ async def governance_execute_approval(
             evidence_repo=_ready(_evidence_repo),
             org_id=_auth.org_id,
             outcome_repo=_ready(_outcome_repo),
+            authority_resolver=(
+                _authority_resolver if settings.heart_enforcement_enabled else None
+            ),
+            heart_enforcement_required=settings.heart_enforcement_enabled,
         )
     except ApprovalNotFoundError as exc:
         raise HTTPException(404, str(exc)) from None
@@ -3604,6 +3704,262 @@ async def governance_get_active_intent(
     return {"has_active_contract": True, **contract.to_dict()}
 
 
+def _validate_heart_window(not_before: datetime | None, expires_at: datetime | None) -> None:
+    for label, value in (("not_before", not_before), ("expires_at", expires_at)):
+        if value is not None and value.tzinfo is None:
+            raise HTTPException(422, f"{label} must include a timezone offset.")
+    if expires_at is not None and expires_at <= datetime.now(UTC):
+        raise HTTPException(422, "expires_at must be in the future.")
+    if not_before is not None and expires_at is not None and expires_at <= not_before:
+        raise HTTPException(422, "expires_at must be later than not_before.")
+
+
+@app.post("/api/governance/heart/roots", tags=["governance"], status_code=201)
+@limiter.limit("20/minute")
+async def governance_issue_heart_root(
+    request: Request,
+    req: HeartRootIssueRequest,
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, Any]:
+    """Issue one tenant-scoped, evidence-backed Heart root record."""
+    if not _auth.org_id:
+        raise HTTPException(400, "Heart requires an org-scoped API key.")
+    _validate_heart_window(req.not_before, req.expires_at)
+    terminal = req.root_type in {RootType.HUMAN, RootType.ORGANIZATION}
+    if terminal and req.authority_source is not None:
+        raise HTTPException(422, "Terminal HUMAN/ORGANIZATION roots cannot have a source.")
+    if not terminal and req.authority_source is None:
+        raise HTTPException(422, "Service and workload roots require authority_source.")
+    if req.authority_source is not None:
+        parent = await _ready(_heart_root_repo).get(_auth.org_id, req.authority_source)
+        if parent is None:
+            raise HTTPException(404, "Authority source root not found in this tenant.")
+        chain = await _ready(_heart_root_repo).load_chain(_auth.org_id, parent)
+        if not validate_root_chain(parent, lambda root_id: chain.get(root_id)).is_valid:
+            raise HTTPException(409, "Authority source root chain is not currently valid.")
+    record = build_root_authority_record(
+        req.subject_id,
+        req.root_type,
+        req.issuer,
+        req.verification_method,
+        organization_id=_auth.org_id,
+        authority_source=req.authority_source,
+        jurisdiction=req.jurisdiction,
+        evidence_refs=tuple(req.evidence_refs),
+        not_before=req.not_before,
+        expires_at=req.expires_at,
+    )
+    await _ready(_heart_root_repo).issue(_auth.org_id, record)
+    logger.info(
+        "heart_root_issued",
+        root_id=record.root_id,
+        subject_id=record.subject_id,
+        org_id=_auth.org_id,
+        issued_by=_auth.key_id,
+    )
+    return record.to_dict()
+
+
+@app.post("/api/governance/heart/consents", tags=["governance"], status_code=201)
+@limiter.limit("20/minute")
+async def governance_issue_heart_consent(
+    request: Request,
+    req: HeartConsentIssueRequest,
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, Any]:
+    """Capture explicit consent against a valid root in the same tenant."""
+    if not _auth.org_id:
+        raise HTTPException(400, "Heart requires an org-scoped API key.")
+    _validate_heart_window(req.not_before, req.expires_at)
+    root = await _ready(_heart_root_repo).get(_auth.org_id, req.consenting_root_id)
+    if root is None:
+        raise HTTPException(404, "Consenting root not found in this tenant.")
+    chain = await _ready(_heart_root_repo).load_chain(_auth.org_id, root)
+    if not validate_root_chain(root, lambda root_id: chain.get(root_id)).is_valid:
+        raise HTTPException(409, "Consenting root chain is not currently valid.")
+    if req.subject_id != req.grantee_id or root.subject_id != req.grantee_id:
+        raise HTTPException(
+            422,
+            "Heart production consent requires subject_id, grantee_id, and root subject to match.",
+        )
+    proof = build_consent_proof(
+        req.subject_id,
+        req.consenting_root_id,
+        req.grantee_id,
+        req.scope_description,
+        req.purpose,
+        req.consent_method,
+        evidence_refs=tuple(req.evidence_refs),
+        not_before=req.not_before,
+        expires_at=req.expires_at,
+    )
+    await _ready(_heart_consent_repo).issue(_auth.org_id, proof)
+    logger.info(
+        "heart_consent_issued",
+        consent_id=proof.consent_id,
+        grantee_id=proof.grantee_id,
+        org_id=_auth.org_id,
+        issued_by=_auth.key_id,
+    )
+    return proof.to_dict()
+
+
+@app.post("/api/governance/heart/purpose-bindings", tags=["governance"], status_code=201)
+@limiter.limit("20/minute")
+async def governance_bind_heart_purpose(
+    request: Request,
+    req: HeartPurposeBindingRequest,
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, Any]:
+    """Bind an active intent to matching tenant consent without widening either."""
+    if not _auth.org_id:
+        raise HTTPException(400, "Heart requires an org-scoped API key.")
+    intent = await _ready(_intent_repo).get(_auth.org_id, req.intent_ref)
+    if intent is None or intent.agent_id != req.principal_id:
+        raise HTTPException(404, "Intent contract not found for this tenant and principal.")
+    if not intent.is_active():
+        raise HTTPException(409, "Intent contract is no longer active.")
+    consent = await _ready(_heart_consent_repo).get(_auth.org_id, req.consent_ref)
+    if consent is None or consent.grantee_id != req.principal_id:
+        raise HTTPException(404, "Consent proof not found for this tenant and principal.")
+    if req.purpose != intent.goal or req.purpose != consent.purpose:
+        raise HTTPException(422, "Purpose must exactly match the intent goal and consent purpose.")
+    binding = build_purpose_binding(req.purpose, req.intent_ref, req.consent_ref)
+    await _ready(_heart_binding_repo).bind(_auth.org_id, req.principal_id, binding)
+    logger.info(
+        "heart_purpose_bound",
+        binding_id=binding.binding_id,
+        principal_id=req.principal_id,
+        org_id=_auth.org_id,
+        bound_by=_auth.key_id,
+    )
+    return binding.to_dict()
+
+
+@app.post("/api/governance/heart/roots/{root_id}/revoke", tags=["governance"])
+@limiter.limit("20/minute")
+async def governance_revoke_heart_root(
+    request: Request,
+    root_id: str,
+    req: HeartRevokeRequest,
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, Any]:
+    if not _auth.org_id:
+        raise HTTPException(400, "Heart requires an org-scoped API key.")
+    try:
+        record = await _ready(_heart_root_repo).revoke(
+            _auth.org_id, root_id, revoked_by=_auth.key_id, reason=req.reason
+        )
+    except HeartRecordNotFoundError:
+        raise HTTPException(404, "Active Heart root not found in this tenant.") from None
+    return record.to_dict()
+
+
+@app.post("/api/governance/heart/consents/{consent_id}/revoke", tags=["governance"])
+@limiter.limit("20/minute")
+async def governance_revoke_heart_consent(
+    request: Request,
+    consent_id: str,
+    req: HeartRevokeRequest,
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, Any]:
+    if not _auth.org_id:
+        raise HTTPException(400, "Heart requires an org-scoped API key.")
+    try:
+        proof = await _ready(_heart_consent_repo).revoke(
+            _auth.org_id, consent_id, revoked_by=_auth.key_id, reason=req.reason
+        )
+    except HeartRecordNotFoundError:
+        raise HTTPException(404, "Active Heart consent not found in this tenant.") from None
+    return proof.to_dict()
+
+
+@app.get("/api/governance/heart/status/{principal_id}", tags=["governance"])
+@limiter.limit("60/minute")
+async def governance_get_heart_status(
+    request: Request,
+    principal_id: str,
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
+) -> dict[str, Any]:
+    """Return Heart enrollment completeness for one tenant principal."""
+    if not _auth.org_id:
+        raise HTTPException(400, "Heart requires an org-scoped API key.")
+    root = await _ready(_heart_root_repo).get_latest_for_subject(_auth.org_id, principal_id)
+    intent = await _ready(_intent_repo).get_active_for_agent(_auth.org_id, principal_id)
+    consent = (
+        await _ready(_heart_consent_repo).get_latest_for_grantee(
+            _auth.org_id, principal_id, intent.goal
+        )
+        if intent is not None
+        else None
+    )
+    binding = (
+        await _ready(_heart_binding_repo).get_for_refs(
+            _auth.org_id, principal_id, intent.contract_id, consent.consent_id
+        )
+        if intent is not None and consent is not None
+        else None
+    )
+    passport = await _ready(_authority_passport_repo).get_active_for_principal(
+        _auth.org_id, principal_id
+    )
+    root_chain_valid = False
+    if root is not None:
+        chain = await _ready(_heart_root_repo).load_chain(_auth.org_id, root)
+        root_chain_valid = validate_root_chain(root, lambda root_id: chain.get(root_id)).is_valid
+
+    consent_valid = bool(
+        consent
+        and consent.is_temporally_valid()
+        and root
+        and consent.consenting_root_id == root.root_id
+        and consent.grantee_id == principal_id
+    )
+    purpose_binding_valid = bool(
+        binding
+        and intent
+        and consent
+        and binding.intent_ref == intent.contract_id
+        and binding.consent_ref == consent.consent_id
+        and binding.purpose == intent.goal == consent.purpose
+    )
+
+    passport_valid = False
+    if passport is not None:
+        source_ceiling = None
+        source_delegation = None
+        if passport.source == "org_ceiling":
+            source_ceiling = await _ready(_ceiling_repo).get(_auth.org_id)
+        elif passport.source == "delegation":
+            source_delegation = await _ready(_delegation_repo).get_for_org(
+                _auth.org_id, passport.source_id
+            )
+        passport_valid = (
+            verify_passport(passport, ceiling=source_ceiling, delegation=source_delegation).status
+            == PassportStatus.VALID
+        )
+
+    checks = {
+        "root_chain": root_chain_valid,
+        "intent": bool(intent and intent.is_active()),
+        "consent": consent_valid,
+        "purpose_binding": purpose_binding_valid,
+        "authority_passport": passport_valid,
+    }
+    ready = all(checks.values())
+    return {
+        "organization_id": _auth.org_id,
+        "principal_id": principal_id,
+        "ready": ready,
+        "checks": checks,
+        "root": root.to_dict() if root else None,
+        "intent": intent.to_dict() if intent else None,
+        "consent": consent.to_dict() if consent else None,
+        "purpose_binding": binding.to_dict() if binding else None,
+        "authority_passport": passport.to_dict() if passport else None,
+    }
+
+
 @app.post("/api/governance/authority-passports", tags=["governance"], status_code=201)
 @limiter.limit("20/minute")
 async def governance_issue_authority_passport(
@@ -3669,8 +4025,8 @@ async def governance_get_authority_passport(
         raise HTTPException(
             400, "Authority passports require an org-scoped API key, not a legacy flat key."
         )
-    passport = await _ready(_authority_passport_repo).get(passport_id)
-    if passport is None or passport.organization_id != _auth.org_id:
+    passport = await _ready(_authority_passport_repo).get(_auth.org_id, passport_id)
+    if passport is None:
         raise HTTPException(404, "Authority passport not found.")
 
     ceiling = None
@@ -3700,12 +4056,12 @@ async def governance_revoke_authority_passport(
         raise HTTPException(
             400, "Authority passports require an org-scoped API key, not a legacy flat key."
         )
-    existing = await _ready(_authority_passport_repo).get(passport_id)
-    if existing is None or existing.organization_id != _auth.org_id:
+    existing = await _ready(_authority_passport_repo).get(_auth.org_id, passport_id)
+    if existing is None:
         raise HTTPException(404, "Authority passport not found.")
     try:
         revoked = await _ready(_authority_passport_repo).revoke(
-            passport_id, revoked_by=_auth.key_id, reason=req.reason
+            _auth.org_id, passport_id, revoked_by=_auth.key_id, reason=req.reason
         )
     except AuthorityPassportNotFoundError:
         raise HTTPException(404, "Authority passport not found.") from None
@@ -3875,6 +4231,10 @@ async def upstream_call_tool(
             executor=executor,
             tool_trust_repo=_ready(_tool_trust_repo),
             outcome_repo=_ready(_outcome_repo),
+            authority_resolver=(
+                _authority_resolver if settings.heart_enforcement_enabled else None
+            ),
+            heart_enforcement_required=settings.heart_enforcement_enabled,
         )
     except UpstreamServerNotAvailableError as exc:
         raise HTTPException(404, str(exc)) from None
@@ -3903,8 +4263,8 @@ async def upstream_get_trust_score(
         raise HTTPException(
             400, "Upstream servers require an org-scoped API key, not a legacy flat key."
         )
-    server = await _ready(_upstream_registry).get(server_id)
-    if server is None or server.org_id != _auth.org_id:
+    server = await _ready(_upstream_registry).get_for_org(_auth.org_id, server_id)
+    if server is None:
         raise HTTPException(404, f"Upstream MCP server {server_id!r} not found.")
     score = await _ready(_tool_trust_repo).get(server_id)
     if score is None:
@@ -3931,8 +4291,8 @@ async def upstream_scan_trust(
         raise HTTPException(
             400, "Upstream servers require an org-scoped API key, not a legacy flat key."
         )
-    server = await _ready(_upstream_registry).get(server_id)
-    if server is None or server.org_id != _auth.org_id:
+    server = await _ready(_upstream_registry).get_for_org(_auth.org_id, server_id)
+    if server is None:
         raise HTTPException(404, f"Upstream MCP server {server_id!r} not found.")
 
     all_tools, errors = await discover_upstream_tools(_ready(_upstream_registry), _auth.org_id)
@@ -3982,8 +4342,8 @@ async def upstream_override_trust(
         raise HTTPException(
             400, "Upstream servers require an org-scoped API key, not a legacy flat key."
         )
-    server = await _ready(_upstream_registry).get(server_id)
-    if server is None or server.org_id != _auth.org_id:
+    server = await _ready(_upstream_registry).get_for_org(_auth.org_id, server_id)
+    if server is None:
         raise HTTPException(404, f"Upstream MCP server {server_id!r} not found.")
 
     current = await _ready(_tool_trust_repo).get(server_id) or unscanned_score(
@@ -4475,17 +4835,22 @@ async def get_drift_trend(
 @app.get("/api/version", tags=["ops"])
 async def api_version() -> dict[str, Any]:
     """Return full version and stability metadata."""
-    major, minor, patch = (int(part) for part in __version__.split(".")[:3])
+    version_match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(.*)", __version__)
+    if version_match is None:
+        raise RuntimeError(f"Invalid package version: {__version__}")
+    major, minor, patch = (int(part) for part in version_match.group(1, 2, 3))
+    prerelease = version_match.group(4) or None
     return {
         "version": __version__,
         "major": major,
         "minor": minor,
         "patch": patch,
-        "stable": True,
+        "stable": prerelease is None,
+        "prerelease": prerelease,
         "api_versions": ["1.0", "1.1"],
         "current_api_prefix": "/api/v1",
         "deprecated_prefixes": [],
-        "release_date": "2026-07-12",
+        "release_date": "2026-08-27",
         "changelog_url": "https://github.com/Guruprasath-Annadurai/ResponsibleAi/blob/main/CHANGELOG.md",
     }
 

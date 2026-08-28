@@ -1,18 +1,18 @@
 {
-  "_comment": "Tool/resource definitions are NOT duplicated here — they drift. The canonical, live source is the server's own capability card, generated from the same TOOL_DEFS/RESOURCE_DEFS the live MCP server advertises.",
-  "canonicalCapabilityCard": "https://whitepact-mcp-http.onrender.com/.well-known/mcp/server-card.json",
+  "_comment": "Candidate template only. Replace YOUR_WHITEPACT_HOST after deployment and live validation. Tool/resource definitions come from the server capability card generated from TOOL_DEFS/RESOURCE_DEFS.",
+  "canonicalCapabilityCard": "https://YOUR_WHITEPACT_HOST/.well-known/mcp/server-card.json",
   "mcpEndpoint": {
-    "streamableHttp": "https://whitepact-mcp-http.onrender.com/mcp",
-    "legacySse": "https://whitepact-mcp-http.onrender.com/sse"
+    "streamableHttp": "https://YOUR_WHITEPACT_HOST/mcp",
+    "legacySse": "https://YOUR_WHITEPACT_HOST/sse"
   },
   "authentication": {
-    "type": "apiKey",
+    "type": "oauth2_or_apiKey",
     "scheme": "Bearer",
     "header": "Authorization",
-    "obtainedFrom": "WhitePact dashboard (Settings -> API Keys) after creating a free org",
+    "obtainedFrom": "The candidate deployment's external IdP or tenant API-key provisioning flow",
     "oauthAuthorizationServer": null
   },
-  "toolCount": 27,
+  "toolCount": 30,
   "resourceCount": {
     "canonical": 10,
     "advertisedDualScheme": 20
@@ -21,10 +21,11 @@
     "readOnly": true,
     "destructive": false,
     "idempotent": true,
-    "openWorld": false
+    "openWorldVariesByTool": true
   },
   "version": "1.2.2",
   "listingVersion": "1.2.3",
+  "candidateVersion": "1.2.4rc1",
   "repository": "https://github.com/Guruprasath-Annadurai/Whitepact",
   "_urlNote": "Support/privacy/terms below use the repo's own docs via raw.githubusercontent.com, verified live (200) 2026-08-13. A dedicated whitepact.<tld> domain does not exist yet -- these are real, reachable URLs today, not placeholders, but a Microsoft reviewer may expect a branded domain rather than a raw GitHub content link. Swapping to a real domain later is a founder action, not a content change.",
   "support": "mailto:annaduraiguruprasath7@gmail.com",

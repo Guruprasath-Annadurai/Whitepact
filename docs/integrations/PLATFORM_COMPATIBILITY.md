@@ -1,53 +1,120 @@
-# WhitePact Platform Compatibility Matrix
+# WhitePact Enterprise Provider Compatibility
 
-Source of truth for what is actually verified, as of the date below — not
-aspirational. Statuses are restricted to:
+This matrix describes the `1.2.4rc1` source candidate. It deliberately
+separates repository verification from provider-account verification.
 
-- **VERIFIED** — tested end-to-end against the real provider/client.
-- **PARTIALLY_VERIFIED** — the WhitePact side (protocol/transport/auth) is
-  confirmed working; the provider-specific surface (their UI, their CLI,
-  their registry) was not independently exercised.
-- **CONFIG_READY** — a correct configuration/example exists and follows the
-  provider's documented format, but has not been run against the real
-  provider (no credentials available, or the surface requires an account
-  Claude cannot create — see `FOUNDER_ACTIONS.md`).
-- **BLOCKED** — a concrete technical or policy incompatibility exists.
-- **NOT_TESTED** — no verification attempted yet.
+Last reviewed: 2026-08-27
 
-`APPROVED` is never used here unless a platform's own review process has
-actually approved WhitePact's listing.
+## Release-candidate MCP contract
 
-Last verified: 2026-08-13. WhitePact `1.2.2` (PyPI package) / `1.2.3`
-(MCP Registry listing).
-
-## Current WhitePact MCP surface (ground truth)
-
-| Property | Value |
+| Capability | Candidate behavior |
 |---|---|
-| Transports | `streamable-http` (primary), `sse` (legacy, still served), `stdio` (self-hosted, free) |
-| Public endpoint | `https://whitepact-mcp-http.onrender.com/mcp` (streamable-http), `.../sse` (SSE) |
-| Auth | Static Bearer API key only. No OAuth Authorization Server is deployed (`/.well-known/oauth-protected-resource` 404s — confirmed live, no OIDC issuer configured on the hosted instance) |
-| Tools | 27, all `readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False` |
-| Resources | Supported — 10 canonical resources, 20 advertised (dual `whitepact://` / `rai://` URI scheme) |
-| Prompts | **Not supported** — no `prompts/list` handler in `src/responsibleai/mcp/server.py` |
-| Structured output | Tool results are JSON text content; no `structuredContent`/`outputSchema` wired into tool responses yet (gap, not platform-specific) |
-| Origin validation | Enforced via `RAI_MCP_HTTP_ALLOWED_ORIGINS` / `TrustedHostMiddleware` |
-| Health | `GET /health` → `{"status":"ok","tools":27,...}` (live-verified 2026-08-13) |
-| Directory fallback card | `GET /.well-known/mcp/server-card.json` — static capability card for crawlers that can't complete an authenticated scan (e.g. Smithery) |
-| Demo/unauthenticated bypass | `RAI_MCP_HTTP_ALLOW_UNAUTHENTICATED_DEMO` env var exists for recording demos only — **confirmed closed** (live 401 on unauthenticated `/mcp` initialize, 2026-08-13) |
+| Primary endpoint | HTTPS `POST /mcp`, stateless Streamable HTTP |
+| Legacy endpoint | `/sse` plus `/messages/` |
+| Authentication | OAuth/OIDC bearer tokens with exact audience, issuer, expiry, subject, scope, and tenant validation; static tenant API keys remain supported for clients that supply a bearer token directly |
+| OAuth discovery | RFC 9728 protected-resource metadata and OAuth authorization-server discovery validation |
+| Tenant isolation | Unknown/missing tenants fail closed; authority repositories scope reads and revocations by tenant |
+| Tools | 30 tools with JSON Schema inputs, object output schemas, structured content, and explicit MCP annotations |
+| Resources | 10 resources under both `whitepact://` and legacy `rai://` URI schemes |
+| Governance | Heart root, consent, intent, purpose binding, live authority passport, policy, approval, evidence, and reauthorization gates |
+| Operations | `/live`, `/ready`, `/health`, migration gate, Redis-backed distributed authentication throttling |
 
-## Compatibility matrix
+## Status definitions
 
-| Platform | Surface | Transport | Auth | Tools | Resources | Prompts | Structured Results | Approval Model | Status | Test Evidence | Founder Action | Known Limitation |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| GitHub Copilot | CLI / IDE MCP (remote HTTP) | streamable-http | Bearer API key | Discoverable | N/A (Copilot MCP surface is tool-centric) | N/A | Text content only | Per-call tool approval in client | VERIFIED | Run live 2026-08-15 with GitHub Copilot CLI v1.0.80: `copilot mcp add` registered the server, `copilot mcp get whitepact` confirmed config, and an interactive prompt triggered a real `rai_scan` tool call that correctly detected and redacted PII; confirmed live `github.com/mcp/Guruprasath-Annadurai/whitepact` 404s — not yet in GitHub's curated registry (separate from this working CLI integration) | Real submission path confirmed 2026-08-14 (GitHub's own blog): email `partnerships@github.com` requesting inclusion, referencing the already-live official registry listing — draft ready in `compliance/outreach/READY_TO_SEND_EMAILS.md`, sending it is the founder action | Open MCP Registry presence ≠ GitHub's curated registry (219 servers, editorially curated, not a live mirror despite GitHub's stated intent for one) |
-| Microsoft Copilot / Copilot Studio | Custom connector (admin-added, MCP over Streamable HTTP) | streamable-http | Bearer API key (custom connector auth) | Discoverable | Supported by connector, untested by MS tooling | N/A | Text content only | Admin/tenant approval per connector | CONFIG_READY | Local protocol test only; no Microsoft tooling available to run | Partner Center account, business verification, Copilot enrollment — see `distribution/microsoft/FOUNDER_SUBMISSION_CHECKLIST.md` | Certification package prepared, not submitted |
-| Anthropic Claude | Custom remote MCP connector | streamable-http | Bearer API key | Discoverable | Discoverable | N/A (Claude tolerates absent `prompts/list`) | Text content only | Per-tool user approval in Claude UI | PARTIALLY_VERIFIED | Protocol-level `/mcp` init verified live via curl; UI-level "Add custom connector" flow requires interactive browser session | Add connector via Settings → Connectors in an interactive Claude session; confirm tool list renders | Claude UI add-flow can't be scripted headlessly from this session |
-| xAI Grok | Custom connector (grok.com, private) + xAI API remote MCP | streamable-http | Bearer API key | Discoverable | Discoverable | N/A | Text content only | Per-connector approval | VERIFIED (API path) | Run live 2026-08-14 with real credentials: full round trip (connect, auth, tool discovery, tool call, structured response) succeeded — response was WhitePact's own correct FREE-plan gating, not a connection failure. Two real bugs found and fixed along the way (wrong `WHITEPACT_API_KEY`, wrong SDK field for the bearer token) | Upgrade the test org's plan to see a full data-returning response; grok.com custom connector (Path A) is private to the account that adds it, not a directory listing | grok.com/connectors has no public submission process found (curated by xAI); `xai-org/plugin-marketplace` is a real, official, PR-based submission path but for Grok Build (coding agent), not the chat connector catalog |
-| Google Gemini | Remote MCP (Interactions API) | streamable-http only (Gemini does not support SSE for remote MCP) | Bearer API key via `headers` | Discoverable | Discoverable | N/A | Text content only | `allowed_tools` scoping | PARTIALLY_VERIFIED | Run live 2026-08-14 against the real API with real `GEMINI_API_KEY`/`WHITEPACT_API_KEY` — tool-config schema accepted by the live server (fixed two real bugs found in the process: wrong API method, stale model name); blocked short of a full tool call by a `429` requiring a billing-enabled Google Cloud project | Enable billing on the Google Cloud project behind `GEMINI_API_KEY` | Must register server name as `whitepact` (no hyphen) per Gemini's current restriction; must use `client.interactions.create`, not `client.models.generate_content` |
-| Kiro CLI | Remote HTTP MCP config | streamable-http | Bearer API key (OAuth not required by WhitePact) | Discoverable | Discoverable | N/A | Text content only | Kiro tool-approval / `autoApprove` prompts | VERIFIED | Run live 2026-08-16: installed via `brew install --cask amazon-q`, signed in, config added to `~/.kiro/settings/mcp.json`, confirmed WhitePact's tools show up in `kiro-cli` | None | None |
-| Amazon Q Developer (legacy) | Remote HTTP MCP config | streamable-http | Bearer API key (OAuth not required by WhitePact) | Discoverable | Discoverable | N/A | Text content only | Q Developer tool-approval prompts | LEGACY / SUPERSEDED | Confirmed 2026-08-16: new signups closed 2026-05-15, IDE plugins/subscriptions EOL 2027-04-30 — see `kiro-cli.md` for the current target | Migrate to Kiro CLI instead | Amazon rebranded/retired this product in favor of Kiro |
-| AWS Bedrock AgentCore | External MCP target behind AgentCore Gateway | streamable-http | Bearer API key | Discoverable | Discoverable | N/A | Text content only | Gateway-level policy + WhitePact's own authority engine (unchanged) | CONFIG_READY | Local protocol test only; no AgentCore Gateway instance available | Provision an AgentCore Gateway and register WhitePact as a target | Reference architecture only — not a hosting migration |
-| Mistral Le Chat | Featured/MCP Connectors directory or custom | **Blocked pending transport decision** | Bearer API key | Discoverable | Discoverable | N/A | Text content only | Per-connector approval | BLOCKED_BY_CLIENT_TRANSPORT | See `docs/adr/ADR-MISTRAL-MCP-TRANSPORT.md` | Confirm Le Chat's current transport requirement directly (no verified official submission channel found — see ADR) | If Le Chat requires legacy SSE only and WhitePact's SSE support is ever dropped, this breaks; currently SSE is still served, so no immediate break |
-| Cursor | Remote MCP (project or global `mcp.json`) | streamable-http | Bearer API key | Discoverable | Discoverable | N/A | Text content only | Per-tool approval in Cursor UI | VERIFIED | Run live 2026-08-15: added `whitepact` to `~/.cursor/mcp.json`, restarted Cursor, confirmed connected in the MCP settings panel | None | "Add to Cursor" one-click deep link format not independently confirmed from current official docs — omitted rather than guessed |
-| OpenAI | Plugins Directory | streamable-http | OAuth/No-Auth/Mixed only (WhitePact used a scoped demo-auth workaround) | Discoverable | Discoverable | N/A | Text content only | Per-tool approval + directory review | Handled separately (submitted, in Review) | See `compliance/OPENAI_PLUGIN_SUBMISSION_PREP.md` and `FOUNDER_ACTION_CHECKLIST.md` | None — submission complete | Out of scope for this document per task instructions |
+- **REPOSITORY_VERIFIED**: protocol behavior is covered by automated local tests.
+- **CONFIG_READY**: repository behavior and provider configuration are ready, but the candidate has not been exercised with a real provider account.
+- **BRIDGE_VERIFIED**: a repository-tested client bridge exists for a provider surface that does not yet support native remote MCP.
+- **EXTERNAL_GATE**: completion requires credentials, provider approval, deployed infrastructure, or another action outside this repository.
+
+## Provider matrix
+
+| Provider | Native surface | Candidate status | Authentication path | Remaining external gate |
+|---|---|---|---|---|
+| OpenAI | Responses/Plugins remote MCP | CONFIG_READY | OAuth 2.1 discovery, PKCE-capable authorization server, exact resource audience and `mcp:tools` scope | Deploy candidate; register/approve OAuth client or client metadata; run submission compatibility test |
+| Anthropic Claude | Messages API and Managed Agents MCP connectors | CONFIG_READY | Pre-obtained OAuth bearer token or Claude vault `mcp_oauth` credential | Run candidate through Claude connector with a real vault/account |
+| Microsoft | Copilot Studio custom MCP server | CONFIG_READY | OAuth 2.0 or API-key bearer; register Copilot callback URL in the external IdP | Tenant admin registration and Copilot Studio validation |
+| xAI | Responses API Remote MCP Tool | CONFIG_READY | `authorization` bearer token; OAuth access tokens work when obtained out of band | Run candidate with xAI credentials and an enterprise tenant token |
+| AWS | Bedrock AgentCore Gateway MCP target | CONFIG_READY | OAuth authorization code/client credentials/token exchange or API-key bearer | Provision Gateway/Identity resources and synchronize the target |
+| Mistral | Studio Connectors | CONFIG_READY | OAuth2 client credentials or static Authorization header | Run the Connectors Debugger and register the candidate connector |
+| Google Gemini Antigravity | Remote Streamable HTTP MCP | CONFIG_READY | Custom Authorization header | Run the preview agent with a candidate tenant credential |
+| Gemini 3 Interactions model path | No native remote MCP at review date | BRIDGE_VERIFIED | Host application opens authenticated MCP session; `GeminiMCPBridge` exposes schemas and routes calls | Keep bridge until Google marks native remote MCP supported for this model path |
+
+## Provider-specific constraints
+
+### OpenAI
+
+Use the exact public MCP URL as both `server_url` and token audience. Production
+must expose `/.well-known/oauth-protected-resource`, validate the authorization
+server metadata, advertise S256 PKCE, and issue tokens containing `sub`, tenant,
+audience, expiry, and `mcp:tools`. WhitePact is a resource server; the external
+identity provider owns authorization, token issuance, client registration, and
+user consent.
+
+Official reference: <https://developers.openai.com/api/docs/guides/tools-connectors-mcp>
+
+### Claude
+
+Use the public HTTPS `/mcp` URL. Claude currently supports tool calls over
+Streamable HTTP and SSE. Restrict the enabled tools explicitly and keep its
+default per-tool approval policy for production onboarding.
+
+Official reference: <https://platform.claude.com/docs/en/agents-and-tools/mcp-connector>
+
+### Microsoft
+
+Copilot Studio accepts API-key or OAuth 2.0 authentication. For OAuth, add the
+callback URL Copilot Studio provides to the identity-provider client. Do not
+reuse a dashboard client ID as the MCP resource audience.
+
+Official reference: <https://learn.microsoft.com/en-us/microsoft-copilot-studio/mcp-create-new-server>
+
+### xAI
+
+Configure a Remote MCP Tool with `server_url`, `server_label`, an allowlist, and
+the tenant access token in `authorization`. xAI does not currently support the
+OpenAI Responses `require_approval` field, so application/Heart approval remains
+the enforcement layer.
+
+Official reference: <https://docs.x.ai/developers/tools/remote-mcp>
+
+### AWS
+
+Use a Streamable HTTP target. AgentCore supports OAuth, API keys, and several
+OAuth grant patterns; DYNAMIC listing avoids control-plane discovery that would
+otherwise require a machine-to-machine token. WhitePact's stateless transport is
+compatible with AgentCore's recommended mode.
+
+Official references:
+<https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-target-MCPservers.html>
+and
+<https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-mcp-protocol-contract.html>
+
+### Mistral
+
+Register the public `/mcp` URL, authenticate with OAuth2 client credentials or
+an Authorization header, and run the Connector Debugger before publishing.
+Connectors remain a public-preview provider feature, so repeat validation for
+each enterprise candidate.
+
+Official reference: <https://docs.mistral.ai/studio/connectors/debugger>
+
+### Gemini
+
+Antigravity supports remote Streamable HTTP MCP. The Gemini 3 Interactions
+documentation still lists remote MCP as unavailable, so applications using that
+model path should use `responsibleai.integrations.GeminiMCPBridge`. The bridge
+does not acquire or store credentials and cannot bypass WhitePact governance.
+
+Official references:
+<https://ai.google.dev/gemini-api/docs/antigravity-agent> and
+<https://ai.google.dev/gemini-api/docs/interactions-overview>
+
+## Required live test for every provider
+
+1. Obtain a tenant-scoped token for the exact MCP resource and scope.
+2. Confirm unauthenticated discovery returns `401` plus resource metadata.
+3. Initialize the provider against `/mcp` and list all expected tools.
+4. Confirm annotations and input/output schemas are accepted.
+5. Call `rai_health`, then a governed `rai_scan` with a fully enrolled Heart principal.
+6. Confirm a wrong audience, wrong scope, unknown tenant, revoked consent, and cross-tenant identifier are rejected.
+7. Record provider, client/API version, timestamp, tenant, result, and evidence artifact. Never mark a provider VERIFIED based only on repository tests.

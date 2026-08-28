@@ -25,6 +25,7 @@ from responsibleai.governance import (
     AuthorizationActionMismatchError,
     AuthorizationAlreadyConsumedError,
     AuthorizationExpiredError,
+    AuthorizationHeartBindingError,
     AuthorizationOrganizationMismatchError,
     DecisionNotExecutableError,
     ExecutionAuthorization,
@@ -80,6 +81,11 @@ class TestAuthorizeExecutionRefusesNonExecutableDecisions:
             decision = DecisionResult(decision=decision_value, action_id=action.action_id)
             authorization = authorize_execution(decision, action)
             assert authorization.decision == decision_value
+
+    def test_heart_required_refuses_unbound_authorization(self) -> None:
+        action = _action()
+        with pytest.raises(AuthorizationHeartBindingError):
+            authorize_execution(_allow_decision(action.action_id), action, require_heart=True)
 
 
 class TestExecutorRefusesInvalidAuthorization:
@@ -165,6 +171,13 @@ class TestExecutorRefusesInvalidAuthorization:
         executor = InternalToolExecutor()
         with pytest.raises(AuthorizationOrganizationMismatchError):
             await executor.execute(forged, action)
+
+    async def test_heart_marked_permit_without_digests_is_refused(self) -> None:
+        action = _action()
+        authorization = authorize_execution(_allow_decision(action.action_id), action)
+        authorization.heart_required = True
+        with pytest.raises(AuthorizationHeartBindingError):
+            await InternalToolExecutor().execute(authorization, action)
 
 
 class TestExecutionAuthorizationBindsToRedactedArguments:

@@ -5,26 +5,34 @@ metadata:
   labels:
     {{- include "rai-governance.labels" . | nindent 4 }}
 data:
-  RAI_AUTH_ENABLED: {{ .Values.config.authEnabled | quote }}
-  RAI_ALERT_THRESHOLD: {{ .Values.config.alertThreshold | quote }}
-  RAI_MONTHLY_BUDGET_USD: {{ .Values.config.monthlyBudgetUsd | quote }}
-  RAI_LOG_LEVEL: {{ .Values.config.logLevel | quote }}
-  RAI_LOG_JSON: {{ .Values.config.logJson | quote }}
+  WHITEPACT_PRODUCTION_MODE: {{ .Values.config.productionMode | quote }}
+  WHITEPACT_MULTI_REPLICA: {{ .Values.config.multiReplica | quote }}
+  WHITEPACT_AUTO_MIGRATE: {{ .Values.config.autoMigrate | quote }}
+  WHITEPACT_MCP_GOVERNANCE_ENABLED: {{ .Values.config.mcpGovernanceEnabled | quote }}
+  WHITEPACT_HEART_ENFORCEMENT_ENABLED: {{ .Values.config.heartEnforcementEnabled | quote }}
+  WHITEPACT_MCP_OAUTH_RESOURCE_URI: {{ .Values.config.mcpOauthResourceUri | quote }}
+  WHITEPACT_MCP_OAUTH_SCOPES: {{ .Values.config.mcpOauthScopes | quote }}
+  WHITEPACT_MCP_OAUTH_RESOURCE_DOCUMENTATION: {{ .Values.config.mcpOauthResourceDocumentation | quote }}
+  WHITEPACT_AUTH_ENABLED: {{ .Values.config.authEnabled | quote }}
+  WHITEPACT_ALERT_THRESHOLD: {{ .Values.config.alertThreshold | quote }}
+  WHITEPACT_MONTHLY_BUDGET_USD: {{ .Values.config.monthlyBudgetUsd | quote }}
+  WHITEPACT_LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  WHITEPACT_LOG_JSON: {{ .Values.config.logJson | quote }}
   {{- if .Values.config.databaseUrl }}
-  RAI_DATABASE_URL: {{ .Values.config.databaseUrl | quote }}
+  WHITEPACT_DATABASE_URL: {{ .Values.config.databaseUrl | quote }}
   {{- end }}
   {{- if .Values.config.redisUrl }}
-  RAI_REDIS_URL: {{ .Values.config.redisUrl | quote }}
+  WHITEPACT_REDIS_URL: {{ .Values.config.redisUrl | quote }}
   {{- end }}
   {{- if .Values.config.otelEndpoint }}
-  RAI_OTEL_ENDPOINT: {{ .Values.config.otelEndpoint | quote }}
+  WHITEPACT_OTEL_ENDPOINT: {{ .Values.config.otelEndpoint | quote }}
   {{- end }}
   {{- if .Values.oidc.enabled }}
-  RAI_OIDC_ISSUER: {{ .Values.oidc.issuer | quote }}
-  RAI_OIDC_CLIENT_ID: {{ .Values.oidc.clientId | quote }}
-  RAI_OIDC_REDIRECT_URI: {{ .Values.oidc.redirectUri | quote }}
-  RAI_OIDC_SCOPES: {{ .Values.oidc.scopes | quote }}
+  WHITEPACT_OIDC_ISSUER: {{ .Values.oidc.issuer | quote }}
+  WHITEPACT_OIDC_CLIENT_ID: {{ .Values.oidc.clientId | quote }}
+  WHITEPACT_OIDC_REDIRECT_URI: {{ .Values.oidc.redirectUri | quote }}
+  WHITEPACT_OIDC_SCOPES: {{ .Values.oidc.scopes | quote }}
   {{- end }}
   {{- if .Values.persistence.enabled }}
-  RAI_DB_PATH: {{ .Values.persistence.mountPath }}/data.db
+  WHITEPACT_DB_PATH: {{ .Values.persistence.mountPath }}/data.db
   {{- end }}

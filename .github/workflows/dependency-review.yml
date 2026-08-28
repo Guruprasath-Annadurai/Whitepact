@@ -19,17 +19,25 @@ permissions:
 jobs:
   dependency-review:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Dependency Review
-        uses: actions/dependency-review-action@v4
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
         with:
           # MIT (this project's own license) plus the common permissive
           # licenses already carried by its real dependency tree
           # (verified against `pip-licenses` output as of this writing)
           # -- not an aspirational allowlist, the actual licenses this
-          # project already ships with.
-          allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, Python-2.0, MPL-2.0
+          # project already ships with. 0BSD/Zlib/CC0-1.0/Unlicense/
+          # MIT-CMU/MIT-0/CC-BY-4.0/PSF-2.0 added deliberately: each is
+          # an unambiguous, individually permissive OSI/public-domain-
+          # equivalent license appearing in a transitive dependency's
+          # compound SPDX expression. GPL-1.0-or-later, Ruby, and
+          # CNRI-Python are deliberately NOT added -- those need a human
+          # legal call, not a default-allow; see
+          # compliance/ENTERPRISE_RC_GATE_REGISTER.md.
+          allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, Python-2.0, MPL-2.0, 0BSD, Zlib, CC0-1.0, Unlicense, MIT-CMU, MIT-0, CC-BY-4.0, PSF-2.0
           fail-on-severity: high
           comment-summary-in-pr: always

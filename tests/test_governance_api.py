@@ -1508,6 +1508,175 @@ class TestIntentContractEndpoints:
         assert r.json()["has_active_contract"] is False
 
 
+class TestHeartEnrollmentEndpoints:
+    async def test_full_tenant_enrollment_reports_ready(
+        self, client: AsyncClient, org_and_admin_key
+    ) -> None:
+        from responsibleai.dashboard.app import _db_engine
+        from responsibleai.db import OrgAuthorityCeilingRepository
+        from responsibleai.governance import OrgAuthorityCeiling
+
+        org_id, admin_key = org_and_admin_key
+        headers = {"Authorization": f"Bearer {admin_key}"}
+        principal = "agent-heart-1"
+        purpose = "operate approved governance tools"
+
+        root_response = await client.post(
+            "/api/governance/heart/roots",
+            json={
+                "subject_id": principal,
+                "root_type": "HUMAN",
+                "issuer": "https://idp.example.test",
+                "verification_method": "oidc-sub",
+                "evidence_refs": ["oidc:event:123"],
+            },
+            headers=headers,
+        )
+        assert root_response.status_code == 201, root_response.text
+        root_id = root_response.json()["root_id"]
+
+        intent_response = await client.post(
+            "/api/governance/intent-contracts",
+            json={
+                "agent_id": principal,
+                "goal": purpose,
+                "allowed_action_types": ["rai_health"],
+            },
+            headers=headers,
+        )
+        assert intent_response.status_code == 201, intent_response.text
+        intent_id = intent_response.json()["contract_id"]
+
+        consent_response = await client.post(
+            "/api/governance/heart/consents",
+            json={
+                "subject_id": principal,
+                "consenting_root_id": root_id,
+                "grantee_id": principal,
+                "scope_description": "Call the health governance tool",
+                "purpose": purpose,
+                "consent_method": "API_AUTHENTICATED_REQUEST",
+                "evidence_refs": ["request:456"],
+            },
+            headers=headers,
+        )
+        assert consent_response.status_code == 201, consent_response.text
+        consent_id = consent_response.json()["consent_id"]
+
+        binding_response = await client.post(
+            "/api/governance/heart/purpose-bindings",
+            json={
+                "principal_id": principal,
+                "purpose": purpose,
+                "intent_ref": intent_id,
+                "consent_ref": consent_id,
+            },
+            headers=headers,
+        )
+        assert binding_response.status_code == 201, binding_response.text
+
+        await OrgAuthorityCeilingRepository(_db_engine).set(
+            OrgAuthorityCeiling(org_id=org_id, allowed_action_types=["rai_health"])
+        )
+        passport_response = await client.post(
+            "/api/governance/authority-passports",
+            json={"principal_id": principal, "source": "org_ceiling"},
+            headers=headers,
+        )
+        assert passport_response.status_code == 201, passport_response.text
+
+        status = await client.get(f"/api/governance/heart/status/{principal}", headers=headers)
+        assert status.status_code == 200
+        body = status.json()
+        assert body["organization_id"] == org_id
+        assert body["ready"] is True
+        assert body["root"]["root_id"] == root_id
+        assert body["consent"]["consent_id"] == consent_id
+        assert body["purpose_binding"]["intent_ref"] == intent_id
+        assert body["authority_passport"]["principal_id"] == principal
+
+        revoked_root = await client.post(
+            f"/api/governance/heart/roots/{root_id}/revoke",
+            json={"reason": "identity authority withdrawn"},
+            headers=headers,
+        )
+        assert revoked_root.status_code == 200
+        no_longer_ready = await client.get(
+            f"/api/governance/heart/status/{principal}", headers=headers
+        )
+        assert no_longer_ready.json()["ready"] is False
+        assert no_longer_ready.json()["checks"]["root_chain"] is False
+
+    async def test_service_root_requires_valid_source(
+        self, client: AsyncClient, org_and_admin_key
+    ) -> None:
+        _org_id, admin_key = org_and_admin_key
+        r = await client.post(
+            "/api/governance/heart/roots",
+            json={
+                "subject_id": "service-1",
+                "root_type": "SERVICE_PRINCIPAL",
+                "issuer": "whitepact",
+                "verification_method": "api-key",
+            },
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        assert r.status_code == 422
+
+    async def test_revoked_consent_makes_status_not_ready(
+        self, client: AsyncClient, org_and_admin_key
+    ) -> None:
+        _org_id, admin_key = org_and_admin_key
+        headers = {"Authorization": f"Bearer {admin_key}"}
+        principal = "agent-revoked"
+        purpose = "test revocation"
+        root = await client.post(
+            "/api/governance/heart/roots",
+            json={
+                "subject_id": principal,
+                "root_type": "HUMAN",
+                "issuer": "test",
+                "verification_method": "test",
+            },
+            headers=headers,
+        )
+        intent = await client.post(
+            "/api/governance/intent-contracts",
+            json={"agent_id": principal, "goal": purpose},
+            headers=headers,
+        )
+        consent = await client.post(
+            "/api/governance/heart/consents",
+            json={
+                "subject_id": principal,
+                "consenting_root_id": root.json()["root_id"],
+                "grantee_id": principal,
+                "scope_description": "test",
+                "purpose": purpose,
+                "consent_method": "API_AUTHENTICATED_REQUEST",
+            },
+            headers=headers,
+        )
+        await client.post(
+            "/api/governance/heart/purpose-bindings",
+            json={
+                "principal_id": principal,
+                "purpose": purpose,
+                "intent_ref": intent.json()["contract_id"],
+                "consent_ref": consent.json()["consent_id"],
+            },
+            headers=headers,
+        )
+        revoked = await client.post(
+            f"/api/governance/heart/consents/{consent.json()['consent_id']}/revoke",
+            json={"reason": "operator revoked"},
+            headers=headers,
+        )
+        assert revoked.status_code == 200
+        status = await client.get(f"/api/governance/heart/status/{principal}", headers=headers)
+        assert status.json()["ready"] is False
+
+
 class TestAuthorityPassportEndpoints:
     async def _set_ceiling(self, org_id: str, **kwargs) -> None:
         from responsibleai.dashboard.app import _db_engine

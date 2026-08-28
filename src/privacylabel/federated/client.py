@@ -184,12 +184,18 @@ class FederatedClient:
         results = await self.provider.batch_label(texts)
 
         for record, result in zip(records, results, strict=False):
+            raw_label = result.get("label")
+            raw_confidence = result.get("confidence", 0.9)
+            if not isinstance(raw_label, str):
+                raise ValueError("Label provider returned a non-string label")
+            if isinstance(raw_confidence, bool) or not isinstance(raw_confidence, (int, float)):
+                raise ValueError("Label provider returned a non-numeric confidence")
             batch.append(
                 Label(
                     label_id=str(uuid.uuid4()),
-                    data_id=record.get("id", str(uuid.uuid4())),
-                    label=result["label"],
-                    confidence=float(result.get("confidence", 0.9)),
+                    data_id=str(record.get("id", uuid.uuid4())),
+                    label=raw_label,
+                    confidence=float(raw_confidence),
                     source="federated",
                     metadata={"model": result.get("model", "unknown")},
                 )

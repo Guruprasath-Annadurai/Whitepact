@@ -12,3 +12,6 @@ wiki/Authentication-and-RBAC.md:curl-auth-header:26
 wiki/Authentication-and-RBAC.md:curl-auth-header:66
 wiki/Authentication-and-RBAC.md:curl-auth-header:75
 wiki/Authentication-and-RBAC.md:curl-auth-header:86
+# False positive: this line passes an RSA private key generated in memory by
+# the test itself; no static key material or credential is present in source.
+tests/test_saml.py:generic-api-key:252

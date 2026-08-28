@@ -117,6 +117,102 @@ class TestMultiReplicaProblems:
         assert "rate limiting" in problems[0]
 
 
+class TestProductionReadiness:
+    def test_production_mode_defaults_false(self, monkeypatch, fresh_settings_module) -> None:
+        monkeypatch.delenv("RAI_PRODUCTION_MODE", raising=False)
+        assert fresh_settings_module.Settings().production_mode is False
+
+    def test_production_mode_reads_environment(self, monkeypatch, fresh_settings_module) -> None:
+        monkeypatch.setenv("RAI_PRODUCTION_MODE", "true")
+        assert fresh_settings_module.Settings().production_mode is True
+
+    def test_dashboard_rejects_development_bypasses(self, fresh_settings_module) -> None:
+        settings = fresh_settings_module.Settings(
+            _env_file=None,
+            production_mode=True,
+            auth_enabled=False,
+            allow_all_origins=True,
+            oidc_issuer="https://idp.example.com",
+            oidc_skip_verification=True,
+        )
+
+        problems = fresh_settings_module.production_readiness_problems(
+            settings, component="dashboard"
+        )
+
+        assert any("authentication" in problem.lower() for problem in problems)
+        assert any("all CORS origins" in problem for problem in problems)
+        assert any("OIDC" in problem for problem in problems)
+
+    def test_mcp_rejects_governance_and_demo_bypasses(self, fresh_settings_module) -> None:
+        settings = fresh_settings_module.Settings(
+            _env_file=None,
+            production_mode=True,
+            mcp_governance_enabled=False,
+            mcp_http_allow_unauthenticated_demo=True,
+        )
+
+        problems = fresh_settings_module.production_readiness_problems(settings, component="mcp")
+
+        assert any("governance" in problem.lower() for problem in problems)
+        assert any("unauthenticated" in problem.lower() for problem in problems)
+        assert any("OAuth" in problem for problem in problems)
+
+    def test_safe_mcp_production_configuration_is_clean(self, fresh_settings_module) -> None:
+        settings = fresh_settings_module.Settings(
+            _env_file=None,
+            production_mode=True,
+            database_url="postgresql://user:pass@db/whitepact",
+            redis_url="redis://redis:6379/0",
+            multi_replica=True,
+            auto_migrate=False,
+            mcp_governance_enabled=True,
+            heart_enforcement_enabled=True,
+            oidc_issuer="https://idp.example.com",
+            mcp_oauth_resource_uri="https://mcp.example.com/mcp",
+            mcp_oauth_scopes=["mcp:tools"],
+        )
+        assert fresh_settings_module.production_readiness_problems(settings, component="mcp") == []
+
+    def test_multi_replica_requires_shared_backends_and_external_migrations(
+        self, fresh_settings_module
+    ) -> None:
+        settings = fresh_settings_module.Settings(
+            _env_file=None,
+            production_mode=True,
+            multi_replica=True,
+            db_path=":memory:",
+            redis_url=None,
+            auto_migrate=True,
+        )
+
+        problems = fresh_settings_module.production_readiness_problems(
+            settings, component="dashboard"
+        )
+
+        assert any("SQLite" in problem for problem in problems)
+        assert any("rate limiting" in problem for problem in problems)
+        assert any("migration" in problem.lower() for problem in problems)
+
+    def test_safe_dashboard_production_configuration_is_clean(self, fresh_settings_module) -> None:
+        settings = fresh_settings_module.Settings(
+            _env_file=None,
+            production_mode=True,
+            database_url="postgresql://user:pass@db/whitepact",
+            redis_url="redis://redis:6379/0",
+            multi_replica=True,
+            auto_migrate=False,
+            auth_enabled=True,
+            allow_all_origins=False,
+            heart_enforcement_enabled=True,
+        )
+
+        assert (
+            fresh_settings_module.production_readiness_problems(settings, component="dashboard")
+            == []
+        )
+
+
 class TestWhitepactEnvVarPrecedence:
     """MIGRATION_WHITEPACT_V2.md Section 5: WHITEPACT_ is the preferred
     prefix; RAI_ is the legacy prefix, kept fully functional. If both are

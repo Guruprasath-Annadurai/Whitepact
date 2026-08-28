@@ -120,6 +120,14 @@ class AuthorizationTargetDriftError(ExecutionNotAuthorizedError):
         )
 
 
+class AuthorizationHeartBindingError(ExecutionNotAuthorizedError):
+    """A Heart-enforced execution permit has no valid legitimacy binding."""
+
+
+class AuthorityGrantMismatchError(ExecutionNotAuthorizedError):
+    """The supplied Heart grant is unusable or belongs to another action."""
+
+
 @dataclass
 class ExecutionAuthorization:
     """What `authorize_execution()` hands an executor — the structural
@@ -147,6 +155,9 @@ class ExecutionAuthorization:
     organization_id: str | None
     decision: GovernanceDecision
     target_fingerprint: str | None = None
+    authority_grant_digest: str | None = None
+    legitimacy_digest: str | None = None
+    heart_required: bool = False
     authorization_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     nonce: str = field(default_factory=lambda: uuid.uuid4().hex)
     issued_at: datetime = field(default_factory=lambda: datetime.now(UTC))
@@ -171,6 +182,8 @@ def authorize_execution(
     *,
     ttl_seconds: int = DEFAULT_AUTHORIZATION_TTL_SECONDS,
     target_fingerprint: str | None = None,
+    authority_grant: Any | None = None,
+    require_heart: bool = False,
 ) -> ExecutionAuthorization:
     """Turn a gateway decision into an `ExecutionAuthorization` — the
     only place one is ever constructed. Raises `DecisionNotExecutableError`
@@ -198,12 +211,34 @@ def authorize_execution(
     """
     if decision.decision not in (GovernanceDecision.ALLOW, GovernanceDecision.ALLOW_WITH_REDACTION):
         raise DecisionNotExecutableError(decision.decision)
+    if require_heart and authority_grant is None:
+        raise AuthorizationHeartBindingError(
+            "Heart enforcement requires an AuthorityGrant before execution."
+        )
+    if authority_grant is not None:
+        if (
+            not authority_grant.is_usable
+            or authority_grant.organization_id != action.agent.organization_id
+            or authority_grant.acting_agent_id != action.agent.agent_id
+            or authority_grant.requested_action_type != action.action_type
+            or authority_grant.requested_target != action.target
+        ):
+            raise AuthorityGrantMismatchError(
+                "AuthorityGrant is expired, vetoed, or does not match the action."
+            )
 
     return ExecutionAuthorization(
         action_digest=compute_action_digest(action),
         organization_id=action.agent.organization_id,
         decision=decision.decision,
         target_fingerprint=target_fingerprint,
+        authority_grant_digest=(
+            authority_grant.canonical_digest if authority_grant is not None else None
+        ),
+        legitimacy_digest=(
+            authority_grant.legitimacy.canonical_digest if authority_grant is not None else None
+        ),
+        heart_required=require_heart,
         expires_at=datetime.now(UTC) + timedelta(seconds=ttl_seconds),
     )
 
@@ -239,6 +274,12 @@ def _validate_authorization(authorization: ExecutionAuthorization, action: Actio
         raise AuthorizationOrganizationMismatchError(authorization.authorization_id)
     if not authorization.matches_action(action):
         raise AuthorizationActionMismatchError(authorization.authorization_id)
+    if authorization.heart_required and (
+        not authorization.authority_grant_digest or not authorization.legitimacy_digest
+    ):
+        raise AuthorizationHeartBindingError(
+            f"ExecutionAuthorization {authorization.authorization_id!r} has no Heart binding."
+        )
 
 
 def check_target_fingerprint(

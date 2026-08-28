@@ -85,6 +85,7 @@ from responsibleai.rbac.models import OrgContext
 _executor = InternalToolExecutor()
 
 if TYPE_CHECKING:
+    from responsibleai.governance.authority_resolver import AuthorityResolver
     from responsibleai.webhooks.manager import WebhookManager
 
 _logger = logging.getLogger("responsibleai.mcp.governance")
@@ -101,6 +102,8 @@ class GovernanceServices:
     approval_repo: ApprovalRepository
     policy_repo: PolicyRepository
     trust_client: TrustClient
+    authority_resolver: AuthorityResolver | None = None
+    heart_enforcement_required: bool = False
     webhook_manager: WebhookManager | None = None
     # Optional -- an org with no ceiling repo wired (or no ceiling row
     # for that org) simply never gets a `parent_authority` passed to
@@ -244,12 +247,41 @@ async def apply_governance(
         if ceiling.max_delegation_depth is not None:
             inherited_constraints["max_delegation_depth"] = ceiling.max_delegation_depth
 
-    authority = AuthorityContext(
-        delegated_by=ctx.org_id,
-        granted_action_types=frozenset({name}),
-        constraints=inherited_constraints,
-        require_approval_for=inherited_approval,
-    )
+    authority_resolution_denied_reason: str | None = None
+    grant = None
+    if services.authority_resolver is not None:
+        from responsibleai.governance.authority_resolver import AuthorityResolutionError
+
+        requested_purpose = arguments.get("purpose")
+        try:
+            grant = await services.authority_resolver.resolve(
+                identity,
+                action_type=name,
+                target=name,
+                purpose=requested_purpose if isinstance(requested_purpose, str) else None,
+            )
+            authority = grant.to_authority_context()
+        except AuthorityResolutionError as exc:
+            authority_resolution_denied_reason = str(exc)
+            authority = AuthorityContext(
+                delegated_by=ctx.org_id,
+                granted_action_types=frozenset(),
+            )
+    elif services.heart_enforcement_required:
+        authority_resolution_denied_reason = (
+            "HEART_RESOLVER_UNAVAILABLE: production Heart enforcement has no resolver"
+        )
+        authority = AuthorityContext(
+            delegated_by=ctx.org_id,
+            granted_action_types=frozenset(),
+        )
+    else:
+        authority = AuthorityContext(
+            delegated_by=ctx.org_id,
+            granted_action_types=frozenset({name}),
+            constraints=inherited_constraints,
+            require_approval_for=inherited_approval,
+        )
     action = ActionRequest(agent=agent, action_type=name, target=name, arguments=arguments)
 
     violation_count = await recent_violation_count(
@@ -336,7 +368,13 @@ async def apply_governance(
     )
 
     evaluate_started = time.monotonic()
-    if delegation_denied_reason is not None:
+    if authority_resolution_denied_reason is not None:
+        decision = DecisionResult(
+            decision=GovernanceDecision.DENY,
+            action_id=action.action_id,
+            reason_codes=[authority_resolution_denied_reason],
+        )
+    elif delegation_denied_reason is not None:
         decision = DecisionResult(
             decision=GovernanceDecision.DENY,
             action_id=action.action_id,
@@ -361,7 +399,14 @@ async def apply_governance(
         time.monotonic() - evaluate_started,
         org_id=ctx.org_id,
     )
-    evidence = build_evidence_record(action, agent, authority, decision)
+    evidence = build_evidence_record(
+        action,
+        agent,
+        authority,
+        decision,
+        authority_grant_digest=grant.canonical_digest if grant is not None else None,
+        legitimacy_digest=(grant.legitimacy.canonical_digest if grant is not None else None),
+    )
     try:
         await services.evidence_repo.record(evidence)
     except Exception:
@@ -457,7 +502,12 @@ async def apply_governance(
         arguments=final_arguments,
         action_id=action.action_id,
     )
-    authorization = authorize_execution(decision, final_action)
+    authorization = authorize_execution(
+        decision,
+        final_action,
+        authority_grant=grant,
+        require_heart=services.heart_enforcement_required,
+    )
     try:
         result = await _executor.execute(authorization, final_action)
     except Exception:
@@ -524,7 +574,7 @@ def _agent_from_approval(approval: ApprovalRequest) -> AgentContext:
     raising and blocking an otherwise-valid resume."""
     identity = IdentityContext(
         identity_id=approval.requested_by or "unknown",
-        kind="api_key",
+        kind="oidc" if (approval.requested_by or "").startswith("oidc:") else "api_key",
         org_id=approval.organization_id,
     )
     return AgentContext(
@@ -540,6 +590,8 @@ async def resume_approval(
     org_id: str,
     upstream_registry: Any = None,
     outcome_repo: OutcomeRepository | None = None,
+    authority_resolver: Any = None,
+    heart_enforcement_required: bool = False,
 ) -> dict[str, Any]:
     """The REQUIRE_APPROVAL -> resume-execution pipeline: given an
     approval a human has already resolved APPROVED, reconstruct the
@@ -563,19 +615,55 @@ async def resume_approval(
     REST endpoint) map these the same way the resolve endpoint already
     maps the first three.
     """
-    from responsibleai.db import ApprovalNotFoundError
+    from responsibleai.db import (
+        ApprovalExpiredError,
+        ApprovalNotApprovedError,
+        ApprovalNotFoundError,
+    )
+    from responsibleai.governance.approval import ApprovalStatus
     from responsibleai.governance.upstream_executor import ACTION_TYPE as _UPSTREAM_ACTION_TYPE
     from responsibleai.governance.upstream_executor import UpstreamMCPExecutor
 
-    approval = await approval_repo.get(approval_id)
-    if approval is None or approval.organization_id != org_id:
+    approval = await approval_repo.get_for_org(org_id, approval_id)
+    if approval is None:
         # Same 404-not-403 pattern as governance_resolve_approval: this
         # function never confirms whether an approval ID belonging to
         # another org exists.
         raise ApprovalNotFoundError(approval_id)
+    # Validate the cheap, user-visible state prerequisites before doing
+    # a potentially remote Heart resolution.  consume() repeats these
+    # checks atomically below, so this does not weaken replay protection.
+    if approval.status is not ApprovalStatus.APPROVED:
+        raise ApprovalNotApprovedError(approval_id, approval.status.value)
+    if approval.is_expired:
+        raise ApprovalExpiredError(
+            approval_id,
+            approval.expires_at.isoformat() if approval.expires_at else None,
+        )
 
     agent = _agent_from_approval(approval)
     action = build_resume_action(approval, agent=agent)
+
+    grant = None
+    if authority_resolver is not None:
+        from responsibleai.governance.authority_resolver import AuthorityResolutionError
+
+        requested_purpose = action.arguments.get("purpose")
+        try:
+            grant = await authority_resolver.resolve(
+                agent.identity,
+                action_type=action.action_type,
+                target=action.target,
+                purpose=requested_purpose if isinstance(requested_purpose, str) else None,
+            )
+        except AuthorityResolutionError as exc:
+            raise ValueError(
+                f"Approval cannot execute because Heart re-authorization failed: {exc}"
+            ) from exc
+    elif heart_enforcement_required:
+        raise ValueError(
+            "Approval cannot execute because production Heart enforcement has no resolver."
+        )
 
     if approval.action_type == _UPSTREAM_ACTION_TYPE:
         if upstream_registry is None:
@@ -601,13 +689,25 @@ async def resume_approval(
         ],
         risk_tier=RiskTier(approval.risk_tier) if approval.risk_tier else None,
     )
-    authorization = authorize_execution(decision, action)
+    authorization = authorize_execution(
+        decision,
+        action,
+        authority_grant=grant,
+        require_heart=heart_enforcement_required,
+    )
     result = await executor.execute(authorization, action)
 
     authority = AuthorityContext(
         delegated_by=org_id, granted_action_types=frozenset({action.action_type})
     )
-    evidence = build_evidence_record(action, agent, authority, decision)
+    evidence = build_evidence_record(
+        action,
+        agent,
+        authority,
+        decision,
+        authority_grant_digest=grant.canonical_digest if grant is not None else None,
+        legitimacy_digest=(grant.legitimacy.canonical_digest if grant is not None else None),
+    )
     evidence_recorded = True
     try:
         await evidence_repo.record(evidence)

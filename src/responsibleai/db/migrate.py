@@ -37,7 +37,10 @@ import os
 import sys
 from pathlib import Path
 
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 from responsibleai.db.engine import create_engine as _create_db_engine
 
@@ -111,13 +114,19 @@ async def _needs_baseline_stamp(effective_db_url: str) -> bool:
 
 def _migration_env(effective_db_url: str) -> dict[str, str]:
     env = os.environ.copy()
-    env.pop("RAI_DB_URL", None)  # migrations/env.py checks this first — don't let a stale value win
+    for name in (
+        "WHITEPACT_DATABASE_URL",
+        "WHITEPACT_DB_URL",
+        "WHITEPACT_DB_PATH",
+        "RAI_DATABASE_URL",
+        "RAI_DB_URL",
+        "RAI_DB_PATH",
+    ):
+        env.pop(name, None)
     if effective_db_url.startswith("postgresql") or effective_db_url.startswith("postgres"):
-        env["RAI_DATABASE_URL"] = effective_db_url
-        env.pop("RAI_DB_PATH", None)
+        env["WHITEPACT_DATABASE_URL"] = effective_db_url
     else:
-        env["RAI_DB_PATH"] = effective_db_url
-        env.pop("RAI_DATABASE_URL", None)
+        env["WHITEPACT_DB_PATH"] = effective_db_url
     return env
 
 
@@ -176,3 +185,31 @@ async def run_migrations_or_raise(effective_db_url: str) -> None:
 
     await _run_alembic(ini_path, env, "upgrade", "head")
     logger.info("db_migrations_applied", extra={"alembic_ini": str(ini_path)})
+
+
+async def schema_is_at_head(effective_db_url: str) -> bool:
+    """Return whether the database's Alembic revisions equal repository head.
+
+    Production services use this after connecting when migrations are run as
+    a separate deployment step. A reachable database with an absent or stale
+    ``alembic_version`` table is not ready to serve application traffic.
+    """
+    ini_path = _find_alembic_ini()
+    if ini_path is None:
+        return False
+
+    config = Config(str(ini_path))
+    expected_heads = set(ScriptDirectory.from_config(config).get_heads())
+    if not expected_heads:
+        return False
+
+    engine = _create_db_engine(effective_db_url)
+    try:
+        async with engine.raw.connect() as conn:
+            rows = await conn.execute(text("SELECT version_num FROM alembic_version"))
+            actual_heads = {str(row.version_num) for row in rows.fetchall()}
+    except SQLAlchemyError:
+        return False
+    finally:
+        await engine.raw.dispose()
+    return actual_heads == expected_heads

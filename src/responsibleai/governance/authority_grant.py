@@ -40,8 +40,10 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
-from dataclasses import dataclass, field
+from collections.abc import Mapping
+from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import UTC, datetime, timedelta
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -61,6 +63,21 @@ def _canonical_json(payload: dict[str, Any]) -> str:
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
 
 
+def _canonical_value(value: Any) -> Any:
+    """Convert Heart values to a stable, JSON-compatible shape."""
+    if is_dataclass(value) and not isinstance(value, type):
+        return {item.name: _canonical_value(getattr(value, item.name)) for item in fields(value)}
+    if isinstance(value, Mapping):
+        return {str(key): _canonical_value(item) for key, item in value.items()}
+    if isinstance(value, (set, frozenset)):
+        return sorted(_canonical_value(item) for item in value)
+    if isinstance(value, tuple):
+        return [_canonical_value(item) for item in value]
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return value
+
+
 def compute_authority_grant_digest(
     grant_id: str,
     organization_id: str,
@@ -75,15 +92,12 @@ def compute_authority_grant_digest(
     delegation_reference: str | None,
     issued_at: datetime,
     expires_at: datetime,
+    effective_authority: AuthorityEnvelope,
+    policy_constraints: Mapping[str, Any],
 ) -> str:
     """SHA-256 over the canonical JSON of every field that defines
-    what this grant actually asserts. `effective_authority`/
-    `policy_constraints` are deliberately excluded from the digest
-    inputs here and instead represented via `legitimacy_digest` (the
-    wrapped `LegitimacyEnvelope`'s own digest) -- the effective
-    authority envelope has no canonical digest of its own (H2's
-    `AuthorityEnvelope` was never given one), so this grant's own
-    integrity is anchored to the one sub-object that does."""
+    what this grant actually asserts, including the effective authority
+    and policy constraints used by the execution boundary."""
     payload = {
         "grant_id": grant_id,
         "organization_id": organization_id,
@@ -98,6 +112,8 @@ def compute_authority_grant_digest(
         "delegation_reference": delegation_reference,
         "issued_at": issued_at.isoformat(),
         "expires_at": expires_at.isoformat(),
+        "effective_authority": _canonical_value(effective_authority),
+        "policy_constraints": _canonical_value(policy_constraints),
     }
     return hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
 
@@ -121,7 +137,7 @@ class AuthorityGrant:
     root_reference: str | None = None
     consent_reference: str | None = None
     delegation_reference: str | None = None
-    policy_constraints: dict[str, Any] = field(default_factory=dict)
+    policy_constraints: Mapping[str, Any] = field(default_factory=lambda: MappingProxyType({}))
     grant_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     issued_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     expires_at: datetime = field(default_factory=lambda: datetime.now(UTC))
@@ -211,6 +227,7 @@ def build_authority_grant(
     grant_id = str(uuid.uuid4())
     issued_at = datetime.now(UTC)
     expires_at = issued_at + timedelta(seconds=ttl_seconds)
+    immutable_constraints: Mapping[str, Any] = MappingProxyType(dict(policy_constraints or {}))
     digest = compute_authority_grant_digest(
         grant_id,
         organization_id,
@@ -225,6 +242,8 @@ def build_authority_grant(
         delegation_reference,
         issued_at,
         expires_at,
+        effective_authority,
+        immutable_constraints,
     )
     return AuthorityGrant(
         organization_id=organization_id,
@@ -238,7 +257,7 @@ def build_authority_grant(
         root_reference=root_reference,
         consent_reference=consent_reference,
         delegation_reference=delegation_reference,
-        policy_constraints=policy_constraints or {},
+        policy_constraints=immutable_constraints,
         grant_id=grant_id,
         issued_at=issued_at,
         expires_at=expires_at,

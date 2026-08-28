@@ -46,7 +46,7 @@ def _init_version() -> str:
 
 def _readme_banner_version() -> str | None:
     text = _read("README.md")
-    m = re.search(r"WhitePact\s+v(\d+\.\d+\.\d+)", text)
+    m = re.search(r"WhitePact\s+v(\d+\.\d+\.\d+(?:rc\d+)?)", text)
     return m.group(1) if m else None
 
 

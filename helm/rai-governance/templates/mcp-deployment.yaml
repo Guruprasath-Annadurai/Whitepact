@@ -54,7 +54,11 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "rai-governance.fullname" . }}
-            {{- if or .Values.config.apiKeys (and .Values.oidc.enabled (not .Values.oidc.existingSecret)) }}
+            {{- if .Values.config.existingSecret }}
+            - secretRef:
+                name: {{ .Values.config.existingSecret }}
+            {{- end }}
+            {{- if or .Values.config.apiKeys (and .Values.oidc.enabled .Values.oidc.clientSecret (not .Values.oidc.existingSecret)) }}
             - secretRef:
                 name: {{ include "rai-governance.fullname" . }}
             {{- end }}
@@ -67,9 +71,9 @@ spec:
             # two are specific to the MCP HTTP transport's own bind
             # address/port (mcp/server.py's main_http()), unrelated to
             # anything the dashboard process reads.
-            - name: RAI_MCP_HTTP_HOST
+            - name: WHITEPACT_MCP_HTTP_HOST
               value: "0.0.0.0"
-            - name: RAI_MCP_HTTP_PORT
+            - name: WHITEPACT_MCP_HTTP_PORT
               value: "8766"
             {{- with .Values.mcp.extraEnv }}
             {{- toYaml . | nindent 12 }}

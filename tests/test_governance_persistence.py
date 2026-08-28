@@ -83,6 +83,18 @@ class TestEvidenceRepositoryRecordAndGet:
     async def test_get_unknown_id_returns_none(self, evidence_repo) -> None:
         assert await evidence_repo.get("does-not-exist") is None
 
+    async def test_get_for_org_enforces_tenant_boundary(self, evidence_repo) -> None:
+        gw = WhitePactRuntimeGateway()
+        agent = _agent("org-a")
+        authority = _authority(delegated_by="org-a")
+        action = ActionRequest(agent=agent, action_type="mcp_tool_call", target="rai_health")
+        saved = await evidence_repo.record(
+            build_evidence_record(action, agent, authority, gw.evaluate(action, authority))
+        )
+
+        assert await evidence_repo.get_for_org("org-a", saved.evidence_id) is not None
+        assert await evidence_repo.get_for_org("org-b", saved.evidence_id) is None
+
     async def test_argument_keys_never_leak_values(self, evidence_repo) -> None:
         gw = WhitePactRuntimeGateway()
         agent = _agent()
@@ -307,6 +319,18 @@ class TestApprovalRepositoryCreateAndList:
 
     async def test_get_unknown_id_returns_none(self, approval_repo) -> None:
         assert await approval_repo.get("does-not-exist") is None
+
+    async def test_get_for_org_enforces_tenant_boundary(self, approval_repo) -> None:
+        gw = WhitePactRuntimeGateway()
+        agent = _agent("org-a")
+        authority = _authority(delegated_by="org-a", require_approval_for=frozenset({"deployment"}))
+        action = ActionRequest(agent=agent, action_type="deployment", target="prod")
+        saved = await approval_repo.create(
+            build_approval_request(action, gw.evaluate(action, authority))
+        )
+
+        assert await approval_repo.get_for_org("org-a", saved.approval_id) is not None
+        assert await approval_repo.get_for_org("org-b", saved.approval_id) is None
 
     async def test_list_pending_scoped_by_org(self, approval_repo) -> None:
         gw = WhitePactRuntimeGateway()

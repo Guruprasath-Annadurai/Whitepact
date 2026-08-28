@@ -39,7 +39,7 @@ found and fixed getting here:
 ## Path A — Grok custom connector (grok.com) — private, not a directory listing
 
 1. `grok.com/connectors` → **New Connector** → **Custom**.
-2. URL: `https://whitepact-mcp-http.onrender.com/mcp`.
+2. URL: `https://YOUR_WHITEPACT_HOST/mcp` (verified candidate deployment).
 3. Authentication: Bearer token, value = your WhitePact API key.
 
 Not exercised — requires an interactive grok.com session. **Important:**

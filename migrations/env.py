@@ -25,13 +25,12 @@ if config.config_file_name is not None:
 def _resolve_url() -> str:
     """Resolve the DB URL from environment variables.
 
-    Priority:
-    1. RAI_DB_URL — full SQLAlchemy-style URL
-    2. RAI_DB_PATH — file path (converted to sqlite+aiosqlite://)
-    3. Falls back to ./governance.db
+    Preferred WHITEPACT_* names win over legacy RAI_* aliases.
     """
     raw = (
-        os.environ.get("RAI_DB_URL")
+        os.environ.get("WHITEPACT_DATABASE_URL")
+        or os.environ.get("WHITEPACT_DB_URL")
+        or os.environ.get("RAI_DB_URL")
         or os.environ.get("RAI_DATABASE_URL")
         or ""
     )
@@ -41,7 +40,7 @@ def _resolve_url() -> str:
             raw = raw.replace("postgres://", "postgresql+asyncpg://", 1)
         return raw
 
-    path = os.environ.get("RAI_DB_PATH", "governance.db")
+    path = os.environ.get("WHITEPACT_DB_PATH") or os.environ.get("RAI_DB_PATH", "governance.db")
     if path == ":memory:":
         return "sqlite+aiosqlite:///:memory:"
     return f"sqlite+aiosqlite:///{path}"

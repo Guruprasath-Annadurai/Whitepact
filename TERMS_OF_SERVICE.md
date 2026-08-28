@@ -16,7 +16,7 @@
 > This exists so you have a concrete, platform-accurate starting point to
 > hand to an attorney — not a document to publish as-is.
 
-Last reviewed: 2026-08-13 · Platform version: 1.2.3
+Last reviewed: 2026-08-27 · Platform version: 1.2.4rc1
 
 ---
 
@@ -220,15 +220,12 @@ of `compliance/DPA_TEMPLATE.md` apply — itself still a draft pending
 attorney review, per its own header. General data-handling posture is
 described in `ENTERPRISE_SECURITY.md`.
 
-**Note on `PRIVACY.md`**: the existing `PRIVACY.md` in this repository
-documents the differential-privacy guarantees of the federated-learning
-module (`PrivacyLabel`) specifically — it is technical documentation for
-that feature, not a general privacy policy describing how the platform
-as a whole collects, uses, and discloses personal data. A real privacy
-policy covering the whole Service (what's collected at signup, cookies/
-analytics if any, data retention, deletion rights, international
-transfers) does not yet exist and should be drafted and reviewed
-alongside these Terms before either is published live.
+`PRIVACY_POLICY.md` is the general platform privacy policy. The separate
+`PRIVACY.md` documents only the differential-privacy guarantees of the
+federated-learning module (`PrivacyLabel`) and does not replace the general
+policy. Both remain self-drafted and require the counsel review described in
+their provenance notices before an enterprise contract treats them as
+attorney-approved.
 
 ---
 

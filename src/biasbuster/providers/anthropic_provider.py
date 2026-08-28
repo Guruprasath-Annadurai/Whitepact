@@ -48,7 +48,11 @@ class AnthropicProvider(BaseProvider):
             max_tokens=request.max_tokens,
             system=request.system_prompt,
             messages=[{"role": "user", "content": request.prompt}],
-            temperature=request.temperature,
+            # Anthropic SDK 1.x removed ``temperature`` from the typed
+            # top-level signature while the Messages API still accepts it.
+            # ``extra_body`` preserves the portable provider contract across
+            # both the pre-1.x and 1.x SDK families.
+            extra_body={"temperature": request.temperature},
         )
         return CompletionResponse(
             # response.content can hold tool-use/thinking blocks alongside

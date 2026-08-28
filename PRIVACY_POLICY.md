@@ -26,7 +26,7 @@
 > for the platform as a whole. Both are needed; neither replaces the
 > other.
 
-**Effective date / Last reviewed:** 2026-08-13 · **Platform version:** 1.2.3
+**Effective date / Last reviewed:** 2026-08-27 · **Platform version:** 1.2.4rc1
 
 ---
 

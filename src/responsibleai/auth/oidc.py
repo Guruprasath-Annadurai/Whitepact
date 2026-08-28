@@ -18,6 +18,7 @@ class JWTClaims:
     name: str | None = None
     roles: list[str] = field(default_factory=list)
     org_id: str | None = None
+    scopes: frozenset[str] = frozenset()
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -25,12 +26,16 @@ class JWTClaims:
         roles_raw = payload.get("roles") or payload.get("groups") or []
         if isinstance(roles_raw, str):
             roles_raw = [roles_raw]
+        scope_raw = payload.get("scope") or payload.get("scp") or []
+        if isinstance(scope_raw, str):
+            scope_raw = scope_raw.replace(",", " ").split()
         return cls(
             sub=payload.get("sub", ""),
             email=payload.get("email"),
             name=payload.get("name"),
             roles=list(roles_raw),
             org_id=payload.get("org_id") or payload.get("tenant_id"),
+            scopes=frozenset(str(scope) for scope in scope_raw),
             raw=payload,
         )
 
@@ -76,10 +81,17 @@ class OIDCProvider:
         client_id: str,
         jwks_uri: str | None = None,
         skip_verification: bool = False,
+        audience: str | None = None,
+        required_scopes: tuple[str, ...] = (),
+        validate_unverified_claims: bool = False,
     ) -> None:
         self.issuer = issuer
         self.client_id = client_id
         self.skip_verification = skip_verification
+        self.audience = audience if audience is not None else client_id
+        self.required_scopes = frozenset(required_scopes)
+        self.validate_unverified_claims = validate_unverified_claims
+        self._explicit_jwks_uri = jwks_uri is not None
         _uri = jwks_uri or f"{issuer.rstrip('/')}/.well-known/jwks.json"
         self._jwks = AsyncJWKSClient(_uri)
         self._discovery_doc: dict[str, Any] | None = None
@@ -93,6 +105,9 @@ class OIDCProvider:
             resp = await client.get(url)
             resp.raise_for_status()
             self._discovery_doc = resp.json()
+        discovered_jwks = self._discovery_doc.get("jwks_uri")
+        if discovered_jwks and not self._explicit_jwks_uri:
+            self._jwks = AsyncJWKSClient(discovered_jwks)
         return self._discovery_doc
 
     async def validate_token(self, token: str) -> JWTClaims:
@@ -101,7 +116,10 @@ class OIDCProvider:
         Raises ``ValueError`` if the token is invalid or expired.
         """
         if self.skip_verification:
-            return self._decode_unverified(token)
+            payload = self._decode_unverified_payload(token)
+            if self.validate_unverified_claims:
+                self._validate_security_claims(payload)
+            return JWTClaims.from_payload(payload)
 
         try:
             import jwt as pyjwt
@@ -134,18 +152,21 @@ class OIDCProvider:
                 token,
                 public_key,
                 algorithms=["RS256", "RS384", "RS512", "ES256", "ES384", "ES512"],
-                audience=self.client_id,
+                audience=self.audience,
                 issuer=self.issuer,
+                options={"require": ["exp", "iss", "aud", "sub"]},
             )
         except pyjwt.ExpiredSignatureError as e:
             raise ValueError("Token has expired") from e
         except pyjwt.InvalidTokenError as e:
             raise ValueError(f"Invalid token: {e}") from e
 
-        return JWTClaims.from_payload(payload)
+        claims = JWTClaims.from_payload(payload)
+        self._validate_claim_shape(claims)
+        return claims
 
     @staticmethod
-    def _decode_unverified(token: str) -> JWTClaims:
+    def _decode_unverified_payload(token: str) -> dict[str, Any]:
         import base64
         import json
 
@@ -158,7 +179,36 @@ class OIDCProvider:
             payload = json.loads(base64.urlsafe_b64decode(padded))
         except Exception as e:
             raise ValueError(f"Failed to decode JWT payload: {e}") from e
-        return JWTClaims.from_payload(payload)
+        if not isinstance(payload, dict):
+            raise ValueError("JWT payload must be a JSON object")
+        return payload
+
+    @staticmethod
+    def _decode_unverified(token: str) -> JWTClaims:
+        """Backward-compatible development helper; never verifies a signature."""
+        return JWTClaims.from_payload(OIDCProvider._decode_unverified_payload(token))
+
+    def _validate_security_claims(self, payload: dict[str, Any]) -> None:
+        if payload.get("iss") != self.issuer:
+            raise ValueError("Token issuer does not match the configured issuer")
+        audience = payload.get("aud")
+        audiences = {audience} if isinstance(audience, str) else set(audience or [])
+        if not self.audience or self.audience not in audiences:
+            raise ValueError("Token audience does not include the configured resource")
+        expires_at = payload.get("exp")
+        if not isinstance(expires_at, int | float) or expires_at <= time.time():
+            raise ValueError("Token has expired or has no valid expiration")
+        not_before = payload.get("nbf")
+        if isinstance(not_before, int | float) and not_before > time.time():
+            raise ValueError("Token is not yet valid")
+        self._validate_claim_shape(JWTClaims.from_payload(payload))
+
+    def _validate_claim_shape(self, claims: JWTClaims) -> None:
+        if not claims.sub:
+            raise ValueError("Token subject is required")
+        missing = self.required_scopes - claims.scopes
+        if missing:
+            raise ValueError(f"Token is missing required scopes: {', '.join(sorted(missing))}")
 
     def authorization_url(self, redirect_uri: str, state: str, scopes: list[str]) -> str:
         """Build the OAuth2 authorization redirect URL."""
@@ -203,3 +253,24 @@ class OIDCProvider:
             if resp.status_code != 200:
                 raise ValueError(f"Token exchange failed: {resp.text}")
             return resp.json()
+
+
+def validate_mcp_authorization_server_metadata(
+    metadata: dict[str, Any], *, expected_issuer: str
+) -> None:
+    """Validate the OAuth 2.1 discovery fields required by MCP hosts."""
+    problems: list[str] = []
+    if metadata.get("issuer") != expected_issuer:
+        problems.append("issuer must exactly match the configured authorization server")
+    for field_name in ("authorization_endpoint", "token_endpoint", "jwks_uri"):
+        value = metadata.get(field_name)
+        if not isinstance(value, str) or not value.startswith("https://"):
+            problems.append(f"{field_name} must be an HTTPS URL")
+    methods = metadata.get("code_challenge_methods_supported") or []
+    if "S256" not in methods:
+        problems.append("code_challenge_methods_supported must include S256")
+    auth_methods = metadata.get("token_endpoint_auth_methods_supported") or []
+    if not auth_methods:
+        problems.append("token_endpoint_auth_methods_supported must be published")
+    if problems:
+        raise ValueError("Unsafe MCP authorization-server metadata: " + "; ".join(problems))

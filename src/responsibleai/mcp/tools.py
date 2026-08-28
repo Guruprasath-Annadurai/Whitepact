@@ -917,7 +917,7 @@ TOOL_DEFS: list[types.Tool] = [
         name="rai_check_trust",
         title="Check Public Trust Index Score",
         annotations=types.ToolAnnotations(
-            readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False
+            readOnlyHint=True, idempotentHint=True, openWorldHint=True, destructiveHint=False
         ),
         description=(
             "Check the public, independently-verifiable Trust Index score, certification "
@@ -1104,6 +1104,18 @@ TOOL_DEFS: list[types.Tool] = [
         },
     ),
 ]
+
+# All handlers return a JSON object and the server publishes that same object
+# as structuredContent.  Advertising this output contract matters to hosts
+# that validate MCP structured results (including OpenAI and Claude) while
+# preserving each handler's intentionally flexible, tool-specific fields.
+_OBJECT_OUTPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": True,
+}
+for _tool in TOOL_DEFS:
+    if _tool.outputSchema is None:
+        _tool.outputSchema = dict(_OBJECT_OUTPUT_SCHEMA)
 
 # dispatch_tool() and its handler table are defined at the very end of this
 # file, after every _handle_* function below -- see "tool dispatch" section.

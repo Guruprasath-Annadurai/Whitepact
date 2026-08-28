@@ -86,8 +86,7 @@ endpoints, which are out of scope for an unauthenticated connector):
 
 - Microsoft's certification process typically requires proving control
   of the domain/endpoint being registered
-  (`whitepact-mcp-http.onrender.com`, a Render subdomain WhitePact
-  controls) — confirm the exact verification method from current
+  (the verified candidate host replacing `YOUR_WHITEPACT_HOST`) — confirm the exact verification method from current
   Microsoft docs at submission time, since these processes change.
 
 ## 5. Legal/support information

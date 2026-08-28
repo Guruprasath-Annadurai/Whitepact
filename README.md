@@ -15,7 +15,7 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│                        WhitePact  v1.2.3                                     │
+│                       WhitePact  v1.2.4rc1                                   │
 │                                                                              │
 │  ┌──────────────┐  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐  │
 │  │ Governance   │  │ Trust Score │  │  Compliance  │  │  Guardrails      │  │
@@ -68,7 +68,7 @@ and a live dashboard — that covers the full governance lifecycle:
 | Can I cite and verify a trust score anywhere? | `Trust Index` | Free self-assessed or human-reviewed certified passport, verifiable at `/verify/{id}`, embeddable badge |
 | Has this AI system failed publicly before? | `AI Incident Database` | Crowd-reported, moderator-reviewed, hash-chained public registry |
 | Should my agent trust this third-party tool before calling it? | `rai_check_trust` + LangChain/LangGraph/ADK integrations | Free lookup, plus a real block/pause gate in-agent |
-| Can any MCP client govern every AI call? | `MCP Server` | 27 governance tools over stdio, Streamable HTTP, or legacy HTTP+SSE |
+| Can any MCP client govern every AI call? | `MCP Server` | 30 governance tools over stdio, Streamable HTTP, or legacy HTTP+SSE |
 
 ---
 
@@ -311,34 +311,29 @@ See `GAME_CHANGER_BUILD_PLAN.md` Phase B for the reasoning behind each.
 
 ### MCP directory listings
 
-WhitePact is listed and queryable today on real MCP directories — not
-aspirational, all verified live:
+The published package/listing remains discoverable in MCP directories. The
+`1.2.4rc1` remote deployment is an external release gate and is not represented
+as live until its readiness and provider tests pass:
 
 - **Official MCP Registry** — `server.json` at the repository root
   (schema `2025-12-11`, listing version `1.2.3`) is published as
   `io.github.Guruprasath-Annadurai/whitepact`, confirmed queryable at
   [registry.modelcontextprotocol.io](https://registry.modelcontextprotocol.io).
-  Advertises both the PyPI/stdio package (`whitepact-mcp`, self-hosted,
-  free, unrestricted) and a `remotes` entry pointing at the hosted
-  Streamable HTTP and SSE transports (`whitepact-mcp-http.onrender.com`)
-  — a one-click remote connector, not just an installable package.
+  The candidate manifest advertises the published PyPI/stdio package
+  (`whitepact-mcp`, self-hosted). Remote entries are intentionally withheld
+  while production hosting is being restored and validated.
 - **Antigravity CLI plugin** — `plugins/whitepact/` at the repository
   root follows the [official Antigravity plugin manifest
-  format](https://antigravity.google/docs/plugins), connecting to the
-  same hosted Streamable HTTP transport via `serverUrl`. No official
+  format](https://antigravity.google/docs/plugins). Its `serverUrl` is a
+  deployment target and must be updated/verified before use. No official
   Antigravity plugin directory exists yet, so this is distributed
   directly from the repo — see `plugins/whitepact/README.md`.
 - **Smithery** — listed as
   [`guruprasathannadurai-official/whitepact`](https://smithery.ai/server/guruprasathannadurai-official/whitepact),
-  30 tools and 20 resources discovered against the hosted Streamable
-  HTTP transport (`whitepact-mcp-http.onrender.com/mcp`, a separate
-  Render service from the main dashboard). This deployment has no
-  OAuth authorization server configured — only static Bearer API
-  keys — so a public, unauthenticated
-  `/.well-known/mcp/server-card.json` serves the same live
-  `TOOL_DEFS`/`RESOURCE_DEFS` the server itself advertises, for
-  directories whose scanners can't complete a live authenticated
-  crawl.
+  previously listed as `guruprasathannadurai-official/whitepact`. Re-run its
+  authenticated discovery and health checks after the candidate deployment;
+  historical directory discovery is not evidence that the current endpoint is
+  production-ready.
 
 See `compliance/MCP_DISTRIBUTION_GUIDE.md` for the full distribution
 plan, including directories not yet submitted to.
@@ -795,8 +790,8 @@ See [`ROADMAP.md`](ROADMAP.md) for the canonical NOW/NEXT/LATER plan. The list b
 - [x] v0.6 — Async PostgreSQL (SQLAlchemy), Redis rate limiting, OpenTelemetry APM, LLM integration tests
 - [x] v1.0 — WebSocket drift alerts, Prometheus endpoint, multi-tenant RBAC, org management API
 - [x] v1.1 — MCP server (10 tools, 5 resources), audit log API, red team API, billing API, Alembic migrations, per-org rate limiting, DB-persisted webhook retry queue
-- [x] v1.2 — Public Leaderboard, Trust Index/Passports + embeddable badges, AI Incident Database, TOTP MFA, expanded field encryption, DB-persisted webhooks, full dashboard UI rebuild, white-label branding, a genuinely live hosted instance — see `CHANGELOG.md` for the full list
-- [x] WhitePact migration (`1.2.0` → `1.2.2`) — governance decision core, MCP Streamable HTTP + OAuth/OIDC, risk tiering + policy engine, hash-chained evidence, approval workflow, multi-approver quorum + delegation chains, upstream MCP tool discovery, MCP trust/supply-chain scanner, HA Helm deployment, supply chain security (SBOM/provenance), release engineering, open source governance, live listings on the official MCP Registry and Smithery — see `MIGRATION_WHITEPACT_V2.md` for the full phase-by-phase log and what's still not done
+- [x] v1.2 — Public Leaderboard, Trust Index/Passports + embeddable badges, AI Incident Database, TOTP MFA, expanded field encryption, DB-persisted webhooks, full dashboard UI rebuild, white-label branding, and a historically hosted deployment (current candidate availability is an external gate) — see `CHANGELOG.md` for the full list
+- [x] WhitePact migration (`1.2.0` → `1.2.2`) — governance decision core, MCP Streamable HTTP + OAuth/OIDC, risk tiering + policy engine, hash-chained evidence, approval workflow, multi-approver quorum + delegation chains, upstream MCP tool discovery, MCP trust/supply-chain scanner, HA Helm deployment, supply chain security (SBOM/provenance), release engineering, open source governance, and directory listings on the official MCP Registry and Smithery — see `MIGRATION_WHITEPACT_V2.md` for the full phase-by-phase log and what's still not done
 - [ ] v2.0 onward — see `VERSION_ROADMAP.md` for the phase-by-phase plan through v6.0
 - **Strategic direction** — `GAME_CHANGER_STRATEGY.md` lays out an infrastructure-first bet (free public trust registry, an agent-native trust-check primitive, AI-answer-engine citability) as an alternative to the enterprise-SaaS path, with `GAME_CHANGER_BUILD_PLAN.md` breaking it into concrete engineering phases against the current codebase
 

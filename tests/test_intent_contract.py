@@ -181,7 +181,7 @@ class TestIntentContractRepository:
             repo = IntentContractRepository(engine)
             contract = _contract(goal="deploy service")
             await repo.declare(contract)
-            fetched = await repo.get(contract.contract_id)
+            fetched = await repo.get("org-1", contract.contract_id)
             assert fetched is not None
             assert fetched.goal == "deploy service"
             assert fetched.agent_id == "k1"
@@ -227,6 +227,18 @@ class TestIntentContractRepository:
         engine = await self._engine()
         try:
             repo = IntentContractRepository(engine)
-            assert await repo.get("does-not-exist") is None
+            assert await repo.get("org-1", "does-not-exist") is None
+        finally:
+            await engine.close()
+
+    async def test_get_never_crosses_tenant_boundary(self) -> None:
+        engine = await self._engine()
+        try:
+            repo = IntentContractRepository(engine)
+            contract = _contract(goal="tenant-private intent")
+            await repo.declare(contract)
+
+            assert await repo.get("org-2", contract.contract_id) is None
+            assert await repo.get("org-1", contract.contract_id) is not None
         finally:
             await engine.close()

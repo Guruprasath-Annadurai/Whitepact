@@ -29,7 +29,7 @@ Kiro's own auth flow — see
 ## Endpoint
 
 ```
-https://whitepact-mcp-http.onrender.com/mcp
+https://YOUR_WHITEPACT_HOST/mcp
 ```
 
 Streamable HTTP.
@@ -82,7 +82,7 @@ launched `kiro-cli`, and confirmed WhitePact's tools show up.
 
 ## Security notes
 
-All 27 tools are read-only (`readOnlyHint=True`, `destructiveHint=False`).
+All 30 tools are read-only (`readOnlyHint=True`, `destructiveHint=False`).
 Kiro's own per-tool approval / `autoApprove` list still applies —
 WhitePact does not bypass client-side approval.
 

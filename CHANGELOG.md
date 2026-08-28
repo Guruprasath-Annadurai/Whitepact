@@ -10,6 +10,17 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ### Added
 
+- Enterprise release candidate `1.2.4rc1` (2026-08-27): production
+  dashboard/MCP topology with fail-closed readiness and migrations; persisted
+  Heart root, consent, intent, purpose-binding, passport, and reauthorization
+  wiring; OAuth 2.1 resource-server metadata and strict issuer/audience/scope/
+  tenant validation; repository-level tenant isolation; corrected MCP schemas
+  and annotations; immutable CI actions, dependency automation, release/version
+  gates, SBOM/provenance controls, and pinned security/build tooling; provider
+  compatibility guidance plus a tested Gemini function-calling bridge. External
+  deployment, identity-provider, legal, penetration-test, publication, and live
+  provider-acceptance gates are tracked in
+  `compliance/ENTERPRISE_RC_GATE_REGISTER.md` and are not claimed complete.
 - Heart → WhitePact Production Integration, Phase 2 — Identity
   Adapter (2026-08-26) (`governance/identity_authority_adapter.py`)
   — the boundary between real, already-live authentication (static

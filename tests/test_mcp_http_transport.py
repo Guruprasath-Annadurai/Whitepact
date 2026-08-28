@@ -140,6 +140,20 @@ class TestLegacySseTransportUnaffected:
 
 
 class TestHealthEndpoint:
+    async def test_liveness_is_process_only(self, seeded_app) -> None:
+        app, _raw_key = seeded_app
+        async with await _raw_client(app) as client:
+            response = await client.get("/live")
+        assert response.status_code == 200
+        assert response.json()["status"] == "alive"
+
+    async def test_readiness_checks_database(self, seeded_app) -> None:
+        app, _raw_key = seeded_app
+        async with await _raw_client(app) as client:
+            response = await client.get("/ready")
+        assert response.status_code == 200
+        assert response.json()["checks"]["database"] == "ok"
+
     async def test_health_lists_both_transports(self, seeded_app) -> None:
         app, _raw_key = seeded_app
         async with await _raw_client(app) as client:

@@ -11,6 +11,7 @@ has not expired.
 
 from __future__ import annotations
 
+import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
@@ -142,8 +143,48 @@ class TestCanonicalDigest:
             grant.delegation_reference,
             grant.issued_at,
             grant.expires_at,
+            grant.effective_authority,
+            grant.policy_constraints,
         )
         assert grant.canonical_digest == expected
+
+    def test_digest_covers_effective_authority_and_policy_constraints(self) -> None:
+        legitimacy = _legitimacy()
+        narrow = build_authority_grant(
+            "org1",
+            "u1",
+            "agent1",
+            "payment.execute",
+            "vendor_x",
+            _envelope(max_value=100.0),
+            legitimacy,
+            policy_constraints={"region": "eu"},
+        )
+        broad = build_authority_grant(
+            "org1",
+            "u1",
+            "agent1",
+            "payment.execute",
+            "vendor_x",
+            _envelope(max_value=500000.0),
+            legitimacy,
+            policy_constraints={"region": "us"},
+        )
+        assert narrow.canonical_digest != broad.canonical_digest
+
+    def test_policy_constraints_are_immutable_after_issue(self) -> None:
+        grant = build_authority_grant(
+            "org1",
+            "u1",
+            "agent1",
+            "payment.execute",
+            "vendor_x",
+            _envelope(),
+            _legitimacy(),
+            policy_constraints={"region": "eu"},
+        )
+        with pytest.raises(TypeError):
+            grant.policy_constraints["region"] = "us"  # type: ignore[index]
 
     def test_two_grants_same_inputs_have_distinct_ids_and_digests(self) -> None:
         legitimacy = _legitimacy()

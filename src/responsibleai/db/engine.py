@@ -393,6 +393,8 @@ governance_evidence = Table(
     # NULL when no Policy reached evaluation for this action at all --
     # see governance/policy.py's Policy.version docstring.
     Column("policy_version", Integer, nullable=True),
+    Column("authority_grant_digest", String(64), nullable=True),
+    Column("legitimacy_digest", String(64), nullable=True),
     Column("decision", String(30), nullable=False),
     Column("reason_codes", Text, nullable=False),  # JSON list
     Column("framework", String(50), nullable=True),
@@ -750,6 +752,70 @@ governance_authority_passports = Table(
     Index("idx_ap_principal", "org_id", "principal_id"),
 )
 
+# Heart production integration: persisted legitimacy inputs. These tables
+# intentionally store opaque identity/evidence references, never raw identity
+# documents, consent artifacts, or bearer credentials.
+heart_root_authorities = Table(
+    "heart_root_authorities",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("org_id", String(36), nullable=False),
+    Column("subject_id", String(255), nullable=False),
+    Column("root_type", String(32), nullable=False),
+    Column("issuer", String(255), nullable=False),
+    Column("verification_method", String(128), nullable=False),
+    Column("authority_source", String(36), nullable=True),
+    Column("jurisdiction", String(64), nullable=True),
+    Column("evidence_refs", Text, nullable=False),
+    Column("issued_at", String(32), nullable=False),
+    Column("not_before", String(32), nullable=True),
+    Column("expires_at", String(32), nullable=True),
+    Column("revoked_at", String(32), nullable=True),
+    Column("revoked_by", String(200), nullable=True),
+    Column("revoke_reason", Text, nullable=True),
+    Column("canonical_digest", String(64), nullable=False),
+    Index("idx_hra_subject", "org_id", "subject_id"),
+    Index("idx_hra_source", "org_id", "authority_source"),
+)
+
+heart_consent_proofs = Table(
+    "heart_consent_proofs",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("org_id", String(36), nullable=False),
+    Column("subject_id", String(255), nullable=False),
+    Column("consenting_root_id", String(36), nullable=False),
+    Column("grantee_id", String(255), nullable=False),
+    Column("scope_description", Text, nullable=False),
+    Column("purpose", Text, nullable=False),
+    Column("consent_method", String(40), nullable=False),
+    Column("evidence_refs", Text, nullable=False),
+    Column("consented_at", String(32), nullable=False),
+    Column("not_before", String(32), nullable=True),
+    Column("expires_at", String(32), nullable=True),
+    Column("revoked_at", String(32), nullable=True),
+    Column("revoked_by", String(200), nullable=True),
+    Column("revoke_reason", Text, nullable=True),
+    Column("canonical_digest", String(64), nullable=False),
+    Index("idx_hcp_grantee", "org_id", "grantee_id"),
+    Index("idx_hcp_root", "org_id", "consenting_root_id"),
+)
+
+heart_purpose_bindings = Table(
+    "heart_purpose_bindings",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("org_id", String(36), nullable=False),
+    Column("principal_id", String(255), nullable=False),
+    Column("purpose", Text, nullable=False),
+    Column("intent_ref", String(36), nullable=False),
+    Column("consent_ref", String(36), nullable=False),
+    Column("bound_at", String(32), nullable=False),
+    Column("canonical_digest", String(64), nullable=False),
+    Index("idx_hpb_principal", "org_id", "principal_id"),
+    Index("idx_hpb_refs", "org_id", "intent_ref", "consent_ref"),
+)
+
 
 class DatabaseEngine:
     """Async database engine wrapping SQLAlchemy — SQLite or PostgreSQL.
@@ -809,6 +875,11 @@ class DatabaseEngine:
 
     async def connect(self) -> AsyncConnection:
         return await self._engine.connect()
+
+    async def ping(self) -> None:
+        """Raise if the database cannot serve a trivial query."""
+        async with self._engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
 
     async def close(self) -> None:
         await self._engine.dispose()

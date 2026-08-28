@@ -12,7 +12,7 @@
 ## Endpoint
 
 ```
-https://whitepact-mcp-http.onrender.com/mcp
+https://YOUR_WHITEPACT_HOST/mcp
 ```
 
 ## Authentication
@@ -24,14 +24,14 @@ Authorization Server.
 ## Setup (manual, in Claude's UI)
 
 1. Claude → **Settings** → **Connectors** → **Add custom connector**.
-2. URL: `https://whitepact-mcp-http.onrender.com/mcp`.
+2. URL: `https://YOUR_WHITEPACT_HOST/mcp` after the candidate deployment passes readiness.
 3. Add header: `Authorization: Bearer <YOUR_WHITEPACT_API_KEY>`.
 4. Save. Claude will fetch `tools/list` immediately — 27 tools should
    appear.
 
 This flow requires an interactive browser session and was **not**
 exercised in this pass (no such session available here). It was
-previously verified live in this project for the OpenAI submission's demo
+previously used in this project for the OpenAI submission's demo
 recording, using the same underlying `/mcp` endpoint and auth pattern —
 see `FOUNDER_ACTION_CHECKLIST.md`.
 

@@ -94,7 +94,7 @@ compliance mapping against NIST AI RMF, the EU AI Act, and ISO 42001.
 → A public, verifiable Trust Index — free self-assessment, a
 cross-model leaderboard built from actually calling each model's API
 (not self-reported), and a public API to check any cited score.
-→ An MCP server with 27 governance tools, so any MCP-compatible AI
+→ An MCP server with 30 governance tools, so any MCP-compatible AI
 assistant can call into it directly.
 
 The part I care most about: every self-assessed score is explicitly
@@ -102,7 +102,8 @@ labeled as such — `certified: false` — everywhere it's shown. A
 citable trust standard is only useful if it can't be quietly gamed
 into looking like independent verification.
 
-It's open source (MIT), live, and free to try:
+It's open source (MIT). Publish the hosted links below only after the
+candidate deployment and provider compatibility gates pass:
 🔗 Try the public leaderboard/self-assessment:
 https://responsibleai-dashboard.onrender.com/registry
 🔗 Source: https://github.com/Guruprasath-Annadurai/Whitepact
@@ -163,10 +164,10 @@ auto-shortens URLs.
 > → Source (MIT): github.com/Guruprasath-Annadurai/Whitepact
 > → `pip install rai-governance-platform`
 
-**Tweet 6 (Grok-specific, since it's genuinely fresh and true)**
+**Tweet 6 (Grok-specific; re-verify the marketplace status before posting)**
 
 > Also just shipped: a WhitePact plugin for Grok Build, xAI's coding
-> agent — 27 governance tools available directly in-agent.
+> agent — 30 governance tools available directly in-agent.
 > github.com/xai-org/plugin-marketplace/pull/244
 
 **Tweet 7 (close)**

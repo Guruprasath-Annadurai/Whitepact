@@ -112,17 +112,18 @@ GitHub MCP Registry (github.com/mcp).
 
 WhitePact is an AI governance MCP server — trust scoring, PII/harmful-
 content guardrails, hallucination detection, and compliance checks
-(NIST AI RMF, EU AI Act, ISO 42001) for any AI agent's actions. All 27
-tools are read-only.
+(NIST AI RMF, EU AI Act, ISO 42001) for any AI agent's actions. The
+candidate exposes 30 tools with per-tool read/write and open-world annotations.
 
-It's already published to the official MCP Registry and live:
+It's already published to the official MCP Registry; the remote candidate
+must pass its external deployment gate before this draft is sent:
 - Registry listing: `io.github.Guruprasath-Annadurai/whitepact`,
   queryable at `registry.modelcontextprotocol.io/v0/servers?search=whitepact`
-- `server.json` includes both a `stdio` package and hosted `remotes`
-  (Streamable HTTP + SSE)
+- `server.json` includes the published `stdio` package; hosted `remotes`
+  remain withheld until the production endpoint is verified
 - Source: https://github.com/Guruprasath-Annadurai/Whitepact (MIT
   licensed)
-- Hosted endpoint: https://whitepact-mcp-http.onrender.com/mcp
+- Hosted endpoint: `https://YOUR_WHITEPACT_HOST/mcp` (replace only after verification)
 
 Happy to provide anything else needed for review.
 

@@ -24,6 +24,7 @@ from responsibleai.db.migrate import (
     _needs_baseline_stamp,
     _run_alembic,
     run_migrations_or_raise,
+    schema_is_at_head,
 )
 
 
@@ -58,22 +59,28 @@ def tmp_sqlite_path(tmp_path: Path) -> str:
 class TestMigrationEnv:
     def test_sqlite_path_sets_db_path(self):
         env = _migration_env("/tmp/foo.db")
-        assert env["RAI_DB_PATH"] == "/tmp/foo.db"
-        assert "RAI_DATABASE_URL" not in env
+        assert env["WHITEPACT_DB_PATH"] == "/tmp/foo.db"
+        assert "WHITEPACT_DATABASE_URL" not in env
 
     def test_postgres_url_sets_database_url(self):
         env = _migration_env("postgresql://u:p@host/db")
-        assert env["RAI_DATABASE_URL"] == "postgresql://u:p@host/db"
-        assert "RAI_DB_PATH" not in env
+        assert env["WHITEPACT_DATABASE_URL"] == "postgresql://u:p@host/db"
+        assert "WHITEPACT_DB_PATH" not in env
 
     def test_postgres_scheme_variant_also_detected(self):
         env = _migration_env("postgres://u:p@host/db")
-        assert env["RAI_DATABASE_URL"] == "postgres://u:p@host/db"
+        assert env["WHITEPACT_DATABASE_URL"] == "postgres://u:p@host/db"
 
     def test_stale_db_url_is_removed(self, monkeypatch):
         monkeypatch.setenv("RAI_DB_URL", "sqlite+aiosqlite:///stale.db")
         env = _migration_env("/tmp/foo.db")
         assert "RAI_DB_URL" not in env
+
+    def test_preferred_stale_database_url_is_replaced(self, monkeypatch):
+        monkeypatch.setenv("WHITEPACT_DATABASE_URL", "postgresql://stale/db")
+        env = _migration_env("/tmp/foo.db")
+        assert env["WHITEPACT_DB_PATH"] == "/tmp/foo.db"
+        assert "WHITEPACT_DATABASE_URL" not in env
 
 
 class TestFindAlembicIni:
@@ -135,7 +142,7 @@ class TestRunMigrationsOrRaise:
         try:
             async with engine.raw.connect() as conn:
                 rows = await conn.execute(text("SELECT version_num FROM alembic_version"))
-                assert rows.scalar() == "0029"
+                assert rows.scalar() == "0030"
 
                 cols = await conn.execute(text("PRAGMA table_info(organizations)"))
                 col_names = {r[1] for r in cols.fetchall()}
@@ -143,6 +150,18 @@ class TestRunMigrationsOrRaise:
                 assert "sso_required" in col_names
         finally:
             await engine.raw.dispose()
+
+    async def test_schema_head_probe_rejects_unmigrated_database(self, tmp_sqlite_path):
+        engine = create_engine(tmp_sqlite_path)
+        await engine.init()
+        await engine.close()
+
+        assert await schema_is_at_head(tmp_sqlite_path) is False
+
+    async def test_schema_head_probe_accepts_migrated_database(self, tmp_sqlite_path):
+        await run_migrations_or_raise(tmp_sqlite_path)
+
+        assert await schema_is_at_head(tmp_sqlite_path) is True
 
     async def test_preexisting_unstamped_database_reaches_head(self, tmp_sqlite_path):
         """The real-world case: an existing self-hosted install's DB, built
@@ -156,7 +175,7 @@ class TestRunMigrationsOrRaise:
         try:
             async with engine2.raw.connect() as conn:
                 rows = await conn.execute(text("SELECT version_num FROM alembic_version"))
-                assert rows.scalar() == "0029"
+                assert rows.scalar() == "0030"
         finally:
             await engine2.raw.dispose()
 
@@ -168,7 +187,7 @@ class TestRunMigrationsOrRaise:
         try:
             async with engine.raw.connect() as conn:
                 rows = await conn.execute(text("SELECT version_num FROM alembic_version"))
-                assert rows.scalar() == "0029"
+                assert rows.scalar() == "0030"
         finally:
             await engine.raw.dispose()
 

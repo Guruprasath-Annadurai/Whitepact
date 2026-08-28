@@ -94,12 +94,14 @@ class AuthorityPassportRepository:
             )
         return passport
 
-    async def get(self, passport_id: str) -> AuthorityPassport | None:
+    async def get(self, org_id: str, passport_id: str) -> AuthorityPassport | None:
+        """Fetch a passport only from the caller's tenant."""
         async with self._engine.raw.connect() as conn:
             row = (
                 await conn.execute(
                     select(governance_authority_passports).where(
-                        governance_authority_passports.c.id == passport_id
+                        governance_authority_passports.c.org_id == org_id,
+                        governance_authority_passports.c.id == passport_id,
                     )
                 )
             ).fetchone()
@@ -126,17 +128,25 @@ class AuthorityPassportRepository:
         return passport if passport.is_active() else None
 
     async def revoke(
-        self, passport_id: str, *, revoked_by: str, reason: str | None = None
+        self,
+        org_id: str,
+        passport_id: str,
+        *,
+        revoked_by: str,
+        reason: str | None = None,
     ) -> AuthorityPassport:
-        existing = await self.get(passport_id)
+        existing = await self.get(org_id, passport_id)
         if existing is None:
             raise AuthorityPassportNotFoundError(passport_id)
         async with self._engine.raw.begin() as conn:
             await conn.execute(
                 update(governance_authority_passports)
-                .where(governance_authority_passports.c.id == passport_id)
+                .where(
+                    governance_authority_passports.c.org_id == org_id,
+                    governance_authority_passports.c.id == passport_id,
+                )
                 .values(revoked_at=_now(), revoked_by=revoked_by, revoke_reason=reason)
             )
-        updated = await self.get(passport_id)
+        updated = await self.get(org_id, passport_id)
         assert updated is not None
         return updated

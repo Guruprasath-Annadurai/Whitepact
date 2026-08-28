@@ -1,5 +1,13 @@
 # WhitePact — Connector/Directory Readiness Report
 
+> **Superseded availability notice (2026-08-27):** This historical report
+> predates the `1.2.4rc1` enterprise hardening. Its claims that the Render
+> remote is live are not current evidence; the endpoint timed out during the
+> RC check. Use `docs/integrations/PLATFORM_COMPATIBILITY.md` and
+> `compliance/ENTERPRISE_RC_GATE_REGISTER.md` for current status. Do not submit
+> a connector from this report until a new deployment and provider-specific
+> live test have been recorded.
+
 > Written for external review (originally: to hand to ChatGPT and ask "what's
 > missing, what would you build first"). Every claim below was checked live
 > against the running code/services on 2026-08-13, not recalled from memory —
