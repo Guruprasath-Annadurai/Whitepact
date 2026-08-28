@@ -10,6 +10,26 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ### Added
 
+- Enterprise Neural Phase 12 — Platform + Network + Service Isolation
+  (2026-08-28) (`mcp/server.py`'s `platform_isolation_problems()`) —
+  audit-driven: `THREAT_MODEL.md` already documented DNS rebinding
+  protection defaulting to disabled for the hosted MCP HTTP/SSE
+  transport, application-layer message signing as out of scope
+  (TLS-only, deployer responsibility), and per-connection SSE
+  DoS protection as not yet built (no config knob to check, named
+  rather than papered over). This phase closes the one genuinely
+  actionable gap: DNS-rebinding-disabled had no startup-time
+  visibility, unlike `dashboard.config.multi_replica_problems()`'s
+  existing precedent for exactly this shape of check. New pure
+  function `platform_isolation_problems()`, wired into
+  `_build_http_app()` to log a warning (not a hard failure, same
+  non-blocking posture as the `multi_replica` precedent) when
+  transport security ends up disabled. Also corrects a stale
+  `THREAT_MODEL.md` claim ("no upstream/third-party MCP proxy executor
+  exists yet") that Phase 11 disproved — `UpstreamMCPExecutor` has the
+  identical bypass-invariant property, independently tested. 2 new
+  tests; full suite 3123 passed, 1 skipped, 0 failed.
+
 - Enterprise Neural Phase 11 — Citadel Execution Containment Evidence
   (2026-08-28) (`tests/test_citadel_execution_containment.py`) —
   audit-driven, not a rebuild: Phase 0's audit flagged execution-permit
