@@ -16,10 +16,19 @@ where those documents conflict with this one, this one is correct.
 | Repository | `Guruprasath-Annadurai/Whitepact` |
 | Branch | `security/enterprise-neural-phase-0-1` |
 | PR | [#50](https://github.com/Guruprasath-Annadurai/Whitepact/pull/50) — **OPEN, UNMERGED** |
-| Head commit SHA | `2913b0f33cc720541e7131fb72b15c70862e7366` |
+| Head commit SHA | `4136dc9beab422f22846fa90b5fa3365f75129fb` |
 | Base branch | `main` |
 | Base SHA (merge-base) | `9dcdc1bebe0ad856bd399dc627d17c35a2cc5828` |
-| Verification timestamp (UTC) | 2026-08-28T17:49:30Z |
+| Verification timestamp (UTC) | 2026-08-28T18:05:31Z |
+
+Note: §3's fresh-verification numbers below (test suite, ruff, mypy,
+Bandit, pip-audit) were captured against commit `2913b0f` — the
+commit immediately prior to this one, which added only this document
+and `CODEX_ATTACK_MAP.md` (documentation, zero source/test files
+touched). PR #50's 12/12 CI check re-confirmation and the CodeQL
+alert count were re-verified a second time, specifically against
+`4136dc9` (this exact head), after that commit's own CI run
+completed — see the timestamp above.
 
 **If any commit is added to this branch after the timestamp above, this
 section is stale — re-verify `git rev-parse HEAD` before trusting the
