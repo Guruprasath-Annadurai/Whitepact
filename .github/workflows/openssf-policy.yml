@@ -10,8 +10,8 @@ permissions:
   contents: read
 
 jobs:
-  pinned-actions:
-    name: Immutable GitHub Action pins
+  policy:
+    name: OpenSSF policy checks
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -21,3 +21,6 @@ jobs:
 
       - name: Reject movable GitHub Action references
         run: python scripts/check_pinned_actions.py
+
+      - name: Enforce source copyright and SPDX headers
+        run: python scripts/manage_license_headers.py --check
