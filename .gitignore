@@ -18,6 +18,7 @@ venv/
 !grafana/dashboards/*.json
 !src/responsibleai/dashboard/static/locales/*.json
 !server.json
+!.bestpractices.json
 !plugins/**/*.json
 !distribution/**/*.json
 !examples/amazon-q/*.json
