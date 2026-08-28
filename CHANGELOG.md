@@ -826,6 +826,22 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ### Fixed
 
+- Enterprise Neural Phase 15 — Enterprise Trust + Procurement
+  Readiness (2026-08-28) (`SECURITY_ASSURANCE_CASE.md`) —
+  audit-driven: procurement-readiness documentation (`compliance/`'s
+  SOC2/CAIQ/NIST-CSF/DPA/vendor-risk artifacts, the 911-line
+  `SECURITY_ASSURANCE_CASE.md` itself) was already extraordinarily
+  comprehensive, not a gap to build from scratch. The genuine gap was
+  staleness: the assurance case's Evidence Matrix (§7) predated this
+  directive's own Phases 11 and 13 by nine days. Updated rows C4
+  (Runtime authority enforcement) and C6 (Execution Permit binding) to
+  cite `UpstreamMCPExecutor` and target-fingerprint drift detection,
+  both real and tested since Phase 11; C11 (Hash-chain tamper-
+  evidence) to note the evidence-bundle mitigation Phase 13 proved
+  works, alongside the still-real limitation (no automated external
+  publication pipeline); C12 (fail-closed) to cite Phase 14's
+  resilience matrix. Bumped the document's own stale "Last reviewed"
+  date and platform-version reference. No source code changed.
 - MCP review-contract hardening pass (2026-08-25), prompted by a
   reported OpenAI Plugins Directory review outcome for the 2026-08-13
   submission that **this repository has no corroborating record of**
