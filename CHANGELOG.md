@@ -10,6 +10,18 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ### Added
 
+- Enterprise Neural Phase 4 Step 2 — Neural Vault Persistence
+  (2026-08-28) (`db/neural_vault_repository.py`, migration `0031`) —
+  `NeuralConsentRepository` (append-only consent ledger, revocation
+  inserts a new version rather than mutating) and `NeuralVaultRepository`
+  (Vault index storing metadata/references, never raw N0/N1/N2 content —
+  `NeuralVaultEntry` has no payload field at all, an architectural
+  enforcement, not a convention). Soft-delete semantics kept explicit
+  per the design doc's "deletion semantics must be explicit"
+  requirement. 17 new tests, 100% coverage. Migration verified via a
+  real `alembic upgrade head`/`downgrade -1`/`upgrade head` cycle. Full
+  suite: 3009 passed, 0 failed.
+
 - Enterprise Neural Phase 4 — Neural Data Classification + Consent
   Policy (2026-08-28) (`governance/neural/`, new subpackage; see
   `docs/enterprise-neural/04_PHASE4_DESIGN.md`) — the N0-N5

@@ -26,6 +26,7 @@ from responsibleai.governance.neural.types import (
     NeuralDataClass,
     NeuralPayload,
     NeuralPrivacyError,
+    NeuralVaultEntry,
 )
 
 __all__ = [
@@ -40,5 +41,6 @@ __all__ = [
     "NeuralPolicyReason",
     "NeuralPolicyResult",
     "NeuralPrivacyError",
+    "NeuralVaultEntry",
     "evaluate_neural_data_flow",
 ]

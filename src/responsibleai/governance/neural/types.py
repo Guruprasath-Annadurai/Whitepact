@@ -136,3 +136,37 @@ class ConsentRecord:
     @property
     def is_active(self) -> bool:
         return self.status is ConsentStatus.GRANTED
+
+
+@dataclass(frozen=True)
+class NeuralVaultEntry:
+    """A Neural Vault *index* record — metadata about a captured
+    `NeuralPayload`, never its raw content. See design doc Sec 6: the
+    Vault stores references and local-residency metadata by default,
+    not server-side raw neural data. `encrypted_sync_copy` is populated
+    only when a subject has separately, explicitly consented to
+    cross-device sync — `None` is the default, expected state, not a
+    partial/broken record.
+    """
+
+    entry_id: str
+    subject_id: str
+    session_id: str
+    data_class: NeuralDataClass
+    captured_at: datetime
+    device_reference: str | None = None
+    retention_expires_at: datetime | None = None
+    deleted_at: datetime | None = None
+    encrypted_sync_copy: str | None = None
+
+    def __post_init__(self) -> None:
+        if not self.entry_id:
+            raise ValueError("NeuralVaultEntry.entry_id must be non-empty")
+        if not self.subject_id:
+            raise ValueError("NeuralVaultEntry.subject_id must be non-empty")
+        if not self.session_id:
+            raise ValueError("NeuralVaultEntry.session_id must be non-empty")
+
+    @property
+    def is_deleted(self) -> bool:
+        return self.deleted_at is not None
