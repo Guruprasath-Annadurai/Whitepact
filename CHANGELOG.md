@@ -10,6 +10,27 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ### Added
 
+- Enterprise Neural Phase 8 — LLM + Agent Security Boundary Evidence
+  (2026-08-28) (`tests/test_llm_agent_security_boundary.py`) —
+  audit-driven, not a rebuild: most of the directive's "LLM must never
+  issue authority or create execution permits" requirements already
+  held structurally, built under prior initiatives. This phase adds
+  regression-tested evidence rather than new architecture: structural
+  guards confirming `ExecutionAuthorization` and `AuthorityGrant` each
+  have exactly one gated construction site in the real, shipped source
+  tree, and `mint_neural_intent_attestation` has zero call sites
+  outside its own module; runtime tests confirming
+  `authorize_execution()` requires a real `DecisionResult` from the
+  governance gateway and ignores attacker-controlled
+  `ActionRequest.arguments` entirely, even a payload crafted to look
+  like a decision object. Two genuine, pre-existing gaps named
+  explicitly rather than silently left implicit: the self-hosted stdio
+  MCP transport remains ungoverned (no organizational identity to
+  evaluate against), and LLM-supplied tool arguments aren't schema-
+  validated before reaching governance — both correctly out of this
+  phase's scope (each is a separate, larger initiative). 7 new tests.
+  Full suite: 3102 passed, 0 failed.
+
 - Enterprise Neural Phase 7 — Neural Intent Attestation + Action
   Binding (2026-08-28) (`governance/neural/attestation.py`) —
   `NeuralIntentAttestation`, minted and verified via
