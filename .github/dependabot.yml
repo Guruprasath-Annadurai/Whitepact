@@ -17,3 +17,12 @@ updates:
       time: "06:00"
       timezone: "Etc/UTC"
     open-pull-requests-limit: 5
+
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:30"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
