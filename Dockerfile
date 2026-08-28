@@ -1,4 +1,8 @@
-FROM python:3.12-slim AS builder
+# The human-readable tag documents the intended update line; the digest makes
+# the actual build input immutable for supply-chain reproducibility / OpenSSF
+# Pinned-Dependencies. Update both together after reviewing a new upstream
+# Python image.
+FROM python:3.12-slim@sha256:7a8b475003c4fe15a2cd4e55e5cfc2f3560bdc9333d624f24cdd6d4340fd7a17 AS builder
 
 WORKDIR /build
 RUN pip install --upgrade pip build
@@ -7,7 +11,7 @@ COPY src/ ./src/
 RUN python -m build --wheel --outdir /dist
 
 
-FROM python:3.12-slim AS runtime
+FROM python:3.12-slim@sha256:7a8b475003c4fe15a2cd4e55e5cfc2f3560bdc9333d624f24cdd6d4340fd7a17 AS runtime
 
 LABEL org.opencontainers.image.title="ResponsibleAI Governance Platform"
 LABEL org.opencontainers.image.description="Enterprise AI Governance — Trust Scoring, Compliance, Cost Intelligence"
