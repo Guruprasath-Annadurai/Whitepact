@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   apply-source-headers:
-    if: ${{ !contains(github.event.head_commit.message, 'chore: apply source license headers') }}
+    if: "${{ !contains(github.event.head_commit.message, 'chore: apply source license headers') }}"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout hardening branch
