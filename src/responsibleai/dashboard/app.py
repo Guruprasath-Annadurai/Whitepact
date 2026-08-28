@@ -122,6 +122,7 @@ from responsibleai.db import (
     WorkflowRuleRepository,
     create_engine,
 )
+from responsibleai.db.crypto_activation import activate_production_crypto
 from responsibleai.db.engine import DatabaseEngine
 from responsibleai.db.migrate import MigrationError, run_migrations_or_raise
 from responsibleai.eval import (
@@ -358,6 +359,15 @@ async def lifespan(application: FastAPI):
 
     _db_engine = create_engine(settings.effective_db_url)
     await _db_engine.init()
+
+    # Security Remediation Gap 1: fail-closed crypto activation. No-op
+    # unless settings.enterprise_mode=true; raises (aborting startup)
+    # if enterprise_mode is set but crypto_root_key is missing/invalid
+    # -- never falls through to serving traffic with encryption
+    # silently disabled. Must run before any repository below reads or
+    # writes an EncryptedString column.
+    await activate_production_crypto(settings, _db_engine)
+
     _plan_rate_limiter = PlanRateLimiter(redis_url=settings.redis_url)
 
     policy = BudgetPolicy(monthly_limit_usd=settings.monthly_budget_usd)

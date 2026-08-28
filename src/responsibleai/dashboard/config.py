@@ -207,6 +207,39 @@ class Settings(BaseSettings):
         ),
     )
 
+    # Enterprise/production mode self-declaration (Security Remediation
+    # Gap 1: crypto activation). See db/crypto_activation.py. Same
+    # opt-in, non-breaking pattern as multi_replica above -- absence of
+    # this flag is what selects development-compatible behavior, so a
+    # deployment can never end up in a half-enterprise state by
+    # forgetting to set something.
+    enterprise_mode: bool = Field(
+        default=False,
+        description=(
+            "Set true to enable enterprise/production fail-closed "
+            "behavior. Currently gates: crypto foundation activation "
+            "(db/crypto_activation.py) -- when true, real envelope "
+            "encryption for field-encrypted columns and SAML session "
+            "signing is REQUIRED and the application refuses to start "
+            "if crypto_root_key is missing or malformed, rather than "
+            "silently falling back to the legacy Fernet/HMAC schemes "
+            "or plaintext. Development/self-hosted default (false) is "
+            "completely unchanged by this flag's existence."
+        ),
+    )
+    crypto_root_key: str | None = Field(
+        default=None,
+        description=(
+            "Hex-encoded 32-byte (AES-256) root key for the envelope-"
+            "encryption crypto foundation (governance/crypto/). "
+            "REQUIRED when enterprise_mode=true. Generate with: "
+            "python -c \"import secrets; print(secrets.token_hex(32))\". "
+            "Never logged -- only the resulting KeyId (purpose/tenant/"
+            "version/environment, never key material) is ever logged "
+            "by db/crypto_activation.py."
+        ),
+    )
+
     # OpenTelemetry (optional)
     otel_endpoint: str | None = Field(
         default=None,

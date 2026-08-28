@@ -519,6 +519,12 @@ def _build_http_app() -> Any:
     @asynccontextmanager
     async def _lifespan(_app: Starlette) -> Any:
         await _db_engine.init()
+        # Security Remediation Gap 1: fail-closed crypto activation --
+        # see dashboard/app.py's identical call for the full rationale.
+        # No-op unless settings.enterprise_mode=true.
+        from responsibleai.db.crypto_activation import activate_production_crypto
+
+        await activate_production_crypto(settings, _db_engine)
         if _governance_webhook_manager is not None:
             await _governance_webhook_manager.load_configs()
             _governance_webhook_manager.start_retry_worker()
