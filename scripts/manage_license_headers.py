@@ -13,7 +13,7 @@ import argparse
 import subprocess
 from pathlib import Path
 
-COPYRIGHT = "Copyright the WhitePact contributors."
+COPYRIGHT = "Copyright (c) 2026 Guruprasath Annadurai"
 SPDX = "SPDX-License-Identifier: MIT"
 ROOTS = ("src/", "tests/", "scripts/", "examples/")
 SUPPORTED = {".py", ".js", ".sh", ".css", ".html"}
@@ -45,7 +45,7 @@ def header_for(path: Path) -> str:
     if suffix == ".css":
         return f"/* {COPYRIGHT}\n * {SPDX}\n */\n"
     if suffix == ".html":
-        return f"<!-- {COPYRIGHT} {SPDX} -->\n"
+        return f"<!-- {COPYRIGHT}; {SPDX} -->\n"
     raise ValueError(f"unsupported source type: {path}")
 
 
