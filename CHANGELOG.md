@@ -10,6 +10,31 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ### Added
 
+- Enterprise Neural Phase 17 — Full Adversarial Hardening Fuzz Test
+  (2026-08-28) (`tests/test_ssrf_guard_fuzz.py`) — audit-driven:
+  `SECURITY_ASSURANCE_CASE.md` §8 already states plainly that "no
+  fuzz-testing... has been performed against any surface" in this
+  codebase; a dedicated third-party pentest and general fuzzing
+  infrastructure remain correctly out of scope for one phase, but a
+  real, narrowly-scoped Hypothesis property test against a genuine
+  security boundary is achievable. Target:
+  `webhooks/manager.py::validate_webhook_url()` — the SSRF guard both
+  webhook delivery and upstream MCP server registration/dispatch
+  (`governance/upstream.py::validate_upstream_server_url()`, which
+  delegates to it directly) rely on. Existing coverage exercised five
+  hand-picked addresses; this generates arbitrary IPv4/IPv6 addresses
+  across the full space via `hypothesis.strategies.ip_addresses()` and
+  checks the function's verdict against its own documented six-
+  condition logic (`is_private`/`is_loopback`/`is_link_local`/
+  `is_reserved`/`is_multicast`/`is_unspecified`) as the oracle — a
+  regression guard a future edit subtly narrowing or widening that
+  check would trip, which fixed example inputs cannot catch. Also
+  confirms `validate_upstream_server_url()`'s delegation holds across
+  the same generated space, not just by reading the one-line wrapper.
+  No bug found — both functions' existing logic is correct across 700
+  generated examples. 2 new tests. Full suite 3147 passed, 1 skipped,
+  0 failed.
+
 - Enterprise Neural Phase 16 — Scientific Evidence System (2026-08-28)
   (`governance/neural/evidence.py`) — closes a real, previously-
   unenforced gap: `device.py`'s own docstring quotes the master
