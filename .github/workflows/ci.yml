@@ -89,6 +89,13 @@ jobs:
           # hard-failing gate rather than informational-only.
           python scripts/check_branch_coverage.py --threshold 80 --fail
 
+      - name: Enforce statement coverage (OpenSSF Gold)
+        run: |
+          # Gold requires pure statement coverage >=90%. The coverage.py
+          # terminal "Cover" value is blended when branch measurement is on,
+          # so use an explicit statement-only calculation from coverage.json.
+          python scripts/check_statement_coverage.py --threshold 90 --fail
+
       - name: Check documentation consistency (OpenSSF Silver documentation_current)
         run: python scripts/check_doc_consistency.py
 
