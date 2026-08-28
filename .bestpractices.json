@@ -19,6 +19,10 @@
   "repo_distributed_status": "Met",
   "repo_distributed_justification": "WhitePact uses Git, a distributed version-control system, and the authoritative public repository is hosted on GitHub.",
 
+  "small_tasks_status": "Met",
+  "small_tasks_justification": "WhitePact publicly identifies bounded starter work for new and casual contributors with explicit scope, constraints, and acceptance criteria.",
+  "small_tasks_url": "https://github.com/Guruprasath-Annadurai/Whitepact/issues/53",
+
   "code_review_standards_status": "Met",
   "code_review_standards_justification": "WhitePact documents what reviewers must check, security-sensitive review expectations, and technical acceptance criteria. The document explicitly distinguishes review standards from the separate two-person-review history requirement.",
   "code_review_standards_url": "https://github.com/Guruprasath-Annadurai/Whitepact/blob/main/docs/CODE_REVIEW.md",
@@ -27,12 +31,16 @@
   "two_person_review_justification": "WhitePact is currently maintained primarily by one person and cannot honestly demonstrate that at least 50% of proposed modifications before release were reviewed by a different person. This will only be marked Met after real independent review history satisfies the criterion.",
   "two_person_review_url": "https://github.com/Guruprasath-Annadurai/Whitepact/blob/main/docs/CODE_REVIEW.md",
 
+  "build_reproducible_status": "Met",
+  "build_reproducible_justification": "WhitePact CI builds the wheel and source distribution twice from the same source revision with SOURCE_DATE_EPOCH fixed to the commit timestamp, then compares SHA-256 digests. The first GitHub run of this gate completed successfully with byte-for-byte identical artifacts.",
+  "build_reproducible_url": "https://github.com/Guruprasath-Annadurai/Whitepact/blob/main/.github/workflows/reproducible-build.yml",
+
   "test_invocation_status": "Met",
   "test_invocation_justification": "The full automated Python test suite is invoked using the standard pytest command; CONTRIBUTING.md documents the exact commands and CI runs pytest directly.",
   "test_invocation_url": "https://github.com/Guruprasath-Annadurai/Whitepact/blob/main/CONTRIBUTING.md#running-tests",
 
   "test_continuous_integration_status": "Met",
-  "test_continuous_integration_justification": "GitHub Actions runs linting, typing, dependency auditing, tests with coverage, builds, Helm validation, accessibility checks, and i18n checks for pull requests and relevant pushes.",
+  "test_continuous_integration_justification": "GitHub Actions runs linting, typing, dependency auditing, tests with coverage, builds, Helm validation, accessibility checks, i18n checks, and a reproducible-build gate for pull requests and relevant pushes.",
   "test_continuous_integration_url": "https://github.com/Guruprasath-Annadurai/Whitepact/blob/main/.github/workflows/ci.yml",
 
   "test_branch_coverage80_status": "Met",
