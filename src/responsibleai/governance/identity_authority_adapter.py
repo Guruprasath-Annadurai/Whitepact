@@ -53,6 +53,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from responsibleai.governance.models import IdentityKind
 from responsibleai.governance.root_authority import RootType, build_root_authority_record
 
 if TYPE_CHECKING:
@@ -65,20 +66,57 @@ if TYPE_CHECKING:
 # IdentityContext.kind -> RootType. Kept as an explicit, reviewable
 # mapping table rather than inline conditionals -- see module
 # docstring for the fail-safe reasoning behind each entry, especially
-# "oidc"'s deliberately non-terminal classification.
-_KIND_TO_ROOT_TYPE: dict[str, RootType] = {
-    "human": RootType.HUMAN,
-    "api_key": RootType.ORGANIZATION,
-    "oidc": RootType.WORKLOAD_IDENTITY,
-    "vc": RootType.SERVICE_PRINCIPAL,
-    "agent": RootType.SERVICE_PRINCIPAL,
-    "workload": RootType.WORKLOAD_IDENTITY,
+# "oidc"'s deliberately non-terminal classification. DEVICE/BCI_SESSION/
+# TOOL/SERVICE (Zero-Trust Identity Phase 1,
+# docs/heart-production/03_ZERO_TRUST_IDENTITY.md) are new entries: none
+# of the four is human- or organization-controlled by construction, so
+# each maps non-terminal for the same reason "agent"/"workload" already
+# do -- a device, a BCI session, a tool, or a service account is never
+# itself a legitimate root, only ever a link needing a resolvable chain
+# to one.
+_KIND_TO_ROOT_TYPE: dict[IdentityKind, RootType] = {
+    IdentityKind.HUMAN: RootType.HUMAN,
+    IdentityKind.ORGANIZATION: RootType.ORGANIZATION,
+    IdentityKind.OIDC: RootType.WORKLOAD_IDENTITY,
+    IdentityKind.VERIFIED_CREDENTIAL: RootType.SERVICE_PRINCIPAL,
+    IdentityKind.AGENT: RootType.SERVICE_PRINCIPAL,
+    IdentityKind.WORKLOAD: RootType.WORKLOAD_IDENTITY,
+    IdentityKind.DEVICE: RootType.WORKLOAD_IDENTITY,
+    IdentityKind.BCI_SESSION: RootType.WORKLOAD_IDENTITY,
+    IdentityKind.TOOL: RootType.SERVICE_PRINCIPAL,
+    IdentityKind.SERVICE: RootType.SERVICE_PRINCIPAL,
 }
 
 # The fail-safe default for any IdentityContext.kind this table
 # doesn't recognize -- non-terminal, never silently treated as a
 # legitimate root in its own right.
 _DEFAULT_ROOT_TYPE = RootType.WORKLOAD_IDENTITY
+
+# PrincipalClaim.holder_kind (Authority Everywhere Phase 3,
+# governance/principal.py) is a second, independently-sourced kind
+# string -- part of the Verifiable Credential wire format
+# (auth/verifiable_credential.py's `holderKind` claim), so its two
+# values are kept unchanged rather than renamed to match IdentityKind's
+# names (that would be a breaking wire-format change, not an internal
+# type-safety improvement). This mapping is the reconciliation point
+# Zero-Trust Identity Phase 1 adds: both wire values already meant one
+# of IdentityKind's own members, just spelled differently.
+_HOLDER_KIND_TO_IDENTITY_KIND: dict[str, IdentityKind] = {
+    "service_account": IdentityKind.SERVICE,
+    "external_agent": IdentityKind.AGENT,
+}
+
+
+def identity_kind_from_holder_kind(holder_kind: str) -> IdentityKind:
+    """Reconciles `PrincipalClaim.holder_kind`'s wire-format values with
+    `IdentityKind`. An unrecognized `holder_kind` (a future VC wire
+    value this mapping doesn't have yet) fails safe to `AGENT` -- both
+    of today's known `IdentityKind` targets for this claim
+    (`SERVICE`/`AGENT`) already map to the same non-terminal
+    `RootType.SERVICE_PRINCIPAL`, so this default changes no root-type
+    outcome; it exists so an unrecognized value is still a real
+    `IdentityKind` rather than silently falling through untyped."""
+    return _HOLDER_KIND_TO_IDENTITY_KIND.get(holder_kind, IdentityKind.AGENT)
 
 
 def identity_context_to_root_type(identity: IdentityContext) -> RootType:
@@ -136,10 +174,18 @@ def build_root_authority_record_from_principal_claim(
     -- a verified principal (`holder_kind` `"service_account"` or
     `"external_agent"`) is never human by construction, so this is not
     a judgment call the way `"oidc"` above is; both `holder_kind`
-    values are non-human and therefore non-terminal, consistently."""
+    values are non-human and therefore non-terminal, consistently.
+    Routes through `identity_kind_from_holder_kind()` +
+    `_KIND_TO_ROOT_TYPE` (rather than hardcoding `SERVICE_PRINCIPAL`
+    directly) so this stays the single source of truth for the
+    kind -> root-type mapping; both `SERVICE` and `AGENT` resolve to
+    `SERVICE_PRINCIPAL` today, so this is a documentation/consistency
+    change, not a behavior change."""
+    identity_kind = identity_kind_from_holder_kind(claim.holder_kind)
+    root_type = _KIND_TO_ROOT_TYPE.get(identity_kind, _DEFAULT_ROOT_TYPE)
     return build_root_authority_record(
         claim.principal_id,
-        RootType.SERVICE_PRINCIPAL,
+        root_type,
         claim.issuer,
         claim.credential_type,
         organization_id=claim.org_id,

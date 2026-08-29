@@ -83,6 +83,27 @@ class TestOidcScopesEnvParsing:
         assert settings.oidc_scopes == ["openid", "email", "profile"]
 
 
+class TestOidcHumanIndicatorValuesEnvParsing:
+    def test_comma_separated_string_does_not_crash(
+        self, monkeypatch, fresh_settings_module
+    ) -> None:
+        monkeypatch.setenv("RAI_OIDC_HUMAN_INDICATOR_VALUES", "pwd,mfa")
+        settings = fresh_settings_module.Settings()
+        assert settings.oidc_human_indicator_values == ["pwd", "mfa"]
+
+    def test_unset_uses_documented_default(self, monkeypatch, fresh_settings_module) -> None:
+        monkeypatch.delenv("RAI_OIDC_HUMAN_INDICATOR_VALUES", raising=False)
+        settings = fresh_settings_module.Settings()
+        assert settings.oidc_human_indicator_values == ["pwd", "mfa", "otp"]
+
+    def test_human_indicator_claim_unset_by_default(
+        self, monkeypatch, fresh_settings_module
+    ) -> None:
+        monkeypatch.delenv("RAI_OIDC_HUMAN_INDICATOR_CLAIM", raising=False)
+        settings = fresh_settings_module.Settings()
+        assert settings.oidc_human_indicator_claim is None
+
+
 class TestMultiReplicaFlag:
     def test_defaults_false(self, monkeypatch, fresh_settings_module) -> None:
         monkeypatch.delenv("RAI_MULTI_REPLICA", raising=False)

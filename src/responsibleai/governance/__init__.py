@@ -24,11 +24,37 @@ Heart test suites already established.
 **Production Integration Phase 1** (`docs/heart-production/`) adds
 `AuthorityGrant` (`governance/authority_grant.py`) — the boundary
 object between the Heart and WhitePact's live decision path, exported
-here for the same reason every Heart symbol already is."""
+here for the same reason every Heart symbol already is.
+
+**Enterprise Neural Phase 2** (`docs/enterprise-neural/`) adds the
+`crypto` subpackage — key hierarchy, the `KeyProvider` Protocol, and
+`LocalEnvelopeKeyProvider` (`governance/crypto/`) — exported as a
+module, the same `sovereignty_kernel`-style convention above, since its
+public surface is a dozen names better reached as `crypto.KeyId`
+etc. than flattened individually into this file's own `__all__`.
+
+**Enterprise Neural Phase 4** adds the `neural` subpackage —
+`NeuralDataClass`/`NeuralPayload` classification, per-category
+`ConsentRecord`, and the fail-closed `evaluate_neural_data_flow` policy
+evaluator (`governance/neural/`) — exported as a module, same
+convention. Net-new product surface (Phases 5-7's BCI device adapters,
+decoders, and intent attestation don't exist yet); see
+`docs/enterprise-neural/04_PHASE4_DESIGN.md`."""
 
 from __future__ import annotations
 
-from responsibleai.governance import sovereignty_kernel
+from responsibleai.governance import crypto, neural, sovereignty_kernel
+from responsibleai.governance.audit_anchor import (
+    AnchorAlreadyPublishedError,
+    AnchorRecord,
+    AnchorVerificationResult,
+    AnchorVerificationStatus,
+    AuditAnchorProvider,
+    LocalFileAnchorProvider,
+    build_and_sign_anchor,
+    publish_anchor,
+    verify_anchor_from_provider,
+)
 from responsibleai.governance.authority_conflict_resolver import (
     ConflictResolutionResult,
     ConflictResolutionStatus,
@@ -59,6 +85,11 @@ from responsibleai.governance.authority_lifetime import (
     LifetimeStatus,
     LifetimeWindow,
     check_lifetime,
+)
+from responsibleai.governance.authority_resolver import (
+    prefetch_root_chain,
+    resolve_authority_grant,
+    resolve_root_for_identity,
 )
 from responsibleai.governance.autonomy_budget import (
     AutonomyBudgetPolicy,
@@ -132,6 +163,8 @@ from responsibleai.governance.models import (
     DecisionResult,
     GovernanceDecision,
     IdentityContext,
+    IdentityKind,
+    identity_kind_from_org_context,
     validate_attenuation,
 )
 from responsibleai.governance.non_delegable_authority import (
@@ -139,6 +172,7 @@ from responsibleai.governance.non_delegable_authority import (
     NonDelegableViolation,
     check_non_delegable_authority,
 )
+from responsibleai.governance.oidc_subject_classifier import classify_oidc_subject
 from responsibleai.governance.policy import Policy, PolicyMatch, PolicyRule
 from responsibleai.governance.purpose_binding import (
     PurposeBinding,
@@ -188,6 +222,11 @@ __all__ = [
     "ROOT_AUTHORITY_LIFETIME_WINDOW",
     "ActionRequest",
     "AgentContext",
+    "AnchorAlreadyPublishedError",
+    "AnchorRecord",
+    "AnchorVerificationResult",
+    "AnchorVerificationStatus",
+    "AuditAnchorProvider",
     "AuthorityConstitutionVersion",
     "AuthorityContext",
     "AuthorityEnvelope",
@@ -220,6 +259,7 @@ __all__ = [
     "HeartVetoRecord",
     "HeartVetoStatus",
     "IdentityContext",
+    "IdentityKind",
     "InternalToolExecutor",
     "LatticeComparisonResult",
     "LatticeComparisonStatus",
@@ -227,6 +267,7 @@ __all__ = [
     "LifetimeCheckResult",
     "LifetimeStatus",
     "LifetimeWindow",
+    "LocalFileAnchorProvider",
     "MemoryFirewallResult",
     "NonDelegableScope",
     "NonDelegableViolation",
@@ -254,6 +295,7 @@ __all__ = [
     "apply_heart_veto",
     "authority_context_to_envelope",
     "authorize_execution",
+    "build_and_sign_anchor",
     "build_authority_grant",
     "build_consent_proof",
     "build_constitution_version",
@@ -267,8 +309,10 @@ __all__ = [
     "check_non_delegable_authority",
     "check_revocation_epoch",
     "classify_action_risk",
+    "classify_oidc_subject",
     "compare_authority_contexts",
     "compare_envelopes",
+    "crypto",
     "current_constitution",
     "enforce_heart_veto",
     "enrich_agent_trust_state",
@@ -279,10 +323,16 @@ __all__ = [
     "build_root_authority_record_from_principal_claim",
     "get_constitution_version",
     "identity_context_to_root_type",
+    "identity_kind_from_org_context",
     "intersect_envelopes",
+    "neural",
+    "prefetch_root_chain",
+    "publish_anchor",
     "recent_autonomous_action_count",
     "recent_violation_count",
     "resolve_authority_conflicts",
+    "resolve_authority_grant",
+    "resolve_root_for_identity",
     "scan_memory_write",
     "sovereignty_kernel",
     "validate_attenuation",
@@ -290,5 +340,6 @@ __all__ = [
     "validate_delegation_legitimacy",
     "validate_purpose_binding",
     "validate_root_chain",
+    "verify_anchor_from_provider",
     "verify_evidence_bundle",
 ]

@@ -23,6 +23,7 @@ from responsibleai.db import (
     EvidenceRepository,
     OutcomeRepository,
     PolicyRepository,
+    RootAuthorityRepository,
 )
 from responsibleai.db.tool_trust_repository import ToolTrustRepository
 from responsibleai.db.upstream_repository import UpstreamServerRepository
@@ -33,11 +34,14 @@ from responsibleai.governance import (
     DecisionResult,
     GovernanceDecision,
     IdentityContext,
+    IdentityKind,
     ReasonCode,
     WhitePactRuntimeGateway,
     authorize_execution,
     format_reason,
+    identity_kind_from_org_context,
     recent_violation_count,
+    resolve_authority_grant,
 )
 from responsibleai.governance.approval import build_approval_request
 from responsibleai.governance.evidence import EvidenceRecord, build_evidence_record
@@ -92,6 +96,53 @@ async def _record_evidence(
     return evidence
 
 
+_ISSUER_VERIFICATION_METHOD_BY_KIND: dict[IdentityKind, tuple[str, str]] = {
+    IdentityKind.ORGANIZATION: ("org_repository", "api_key_hash"),
+    IdentityKind.HUMAN: ("idp", "oidc"),
+}
+
+
+async def _heart_legitimacy_denied_reason(
+    root_authority_repo: RootAuthorityRepository | None,
+    identity: IdentityContext,
+    agent: AgentContext,
+    action: ActionRequest,
+    authority: AuthorityContext,
+) -> str | None:
+    """Heart Production Integration Phase 6, upstream-proxy counterpart
+    to `governance_integration.py`'s function of the same name -- see
+    that docstring for the full reasoning. Duplicated rather than
+    imported, matching this file's own stated convention of not
+    coupling to `governance_integration.py`'s independently-evolving
+    call site. Local import for the same reason
+    governance_integration.py's own copy uses one -- see that
+    function's docstring."""
+    from responsibleai.dashboard.config import get_settings
+
+    if root_authority_repo is None or not get_settings().enterprise_mode:
+        return None
+
+    issuer, verification_method = _ISSUER_VERIFICATION_METHOD_BY_KIND.get(
+        identity.kind, ("idp", identity.kind.value)
+    )
+    grant = await resolve_authority_grant(
+        identity,
+        agent,
+        action,
+        authority,
+        root_authority_repo,
+        issuer=issuer,
+        verification_method=verification_method,
+    )
+    if grant.is_legitimate:
+        return None
+    return format_reason(
+        ReasonCode.HEART_LEGITIMACY_FAILED,
+        status=grant.legitimacy.heart_veto.status.value,
+        reason=grant.legitimacy.heart_veto.reason or "unspecified",
+    )
+
+
 async def apply_upstream_governance(
     server_id: str,
     tool_name: str,
@@ -106,6 +157,7 @@ async def apply_upstream_governance(
     executor: UpstreamMCPExecutor,
     tool_trust_repo: ToolTrustRepository,
     outcome_repo: OutcomeRepository | None = None,
+    root_authority_repo: RootAuthorityRepository | None = None,
 ) -> UpstreamGovernanceOutcome:
     """Evaluate and, if governance allows it, execute one proxied call
     to an org-registered upstream MCP server. Requires an org-scoped
@@ -116,7 +168,7 @@ async def apply_upstream_governance(
 
     identity = IdentityContext(
         identity_id=ctx.key_id,
-        kind="oidc" if ctx.key_id.startswith("oidc:") else "api_key",
+        kind=identity_kind_from_org_context(ctx),
         org_id=ctx.org_id,
         display_name=ctx.org_name,
     )
@@ -199,10 +251,25 @@ async def apply_upstream_governance(
     violation_count = await recent_violation_count(evidence_repo, ctx.org_id, agent.agent_id)
     policy = await policy_repo.get_policy(ctx.org_id)
 
-    evaluate_started = time.monotonic()
-    decision = gateway.evaluate(
-        action, authority, policy=policy, recent_violation_count=violation_count
+    # Heart Production Integration Phase 6 -- see
+    # _heart_legitimacy_denied_reason()'s own docstring. A no-op unless
+    # both root_authority_repo is wired and enterprise_mode is on.
+    heart_denied_reason = await _heart_legitimacy_denied_reason(
+        root_authority_repo, identity, agent, action, authority
     )
+
+    evaluate_started = time.monotonic()
+    if heart_denied_reason is not None:
+        decision = DecisionResult(
+            decision=GovernanceDecision.DENY,
+            action_id=action.action_id,
+            reason_codes=[heart_denied_reason],
+            risk_tier=classify_action_risk(action.action_type, action.target),
+        )
+    else:
+        decision = gateway.evaluate(
+            action, authority, policy=policy, recent_violation_count=violation_count
+        )
     observe_governance_decision(
         decision.decision.value,
         decision.risk_tier.value if decision.risk_tier is not None else None,

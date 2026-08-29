@@ -207,6 +207,39 @@ class Settings(BaseSettings):
         ),
     )
 
+    # Enterprise/production mode self-declaration (Security Remediation
+    # Gap 1: crypto activation). See db/crypto_activation.py. Same
+    # opt-in, non-breaking pattern as multi_replica above -- absence of
+    # this flag is what selects development-compatible behavior, so a
+    # deployment can never end up in a half-enterprise state by
+    # forgetting to set something.
+    enterprise_mode: bool = Field(
+        default=False,
+        description=(
+            "Set true to enable enterprise/production fail-closed "
+            "behavior. Currently gates: crypto foundation activation "
+            "(db/crypto_activation.py) -- when true, real envelope "
+            "encryption for field-encrypted columns and SAML session "
+            "signing is REQUIRED and the application refuses to start "
+            "if crypto_root_key is missing or malformed, rather than "
+            "silently falling back to the legacy Fernet/HMAC schemes "
+            "or plaintext. Development/self-hosted default (false) is "
+            "completely unchanged by this flag's existence."
+        ),
+    )
+    crypto_root_key: str | None = Field(
+        default=None,
+        description=(
+            "Hex-encoded 32-byte (AES-256) root key for the envelope-"
+            "encryption crypto foundation (governance/crypto/). "
+            "REQUIRED when enterprise_mode=true. Generate with: "
+            'python -c "import secrets; print(secrets.token_hex(32))". '
+            "Never logged -- only the resulting KeyId (purpose/tenant/"
+            "version/environment, never key material) is ever logged "
+            "by db/crypto_activation.py."
+        ),
+    )
+
     # OpenTelemetry (optional)
     otel_endpoint: str | None = Field(
         default=None,
@@ -251,6 +284,39 @@ class Settings(BaseSettings):
     oidc_skip_verification: bool = Field(
         default=False,
         description="Skip JWT signature verification (test/dev only — never use in production).",
+    )
+    # Zero-Trust Identity (docs/heart-production/03_ZERO_TRUST_IDENTITY.md):
+    # closes the "oidc" kind's documented mechanism-vs-identity-type
+    # ambiguity -- a human via SSO and a machine via client-credentials
+    # both produce kind="oidc" today, with no discriminator, so the
+    # identity_authority_adapter.py mapping conservatively treats every
+    # OIDC identity as non-terminal (WORKLOAD_IDENTITY). No universal
+    # standard claim distinguishes the two across every IdP, so this is
+    # deliberately deployer-configured (mirrors integrations/identity_bridge.py's
+    # existing `org_claim` parameter, same "configurable, not guessed"
+    # discipline) rather than a WhitePact-wide heuristic. Left unset
+    # (the default), classification is completely unchanged --
+    # governance.oidc_subject_classifier.classify_oidc_subject() is not
+    # yet wired into any live request path; see that module's own
+    # docstring for why.
+    oidc_human_indicator_claim: str | None = Field(
+        default=None,
+        description=(
+            "JWT claim name whose presence indicates a real human "
+            "authentication event, e.g. 'amr' (RFC 8176 Authentication "
+            "Methods References -- most IdPs populate this only for an "
+            "interactive end-user login, never for a client-credentials "
+            "grant). Leave unset to keep every OIDC identity classified "
+            "conservatively as non-terminal (WORKLOAD_IDENTITY)."
+        ),
+    )
+    oidc_human_indicator_values: Annotated[list[str], NoDecode] = Field(
+        default=["pwd", "mfa", "otp"],
+        description=(
+            "Values of oidc_human_indicator_claim (when it's a list, "
+            "e.g. 'amr') that count as evidence of human authentication. "
+            "Ignored when oidc_human_indicator_claim is unset."
+        ),
     )
 
     # Verified Principal (Authority Everywhere Phase 3) — Verifiable
@@ -431,6 +497,13 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return [s.strip() for s in v.split(",") if s.strip()]
         return list(v) if v else ["openid", "email", "profile"]
+
+    @field_validator("oidc_human_indicator_values", mode="before")
+    @classmethod
+    def _parse_oidc_human_indicator_values(cls, v: Any) -> list[str]:
+        if isinstance(v, str):
+            return [s.strip() for s in v.split(",") if s.strip()]
+        return list(v) if v else ["pwd", "mfa", "otp"]
 
     @field_validator("api_keys", mode="before")
     @classmethod

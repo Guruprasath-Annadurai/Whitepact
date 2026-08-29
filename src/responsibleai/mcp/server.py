@@ -241,6 +241,35 @@ async def _call_tool(
         assert outcome.result is not None, "governed ALLOW outcome must carry an execution result"
         return _text_and_structured(outcome.result)
 
+    # Security Remediation Gap 2: `ctx is None` here means this is a
+    # genuinely self-hosted stdio call -- a hosted-HTTP request always
+    # has `ctx` set by its own auth middleware before reaching this
+    # point. In enterprise_mode (see Gap 1's Settings.enterprise_mode,
+    # reused deliberately rather than duplicated), stdio may only
+    # execute MINIMAL/LOW risk-tier tools -- the explicit "local
+    # development-only capability set" per
+    # docs/enterprise-neural/REMEDIATION_GAP2_STDIO_GOVERNANCE.md.
+    # Default (enterprise_mode=false) behavior is completely unchanged.
+    if ctx is None:
+        from responsibleai.dashboard.config import get_settings
+        from responsibleai.governance.risk import RiskTier, classify_action_risk
+
+        if get_settings().enterprise_mode:
+            risk_tier = classify_action_risk("mcp_tool_call", name)
+            if risk_tier not in (RiskTier.MINIMAL, RiskTier.LOW):
+                error = {
+                    "error": "stdio_privileged_execution_blocked",
+                    "message": (
+                        f"Tool {name!r} is classified {risk_tier.value!r} risk. "
+                        "Enterprise mode restricts the self-hosted stdio "
+                        "transport to MINIMAL/LOW risk tools only -- it has no "
+                        "organizational identity to evaluate authority/policy "
+                        "against, so privileged tools require the governed "
+                        "hosted HTTP/SSE transport instead."
+                    ),
+                }
+                return _text_and_structured(error)
+
     result = await dispatch_tool(name, call_arguments)
     return _text_and_structured(result)
 
@@ -309,6 +338,33 @@ def _build_transport_security() -> Any:
         allowed_hosts=allowed_hosts,
         allowed_origins=allowed_origins,
     )
+
+
+def platform_isolation_problems(transport_security_enabled: bool) -> list[str]:
+    """Return a human-readable problem per hosted-transport isolation
+    setting left at its unsafe default. Empty list means no known
+    platform-isolation gap for the current configuration. Pure function
+    (no I/O), same pattern as `dashboard.config.multi_replica_problems()`
+    — unit-testable without booting a real ASGI app, and callers decide
+    whether an empty result means "log nothing" or "log success."
+
+    Currently checks exactly one condition: DNS rebinding protection
+    (`_build_transport_security()`) staying at its backward-compatible
+    default of disabled because no deployer-configured allowlist exists
+    yet — see `THREAT_MODEL.md` §1's "DNS rebinding" entry. Not a hard
+    startup failure (an empty allowlist with protection force-enabled
+    would reject every request) — informational, like
+    `multi_replica_problems()`'s own non-blocking precedent.
+    """
+    problems = []
+    if not transport_security_enabled:
+        problems.append(
+            "DNS rebinding protection is disabled for the hosted MCP HTTP/SSE "
+            "transport — set RAI_MCP_HTTP_ALLOWED_HOSTS and/or "
+            "RAI_MCP_HTTP_ALLOWED_ORIGINS to enable it. See THREAT_MODEL.md "
+            "Section 1."
+        )
+    return problems
 
 
 class _AuthFailureLimiter:
@@ -402,6 +458,7 @@ def _build_http_app() -> Any:
             OrgAutonomyBudgetRepository,
             OutcomeRepository,
             PolicyRepository,
+            RootAuthorityRepository,
             WebhookConfigRepository,
             WebhookDeliveryRepository,
             WorkflowRuleRepository,
@@ -435,6 +492,13 @@ def _build_http_app() -> Any:
             autonomy_budget_repo=OrgAutonomyBudgetRepository(_db_engine),
             outcome_repo=OutcomeRepository(_db_engine),
             intent_repo=IntentContractRepository(_db_engine),
+            # Heart Production Integration Phase 6 -- always wired
+            # when governance is on, same pattern as every other
+            # optional repo above; the actual legitimacy check only
+            # runs (and can only deny) when Settings.enterprise_mode
+            # is also true (see governance_integration.py's
+            # _heart_legitimacy_denied_reason()).
+            root_authority_repo=RootAuthorityRepository(_db_engine),
         )
     # Reuses the exact same RAI_OIDC_* / Settings.oidc_* config the
     # dashboard API's SSO login already reads (dashboard/app.py's own
@@ -470,6 +534,11 @@ def _build_http_app() -> Any:
     )
     _principal_repo = PrincipalRepository(_db_engine)
     transport_security = _build_transport_security()
+    isolation_problems = platform_isolation_problems(
+        transport_security.enable_dns_rebinding_protection
+    )
+    if isolation_problems:
+        _logger.warning("platform_isolation_misconfigured: %s", "; ".join(isolation_problems))
     sse = SseServerTransport("/messages/", security_settings=transport_security)
     # stateless=True: each POST to /mcp is authenticated and dispatched
     # independently, mirroring the legacy /sse transport's per-connection
@@ -487,6 +556,12 @@ def _build_http_app() -> Any:
     @asynccontextmanager
     async def _lifespan(_app: Starlette) -> Any:
         await _db_engine.init()
+        # Security Remediation Gap 1: fail-closed crypto activation --
+        # see dashboard/app.py's identical call for the full rationale.
+        # No-op unless settings.enterprise_mode=true.
+        from responsibleai.db.crypto_activation import activate_production_crypto
+
+        await activate_production_crypto(settings, _db_engine)
         if _governance_webhook_manager is not None:
             await _governance_webhook_manager.load_configs()
             _governance_webhook_manager.start_retry_worker()
@@ -522,6 +597,28 @@ def _build_http_app() -> Any:
                 role = candidate
                 break
 
+        # Zero-Trust Identity follow-up (governance/oidc_subject_classifier.py):
+        # unset settings.oidc_human_indicator_claim (the default) means
+        # classify_oidc_subject() always returns IdentityKind.OIDC, so
+        # oidc_classified_human stays False and behavior is byte-for-byte
+        # identical to before this classifier existed. Local import --
+        # matches this file's own established convention (see Security
+        # Remediation Gap 2's stdio governance gate) of keeping the
+        # stdio import graph free of anything not needed when governance
+        # is off; _resolve_oidc_context() is only ever reached from
+        # _build_http_app(), never from stdio's main().
+        from responsibleai.governance import IdentityKind
+        from responsibleai.governance.oidc_subject_classifier import classify_oidc_subject
+
+        oidc_classified_human = (
+            classify_oidc_subject(
+                claims.raw,
+                human_indicator_claim=settings.oidc_human_indicator_claim,
+                human_indicator_values=settings.oidc_human_indicator_values,
+            )
+            == IdentityKind.HUMAN
+        )
+
         return OrgContext(
             key_id=f"oidc:{claims.sub}",
             role=role,
@@ -529,6 +626,7 @@ def _build_http_app() -> Any:
             org_name=org.name if org else None,
             is_legacy=False,
             plan=org.plan if org else Plan.FREE,
+            oidc_classified_human=oidc_classified_human,
         )
 
     async def _resolve_vc_context(token: str) -> OrgContext | None:

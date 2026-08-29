@@ -10,6 +10,401 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ### Added
 
+- Enterprise Neural Phase 18 — Final Enterprise Release Verification
+  (2026-08-28) (`docs/enterprise-neural/18_PHASE18_FINAL_SYNTHESIS.md`)
+  — the final phase of the master directive: a synthesis and
+  verification pass over Phases 0-1, 2, 4-8, 10-17 on
+  `security/enterprise-neural-phase-0-1`, not net-new security work.
+  Re-ran the full regression suite one final time (3147 passed, 1
+  skipped, 0 failed) and re-confirmed PR #50's 12/12 checks green via
+  the GitHub API, not from memory. Confirmed CodeQL genuinely shows 0
+  open alerts (verified by filtering the code-scanning API by
+  `tool.name`, since OpenSSF Scorecard also publishes to the same
+  alerts endpoint under different rule IDs and would otherwise look
+  like CodeQL findings) — 58 open Scorecard findings on `main` exist
+  and are named honestly as a real, out-of-scope-for-this-phase gap,
+  not hidden by an imprecise "0 alerts" claim. Backfilled
+  `PROGRESS_LEDGER.md`'s "Commit" column, which had said "pending
+  (uncommitted at ledger update time)" for every phase from 2 through
+  17 since each entry was written before its own commit existed — the
+  same staleness class Phases 12 and 15 already found and fixed
+  elsewhere. No source code changed.
+
+- Enterprise Neural Phase 17 — Full Adversarial Hardening Fuzz Test
+  (2026-08-28) (`tests/test_ssrf_guard_fuzz.py`) — audit-driven:
+  `SECURITY_ASSURANCE_CASE.md` §8 already states plainly that "no
+  fuzz-testing... has been performed against any surface" in this
+  codebase; a dedicated third-party pentest and general fuzzing
+  infrastructure remain correctly out of scope for one phase, but a
+  real, narrowly-scoped Hypothesis property test against a genuine
+  security boundary is achievable. Target:
+  `webhooks/manager.py::validate_webhook_url()` — the SSRF guard both
+  webhook delivery and upstream MCP server registration/dispatch
+  (`governance/upstream.py::validate_upstream_server_url()`, which
+  delegates to it directly) rely on. Existing coverage exercised five
+  hand-picked addresses; this generates arbitrary IPv4/IPv6 addresses
+  across the full space via `hypothesis.strategies.ip_addresses()` and
+  checks the function's verdict against its own documented six-
+  condition logic (`is_private`/`is_loopback`/`is_link_local`/
+  `is_reserved`/`is_multicast`/`is_unspecified`) as the oracle — a
+  regression guard a future edit subtly narrowing or widening that
+  check would trip, which fixed example inputs cannot catch. Also
+  confirms `validate_upstream_server_url()`'s delegation holds across
+  the same generated space, not just by reading the one-line wrapper.
+  No bug found — both functions' existing logic is correct across 700
+  generated examples. 2 new tests. Full suite 3147 passed, 1 skipped,
+  0 failed.
+
+- Enterprise Neural Phase 16 — Scientific Evidence System (2026-08-28)
+  (`governance/neural/evidence.py`) — closes a real, previously-
+  unenforced gap: `device.py`'s own docstring quotes the master
+  directive directly ("WhitePact's own measured capability evidence
+  determines what WhitePact labels validated"), but nothing checked
+  it — a sufficiently trusted device (`TRUST_A`/`TRUST_B`/`TRUST_C`)
+  could claim `CapabilityState.VALIDATED` for any capability with zero
+  supporting evidence. `NeuralEvidenceType` distinguishes evidence by
+  who measured it (`WHITEPACT_MEASURED`/`INDEPENDENT_THIRD_PARTY`/
+  `REGULATORY_CLEARANCE` qualify; `VENDOR_SELF_REPORTED` deliberately
+  does not, on its own). `evaluate_capability_validation_claim()` is
+  fail-closed: a `VALIDATED` claim with no matching evidence record,
+  or only vendor-self-reported ones, is DENY. No concrete device,
+  decoder, or study is fabricated — same discipline as Phases 5-6's
+  typed-contract-only scope. 13 new tests (12 in
+  `tests/test_neural_evidence.py` including a Hypothesis property test
+  that no quantity of vendor-only evidence can ever produce ALLOW, 1
+  export regression guard), 100% coverage, exported from
+  `governance/neural/__init__.py`. Full suite 3145 passed, 1 skipped,
+  0 failed.
+
+- Enterprise Neural Phase 14 — Resilience + Fail-Closed Operations
+  Matrix (2026-08-28) (`tests/test_resilience_fail_closed_matrix.py`)
+  — audit-driven, not a rebuild: `THREAT_MODEL.md` already documents
+  evidence-write failures failing closed and Trust Index lookups
+  failing open, deliberately asymmetric; `TestAuthoritySubsystemCrashFailsClosed`
+  already proved `WhitePactRuntimeGateway.evaluate()` crashes fail
+  closed too, by simple exception propagation (no try/except needed —
+  a crash structurally prevents evidence being written or the executor
+  being reached). Auditing `apply_governance()` in full found six more
+  repository dependencies called before `evaluate()`
+  (`ceiling_repo`, `policy_repo`, `delegation_repo`,
+  `workflow_rule_repo`, `autonomy_budget_repo`, `intent_repo`) relying
+  on the identical propagation mechanism, none individually
+  regression-tested for it. This phase generalizes the existing crash
+  test's exact pattern across all six, parametrized: a crash in any
+  one never produces the tool's real payload and never fabricates an
+  evidence record. Two dependencies (`recent_*_count()` helper calls,
+  `evidence_repo.list_recent_actions()`) are only reached under
+  additional preconditions the shared parametrized sweep can't cover
+  without separate setup — named as a residual gap, not silently
+  assumed covered. 6 new tests; full suite 3132 passed, 1 skipped, 0
+  failed.
+
+- Enterprise Neural Phase 13 — Immutable Audit + Evidence Anchoring
+  Evidence (2026-08-28) (`tests/test_evidence_chain_anchoring.py`) —
+  audit-driven, not a rebuild: `ENTERPRISE_SECURITY.md` already
+  documents that no hash chain alone can defend against an attacker
+  with full DB write access recomputing the entire chain from
+  scratch — only external anchoring (periodic publication to
+  write-once storage) can. `governance/evidence_bundle.py`'s
+  offline-verifiable, digest-bearing bundle export (already real,
+  already tested, already API-exposed) already provides exactly the
+  artifact such an anchor needs; only the choice of *where* to publish
+  it is a real, cloud/infra-specific gap, correctly out of scope
+  without an explicit target named. This phase makes the underlying
+  claim concrete and reproducible rather than leaving it as prose: (1)
+  a full-chain-regeneration attack, simulated by writing directly to
+  `governance_evidence` and recomputing every downstream hash, passes
+  `EvidenceRepository.verify_chain()` — proving the documented
+  limitation is real; (2) a bundle digest captured before the attack
+  differs from one captured after, for the identical record range —
+  proving the mitigation actually works; (3) a negative control
+  confirms two exports of unchanged content produce the identical
+  digest, so (1) and (2) aren't artifacts of unrelated digest
+  instability. 3 new tests; full suite 3126 passed, 1 skipped, 0
+  failed.
+
+- Enterprise Neural Phase 12 — Platform + Network + Service Isolation
+  (2026-08-28) (`mcp/server.py`'s `platform_isolation_problems()`) —
+  audit-driven: `THREAT_MODEL.md` already documented DNS rebinding
+  protection defaulting to disabled for the hosted MCP HTTP/SSE
+  transport, application-layer message signing as out of scope
+  (TLS-only, deployer responsibility), and per-connection SSE
+  DoS protection as not yet built (no config knob to check, named
+  rather than papered over). This phase closes the one genuinely
+  actionable gap: DNS-rebinding-disabled had no startup-time
+  visibility, unlike `dashboard.config.multi_replica_problems()`'s
+  existing precedent for exactly this shape of check. New pure
+  function `platform_isolation_problems()`, wired into
+  `_build_http_app()` to log a warning (not a hard failure, same
+  non-blocking posture as the `multi_replica` precedent) when
+  transport security ends up disabled. Also corrects a stale
+  `THREAT_MODEL.md` claim ("no upstream/third-party MCP proxy executor
+  exists yet") that Phase 11 disproved — `UpstreamMCPExecutor` has the
+  identical bypass-invariant property, independently tested. 2 new
+  tests; full suite 3123 passed, 1 skipped, 0 failed.
+
+- Enterprise Neural Phase 11 — Citadel Execution Containment Evidence
+  (2026-08-28) (`tests/test_citadel_execution_containment.py`) —
+  audit-driven, not a rebuild: Phase 0's audit flagged execution-permit
+  binding as "partially implemented... not yet a general Citadel-style
+  containment boundary"; since then, Execution Permit v2 and the JIT
+  Credential Broker generalized `ExecutionAuthorization` well beyond
+  MCP-mediated internal tool calls to `UpstreamMCPExecutor`
+  (target-fingerprint drift detection, per-call narrowly-scoped
+  credentials, DNS re-validation before dispatch) — already real,
+  already tested. This phase adds regression-tested evidence: every
+  concrete `Executor` implementation calls the shared
+  `_validate_authorization()` (exactly two call sites, both known);
+  `check_target_fingerprint()` has exactly one call site
+  (`upstream_executor.py` — `InternalToolExecutor` correctly never
+  calls it); a fresh authorization with no target fingerprint never
+  raises `AuthorizationTargetDriftError` through the real
+  `InternalToolExecutor`; and the shared replay/mismatch protections
+  hold identically on both executors, proven independently rather than
+  assumed to transfer. Also confirms `mcp/server.py`'s second
+  `dispatch_tool()` call site is the already-documented, correctly
+  out-of-scope ungoverned-stdio-transport path (Phase 8 Gap 1 / Phase
+  10 Gap 2), not a new bypass. 7 new tests; full suite 3121 passed, 1
+  skipped, 0 failed.
+
+- Enterprise Neural Phase 10 — Brain Policy + Risk Engine Evidence
+  (2026-08-28) (`tests/test_brain_policy_risk_boundary.py`) —
+  audit-driven, not a rebuild: SPEC.md §2.5 already names "the Brain"
+  as the existing `governance/gateway.py` risk-classification +
+  policy-evaluation pipeline, and `gateway.py`'s own docstring already
+  labels those steps "Phase 9" (`risk.py`) and "Phase 10"
+  (`policy.py`) — real, persisted (`db/policy_repository.py`), tested
+  (41 pre-existing direct tests), and unconditionally wired into both
+  live governed-call paths (`mcp/governance_integration.py`,
+  `mcp/upstream_dispatch.py`). This phase adds regression-tested
+  evidence: `Policy.evaluate()` has exactly one call site
+  (`gateway.py`); `classify_action_risk()` has exactly the three
+  audited call sites; every `DecisionResult` the gateway produces
+  carries a real `RiskTier`; a matching `Policy` rule actually gates
+  the outcome through the real gateway; and an attacker-controlled
+  `ActionRequest.arguments` payload shaped to look like a risk/policy
+  override has zero effect on either. 13 new tests, 100% coverage on
+  the exercised modules; full suite 3114 passed, 0 failed.
+- Enterprise Neural Phase 8 — LLM + Agent Security Boundary Evidence
+  (2026-08-28) (`tests/test_llm_agent_security_boundary.py`) —
+  audit-driven, not a rebuild: most of the directive's "LLM must never
+  issue authority or create execution permits" requirements already
+  held structurally, built under prior initiatives. This phase adds
+  regression-tested evidence rather than new architecture: structural
+  guards confirming `ExecutionAuthorization` and `AuthorityGrant` each
+  have exactly one gated construction site in the real, shipped source
+  tree, and `mint_neural_intent_attestation` has zero call sites
+  outside its own module; runtime tests confirming
+  `authorize_execution()` requires a real `DecisionResult` from the
+  governance gateway and ignores attacker-controlled
+  `ActionRequest.arguments` entirely, even a payload crafted to look
+  like a decision object. Two genuine, pre-existing gaps named
+  explicitly rather than silently left implicit: the self-hosted stdio
+  MCP transport remains ungoverned (no organizational identity to
+  evaluate against), and LLM-supplied tool arguments aren't schema-
+  validated before reaching governance — both correctly out of this
+  phase's scope (each is a separate, larger initiative). 7 new tests.
+  Full suite: 3102 passed, 0 failed.
+
+- Enterprise Neural Phase 7 — Neural Intent Attestation + Action
+  Binding (2026-08-28) (`governance/neural/attestation.py`) —
+  `NeuralIntentAttestation`, minted and verified via
+  `governance/crypto`'s existing signing primitives (a new
+  `KeyPurpose.NEURAL_ATTESTATION` value, additive), implementing the
+  directive's mutation-invalidates-authorization property literally:
+  `verify_neural_intent_attestation` compares the attestation's stored
+  action digest against the digest of what's actually about to
+  execute and rejects on any mismatch — changing the amount, the
+  recipient, or the purpose after attestation invalidates it.
+  Fail-closed verification order (signature → expiry → mutation →
+  embedded decision status), so a forged attestation never reaches the
+  later checks. Unlike Phases 5/6, this is fully implemented and
+  tested end-to-end (not merely a typed contract) — attestation is a
+  pure transformation over already-typed objects, not hardware- or
+  model-dependent. 24 new tests (2 Hypothesis property tests,
+  including the literal ₹1,000→₹100,000 and recipient-A→B scenarios
+  the directive names), 100% coverage. Full suite: 3095 passed, 0
+  failed.
+
+- Enterprise Neural Phase 6 — Neural Signal Integrity + Decoder Safety
+  (2026-08-28) (`governance/neural/decision.py`) — `NeuralDecision`
+  (every field the directive requires: schema version, calibrated
+  probability, uncertainty, signal quality, decoder/calibration
+  identity+version+hash, subject/session/device context, expiry) with
+  `__post_init__` rejecting NaN, +/-Infinity, out-of-range confidence
+  values, and non-increasing expiry unconditionally.
+  `NeuralDecisionStatus` (VALID/AMBIGUOUS/REJECTED) and
+  `classify_decision_status()` (checks uncertainty before probability,
+  so genuine uncertainty is AMBIGUOUS rather than a misleading
+  REJECTED), plus `is_expired`/`matches_context`/`is_stale_decoder`.
+  Deliberately **no decoder** — same reasoning as Phase 5: no real
+  trained model or device signal exists to validate one against. 40
+  new tests (3 Hypothesis property tests), 100% coverage. Full suite:
+  3069 passed, 0 failed.
+
+- Enterprise Neural Phase 5 — BCI Device Trust + Capability Contract
+  (2026-08-28) (`governance/neural/device.py`) — `DeviceTrustLevel`
+  (TRUST_A-D), `CapabilityState` (VALIDATED/EXPERIMENTAL/UNAVAILABLE),
+  `NeuralCapabilityManifest` (validates channel count, sampling rate,
+  and a trust-capability ceiling at construction — a `TRUST_D`
+  device's manifest cannot claim any capability `VALIDATED`, since an
+  unverified transport gives no basis for that measured-confidence
+  claim), and the `BCIDeviceAdapter` `Protocol`. Deliberately adds
+  **no** BrainFlow/LSL/vendor-SDK dependency and **no concrete device
+  adapter** — with no real device or vendor decision to validate
+  against, building one now would be exactly the kind of fabricated
+  capability claim the directive prohibits. 18 new tests (3 Hypothesis
+  property tests), 100% coverage. Full suite: 3028 passed, 0 failed.
+
+- Enterprise Neural Phase 4 Step 2 — Neural Vault Persistence
+  (2026-08-28) (`db/neural_vault_repository.py`, migration `0031`) —
+  `NeuralConsentRepository` (append-only consent ledger, revocation
+  inserts a new version rather than mutating) and `NeuralVaultRepository`
+  (Vault index storing metadata/references, never raw N0/N1/N2 content —
+  `NeuralVaultEntry` has no payload field at all, an architectural
+  enforcement, not a convention). Soft-delete semantics kept explicit
+  per the design doc's "deletion semantics must be explicit"
+  requirement. 17 new tests, 100% coverage. Migration verified via a
+  real `alembic upgrade head`/`downgrade -1`/`upgrade head` cycle. Full
+  suite: 3009 passed, 0 failed.
+
+- Enterprise Neural Phase 4 — Neural Data Classification + Consent
+  Policy (2026-08-28) (`governance/neural/`, new subpackage; see
+  `docs/enterprise-neural/04_PHASE4_DESIGN.md`) — the N0-N5
+  `NeuralDataClass` classification vocabulary, `NeuralPayload` (a
+  mandatory-classification wrapper whose `__repr__` never renders raw
+  payload bytes, closing the accidental-log-leak class of risk), the
+  8-category `ConsentCategory`/`ConsentRecord` model (no blanket "I
+  agree" — each category granted/revoked independently), and
+  `evaluate_neural_data_flow()`, a fail-closed consent policy
+  evaluator (missing or revoked consent → DENY, "latest version wins"
+  resolution). 26 new tests (2 Hypothesis property tests), 100%
+  coverage, exported from `governance/__init__.py` as `neural`. This
+  is Step 1 of Phase 4's build — the Neural Vault persistence layer
+  and end-to-end leakage tests remain. Net-new product surface: zero
+  neural/BCI code existed before this phase.
+
+- Enterprise Neural Phase 2 Step 5 — Generalized Rotation Script,
+  Phase 2 complete (2026-08-28)
+  (`scripts/rotate_field_encryption_key.py`) — the existing legacy
+  Fernet rotation script now also supports migrating to, or rotating
+  within, the new `governance/crypto` scheme via `RAI_ROOT_KEY`,
+  reusing its original sweep logic unchanged (proof Step 3's
+  dual-scheme `EncryptedString` design needed zero changes to support
+  this). A real data-corruption risk was found and fixed before this
+  landed: running the migration without also keeping the legacy
+  `RAI_FIELD_ENCRYPTION_KEY` set would silently re-encrypt
+  still-undecrypted legacy ciphertext as if it were plaintext,
+  double-wrapping it. A pre-flight check now refuses to proceed when
+  it detects this condition. 11 new tests plus full manual CLI
+  verification against a real `alembic`-migrated database (both the
+  refusal and success paths). Full suite: 2965 passed, 0 failed. This
+  closes Phase 2 (Cryptographic Foundation + Key Management) — all 5
+  implementation steps complete; see
+  `docs/enterprise-neural/02_PHASE2_STEP5_REPORT.md`'s final verdict
+  for what the phase does and does not deliver (the key-management
+  foundation is real and tested; nothing in the running application
+  activates it yet — that remains a separate, unscheduled step).
+
+- Enterprise Neural Phase 2 Step 4 — Canonical Signing + SAML Session
+  Key Rotation (2026-08-28) (`governance/crypto/signing.py`,
+  `auth/saml.py`) — `sign()`/`verify()`, an HMAC-SHA256 helper binding
+  `KeyId` into the signed material, and SAML session-token signing
+  (`mint_session_token`/`validate_session_token`) wired onto it via
+  `configure_session_signing_key()`, alongside the legacy
+  `SAMLConfig.session_secret` path. **Scope correction from the
+  original design doc**, found by reading `webhooks/manager.py`'s
+  actual secret-sharing model before implementing: the design doc's
+  Sec 3.11 treated webhook payload signing the same as SAML session
+  signing, but a webhook's HMAC secret is shared with an external
+  receiver (Slack, PagerDuty, a customer endpoint) — WhitePact
+  rotating it internally without the receiver rotating in lockstep
+  would silently break their signature verification. Webhook signing
+  is deliberately **not** wired onto this scheme; SAML session tokens
+  (signed and verified entirely within this codebase) are a correct
+  fit. 6 new tests, 100% coverage on the new module. Full suite: 2954
+  passed, 0 failed.
+
+- Enterprise Neural Phase 2 Step 3 — Field Encryption Dual-Scheme
+  Wiring (2026-08-28) (`db/encryption.py`) — `EncryptedString` now
+  supports the new `governance/crypto`-based envelope scheme
+  alongside legacy `RAI_FIELD_ENCRYPTION_KEY` Fernet, activated via
+  `configure_field_encryption_key()`. Format detection uses an
+  explicit, versioned string prefix (`"wpcrypto2:"`), not a
+  structural guess. Two real bugs found and fixed before merge: the
+  first design attempt detected format by decoding stored values as
+  base64 and checking a byte — running the full regression suite
+  surfaced 12 failures, because base32 TOTP secrets
+  (`pyotp.random_base32()`) use an alphabet that's a strict subset of
+  base64's at a block-aligned length, so genuine plaintext TOTP
+  secrets "successfully" decoded as base64 and were misidentified as
+  ciphertext, breaking every MFA flow. Replaced with the explicit
+  prefix. Separately, `governance/crypto/envelope.py`'s
+  `decode_envelope()` was found to decode leniently
+  (`validate=False`, Python's base64 default) rather than strictly,
+  silently discarding invalid characters instead of rejecting
+  malformed input — fixed to decode strictly. 13 new/updated tests,
+  100% coverage on `db/encryption.py`. Full suite: 2949 passed, 0
+  failed. Application-startup wiring to actually activate the new
+  scheme in production is explicitly out of scope for this step — see
+  `docs/enterprise-neural/02_PHASE2_STEP3_REPORT.md`.
+
+- Enterprise Neural Phase 2 Step 2 — Persistent Key Store (2026-08-28)
+  (`db/crypto_key_repository.py`, migration `0030`) — `CryptoKeyRepository`,
+  a DB-backed `WrappedKeyStore` (`governance/crypto/provider.py`)
+  replacing Step 1's `InMemoryWrappedKeyStore` for real deployments.
+  `key_id` (the canonical `KeyId.to_string()` encoding) is the table's
+  primary key, so a concurrent write racing to generate the same
+  purpose/tenant/environment/version now hits a real database
+  uniqueness constraint and raises `KeyVersionConflictError` instead
+  of silently overwriting — closing the concurrency-safety residual
+  risk Step 1's report flagged. Fixed a real bug caught by `mypy`
+  before merge: `LocalEnvelopeKeyProvider`'s `store` constructor
+  parameter was over-narrowed to `InMemoryWrappedKeyStore | None`
+  instead of the `WrappedKeyStore` Protocol, which would have
+  rejected any conforming store (including this one) at the type level
+  — defeating the entire point of the abstraction Step 1 built.
+  15 new tests (repository CRUD/query contract, tenant/environment
+  isolation, and end-to-end `LocalEnvelopeKeyProvider` behavior wired
+  onto the DB-backed store, including persistence across separate
+  repository instances against the same DB — simulating a process
+  restart), 100% coverage on the new repository. Migration verified to
+  apply and reverse cleanly via a real `alembic upgrade head` /
+  `downgrade -1` / `upgrade head` cycle against a fresh SQLite DB, not
+  just via the test suite's `metadata.create_all()` path. Exported
+  from `db/__init__.py`. Nothing in the existing codebase writes to
+  this table yet — wiring `db/encryption.py`, `webhooks/manager.py`,
+  and `auth/saml.py` onto this provider is still a later Phase 2 step.
+
+- Enterprise Neural Phase 2 Step 1 — Cryptographic Foundation, Key
+  Management package (2026-08-28) (`governance/crypto/`, new
+  subpackage; see `docs/enterprise-neural/02_PHASE2_DESIGN.md` for the
+  full design) — `KeyId`/`KeyPurpose`/`KeyStatus` key-hierarchy
+  vocabulary, the `KeyProvider` Protocol every future call site
+  (`db/encryption.py`, `webhooks/manager.py`, `auth/saml.py`) is meant
+  to depend on rather than a concrete provider, and the one
+  production-capable implementation this phase builds:
+  `LocalEnvelopeKeyProvider` — real envelope encryption (HKDF-derived
+  per-purpose/tenant KEK wraps random DEKs via AES-256-GCM), not a
+  fake KMS. Self-describing encrypted envelope format
+  (`governance/crypto/envelope.py`) binds its `KeyId` into the AEAD
+  authentication tag, so tampering with the embedded key identity
+  breaks decryption the same as tampering with ciphertext. Two real
+  bugs found and fixed during property testing before merge: a
+  `KeyId` string encoding where an actual tenant named `"-"` or
+  containing a NUL byte collided with reserved sentinels, and a
+  version-numbering bug where retiring or revoking a key outside of
+  `rotate()` could cause the next `get_encryption_key()`/`rotate()`
+  call to silently regenerate and overwrite an existing key version's
+  wrapped DEK. 47 new tests (2 Hypothesis property tests, explicit
+  misuse-test coverage for corrupted ciphertext, tampered AAD, wrong
+  tenant/purpose keys, revoked/retired-key distinction, malformed
+  envelopes, and no-secret-leakage-in-errors), 100% coverage on the
+  new package, exported from `governance/__init__.py` as `crypto`.
+  Wiring existing call sites onto this provider and the persistent
+  `crypto_keys`-table-backed `WrappedKeyStore` are later Phase 2 steps
+  — this step ships only the package, Protocol, and the in-memory
+  store (explicitly non-persistent, documented as dev/test-only).
 - Heart → WhitePact Production Integration, Phase 2 — Identity
   Adapter (2026-08-26) (`governance/identity_authority_adapter.py`)
   — the boundary between real, already-live authentication (static
@@ -497,6 +892,22 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ### Fixed
 
+- Enterprise Neural Phase 15 — Enterprise Trust + Procurement
+  Readiness (2026-08-28) (`SECURITY_ASSURANCE_CASE.md`) —
+  audit-driven: procurement-readiness documentation (`compliance/`'s
+  SOC2/CAIQ/NIST-CSF/DPA/vendor-risk artifacts, the 911-line
+  `SECURITY_ASSURANCE_CASE.md` itself) was already extraordinarily
+  comprehensive, not a gap to build from scratch. The genuine gap was
+  staleness: the assurance case's Evidence Matrix (§7) predated this
+  directive's own Phases 11 and 13 by nine days. Updated rows C4
+  (Runtime authority enforcement) and C6 (Execution Permit binding) to
+  cite `UpstreamMCPExecutor` and target-fingerprint drift detection,
+  both real and tested since Phase 11; C11 (Hash-chain tamper-
+  evidence) to note the evidence-bundle mitigation Phase 13 proved
+  works, alongside the still-real limitation (no automated external
+  publication pipeline); C12 (fail-closed) to cite Phase 14's
+  resilience matrix. Bumped the document's own stale "Last reviewed"
+  date and platform-version reference. No source code changed.
 - MCP review-contract hardening pass (2026-08-25), prompted by a
   reported OpenAI Plugins Directory review outcome for the 2026-08-13
   submission that **this repository has no corroborating record of**

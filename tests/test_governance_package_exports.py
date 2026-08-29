@@ -127,6 +127,94 @@ class TestHeartSymbolsAreExported:
         assert "sovereignty_kernel" in governance.__all__
         assert hasattr(governance.sovereignty_kernel, "evaluate")
 
+    def test_crypto_module_exported(self) -> None:
+        """Enterprise Neural Phase 2's key-management subpackage is
+        exported the same way `sovereignty_kernel` already is."""
+        assert hasattr(governance, "crypto")
+        assert "crypto" in governance.__all__
+        for name in (
+            "KeyId",
+            "KeyPurpose",
+            "KeyStatus",
+            "KeyProvider",
+            "LocalEnvelopeKeyProvider",
+            "encrypt_envelope",
+            "decrypt_envelope",
+        ):
+            assert hasattr(governance.crypto, name)
+
+    def test_neural_module_exported(self) -> None:
+        """Enterprise Neural Phase 4's data-classification/consent
+        subpackage is exported the same way `crypto` already is."""
+        assert hasattr(governance, "neural")
+        assert "neural" in governance.__all__
+        for name in (
+            "NeuralDataClass",
+            "NeuralPayload",
+            "ConsentCategory",
+            "ConsentRecord",
+            "ConsentStatus",
+            "evaluate_neural_data_flow",
+        ):
+            assert hasattr(governance.neural, name)
+
+    def test_neural_device_symbols_exported(self) -> None:
+        """Enterprise Neural Phase 5's device trust/capability contract
+        is exported from the same `neural` module."""
+        for name in (
+            "DeviceTrustLevel",
+            "CapabilityState",
+            "NeuralCapabilityManifest",
+            "BCIDeviceAdapter",
+            "max_capability_state_for_trust_level",
+        ):
+            assert hasattr(governance.neural, name)
+
+    def test_neural_decision_symbols_exported(self) -> None:
+        """Enterprise Neural Phase 6's typed decision contract is
+        exported from the same `neural` module."""
+        for name in (
+            "NeuralDecision",
+            "NeuralDecisionStatus",
+            "classify_decision_status",
+            "is_expired",
+            "matches_context",
+            "is_stale_decoder",
+        ):
+            assert hasattr(governance.neural, name)
+
+    def test_neural_attestation_symbols_exported(self) -> None:
+        """Enterprise Neural Phase 7's intent attestation contract is
+        exported from the same `neural` module."""
+        for name in (
+            "NeuralIntentAttestation",
+            "NeuralAttestationStatus",
+            "NeuralAttestationRejectReason",
+            "NeuralAttestationVerificationResult",
+            "compute_neural_action_digest",
+            "mint_neural_intent_attestation",
+            "verify_neural_intent_attestation",
+        ):
+            assert hasattr(governance.neural, name)
+
+    def test_neural_evidence_symbols_exported(self) -> None:
+        """Enterprise Neural Phase 16's scientific evidence contract is
+        exported from the same `neural` module."""
+        for name in (
+            "NeuralCapabilityEvidence",
+            "NeuralEvidenceType",
+            "NeuralEvidenceDecision",
+            "NeuralEvidenceReason",
+            "NeuralEvidenceResult",
+            "evaluate_capability_validation_claim",
+        ):
+            assert hasattr(governance.neural, name)
+
+    def test_crypto_neural_attestation_key_purpose_exported(self) -> None:
+        """Enterprise Neural Phase 7 adds KeyPurpose.NEURAL_ATTESTATION
+        to the existing governance/crypto/ enum."""
+        assert hasattr(governance.crypto.KeyPurpose, "NEURAL_ATTESTATION")
+
     def test_constitution_symbols_exported(self) -> None:
         for name in (
             "ConstitutionalLawCode",

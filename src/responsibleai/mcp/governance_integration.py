@@ -53,6 +53,7 @@ from responsibleai.db import (
     OrgAutonomyBudgetRepository,
     OutcomeRepository,
     PolicyRepository,
+    RootAuthorityRepository,
     WorkflowRuleRepository,
 )
 from responsibleai.governance import (
@@ -62,6 +63,7 @@ from responsibleai.governance import (
     DecisionResult,
     GovernanceDecision,
     IdentityContext,
+    IdentityKind,
     InternalToolExecutor,
     ReasonCode,
     RiskTier,
@@ -69,8 +71,10 @@ from responsibleai.governance import (
     authorize_execution,
     enrich_agent_trust_state,
     format_reason,
+    identity_kind_from_org_context,
     recent_autonomous_action_count,
     recent_violation_count,
+    resolve_authority_grant,
 )
 from responsibleai.governance.approval import (
     ApprovalRequest,
@@ -133,6 +137,18 @@ class GovernanceServices:
     # to `WhitePactRuntimeGateway.evaluate()`, identical to behavior
     # before Intent Contracts existed.
     intent_repo: IntentContractRepository | None = None
+    # Optional -- Heart Production Integration Phase 6
+    # (governance/authority_resolver.py). Unset (the default) means
+    # every existing test/deploy setup that constructs
+    # `GovernanceServices` without one behaves identically to before
+    # Phase 6 existed: the Heart legitimacy check below is skipped
+    # entirely, not just non-blocking. Even when wired, the check only
+    # actually gates decisions when `Settings.enterprise_mode` is also
+    # true (see `_heart_legitimacy_denied_reason()`) -- reusing the
+    # same opt-in gate Gap 1 (crypto activation) and Gap 2 (stdio
+    # governance) already established for "stricter, fail-closed
+    # production behavior."
+    root_authority_repo: RootAuthorityRepository | None = None
 
 
 @dataclass
@@ -147,6 +163,85 @@ class GovernanceOutcome:
     # no code path left where a governed call reaches dispatch_tool()
     # without first passing through authorize_execution().
     result: dict[str, Any] | None = None
+
+
+# Heart Production Integration Phase 6 -- resolve_authority_grant()
+# needs issuer/verification_method metadata describing HOW this root
+# was verified (governance/root_authority.py's RootAuthorityRecord
+# fields). This is descriptive audit metadata, not itself
+# security-critical (identity_authority_adapter.py's already-tested
+# kind->RootType mapping is what actually determines terminal/
+# non-terminal), so a generic, honest default per kind is appropriate
+# here rather than trying to thread more precise per-mechanism detail
+# through every call site.
+_ISSUER_VERIFICATION_METHOD_BY_KIND: dict[IdentityKind, tuple[str, str]] = {
+    IdentityKind.ORGANIZATION: ("org_repository", "api_key_hash"),
+    IdentityKind.HUMAN: ("idp", "oidc"),
+}
+
+
+async def _heart_legitimacy_denied_reason(
+    services: GovernanceServices,
+    identity: IdentityContext,
+    agent: AgentContext,
+    action: ActionRequest,
+    authority: AuthorityContext,
+) -> str | None:
+    """Heart Production Integration Phase 6: the live-path gate
+    Phase 5's `authority_resolver.py` was built for but deliberately
+    not wired to. Returns `None` (no denial) unless BOTH
+    `services.root_authority_repo` is wired AND
+    `Settings.enterprise_mode` is true -- unset/off, this function is a
+    no-op and `apply_governance()`'s behavior is unchanged from before
+    Phase 6 existed, exactly the same "optional service, opt-in flag"
+    pattern this file already uses for `ceiling_repo`/`delegation_repo`/
+    every other v3 authority-layer feature.
+
+    When both are set, resolves a real `AuthorityGrant`
+    (`resolve_authority_grant()`) and denies with
+    `ReasonCode.HEART_LEGITIMACY_FAILED` if the Heart's own verdict
+    says this identity's authority does not trace to a legitimate
+    root -- the actual enforcement Phase 5's resolver existed to make
+    possible. `UnrepresentableConstraintError` (a constraint
+    `authority.constraints` carries that the Heart's lattice has no
+    dimension for) is deliberately not caught here -- it propagates
+    exactly like every other pre-`evaluate()` dependency crash this
+    file already lets propagate (`TestPreEvaluateDependencyCrashesFailClosed`),
+    fail-closed by the same mechanism, not a special case.
+    """
+    # Local import, re-resolved on every call rather than bound once at
+    # module-import time -- matches mcp/server.py's own established
+    # convention (see its _build_http_app()/its stdio gate) for exactly
+    # this reason: get_settings() is a process-global-cache singleton
+    # (dashboard/config.py's own `_settings`), and a top-level `from
+    # ... import get_settings` here would bind to whatever that name
+    # resolved to the first time this module was ever imported --
+    # stale for any test that monkeypatches `config_module.get_settings`
+    # afterward, exactly the bug this local import avoids.
+    from responsibleai.dashboard.config import get_settings
+
+    if services.root_authority_repo is None or not get_settings().enterprise_mode:
+        return None
+
+    issuer, verification_method = _ISSUER_VERIFICATION_METHOD_BY_KIND.get(
+        identity.kind, ("idp", identity.kind.value)
+    )
+    grant = await resolve_authority_grant(
+        identity,
+        agent,
+        action,
+        authority,
+        services.root_authority_repo,
+        issuer=issuer,
+        verification_method=verification_method,
+    )
+    if grant.is_legitimate:
+        return None
+    return format_reason(
+        ReasonCode.HEART_LEGITIMACY_FAILED,
+        status=grant.legitimacy.heart_veto.status.value,
+        reason=grant.legitimacy.heart_veto.reason or "unspecified",
+    )
 
 
 async def apply_governance(
@@ -172,7 +267,7 @@ async def apply_governance(
 
     identity = IdentityContext(
         identity_id=ctx.key_id,
-        kind="oidc" if ctx.key_id.startswith("oidc:") else "api_key",
+        kind=identity_kind_from_org_context(ctx),
         org_id=ctx.org_id,
         display_name=ctx.org_name,
     )
@@ -283,6 +378,13 @@ async def apply_governance(
                 code, delegation_id=latest_delegation.delegation_id
             )
 
+    # Heart Production Integration Phase 6 -- see
+    # _heart_legitimacy_denied_reason()'s own docstring. A no-op unless
+    # both root_authority_repo is wired and enterprise_mode is on.
+    heart_denied_reason = await _heart_legitimacy_denied_reason(
+        services, identity, agent, action, authority
+    )
+
     # Workflow Authority Engine (v3 authority-layer work): does this
     # action, combined with the agent's own recent history, complete a
     # forbidden sequence the org has configured? Fetches the widest
@@ -336,11 +438,12 @@ async def apply_governance(
     )
 
     evaluate_started = time.monotonic()
-    if delegation_denied_reason is not None:
+    pre_evaluate_denied_reason = delegation_denied_reason or heart_denied_reason
+    if pre_evaluate_denied_reason is not None:
         decision = DecisionResult(
             decision=GovernanceDecision.DENY,
             action_id=action.action_id,
-            reason_codes=[delegation_denied_reason],
+            reason_codes=[pre_evaluate_denied_reason],
         )
     else:
         decision = services.gateway.evaluate(
@@ -524,7 +627,7 @@ def _agent_from_approval(approval: ApprovalRequest) -> AgentContext:
     raising and blocking an otherwise-valid resume."""
     identity = IdentityContext(
         identity_id=approval.requested_by or "unknown",
-        kind="api_key",
+        kind=IdentityKind.ORGANIZATION,
         org_id=approval.organization_id,
     )
     return AgentContext(

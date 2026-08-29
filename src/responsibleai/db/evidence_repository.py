@@ -20,12 +20,33 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import func, insert, select
+from sqlalchemy.exc import IntegrityError
 
 from responsibleai.db.engine import DatabaseEngine, governance_evidence
 from responsibleai.governance.evidence import EvidenceRecord
 from responsibleai.governance.workflow import TimestampedAction
 
 _GENESIS_HASH = "0" * 64
+
+# Security Remediation Gap 5 -- bounded retry when a concurrent
+# replica wins the race to append to this org's chain first (caught by
+# db/engine.py's idx_gev_chain_link/idx_gev_chain_genesis unique
+# indexes as an IntegrityError). A handful of attempts is enough to
+# ride out genuine concurrent contention; if every attempt still
+# conflicts, something is wrong beyond ordinary contention and this
+# fails closed (record() raises) rather than looping indefinitely.
+_MAX_CHAIN_CONFLICT_RETRIES = 5
+
+
+class EvidenceChainConflictError(Exception):
+    """Raised by `EvidenceRepository.record()` when
+    `_MAX_CHAIN_CONFLICT_RETRIES` consecutive attempts to append to an
+    org's evidence chain all lost the race to a concurrent writer (in
+    this process or another replica). The caller's existing "no
+    evidence, no execution" fail-closed behavior
+    (`mcp/governance_integration.py`'s pre-execution evidence check)
+    applies unchanged -- this is just a more specific, named exception
+    than a bare `IntegrityError` would be."""
 
 
 def _now() -> str:
@@ -108,50 +129,76 @@ class EvidenceRepository:
         """Persist *evidence*, chaining it onto its organization's last
         entry. Mutates and returns *evidence* with `prev_hash`/`hash`
         filled in — the same object, for caller convenience, not a copy.
+
+        Security Remediation Gap 5 (multi-instance sequencing safety):
+        `self._chain_lock` only serializes writers within this one
+        process; a concurrent replica writing to the same org's chain
+        is not covered by it. `db/engine.py`'s
+        `idx_gev_chain_link`/`idx_gev_chain_genesis` unique indexes are
+        the actual cross-process safety net -- a second writer that
+        raced this one and lost gets `IntegrityError` on insert, not a
+        silently forked chain. On that conflict, this method forces a
+        fresh re-hydration (bypassing the in-process cache, which is
+        now known stale) and retries, up to
+        `_MAX_CHAIN_CONFLICT_RETRIES` times, before failing closed with
+        `EvidenceChainConflictError`.
         """
         async with self._chain_lock:
-            await self._hydrate_chain(evidence.organization_id)
-            prev_hash = self._last_hash_by_org.get(evidence.organization_id)
-            recorded_at = _now()
-            hashable = {
-                "id": evidence.evidence_id,
-                "org_id": evidence.organization_id,
-                "action_id": evidence.action_id,
-                "decision": evidence.decision,
-                "evaluated_at": evidence.evaluated_at.isoformat(),
-                "recorded_at": recorded_at,
-            }
-            entry_hash = _compute_entry_hash(prev_hash, hashable)
+            for attempt in range(_MAX_CHAIN_CONFLICT_RETRIES):
+                if attempt > 0:
+                    self._hydrated_orgs.discard(evidence.organization_id)
+                await self._hydrate_chain(evidence.organization_id)
+                prev_hash = self._last_hash_by_org.get(evidence.organization_id)
+                recorded_at = _now()
+                hashable = {
+                    "id": evidence.evidence_id,
+                    "org_id": evidence.organization_id,
+                    "action_id": evidence.action_id,
+                    "decision": evidence.decision,
+                    "evaluated_at": evidence.evaluated_at.isoformat(),
+                    "recorded_at": recorded_at,
+                }
+                entry_hash = _compute_entry_hash(prev_hash, hashable)
 
-            async with self._engine.raw.begin() as conn:
-                await conn.execute(
-                    insert(governance_evidence).values(
-                        id=evidence.evidence_id,
-                        org_id=evidence.organization_id,
-                        action_id=evidence.action_id,
-                        agent_id=evidence.agent_id,
-                        identity_id=evidence.identity_id,
-                        action_type=evidence.action_type,
-                        target=evidence.target,
-                        argument_keys=json.dumps(evidence.argument_keys),
-                        authority_delegated_by=evidence.authority_delegated_by,
-                        delegation_chain=json.dumps(evidence.delegation_chain)
-                        if evidence.delegation_chain
-                        else None,
-                        risk_tier=evidence.risk_tier,
-                        policy_version=evidence.policy_version,
-                        decision=evidence.decision,
-                        reason_codes=json.dumps(evidence.reason_codes),
-                        framework=evidence.framework,
-                        provider=evidence.provider,
-                        model=evidence.model,
-                        evaluated_at=evidence.evaluated_at.isoformat(),
-                        recorded_at=recorded_at,
-                        entry_hash=entry_hash,
-                        prev_hash=prev_hash,
-                    )
+                try:
+                    async with self._engine.raw.begin() as conn:
+                        await conn.execute(
+                            insert(governance_evidence).values(
+                                id=evidence.evidence_id,
+                                org_id=evidence.organization_id,
+                                action_id=evidence.action_id,
+                                agent_id=evidence.agent_id,
+                                identity_id=evidence.identity_id,
+                                action_type=evidence.action_type,
+                                target=evidence.target,
+                                argument_keys=json.dumps(evidence.argument_keys),
+                                authority_delegated_by=evidence.authority_delegated_by,
+                                delegation_chain=json.dumps(evidence.delegation_chain)
+                                if evidence.delegation_chain
+                                else None,
+                                risk_tier=evidence.risk_tier,
+                                policy_version=evidence.policy_version,
+                                decision=evidence.decision,
+                                reason_codes=json.dumps(evidence.reason_codes),
+                                framework=evidence.framework,
+                                provider=evidence.provider,
+                                model=evidence.model,
+                                evaluated_at=evidence.evaluated_at.isoformat(),
+                                recorded_at=recorded_at,
+                                entry_hash=entry_hash,
+                                prev_hash=prev_hash,
+                            )
+                        )
+                except IntegrityError:
+                    continue
+                self._last_hash_by_org[evidence.organization_id] = entry_hash
+                break
+            else:
+                raise EvidenceChainConflictError(
+                    f"could not append to org {evidence.organization_id!r}'s evidence chain "
+                    f"after {_MAX_CHAIN_CONFLICT_RETRIES} attempts -- persistent concurrent "
+                    "writer contention"
                 )
-            self._last_hash_by_org[evidence.organization_id] = entry_hash
 
         evidence.prev_hash = prev_hash
         evidence.hash = entry_hash

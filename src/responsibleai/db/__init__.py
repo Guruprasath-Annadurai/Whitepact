@@ -15,7 +15,12 @@ from responsibleai.db.authority_passport_repository import (
     AuthorityPassportNotFoundError,
     AuthorityPassportRepository,
 )
+from responsibleai.db.consent_proof_repository import (
+    ConsentProofNotFoundError,
+    ConsentProofRepository,
+)
 from responsibleai.db.credential_issuance_repository import CredentialIssuanceRepository
+from responsibleai.db.crypto_key_repository import CryptoKeyRepository
 from responsibleai.db.delegation_repository import (
     DelegationEscalationError,
     DelegationNotFoundError,
@@ -28,6 +33,11 @@ from responsibleai.db.incident_repository import IncidentRepository
 from responsibleai.db.intent_repository import IntentContractRepository
 from responsibleai.db.leaderboard_repository import LeaderboardRepository
 from responsibleai.db.mcp_usage_repository import McpUsageRepository
+from responsibleai.db.neural_vault_repository import (
+    NeuralConsentRepository,
+    NeuralVaultEntryNotFoundError,
+    NeuralVaultRepository,
+)
 from responsibleai.db.org_authority_ceiling_repository import OrgAuthorityCeilingRepository
 from responsibleai.db.org_autonomy_budget_repository import OrgAutonomyBudgetRepository
 from responsibleai.db.org_repository import OrgRepository, SSORequiredError
@@ -37,6 +47,10 @@ from responsibleai.db.policy_repository import PolicyRepository, PolicyRuleNotFo
 from responsibleai.db.principal_repository import PrincipalRepository
 from responsibleai.db.public_incident_repository import PublicIncidentRepository
 from responsibleai.db.repositories import CostRepository, TrustRepository
+from responsibleai.db.root_authority_repository import (
+    RootAuthorityRecordNotFoundError,
+    RootAuthorityRepository,
+)
 from responsibleai.db.tool_trust_repository import ToolTrustRepository
 from responsibleai.db.upstream_repository import (
     UpstreamServerNotFoundError,
@@ -96,4 +110,12 @@ __all__ = [
     "DelegationNotFoundError",
     "DelegationRepository",
     "OrgAutonomyBudgetRepository",
+    "CryptoKeyRepository",
+    "NeuralConsentRepository",
+    "NeuralVaultEntryNotFoundError",
+    "NeuralVaultRepository",
+    "RootAuthorityRecordNotFoundError",
+    "RootAuthorityRepository",
+    "ConsentProofNotFoundError",
+    "ConsentProofRepository",
 ]

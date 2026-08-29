@@ -406,6 +406,27 @@ governance_evidence = Table(
     Index("idx_gev_action", "action_id"),
     Index("idx_gev_decision", "decision"),
     Index("idx_gev_recorded", "recorded_at"),
+    # Security Remediation Gap 5 (multi-instance sequencing safety) --
+    # see migrations/versions/0033_add_evidence_chain_uniqueness.py's
+    # own docstring for the full race this closes. Declared here too
+    # (not just in the migration) so create_engine(":memory:")'s
+    # metadata.create_all() -- what every test in this repo runs
+    # against -- creates the same constraint tests rely on.
+    Index(
+        "idx_gev_chain_link",
+        "org_id",
+        "prev_hash",
+        unique=True,
+        sqlite_where=text("prev_hash IS NOT NULL"),
+        postgresql_where=text("prev_hash IS NOT NULL"),
+    ),
+    Index(
+        "idx_gev_chain_genesis",
+        "org_id",
+        unique=True,
+        sqlite_where=text("prev_hash IS NULL"),
+        postgresql_where=text("prev_hash IS NULL"),
+    ),
 )
 
 # Phase 11 — persisted GovernanceDecision.REQUIRE_APPROVAL requests,
@@ -748,6 +769,126 @@ governance_authority_passports = Table(
     Column("revoke_reason", Text, nullable=True),
     Index("idx_ap_org", "org_id"),
     Index("idx_ap_principal", "org_id", "principal_id"),
+)
+
+governance_root_authority_records = Table(
+    "governance_root_authority_records",
+    metadata,
+    # Heart Phase H3 (governance/root_authority.py) `RootAuthorityRecord`,
+    # persisted here for Heart Production Integration Phase 3. Purely
+    # additive storage: `root_authority.py`'s validation semantics
+    # (`validate_root_chain()`) are unchanged and unaware this table
+    # exists -- callers resolve rows through this repository and pass
+    # already-reconstructed `RootAuthorityRecord` objects in, per the
+    # Heart's TCB-minimization discipline (see 00_CURRENT_RUNTIME_MAP.md).
+    Column("root_id", String(36), primary_key=True),
+    Column("subject_id", String(255), nullable=False),
+    Column("root_type", String(32), nullable=False),
+    Column("organization_id", String(36), nullable=True),
+    Column("issuer", String(255), nullable=False),
+    Column("verification_method", String(128), nullable=False),
+    Column("authority_source", String(36), nullable=True),  # another root_id, or null
+    Column("jurisdiction", String(64), nullable=True),
+    Column("evidence_refs", Text, nullable=False),  # JSON list
+    Column("issued_at", String(32), nullable=False),
+    Column("not_before", String(32), nullable=True),
+    Column("expires_at", String(32), nullable=True),
+    Column("revoked_at", String(32), nullable=True),
+    Column("revoked_by", String(200), nullable=True),
+    Column("revoke_reason", Text, nullable=True),
+    Column("canonical_digest", String(64), nullable=False),
+    Index("idx_rar_subject", "subject_id"),
+    Index("idx_rar_org", "organization_id"),
+    Index("idx_rar_source", "authority_source"),
+)
+
+governance_consent_proofs = Table(
+    "governance_consent_proofs",
+    metadata,
+    # Heart Phase H4 (governance/consent_proof.py) `ConsentProof`,
+    # persisted here for Heart Production Integration Phase 3. Same
+    # additive-storage-only discipline as `governance_root_authority_records`
+    # above -- `consent_proof.py`'s `validate_consent_proof()` is
+    # unchanged and stays free of any dependency on this table.
+    Column("consent_id", String(36), primary_key=True),
+    Column("subject_id", String(255), nullable=False),
+    Column("consenting_root_id", String(36), nullable=False),
+    Column("grantee_id", String(200), nullable=False),
+    Column("scope_description", Text, nullable=False),
+    Column("purpose", Text, nullable=False),
+    Column("consent_method", String(32), nullable=False),
+    Column("evidence_refs", Text, nullable=False),  # JSON list
+    Column("consented_at", String(32), nullable=False),
+    Column("not_before", String(32), nullable=True),
+    Column("expires_at", String(32), nullable=True),
+    Column("revoked_at", String(32), nullable=True),
+    Column("revoked_by", String(200), nullable=True),
+    Column("revoke_reason", Text, nullable=True),
+    Column("canonical_digest", String(64), nullable=False),
+    Index("idx_cp_grantee", "grantee_id"),
+    Index("idx_cp_consenting_root", "consenting_root_id"),
+)
+
+governance_crypto_keys = Table(
+    "governance_crypto_keys",
+    metadata,
+    # Canonical KeyId.to_string() encoding (governance/crypto/types.py)
+    # -- collision-free by construction, so it doubles as the primary
+    # key rather than needing a separate synthetic id column.
+    Column("key_id", String(300), primary_key=True),
+    Column("purpose", String(32), nullable=False),
+    # "" (not NULL) represents "no tenant" -- the same wire encoding
+    # KeyId.to_string() itself already uses, reused here rather than a
+    # nullable column, since a composite PRIMARY KEY cannot contain a
+    # nullable column in standard SQL and this avoids needing one.
+    Column("tenant_id", String(200), nullable=False),
+    Column("environment", String(32), nullable=False),
+    Column("version", Integer, nullable=False),
+    Column("wrapped_dek", Text, nullable=False),  # base64, never plaintext DEK material
+    Column("status", String(16), nullable=False),  # active | retired | revoked
+    Column("created_at", String(32), nullable=False),
+    Index(
+        "idx_crypto_keys_lookup",
+        "purpose",
+        "tenant_id",
+        "environment",
+        "status",
+        "version",
+    ),
+)
+
+governance_neural_consent = Table(
+    "governance_neural_consent",
+    metadata,
+    Column("consent_id", String(64), primary_key=True),
+    Column("subject_id", String(200), nullable=False),
+    Column("organization_id", String(36), nullable=True),
+    Column("category", String(32), nullable=False),
+    Column("status", String(16), nullable=False),
+    Column("version", Integer, nullable=False),
+    Column("granted_at", String(32), nullable=False),
+    Column("revoked_at", String(32), nullable=True),
+    Index("idx_neural_consent_subject_category", "subject_id", "category"),
+)
+
+governance_neural_vault_index = Table(
+    "governance_neural_vault_index",
+    metadata,
+    Column("entry_id", String(64), primary_key=True),
+    Column("subject_id", String(200), nullable=False),
+    Column("session_id", String(200), nullable=False),
+    Column("data_class", String(32), nullable=False),
+    Column("device_reference", String(200), nullable=True),
+    Column("captured_at", String(32), nullable=False),
+    Column("retention_expires_at", String(32), nullable=True),
+    Column("deleted_at", String(32), nullable=True),
+    # Populated only when a subject has separately, explicitly
+    # consented to cross-device sync -- NULL is the default, expected
+    # state, not a partial record. See governance/neural/types.py's
+    # NeuralVaultEntry docstring.
+    Column("encrypted_sync_copy", Text, nullable=True),
+    Index("idx_neural_vault_subject", "subject_id"),
+    Index("idx_neural_vault_subject_session", "subject_id", "session_id"),
 )
 
 

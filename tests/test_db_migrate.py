@@ -135,7 +135,7 @@ class TestRunMigrationsOrRaise:
         try:
             async with engine.raw.connect() as conn:
                 rows = await conn.execute(text("SELECT version_num FROM alembic_version"))
-                assert rows.scalar() == "0029"
+                assert rows.scalar() == "0033"
 
                 cols = await conn.execute(text("PRAGMA table_info(organizations)"))
                 col_names = {r[1] for r in cols.fetchall()}
@@ -156,7 +156,7 @@ class TestRunMigrationsOrRaise:
         try:
             async with engine2.raw.connect() as conn:
                 rows = await conn.execute(text("SELECT version_num FROM alembic_version"))
-                assert rows.scalar() == "0029"
+                assert rows.scalar() == "0033"
         finally:
             await engine2.raw.dispose()
 
@@ -168,7 +168,7 @@ class TestRunMigrationsOrRaise:
         try:
             async with engine.raw.connect() as conn:
                 rows = await conn.execute(text("SELECT version_num FROM alembic_version"))
-                assert rows.scalar() == "0029"
+                assert rows.scalar() == "0033"
         finally:
             await engine.raw.dispose()
 
