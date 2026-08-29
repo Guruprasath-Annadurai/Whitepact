@@ -1,5 +1,21 @@
 # Security Remediation Gap 2 — Stdio MCP Governance Bypass: Design + Report
 
+**Superseded in part by Heart Enforcement Chokepoint Closure, Phase
+E2** (see `docs/heart-production-closure/ENFORCEMENT_PATH_MATRIX.md`):
+this document's original decision let `enterprise_mode=true` stdio
+keep executing MINIMAL/LOW risk-tier tools with zero governance check.
+The Phase E0 audit named that itself a real bypass -- `enterprise_mode`
+is this codebase's "production authority-enforced mode" flag, and
+stdio structurally cannot satisfy a Heart legitimacy check at any risk
+tier (no organizational identity exists to check it against). As of
+that closure work, `enterprise_mode=true` blocks ALL stdio tool
+execution, not just non-MINIMAL/LOW. The risk-tier analysis and
+architecture reasoning below remain accurate history for how the
+original, now-tightened decision was reached; the error code changed
+from `stdio_privileged_execution_blocked` to
+`stdio_execution_blocked_in_enterprise_mode` to reflect the new,
+unconditional behavior.
+
 ## Reproduction
 
 Confirmed, not assumed: `mcp/server.py::_call_tool()` is the single

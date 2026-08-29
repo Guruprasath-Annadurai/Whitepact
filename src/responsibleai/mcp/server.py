@@ -241,34 +241,44 @@ async def _call_tool(
         assert outcome.result is not None, "governed ALLOW outcome must carry an execution result"
         return _text_and_structured(outcome.result)
 
-    # Security Remediation Gap 2: `ctx is None` here means this is a
+    # Security Remediation Gap 2, tightened by Heart Enforcement
+    # Chokepoint Closure Phase E2: `ctx is None` here means this is a
     # genuinely self-hosted stdio call -- a hosted-HTTP request always
     # has `ctx` set by its own auth middleware before reaching this
-    # point. In enterprise_mode (see Gap 1's Settings.enterprise_mode,
-    # reused deliberately rather than duplicated), stdio may only
-    # execute MINIMAL/LOW risk-tier tools -- the explicit "local
-    # development-only capability set" per
-    # docs/enterprise-neural/REMEDIATION_GAP2_STDIO_GOVERNANCE.md.
-    # Default (enterprise_mode=false) behavior is completely unchanged.
+    # point. Gap 2's original fix let stdio keep executing MINIMAL/LOW
+    # risk-tier tools even under enterprise_mode ("the local
+    # development-only capability set"). ENFORCEMENT_PATH_MATRIX.md's
+    # Phase E0 audit named that a real bypass: enterprise_mode is this
+    # codebase's own "production authority-enforced mode" flag
+    # (heart_production_gate.py), and stdio has no organizational
+    # identity whatsoever to resolve a Heart legitimacy grant against --
+    # there is no way to make even a MINIMAL-risk stdio call "Heart
+    # legitimacy checked." Per the closure directive's own final
+    # invariant ("no code path may execute a governed action without a
+    # valid Heart legitimacy result" -- not "no path, except stdio"),
+    # enterprise_mode now blocks EVERY stdio tool call, not just
+    # non-MINIMAL/LOW ones. Default (enterprise_mode=false) behavior is
+    # completely unchanged -- stdio stays the free, full-featured,
+    # explicitly self-hosted-only transport it always was.
     if ctx is None:
         from responsibleai.dashboard.config import get_settings
-        from responsibleai.governance.risk import RiskTier, classify_action_risk
 
         if get_settings().enterprise_mode:
-            risk_tier = classify_action_risk("mcp_tool_call", name)
-            if risk_tier not in (RiskTier.MINIMAL, RiskTier.LOW):
-                error = {
-                    "error": "stdio_privileged_execution_blocked",
-                    "message": (
-                        f"Tool {name!r} is classified {risk_tier.value!r} risk. "
-                        "Enterprise mode restricts the self-hosted stdio "
-                        "transport to MINIMAL/LOW risk tools only -- it has no "
-                        "organizational identity to evaluate authority/policy "
-                        "against, so privileged tools require the governed "
-                        "hosted HTTP/SSE transport instead."
-                    ),
-                }
-                return _text_and_structured(error)
+            error = {
+                "error": "stdio_execution_blocked_in_enterprise_mode",
+                "message": (
+                    f"Tool {name!r} was requested over the self-hosted stdio "
+                    "transport, which has no organizational identity to "
+                    "resolve Heart legitimacy against. enterprise_mode=true "
+                    "means this deployment claims production authority "
+                    "enforcement for every tool call -- stdio cannot "
+                    "participate in that claim, so it is blocked entirely "
+                    "rather than partially (by risk tier) allowed. Use the "
+                    "governed hosted HTTP/SSE transport instead, or run "
+                    "without enterprise_mode for local development."
+                ),
+            }
+            return _text_and_structured(error)
 
     result = await dispatch_tool(name, call_arguments)
     return _text_and_structured(result)

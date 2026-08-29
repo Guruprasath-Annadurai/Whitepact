@@ -36,46 +36,46 @@ class TestReproduceTheUngovernedStdioFinding:
         assert "error" not in structured
 
 
-class TestEnterpriseModeBlocksPrivilegedStdioExecution:
+class TestEnterpriseModeBlocksAllStdioExecution:
+    """Heart Enforcement Chokepoint Closure Phase E2: stdio has no
+    organizational identity to resolve Heart legitimacy against, so
+    enterprise_mode now blocks EVERY stdio tool call -- not just
+    non-MINIMAL/LOW ones (the prior Gap 2 behavior). See
+    ENFORCEMENT_PATH_MATRIX.md's Path 1 finding for why the previous,
+    risk-tiered exception was itself a real bypass."""
+
     async def test_high_risk_tool_blocked_in_enterprise_mode(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(get_settings(), "enterprise_mode", True)
         content, structured = await mcp_server._call_tool("rai_hallucination", {"text": "x"})
-        assert structured["error"] == "stdio_privileged_execution_blocked"
-        assert "HIGH" in structured["message"] or "high" in structured["message"]
+        assert structured["error"] == "stdio_execution_blocked_in_enterprise_mode"
 
     async def test_medium_risk_tool_blocked_in_enterprise_mode(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(get_settings(), "enterprise_mode", True)
         content, structured = await mcp_server._call_tool("rai_compliance", {})
-        assert structured["error"] == "stdio_privileged_execution_blocked"
+        assert structured["error"] == "stdio_execution_blocked_in_enterprise_mode"
 
-    async def test_low_risk_tool_still_allowed_in_enterprise_mode(
+    async def test_low_risk_tool_now_also_blocked_in_enterprise_mode(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(get_settings(), "enterprise_mode", True)
         content, structured = await mcp_server._call_tool("rai_health", {})
-        assert "error" not in structured
+        assert structured["error"] == "stdio_execution_blocked_in_enterprise_mode"
 
-    async def test_minimal_risk_tool_still_allowed_in_enterprise_mode(
+    async def test_minimal_risk_tool_now_also_blocked_in_enterprise_mode(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(get_settings(), "enterprise_mode", True)
         content, structured = await mcp_server._call_tool("rai_org_status", {})
-        assert "error" not in structured
+        assert structured["error"] == "stdio_execution_blocked_in_enterprise_mode"
 
-    async def test_unknown_tool_defaults_medium_and_is_blocked(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """UNKNOWN = DENY: a tool name not in TOOL_RISK_TIERS defaults
-        to MEDIUM via classify_action_risk() (fail-closed, not
-        MINIMAL) and is therefore blocked in enterprise mode too --
-        never silently allowed just because it's unrecognized."""
+    async def test_unknown_tool_is_also_blocked(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(get_settings(), "enterprise_mode", True)
         content, structured = await mcp_server._call_tool("rai_some_future_tool", {})
-        assert structured["error"] == "stdio_privileged_execution_blocked"
+        assert structured["error"] == "stdio_execution_blocked_in_enterprise_mode"
 
 
 class TestDefaultBehaviorUnchanged:
@@ -89,7 +89,7 @@ class TestDefaultBehaviorUnchanged:
     async def test_no_tool_is_blocked_when_enterprise_mode_is_false(self, tool_name: str) -> None:
         args = {"text": "x"} if tool_name == "rai_hallucination" else {}
         content, structured = await mcp_server._call_tool(tool_name, args)
-        assert structured.get("error") != "stdio_privileged_execution_blocked"
+        assert structured.get("error") != "stdio_execution_blocked_in_enterprise_mode"
 
 
 class TestBlockedResponseNeverLeaksToolExecution:
@@ -103,5 +103,5 @@ class TestBlockedResponseNeverLeaksToolExecution:
         that shape, i.e. the tool genuinely never ran."""
         monkeypatch.setattr(get_settings(), "enterprise_mode", True)
         content, structured = await mcp_server._call_tool("rai_benchmark", {})
-        assert structured["error"] == "stdio_privileged_execution_blocked"
+        assert structured["error"] == "stdio_execution_blocked_in_enterprise_mode"
         assert "status" not in structured
