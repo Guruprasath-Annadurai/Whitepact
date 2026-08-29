@@ -835,6 +835,26 @@ governance_consent_proofs = Table(
     Index("idx_cp_consenting_root", "consenting_root_id"),
 )
 
+governance_revocation_epochs = Table(
+    "governance_revocation_epochs",
+    metadata,
+    # Heart Phase H9 (governance/revocation_kernel.py) `RevocationEpoch`,
+    # persisted here for Heart Production Closure Gap B. That module's
+    # own docstring named the gap directly: the primitive existed with
+    # zero persistence and zero call sites, so its absence didn't make
+    # today's root/delegation revocation checking unsafe (both already
+    # hit the DB fresh on every check, no cache layer) -- but it meant
+    # the primitive provided no real capability yet either. This table
+    # is that persistence. `organization_id=""` (not NULL) is this
+    # codebase's established "no tenant" convention (see
+    # governance_crypto_keys.tenant_id above) rather than a nullable
+    # column, since a composite PRIMARY KEY cannot contain one.
+    Column("organization_id", String(36), primary_key=True),
+    Column("scope", String(64), primary_key=True),
+    Column("epoch", Integer, nullable=False, server_default="0"),
+    Column("updated_at", String(32), nullable=False),
+)
+
 governance_crypto_keys = Table(
     "governance_crypto_keys",
     metadata,

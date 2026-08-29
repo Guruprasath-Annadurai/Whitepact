@@ -47,6 +47,7 @@ from responsibleai.db.policy_repository import PolicyRepository, PolicyRuleNotFo
 from responsibleai.db.principal_repository import PrincipalRepository
 from responsibleai.db.public_incident_repository import PublicIncidentRepository
 from responsibleai.db.repositories import CostRepository, TrustRepository
+from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
 from responsibleai.db.root_authority_repository import (
     RootAuthorityRecordNotFoundError,
     RootAuthorityRepository,
@@ -116,6 +117,7 @@ __all__ = [
     "NeuralVaultRepository",
     "RootAuthorityRecordNotFoundError",
     "RootAuthorityRepository",
+    "RevocationEpochRepository",
     "ConsentProofNotFoundError",
     "ConsentProofRepository",
 ]

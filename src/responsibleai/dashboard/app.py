@@ -111,6 +111,7 @@ from responsibleai.db import (
     PolicyRepository,
     PolicyRuleNotFoundError,
     PublicIncidentRepository,
+    RevocationEpochRepository,
     RootAuthorityRepository,
     SelfApprovalError,
     SSORequiredError,
@@ -300,6 +301,7 @@ _outcome_repo: OutcomeRepository | None = None
 _intent_repo: IntentContractRepository | None = None
 _root_authority_repo: RootAuthorityRepository | None = None
 _consent_proof_repo: ConsentProofRepository | None = None
+_revocation_epoch_repo: RevocationEpochRepository | None = None
 _authority_passport_repo: AuthorityPassportRepository | None = None
 _upstream_gateway: WhitePactRuntimeGateway = WhitePactRuntimeGateway()
 _db_engine: DatabaseEngine | None = None
@@ -356,7 +358,7 @@ async def lifespan(application: FastAPI):
     global _tool_trust_repo, _credential_issuance_repo, _outcome_repo
     global _workflow_rule_repo, _delegation_repo, _autonomy_budget_repo, _intent_repo
     global _authority_passport_repo
-    global _root_authority_repo, _consent_proof_repo
+    global _root_authority_repo, _consent_proof_repo, _revocation_epoch_repo
     global _eval_repo, _comparator, _benchmark_runner, _dataset_scanner
     global _oidc_provider, _saml_config, _stripe_service, _plan_rate_limiter
 
@@ -414,6 +416,7 @@ async def lifespan(application: FastAPI):
     _outcome_repo = OutcomeRepository(_db_engine)
     _root_authority_repo = RootAuthorityRepository(_db_engine)
     _consent_proof_repo = ConsentProofRepository(_db_engine)
+    _revocation_epoch_repo = RevocationEpochRepository(_db_engine)
     _ceiling_repo = OrgAuthorityCeilingRepository(_db_engine)
     _workflow_rule_repo = WorkflowRuleRepository(_db_engine)
     _delegation_repo = DelegationRepository(_db_engine)
@@ -3557,6 +3560,12 @@ async def governance_revoke_delegation(
     revoked_ids = await _ready(_delegation_repo).revoke_branch(
         _auth.org_id, identity_id, revoked_by=_auth.key_id, reason=req.reason
     )
+    # Heart Production Closure Gap B: one epoch bump per cascading
+    # revocation event (not per revoked descendant) -- the epoch
+    # answers "has anything in this scope changed since I was issued",
+    # which a single bump already answers regardless of how many rows
+    # the cascade touched.
+    await _ready(_revocation_epoch_repo).bump(_auth.org_id, "delegation")
     logger.info(
         "governance_delegation_revoked",
         identity_id=identity_id,
@@ -3859,6 +3868,10 @@ async def governance_revoke_consent_proof(
         )
     except ConsentProofNotFoundError:
         raise HTTPException(404, "Consent proof not found.") from None
+    # Heart Production Closure Gap B: makes the revocation observable
+    # as a monotonic, durable epoch bump, in addition to the row-level
+    # revoked_at every existing consumer already checks live.
+    await _ready(_revocation_epoch_repo).bump(_auth.org_id, "consent")
     logger.info(
         "governance_consent_proof_revoked",
         consent_id=consent_id,
