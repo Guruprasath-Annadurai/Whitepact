@@ -458,7 +458,7 @@ above, is the current source of truth)
 | 2. `mcp_governance_enabled=false` | Unchanged — still requires the deployment to opt in; `heart_production_gate.py` refuses `enterprise_mode=true` without it |
 | 3. `enterprise_mode=false` | Unchanged by design — this is the documented dev/self-hosted default |
 | 4. Legacy/demo hosted-MCP auth | **CORRECTED, then FIXED**: the "legacy DB-backed key" half of this finding was a factual error in the original audit (see the correction inline above) — no such path exists. The demo-flag half was real and is now closed (Phase E4). **Also found and fixed while implementing E4**: `verify_heart_production_enforcement()` (Gap C) was never actually called from this process (`mcp/server.py`'s `_build_http_app()`) at all — only from `dashboard/app.py`'s separate process. Now wired into both. |
-| 6. Approval-resume doesn't re-check Heart | Not yet fixed — tracked as Phase E6 |
+| 6. Approval-resume doesn't re-check Heart | **FIXED** — `resume_approval()` re-runs `resolve_authority_grant()` fresh at resume time when `root_authority_repo`/`consent_repo` are wired; raises `ApprovalRevokedSinceQueuedError` (HTTP 403) if legitimacy no longer holds, after `consume()` has already run (approval spent either way) |
 | Path 5 (dashboard upstream call) | Improved incidentally — now also gets `consent_repo` |
 
 No code was modified during Phase E0 itself (the audit). Everything in
