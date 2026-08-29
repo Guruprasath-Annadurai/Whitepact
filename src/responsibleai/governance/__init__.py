@@ -171,6 +171,7 @@ from responsibleai.governance.non_delegable_authority import (
     NonDelegableViolation,
     check_non_delegable_authority,
 )
+from responsibleai.governance.oidc_subject_classifier import classify_oidc_subject
 from responsibleai.governance.policy import Policy, PolicyMatch, PolicyRule
 from responsibleai.governance.purpose_binding import (
     PurposeBinding,
@@ -307,6 +308,7 @@ __all__ = [
     "check_non_delegable_authority",
     "check_revocation_epoch",
     "classify_action_risk",
+    "classify_oidc_subject",
     "compare_authority_contexts",
     "compare_envelopes",
     "crypto",

@@ -285,6 +285,39 @@ class Settings(BaseSettings):
         default=False,
         description="Skip JWT signature verification (test/dev only — never use in production).",
     )
+    # Zero-Trust Identity (docs/heart-production/03_ZERO_TRUST_IDENTITY.md):
+    # closes the "oidc" kind's documented mechanism-vs-identity-type
+    # ambiguity -- a human via SSO and a machine via client-credentials
+    # both produce kind="oidc" today, with no discriminator, so the
+    # identity_authority_adapter.py mapping conservatively treats every
+    # OIDC identity as non-terminal (WORKLOAD_IDENTITY). No universal
+    # standard claim distinguishes the two across every IdP, so this is
+    # deliberately deployer-configured (mirrors integrations/identity_bridge.py's
+    # existing `org_claim` parameter, same "configurable, not guessed"
+    # discipline) rather than a WhitePact-wide heuristic. Left unset
+    # (the default), classification is completely unchanged --
+    # governance.oidc_subject_classifier.classify_oidc_subject() is not
+    # yet wired into any live request path; see that module's own
+    # docstring for why.
+    oidc_human_indicator_claim: str | None = Field(
+        default=None,
+        description=(
+            "JWT claim name whose presence indicates a real human "
+            "authentication event, e.g. 'amr' (RFC 8176 Authentication "
+            "Methods References -- most IdPs populate this only for an "
+            "interactive end-user login, never for a client-credentials "
+            "grant). Leave unset to keep every OIDC identity classified "
+            "conservatively as non-terminal (WORKLOAD_IDENTITY)."
+        ),
+    )
+    oidc_human_indicator_values: Annotated[list[str], NoDecode] = Field(
+        default=["pwd", "mfa", "otp"],
+        description=(
+            "Values of oidc_human_indicator_claim (when it's a list, "
+            "e.g. 'amr') that count as evidence of human authentication. "
+            "Ignored when oidc_human_indicator_claim is unset."
+        ),
+    )
 
     # Verified Principal (Authority Everywhere Phase 3) — Verifiable
     # Credential (JWT-VC) bearer auth for non-human principals (service
@@ -464,6 +497,13 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return [s.strip() for s in v.split(",") if s.strip()]
         return list(v) if v else ["openid", "email", "profile"]
+
+    @field_validator("oidc_human_indicator_values", mode="before")
+    @classmethod
+    def _parse_oidc_human_indicator_values(cls, v: Any) -> list[str]:
+        if isinstance(v, str):
+            return [s.strip() for s in v.split(",") if s.strip()]
+        return list(v) if v else ["pwd", "mfa", "otp"]
 
     @field_validator("api_keys", mode="before")
     @classmethod
