@@ -121,13 +121,13 @@ class TestAuthenticatedCallerGetsRealOrgData:
 
 class TestStdioHasNoRealOrgData:
     async def test_dispatch_tool_direct_call_with_no_context_has_no_org_fields(self) -> None:
-        """The self-hosted stdio path (or any direct dispatch_tool()
+        """The self-hosted stdio path (or any direct _dispatch_tool_unchecked()
         call outside a request context) has genuinely no org to look
         up -- org_id/plan/usage must be absent, not fabricated as
         None-filled placeholders that look like real (empty) data."""
-        from responsibleai.mcp.tools import dispatch_tool
+        from responsibleai.mcp.tools import _dispatch_tool_unchecked
 
-        result = await dispatch_tool("rai_org_status", {})
+        result = await _dispatch_tool_unchecked("rai_org_status", {})
         assert "org_id" not in result
         assert "plan" not in result
         assert "usage" not in result

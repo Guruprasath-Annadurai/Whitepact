@@ -86,7 +86,7 @@ from responsibleai.mcp.licensing import (
     upgrade_message,
 )
 from responsibleai.mcp.resources import RESOURCE_DEFS, dispatch_resource
-from responsibleai.mcp.tools import TOOL_DEFS, dispatch_tool
+from responsibleai.mcp.tools import TOOL_DEFS, _dispatch_tool_unchecked
 from responsibleai.rbac.models import OrgContext
 
 if TYPE_CHECKING:
@@ -166,7 +166,7 @@ def _text_and_structured(
     payload: dict[str, Any],
 ) -> tuple[list[types.TextContent], dict[str, Any]]:
     """Every tool/error payload here is a JSON-native `dict[str, Any]`
-    (verified: `dispatch_tool` is typed `-> dict[str, Any]`, and every
+    (verified: `_dispatch_tool_unchecked` is typed `-> dict[str, Any]`, and every
     inline error dict below is built from string/bool/None literals) —
     safe to hand to the SDK's `structuredContent` as-is. Still returning
     the serialized `TextContent` alongside it (not replacing it) per
@@ -235,7 +235,7 @@ async def _call_tool(
             return _text_and_structured(outcome.blocked_response or {"error": "governance_blocked"})
         # apply_governance() already ran the tool via InternalToolExecutor
         # once it had a valid ExecutionAuthorization — outcome.result is
-        # that result. Calling dispatch_tool() again here would both
+        # that result. Calling _dispatch_tool_unchecked() again here would both
         # double-execute the tool and reintroduce the exact bypass this
         # wiring exists to close.
         assert outcome.result is not None, "governed ALLOW outcome must carry an execution result"
@@ -280,7 +280,7 @@ async def _call_tool(
             }
             return _text_and_structured(error)
 
-    result = await dispatch_tool(name, call_arguments)
+    result = await _dispatch_tool_unchecked(name, call_arguments)
     return _text_and_structured(result)
 
 

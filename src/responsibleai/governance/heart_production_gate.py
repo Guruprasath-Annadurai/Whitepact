@@ -10,7 +10,7 @@ legitimacy enforcement at all. A deployment could set
 fail-closed behavior") while `mcp_governance_enabled` stays at its
 default `False`, in which case the audit's traced bypass path #1
 applies unchanged: `_call_tool()`'s governance branch is never taken,
-every tool call reaches `dispatch_tool()` with zero governance, and
+every tool call reaches `_dispatch_tool_unchecked()` with zero governance, and
 Heart is never consulted regardless of `enterprise_mode`. That is a
 silent, easy-to-hit misconfiguration for exactly the deployment most
 likely to believe it is protected.
@@ -45,20 +45,29 @@ create two competing "is this production" flags in the same codebase.
   protected the one process where stdio-block/legacy-key/demo-auth
   bypasses live. Now called from both processes' startup.
 - **Does not** claim every alternate execution path this codebase has
-  is closed. The audit traced six, now five: (1) `mcp_governance_enabled=False`
-  (closed by this gate — enforced mode now requires it true); (2)
-  `enterprise_mode` was itself the second independent opt-in Heart
-  needed (closed — this gate makes it imply governance); (3) the
-  self-hosted stdio transport (closed separately -- Phase E2, see
-  `mcp/server.py`'s `_call_tool()` -- enterprise_mode now blocks stdio
-  entirely rather than needing a startup check here); (4) legacy
-  non-org-scoped API keys reaching hosted-MCP dispatch ungoverned
-  (**not** closed here — a pre-existing, separately-gated escape hatch
-  whose own removal/tightening is tracked as Phase E3, not yet done);
-  (5) a direct Python import of `dispatch_tool()` bypassing the HTTP
-  layer entirely (**not closeable** by a runtime startup check — it is
-  a structural property of dispatch_tool() having no caller-identity
-  concept of its own, named honestly rather than papered over).
+  is closed. The audit traced six, now down to one genuinely open item:
+  (1) `mcp_governance_enabled=False` (closed by this gate — enforced
+  mode now requires it true); (2) `enterprise_mode` was itself the
+  second independent opt-in Heart needed (closed — this gate makes it
+  imply governance); (3) the self-hosted stdio transport (closed
+  separately -- Phase E2, see `mcp/server.py`'s `_call_tool()` --
+  enterprise_mode now blocks stdio entirely rather than needing a
+  startup check here); (4) legacy non-org-scoped API keys reaching
+  hosted-MCP dispatch ungoverned (**corrected, not real** -- the
+  original audit's claim here was a factual error; see
+  `ENFORCEMENT_PATH_MATRIX.md`'s Path 4 correction. The demo-auth flag
+  it was conflated with is real and is closed above); (5) a direct
+  Python import of `mcp.tools._dispatch_tool_unchecked()` bypassing the
+  HTTP layer entirely (**mitigated, not fully closeable** by a runtime
+  startup check -- it is a structural property of that function having
+  no caller-identity concept of its own. Phase E5 renamed it from
+  `dispatch_tool` to `_dispatch_tool_unchecked`, so it is no longer
+  accidentally indistinguishable from a safe public entrypoint, and
+  `tests/test_dispatch_tool_unchecked_call_sites.py` fails the suite if
+  a new internal call site appears anywhere this audit didn't account
+  for. A determined caller with repo access can still import and call
+  a private function directly -- Python cannot prevent that -- named
+  honestly rather than claimed impossible).
 """
 
 from __future__ import annotations
@@ -116,7 +125,7 @@ async def verify_heart_production_enforcement(settings: Settings, engine: Databa
             "hosted MCP access with no credential at all, over a connection "
             "the governance dispatch path (mcp/server.py's _call_tool()) "
             "cannot build an AuthorityContext for -- every tool call over "
-            "that connection reaches dispatch_tool() with zero governance "
+            "that connection reaches _dispatch_tool_unchecked() with zero governance "
             "and zero Heart legitimacy check, regardless of enterprise_mode. "
             "Unset mcp_http_allow_unauthenticated_demo before enabling "
             "enterprise_mode, or unset enterprise_mode if this deployment "

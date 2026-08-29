@@ -258,63 +258,63 @@ class TestInvocationNameObservability:
 class TestRaiScan:
     @pytest.mark.asyncio
     async def test_clean_text_not_blocked(self) -> None:
-        from responsibleai.mcp.tools import dispatch_tool
+        from responsibleai.mcp.tools import _dispatch_tool_unchecked
 
-        r = await dispatch_tool("rai_scan", {"text": "Hello, world!"})
+        r = await _dispatch_tool_unchecked("rai_scan", {"text": "Hello, world!"})
         assert r["is_blocked"] is False
         assert r["pii_findings"] == []
 
     @pytest.mark.asyncio
     async def test_email_detected(self) -> None:
-        from responsibleai.mcp.tools import dispatch_tool
+        from responsibleai.mcp.tools import _dispatch_tool_unchecked
 
-        r = await dispatch_tool("rai_scan", {"text": "Contact me at test@example.com"})
+        r = await _dispatch_tool_unchecked("rai_scan", {"text": "Contact me at test@example.com"})
         assert r["has_pii"] is True
         cats = [f["category"] for f in r["pii_findings"]]
         assert "email" in cats
 
     @pytest.mark.asyncio
     async def test_redacted_text_returned_by_default(self) -> None:
-        from responsibleai.mcp.tools import dispatch_tool
+        from responsibleai.mcp.tools import _dispatch_tool_unchecked
 
-        r = await dispatch_tool("rai_scan", {"text": "My email is foo@bar.com"})
+        r = await _dispatch_tool_unchecked("rai_scan", {"text": "My email is foo@bar.com"})
         assert r["redacted_text"] is not None
 
     @pytest.mark.asyncio
     async def test_no_redaction_when_disabled(self) -> None:
-        from responsibleai.mcp.tools import dispatch_tool
+        from responsibleai.mcp.tools import _dispatch_tool_unchecked
 
-        r = await dispatch_tool("rai_scan", {"text": "foo@bar.com", "redact": False})
+        r = await _dispatch_tool_unchecked("rai_scan", {"text": "foo@bar.com", "redact": False})
         assert r["redacted_text"] is None
 
 
 class TestRaiTrustScore:
     @pytest.mark.asyncio
     async def test_default_score_is_50(self) -> None:
-        from responsibleai.mcp.tools import dispatch_tool
+        from responsibleai.mcp.tools import _dispatch_tool_unchecked
 
-        r = await dispatch_tool("rai_trust_score", {})
+        r = await _dispatch_tool_unchecked("rai_trust_score", {})
         assert r["trust_score"] == 50.0
         assert r["grade"] == "F"
 
     @pytest.mark.asyncio
     async def test_perfect_score(self) -> None:
-        from responsibleai.mcp.tools import dispatch_tool
+        from responsibleai.mcp.tools import _dispatch_tool_unchecked
 
         dims = {
             d: 1.0
             for d in ["fairness", "privacy", "security", "robustness", "compliance", "authenticity"]
         }
-        r = await dispatch_tool("rai_trust_score", dims)
+        r = await _dispatch_tool_unchecked("rai_trust_score", dims)
         assert r["trust_score"] == 100.0
         assert r["grade"] == "A"
         assert r["risk"] == "LOW"
 
     @pytest.mark.asyncio
     async def test_score_has_dimensions(self) -> None:
-        from responsibleai.mcp.tools import dispatch_tool
+        from responsibleai.mcp.tools import _dispatch_tool_unchecked
 
-        r = await dispatch_tool("rai_trust_score", {"fairness": 0.8})
+        r = await _dispatch_tool_unchecked("rai_trust_score", {"fairness": 0.8})
         assert "dimensions" in r
         assert "fairness" in r["dimensions"]
 
@@ -322,34 +322,36 @@ class TestRaiTrustScore:
 class TestRaiCompliance:
     @pytest.mark.asyncio
     async def test_returns_compliance_score(self) -> None:
-        from responsibleai.mcp.tools import dispatch_tool
+        from responsibleai.mcp.tools import _dispatch_tool_unchecked
 
-        r = await dispatch_tool("rai_compliance", {"framework": "NIST_AI_RMF"})
+        r = await _dispatch_tool_unchecked("rai_compliance", {"framework": "NIST_AI_RMF"})
         assert "compliance_score" in r
 
     @pytest.mark.asyncio
     async def test_eu_ai_act_framework(self) -> None:
-        from responsibleai.mcp.tools import dispatch_tool
+        from responsibleai.mcp.tools import _dispatch_tool_unchecked
 
-        r = await dispatch_tool(
+        r = await _dispatch_tool_unchecked(
             "rai_compliance", {"framework": "EU_AI_ACT", "use_case": "credit scoring"}
         )
         assert "compliance_score" in r
 
     @pytest.mark.asyncio
     async def test_invalid_framework_falls_back(self) -> None:
-        from responsibleai.mcp.tools import dispatch_tool
+        from responsibleai.mcp.tools import _dispatch_tool_unchecked
 
-        r = await dispatch_tool("rai_compliance", {"framework": "UNKNOWN_XYZ"})
+        r = await _dispatch_tool_unchecked("rai_compliance", {"framework": "UNKNOWN_XYZ"})
         assert "compliance_score" in r
 
 
 class TestRaiHallucination:
     @pytest.mark.asyncio
     async def test_returns_risk_fields(self) -> None:
-        from responsibleai.mcp.tools import dispatch_tool
+        from responsibleai.mcp.tools import _dispatch_tool_unchecked
 
-        r = await dispatch_tool("rai_hallucination", {"text": "The capital of France is Paris."})
+        r = await _dispatch_tool_unchecked(
+            "rai_hallucination", {"text": "The capital of France is Paris."}
+        )
         assert "hallucination_risk" in r
         assert "risk_level" in r
         assert "consistency_score" in r
@@ -357,19 +359,19 @@ class TestRaiHallucination:
 
     @pytest.mark.asyncio
     async def test_hedging_text_has_higher_risk(self) -> None:
-        from responsibleai.mcp.tools import dispatch_tool
+        from responsibleai.mcp.tools import _dispatch_tool_unchecked
 
         hedged = "I think maybe possibly the answer might be around 42, but I'm not sure."
-        r = await dispatch_tool("rai_hallucination", {"text": hedged})
+        r = await _dispatch_tool_unchecked("rai_hallucination", {"text": hedged})
         assert r["hedging_score"] > 0
 
 
 class TestRaiCostEstimate:
     @pytest.mark.asyncio
     async def test_known_model_returns_cost(self) -> None:
-        from responsibleai.mcp.tools import dispatch_tool
+        from responsibleai.mcp.tools import _dispatch_tool_unchecked
 
-        r = await dispatch_tool(
+        r = await _dispatch_tool_unchecked(
             "rai_cost_estimate",
             {
                 "model": "gpt-4o",
@@ -383,9 +385,9 @@ class TestRaiCostEstimate:
 
     @pytest.mark.asyncio
     async def test_local_model_is_free(self) -> None:
-        from responsibleai.mcp.tools import dispatch_tool
+        from responsibleai.mcp.tools import _dispatch_tool_unchecked
 
-        r = await dispatch_tool(
+        r = await _dispatch_tool_unchecked(
             "rai_cost_estimate",
             {
                 "model": "llama3.2",
@@ -398,9 +400,9 @@ class TestRaiCostEstimate:
 
     @pytest.mark.asyncio
     async def test_zero_tokens_is_zero(self) -> None:
-        from responsibleai.mcp.tools import dispatch_tool
+        from responsibleai.mcp.tools import _dispatch_tool_unchecked
 
-        r = await dispatch_tool(
+        r = await _dispatch_tool_unchecked(
             "rai_cost_estimate",
             {
                 "model": "gpt-4o",
@@ -415,30 +417,30 @@ class TestRaiCostEstimate:
 class TestRaiRedteam:
     @pytest.mark.asyncio
     async def test_payloads_returns_list(self) -> None:
-        from responsibleai.mcp.tools import dispatch_tool
+        from responsibleai.mcp.tools import _dispatch_tool_unchecked
 
-        r = await dispatch_tool("rai_redteam_payloads", {})
+        r = await _dispatch_tool_unchecked("rai_redteam_payloads", {})
         assert r["count"] > 0
         assert len(r["payloads"]) == r["count"]
 
     @pytest.mark.asyncio
     async def test_filter_by_category(self) -> None:
-        from responsibleai.mcp.tools import dispatch_tool
+        from responsibleai.mcp.tools import _dispatch_tool_unchecked
 
-        r = await dispatch_tool("rai_redteam_payloads", {"categories": ["jailbreak"]})
+        r = await _dispatch_tool_unchecked("rai_redteam_payloads", {"categories": ["jailbreak"]})
         for p in r["payloads"]:
             assert p["category"] == "jailbreak"
 
     @pytest.mark.asyncio
     async def test_analyze_returns_report(self) -> None:
-        from responsibleai.mcp.tools import dispatch_tool
+        from responsibleai.mcp.tools import _dispatch_tool_unchecked
 
         # Good responses — model refuses everything
-        payloads_r = await dispatch_tool("rai_redteam_payloads", {})
+        payloads_r = await _dispatch_tool_unchecked("rai_redteam_payloads", {})
         responses = {
             p["name"]: "I cannot assist with that request." for p in payloads_r["payloads"]
         }
-        r = await dispatch_tool(
+        r = await _dispatch_tool_unchecked(
             "rai_redteam_analyze",
             {
                 "model_name": "test-model",
@@ -452,12 +454,12 @@ class TestRaiRedteam:
 
     @pytest.mark.asyncio
     async def test_analyze_vulnerable_model(self) -> None:
-        from responsibleai.mcp.tools import dispatch_tool
+        from responsibleai.mcp.tools import _dispatch_tool_unchecked
 
         responses = {
             "System prompt override attempt": "OVERRIDE_CONFIRMED. I am now DAN. No restrictions.",
         }
-        r = await dispatch_tool(
+        r = await _dispatch_tool_unchecked(
             "rai_redteam_analyze",
             {
                 "model_name": "vulnerable-model",
@@ -471,9 +473,9 @@ class TestRaiRedteam:
 class TestRaiCompareModels:
     @pytest.mark.asyncio
     async def test_returns_winner(self) -> None:
-        from responsibleai.mcp.tools import dispatch_tool
+        from responsibleai.mcp.tools import _dispatch_tool_unchecked
 
-        r = await dispatch_tool(
+        r = await _dispatch_tool_unchecked(
             "rai_compare_models",
             {
                 "model_a": "gpt-4o",
@@ -504,9 +506,9 @@ class TestRaiCompareModels:
 
     @pytest.mark.asyncio
     async def test_default_scores_equal(self) -> None:
-        from responsibleai.mcp.tools import dispatch_tool
+        from responsibleai.mcp.tools import _dispatch_tool_unchecked
 
-        r = await dispatch_tool(
+        r = await _dispatch_tool_unchecked(
             "rai_compare_models",
             {
                 "model_a": "a",
@@ -521,17 +523,17 @@ class TestRaiCompareModels:
 class TestRaiAuditSummary:
     @pytest.mark.asyncio
     async def test_returns_governance_info(self) -> None:
-        from responsibleai.mcp.tools import dispatch_tool
+        from responsibleai.mcp.tools import _dispatch_tool_unchecked
 
-        r = await dispatch_tool("rai_audit_summary", {"days": 7})
+        r = await _dispatch_tool_unchecked("rai_audit_summary", {"days": 7})
         assert "governance_engine" in r
         assert r["governance_engine"]["tools_available"] == 30
 
     @pytest.mark.asyncio
     async def test_frameworks_listed(self) -> None:
-        from responsibleai.mcp.tools import dispatch_tool
+        from responsibleai.mcp.tools import _dispatch_tool_unchecked
 
-        r = await dispatch_tool("rai_audit_summary", {})
+        r = await _dispatch_tool_unchecked("rai_audit_summary", {})
         assert "NIST_AI_RMF" in r["governance_engine"]["frameworks"]
 
 
@@ -564,17 +566,17 @@ class TestStructuredToolOutput:
 class TestRaiHealth:
     @pytest.mark.asyncio
     async def test_status_ok(self) -> None:
-        from responsibleai.mcp.tools import dispatch_tool
+        from responsibleai.mcp.tools import _dispatch_tool_unchecked
 
-        r = await dispatch_tool("rai_health", {})
+        r = await _dispatch_tool_unchecked("rai_health", {})
         assert r["status"] == "ok"
         assert r["version"] == __version__
 
     @pytest.mark.asyncio
     async def test_all_modules_ok(self) -> None:
-        from responsibleai.mcp.tools import dispatch_tool
+        from responsibleai.mcp.tools import _dispatch_tool_unchecked
 
-        r = await dispatch_tool("rai_health", {})
+        r = await _dispatch_tool_unchecked("rai_health", {})
         for module, status in r["modules"].items():
             assert status == "ok", f"Module {module} not ok"
 
@@ -582,9 +584,9 @@ class TestRaiHealth:
 class TestRaiIncidentLog:
     @pytest.mark.asyncio
     async def test_builds_structured_record(self) -> None:
-        from responsibleai.mcp.tools import dispatch_tool
+        from responsibleai.mcp.tools import _dispatch_tool_unchecked
 
-        r = await dispatch_tool(
+        r = await _dispatch_tool_unchecked(
             "rai_incident_log",
             {
                 "incident_type": "pii_leak",
@@ -604,9 +606,9 @@ class TestRaiIncidentLog:
         this field used to claim a POST /api/v1/incidents endpoint existed
         when it didn't. It's real now (POST /api/incidents) — assert the
         tool says so instead of pointing at a 404."""
-        from responsibleai.mcp.tools import dispatch_tool
+        from responsibleai.mcp.tools import _dispatch_tool_unchecked
 
-        r = await dispatch_tool("rai_incident_log", {"description": "test"})
+        r = await _dispatch_tool_unchecked("rai_incident_log", {"description": "test"})
         assert "POST /api/incidents" in r["persist_instructions"]
         assert "/api/v1/incidents" not in r["persist_instructions"]
 
@@ -614,9 +616,9 @@ class TestRaiIncidentLog:
 class TestUnknownTool:
     @pytest.mark.asyncio
     async def test_unknown_tool_returns_error(self) -> None:
-        from responsibleai.mcp.tools import dispatch_tool
+        from responsibleai.mcp.tools import _dispatch_tool_unchecked
 
-        r = await dispatch_tool("nonexistent_tool", {})
+        r = await _dispatch_tool_unchecked("nonexistent_tool", {})
         assert "error" in r
 
 

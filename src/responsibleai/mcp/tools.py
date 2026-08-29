@@ -1105,7 +1105,7 @@ TOOL_DEFS: list[types.Tool] = [
     ),
 ]
 
-# dispatch_tool() and its handler table are defined at the very end of this
+# _dispatch_tool_unchecked() and its handler table are defined at the very end of this
 # file, after every _handle_* function below -- see "tool dispatch" section.
 # It has to come last: the table is built once at module-import time (not
 # rebuilt per call, unlike the old inline-dict version), which only works
@@ -2303,11 +2303,11 @@ async def _real_org_status_fields(caller_org_name: str) -> dict[str, Any]:
     correct answer for a deployment with no hosted account at all.
 
     Lazy-imports from mcp.server rather than importing at module level:
-    server.py imports TOOL_DEFS/dispatch_tool from this module, so a
+    server.py imports TOOL_DEFS/_dispatch_tool_unchecked from this module, so a
     top-level import here would be circular. By the time this function
     actually runs, server.py has always already finished importing
     (nothing can reach _handle_org_status without going through
-    dispatch_tool, which only exists once server.py's own import of
+    _dispatch_tool_unchecked, which only exists once server.py's own import of
     this module has completed)."""
     from responsibleai.mcp.licensing import monthly_quota
     from responsibleai.mcp.server import _current_org, _current_usage_repo, _month_start_iso
@@ -2492,7 +2492,7 @@ async def _handle_webhook_status(args: dict[str, Any]) -> dict[str, Any]:
 # Module-level, built once at import time: every entry is a reference to a
 # module-level async function above, so there's no per-request state to
 # close over. The previous version rebuilt this same ~29-entry dict fresh
-# inside dispatch_tool() on every single tool call -- pure waste, since the
+# inside _dispatch_tool_unchecked() on every single tool call -- pure waste, since the
 # mapping never changes at runtime. Has to live down here, after every
 # _handle_* function it references is actually defined.
 _TOOL_HANDLERS: dict[str, Any] = {
@@ -2530,7 +2530,25 @@ _TOOL_HANDLERS: dict[str, Any] = {
 }
 
 
-async def dispatch_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
+async def _dispatch_tool_unchecked(name: str, args: dict[str, Any]) -> dict[str, Any]:
+    """Runs *name*'s handler directly against *args* -- no authority,
+    governance, or Heart legitimacy check of any kind. The leading
+    underscore is deliberate (Heart Enforcement Chokepoint Closure
+    Phase E5, renamed from the previously-public-looking
+    `dispatch_tool`): this function must never be called for anything
+    reachable by external input without a caller that has already
+    resolved and validated authority to execute *name*.
+
+    The only two audited, safe call sites are `mcp/server.py`'s stdio
+    fallback (explicitly self-hosted/unrestricted, or blocked entirely
+    under `enterprise_mode` -- see that module) and
+    `governance/execution.py`'s `InternalToolExecutor.execute()`, which
+    structurally cannot call this without a matching, unexpired,
+    single-use `ExecutionAuthorization` already having been validated.
+    `tests/test_dispatch_tool_unchecked_call_sites.py` enforces this
+    list stays exhaustive -- a new call site anywhere else fails that
+    test and requires deliberate review, not a silent new bypass.
+    """
     handler = _TOOL_HANDLERS.get(name)
     if not handler:
         return {"error": f"Unknown tool: {name}"}

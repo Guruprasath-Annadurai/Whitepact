@@ -1,6 +1,6 @@
 """Wires `WhitePactRuntimeGateway` into the live, hosted-MCP-transport
 tool-call dispatch path — closes the gap MIGRATION_WHITEPACT_V2.md
-flagged: `dispatch_tool()` used to be unchanged by any of the
+flagged: `_dispatch_tool_unchecked()` used to be unchanged by any of the
 governance-core work; no live MCP tool call routed through the gateway,
 which only existed as a separate, opt-in REST API
 (`/api/governance/*`).
@@ -25,14 +25,14 @@ setting.
 
 **Execution binding (v3 authority-layer work)**: an ALLOW/
 ALLOW_WITH_REDACTION decision no longer just tells `_call_tool()`
-"go ahead and call `dispatch_tool()` yourself" — this module now
+"go ahead and call `_dispatch_tool_unchecked()` yourself" — this module now
 constructs an `ExecutionAuthorization` (`governance/execution.py`) and
 runs the tool itself via `InternalToolExecutor`, which structurally
 cannot execute without a matching, unexpired, single-use
 authorization. `_call_tool()` uses the resulting `GovernanceOutcome.result`
-directly rather than calling `dispatch_tool()` a second time — there is
+directly rather than calling `_dispatch_tool_unchecked()` a second time — there is
 now exactly one place in the governed path that invokes
-`dispatch_tool()`, and it's gated.
+`_dispatch_tool_unchecked()`, and it's gated.
 """
 
 from __future__ import annotations
@@ -172,8 +172,8 @@ class GovernanceOutcome:
     # Set only when proceed=True — the tool already ran, via
     # InternalToolExecutor, by the time apply_governance() returns.
     # _call_tool() uses this directly instead of calling
-    # dispatch_tool() itself, which is the actual enforcement: there is
-    # no code path left where a governed call reaches dispatch_tool()
+    # _dispatch_tool_unchecked() itself, which is the actual enforcement: there is
+    # no code path left where a governed call reaches _dispatch_tool_unchecked()
     # without first passing through authorize_execution().
     result: dict[str, Any] | None = None
 

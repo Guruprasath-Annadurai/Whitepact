@@ -284,9 +284,9 @@ class TestGatewayCausalInfluenceWiring:
 
 class TestCausalInfluenceCheckMCPTool:
     async def test_handler_reports_block_and_untrusted_influence(self) -> None:
-        from responsibleai.mcp.tools import dispatch_tool
+        from responsibleai.mcp.tools import _dispatch_tool_unchecked
 
-        result = await dispatch_tool(
+        result = await _dispatch_tool_unchecked(
             "rai_causal_influence_check",
             {
                 "provenance": [
@@ -303,15 +303,15 @@ class TestCausalInfluenceCheckMCPTool:
         assert result["has_untrusted_influence"] is True
 
     async def test_handler_requires_provenance(self) -> None:
-        from responsibleai.mcp.tools import dispatch_tool
+        from responsibleai.mcp.tools import _dispatch_tool_unchecked
 
-        result = await dispatch_tool("rai_causal_influence_check", {})
+        result = await _dispatch_tool_unchecked("rai_causal_influence_check", {})
         assert "error" in result
 
     async def test_handler_allows_clean_trusted_provenance(self) -> None:
-        from responsibleai.mcp.tools import dispatch_tool
+        from responsibleai.mcp.tools import _dispatch_tool_unchecked
 
-        result = await dispatch_tool(
+        result = await _dispatch_tool_unchecked(
             "rai_causal_influence_check",
             {"provenance": [{"kind": "user_input", "trust": "TRUSTED", "content": "hello"}]},
         )

@@ -1,7 +1,7 @@
 """Decision -> execution binding and the executor abstraction — closes
 the gap the WhitePact v3 authority-layer review flagged as the highest
 priority after the approval-mutation fix: nothing previously stopped a
-caller from running `dispatch_tool()` directly, bypassing whatever
+caller from running `_dispatch_tool_unchecked()` directly, bypassing whatever
 `WhitePactRuntimeGateway.evaluate()` actually decided. That direct-call
 path still exists (see `THREAT_MODEL.md`'s "governance gateway is a
 chosen integration point, not an unbypassable boundary" entry — this
@@ -259,7 +259,7 @@ def check_target_fingerprint(
 
 class InternalToolExecutor:
     """Executes one of this platform's own 27 MCP tools
-    (`mcp.tools.dispatch_tool`) — the only executor that exists today.
+    (`mcp.tools._dispatch_tool_unchecked`) — the only executor that exists today.
     Named to match the v3 spec's own suggested name for this exact
     case (Section 28 lists `InternalToolExecutor` alongside the
     not-yet-built `MCPExecutor`/`HTTPExecutor` for proxying to
@@ -272,6 +272,6 @@ class InternalToolExecutor:
             True  # single-use — a second call now hits AuthorizationAlreadyConsumedError
         )
 
-        from responsibleai.mcp.tools import dispatch_tool
+        from responsibleai.mcp.tools import _dispatch_tool_unchecked
 
-        return await dispatch_tool(action.action_type, action.arguments)
+        return await _dispatch_tool_unchecked(action.action_type, action.arguments)
