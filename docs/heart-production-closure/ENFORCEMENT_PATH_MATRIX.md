@@ -141,6 +141,28 @@ PRODUCTION REACHABLE?:    YES -- "kept running, unmodified, for existing
 
 ### Path 4 — Hosted MCP transport, legacy/demo authentication
 
+**Correction, added after this document was first written**: sub-case
+(b) below ("a legacy flat key matched by `_org_repo.authenticate()`
+... org_id=None") was a factual error in the original audit.
+Re-reading `OrgRepository.authenticate()` (`db/org_repository.py:207`)
+directly: on a match it always returns `is_legacy=False` and
+`org_id=row.org_id` (a real org, never `None`) -- there is no
+DB-backed "legacy key with no org" case on this path at all; a
+non-matching key returns `None` from `_authenticate()` and gets a 401
+before `_call_tool()` is ever reached. Sub-case (a), the demo flag, was
+accurate and is now closed by Phase E4 (`heart_production_gate.py`
+refuses startup when `enterprise_mode=true` and
+`mcp_http_allow_unauthenticated_demo=true`). **With that fix in place,
+Path 4 is fully closed for the hosted MCP transports** -- the only
+`org_id=None` case reachable through `_call_tool()`'s governance branch
+condition no longer exists once demo-mode can't coexist with
+enterprise_mode at startup. No further E3-style code change was needed
+here; the "legacy-key bypass" the closure directive named turned out,
+on this specific transport, to already not exist once the demo flag
+(which this audit conflated with it) is closed. The original
+paragraph is left below unedited, struck through in spirit, for an
+honest record of what was first claimed:
+
 ```
 ENTRYPOINT:              Same `_authenticate()` (server.py:684) feeding
                           Paths 2/3.
@@ -426,9 +448,26 @@ PRODUCTION REACHABLE?:    N/A.
 
 ---
 
+## Post-E0 status (updated as fixes land — this section, not the table
+above, is the current source of truth)
+
+| Finding | Status |
+|---|---|
+| Headline: consent never consulted live | **FIXED** — `consent_repo` wired into both call sites, regression test through the real HTTP dispatch path (`test_heart_wiring_phase6.py::TestConsentBackedLegitimacyReachableThroughLiveDispatch`) |
+| 1. stdio (declared capability) | **FIXED** — `enterprise_mode=true` now blocks stdio entirely, not just non-MINIMAL/LOW (Phase E2) |
+| 2. `mcp_governance_enabled=false` | Unchanged — still requires the deployment to opt in; `heart_production_gate.py` refuses `enterprise_mode=true` without it |
+| 3. `enterprise_mode=false` | Unchanged by design — this is the documented dev/self-hosted default |
+| 4. Legacy/demo hosted-MCP auth | **CORRECTED, then FIXED**: the "legacy DB-backed key" half of this finding was a factual error in the original audit (see the correction inline above) — no such path exists. The demo-flag half was real and is now closed (Phase E4). **Also found and fixed while implementing E4**: `verify_heart_production_enforcement()` (Gap C) was never actually called from this process (`mcp/server.py`'s `_build_http_app()`) at all — only from `dashboard/app.py`'s separate process. Now wired into both. |
+| 6. Approval-resume doesn't re-check Heart | Not yet fixed — tracked as Phase E6 |
+| Path 5 (dashboard upstream call) | Improved incidentally — now also gets `consent_repo` |
+
+No code was modified during Phase E0 itself (the audit). Everything in
+this status table reflects work done afterward, in separate commits,
+each with its own tests.
+
 ## What Phase E0 deliberately does not do
 
-No code was changed. No recommendation above has been implemented. The next
+No code was changed **during E0 itself**. The next
 phase (E1 — canonical execution chokepoint design) should read this matrix
 and decide, with the repository owner, which of the six findings above to
 prioritize and in what order — this document does not make that call.
