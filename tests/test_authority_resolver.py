@@ -12,8 +12,12 @@ plumbs data through unchecked).
 
 from __future__ import annotations
 
+import dataclasses
+from datetime import UTC, datetime, timedelta
+
 import pytest
 
+from responsibleai.db.consent_proof_repository import ConsentProofRepository
 from responsibleai.db.engine import create_engine
 from responsibleai.db.root_authority_repository import RootAuthorityRepository
 from responsibleai.governance.authority_resolver import (
@@ -21,6 +25,7 @@ from responsibleai.governance.authority_resolver import (
     resolve_authority_grant,
     resolve_root_for_identity,
 )
+from responsibleai.governance.consent_proof import ConsentMethod, build_consent_proof
 from responsibleai.governance.models import (
     ActionRequest,
     AgentContext,
@@ -41,6 +46,11 @@ async def db():
 @pytest.fixture()
 async def root_repo(db):
     return RootAuthorityRepository(db)
+
+
+@pytest.fixture()
+async def consent_repo(db):
+    return ConsentProofRepository(db)
 
 
 class TestResolveRootForIdentityGetOrCreate:
@@ -250,3 +260,452 @@ class TestResolveAuthorityGrantEndToEnd:
                 issuer="org_repository",
                 verification_method="api_key_hash",
             )
+
+
+# --- Heart Production Closure Gap A: consent-backed legitimacy ---
+#
+# These tests use `_identity(kind="oidc", ...)` (RootType.WORKLOAD_IDENTITY,
+# non-terminal, no `authority_source`) as the ACTING identity throughout,
+# deliberately -- its own root is never legitimate on its own (see
+# `test_non_terminal_identity_with_no_source_is_not_legitimate` above).
+# This means every test below can distinguish "the grant became
+# legitimate because consent-backed legitimacy actually kicked in" from
+# "the grant was legitimate anyway because of the identity's own root" --
+# if a test asserts `is_legitimate is True`, that legitimacy can only
+# have come from the resolved consent proof's own (terminal, organization)
+# root, never from the acting identity's root.
+
+
+async def _consenting_org_root(root_repo, *, organization_id: str = "org-1"):
+    root = build_root_authority_record(
+        "admin-1", RootType.ORGANIZATION, "idp", "oidc", organization_id=organization_id
+    )
+    return await root_repo.create(root)
+
+
+class TestResolveAuthorityGrantConsentBacked:
+    async def test_valid_applicable_consent_makes_an_otherwise_illegitimate_agent_legitimate(
+        self, root_repo, consent_repo
+    ):
+        consenting_root = await _consenting_org_root(root_repo)
+        proof = build_consent_proof(
+            "admin-1",
+            consenting_root.root_id,
+            "agent-1",
+            "run rai scans",
+            "vendor risk review",
+            ConsentMethod.API_AUTHENTICATED_REQUEST,
+            allowed_action_types=("mcp_tool_call",),
+        )
+        await consent_repo.create(proof)
+
+        identity = _identity(kind="oidc", identity_id="oidc:sub123")
+        agent = _agent(identity)
+        action = _action(agent)
+        authority_context = AuthorityContext(
+            delegated_by="org-1", granted_action_types=frozenset({"mcp_tool_call"})
+        )
+
+        grant = await resolve_authority_grant(
+            identity,
+            agent,
+            action,
+            authority_context,
+            root_repo,
+            issuer="idp",
+            verification_method="oidc",
+            consent_repo=consent_repo,
+        )
+        assert grant.is_legitimate is True
+        assert grant.root_reference == consenting_root.root_id
+
+    async def test_no_consent_repo_supplied_behaves_exactly_as_before(self, root_repo):
+        """A caller that does not opt in to consent-backed resolution
+        (consent_repo=None, the default) must get today's unchanged
+        self-root-only behavior -- no silent behavior change for
+        existing callers."""
+        identity = _identity(kind="oidc", identity_id="oidc:sub123")
+        agent = _agent(identity)
+        action = _action(agent)
+        authority_context = AuthorityContext(
+            delegated_by="org-1", granted_action_types=frozenset({"mcp_tool_call"})
+        )
+
+        grant = await resolve_authority_grant(
+            identity,
+            agent,
+            action,
+            authority_context,
+            root_repo,
+            issuer="idp",
+            verification_method="oidc",
+        )
+        assert grant.is_legitimate is False
+
+    async def test_no_applicable_consent_falls_back_to_self_root_not_synthesized(
+        self, root_repo, consent_repo
+    ):
+        """A valid authentication session with no legitimate applicable
+        authority must not silently synthesize authority: with
+        consent_repo supplied but nothing captured for this grantee,
+        the grant must fall back to (and stay bound by) the acting
+        identity's own -- here illegitimate -- root."""
+        identity = _identity(kind="oidc", identity_id="oidc:sub123")
+        agent = _agent(identity)
+        action = _action(agent)
+        authority_context = AuthorityContext(
+            delegated_by="org-1", granted_action_types=frozenset({"mcp_tool_call"})
+        )
+
+        grant = await resolve_authority_grant(
+            identity,
+            agent,
+            action,
+            authority_context,
+            root_repo,
+            issuer="idp",
+            verification_method="oidc",
+            consent_repo=consent_repo,
+        )
+        assert grant.is_legitimate is False
+
+    async def test_consent_from_another_tenant_is_not_applicable(self, root_repo, consent_repo):
+        other_tenant_root = await _consenting_org_root(root_repo, organization_id="org-2")
+        proof = build_consent_proof(
+            "admin-2",
+            other_tenant_root.root_id,
+            "agent-1",
+            "scope",
+            "purpose",
+            ConsentMethod.API_AUTHENTICATED_REQUEST,
+            allowed_action_types=("mcp_tool_call",),
+        )
+        await consent_repo.create(proof)
+
+        identity = _identity(kind="oidc", identity_id="oidc:sub123")
+        agent = _agent(identity)  # agent.organization_id == "org-1"
+        action = _action(agent)
+        authority_context = AuthorityContext(
+            delegated_by="org-1", granted_action_types=frozenset({"mcp_tool_call"})
+        )
+
+        grant = await resolve_authority_grant(
+            identity,
+            agent,
+            action,
+            authority_context,
+            root_repo,
+            issuer="idp",
+            verification_method="oidc",
+            consent_repo=consent_repo,
+        )
+        assert grant.is_legitimate is False
+
+    async def test_consent_belonging_to_another_principal_is_not_applicable(
+        self, root_repo, consent_repo
+    ):
+        consenting_root = await _consenting_org_root(root_repo)
+        proof = build_consent_proof(
+            "admin-1",
+            consenting_root.root_id,
+            "some-other-agent",
+            "scope",
+            "purpose",
+            ConsentMethod.API_AUTHENTICATED_REQUEST,
+            allowed_action_types=("mcp_tool_call",),
+        )
+        await consent_repo.create(proof)
+
+        identity = _identity(kind="oidc", identity_id="oidc:sub123")
+        agent = _agent(identity)  # agent_id == "agent-1", not "some-other-agent"
+        action = _action(agent)
+        authority_context = AuthorityContext(
+            delegated_by="org-1", granted_action_types=frozenset({"mcp_tool_call"})
+        )
+
+        grant = await resolve_authority_grant(
+            identity,
+            agent,
+            action,
+            authority_context,
+            root_repo,
+            issuer="idp",
+            verification_method="oidc",
+            consent_repo=consent_repo,
+        )
+        assert grant.is_legitimate is False
+
+    async def test_expired_consent_is_not_applicable(self, root_repo, consent_repo):
+        consenting_root = await _consenting_org_root(root_repo)
+        proof = build_consent_proof(
+            "admin-1",
+            consenting_root.root_id,
+            "agent-1",
+            "scope",
+            "purpose",
+            ConsentMethod.API_AUTHENTICATED_REQUEST,
+            allowed_action_types=("mcp_tool_call",),
+            expires_at=datetime.now(UTC) - timedelta(days=1),
+        )
+        await consent_repo.create(proof)
+
+        identity = _identity(kind="oidc", identity_id="oidc:sub123")
+        agent = _agent(identity)
+        action = _action(agent)
+        authority_context = AuthorityContext(
+            delegated_by="org-1", granted_action_types=frozenset({"mcp_tool_call"})
+        )
+
+        grant = await resolve_authority_grant(
+            identity,
+            agent,
+            action,
+            authority_context,
+            root_repo,
+            issuer="idp",
+            verification_method="oidc",
+            consent_repo=consent_repo,
+        )
+        assert grant.is_legitimate is False
+
+    async def test_revoked_consent_is_not_applicable(self, root_repo, consent_repo):
+        consenting_root = await _consenting_org_root(root_repo)
+        proof = build_consent_proof(
+            "admin-1",
+            consenting_root.root_id,
+            "agent-1",
+            "scope",
+            "purpose",
+            ConsentMethod.API_AUTHENTICATED_REQUEST,
+            allowed_action_types=("mcp_tool_call",),
+        )
+        await consent_repo.create(proof)
+        await consent_repo.revoke(proof.consent_id, revoked_by="admin-1", reason="offboarded")
+
+        identity = _identity(kind="oidc", identity_id="oidc:sub123")
+        agent = _agent(identity)
+        action = _action(agent)
+        authority_context = AuthorityContext(
+            delegated_by="org-1", granted_action_types=frozenset({"mcp_tool_call"})
+        )
+
+        grant = await resolve_authority_grant(
+            identity,
+            agent,
+            action,
+            authority_context,
+            root_repo,
+            issuer="idp",
+            verification_method="oidc",
+            consent_repo=consent_repo,
+        )
+        assert grant.is_legitimate is False
+
+    async def test_wrong_action_type_scope_is_not_applicable(self, root_repo, consent_repo):
+        consenting_root = await _consenting_org_root(root_repo)
+        proof = build_consent_proof(
+            "admin-1",
+            consenting_root.root_id,
+            "agent-1",
+            "scope",
+            "purpose",
+            ConsentMethod.API_AUTHENTICATED_REQUEST,
+            allowed_action_types=("payment.execute",),  # action requests "mcp_tool_call"
+        )
+        await consent_repo.create(proof)
+
+        identity = _identity(kind="oidc", identity_id="oidc:sub123")
+        agent = _agent(identity)
+        action = _action(agent)
+        authority_context = AuthorityContext(
+            delegated_by="org-1", granted_action_types=frozenset({"mcp_tool_call"})
+        )
+
+        grant = await resolve_authority_grant(
+            identity,
+            agent,
+            action,
+            authority_context,
+            root_repo,
+            issuer="idp",
+            verification_method="oidc",
+            consent_repo=consent_repo,
+        )
+        assert grant.is_legitimate is False
+
+    async def test_wrong_target_resource_is_not_applicable(self, root_repo, consent_repo):
+        consenting_root = await _consenting_org_root(root_repo)
+        proof = build_consent_proof(
+            "admin-1",
+            consenting_root.root_id,
+            "agent-1",
+            "scope",
+            "purpose",
+            ConsentMethod.API_AUTHENTICATED_REQUEST,
+            allowed_action_types=("mcp_tool_call",),
+            allowed_targets=("some-other-tool",),  # action targets "rai_scan"
+        )
+        await consent_repo.create(proof)
+
+        identity = _identity(kind="oidc", identity_id="oidc:sub123")
+        agent = _agent(identity)
+        action = _action(agent)
+        authority_context = AuthorityContext(
+            delegated_by="org-1", granted_action_types=frozenset({"mcp_tool_call"})
+        )
+
+        grant = await resolve_authority_grant(
+            identity,
+            agent,
+            action,
+            authority_context,
+            root_repo,
+            issuer="idp",
+            verification_method="oidc",
+            consent_repo=consent_repo,
+        )
+        assert grant.is_legitimate is False
+
+    async def test_unscoped_consent_matches_no_action_fail_closed(self, root_repo, consent_repo):
+        """Built directly via build_consent_proof() with no
+        allowed_action_types at all (bypassing the REST endpoint's
+        required-non-empty validation) -- must be treated as matching
+        NO action at the wiring layer, never as matching every action."""
+        consenting_root = await _consenting_org_root(root_repo)
+        proof = build_consent_proof(
+            "admin-1",
+            consenting_root.root_id,
+            "agent-1",
+            "scope",
+            "purpose",
+            ConsentMethod.API_AUTHENTICATED_REQUEST,
+            # allowed_action_types intentionally omitted -- defaults to ()
+        )
+        await consent_repo.create(proof)
+
+        identity = _identity(kind="oidc", identity_id="oidc:sub123")
+        agent = _agent(identity)
+        action = _action(agent)
+        authority_context = AuthorityContext(
+            delegated_by="org-1", granted_action_types=frozenset({"mcp_tool_call"})
+        )
+
+        grant = await resolve_authority_grant(
+            identity,
+            agent,
+            action,
+            authority_context,
+            root_repo,
+            issuer="idp",
+            verification_method="oidc",
+            consent_repo=consent_repo,
+        )
+        assert grant.is_legitimate is False
+
+    async def test_modified_tampered_proof_is_not_applicable(self, root_repo, consent_repo):
+        """A row whose stored fields no longer match its own
+        canonical_digest (simulating a direct DB write bypassing
+        build_consent_proof()) must be treated as absent, not as a
+        degraded-but-usable match."""
+        consenting_root = await _consenting_org_root(root_repo)
+        proof = build_consent_proof(
+            "admin-1",
+            consenting_root.root_id,
+            "agent-1",
+            "scope",
+            "purpose",
+            ConsentMethod.API_AUTHENTICATED_REQUEST,
+            allowed_action_types=("mcp_tool_call",),
+        )
+        tampered = dataclasses.replace(proof, scope_description="a different scope entirely")
+        await consent_repo.create(tampered)
+
+        identity = _identity(kind="oidc", identity_id="oidc:sub123")
+        agent = _agent(identity)
+        action = _action(agent)
+        authority_context = AuthorityContext(
+            delegated_by="org-1", granted_action_types=frozenset({"mcp_tool_call"})
+        )
+
+        grant = await resolve_authority_grant(
+            identity,
+            agent,
+            action,
+            authority_context,
+            root_repo,
+            issuer="idp",
+            verification_method="oidc",
+            consent_repo=consent_repo,
+        )
+        assert grant.is_legitimate is False
+
+    async def test_nonexistent_consent_falls_back_without_error(self, root_repo, consent_repo):
+        """No consent proof was ever captured for this grantee at
+        all -- must fall back cleanly, not raise."""
+        identity = _identity(kind="oidc", identity_id="oidc:sub123")
+        agent = _agent(identity)
+        action = _action(agent)
+        authority_context = AuthorityContext(
+            delegated_by="org-1", granted_action_types=frozenset({"mcp_tool_call"})
+        )
+
+        grant = await resolve_authority_grant(
+            identity,
+            agent,
+            action,
+            authority_context,
+            root_repo,
+            issuer="idp",
+            verification_method="oidc",
+            consent_repo=consent_repo,
+        )
+        assert grant.is_legitimate is False
+
+    async def test_stale_superseded_consent_is_not_used_even_if_it_would_have_matched(
+        self, root_repo, consent_repo
+    ):
+        """ "Latest wins": once a newer consent proof exists for the
+        same grantee, an older -- even scope-matching -- proof must
+        never be consulted again. This proves get_latest_for_grantee()
+        really is latest-wins, not first-wins or any-wins."""
+        consenting_root = await _consenting_org_root(root_repo)
+        stale_matching_proof = build_consent_proof(
+            "admin-1",
+            consenting_root.root_id,
+            "agent-1",
+            "old scope",
+            "old purpose",
+            ConsentMethod.API_AUTHENTICATED_REQUEST,
+            allowed_action_types=("mcp_tool_call",),
+        )
+        await consent_repo.create(stale_matching_proof)
+
+        newer_nonmatching_proof = build_consent_proof(
+            "admin-1",
+            consenting_root.root_id,
+            "agent-1",
+            "new scope",
+            "new purpose",
+            ConsentMethod.API_AUTHENTICATED_REQUEST,
+            allowed_action_types=("payment.execute",),  # supersedes with a non-match
+        )
+        await consent_repo.create(newer_nonmatching_proof)
+
+        identity = _identity(kind="oidc", identity_id="oidc:sub123")
+        agent = _agent(identity)
+        action = _action(agent)
+        authority_context = AuthorityContext(
+            delegated_by="org-1", granted_action_types=frozenset({"mcp_tool_call"})
+        )
+
+        grant = await resolve_authority_grant(
+            identity,
+            agent,
+            action,
+            authority_context,
+            root_repo,
+            issuer="idp",
+            verification_method="oidc",
+            consent_repo=consent_repo,
+        )
+        assert grant.is_legitimate is False

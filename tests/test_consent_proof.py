@@ -51,6 +51,8 @@ class TestConsentProofRecord:
             proof.purpose,
             proof.consent_method,
             proof.consented_at,
+            proof.allowed_action_types,
+            proof.allowed_targets,
         )
         assert proof.canonical_digest == expected
 

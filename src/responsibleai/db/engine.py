@@ -817,6 +817,12 @@ governance_consent_proofs = Table(
     Column("scope_description", Text, nullable=False),
     Column("purpose", Text, nullable=False),
     Column("consent_method", String(32), nullable=False),
+    # Heart Production Closure Gap A -- migration 0034. JSON lists;
+    # empty list means "no scope declared," treated as matching no
+    # action at the wiring layer (governance/authority_resolver.py),
+    # never as matching every action.
+    Column("allowed_action_types", Text, nullable=False, server_default="[]"),
+    Column("allowed_targets", Text, nullable=False, server_default="[]"),
     Column("evidence_refs", Text, nullable=False),  # JSON list
     Column("consented_at", String(32), nullable=False),
     Column("not_before", String(32), nullable=True),

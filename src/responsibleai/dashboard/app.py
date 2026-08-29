@@ -1034,11 +1034,22 @@ class ConsentProofCaptureRequest(BaseModel):
     someone else's behalf would defeat the entire point of a
     root-backed consent record. `consent_method` is always
     `API_AUTHENTICATED_REQUEST` for the same reason: this authenticated
-    call *is* the consent act (see `ConsentMethod`'s own docstring)."""
+    call *is* the consent act (see `ConsentMethod`'s own docstring).
+
+    `allowed_action_types` is required and non-empty here -- Heart
+    Production Closure Gap A. This is the REST-boundary half of the
+    fail-closed-by-omission design: `ConsentProof`/`build_consent_proof()`
+    themselves keep an empty-tuple default for backward compatibility
+    with pre-existing callers, but any consent captured through this
+    real capture flow must declare a real scope, since an unscoped
+    proof is later interpreted by `governance/authority_resolver.py`'s
+    wiring as matching NO action, never as matching every action."""
 
     grantee_id: str = Field(..., min_length=1, max_length=200)
     scope_description: str = Field(..., min_length=1, max_length=2000)
     purpose: str = Field(..., min_length=1, max_length=2000)
+    allowed_action_types: list[str] = Field(..., min_length=1, max_length=200)
+    allowed_targets: list[str] = Field(default_factory=list, max_length=200)
     evidence_refs: list[str] = Field(default_factory=list, max_length=20)
     expires_in_minutes: int | None = Field(default=None, ge=1, le=525_600)  # up to 1 year
 
@@ -3752,6 +3763,8 @@ async def governance_capture_consent(
         consent_method=ConsentMethod.API_AUTHENTICATED_REQUEST,
         evidence_refs=tuple(req.evidence_refs),
         expires_at=expires_at,
+        allowed_action_types=tuple(req.allowed_action_types),
+        allowed_targets=tuple(req.allowed_targets),
     )
     await _ready(_consent_proof_repo).create(proof)
     logger.info(
