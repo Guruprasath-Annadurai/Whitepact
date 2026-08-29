@@ -406,6 +406,27 @@ governance_evidence = Table(
     Index("idx_gev_action", "action_id"),
     Index("idx_gev_decision", "decision"),
     Index("idx_gev_recorded", "recorded_at"),
+    # Security Remediation Gap 5 (multi-instance sequencing safety) --
+    # see migrations/versions/0033_add_evidence_chain_uniqueness.py's
+    # own docstring for the full race this closes. Declared here too
+    # (not just in the migration) so create_engine(":memory:")'s
+    # metadata.create_all() -- what every test in this repo runs
+    # against -- creates the same constraint tests rely on.
+    Index(
+        "idx_gev_chain_link",
+        "org_id",
+        "prev_hash",
+        unique=True,
+        sqlite_where=text("prev_hash IS NOT NULL"),
+        postgresql_where=text("prev_hash IS NOT NULL"),
+    ),
+    Index(
+        "idx_gev_chain_genesis",
+        "org_id",
+        unique=True,
+        sqlite_where=text("prev_hash IS NULL"),
+        postgresql_where=text("prev_hash IS NULL"),
+    ),
 )
 
 # Phase 11 — persisted GovernanceDecision.REQUIRE_APPROVAL requests,
