@@ -4163,6 +4163,7 @@ async def upstream_call_tool(
             tool_trust_repo=_ready(_tool_trust_repo),
             outcome_repo=_ready(_outcome_repo),
             root_authority_repo=_ready(_root_authority_repo),
+            consent_repo=_ready(_consent_proof_repo),
         )
     except UpstreamServerNotAvailableError as exc:
         raise HTTPException(404, str(exc)) from None

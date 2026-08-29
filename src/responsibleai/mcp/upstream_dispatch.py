@@ -20,6 +20,7 @@ from typing import Any
 from responsibleai.dashboard.prometheus import observe_governance_decision
 from responsibleai.db import (
     ApprovalRepository,
+    ConsentProofRepository,
     EvidenceRepository,
     OutcomeRepository,
     PolicyRepository,
@@ -108,6 +109,8 @@ async def _heart_legitimacy_denied_reason(
     agent: AgentContext,
     action: ActionRequest,
     authority: AuthorityContext,
+    *,
+    consent_repo: ConsentProofRepository | None = None,
 ) -> str | None:
     """Heart Production Integration Phase 6, upstream-proxy counterpart
     to `governance_integration.py`'s function of the same name -- see
@@ -116,7 +119,13 @@ async def _heart_legitimacy_denied_reason(
     coupling to `governance_integration.py`'s independently-evolving
     call site. Local import for the same reason
     governance_integration.py's own copy uses one -- see that
-    function's docstring."""
+    function's docstring.
+
+    `consent_repo` (Heart Enforcement Chokepoint Closure): same fix as
+    `governance_integration.py`'s counterpart -- this call site also
+    omitted it, meaning Gap A's consent-backed legitimacy was equally
+    unreachable on the upstream-proxy path. See
+    ENFORCEMENT_PATH_MATRIX.md's headline E0 finding."""
     from responsibleai.dashboard.config import get_settings
 
     if root_authority_repo is None or not get_settings().enterprise_mode:
@@ -133,6 +142,7 @@ async def _heart_legitimacy_denied_reason(
         root_authority_repo,
         issuer=issuer,
         verification_method=verification_method,
+        consent_repo=consent_repo,
     )
     if grant.is_legitimate:
         return None
@@ -158,6 +168,7 @@ async def apply_upstream_governance(
     tool_trust_repo: ToolTrustRepository,
     outcome_repo: OutcomeRepository | None = None,
     root_authority_repo: RootAuthorityRepository | None = None,
+    consent_repo: ConsentProofRepository | None = None,
 ) -> UpstreamGovernanceOutcome:
     """Evaluate and, if governance allows it, execute one proxied call
     to an org-registered upstream MCP server. Requires an org-scoped
@@ -255,7 +266,7 @@ async def apply_upstream_governance(
     # _heart_legitimacy_denied_reason()'s own docstring. A no-op unless
     # both root_authority_repo is wired and enterprise_mode is on.
     heart_denied_reason = await _heart_legitimacy_denied_reason(
-        root_authority_repo, identity, agent, action, authority
+        root_authority_repo, identity, agent, action, authority, consent_repo=consent_repo
     )
 
     evaluate_started = time.monotonic()

@@ -451,6 +451,7 @@ def _build_http_app() -> Any:
     if settings.mcp_governance_enabled:
         from responsibleai.db import (
             ApprovalRepository,
+            ConsentProofRepository,
             DelegationRepository,
             EvidenceRepository,
             IntentContractRepository,
@@ -492,6 +493,12 @@ def _build_http_app() -> Any:
             autonomy_budget_repo=OrgAutonomyBudgetRepository(_db_engine),
             outcome_repo=OutcomeRepository(_db_engine),
             intent_repo=IntentContractRepository(_db_engine),
+            # Heart Enforcement Chokepoint Closure: wires consent
+            # alongside root authority so resolve_authority_grant()
+            # actually consults persisted consent on this live path
+            # instead of root-only (ENFORCEMENT_PATH_MATRIX.md's
+            # headline E0 finding).
+            consent_repo=ConsentProofRepository(_db_engine),
             # Heart Production Integration Phase 6 -- always wired
             # when governance is on, same pattern as every other
             # optional repo above; the actual legitimacy check only

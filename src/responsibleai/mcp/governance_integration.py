@@ -46,6 +46,7 @@ from typing import TYPE_CHECKING, Any
 from responsibleai.dashboard.prometheus import observe_governance_decision
 from responsibleai.db import (
     ApprovalRepository,
+    ConsentProofRepository,
     DelegationRepository,
     EvidenceRepository,
     IntentContractRepository,
@@ -149,6 +150,18 @@ class GovernanceServices:
     # governance) already established for "stricter, fail-closed
     # production behavior."
     root_authority_repo: RootAuthorityRepository | None = None
+    # Heart Enforcement Chokepoint Closure (headline finding of
+    # ENFORCEMENT_PATH_MATRIX.md's Phase E0 audit): Gap A's
+    # consent-backed legitimacy (governance/authority_resolver.py's
+    # `consent_repo` parameter) had zero live call sites -- fully
+    # wired and tested, but structurally unreachable in production,
+    # since neither this dataclass nor `_heart_legitimacy_denied_reason()`
+    # ever passed one through. Optional, same pattern as
+    # `root_authority_repo` above -- unset means Heart only ever
+    # checks root authority, exactly as before this fix; wired, it
+    # lets `resolve_authority_grant()` actually consult persisted
+    # consent, not just root legitimacy.
+    consent_repo: ConsentProofRepository | None = None
 
 
 @dataclass
@@ -198,7 +211,10 @@ async def _heart_legitimacy_denied_reason(
     every other v3 authority-layer feature.
 
     When both are set, resolves a real `AuthorityGrant`
-    (`resolve_authority_grant()`) and denies with
+    (`resolve_authority_grant()`, now also passed `services.consent_repo`
+    when wired -- Heart Enforcement Chokepoint Closure -- so a
+    persisted, integrity-verified, scope-matching consent proof is
+    actually consulted, not just root authority) and denies with
     `ReasonCode.HEART_LEGITIMACY_FAILED` if the Heart's own verdict
     says this identity's authority does not trace to a legitimate
     root -- the actual enforcement Phase 5's resolver existed to make
@@ -234,6 +250,7 @@ async def _heart_legitimacy_denied_reason(
         services.root_authority_repo,
         issuer=issuer,
         verification_method=verification_method,
+        consent_repo=services.consent_repo,
     )
     if grant.is_legitimate:
         return None
