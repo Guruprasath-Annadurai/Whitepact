@@ -86,6 +86,11 @@ from responsibleai.governance.authority_lifetime import (
     LifetimeWindow,
     check_lifetime,
 )
+from responsibleai.governance.authority_resolver import (
+    prefetch_root_chain,
+    resolve_authority_grant,
+    resolve_root_for_identity,
+)
 from responsibleai.governance.autonomy_budget import (
     AutonomyBudgetPolicy,
     recent_autonomous_action_count,
@@ -317,10 +322,13 @@ __all__ = [
     "identity_context_to_root_type",
     "intersect_envelopes",
     "neural",
+    "prefetch_root_chain",
     "publish_anchor",
     "recent_autonomous_action_count",
     "recent_violation_count",
     "resolve_authority_conflicts",
+    "resolve_authority_grant",
+    "resolve_root_for_identity",
     "scan_memory_write",
     "sovereignty_kernel",
     "validate_attenuation",

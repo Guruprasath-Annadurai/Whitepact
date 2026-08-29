@@ -1,14 +1,16 @@
 """Async repository for `RootAuthorityRecord` (Heart Phase H3,
 governance/root_authority.py) -- Heart Production Integration Phase 3.
 
-Pure persistence: `create()`, `get()`, `revoke()`. This module does not
-resolve chains, validate anything, or decide what makes a root
-legitimate -- that stays `root_authority.validate_root_chain()`'s job,
-unchanged. A future `RootResolver` (Phase 5, the Authority Resolver)
-can be built by wrapping `get()`, but building that resolver is
-explicitly out of this phase's scope, matching the same "ship storage
-only" discipline `authority_passport_repository.py` established for
-Authority Passports.
+Pure persistence: `create()`, `get()`, `revoke()`,
+`get_latest_for_subject()`. This module does not resolve chains,
+validate anything, or decide what makes a root legitimate -- that
+stays `root_authority.validate_root_chain()`'s job, unchanged.
+`get_latest_for_subject()` (added for Phase 5, the Authority Resolver)
+is the one exception to "pure storage only": it encodes the
+"latest-issued row wins" resolution `AuthorityPassportRepository.
+get_active_for_principal()` and `DelegationRepository.
+get_latest_delegation()` already use elsewhere in this codebase, not a
+new pattern invented here.
 """
 
 from __future__ import annotations
@@ -87,6 +89,37 @@ class RootAuthorityRepository:
                     select(governance_root_authority_records).where(
                         governance_root_authority_records.c.root_id == root_id
                     )
+                )
+            ).fetchone()
+        return _row_to_record(row) if row else None
+
+    async def get_latest_for_subject(
+        self, subject_id: str, *, organization_id: str | None = None
+    ) -> RootAuthorityRecord | None:
+        """The most recently issued root record for *subject_id*
+        (optionally narrowed to *organization_id*), or `None` if none
+        exists yet -- the bootstrap lookup `resolve_root_for_identity()`
+        (`governance/authority_resolver.py`) uses to decide whether a
+        new root needs issuing. Deliberately does not filter by
+        `revoked_at`/`expires_at` here -- returning the latest row
+        regardless of temporal validity lets a caller distinguish "no
+        root has ever been issued" (return `None`, issue a new one)
+        from "a root exists but is currently revoked/expired" (return
+        it, let `validate_root_chain()`'s own temporal check report
+        `REVOKED`/`EXPIRED` rather than silently issuing a fresh root
+        that would bypass a deliberate revocation)."""
+        async with self._engine.raw.connect() as conn:
+            conditions = [governance_root_authority_records.c.subject_id == subject_id]
+            if organization_id is not None:
+                conditions.append(
+                    governance_root_authority_records.c.organization_id == organization_id
+                )
+            row = (
+                await conn.execute(
+                    select(governance_root_authority_records)
+                    .where(*conditions)
+                    .order_by(governance_root_authority_records.c.issued_at.desc())
+                    .limit(1)
                 )
             ).fetchone()
         return _row_to_record(row) if row else None
