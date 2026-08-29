@@ -158,6 +158,7 @@ from responsibleai.governance.consent_proof import (
 )
 from responsibleai.governance.evidence_bundle import build_evidence_bundle, verify_evidence_bundle
 from responsibleai.governance.gateway import WhitePactRuntimeGateway
+from responsibleai.governance.heart_production_gate import verify_heart_production_enforcement
 from responsibleai.governance.intent import build_intent_contract
 from responsibleai.governance.models import (
     GovernanceDecision,
@@ -391,6 +392,15 @@ async def lifespan(application: FastAPI):
     # silently disabled. Must run before any repository below reads or
     # writes an EncryptedString column.
     await activate_production_crypto(settings, _db_engine)
+
+    # Heart Production Closure Gap C: fail-closed at startup, not
+    # warning-and-continuing, when enterprise_mode=true but Heart's
+    # production dependencies (mcp_governance_enabled, the root-
+    # authority store, the revocation-epoch store) aren't all genuinely
+    # available. No-op unless enterprise_mode=true. See
+    # governance/heart_production_gate.py's module docstring for the
+    # exact gap this closes and, honestly, the ones it does not.
+    await verify_heart_production_enforcement(settings, _db_engine)
 
     _plan_rate_limiter = PlanRateLimiter(redis_url=settings.redis_url)
 

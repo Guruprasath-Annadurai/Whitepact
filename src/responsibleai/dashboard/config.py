@@ -223,8 +223,15 @@ class Settings(BaseSettings):
             "signing is REQUIRED and the application refuses to start "
             "if crypto_root_key is missing or malformed, rather than "
             "silently falling back to the legacy Fernet/HMAC schemes "
-            "or plaintext. Development/self-hosted default (false) is "
-            "completely unchanged by this flag's existence."
+            "or plaintext; and (Heart Production Closure Gap C, "
+            "governance/heart_production_gate.py) Heart legitimacy "
+            "enforcement -- when true, mcp_governance_enabled must also "
+            "be true and the root-authority/revocation-epoch stores must "
+            "be reachable, or the application refuses to start, rather "
+            "than a deployment believing it enforces Heart while "
+            "governance dispatch-gating is silently off. Development/"
+            "self-hosted default (false) is completely unchanged by "
+            "this flag's existence."
         ),
     )
     crypto_root_key: str | None = Field(
