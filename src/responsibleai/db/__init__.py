@@ -43,6 +43,10 @@ from responsibleai.db.policy_repository import PolicyRepository, PolicyRuleNotFo
 from responsibleai.db.principal_repository import PrincipalRepository
 from responsibleai.db.public_incident_repository import PublicIncidentRepository
 from responsibleai.db.repositories import CostRepository, TrustRepository
+from responsibleai.db.root_authority_repository import (
+    RootAuthorityRecordNotFoundError,
+    RootAuthorityRepository,
+)
 from responsibleai.db.tool_trust_repository import ToolTrustRepository
 from responsibleai.db.upstream_repository import (
     UpstreamServerNotFoundError,
@@ -106,4 +110,6 @@ __all__ = [
     "NeuralConsentRepository",
     "NeuralVaultEntryNotFoundError",
     "NeuralVaultRepository",
+    "RootAuthorityRecordNotFoundError",
+    "RootAuthorityRepository",
 ]

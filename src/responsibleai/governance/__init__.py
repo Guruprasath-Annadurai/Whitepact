@@ -164,6 +164,7 @@ from responsibleai.governance.models import (
     GovernanceDecision,
     IdentityContext,
     IdentityKind,
+    identity_kind_from_org_context,
     validate_attenuation,
 )
 from responsibleai.governance.non_delegable_authority import (
@@ -322,6 +323,7 @@ __all__ = [
     "build_root_authority_record_from_principal_claim",
     "get_constitution_version",
     "identity_context_to_root_type",
+    "identity_kind_from_org_context",
     "intersect_envelopes",
     "neural",
     "prefetch_root_chain",

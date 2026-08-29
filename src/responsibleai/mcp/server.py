@@ -458,6 +458,7 @@ def _build_http_app() -> Any:
             OrgAutonomyBudgetRepository,
             OutcomeRepository,
             PolicyRepository,
+            RootAuthorityRepository,
             WebhookConfigRepository,
             WebhookDeliveryRepository,
             WorkflowRuleRepository,
@@ -491,6 +492,13 @@ def _build_http_app() -> Any:
             autonomy_budget_repo=OrgAutonomyBudgetRepository(_db_engine),
             outcome_repo=OutcomeRepository(_db_engine),
             intent_repo=IntentContractRepository(_db_engine),
+            # Heart Production Integration Phase 6 -- always wired
+            # when governance is on, same pattern as every other
+            # optional repo above; the actual legitimacy check only
+            # runs (and can only deny) when Settings.enterprise_mode
+            # is also true (see governance_integration.py's
+            # _heart_legitimacy_denied_reason()).
+            root_authority_repo=RootAuthorityRepository(_db_engine),
         )
     # Reuses the exact same RAI_OIDC_* / Settings.oidc_* config the
     # dashboard API's SSO login already reads (dashboard/app.py's own
@@ -589,6 +597,28 @@ def _build_http_app() -> Any:
                 role = candidate
                 break
 
+        # Zero-Trust Identity follow-up (governance/oidc_subject_classifier.py):
+        # unset settings.oidc_human_indicator_claim (the default) means
+        # classify_oidc_subject() always returns IdentityKind.OIDC, so
+        # oidc_classified_human stays False and behavior is byte-for-byte
+        # identical to before this classifier existed. Local import --
+        # matches this file's own established convention (see Security
+        # Remediation Gap 2's stdio governance gate) of keeping the
+        # stdio import graph free of anything not needed when governance
+        # is off; _resolve_oidc_context() is only ever reached from
+        # _build_http_app(), never from stdio's main().
+        from responsibleai.governance import IdentityKind
+        from responsibleai.governance.oidc_subject_classifier import classify_oidc_subject
+
+        oidc_classified_human = (
+            classify_oidc_subject(
+                claims.raw,
+                human_indicator_claim=settings.oidc_human_indicator_claim,
+                human_indicator_values=settings.oidc_human_indicator_values,
+            )
+            == IdentityKind.HUMAN
+        )
+
         return OrgContext(
             key_id=f"oidc:{claims.sub}",
             role=role,
@@ -596,6 +626,7 @@ def _build_http_app() -> Any:
             org_name=org.name if org else None,
             is_legacy=False,
             plan=org.plan if org else Plan.FREE,
+            oidc_classified_human=oidc_classified_human,
         )
 
     async def _resolve_vc_context(token: str) -> OrgContext | None:

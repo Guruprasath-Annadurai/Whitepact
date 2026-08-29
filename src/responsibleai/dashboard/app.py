@@ -109,6 +109,7 @@ from responsibleai.db import (
     PolicyRepository,
     PolicyRuleNotFoundError,
     PublicIncidentRepository,
+    RootAuthorityRepository,
     SelfApprovalError,
     SSORequiredError,
     ToolTrustRepository,
@@ -146,7 +147,8 @@ from responsibleai.governance.ceiling import OrgAuthorityCeiling
 from responsibleai.governance.evidence_bundle import build_evidence_bundle, verify_evidence_bundle
 from responsibleai.governance.gateway import WhitePactRuntimeGateway
 from responsibleai.governance.intent import build_intent_contract
-from responsibleai.governance.models import GovernanceDecision
+from responsibleai.governance.models import GovernanceDecision, IdentityKind
+from responsibleai.governance.oidc_subject_classifier import classify_oidc_subject
 from responsibleai.governance.outcome import OutcomeStatus, build_outcome_record
 from responsibleai.governance.policy import PolicyRule
 from responsibleai.governance.risk import RiskTier
@@ -279,6 +281,7 @@ _tool_trust_repo: ToolTrustRepository | None = None
 _credential_issuance_repo: CredentialIssuanceRepository | None = None
 _outcome_repo: OutcomeRepository | None = None
 _intent_repo: IntentContractRepository | None = None
+_root_authority_repo: RootAuthorityRepository | None = None
 _authority_passport_repo: AuthorityPassportRepository | None = None
 _upstream_gateway: WhitePactRuntimeGateway = WhitePactRuntimeGateway()
 _db_engine: DatabaseEngine | None = None
@@ -335,6 +338,7 @@ async def lifespan(application: FastAPI):
     global _tool_trust_repo, _credential_issuance_repo, _outcome_repo
     global _workflow_rule_repo, _delegation_repo, _autonomy_budget_repo, _intent_repo
     global _authority_passport_repo
+    global _root_authority_repo
     global _eval_repo, _comparator, _benchmark_runner, _dataset_scanner
     global _oidc_provider, _saml_config, _stripe_service, _plan_rate_limiter
 
@@ -390,6 +394,7 @@ async def lifespan(application: FastAPI):
     _tool_trust_repo = ToolTrustRepository(_db_engine)
     _credential_issuance_repo = CredentialIssuanceRepository(_db_engine)
     _outcome_repo = OutcomeRepository(_db_engine)
+    _root_authority_repo = RootAuthorityRepository(_db_engine)
     _ceiling_repo = OrgAuthorityCeilingRepository(_db_engine)
     _workflow_rule_repo = WorkflowRuleRepository(_db_engine)
     _delegation_repo = DelegationRepository(_db_engine)
@@ -678,6 +683,20 @@ async def _resolve_oidc_context(token: str) -> OrgContext | None:
             role = candidate
             break
 
+    # Zero-Trust Identity follow-up (governance/oidc_subject_classifier.py) --
+    # see mcp/server.py's own copy of this same resolution for the full
+    # reasoning. Unset settings.oidc_human_indicator_claim (the default)
+    # means this always evaluates to False, identical to behavior before
+    # the classifier existed.
+    oidc_classified_human = (
+        classify_oidc_subject(
+            claims.raw,
+            human_indicator_claim=settings.oidc_human_indicator_claim,
+            human_indicator_values=settings.oidc_human_indicator_values,
+        )
+        == IdentityKind.HUMAN
+    )
+
     return OrgContext(
         key_id=f"oidc:{claims.sub}",
         role=role,
@@ -685,6 +704,7 @@ async def _resolve_oidc_context(token: str) -> OrgContext | None:
         org_name=org.name if org else None,
         is_legacy=False,
         plan=org.plan if org else Plan.FREE,
+        oidc_classified_human=oidc_classified_human,
     )
 
 
@@ -3885,6 +3905,7 @@ async def upstream_call_tool(
             executor=executor,
             tool_trust_repo=_ready(_tool_trust_repo),
             outcome_repo=_ready(_outcome_repo),
+            root_authority_repo=_ready(_root_authority_repo),
         )
     except UpstreamServerNotAvailableError as exc:
         raise HTTPException(404, str(exc)) from None

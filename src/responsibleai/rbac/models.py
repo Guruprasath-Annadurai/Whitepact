@@ -96,6 +96,17 @@ class OrgContext:
     mfa_enrolled: bool = False
     is_legacy: bool = False  # True for flat RAI_API_KEYS entries
     plan: Plan = Plan.ENTERPRISE  # legacy/anon keys default to unrestricted for backward compat
+    # Zero-Trust Identity follow-up (governance/oidc_subject_classifier.py):
+    # set only by an OIDC resolution path that has Settings.
+    # oidc_human_indicator_claim configured and found a matching claim
+    # value on this specific token -- False (the default) for every
+    # other auth mechanism and for any unconfigured/non-matching OIDC
+    # token, identical to behavior before this field existed. Consumed
+    # by IdentityContext.from_org_context() and the two call sites that
+    # duplicate its kind-selection ternary (mcp/governance_integration.py,
+    # mcp/upstream_dispatch.py) to classify the resulting IdentityContext
+    # as IdentityKind.HUMAN instead of IdentityKind.OIDC.
+    oidc_classified_human: bool = False
 
 
 @dataclass

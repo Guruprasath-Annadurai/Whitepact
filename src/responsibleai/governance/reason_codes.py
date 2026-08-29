@@ -138,6 +138,15 @@ class ReasonCode(StrEnum):
     # those check what the *organization* delegated, not what the agent
     # itself *promised* for this specific task.
     INTENT_VIOLATED = "INTENT_VIOLATED"
+    # Not in the original list; added for Heart Production Integration
+    # Phase 6 (governance/authority_resolver.py, gated behind
+    # Settings.enterprise_mode) -- distinct from AUTHORITY_REVOKED/
+    # AUTHORITY_EXPIRED above (both about a Delegation Graph grant
+    # lapsing) since this is the Heart's own root-of-trust verdict:
+    # the identity's authority does not trace to a legitimate
+    # human/organization root, or a downstream Heart check (consent,
+    # purpose, delegation, non-delegable, revocation-epoch) failed.
+    HEART_LEGITIMACY_FAILED = "HEART_LEGITIMACY_FAILED"
 
 
 def format_reason(code: ReasonCode, /, **details: object) -> str:

@@ -125,7 +125,7 @@ class IdentityContext:
         uses, it doesn't invent new trust."""
         return cls(
             identity_id=ctx.key_id,
-            kind=IdentityKind.OIDC if ctx.key_id.startswith("oidc:") else IdentityKind.ORGANIZATION,
+            kind=identity_kind_from_org_context(ctx),
             org_id=ctx.org_id,
             display_name=ctx.org_name,
             org_context=ctx,
@@ -149,6 +149,27 @@ class IdentityContext:
             org_id=claim.org_id,
             display_name=claim.credential_type,
         )
+
+
+def identity_kind_from_org_context(ctx: OrgContext) -> IdentityKind:
+    """The single source of truth for ``OrgContext`` -> ``IdentityKind``
+    -- used by ``IdentityContext.from_org_context()`` above and by the
+    two call sites (``mcp/governance_integration.py``,
+    ``mcp/upstream_dispatch.py``) that construct an ``IdentityContext``
+    inline rather than via that classmethod, so Zero-Trust Identity's
+    OIDC human/machine classification
+    (``governance/oidc_subject_classifier.py``) can't silently drift
+    between the three. A static API key (``key_id`` with no ``"oidc:"``
+    prefix) is always ``ORGANIZATION``. An OIDC-authenticated identity
+    is ``HUMAN`` only when ``ctx.oidc_classified_human`` is set --
+    which only happens when a deployer has configured
+    ``Settings.oidc_human_indicator_claim`` and the token actually
+    matched it (see ``OrgContext.oidc_classified_human``'s own
+    docstring) -- and ``OIDC`` otherwise, identical to this codebase's
+    behavior before that classifier existed."""
+    if not ctx.key_id.startswith("oidc:"):
+        return IdentityKind.ORGANIZATION
+    return IdentityKind.HUMAN if ctx.oidc_classified_human else IdentityKind.OIDC
 
 
 @dataclass
