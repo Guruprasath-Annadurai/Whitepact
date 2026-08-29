@@ -652,6 +652,26 @@ def _agent_from_approval(approval: ApprovalRequest) -> AgentContext:
     )
 
 
+class ApprovalRevokedSinceQueuedError(Exception):
+    """Heart Enforcement Chokepoint Closure Phase E6: raised by
+    `resume_approval()` when a fresh Heart legitimacy check at RESUME
+    time (not just at the original REQUIRE_APPROVAL decision time)
+    finds the principal's authority no longer legitimate -- root or
+    consent revoked, expired, or otherwise no longer valid since the
+    approval was queued. `db/approval_repository.py`'s `consume()` has
+    already run by the time this is raised (single-use is enforced
+    either way), so a caller catching this must treat the approval as
+    spent, not retryable."""
+
+    def __init__(self, approval_id: str, reason: str) -> None:
+        self.approval_id = approval_id
+        self.reason = reason
+        super().__init__(
+            f"Approval {approval_id!r} was consumed but not executed: Heart legitimacy "
+            f"no longer holds at resume time ({reason})."
+        )
+
+
 async def resume_approval(
     approval_id: str,
     *,
@@ -660,6 +680,8 @@ async def resume_approval(
     org_id: str,
     upstream_registry: Any = None,
     outcome_repo: OutcomeRepository | None = None,
+    root_authority_repo: RootAuthorityRepository | None = None,
+    consent_repo: ConsentProofRepository | None = None,
 ) -> dict[str, Any]:
     """The REQUIRE_APPROVAL -> resume-execution pipeline: given an
     approval a human has already resolved APPROVED, reconstruct the
@@ -682,6 +704,24 @@ async def resume_approval(
     approval resumed without `upstream_registry`) -- callers (e.g. a
     REST endpoint) map these the same way the resolve endpoint already
     maps the first three.
+
+    `root_authority_repo`/`consent_repo` (Heart Enforcement Chokepoint
+    Closure Phase E6): when both are wired AND `Settings.enterprise_mode`
+    is true, re-runs the exact same Heart legitimacy check
+    `apply_governance()`/`apply_upstream_governance()` ran at the
+    ORIGINAL decision time -- but now, freshly, at resume time. This
+    closes a real gap the Phase E0 audit found: a REQUIRE_APPROVAL
+    decision can sit queued for an arbitrary, human-approval-latency
+    amount of time, during which the principal's root or consent could
+    be revoked; without this re-check, `resume_approval()` would still
+    execute purely on the strength of the original (now stale) verdict.
+    Raises `ApprovalRevokedSinceQueuedError` if the fresh check fails --
+    AFTER `consume()` has already run (single-use is unconditional), so
+    the approval is spent either way, matching the fail-closed
+    direction: better to burn an approval than execute on stale
+    legitimacy. Unset (either param `None`) is a complete no-op,
+    identical to before this phase existed -- same opt-in pattern every
+    other Heart production-integration seam in this codebase uses.
     """
     from responsibleai.db import ApprovalNotFoundError
     from responsibleai.governance.upstream_executor import ACTION_TYPE as _UPSTREAM_ACTION_TYPE
@@ -712,6 +752,36 @@ async def resume_approval(
     # never execute against an approval it hasn't already, atomically,
     # marked CONSUMED. If this raises, nothing below runs.
     await approval_repo.consume(approval.approval_id, action=action)
+
+    # Heart Enforcement Chokepoint Closure Phase E6 -- see this
+    # function's own docstring. A no-op unless both root_authority_repo
+    # and consent_repo are wired; the enterprise_mode check happens
+    # inside the same way _heart_legitimacy_denied_reason() gates it.
+    if root_authority_repo is not None:
+        from responsibleai.dashboard.config import get_settings
+
+        if get_settings().enterprise_mode:
+            authority_for_recheck = AuthorityContext(
+                delegated_by=org_id, granted_action_types=frozenset({action.action_type})
+            )
+            issuer, verification_method = _ISSUER_VERIFICATION_METHOD_BY_KIND.get(
+                agent.identity.kind, ("idp", agent.identity.kind.value)
+            )
+            recheck_grant = await resolve_authority_grant(
+                agent.identity,
+                agent,
+                action,
+                authority_for_recheck,
+                root_authority_repo,
+                issuer=issuer,
+                verification_method=verification_method,
+                consent_repo=consent_repo,
+            )
+            if not recheck_grant.is_legitimate:
+                raise ApprovalRevokedSinceQueuedError(
+                    approval.approval_id,
+                    recheck_grant.legitimacy.heart_veto.reason or "unspecified",
+                )
 
     decision = DecisionResult(
         decision=GovernanceDecision.ALLOW,

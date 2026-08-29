@@ -190,7 +190,10 @@ from responsibleai.incidents.logic import build_incident_record
 from responsibleai.leaderboard.models import METHODOLOGY_VERSION
 from responsibleai.leaderboard.providers import ProviderNotConfiguredError, get_adapter
 from responsibleai.leaderboard.runner import LeaderboardRunner
-from responsibleai.mcp.governance_integration import resume_approval
+from responsibleai.mcp.governance_integration import (
+    ApprovalRevokedSinceQueuedError,
+    resume_approval,
+)
 from responsibleai.mcp.licensing import monthly_quota, plan_catalog
 from responsibleai.mcp.upstream_dispatch import apply_upstream_governance
 from responsibleai.rbac import (
@@ -3274,6 +3277,8 @@ async def governance_execute_approval(
             evidence_repo=_ready(_evidence_repo),
             org_id=_auth.org_id,
             outcome_repo=_ready(_outcome_repo),
+            root_authority_repo=_ready(_root_authority_repo),
+            consent_repo=_ready(_consent_proof_repo),
         )
     except ApprovalNotFoundError as exc:
         raise HTTPException(404, str(exc)) from None
@@ -3281,6 +3286,8 @@ async def governance_execute_approval(
         raise HTTPException(409, str(exc)) from None
     except (ApprovalNotApprovedError, ApprovalActionMismatchError) as exc:
         raise HTTPException(409, str(exc)) from None
+    except ApprovalRevokedSinceQueuedError as exc:
+        raise HTTPException(403, str(exc)) from None
     except ValueError as exc:
         # build_resume_action()'s "no persisted arguments" case -- a
         # pre-resume-feature approval that was already APPROVED before

@@ -398,3 +398,131 @@ class TestResumeApprovalDirectUnit:
                 evidence_repo=_EvidenceRepo(engine),
                 org_id="org-1",
             )
+
+
+class TestResumeApprovalReChecksHeartAtExecutionTime:
+    """Heart Enforcement Chokepoint Closure Phase E6: the gap the
+    Phase E0 audit found -- resume_approval() previously never
+    re-checked Heart legitimacy at execution time, only at the
+    original REQUIRE_APPROVAL decision time. If the principal's root
+    or consent is revoked while the approval sits queued waiting for a
+    human, the original (now stale) verdict alone let execution
+    proceed. These tests use resume_approval() directly (bypassing
+    HTTP), matching TestResumeApprovalDirectUnit's own established
+    pattern, since exercising this specifically needs an ORGANIZATION-
+    kind root persisted for identity_id="k1" (what
+    _agent_from_approval() always reconstructs) that can be revoked
+    between approval and resume."""
+
+    @pytest.fixture()
+    async def engine(self):
+        from responsibleai.db import create_engine
+
+        e = create_engine(":memory:")
+        await e.init()
+        yield e
+        await e.close()
+
+    @pytest.fixture(autouse=True)
+    def _enterprise_mode(self, monkeypatch: pytest.MonkeyPatch):
+        from responsibleai.dashboard.config import get_settings
+
+        monkeypatch.setattr(get_settings(), "enterprise_mode", True)
+        yield
+
+    async def _seed_approved(self, engine, *, org_id: str = "org-1"):
+        from responsibleai.db import ApprovalRepository as _ApprovalRepo
+
+        repo = _ApprovalRepo(engine)
+        identity = IdentityContext(identity_id="k1", kind="api_key", org_id=org_id)
+        agent = AgentContext(identity=identity, framework="mcp-client")
+        authority = AuthorityContext(
+            delegated_by=org_id,
+            granted_action_types=frozenset({"rai_health"}),
+            require_approval_for=frozenset({"rai_health"}),
+        )
+        action = ActionRequest(agent=agent, action_type="rai_health", target="rai_health")
+        decision = WhitePactRuntimeGateway().evaluate(action, authority)
+        assert decision.decision == GovernanceDecision.REQUIRE_APPROVAL
+        approval = await repo.create(build_approval_request(action, decision))
+        await repo.resolve(
+            approval.approval_id, outcome=ApprovalStatus.APPROVED, resolved_by="admin"
+        )
+        return repo, approval.approval_id
+
+    async def test_no_root_repo_wired_is_a_complete_no_op(self, engine) -> None:
+        """Backward compatibility: omitting root_authority_repo/
+        consent_repo entirely (the default) must behave identically to
+        before this phase existed, even with enterprise_mode=true."""
+        from responsibleai.db import EvidenceRepository as _EvidenceRepo
+
+        repo, approval_id = await self._seed_approved(engine)
+        result = await resume_approval(
+            approval_id, approval_repo=repo, evidence_repo=_EvidenceRepo(engine), org_id="org-1"
+        )
+        assert result["status"] == "ok"
+
+    async def test_revoked_root_since_approval_denies_execution(self, engine) -> None:
+        from responsibleai.db import EvidenceRepository as _EvidenceRepo
+        from responsibleai.db.consent_proof_repository import ConsentProofRepository
+        from responsibleai.db.root_authority_repository import RootAuthorityRepository
+        from responsibleai.governance.identity_authority_adapter import (
+            build_root_authority_record_from_identity,
+        )
+        from responsibleai.governance.models import IdentityKind
+        from responsibleai.mcp.governance_integration import ApprovalRevokedSinceQueuedError
+
+        repo, approval_id = await self._seed_approved(engine)
+
+        # Simulate what already happened at the ORIGINAL decision time
+        # (a root get-or-created for this identity) -- then simulate an
+        # admin revoking it while the approval sat waiting for a human.
+        root_repo = RootAuthorityRepository(engine)
+        reconstructed_identity = IdentityContext(
+            identity_id="k1", kind=IdentityKind.ORGANIZATION, org_id="org-1"
+        )
+        record = build_root_authority_record_from_identity(
+            reconstructed_identity, issuer="org_repository", verification_method="api_key_hash"
+        )
+        created = await root_repo.create(record)
+        await root_repo.revoke(created.root_id, revoked_by="admin-1", reason="offboarded")
+
+        with pytest.raises(ApprovalRevokedSinceQueuedError, match=approval_id):
+            await resume_approval(
+                approval_id,
+                approval_repo=repo,
+                evidence_repo=_EvidenceRepo(engine),
+                org_id="org-1",
+                root_authority_repo=root_repo,
+                consent_repo=ConsentProofRepository(engine),
+            )
+
+        # Single-use is unconditional: the approval must be spent even
+        # though execution was denied -- a second attempt (even without
+        # the Heart check wired at all) must not succeed either.
+        with pytest.raises(ApprovalNotApprovedError):
+            await resume_approval(
+                approval_id, approval_repo=repo, evidence_repo=_EvidenceRepo(engine), org_id="org-1"
+            )
+
+    async def test_still_legitimate_root_allows_execution(self, engine) -> None:
+        """Control: a root that was never revoked must still allow
+        execution once root_authority_repo/consent_repo are wired --
+        proves the previous test's denial genuinely came from the
+        revocation, not from wiring the params at all."""
+        from responsibleai.db import EvidenceRepository as _EvidenceRepo
+        from responsibleai.db.consent_proof_repository import ConsentProofRepository
+        from responsibleai.db.root_authority_repository import RootAuthorityRepository
+
+        repo, approval_id = await self._seed_approved(engine)
+        root_repo = RootAuthorityRepository(engine)
+
+        result = await resume_approval(
+            approval_id,
+            approval_repo=repo,
+            evidence_repo=_EvidenceRepo(engine),
+            org_id="org-1",
+            root_authority_repo=root_repo,
+            consent_repo=ConsentProofRepository(engine),
+        )
+        assert result["status"] == "ok"
