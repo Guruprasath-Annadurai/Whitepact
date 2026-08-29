@@ -91,6 +91,8 @@ from responsibleai.db import (
     AuditRepository,
     AuthorityPassportNotFoundError,
     AuthorityPassportRepository,
+    ConsentProofNotFoundError,
+    ConsentProofRepository,
     CostRepository,
     CredentialIssuanceRepository,
     DelegationEscalationError,
@@ -142,16 +144,31 @@ from responsibleai.governance.authority_passport import (
     build_authority_passport_from_delegation,
     verify_passport,
 )
+from responsibleai.governance.authority_resolver import (
+    prefetch_root_chain,
+    resolve_root_for_identity,
+)
 from responsibleai.governance.autonomy_budget import AutonomyBudgetPolicy
 from responsibleai.governance.ceiling import OrgAuthorityCeiling
+from responsibleai.governance.consent_proof import (
+    ConsentMethod,
+    build_consent_proof,
+    validate_consent_proof,
+)
 from responsibleai.governance.evidence_bundle import build_evidence_bundle, verify_evidence_bundle
 from responsibleai.governance.gateway import WhitePactRuntimeGateway
 from responsibleai.governance.intent import build_intent_contract
-from responsibleai.governance.models import GovernanceDecision, IdentityKind
+from responsibleai.governance.models import (
+    GovernanceDecision,
+    IdentityContext,
+    IdentityKind,
+    identity_kind_from_org_context,
+)
 from responsibleai.governance.oidc_subject_classifier import classify_oidc_subject
 from responsibleai.governance.outcome import OutcomeStatus, build_outcome_record
 from responsibleai.governance.policy import PolicyRule
 from responsibleai.governance.risk import RiskTier
+from responsibleai.governance.root_authority import validate_root_chain
 from responsibleai.governance.tool_trust import (
     ToolTrustTier,
     apply_admin_override,
@@ -282,6 +299,7 @@ _credential_issuance_repo: CredentialIssuanceRepository | None = None
 _outcome_repo: OutcomeRepository | None = None
 _intent_repo: IntentContractRepository | None = None
 _root_authority_repo: RootAuthorityRepository | None = None
+_consent_proof_repo: ConsentProofRepository | None = None
 _authority_passport_repo: AuthorityPassportRepository | None = None
 _upstream_gateway: WhitePactRuntimeGateway = WhitePactRuntimeGateway()
 _db_engine: DatabaseEngine | None = None
@@ -338,7 +356,7 @@ async def lifespan(application: FastAPI):
     global _tool_trust_repo, _credential_issuance_repo, _outcome_repo
     global _workflow_rule_repo, _delegation_repo, _autonomy_budget_repo, _intent_repo
     global _authority_passport_repo
-    global _root_authority_repo
+    global _root_authority_repo, _consent_proof_repo
     global _eval_repo, _comparator, _benchmark_runner, _dataset_scanner
     global _oidc_provider, _saml_config, _stripe_service, _plan_rate_limiter
 
@@ -395,6 +413,7 @@ async def lifespan(application: FastAPI):
     _credential_issuance_repo = CredentialIssuanceRepository(_db_engine)
     _outcome_repo = OutcomeRepository(_db_engine)
     _root_authority_repo = RootAuthorityRepository(_db_engine)
+    _consent_proof_repo = ConsentProofRepository(_db_engine)
     _ceiling_repo = OrgAuthorityCeilingRepository(_db_engine)
     _workflow_rule_repo = WorkflowRuleRepository(_db_engine)
     _delegation_repo = DelegationRepository(_db_engine)
@@ -1005,6 +1024,27 @@ class IntentContractDeclareRequest(BaseModel):
     denied_targets: list[str] | None = Field(default=None, max_length=200)
     allowed_action_types: list[str] | None = Field(default=None, max_length=200)
     expires_in_minutes: int | None = Field(default=None, ge=1, le=525_600)  # up to 1 year
+
+
+class ConsentProofCaptureRequest(BaseModel):
+    """See governance/consent_proof.py's `ConsentProof`. The
+    authenticated caller (`_auth`) is always the consenting party --
+    this endpoint never accepts a caller-supplied `subject_id`/
+    `consenting_root_id`, since letting a request claim consent on
+    someone else's behalf would defeat the entire point of a
+    root-backed consent record. `consent_method` is always
+    `API_AUTHENTICATED_REQUEST` for the same reason: this authenticated
+    call *is* the consent act (see `ConsentMethod`'s own docstring)."""
+
+    grantee_id: str = Field(..., min_length=1, max_length=200)
+    scope_description: str = Field(..., min_length=1, max_length=2000)
+    purpose: str = Field(..., min_length=1, max_length=2000)
+    evidence_refs: list[str] = Field(default_factory=list, max_length=20)
+    expires_in_minutes: int | None = Field(default=None, ge=1, le=525_600)  # up to 1 year
+
+
+class ConsentProofRevokeRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=2000)
 
 
 class AuthorityPassportIssueRequest(BaseModel):
@@ -3632,6 +3672,187 @@ async def governance_get_active_intent(
     if contract is None:
         return {"agent_id": agent_id, "has_active_contract": False}
     return {"has_active_contract": True, **contract.to_dict()}
+
+
+# Heart Phase H4 consent capture -- issuer/verification_method for the
+# caller's own root, matching the convention already established in
+# mcp/governance_integration.py and mcp/upstream_dispatch.py's own
+# copies of this same small dict (duplicated deliberately, not
+# imported, per this codebase's stated "one independently evolving
+# call site" convention for exactly this kind of small lookup).
+_CONSENT_CAPTURE_ISSUER_VERIFICATION_METHOD_BY_KIND: dict[IdentityKind, tuple[str, str]] = {
+    IdentityKind.ORGANIZATION: ("org_repository", "api_key_hash"),
+    IdentityKind.HUMAN: ("idp", "oidc"),
+}
+
+
+@app.post("/api/governance/consent-proofs", tags=["governance"], status_code=201)
+@limiter.limit("20/minute")
+async def governance_capture_consent(
+    request: Request,
+    req: ConsentProofCaptureRequest,
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, Any]:
+    """Captures a real `ConsentProof` (Heart Phase H4) -- this
+    authenticated, ADMIN-role API call *is* the consent act
+    (`ConsentMethod.API_AUTHENTICATED_REQUEST`). Closes the gap
+    `governance/consent_proof.py`'s own module docstring named: "not
+    built here: real wiring from an actual consent-capture UI/flow into
+    a persisted `ConsentProof`."
+
+    The caller is always the consenting party -- `subject_id`/
+    `consenting_root_id` are never accepted from the request body (see
+    `ConsentProofCaptureRequest`'s own docstring). Get-or-creates the
+    caller's own root of trust the same way Heart Production
+    Integration Phase 6's live gate does
+    (`governance/authority_resolver.py::resolve_root_for_identity()`),
+    so a consent proof captured here is immediately usable by anything
+    that later validates it against that same root -- no separate
+    bootstrap step needed.
+
+    Persisting this record does NOT by itself make it legitimate --
+    `GET .../{consent_id}` below re-validates it against the caller's
+    actual root chain every time it's read, the same "never trust
+    stored fields alone" discipline `GET .../authority-passports/{id}`
+    already established. A consent proof captured by an identity whose
+    own root doesn't trace to a legitimate human/organization root is
+    persisted (as an honest audit record that the request happened)
+    but will correctly report itself as not legitimate when validated.
+    """
+    if not _auth.org_id:
+        raise HTTPException(
+            400, "Consent proofs require an org-scoped API key, not a legacy flat key."
+        )
+    identity = IdentityContext(
+        identity_id=_auth.key_id,
+        kind=identity_kind_from_org_context(_auth),
+        org_id=_auth.org_id,
+        display_name=_auth.org_name,
+    )
+    issuer, verification_method = _CONSENT_CAPTURE_ISSUER_VERIFICATION_METHOD_BY_KIND.get(
+        identity.kind, ("idp", identity.kind.value)
+    )
+    root = await resolve_root_for_identity(
+        identity,
+        _ready(_root_authority_repo),
+        issuer=issuer,
+        verification_method=verification_method,
+    )
+
+    expires_at = None
+    if req.expires_in_minutes is not None:
+        expires_at = datetime.now(UTC) + timedelta(minutes=req.expires_in_minutes)
+
+    proof = build_consent_proof(
+        subject_id=identity.identity_id,
+        consenting_root_id=root.root_id,
+        grantee_id=req.grantee_id,
+        scope_description=req.scope_description,
+        purpose=req.purpose,
+        consent_method=ConsentMethod.API_AUTHENTICATED_REQUEST,
+        evidence_refs=tuple(req.evidence_refs),
+        expires_at=expires_at,
+    )
+    await _ready(_consent_proof_repo).create(proof)
+    logger.info(
+        "governance_consent_proof_captured",
+        consent_id=proof.consent_id,
+        subject_id=identity.identity_id,
+        grantee_id=req.grantee_id,
+        root_id=root.root_id,
+        org_id=_auth.org_id,
+    )
+    return proof.to_dict()
+
+
+@app.get("/api/governance/consent-proofs/{consent_id}", tags=["governance"])
+@limiter.limit("60/minute")
+async def governance_get_consent_proof(
+    request: Request,
+    consent_id: str,
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
+) -> dict[str, Any]:
+    """Fetches a consent proof and re-validates it against its actual
+    root chain in the same response -- see
+    `governance_capture_consent()`'s own docstring for why persisted
+    never means legitimate on its own.
+
+    `ConsentProof` itself carries no `organization_id` (Heart types
+    stay deliberately org-agnostic at the type level -- see
+    `root_authority.py`'s own TCB-minimization discipline), so
+    cross-org isolation here is enforced via the consenting root's own
+    `organization_id` instead: a proof whose root belongs to a
+    different org (or has no resolvable root at all) is reported
+    `404`, identical to how a truly nonexistent proof is reported --
+    never leaking whether a given `consent_id` exists in someone
+    else's org."""
+    if not _auth.org_id:
+        raise HTTPException(
+            400, "Consent proofs require an org-scoped API key, not a legacy flat key."
+        )
+    proof = await _ready(_consent_proof_repo).get(consent_id)
+    if proof is None:
+        raise HTTPException(404, "Consent proof not found.")
+
+    root = await _ready(_root_authority_repo).get(proof.consenting_root_id)
+    if root is None or root.organization_id != _auth.org_id:
+        # Either the referenced root doesn't exist in storage at all,
+        # or it belongs to a different org -- both cases fail closed
+        # to the same 404 a genuinely nonexistent proof would return,
+        # never distinguishing "exists but isn't yours" from "doesn't
+        # exist" (roots are never deleted in this codebase, only
+        # revoked, so a missing root here is not an expected same-org
+        # diagnostic case worth a richer response).
+        raise HTTPException(404, "Consent proof not found.")
+
+    prefetched = await prefetch_root_chain(root, _ready(_root_authority_repo))
+    root_result = validate_root_chain(root, lambda root_id: prefetched.get(root_id))
+    consent_result = validate_consent_proof(proof, root_result)
+
+    return {
+        **proof.to_dict(),
+        "validation": {
+            "status": consent_result.status.value,
+            "is_valid": consent_result.is_valid,
+            "detail": consent_result.detail,
+        },
+    }
+
+
+@app.post("/api/governance/consent-proofs/{consent_id}/revoke", tags=["governance"])
+@limiter.limit("20/minute")
+async def governance_revoke_consent_proof(
+    request: Request,
+    consent_id: str,
+    req: ConsentProofRevokeRequest,
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, Any]:
+    if not _auth.org_id:
+        raise HTTPException(
+            400, "Consent proofs require an org-scoped API key, not a legacy flat key."
+        )
+    existing = await _ready(_consent_proof_repo).get(consent_id)
+    if existing is None:
+        raise HTTPException(404, "Consent proof not found.")
+    existing_root = await _ready(_root_authority_repo).get(existing.consenting_root_id)
+    if existing_root is None or existing_root.organization_id != _auth.org_id:
+        # Same cross-org isolation as GET above -- fail closed to the
+        # same 404 rather than distinguishing "not yours" from
+        # "doesn't exist."
+        raise HTTPException(404, "Consent proof not found.")
+    try:
+        revoked = await _ready(_consent_proof_repo).revoke(
+            consent_id, revoked_by=_auth.key_id, reason=req.reason
+        )
+    except ConsentProofNotFoundError:
+        raise HTTPException(404, "Consent proof not found.") from None
+    logger.info(
+        "governance_consent_proof_revoked",
+        consent_id=consent_id,
+        org_id=_auth.org_id,
+        revoked_by=_auth.key_id,
+    )
+    return revoked.to_dict()
 
 
 @app.post("/api/governance/authority-passports", tags=["governance"], status_code=201)

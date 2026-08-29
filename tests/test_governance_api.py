@@ -1714,3 +1714,202 @@ class TestAuthorityPassportEndpoints:
             headers={"Authorization": f"Bearer {other_key}"},
         )
         assert r.status_code == 404
+
+
+class TestConsentProofEndpoints:
+    """Heart Phase H4 consent capture -- see
+    governance_capture_consent()'s own docstring in dashboard/app.py.
+    """
+
+    async def _capture(
+        self,
+        client: AsyncClient,
+        admin_key: str,
+        *,
+        grantee_id: str = "agent-1",
+        scope_description: str = "read billing records",
+        purpose: str = "quarterly audit",
+    ) -> dict:
+        r = await client.post(
+            "/api/governance/consent-proofs",
+            json={
+                "grantee_id": grantee_id,
+                "scope_description": scope_description,
+                "purpose": purpose,
+            },
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        assert r.status_code == 201, r.text
+        return r.json()
+
+    async def test_analyst_cannot_capture(self, client: AsyncClient, org_and_analyst_key) -> None:
+        _org_id, key = org_and_analyst_key
+        r = await client.post(
+            "/api/governance/consent-proofs",
+            json={"grantee_id": "agent-1", "scope_description": "x", "purpose": "y"},
+            headers={"Authorization": f"Bearer {key}"},
+        )
+        assert r.status_code == 403
+
+    async def test_capture_persists_the_authenticated_caller_as_subject(
+        self, client: AsyncClient, org_and_admin_key
+    ) -> None:
+        _org_id, admin_key = org_and_admin_key
+        body = await self._capture(client, admin_key)
+        assert body["grantee_id"] == "agent-1"
+        assert body["scope_description"] == "read billing records"
+        assert body["purpose"] == "quarterly audit"
+        assert body["consent_method"] == "API_AUTHENTICATED_REQUEST"
+        assert body["consent_id"]
+        assert body["consenting_root_id"]
+        assert body["revoked_at"] is None
+
+    async def test_capture_request_cannot_specify_its_own_subject_or_root(
+        self, client: AsyncClient, org_and_admin_key
+    ) -> None:
+        """ConsentProofCaptureRequest has no subject_id/consenting_root_id
+        field at all -- extra fields in the JSON body are simply
+        ignored by FastAPI/Pydantic, not accepted as an override. This
+        test locks in that a caller cannot smuggle a different subject
+        or root in, even by trying."""
+        _org_id, admin_key = org_and_admin_key
+        r = await client.post(
+            "/api/governance/consent-proofs",
+            json={
+                "grantee_id": "agent-1",
+                "scope_description": "x",
+                "purpose": "y",
+                "subject_id": "someone-else",
+                "consenting_root_id": "not-a-real-root",
+            },
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        assert r.status_code == 201, r.text
+        assert r.json()["subject_id"] != "someone-else"
+        assert r.json()["consenting_root_id"] != "not-a-real-root"
+
+    async def test_get_reports_valid_for_a_static_api_key_captured_proof(
+        self, client: AsyncClient, org_and_admin_key
+    ) -> None:
+        """A static API key identity maps to a terminal root
+        (ORGANIZATION) -- a consent proof captured by one is
+        immediately reported valid, no separate chain-building step
+        needed."""
+        _org_id, admin_key = org_and_admin_key
+        captured = await self._capture(client, admin_key)
+
+        r = await client.get(
+            f"/api/governance/consent-proofs/{captured['consent_id']}",
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["validation"]["is_valid"] is True
+        assert body["validation"]["status"] == "VALID"
+
+    async def test_get_unknown_consent_id_is_404(
+        self, client: AsyncClient, org_and_admin_key
+    ) -> None:
+        _org_id, admin_key = org_and_admin_key
+        r = await client.get(
+            "/api/governance/consent-proofs/does-not-exist",
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        assert r.status_code == 404
+
+    async def test_revoke_sets_revoked_fields(self, client: AsyncClient, org_and_admin_key) -> None:
+        _org_id, admin_key = org_and_admin_key
+        captured = await self._capture(client, admin_key)
+
+        r = await client.post(
+            f"/api/governance/consent-proofs/{captured['consent_id']}/revoke",
+            json={"reason": "withdrew consent"},
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["revoked_at"] is not None
+        assert body["revoke_reason"] == "withdrew consent"
+
+    async def test_revoked_proof_reports_invalid(
+        self, client: AsyncClient, org_and_admin_key
+    ) -> None:
+        _org_id, admin_key = org_and_admin_key
+        captured = await self._capture(client, admin_key)
+        await client.post(
+            f"/api/governance/consent-proofs/{captured['consent_id']}/revoke",
+            json={},
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+
+        r = await client.get(
+            f"/api/governance/consent-proofs/{captured['consent_id']}",
+            headers={"Authorization": f"Bearer {admin_key}"},
+        )
+        body = r.json()
+        assert body["validation"]["is_valid"] is False
+        assert body["validation"]["status"] == "REVOKED"
+
+    async def test_analyst_can_get_but_not_revoke(
+        self, client: AsyncClient, org_and_admin_key, org_and_analyst_key
+    ) -> None:
+        _org_id, admin_key = org_and_admin_key
+        _org_id2, analyst_key = org_and_analyst_key
+        captured = await self._capture(client, admin_key)
+
+        r = await client.get(
+            f"/api/governance/consent-proofs/{captured['consent_id']}",
+            headers={"Authorization": f"Bearer {analyst_key}"},
+        )
+        assert r.status_code == 200
+
+        r = await client.post(
+            f"/api/governance/consent-proofs/{captured['consent_id']}/revoke",
+            json={},
+            headers={"Authorization": f"Bearer {analyst_key}"},
+        )
+        assert r.status_code == 403
+
+    async def test_cross_org_consent_proof_not_visible(
+        self, client: AsyncClient, org_and_admin_key
+    ) -> None:
+        _org_id, admin_key = org_and_admin_key
+        captured = await self._capture(client, admin_key)
+
+        r = await client.post(
+            "/api/orgs",
+            json={"name": "Other Consent Co", "slug": "other-consent-co"},
+            headers=BOOTSTRAP_AUTH,
+        )
+        other_org_id = r.json()["id"]
+        r = await client.post(
+            f"/api/orgs/{other_org_id}/keys",
+            json={"name": "k", "role": "ADMIN"},
+            headers=BOOTSTRAP_AUTH,
+        )
+        other_key = r.json()["key"]
+
+        r = await client.get(
+            f"/api/governance/consent-proofs/{captured['consent_id']}",
+            headers={"Authorization": f"Bearer {other_key}"},
+        )
+        assert r.status_code == 404
+
+        r = await client.post(
+            f"/api/governance/consent-proofs/{captured['consent_id']}/revoke",
+            json={},
+            headers={"Authorization": f"Bearer {other_key}"},
+        )
+        assert r.status_code == 404
+
+    async def test_two_captures_by_the_same_identity_share_one_root(
+        self, client: AsyncClient, org_and_admin_key
+    ) -> None:
+        """resolve_root_for_identity()'s get-or-create semantics --
+        two consent proofs captured by the same authenticated identity
+        must resolve to the same persisted root, not a fresh one each
+        time."""
+        _org_id, admin_key = org_and_admin_key
+        first = await self._capture(client, admin_key, grantee_id="agent-1")
+        second = await self._capture(client, admin_key, grantee_id="agent-2")
+        assert first["consenting_root_id"] == second["consenting_root_id"]

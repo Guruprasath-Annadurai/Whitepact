@@ -15,6 +15,10 @@ from responsibleai.db.authority_passport_repository import (
     AuthorityPassportNotFoundError,
     AuthorityPassportRepository,
 )
+from responsibleai.db.consent_proof_repository import (
+    ConsentProofNotFoundError,
+    ConsentProofRepository,
+)
 from responsibleai.db.credential_issuance_repository import CredentialIssuanceRepository
 from responsibleai.db.crypto_key_repository import CryptoKeyRepository
 from responsibleai.db.delegation_repository import (
@@ -112,4 +116,6 @@ __all__ = [
     "NeuralVaultRepository",
     "RootAuthorityRecordNotFoundError",
     "RootAuthorityRepository",
+    "ConsentProofNotFoundError",
+    "ConsentProofRepository",
 ]
