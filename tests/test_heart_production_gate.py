@@ -86,3 +86,45 @@ class TestFailClosedStartup:
         with pytest.raises(HeartEnforcementError, match="mcp_governance_enabled"):
             await verify_heart_production_enforcement(settings, engine)
         await engine.close()
+
+
+class TestDemoAuthIncompatibleWithEnterpriseMode:
+    """Heart Enforcement Chokepoint Closure Phase E4: the demo-auth
+    flag grants hosted MCP access with zero credentials, over a
+    connection the governance dispatch path cannot build authority
+    for -- incompatible with a deployment claiming production
+    enforcement."""
+
+    async def test_demo_flag_alone_is_fine(self) -> None:
+        """enterprise_mode=false is a no-op regardless of the demo
+        flag -- this flag's own existing scope (dev/demo use) is
+        unaffected."""
+        settings = Settings(
+            enterprise_mode=False,
+            mcp_governance_enabled=False,
+            mcp_http_allow_unauthenticated_demo=True,
+        )
+        engine = await _engine()
+        await verify_heart_production_enforcement(settings, engine)  # must not raise
+        await engine.close()
+
+    async def test_enterprise_mode_true_with_demo_flag_true_raises(self) -> None:
+        settings = Settings(
+            enterprise_mode=True,
+            mcp_governance_enabled=True,
+            mcp_http_allow_unauthenticated_demo=True,
+        )
+        engine = await _engine()
+        with pytest.raises(HeartEnforcementError, match="mcp_http_allow_unauthenticated_demo"):
+            await verify_heart_production_enforcement(settings, engine)
+        await engine.close()
+
+    async def test_enterprise_mode_true_with_demo_flag_false_passes(self) -> None:
+        settings = Settings(
+            enterprise_mode=True,
+            mcp_governance_enabled=True,
+            mcp_http_allow_unauthenticated_demo=False,
+        )
+        engine = await _engine()
+        await verify_heart_production_enforcement(settings, engine)  # must not raise
+        await engine.close()

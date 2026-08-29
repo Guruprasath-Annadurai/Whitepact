@@ -31,27 +31,33 @@ create two competing "is this production" flags in the same codebase.
 
 - **Does** fail startup (raise, before the first request is served)
   when `enterprise_mode=true` and any of: `mcp_governance_enabled` is
-  false, the root-authority repository is unreachable, or the
-  revocation-epoch repository is unreachable. This is the literal
-  `production_authority_mode=true + Heart unavailable/misconfigured =
-  startup failure` invariant the directive names, using
-  `enterprise_mode` as that mode flag.
+  false, the root-authority repository is unreachable, the
+  revocation-epoch repository is unreachable, or (Heart Enforcement
+  Chokepoint Closure Phase E4) `mcp_http_allow_unauthenticated_demo` is
+  true. This is the literal `production_authority_mode=true + Heart
+  unavailable/misconfigured = startup failure` invariant the directive
+  names, using `enterprise_mode` as that mode flag.
+- **Critical wiring fix (Phase E0/E4)**: this function previously ran
+  ONLY from `dashboard/app.py`'s own startup -- the separate
+  `whitepact-mcp-http` process (`mcp/server.py`'s `_build_http_app()`
+  `_lifespan()`) never called it at all, meaning the fail-closed
+  startup invariant this module exists to provide never actually
+  protected the one process where stdio-block/legacy-key/demo-auth
+  bypasses live. Now called from both processes' startup.
 - **Does not** claim every alternate execution path this codebase has
-  is closed. The audit traced six: (1) `mcp_governance_enabled=False`
+  is closed. The audit traced six, now five: (1) `mcp_governance_enabled=False`
   (closed by this gate — enforced mode now requires it true); (2)
   `enterprise_mode` was itself the second independent opt-in Heart
   needed (closed — this gate makes it imply governance); (3) the
-  self-hosted stdio transport, which has no organizational identity to
-  evaluate authority against at all (**not** closed here — stdio's
-  entire trust model is different, and forcing it through org-scoped
-  Heart evaluation is a separate, larger design decision this phase
-  does not make unilaterally); (4) legacy non-org-scoped API keys and
-  (5) `mcp_http_allow_unauthenticated_demo` (**not** closed here —
-  both are pre-existing, separately-gated escape hatches whose own
-  removal/tightening is out of this phase's scope); (6) a direct
-  Python import of `dispatch_tool()` bypassing the HTTP layer
-  entirely (**not closeable** by a runtime startup check — it is a
-  structural property of dispatch_tool() having no caller-identity
+  self-hosted stdio transport (closed separately -- Phase E2, see
+  `mcp/server.py`'s `_call_tool()` -- enterprise_mode now blocks stdio
+  entirely rather than needing a startup check here); (4) legacy
+  non-org-scoped API keys reaching hosted-MCP dispatch ungoverned
+  (**not** closed here — a pre-existing, separately-gated escape hatch
+  whose own removal/tightening is tracked as Phase E3, not yet done);
+  (5) a direct Python import of `dispatch_tool()` bypassing the HTTP
+  layer entirely (**not closeable** by a runtime startup check — it is
+  a structural property of dispatch_tool() having no caller-identity
   concept of its own, named honestly rather than papered over).
 """
 
@@ -101,6 +107,20 @@ async def verify_heart_production_enforcement(settings: Settings, engine: Databa
             "deployment believes it is enforcing production authority. "
             "Set mcp_governance_enabled=true, or unset enterprise_mode if "
             "this deployment intentionally does not enforce Heart yet."
+        )
+
+    if settings.mcp_http_allow_unauthenticated_demo:
+        raise HeartEnforcementError(
+            "enterprise_mode=true is incompatible with "
+            "mcp_http_allow_unauthenticated_demo=true. The demo flag grants "
+            "hosted MCP access with no credential at all, over a connection "
+            "the governance dispatch path (mcp/server.py's _call_tool()) "
+            "cannot build an AuthorityContext for -- every tool call over "
+            "that connection reaches dispatch_tool() with zero governance "
+            "and zero Heart legitimacy check, regardless of enterprise_mode. "
+            "Unset mcp_http_allow_unauthenticated_demo before enabling "
+            "enterprise_mode, or unset enterprise_mode if this deployment "
+            "intentionally runs the demo flag."
         )
 
     try:

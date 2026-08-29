@@ -579,6 +579,18 @@ def _build_http_app() -> Any:
         from responsibleai.db.crypto_activation import activate_production_crypto
 
         await activate_production_crypto(settings, _db_engine)
+        # Heart Enforcement Chokepoint Closure: this call was missing
+        # entirely from this process before -- verify_heart_production_
+        # enforcement() previously only ran from dashboard/app.py's own
+        # startup, so the fail-closed invariant it provides never
+        # actually protected the process where Heart enforcement (and
+        # its bypasses: stdio, legacy keys, the demo-auth flag) lives.
+        # No-op unless settings.enterprise_mode=true.
+        from responsibleai.governance.heart_production_gate import (
+            verify_heart_production_enforcement,
+        )
+
+        await verify_heart_production_enforcement(settings, _db_engine)
         if _governance_webhook_manager is not None:
             await _governance_webhook_manager.load_configs()
             _governance_webhook_manager.start_retry_worker()

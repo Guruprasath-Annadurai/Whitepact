@@ -255,6 +255,30 @@ class TestOidcHumanClassificationElevatesToTerminal:
         assert any(code.startswith("HEART_LEGITIMACY_FAILED") for code in payload["reason_codes"])
 
 
+class TestHeartProductionGateActuallyRunsInThisProcess:
+    """Heart Enforcement Chokepoint Closure: verify_heart_production_
+    enforcement() (Gap C) previously ran ONLY from dashboard/app.py's
+    startup -- this exact process (whitepact-mcp-http, built by
+    _build_http_app()) never called it, so its fail-closed startup
+    invariant never actually protected the process where Heart
+    enforcement (and its bypasses) live. This proves the fix through
+    the real ASGI lifespan (LifespanManager.__aenter__(), which is
+    exactly what a real `whitepact-mcp-http` process start runs), not
+    by calling verify_heart_production_enforcement() directly."""
+
+    async def test_enterprise_mode_with_demo_flag_fails_to_start(self, mcp_app) -> None:
+        from responsibleai.governance.heart_production_gate import HeartEnforcementError
+
+        build, _org_id, _raw_key = mcp_app
+        with pytest.raises(HeartEnforcementError, match="mcp_http_allow_unauthenticated_demo"):
+            await build(enterprise_mode=True, mcp_http_allow_unauthenticated_demo=True)
+
+    async def test_enterprise_mode_without_demo_flag_starts_fine(self, mcp_app) -> None:
+        build, _org_id, _raw_key = mcp_app
+        app = await build(enterprise_mode=True)  # must not raise
+        assert app is not None
+
+
 class TestConsentBackedLegitimacyReachableThroughLiveDispatch:
     """Heart Enforcement Chokepoint Closure: ENFORCEMENT_PATH_MATRIX.md's
     headline E0 finding was that Gap A's consent-backed legitimacy had
