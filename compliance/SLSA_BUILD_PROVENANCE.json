@@ -1,0 +1,82 @@
+{
+  "schema_version": "1.0",
+  "reviewed_at": "2026-08-30",
+  "normative_specification": "SLSA v1.2 Build Track",
+  "repository": "Guruprasath-Annadurai/Whitepact",
+  "status_vocabulary": [
+    "VERIFIED",
+    "IMPLEMENTED BUT NOT YET RELEASE-VERIFIED",
+    "NOT SATISFIED",
+    "NOT APPLICABLE"
+  ],
+  "boundary": {
+    "subjects": ["Python wheel", "Python sdist"],
+    "source_authorization": "approved-signer annotated Git release tag",
+    "trusted_builder": ".github/workflows/reusable-build.yml",
+    "distribution_workflow": ".github/workflows/publish.yml",
+    "build_platform": "GitHub-hosted GitHub Actions runner",
+    "supporting_evidence": ["sbom.cyclonedx.json", "SHA256SUMS"]
+  },
+  "current_release": {
+    "tag": "v1.2.3",
+    "source_commit": "c53562281df07f657d8bdcdb387b40d66d4e4c48",
+    "signer_workflow": ".github/workflows/publish.yml@refs/tags/v1.2.3",
+    "runner_environment": "github-hosted",
+    "wheel_sha256": "1286d5c36b7fdc39e365b327eb714224983145fa2761d516443b8c217d213d00",
+    "sdist_sha256": "06cca485080d29d38d3da5feaf4fb63e64ee5cc9bd14bac6d53ee1398b07c6e6",
+    "provenance_predicate": "https://slsa.dev/provenance/v1",
+    "build_l2_evidence": "VERIFIED",
+    "build_l3_evidence": "NOT SATISFIED"
+  },
+  "controls": [
+    {
+      "id": "release-v1.2.3-provenance",
+      "status": "VERIFIED",
+      "summary": "Wheel and sdist provenance independently verified."
+    },
+    {
+      "id": "release-v1.2.3-signed-tag",
+      "status": "VERIFIED",
+      "summary": "Annotated release tag verifies against the approved SSH signer allow-list."
+    },
+    {
+      "id": "reusable-trusted-builder",
+      "status": "IMPLEMENTED BUT NOT YET RELEASE-VERIFIED",
+      "summary": "Reusable workflow exclusively builds, reproduces, hashes, attests, and uploads release artifacts."
+    },
+    {
+      "id": "least-privilege-builder",
+      "status": "IMPLEMENTED BUT NOT YET RELEASE-VERIFIED",
+      "summary": "Builder has contents:read, id-token:write, attestations:write and no secrets or publish authority."
+    },
+    {
+      "id": "exact-byte-distribution",
+      "status": "IMPLEMENTED BUT NOT YET RELEASE-VERIFIED",
+      "summary": "Publisher verifies checksums and provenance, does not rebuild, and checks PyPI hashes."
+    },
+    {
+      "id": "cyclonedx-sbom-attestation",
+      "status": "IMPLEMENTED BUT NOT YET RELEASE-VERIFIED",
+      "summary": "Official GitHub SBOM mode binds the CycloneDX document to the wheel."
+    },
+    {
+      "id": "new-hardened-release-run",
+      "status": "NOT SATISFIED",
+      "summary": "No signed release has traversed the reusable builder yet."
+    },
+    {
+      "id": "independent-l3-release-verification",
+      "status": "NOT SATISFIED",
+      "summary": "Public release assets have not yet been verified against the reusable signer workflow."
+    },
+    {
+      "id": "slsa-source-track",
+      "status": "NOT APPLICABLE",
+      "summary": "Outside this Build Track assessment."
+    }
+  ],
+  "public_claim": {
+    "build_l2": "Allowed for the v1.2.3 release with the recorded evidence scope.",
+    "build_l3": "Prohibited until a new hardened release runs and independent verification passes."
+  }
+}

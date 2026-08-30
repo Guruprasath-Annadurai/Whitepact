@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling==1.32.0"]
 build-backend = "hatchling.build"
 
 [project]
@@ -149,6 +149,7 @@ dev = [
     "langgraph>=1.0.0",
     "google-adk>=2.0.0",
     "hypothesis>=6.100.0",
+    "PyYAML>=6.0.3",
 ]
 
 [project.scripts]

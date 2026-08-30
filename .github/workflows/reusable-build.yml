@@ -1,0 +1,129 @@
+name: Reusable trusted release builder
+
+on:
+  workflow_call:
+
+# This reusable workflow is the release build boundary. It deliberately has no
+# publishing environment, release permission, package permission, or secrets.
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+jobs:
+  build:
+    name: Build, reproduce, and attest release artifacts
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+
+    steps:
+      - name: Checkout the tagged source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Verify release identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          if [ "${GITHUB_REF_TYPE}" != "tag" ] || [ "${GITHUB_REF_NAME}" != "v${VERSION}" ]; then
+            echo "::error::Release ref ${GITHUB_REF} does not match pyproject.toml version v${VERSION}."
+            exit 1
+          fi
+
+      - name: Install pinned build and SBOM tools
+        run: >-
+          python -m pip install
+          build==1.6.0
+          twine==7.0.0
+          cyclonedx-bom==7.3.1
+
+      - name: Build wheel and sdist
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
+          export SOURCE_DATE_EPOCH
+          python -m build --outdir release-bundle
+          python -m twine check release-bundle/*
+
+      - name: Verify reproducible release build
+        shell: bash
+        run: |
+          set -euo pipefail
+          SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
+          export SOURCE_DATE_EPOCH
+          python -m build --outdir reproducibility-check
+
+          primary_names="$(find release-bundle -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)"
+          reproduced_names="$(find reproducibility-check -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)"
+          if [ "$primary_names" != "$reproduced_names" ]; then
+            echo "::error::The second build produced a different artifact set."
+            diff -u <(printf '%s\n' "$primary_names") <(printf '%s\n' "$reproduced_names") || true
+            exit 1
+          fi
+
+          while IFS= read -r artifact; do
+            cmp --silent "release-bundle/${artifact}" "reproducibility-check/${artifact}" || {
+              echo "::error::Non-reproducible release artifact: ${artifact}"
+              sha256sum "release-bundle/${artifact}" "reproducibility-check/${artifact}"
+              exit 1
+            }
+          done <<< "$primary_names"
+
+      - name: Generate CycloneDX SBOM from the releasable wheel
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m venv "${RUNNER_TEMP}/whitepact-sbom-venv"
+          "${RUNNER_TEMP}/whitepact-sbom-venv/bin/python" -m pip install --upgrade pip
+          "${RUNNER_TEMP}/whitepact-sbom-venv/bin/python" -m pip install release-bundle/*.whl
+          cyclonedx-py environment \
+            --pyproject pyproject.toml \
+            --spec-version 1.6 \
+            --of json \
+            -o release-bundle/sbom.cyclonedx.json \
+            "${RUNNER_TEMP}/whitepact-sbom-venv/bin/python"
+
+      - name: Record builder SHA-256 digests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release-bundle
+          sha256sum ./*.whl ./*.tar.gz sbom.cyclonedx.json > SHA256SUMS
+          sha256sum --check SHA256SUMS
+
+      - name: Attest wheel and sdist build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: |
+            release-bundle/*.whl
+            release-bundle/*.tar.gz
+
+      - name: Attest CycloneDX SBOM for the installable wheel
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: release-bundle/*.whl
+          sbom-path: release-bundle/sbom.cyclonedx.json
+
+      # Upload once, only after both attestations exist. The caller downloads this
+      # bundle and publishes these exact bytes; it never invokes a package builder.
+      - name: Upload attested release bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-bundle
+          path: release-bundle/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14

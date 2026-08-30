@@ -13,8 +13,8 @@ things:
 
 | | Proves | Verified with |
 |---|---|---|
-| Artifact attestation (already implemented) | This wheel/sdist was built by this repo's own GitHub Actions workflow, from this exact commit, unmodified since | `gh attestation verify <file> --owner Guruprasath-Annadurai` |
-| Signed Git tag (**not yet implemented** — this document) | A trusted human (the founder, or an approved release maintainer) actually authorized cutting this release at this commit | `git tag -v vX.Y.Z` |
+| Artifact attestation (already implemented) | This wheel/sdist was built by this repo's own GitHub Actions workflow, from this exact commit, unmodified since | `gh attestation verify <file> --repo Guruprasath-Annadurai/Whitepact` (new reusable-builder releases add `--signer-workflow`; see `docs/VERIFY_RELEASE.md`) |
+| Signed Git tag (**implemented for `v1.2.3` and required for future releases**) | A trusted human (the founder, or an approved release maintainer) actually authorized cutting this release at this commit | `git tag -v vX.Y.Z` |
 
 A signed build pipeline that runs automatically on *any* pushed tag
 does not, by itself, prove a human intended to cut that release — it
