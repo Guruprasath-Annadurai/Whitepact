@@ -134,10 +134,22 @@ jobs:
           print("Attached CycloneDX SBOM exactly matches the attested predicate.")
           PY
 
+      - name: Stage exact attested distributions for PyPI
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBLISH_DIR="${RUNNER_TEMP}/whitepact-pypi-publish"
+          rm -rf "${PUBLISH_DIR}"
+          mkdir -p "${PUBLISH_DIR}"
+          cp release-bundle/*.whl release-bundle/*.tar.gz "${PUBLISH_DIR}/"
+          test "$(find "${PUBLISH_DIR}" -maxdepth 1 -type f -name '*.whl' | wc -l | tr -d ' ')" = "1"
+          test "$(find "${PUBLISH_DIR}" -maxdepth 1 -type f -name '*.tar.gz' | wc -l | tr -d ' ')" = "1"
+          test "$(find "${PUBLISH_DIR}" -maxdepth 1 -type f | wc -l | tr -d ' ')" = "2"
+
       - name: Publish exact attested distributions to PyPI
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
-          packages-dir: release-bundle/
+          packages-dir: ${{ runner.temp }}/whitepact-pypi-publish/
           skip-existing: true
 
       - name: Confirm PyPI published the builder's exact bytes
