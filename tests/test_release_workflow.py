@@ -56,11 +56,36 @@ def test_publish_never_rebuilds_or_creates_provenance() -> None:
 
 
 def test_builder_owns_both_distributions_and_reproducibility_check() -> None:
-    assert "python -m build --outdir release-bundle" in BUILDER
-    assert "python -m build --outdir reproducibility-check" in BUILDER
-    assert 'cmp --silent "release-bundle/${artifact}"' in BUILDER
-    assert "python -m twine check release-bundle/*" in BUILDER
+    assert 'PRIMARY_DIR="${RUNNER_TEMP}/whitepact-release-bundle"' in BUILDER
+    assert 'REPRO_DIR="${RUNNER_TEMP}/whitepact-reproducibility-check"' in BUILDER
 
+    assert 'python -m build --outdir "${PRIMARY_DIR}"' in BUILDER
+    assert 'python -m build --outdir "${REPRO_DIR}"' in BUILDER
+
+    assert 'primary_names="$(find "${PRIMARY_DIR}"' in BUILDER
+    assert 'reproduced_names="$(find "${REPRO_DIR}"' in BUILDER
+
+    assert (
+        'cmp --silent "${PRIMARY_DIR}/${artifact}" "${REPRO_DIR}/${artifact}"'
+        in BUILDER
+    )
+    assert (
+        'sha256sum "${PRIMARY_DIR}/${artifact}" "${REPRO_DIR}/${artifact}"'
+        in BUILDER
+    )
+
+    # The source checkout must remain unchanged while both builds are produced.
+    assert "python -m build --outdir release-bundle" not in BUILDER
+    assert "python -m build --outdir reproducibility-check" not in BUILDER
+    assert 'cmp --silent "release-bundle/${artifact}"' not in BUILDER
+
+    # Only the already-verified primary artifacts are exposed for the
+    # downstream SBOM, digest, attestation, and publication steps.
+    copy_index = BUILDER.index('cp "${PRIMARY_DIR}"/* release-bundle/')
+    compare_index = BUILDER.index(
+        'cmp --silent "${PRIMARY_DIR}/${artifact}" "${REPRO_DIR}/${artifact}"'
+    )
+    assert copy_index > compare_index
 
 def test_provenance_explicitly_covers_wheel_and_sdist() -> None:
     provenance = re.search(
