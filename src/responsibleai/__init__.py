@@ -47,7 +47,7 @@ from responsibleai.redteam.simulator import (
 from responsibleai.trust.passport import AIPassport, PassportGenerator
 from responsibleai.trust.score import TrustScore, TrustScoreEngine
 
-__version__ = "1.2.5"
+__version__ = "1.2.6"
 
 __all__ = [
     # Trust
