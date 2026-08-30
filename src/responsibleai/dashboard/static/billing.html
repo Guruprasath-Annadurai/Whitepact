@@ -71,7 +71,7 @@
         const p = d[tier];
         return '<div class="plan-card"><h3>' + escHtml(tier) + '</h3><div class="price">$' + p.price_usd_monthly + '/mo</div>' +
           '<div class="text-sm text-muted">' + escHtml(p.description) + '</div>' +
-          '<ul>' + p.tools.map(function (t) { return "<li>" + escHtml(t) + "</li>"; }).join("") + '</ul>' +
+          '<ul tabindex="0" aria-label="' + escHtml(tier) + ' plan tools">' + p.tools.map(function (t) { return "<li>" + escHtml(t) + "</li>"; }).join("") + '</ul>' +
           (tier !== "FREE" ? '<button class="btn btn-primary" style="width:100%;margin-top:1rem;" data-plan="' + tier + '">Upgrade to ' + tier + '</button>' : '') +
           '</div>';
       }).join("");

@@ -182,8 +182,10 @@ jobs:
       - name: Install project
         run: pip install -e ".[dashboard]"
 
-      - name: Install pa11y-ci
-        run: npm ci
+      - name: Install accessibility tooling
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
 
       - name: Start dashboard (auth disabled, in-memory DB)
         run: |
@@ -196,8 +198,8 @@ jobs:
           done
           curl -sf http://127.0.0.1:8765/ > /dev/null || (cat dashboard.log && exit 1)
 
-      - name: Run pa11y-ci against public/dashboard pages (docs/ACCESSIBILITY.md)
-        run: npx pa11y-ci --config .pa11yci.json
+      - name: Run accessibility gate against public/dashboard pages
+        run: npm run a11y
 
   i18n-tests:
     name: i18n unit tests
