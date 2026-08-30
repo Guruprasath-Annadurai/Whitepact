@@ -512,6 +512,18 @@ class ActionRequest:
     arguments: dict[str, Any] = field(default_factory=dict)
     action_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     proposed_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    # Enterprise Readiness Phase 5 (purpose binding). `None` by default
+    # -- no live MCP tool-call schema on either hosted dispatch path
+    # has a protocol-level field for "what purpose is this call for"
+    # today, so this stays unset on every current live call site; a
+    # caller that DOES set it opts into purpose-compatibility
+    # enforcement at consent resolution (see
+    # governance/authority_resolver.py's `_resolve_applicable_consent()`)
+    # and gets automatic mutation detection for free, since
+    # `governance/approval.py`'s `compute_action_digest()` includes
+    # this field in the same digest `ExecutionAuthorization`/
+    # `ApprovalRequest` already rely on to detect a changed action.
+    purpose: str | None = None
 
 
 @dataclass

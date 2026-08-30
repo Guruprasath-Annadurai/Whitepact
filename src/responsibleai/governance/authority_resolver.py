@@ -196,6 +196,13 @@ async def _resolve_applicable_consent(
        is optional in a way action-type scoping is not (the REST
        capture endpoint requires a non-empty `allowed_action_types` but
        allows an empty `allowed_targets`).
+    4. **Purpose (Enterprise Readiness Phase 5)**: only enforced when
+       the caller opted in by setting `action.purpose`. When set, the
+       consent is applicable only if it matches `proof.purpose`
+       *exactly* -- free-text equality against a specific, previously
+       persisted, already-authorized value, the same pattern
+       `compute_action_digest()` already uses for mutation detection.
+       A consent permitting purpose A must never authorize purpose B.
 
     Returns `None` (never a partially-checked proof) the moment any
     check fails -- callers then fall back to today's self-root-only
@@ -210,6 +217,8 @@ async def _resolve_applicable_consent(
     if action.action_type not in proof.allowed_action_types:
         return None
     if proof.allowed_targets and action.target not in proof.allowed_targets:
+        return None
+    if action.purpose is not None and action.purpose != proof.purpose:
         return None
     return proof
 
@@ -314,4 +323,10 @@ async def resolve_authority_grant(
         # governance/execution.py) can now bind to which consent proof
         # actually authorized the action, not just that some consent did.
         consent_reference=consent.consent_id if consent is not None else None,
+        # Enterprise Readiness Phase 5 (purpose binding): only populate
+        # the validated purpose once a consent-backed grant actually
+        # confirmed compatibility (_resolve_applicable_consent()'s
+        # purpose check, above) -- never populate before compatibility
+        # is established, per the directive's own ordering requirement.
+        requested_purpose=action.purpose if consent is not None else None,
     )

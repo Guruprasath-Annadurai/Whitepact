@@ -71,10 +71,15 @@ class ApprovalStatus(StrEnum):
 
 def compute_action_digest(action: ActionRequest) -> str:
     """A stable SHA-256 digest over exactly the fields that define
-    "what a human approved" — action_type, target, and the argument
+    "what a human approved" — action_type, target, the argument
     values (not just their names, unlike `EvidenceRecord.argument_keys`
     — the mutation invariant needs to detect a *changed value*, e.g.
-    the payment amount, not just a changed argument *name*).
+    the payment amount, not just a changed argument *name*), and
+    (Enterprise Readiness Phase 5) `purpose` — an authorization or
+    approval granted for one declared purpose must not silently cover
+    execution under a different one; including it here means mutation
+    detection for purpose comes for free through this same,
+    already-tested mechanism, not a second, separate check.
 
     This function's whole job is producing a value comparable across
     two separately-constructed `ActionRequest`s for the same logical
@@ -88,6 +93,7 @@ def compute_action_digest(action: ActionRequest) -> str:
             "action_type": action.action_type,
             "target": action.target,
             "arguments": action.arguments,
+            "purpose": action.purpose,
         },
         sort_keys=True,
         default=str,
@@ -156,6 +162,14 @@ class ApprovalRequest:
     # and encrypting the column doesn't change that exposure risk once
     # the API itself hands the plaintext back over HTTP.
     arguments: dict[str, Any] | None = None
+    # Enterprise Readiness Phase 5 (purpose binding). The requested
+    # purpose a human is being asked to approve, carried unchanged
+    # through to build_resume_action() so a resumed execution is
+    # re-checked against the SAME purpose that was queued -- without
+    # this, purpose would be silently dropped across a
+    # REQUIRE_APPROVAL -> resume cycle, defeating Section 9's
+    # revalidation requirement before it could even run.
+    purpose: str | None = None
 
     @property
     def is_resolved(self) -> bool:
@@ -221,6 +235,7 @@ def build_approval_request(action: ActionRequest, decision: DecisionResult) -> A
         requested_by=action.agent.identity.identity_id,
         arguments=dict(action.arguments),
         required_approvals=default_required_approvals(decision.risk_tier),
+        purpose=action.purpose,
     )
 
 
@@ -255,4 +270,5 @@ def build_resume_action(approval: ApprovalRequest, *, agent: AgentContext) -> Ac
         target=approval.target,
         arguments=approval.arguments,
         action_id=approval.action_id,
+        purpose=approval.purpose,
     )

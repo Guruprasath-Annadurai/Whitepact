@@ -45,6 +45,15 @@ class PolicyRule:
     risk_tiers: frozenset[RiskTier] | None = None  # None = matches any tier
     action_types: frozenset[str] | None = None  # None = matches any action_type
     targets: frozenset[str] | None = None  # None = matches any target
+    # Enterprise Readiness Phase 5 (purpose binding). `None` matches
+    # any purpose (including no purpose declared at all) -- identical
+    # backward-compatible shape to `action_types`/`targets` above, so
+    # every existing rule keeps behaving exactly as before this field
+    # existed. When set, a rule with a declared purpose set requires a
+    # MATCHING requested purpose to fire -- `action.purpose is None`
+    # against a rule that DOES restrict purpose is a non-match (the
+    # rule needed a purpose that wasn't given), not a silent pass.
+    allowed_purposes: frozenset[str] | None = None
 
     def __post_init__(self) -> None:
         if self.effect not in _RULE_EFFECTS:
@@ -58,7 +67,11 @@ class PolicyRule:
             return False
         if self.action_types is not None and action.action_type not in self.action_types:
             return False
-        return not (self.targets is not None and action.target not in self.targets)
+        if self.targets is not None and action.target not in self.targets:
+            return False
+        return not (
+            self.allowed_purposes is not None and action.purpose not in self.allowed_purposes
+        )
 
 
 @dataclass

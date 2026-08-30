@@ -159,15 +159,21 @@ class ExecutionAuthorization:
     which Heart verdict digest authorized an action, not just the
     action's own shape.
 
-    `revocation_epoch` and `purpose` are deliberately left `None` with
-    no field to populate them from yet — `resolve_authority_grant()`
-    does not query `RevocationEpochRepository` at grant time (that
-    wiring doesn't exist; see `docs/enterprise-readiness/
-    00_MASTER_READINESS_AUDIT.md`'s Purpose binding row), and no
-    `ActionRequest` carries a requested purpose today. Adding these
-    fields now, unpopulated, means a future phase that does wire that
-    data doesn't need to touch this dataclass's shape again — but this
-    class does not fabricate values for them.
+    `revocation_epoch` is deliberately left `None` with no field to
+    populate it from yet — `resolve_authority_grant()` does not query
+    `RevocationEpochRepository` at grant time (that wiring doesn't
+    exist; see `docs/enterprise-readiness/00_MASTER_READINESS_AUDIT.md`'s
+    Purpose binding row). This class does not fabricate a value for it.
+
+    `purpose` (Enterprise Readiness Phase 5) is populated by
+    `authorize_execution()`'s `purpose` parameter, which callers pass
+    as `grant.requested_purpose` — the VALIDATED purpose
+    `resolve_authority_grant()` confirmed against consent/policy, never
+    the raw, unvalidated `action.purpose`. It participates in
+    `compute_action_digest()` (see `governance/approval.py`), so a
+    mutated purpose invalidates the authorization the same way a
+    mutated argument does — this is the digest-binding mechanism that
+    proves authorization(purpose=A) cannot execute as purpose=B.
     """
 
     action_digest: str
@@ -206,6 +212,7 @@ def authorize_execution(
     target_fingerprint: str | None = None,
     consent_reference: str | None = None,
     heart_legitimacy_digest: str | None = None,
+    purpose: str | None = None,
 ) -> ExecutionAuthorization:
     """Turn a gateway decision into an `ExecutionAuthorization` — the
     only place one is ever constructed. Raises `DecisionNotExecutableError`
@@ -238,6 +245,12 @@ def authorize_execution(
     `None` otherwise, honestly reflecting that no Heart verdict backs
     this authorization. `decision.policy_version` is read directly from
     *decision* — always available, no separate parameter needed.
+
+    *purpose* (Enterprise Readiness Phase 5) — pass `grant.
+    requested_purpose` when a consent-backed grant validated one; leave
+    `None` otherwise. Callers must never pass the raw, unvalidated
+    `action.purpose` here — only a value `resolve_authority_grant()`
+    already confirmed compatible gets bound into the authorization.
     """
     if decision.decision not in (GovernanceDecision.ALLOW, GovernanceDecision.ALLOW_WITH_REDACTION):
         raise DecisionNotExecutableError(decision.decision)
@@ -250,6 +263,7 @@ def authorize_execution(
         consent_reference=consent_reference,
         policy_version=decision.policy_version,
         heart_legitimacy_digest=heart_legitimacy_digest,
+        purpose=purpose,
         expires_at=datetime.now(UTC) + timedelta(seconds=ttl_seconds),
     )
 

@@ -365,6 +365,7 @@ async def apply_upstream_governance(
         target=target,
         arguments=final_arguments,
         action_id=action.action_id,
+        purpose=action.purpose,
     )
     # Execution Permit v2 -- fingerprint the server config this
     # decision was actually made against, so UpstreamMCPExecutor.execute()
@@ -377,6 +378,7 @@ async def apply_upstream_governance(
         heart_legitimacy_digest=(
             heart_grant.legitimacy.canonical_digest if heart_grant is not None else None
         ),
+        purpose=heart_grant.requested_purpose if heart_grant is not None else None,
     )
     try:
         result = await executor.execute(authorization, final_action)

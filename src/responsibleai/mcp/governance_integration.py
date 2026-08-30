@@ -597,6 +597,7 @@ async def apply_governance(
         target=name,
         arguments=final_arguments,
         action_id=action.action_id,
+        purpose=action.purpose,
     )
     authorization = authorize_execution(
         decision,
@@ -605,6 +606,7 @@ async def apply_governance(
         heart_legitimacy_digest=(
             heart_grant.legitimacy.canonical_digest if heart_grant is not None else None
         ),
+        purpose=heart_grant.requested_purpose if heart_grant is not None else None,
     )
     try:
         result = await InternalToolExecutor(nonce_repo=services.nonce_repo).execute(
@@ -671,14 +673,32 @@ def _agent_from_approval(approval: ApprovalRequest) -> AgentContext:
     falls back to `"unknown"` only for a pre-existing approval that
     somehow has no `requested_by` (shouldn't happen for anything built
     via `build_approval_request()`, which always sets it), rather than
-    raising and blocking an otherwise-valid resume."""
+    raising and blocking an otherwise-valid resume.
+
+    `agent_id=approval.requested_by` (Enterprise Readiness Phase 5,
+    found while wiring purpose-recheck at resume): every real call
+    site that builds an `ActionRequest` for governance (`apply_governance()`'s
+    `agent = AgentContext(..., agent_id=ctx.key_id, ...)` alongside
+    `identity = IdentityContext(identity_id=ctx.key_id, ...)`) sets
+    `agent.agent_id` to the SAME value as `identity.identity_id` --
+    `requested_by` already persists exactly that value. Without this,
+    `_resolve_applicable_consent()`'s `get_latest_for_grantee(agent.agent_id, ...)`
+    lookup at resume time would key off a fresh random UUID
+    (`AgentContext.agent_id`'s dataclass default) that no consent was
+    ever captured against, making the entire Phase E6/Phase 5 consent
+    recheck at resume silently unable to find an applicable consent no
+    matter what changed -- a real, pre-existing gap this phase's own
+    negative tests caught."""
     identity = IdentityContext(
         identity_id=approval.requested_by or "unknown",
         kind=IdentityKind.ORGANIZATION,
         org_id=approval.organization_id,
     )
     return AgentContext(
-        identity=identity, organization_id=approval.organization_id, framework="resumed-approval"
+        identity=identity,
+        organization_id=approval.organization_id,
+        agent_id=approval.requested_by or "unknown",
+        framework="resumed-approval",
     )
 
 
@@ -825,6 +845,24 @@ async def resume_approval(
                     approval.approval_id,
                     recheck_grant.legitimacy.heart_veto.reason or "unspecified",
                 )
+            # Enterprise Readiness Phase 5 (purpose binding), directive
+            # Section 9: `is_legitimate` alone is not sufficient here --
+            # `_agent_from_approval()` always reconstructs an
+            # IdentityKind.ORGANIZATION identity (terminal, self-root
+            # legitimate by default), so a consent that no longer
+            # backs the queued purpose does not by itself flip
+            # `is_legitimate` to False the way a fully revoked root
+            # does (resolve_authority_grant() simply falls back to the
+            # still-legitimate self-root when no consent applies).
+            # `requested_purpose` is populated ONLY when a consent
+            # actually validated it (authority_resolver.py), so it is
+            # the correct, independent signal that the originally
+            # authorized purpose no longer holds.
+            if action.purpose is not None and recheck_grant.requested_purpose != action.purpose:
+                raise ApprovalRevokedSinceQueuedError(
+                    approval.approval_id,
+                    "requested purpose no longer authorized by consent/policy",
+                )
 
     decision = DecisionResult(
         decision=GovernanceDecision.ALLOW,
@@ -841,6 +879,7 @@ async def resume_approval(
         heart_legitimacy_digest=(
             recheck_grant.legitimacy.canonical_digest if recheck_grant is not None else None
         ),
+        purpose=recheck_grant.requested_purpose if recheck_grant is not None else None,
     )
     result = await executor.execute(authorization, action)
 

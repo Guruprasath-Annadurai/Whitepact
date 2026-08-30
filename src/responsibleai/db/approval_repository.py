@@ -146,6 +146,7 @@ def _row_to_request(row: Any) -> ApprovalRequest:
         resolved_by=row.resolved_by,
         resolved_at=datetime.fromisoformat(row.resolved_at) if row.resolved_at else None,
         resolution_notes=row.resolution_notes,
+        purpose=getattr(row, "purpose", None),
     )
 
 
@@ -189,6 +190,7 @@ class ApprovalRepository:
                     if approval.arguments is not None
                     else None,
                     required_approvals=approval.required_approvals,
+                    purpose=approval.purpose,
                 )
             )
 

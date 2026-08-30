@@ -475,6 +475,12 @@ governance_approvals = Table(
     Column("resolved_by", String(200), nullable=True),
     Column("resolved_at", String(32), nullable=True),
     Column("resolution_notes", Text, nullable=True),
+    # Enterprise Readiness Phase 5 (purpose binding). NULL for rows
+    # persisted before this column existed and for any approval whose
+    # requesting ActionRequest never set a purpose -- both cases mean
+    # "no requested purpose was declared," not "any purpose is
+    # authorized." See governance/approval.py's build_resume_action().
+    Column("purpose", Text, nullable=True),
     Index("idx_gap_org", "org_id"),
     Index("idx_gap_status", "status"),
     Index("idx_gap_requested", "requested_at"),

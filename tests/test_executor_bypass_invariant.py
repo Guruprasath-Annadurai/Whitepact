@@ -237,24 +237,36 @@ class TestExecutionAuthorizationCarriesProvenanceFields:
         assert authorization.consent_reference == "consent-abc123"
         assert authorization.heart_legitimacy_digest == "digest-def456"
 
-    def test_revocation_epoch_and_purpose_have_no_way_to_be_populated_yet(self) -> None:
+    def test_revocation_epoch_has_no_way_to_be_populated_yet(self) -> None:
         """Named honestly, matching governance/execution.py's own
-        docstring: these fields exist on the dataclass for a future
+        docstring: this field exists on the dataclass for a future
         phase to populate, but authorize_execution() has no parameter
-        for either today, since no live caller produces a value for
-        them -- this test locks in that current, honest state rather
-        than letting a future change silently start fabricating one."""
+        for it today, since no live caller produces a value for it --
+        this test locks in that current, honest state rather than
+        letting a future change silently start fabricating one."""
         action = _action()
         decision = _allow_decision(action.action_id)
         authorization = authorize_execution(decision, action)
         assert authorization.revocation_epoch is None
-        assert authorization.purpose is None
         import inspect
 
         from responsibleai.governance.execution import authorize_execution as _fn
 
         assert "revocation_epoch" not in inspect.signature(_fn).parameters
-        assert "purpose" not in inspect.signature(_fn).parameters
+
+    def test_purpose_defaults_none_and_is_carried_through_when_supplied(self) -> None:
+        """Enterprise Readiness Phase 5: purpose defaults to None (no
+        caller opted in) but is bound into the authorization verbatim
+        when a caller does supply it -- see authorize_execution()'s own
+        docstring for why callers must only ever pass a VALIDATED
+        purpose (grant.requested_purpose), never the raw action.purpose."""
+        action = _action()
+        decision = _allow_decision(action.action_id)
+        authorization = authorize_execution(decision, action)
+        assert authorization.purpose is None
+
+        authorization_with_purpose = authorize_execution(decision, action, purpose="analytics")
+        assert authorization_with_purpose.purpose == "analytics"
 
     def test_execution_id_is_distinct_from_authorization_id_and_from_other_executions(
         self,
