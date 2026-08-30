@@ -164,11 +164,24 @@ tbody tr:hover { background: var(--row-hover); }
 /* ── Badges / pills ───────────────────────────────────────────────────────── */
 .pill { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.72rem; font-weight: 700; border-radius: 999px; padding: 0.18rem 0.6rem; text-transform: uppercase; letter-spacing: 0.02em; }
 .pill-outline { background: transparent; border: 1px solid var(--border); color: var(--muted); text-transform: none; font-weight: 600; }
-.pill-critical, .pill-high { background: rgba(220,38,38,0.14); color: var(--danger-text); }
-.pill-medium { background: rgba(37,99,235,0.12); color: var(--link); }
+.pill-critical, .pill-high { background: rgba(220,38,38,0.14); color: #991b1b; }
+.pill-medium { background: rgba(37,99,235,0.12); color: #1e40af; }
 .pill-low, .pill-neutral { background: var(--code-bg); color: var(--muted); }
-.pill-success { background: rgba(22,163,74,0.14); color: var(--green); }
-.pill-warning { background: rgba(217,119,6,0.14); color: var(--amber); }
+.pill-success { background: rgba(22,163,74,0.14); color: #166534; }
+.pill-warning { background: rgba(217,119,6,0.14); color: #92400e; }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .pill-critical,
+  :root:not([data-theme="light"]) .pill-high { color: #fca5a5; }
+  :root:not([data-theme="light"]) .pill-medium { color: #93c5fd; }
+  :root:not([data-theme="light"]) .pill-success { color: #86efac; }
+  :root:not([data-theme="light"]) .pill-warning { color: #fcd34d; }
+}
+:root[data-theme="dark"] .pill-critical,
+:root[data-theme="dark"] .pill-high { color: #fca5a5; }
+:root[data-theme="dark"] .pill-medium { color: #93c5fd; }
+:root[data-theme="dark"] .pill-success { color: #86efac; }
+:root[data-theme="dark"] .pill-warning { color: #fcd34d; }
 
 /* ── Grade badge (trust score) ────────────────────────────────────────────── */
 .grade-badge { display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem; border-radius: 8px; font-weight: 800; font-size: 0.95rem; }

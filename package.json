@@ -2,11 +2,12 @@
   "name": "whitepact-frontend-tooling",
   "private": true,
   "description": "Dev-only manifest for frontend tooling (pa11y-ci accessibility scans, i18n unit tests). Not published; the project itself is Python, distributed via PyPI as rai-governance-platform.",
-  "devDependencies": {
-    "pa11y-ci": "^4.0.1"
-  },
   "scripts": {
-    "a11y": "pa11y-ci --config .pa11yci.json",
+    "a11y": "node tests/js/accessibility.test.mjs",
     "test:i18n": "node --test tests/js/i18n.test.js"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "playwright": "^1.62.1"
   }
 }
