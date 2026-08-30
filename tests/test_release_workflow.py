@@ -135,12 +135,14 @@ def test_publish_verifies_before_pypi_and_pypi_before_release() -> None:
         "Verify builder digests and artifact set",
         "Independently verify wheel and sdist provenance",
         "Verify CycloneDX SBOM attestation",
+        "Stage exact attested distributions for PyPI",
         "Publish exact attested distributions to PyPI",
         "Confirm PyPI published the builder's exact bytes",
         "Create GitHub Release from the same verified bundle",
     )
     assert positions == sorted(positions)
-    assert "packages-dir: release-bundle/" in PUBLISH
+    assert "packages-dir: release-bundle/" not in PUBLISH
+    assert "packages-dir: ${{ runner.temp }}/whitepact-pypi-publish/" in PUBLISH
     assert "skip-existing: true" in PUBLISH
     assert "sha256sum --check SHA256SUMS" in PUBLISH
 
@@ -196,3 +198,14 @@ def test_verification_constrains_builder_source_and_runner() -> None:
     assert '--source-digest "$GITHUB_SHA"' in PUBLISH
     assert '--source-ref "$GITHUB_REF"' in PUBLISH
     assert PUBLISH.count("--deny-self-hosted-runners") == 2
+
+
+def test_pypi_publish_stages_only_distribution_files() -> None:
+    assert 'PUBLISH_DIR="${RUNNER_TEMP}/whitepact-pypi-publish"' in PUBLISH
+    assert 'cp release-bundle/*.whl release-bundle/*.tar.gz "${PUBLISH_DIR}/"' in PUBLISH
+    assert "packages-dir: ${{ runner.temp }}/whitepact-pypi-publish/" in PUBLISH
+    assert "packages-dir: release-bundle/" not in PUBLISH
+
+    stage_index = PUBLISH.index('cp release-bundle/*.whl release-bundle/*.tar.gz "${PUBLISH_DIR}/"')
+    publish_index = PUBLISH.index("packages-dir: ${{ runner.temp }}/whitepact-pypi-publish/")
+    assert stage_index < publish_index
