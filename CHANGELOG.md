@@ -8,6 +8,25 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ## [Unreleased]
 
+## [1.2.4] - 2026-08-31
+
+### Security / Release Engineering
+
+- Hardened the release pipeline toward SLSA Build L3 with a reusable trusted
+  builder, reproducible build verification, CycloneDX SBOM generation,
+  SHA-256 manifests, GitHub artifact attestations, provenance verification,
+  PyPI Trusted Publishing, and publication of the same verified artifact bundle
+  to GitHub Releases. Build L3 is not claimed until this release completes the
+  hardened pipeline and the resulting public provenance is independently
+  verified.
+- Removed the vulnerable `pa11y-ci` / Puppeteer / `extract-zip` accessibility
+  dependency chain reported by Dependabot and replaced it with
+  `@axe-core/playwright` + Playwright.
+- Preserved the 30-page accessibility CI gate and fixed the WCAG AA issues
+  surfaced by Axe, including pill color contrast and keyboard access for
+  scrollable billing plan lists.
+
+
 ### Added
 
 - Heart → WhitePact Production Integration, Phase 2 — Identity
