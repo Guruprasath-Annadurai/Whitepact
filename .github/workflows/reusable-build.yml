@@ -55,8 +55,11 @@ jobs:
           set -euo pipefail
           SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
           export SOURCE_DATE_EPOCH
-          python -m build --outdir release-bundle
-          python -m twine check release-bundle/*
+          PRIMARY_DIR="${RUNNER_TEMP}/whitepact-release-bundle"
+          rm -rf "${PRIMARY_DIR}"
+          mkdir -p "${PRIMARY_DIR}"
+          python -m build --outdir "${PRIMARY_DIR}"
+          python -m twine check "${PRIMARY_DIR}"/*
 
       - name: Verify reproducible release build
         shell: bash
@@ -64,10 +67,14 @@ jobs:
           set -euo pipefail
           SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
           export SOURCE_DATE_EPOCH
-          python -m build --outdir reproducibility-check
+          PRIMARY_DIR="${RUNNER_TEMP}/whitepact-release-bundle"
+          REPRO_DIR="${RUNNER_TEMP}/whitepact-reproducibility-check"
+          rm -rf "${REPRO_DIR}"
+          mkdir -p "${REPRO_DIR}"
+          python -m build --outdir "${REPRO_DIR}"
 
-          primary_names="$(find release-bundle -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)"
-          reproduced_names="$(find reproducibility-check -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)"
+          primary_names="$(find "${PRIMARY_DIR}" -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)"
+          reproduced_names="$(find "${REPRO_DIR}" -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)"
           if [ "$primary_names" != "$reproduced_names" ]; then
             echo "::error::The second build produced a different artifact set."
             diff -u <(printf '%s\n' "$primary_names") <(printf '%s\n' "$reproduced_names") || true
@@ -75,12 +82,17 @@ jobs:
           fi
 
           while IFS= read -r artifact; do
-            cmp --silent "release-bundle/${artifact}" "reproducibility-check/${artifact}" || {
+            cmp --silent "${PRIMARY_DIR}/${artifact}" "${REPRO_DIR}/${artifact}" || {
               echo "::error::Non-reproducible release artifact: ${artifact}"
-              sha256sum "release-bundle/${artifact}" "reproducibility-check/${artifact}"
+              sha256sum "${PRIMARY_DIR}/${artifact}" "${REPRO_DIR}/${artifact}"
               exit 1
             }
           done <<< "$primary_names"
+
+          # Only expose the verified primary build after reproducibility succeeds.
+          rm -rf release-bundle
+          mkdir -p release-bundle
+          cp "${PRIMARY_DIR}"/* release-bundle/
 
       - name: Generate CycloneDX SBOM from the releasable wheel
         shell: bash
