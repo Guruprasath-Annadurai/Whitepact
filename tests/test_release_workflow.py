@@ -65,14 +65,8 @@ def test_builder_owns_both_distributions_and_reproducibility_check() -> None:
     assert 'primary_names="$(find "${PRIMARY_DIR}"' in BUILDER
     assert 'reproduced_names="$(find "${REPRO_DIR}"' in BUILDER
 
-    assert (
-        'cmp --silent "${PRIMARY_DIR}/${artifact}" "${REPRO_DIR}/${artifact}"'
-        in BUILDER
-    )
-    assert (
-        'sha256sum "${PRIMARY_DIR}/${artifact}" "${REPRO_DIR}/${artifact}"'
-        in BUILDER
-    )
+    assert 'cmp --silent "${PRIMARY_DIR}/${artifact}" "${REPRO_DIR}/${artifact}"' in BUILDER
+    assert 'sha256sum "${PRIMARY_DIR}/${artifact}" "${REPRO_DIR}/${artifact}"' in BUILDER
 
     # The source checkout must remain unchanged while both builds are produced.
     assert "python -m build --outdir release-bundle" not in BUILDER
@@ -86,6 +80,7 @@ def test_builder_owns_both_distributions_and_reproducibility_check() -> None:
         'cmp --silent "${PRIMARY_DIR}/${artifact}" "${REPRO_DIR}/${artifact}"'
     )
     assert copy_index > compare_index
+
 
 def test_provenance_explicitly_covers_wheel_and_sdist() -> None:
     provenance = re.search(
