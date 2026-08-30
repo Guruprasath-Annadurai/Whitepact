@@ -55,17 +55,30 @@ entry).
      by an approved release signer** (`verify-signed-tag` job) —
      nothing below this point runs for a lightweight, unsigned, or
      unapproved-signer tag.
-   - Builds the wheel and sdist, verifies them with `twine check`.
-   - Generates a CycloneDX SBOM from the actual built artifact's
-     installed dependency closure (Phase 15).
-   - Attests build provenance via Sigstore
-     (`actions/attest-build-provenance`) — verifiable with
-     `gh attestation verify <file> --owner Guruprasath-Annadurai`.
+   - Calls `.github/workflows/reusable-build.yml`, whose least-privilege
+     job exclusively builds the wheel and sdist, verifies them with
+     `twine check`, rebuilds them once and byte-compares the results,
+     and records SHA-256 digests.
+   - Generates a CycloneDX SBOM from the actual wheel's installed
+     dependency closure and creates an official GitHub SBOM attestation
+     bound to that wheel.
+   - Attests both wheel and sdist build provenance via GitHub/Sigstore
+     from inside the reusable builder. The bundle is uploaded once,
+     after attestation; the publish job never rebuilds it.
+   - Downloads the bundle, verifies the builder checksums and both
+     provenance subjects against the expected reusable workflow,
+     source commit, tag ref, and GitHub-hosted runner.
    - Publishes to PyPI via [trusted publishing](https://docs.pypi.org/trusted-publishers/)
      (OIDC — no long-lived API token stored as a secret).
-   - Creates a GitHub Release for the tag, attaching the built
-     artifacts and the SBOM, with auto-generated notes pointing back
-     at the `CHANGELOG.md` entry.
+   - Confirms PyPI reports the builder's exact wheel/sdist SHA-256
+     values, then creates a GitHub Release attaching those same bytes,
+     the SBOM, and `SHA256SUMS`.
+
+Consumer verification commands are in `docs/VERIFY_RELEASE.md`. The reusable
+workflow architecture is not itself proof of SLSA Build L3: a new release must
+complete it, and the public release bytes must then be independently verified
+against `.github/workflows/reusable-build.yml`. The live evidence state is
+recorded without overclaiming in `compliance/SLSA_BUILD_PROVENANCE.md`.
 
 ## Signing releases
 

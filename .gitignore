@@ -11,6 +11,7 @@ venv/
 !.env.example
 !.env.prod.example
 *.json
+!compliance/SLSA_BUILD_PROVENANCE.json
 !package.json
 !package-lock.json
 !.pa11yci.json
