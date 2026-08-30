@@ -8,6 +8,24 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ## [Unreleased]
 
+## [1.2.5] - 2026-08-31
+
+### Security / Release Engineering
+
+- Fixed the hardened release builder so reproducibility builds are produced
+  outside the source checkout under `RUNNER_TEMP`, preventing generated
+  release artifacts from contaminating the second sdist build.
+- Preserved the fail-closed byte-for-byte reproducibility gate: verified
+  primary artifacts are copied into `release-bundle/` only after the primary
+  and reproduction artifact sets match.
+- Added release-workflow tests that enforce isolated build directories and
+  verify that publication artifacts are exposed only after reproducibility
+  succeeds.
+- `v1.2.4` remains an immutable signed historical tag whose publication
+  attempt stopped at the reproducibility gate; it was not repointed or
+  rewritten. `v1.2.5` is the recovery release through the repaired pipeline.
+
+
 ## [1.2.4] - 2026-08-31
 
 ### Security / Release Engineering
