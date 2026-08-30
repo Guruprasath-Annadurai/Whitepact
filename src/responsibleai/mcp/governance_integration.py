@@ -61,6 +61,7 @@ from responsibleai.governance import (
     ActionRequest,
     AgentContext,
     AuthorityContext,
+    AuthorityGrant,
     DecisionResult,
     GovernanceDecision,
     IdentityContext,
@@ -199,11 +200,11 @@ async def _heart_legitimacy_denied_reason(
     agent: AgentContext,
     action: ActionRequest,
     authority: AuthorityContext,
-) -> str | None:
+) -> tuple[str | None, AuthorityGrant | None]:
     """Heart Production Integration Phase 6: the live-path gate
     Phase 5's `authority_resolver.py` was built for but deliberately
-    not wired to. Returns `None` (no denial) unless BOTH
-    `services.root_authority_repo` is wired AND
+    not wired to. Returns `(None, None)` (no denial, no grant) unless
+    BOTH `services.root_authority_repo` is wired AND
     `Settings.enterprise_mode` is true -- unset/off, this function is a
     no-op and `apply_governance()`'s behavior is unchanged from before
     Phase 6 existed, exactly the same "optional service, opt-in flag"
@@ -224,6 +225,13 @@ async def _heart_legitimacy_denied_reason(
     exactly like every other pre-`evaluate()` dependency crash this
     file already lets propagate (`TestPreEvaluateDependencyCrashesFailClosed`),
     fail-closed by the same mechanism, not a special case.
+
+    The second tuple element (Enterprise Readiness Phase 3, execution
+    binding) is the resolved `AuthorityGrant` itself whenever the Heart
+    check actually ran -- legitimate or not -- so a caller can bind
+    `grant.consent_reference`/`grant.legitimacy.canonical_digest` into
+    the `ExecutionAuthorization` it constructs next, not just receive a
+    pass/fail string.
     """
     # Local import, re-resolved on every call rather than bound once at
     # module-import time -- matches mcp/server.py's own established
@@ -237,7 +245,7 @@ async def _heart_legitimacy_denied_reason(
     from responsibleai.dashboard.config import get_settings
 
     if services.root_authority_repo is None or not get_settings().enterprise_mode:
-        return None
+        return None, None
 
     issuer, verification_method = _ISSUER_VERIFICATION_METHOD_BY_KIND.get(
         identity.kind, ("idp", identity.kind.value)
@@ -253,11 +261,14 @@ async def _heart_legitimacy_denied_reason(
         consent_repo=services.consent_repo,
     )
     if grant.is_legitimate:
-        return None
-    return format_reason(
-        ReasonCode.HEART_LEGITIMACY_FAILED,
-        status=grant.legitimacy.heart_veto.status.value,
-        reason=grant.legitimacy.heart_veto.reason or "unspecified",
+        return None, grant
+    return (
+        format_reason(
+            ReasonCode.HEART_LEGITIMACY_FAILED,
+            status=grant.legitimacy.heart_veto.status.value,
+            reason=grant.legitimacy.heart_veto.reason or "unspecified",
+        ),
+        grant,
     )
 
 
@@ -398,7 +409,10 @@ async def apply_governance(
     # Heart Production Integration Phase 6 -- see
     # _heart_legitimacy_denied_reason()'s own docstring. A no-op unless
     # both root_authority_repo is wired and enterprise_mode is on.
-    heart_denied_reason = await _heart_legitimacy_denied_reason(
+    # `heart_grant` (Enterprise Readiness Phase 3) is the resolved
+    # AuthorityGrant when the check ran, for binding into the
+    # ExecutionAuthorization built further down on the ALLOW path.
+    heart_denied_reason, heart_grant = await _heart_legitimacy_denied_reason(
         services, identity, agent, action, authority
     )
 
@@ -577,7 +591,14 @@ async def apply_governance(
         arguments=final_arguments,
         action_id=action.action_id,
     )
-    authorization = authorize_execution(decision, final_action)
+    authorization = authorize_execution(
+        decision,
+        final_action,
+        consent_reference=heart_grant.consent_reference if heart_grant is not None else None,
+        heart_legitimacy_digest=(
+            heart_grant.legitimacy.canonical_digest if heart_grant is not None else None
+        ),
+    )
     try:
         result = await _executor.execute(authorization, final_action)
     except Exception:
@@ -757,6 +778,11 @@ async def resume_approval(
     # function's own docstring. A no-op unless both root_authority_repo
     # and consent_repo are wired; the enterprise_mode check happens
     # inside the same way _heart_legitimacy_denied_reason() gates it.
+    # `recheck_grant` (Enterprise Readiness Phase 3) stays None whenever
+    # the recheck didn't run, so the ExecutionAuthorization built below
+    # honestly carries no consent_reference/heart_legitimacy_digest in
+    # that case rather than a stale or fabricated one.
+    recheck_grant: AuthorityGrant | None = None
     if root_authority_repo is not None:
         from responsibleai.dashboard.config import get_settings
 
@@ -791,7 +817,14 @@ async def resume_approval(
         ],
         risk_tier=RiskTier(approval.risk_tier) if approval.risk_tier else None,
     )
-    authorization = authorize_execution(decision, action)
+    authorization = authorize_execution(
+        decision,
+        action,
+        consent_reference=recheck_grant.consent_reference if recheck_grant is not None else None,
+        heart_legitimacy_digest=(
+            recheck_grant.legitimacy.canonical_digest if recheck_grant is not None else None
+        ),
+    )
     result = await executor.execute(authorization, action)
 
     authority = AuthorityContext(

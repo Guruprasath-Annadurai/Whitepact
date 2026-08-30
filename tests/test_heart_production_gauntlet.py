@@ -189,6 +189,11 @@ class TestFullProductionAuthorityGauntlet:
         )
         assert grant.is_legitimate is True
         assert grant.root_reference == admin_root.root_id
+        # Enterprise Readiness Phase 3: resolve_authority_grant() must
+        # stamp which consent proof actually backed the grant, not just
+        # that some consent existed -- feeds ExecutionAuthorization's
+        # own consent_reference binding.
+        assert grant.consent_reference == proof.consent_id
 
         # 5. Enforcement boundary -- policy/risk decision stands in for
         # a real Policy/RiskTier evaluation (out of this gauntlet's

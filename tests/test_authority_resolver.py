@@ -368,6 +368,10 @@ class TestResolveAuthorityGrantConsentBacked:
             consent_repo=consent_repo,
         )
         assert grant.is_legitimate is False
+        # Enterprise Readiness Phase 3: no applicable consent must mean
+        # no consent_reference either -- an illegitimate grant carrying
+        # a stamped consent_reference would be self-contradictory.
+        assert grant.consent_reference is None
 
     async def test_consent_from_another_tenant_is_not_applicable(self, root_repo, consent_repo):
         other_tenant_root = await _consenting_org_root(root_repo, organization_id="org-2")

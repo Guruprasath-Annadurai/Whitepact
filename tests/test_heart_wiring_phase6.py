@@ -343,3 +343,64 @@ class TestConsentBackedLegitimacyReachableThroughLiveDispatch:
         payload = json.loads(result.content[0].text)
         assert payload["error"] == "governance_denied"
         assert any(code.startswith("HEART_LEGITIMACY_FAILED") for code in payload["reason_codes"])
+
+
+class TestExecutionAuthorizationBoundToConsentThroughLiveDispatch:
+    """Enterprise Readiness Phase 3: proves the actual wiring in
+    mcp/governance_integration.py -- not just authorize_execution() and
+    resolve_authority_grant() in isolation -- by intercepting the real
+    authorize_execution() call the live consent-backed dispatch path
+    makes, and checking what it was actually called with."""
+
+    async def test_live_allow_binds_consent_reference_and_heart_digest(
+        self, mcp_app_with_engine, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from responsibleai.db.consent_proof_repository import ConsentProofRepository
+        from responsibleai.db.root_authority_repository import RootAuthorityRepository
+        from responsibleai.governance.consent_proof import ConsentMethod, build_consent_proof
+        from responsibleai.governance.root_authority import (
+            RootType,
+            build_root_authority_record,
+        )
+
+        build, org_id, _raw_key, engine = mcp_app_with_engine
+
+        root_repo = RootAuthorityRepository(engine)
+        consent_repo = ConsentProofRepository(engine)
+        admin_root = await root_repo.create(
+            build_root_authority_record(
+                "admin-1", RootType.ORGANIZATION, "idp", "oidc", organization_id=org_id
+            )
+        )
+        proof = build_consent_proof(
+            "admin-1",
+            admin_root.root_id,
+            "oidc:user-1",
+            "run health checks on behalf of the org",
+            "uptime monitoring",
+            ConsentMethod.API_AUTHENTICATED_REQUEST,
+            allowed_action_types=("rai_health",),
+        )
+        await consent_repo.create(proof)
+
+        captured: dict = {}
+        import responsibleai.mcp.governance_integration as gi_module
+
+        real_authorize = gi_module.authorize_execution
+
+        def _spy(*args, **kwargs):
+            captured["consent_reference"] = kwargs.get("consent_reference")
+            captured["heart_legitimacy_digest"] = kwargs.get("heart_legitimacy_digest")
+            return real_authorize(*args, **kwargs)
+
+        monkeypatch.setattr(gi_module, "authorize_execution", _spy)
+
+        app = await build(enterprise_mode=True)
+        token = _make_jwt({"sub": "user-1", "org_id": org_id, "roles": ["ANALYST"]})
+        result = await _call_tool(app, token, "rai_health", {})
+        payload = json.loads(result.content[0].text)
+        assert "status" in payload  # the tool actually ran
+
+        assert captured["consent_reference"] == proof.consent_id
+        assert captured["heart_legitimacy_digest"]  # non-empty, a real digest string
+        assert isinstance(captured["heart_legitimacy_digest"], str)

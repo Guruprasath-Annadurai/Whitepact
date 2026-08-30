@@ -141,13 +141,46 @@ class ExecutionAuthorization:
     `action_digest`). When set, `execute()` must recompute the same
     fingerprint from the target as it exists *right now* and refuse to
     run on any mismatch — see `AuthorizationTargetDriftError`.
+
+    **Enterprise Readiness Phase 3 fields** (`consent_reference`,
+    `policy_version`, `heart_legitimacy_digest`, `execution_id`):
+    audit/provenance binding, not independently re-validated against a
+    "current" value the way `target_fingerprint` is. Unlike a resolved
+    upstream target (genuinely external, mutable state that can drift
+    between decision and execution), a decision's policy version and
+    the consent/legitimacy verdict that produced it are properties of
+    the decision itself, computed once, a few lines before
+    `authorize_execution()` is called — there is no meaningful "current"
+    value to recompute and compare at `execute()` time the way there is
+    for a target. Their purpose is completeness of what an
+    `EvidenceRecord` can bind to (see `PHASE2_EXECUTION_BOUNDARY_
+    ARCHITECTURE.md`'s reasoning for why this stays structural, not
+    signed): recording exactly which consent, which policy version, and
+    which Heart verdict digest authorized an action, not just the
+    action's own shape.
+
+    `revocation_epoch` and `purpose` are deliberately left `None` with
+    no field to populate them from yet — `resolve_authority_grant()`
+    does not query `RevocationEpochRepository` at grant time (that
+    wiring doesn't exist; see `docs/enterprise-readiness/
+    00_MASTER_READINESS_AUDIT.md`'s Purpose binding row), and no
+    `ActionRequest` carries a requested purpose today. Adding these
+    fields now, unpopulated, means a future phase that does wire that
+    data doesn't need to touch this dataclass's shape again — but this
+    class does not fabricate values for them.
     """
 
     action_digest: str
     organization_id: str | None
     decision: GovernanceDecision
     target_fingerprint: str | None = None
+    consent_reference: str | None = None
+    policy_version: int | None = None
+    heart_legitimacy_digest: str | None = None
+    revocation_epoch: int | None = None
+    purpose: str | None = None
     authorization_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    execution_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     nonce: str = field(default_factory=lambda: uuid.uuid4().hex)
     issued_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     expires_at: datetime = field(
@@ -171,6 +204,8 @@ def authorize_execution(
     *,
     ttl_seconds: int = DEFAULT_AUTHORIZATION_TTL_SECONDS,
     target_fingerprint: str | None = None,
+    consent_reference: str | None = None,
+    heart_legitimacy_digest: str | None = None,
 ) -> ExecutionAuthorization:
     """Turn a gateway decision into an `ExecutionAuthorization` — the
     only place one is ever constructed. Raises `DecisionNotExecutableError`
@@ -195,6 +230,14 @@ def authorize_execution(
     drift between that resolution and what the target resolves to when
     the permit is actually consumed. Leave `None` when there's nothing
     to resolve (internal tools).
+
+    *consent_reference*/*heart_legitimacy_digest* (Enterprise Readiness
+    Phase 3) — pass `grant.consent_reference`/`grant.legitimacy.
+    canonical_digest` when the caller resolved a real `AuthorityGrant`
+    (i.e. `enterprise_mode` + Heart wiring was on for this call); leave
+    `None` otherwise, honestly reflecting that no Heart verdict backs
+    this authorization. `decision.policy_version` is read directly from
+    *decision* — always available, no separate parameter needed.
     """
     if decision.decision not in (GovernanceDecision.ALLOW, GovernanceDecision.ALLOW_WITH_REDACTION):
         raise DecisionNotExecutableError(decision.decision)
@@ -204,6 +247,9 @@ def authorize_execution(
         organization_id=action.agent.organization_id,
         decision=decision.decision,
         target_fingerprint=target_fingerprint,
+        consent_reference=consent_reference,
+        policy_version=decision.policy_version,
+        heart_legitimacy_digest=heart_legitimacy_digest,
         expires_at=datetime.now(UTC) + timedelta(seconds=ttl_seconds),
     )
 

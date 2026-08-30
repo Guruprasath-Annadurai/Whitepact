@@ -189,3 +189,79 @@ class TestExecutionAuthorizationBindsToRedactedArguments:
         # apply_governance() actually does) matches correctly.
         authorization2 = authorize_execution(decision, redacted)
         assert authorization2.matches_action(redacted) is True
+
+
+class TestExecutionAuthorizationCarriesProvenanceFields:
+    """Enterprise Readiness Phase 3 (cryptographic/structural execution
+    binding): `ExecutionAuthorization` now carries `policy_version`,
+    `consent_reference`, `heart_legitimacy_digest`, and `execution_id`
+    -- audit/provenance binding, not independently re-validated at
+    `execute()` time (see `governance/execution.py`'s own docstring for
+    why these differ from `target_fingerprint`). These tests prove
+    correct population and correct honest absence, not a drift check
+    against a "current" value that doesn't exist for these fields."""
+
+    def test_policy_version_is_read_from_the_decision_automatically(self) -> None:
+        action = _action()
+        decision = DecisionResult(
+            decision=GovernanceDecision.ALLOW, action_id=action.action_id, policy_version=7
+        )
+        authorization = authorize_execution(decision, action)
+        assert authorization.policy_version == 7
+
+    def test_policy_version_is_none_when_no_policy_was_consulted(self) -> None:
+        action = _action()
+        decision = _allow_decision(action.action_id)  # policy_version defaults None
+        authorization = authorize_execution(decision, action)
+        assert authorization.policy_version is None
+
+    def test_consent_reference_and_heart_digest_default_none(self) -> None:
+        """The honest default: an authorization built without Heart
+        having run (enterprise_mode off, or no consent_repo wired)
+        must not fabricate a consent reference or legitimacy digest."""
+        action = _action()
+        decision = _allow_decision(action.action_id)
+        authorization = authorize_execution(decision, action)
+        assert authorization.consent_reference is None
+        assert authorization.heart_legitimacy_digest is None
+
+    def test_consent_reference_and_heart_digest_are_carried_through_when_supplied(self) -> None:
+        action = _action()
+        decision = _allow_decision(action.action_id)
+        authorization = authorize_execution(
+            decision,
+            action,
+            consent_reference="consent-abc123",
+            heart_legitimacy_digest="digest-def456",
+        )
+        assert authorization.consent_reference == "consent-abc123"
+        assert authorization.heart_legitimacy_digest == "digest-def456"
+
+    def test_revocation_epoch_and_purpose_have_no_way_to_be_populated_yet(self) -> None:
+        """Named honestly, matching governance/execution.py's own
+        docstring: these fields exist on the dataclass for a future
+        phase to populate, but authorize_execution() has no parameter
+        for either today, since no live caller produces a value for
+        them -- this test locks in that current, honest state rather
+        than letting a future change silently start fabricating one."""
+        action = _action()
+        decision = _allow_decision(action.action_id)
+        authorization = authorize_execution(decision, action)
+        assert authorization.revocation_epoch is None
+        assert authorization.purpose is None
+        import inspect
+
+        from responsibleai.governance.execution import authorize_execution as _fn
+
+        assert "revocation_epoch" not in inspect.signature(_fn).parameters
+        assert "purpose" not in inspect.signature(_fn).parameters
+
+    def test_execution_id_is_distinct_from_authorization_id_and_from_other_executions(
+        self,
+    ) -> None:
+        action = _action()
+        decision = _allow_decision(action.action_id)
+        auth1 = authorize_execution(decision, action)
+        auth2 = authorize_execution(decision, action)
+        assert auth1.execution_id != auth1.authorization_id
+        assert auth1.execution_id != auth2.execution_id

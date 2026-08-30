@@ -305,4 +305,13 @@ async def resolve_authority_grant(
         effective_authority=effective_authority,
         legitimacy=legitimacy,
         root_reference=root.root_id,
+        # Enterprise Readiness Phase 3 (cryptographic/structural execution
+        # binding): AuthorityGrant.consent_reference has existed since
+        # authority_grant.py's own Phase 1 build, but this resolver -- the
+        # only place that actually knows which consent (if any) backed a
+        # grant -- never populated it. A caller building an
+        # ExecutionAuthorization from this grant (see
+        # governance/execution.py) can now bind to which consent proof
+        # actually authorized the action, not just that some consent did.
+        consent_reference=consent.consent_id if consent is not None else None,
     )

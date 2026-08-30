@@ -32,6 +32,7 @@ from responsibleai.governance import (
     ActionRequest,
     AgentContext,
     AuthorityContext,
+    AuthorityGrant,
     DecisionResult,
     GovernanceDecision,
     IdentityContext,
@@ -111,7 +112,7 @@ async def _heart_legitimacy_denied_reason(
     authority: AuthorityContext,
     *,
     consent_repo: ConsentProofRepository | None = None,
-) -> str | None:
+) -> tuple[str | None, AuthorityGrant | None]:
     """Heart Production Integration Phase 6, upstream-proxy counterpart
     to `governance_integration.py`'s function of the same name -- see
     that docstring for the full reasoning. Duplicated rather than
@@ -125,11 +126,16 @@ async def _heart_legitimacy_denied_reason(
     `governance_integration.py`'s counterpart -- this call site also
     omitted it, meaning Gap A's consent-backed legitimacy was equally
     unreachable on the upstream-proxy path. See
-    ENFORCEMENT_PATH_MATRIX.md's headline E0 finding."""
+    ENFORCEMENT_PATH_MATRIX.md's headline E0 finding.
+
+    Returns `(denied_reason, grant)` (Enterprise Readiness Phase 3) --
+    same shape as `governance_integration.py`'s counterpart, so a
+    caller can bind `grant.consent_reference`/`grant.legitimacy.
+    canonical_digest` into the `ExecutionAuthorization` it builds next."""
     from responsibleai.dashboard.config import get_settings
 
     if root_authority_repo is None or not get_settings().enterprise_mode:
-        return None
+        return None, None
 
     issuer, verification_method = _ISSUER_VERIFICATION_METHOD_BY_KIND.get(
         identity.kind, ("idp", identity.kind.value)
@@ -145,11 +151,14 @@ async def _heart_legitimacy_denied_reason(
         consent_repo=consent_repo,
     )
     if grant.is_legitimate:
-        return None
-    return format_reason(
-        ReasonCode.HEART_LEGITIMACY_FAILED,
-        status=grant.legitimacy.heart_veto.status.value,
-        reason=grant.legitimacy.heart_veto.reason or "unspecified",
+        return None, grant
+    return (
+        format_reason(
+            ReasonCode.HEART_LEGITIMACY_FAILED,
+            status=grant.legitimacy.heart_veto.status.value,
+            reason=grant.legitimacy.heart_veto.reason or "unspecified",
+        ),
+        grant,
     )
 
 
@@ -265,7 +274,10 @@ async def apply_upstream_governance(
     # Heart Production Integration Phase 6 -- see
     # _heart_legitimacy_denied_reason()'s own docstring. A no-op unless
     # both root_authority_repo is wired and enterprise_mode is on.
-    heart_denied_reason = await _heart_legitimacy_denied_reason(
+    # `heart_grant` (Enterprise Readiness Phase 3) is the resolved
+    # AuthorityGrant when the check ran, for binding into the
+    # ExecutionAuthorization built further down on the ALLOW path.
+    heart_denied_reason, heart_grant = await _heart_legitimacy_denied_reason(
         root_authority_repo, identity, agent, action, authority, consent_repo=consent_repo
     )
 
@@ -358,7 +370,13 @@ async def apply_upstream_governance(
     # decision was actually made against, so UpstreamMCPExecutor.execute()
     # can detect if that config drifts before the permit is consumed.
     authorization = authorize_execution(
-        decision, final_action, target_fingerprint=compute_upstream_target_fingerprint(server)
+        decision,
+        final_action,
+        target_fingerprint=compute_upstream_target_fingerprint(server),
+        consent_reference=heart_grant.consent_reference if heart_grant is not None else None,
+        heart_legitimacy_digest=(
+            heart_grant.legitimacy.canonical_digest if heart_grant is not None else None
+        ),
     )
     try:
         result = await executor.execute(authorization, final_action)
