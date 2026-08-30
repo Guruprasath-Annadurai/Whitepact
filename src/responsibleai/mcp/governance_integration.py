@@ -88,8 +88,6 @@ from responsibleai.governance.outcome import OutcomeStatus, build_outcome_record
 from responsibleai.integrations.client import TrustClient
 from responsibleai.rbac.models import OrgContext
 
-_executor = InternalToolExecutor()
-
 if TYPE_CHECKING:
     from responsibleai.webhooks.manager import WebhookManager
 
@@ -129,8 +127,8 @@ class GovernanceServices:
     # passed to `WhitePactRuntimeGateway.evaluate()`, identical to
     # behavior before the Autonomy Budget existed.
     autonomy_budget_repo: OrgAutonomyBudgetRepository | None = None
-    # Optional, same pattern -- when unset, `_executor.execute()` still
-    # runs exactly as before Outcome Observation existed; no
+    # Optional, same pattern -- when unset, `InternalToolExecutor.execute()`
+    # still runs exactly as before Outcome Observation existed; no
     # OutcomeRecord is ever persisted, and Reconciliation/Attestation
     # simply see "no outcome reported" for every evidence entry.
     outcome_repo: OutcomeRepository | None = None
@@ -163,6 +161,15 @@ class GovernanceServices:
     # lets `resolve_authority_grant()` actually consult persisted
     # consent, not just root legitimacy.
     consent_repo: ConsentProofRepository | None = None
+    # Enterprise Readiness Phase 4 (replay protection). Optional, same
+    # opt-in pattern -- unset means InternalToolExecutor (freshly
+    # constructed per call, not a shared singleton -- see this class's
+    # own history: a module-level singleton reconfigured via a setter
+    # leaked its durable-repo state across independently-constructed
+    # apps, a real bug caught by this branch's own test suite) falls
+    # back to its in-memory-only `consumed` flag, identical to before
+    # this phase existed.
+    nonce_repo: Any = None
 
 
 @dataclass
@@ -600,7 +607,9 @@ async def apply_governance(
         ),
     )
     try:
-        result = await _executor.execute(authorization, final_action)
+        result = await InternalToolExecutor(nonce_repo=services.nonce_repo).execute(
+            authorization, final_action
+        )
     except Exception:
         await _record_outcome(
             services,
@@ -703,6 +712,7 @@ async def resume_approval(
     outcome_repo: OutcomeRepository | None = None,
     root_authority_repo: RootAuthorityRepository | None = None,
     consent_repo: ConsentProofRepository | None = None,
+    nonce_repo: Any = None,
 ) -> dict[str, Any]:
     """The REQUIRE_APPROVAL -> resume-execution pipeline: given an
     approval a human has already resolved APPROVED, reconstruct the
@@ -743,6 +753,13 @@ async def resume_approval(
     legitimacy. Unset (either param `None`) is a complete no-op,
     identical to before this phase existed -- same opt-in pattern every
     other Heart production-integration seam in this codebase uses.
+
+    `nonce_repo` (Enterprise Readiness Phase 4, replay protection):
+    passed through to a freshly-constructed `InternalToolExecutor` or
+    `UpstreamMCPExecutor` (whichever branch below applies) -- both
+    executors are built fresh per call, never shared across calls, so
+    there is no module-level mutable state for a caller's own
+    (possibly short-lived, per-request) repo instance to leak into.
     """
     from responsibleai.db import ApprovalNotFoundError
     from responsibleai.governance.upstream_executor import ACTION_TYPE as _UPSTREAM_ACTION_TYPE
@@ -764,9 +781,9 @@ async def resume_approval(
                 f"Approval {approval.approval_id!r} is an upstream MCP tool call and "
                 "requires upstream_registry to resume."
             )
-        executor: Any = UpstreamMCPExecutor(upstream_registry)
+        executor: Any = UpstreamMCPExecutor(upstream_registry, nonce_repo=nonce_repo)
     else:
-        executor = _executor
+        executor = InternalToolExecutor(nonce_repo=nonce_repo)
 
     # consume() is called BEFORE execution, not after -- it's the
     # single-use guard (mutation + replay protection); a resume must

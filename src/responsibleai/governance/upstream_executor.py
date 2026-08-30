@@ -24,8 +24,10 @@ import httpx
 
 from responsibleai.governance.execution import (
     ExecutionAuthorization,
+    NonceConsumer,
     _validate_authorization,
     check_target_fingerprint,
+    consume_nonce_durably,
 )
 from responsibleai.governance.jit_credential import consume_jit_credential, issue_jit_credential
 from responsibleai.governance.models import ActionRequest
@@ -153,8 +155,17 @@ class UpstreamMCPExecutor:
         *,
         http_client_factory: _HTTPClientFactory | None = None,
         credential_issuance_repo: CredentialIssuanceRepository | None = None,
+        nonce_repo: NonceConsumer | None = None,
     ) -> None:
         self._registry = registry
+        # Enterprise Readiness Phase 4 (replay protection) -- optional,
+        # same backward-compatible-None pattern as
+        # credential_issuance_repo below. Constructed per-call in this
+        # executor's case (unlike InternalToolExecutor's module-level
+        # singleton), so a real one is simply passed at construction
+        # time by every call site that has DB access -- no late-binding
+        # setter needed here.
+        self._nonce_repo = nonce_repo
         # Resolved at call time (execute()), not bound here as a default
         # parameter value -- a default value captures a reference to
         # whatever _default_http_client_factory *was* at class-
@@ -178,6 +189,7 @@ class UpstreamMCPExecutor:
         # stale or forged authorization is rejected on its own terms
         # rather than on an incidental "server not found."
         _validate_authorization(authorization, action)
+        await consume_nonce_durably(authorization, self._nonce_repo)
 
         server_id, tool_name = parse_upstream_target(action.target)
         server = await self._registry.get(server_id)

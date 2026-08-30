@@ -855,6 +855,32 @@ governance_revocation_epochs = Table(
     Column("updated_at", String(32), nullable=False),
 )
 
+governance_execution_nonces = Table(
+    "governance_execution_nonces",
+    metadata,
+    # Enterprise Readiness Phase 4 (replay protection) --
+    # governance/execution.py's ExecutionAuthorization.nonce already
+    # existed but had nowhere durable to record consumption: the
+    # in-memory `consumed: bool` flag correctly stops same-process
+    # replay (zero setup cost, always on) but provides nothing across
+    # a process restart or a second instance -- unlike
+    # ApprovalRepository.consume(), which was already durable. `nonce`
+    # itself is the primary key: the UNIQUE constraint IS the atomic
+    # consume-once-across-every-process guarantee, not something this
+    # repository has to build with its own locking.
+    Column("nonce", String(64), primary_key=True),
+    Column("authorization_id", String(36), nullable=False),
+    Column("organization_id", String(36), nullable=False),
+    Column("consumed_at", String(32), nullable=False),
+    # No automatic pruning job exists yet for this table -- named
+    # honestly rather than assumed: a long-running deployment
+    # accumulates one row per authorized execution forever. The
+    # `consumed_at` index below is exactly what a future pruning job
+    # (delete rows older than N days) would need; it is not itself
+    # that job.
+    Index("idx_execution_nonces_consumed_at", "consumed_at"),
+)
+
 governance_crypto_keys = Table(
     "governance_crypto_keys",
     metadata,

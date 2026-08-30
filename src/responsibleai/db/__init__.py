@@ -29,6 +29,10 @@ from responsibleai.db.delegation_repository import (
 from responsibleai.db.engine import DatabaseEngine, create_engine
 from responsibleai.db.eval_repository import EvalRepository
 from responsibleai.db.evidence_repository import EvidenceRepository
+from responsibleai.db.execution_nonce_repository import (
+    ExecutionNonceRepository,
+    NonceAlreadyConsumedError,
+)
 from responsibleai.db.incident_repository import IncidentRepository
 from responsibleai.db.intent_repository import IntentContractRepository
 from responsibleai.db.leaderboard_repository import LeaderboardRepository
@@ -118,6 +122,8 @@ __all__ = [
     "RootAuthorityRecordNotFoundError",
     "RootAuthorityRepository",
     "RevocationEpochRepository",
+    "ExecutionNonceRepository",
+    "NonceAlreadyConsumedError",
     "ConsentProofNotFoundError",
     "ConsentProofRepository",
 ]

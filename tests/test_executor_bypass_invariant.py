@@ -265,3 +265,81 @@ class TestExecutionAuthorizationCarriesProvenanceFields:
         auth2 = authorize_execution(decision, action)
         assert auth1.execution_id != auth1.authorization_id
         assert auth1.execution_id != auth2.execution_id
+
+
+class TestDurableReplayProtection:
+    """Enterprise Readiness Phase 4: proves the property the in-memory
+    `consumed` flag alone CANNOT prove -- replay across two
+    independently-constructed `ExecutionAuthorization` objects (or two
+    independently-constructed executors) that happen to carry the same
+    `nonce`, simulating a second process (or a reconstructed/replayed
+    object) rather than a second call on the exact same in-memory
+    object `test_replay_is_refused` above already covers."""
+
+    @pytest.fixture()
+    async def engine(self):
+        from responsibleai.db import create_engine
+
+        e = create_engine(":memory:")
+        await e.init()
+        yield e
+        await e.close()
+
+    async def test_no_nonce_repo_is_a_complete_no_op(self) -> None:
+        """Backward compatibility: an executor constructed without a
+        nonce_repo (the default) behaves identically to before this
+        phase existed -- only the in-memory flag protects it."""
+        action = _action()
+        decision = _allow_decision(action.action_id)
+        authorization = authorize_execution(decision, action)
+        executor = InternalToolExecutor()  # no nonce_repo
+        result = await executor.execute(authorization, action)
+        assert result["is_blocked"] is False
+
+    async def test_two_different_authorization_objects_sharing_a_nonce_second_denied(
+        self, engine
+    ) -> None:
+        """The core new property: authorization2 has its OWN, unset
+        `consumed=False` flag -- only the durable nonce repo can catch
+        this replay, proving the durability layer does real work
+        beyond what the in-memory flag already did."""
+        from responsibleai.db.execution_nonce_repository import ExecutionNonceRepository
+
+        nonce_repo = ExecutionNonceRepository(engine)
+        action = _action()
+        decision = _allow_decision(action.action_id)
+
+        authorization1 = authorize_execution(decision, action)
+        authorization2 = authorize_execution(decision, action)
+        authorization2.nonce = authorization1.nonce  # simulate a reused/replayed nonce
+        assert authorization2.consumed is False  # the in-memory flag alone would allow this
+
+        executor1 = InternalToolExecutor(nonce_repo=nonce_repo)
+        result1 = await executor1.execute(authorization1, action)
+        assert result1["is_blocked"] is False
+
+        executor2 = InternalToolExecutor(nonce_repo=nonce_repo)  # simulates a second process
+        with pytest.raises(AuthorizationAlreadyConsumedError):
+            await executor2.execute(authorization2, action)
+
+    async def test_durable_replay_denial_leaves_the_tool_unexecuted(self, engine) -> None:
+        """The replayed authorization must be rejected BEFORE the tool
+        handler runs -- not executed-then-flagged."""
+        from responsibleai.db.execution_nonce_repository import ExecutionNonceRepository
+
+        nonce_repo = ExecutionNonceRepository(engine)
+        action = _action(text="a distinctive marker string for this test")
+        decision = _allow_decision(action.action_id)
+
+        authorization1 = authorize_execution(decision, action)
+        authorization2 = authorize_execution(decision, action)
+        authorization2.nonce = authorization1.nonce
+
+        await InternalToolExecutor(nonce_repo=nonce_repo).execute(authorization1, action)
+
+        with pytest.raises(AuthorizationAlreadyConsumedError):
+            # If this silently executed instead of raising, the second
+            # rai_scan call would run again -- there is no side effect
+            # to assert against directly (rai_scan is pure), so the
+            # raise itself, before any handler code runs, is the proof.
+            await InternalToolExecutor(nonce_repo=nonce_repo).execute(authorization2, action)

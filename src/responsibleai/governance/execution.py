@@ -287,6 +287,53 @@ def _validate_authorization(authorization: ExecutionAuthorization, action: Actio
         raise AuthorizationActionMismatchError(authorization.authorization_id)
 
 
+class NonceConsumer(Protocol):
+    """Enterprise Readiness Phase 4 (replay protection) -- the durable
+    consume-once seam, structurally typed rather than importing
+    `db.execution_nonce_repository.ExecutionNonceRepository` directly:
+    `governance/` stays free of a compile-time dependency on `db/`, the
+    same TCB-minimization discipline `root_authority.py`'s
+    `RootResolver` Protocol and `crypto/provider.py`'s `KeyProvider`
+    Protocol already establish for every other Heart/execution seam in
+    this codebase. `ExecutionNonceRepository` satisfies this Protocol
+    by construction (duck typing), no explicit registration needed."""
+
+    async def consume(self, nonce: str, *, authorization_id: str, organization_id: str) -> None: ...
+
+
+async def consume_nonce_durably(
+    authorization: ExecutionAuthorization, nonce_consumer: NonceConsumer | None
+) -> None:
+    """The opt-in durability layer for replay protection. A complete
+    no-op when `nonce_consumer` is `None` -- the in-memory `consumed`
+    flag `_validate_authorization()` already checks is unaffected
+    either way and keeps stopping same-process replay unconditionally;
+    this only adds protection across a process restart or a second
+    instance, matching `RevocationEpochRepository`'s own "cache is an
+    optimization, durable store is authority" precedent.
+
+    Raises `AuthorizationAlreadyConsumedError` -- the SAME error the
+    in-memory check raises -- if the durable store reports this nonce
+    already spent, so a caller never needs to distinguish which layer
+    caught the replay. Local import (matches this module's own
+    `InternalToolExecutor.execute()` convention below) to keep
+    `governance/` layered below `db/`, not coupled to it at module-
+    import time.
+    """
+    if nonce_consumer is None:
+        return
+    from responsibleai.db.execution_nonce_repository import NonceAlreadyConsumedError
+
+    try:
+        await nonce_consumer.consume(
+            authorization.nonce,
+            authorization_id=authorization.authorization_id,
+            organization_id=authorization.organization_id or "",
+        )
+    except NonceAlreadyConsumedError as exc:
+        raise AuthorizationAlreadyConsumedError(authorization.authorization_id) from exc
+
+
 def check_target_fingerprint(
     authorization: ExecutionAuthorization, current_target_fingerprint: str | None
 ) -> None:
@@ -310,10 +357,27 @@ class InternalToolExecutor:
     case (Section 28 lists `InternalToolExecutor` alongside the
     not-yet-built `MCPExecutor`/`HTTPExecutor` for proxying to
     *external* systems).
+
+    `nonce_repo` defaults `None` (no durable replay protection, just
+    the in-memory `consumed` flag below). **Construct this fresh per
+    call** — `apply_governance()`/`resume_approval()`
+    (`mcp/governance_integration.py`) both do — rather than sharing one
+    long-lived instance across calls or processes: an earlier version
+    of this class was a module-level singleton reconfigured via a
+    setter after the fact, which leaked one app's durable-repo
+    reference into a later, independently-constructed app in the same
+    process (caught by this branch's own test suite, not shipped).
+    `UpstreamMCPExecutor` (`governance/upstream_executor.py`) already
+    followed this same per-call-construction convention; this class now
+    matches it.
     """
+
+    def __init__(self, nonce_repo: NonceConsumer | None = None) -> None:
+        self.nonce_repo = nonce_repo
 
     async def execute(self, authorization: ExecutionAuthorization, action: ActionRequest) -> Any:
         _validate_authorization(authorization, action)
+        await consume_nonce_durably(authorization, self.nonce_repo)
         authorization.consumed = (
             True  # single-use — a second call now hits AuthorizationAlreadyConsumedError
         )

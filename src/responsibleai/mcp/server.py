@@ -464,6 +464,7 @@ def _build_http_app() -> Any:
             ConsentProofRepository,
             DelegationRepository,
             EvidenceRepository,
+            ExecutionNonceRepository,
             IntentContractRepository,
             OrgAuthorityCeilingRepository,
             OrgAutonomyBudgetRepository,
@@ -516,6 +517,15 @@ def _build_http_app() -> Any:
             # is also true (see governance_integration.py's
             # _heart_legitimacy_denied_reason()).
             root_authority_repo=RootAuthorityRepository(_db_engine),
+            # Enterprise Readiness Phase 4 (replay protection) --
+            # InternalToolExecutor is now constructed fresh per call in
+            # apply_governance() (not a shared singleton -- see that
+            # function's own history: a module-level singleton
+            # reconfigured via a setter leaked its durable-repo state
+            # across independently-built apps, caught by this branch's
+            # own test suite), so the repo is threaded through here and
+            # passed at construction time each call, no late-binding.
+            nonce_repo=ExecutionNonceRepository(_db_engine),
         )
     # Reuses the exact same RAI_OIDC_* / Settings.oidc_* config the
     # dashboard API's SSO login already reads (dashboard/app.py's own

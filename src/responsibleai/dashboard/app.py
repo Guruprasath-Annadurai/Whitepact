@@ -99,6 +99,7 @@ from responsibleai.db import (
     DelegationRepository,
     EvalRepository,
     EvidenceRepository,
+    ExecutionNonceRepository,
     IncidentRepository,
     IntentContractRepository,
     LeaderboardRepository,
@@ -306,6 +307,7 @@ _intent_repo: IntentContractRepository | None = None
 _root_authority_repo: RootAuthorityRepository | None = None
 _consent_proof_repo: ConsentProofRepository | None = None
 _revocation_epoch_repo: RevocationEpochRepository | None = None
+_execution_nonce_repo: ExecutionNonceRepository | None = None
 _authority_passport_repo: AuthorityPassportRepository | None = None
 _upstream_gateway: WhitePactRuntimeGateway = WhitePactRuntimeGateway()
 _db_engine: DatabaseEngine | None = None
@@ -363,6 +365,7 @@ async def lifespan(application: FastAPI):
     global _workflow_rule_repo, _delegation_repo, _autonomy_budget_repo, _intent_repo
     global _authority_passport_repo
     global _root_authority_repo, _consent_proof_repo, _revocation_epoch_repo
+    global _execution_nonce_repo
     global _eval_repo, _comparator, _benchmark_runner, _dataset_scanner
     global _oidc_provider, _saml_config, _stripe_service, _plan_rate_limiter
 
@@ -430,6 +433,7 @@ async def lifespan(application: FastAPI):
     _root_authority_repo = RootAuthorityRepository(_db_engine)
     _consent_proof_repo = ConsentProofRepository(_db_engine)
     _revocation_epoch_repo = RevocationEpochRepository(_db_engine)
+    _execution_nonce_repo = ExecutionNonceRepository(_db_engine)
     _ceiling_repo = OrgAuthorityCeilingRepository(_db_engine)
     _workflow_rule_repo = WorkflowRuleRepository(_db_engine)
     _delegation_repo = DelegationRepository(_db_engine)
@@ -3279,6 +3283,7 @@ async def governance_execute_approval(
             outcome_repo=_ready(_outcome_repo),
             root_authority_repo=_ready(_root_authority_repo),
             consent_repo=_ready(_consent_proof_repo),
+            nonce_repo=_ready(_execution_nonce_repo),
         )
     except ApprovalNotFoundError as exc:
         raise HTTPException(404, str(exc)) from None
@@ -4153,7 +4158,9 @@ async def upstream_call_tool(
             400, "Upstream calls require an org-scoped API key, not a legacy flat key."
         )
     executor = UpstreamMCPExecutor(
-        _ready(_upstream_registry), credential_issuance_repo=_ready(_credential_issuance_repo)
+        _ready(_upstream_registry),
+        credential_issuance_repo=_ready(_credential_issuance_repo),
+        nonce_repo=_ready(_execution_nonce_repo),
     )
     try:
         outcome = await apply_upstream_governance(
