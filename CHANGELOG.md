@@ -8,6 +8,24 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ## [Unreleased]
 
+## [1.2.6] - 2026-08-31
+
+### Security / Release Engineering
+
+- Fixed PyPI publication staging so only the already-verified wheel and sdist
+  are passed to the PyPI publishing action.
+- Preserved the complete verified release bundle containing the wheel, sdist,
+  SHA-256 manifest, and CycloneDX SBOM for provenance verification and GitHub
+  Release publication.
+- Added regression coverage enforcing that PyPI staging contains exactly one
+  wheel and one sdist and occurs only after provenance and SBOM verification.
+- The signed `v1.2.5` release attempt successfully passed the hardened builder,
+  reproducibility gate, provenance attestations, SBOM attestation, digest
+  verification, and independent verification, but stopped before publication
+  because the PyPI action attempted to parse `SHA256SUMS` as a distribution.
+  The `v1.2.5` tag remains immutable.
+
+
 ## [1.2.5] - 2026-08-31
 
 ### Security / Release Engineering
