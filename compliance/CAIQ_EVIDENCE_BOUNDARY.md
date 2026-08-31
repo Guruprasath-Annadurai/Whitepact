@@ -1,6 +1,6 @@
 # CAIQ Evidence Boundary
 
-Assessment: CSA CAIQ v4.0.3 workbook, 261 assessment questions.  
+Assessment: CSA CAIQ v4.0.3 workbook, 261 assessment questions.
 Review date: 2026-08-31. Scope: WhitePact repository plus the limited live-site evidence
 in `HARDENED_SITE_VERIFICATION.md`. This is a **self-assessment**, not CSA STAR
 certification, attestation, or an independent assurance opinion.
