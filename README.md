@@ -813,12 +813,14 @@ or ISO certification. Current technical and claim boundaries are maintained in
 
 Release consumers can review the [signed-tag evidence](compliance/SIGNED_VERSION_TAGS.md),
 [release process](RELEASING.md), [security policy](SECURITY.md),
-[reproducible-build evidence](compliance/OPENSSF_SECURITY_EVIDENCE.md), and CycloneDX SBOM
-attached to the named GitHub release. The separate SLSA hardening branch contains the
-[SLSA evidence boundary](https://github.com/Guruprasath-Annadurai/Whitepact/blob/security/slsa-build-l3-hardening/compliance/SLSA_BUILD_PROVENANCE.md)
-and [consumer verification guide](https://github.com/Guruprasath-Annadurai/Whitepact/blob/security/slsa-build-l3-hardening/docs/VERIFY_RELEASE.md);
-Build L3 remains pending until a new release is produced through that architecture and
-its exact artifacts are independently verified.
+[SLSA evidence boundary](compliance/SLSA_BUILD_PROVENANCE.md), and
+[consumer verification guide](docs/VERIFY_RELEASE.md). The reusable trusted-builder
+pipeline is present on `main`. Release `v1.2.6` completed that path: its wheel and sdist
+were reproduced, hashed, attested, independently verified in the publish job, published
+to PyPI without rebuilding, hash-matched to PyPI, and attached to the GitHub Release with
+the CycloneDX SBOM. Independent consumer verification was repeated on 2026-08-31. The
+release-specific evidence is assessed as satisfying SLSA v1.2 Build L3; SLSA is a
+conformance framework, not a certification or a guarantee that an artifact is secure.
 
 ---
 

@@ -37,11 +37,11 @@ Repository status below is a self-audit and does not change that award.
 
 | Control ID | Level | Requirement | Evidence | Status | Action taken | Blocker |
 |---|---:|---|---|---|---|---|
-| OSPS-AC-04.01 | 2 | default CI permissions least privilege | top-level `contents: read`; scoped jobs | TECHNICALLY READY | PR #52 hardening retained | Merge and official reassessment |
+| OSPS-AC-04.01 | 2 | default CI permissions least privilege | main workflows use read-only/empty defaults and scoped jobs; Scorecard Token-Permissions 10 | VERIFIED | PR #52 landed on main | Official OSPS reassessment still external |
 | OSPS-BR-02.01 | 2 | unique release identifiers | SemVer tags/releases | VERIFIED | preserved | None |
 | OSPS-BR-04.01 | 2 | release change/security log | CHANGELOG/release workflow | VERIFIED | preserved | None |
 | OSPS-BR-05.01 | 2 | standardized dependency tooling | pip/pyproject/npm/Actions | VERIFIED | security lock added | None |
-| OSPS-BR-06.01 | 2 | signed release or signed hash manifest | signed tags, GitHub attestations/digests | PENDING RELEASE VERIFICATION | preserved | New hardened release must be verified |
+| OSPS-BR-06.01 | 2 | signed release or signed hash manifest | signed `v1.2.6` tag, `SHA256SUMS`, GitHub attestations | VERIFIED | consumer verification repeated 2026-08-31 | None for v1.2.6 evidence; official award remains external |
 | OSPS-DO-06.01 | 2 | document dependency selection/tracking | CONTRIBUTING, Dependabot, vulnerability policy | VERIFIED | process consolidated | None |
 | OSPS-DO-07.01 | 2 | document build and prerequisites | CONTRIBUTING/RELEASING/pyproject | VERIFIED | preserved | None |
 | OSPS-GV-01.01 | 2 | list members with sensitive access | MAINTAINERS | VERIFIED | created honest list | None |
@@ -61,16 +61,16 @@ Repository status below is a self-audit and does not change that award.
 
 | Control ID | Level | Requirement | Evidence | Status | Action taken | Blocker |
 |---|---:|---|---|---|---|---|
-| OSPS-AC-04.02 | 3 | job permissions are minimum necessary | workflow permission audit | TECHNICALLY READY | PR #52 + regression guard | Merge/rescan |
-| OSPS-BR-01.04 | 3 | validate trusted collaborator pipeline input | release tag/signer/version checks | TECHNICALLY READY | dangerous-workflow review documented | Release verification |
-| OSPS-BR-02.02 | 3 | associate every asset with unique release | versioned wheel/sdist/release/SBOM | PENDING RELEASE VERIFICATION | preserved | Next release |
+| OSPS-AC-04.02 | 3 | job permissions are minimum necessary | workflow permission audit; Scorecard Token-Permissions 10 | VERIFIED | PR #52 landed; regression guard retained | Future workflow review |
+| OSPS-BR-01.04 | 3 | validate trusted collaborator pipeline input | `v1.2.6` signed-tag, signer allow-list and version/ref checks | VERIFIED | release run 33337718757 passed | Future release adherence |
+| OSPS-BR-02.02 | 3 | associate every asset with unique release | v1.2.6 wheel/sdist/SBOM/checksums and attestations | VERIFIED | public release assets and PyPI hashes checked | None for v1.2.6 |
 | OSPS-BR-07.02 | 3 | secrets lifecycle policy | ENTERPRISE_SECURITY, KEY_MANAGEMENT, incident runbook | VERIFIED | routes cross-referenced | Hosted rotation evidence is deployment-specific |
-| OSPS-DO-03.01 | 3 | integrity/authenticity verification instructions | docs/VERIFY_RELEASE.md on SLSA branch; RELEASING | PENDING RELEASE VERIFICATION | no SLSA duplication | Merge SLSA work and release |
+| OSPS-DO-03.01 | 3 | integrity/authenticity verification instructions | `docs/VERIFY_RELEASE.md` on main; commands passed for v1.2.6 | VERIFIED | consumer verification repeated 2026-08-31 | Consumers must execute policy checks |
 | OSPS-DO-03.02 | 3 | verify release author identity | signed tag/signer allow-list docs | VERIFIED | preserved | Consumer must execute verification |
 | OSPS-DO-04.01 | 3 | scope/duration of support | SUPPORT/SECURITY | VERIFIED | created | None |
 | OSPS-DO-05.01 | 3 | state end of security updates | SUPPORT/SECURITY | VERIFIED | clarified latest-only model | None |
 | OSPS-GV-04.01 | 3 | review collaborators before escalation | MAINTAINERS process | VERIFIED | explicit grant/removal process added | Actual future decisions require evidence |
-| OSPS-QA-02.02 | 3 | SBOM with compiled release assets | CycloneDX release output | PENDING RELEASE VERIFICATION | preserved | Next hardened release |
+| OSPS-QA-02.02 | 3 | SBOM with compiled release assets | v1.2.6 CycloneDX asset and wheel-bound SBOM attestation | VERIFIED | release asset checksum and attestation verified | None for v1.2.6 |
 | OSPS-QA-04.02 | 3 | consistent controls across multiple repos | single-repository scope | NOT APPLICABLE | scope recorded | Reassess if split |
 | OSPS-QA-06.02 | 3 | document test execution | CONTRIBUTING and workflows | VERIFIED | preserved | None |
 | OSPS-QA-06.03 | 3 | major changes add/update tests | CONTRIBUTING/CODE_REVIEW | VERIFIED | regression guard added | Human enforcement plus CI |

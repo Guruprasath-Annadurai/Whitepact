@@ -47,9 +47,11 @@ These three criteria must remain Unmet until real people and real review history
 | `dynamic_analysis` | **Met** | Automated tests exceed the 80% pure branch-coverage route required by the project's selected dynamic-analysis path. |
 | `dynamic_analysis_enable_assertions` | **Met** | Pytest assertions are executed throughout CI across security and runtime behavior. |
 
-## OpenSSF Scorecard hardening in this branch
+## OpenSSF Scorecard hardening now on `main`
 
-The `security/openssf-hardening` branch addresses repository-side Scorecard findings without changing WhitePact runtime feature logic:
+PR #52 landed the repository-side Scorecard hardening on `main` without changing
+WhitePact runtime feature logic. The official v5.0.0 assessment on 2026-08-31 reports
+**6.0/10** for `79f604bcd5162aca92419f2801cfad3903ad9874`:
 
 - GitHub Actions are pinned to full immutable commit SHAs.
 - Workflow `GITHUB_TOKEN` permissions are reduced to least privilege, including moving release write/OIDC permissions to the publishing job only.
@@ -59,13 +61,17 @@ The `security/openssf-hardening` branch addresses repository-side Scorecard find
 - `scripts/manage_license_headers.py` and the OpenSSF policy workflow prevent first-party source license/copyright metadata from regressing.
 - Existing DCO, Gitleaks, dependency-review, Scorecard, SAST/dependency scan, release provenance, SBOM and signed-tag controls remain intact.
 
-## Remaining Scorecard limitation
+## Remaining Scorecard limitations
 
 Hash-pinned Actions and container images materially improve `Pinned-Dependencies`.
 Bandit and pip-audit now resolve from a generated `requirements-security.lock` using
 `--require-hashes`. Normal CI and end-user dependency ranges intentionally remain flexible;
 therefore this is stronger security-tooling evidence, not a claim that every shell install
 in the repository is fully hash-locked.
+
+The current official deductions remain visible in
+`compliance/OPENSSF_SCORECARD_GAP_ANALYSIS.md`. Gold is governed by BadgeApp criteria,
+not by turning the aggregate Scorecard number into a substitute award.
 
 ## Why Gold is deliberately not claimed yet
 

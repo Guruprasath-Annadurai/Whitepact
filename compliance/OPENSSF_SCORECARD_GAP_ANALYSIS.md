@@ -1,31 +1,32 @@
 # OpenSSF Scorecard Gap Analysis
 
-Evidence boundary: official Scorecard v5.0.0 result dated 2026-08-27 for
-`9dcdc1bebe0ad856bd399dc627d17c35a2cc5828`; repository work assessed through
-this hardening branch on 2026-08-31. Branch changes are not reflected in the official
-score until merged and rescanned. Current official score: **4.2/10**.
+Evidence boundary: official Scorecard v5.0.0 result dated 2026-08-31 for
+`79f604bcd5162aca92419f2801cfad3903ad9874`; workflow run
+`33359584927` completed successfully and the official API publishes **6.0/10**.
+This supersedes the pre-hardening 4.2 result.
 
-| Check | Current evidence | Action taken | Status | Blocker | Remaining risk |
-|---|---|---|---|---|---|
-| Branch-Protection | Classic protection requires PRs, checks, conversation resolution; blocks force-push/deletion; Scorecard returned API error | Recorded API evidence and exact owner actions | VERIFIED, scanner unknown | PLATFORM LIMITATION | Required checks need refreshing after merge |
-| Code-Review | 0/30 commits had non-author approval | Review standard exists; no synthetic reviewer added | HUMAN MATURITY BLOCKER | Genuine second reviewer/history | Sole-author blind spots |
-| Contributors | Score 0; project has one maintainer | Honest roles and succession process documented | HUMAN MATURITY BLOCKER | Genuine independent contributors | Bus factor one |
-| Dangerous-Workflow | Score 10; no `pull_request_target`; privileged credentials isolated | Added regression rejection for `pull_request_target`/`write-all` | VERIFIED | None | Future context interpolation still needs review |
-| Dependency-Update-Tool | Score 0 on main | PR #52 adds weekly grouped-limit Dependabot coverage for pip, Actions, Docker | TECHNICALLY READY | Merge and rescan | Update PRs still require human review |
-| Fuzzing | Score 0 | Added/recorded meaningful Hypothesis security properties | TECHNICALLY READY | Scorecard recognizes external fuzz services, not ordinary property tests | No continuous coverage-guided service |
-| License | Score 10 | MIT, per-file SPDX/copyright guard retained | VERIFIED | None | Generated/vendor files excluded by policy |
-| Maintained | Score 0; repository younger than Scorecard activity window | No fake activity created | EXTERNAL VERIFICATION REQUIRED | Passage of time and real activity | Young-project signal |
-| Packaging | Score 10 | PyPI/release packaging controls retained | VERIFIED | None | Publication still depends on protected release workflow |
-| Pinned-Dependencies | Score 0 on main | PR #52 pins Actions/containers; security tools now hash-locked | TECHNICALLY READY | Merge and rescan; normal CI/end-user resolution remains range-based | Some shell installs intentionally remain non-hash-locked outside security tooling |
-| SAST | Score 0 on main | Weekly/main Bandit medium/high gate retained; scanner dependencies hash-locked | TECHNICALLY READY | Merge and Scorecard detection | Bandit is not a complete semantic analyzer |
-| Security-Policy | Score 10 | Added private reporting, advisory workflow, dependency handling | VERIFIED | None | Response targets are not contractual SLA |
-| Signed-Releases | Score 0 | Signed annotated tag, signer allow-list, attestations and verification docs exist | PENDING RELEASE VERIFICATION | A new hardened release must be produced/verified | Scorecard heuristics may still not credit GitHub attestations |
-| Token-Permissions | Score 0 on main | PR #52 applies read defaults and job-scoped writes; regression rejects `write-all` | TECHNICALLY READY | Merge and rescan | Permission changes require continued review |
-| Vulnerabilities | Score 9; one opt-in NLTK advisory | Recorded reachability analysis and OpenVEX; CI exception is explicit | TECHNICALLY READY | Upstream patched NLTK release | Optional extra carries unpatched code even though affected path is unreachable |
-| Binary-Artifacts | Score 10 | No generated executables/unreviewable binaries | VERIFIED | None | Future additions guarded by review, not a dedicated binary scanner |
-| CI-Tests | Score 10 | Python matrix, security and coverage gates | VERIFIED | None | Hosted CI availability |
-| CII-Best-Practices | Score 7 | Official Silver; Gold technical evidence updated | ACHIEVED (Silver only) | Human/owner criteria and official BadgeApp award | Gold is not claimable |
+| Check | Score | Current evidence | Classification | Remaining action / limitation |
+|---|---:|---|---|---|
+| Binary-Artifacts | 10 | no binaries detected | VERIFIED | preserve review discipline |
+| Branch-Protection | -1 | scanner API returned `Resource not accessible by integration`; authenticated repository audit separately found protections | PLATFORM LIMITATION | retain protection; retry official scan |
+| CI-Tests | 10 | 30/30 merged PRs checked | VERIFIED | hosted CI availability |
+| CII-Best-Practices | 7 | official Silver badge detected | ACHIEVED (Silver only) | Gold still has human/account criteria |
+| Code-Review | 0 | 0/30 approved changesets | HUMAN MATURITY BLOCKER | real non-author reviews only |
+| Contributors | 0 | no contributing companies/organizations detected | HUMAN MATURITY BLOCKER | genuine independent contributors |
+| Dangerous-Workflow | 10 | no dangerous workflow pattern detected | VERIFIED | continue contextual review |
+| Dependency-Update-Tool | 10 | Dependabot detected | VERIFIED | human review of updates remains necessary |
+| Fuzzing | 0 | no recognized fuzzer integration | EXTERNAL-SERVICE / TECHNICAL GAP | Hypothesis is property testing, not a recognized continuous fuzzer |
+| License | 10 | recognized MIT license | VERIFIED | per-file policy is separately enforced |
+| Maintained | 0 | repository created within 90 days | HUMAN HISTORY / TIME | do not manufacture activity |
+| Packaging | 10 | GitHub Actions release packaging detected | VERIFIED | preserve protected release path |
+| Pinned-Dependencies | 4 | Actions and containers pinned; most pip/download commands not hash-pinned | PARTIALLY VERIFIED | remediate only where coherent and maintainable |
+| SAST | 0 | Scorecard did not recognize SAST across recent commits | TECHNICALLY READY ON BRANCH / SCANNER GAP | merge PR-triggered Bandit gate and reassess recognition |
+| Security-Policy | 10 | actionable policy detected | VERIFIED | response objectives are not contractual SLAs |
+| Signed-Releases | 0 | Scorecard did not recognize v1.2.6 signature/provenance | SCANNER MISMATCH | independent tag and attestation checks pass; do not alter evidence to game heuristic |
+| Token-Permissions | 10 | least-privilege workflow tokens detected | VERIFIED | preserve job-scoped writes |
+| Vulnerabilities | 10 | zero existing vulnerabilities detected by Scorecard | VERIFIED FOR SCANNER SCOPE | retain SCA and OpenVEX review |
 
-The maximum honest improvement is to merge the hardened controls and let the official
-scanner recalculate. Maintained, Contributors, and Code-Review cannot be repaired by
-repository text; doing so would game the measurement.
+Scorecard v5.0.0 did not emit a separate Webhooks check in this result. The maximum honest
+improvement is to address coherent dependency/SAST gaps, preserve legitimate controls,
+and wait for genuine review/contributor/history evidence. Scorecard's Signed-Releases
+heuristic does not override independently verified v1.2.6 release evidence.

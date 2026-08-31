@@ -5,14 +5,14 @@ implementation, release evidence, and external assurance.
 
 | Area | Status | Verified evidence | Public claim allowed | Blocker | Next action |
 |---|---|---|---|---|---|
-| OpenSSF Best Practices | ACHIEVED | official project 14112 = Silver | “Silver awarded” | Gold human/account/official criteria | merge controls, update BadgeApp; earn real reviewer/contributor history |
-| OpenSSF Scorecard | VERIFIED | official v5.0.0 score 4.2 on 2026-08-27 | exact dated score only | rescan after PR #52/this branch | merge and wait for official rescan |
+| OpenSSF Best Practices | ACHIEVED | official project 14112 = Silver | “Silver awarded” | Gold human/account/official criteria | update BadgeApp evidence; earn real reviewer/contributor history |
+| OpenSSF Scorecard | VERIFIED | official v5.0.0 score 6.0 on 2026-08-31 for `79f604b` | exact dated score only | Branch-Protection API error; human/history and scanner deductions | address legitimate technical deductions; wait for real history where required |
 | OSPS Baseline | ACHIEVED | official Level 1; current 2026.08.28 audit | “Level 1 awarded” | L3 non-author approval; release/owner evidence | submit updated L2 evidence; do not claim award early |
-| SLSA | PENDING RELEASE VERIFICATION | hardened architecture on separate branch `c9bf6d6`; prior attestation evidence | implementation/pending language only | exact release not yet built/verified through new builder | merge SLSA work, release, run consumer verification |
-| SBOM | VERIFIED | CycloneDX attached to v1.2.3 and workflow generation | named-release SBOM available | SBOM attestation/new-release association | verify exact next-release SBOM/digests |
-| Signed release | VERIFIED | signed annotated v1.2.3 and approved SSH signer | v1.2.3 signed-tag claim | historical tags unsigned | keep all future tags signed and audit log current |
-| PyPI Trusted Publishing | VERIFIED | v1.2.3 release record/workflow OIDC | named-release claim | next pipeline release | retain no long-lived token |
-| Reproducible builds | TECHNICALLY READY | PR #52 reproducible workflow/tests | branch technical evidence | official main/new release evidence | merge and preserve required check |
+| SLSA | VERIFIED (RELEASE-SPECIFIC) | v1.2.6 wheel/sdist verify against the main reusable builder, source commit/tag and hosted runner; v1.2 normative assessment recorded | “v1.2.6 release evidence satisfies SLSA v1.2 Build L3” with scope | not a certification or artifact-security guarantee | preserve builder and consumer verification on every release |
+| SBOM | VERIFIED | v1.2.6 CycloneDX release asset, checksum and wheel-bound SBOM attestation | v1.2.6 SBOM/attestation available | SBOM describes dependencies; it is not a vulnerability-free claim | preserve generation, attestation and verification |
+| Signed release | VERIFIED | approved-signer annotated `v1.2.6` tag verified locally and in run 33337718757 | v1.2.6 signed-tag claim | historical tags vary | keep all future tags signed and audit log current |
+| PyPI Trusted Publishing | VERIFIED | v1.2.6 OIDC publication and PyPI hashes match builder outputs | named-release exact-byte claim | future releases require fresh evidence | retain no long-lived token |
+| Reproducible builds | VERIFIED (RELEASE-SPECIFIC) | v1.2.6 builder's byte comparison passed | v1.2.6 reproducible-build claim | not independently rebuilt outside GitHub | preserve build-twice gate and consider external rebuild corroboration |
 | Repository governance | TECHNICALLY READY | classic protection verified; PR/checks/no force/deletion | factual settings only | required-check refresh; no reviewer approval | owner updates checks; add real second reviewer when available |
 | Internal security review | VERIFIED | dated internal review and threat model | “internal/non-independent review” | independent validation | commission scoped penetration test |
 | Fuzz/property testing | VERIFIED | Hypothesis authority/identity/evidence suites | factual test claim | no continuous coverage-guided service | consider Atheris/CIFuzz only with meaningful harness |

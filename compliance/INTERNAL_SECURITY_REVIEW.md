@@ -17,10 +17,11 @@
 > low-risk with reasoning given, and one (a third-party pentest) that no
 > amount of internal review can substitute for.
 
-Last reviewed: 2026-08-31 · Source boundary: `security/non-slsa-trust-hardening`
-based on PR #52 head `b4feece202b761533d456412d81292e2f5791bef` plus the changes
-documented in this branch. Package version at review start: 1.2.3. This review is not a
-release attestation and does not cover the separate SLSA branch.
+Last reviewed: 2026-08-31 · Source boundary: `security/non-slsa-trust-hardening`,
+rebased on current `main` at `79f604bcd5162aca92419f2801cfad3903ad9874`, plus the changes
+documented in this branch. Package version: 1.2.6. This review is not a release
+attestation. Release-specific supply-chain evidence is assessed separately in
+`compliance/SLSA_BUILD_PROVENANCE.md`.
 
 ## 2026-08-31 review extension
 
@@ -37,9 +38,10 @@ current threat and supply-chain boundary:
 - Dependency Review blocks high/critical vulnerability changes and enforces the license
   policy; Dependabot covers pip, Actions and Docker; GitHub secret scanning/push
   protection and Gitleaks are enabled.
-- GitHub Actions/containers are immutable-pinned by PR #52, enforced by the OpenSSF
-  policy guard. Release intent, reproducibility, SBOM and provenance controls are
-  preserved; SLSA evidence/claims are intentionally not reassessed here.
+- GitHub Actions/containers are immutable-pinned on `main`, enforced by the OpenSSF
+  policy guard. Release `v1.2.6` exercised signed intent, reproducibility, SBOM and
+  provenance controls successfully; their release-specific assessment remains separate
+  from this internal application-security review.
 - Live public-edge checks observed HTTPS, HSTS, CSP, framing/MIME/referrer/permissions
   headers and TLS 1.2/1.3; see `compliance/HARDENED_SITE_VERIFICATION.md` for limitations.
 

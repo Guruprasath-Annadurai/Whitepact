@@ -29,8 +29,11 @@ actual owner.
 `RELEASING.md`, `security/release-signers.allowed`, and
 `compliance/SIGNED_VERSION_TAGS.md` define signed annotated tags and the approved signer
 boundary. Release publication uses GitHub OIDC/PyPI Trusted Publishing rather than a
-long-lived PyPI token. SLSA architecture and claims remain owned by the separate SLSA
-hardening branch.
+long-lived PyPI token. The reusable trusted-builder architecture is on `main`; `v1.2.6`
+successfully exercised signed release intent, hosted reproducible builds, provenance and
+SBOM attestations, independent verification, exact-byte PyPI publication, PyPI hash
+confirmation, and GitHub Release creation. `compliance/SLSA_BUILD_PROVENANCE.md` records
+the release-specific evidence and claim boundary.
 
 ## Owner actions after this branch merges
 

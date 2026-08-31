@@ -1,10 +1,10 @@
 # Verify a WhitePact release
 
-These commands verify a release independently of the WhitePact publish job. They
-apply to the first release built after `.github/workflows/reusable-build.yml` is
-present on its signed tag. Earlier releases, including `v1.2.3`, were attested by
-`.github/workflows/publish.yml` and therefore have a different signer-workflow
-identity.
+These commands verify a release independently of the WhitePact publish job. Release
+`v1.2.6` is the first release built and attested by
+`.github/workflows/reusable-build.yml`; the commands below passed for its public wheel
+and sdist on 2026-08-31. Earlier releases, including `v1.2.3`, were attested by
+`.github/workflows/publish.yml` and therefore have a different signer-workflow identity.
 
 Set the release version, download the public assets, and obtain the tagged source:
 

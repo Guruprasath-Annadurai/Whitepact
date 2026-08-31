@@ -40,7 +40,7 @@ is unchanged until billing is actually wired up and a paying customer
 exists. What's true now is narrower and real: the platform itself is
 reachable and functioning at the URL above.
 
-Last reviewed: 2026-08-31 · Package version at review start: 1.2.3
+Last reviewed: 2026-08-31 · Repository/package version reconciled through: 1.2.6
 
 ---
 

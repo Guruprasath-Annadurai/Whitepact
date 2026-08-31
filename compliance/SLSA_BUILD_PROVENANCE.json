@@ -18,56 +18,63 @@
     "supporting_evidence": ["sbom.cyclonedx.json", "SHA256SUMS"]
   },
   "current_release": {
-    "tag": "v1.2.3",
-    "source_commit": "c53562281df07f657d8bdcdb387b40d66d4e4c48",
-    "signer_workflow": ".github/workflows/publish.yml@refs/tags/v1.2.3",
+    "tag": "v1.2.6",
+    "source_commit": "f784c44819c9c26f4e3486a9a6331508e20fd1eb",
+    "signer_workflow": ".github/workflows/reusable-build.yml@refs/tags/v1.2.6",
     "runner_environment": "github-hosted",
-    "wheel_sha256": "1286d5c36b7fdc39e365b327eb714224983145fa2761d516443b8c217d213d00",
-    "sdist_sha256": "06cca485080d29d38d3da5feaf4fb63e64ee5cc9bd14bac6d53ee1398b07c6e6",
+    "wheel_sha256": "aef728a0227c115537aee7f434aa2c28d744f15cca78822eb1df339f106d3ad7",
+    "sdist_sha256": "289c37a2ecd36f989530674f5b483362b81b14ff277fc9d6b6373d5fa4155bd3",
+    "sbom_sha256": "a678fe2650f805baa8e9d2dd554a4e0bef701525d28ffc1335d9936785ae5c3f",
+    "publish_run": "https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/33337718757",
     "provenance_predicate": "https://slsa.dev/provenance/v1",
     "build_l2_evidence": "VERIFIED",
-    "build_l3_evidence": "NOT SATISFIED"
+    "build_l3_evidence": "VERIFIED"
   },
   "controls": [
     {
-      "id": "release-v1.2.3-provenance",
+      "id": "release-v1.2.6-provenance",
       "status": "VERIFIED",
-      "summary": "Wheel and sdist provenance independently verified."
+      "summary": "Wheel and sdist provenance independently verified against the reusable builder, source commit, tag ref, and GitHub-hosted runner."
     },
     {
-      "id": "release-v1.2.3-signed-tag",
+      "id": "release-v1.2.6-signed-tag",
       "status": "VERIFIED",
       "summary": "Annotated release tag verifies against the approved SSH signer allow-list."
     },
     {
       "id": "reusable-trusted-builder",
-      "status": "IMPLEMENTED BUT NOT YET RELEASE-VERIFIED",
-      "summary": "Reusable workflow exclusively builds, reproduces, hashes, attests, and uploads release artifacts."
+      "status": "VERIFIED",
+      "summary": "The successful v1.2.6 workflow exclusively built, reproduced, hashed, attested, and uploaded release artifacts."
     },
     {
       "id": "least-privilege-builder",
-      "status": "IMPLEMENTED BUT NOT YET RELEASE-VERIFIED",
+      "status": "VERIFIED",
       "summary": "Builder has contents:read, id-token:write, attestations:write and no secrets or publish authority."
     },
     {
       "id": "exact-byte-distribution",
-      "status": "IMPLEMENTED BUT NOT YET RELEASE-VERIFIED",
-      "summary": "Publisher verifies checksums and provenance, does not rebuild, and checks PyPI hashes."
+      "status": "VERIFIED",
+      "summary": "v1.2.6 publisher verified checksums and provenance, did not rebuild, and matched PyPI hashes."
     },
     {
       "id": "cyclonedx-sbom-attestation",
-      "status": "IMPLEMENTED BUT NOT YET RELEASE-VERIFIED",
-      "summary": "Official GitHub SBOM mode binds the CycloneDX document to the wheel."
+      "status": "VERIFIED",
+      "summary": "The v1.2.6 CycloneDX document is attached to the release and its SBOM attestation is bound to the wheel."
     },
     {
-      "id": "new-hardened-release-run",
-      "status": "NOT SATISFIED",
-      "summary": "No signed release has traversed the reusable builder yet."
+      "id": "hardened-release-v1.2.6-run",
+      "status": "VERIFIED",
+      "summary": "Signed release v1.2.6 successfully traversed the reusable builder and exact-byte publisher."
     },
     {
-      "id": "independent-l3-release-verification",
-      "status": "NOT SATISFIED",
-      "summary": "Public release assets have not yet been verified against the reusable signer workflow."
+      "id": "independent-v1.2.6-release-verification",
+      "status": "VERIFIED",
+      "summary": "Public wheel and sdist independently verified against the expected reusable signer workflow on 2026-08-31."
+    },
+    {
+      "id": "slsa-v1.2-build-l3-assessment",
+      "status": "VERIFIED",
+      "summary": "The assessed v1.2.6 wheel and sdist satisfy the SLSA v1.2 Build L3 producer, provenance, hosted, and isolated-builder requirements."
     },
     {
       "id": "slsa-source-track",
@@ -76,7 +83,7 @@
     }
   ],
   "public_claim": {
-    "build_l2": "Allowed for the v1.2.3 release with the recorded evidence scope.",
-    "build_l3": "Prohibited until a new hardened release runs and independent verification passes."
+    "build_l2": "Satisfied by the assessed v1.2.6 release as a subset of its Build L3 evidence.",
+    "build_l3": "Allowed only for the assessed v1.2.6 wheel and sdist with the recorded evidence scope; this is not certification or a guarantee of artifact security."
   }
 }

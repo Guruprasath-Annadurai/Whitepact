@@ -3,8 +3,8 @@
 # SPDX-License-Identifier: MIT
 """Repository-level guardrails for non-SLSA trust controls.
 
-This intentionally does not duplicate release/provenance assertions owned by the
-separate SLSA hardening work.
+This intentionally does not duplicate the SLSA-specific release/provenance assertions
+enforced by the release tests and evidence register on ``main``.
 """
 
 from __future__ import annotations

@@ -1,6 +1,6 @@
 # Signed Version Tags — Audit and Status
 
-Last reviewed: 2026-08-19 · For the OpenSSF Best Practices `version_tags_signed` criterion.
+Last reviewed: 2026-08-31 · For the OpenSSF Best Practices `version_tags_signed` criterion.
 
 ## What this document is about — and what it isn't
 
@@ -14,7 +14,7 @@ things:
 | | Proves | Verified with |
 |---|---|---|
 | Artifact attestation (already implemented) | This wheel/sdist was built by this repo's own GitHub Actions workflow, from this exact commit, unmodified since | `gh attestation verify <file> --repo Guruprasath-Annadurai/Whitepact` (new reusable-builder releases add `--signer-workflow`; see `docs/VERIFY_RELEASE.md`) |
-| Signed Git tag (**implemented for `v1.2.3` and required for future releases**) | A trusted human (the founder, or an approved release maintainer) actually authorized cutting this release at this commit | `git tag -v vX.Y.Z` |
+| Signed Git tag (**verified for `v1.2.3` and `v1.2.6`; required for every future release**) | A trusted human (the founder, or an approved release maintainer) actually authorized cutting this release at this commit | `git tag -v vX.Y.Z` |
 
 A signed build pipeline that runs automatically on *any* pushed tag
 does not, by itself, prove a human intended to cut that release — it
@@ -36,7 +36,7 @@ lightweight tag (reconstructed from the pointed-to commit), so the
 release page alone is not evidence of an annotated, let alone signed,
 tag. This audit used the raw Git object model, not the GitHub UI.
 
-## 2. Audit results — all 9 existing tags
+## 2. Historical audit results — the 9 pre-policy tags
 
 | Tag | Object type | Annotated | Signed | `git tag -v` result |
 |---|---|---|---|---|
@@ -123,7 +123,15 @@ and re-cut cleanly after the fix landed. The second attempt's
 release from this point forward uses the same `git tag -s` procedure
 (`RELEASING.md` "Cutting a signed tag"), gated by the same CI check.
 
-## 6. Revisiting this document
+## 6. `v1.2.6` — current hardened release evidence
+
+The annotated `v1.2.6` tag points to
+`f784c44819c9c26f4e3486a9a6331508e20fd1eb`. On 2026-08-31, `git tag -v v1.2.6`
+reported a good SSH signature for `milchcreamfoods@gmail.com` against
+`security/release-signers.allowed`. Publish run `33337718757` independently passed the
+same signed-tag and approved-signer gate before invoking the reusable trusted builder.
+
+## 7. Revisiting this document
 
 Update the audit table above whenever a new tag is cut — this is a
 point-in-time snapshot (2026-08-19), not a live query. Re-run Section 1's

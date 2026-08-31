@@ -22,15 +22,20 @@ Claims are allowed only with the specific run/release/commit:
 - pinned GitHub Actions/container inputs and hash-locked security scanner tooling.
 - SAST/SCA/dependency-review/Gitleaks results from named workflow runs.
 - reproducible-build results, CycloneDX SBOM, artifact digests and GitHub attestations.
-- signed annotated `v1.2.3` tag and approved signer verification.
-- PyPI Trusted Publishing for `v1.2.3`.
+- signed annotated `v1.2.6` tag and approved signer verification.
+- PyPI Trusted Publishing and builder/PyPI SHA-256 parity for `v1.2.6`.
 
-Approved: “Release v1.2.3 was published through PyPI Trusted Publishing and its signed
-tag, attached SBOM and GitHub build provenance can be independently checked.”
+Approved: “Release v1.2.6 was built and reproduced by WhitePact's reusable trusted
+builder, published through PyPI Trusted Publishing without rebuilding, and its signed
+tag, checksums, CycloneDX SBOM, provenance and SBOM attestation can be independently
+checked.”
 
-SLSA Build Level 3 is **not claimable** until a release is built through the separate
-hardened reusable-builder architecture and its exact artifacts/provenance are independently
-verified. Workflow code alone is implementation evidence.
+The `v1.2.6` wheel and sdist completed the hardened path and independently verified
+against the expected repository, reusable workflow, source commit, signed tag ref and
+GitHub-hosted runner. The recorded SLSA v1.2 assessment permits the scoped statement:
+“WhitePact v1.2.6 release evidence satisfies SLSA v1.2 Build L3 requirements.” This is a
+release-specific conformance assessment, not “SLSA certification,” a claim about every
+WhitePact version, or proof that the artifact is free of vulnerabilities.
 
 ## C. Self-assessment / alignment
 
@@ -53,7 +58,8 @@ Approved examples:
 ## D. Not currently claimable
 
 - OpenSSF Best Practices Gold or OSPS L2/L3 award.
-- SLSA Build L3 before release verification.
+- “SLSA certified,” any SLSA level for releases other than those individually assessed,
+  or a claim that provenance guarantees artifact security.
 - CSA STAR Level 1/2 registration, certification or attestation.
 - ISO/IEC 42001, ISO 27001, SOC 2, NIST, OWASP, EU AI Act or CAIQ certification.
 - “EU AI Act fully compliant.”
@@ -66,7 +72,7 @@ Prohibited examples:
 
 - “OpenSSF Gold certified.”
 - “OSPS Level 3 achieved.”
-- “SLSA L3 ready” when the intended meaning is achieved/verified.
+- “SLSA certified” or an unscoped “WhitePact is SLSA L3” claim.
 - “CSA STAR certified.”
 - “ISO 42001 / NIST / OWASP / EU AI Act certified or fully compliant.”
 - “Independently pentested” based on Bandit, ZAP, property tests or the internal review.
