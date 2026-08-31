@@ -804,7 +804,23 @@ See [`ROADMAP.md`](ROADMAP.md) for the canonical NOW/NEXT/LATER plan. The list b
 
 ## Security & Open Source Assurance
 
-WhitePact holds two [OpenSSF](https://openssf.org/) self-certifications on its [bestpractices.dev project page](https://www.bestpractices.dev/projects/14112): the **Best Practices Passing** badge and **OSPS Baseline Level 1**. Both are voluntary, self-attested badges backed by real, inspectable evidence in this repository (see `compliance/OSPS_BASELINE_BRANCH_PROTECTION.md`, `compliance/OPENSSF_SECURITY_EVIDENCE.md`, `compliance/OPENSSF_SILVER_GAP_ANALYSIS.md`) — they are **not** an independent third-party audit, a penetration test, or equivalent to SOC 2 / ISO 27001 certification. None of those are claimed. See [`compliance/SOC2_ALTERNATIVE_PATH.md`](compliance/SOC2_ALTERNATIVE_PATH.md) for the honest path toward a real independent audit once there's budget for one.
+The official [OpenSSF/OSPS BadgeApp project](https://www.bestpractices.dev/projects/14112)
+currently records **OpenSSF Best Practices Silver** and **OSPS Baseline Level 1**.
+They are voluntary project evidence, not an independent audit, penetration test, SOC 2,
+or ISO certification. Current technical and claim boundaries are maintained in
+[`WHITEPACT_TRUST_STATUS.md`](compliance/WHITEPACT_TRUST_STATUS.md) and
+[`PUBLIC_TRUST_CLAIMS.md`](compliance/PUBLIC_TRUST_CLAIMS.md).
+
+Release consumers can review the [signed-tag evidence](compliance/SIGNED_VERSION_TAGS.md),
+[release process](RELEASING.md), [security policy](SECURITY.md),
+[SLSA evidence boundary](compliance/SLSA_BUILD_PROVENANCE.md), and
+[consumer verification guide](docs/VERIFY_RELEASE.md). The reusable trusted-builder
+pipeline is present on `main`. Release `v1.2.6` completed that path: its wheel and sdist
+were reproduced, hashed, attested, independently verified in the publish job, published
+to PyPI without rebuilding, hash-matched to PyPI, and attached to the GitHub Release with
+the CycloneDX SBOM. Independent consumer verification was repeated on 2026-08-31. The
+release-specific evidence is assessed as satisfying SLSA v1.2 Build L3; SLSA is a
+conformance framework, not a certification or a guarantee that an artifact is secure.
 
 ---
 
@@ -817,7 +833,7 @@ WhitePact holds two [OpenSSF](https://openssf.org/) self-certifications on its [
 - [`LEGACY_TO_MACHINE_AUTHORITY_MAP.md`](LEGACY_TO_MACHINE_AUTHORITY_MAP.md) — mapping RBAC/OAuth/IAM concepts onto their WhitePact equivalents, for readers coming from traditional access control
 - [`MIGRATION_WHITEPACT_V2.md`](MIGRATION_WHITEPACT_V2.md) — phase-by-phase migration log, what's done and what's explicitly not
 - [`DEFINITION_OF_DONE.md`](DEFINITION_OF_DONE.md) — closing report: what's real today, what isn't, verifiable
-- [`THREAT_MODEL.md`](THREAT_MODEL.md) — threat model for the current attack surface
+- [`SECURITY_THREAT_MODEL.md`](SECURITY_THREAT_MODEL.md) — current security threat and attack-surface model
 - [`DETERMINISTIC_VS_PROBABILISTIC.md`](DETERMINISTIC_VS_PROBABILISTIC.md) — why governance decisions are deterministic
 - [`SLA.md`](SLA.md), [`ENTERPRISE_SECURITY.md`](ENTERPRISE_SECURITY.md), [`SECURITY.md`](SECURITY.md) — enterprise/security posture, stated honestly
 - [`compliance/SOC2_ALTERNATIVE_PATH.md`](compliance/SOC2_ALTERNATIVE_PATH.md) — real, free, independently verifiable trust signals for now; the honest path to a real SOC 2 when there's budget for one

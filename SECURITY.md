@@ -20,7 +20,9 @@ what's shipping.
 
 **Do not open a public GitHub issue for security vulnerabilities.**
 
-Email **annaduraiguruprasath7@gmail.com** with the subject line:
+Preferred: open a [private GitHub vulnerability report](https://github.com/Guruprasath-Annadurai/Whitepact/security/advisories/new).
+
+Alternatively, email **annaduraiguruprasath7@gmail.com** with the subject line:
 `[WhitePact Security] <brief description>`
 
 Please include:
@@ -42,10 +44,28 @@ In scope:
 - PII leakage through the guardrails engine
 - Authentication or verification bypass in AI Passport hash verification
 
+Dependency vulnerabilities that affect WhitePact are in scope for triage and mitigation.
+WhitePact may coordinate the upstream fix rather than maintain a permanent fork.
+
 Out of scope:
-- Vulnerabilities in third-party dependencies (report those upstream)
 - Social engineering attacks
 - Issues requiring physical access to the system
+
+## Triage and advisory process
+
+1. The maintainer acknowledges the report and validates affected versions and impact.
+2. Severity is assigned using exploitability, affected confidentiality/integrity/
+   availability, tenant impact, required privileges, and reachable deployment paths.
+3. Confirmed reports are tracked privately in a GitHub Security Advisory when practical.
+4. A fix or documented mitigation is tested on all supported Python versions. Critical
+   and high findings block a release unless an explicit, time-bounded non-exploitability
+   analysis is recorded.
+5. The maintainer requests a CVE through GitHub when the issue meets CVE criteria, then
+   publishes the advisory and release notes after a fixed release is available.
+6. Secret exposures trigger immediate revocation before normal remediation work.
+
+The detailed dependency, exception, disclosure, and release policy is in
+[compliance/VULNERABILITY_MANAGEMENT.md](compliance/VULNERABILITY_MANAGEMENT.md).
 
 ## Responsible disclosure
 

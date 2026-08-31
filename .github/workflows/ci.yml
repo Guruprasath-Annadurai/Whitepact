@@ -44,7 +44,7 @@ jobs:
 
       - name: Scan dependencies for known vulnerabilities
         run: |
-          pip install pip-audit
+          pip install --require-hashes -r requirements-security.lock
           # PYSEC-2026-597: nltk path traversal in nltk.data.load()/find() via
           # percent-encoded "../" sequences. No fix version exists upstream
           # yet. nltk is an opt-in extra ([sentiment]), not installed by a
@@ -205,6 +205,7 @@ jobs:
             nohup uvicorn responsibleai.dashboard.app:app --host 127.0.0.1 --port 8765 \
             > dashboard.log 2>&1 &
           for i in $(seq 1 20); do
+            echo "dashboard readiness attempt ${i}/20"
             curl -sf http://127.0.0.1:8765/ > /dev/null && break
             sleep 1
           done

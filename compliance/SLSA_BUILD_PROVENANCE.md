@@ -12,8 +12,8 @@ The allowed status values are:
 
 - **VERIFIED** — checked against a real released artifact or immutable repository
   evidence.
-- **IMPLEMENTED BUT NOT YET RELEASE-VERIFIED** — present and locally validated in
-  workflow code, but no public release has yet traversed that implementation.
+- **IMPLEMENTED BUT NOT YET RELEASE-VERIFIED** — present and locally validated for a
+  control whose release-specific execution evidence has not yet been recorded.
 - **NOT SATISFIED** — required evidence does not exist or has not passed.
 - **NOT APPLICABLE** — outside the assessed SLSA v1.2 Build Track boundary.
 
@@ -35,17 +35,17 @@ sdist are the SLSA build subjects.
 
 | Control / assertion | Status | Evidence and boundary |
 |---|---|---|
-| `v1.2.3` wheel and sdist have signed SLSA provenance | **VERIFIED** | `gh attestation verify` passed on 2026-08-30 for both GitHub Release assets. Predicate: `https://slsa.dev/provenance/v1`; source commit: `c53562281df07f657d8bdcdb387b40d66d4e4c48`; signer workflow: `.github/workflows/publish.yml@refs/tags/v1.2.3`; GitHub-hosted runner. |
-| `v1.2.3` artifact digest integrity | **VERIFIED** | Wheel SHA-256 `1286d5c36b7fdc39e365b327eb714224983145fa2761d516443b8c217d213d00`; sdist SHA-256 `06cca485080d29d38d3da5feaf4fb63e64ee5cc9bd14bac6d53ee1398b07c6e6`. Both are authenticated attestation subjects. |
-| `v1.2.3` release-intent signature | **VERIFIED** | Annotated tag `v1.2.3` verifies as a good SSH signature for `milchcreamfoods@gmail.com` against `security/release-signers.allowed`. |
-| Current released evidence supports SLSA Build L2 | **VERIFIED** | `v1.2.3` provenance is authenticated, service-generated on a hosted build platform, identifies artifact digests and source, and is independently consumable. This is a release-specific L2 conclusion, not an L3 conclusion. |
-| Reusable workflow exclusively creates release wheel and sdist | **IMPLEMENTED BUT NOT YET RELEASE-VERIFIED** | `.github/workflows/reusable-build.yml` owns both builds, byte-for-byte reproducibility comparison, provenance, SBOM attestation, checksums, and the single artifact upload. `.github/workflows/publish.yml` calls it and contains no build command. |
-| Trusted-builder least-privilege permissions | **IMPLEMENTED BUT NOT YET RELEASE-VERIFIED** | Caller and reusable workflow grant only `contents: read`, `id-token: write`, and `attestations: write`; no publishing environment or secrets cross the boundary. External actions in the modified release workflows are pinned to immutable commits. |
-| Exact attested bytes reach PyPI and GitHub Release | **IMPLEMENTED BUT NOT YET RELEASE-VERIFIED** | Publish downloads `release-bundle`, checks builder `SHA256SUMS`, verifies both provenance statements with repository/builder/source/ref/runner constraints, uploads the bundle's distributions without rebuilding, checks PyPI JSON SHA-256 values, then attaches the same files to the GitHub Release. |
-| CycloneDX SBOM attestation | **IMPLEMENTED BUT NOT YET RELEASE-VERIFIED** | Official `actions/attest` SBOM mode binds `sbom.cyclonedx.json` to the wheel using predicate type `https://cyclonedx.org/bom`. No sdist SBOM-attestation claim is made. |
-| New hardened release has executed successfully | **NOT SATISFIED** | No new signed version tag has run the reusable workflow yet. Workflow implementation and local tests cannot satisfy this release-evidence gate. |
-| New wheel and sdist independently verify against the reusable signer workflow | **NOT SATISFIED** | Required acceptance command is `gh attestation verify ... --signer-workflow Guruprasath-Annadurai/Whitepact/.github/workflows/reusable-build.yml`, with expected source digest/ref and hosted-runner enforcement, against downloaded public release assets. |
-| Public SLSA Build L3 claim | **NOT SATISFIED** | Blocked until the two preceding rows pass for a real release and the exact PyPI/GitHub Release hashes match the builder manifest. |
+| `v1.2.6` wheel and sdist have signed SLSA provenance | **VERIFIED** | `gh attestation verify` passed on 2026-08-31 for both downloaded GitHub Release assets. Predicate: `https://slsa.dev/provenance/v1`; source commit: `f784c44819c9c26f4e3486a9a6331508e20fd1eb`; signer workflow: `.github/workflows/reusable-build.yml@refs/tags/v1.2.6`; GitHub-hosted runner; Rekor timestamp verified. |
+| `v1.2.6` artifact digest integrity | **VERIFIED** | Wheel SHA-256 `aef728a0227c115537aee7f434aa2c28d744f15cca78822eb1df339f106d3ad7`; sdist SHA-256 `289c37a2ecd36f989530674f5b483362b81b14ff277fc9d6b6373d5fa4155bd3`. `SHA256SUMS`, GitHub release digests, attestation subjects and PyPI JSON agree. |
+| `v1.2.6` release-intent signature | **VERIFIED** | Annotated tag `v1.2.6` verifies as a good SSH signature for `milchcreamfoods@gmail.com` against `security/release-signers.allowed`; the release job's signer gate also passed. |
+| `v1.2.6` released evidence satisfies SLSA v1.2 Build L3 | **VERIFIED** | The producer uses a consistent, documented process and distributes provenance. GitHub-hosted Actions provides hosted, ephemeral isolation and platform-controlled keyless signing; the SLSA v1 predicate identifies both subjects, builder, invocation, source and external parameters. GitHub's official reusable-workflow/artifact-attestation model is the selected L3-capable builder pattern. This is a release-specific conformance assessment, not certification. |
+| Reusable workflow exclusively creates release wheel and sdist | **VERIFIED** | `.github/workflows/reusable-build.yml` built both v1.2.6 distributions, compared a second build byte-for-byte, generated provenance/SBOM/checksums, and uploaded once. `.github/workflows/publish.yml` did not rebuild. Run `33337718757` passed. |
+| Trusted-builder least-privilege permissions | **VERIFIED** | Caller and reusable workflow grant only `contents: read`, `id-token: write`, and `attestations: write`; no publishing environment or long-lived secret crosses the boundary. The successful signer identity records a GitHub-hosted runner. |
+| Exact attested bytes reached PyPI and GitHub Release | **VERIFIED** | Publish checked `SHA256SUMS`, verified provenance, copied only the two distributions, published without rebuilding, confirmed PyPI SHA-256 values, and created the GitHub Release from the same bundle. Independent comparison repeated on 2026-08-31. |
+| CycloneDX SBOM attestation | **VERIFIED** | v1.2.6 includes `sbom.cyclonedx.json` (SHA-256 `a678fe2650f805baa8e9d2dd554a4e0bef701525d28ffc1335d9936785ae5c3f`) and an SBOM attestation bound to the wheel with predicate type `https://cyclonedx.org/bom`. No sdist SBOM-attestation claim is made. |
+| Hardened release executed successfully | **VERIFIED** | Publish run `33337718757` completed signed-tag verification, reusable build/reproduction/attestation, publish verification, exact-byte PyPI publication, hash confirmation and GitHub Release creation. |
+| Wheel and sdist independently verify against the reusable signer workflow | **VERIFIED** | Consumer commands in `docs/VERIFY_RELEASE.md` passed on 2026-08-31 with repository, signer workflow, source digest, tag ref and hosted-runner constraints. |
+| Scoped public SLSA Build L3 statement for v1.2.6 | **VERIFIED** | Allowed wording is limited to the assessed v1.2.6 wheel/sdist and must remain qualified as conformance evidence, not certification or proof of artifact security. |
 | SLSA Source Track assessment | **NOT APPLICABLE** | This assessment is limited to the SLSA v1.2 Build Track. Source Track conformance is a separate assessment. |
 | Obsolete pre-v1.0 Build Level 4 terminology | **NOT APPLICABLE** | SLSA v1.2 Build Track ends at Build L3. No Build L4 claim is used. |
 
@@ -61,17 +61,16 @@ byte comparison, despite prior documentation treating reproducibility as an
 existing control; that check is newly implemented here rather than credited as
 historical evidence.
 
-After this hardening, the signed-tag gate authorizes release intent; a reusable,
+In the current architecture, the signed-tag gate authorizes release intent; a reusable,
 least-privilege workflow builds, reproduces, hashes, and attests; and a separate
 publish job can only download, verify, and distribute the resulting bundle. OIDC
 identities remain short-lived. No PyPI API token or signing private key exists in
-the workflow.
+the workflow. Release `v1.2.6` exercised this architecture successfully.
 
 ## Claim rule
 
-WhitePact may state that the existing `v1.2.3` release has independently verified
-SLSA Build L2-compatible provenance. It must not state that WhitePact currently
-has a Build L3 release. After a new signed version tag completes the hardened
-workflow, a reviewer must download the public wheel and sdist and run every
-release-acceptance check in `docs/VERIFY_RELEASE.md`. Only that successful,
-recorded verification closes the Build L3 evidence gate.
+WhitePact may state that the assessed `v1.2.6` wheel and sdist have release-specific
+evidence satisfying SLSA v1.2 Build L3 requirements. It must not say “SLSA certified,”
+apply the statement to unassessed releases, or imply that provenance proves absence of
+vulnerabilities. Each future release needs fresh signed-tag, workflow, artifact, digest,
+attestation and consumer-verification evidence before receiving the same statement.

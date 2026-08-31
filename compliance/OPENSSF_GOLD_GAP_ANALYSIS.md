@@ -4,6 +4,7 @@
 **Badge project:** 14112  
 **Current earned Metal level:** Silver  
 **Current earned Baseline level:** Baseline Level 1  
+**Evidence refreshed:** 2026-08-31
 **Purpose:** keep the path to Gold evidence-based. A criterion is not marked Met merely because code or documentation can be added; organizational and historical requirements must be satisfied by real project history.
 
 ## Current Gold blockers
@@ -22,17 +23,17 @@ These three criteria must remain Unmet until real people and real review history
 
 | Criterion | Current status | Why it remains open |
 |---|---|---|
-| `require_2FA` | **Needs account-level evidence** | Repository files cannot prove the maintainer's real GitHub 2FA state. Do not mark Met without owner/account evidence. |
-| `secure_2FA` | **Needs account-level evidence** | Requires evidence of a cryptographic second factor such as TOTP, passkey, or security key. Repository code cannot prove this. |
-| `hardened_site` | **Needs live-site evidence** | Application middleware implements security headers, but `whitepact.com` must be checked from a reachable external environment before claiming the live site satisfies the Gold header requirement. |
+| `require_2FA` | **OWNER ACTION REQUIRED** | Repository files cannot prove the maintainer's real GitHub 2FA state. Do not mark Met without owner/account evidence. |
+| `secure_2FA` | **OWNER ACTION REQUIRED** | Requires evidence of a cryptographic second factor such as TOTP, passkey, or security key. Repository code cannot prove this. |
+| `hardened_site` | **TECHNICALLY READY** | External checks on 2026-08-30/31 verified HTTPS redirect, HSTS, CSP, frame/MIME/referrer/permissions headers, certificate, and TLS 1.2/1.3. `compliance/HARDENED_SITE_VERIFICATION.md` records residual limitations. BadgeApp submission/award remains owner/external work. |
 
 ## Technical Gold work
 
 | Criterion | Status | Evidence / next action |
 |---|---|---|
 | `achieve_silver` | **Met** | WhitePact has earned the OpenSSF Best Practices Silver badge. |
-| `copyright_per_file` | **Met on this hardening branch** | Tracked first-party source files under `src/`, `tests/`, `scripts/`, and `examples/` carry a copyright statement matching the root MIT `LICENSE`. `scripts/manage_license_headers.py --check` is enforced by the OpenSSF Policy Guard. |
-| `license_per_file` | **Met on this hardening branch** | The same tracked first-party source files carry `SPDX-License-Identifier: MIT`, enforced by CI. See `compliance/OPENSSF_SOURCE_LICENSES.md`. |
+| `copyright_per_file` | **TECHNICALLY READY** | Tracked first-party source files under `src/`, `tests/`, `scripts/`, and `examples/` carry a copyright statement matching the root MIT `LICENSE`. `scripts/manage_license_headers.py --check` is enforced by the OpenSSF Policy Guard. Official BadgeApp evidence must be refreshed. |
+| `license_per_file` | **TECHNICALLY READY** | The same tracked first-party source files carry `SPDX-License-Identifier: MIT`, enforced by CI. See `compliance/OPENSSF_SOURCE_LICENSES.md`; official BadgeApp evidence must be refreshed. |
 | `repo_distributed` | **Met** | Git/GitHub is the authoritative distributed source repository. |
 | `code_review_standards` | **Met** | `docs/CODE_REVIEW.md` defines review scope, security review checks, and acceptance criteria while explicitly not claiming independent review history. |
 | `test_invocation` | **Met** | `CONTRIBUTING.md#running-tests` documents standard `pytest` invocation. |
@@ -46,9 +47,11 @@ These three criteria must remain Unmet until real people and real review history
 | `dynamic_analysis` | **Met** | Automated tests exceed the 80% pure branch-coverage route required by the project's selected dynamic-analysis path. |
 | `dynamic_analysis_enable_assertions` | **Met** | Pytest assertions are executed throughout CI across security and runtime behavior. |
 
-## OpenSSF Scorecard hardening in this branch
+## OpenSSF Scorecard hardening now on `main`
 
-The `security/openssf-hardening` branch addresses repository-side Scorecard findings without changing WhitePact runtime feature logic:
+PR #52 landed the repository-side Scorecard hardening on `main` without changing
+WhitePact runtime feature logic. The official v5.0.0 assessment on 2026-08-31 reports
+**6.0/10** for `79f604bcd5162aca92419f2801cfad3903ad9874`:
 
 - GitHub Actions are pinned to full immutable commit SHAs.
 - Workflow `GITHUB_TOKEN` permissions are reduced to least privilege, including moving release write/OIDC permissions to the publishing job only.
@@ -58,9 +61,17 @@ The `security/openssf-hardening` branch addresses repository-side Scorecard find
 - `scripts/manage_license_headers.py` and the OpenSSF policy workflow prevent first-party source license/copyright metadata from regressing.
 - Existing DCO, Gitleaks, dependency-review, Scorecard, SAST/dependency scan, release provenance, SBOM and signed-tag controls remain intact.
 
-## Remaining Scorecard limitation
+## Remaining Scorecard limitations
 
-Hash-pinned Actions and container images materially improve `Pinned-Dependencies`, but Scorecard can still flag shell `pip install` commands that do not use a hash-locked requirements workflow. Fully eliminating those findings requires a coherent hash-locked Python bootstrap/dependency process; do not invent package hashes or mark this solved until the real installation paths use verified locks.
+Hash-pinned Actions and container images materially improve `Pinned-Dependencies`.
+Bandit and pip-audit now resolve from a generated `requirements-security.lock` using
+`--require-hashes`. Normal CI and end-user dependency ranges intentionally remain flexible;
+therefore this is stronger security-tooling evidence, not a claim that every shell install
+in the repository is fully hash-locked.
+
+The current official deductions remain visible in
+`compliance/OPENSSF_SCORECARD_GAP_ANALYSIS.md`. Gold is governed by BadgeApp criteria,
+not by turning the aggregate Scorecard number into a substitute award.
 
 ## Why Gold is deliberately not claimed yet
 

@@ -1,4 +1,4 @@
-# Internal Security Review — ResponsibleAI Platform v1.2.0
+# INTERNAL SECURITY REVIEW — WhitePact
 
 > ## ⚠️ This is an internal review, not a third-party penetration test
 >
@@ -17,7 +17,47 @@
 > low-risk with reasoning given, and one (a third-party pentest) that no
 > amount of internal review can substitute for.
 
-Last reviewed: 2026-07-23 · Platform version: 1.2.0
+Last reviewed: 2026-08-31 · Source boundary: `security/non-slsa-trust-hardening`,
+rebased on current `main` at `79f604bcd5162aca92419f2801cfad3903ad9874`, plus the changes
+documented in this branch. Package version: 1.2.6. This review is not a release
+attestation. Release-specific supply-chain evidence is assessed separately in
+`compliance/SLSA_BUILD_PROVENANCE.md`.
+
+## 2026-08-31 review extension
+
+The earlier findings below remain part of the review history. This extension adds the
+current threat and supply-chain boundary:
+
+- `SECURITY_THREAT_MODEL.md` analyzes the Heart authority path, MCP/upstream tools,
+  identity, tenant storage, approvals, evidence, CI and release boundary.
+- Hypothesis and negative tests cover attenuation, unknown identity types, revoked/
+  expired authority, cycle handling, approval mutation/replay, tenant isolation, and
+  malformed/tampered offline evidence (`compliance/FUZZING_READINESS.md`).
+- Bandit SAST and pip-audit run on main and weekly; scanner executables now install from
+  `requirements-security.lock` using `--require-hashes`.
+- Dependency Review blocks high/critical vulnerability changes and enforces the license
+  policy; Dependabot covers pip, Actions and Docker; GitHub secret scanning/push
+  protection and Gitleaks are enabled.
+- GitHub Actions/containers are immutable-pinned on `main`, enforced by the OpenSSF
+  policy guard. Release `v1.2.6` exercised signed intent, reproducibility, SBOM and
+  provenance controls successfully; their release-specific assessment remains separate
+  from this internal application-security review.
+- Live public-edge checks observed HTTPS, HSTS, CSP, framing/MIME/referrer/permissions
+  headers and TLS 1.2/1.3; see `compliance/HARDENED_SITE_VERIFICATION.md` for limitations.
+
+### Findings from this extension
+
+| ID | Severity | Status | Finding / disposition |
+|---|---|---|---|
+| ISR-2026-04 | Medium | FIXED | Offline evidence verifier raised parser exceptions for malformed external JSON. It now returns a deterministic invalid result; Hypothesis exercises arbitrary JSON. |
+| ISR-2026-05 | High upstream / not reachable here | DOCUMENTED EXCEPTION | NLTK PYSEC-2026-597 affects an opt-in extra and an API path WhitePact does not call with attacker input. OpenVEX and review trigger added; upstream fix remains preferred. |
+| ISR-2026-06 | Governance | OPEN | Main requires PR/checks but no non-author approval because only one maintainer exists. HUMAN MATURITY BLOCKER. |
+| ISR-2026-07 | Assurance | OPEN | No independent penetration test of application, deployment or cloud boundary. EXTERNAL AUDIT REQUIRED. |
+| ISR-2026-08 | Low | OPEN | Public CSP permits inline script/style and response headers disclose Uvicorn/Render identifiers. Record as residual hardening risk. |
+
+Known limitations: this was performed by the author/maintainer; no source-level review can
+prove live OAuth tenant setup, IdP revocation, cloud IAM, database row isolation, backup
+recovery, WAF/origin restrictions, authenticated cookies, or production incident response.
 
 ---
 

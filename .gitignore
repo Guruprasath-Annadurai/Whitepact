@@ -22,6 +22,7 @@ venv/
 !server.json
 !plugins/**/*.json
 !distribution/**/*.json
+!security/*.openvex.json
 !examples/amazon-q/*.json
 !examples/kiro-cli/*.json
 !examples/aws-agentcore/*.json

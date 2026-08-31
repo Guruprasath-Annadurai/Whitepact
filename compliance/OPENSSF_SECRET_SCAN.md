@@ -1,5 +1,20 @@
 # OpenSSF `no_leaked_credentials` — Secret Scan Report
 
+## Current validation addendum — 2026-08-31
+
+Gitleaks v8.30.1 scanned all 423 reachable commits and approximately 10.19 MB
+with redaction enabled. One new scanner hit was reviewed: historical commit
+`22f67d5`, `tests/test_saml.py:252`, where a negative signature test passes an
+RSA private key generated in memory to the SAML signer. The repository contains
+the variable reference, not key material or a credential. Its exact historical
+fingerprint is documented in `.gitleaksignore`; no rule-wide suppression was
+added. After that narrow false-positive classification, the full-history scan
+reports zero unignored leaks.
+
+The dated report below is retained as evidence of the earlier scan and
+out-of-repository credential incident. Its counts describe the 2026-08-17 run,
+not the current repository history.
+
 **Date**: 2026-08-17
 **Scanner**: [gitleaks](https://github.com/gitleaks/gitleaks) v8.30.1 — full git history
 **Second scanner**: TruffleHog — **NOT RUN** (not installed in this environment; not attempted with a fabricated or partial result). If independent corroboration is required, run `trufflehog git file://. --since-commit=<root>` before this document is treated as final on that point.
