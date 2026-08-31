@@ -24,3 +24,6 @@ jobs:
 
       - name: Enforce source copyright and SPDX headers
         run: python scripts/manage_license_headers.py --check
+
+      - name: Enforce non-SLSA trust controls and public claim boundaries
+        run: python scripts/check_trust_regressions.py
