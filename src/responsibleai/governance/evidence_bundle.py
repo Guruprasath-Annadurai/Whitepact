@@ -164,8 +164,31 @@ def verify_evidence_bundle(bundle_dict: dict[str, Any]) -> BundleVerificationRes
     3. The bundle-level digest matches recomputing it over all
        (now-verified) record hashes.
     """
-    records_data = bundle_dict.get("records", [])
-    records = [_record_from_dict(d) for d in records_data]
+    try:
+        records_data = bundle_dict.get("records", [])
+        if not isinstance(records_data, list) or not all(
+            isinstance(record, dict) for record in records_data
+        ):
+            raise TypeError("records must be a list of objects")
+        records = [_record_from_dict(d) for d in records_data]
+        declared_count = bundle_dict.get("record_count")
+        if declared_count is not None and declared_count != len(records):
+            return BundleVerificationResult(
+                valid=False,
+                chain_intact=False,
+                digest_matches=False,
+                failure_reason="record count mismatch",
+            )
+    except (AttributeError, KeyError, TypeError, ValueError) as exc:
+        # Bundles are externally supplied serialized evidence. Malformed
+        # structures must produce a deterministic invalid verdict rather
+        # than leak parser exceptions into a verifier or API caller.
+        return BundleVerificationResult(
+            valid=False,
+            chain_intact=False,
+            digest_matches=False,
+            failure_reason=f"malformed bundle: {exc}",
+        )
 
     expected_prev: str | None = None
     for i, record in enumerate(records):

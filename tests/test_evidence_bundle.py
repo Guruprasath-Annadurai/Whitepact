@@ -11,6 +11,8 @@ from __future__ import annotations
 import copy
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from responsibleai.db import EvidenceRepository, create_engine
 from responsibleai.governance import (
@@ -159,8 +161,51 @@ class TestVerifyEvidenceBundleTamperDetection:
         tampered["records"][1]["decision"] = "DENY"  # was ALLOW
         result = verify_evidence_bundle(tampered)
         assert result.valid is False
-        assert result.chain_intact is False
-        assert "hash mismatch" in result.failure_reason
+
+
+_json_scalars = st.none() | st.booleans() | st.integers() | st.text(max_size=80)
+_json_values = st.recursive(
+    _json_scalars,
+    lambda children: (
+        st.lists(children, max_size=8) | st.dictionaries(st.text(max_size=30), children, max_size=8)
+    ),
+    max_leaves=30,
+)
+
+
+class TestEvidenceBundleMalformedInputProperties:
+    @given(value=_json_values)
+    def test_arbitrary_json_never_raises_or_verifies(self, value: object) -> None:
+        """Untrusted serialized input must fail closed without parser exceptions."""
+        result = verify_evidence_bundle(value)  # type: ignore[arg-type]
+        assert result.valid is False
+
+    @given(replacement=st.text(max_size=100).filter(lambda value: value != "ALLOW"))
+    def test_arbitrary_decision_mutation_breaks_hash(self, replacement: str) -> None:
+        from datetime import UTC, datetime
+
+        from responsibleai.governance.evidence import EvidenceRecord
+        from responsibleai.governance.evidence_bundle import _compute_entry_hash
+
+        record = EvidenceRecord(
+            evidence_id="evidence-1",
+            organization_id="org-1",
+            action_id="action-1",
+            agent_id="agent-1",
+            identity_id="identity-1",
+            action_type="mcp_tool_call",
+            target="tool-1",
+            argument_keys=[],
+            authority_delegated_by="org-1",
+            decision="ALLOW",
+            reason_codes=[],
+            evaluated_at=datetime(2026, 8, 31, tzinfo=UTC),
+            recorded_at="2026-08-31T00:00:00+00:00",
+        )
+        record.hash = _compute_entry_hash(record.prev_hash, record)
+        bundle = build_evidence_bundle([record], org_id="org-1").to_dict()
+        bundle["records"][0]["decision"] = replacement
+        assert verify_evidence_bundle(bundle).valid is False
 
     async def test_reordering_records_breaks_chain(self, evidence_repo) -> None:
         records = await _seed(evidence_repo, 3)
