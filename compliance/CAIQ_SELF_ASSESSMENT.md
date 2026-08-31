@@ -1,4 +1,4 @@
-# Consensus Assessment Self-Assessment — ResponsibleAI Platform v1.2.0
+# Consensus Assessment Self-Assessment — WhitePact
 
 Modeled on the Cloud Security Alliance's Consensus Assessment Initiative
 Questionnaire (CAIQ) domain structure. This is our own self-administered
@@ -11,8 +11,15 @@ file/mechanism behind it. Where a control doesn't exist, that's stated
 plainly, not omitted. If you find a claim here that doesn't match the code,
 the code is ground truth — report the discrepancy per `SECURITY.md`.
 
-**Reference hosting provider:** as of 2026-07-23, **a live, genuinely
-deployed instance exists** at `https://responsibleai-dashboard.onrender.com`
+**Evidence boundary update (2026-08-31):** the public site at
+`https://whitepact.com` was externally observed as reachable and header-hardened. The
+older Render/Supabase/Upstash reference architecture described below has not been
+revalidated end-to-end during this review. Treat provider, region, backup, capacity,
+internal-TLS, and production-operating claims below as **OWNER ASSERTION REQUIRED**, not
+deployment-verified facts. The row-level authoritative responses and evidence classes are
+in `CAIQv4.0.3_WhitePact_completed.xlsx` and `CAIQ_EVIDENCE_BOUNDARY.md`.
+
+The earlier reference design used `https://responsibleai-dashboard.onrender.com`
 — a three-vendor managed-services stack chosen because neither Oracle
 Cloud's nor Google Cloud's signup flow could be completed without a
 payment card the founder didn't have:
@@ -33,7 +40,7 @@ is unchanged until billing is actually wired up and a paying customer
 exists. What's true now is narrower and real: the platform itself is
 reachable and functioning at the URL above.
 
-Last reviewed: 2026-07-23 · Platform version: 1.2.0
+Last reviewed: 2026-08-31 · Package version at review start: 1.2.3
 
 ---
 
@@ -64,7 +71,7 @@ Last reviewed: 2026-07-23 · Platform version: 1.2.0
 
 | Question | Answer |
 |---|---|
-| Is there a documented disaster recovery plan? | Yes — `SLA.md`'s "Disaster recovery" section. RPO 24h (nightly `pg_dump`), RTO 1-4h depending on tier. `scripts/backup-postgres.sh` / `scripts/restore-postgres.sh`. |
+| Is there a documented disaster recovery plan? | Partial documentation exists in `SLA.md` and backup/restore scripts. The RPO/RTO and scheduled backup operation are **not deployment verified**; this is not an exercised DR control. |
 | Is backup data encrypted? | Backup files are not encrypted by the script itself — encrypt at the storage layer (S3 SSE, encrypted volume) where you ship them, per `ENTERPRISE_SECURITY.md`'s encryption-at-rest posture. |
 | Is there a documented uptime SLA? | Yes — `SLA.md`, tiered by plan (FREE 99.0% design target/not enforced, PRO 99.5%, ENTERPRISE 99.9%). |
 | Is there redundancy/failover for the hosted stack? | `docker-compose.prod.yml` runs single-instance dashboard + MCP services against Postgres/Redis — no automatic failover *orchestration* between replicas is configured today; promoting a replica to primary remains the deployer's Kubernetes/cloud provider responsibility, not built into the app. What the app does do: `DatabaseEngine.init()` retries a transient connection failure with capped exponential backoff (up to 5 attempts) rather than crashing immediately, so a brief failover/DNS-repoint window at startup doesn't take the app down outright. Multi-replica horizontal scaling is supported (Helm chart, HPA). |
@@ -85,7 +92,7 @@ Last reviewed: 2026-07-23 · Platform version: 1.2.0
 
 | Question | Answer |
 |---|---|
-| Is data encrypted at rest? | Not enforced by the application layer — see `ENTERPRISE_SECURITY.md`. For the live reference deployment specifically: **yes, at the infrastructure layer, per Supabase** — Supabase's managed Postgres encrypts data at rest by default as part of its SOC 2/ISO 27001-certified infrastructure (see Supabase's own security documentation for current specifics). This is a property of the chosen database vendor, not something this codebase implements — a different self-hosted provider/config could lack it, so don't read this as a platform-wide guarantee. |
+| Is data encrypted at rest? | Field encryption is opt-in and covers the columns listed in `compliance/KEY_MANAGEMENT.md`; without its key it is passthrough. Infrastructure encryption is a deployment/provider control and is **OWNER ASSERTION REQUIRED** for the current production environment. |
 | Is data encrypted in transit? | TLS is the deployer's responsibility (reverse proxy termination) — the app speaks plain HTTP internally. See `DEPLOYMENT.md`'s nginx config. Webhook payloads carry HMAC-SHA256 signatures independent of transport encryption. |
 | Is there a data retention and deletion policy? | Yes — configurable per data type (`SLA.md`'s Data Retention table): trust scores/token usage default 365 days, audit log via `AuditRepository.cleanup(retention_days=N)`. Not run automatically; scheduling is the deployer's responsibility. |
 | Is PII detected and handled specially? | Yes — the Guardrails Engine (`rai_scan` / `GET /api/scan`) detects email, phone, SSN, credit card, IP address and can redact in real time; `rai_pii_report` aggregates findings for GDPR/CCPA evidence. |
@@ -188,8 +195,8 @@ Last reviewed: 2026-07-23 · Platform version: 1.2.0
 | Question | Answer |
 |---|---|
 | Is there a sub-processor list? | Yes — `SLA.md`'s "Sub-processors" section (summary) and `compliance/DPA_TEMPLATE.md` Section 2 (full detail: purpose, data processed, location, certifications for each), both updated 2026-07-23 to list Render, Supabase, and Upstash as the live reference deployment's infrastructure vendors. Also lists Stripe (billing, if enabled) and the customer's own OIDC/LLM provider choices. For self-hosted deployments where the customer runs their own infrastructure entirely, most of this doesn't apply — the customer *is* the infrastructure choice. This is not the same as a ResponsibleAI-operated hosted SaaS tier being live for sale, which it still isn't. |
-| Are third-party dependencies tracked and scanned? | Dependencies are declared in `pyproject.toml` with version constraints. `pip-audit` runs on every CI build (`.github/workflows/ci.yml`) and scans the full resolved dependency tree. A default `pip install rai-governance-platform` currently resolves to zero known vulnerabilities. `nltk` (PYSEC-2026-597, path traversal in `nltk.data.load()`/`find()` via percent-encoded traversal sequences, no upstream fix as of this writing) was removed from the mandatory dependency set and moved to an opt-in `[sentiment]` extra — installing it knowingly takes on that disclosed, upstream-unpatched risk, though reviewed and confirmed non-exploitable in this codebase's own usage (the only call site passes a hardcoded literal resource name, never attacker-controlled input). CI installs `[sentiment]` explicitly to keep the sentiment-scoring tests real, so `pip-audit --ignore-vuln PYSEC-2026-597` still appears there with that rationale documented inline — not silently suppressed. Dependabot is not configured (no automatic PR-based update flow yet — real remaining gap). |
-| Is there an SBOM (Software Bill of Materials)? | Not yet generated. Given the project is open source with a fully inspectable dependency tree, this is lower priority than for closed-source vendors, but still a gap for buyers who require a formal SBOM artifact. |
+| Are third-party dependencies tracked and scanned? | Yes at source/CI level: `pyproject.toml`, Dependabot for pip/Actions/Docker, Dependency Review, and pip-audit. Security scanner tooling is hash-locked. NLTK PYSEC-2026-597 remains an opt-in, documented non-reachable exception in `security/whitepact.openvex.json`; an upstream patch remains preferred. |
+| Is there an SBOM (Software Bill of Materials)? | CycloneDX SBOM generation exists in build/release workflows. Availability and digest association must be verified on the exact published release; this statement is not an SBOM attestation claim. |
 | Is there a vendor/third-party risk assessment process? | Yes — `compliance/VENDOR_RISK_ASSESSMENT.md` evaluates each sub-processor listed above (data shared, certification status, outage/breach impact, residual risk). Stated honestly: it's a one-time write-up done alongside other compliance work, not a scheduled recurring review — the document says so itself. |
 
 ---
@@ -223,7 +230,7 @@ Last reviewed: 2026-07-23 · Platform version: 1.2.0
 | NIST CSF self-assessment | ✅ Done | — |
 | OWASP ZAP automated scan | Script ready, not yet run against a live deployment | Needs a running instance to scan |
 | Dependency vulnerability scanning in CI | ✅ Done — `pip-audit` on every CI run, one finding triaged | — |
-| Dependabot (automatic dependency update PRs) | Not started | Engineering time — quick win, should follow soon |
+| Dependabot (automatic dependency update PRs) | Technically ready on the hardening branch for pip, Actions and Docker | Merge and observe operation |
 | Formal incident response runbook | ✅ Done — one tabletop drill completed 2026-07-21 (`TABLETOP_EXERCISE_2026-07-21.md`), two real gaps found and fixed; still untested against a real production incident | — |
 | Incident record persistence + Alertmanager bridge | ✅ Done — `incidents` table, `POST /api/incidents`, `POST /api/alerts/webhook` (`grafana/prometheus/alertmanager.yml.example`); closes the gap the tabletop drill found (ephemeral MCP output, no auto-bridge from alerts) | — |
 | Third-party penetration test | Not started | **Funding** — typically $5-15K even scoped narrow |

@@ -1,8 +1,17 @@
 # Copyright (c) 2026 Guruprasath Annadurai
 # SPDX-License-Identifier: MIT
-"""Answer set for the CSA STAR Level 1 CAIQ v4.0.3 questionnaire,
-grounded in the real, current state of the WhitePact/ResponsibleAI
-codebase and its existing compliance docs (compliance/CAIQ_SELF_ASSESSMENT.md,
+"""Historical seed answers for the CSA CAIQ v4.0.3 questionnaire.
+
+This module is retained for traceability only. It is not the authoritative
+assessment and must not be used to regenerate or submit the workbook without a
+fresh evidence review. The evidence-classified, row-by-row audited source of
+truth is ``compliance/CAIQv4.0.3_WhitePact_completed.xlsx`` together with
+``compliance/CAIQ_EVIDENCE_BOUNDARY.md``. Several optimistic seed answers below
+were deliberately downgraded in that workbook when repository or deployment
+evidence was insufficient.
+
+The original seed was based on the WhitePact/ResponsibleAI codebase and its
+existing compliance docs (compliance/CAIQ_SELF_ASSESSMENT.md,
 THREAT_MODEL.md, SOC2_READINESS.md, ENTERPRISE_SECURITY.md,
 compliance/KEY_MANAGEMENT.md, GOVERNANCE.md, compliance/INTERNAL_SECURITY_REVIEW.md,
 compliance/INCIDENT_RESPONSE_RUNBOOK.md, DEPLOY_RUNBOOK.md).
