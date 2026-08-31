@@ -64,10 +64,11 @@ WhitePact runtime feature logic. The official v5.0.0 assessment on 2026-08-31 re
 ## Remaining Scorecard limitations
 
 Hash-pinned Actions and container images materially improve `Pinned-Dependencies`.
-Bandit and pip-audit now resolve from a generated `requirements-security.lock` using
-`--require-hashes`. Normal CI and end-user dependency ranges intentionally remain flexible;
-therefore this is stronger security-tooling evidence, not a claim that every shell install
-in the repository is fully hash-locked.
+Bandit, pip-audit, CI, build, and production-image dependencies now resolve from generated
+hash locks using `--require-hashes`. End-user dependency ranges in `pyproject.toml` remain
+the package compatibility contract; controlled repository environments consume reviewed locks.
+This is stronger controlled-environment evidence, not a claim that every end-user install is
+locked to WhitePact's internal CI dependency set.
 
 The current official deductions remain visible in
 `compliance/OPENSSF_SCORECARD_GAP_ANALYSIS.md`. Gold is governed by BadgeApp criteria,

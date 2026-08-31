@@ -35,7 +35,11 @@ Known technical/evidence items still requiring a later dedicated pass include:
 
 ## Scorecard caveats
 
-This branch materially improves Pinned-Dependencies and Token-Permissions by hash-pinning GitHub Actions and container images and by reducing token permissions. Some pip install commands remain visible to Scorecard without `--require-hashes`; eliminating every such warning would require a hash-locked Python bootstrap/dependency workflow and is intentionally not papered over in this PR.
+The earlier hardening branch pinned GitHub Actions and container images and reduced token
+permissions. The later Scorecard hardening branch adds the coherent hash-locked Python
+bootstrap/dependency workflow that this historical report identified as remaining work. See
+`OPENSSF_SCORECARD_CURRENT.md` for the current evidence boundary; no post-change score is
+claimed before an official rescan.
 
 ## Verification policy
 

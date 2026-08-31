@@ -6,7 +6,7 @@ implementation, release evidence, and external assurance.
 | Area | Status | Verified evidence | Public claim allowed | Blocker | Next action |
 |---|---|---|---|---|---|
 | OpenSSF Best Practices | ACHIEVED | official project 14112 = Silver | “Silver awarded” | Gold human/account/official criteria | update BadgeApp evidence; earn real reviewer/contributor history |
-| OpenSSF Scorecard | VERIFIED | official v5.0.0 score 6.0 on 2026-08-31 for `79f604b` | exact dated score only | Branch-Protection API error; human/history and scanner deductions | address legitimate technical deductions; wait for real history where required |
+| OpenSSF Scorecard | VERIFIED | official v5.0.0 score 6.1 on 2026-08-31 for `a46980d` | exact dated score only | Branch-Protection API error; human/history and scanner deductions | merge/run branch controls, release portable provenance, rescan; wait for real history |
 | OSPS Baseline | ACHIEVED | official Level 1; current 2026.08.28 audit | “Level 1 awarded” | L3 non-author approval; release/owner evidence | submit updated L2 evidence; do not claim award early |
 | SLSA | VERIFIED (RELEASE-SPECIFIC) | v1.2.6 wheel/sdist verify against the main reusable builder, source commit/tag and hosted runner; v1.2 normative assessment recorded | “v1.2.6 release evidence satisfies SLSA v1.2 Build L3” with scope | not a certification or artifact-security guarantee | preserve builder and consumer verification on every release |
 | SBOM | VERIFIED | v1.2.6 CycloneDX release asset, checksum and wheel-bound SBOM attestation | v1.2.6 SBOM/attestation available | SBOM describes dependencies; it is not a vulnerability-free claim | preserve generation, attestation and verification |

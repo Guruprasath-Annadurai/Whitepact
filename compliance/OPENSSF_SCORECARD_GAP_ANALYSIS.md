@@ -1,9 +1,9 @@
 # OpenSSF Scorecard Gap Analysis
 
-Evidence boundary: official Scorecard v5.0.0 result dated 2026-08-31 for
-`79f604bcd5162aca92419f2801cfad3903ad9874`; workflow run
-`33359584927` completed successfully and the official API publishes **6.0/10**.
-This supersedes the pre-hardening 4.2 result.
+The authoritative dated baseline and complete per-check evidence are maintained
+in [`OPENSSF_SCORECARD_CURRENT.md`](OPENSSF_SCORECARD_CURRENT.md). The official
+2026-08-31 result for `a46980d4873ab614f462878903ee4389c51f0e8f` is **6.1/10**.
+No branch-only improvement is represented as an achieved Scorecard result.
 
 | Check | Score | Current evidence | Classification | Remaining action / limitation |
 |---|---:|---|---|---|
@@ -19,10 +19,10 @@ This supersedes the pre-hardening 4.2 result.
 | License | 10 | recognized MIT license | VERIFIED | per-file policy is separately enforced |
 | Maintained | 0 | repository created within 90 days | HUMAN HISTORY / TIME | do not manufacture activity |
 | Packaging | 10 | GitHub Actions release packaging detected | VERIFIED | preserve protected release path |
-| Pinned-Dependencies | 4 | Actions and containers pinned; most pip/download commands not hash-pinned | PARTIALLY VERIFIED | remediate only where coherent and maintainable |
-| SAST | 0 | Scorecard did not recognize SAST across recent commits | TECHNICALLY READY ON BRANCH / SCANNER GAP | merge PR-triggered Bandit gate and reassess recognition |
+| Pinned-Dependencies | 5 | Actions and containers pinned; pip/download findings remain in the official baseline | IMPLEMENTED ON BRANCH / NOT RESCANNED | generated hash locks and detector findings remediated; merge and rescan |
+| SAST | 0 | Scorecard did not recognize SAST across recent commits | IMPLEMENTED ON BRANCH / NOT RUN | merge and successfully run CodeQL, then rescan |
 | Security-Policy | 10 | actionable policy detected | VERIFIED | response objectives are not contractual SLAs |
-| Signed-Releases | 0 | Scorecard did not recognize v1.2.6 signature/provenance | SCANNER MISMATCH | independent tag and attestation checks pass; do not alter evidence to game heuristic |
+| Signed-Releases | 0 | v1.2.6 has verified online provenance but no recognized portable release asset | IMPLEMENTED FOR NEXT RELEASE | publish and verify the genuine `.sigstore` bundle on a new signed release |
 | Token-Permissions | 10 | least-privilege workflow tokens detected | VERIFIED | preserve job-scoped writes |
 | Vulnerabilities | 10 | zero existing vulnerabilities detected by Scorecard | VERIFIED FOR SCANNER SCOPE | retain SCA and OpenVEX review |
 
