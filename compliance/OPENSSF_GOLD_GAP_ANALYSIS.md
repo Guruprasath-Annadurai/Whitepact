@@ -4,6 +4,7 @@
 **Badge project:** 14112  
 **Current earned Metal level:** Silver  
 **Current earned Baseline level:** Baseline Level 1  
+**Evidence refreshed:** 2026-08-31
 **Purpose:** keep the path to Gold evidence-based. A criterion is not marked Met merely because code or documentation can be added; organizational and historical requirements must be satisfied by real project history.
 
 ## Current Gold blockers
@@ -22,17 +23,17 @@ These three criteria must remain Unmet until real people and real review history
 
 | Criterion | Current status | Why it remains open |
 |---|---|---|
-| `require_2FA` | **Needs account-level evidence** | Repository files cannot prove the maintainer's real GitHub 2FA state. Do not mark Met without owner/account evidence. |
-| `secure_2FA` | **Needs account-level evidence** | Requires evidence of a cryptographic second factor such as TOTP, passkey, or security key. Repository code cannot prove this. |
-| `hardened_site` | **Needs live-site evidence** | Application middleware implements security headers, but `whitepact.com` must be checked from a reachable external environment before claiming the live site satisfies the Gold header requirement. |
+| `require_2FA` | **OWNER ACTION REQUIRED** | Repository files cannot prove the maintainer's real GitHub 2FA state. Do not mark Met without owner/account evidence. |
+| `secure_2FA` | **OWNER ACTION REQUIRED** | Requires evidence of a cryptographic second factor such as TOTP, passkey, or security key. Repository code cannot prove this. |
+| `hardened_site` | **TECHNICALLY READY** | External checks on 2026-08-30/31 verified HTTPS redirect, HSTS, CSP, frame/MIME/referrer/permissions headers, certificate, and TLS 1.2/1.3. `compliance/HARDENED_SITE_VERIFICATION.md` records residual limitations. BadgeApp submission/award remains owner/external work. |
 
 ## Technical Gold work
 
 | Criterion | Status | Evidence / next action |
 |---|---|---|
 | `achieve_silver` | **Met** | WhitePact has earned the OpenSSF Best Practices Silver badge. |
-| `copyright_per_file` | **Met on this hardening branch** | Tracked first-party source files under `src/`, `tests/`, `scripts/`, and `examples/` carry a copyright statement matching the root MIT `LICENSE`. `scripts/manage_license_headers.py --check` is enforced by the OpenSSF Policy Guard. |
-| `license_per_file` | **Met on this hardening branch** | The same tracked first-party source files carry `SPDX-License-Identifier: MIT`, enforced by CI. See `compliance/OPENSSF_SOURCE_LICENSES.md`. |
+| `copyright_per_file` | **TECHNICALLY READY** | Tracked first-party source files under `src/`, `tests/`, `scripts/`, and `examples/` carry a copyright statement matching the root MIT `LICENSE`. `scripts/manage_license_headers.py --check` is enforced by the OpenSSF Policy Guard. Official BadgeApp evidence must be refreshed. |
+| `license_per_file` | **TECHNICALLY READY** | The same tracked first-party source files carry `SPDX-License-Identifier: MIT`, enforced by CI. See `compliance/OPENSSF_SOURCE_LICENSES.md`; official BadgeApp evidence must be refreshed. |
 | `repo_distributed` | **Met** | Git/GitHub is the authoritative distributed source repository. |
 | `code_review_standards` | **Met** | `docs/CODE_REVIEW.md` defines review scope, security review checks, and acceptance criteria while explicitly not claiming independent review history. |
 | `test_invocation` | **Met** | `CONTRIBUTING.md#running-tests` documents standard `pytest` invocation. |
@@ -60,7 +61,11 @@ The `security/openssf-hardening` branch addresses repository-side Scorecard find
 
 ## Remaining Scorecard limitation
 
-Hash-pinned Actions and container images materially improve `Pinned-Dependencies`, but Scorecard can still flag shell `pip install` commands that do not use a hash-locked requirements workflow. Fully eliminating those findings requires a coherent hash-locked Python bootstrap/dependency process; do not invent package hashes or mark this solved until the real installation paths use verified locks.
+Hash-pinned Actions and container images materially improve `Pinned-Dependencies`.
+Bandit and pip-audit now resolve from a generated `requirements-security.lock` using
+`--require-hashes`. Normal CI and end-user dependency ranges intentionally remain flexible;
+therefore this is stronger security-tooling evidence, not a claim that every shell install
+in the repository is fully hash-locked.
 
 ## Why Gold is deliberately not claimed yet
 
