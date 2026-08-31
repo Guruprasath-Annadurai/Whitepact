@@ -86,7 +86,8 @@ jobs:
           sha256sum --check SHA256SUMS
           test "$(find . -maxdepth 1 -type f -name '*.whl' | wc -l | tr -d ' ')" = "1"
           test "$(find . -maxdepth 1 -type f -name '*.tar.gz' | wc -l | tr -d ' ')" = "1"
-          test "$(find . -maxdepth 1 -type f | wc -l | tr -d ' ')" = "4"
+          test "$(find . -maxdepth 1 -type f -name '*.sigstore' | wc -l | tr -d ' ')" = "1"
+          test "$(find . -maxdepth 1 -type f | wc -l | tr -d ' ')" = "5"
 
       - name: Independently verify wheel and sdist provenance
         env:
@@ -96,6 +97,20 @@ jobs:
           set -euo pipefail
           for artifact in release-bundle/*.whl release-bundle/*.tar.gz; do
             gh attestation verify "$artifact" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/reusable-build.yml" \
+              --source-digest "$GITHUB_SHA" \
+              --source-ref "$GITHUB_REF" \
+              --deny-self-hosted-runners
+          done
+
+      - name: Verify portable provenance bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          for artifact in release-bundle/*.whl release-bundle/*.tar.gz; do
+            gh attestation verify "$artifact" \
+              --bundle release-bundle/*-provenance.sigstore \
               --repo "$GITHUB_REPOSITORY" \
               --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/reusable-build.yml" \
               --source-digest "$GITHUB_SHA" \

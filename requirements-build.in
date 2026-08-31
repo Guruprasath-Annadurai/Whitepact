@@ -1,0 +1,7 @@
+# Build, distribution validation, SBOM, and local wheel-install tooling.
+# Runtime/library dependencies remain sourced from pyproject.toml.
+build==1.6.0
+cyclonedx-bom==7.3.1
+hatchling==1.32.0
+installer==0.7.0
+twine==7.0.0

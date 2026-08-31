@@ -50,7 +50,7 @@ set +e
 docker run --rm \
   -v "$(pwd)/${OUTPUT_DIR}:/zap/wrk/:rw" \
   --network host \
-  ghcr.io/zaproxy/zaproxy:stable \
+  ghcr.io/zaproxy/zaproxy:stable@sha256:781a2bdaea47324e7bab583e2263f21d257b0aee61ed51521a5be45f5f5081ef \
   zap-baseline.py \
   -t "$TARGET_URL" \
   -r "$REPORT_HTML" \

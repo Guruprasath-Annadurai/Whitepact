@@ -17,7 +17,7 @@ services:
       RAI_LOG_JSON: "true"
       RAI_AUTH_ENABLED: "true"
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8765/api/health"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8765/api/health', timeout=4)"]
       interval: 30s
       timeout: 5s
       retries: 3

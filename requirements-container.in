@@ -1,0 +1,4 @@
+# Production image dependency closure. The application wheel is installed
+# locally with installer; its runtime extras remain sourced from pyproject.toml.
+.[dashboard,postgres,redis,billing]
+installer==0.7.0

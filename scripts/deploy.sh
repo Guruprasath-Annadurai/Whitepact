@@ -101,8 +101,17 @@ log "Migration head: ${current}"
 # ── 6. Local verification ─────────────────────────────────────────────────────
 
 log "Verifying health endpoints (local, pre-TLS)..."
-curl -fsS http://127.0.0.1:8765/api/health | python3 -m json.tool
-curl -fsS http://127.0.0.1:8766/health | python3 -m json.tool
+python3 - <<'PY'
+import json
+import urllib.request
+
+for endpoint in (
+    "http://127.0.0.1:8765/api/health",
+    "http://127.0.0.1:8766/health",
+):
+    with urllib.request.urlopen(endpoint, timeout=10) as response:
+        print(json.dumps(json.load(response), indent=2, sort_keys=True))
+PY
 
 log "Stack is up and migrated. Remaining steps are the ones this script"
 log "deliberately doesn't automate — see DEPLOY_RUNBOOK.md:"

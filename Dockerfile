@@ -5,10 +5,11 @@
 FROM python:3.12-slim@sha256:7a8b475003c4fe15a2cd4e55e5cfc2f3560bdc9333d624f24cdd6d4340fd7a17 AS builder
 
 WORKDIR /build
-RUN pip install --upgrade pip build
+COPY requirements-build.lock ./
+RUN python -m pip install --require-hashes -r requirements-build.lock
 COPY pyproject.toml README.md LICENSE ./
 COPY src/ ./src/
-RUN python -m build --wheel --outdir /dist
+RUN python -m build --no-isolation --wheel --outdir /dist
 
 
 FROM python:3.12-slim@sha256:7a8b475003c4fe15a2cd4e55e5cfc2f3560bdc9333d624f24cdd6d4340fd7a17 AS runtime
@@ -25,10 +26,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     RAI_LOG_JSON=true \
     RAI_DB_PATH=/data/responsibleai.db
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
 RUN groupadd --gid 1001 appgroup && \
     useradd --uid 1001 --gid appgroup --shell /bin/sh --create-home appuser
 
@@ -36,14 +33,11 @@ RUN mkdir -p /data && chown appuser:appgroup /data
 
 WORKDIR /app
 COPY --from=builder /dist/*.whl /tmp/
-# Install via the wheel's own [dashboard,postgres,redis,billing] extras
-# (defined in pyproject.toml) rather than a hand-maintained package list —
-# the previous hardcoded list silently drifted out of sync with
-# pyproject.toml's dashboard extra (missing sqlalchemy, aiosqlite,
-# websockets, prometheus-client, cryptography, pyotp) because nothing had
-# actually built and run this exact image since MFA/field-encryption
-# shipped. Extras-based install can't drift the same way again.
-RUN whl="$(ls /tmp/*.whl)" && pip install --no-cache-dir "${whl}[dashboard,postgres,redis,billing]"
+COPY requirements-container.lock ./
+# The fully resolved, hash-locked runtime closure is installed first. Installer
+# then adds the locally built wheel without resolving or downloading anything.
+RUN python -m pip install --require-hashes -r requirements-container.lock && \
+    python -m installer /tmp/*.whl
 
 COPY src/responsibleai/dashboard/static/ /app/static/
 COPY alembic.ini ./
@@ -54,7 +48,7 @@ USER appuser
 EXPOSE 8765 8766
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -fsS http://localhost:8765/api/health | python3 -c "import sys,json; d=json.load(sys.stdin); sys.exit(0 if d['status'] in ('healthy','degraded') else 1)"
+    CMD python3 -c "import json,sys,urllib.request; d=json.load(urllib.request.urlopen('http://localhost:8765/api/health', timeout=4)); sys.exit(0 if d['status'] in ('healthy','degraded') else 1)"
 
 CMD ["sh", "-c", "uvicorn responsibleai.dashboard.app:app \
     --host ${RAI_HOST} \

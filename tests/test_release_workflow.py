@@ -61,8 +61,8 @@ def test_builder_owns_both_distributions_and_reproducibility_check() -> None:
     assert 'PRIMARY_DIR="${RUNNER_TEMP}/whitepact-release-bundle"' in BUILDER
     assert 'REPRO_DIR="${RUNNER_TEMP}/whitepact-reproducibility-check"' in BUILDER
 
-    assert 'python -m build --outdir "${PRIMARY_DIR}"' in BUILDER
-    assert 'python -m build --outdir "${REPRO_DIR}"' in BUILDER
+    assert 'python -m build --no-isolation --outdir "${PRIMARY_DIR}"' in BUILDER
+    assert 'python -m build --no-isolation --outdir "${REPRO_DIR}"' in BUILDER
 
     assert 'primary_names="$(find "${PRIMARY_DIR}"' in BUILDER
     assert 'reproduced_names="$(find "${REPRO_DIR}"' in BUILDER
@@ -116,6 +116,15 @@ def test_publish_compares_attached_sbom_to_authenticated_predicate() -> None:
     assert "attested-sbom.json" in PUBLISH
     assert "attached != attested" in PUBLISH
     assert "Attached CycloneDX SBOM differs from its attested predicate" in PUBLISH
+
+
+def test_portable_provenance_bundle_is_exported_hashed_and_verified() -> None:
+    assert "id: provenance" in BUILDER
+    assert "steps.provenance.outputs.bundle-path" in BUILDER
+    assert "-provenance.sigstore" in BUILDER
+    assert "sha256sum ./*.sigstore >> SHA256SUMS" in BUILDER
+    assert "Verify portable provenance bundle" in PUBLISH
+    assert "--bundle release-bundle/*-provenance.sigstore" in PUBLISH
 
 
 def test_builder_uploads_exactly_once_after_attestation_and_checksums() -> None:
@@ -199,7 +208,7 @@ def test_verification_constrains_builder_source_and_runner() -> None:
     assert ".github/workflows/reusable-build.yml" in PUBLISH
     assert '--source-digest "$GITHUB_SHA"' in PUBLISH
     assert '--source-ref "$GITHUB_REF"' in PUBLISH
-    assert PUBLISH.count("--deny-self-hosted-runners") == 2
+    assert PUBLISH.count("--deny-self-hosted-runners") == 3
 
 
 def test_pypi_publish_stages_only_distribution_files() -> None:

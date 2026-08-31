@@ -17,9 +17,12 @@ properties for invariant-heavy Python code. This is not OSS-Fuzz enrollment.
 | Policy parsing | Examples | malformed/empty policy cannot silently grant broader scope | `test_governance_policy.py`, `test_policy_repository.py` | VERIFIED | Arbitrary serialized DB-row property suite |
 | Supply-chain metadata | Workflow policy scripts | movable Actions and unlicensed source fail CI | `check_pinned_actions.py`, `manage_license_headers.py` | TECHNICALLY READY | No general-purpose malformed SBOM parser in runtime |
 
-OSS-Fuzz is **NOT APPLICABLE** as a truthful near-term integration: WhitePact is primarily
-Python and has no native parser target or long-running coverage-guided harness accepted by
-OSS-Fuzz. Hypothesis provides meaningful security value, but OpenSSF Scorecard may still
-report Fuzzing 0 because it recognizes specific continuous fuzzing services. A future MCP
-wire-protocol/JSON harness can use Atheris or CIFuzz if coverage and crash triage ownership
-are established; an empty badge-oriented harness is prohibited.
+The Scorecard Fuzzing check does not recognize Hypothesis as continuous fuzzing.
+ClusterFuzzLite supports Python through Atheris and is a plausible recognized route;
+`verify_evidence_bundle` is the strongest initial target because it consumes attacker-shaped
+serialized evidence and must fail closed. The integration was deliberately **not added** in
+this branch: the local Docker daemon was unavailable, so the official ClusterFuzzLite image,
+harness, seed corpus, and crash artifact path could not be executed end to end. An untested
+badge workflow would not be evidence. Complete a real local/CI container run, establish crash
+triage ownership, then add the workflow and retain its successful public run. Until then the
+official Fuzzing score remains 0.
