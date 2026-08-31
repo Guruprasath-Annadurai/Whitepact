@@ -2,7 +2,7 @@
 # the actual build input immutable for supply-chain reproducibility / OpenSSF
 # Pinned-Dependencies. Update both together after reviewing a new upstream
 # Python image.
-FROM python:3.12-slim@sha256:7a8b475003c4fe15a2cd4e55e5cfc2f3560bdc9333d624f24cdd6d4340fd7a17 AS builder
+FROM python:3.14-slim@sha256:cae66f2ef0ec51a9891263eeee7f987dacf0a9879e8aa9353d5606e0530619a5 AS builder
 
 WORKDIR /build
 RUN pip install --upgrade pip build
@@ -11,7 +11,7 @@ COPY src/ ./src/
 RUN python -m build --wheel --outdir /dist
 
 
-FROM python:3.12-slim@sha256:7a8b475003c4fe15a2cd4e55e5cfc2f3560bdc9333d624f24cdd6d4340fd7a17 AS runtime
+FROM python:3.14-slim@sha256:cae66f2ef0ec51a9891263eeee7f987dacf0a9879e8aa9353d5606e0530619a5 AS runtime
 
 LABEL org.opencontainers.image.title="ResponsibleAI Governance Platform"
 LABEL org.opencontainers.image.description="Enterprise AI Governance — Trust Scoring, Compliance, Cost Intelligence"
