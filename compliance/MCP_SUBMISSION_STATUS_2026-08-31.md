@@ -34,13 +34,15 @@ WhitePact is already published in the official MCP Registry under `io.github.Gur
 
 WhitePact is already listed on Smithery. Repository documentation records the hosted Streamable HTTP scanner discovering **30 tools / 20 resources**.
 
-### xAI Grok Build plugin marketplace — SUBMITTED
+### xAI Grok Build plugin marketplace — OPEN SUBMISSION, UPDATED
 
-The repository records `xai-org/plugin-marketplace#244` as the WhitePact submission, with the marketplace validation and automated security checks passing at submission time. This is for the Grok Build coding-agent marketplace, not the consumer `grok.com` connector catalog.
+`xai-org/plugin-marketplace#244` remains open. On 2026-08-31 its head branch was updated to correct stale 27-tool documentation to the current **30 tools / 20 resources** and to narrow an over-broad statelessness claim. This is a submission to the Grok Build coding-agent marketplace, not the consumer `grok.com` connector catalog. Do not describe the plugin as accepted until xAI merges/accepts it.
 
-### GitHub curated MCP inclusion — REQUEST SENT
+### GitHub MCP Registry curated inclusion — APPROVED, PUBLIC ROLLOUT PENDING VERIFICATION
 
-The repository records the GitHub partnerships request as sent on 2026-08-15 with receipt/ticket confirmation. Treat this as awaiting GitHub response; do not claim curated inclusion until GitHub actually lists WhitePact.
+GitHub Support ticket **#156426** was approved on 2026-08-27. GitHub's Senior Partner Engineer wrote that the WhitePact MCP server had been reviewed and **approved for inclusion in the GitHub MCP Registry**, that GitHub would proceed with adding it, and that no further action was required from the submitter.
+
+This is a verified approval signal from GitHub, but a fresh public search on 2026-08-31 did not yet surface a WhitePact listing under the GitHub MCP catalog. Therefore the accurate current claim is **approved for inclusion; rollout/listing pending public verification**, not yet “publicly listed in GitHub MCP Registry.”
 
 ## OpenAI / ChatGPT — RE-SUBMISSION REQUIRED
 
@@ -57,7 +59,9 @@ Repository remediation after that submission includes commit `eb64e1c8123bc01730
 
 A follow-up commit, `84aa6506dabd0056cf1b2b874a9e9eb09f158fb0`, wired `rai_org_status` to authenticated hosted-org state and added live MCP protocol tests for that path.
 
-**Owner action required:** re-run the exact positive/negative submission tests against the currently hosted MCP endpoint in ChatGPT web and mobile, then resubmit through the authenticated OpenAI app submission UI. Do not reuse stale v1.2.3 expected-output text without checking it against current behavior.
+A current re-submission matrix is maintained in `compliance/OPENAI_RESUBMISSION_2026-08-31.md`. It requires the exact positive/negative cases to be re-run in ChatGPT web and mobile using the actual review endpoint/auth mode before a new submission is sent.
+
+**Owner action required:** run that web/mobile matrix and re-submit through the authenticated OpenAI app submission UI after observed outputs are aligned with the form.
 
 ## Anthropic / Claude — FOUNDER UI SUBMISSION REQUIRED
 
@@ -91,7 +95,8 @@ The repository records successful client-side integrations for Cursor, Kiro CLI,
 3. Founder re-submits OpenAI app after those tests pass.
 4. Founder submits to Anthropic's current Connectors Directory flow.
 5. Complete Microsoft publisher/Partner Center prerequisites and submit the prepared Microsoft package.
-6. Continue only legitimate community-directory submissions that have an explicit public submission mechanism; do not spam directories or fabricate acceptance.
+6. Verify when GitHub's approved curated listing becomes publicly visible and only then change the claim from “approved” to “live.”
+7. Continue only legitimate community-directory submissions that have an explicit public submission mechanism; do not spam directories or fabricate acceptance.
 
 ## Claim boundaries
 
