@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Async repository for the public cross-model trust leaderboard.
 
 Two tables: `leaderboard_models` (the registry of which models are tracked)

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """The WhitePact Runtime Gateway — SPEC.md Section 2's missing piece:
 "there is no single component that takes 'agent proposes action' as
 input and returns one of the five decisions above as output."

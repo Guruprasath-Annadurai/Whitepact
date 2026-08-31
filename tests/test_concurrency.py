@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Concurrency / race-condition tests.
 
 Several repositories in this codebase carry an explicit, documented

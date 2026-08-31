@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Async repository for persisted ``WorkflowSequenceRule``s (v3
 authority-layer work, Workflow Authority Engine) -- per-org forbidden
 action-sequence rules ``mcp/governance_integration.py`` fetches on every

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Token-by-token streaming guardrails scanner.
 
 Wraps any async generator of string tokens (OpenAI stream, Anthropic stream,

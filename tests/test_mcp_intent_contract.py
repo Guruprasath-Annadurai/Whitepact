@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Real MCP protocol round-trip test proving Intent Contract wiring
 end-to-end: an agent declares a contract via `IntentContractRepository`
 (the same repo `POST /api/governance/intent-contracts` writes through),

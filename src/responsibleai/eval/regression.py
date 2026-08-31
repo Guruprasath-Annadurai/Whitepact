@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Regression detector — track benchmark baselines and flag score drops."""
 
 from __future__ import annotations

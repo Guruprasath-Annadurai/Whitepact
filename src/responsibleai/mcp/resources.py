@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """MCP resource definitions for the WhitePact governance server.
 
 See MIGRATION_WHITEPACT_V2.md Section 6: resources are served under

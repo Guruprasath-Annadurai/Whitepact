@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for the MCP server's plan-gated tool dispatch — tier enforcement and quota metering.
 
 These exercise `_call_tool` directly with the module's contextvars set, simulating

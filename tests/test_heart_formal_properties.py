@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Heart Phase H14 — Formal and Property-Based Assurance.
 
 Cross-cutting property tests spanning the full H3-H13 chain, verifying

@@ -1,0 +1,59 @@
+name: Reproducible Build
+
+on:
+  pull_request:
+    branches: ["main"]
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Rebuild artifacts identically
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build frontend
+        run: python -m pip install build
+
+      - name: Build twice from the same source epoch
+        shell: bash
+        run: |
+          set -euo pipefail
+          export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          export PYTHONHASHSEED=0
+          rm -rf /tmp/whitepact-build-a /tmp/whitepact-build-b
+          mkdir -p /tmp/whitepact-build-a /tmp/whitepact-build-b
+          python -m build --outdir /tmp/whitepact-build-a
+          sleep 2
+          python -m build --outdir /tmp/whitepact-build-b
+
+      - name: Compare artifact names and SHA-256 digests
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd /tmp/whitepact-build-a
+            sha256sum * | sort -k2
+          ) > /tmp/build-a.sha256
+          (
+            cd /tmp/whitepact-build-b
+            sha256sum * | sort -k2
+          ) > /tmp/build-b.sha256
+          echo "Build A:"
+          cat /tmp/build-a.sha256
+          echo "Build B:"
+          cat /tmp/build-b.sha256
+          diff -u /tmp/build-a.sha256 /tmp/build-b.sha256
+          echo "Wheel and sdist are byte-for-byte reproducible for this source revision."

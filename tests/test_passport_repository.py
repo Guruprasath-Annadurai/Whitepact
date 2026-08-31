@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for PassportRepository — persistence behind the open Trust Index
 standard's citability/verifiability guarantee (compliance/TRUST_INDEX_SPEC.md)."""
 

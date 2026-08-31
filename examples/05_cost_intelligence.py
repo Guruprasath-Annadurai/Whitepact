@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """
 Example 05 — Cost Intelligence (Tracker + Analyzer + Router)
 Run: python examples/05_cost_intelligence.py

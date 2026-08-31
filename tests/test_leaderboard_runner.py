@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for LeaderboardRunner — the orchestrator that reuses the platform's
 existing eval engines (BenchmarkRunner, RedTeamSimulator, GuardrailsEngine,
 HallucinationDetector, TrustScoreEngine) to produce one leaderboard row."""

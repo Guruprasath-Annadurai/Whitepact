@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Intelligent model router — cheapest acceptable model for a given task."""
 
 from __future__ import annotations

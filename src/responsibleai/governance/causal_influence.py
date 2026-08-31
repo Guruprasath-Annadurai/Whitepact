@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Causal Influence Firewall (Authority Everywhere Phase 7) —
 generalizes `governance/memory_firewall.py`'s persistent-memory-only
 injection scan into a provenance-aware check that runs against *any*

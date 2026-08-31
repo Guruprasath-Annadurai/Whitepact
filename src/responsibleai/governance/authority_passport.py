@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Authority Passport (Authority Everywhere Phase 5) — a portable,
 issuable, revocable, independently verifiable representation of a
 principal's held authority, generalizing `governance/ceiling.py`'s

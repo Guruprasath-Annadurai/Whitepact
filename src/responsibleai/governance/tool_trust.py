@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tool Trust Network (Authority Everywhere Phase 8) — a continuously
 maintained trust score for one org-registered upstream MCP server,
 independent of who is asking to call it.

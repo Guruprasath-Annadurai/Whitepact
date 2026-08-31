@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Sovereignty Kernel Entry Point (Heart Phase H13) — the first, and
 so far only, place in this codebase that actually calls the H3-H12
 Heart functions together, for one real request, and returns one

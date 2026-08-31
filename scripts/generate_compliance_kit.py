@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Scaffold a compliance self-assessment starter kit for another company.
 
 The sellable product behind STRATEGY_ROADMAP.md Part 0, Item 4: package

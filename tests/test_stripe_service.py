@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for StripeService -- previously entirely untested (0% branch
 coverage). `stripe` is an optional [billing] extra not installed in
 this environment (or in CI's default install matrix) -- a fake module

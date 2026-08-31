@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """The approval workflow's domain model — SPEC.md's `Decision.REQUIRE_APPROVAL`
 made actionable, Phase 11. This module holds the pure shape
 (`ApprovalRequest`, `ApprovalStatus`) and its pure assembly function;

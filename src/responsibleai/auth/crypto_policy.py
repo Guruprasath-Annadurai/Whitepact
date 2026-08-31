@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Minimum cryptographic-strength policy for keys and secrets this
 codebase either generates itself or accepts from a caller/external
 party (OpenSSF Best Practices `crypto_keylength` criterion).

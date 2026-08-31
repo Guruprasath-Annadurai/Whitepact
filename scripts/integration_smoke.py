@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Cross-platform MCP compatibility preflight for WhitePact.
 
 This is a protocol-level smoke suite: it proves the WhitePact MCP server

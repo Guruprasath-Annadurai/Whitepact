@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Autonomy Budget (v3 authority-layer work): a rolling-window cap on
 how many actions an identity may execute WITHOUT a human in the loop
 before the gateway forces the next one to ``REQUIRE_APPROVAL`` --

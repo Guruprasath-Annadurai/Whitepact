@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """MCP tool definitions and dispatch for the ResponsibleAI governance server."""
 
 from __future__ import annotations

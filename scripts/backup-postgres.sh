@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 # Backup the production Postgres database (docker-compose.prod.yml stack).
 #
 # Usage:

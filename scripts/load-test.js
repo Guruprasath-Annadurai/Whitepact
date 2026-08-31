@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Guruprasath Annadurai
+// SPDX-License-Identifier: MIT
 /**
  * Load test validating the SLA.md response-time and error-rate targets
  * against a real running instance — not a paper claim.

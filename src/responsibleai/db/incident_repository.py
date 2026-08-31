@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Async repository for persisted governance incident records.
 
 Backs POST /api/incidents (manual/MCP-relayed incidents) and

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Core entities for the WhitePact runtime governance pipeline —
 SPEC.md Section 3. Each dataclass below is the concrete, executable
 form of a **[TARGET]** entity SPEC.md defines; see that document for

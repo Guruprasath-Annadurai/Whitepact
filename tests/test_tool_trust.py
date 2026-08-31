@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for the Tool Trust Network (Authority Everywhere Phase 8) and
 Execution Permit v2's target-fingerprint drift detection (Phase 9).
 

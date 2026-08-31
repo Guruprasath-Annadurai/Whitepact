@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for Heart Production Integration Phase 2 — the Identity →
 Heart Root-Authority Adapter (`governance/identity_authority_adapter.py`).
 

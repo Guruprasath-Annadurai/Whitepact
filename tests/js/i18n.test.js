@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Guruprasath Annadurai
+// SPDX-License-Identifier: MIT
 "use strict";
 
 /* Tests for the i18n module's pure logic (locale resolution, interpolation,

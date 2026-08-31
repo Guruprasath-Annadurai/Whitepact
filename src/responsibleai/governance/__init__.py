@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """WhitePact runtime governance core — SPEC.md Section 2's pipeline
 (Agent -> Action -> Policy/Authority -> Decision), Phase 8 of
 MIGRATION_WHITEPACT_V2.md. See governance/models.py and

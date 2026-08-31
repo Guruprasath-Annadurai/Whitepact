@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Revocation Kernel (Heart Phase H9) — `RevocationEpoch`, the thin,
 additive primitive `docs/heart/HEART_CURRENT_STATE.md` §6 specifies
 for closing the one confirmed real gap in this codebase's revocation

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for the WhitePact runtime governance core (SPEC.md Section 2-3,
 MIGRATION_WHITEPACT_V2.md Phase 8): the core entities in
 `governance/models.py` and `WhitePactRuntimeGateway.evaluate()`'s

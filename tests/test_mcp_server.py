@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for the ResponsibleAI MCP server — tools, resources, and dispatch."""
 
 from __future__ import annotations

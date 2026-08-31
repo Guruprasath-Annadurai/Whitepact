@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch

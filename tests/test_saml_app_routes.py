@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """App-level SAML route tests -- covers the dashboard/app.py wiring
 (provider listing, login redirect, ACS callback, SP metadata, and the
 SAML branch of get_org_context) that tests/test_saml.py doesn't reach,

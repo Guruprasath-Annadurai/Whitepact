@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for auth.oidc -- JWTClaims parsing, AsyncJWKSClient caching,
 OIDCProvider.validate_token's error paths, unverified decode, authorization
 URL building, and code exchange. Weak/strong-RSA-key rejection during real

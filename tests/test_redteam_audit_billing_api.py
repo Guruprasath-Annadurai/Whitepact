@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """API endpoint tests for red team, audit log, and billing endpoints (v1.1.0)."""
 
 from __future__ import annotations

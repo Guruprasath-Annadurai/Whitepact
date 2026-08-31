@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Async repository for Authority Passports (Authority Everywhere
 Phase 5) -- persists `AuthorityPassport`s issued via
 `POST /api/governance/authority-passports`, resolves the currently

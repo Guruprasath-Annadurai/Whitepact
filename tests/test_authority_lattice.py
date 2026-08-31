@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for the Authority Lattice (Heart Phase H2) --
 `governance/authority_lattice.py`'s `AuthorityEnvelope`,
 `compare_envelopes()`, `intersect_envelopes()`, and the

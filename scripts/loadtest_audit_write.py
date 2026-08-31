@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Concurrent load test for AuditRepository.write() -- the one DB write
 that happens on every single API request via AuditLogMiddleware.
 

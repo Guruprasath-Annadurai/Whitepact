@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for the MCP Trust/Supply-Chain Scanner (SPEC.md Section 7,
 Phase 13). The one hard requirement this enforces throughout: every
 finding is VERIFIED_FACT / INFERRED_SIGNAL / UNKNOWN, never a single

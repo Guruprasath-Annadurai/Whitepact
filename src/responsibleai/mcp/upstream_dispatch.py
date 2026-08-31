@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Wires the MCP Upstream Gateway (``governance/upstream_executor.py``)
 into a REST-triggered proxied tool call — the outbound counterpart to
 ``governance_integration.py``'s ``apply_governance()``, which governs

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for `rai_org_status`'s live-org wiring (real follow-up to the
 finding in compliance/OPENAI_PLUGIN_SUBMISSION_PREP.md's TC-P5 write-up
 and tests/openai_review/review_contract.py): on the hosted MCP

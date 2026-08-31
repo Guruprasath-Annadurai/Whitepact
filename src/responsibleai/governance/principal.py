@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Verified Principal (Authority Everywhere Phase 3) — the governance-
 layer, audit-safe representation of a cryptographically verified
 non-human principal, decoupled from how it was verified.

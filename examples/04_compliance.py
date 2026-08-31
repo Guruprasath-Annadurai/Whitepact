@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """
 Example 04 — Compliance Engine (NIST AI RMF, EU AI Act, ISO 42001)
 Run: python examples/04_compliance.py

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for the Memory Firewall (governance/memory_firewall.py) --
 deterministic prompt-injection pattern detection for content destined
 for persistent agent memory. See that module's docstring for why

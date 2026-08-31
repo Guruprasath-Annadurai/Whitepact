@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Cross-organization data isolation tests against a real, auth-enabled app
 instance — see test_mfa_login_flow.py's module docstring for why auth is
 forced on by monkeypatching the settings singleton rather than via

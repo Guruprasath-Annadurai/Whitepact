@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for Intent Contract (Authority Everywhere Phase 4) --
 `governance/intent.py`'s `IntentContract`/`intent_violation()`,
 `WhitePactRuntimeGateway.evaluate()`'s new optional `intent` parameter,

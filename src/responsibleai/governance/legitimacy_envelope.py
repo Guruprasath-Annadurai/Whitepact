@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Legitimacy Envelope (Heart Phase H12) — the single, portable,
 digestible artifact that packages the Heart's final verdict (Phase
 H11's `HeartVetoRecord`) about one identity's authority, at one point

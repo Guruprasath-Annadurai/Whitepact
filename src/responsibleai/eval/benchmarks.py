@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Built-in benchmark suites — TruthfulQA, BBQ, HellaSwag.
 
 Each suite ships as a small representative sample (no external download needed).

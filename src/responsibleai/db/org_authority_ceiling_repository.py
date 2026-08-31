@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Async repository for ``OrgAuthorityCeiling`` (v3 authority-layer
 work) -- one row per org, the structural ceiling
 ``mcp/governance_integration.py`` fetches on every hosted MCP tool call

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """
 Example 06 — Trust Drift Monitor
 Run: python examples/06_drift_monitor.py

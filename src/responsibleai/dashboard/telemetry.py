@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """OpenTelemetry setup — traces and metrics exported via OTLP."""
 
 from __future__ import annotations

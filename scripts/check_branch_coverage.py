@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """OpenSSF `dynamic_analysis` criterion: report and (optionally) gate on
 *pure* branch coverage — not the blended statement+branch percentage
 `coverage.py`'s own terminal report prints when `--cov-branch` is set.

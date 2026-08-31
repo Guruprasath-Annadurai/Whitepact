@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Integration tests for the hosted MCP HTTP app — both the modern
 Streamable HTTP transport (`/mcp`) and the legacy HTTP+SSE transport
 (`/sse` + `/messages/`) built by `responsibleai.mcp.server._build_http_app`.

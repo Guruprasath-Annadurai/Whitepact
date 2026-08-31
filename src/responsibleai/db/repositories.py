@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Async repository classes — thin async wrappers over the schema tables."""
 
 from __future__ import annotations

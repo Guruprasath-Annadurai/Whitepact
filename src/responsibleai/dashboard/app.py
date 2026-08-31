@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Governance Dashboard — production FastAPI application (v1.0.0)."""
 
 from __future__ import annotations

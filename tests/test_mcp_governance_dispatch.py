@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Integration tests for the MCP dispatch-path governance wiring
 (mcp/governance_integration.py + mcp/server.py's `_call_tool`) — closes
 the gap where `dispatch_tool()` never routed through

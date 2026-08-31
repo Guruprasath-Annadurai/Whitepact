@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """The MCP Upstream Gateway's domain model — v3 authority-layer work,
 the largest single remaining gap the gap reports in this session
 flagged repeatedly: WhitePact governed its own 27 in-process tools but

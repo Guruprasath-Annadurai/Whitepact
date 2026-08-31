@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """The evidence model — SPEC.md Section 3.7, Phase 12. This module holds
 the pure, in-memory shape (`EvidenceRecord`) and its pure assembly
 function (`build_evidence_record`); persistence and hash-chaining live

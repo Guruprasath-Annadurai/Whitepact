@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Configure WhitePact as a remote MCP server for the xAI Grok API.
 
 Reads credentials from the environment only -- never hardcode a key here

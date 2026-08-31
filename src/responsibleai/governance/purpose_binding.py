@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Purpose Binding (Heart Phase H5) — the executable form of
 constitutional law H4 ("authority remains bound to purpose").
 

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Authority Lattice (Heart Phase H2) — an explicit, deterministic
 authority-comparison model, generalizing the informal dict-based
 constraint comparisons `AuthorityContext.constraint_violation()` and

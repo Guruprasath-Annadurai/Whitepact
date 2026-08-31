@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for scripts/generate_compliance_kit.py — the scaffolding tool
 behind the compliance-starter-kit product (STRATEGY_ROADMAP.md Part 0,
 Item 4)."""

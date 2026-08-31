@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Persist and query Model Evaluation Framework results."""
 
 from __future__ import annotations

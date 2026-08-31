@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for approval expiry (v3 authority-layer work, Task #135): a
 REQUIRE_APPROVAL request has a real time limit
 (`governance/approval.py`'s `DEFAULT_APPROVAL_TTL_HOURS`), enforced by

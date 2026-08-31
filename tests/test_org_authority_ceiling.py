@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for `OrgAuthorityCeiling` (governance/ceiling.py) and
 `OrgAuthorityCeilingRepository` (db/org_authority_ceiling_repository.py)
 -- the structural, per-org authority ceiling enforced live on every

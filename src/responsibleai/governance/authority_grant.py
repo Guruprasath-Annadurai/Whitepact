@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Authority Grant — the production Authority Contract (Heart →
 WhitePact Production Integration, Phase 1). See
 `docs/heart-production/01_AUTHORITY_CONTRACT.md` for the full design

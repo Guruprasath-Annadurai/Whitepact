@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Verified Principal (Authority Everywhere Phase 3) — W3C Verifiable
 Credential (JWT-VC) bearer verification, additive to the existing
 human-IdP path in ``auth/oidc.py`` and ``auth/saml.py``.

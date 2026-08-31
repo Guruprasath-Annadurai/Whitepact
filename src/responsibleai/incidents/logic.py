@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Shared incident-record construction, used by both the `rai_incident_log`
 MCP tool (`responsibleai.mcp.tools`) and the dashboard's `POST /api/incidents`
 / `POST /api/alerts/webhook` endpoints (`responsibleai.dashboard.app`).

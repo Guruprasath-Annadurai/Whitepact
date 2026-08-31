@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for Authority Passport (Authority Everywhere Phase 5) --
 `governance/authority_passport.py`'s `AuthorityPassport`,
 `build_authority_passport_from_ceiling()`/`build_authority_passport_from_delegation()`,

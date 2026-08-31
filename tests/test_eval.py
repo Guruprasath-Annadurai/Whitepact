@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for the Model Evaluation Framework — comparator, benchmarks, regression, dataset scanner."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tool discovery/aggregation for the MCP Upstream Gateway (v3
 authority-layer work, Task #144's bounded scope).
 

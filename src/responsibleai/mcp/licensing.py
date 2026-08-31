@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tool tier gating for the ResponsibleAI MCP server — open-core monetization.
 
 Self-hosted stdio usage (no org context) is always unrestricted — this only

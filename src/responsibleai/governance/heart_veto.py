@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Heart Veto (Heart Phase H11) — the executable form of
 constitutional law H12 ("Heart veto cannot be overridden"), and the
 first Heart module whose entire purpose is to have real teeth rather

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """WhitePact Authority Constitution (Heart Phase H1) — the versioned,
 immutable set of laws that protect the integrity of the authority
 system itself, distinct from `governance/policy.py`'s `Policy`.

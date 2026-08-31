@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 # One-command bring-up for the self-hosted production stack
 # (docker-compose.prod.yml — Postgres + Redis, multi-replica-capable).
 #

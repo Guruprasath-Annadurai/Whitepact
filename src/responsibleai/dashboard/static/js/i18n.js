@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Guruprasath Annadurai
+// SPDX-License-Identifier: MIT
 /* ResponsibleAI i18n -- lightweight, dependency-free message-catalog
    architecture. Locale catalogs are plain JSON files under
    /static/locales/<locale>.json, fetched on demand and cached in memory.

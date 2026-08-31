@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Regression guards for the SLSA release trust boundary.
 
 These tests intentionally inspect workflow source as policy. GitHub validates the

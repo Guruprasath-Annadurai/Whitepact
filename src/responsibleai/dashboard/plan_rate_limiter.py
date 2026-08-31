@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Per-org, plan-aware request rate limiting.
 
 The slowapi/`limits`-backed limiter wired in `app.py` protects every route

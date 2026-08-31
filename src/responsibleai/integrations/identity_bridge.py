@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Identity Bridge — provider-specific claims adapters for Entra ID, Google
 Workspace, Okta, and AWS (Cognito / IAM Identity Center), turning each
 provider's own token shape into WhitePact's `IdentityContext`.

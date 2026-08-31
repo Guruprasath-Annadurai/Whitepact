@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Trust Drift Monitor — detect governance score degradation over time."""
 
 from __future__ import annotations

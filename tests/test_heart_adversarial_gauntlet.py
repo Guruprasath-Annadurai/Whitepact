@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Heart Phase H15 — Adversarial Heart Gauntlet.
 
 A curated set of deliberately adversarial scenarios attacking the

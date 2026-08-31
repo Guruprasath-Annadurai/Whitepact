@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Stable reason codes for governance decisions — a first, partial step
 toward replacing scattered free-form `reason_codes` strings
 (`f"authority_not_granted:{action.action_type}"`,

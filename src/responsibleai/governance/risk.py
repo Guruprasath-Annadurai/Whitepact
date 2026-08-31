@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Risk-tiered routing — SPEC.md Section 4's "proposed tiering for
 Phase 9's risk router", made executable. That section explicitly
 recorded the tool→tier mapping below "so the tiering decision is made

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for Outcome Observation (Phase 12), Reconciliation (Phase 13),
 and Attestation (Phase 14).
 

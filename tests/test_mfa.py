@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for TOTP MFA business logic (responsibleai.auth.mfa)."""
 
 from __future__ import annotations

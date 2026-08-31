@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Cross-request violation-pattern tracking — what
 `GovernanceDecision.QUARANTINE` needed to become reachable, not just a
 defined enum member (`governance/models.py`'s module docstring used to

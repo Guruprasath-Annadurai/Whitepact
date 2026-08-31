@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Consent Proof (Heart Phase H4) — a structured, digest-bound record
 that a specific human (or otherwise-legitimate root) actually
 consented to a specific grant of authority, for a specific purpose,

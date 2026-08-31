@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """LeaderboardRunner — orchestrates one full cross-model evaluation pass.
 
 Deliberately reuses the platform's existing eval engines rather than

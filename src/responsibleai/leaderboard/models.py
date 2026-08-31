@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Data models for the public cross-model trust leaderboard.
 
 A LeaderboardRunResult is the output of one full evaluation pass against one

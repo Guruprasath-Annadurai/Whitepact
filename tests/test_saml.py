@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for auth.saml -- AuthnRequest generation, signed-response
 validation (including the security-critical failure modes: tampering,
 wrong signer, expiry, replay), claim extraction, SP metadata, and the

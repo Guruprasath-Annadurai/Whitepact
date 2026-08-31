@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for persisted governance evidence and approvals (SPEC.md
 Section 3.7 / Phases 11-12): `EvidenceRepository`'s per-org hash chain
 (and tamper detection) and `ApprovalRepository`'s resolution state

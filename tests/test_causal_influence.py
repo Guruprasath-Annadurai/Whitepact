@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for the Causal Influence Firewall (Authority Everywhere Phase 7).
 
 Covers: `parse_provenance()`'s fail-safe parsing, `analyze_causal_influence()`'s

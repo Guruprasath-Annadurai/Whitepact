@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Integration tests for the Governance Dashboard API."""
 
 from __future__ import annotations

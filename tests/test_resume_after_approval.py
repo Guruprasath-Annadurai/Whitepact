@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for the REQUIRE_APPROVAL -> resume-execution pipeline (v3
 authority-layer work, Task #140): the real architectural gap flagged
 throughout this session -- an approved action previously had nothing

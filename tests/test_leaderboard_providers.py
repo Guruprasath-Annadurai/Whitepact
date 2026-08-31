@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for leaderboard model adapters (db/../leaderboard/providers.py)."""
 
 from __future__ import annotations

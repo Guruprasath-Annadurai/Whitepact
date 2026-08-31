@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for risk-tiered routing (SPEC.md Section 4, Phase 9):
 `governance/risk.py`'s tool -> tier table and `classify_action_risk()`.
 """

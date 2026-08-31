@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for OrgRepository — multi-tenant org and API key management."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Guruprasath Annadurai
+// SPDX-License-Identifier: MIT
 /* ResponsibleAI shared app shell — sidebar/topbar injection, theme toggle,
    auth token storage, fetch helper with auth header + toasts.
    Self-contained, no external dependencies. Loaded by every page. */

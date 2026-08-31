@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Populates ``AgentContext.trust_state`` from the public Trust Index —
 closing the gap ``governance/models.py`` used to flag: the field existed
 on ``AgentContext`` since Phase 8, but nothing ever wrote to it.

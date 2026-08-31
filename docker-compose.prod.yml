@@ -11,10 +11,14 @@
 # Postgres and Redis are NOT exposed to the host — only the dashboard and MCP
 # HTTP ports are. Put a TLS-terminating reverse proxy in front of both
 # (see DEPLOYMENT.md's nginx section) before exposing this to the internet.
+#
+# External service images retain readable release-line tags but are also pinned
+# to immutable Docker Hub index digests. Update the tag + digest together after
+# reviewing upstream release/security changes.
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
     container_name: rai-postgres
     restart: unless-stopped
     environment:
@@ -32,7 +36,7 @@ services:
       - rai-internal
 
   redis:
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
     container_name: rai-redis
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"]

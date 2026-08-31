@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for DatabaseEngine.init()'s connection-retry-with-backoff, added to
 tolerate transient DB unavailability (e.g. a managed Postgres finishing a
 failover, or a container starting before DNS repoints) rather than crashing

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Property-based tests (Hypothesis) for the pure, invariant-heavy
 governance functions -- a complement to, not a replacement for, the
 hand-picked example tests in test_authority_attenuation.py,

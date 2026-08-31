@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Reconciliation (Authority Everywhere Phase 13) — does an observed
 `OutcomeRecord` actually match what its `EvidenceRecord` authorized.
 

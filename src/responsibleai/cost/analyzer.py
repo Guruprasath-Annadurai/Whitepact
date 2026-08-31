@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Cost waste detection and prompt efficiency analysis."""
 
 from __future__ import annotations

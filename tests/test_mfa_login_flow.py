@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """End-to-end HTTP test of the TOTP MFA login flow (enroll -> verify ->
 login-with-code -> backup-code fallback -> disable), against a real
 auth-enabled app instance rather than the repo layer directly.

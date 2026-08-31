@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 from biasbuster.probes.age_bias import AgeBiasProbe
 from biasbuster.probes.gender_bias import GenderBiasProbe
 from biasbuster.probes.occupational_stereotype import OccupationalStereotypeProbe

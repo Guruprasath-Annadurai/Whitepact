@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for MCP hosted-transport security hardening:
 
 - DNS rebinding protection (Host/Origin allowlisting), wired via

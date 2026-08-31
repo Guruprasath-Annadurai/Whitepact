@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """The executor bypass invariant (WhitePact v3 authority-layer spec,
 Sections 27/28/49 — one of the "mandatory" tests): `InternalToolExecutor`
 must refuse to execute an action without a valid, matching, unexpired,

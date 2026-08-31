@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 # Restore a Postgres backup produced by scripts/backup-postgres.sh.
 #
 # Usage:

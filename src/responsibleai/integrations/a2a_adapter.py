@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """A2A (Agent2Agent protocol) outbound governance gate -- item #4 of the
 v3 authority-layer spec's build list ("A2A adapter architecture").
 

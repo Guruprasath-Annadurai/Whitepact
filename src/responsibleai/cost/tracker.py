@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """SQLite-backed token usage and cost tracker."""
 
 from __future__ import annotations

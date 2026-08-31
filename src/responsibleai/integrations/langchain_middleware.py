@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """LangChain agent middleware that gates tool calls on the ResponsibleAI
 Trust Index — the reference "npm audit for AI agents" integration
 described in GAME_CHANGER_BUILD_PLAN.md Phase B.

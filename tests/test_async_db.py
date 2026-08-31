@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Tests for the async database layer (CostRepository + TrustRepository).
 
 Runs against an in-memory SQLite+aiosqlite engine — no external database needed.

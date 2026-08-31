@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Async repository for MCP tool call metering — the basis for PRO/ENTERPRISE usage billing.
 
 Only the hosted HTTP/SSE MCP transport writes here (see mcp/server.py). Self-hosted

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Agent-framework integrations for the ResponsibleAI Trust Index.
 
 Every module here builds on `client.TrustClient` — a plain HTTP client

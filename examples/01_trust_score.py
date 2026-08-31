@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """
 Example 01 — Trust Score Engine
 Run: python examples/01_trust_score.py

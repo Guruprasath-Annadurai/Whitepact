@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Heart Phase H17 — Enterprise Hardening.
 
 Locks in a real hardening gap this phase found and fixed: none of the

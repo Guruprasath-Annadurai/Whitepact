@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Self-serve signup anti-abuse guard.
 
 This deployment has no CAPTCHA provider and no outbound-email provider

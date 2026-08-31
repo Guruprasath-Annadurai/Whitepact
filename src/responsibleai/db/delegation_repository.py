@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Async repository for the Delegation Graph (v3 authority-layer work,
 Core Invariant #2) -- persists ``DelegationRecord``s, enforces
 attenuation at grant time, and implements the graph operations the
