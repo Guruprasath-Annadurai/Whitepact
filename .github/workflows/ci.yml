@@ -15,6 +15,8 @@ jobs:
   test:
     name: Lint · Type-check · Test
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: src
     strategy:
       matrix:
         python-version: ["3.11", "3.12"]
@@ -29,9 +31,7 @@ jobs:
           cache: "pip"
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip setuptools
-          pip install -e ".[dev,openai,anthropic,sso,sentiment]"
+        run: python -m pip install --require-hashes -r requirements-ci.lock
 
       - name: Lint with ruff
         run: ruff check src/ tests/
@@ -44,7 +44,6 @@ jobs:
 
       - name: Scan dependencies for known vulnerabilities
         run: |
-          pip install --require-hashes -r requirements-security.lock
           # PYSEC-2026-597: nltk path traversal in nltk.data.load()/find() via
           # percent-encoded "../" sequences. No fix version exists upstream
           # yet. nltk is an opt-in extra ([sentiment]), not installed by a
@@ -55,16 +54,7 @@ jobs:
           # hardcoded literal resource name; the attack requires
           # attacker-controlled input to that parameter, which never happens
           # in this code path. Re-check when nltk ships a patched release.
-          # --skip-editable: this project itself is installed via `pip install -e .`
-          # (see "Install dependencies" above) and isn't published to PyPI under
-          # this exact version yet, which otherwise makes pip-audit hard-fail
-          # trying to look up the local editable install as if it were a
-          # third-party dependency, rather than actually finding no vulnerability.
-          # No --strict here: verified locally that this pip-audit version treats
-          # --skip-editable's skip notices as fatal errors under --strict, which
-          # defeats the point of skipping; the default (non-strict) mode already
-          # fails on a real vulnerability finding, which is what this step is for.
-          pip-audit --skip-editable --ignore-vuln PYSEC-2026-597
+          pip-audit --ignore-vuln PYSEC-2026-597 -r requirements-ci.lock
 
       - name: Run tests with coverage
         run: |
@@ -120,10 +110,10 @@ jobs:
           python-version: "3.12"
 
       - name: Install build tools
-        run: pip install build twine
+        run: python -m pip install --require-hashes -r requirements-build.lock
 
       - name: Build wheel and sdist
-        run: python -m build
+        run: python -m build --no-isolation
 
       - name: Verify distribution
         run: twine check dist/*
@@ -135,10 +125,9 @@ jobs:
       - name: Generate SBOM (CycloneDX)
         run: |
           python -m venv /tmp/sbom-venv
-          /tmp/sbom-venv/bin/pip install --upgrade pip
-          /tmp/sbom-venv/bin/pip install dist/*.whl
-          /tmp/sbom-venv/bin/pip install cyclonedx-bom
-          /tmp/sbom-venv/bin/cyclonedx-py environment \
+          /tmp/sbom-venv/bin/python -m pip install --require-hashes -r requirements-container.lock
+          /tmp/sbom-venv/bin/python -m installer dist/*.whl
+          cyclonedx-py environment \
             --pyproject pyproject.toml \
             --of json \
             -o sbom.cyclonedx.json \
@@ -177,6 +166,8 @@ jobs:
   accessibility:
     name: Accessibility (WCAG2AA)
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: src
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -192,7 +183,7 @@ jobs:
           node-version: "20"
 
       - name: Install project
-        run: pip install -e ".[dashboard]"
+        run: python -m pip install --require-hashes -r requirements-container.lock
 
       - name: Install accessibility tooling
         run: |

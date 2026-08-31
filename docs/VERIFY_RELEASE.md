@@ -69,6 +69,35 @@ gh attestation verify rai_governance_platform-*.whl \
 
 The build-provenance predicate type must be `https://slsa.dev/provenance/v1`.
 
+## Verify the portable provenance bundle
+
+Starting with the first release produced after the portable-bundle control was
+merged, the release also contains exactly one
+`rai-governance-platform-*-provenance.sigstore` file. It is the unmodified bundle
+output from GitHub's `actions/attest` step, is included in `SHA256SUMS`, and is
+verified before PyPI publication. Releases without this asset, including v1.2.6,
+must use the online verification above and must not be described as having the
+portable bundle.
+
+Verify the wheel and sdist offline against that release asset while retaining the
+same repository, workflow, commit, tag, and runner identity constraints:
+
+```bash
+for artifact in rai_governance_platform-*.whl rai_governance_platform-*.tar.gz; do
+  gh attestation verify "$artifact" \
+    --bundle rai-governance-platform-*-provenance.sigstore \
+    --repo "$WHITEPACT_REPO" \
+    --signer-workflow "$WHITEPACT_REPO/.github/workflows/reusable-build.yml" \
+    --source-digest "$WHITEPACT_COMMIT" \
+    --source-ref "refs/tags/v${WHITEPACT_VERSION}" \
+    --deny-self-hosted-runners
+done
+```
+
+The `.sigstore` filename is a representation of the genuine GitHub/Sigstore
+bundle, not a detached developer signature. It does not replace the independently
+verified signed Git tag.
+
 ## Verify release intent: the signed Git tag
 
 The repository allow-list, not a general SSH trust store, defines approved

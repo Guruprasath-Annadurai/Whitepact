@@ -25,19 +25,20 @@ jobs:
           python-version: "3.12"
 
       - name: Install build frontend
-        run: python -m pip install build
+        run: python -m pip install --require-hashes -r requirements-build.lock
 
       - name: Build twice from the same source epoch
         shell: bash
         run: |
           set -euo pipefail
-          export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          export SOURCE_DATE_EPOCH
           export PYTHONHASHSEED=0
           rm -rf /tmp/whitepact-build-a /tmp/whitepact-build-b
           mkdir -p /tmp/whitepact-build-a /tmp/whitepact-build-b
-          python -m build --outdir /tmp/whitepact-build-a
+          python -m build --no-isolation --outdir /tmp/whitepact-build-a
           sleep 2
-          python -m build --outdir /tmp/whitepact-build-b
+          python -m build --no-isolation --outdir /tmp/whitepact-build-b
 
       - name: Compare artifact names and SHA-256 digests
         shell: bash
@@ -45,11 +46,11 @@ jobs:
           set -euo pipefail
           (
             cd /tmp/whitepact-build-a
-            sha256sum * | sort -k2
+            sha256sum ./* | sort -k2
           ) > /tmp/build-a.sha256
           (
             cd /tmp/whitepact-build-b
-            sha256sum * | sort -k2
+            sha256sum ./* | sort -k2
           ) > /tmp/build-b.sha256
           echo "Build A:"
           cat /tmp/build-a.sha256

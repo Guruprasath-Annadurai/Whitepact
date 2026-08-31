@@ -73,7 +73,7 @@ services:
       RAI_AUTH_ENABLED: "true"
       RAI_WORKERS: "${RAI_WORKERS:-4}"
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8765/api/health"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8765/api/health', timeout=4)"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -103,7 +103,7 @@ services:
       RAI_MCP_HTTP_PORT: "8766"
       RAI_MCP_LOG_LEVEL: "INFO"
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8766/health"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8766/health', timeout=4)"]
       interval: 30s
       timeout: 5s
       retries: 3

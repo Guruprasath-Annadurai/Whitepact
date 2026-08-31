@@ -1,0 +1,4 @@
+# CI dependency closure. The project and selected extras remain sourced from
+# pyproject.toml; the generated lock omits the local project itself.
+.[dev,openai,anthropic,sso,sentiment]
+pip-audit==2.10.0

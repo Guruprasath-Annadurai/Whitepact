@@ -43,11 +43,7 @@ jobs:
           fi
 
       - name: Install pinned build and SBOM tools
-        run: >-
-          python -m pip install
-          build==1.6.0
-          twine==7.0.0
-          cyclonedx-bom==7.3.1
+        run: python -m pip install --require-hashes -r requirements-build.lock
 
       - name: Build wheel and sdist
         shell: bash
@@ -58,7 +54,7 @@ jobs:
           PRIMARY_DIR="${RUNNER_TEMP}/whitepact-release-bundle"
           rm -rf "${PRIMARY_DIR}"
           mkdir -p "${PRIMARY_DIR}"
-          python -m build --outdir "${PRIMARY_DIR}"
+          python -m build --no-isolation --outdir "${PRIMARY_DIR}"
           python -m twine check "${PRIMARY_DIR}"/*
 
       - name: Verify reproducible release build
@@ -71,7 +67,7 @@ jobs:
           REPRO_DIR="${RUNNER_TEMP}/whitepact-reproducibility-check"
           rm -rf "${REPRO_DIR}"
           mkdir -p "${REPRO_DIR}"
-          python -m build --outdir "${REPRO_DIR}"
+          python -m build --no-isolation --outdir "${REPRO_DIR}"
 
           primary_names="$(find "${PRIMARY_DIR}" -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)"
           reproduced_names="$(find "${REPRO_DIR}" -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)"
@@ -99,8 +95,9 @@ jobs:
         run: |
           set -euo pipefail
           python -m venv "${RUNNER_TEMP}/whitepact-sbom-venv"
-          "${RUNNER_TEMP}/whitepact-sbom-venv/bin/python" -m pip install --upgrade pip
-          "${RUNNER_TEMP}/whitepact-sbom-venv/bin/python" -m pip install release-bundle/*.whl
+          "${RUNNER_TEMP}/whitepact-sbom-venv/bin/python" -m pip install \
+            --require-hashes -r requirements-container.lock
+          "${RUNNER_TEMP}/whitepact-sbom-venv/bin/python" -m installer release-bundle/*.whl
           cyclonedx-py environment \
             --pyproject pyproject.toml \
             --spec-version 1.6 \
@@ -117,6 +114,7 @@ jobs:
           sha256sum --check SHA256SUMS
 
       - name: Attest wheel and sdist build provenance
+        id: provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: |
@@ -128,6 +126,20 @@ jobs:
         with:
           subject-path: release-bundle/*.whl
           sbom-path: release-bundle/sbom.cyclonedx.json
+
+      - name: Export portable Sigstore provenance bundle
+        shell: bash
+        env:
+          PROVENANCE_BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          test -s "${PROVENANCE_BUNDLE}"
+          cp "${PROVENANCE_BUNDLE}" \
+            "release-bundle/rai-governance-platform-${VERSION}-provenance.sigstore"
+          cd release-bundle
+          sha256sum ./*.sigstore >> SHA256SUMS
+          sha256sum --check SHA256SUMS
 
       # Upload once, only after both attestations exist. The caller downloads this
       # bundle and publishes these exact bytes; it never invokes a package builder.
