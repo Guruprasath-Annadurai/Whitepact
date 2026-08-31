@@ -12,3 +12,8 @@ wiki/Authentication-and-RBAC.md:curl-auth-header:26
 wiki/Authentication-and-RBAC.md:curl-auth-header:66
 wiki/Authentication-and-RBAC.md:curl-auth-header:75
 wiki/Authentication-and-RBAC.md:curl-auth-header:86
+
+# Historical false positive: this line passes an in-memory RSA key generated
+# during a negative SAML signature test. No key material or credential is
+# embedded in the repository.
+22f67d552b77a0b876ce46adc21bc6885269d0aa:tests/test_saml.py:generic-api-key:252

@@ -1,0 +1,25 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://github.com/Guruprasath-Annadurai/Whitepact/security/vex/2026-08-31",
+  "author": "WhitePact maintainers",
+  "role": "Document Creator",
+  "timestamp": "2026-08-31T00:00:00Z",
+  "version": 1,
+  "statements": [
+    {
+      "vulnerability": {
+        "@id": "https://github.com/advisories/GHSA-m42h-3232-vpv3",
+        "name": "PYSEC-2026-597"
+      },
+      "products": [
+        {
+          "@id": "pkg:pypi/rai-governance-platform@1.2.3?extra=sentiment"
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The affected NLTK path accepts attacker-controlled resource names in nltk.data.load/find. WhitePact's optional sentiment path only calls nltk.download with the hard-coded literal vader_lexicon and never routes user input into the affected APIs.",
+      "status_notes": "Re-evaluate if the call path changes or NLTK publishes a fixed version. The sentiment extra remains opt-in."
+    }
+  ]
+}
