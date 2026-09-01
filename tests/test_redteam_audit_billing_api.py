@@ -2,20 +2,30 @@
 
 from __future__ import annotations
 
-import os
-
-os.environ.setdefault("RAI_DB_PATH", ":memory:")
-os.environ.setdefault("RAI_AUTH_ENABLED", "false")
-os.environ.setdefault("RAI_LOG_JSON", "false")
-os.environ.setdefault("RAI_LOG_LEVEL", "WARNING")
-os.environ.setdefault("RAI_AUTO_MIGRATE", "false")
-
 import pytest
 from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
 
 from responsibleai import __version__
-from responsibleai.dashboard.app import app
+from responsibleai.dashboard.app import app, settings
+
+
+@pytest.fixture(autouse=True)
+def _default_test_settings(monkeypatch: pytest.MonkeyPatch):
+    """See test_dashboard_api.py's `_default_test_settings` docstring
+    for the full story: `os.environ.setdefault(...)` at module level
+    only reliably takes effect if this file's import is the first
+    thing in the whole pytest session to trigger the lazy `settings`
+    singleton's construction -- collection-order-dependent and, as
+    observed directly, silently broken by an unrelated file (any file
+    alphabetically earlier that imports `responsibleai.dashboard.app`)
+    winning that race instead. Monkeypatching the shared singleton
+    explicitly is deterministic regardless of import order."""
+    monkeypatch.setattr(settings, "db_path", ":memory:")
+    monkeypatch.setattr(settings, "auth_enabled", False)
+    monkeypatch.setattr(settings, "log_json", False)
+    monkeypatch.setattr(settings, "auto_migrate", False)
+    yield
 
 
 @pytest.fixture()

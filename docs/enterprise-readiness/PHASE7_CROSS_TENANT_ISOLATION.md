@@ -121,6 +121,21 @@ isolated — confirmed, not assumed:
 
 ## A separate, pre-existing finding surfaced while adding this sweep
 
+**Update**: root-caused and fixed — see
+`TEST_SUITE_ORDERING_FRAGILITY_INVESTIGATION.md` for the full
+diagnosis. Summary: `test_cross_tenant_isolation_sweep.py` (this
+phase's own new file) was, by alphabetical accident, the first file in
+the whole suite to import `responsibleai.dashboard.app`, which
+constructs the lazy, process-wide `settings` singleton at import time
+— beating `test_dashboard_api.py`'s own `os.environ.setdefault(...)`
+line to the punch and freezing `auth_enabled` at its true Pydantic
+default (`True`) instead of the intended test baseline (`False`).
+Fixed by replacing that fragile pattern with explicit
+`monkeypatch.setattr(settings, ...)` in the three affected files,
+matching the pattern this codebase's own `test_mfa_login_flow.py`
+already used (and already documented the exact same risk in its own
+docstring). The original finding below is preserved for the record.
+
 Running the new `tests/test_cross_tenant_isolation_sweep.py` together
 with the rest of the suite exposed a **pre-existing test-infrastructure
 fragility**, confirmed to be unrelated to any code change in this
