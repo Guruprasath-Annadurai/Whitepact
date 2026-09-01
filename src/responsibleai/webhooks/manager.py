@@ -57,7 +57,18 @@ def validate_webhook_url(url: str) -> None:
     internal network or a cloud provider's instance-metadata endpoint.
     Re-checked at every delivery (not just registration) since DNS can
     resolve differently between the two."""
-    parsed = urlsplit(url)
+    try:
+        parsed = urlsplit(url)
+    except ValueError as exc:
+        # Enterprise Readiness Phase 18/19 (public-API fuzz coverage):
+        # found by property-based fuzzing -- a malformed URL (e.g. an
+        # unbalanced IPv6 bracket, "http://[") makes urlsplit() itself
+        # raise ValueError("Invalid IPv6 URL") rather than returning a
+        # parse result, which previously fell through uncaught into an
+        # unhandled 500 on every endpoint that registers a webhook or
+        # upstream MCP server URL. A URL that cannot even be parsed is
+        # not a valid webhook target -- same fail-closed treatment.
+        raise UnsafeWebhookURLError(f"could not parse URL: {url!r}") from exc
     if parsed.scheme not in ("http", "https"):
         raise UnsafeWebhookURLError(f"unsupported URL scheme: {parsed.scheme!r}")
     host = parsed.hostname
@@ -67,6 +78,17 @@ def validate_webhook_url(url: str) -> None:
         infos = socket.getaddrinfo(host, None)
     except socket.gaierror as exc:
         raise UnsafeWebhookURLError(f"could not resolve host: {host}") from exc
+    except UnicodeError as exc:
+        # Enterprise Readiness Phase 18/19 (public-API fuzz coverage):
+        # found by property-based fuzzing, not hypothetical -- a
+        # pathologically long or malformed hostname label fails IDNA
+        # encoding inside getaddrinfo() with a raw UnicodeError, not
+        # socket.gaierror, so it fell through uncaught into an
+        # unhandled 500 on every endpoint that registers a webhook or
+        # upstream MCP server URL. Same fail-closed treatment as an
+        # unresolvable host -- there is no valid webhook target that
+        # can't be IDNA-encoded.
+        raise UnsafeWebhookURLError(f"invalid host: {host}") from exc
     for info in infos:
         addr = info[4][0]
         ip = ipaddress.ip_address(addr)

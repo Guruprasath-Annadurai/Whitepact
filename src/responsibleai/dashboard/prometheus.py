@@ -15,6 +15,12 @@ Metrics exported:
     whitepact_decisions_total     Counter Governance decisions by decision/risk_tier/org
     whitepact_evaluation_seconds  Histogram WhitePactRuntimeGateway.evaluate() latency by org
     whitepact_approvals_total     Counter Approval resolutions by outcome/org
+    whitepact_heart_denials_total Counter Heart legitimacy denials by reason/org (Phase 14)
+    whitepact_revocations_total   Counter Root/consent revocations by target_type/org (Phase 14)
+    whitepact_audit_chain_failures_total Counter Evidence-chain tamper detections by org (Phase 14)
+    whitepact_approval_queue_backlog Gauge Live PENDING approval count by org (Phase 14)
+    whitepact_db_pool_checked_out Gauge  DB connection-pool connections currently checked out
+    whitepact_db_pool_size        Gauge  DB connection-pool configured size
 
 The `whitepact_*` metrics are named separately from the `rai_*` ones
 above (not `rai_governance_decisions_total`) deliberately — they belong
@@ -40,6 +46,8 @@ series stays queryable.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from prometheus_client import (
     CONTENT_TYPE_LATEST,
     REGISTRY,
@@ -48,6 +56,9 @@ from prometheus_client import (
     Histogram,
     generate_latest,
 )
+
+if TYPE_CHECKING:
+    from responsibleai.db.engine import DatabaseEngine
 
 # ── Gauges ────────────────────────────────────────────────────────────────────
 
@@ -121,6 +132,50 @@ governance_approvals_total = Counter(
     "whitepact_approvals_total",
     "Total ApprovalRepository.resolve() outcomes",
     ["outcome", "org_id"],  # outcome: APPROVED | DENIED
+)
+
+# Enterprise Readiness Phase 14 (metrics enumeration): the specific
+# names 00_MASTER_READINESS_AUDIT.md's "Observability" row flagged as
+# unconfirmed -- denied decisions were already covered by
+# `whitepact_decisions_total{decision="DENY"}` above; these four close
+# the rest (Heart failures, revocation failures, audit failures, queue
+# backlog), plus DB pool usage.
+
+heart_denials_total = Counter(
+    "whitepact_heart_denials_total",
+    "Total Heart legitimacy denials (resolve_authority_grant() not legitimate)",
+    ["reason", "org_id"],
+)
+
+revocations_total = Counter(
+    "whitepact_revocations_total",
+    "Total root-authority/consent revocations recorded",
+    ["target_type", "org_id"],  # target_type: root_authority | consent
+)
+
+audit_chain_failures_total = Counter(
+    "whitepact_audit_chain_failures_total",
+    "Total evidence hash-chain verifications that found tampering",
+    ["org_id"],
+)
+
+approval_queue_backlog = Gauge(
+    "whitepact_approval_queue_backlog",
+    "Live count of PENDING approvals, tracked incrementally from process "
+    "start -- does NOT reflect approvals already PENDING in the DB before "
+    "this process started (no startup backfill query); restart a process "
+    "and this resets to 0 even though the DB may still hold pending rows.",
+    ["org_id"],
+)
+
+db_pool_checked_out = Gauge(
+    "whitepact_db_pool_checked_out",
+    "DB connection-pool connections currently checked out (sampled at scrape time)",
+)
+
+db_pool_size = Gauge(
+    "whitepact_db_pool_size",
+    "DB connection-pool configured size (sampled at scrape time)",
 )
 
 _UNSCOPED_ORG = "unscoped"
@@ -199,6 +254,40 @@ def observe_governance_decision(
 
 def observe_governance_approval(outcome: str, org_id: str | None = None) -> None:
     governance_approvals_total.labels(outcome=outcome, org_id=_org_label(org_id)).inc()
+
+
+def observe_heart_denial(reason: str, org_id: str | None = None) -> None:
+    heart_denials_total.labels(reason=reason, org_id=_org_label(org_id)).inc()
+
+
+def observe_revocation(target_type: str, org_id: str | None = None) -> None:
+    revocations_total.labels(target_type=target_type, org_id=_org_label(org_id)).inc()
+
+
+def observe_audit_chain_failure(org_id: str | None = None) -> None:
+    audit_chain_failures_total.labels(org_id=_org_label(org_id)).inc()
+
+
+def observe_approval_queued(org_id: str | None = None) -> None:
+    approval_queue_backlog.labels(org_id=_org_label(org_id)).inc()
+
+
+def observe_approval_dequeued(org_id: str | None = None) -> None:
+    approval_queue_backlog.labels(org_id=_org_label(org_id)).dec()
+
+
+def observe_db_pool(engine: DatabaseEngine) -> None:
+    """Sample live pool stats at /metrics scrape time -- SQLite's
+    AsyncAdaptedQueuePool(pool_size=1) still exposes the same
+    checkedout()/size() API, so this is safe to call unconditionally
+    regardless of backend."""
+    pool = engine.raw.pool
+    checked_out = getattr(pool, "checkedout", None)
+    size = getattr(pool, "size", None)
+    if callable(checked_out):
+        db_pool_checked_out.set(checked_out())
+    if callable(size):
+        db_pool_size.set(size())
 
 
 def get_metrics_output() -> tuple[bytes, str]:

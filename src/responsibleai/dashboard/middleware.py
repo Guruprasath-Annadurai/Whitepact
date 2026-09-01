@@ -53,6 +53,60 @@ _SECURITY_HEADERS = {
 }
 
 
+# Enterprise Readiness Phase 18/19 (public-API fuzz/abuse audit): no
+# request-body-size cap existed anywhere in this app -- confirmed by
+# grep, not assumed. A reverse proxy in front of a real deployment
+# (DEPLOYMENT.md's nginx config) may already enforce one, but this
+# app had no defense-in-depth of its own, meaning a self-hosted
+# deployment run without such a proxy (or any deployment, before the
+# proxy's own limit is reached) had no bound on how much of an
+# oversized request body Starlette would buffer into memory before a
+# Pydantic model's own field-level max_length ever got a chance to run.
+# 10 MB comfortably covers every real request shape this API accepts
+# (the largest, `governance/approve` arguments payloads and consent
+# `scope_description`/`purpose` fields, are bounded by Pydantic's own
+# `max_length` at a few KB each) with generous headroom.
+MAX_REQUEST_BODY_BYTES = 10 * 1024 * 1024
+
+
+class MaxBodySizeMiddleware(BaseHTTPMiddleware):
+    """Rejects a request whose declared `Content-Length` exceeds
+    `MAX_REQUEST_BODY_BYTES` with 413, before any route handler or
+    Pydantic validation runs.
+
+    Scoped limitation, stated honestly: this checks the `Content-Length`
+    header, which covers every normal JSON-body request this API's own
+    clients send. It does NOT defend against a chunked-transfer-encoded
+    request that omits `Content-Length` and streams an unbounded body —
+    closing that fully would mean wrapping the ASGI `receive` channel to
+    count bytes as they arrive, a larger change than this pass makes.
+    Real-world deployments still have their reverse proxy's own limit as
+    a second layer; this middleware is the application-level
+    defense-in-depth `DEPENDENCY_RISK_REGISTER.md`'s "no dedicated
+    request-size fuzz coverage" gap named as missing, not the only
+    layer this system now relies on.
+    """
+
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        content_length = request.headers.get("content-length")
+        if content_length is not None:
+            try:
+                length = int(content_length)
+            except ValueError:
+                length = None
+            if length is not None and length > MAX_REQUEST_BODY_BYTES:
+                return JSONResponse(
+                    status_code=413,
+                    content={
+                        "error": "payload_too_large",
+                        "message": (
+                            f"Request body exceeds the {MAX_REQUEST_BODY_BYTES} byte limit."
+                        ),
+                    },
+                )
+        return await call_next(request)
+
+
 class RequestIDMiddleware(BaseHTTPMiddleware):
     """Attach a short UUID to every request and echo it in the response."""
 

@@ -152,6 +152,9 @@ async def _heart_legitimacy_denied_reason(
     )
     if grant.is_legitimate:
         return None, grant
+    from responsibleai.dashboard.prometheus import observe_heart_denial
+
+    observe_heart_denial(grant.legitimacy.heart_veto.status.value, org_id=agent.organization_id)
     return (
         format_reason(
             ReasonCode.HEART_LEGITIMACY_FAILED,
@@ -342,6 +345,9 @@ async def apply_upstream_governance(
 
     if decision.decision == GovernanceDecision.REQUIRE_APPROVAL:
         approval = await approval_repo.create(build_approval_request(action, decision))
+        from responsibleai.dashboard.prometheus import observe_approval_queued
+
+        observe_approval_queued(org_id=agent.organization_id)
         return UpstreamGovernanceOutcome(
             proceed=False,
             blocked_response={
