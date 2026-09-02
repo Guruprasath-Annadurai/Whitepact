@@ -8,7 +8,9 @@ name: DCO
 
 on:
   pull_request:
-    branches: [main]
+    # security/enterprise-neural-remediation added for PR #55 -- see
+    # docs/security-review/CI_GAP_ROOT_CAUSE_AND_FIX.md.
+    branches: [main, security/enterprise-neural-remediation]
 
 permissions:
   contents: read

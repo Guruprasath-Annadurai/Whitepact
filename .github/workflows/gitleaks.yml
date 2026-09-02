@@ -6,7 +6,9 @@ name: Gitleaks
 
 on:
   pull_request:
-    branches: [main]
+    # security/enterprise-neural-remediation added for PR #55 -- see
+    # docs/security-review/CI_GAP_ROOT_CAUSE_AND_FIX.md.
+    branches: [main, security/enterprise-neural-remediation]
   schedule:
     - cron: "0 6 * * 1"  # weekly, Monday 06:00 UTC
   workflow_dispatch: {}

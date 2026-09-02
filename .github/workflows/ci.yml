@@ -4,7 +4,12 @@ on:
   push:
     branches: ["main", "develop"]
   pull_request:
-    branches: ["main"]
+    # security/enterprise-neural-remediation added for PR #55
+    # (security/heart-production-closure), which is stacked on it rather
+    # than on main -- without this, this workflow never ran against that
+    # PR at all. See docs/security-review/FROZEN_REVIEW_VERIFICATION.md
+    # §11 and docs/security-review/CI_GAP_ROOT_CAUSE_AND_FIX.md.
+    branches: ["main", "security/enterprise-neural-remediation"]
 
 jobs:
   test:
