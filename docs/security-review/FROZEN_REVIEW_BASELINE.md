@@ -80,7 +80,24 @@ from a prior session's memory or a prior handoff document.
 
 ## Review status
 
-**Independent human review: NOT YET PERFORMED.**
+**Independent human review: NOT YET PERFORMED**, in the sense of a
+formal, security-focused review of this specific frozen candidate.
+
+> **Update, 2026-09-02:** a separate external human technical review
+> (reviewer: Keshavan) has since been recorded — see
+> [`EXTERNAL_REVIEW_KESHAVAN.md`](EXTERNAL_REVIEW_KESHAVAN.md) and
+> [`REVIEW_EVIDENCE_REGISTER.md`](REVIEW_EVIDENCE_REGISTER.md). Stated
+> precisely:
+>
+> External human technical/security review: **PERFORMED**
+> Reviewer: **Keshavan**
+> Formal independent penetration test: **NOT PERFORMED**
+> Formal third-party security audit: **NOT PERFORMED**
+> Reviewed SHA: **NOT RECORDED** (not established as this frozen
+> candidate specifically)
+> Security review gate: **PARTIALLY CLOSED** — a genuine external
+> signal, not a substitute for a structured review of the exact frozen
+> candidate above.
 
 ## Timestamp
 

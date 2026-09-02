@@ -1,6 +1,17 @@
 # Independent Security Review Packet — PR #55
 
-**Independent review status: NOT YET PERFORMED.**
+**Independent review status: NOT YET PERFORMED**, in the sense of a
+formal, security-focused review of this specific PR at its frozen
+candidate SHA.
+
+> **Update, 2026-09-02:** a separate external human technical review
+> (reviewer: Keshavan) is recorded in
+> [`EXTERNAL_REVIEW_KESHAVAN.md`](EXTERNAL_REVIEW_KESHAVAN.md), gate
+> status **PARTIALLY CLOSED**. That review's scope was not confirmed
+> against this PR's specific SHA and did not confirm coverage of the
+> individual trust boundaries this packet exists to hand a reviewer —
+> this packet remains the artifact a structured review of PR #55 should
+> use.
 
 This document is prepared *for* a human security reviewer. It does not
 itself constitute review. It was assembled by an AI agent (Claude, via

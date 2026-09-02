@@ -1,6 +1,13 @@
 # Independent Security Review Packet — PR #50, PR #54, and the Heart Production Closure branch
 
-**Independent review status: NOT YET PERFORMED.**
+**Independent review status: NOT YET PERFORMED**, in the sense of a
+formal, security-focused review of these specific PRs.
+
+> **Update, 2026-09-02:** a separate external human technical review
+> (reviewer: Keshavan) is recorded in
+> [`EXTERNAL_REVIEW_KESHAVAN.md`](EXTERNAL_REVIEW_KESHAVAN.md) — gate
+> status PARTIALLY CLOSED at the whole-project level. That review's
+> scope was not confirmed against PR #50/#54 specifically.
 
 This document is prepared *for* a human security reviewer. It does not itself
 constitute review, and nothing in this repository should be represented as

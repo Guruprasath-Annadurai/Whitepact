@@ -133,7 +133,11 @@ decision authorized ("close the CI-never-ran gap for PR #55" — singular,
 scoped). A future PR stacking on yet another new intermediate branch will
 need its own explicit, reviewed addition.
 
-## Independent human security review: NOT YET PERFORMED
+## Independent human security review status
 
 This CI fix produces GitHub-attested automated checks. It is not, and is
 not claimed to be, a substitute for independent human security review.
+As of 2026-09-02, a separate external human technical review (see
+[`EXTERNAL_REVIEW_KESHAVAN.md`](EXTERNAL_REVIEW_KESHAVAN.md)) has moved
+that gate to **PARTIALLY CLOSED**; a formal independent security audit
+and penetration test remain NOT PERFORMED.
