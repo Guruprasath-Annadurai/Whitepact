@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
 from collections.abc import Callable
@@ -13,6 +14,55 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from responsibleai.dashboard.logging_config import get_logger, set_request_id
 
 logger = get_logger("middleware")
+
+
+class AuthFailureLimiter:
+    """Per-process sliding-window limiter on failed Bearer-auth
+    attempts, keyed by client IP — Enterprise Readiness Phase 6.
+
+    `mcp/server.py`'s hosted-MCP transport already had an identical,
+    independently-defined `_AuthFailureLimiter` guarding `/mcp`/`/sse`;
+    the REST dashboard API (`dashboard/app.py`'s `get_org_context()`)
+    had no equivalent. `_get_rate_limit_key()`'s existing slowapi
+    bucketing keys a request by the *presented* Bearer token when one
+    is present (by design, for legitimate per-org quota isolation —
+    see that function's own docstring) — which means an attacker
+    trying many *different* candidate tokens against any
+    Bearer-protected endpoint gets a fresh, empty rate-limit bucket
+    for every guess, never accumulating throttling. This class closes
+    that specific gap: a genuinely IP-keyed counter of failed auth
+    attempts, independent of what token was tried, that blocks further
+    attempts from that IP once a threshold is crossed within a window
+    — the exact mechanism the MCP transport already had.
+
+    In-memory, so this is per-replica, not cluster-wide — same
+    documented limitation as `mcp/server.py`'s own copy and everything
+    else in this codebase that isn't backed by Postgres/Redis. A
+    determined attacker distributing requests across replicas isn't
+    stopped by this alone; it's a real speed bump against the common
+    single-source case, not a claim of distributed rate limiting.
+    """
+
+    def __init__(self, max_failures: int, window_seconds: float) -> None:
+        self._max_failures = max_failures
+        self._window_seconds = window_seconds
+        self._failures: dict[str, list[float]] = {}
+        self._lock = asyncio.Lock()
+
+    def _prune(self, key: str, now: float) -> list[float]:
+        attempts = [t for t in self._failures.get(key, []) if now - t < self._window_seconds]
+        self._failures[key] = attempts
+        return attempts
+
+    async def is_blocked(self, key: str) -> bool:
+        async with self._lock:
+            now = asyncio.get_running_loop().time()
+            return len(self._prune(key, now)) >= self._max_failures
+
+    async def record_failure(self, key: str) -> None:
+        async with self._lock:
+            now = asyncio.get_running_loop().time()
+            self._prune(key, now).append(now)
 
 # The dashboard's static pages (static/index.html etc.) load Tailwind and
 # Chart.js from CDN and use inline <style>/<script> blocks plus onclick=

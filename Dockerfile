@@ -1,4 +1,12 @@
-FROM python:3.12-slim AS builder
+# Pinned by digest, not just the mutable `3.12-slim` tag (Enterprise
+# Readiness Phase 24) -- the digest is python:3.12-slim's multi-arch
+# manifest-list digest, so this still resolves to the correct
+# linux/amd64 or linux/arm64 image per builder platform; only the
+# *tag* is no longer able to silently point at different bytes over
+# time. Re-pin deliberately (not automatically) when intentionally
+# taking a new base image update -- `docker buildx imagetools inspect
+# python:3.12-slim` prints the current digest.
+FROM python:3.12-slim@sha256:e5c9fa26ffb76e11e0f054f30dc2523a2f9693f0c36c0cf1e39b27e152d899fc AS builder
 
 WORKDIR /build
 RUN pip install --upgrade pip build
@@ -7,7 +15,7 @@ COPY src/ ./src/
 RUN python -m build --wheel --outdir /dist
 
 
-FROM python:3.12-slim AS runtime
+FROM python:3.12-slim@sha256:e5c9fa26ffb76e11e0f054f30dc2523a2f9693f0c36c0cf1e39b27e152d899fc AS runtime
 
 LABEL org.opencontainers.image.title="ResponsibleAI Governance Platform"
 LABEL org.opencontainers.image.description="Enterprise AI Governance — Trust Scoring, Compliance, Cost Intelligence"

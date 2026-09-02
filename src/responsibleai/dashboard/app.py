@@ -51,6 +51,7 @@ from responsibleai.cost.router import ModelRouter
 from responsibleai.dashboard.config import get_settings, multi_replica_problems
 from responsibleai.dashboard.logging_config import configure_logging, get_logger
 from responsibleai.dashboard.middleware import (
+    AuthFailureLimiter,
     MaxBodySizeMiddleware,
     RequestIDMiddleware,
     RequestLoggingMiddleware,
@@ -259,6 +260,16 @@ if settings.redis_url:
     _limiter_kwargs["storage_uri"] = settings.redis_url
 
 limiter = Limiter(**_limiter_kwargs)
+
+# Enterprise Readiness Phase 6: IP-keyed failed-auth-attempt limiter
+# for the REST API's own Bearer-credential resolution, mirroring
+# mcp/server.py's `_AuthFailureLimiter` for the hosted MCP transport
+# (see AuthFailureLimiter's own docstring for why slowapi's existing
+# per-token bucketing alone doesn't cover this). 20 failures/minute per
+# IP -- generous enough that a legitimate client hitting a transient
+# 401 (e.g. an expired token during a deploy) never gets blocked, tight
+# enough to meaningfully slow down credential-guessing.
+_auth_failure_limiter = AuthFailureLimiter(max_failures=20, window_seconds=60.0)
 
 # Site-wide cap on self-serve signups, independent of per-IP rate
 # limiting — see signup_guard.py's own docstring for why and its
@@ -803,8 +814,15 @@ async def get_org_context(request: Request) -> OrgContext:
         request.state.audit_key_id = "anon"
         return ctx
 
+    client_key = get_remote_address(request)
+    if await _auth_failure_limiter.is_blocked(client_key):
+        raise HTTPException(
+            429, detail="Too many failed authentication attempts. Try again later."
+        )
+
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
+        await _auth_failure_limiter.record_failure(client_key)
         raise HTTPException(401, detail="Missing or invalid Authorization header")
 
     token = auth_header[7:].strip()
@@ -852,6 +870,7 @@ async def get_org_context(request: Request) -> OrgContext:
             request.state.audit_key_id = resolved_ctx.key_id
             return resolved_ctx
 
+    await _auth_failure_limiter.record_failure(client_key)
     raise HTTPException(401, detail="Invalid API key")
 
 

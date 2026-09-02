@@ -820,9 +820,11 @@ WhitePact holds two [OpenSSF](https://openssf.org/) self-certifications on its [
 - [`DEFINITION_OF_DONE.md`](DEFINITION_OF_DONE.md) — closing report: what's real today, what isn't, verifiable
 - [`THREAT_MODEL.md`](THREAT_MODEL.md) — threat model for the current attack surface
 - [`DETERMINISTIC_VS_PROBABILISTIC.md`](DETERMINISTIC_VS_PROBABILISTIC.md) — why governance decisions are deterministic
-- [`SLA.md`](SLA.md), [`ENTERPRISE_SECURITY.md`](ENTERPRISE_SECURITY.md), [`SECURITY.md`](SECURITY.md) — enterprise/security posture, stated honestly
+- [`SLA.md`](SLA.md), [`ENTERPRISE_SECURITY.md`](ENTERPRISE_SECURITY.md), [`SECURITY.md`](SECURITY.md), [`SUPPORT.md`](SUPPORT.md) — enterprise/security posture and support channels, stated honestly
+- [`PRIVACY_POLICY.md`](PRIVACY_POLICY.md) — the platform-wide privacy policy; [`PRIVACY.md`](PRIVACY.md) covers `PrivacyLabel`'s differential-privacy math specifically
 - [`compliance/SOC2_ALTERNATIVE_PATH.md`](compliance/SOC2_ALTERNATIVE_PATH.md) — real, free, independently verifiable trust signals for now; the honest path to a real SOC 2 when there's budget for one
 - [`docs/heart-production-closure/ENFORCEMENT_PATH_MATRIX.md`](docs/heart-production-closure/ENFORCEMENT_PATH_MATRIX.md) — every path in this codebase capable of reaching real tool/action execution, and which ones do or don't require Heart-backed authority — from [PR #55](https://github.com/Guruprasath-Annadurai/Whitepact/pull/55), open and unmerged
+- [`docs/enterprise/`](docs/enterprise/README.md) — enterprise-readiness documentation index (trust boundaries, tenancy, audit model, known limitations, each mapped to its authoritative source); [`docs/enterprise-readiness/`](docs/enterprise-readiness/) — the phase-by-phase closure evidence itself
 - [`docs/ACCESSIBILITY.md`](docs/ACCESSIBILITY.md), [`docs/INTERNATIONALIZATION.md`](docs/INTERNATIONALIZATION.md) — WCAG2AA accessibility approach and the dashboard's i18n architecture, both with real automated CI gates
 - [`compliance/PROJECT_CONTINUITY_PLAN.md`](compliance/PROJECT_CONTINUITY_PLAN.md) — the access/recovery checklist a second person would need if the founder became unavailable; stated honestly as a plan, not proof of bus-factor redundancy (no second person holds this access yet)
 

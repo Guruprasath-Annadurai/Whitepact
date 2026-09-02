@@ -2,6 +2,13 @@
 
 This document describes the differential privacy properties of PrivacyLabel, the threat model it operates under, and the budget accounting model.
 
+> **Scope note**: this is narrow technical documentation for one
+> feature (`PrivacyLabel`'s differential-privacy math). For the
+> platform-wide, general-purpose privacy policy — what personal data
+> the platform as a whole collects, retains, and how to exercise
+> rights over it — see [PRIVACY_POLICY.md](PRIVACY_POLICY.md). Both
+> documents are needed; neither replaces the other.
+
 ---
 
 ## What differential privacy means here
