@@ -128,3 +128,51 @@ class TestDemoAuthIncompatibleWithEnterpriseMode:
         engine = await _engine()
         await verify_heart_production_enforcement(settings, engine)  # must not raise
         await engine.close()
+
+
+class TestAuthDisabledIncompatibleWithEnterpriseMode:
+    """Security-freeze review finding (docs/security-review/
+    STAGE5_INDEPENDENT_REVIEW_GATE.md, item 2): auth_enabled=false
+    grants every dashboard REST request Role.OWNER with zero credential
+    presented (dashboard/app.py's get_org_context() dev-mode branch) --
+    a deployment claiming production-authority-enforced mode should not
+    also leave REST authentication optional."""
+
+    async def test_auth_disabled_alone_is_fine(self) -> None:
+        """enterprise_mode=false is a no-op regardless of auth_enabled --
+        plain local development (auth off, enterprise mode off) is
+        unaffected."""
+        settings = Settings(
+            enterprise_mode=False,
+            mcp_governance_enabled=False,
+            auth_enabled=False,
+        )
+        engine = await _engine()
+        await verify_heart_production_enforcement(settings, engine)  # must not raise
+        await engine.close()
+
+    async def test_enterprise_mode_true_with_auth_disabled_raises(self) -> None:
+        settings = Settings(
+            enterprise_mode=True,
+            mcp_governance_enabled=True,
+            auth_enabled=False,
+        )
+        engine = await _engine()
+        with pytest.raises(HeartEnforcementError, match="auth_enabled"):
+            await verify_heart_production_enforcement(settings, engine)
+        await engine.close()
+
+    async def test_enterprise_mode_true_with_auth_enabled_passes(self) -> None:
+        settings = Settings(
+            enterprise_mode=True,
+            mcp_governance_enabled=True,
+            auth_enabled=True,
+        )
+        engine = await _engine()
+        await verify_heart_production_enforcement(settings, engine)  # must not raise
+        await engine.close()
+
+    async def test_default_settings_have_auth_enabled_true(self) -> None:
+        """Confirms this new check does not newly break the default
+        configuration -- auth_enabled already defaults to True."""
+        assert Settings().auth_enabled is True

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import sys
 from logging.config import fileConfig
 from pathlib import Path
@@ -15,36 +14,12 @@ from sqlalchemy.ext.asyncio import create_async_engine
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from responsibleai.db.engine import metadata as target_metadata  # noqa: E402
+from responsibleai.db.url_resolution import resolve_migration_db_url as _resolve_url  # noqa: E402
 
 config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
-
-
-def _resolve_url() -> str:
-    """Resolve the DB URL from environment variables.
-
-    Priority:
-    1. RAI_DB_URL — full SQLAlchemy-style URL
-    2. RAI_DB_PATH — file path (converted to sqlite+aiosqlite://)
-    3. Falls back to ./governance.db
-    """
-    raw = (
-        os.environ.get("RAI_DB_URL")
-        or os.environ.get("RAI_DATABASE_URL")
-        or ""
-    )
-    if raw:
-        if raw.startswith("postgresql"):
-            raw = raw.replace("postgresql://", "postgresql+asyncpg://", 1)
-            raw = raw.replace("postgres://", "postgresql+asyncpg://", 1)
-        return raw
-
-    path = os.environ.get("RAI_DB_PATH", "governance.db")
-    if path == ":memory:":
-        return "sqlite+aiosqlite:///:memory:"
-    return f"sqlite+aiosqlite:///{path}"
 
 
 def run_migrations_offline() -> None:

@@ -32,11 +32,14 @@ create two competing "is this production" flags in the same codebase.
 - **Does** fail startup (raise, before the first request is served)
   when `enterprise_mode=true` and any of: `mcp_governance_enabled` is
   false, the root-authority repository is unreachable, the
-  revocation-epoch repository is unreachable, or (Heart Enforcement
-  Chokepoint Closure Phase E4) `mcp_http_allow_unauthenticated_demo` is
-  true. This is the literal `production_authority_mode=true + Heart
-  unavailable/misconfigured = startup failure` invariant the directive
-  names, using `enterprise_mode` as that mode flag.
+  revocation-epoch repository is unreachable, `auth_enabled` is false
+  (closed during the security-freeze review process -- see
+  `docs/security-review/STAGE5_INDEPENDENT_REVIEW_GATE.md` item 2), or
+  (Heart Enforcement Chokepoint Closure Phase E4)
+  `mcp_http_allow_unauthenticated_demo` is true. This is the literal
+  `production_authority_mode=true + Heart unavailable/misconfigured =
+  startup failure` invariant the directive names, using
+  `enterprise_mode` as that mode flag.
 - **Critical wiring fix (Phase E0/E4)**: this function previously ran
   ONLY from `dashboard/app.py`'s own startup -- the separate
   `whitepact-mcp-http` process (`mcp/server.py`'s `_build_http_app()`
@@ -130,6 +133,24 @@ async def verify_heart_production_enforcement(settings: Settings, engine: Databa
             "Unset mcp_http_allow_unauthenticated_demo before enabling "
             "enterprise_mode, or unset enterprise_mode if this deployment "
             "intentionally runs the demo flag."
+        )
+
+    if not settings.auth_enabled:
+        raise HeartEnforcementError(
+            "enterprise_mode=true requires auth_enabled=true. "
+            "auth_enabled=false grants every dashboard REST request "
+            "Role.OWNER with no credential presented at all "
+            "(dashboard/app.py's get_org_context() dev-mode branch) -- while "
+            "org-scoped action-execution endpoints reject the resulting "
+            "org_id=None context, that same unauthenticated OWNER role still "
+            "reads and mutates org-wide audit logs, policy rules, and "
+            "workflow/ceiling configuration that a later, properly "
+            "org-scoped execution is evaluated against. A deployment "
+            "believing it is running production-authority-enforced mode "
+            "should not also be leaving every dashboard endpoint's "
+            "authentication optional. Set auth_enabled=true, or unset "
+            "enterprise_mode if this deployment intentionally runs without "
+            "REST authentication (e.g. purely local development)."
         )
 
     try:
