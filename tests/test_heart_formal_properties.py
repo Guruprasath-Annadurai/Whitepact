@@ -188,6 +188,8 @@ class TestDigestSensitivity:
             "purpose": "p",
             "consent_method": ConsentMethod.EXPLICIT_UI_ACTION,
             "consented_at": now,
+            "allowed_action_types": ("rai_scan",),
+            "allowed_targets": (),
         }
         baseline = compute_consent_digest(**base)
         perturbations = {
@@ -199,6 +201,8 @@ class TestDigestSensitivity:
             "purpose": "p2",
             "consent_method": ConsentMethod.SIGNED_DOCUMENT,
             "consented_at": now.replace(year=now.year + 1),
+            "allowed_action_types": ("rai_hallucination",),
+            "allowed_targets": ("some-target",),
         }
         for field, new_value in perturbations.items():
             perturbed = {**base, field: new_value}

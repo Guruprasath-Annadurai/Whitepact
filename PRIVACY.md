@@ -2,6 +2,13 @@
 
 This document describes the differential privacy properties of PrivacyLabel, the threat model it operates under, and the budget accounting model.
 
+> **Scope note**: this is narrow technical documentation for one
+> feature (`PrivacyLabel`'s differential-privacy math). For the
+> platform-wide, general-purpose privacy policy — what personal data
+> the platform as a whole collects, retains, and how to exercise
+> rights over it — see [PRIVACY_POLICY.md](PRIVACY_POLICY.md). Both
+> documents are needed; neither replaces the other.
+
 ---
 
 ## What differential privacy means here
@@ -36,10 +43,10 @@ The Gaussian sigma formula is the standard analytic calibration from Dwork & Rot
 The default `FederatedClient` parameters are:
 
 ```python
-epsilon_per_round = 0.1   # per-round privacy cost
-total_epsilon     = 1.0   # lifetime budget (10 rounds)
-delta             = 1e-6  # failure probability
-gradient_clip     = 1.0   # L2 sensitivity bound
+epsilon_per_round = 0.1  # per-round privacy cost
+total_epsilon = 1.0  # lifetime budget (10 rounds)
+delta = 1e-6  # failure probability
+gradient_clip = 1.0  # L2 sensitivity bound
 ```
 
 **Choosing ε:** Lower ε means more noise and stronger privacy but lower gradient quality. `ε = 0.1` per round is a moderately strong setting. For highly sensitive data (medical records, financial transactions), values in the 0.01–0.1 range are common in the literature. For less sensitive data where utility matters more, 0.5–1.0 is reasonable.

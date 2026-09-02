@@ -10,6 +10,7 @@ through to every EvidenceRecord for the audit trail: who delegated to
 whom, through however many hops, not just the immediate grantor
 authority_delegated_by already recorded.
 """
+
 from __future__ import annotations
 
 from collections.abc import Sequence

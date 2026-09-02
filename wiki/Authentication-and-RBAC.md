@@ -52,8 +52,7 @@ Routes declare their minimum required role:
 
 ```python
 @app.get("/api/metrics")
-async def metrics(_auth: OrgContext = Depends(require_role(Role.ANALYST))):
-    ...
+async def metrics(_auth: OrgContext = Depends(require_role(Role.ANALYST))): ...
 ```
 
 ---

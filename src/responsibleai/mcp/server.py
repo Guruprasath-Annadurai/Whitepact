@@ -86,7 +86,7 @@ from responsibleai.mcp.licensing import (
     upgrade_message,
 )
 from responsibleai.mcp.resources import RESOURCE_DEFS, dispatch_resource
-from responsibleai.mcp.tools import TOOL_DEFS, dispatch_tool
+from responsibleai.mcp.tools import TOOL_DEFS, _dispatch_tool_unchecked
 from responsibleai.rbac.models import OrgContext
 
 if TYPE_CHECKING:
@@ -166,7 +166,7 @@ def _text_and_structured(
     payload: dict[str, Any],
 ) -> tuple[list[types.TextContent], dict[str, Any]]:
     """Every tool/error payload here is a JSON-native `dict[str, Any]`
-    (verified: `dispatch_tool` is typed `-> dict[str, Any]`, and every
+    (verified: `_dispatch_tool_unchecked` is typed `-> dict[str, Any]`, and every
     inline error dict below is built from string/bool/None literals) —
     safe to hand to the SDK's `structuredContent` as-is. Still returning
     the serialized `TextContent` alongside it (not replacing it) per
@@ -235,42 +235,52 @@ async def _call_tool(
             return _text_and_structured(outcome.blocked_response or {"error": "governance_blocked"})
         # apply_governance() already ran the tool via InternalToolExecutor
         # once it had a valid ExecutionAuthorization — outcome.result is
-        # that result. Calling dispatch_tool() again here would both
+        # that result. Calling _dispatch_tool_unchecked() again here would both
         # double-execute the tool and reintroduce the exact bypass this
         # wiring exists to close.
         assert outcome.result is not None, "governed ALLOW outcome must carry an execution result"
         return _text_and_structured(outcome.result)
 
-    # Security Remediation Gap 2: `ctx is None` here means this is a
+    # Security Remediation Gap 2, tightened by Heart Enforcement
+    # Chokepoint Closure Phase E2: `ctx is None` here means this is a
     # genuinely self-hosted stdio call -- a hosted-HTTP request always
     # has `ctx` set by its own auth middleware before reaching this
-    # point. In enterprise_mode (see Gap 1's Settings.enterprise_mode,
-    # reused deliberately rather than duplicated), stdio may only
-    # execute MINIMAL/LOW risk-tier tools -- the explicit "local
-    # development-only capability set" per
-    # docs/enterprise-neural/REMEDIATION_GAP2_STDIO_GOVERNANCE.md.
-    # Default (enterprise_mode=false) behavior is completely unchanged.
+    # point. Gap 2's original fix let stdio keep executing MINIMAL/LOW
+    # risk-tier tools even under enterprise_mode ("the local
+    # development-only capability set"). ENFORCEMENT_PATH_MATRIX.md's
+    # Phase E0 audit named that a real bypass: enterprise_mode is this
+    # codebase's own "production authority-enforced mode" flag
+    # (heart_production_gate.py), and stdio has no organizational
+    # identity whatsoever to resolve a Heart legitimacy grant against --
+    # there is no way to make even a MINIMAL-risk stdio call "Heart
+    # legitimacy checked." Per the closure directive's own final
+    # invariant ("no code path may execute a governed action without a
+    # valid Heart legitimacy result" -- not "no path, except stdio"),
+    # enterprise_mode now blocks EVERY stdio tool call, not just
+    # non-MINIMAL/LOW ones. Default (enterprise_mode=false) behavior is
+    # completely unchanged -- stdio stays the free, full-featured,
+    # explicitly self-hosted-only transport it always was.
     if ctx is None:
         from responsibleai.dashboard.config import get_settings
-        from responsibleai.governance.risk import RiskTier, classify_action_risk
 
         if get_settings().enterprise_mode:
-            risk_tier = classify_action_risk("mcp_tool_call", name)
-            if risk_tier not in (RiskTier.MINIMAL, RiskTier.LOW):
-                error = {
-                    "error": "stdio_privileged_execution_blocked",
-                    "message": (
-                        f"Tool {name!r} is classified {risk_tier.value!r} risk. "
-                        "Enterprise mode restricts the self-hosted stdio "
-                        "transport to MINIMAL/LOW risk tools only -- it has no "
-                        "organizational identity to evaluate authority/policy "
-                        "against, so privileged tools require the governed "
-                        "hosted HTTP/SSE transport instead."
-                    ),
-                }
-                return _text_and_structured(error)
+            error = {
+                "error": "stdio_execution_blocked_in_enterprise_mode",
+                "message": (
+                    f"Tool {name!r} was requested over the self-hosted stdio "
+                    "transport, which has no organizational identity to "
+                    "resolve Heart legitimacy against. enterprise_mode=true "
+                    "means this deployment claims production authority "
+                    "enforcement for every tool call -- stdio cannot "
+                    "participate in that claim, so it is blocked entirely "
+                    "rather than partially (by risk tier) allowed. Use the "
+                    "governed hosted HTTP/SSE transport instead, or run "
+                    "without enterprise_mode for local development."
+                ),
+            }
+            return _text_and_structured(error)
 
-    result = await dispatch_tool(name, call_arguments)
+    result = await _dispatch_tool_unchecked(name, call_arguments)
     return _text_and_structured(result)
 
 
@@ -451,8 +461,10 @@ def _build_http_app() -> Any:
     if settings.mcp_governance_enabled:
         from responsibleai.db import (
             ApprovalRepository,
+            ConsentProofRepository,
             DelegationRepository,
             EvidenceRepository,
+            ExecutionNonceRepository,
             IntentContractRepository,
             OrgAuthorityCeilingRepository,
             OrgAutonomyBudgetRepository,
@@ -492,6 +504,12 @@ def _build_http_app() -> Any:
             autonomy_budget_repo=OrgAutonomyBudgetRepository(_db_engine),
             outcome_repo=OutcomeRepository(_db_engine),
             intent_repo=IntentContractRepository(_db_engine),
+            # Heart Enforcement Chokepoint Closure: wires consent
+            # alongside root authority so resolve_authority_grant()
+            # actually consults persisted consent on this live path
+            # instead of root-only (ENFORCEMENT_PATH_MATRIX.md's
+            # headline E0 finding).
+            consent_repo=ConsentProofRepository(_db_engine),
             # Heart Production Integration Phase 6 -- always wired
             # when governance is on, same pattern as every other
             # optional repo above; the actual legitimacy check only
@@ -499,6 +517,15 @@ def _build_http_app() -> Any:
             # is also true (see governance_integration.py's
             # _heart_legitimacy_denied_reason()).
             root_authority_repo=RootAuthorityRepository(_db_engine),
+            # Enterprise Readiness Phase 4 (replay protection) --
+            # InternalToolExecutor is now constructed fresh per call in
+            # apply_governance() (not a shared singleton -- see that
+            # function's own history: a module-level singleton
+            # reconfigured via a setter leaked its durable-repo state
+            # across independently-built apps, caught by this branch's
+            # own test suite), so the repo is threaded through here and
+            # passed at construction time each call, no late-binding.
+            nonce_repo=ExecutionNonceRepository(_db_engine),
         )
     # Reuses the exact same RAI_OIDC_* / Settings.oidc_* config the
     # dashboard API's SSO login already reads (dashboard/app.py's own
@@ -562,6 +589,18 @@ def _build_http_app() -> Any:
         from responsibleai.db.crypto_activation import activate_production_crypto
 
         await activate_production_crypto(settings, _db_engine)
+        # Heart Enforcement Chokepoint Closure: this call was missing
+        # entirely from this process before -- verify_heart_production_
+        # enforcement() previously only ran from dashboard/app.py's own
+        # startup, so the fail-closed invariant it provides never
+        # actually protected the process where Heart enforcement (and
+        # its bypasses: stdio, legacy keys, the demo-auth flag) lives.
+        # No-op unless settings.enterprise_mode=true.
+        from responsibleai.governance.heart_production_gate import (
+            verify_heart_production_enforcement,
+        )
+
+        await verify_heart_production_enforcement(settings, _db_engine)
         if _governance_webhook_manager is not None:
             await _governance_webhook_manager.load_configs()
             _governance_webhook_manager.start_retry_worker()

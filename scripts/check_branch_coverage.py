@@ -64,8 +64,12 @@ def main() -> int:
     pure_branch_pct = 100.0 * covered_branches / num_branches
     blended_pct = totals.get("percent_covered", 0.0)
 
-    print(f"Pure branch coverage:    {pure_branch_pct:.2f}%  ({covered_branches}/{num_branches} branches)")
-    print(f"Blended stmt+branch %:   {blended_pct:.2f}%  (coverage.py's own default 'Cover' column -- NOT the same metric)")
+    print(
+        f"Pure branch coverage:    {pure_branch_pct:.2f}%  ({covered_branches}/{num_branches} branches)"
+    )
+    print(
+        f"Blended stmt+branch %:   {blended_pct:.2f}%  (coverage.py's own default 'Cover' column -- NOT the same metric)"
+    )
     print(f"OpenSSF threshold:       {args.threshold:.0f}% (pure branch coverage)")
 
     if pure_branch_pct < args.threshold:

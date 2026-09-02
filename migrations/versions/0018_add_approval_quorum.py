@@ -10,6 +10,7 @@ preserves the exact single-approver behavior every existing approval
 had -- see governance/approval.py's required_approvals docstring and
 db/approval_repository.py's resolve() quorum logic.
 """
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -37,7 +38,9 @@ def upgrade() -> None:
         sa.Column("notes", sa.Text(), nullable=True),
         sa.Column("resolved_at", sa.String(32), nullable=False),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("approval_id", "resolver_identity_id", name="uq_gapv_approval_resolver"),
+        sa.UniqueConstraint(
+            "approval_id", "resolver_identity_id", name="uq_gapv_approval_resolver"
+        ),
     )
     op.create_index("idx_gapv_approval", "governance_approval_votes", ["approval_id"])
 

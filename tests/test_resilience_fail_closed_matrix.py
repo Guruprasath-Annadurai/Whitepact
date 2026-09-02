@@ -201,7 +201,7 @@ class TestIndividualToolCrashFailsClosed:
         async def _raise_tool_crash(*_args, **_kwargs):
             raise RuntimeError("simulated tool implementation crash")
 
-        monkeypatch.setattr(tools_module, "dispatch_tool", _raise_tool_crash)
+        monkeypatch.setattr(tools_module, "_dispatch_tool_unchecked", _raise_tool_crash)
 
         app, raw_key, _org_id, _engine = governed_app
         try:

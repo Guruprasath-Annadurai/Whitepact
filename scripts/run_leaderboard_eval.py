@@ -63,7 +63,9 @@ async def _run(args: argparse.Namespace) -> int:
             adapter_name = "mock" if args.dry_run else t["adapter"]
             try:
                 adapter = get_adapter(
-                    adapter_name, t["model"], settings.leaderboard_api_keys,
+                    adapter_name,
+                    t["model"],
+                    settings.leaderboard_api_keys,
                     azure_openai_endpoint=settings.leaderboard_azure_openai_endpoint,
                     azure_openai_api_version=settings.leaderboard_azure_openai_api_version,
                 )
@@ -92,15 +94,17 @@ async def _run(args: argparse.Namespace) -> int:
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--model", help="Evaluate only this model (requires --provider too).")
     parser.add_argument("--provider", help="Provider for --model.")
     parser.add_argument(
-        "--dry-run", action="store_true",
+        "--dry-run",
+        action="store_true",
         help="Use the offline mock adapter for every model instead of real provider "
-             "APIs — no API keys required. Verifies the full pipeline (eval, scoring, "
-             "persistence) end to end without spending anything.",
+        "APIs — no API keys required. Verifies the full pipeline (eval, scoring, "
+        "persistence) end to end without spending anything.",
     )
     return parser.parse_args()
 

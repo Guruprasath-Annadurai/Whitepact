@@ -88,6 +88,12 @@ deepfake   = ["torch>=2.0.0", "torchvision>=0.15.0", "pillow>=10.0.0", "opencv-p
 all        = ["rai-governance-platform[dashboard,postgres,redis,telemetry,openai,anthropic,google,huggingface,deepfake,sso]"]
 mcp        = ["mcp>=1.0.0,<2.0.0"]
 billing    = ["stripe>=9.0.0"]
+# Heart Production Closure Gap D -- governance/audit_anchor_s3.py's
+# S3ObjectLockAnchorProvider. Optional, same reasoning as sso's
+# PyJWT[crypto]: only deployments actually anchoring evidence to S3
+# Object Lock need this; every other deployment (including
+# LocalFileAnchorProvider users) pays nothing for it.
+aws        = ["boto3>=1.34.0"]
 # Agent-framework integrations (src/responsibleai/integrations/) — the
 # rai_check_trust MCP tool and its LangChain/LangGraph/ADK adapters.
 # Opt-in: these are heavy, fast-moving dependencies with no place in a

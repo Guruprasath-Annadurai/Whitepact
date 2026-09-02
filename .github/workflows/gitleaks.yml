@@ -6,7 +6,9 @@ name: Gitleaks
 
 on:
   pull_request:
-    branches: [main]
+    # security/enterprise-neural-remediation added for PR #55 -- see
+    # docs/security-review/CI_GAP_ROOT_CAUSE_AND_FIX.md.
+    branches: [main, security/enterprise-neural-remediation]
   schedule:
     - cron: "0 6 * * 1"  # weekly, Monday 06:00 UTC
   workflow_dispatch: {}
@@ -19,11 +21,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
 
       - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

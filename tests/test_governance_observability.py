@@ -14,8 +14,14 @@ from asgi_lifespan import LifespanManager
 
 from responsibleai.dashboard.prometheus import (
     get_metrics_output,
+    observe_approval_dequeued,
+    observe_approval_queued,
+    observe_audit_chain_failure,
+    observe_db_pool,
     observe_governance_approval,
     observe_governance_decision,
+    observe_heart_denial,
+    observe_revocation,
 )
 from responsibleai.db import OrgRepository, create_engine
 from responsibleai.rbac.models import Plan, Role
@@ -55,6 +61,58 @@ class TestObserveGovernanceApproval:
         body, _ = get_metrics_output()
         text = body.decode()
         assert 'whitepact_approvals_total{org_id="metrics-test-org-3",outcome="APPROVED"}' in text
+
+
+class TestPhase14NewMetrics:
+    """Enterprise Readiness Phase 14 (metrics enumeration): closes the
+    00_MASTER_READINESS_AUDIT.md Observability row's named gap -- Heart
+    failures, revocation failures, audit failures, queue backlog, and
+    DB pool usage now have real exported metrics."""
+
+    def test_heart_denial_counter_appears_in_output(self) -> None:
+        observe_heart_denial("vetoed", org_id="metrics-test-org-4")
+        body, _ = get_metrics_output()
+        text = body.decode()
+        assert 'whitepact_heart_denials_total{org_id="metrics-test-org-4",reason="vetoed"}' in text
+
+    def test_revocation_counter_appears_in_output(self) -> None:
+        observe_revocation("consent", org_id="metrics-test-org-5")
+        body, _ = get_metrics_output()
+        text = body.decode()
+        assert (
+            'whitepact_revocations_total{org_id="metrics-test-org-5",target_type="consent"}' in text
+        )
+
+    def test_audit_chain_failure_counter_appears_in_output(self) -> None:
+        observe_audit_chain_failure(org_id="metrics-test-org-6")
+        body, _ = get_metrics_output()
+        text = body.decode()
+        assert 'whitepact_audit_chain_failures_total{org_id="metrics-test-org-6"}' in text
+
+    def test_approval_queue_backlog_increments_and_decrements(self) -> None:
+        observe_approval_queued(org_id="metrics-test-org-7")
+        observe_approval_queued(org_id="metrics-test-org-7")
+        body, _ = get_metrics_output()
+        text = body.decode()
+        assert 'whitepact_approval_queue_backlog{org_id="metrics-test-org-7"} 2.0' in text
+
+        observe_approval_dequeued(org_id="metrics-test-org-7")
+        body, _ = get_metrics_output()
+        text = body.decode()
+        assert 'whitepact_approval_queue_backlog{org_id="metrics-test-org-7"} 1.0' in text
+
+    async def test_db_pool_gauges_reflect_a_real_engine(self) -> None:
+        from responsibleai.db import create_engine
+
+        engine = create_engine(":memory:")
+        await engine.init()
+        try:
+            observe_db_pool(engine)
+            body, _ = get_metrics_output()
+            text = body.decode()
+            assert "whitepact_db_pool_size 1.0" in text
+        finally:
+            await engine.close()
 
 
 @pytest.fixture()

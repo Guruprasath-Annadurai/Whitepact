@@ -15,6 +15,7 @@ EncryptedString column in this schema (e.g. 0005/0010's ip_address/
 reporter_name). See governance/approval.py's build_resume_action() and
 mcp/governance_integration.py's resume_approval().
 """
+
 from __future__ import annotations
 
 from collections.abc import Sequence

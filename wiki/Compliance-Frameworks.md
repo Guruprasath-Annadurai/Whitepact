@@ -15,12 +15,12 @@ from responsibleai import ComplianceEngine
 
 engine = ComplianceEngine()
 report = engine.evaluate(
-    fairness_score=0.80,       # bias/fairness posture
-    privacy_score=0.85,        # data privacy controls
-    security_score=0.82,       # system security
-    robustness_score=0.78,     # reliability / adversarial robustness
+    fairness_score=0.80,  # bias/fairness posture
+    privacy_score=0.85,  # data privacy controls
+    security_score=0.82,  # system security
+    robustness_score=0.78,  # reliability / adversarial robustness
     compliance_maturity=0.90,  # internal governance maturity
-    use_case="credit_scoring", # deployment context
+    use_case="credit_scoring",  # deployment context
 )
 ```
 

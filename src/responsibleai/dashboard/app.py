@@ -51,6 +51,8 @@ from responsibleai.cost.router import ModelRouter
 from responsibleai.dashboard.config import get_settings, multi_replica_problems
 from responsibleai.dashboard.logging_config import configure_logging, get_logger
 from responsibleai.dashboard.middleware import (
+    AuthFailureLimiter,
+    MaxBodySizeMiddleware,
     RequestIDMiddleware,
     RequestLoggingMiddleware,
     SecurityHeadersMiddleware,
@@ -60,10 +62,13 @@ from responsibleai.dashboard.middleware import (
 from responsibleai.dashboard.plan_rate_limiter import PlanRateLimiter
 from responsibleai.dashboard.prometheus import (
     get_metrics_output,
+    observe_audit_chain_failure,
     observe_cost,
+    observe_db_pool,
     observe_drift_alert,
     observe_governance_approval,
     observe_guardrail,
+    observe_revocation,
     observe_trust_score,
     observe_webhook_delivery,
     observe_websocket_connections,
@@ -99,6 +104,7 @@ from responsibleai.db import (
     DelegationRepository,
     EvalRepository,
     EvidenceRepository,
+    ExecutionNonceRepository,
     IncidentRepository,
     IntentContractRepository,
     LeaderboardRepository,
@@ -111,6 +117,7 @@ from responsibleai.db import (
     PolicyRepository,
     PolicyRuleNotFoundError,
     PublicIncidentRepository,
+    RevocationEpochRepository,
     RootAuthorityRepository,
     SelfApprovalError,
     SSORequiredError,
@@ -157,6 +164,7 @@ from responsibleai.governance.consent_proof import (
 )
 from responsibleai.governance.evidence_bundle import build_evidence_bundle, verify_evidence_bundle
 from responsibleai.governance.gateway import WhitePactRuntimeGateway
+from responsibleai.governance.heart_production_gate import verify_heart_production_enforcement
 from responsibleai.governance.intent import build_intent_contract
 from responsibleai.governance.models import (
     GovernanceDecision,
@@ -188,7 +196,10 @@ from responsibleai.incidents.logic import build_incident_record
 from responsibleai.leaderboard.models import METHODOLOGY_VERSION
 from responsibleai.leaderboard.providers import ProviderNotConfiguredError, get_adapter
 from responsibleai.leaderboard.runner import LeaderboardRunner
-from responsibleai.mcp.governance_integration import resume_approval
+from responsibleai.mcp.governance_integration import (
+    ApprovalRevokedSinceQueuedError,
+    resume_approval,
+)
 from responsibleai.mcp.licensing import monthly_quota, plan_catalog
 from responsibleai.mcp.upstream_dispatch import apply_upstream_governance
 from responsibleai.rbac import (
@@ -250,6 +261,16 @@ if settings.redis_url:
 
 limiter = Limiter(**_limiter_kwargs)
 
+# Enterprise Readiness Phase 6: IP-keyed failed-auth-attempt limiter
+# for the REST API's own Bearer-credential resolution, mirroring
+# mcp/server.py's `_AuthFailureLimiter` for the hosted MCP transport
+# (see AuthFailureLimiter's own docstring for why slowapi's existing
+# per-token bucketing alone doesn't cover this). 20 failures/minute per
+# IP -- generous enough that a legitimate client hitting a transient
+# 401 (e.g. an expired token during a deploy) never gets blocked, tight
+# enough to meaningfully slow down credential-guessing.
+_auth_failure_limiter = AuthFailureLimiter(max_failures=20, window_seconds=60.0)
+
 # Site-wide cap on self-serve signups, independent of per-IP rate
 # limiting — see signup_guard.py's own docstring for why and its
 # honest single-process scope.
@@ -300,6 +321,8 @@ _outcome_repo: OutcomeRepository | None = None
 _intent_repo: IntentContractRepository | None = None
 _root_authority_repo: RootAuthorityRepository | None = None
 _consent_proof_repo: ConsentProofRepository | None = None
+_revocation_epoch_repo: RevocationEpochRepository | None = None
+_execution_nonce_repo: ExecutionNonceRepository | None = None
 _authority_passport_repo: AuthorityPassportRepository | None = None
 _upstream_gateway: WhitePactRuntimeGateway = WhitePactRuntimeGateway()
 _db_engine: DatabaseEngine | None = None
@@ -356,7 +379,8 @@ async def lifespan(application: FastAPI):
     global _tool_trust_repo, _credential_issuance_repo, _outcome_repo
     global _workflow_rule_repo, _delegation_repo, _autonomy_budget_repo, _intent_repo
     global _authority_passport_repo
-    global _root_authority_repo, _consent_proof_repo
+    global _root_authority_repo, _consent_proof_repo, _revocation_epoch_repo
+    global _execution_nonce_repo
     global _eval_repo, _comparator, _benchmark_runner, _dataset_scanner
     global _oidc_provider, _saml_config, _stripe_service, _plan_rate_limiter
 
@@ -390,6 +414,15 @@ async def lifespan(application: FastAPI):
     # writes an EncryptedString column.
     await activate_production_crypto(settings, _db_engine)
 
+    # Heart Production Closure Gap C: fail-closed at startup, not
+    # warning-and-continuing, when enterprise_mode=true but Heart's
+    # production dependencies (mcp_governance_enabled, the root-
+    # authority store, the revocation-epoch store) aren't all genuinely
+    # available. No-op unless enterprise_mode=true. See
+    # governance/heart_production_gate.py's module docstring for the
+    # exact gap this closes and, honestly, the ones it does not.
+    await verify_heart_production_enforcement(settings, _db_engine)
+
     _plan_rate_limiter = PlanRateLimiter(redis_url=settings.redis_url)
 
     policy = BudgetPolicy(monthly_limit_usd=settings.monthly_budget_usd)
@@ -414,6 +447,8 @@ async def lifespan(application: FastAPI):
     _outcome_repo = OutcomeRepository(_db_engine)
     _root_authority_repo = RootAuthorityRepository(_db_engine)
     _consent_proof_repo = ConsentProofRepository(_db_engine)
+    _revocation_epoch_repo = RevocationEpochRepository(_db_engine)
+    _execution_nonce_repo = ExecutionNonceRepository(_db_engine)
     _ceiling_repo = OrgAuthorityCeilingRepository(_db_engine)
     _workflow_rule_repo = WorkflowRuleRepository(_db_engine)
     _delegation_repo = DelegationRepository(_db_engine)
@@ -670,6 +705,9 @@ app.add_middleware(APIVersionMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(RequestIDMiddleware)
+# Outermost -- rejects an oversized request before any other
+# middleware, route handler, or Pydantic validation touches the body.
+app.add_middleware(MaxBodySizeMiddleware)
 
 # ── Static files ───────────────────────────────────────────────────────────────
 _static_dir = Path(__file__).parent / "static"
@@ -776,8 +814,13 @@ async def get_org_context(request: Request) -> OrgContext:
         request.state.audit_key_id = "anon"
         return ctx
 
+    client_key = get_remote_address(request)
+    if await _auth_failure_limiter.is_blocked(client_key):
+        raise HTTPException(429, detail="Too many failed authentication attempts. Try again later.")
+
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
+        await _auth_failure_limiter.record_failure(client_key)
         raise HTTPException(401, detail="Missing or invalid Authorization header")
 
     token = auth_header[7:].strip()
@@ -825,7 +868,36 @@ async def get_org_context(request: Request) -> OrgContext:
             request.state.audit_key_id = resolved_ctx.key_id
             return resolved_ctx
 
+    await _auth_failure_limiter.record_failure(client_key)
     raise HTTPException(401, detail="Invalid API key")
+
+
+def _require_caller_owns_org(_auth: OrgContext, org_id: str) -> None:
+    """Enterprise Readiness Phase 7 (cross-tenant isolation sweep):
+    every ``/api/orgs/{org_id}/...`` handler took ``org_id`` from the
+    URL path and used it directly against the repository layer, while
+    ``require_role()`` only checks the caller's ROLE, never that the
+    caller's own ``OrgContext.org_id`` actually matches the path's
+    ``org_id`` -- a real, exploitable cross-tenant IDOR (any org-scoped
+    key with sufficient role could read/modify/delete another org's
+    settings, API keys, SSO/MFA config, authority ceiling, or autonomy
+    budget just by supplying that org's id). Found by
+    ``tests/test_cross_tenant_isolation_sweep.py``, fixed here with one
+    shared guard rather than fifteen inconsistent inline checks.
+
+    A caller with ``org_id is None`` (legacy flat ``RAI_API_KEYS``/dev
+    anonymous auth) is deliberately exempt -- that's this codebase's
+    existing "sees everything" super-admin persona, the same one
+    ``list_webhooks()``/``list_incidents()`` already carve out via
+    ``is_legacy and role == Role.OWNER``. Every org-scoped key must
+    match exactly.
+
+    Raises the same 404 (not 403) this codebase already uses
+    everywhere else for a cross-org access attempt -- never confirms
+    whether the other org's id even exists.
+    """
+    if _auth.org_id is not None and _auth.org_id != org_id:
+        raise HTTPException(404, "Organization not found")
 
 
 def require_role(min_role: Role):
@@ -1034,11 +1106,22 @@ class ConsentProofCaptureRequest(BaseModel):
     someone else's behalf would defeat the entire point of a
     root-backed consent record. `consent_method` is always
     `API_AUTHENTICATED_REQUEST` for the same reason: this authenticated
-    call *is* the consent act (see `ConsentMethod`'s own docstring)."""
+    call *is* the consent act (see `ConsentMethod`'s own docstring).
+
+    `allowed_action_types` is required and non-empty here -- Heart
+    Production Closure Gap A. This is the REST-boundary half of the
+    fail-closed-by-omission design: `ConsentProof`/`build_consent_proof()`
+    themselves keep an empty-tuple default for backward compatibility
+    with pre-existing callers, but any consent captured through this
+    real capture flow must declare a real scope, since an unscoped
+    proof is later interpreted by `governance/authority_resolver.py`'s
+    wiring as matching NO action, never as matching every action."""
 
     grantee_id: str = Field(..., min_length=1, max_length=200)
     scope_description: str = Field(..., min_length=1, max_length=2000)
     purpose: str = Field(..., min_length=1, max_length=2000)
+    allowed_action_types: list[str] = Field(..., min_length=1, max_length=200)
+    allowed_targets: list[str] = Field(default_factory=list, max_length=200)
     evidence_refs: list[str] = Field(default_factory=list, max_length=20)
     expires_in_minutes: int | None = Field(default=None, ge=1, le=525_600)  # up to 1 year
 
@@ -1527,6 +1610,8 @@ async def metrics(
 @app.get("/metrics", tags=["ops"], include_in_schema=False)
 async def prometheus_metrics() -> Response:
     observe_websocket_connections(_ws_manager.connection_count)
+    if _db_engine is not None:
+        observe_db_pool(_db_engine)
     body, content_type = get_metrics_output()
     return Response(content=body, media_type=content_type)
 
@@ -1601,6 +1686,7 @@ async def get_org(
     org_id: str,
     _auth: OrgContext = Depends(require_role(Role.VIEWER)),
 ) -> dict[str, Any]:
+    _require_caller_owns_org(_auth, org_id)
     org = await _ready(_org_repo).get_org(org_id)
     if not org:
         raise HTTPException(404, "Organization not found")
@@ -1614,6 +1700,7 @@ async def delete_org(
     org_id: str,
     _auth: OrgContext = Depends(require_role(Role.OWNER)),
 ) -> dict[str, Any]:
+    _require_caller_owns_org(_auth, org_id)
     deleted = await _ready(_org_repo).delete_org(org_id)
     if not deleted:
         raise HTTPException(404, "Organization not found")
@@ -1635,6 +1722,7 @@ async def set_org_sso(
     RAI_OIDC_ISSUER to be configured on the server, otherwise enabling this
     would lock the org out entirely.
     """
+    _require_caller_owns_org(_auth, org_id)
     if req.sso_required and _oidc_provider is None:
         raise HTTPException(
             400,
@@ -1660,6 +1748,7 @@ async def set_org_mfa(
     /login. Keys that haven't enrolled yet are blocked from logging in
     (not from making API calls directly — see auth/mfa.py for why) until
     they enroll via POST /api/orgs/{org_id}/keys/{key_id}/mfa/enroll."""
+    _require_caller_owns_org(_auth, org_id)
     org = await _ready(_org_repo).get_org(org_id)
     if not org:
         raise HTTPException(404, "Organization not found")
@@ -1679,6 +1768,7 @@ async def get_authority_ceiling(
     enforced live on every hosted MCP tool call via
     `validate_attenuation()`. `null` fields mean unrestricted; no row at
     all (every org before this feature existed) returns all-`null`."""
+    _require_caller_owns_org(_auth, org_id)
     org = await _ready(_org_repo).get_org(org_id)
     if not org:
         raise HTTPException(404, "Organization not found")
@@ -1708,6 +1798,7 @@ async def set_authority_ceiling(
     tool call under this org is checked against it from the next call
     onward (no restart needed, `mcp/governance_integration.py` fetches
     it fresh per call)."""
+    _require_caller_owns_org(_auth, org_id)
     org = await _ready(_org_repo).get_org(org_id)
     if not org:
         raise HTTPException(404, "Organization not found")
@@ -1745,6 +1836,7 @@ async def get_autonomy_budget(
     to REQUIRE_APPROVAL. `configured: false` (both other fields `null`)
     means no budget is set for this org -- identical to behavior before
     this feature existed."""
+    _require_caller_owns_org(_auth, org_id)
     org = await _ready(_org_repo).get_org(org_id)
     if not org:
         raise HTTPException(404, "Organization not found")
@@ -1776,6 +1868,7 @@ async def set_autonomy_budget(
     under this org is checked against it from the next call onward (no
     restart needed, `mcp/governance_integration.py` fetches it fresh
     per call)."""
+    _require_caller_owns_org(_auth, org_id)
     org = await _ready(_org_repo).get_org(org_id)
     if not org:
         raise HTTPException(404, "Organization not found")
@@ -1801,6 +1894,7 @@ async def delete_autonomy_budget(
     """Removes the org's autonomy budget entirely -- distinct from
     `PUT` (which always requires both fields), the only way back to
     "no cap configured."""
+    _require_caller_owns_org(_auth, org_id)
     org = await _ready(_org_repo).get_org(org_id)
     if not org:
         raise HTTPException(404, "Organization not found")
@@ -1816,6 +1910,7 @@ async def create_api_key(
     req: CreateKeyRequest,
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, Any]:
+    _require_caller_owns_org(_auth, org_id)
     org = await _ready(_org_repo).get_org(org_id)
     if not org:
         raise HTTPException(404, "Organization not found")
@@ -1831,6 +1926,7 @@ async def list_api_keys(
     org_id: str,
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, Any]:
+    _require_caller_owns_org(_auth, org_id)
     keys = await _ready(_org_repo).list_keys(org_id)
     return {"keys": [k.to_dict() for k in keys]}
 
@@ -1843,6 +1939,15 @@ async def revoke_api_key(
     key_id: str,
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, Any]:
+    _require_caller_owns_org(_auth, org_id)
+    # revoke_key() itself is org-agnostic (revokes by key_id alone) --
+    # confirm the key actually belongs to the org named in the path
+    # first, same as the mfa endpoints below already do, so a caller
+    # can't revoke a DIFFERENT org's key just by guessing its key_id
+    # while supplying their own org_id in the URL.
+    key = await _ready(_org_repo).get_key(key_id)
+    if key is None or key.org_id != org_id:
+        raise HTTPException(404, "Key not found")
     revoked = await _ready(_org_repo).revoke_key(key_id)
     if not revoked:
         raise HTTPException(404, "Key not found")
@@ -1861,6 +1966,7 @@ async def enroll_mfa(
     add to their authenticator app. Not yet active — call .../mfa/verify
     with a real code from that app to confirm enrollment. Calling this
     again before verifying replaces the pending (unconfirmed) secret."""
+    _require_caller_owns_org(_auth, org_id)
     key = await _ready(_org_repo).get_key(key_id)
     if key is None or key.org_id != org_id:
         raise HTTPException(404, "Key not found")
@@ -1887,6 +1993,7 @@ async def verify_mfa(
     authenticator app. Returns 10 one-time backup codes — shown exactly
     once, store them now. Each is consumed on use if the authenticator
     device is ever lost."""
+    _require_caller_owns_org(_auth, org_id)
     key = await _ready(_org_repo).get_key(key_id)
     if key is None or key.org_id != org_id:
         raise HTTPException(404, "Key not found")
@@ -1912,6 +2019,7 @@ async def disable_mfa(
     key_id: str,
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, Any]:
+    _require_caller_owns_org(_auth, org_id)
     key = await _ready(_org_repo).get_key(key_id)
     if key is None or key.org_id != org_id:
         raise HTTPException(404, "Key not found")
@@ -3009,6 +3117,8 @@ async def governance_verify_evidence(
             400, "Governance evidence requires an org-scoped API key, not a legacy flat key."
         )
     intact = await _ready(_evidence_repo).verify_chain(_auth.org_id)
+    if not intact:
+        observe_audit_chain_failure(org_id=_auth.org_id)
     return {"org_id": _auth.org_id, "chain_intact": intact}
 
 
@@ -3186,6 +3296,13 @@ async def governance_resolve_approval(
     except AlreadyVotedError as exc:
         raise HTTPException(409, str(exc)) from None
     observe_governance_approval(req.outcome, org_id=_auth.org_id)
+    if resolved.status is not ApprovalStatus.PENDING:
+        # Quorum-aware: a partial vote on a required_approvals > 1
+        # approval leaves it PENDING (still queued) -- only dequeue the
+        # backlog gauge once it actually left PENDING.
+        from responsibleai.dashboard.prometheus import observe_approval_dequeued
+
+        observe_approval_dequeued(org_id=_auth.org_id)
     logger.info(
         "governance_approval_resolved",
         approval_id=approval_id,
@@ -3250,6 +3367,9 @@ async def governance_execute_approval(
             evidence_repo=_ready(_evidence_repo),
             org_id=_auth.org_id,
             outcome_repo=_ready(_outcome_repo),
+            root_authority_repo=_ready(_root_authority_repo),
+            consent_repo=_ready(_consent_proof_repo),
+            nonce_repo=_ready(_execution_nonce_repo),
         )
     except ApprovalNotFoundError as exc:
         raise HTTPException(404, str(exc)) from None
@@ -3257,6 +3377,8 @@ async def governance_execute_approval(
         raise HTTPException(409, str(exc)) from None
     except (ApprovalNotApprovedError, ApprovalActionMismatchError) as exc:
         raise HTTPException(409, str(exc)) from None
+    except ApprovalRevokedSinceQueuedError as exc:
+        raise HTTPException(403, str(exc)) from None
     except ValueError as exc:
         # build_resume_action()'s "no persisted arguments" case -- a
         # pre-resume-feature approval that was already APPROVED before
@@ -3546,6 +3668,12 @@ async def governance_revoke_delegation(
     revoked_ids = await _ready(_delegation_repo).revoke_branch(
         _auth.org_id, identity_id, revoked_by=_auth.key_id, reason=req.reason
     )
+    # Heart Production Closure Gap B: one epoch bump per cascading
+    # revocation event (not per revoked descendant) -- the epoch
+    # answers "has anything in this scope changed since I was issued",
+    # which a single bump already answers regardless of how many rows
+    # the cascade touched.
+    await _ready(_revocation_epoch_repo).bump(_auth.org_id, "delegation")
     logger.info(
         "governance_delegation_revoked",
         identity_id=identity_id,
@@ -3752,6 +3880,8 @@ async def governance_capture_consent(
         consent_method=ConsentMethod.API_AUTHENTICATED_REQUEST,
         evidence_refs=tuple(req.evidence_refs),
         expires_at=expires_at,
+        allowed_action_types=tuple(req.allowed_action_types),
+        allowed_targets=tuple(req.allowed_targets),
     )
     await _ready(_consent_proof_repo).create(proof)
     logger.info(
@@ -3846,6 +3976,11 @@ async def governance_revoke_consent_proof(
         )
     except ConsentProofNotFoundError:
         raise HTTPException(404, "Consent proof not found.") from None
+    observe_revocation("consent", org_id=_auth.org_id)
+    # Heart Production Closure Gap B: makes the revocation observable
+    # as a monotonic, durable epoch bump, in addition to the row-level
+    # revoked_at every existing consumer already checks live.
+    await _ready(_revocation_epoch_repo).bump(_auth.org_id, "consent")
     logger.info(
         "governance_consent_proof_revoked",
         consent_id=consent_id,
@@ -4110,7 +4245,9 @@ async def upstream_call_tool(
             400, "Upstream calls require an org-scoped API key, not a legacy flat key."
         )
     executor = UpstreamMCPExecutor(
-        _ready(_upstream_registry), credential_issuance_repo=_ready(_credential_issuance_repo)
+        _ready(_upstream_registry),
+        credential_issuance_repo=_ready(_credential_issuance_repo),
+        nonce_repo=_ready(_execution_nonce_repo),
     )
     try:
         outcome = await apply_upstream_governance(
@@ -4127,6 +4264,7 @@ async def upstream_call_tool(
             tool_trust_repo=_ready(_tool_trust_repo),
             outcome_repo=_ready(_outcome_repo),
             root_authority_repo=_ready(_root_authority_repo),
+            consent_repo=_ready(_consent_proof_repo),
         )
     except UpstreamServerNotAvailableError as exc:
         raise HTTPException(404, str(exc)) from None

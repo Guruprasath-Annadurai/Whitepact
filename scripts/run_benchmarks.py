@@ -108,14 +108,16 @@ async def run_db_benchmarks() -> None:
 
     async def write_one() -> None:
         counter["n"] += 1
-        await audit_repo.write(AuditEntry(
-            endpoint="/api/bench",
-            method="POST",
-            org_id="bench-org",
-            key_id="bench-key",
-            status_code=200,
-            duration_ms=1.2,
-        ))
+        await audit_repo.write(
+            AuditEntry(
+                endpoint="/api/bench",
+                method="POST",
+                org_id="bench-org",
+                key_id="bench-key",
+                status_code=200,
+                duration_ms=1.2,
+            )
+        )
 
     await bench_async(
         "AuditRepository.write (SQLite in-memory, hash-chained insert)",
@@ -142,8 +144,12 @@ def main() -> None:
     bench(
         "TrustScoreEngine.compute (6 dimensions)",
         lambda: trust_engine.compute(
-            fairness=0.80, privacy=0.85, security=0.82,
-            robustness=0.78, compliance=0.90, authenticity=0.88,
+            fairness=0.80,
+            privacy=0.85,
+            security=0.82,
+            robustness=0.78,
+            compliance=0.90,
+            authenticity=0.88,
         ),
         5000,
     )

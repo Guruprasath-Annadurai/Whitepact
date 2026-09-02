@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
 from collections.abc import Callable
@@ -13,6 +14,56 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from responsibleai.dashboard.logging_config import get_logger, set_request_id
 
 logger = get_logger("middleware")
+
+
+class AuthFailureLimiter:
+    """Per-process sliding-window limiter on failed Bearer-auth
+    attempts, keyed by client IP — Enterprise Readiness Phase 6.
+
+    `mcp/server.py`'s hosted-MCP transport already had an identical,
+    independently-defined `_AuthFailureLimiter` guarding `/mcp`/`/sse`;
+    the REST dashboard API (`dashboard/app.py`'s `get_org_context()`)
+    had no equivalent. `_get_rate_limit_key()`'s existing slowapi
+    bucketing keys a request by the *presented* Bearer token when one
+    is present (by design, for legitimate per-org quota isolation —
+    see that function's own docstring) — which means an attacker
+    trying many *different* candidate tokens against any
+    Bearer-protected endpoint gets a fresh, empty rate-limit bucket
+    for every guess, never accumulating throttling. This class closes
+    that specific gap: a genuinely IP-keyed counter of failed auth
+    attempts, independent of what token was tried, that blocks further
+    attempts from that IP once a threshold is crossed within a window
+    — the exact mechanism the MCP transport already had.
+
+    In-memory, so this is per-replica, not cluster-wide — same
+    documented limitation as `mcp/server.py`'s own copy and everything
+    else in this codebase that isn't backed by Postgres/Redis. A
+    determined attacker distributing requests across replicas isn't
+    stopped by this alone; it's a real speed bump against the common
+    single-source case, not a claim of distributed rate limiting.
+    """
+
+    def __init__(self, max_failures: int, window_seconds: float) -> None:
+        self._max_failures = max_failures
+        self._window_seconds = window_seconds
+        self._failures: dict[str, list[float]] = {}
+        self._lock = asyncio.Lock()
+
+    def _prune(self, key: str, now: float) -> list[float]:
+        attempts = [t for t in self._failures.get(key, []) if now - t < self._window_seconds]
+        self._failures[key] = attempts
+        return attempts
+
+    async def is_blocked(self, key: str) -> bool:
+        async with self._lock:
+            now = asyncio.get_running_loop().time()
+            return len(self._prune(key, now)) >= self._max_failures
+
+    async def record_failure(self, key: str) -> None:
+        async with self._lock:
+            now = asyncio.get_running_loop().time()
+            self._prune(key, now).append(now)
+
 
 # The dashboard's static pages (static/index.html etc.) load Tailwind and
 # Chart.js from CDN and use inline <style>/<script> blocks plus onclick=
@@ -51,6 +102,60 @@ _SECURITY_HEADERS = {
     "Content-Security-Policy": _CONTENT_SECURITY_POLICY,
     "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
 }
+
+
+# Enterprise Readiness Phase 18/19 (public-API fuzz/abuse audit): no
+# request-body-size cap existed anywhere in this app -- confirmed by
+# grep, not assumed. A reverse proxy in front of a real deployment
+# (DEPLOYMENT.md's nginx config) may already enforce one, but this
+# app had no defense-in-depth of its own, meaning a self-hosted
+# deployment run without such a proxy (or any deployment, before the
+# proxy's own limit is reached) had no bound on how much of an
+# oversized request body Starlette would buffer into memory before a
+# Pydantic model's own field-level max_length ever got a chance to run.
+# 10 MB comfortably covers every real request shape this API accepts
+# (the largest, `governance/approve` arguments payloads and consent
+# `scope_description`/`purpose` fields, are bounded by Pydantic's own
+# `max_length` at a few KB each) with generous headroom.
+MAX_REQUEST_BODY_BYTES = 10 * 1024 * 1024
+
+
+class MaxBodySizeMiddleware(BaseHTTPMiddleware):
+    """Rejects a request whose declared `Content-Length` exceeds
+    `MAX_REQUEST_BODY_BYTES` with 413, before any route handler or
+    Pydantic validation runs.
+
+    Scoped limitation, stated honestly: this checks the `Content-Length`
+    header, which covers every normal JSON-body request this API's own
+    clients send. It does NOT defend against a chunked-transfer-encoded
+    request that omits `Content-Length` and streams an unbounded body —
+    closing that fully would mean wrapping the ASGI `receive` channel to
+    count bytes as they arrive, a larger change than this pass makes.
+    Real-world deployments still have their reverse proxy's own limit as
+    a second layer; this middleware is the application-level
+    defense-in-depth `DEPENDENCY_RISK_REGISTER.md`'s "no dedicated
+    request-size fuzz coverage" gap named as missing, not the only
+    layer this system now relies on.
+    """
+
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        content_length = request.headers.get("content-length")
+        if content_length is not None:
+            try:
+                length = int(content_length)
+            except ValueError:
+                length = None
+            if length is not None and length > MAX_REQUEST_BODY_BYTES:
+                return JSONResponse(
+                    status_code=413,
+                    content={
+                        "error": "payload_too_large",
+                        "message": (
+                            f"Request body exceeds the {MAX_REQUEST_BODY_BYTES} byte limit."
+                        ),
+                    },
+                )
+        return await call_next(request)
 
 
 class RequestIDMiddleware(BaseHTTPMiddleware):

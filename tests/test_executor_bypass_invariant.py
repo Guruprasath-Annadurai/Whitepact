@@ -189,3 +189,169 @@ class TestExecutionAuthorizationBindsToRedactedArguments:
         # apply_governance() actually does) matches correctly.
         authorization2 = authorize_execution(decision, redacted)
         assert authorization2.matches_action(redacted) is True
+
+
+class TestExecutionAuthorizationCarriesProvenanceFields:
+    """Enterprise Readiness Phase 3 (cryptographic/structural execution
+    binding): `ExecutionAuthorization` now carries `policy_version`,
+    `consent_reference`, `heart_legitimacy_digest`, and `execution_id`
+    -- audit/provenance binding, not independently re-validated at
+    `execute()` time (see `governance/execution.py`'s own docstring for
+    why these differ from `target_fingerprint`). These tests prove
+    correct population and correct honest absence, not a drift check
+    against a "current" value that doesn't exist for these fields."""
+
+    def test_policy_version_is_read_from_the_decision_automatically(self) -> None:
+        action = _action()
+        decision = DecisionResult(
+            decision=GovernanceDecision.ALLOW, action_id=action.action_id, policy_version=7
+        )
+        authorization = authorize_execution(decision, action)
+        assert authorization.policy_version == 7
+
+    def test_policy_version_is_none_when_no_policy_was_consulted(self) -> None:
+        action = _action()
+        decision = _allow_decision(action.action_id)  # policy_version defaults None
+        authorization = authorize_execution(decision, action)
+        assert authorization.policy_version is None
+
+    def test_consent_reference_and_heart_digest_default_none(self) -> None:
+        """The honest default: an authorization built without Heart
+        having run (enterprise_mode off, or no consent_repo wired)
+        must not fabricate a consent reference or legitimacy digest."""
+        action = _action()
+        decision = _allow_decision(action.action_id)
+        authorization = authorize_execution(decision, action)
+        assert authorization.consent_reference is None
+        assert authorization.heart_legitimacy_digest is None
+
+    def test_consent_reference_and_heart_digest_are_carried_through_when_supplied(self) -> None:
+        action = _action()
+        decision = _allow_decision(action.action_id)
+        authorization = authorize_execution(
+            decision,
+            action,
+            consent_reference="consent-abc123",
+            heart_legitimacy_digest="digest-def456",
+        )
+        assert authorization.consent_reference == "consent-abc123"
+        assert authorization.heart_legitimacy_digest == "digest-def456"
+
+    def test_revocation_epoch_has_no_way_to_be_populated_yet(self) -> None:
+        """Named honestly, matching governance/execution.py's own
+        docstring: this field exists on the dataclass for a future
+        phase to populate, but authorize_execution() has no parameter
+        for it today, since no live caller produces a value for it --
+        this test locks in that current, honest state rather than
+        letting a future change silently start fabricating one."""
+        action = _action()
+        decision = _allow_decision(action.action_id)
+        authorization = authorize_execution(decision, action)
+        assert authorization.revocation_epoch is None
+        import inspect
+
+        from responsibleai.governance.execution import authorize_execution as _fn
+
+        assert "revocation_epoch" not in inspect.signature(_fn).parameters
+
+    def test_purpose_defaults_none_and_is_carried_through_when_supplied(self) -> None:
+        """Enterprise Readiness Phase 5: purpose defaults to None (no
+        caller opted in) but is bound into the authorization verbatim
+        when a caller does supply it -- see authorize_execution()'s own
+        docstring for why callers must only ever pass a VALIDATED
+        purpose (grant.requested_purpose), never the raw action.purpose."""
+        action = _action()
+        decision = _allow_decision(action.action_id)
+        authorization = authorize_execution(decision, action)
+        assert authorization.purpose is None
+
+        authorization_with_purpose = authorize_execution(decision, action, purpose="analytics")
+        assert authorization_with_purpose.purpose == "analytics"
+
+    def test_execution_id_is_distinct_from_authorization_id_and_from_other_executions(
+        self,
+    ) -> None:
+        action = _action()
+        decision = _allow_decision(action.action_id)
+        auth1 = authorize_execution(decision, action)
+        auth2 = authorize_execution(decision, action)
+        assert auth1.execution_id != auth1.authorization_id
+        assert auth1.execution_id != auth2.execution_id
+
+
+class TestDurableReplayProtection:
+    """Enterprise Readiness Phase 4: proves the property the in-memory
+    `consumed` flag alone CANNOT prove -- replay across two
+    independently-constructed `ExecutionAuthorization` objects (or two
+    independently-constructed executors) that happen to carry the same
+    `nonce`, simulating a second process (or a reconstructed/replayed
+    object) rather than a second call on the exact same in-memory
+    object `test_replay_is_refused` above already covers."""
+
+    @pytest.fixture()
+    async def engine(self):
+        from responsibleai.db import create_engine
+
+        e = create_engine(":memory:")
+        await e.init()
+        yield e
+        await e.close()
+
+    async def test_no_nonce_repo_is_a_complete_no_op(self) -> None:
+        """Backward compatibility: an executor constructed without a
+        nonce_repo (the default) behaves identically to before this
+        phase existed -- only the in-memory flag protects it."""
+        action = _action()
+        decision = _allow_decision(action.action_id)
+        authorization = authorize_execution(decision, action)
+        executor = InternalToolExecutor()  # no nonce_repo
+        result = await executor.execute(authorization, action)
+        assert result["is_blocked"] is False
+
+    async def test_two_different_authorization_objects_sharing_a_nonce_second_denied(
+        self, engine
+    ) -> None:
+        """The core new property: authorization2 has its OWN, unset
+        `consumed=False` flag -- only the durable nonce repo can catch
+        this replay, proving the durability layer does real work
+        beyond what the in-memory flag already did."""
+        from responsibleai.db.execution_nonce_repository import ExecutionNonceRepository
+
+        nonce_repo = ExecutionNonceRepository(engine)
+        action = _action()
+        decision = _allow_decision(action.action_id)
+
+        authorization1 = authorize_execution(decision, action)
+        authorization2 = authorize_execution(decision, action)
+        authorization2.nonce = authorization1.nonce  # simulate a reused/replayed nonce
+        assert authorization2.consumed is False  # the in-memory flag alone would allow this
+
+        executor1 = InternalToolExecutor(nonce_repo=nonce_repo)
+        result1 = await executor1.execute(authorization1, action)
+        assert result1["is_blocked"] is False
+
+        executor2 = InternalToolExecutor(nonce_repo=nonce_repo)  # simulates a second process
+        with pytest.raises(AuthorizationAlreadyConsumedError):
+            await executor2.execute(authorization2, action)
+
+    async def test_durable_replay_denial_leaves_the_tool_unexecuted(self, engine) -> None:
+        """The replayed authorization must be rejected BEFORE the tool
+        handler runs -- not executed-then-flagged."""
+        from responsibleai.db.execution_nonce_repository import ExecutionNonceRepository
+
+        nonce_repo = ExecutionNonceRepository(engine)
+        action = _action(text="a distinctive marker string for this test")
+        decision = _allow_decision(action.action_id)
+
+        authorization1 = authorize_execution(decision, action)
+        authorization2 = authorize_execution(decision, action)
+        authorization2.nonce = authorization1.nonce
+
+        await InternalToolExecutor(nonce_repo=nonce_repo).execute(authorization1, action)
+
+        with pytest.raises(AuthorizationAlreadyConsumedError):
+            # If this silently executed instead of raising, the second
+            # rai_scan call would run again -- there is no side effect
+            # to assert against directly (rai_scan is pure), so the
+            # raise itself, before any handler code runs, is the proof.
+            await InternalToolExecutor(nonce_repo=nonce_repo).execute(authorization2, action)

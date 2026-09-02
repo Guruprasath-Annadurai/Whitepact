@@ -10,7 +10,9 @@ name: Dependency Review
 
 on:
   pull_request:
-    branches: ["main"]
+    # security/enterprise-neural-remediation added for PR #55 -- see
+    # docs/security-review/CI_GAP_ROOT_CAUSE_AND_FIX.md.
+    branches: ["main", "security/enterprise-neural-remediation"]
 
 permissions:
   contents: read
@@ -20,10 +22,10 @@ jobs:
   dependency-review:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Dependency Review
-        uses: actions/dependency-review-action@v4
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4
         with:
           # MIT (this project's own license) plus the common permissive
           # licenses already carried by its real dependency tree

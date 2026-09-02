@@ -149,7 +149,9 @@ result = gateway.evaluate(
     action=ActionRequest(tool_name="rai_scan", arguments={"text": "..."}),
     authority=AuthorityContext(org_id="acme", agent_id="agent-1"),
 )
-print(result.decision)  # GovernanceDecision.ALLOW | ALLOW_WITH_REDACTION | REQUIRE_APPROVAL | DENY | QUARANTINE
+print(
+    result.decision
+)  # GovernanceDecision.ALLOW | ALLOW_WITH_REDACTION | REQUIRE_APPROVAL | DENY | QUARANTINE
 ```
 
 - **Risk tiering** (`governance/risk.py`) — every MCP tool is classified
@@ -366,14 +368,20 @@ from responsibleai import TrustScoreEngine, PassportGenerator
 
 engine = TrustScoreEngine()
 score = engine.compute(
-    fairness=0.80, privacy=0.85, security=0.82,
-    robustness=0.78, compliance=0.90, authenticity=0.88,
+    fairness=0.80,
+    privacy=0.85,
+    security=0.82,
+    robustness=0.78,
+    compliance=0.90,
+    authenticity=0.88,
 )
 print(f"{score.overall:.1f} / 100  Grade: {score.grade}  Risk: {score.risk_level}")
 # → 83.7 / 100  Grade: B  Risk: LOW
 
 passport = PassportGenerator().generate(
-    model_name="gpt-4o", provider="openai", trust_score=score,
+    model_name="gpt-4o",
+    provider="openai",
+    trust_score=score,
     compliance_summary={"overall": 80.5},
 )
 print(passport.passport_id)
@@ -388,9 +396,9 @@ from responsibleai import GuardrailsEngine
 guardrails = GuardrailsEngine()
 result = guardrails.scan("Customer SSN is 123-45-6789, email: alice@company.com")
 
-print(result.is_blocked)      # True
-print(result.pii_count)       # 2
-print(result.redacted_text)   # "Customer SSN is [SSN], email: [EMAIL]"
+print(result.is_blocked)  # True
+print(result.pii_count)  # 2
+print(result.redacted_text)  # "Customer SSN is [SSN], email: [EMAIL]"
 ```
 
 ### Hallucination detection
@@ -416,9 +424,12 @@ from responsibleai import ComplianceEngine
 
 engine = ComplianceEngine()
 report = engine.evaluate(
-    fairness_score=0.80, privacy_score=0.85,
-    security_score=0.82, robustness_score=0.78,
-    compliance_maturity=0.90, use_case="credit_scoring",
+    fairness_score=0.80,
+    privacy_score=0.85,
+    security_score=0.82,
+    robustness_score=0.78,
+    compliance_maturity=0.90,
+    use_case="credit_scoring",
 )
 print(f"Score: {report.compliance_score * 100:.1f}%")
 print(f"EU AI Act tier: {report.eu_ai_act_tier.value}")  # high_risk
@@ -443,11 +454,15 @@ for v in report.critical_vulnerabilities:
 ```python
 from responsibleai import CostTracker, ModelRouter, TokenUsage, BudgetPolicy
 
-tracker = CostTracker(db_path="~/.responsibleai/data.db",
-                      policy=BudgetPolicy(monthly_limit_usd=500.0))
+tracker = CostTracker(
+    db_path="~/.responsibleai/data.db", policy=BudgetPolicy(monthly_limit_usd=500.0)
+)
 usage = TokenUsage.create(
-    provider="openai", model="gpt-4o",
-    input_tokens=2000, output_tokens=800, team="product",
+    provider="openai",
+    model="gpt-4o",
+    input_tokens=2000,
+    output_tokens=800,
+    team="product",
 )
 record = tracker.record(usage)
 print(f"This call: ${record.total_cost:.4f}")
@@ -467,8 +482,14 @@ monitor = TrustDriftMonitor(db_path=":memory:", alert_threshold=5.0)
 engine = TrustScoreEngine()
 
 for fairness in [0.90, 0.88, 0.85, 0.72]:
-    score = engine.compute(fairness=fairness, privacy=0.85, security=0.80,
-                           robustness=0.80, compliance=0.85, authenticity=0.85)
+    score = engine.compute(
+        fairness=fairness,
+        privacy=0.85,
+        security=0.80,
+        robustness=0.80,
+        compliance=0.85,
+        authenticity=0.85,
+    )
     alert = monitor.record("gpt-4o", "openai", score)
     if alert:
         print(f"Drift alert! {alert.severity}: {alert.delta:.1f} pt drop")
@@ -671,14 +692,18 @@ from biasbuster import BiasBusterRunner, GenderBiasProbe, RacialBiasProbe
 from biasbuster.providers import OpenAIProvider
 import asyncio
 
+
 async def main():
     provider = OpenAIProvider(api_key="sk-...", model="gpt-4o")
     runner = BiasBusterRunner(provider=provider)
-    suite = await runner.run([
-        GenderBiasProbe(threshold=0.20),
-        RacialBiasProbe(threshold=0.20),
-    ])
+    suite = await runner.run(
+        [
+            GenderBiasProbe(threshold=0.20),
+            RacialBiasProbe(threshold=0.20),
+        ]
+    )
     print(f"Score: {suite.overall_score:.4f}  {'PASSED' if suite.passed else 'FAILED'}")
+
 
 asyncio.run(main())
 ```
@@ -797,6 +822,7 @@ See [`ROADMAP.md`](ROADMAP.md) for the canonical NOW/NEXT/LATER plan. The list b
 - [x] v1.1 — MCP server (10 tools, 5 resources), audit log API, red team API, billing API, Alembic migrations, per-org rate limiting, DB-persisted webhook retry queue
 - [x] v1.2 — Public Leaderboard, Trust Index/Passports + embeddable badges, AI Incident Database, TOTP MFA, expanded field encryption, DB-persisted webhooks, full dashboard UI rebuild, white-label branding, a genuinely live hosted instance — see `CHANGELOG.md` for the full list
 - [x] WhitePact migration (`1.2.0` → `1.2.2`) — governance decision core, MCP Streamable HTTP + OAuth/OIDC, risk tiering + policy engine, hash-chained evidence, approval workflow, multi-approver quorum + delegation chains, upstream MCP tool discovery, MCP trust/supply-chain scanner, HA Helm deployment, supply chain security (SBOM/provenance), release engineering, open source governance, live listings on the official MCP Registry and Smithery — see `MIGRATION_WHITEPACT_V2.md` for the full phase-by-phase log and what's still not done
+- [ ] Heart Production + Enforcement Chokepoint Closure — [PR #55](https://github.com/Guruprasath-Annadurai/Whitepact/pull/55) (**open, unmerged**): consent-backed legitimacy actually consulted at runtime (not just captured), durable multi-instance-safe revocation, fail-closed `enterprise_mode` startup invariants running in every process that needs them, an S3 Object Lock audit-anchor provider, and a full execution-path audit (`ENFORCEMENT_PATH_MATRIX.md`) closing five of six traced bypasses. The sixth — a private, non-exported, audit-guarded function still importable directly by in-process code with repository access — is stated as open, not rounded up to closed; see `docs/heart-production-closure/CHATGPT_HANDOFF_SUMMARY.md` for the full accounting, including what's still explicitly deferred.
 - [ ] v2.0 onward — see `VERSION_ROADMAP.md` for the phase-by-phase plan through v6.0
 - **Strategic direction** — `GAME_CHANGER_STRATEGY.md` lays out an infrastructure-first bet (free public trust registry, an agent-native trust-check primitive, AI-answer-engine citability) as an alternative to the enterprise-SaaS path, with `GAME_CHANGER_BUILD_PLAN.md` breaking it into concrete engineering phases against the current codebase
 
@@ -805,6 +831,8 @@ See [`ROADMAP.md`](ROADMAP.md) for the canonical NOW/NEXT/LATER plan. The list b
 ## Security & Open Source Assurance
 
 WhitePact holds two [OpenSSF](https://openssf.org/) self-certifications on its [bestpractices.dev project page](https://www.bestpractices.dev/projects/14112): the **Best Practices Passing** badge and **OSPS Baseline Level 1**. Both are voluntary, self-attested badges backed by real, inspectable evidence in this repository (see `compliance/OSPS_BASELINE_BRANCH_PROTECTION.md`, `compliance/OPENSSF_SECURITY_EVIDENCE.md`, `compliance/OPENSSF_SILVER_GAP_ANALYSIS.md`) — they are **not** an independent third-party audit, a penetration test, or equivalent to SOC 2 / ISO 27001 certification. None of those are claimed. See [`compliance/SOC2_ALTERNATIVE_PATH.md`](compliance/SOC2_ALTERNATIVE_PATH.md) for the honest path toward a real independent audit once there's budget for one.
+
+**Formal commercial security audit and penetration test: NOT PERFORMED.** The Heart Production Closure work ([PR #55](https://github.com/Guruprasath-Annadurai/Whitepact/pull/55)) is in an active, disclosed security-freeze/review-readiness process — frozen baseline, freshly reproduced test/lint/security-scan evidence, a full independent-review packet and attack map, and GitHub Actions CI now running against that PR (previously it wasn't, due to a branch-trigger gap — root-caused and fixed). An external individual has also performed hands-on, informal security testing, increasing confidence in the architecture — this is not a formal or commercial audit/penetration test (no written scope, methodology, or findings report), and it does not by itself establish the system is vulnerability-free. See [`docs/security-review/`](docs/security-review/) for the complete, honestly-scoped record, including the one known structural limitation ([`docs/architecture/EXECUTION_PROCESS_BOUNDARY_STATEMENT.md`](docs/architecture/EXECUTION_PROCESS_BOUNDARY_STATEMENT.md)) that review process has not closed.
 
 ---
 
@@ -819,8 +847,11 @@ WhitePact holds two [OpenSSF](https://openssf.org/) self-certifications on its [
 - [`DEFINITION_OF_DONE.md`](DEFINITION_OF_DONE.md) — closing report: what's real today, what isn't, verifiable
 - [`THREAT_MODEL.md`](THREAT_MODEL.md) — threat model for the current attack surface
 - [`DETERMINISTIC_VS_PROBABILISTIC.md`](DETERMINISTIC_VS_PROBABILISTIC.md) — why governance decisions are deterministic
-- [`SLA.md`](SLA.md), [`ENTERPRISE_SECURITY.md`](ENTERPRISE_SECURITY.md), [`SECURITY.md`](SECURITY.md) — enterprise/security posture, stated honestly
+- [`SLA.md`](SLA.md), [`ENTERPRISE_SECURITY.md`](ENTERPRISE_SECURITY.md), [`SECURITY.md`](SECURITY.md), [`SUPPORT.md`](SUPPORT.md) — enterprise/security posture and support channels, stated honestly
+- [`PRIVACY_POLICY.md`](PRIVACY_POLICY.md) — the platform-wide privacy policy; [`PRIVACY.md`](PRIVACY.md) covers `PrivacyLabel`'s differential-privacy math specifically
 - [`compliance/SOC2_ALTERNATIVE_PATH.md`](compliance/SOC2_ALTERNATIVE_PATH.md) — real, free, independently verifiable trust signals for now; the honest path to a real SOC 2 when there's budget for one
+- [`docs/heart-production-closure/ENFORCEMENT_PATH_MATRIX.md`](docs/heart-production-closure/ENFORCEMENT_PATH_MATRIX.md) — every path in this codebase capable of reaching real tool/action execution, and which ones do or don't require Heart-backed authority — from [PR #55](https://github.com/Guruprasath-Annadurai/Whitepact/pull/55), open and unmerged
+- [`docs/enterprise/`](docs/enterprise/README.md) — enterprise-readiness documentation index (trust boundaries, tenancy, audit model, known limitations, each mapped to its authoritative source); [`docs/enterprise-readiness/`](docs/enterprise-readiness/) — the phase-by-phase closure evidence itself
 - [`docs/ACCESSIBILITY.md`](docs/ACCESSIBILITY.md), [`docs/INTERNATIONALIZATION.md`](docs/INTERNATIONALIZATION.md) — WCAG2AA accessibility approach and the dashboard's i18n architecture, both with real automated CI gates
 - [`compliance/PROJECT_CONTINUITY_PLAN.md`](compliance/PROJECT_CONTINUITY_PLAN.md) — the access/recovery checklist a second person would need if the founder became unavailable; stated honestly as a plan, not proof of bus-factor redundancy (no second person holds this access yet)
 

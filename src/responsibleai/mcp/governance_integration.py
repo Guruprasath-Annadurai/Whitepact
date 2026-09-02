@@ -1,6 +1,6 @@
 """Wires `WhitePactRuntimeGateway` into the live, hosted-MCP-transport
 tool-call dispatch path — closes the gap MIGRATION_WHITEPACT_V2.md
-flagged: `dispatch_tool()` used to be unchanged by any of the
+flagged: `_dispatch_tool_unchecked()` used to be unchanged by any of the
 governance-core work; no live MCP tool call routed through the gateway,
 which only existed as a separate, opt-in REST API
 (`/api/governance/*`).
@@ -25,14 +25,14 @@ setting.
 
 **Execution binding (v3 authority-layer work)**: an ALLOW/
 ALLOW_WITH_REDACTION decision no longer just tells `_call_tool()`
-"go ahead and call `dispatch_tool()` yourself" — this module now
+"go ahead and call `_dispatch_tool_unchecked()` yourself" — this module now
 constructs an `ExecutionAuthorization` (`governance/execution.py`) and
 runs the tool itself via `InternalToolExecutor`, which structurally
 cannot execute without a matching, unexpired, single-use
 authorization. `_call_tool()` uses the resulting `GovernanceOutcome.result`
-directly rather than calling `dispatch_tool()` a second time — there is
+directly rather than calling `_dispatch_tool_unchecked()` a second time — there is
 now exactly one place in the governed path that invokes
-`dispatch_tool()`, and it's gated.
+`_dispatch_tool_unchecked()`, and it's gated.
 """
 
 from __future__ import annotations
@@ -46,6 +46,7 @@ from typing import TYPE_CHECKING, Any
 from responsibleai.dashboard.prometheus import observe_governance_decision
 from responsibleai.db import (
     ApprovalRepository,
+    ConsentProofRepository,
     DelegationRepository,
     EvidenceRepository,
     IntentContractRepository,
@@ -60,6 +61,7 @@ from responsibleai.governance import (
     ActionRequest,
     AgentContext,
     AuthorityContext,
+    AuthorityGrant,
     DecisionResult,
     GovernanceDecision,
     IdentityContext,
@@ -85,8 +87,6 @@ from responsibleai.governance.evidence import build_evidence_record
 from responsibleai.governance.outcome import OutcomeStatus, build_outcome_record
 from responsibleai.integrations.client import TrustClient
 from responsibleai.rbac.models import OrgContext
-
-_executor = InternalToolExecutor()
 
 if TYPE_CHECKING:
     from responsibleai.webhooks.manager import WebhookManager
@@ -127,8 +127,8 @@ class GovernanceServices:
     # passed to `WhitePactRuntimeGateway.evaluate()`, identical to
     # behavior before the Autonomy Budget existed.
     autonomy_budget_repo: OrgAutonomyBudgetRepository | None = None
-    # Optional, same pattern -- when unset, `_executor.execute()` still
-    # runs exactly as before Outcome Observation existed; no
+    # Optional, same pattern -- when unset, `InternalToolExecutor.execute()`
+    # still runs exactly as before Outcome Observation existed; no
     # OutcomeRecord is ever persisted, and Reconciliation/Attestation
     # simply see "no outcome reported" for every evidence entry.
     outcome_repo: OutcomeRepository | None = None
@@ -149,6 +149,27 @@ class GovernanceServices:
     # governance) already established for "stricter, fail-closed
     # production behavior."
     root_authority_repo: RootAuthorityRepository | None = None
+    # Heart Enforcement Chokepoint Closure (headline finding of
+    # ENFORCEMENT_PATH_MATRIX.md's Phase E0 audit): Gap A's
+    # consent-backed legitimacy (governance/authority_resolver.py's
+    # `consent_repo` parameter) had zero live call sites -- fully
+    # wired and tested, but structurally unreachable in production,
+    # since neither this dataclass nor `_heart_legitimacy_denied_reason()`
+    # ever passed one through. Optional, same pattern as
+    # `root_authority_repo` above -- unset means Heart only ever
+    # checks root authority, exactly as before this fix; wired, it
+    # lets `resolve_authority_grant()` actually consult persisted
+    # consent, not just root legitimacy.
+    consent_repo: ConsentProofRepository | None = None
+    # Enterprise Readiness Phase 4 (replay protection). Optional, same
+    # opt-in pattern -- unset means InternalToolExecutor (freshly
+    # constructed per call, not a shared singleton -- see this class's
+    # own history: a module-level singleton reconfigured via a setter
+    # leaked its durable-repo state across independently-constructed
+    # apps, a real bug caught by this branch's own test suite) falls
+    # back to its in-memory-only `consumed` flag, identical to before
+    # this phase existed.
+    nonce_repo: Any = None
 
 
 @dataclass
@@ -159,8 +180,8 @@ class GovernanceOutcome:
     # Set only when proceed=True — the tool already ran, via
     # InternalToolExecutor, by the time apply_governance() returns.
     # _call_tool() uses this directly instead of calling
-    # dispatch_tool() itself, which is the actual enforcement: there is
-    # no code path left where a governed call reaches dispatch_tool()
+    # _dispatch_tool_unchecked() itself, which is the actual enforcement: there is
+    # no code path left where a governed call reaches _dispatch_tool_unchecked()
     # without first passing through authorize_execution().
     result: dict[str, Any] | None = None
 
@@ -186,11 +207,11 @@ async def _heart_legitimacy_denied_reason(
     agent: AgentContext,
     action: ActionRequest,
     authority: AuthorityContext,
-) -> str | None:
+) -> tuple[str | None, AuthorityGrant | None]:
     """Heart Production Integration Phase 6: the live-path gate
     Phase 5's `authority_resolver.py` was built for but deliberately
-    not wired to. Returns `None` (no denial) unless BOTH
-    `services.root_authority_repo` is wired AND
+    not wired to. Returns `(None, None)` (no denial, no grant) unless
+    BOTH `services.root_authority_repo` is wired AND
     `Settings.enterprise_mode` is true -- unset/off, this function is a
     no-op and `apply_governance()`'s behavior is unchanged from before
     Phase 6 existed, exactly the same "optional service, opt-in flag"
@@ -198,7 +219,10 @@ async def _heart_legitimacy_denied_reason(
     every other v3 authority-layer feature.
 
     When both are set, resolves a real `AuthorityGrant`
-    (`resolve_authority_grant()`) and denies with
+    (`resolve_authority_grant()`, now also passed `services.consent_repo`
+    when wired -- Heart Enforcement Chokepoint Closure -- so a
+    persisted, integrity-verified, scope-matching consent proof is
+    actually consulted, not just root authority) and denies with
     `ReasonCode.HEART_LEGITIMACY_FAILED` if the Heart's own verdict
     says this identity's authority does not trace to a legitimate
     root -- the actual enforcement Phase 5's resolver existed to make
@@ -208,6 +232,13 @@ async def _heart_legitimacy_denied_reason(
     exactly like every other pre-`evaluate()` dependency crash this
     file already lets propagate (`TestPreEvaluateDependencyCrashesFailClosed`),
     fail-closed by the same mechanism, not a special case.
+
+    The second tuple element (Enterprise Readiness Phase 3, execution
+    binding) is the resolved `AuthorityGrant` itself whenever the Heart
+    check actually ran -- legitimate or not -- so a caller can bind
+    `grant.consent_reference`/`grant.legitimacy.canonical_digest` into
+    the `ExecutionAuthorization` it constructs next, not just receive a
+    pass/fail string.
     """
     # Local import, re-resolved on every call rather than bound once at
     # module-import time -- matches mcp/server.py's own established
@@ -221,7 +252,7 @@ async def _heart_legitimacy_denied_reason(
     from responsibleai.dashboard.config import get_settings
 
     if services.root_authority_repo is None or not get_settings().enterprise_mode:
-        return None
+        return None, None
 
     issuer, verification_method = _ISSUER_VERIFICATION_METHOD_BY_KIND.get(
         identity.kind, ("idp", identity.kind.value)
@@ -234,13 +265,20 @@ async def _heart_legitimacy_denied_reason(
         services.root_authority_repo,
         issuer=issuer,
         verification_method=verification_method,
+        consent_repo=services.consent_repo,
     )
     if grant.is_legitimate:
-        return None
-    return format_reason(
-        ReasonCode.HEART_LEGITIMACY_FAILED,
-        status=grant.legitimacy.heart_veto.status.value,
-        reason=grant.legitimacy.heart_veto.reason or "unspecified",
+        return None, grant
+    from responsibleai.dashboard.prometheus import observe_heart_denial
+
+    observe_heart_denial(grant.legitimacy.heart_veto.status.value, org_id=agent.organization_id)
+    return (
+        format_reason(
+            ReasonCode.HEART_LEGITIMACY_FAILED,
+            status=grant.legitimacy.heart_veto.status.value,
+            reason=grant.legitimacy.heart_veto.reason or "unspecified",
+        ),
+        grant,
     )
 
 
@@ -381,7 +419,10 @@ async def apply_governance(
     # Heart Production Integration Phase 6 -- see
     # _heart_legitimacy_denied_reason()'s own docstring. A no-op unless
     # both root_authority_repo is wired and enterprise_mode is on.
-    heart_denied_reason = await _heart_legitimacy_denied_reason(
+    # `heart_grant` (Enterprise Readiness Phase 3) is the resolved
+    # AuthorityGrant when the check ran, for binding into the
+    # ExecutionAuthorization built further down on the ALLOW path.
+    heart_denied_reason, heart_grant = await _heart_legitimacy_denied_reason(
         services, identity, agent, action, authority
     )
 
@@ -530,6 +571,9 @@ async def apply_governance(
             evidence_id=evidence.evidence_id,
             webhook_manager=services.webhook_manager,
         )
+        from responsibleai.dashboard.prometheus import observe_approval_queued
+
+        observe_approval_queued(org_id=agent.organization_id)
         return GovernanceOutcome(
             proceed=False,
             arguments=arguments,
@@ -559,10 +603,21 @@ async def apply_governance(
         target=name,
         arguments=final_arguments,
         action_id=action.action_id,
+        purpose=action.purpose,
     )
-    authorization = authorize_execution(decision, final_action)
+    authorization = authorize_execution(
+        decision,
+        final_action,
+        consent_reference=heart_grant.consent_reference if heart_grant is not None else None,
+        heart_legitimacy_digest=(
+            heart_grant.legitimacy.canonical_digest if heart_grant is not None else None
+        ),
+        purpose=heart_grant.requested_purpose if heart_grant is not None else None,
+    )
     try:
-        result = await _executor.execute(authorization, final_action)
+        result = await InternalToolExecutor(nonce_repo=services.nonce_repo).execute(
+            authorization, final_action
+        )
     except Exception:
         await _record_outcome(
             services,
@@ -624,15 +679,53 @@ def _agent_from_approval(approval: ApprovalRequest) -> AgentContext:
     falls back to `"unknown"` only for a pre-existing approval that
     somehow has no `requested_by` (shouldn't happen for anything built
     via `build_approval_request()`, which always sets it), rather than
-    raising and blocking an otherwise-valid resume."""
+    raising and blocking an otherwise-valid resume.
+
+    `agent_id=approval.requested_by` (Enterprise Readiness Phase 5,
+    found while wiring purpose-recheck at resume): every real call
+    site that builds an `ActionRequest` for governance (`apply_governance()`'s
+    `agent = AgentContext(..., agent_id=ctx.key_id, ...)` alongside
+    `identity = IdentityContext(identity_id=ctx.key_id, ...)`) sets
+    `agent.agent_id` to the SAME value as `identity.identity_id` --
+    `requested_by` already persists exactly that value. Without this,
+    `_resolve_applicable_consent()`'s `get_latest_for_grantee(agent.agent_id, ...)`
+    lookup at resume time would key off a fresh random UUID
+    (`AgentContext.agent_id`'s dataclass default) that no consent was
+    ever captured against, making the entire Phase E6/Phase 5 consent
+    recheck at resume silently unable to find an applicable consent no
+    matter what changed -- a real, pre-existing gap this phase's own
+    negative tests caught."""
     identity = IdentityContext(
         identity_id=approval.requested_by or "unknown",
         kind=IdentityKind.ORGANIZATION,
         org_id=approval.organization_id,
     )
     return AgentContext(
-        identity=identity, organization_id=approval.organization_id, framework="resumed-approval"
+        identity=identity,
+        organization_id=approval.organization_id,
+        agent_id=approval.requested_by or "unknown",
+        framework="resumed-approval",
     )
+
+
+class ApprovalRevokedSinceQueuedError(Exception):
+    """Heart Enforcement Chokepoint Closure Phase E6: raised by
+    `resume_approval()` when a fresh Heart legitimacy check at RESUME
+    time (not just at the original REQUIRE_APPROVAL decision time)
+    finds the principal's authority no longer legitimate -- root or
+    consent revoked, expired, or otherwise no longer valid since the
+    approval was queued. `db/approval_repository.py`'s `consume()` has
+    already run by the time this is raised (single-use is enforced
+    either way), so a caller catching this must treat the approval as
+    spent, not retryable."""
+
+    def __init__(self, approval_id: str, reason: str) -> None:
+        self.approval_id = approval_id
+        self.reason = reason
+        super().__init__(
+            f"Approval {approval_id!r} was consumed but not executed: Heart legitimacy "
+            f"no longer holds at resume time ({reason})."
+        )
 
 
 async def resume_approval(
@@ -643,6 +736,9 @@ async def resume_approval(
     org_id: str,
     upstream_registry: Any = None,
     outcome_repo: OutcomeRepository | None = None,
+    root_authority_repo: RootAuthorityRepository | None = None,
+    consent_repo: ConsentProofRepository | None = None,
+    nonce_repo: Any = None,
 ) -> dict[str, Any]:
     """The REQUIRE_APPROVAL -> resume-execution pipeline: given an
     approval a human has already resolved APPROVED, reconstruct the
@@ -665,6 +761,31 @@ async def resume_approval(
     approval resumed without `upstream_registry`) -- callers (e.g. a
     REST endpoint) map these the same way the resolve endpoint already
     maps the first three.
+
+    `root_authority_repo`/`consent_repo` (Heart Enforcement Chokepoint
+    Closure Phase E6): when both are wired AND `Settings.enterprise_mode`
+    is true, re-runs the exact same Heart legitimacy check
+    `apply_governance()`/`apply_upstream_governance()` ran at the
+    ORIGINAL decision time -- but now, freshly, at resume time. This
+    closes a real gap the Phase E0 audit found: a REQUIRE_APPROVAL
+    decision can sit queued for an arbitrary, human-approval-latency
+    amount of time, during which the principal's root or consent could
+    be revoked; without this re-check, `resume_approval()` would still
+    execute purely on the strength of the original (now stale) verdict.
+    Raises `ApprovalRevokedSinceQueuedError` if the fresh check fails --
+    AFTER `consume()` has already run (single-use is unconditional), so
+    the approval is spent either way, matching the fail-closed
+    direction: better to burn an approval than execute on stale
+    legitimacy. Unset (either param `None`) is a complete no-op,
+    identical to before this phase existed -- same opt-in pattern every
+    other Heart production-integration seam in this codebase uses.
+
+    `nonce_repo` (Enterprise Readiness Phase 4, replay protection):
+    passed through to a freshly-constructed `InternalToolExecutor` or
+    `UpstreamMCPExecutor` (whichever branch below applies) -- both
+    executors are built fresh per call, never shared across calls, so
+    there is no module-level mutable state for a caller's own
+    (possibly short-lived, per-request) repo instance to leak into.
     """
     from responsibleai.db import ApprovalNotFoundError
     from responsibleai.governance.upstream_executor import ACTION_TYPE as _UPSTREAM_ACTION_TYPE
@@ -686,15 +807,68 @@ async def resume_approval(
                 f"Approval {approval.approval_id!r} is an upstream MCP tool call and "
                 "requires upstream_registry to resume."
             )
-        executor: Any = UpstreamMCPExecutor(upstream_registry)
+        executor: Any = UpstreamMCPExecutor(upstream_registry, nonce_repo=nonce_repo)
     else:
-        executor = _executor
+        executor = InternalToolExecutor(nonce_repo=nonce_repo)
 
     # consume() is called BEFORE execution, not after -- it's the
     # single-use guard (mutation + replay protection); a resume must
     # never execute against an approval it hasn't already, atomically,
     # marked CONSUMED. If this raises, nothing below runs.
     await approval_repo.consume(approval.approval_id, action=action)
+
+    # Heart Enforcement Chokepoint Closure Phase E6 -- see this
+    # function's own docstring. A no-op unless both root_authority_repo
+    # and consent_repo are wired; the enterprise_mode check happens
+    # inside the same way _heart_legitimacy_denied_reason() gates it.
+    # `recheck_grant` (Enterprise Readiness Phase 3) stays None whenever
+    # the recheck didn't run, so the ExecutionAuthorization built below
+    # honestly carries no consent_reference/heart_legitimacy_digest in
+    # that case rather than a stale or fabricated one.
+    recheck_grant: AuthorityGrant | None = None
+    if root_authority_repo is not None:
+        from responsibleai.dashboard.config import get_settings
+
+        if get_settings().enterprise_mode:
+            authority_for_recheck = AuthorityContext(
+                delegated_by=org_id, granted_action_types=frozenset({action.action_type})
+            )
+            issuer, verification_method = _ISSUER_VERIFICATION_METHOD_BY_KIND.get(
+                agent.identity.kind, ("idp", agent.identity.kind.value)
+            )
+            recheck_grant = await resolve_authority_grant(
+                agent.identity,
+                agent,
+                action,
+                authority_for_recheck,
+                root_authority_repo,
+                issuer=issuer,
+                verification_method=verification_method,
+                consent_repo=consent_repo,
+            )
+            if not recheck_grant.is_legitimate:
+                raise ApprovalRevokedSinceQueuedError(
+                    approval.approval_id,
+                    recheck_grant.legitimacy.heart_veto.reason or "unspecified",
+                )
+            # Enterprise Readiness Phase 5 (purpose binding), directive
+            # Section 9: `is_legitimate` alone is not sufficient here --
+            # `_agent_from_approval()` always reconstructs an
+            # IdentityKind.ORGANIZATION identity (terminal, self-root
+            # legitimate by default), so a consent that no longer
+            # backs the queued purpose does not by itself flip
+            # `is_legitimate` to False the way a fully revoked root
+            # does (resolve_authority_grant() simply falls back to the
+            # still-legitimate self-root when no consent applies).
+            # `requested_purpose` is populated ONLY when a consent
+            # actually validated it (authority_resolver.py), so it is
+            # the correct, independent signal that the originally
+            # authorized purpose no longer holds.
+            if action.purpose is not None and recheck_grant.requested_purpose != action.purpose:
+                raise ApprovalRevokedSinceQueuedError(
+                    approval.approval_id,
+                    "requested purpose no longer authorized by consent/policy",
+                )
 
     decision = DecisionResult(
         decision=GovernanceDecision.ALLOW,
@@ -704,7 +878,15 @@ async def resume_approval(
         ],
         risk_tier=RiskTier(approval.risk_tier) if approval.risk_tier else None,
     )
-    authorization = authorize_execution(decision, action)
+    authorization = authorize_execution(
+        decision,
+        action,
+        consent_reference=recheck_grant.consent_reference if recheck_grant is not None else None,
+        heart_legitimacy_digest=(
+            recheck_grant.legitimacy.canonical_digest if recheck_grant is not None else None
+        ),
+        purpose=recheck_grant.requested_purpose if recheck_grant is not None else None,
+    )
     result = await executor.execute(authorization, action)
 
     authority = AuthorityContext(

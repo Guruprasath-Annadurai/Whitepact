@@ -1,7 +1,7 @@
 """Decision -> execution binding and the executor abstraction — closes
 the gap the WhitePact v3 authority-layer review flagged as the highest
 priority after the approval-mutation fix: nothing previously stopped a
-caller from running `dispatch_tool()` directly, bypassing whatever
+caller from running `_dispatch_tool_unchecked()` directly, bypassing whatever
 `WhitePactRuntimeGateway.evaluate()` actually decided. That direct-call
 path still exists (see `THREAT_MODEL.md`'s "governance gateway is a
 chosen integration point, not an unbypassable boundary" entry — this
@@ -141,13 +141,52 @@ class ExecutionAuthorization:
     `action_digest`). When set, `execute()` must recompute the same
     fingerprint from the target as it exists *right now* and refuse to
     run on any mismatch — see `AuthorizationTargetDriftError`.
+
+    **Enterprise Readiness Phase 3 fields** (`consent_reference`,
+    `policy_version`, `heart_legitimacy_digest`, `execution_id`):
+    audit/provenance binding, not independently re-validated against a
+    "current" value the way `target_fingerprint` is. Unlike a resolved
+    upstream target (genuinely external, mutable state that can drift
+    between decision and execution), a decision's policy version and
+    the consent/legitimacy verdict that produced it are properties of
+    the decision itself, computed once, a few lines before
+    `authorize_execution()` is called — there is no meaningful "current"
+    value to recompute and compare at `execute()` time the way there is
+    for a target. Their purpose is completeness of what an
+    `EvidenceRecord` can bind to (see `PHASE2_EXECUTION_BOUNDARY_
+    ARCHITECTURE.md`'s reasoning for why this stays structural, not
+    signed): recording exactly which consent, which policy version, and
+    which Heart verdict digest authorized an action, not just the
+    action's own shape.
+
+    `revocation_epoch` is deliberately left `None` with no field to
+    populate it from yet — `resolve_authority_grant()` does not query
+    `RevocationEpochRepository` at grant time (that wiring doesn't
+    exist; see `docs/enterprise-readiness/00_MASTER_READINESS_AUDIT.md`'s
+    Purpose binding row). This class does not fabricate a value for it.
+
+    `purpose` (Enterprise Readiness Phase 5) is populated by
+    `authorize_execution()`'s `purpose` parameter, which callers pass
+    as `grant.requested_purpose` — the VALIDATED purpose
+    `resolve_authority_grant()` confirmed against consent/policy, never
+    the raw, unvalidated `action.purpose`. It participates in
+    `compute_action_digest()` (see `governance/approval.py`), so a
+    mutated purpose invalidates the authorization the same way a
+    mutated argument does — this is the digest-binding mechanism that
+    proves authorization(purpose=A) cannot execute as purpose=B.
     """
 
     action_digest: str
     organization_id: str | None
     decision: GovernanceDecision
     target_fingerprint: str | None = None
+    consent_reference: str | None = None
+    policy_version: int | None = None
+    heart_legitimacy_digest: str | None = None
+    revocation_epoch: int | None = None
+    purpose: str | None = None
     authorization_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    execution_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     nonce: str = field(default_factory=lambda: uuid.uuid4().hex)
     issued_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     expires_at: datetime = field(
@@ -171,6 +210,9 @@ def authorize_execution(
     *,
     ttl_seconds: int = DEFAULT_AUTHORIZATION_TTL_SECONDS,
     target_fingerprint: str | None = None,
+    consent_reference: str | None = None,
+    heart_legitimacy_digest: str | None = None,
+    purpose: str | None = None,
 ) -> ExecutionAuthorization:
     """Turn a gateway decision into an `ExecutionAuthorization` — the
     only place one is ever constructed. Raises `DecisionNotExecutableError`
@@ -195,6 +237,20 @@ def authorize_execution(
     drift between that resolution and what the target resolves to when
     the permit is actually consumed. Leave `None` when there's nothing
     to resolve (internal tools).
+
+    *consent_reference*/*heart_legitimacy_digest* (Enterprise Readiness
+    Phase 3) — pass `grant.consent_reference`/`grant.legitimacy.
+    canonical_digest` when the caller resolved a real `AuthorityGrant`
+    (i.e. `enterprise_mode` + Heart wiring was on for this call); leave
+    `None` otherwise, honestly reflecting that no Heart verdict backs
+    this authorization. `decision.policy_version` is read directly from
+    *decision* — always available, no separate parameter needed.
+
+    *purpose* (Enterprise Readiness Phase 5) — pass `grant.
+    requested_purpose` when a consent-backed grant validated one; leave
+    `None` otherwise. Callers must never pass the raw, unvalidated
+    `action.purpose` here — only a value `resolve_authority_grant()`
+    already confirmed compatible gets bound into the authorization.
     """
     if decision.decision not in (GovernanceDecision.ALLOW, GovernanceDecision.ALLOW_WITH_REDACTION):
         raise DecisionNotExecutableError(decision.decision)
@@ -204,6 +260,10 @@ def authorize_execution(
         organization_id=action.agent.organization_id,
         decision=decision.decision,
         target_fingerprint=target_fingerprint,
+        consent_reference=consent_reference,
+        policy_version=decision.policy_version,
+        heart_legitimacy_digest=heart_legitimacy_digest,
+        purpose=purpose,
         expires_at=datetime.now(UTC) + timedelta(seconds=ttl_seconds),
     )
 
@@ -241,6 +301,53 @@ def _validate_authorization(authorization: ExecutionAuthorization, action: Actio
         raise AuthorizationActionMismatchError(authorization.authorization_id)
 
 
+class NonceConsumer(Protocol):
+    """Enterprise Readiness Phase 4 (replay protection) -- the durable
+    consume-once seam, structurally typed rather than importing
+    `db.execution_nonce_repository.ExecutionNonceRepository` directly:
+    `governance/` stays free of a compile-time dependency on `db/`, the
+    same TCB-minimization discipline `root_authority.py`'s
+    `RootResolver` Protocol and `crypto/provider.py`'s `KeyProvider`
+    Protocol already establish for every other Heart/execution seam in
+    this codebase. `ExecutionNonceRepository` satisfies this Protocol
+    by construction (duck typing), no explicit registration needed."""
+
+    async def consume(self, nonce: str, *, authorization_id: str, organization_id: str) -> None: ...
+
+
+async def consume_nonce_durably(
+    authorization: ExecutionAuthorization, nonce_consumer: NonceConsumer | None
+) -> None:
+    """The opt-in durability layer for replay protection. A complete
+    no-op when `nonce_consumer` is `None` -- the in-memory `consumed`
+    flag `_validate_authorization()` already checks is unaffected
+    either way and keeps stopping same-process replay unconditionally;
+    this only adds protection across a process restart or a second
+    instance, matching `RevocationEpochRepository`'s own "cache is an
+    optimization, durable store is authority" precedent.
+
+    Raises `AuthorizationAlreadyConsumedError` -- the SAME error the
+    in-memory check raises -- if the durable store reports this nonce
+    already spent, so a caller never needs to distinguish which layer
+    caught the replay. Local import (matches this module's own
+    `InternalToolExecutor.execute()` convention below) to keep
+    `governance/` layered below `db/`, not coupled to it at module-
+    import time.
+    """
+    if nonce_consumer is None:
+        return
+    from responsibleai.db.execution_nonce_repository import NonceAlreadyConsumedError
+
+    try:
+        await nonce_consumer.consume(
+            authorization.nonce,
+            authorization_id=authorization.authorization_id,
+            organization_id=authorization.organization_id or "",
+        )
+    except NonceAlreadyConsumedError as exc:
+        raise AuthorizationAlreadyConsumedError(authorization.authorization_id) from exc
+
+
 def check_target_fingerprint(
     authorization: ExecutionAuthorization, current_target_fingerprint: str | None
 ) -> None:
@@ -259,19 +366,36 @@ def check_target_fingerprint(
 
 class InternalToolExecutor:
     """Executes one of this platform's own 27 MCP tools
-    (`mcp.tools.dispatch_tool`) — the only executor that exists today.
+    (`mcp.tools._dispatch_tool_unchecked`) — the only executor that exists today.
     Named to match the v3 spec's own suggested name for this exact
     case (Section 28 lists `InternalToolExecutor` alongside the
     not-yet-built `MCPExecutor`/`HTTPExecutor` for proxying to
     *external* systems).
+
+    `nonce_repo` defaults `None` (no durable replay protection, just
+    the in-memory `consumed` flag below). **Construct this fresh per
+    call** — `apply_governance()`/`resume_approval()`
+    (`mcp/governance_integration.py`) both do — rather than sharing one
+    long-lived instance across calls or processes: an earlier version
+    of this class was a module-level singleton reconfigured via a
+    setter after the fact, which leaked one app's durable-repo
+    reference into a later, independently-constructed app in the same
+    process (caught by this branch's own test suite, not shipped).
+    `UpstreamMCPExecutor` (`governance/upstream_executor.py`) already
+    followed this same per-call-construction convention; this class now
+    matches it.
     """
+
+    def __init__(self, nonce_repo: NonceConsumer | None = None) -> None:
+        self.nonce_repo = nonce_repo
 
     async def execute(self, authorization: ExecutionAuthorization, action: ActionRequest) -> Any:
         _validate_authorization(authorization, action)
+        await consume_nonce_durably(authorization, self.nonce_repo)
         authorization.consumed = (
             True  # single-use — a second call now hits AuthorizationAlreadyConsumedError
         )
 
-        from responsibleai.mcp.tools import dispatch_tool
+        from responsibleai.mcp.tools import _dispatch_tool_unchecked
 
-        return await dispatch_tool(action.action_type, action.arguments)
+        return await _dispatch_tool_unchecked(action.action_type, action.arguments)

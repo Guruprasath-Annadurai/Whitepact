@@ -141,12 +141,48 @@ class TestAsyncJWKSClient:
 # ── API versioning tests ───────────────────────────────────────────────────────
 
 
+@pytest.fixture(autouse=True)
+def _default_test_settings(monkeypatch: pytest.MonkeyPatch):
+    """Root cause of a real, previously-unresolved hang, found and
+    fixed here: this fixture never existed in this file. Every OTHER
+    file in this suite that builds a `client` fixture explicitly
+    monkeypatches `dashboard.app.settings` to test-safe values
+    (`db_path=":memory:"`, `auto_migrate=False`) -- this file had none
+    of that, so its `client` fixture ran every app startup against
+    whatever `settings.db_path`/`settings.auto_migrate` happened to be
+    at that moment: after monkeypatch reverts every other file's own
+    overrides, that's the *actual Pydantic defaults* --
+    `db_path=~/.responsibleai/data.db` (a REAL file in the real user
+    home directory, not `:memory:`) and `auto_migrate=True`. Every one
+    of this file's ~40 tests using `client` was therefore spawning a
+    real `alembic upgrade head` subprocess against a real, persistent,
+    shared on-disk SQLite file on every single app startup -- slow
+    enough on its own, and confirmed (via `~/.responsibleai/data.db`
+    genuinely existing on disk after a test run) to be real state
+    leakage into the actual filesystem, not just theoretical. The
+    reported hang (`TEST_V1_API_HANG_FINDING.md`) is consistent with
+    piling up that many real subprocess spawns against one shared
+    file in a tight loop. See test_dashboard_api.py's own
+    `_default_test_settings` fixture for the identical, already-
+    established fix pattern used everywhere else in this suite.
+    """
+    from responsibleai.dashboard.app import settings
+
+    monkeypatch.setattr(settings, "db_path", ":memory:")
+    monkeypatch.setattr(settings, "database_url", None)
+    monkeypatch.setattr(settings, "auto_migrate", False)
+    monkeypatch.setattr(settings, "auth_enabled", False)
+    yield
+
+
 @pytest.fixture()
 async def client():
     from responsibleai.dashboard.app import app
 
-    async with LifespanManager(app):
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+    async with LifespanManager(app) as manager:
+        async with AsyncClient(
+            transport=ASGITransport(app=manager.app), base_url="http://test"
+        ) as c:
             yield c
 
 

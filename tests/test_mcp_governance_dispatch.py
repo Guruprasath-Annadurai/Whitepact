@@ -1,6 +1,6 @@
 """Integration tests for the MCP dispatch-path governance wiring
 (mcp/governance_integration.py + mcp/server.py's `_call_tool`) — closes
-the gap where `dispatch_tool()` never routed through
+the gap where `_dispatch_tool_unchecked()` never routed through
 `WhitePactRuntimeGateway`, even though the gateway itself, evidence
 persistence, and the approval workflow all already existed as a
 separate, opt-in REST API.

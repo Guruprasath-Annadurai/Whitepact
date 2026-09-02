@@ -1729,6 +1729,7 @@ class TestConsentProofEndpoints:
         grantee_id: str = "agent-1",
         scope_description: str = "read billing records",
         purpose: str = "quarterly audit",
+        allowed_action_types: list[str] | None = None,
     ) -> dict:
         r = await client.post(
             "/api/governance/consent-proofs",
@@ -1736,6 +1737,7 @@ class TestConsentProofEndpoints:
                 "grantee_id": grantee_id,
                 "scope_description": scope_description,
                 "purpose": purpose,
+                "allowed_action_types": allowed_action_types or ["mcp_tool_call"],
             },
             headers={"Authorization": f"Bearer {admin_key}"},
         )
@@ -1779,6 +1781,7 @@ class TestConsentProofEndpoints:
                 "grantee_id": "agent-1",
                 "scope_description": "x",
                 "purpose": "y",
+                "allowed_action_types": ["mcp_tool_call"],
                 "subject_id": "someone-else",
                 "consenting_root_id": "not-a-real-root",
             },

@@ -94,6 +94,55 @@ async def mcp_app(monkeypatch: pytest.MonkeyPatch):
     await engine.close()
 
 
+@pytest.fixture()
+async def mcp_app_with_engine(monkeypatch: pytest.MonkeyPatch):
+    """Same as `mcp_app` above, duplicated (not refactored to share
+    code -- matching this file's own stated "one independently
+    deletable file" convention) but ALSO yields the underlying engine,
+    so a test can construct its own `ConsentProofRepository`/
+    `RootAuthorityRepository` against the exact same DB the live app
+    uses -- needed to prove consent is actually reachable through the
+    real dispatch path (Heart Enforcement Chokepoint Closure), not
+    just through `resolve_authority_grant()` called directly."""
+    import responsibleai.dashboard.config as config_module
+    import responsibleai.db as db_module
+    from responsibleai.mcp.server import _build_http_app
+
+    engine = create_engine(":memory:")
+    await engine.init()
+    monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
+
+    org_repo = OrgRepository(engine)
+    org = await org_repo.create_org("Acme", "acme", plan=Plan.ENTERPRISE)
+    _key_rec, raw_key = await org_repo.create_key(org.id, "test-key", role=Role.ANALYST)
+
+    from asgi_lifespan import LifespanManager
+
+    built = []
+
+    async def _build(**settings_kwargs):
+        if settings_kwargs.get("enterprise_mode"):
+            settings_kwargs.setdefault("crypto_root_key", secrets.token_hex(32))
+        settings = Settings(
+            mcp_governance_enabled=True,
+            oidc_issuer="https://idp.example.com",
+            oidc_skip_verification=True,
+            **settings_kwargs,
+        )
+        monkeypatch.setattr(config_module, "get_settings", lambda: settings)
+        app = _build_http_app()
+        manager = LifespanManager(app)
+        await manager.__aenter__()
+        built.append(manager)
+        return manager.app
+
+    yield _build, org.id, raw_key, engine
+
+    for manager in built:
+        await manager.__aexit__(None, None, None)
+    await engine.close()
+
+
 def _client(app, token: str) -> httpx.AsyncClient:
     return httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
@@ -204,3 +253,154 @@ class TestOidcHumanClassificationElevatesToTerminal:
         payload = json.loads(result.content[0].text)
         assert payload["error"] == "governance_denied"
         assert any(code.startswith("HEART_LEGITIMACY_FAILED") for code in payload["reason_codes"])
+
+
+class TestHeartProductionGateActuallyRunsInThisProcess:
+    """Heart Enforcement Chokepoint Closure: verify_heart_production_
+    enforcement() (Gap C) previously ran ONLY from dashboard/app.py's
+    startup -- this exact process (whitepact-mcp-http, built by
+    _build_http_app()) never called it, so its fail-closed startup
+    invariant never actually protected the process where Heart
+    enforcement (and its bypasses) live. This proves the fix through
+    the real ASGI lifespan (LifespanManager.__aenter__(), which is
+    exactly what a real `whitepact-mcp-http` process start runs), not
+    by calling verify_heart_production_enforcement() directly."""
+
+    async def test_enterprise_mode_with_demo_flag_fails_to_start(self, mcp_app) -> None:
+        from responsibleai.governance.heart_production_gate import HeartEnforcementError
+
+        build, _org_id, _raw_key = mcp_app
+        with pytest.raises(HeartEnforcementError, match="mcp_http_allow_unauthenticated_demo"):
+            await build(enterprise_mode=True, mcp_http_allow_unauthenticated_demo=True)
+
+    async def test_enterprise_mode_without_demo_flag_starts_fine(self, mcp_app) -> None:
+        build, _org_id, _raw_key = mcp_app
+        app = await build(enterprise_mode=True)  # must not raise
+        assert app is not None
+
+
+class TestConsentBackedLegitimacyReachableThroughLiveDispatch:
+    """Heart Enforcement Chokepoint Closure: ENFORCEMENT_PATH_MATRIX.md's
+    headline E0 finding was that Gap A's consent-backed legitimacy had
+    zero live call sites -- fully wired and tested via
+    resolve_authority_grant() called directly, but structurally
+    unreachable through the actual hosted MCP dispatch path. This class
+    proves the fix through the real HTTP app, not just the resolver in
+    isolation: the exact non-terminal-OIDC-gets-denied scenario from
+    TestHeartGateDeniesNonTerminalIdentityWhenEnabled above, but now
+    with a persisted, matching consent proof -- must flip to ALLOWED,
+    and the legitimacy must demonstrably come from the consent's root,
+    not the identity's own (still non-terminal) one."""
+
+    async def test_consent_backed_grant_allows_an_otherwise_denied_identity(
+        self, mcp_app_with_engine
+    ) -> None:
+        from responsibleai.db.consent_proof_repository import ConsentProofRepository
+        from responsibleai.db.root_authority_repository import RootAuthorityRepository
+        from responsibleai.governance.consent_proof import ConsentMethod, build_consent_proof
+        from responsibleai.governance.root_authority import (
+            RootType,
+            build_root_authority_record,
+        )
+
+        build, org_id, _raw_key, engine = mcp_app_with_engine
+
+        root_repo = RootAuthorityRepository(engine)
+        consent_repo = ConsentProofRepository(engine)
+        admin_root = await root_repo.create(
+            build_root_authority_record(
+                "admin-1", RootType.ORGANIZATION, "idp", "oidc", organization_id=org_id
+            )
+        )
+        proof = build_consent_proof(
+            "admin-1",
+            admin_root.root_id,
+            "oidc:user-1",  # matches key_id=f"oidc:{claims.sub}" for sub="user-1"
+            "run health checks on behalf of the org",
+            "uptime monitoring",
+            ConsentMethod.API_AUTHENTICATED_REQUEST,
+            allowed_action_types=("rai_health",),
+        )
+        await consent_repo.create(proof)
+
+        app = await build(enterprise_mode=True)
+        token = _make_jwt({"sub": "user-1", "org_id": org_id, "roles": ["ANALYST"]})
+        result = await _call_tool(app, token, "rai_health", {})
+        payload = json.loads(result.content[0].text)
+        assert "status" in payload  # the real rai_health payload, not a denial
+        assert "error" not in payload
+
+    async def test_without_consent_the_same_identity_is_still_denied(
+        self, mcp_app_with_engine
+    ) -> None:
+        """Control: no consent captured at all -- must still deny,
+        proving the previous test's ALLOW genuinely came from the
+        consent, not from some unrelated change in default behavior."""
+        build, org_id, _raw_key, _engine = mcp_app_with_engine
+        app = await build(enterprise_mode=True)
+        token = _make_jwt({"sub": "user-1", "org_id": org_id, "roles": ["ANALYST"]})
+        result = await _call_tool(app, token, "rai_health", {})
+        payload = json.loads(result.content[0].text)
+        assert payload["error"] == "governance_denied"
+        assert any(code.startswith("HEART_LEGITIMACY_FAILED") for code in payload["reason_codes"])
+
+
+class TestExecutionAuthorizationBoundToConsentThroughLiveDispatch:
+    """Enterprise Readiness Phase 3: proves the actual wiring in
+    mcp/governance_integration.py -- not just authorize_execution() and
+    resolve_authority_grant() in isolation -- by intercepting the real
+    authorize_execution() call the live consent-backed dispatch path
+    makes, and checking what it was actually called with."""
+
+    async def test_live_allow_binds_consent_reference_and_heart_digest(
+        self, mcp_app_with_engine, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from responsibleai.db.consent_proof_repository import ConsentProofRepository
+        from responsibleai.db.root_authority_repository import RootAuthorityRepository
+        from responsibleai.governance.consent_proof import ConsentMethod, build_consent_proof
+        from responsibleai.governance.root_authority import (
+            RootType,
+            build_root_authority_record,
+        )
+
+        build, org_id, _raw_key, engine = mcp_app_with_engine
+
+        root_repo = RootAuthorityRepository(engine)
+        consent_repo = ConsentProofRepository(engine)
+        admin_root = await root_repo.create(
+            build_root_authority_record(
+                "admin-1", RootType.ORGANIZATION, "idp", "oidc", organization_id=org_id
+            )
+        )
+        proof = build_consent_proof(
+            "admin-1",
+            admin_root.root_id,
+            "oidc:user-1",
+            "run health checks on behalf of the org",
+            "uptime monitoring",
+            ConsentMethod.API_AUTHENTICATED_REQUEST,
+            allowed_action_types=("rai_health",),
+        )
+        await consent_repo.create(proof)
+
+        captured: dict = {}
+        import responsibleai.mcp.governance_integration as gi_module
+
+        real_authorize = gi_module.authorize_execution
+
+        def _spy(*args, **kwargs):
+            captured["consent_reference"] = kwargs.get("consent_reference")
+            captured["heart_legitimacy_digest"] = kwargs.get("heart_legitimacy_digest")
+            return real_authorize(*args, **kwargs)
+
+        monkeypatch.setattr(gi_module, "authorize_execution", _spy)
+
+        app = await build(enterprise_mode=True)
+        token = _make_jwt({"sub": "user-1", "org_id": org_id, "roles": ["ANALYST"]})
+        result = await _call_tool(app, token, "rai_health", {})
+        payload = json.loads(result.content[0].text)
+        assert "status" in payload  # the tool actually ran
+
+        assert captured["consent_reference"] == proof.consent_id
+        assert captured["heart_legitimacy_digest"]  # non-empty, a real digest string
+        assert isinstance(captured["heart_legitimacy_digest"], str)

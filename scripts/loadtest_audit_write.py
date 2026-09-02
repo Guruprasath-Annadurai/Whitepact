@@ -34,7 +34,9 @@ from responsibleai.db.engine import DatabaseEngine, metadata
 from responsibleai.rbac.models import AuditEntry
 
 
-async def run_concurrency_level(audit_repo: AuditRepository, concurrency: int, total_writes: int) -> tuple[float, float]:
+async def run_concurrency_level(
+    audit_repo: AuditRepository, concurrency: int, total_writes: int
+) -> tuple[float, float]:
     """Fire `total_writes` writes using `concurrency` simultaneous coroutines.
 
     Returns (wall_clock_seconds, writes_per_second).
@@ -46,14 +48,16 @@ async def run_concurrency_level(audit_repo: AuditRepository, concurrency: int, t
         nonlocal remaining
         while remaining > 0:
             remaining -= 1
-            await audit_repo.write(AuditEntry(
-                endpoint="/api/loadtest",
-                method="POST",
-                org_id="loadtest-org",
-                key_id="loadtest-key",
-                status_code=200,
-                duration_ms=1.0,
-            ))
+            await audit_repo.write(
+                AuditEntry(
+                    endpoint="/api/loadtest",
+                    method="POST",
+                    org_id="loadtest-org",
+                    key_id="loadtest-key",
+                    status_code=200,
+                    duration_ms=1.0,
+                )
+            )
 
     start = time.perf_counter()
     await asyncio.gather(*(worker() for _ in range(concurrency)))

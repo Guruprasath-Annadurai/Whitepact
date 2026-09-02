@@ -44,6 +44,21 @@ into a persisted `ConsentProof`, and any DB persistence layer for this
 type. This phase ships the record type and its validation semantics
 only — the same scope discipline every prior Heart phase (H1-H3) has
 held to.
+
+**Heart Production Closure, Gap A addendum**: `allowed_action_types`
+and `allowed_targets` were added once a real consent-capture flow and
+a real Authority Resolver both existed and needed genuine
+scope/action/resource compatibility checking, not just "does a
+consent record exist for this grantee." `scope_description`/`purpose`
+remain free text (no structured comparison is attempted against them
+— see `docs/heart-production-closure/01_GAP_A_CONSENT_LEGITIMACY.md`
+for why that's named as a real, remaining limitation rather than
+faked); `allowed_action_types` is the one structured field this module
+actually enforces a match against, at the wiring layer
+(`governance/authority_resolver.py`), not inside
+`validate_consent_proof()` itself -- this module's own validation
+semantics (root match, root legitimacy, temporal validity) are
+unchanged and untouched by that addendum.
 """
 
 from __future__ import annotations
@@ -92,12 +107,19 @@ def compute_consent_digest(
     purpose: str,
     consent_method: ConsentMethod,
     consented_at: datetime,
+    allowed_action_types: tuple[str, ...],
+    allowed_targets: tuple[str, ...],
 ) -> str:
     """SHA-256 over the canonical JSON of every field that defines what
     this consent act actually asserts. Complete over these fields --
     see `root_authority.py`'s own digest function for why this
     codebase calls that out explicitly rather than leaving readers to
-    guess."""
+    guess. `allowed_action_types`/`allowed_targets` (Heart Production
+    Closure Gap A) are included for the same reason every other field
+    here is: a proof whose scope was silently widened after issuance
+    (a tampered row, not a new consent act) must fail digest
+    verification, not be silently accepted with a wider scope than was
+    actually consented to."""
     payload = {
         "consent_id": consent_id,
         "subject_id": subject_id,
@@ -107,6 +129,8 @@ def compute_consent_digest(
         "purpose": purpose,
         "consent_method": consent_method.value,
         "consented_at": consented_at.isoformat(),
+        "allowed_action_types": sorted(allowed_action_types),
+        "allowed_targets": sorted(allowed_targets),
     }
     return hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
 
@@ -127,6 +151,20 @@ class ConsentProof:
     scope_description: str
     purpose: str
     consent_method: ConsentMethod
+    # Heart Production Closure Gap A: the one structurally-enforced
+    # scope field -- required non-empty by build_consent_proof() below,
+    # since a consent proof with no action-type restriction at all
+    # would authorize anything, defeating "not sufficient to just check
+    # existence." Matched against ActionRequest.action_type at the
+    # wiring layer (governance/authority_resolver.py), not inside
+    # validate_consent_proof() -- see this module's own docstring.
+    allowed_action_types: tuple[str, ...] = ()
+    # Optional narrowing on top of allowed_action_types -- empty means
+    # "no target restriction beyond the action-type scope," a
+    # deliberate, named UX tradeoff (see this module's docstring) so
+    # every consent capture doesn't have to enumerate every possible
+    # target upfront.
+    allowed_targets: tuple[str, ...] = ()
     evidence_refs: tuple[str, ...] = ()
     consent_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     consented_at: datetime = field(default_factory=lambda: datetime.now(UTC))
@@ -156,6 +194,8 @@ class ConsentProof:
             "scope_description": self.scope_description,
             "purpose": self.purpose,
             "consent_method": self.consent_method.value,
+            "allowed_action_types": list(self.allowed_action_types),
+            "allowed_targets": list(self.allowed_targets),
             "evidence_refs": list(self.evidence_refs),
             "consented_at": self.consented_at.isoformat(),
             "not_before": self.not_before.isoformat() if self.not_before else None,
@@ -175,6 +215,8 @@ def build_consent_proof(
     purpose: str,
     consent_method: ConsentMethod,
     *,
+    allowed_action_types: tuple[str, ...] = (),
+    allowed_targets: tuple[str, ...] = (),
     evidence_refs: tuple[str, ...] = (),
     not_before: datetime | None = None,
     expires_at: datetime | None = None,
@@ -182,7 +224,20 @@ def build_consent_proof(
     """The only intended constructor -- computes `canonical_digest`
     from the other fields, mirroring `build_root_authority_record()`'s
     own pattern (Phase H3) so two proofs are the same proof if and
-    only if their digests match."""
+    only if their digests match.
+
+    `allowed_action_types` defaults to `()` -- kept optional here,
+    not required, so every pre-existing caller across this codebase's
+    own Heart test suites (built before Gap A existed) keeps working
+    unchanged; this constructor does not itself enforce a non-empty
+    scope. The real enforcement lives at the two places that actually
+    matter for production legitimacy: the consent-capture REST
+    endpoint requires a non-empty list (`dashboard/app.py`'s
+    `ConsentProofCaptureRequest`), and
+    `governance/authority_resolver.py`'s wiring treats an empty
+    `allowed_action_types` as matching *no* action -- fail-closed, an
+    unscoped proof authorizes nothing on the live path, never
+    everything."""
     consent_id = str(uuid.uuid4())
     consented_at = datetime.now(UTC)
     digest = compute_consent_digest(
@@ -194,6 +249,8 @@ def build_consent_proof(
         purpose,
         consent_method,
         consented_at,
+        allowed_action_types,
+        allowed_targets,
     )
     return ConsentProof(
         consent_id=consent_id,
@@ -203,6 +260,8 @@ def build_consent_proof(
         scope_description=scope_description,
         purpose=purpose,
         consent_method=consent_method,
+        allowed_action_types=allowed_action_types,
+        allowed_targets=allowed_targets,
         evidence_refs=evidence_refs,
         consented_at=consented_at,
         not_before=not_before,
@@ -218,6 +277,13 @@ class ConsentValidationStatus(StrEnum):
     NOT_YET_VALID = "NOT_YET_VALID"
     ROOT_NOT_LEGITIMATE = "ROOT_NOT_LEGITIMATE"
     ROOT_MISMATCH = "ROOT_MISMATCH"
+    # Heart Production Closure Gap A -- distinct from every status
+    # above, which all describe a *genuine* proof that fails validation
+    # for a real reason. TAMPERED means the fetched row's fields don't
+    # recompute to its own stored canonical_digest -- the record isn't
+    # trustworthy as data at all, checked before any of the other
+    # statuses are even meaningful to evaluate.
+    TAMPERED = "TAMPERED"
 
 
 @dataclass(frozen=True)
@@ -266,3 +332,27 @@ def validate_consent_proof(
             return ConsentValidationResult(ConsentValidationStatus.NOT_YET_VALID, proof.consent_id)
         return ConsentValidationResult(ConsentValidationStatus.EXPIRED, proof.consent_id)
     return ConsentValidationResult(ConsentValidationStatus.VALID, proof.consent_id)
+
+
+def verify_consent_proof_integrity(proof: ConsentProof) -> bool:
+    """Heart Production Closure Gap A -- recomputes `canonical_digest`
+    from *proof*'s own current field values and compares it to what's
+    stored on the record. `build_consent_proof()` computes this digest
+    once at issuance; nothing before this function ever re-checked it
+    on read. A caller should treat a proof failing this check as not
+    trustworthy data at all -- not merely "not legitimate" the way a
+    revoked or expired proof is -- and never pass it into
+    `validate_consent_proof()`/`sovereignty_kernel.evaluate()`."""
+    recomputed = compute_consent_digest(
+        proof.consent_id,
+        proof.subject_id,
+        proof.consenting_root_id,
+        proof.grantee_id,
+        proof.scope_description,
+        proof.purpose,
+        proof.consent_method,
+        proof.consented_at,
+        proof.allowed_action_types,
+        proof.allowed_targets,
+    )
+    return recomputed == proof.canonical_digest

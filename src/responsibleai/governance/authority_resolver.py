@@ -33,20 +33,19 @@ circuit breaker against a misconfigured or adversarial chain).
 
 **What this module does not do -- named honestly**:
 
-- **Does not run consent, purpose-binding, or delegation-legitimacy
-  checks.** `sovereignty_kernel.evaluate()` only runs each H4/H5/H6
-  check when its prerequisite inputs are all supplied -- and this
-  codebase has no live path that produces a real `ConsentProof`
-  (`consent_proof.py`'s own docstring: "not built here: real wiring
-  from an actual consent-capture UI/flow"). Fabricating a synthetic
-  `ConsentProof` to make those checks "run" would be exactly the kind
-  of fabricated capability this whole remediation exists to prevent --
-  worse than not running them at all, since a fake-but-passing check
-  reads as a real guarantee. `resolve_authority_grant()` therefore
-  supplies only `root`/`root_resolver`/`requested_action_types` to
-  `evaluate()`; the resulting `LegitimacyEnvelope`'s consent/purpose/
-  delegation-legitimacy sub-results are always absent (not evaluated),
-  never fabricated as passing.
+- **Consent is now consulted (Heart Production Closure Gap A), but
+  purpose-binding and delegation-legitimacy checks are still not
+  run.** `sovereignty_kernel.evaluate()` only runs each H4/H5/H6 check
+  when its prerequisite inputs are all supplied. `resolve_authority_grant()`
+  now looks up, integrity-verifies, and scope-matches a real persisted
+  `ConsentProof` when a `consent_repo` is supplied (see
+  `_resolve_applicable_consent()` below) and passes it into
+  `evaluate()` alongside the CONSENT's OWN root -- not the acting
+  identity's root -- since `validate_consent_proof()` itself checks the
+  proof against whichever root/root_result it is handed, and the
+  consent's `consenting_root_id` is the root that actually vouches for
+  it. Purpose-binding and delegation-legitimacy checks still have no
+  live wiring and remain unevaluated (not fabricated as passing).
 - **Does not run revocation-epoch checking.** `RevocationEpoch`
   (`revocation_kernel.py`) is purely in-memory today -- confirmed, no
   DB repository exists for it, and that module's own docstring states
@@ -73,6 +72,10 @@ from typing import TYPE_CHECKING
 
 from responsibleai.governance.authority_grant import AuthorityGrant, build_authority_grant
 from responsibleai.governance.authority_lattice import authority_context_to_envelope
+from responsibleai.governance.consent_proof import (
+    ConsentProof,
+    verify_consent_proof_integrity,
+)
 from responsibleai.governance.identity_authority_adapter import (
     build_root_authority_record_from_identity,
 )
@@ -80,6 +83,7 @@ from responsibleai.governance.root_authority import RootAuthorityRecord
 from responsibleai.governance.sovereignty_kernel import evaluate as sovereignty_evaluate
 
 if TYPE_CHECKING:
+    from responsibleai.db.consent_proof_repository import ConsentProofRepository
     from responsibleai.db.root_authority_repository import RootAuthorityRepository
     from responsibleai.governance.models import (
         ActionRequest,
@@ -162,6 +166,63 @@ def _sync_resolver_from_prefetch(prefetched: dict[str, RootAuthorityRecord]) -> 
     return _resolve
 
 
+async def _resolve_applicable_consent(
+    agent: AgentContext,
+    action: ActionRequest,
+    consent_repo: ConsentProofRepository,
+) -> ConsentProof | None:
+    """Heart Production Closure Gap A. Looks up the latest consent
+    proof naming `agent.agent_id` as grantee, scoped to
+    `agent.organization_id` (the repository's own JOIN against
+    `governance_root_authority_records` makes a cross-tenant match
+    structurally impossible to return -- see
+    `ConsentProofRepository.get_latest_for_grantee()`), then applies
+    every wiring-layer check the directive requires before treating it
+    as applicable:
+
+    1. **Integrity**: `verify_consent_proof_integrity()` recomputes the
+       digest from every current field and compares to
+       `canonical_digest`. A tampered row is treated as if no consent
+       existed at all -- never surfaced as a degraded-but-usable
+       match.
+    2. **Scope -- action type**: `action.action_type` must be in
+       `proof.allowed_action_types`. An empty tuple (unscoped consent
+       -- see `consent_proof.py`'s own docstring) matches NO action,
+       fail-closed by omission; this is deliberately not the same as
+       matching every action.
+    3. **Scope -- target**: only enforced when the proof declares a
+       non-empty `allowed_targets`; an empty target list means "not
+       target-restricted", not "matches nothing", since target scoping
+       is optional in a way action-type scoping is not (the REST
+       capture endpoint requires a non-empty `allowed_action_types` but
+       allows an empty `allowed_targets`).
+    4. **Purpose (Enterprise Readiness Phase 5)**: only enforced when
+       the caller opted in by setting `action.purpose`. When set, the
+       consent is applicable only if it matches `proof.purpose`
+       *exactly* -- free-text equality against a specific, previously
+       persisted, already-authorized value, the same pattern
+       `compute_action_digest()` already uses for mutation detection.
+       A consent permitting purpose A must never authorize purpose B.
+
+    Returns `None` (never a partially-checked proof) the moment any
+    check fails -- callers then fall back to today's self-root-only
+    behavior, exactly as if no consent_repo had been supplied."""
+    proof = await consent_repo.get_latest_for_grantee(
+        agent.agent_id, organization_id=agent.organization_id or ""
+    )
+    if proof is None:
+        return None
+    if not verify_consent_proof_integrity(proof):
+        return None
+    if action.action_type not in proof.allowed_action_types:
+        return None
+    if proof.allowed_targets and action.target not in proof.allowed_targets:
+        return None
+    if action.purpose is not None and action.purpose != proof.purpose:
+        return None
+    return proof
+
+
 async def resolve_authority_grant(
     identity: IdentityContext,
     agent: AgentContext,
@@ -171,23 +232,39 @@ async def resolve_authority_grant(
     *,
     issuer: str,
     verification_method: str,
+    consent_repo: ConsentProofRepository | None = None,
 ) -> AuthorityGrant:
     """The main entrypoint. Builds a real `AuthorityGrant` for one
     action request:
 
     1. Get-or-create this identity's root of trust
        (`resolve_root_for_identity()`).
-    2. Prefetch its chain and wrap it as a sync `RootResolver`
-       (`prefetch_root_chain()` + `_sync_resolver_from_prefetch()`).
-    3. Run `sovereignty_kernel.evaluate()` -- **root validation and
-       non-delegable-authority checking only**, this phase's honest
-       scope (see module docstring's "what this does not do" for
-       exactly why consent/purpose/delegation checks are not run).
-    4. Convert the already-existing, already-correct
+    2. **Heart Production Closure Gap A**: if `consent_repo` is
+       supplied, look up an applicable, integrity-verified,
+       scope-matching consent proof for `agent.agent_id`
+       (`_resolve_applicable_consent()`). When one is found, resolve
+       and validate the CONSENT'S OWN root (`proof.consenting_root_id`)
+       instead of the identity's own root -- `validate_consent_proof()`
+       checks a proof against whichever root_result it is handed, and
+       only the consenting root's chain is the one that actually
+       vouches for this proof. `subject_identity_id` passed to
+       `evaluate()` becomes the consenting subject (`proof.subject_id`),
+       not the acting agent, for the same reason. When no consent_repo
+       is supplied, or no applicable consent is found, falls back to
+       today's self-root-only behavior unchanged.
+    3. Prefetch the chosen root's chain and wrap it as a sync
+       `RootResolver` (`prefetch_root_chain()` +
+       `_sync_resolver_from_prefetch()`).
+    4. Run `sovereignty_kernel.evaluate()` -- root validation,
+       non-delegable-authority checking, and (when consent was
+       resolved) H4 consent-legitimacy checking. Purpose-binding and
+       delegation-legitimacy checks still have no live wiring (see
+       module docstring).
+    5. Convert the already-existing, already-correct
        `AuthorityContext` (ceiling + delegation authority determination
        -- unchanged, not reimplemented here) into an `AuthorityEnvelope`
        via the existing `authority_context_to_envelope()` adapter.
-    5. Wrap both in an `AuthorityGrant` via `build_authority_grant()`.
+    6. Wrap both in an `AuthorityGrant` via `build_authority_grant()`.
 
     Raises `UnrepresentableConstraintError` (propagated from
     `authority_context_to_envelope()`) if `authority_context.
@@ -198,14 +275,31 @@ async def resolve_authority_grant(
     root = await resolve_root_for_identity(
         identity, root_repo, issuer=issuer, verification_method=verification_method
     )
+
+    consent: ConsentProof | None = None
+    subject_identity_id = identity.identity_id
+    if consent_repo is not None:
+        consent = await _resolve_applicable_consent(agent, action, consent_repo)
+        if consent is not None:
+            consenting_root = await root_repo.get(consent.consenting_root_id)
+            if consenting_root is not None:
+                root = consenting_root
+                subject_identity_id = consent.subject_id
+            else:
+                # The consent's own root record is missing -- treat as
+                # no applicable consent rather than validating against
+                # a root that cannot itself be resolved.
+                consent = None
+
     prefetched = await prefetch_root_chain(root, root_repo)
     resolver = _sync_resolver_from_prefetch(prefetched)
 
     legitimacy = sovereignty_evaluate(
         agent.organization_id or "",
-        identity.identity_id,
+        subject_identity_id,
         root=root,
         root_resolver=resolver,
+        consent=consent,
         requested_action_types=frozenset({action.action_type}),
     )
 
@@ -220,4 +314,19 @@ async def resolve_authority_grant(
         effective_authority=effective_authority,
         legitimacy=legitimacy,
         root_reference=root.root_id,
+        # Enterprise Readiness Phase 3 (cryptographic/structural execution
+        # binding): AuthorityGrant.consent_reference has existed since
+        # authority_grant.py's own Phase 1 build, but this resolver -- the
+        # only place that actually knows which consent (if any) backed a
+        # grant -- never populated it. A caller building an
+        # ExecutionAuthorization from this grant (see
+        # governance/execution.py) can now bind to which consent proof
+        # actually authorized the action, not just that some consent did.
+        consent_reference=consent.consent_id if consent is not None else None,
+        # Enterprise Readiness Phase 5 (purpose binding): only populate
+        # the validated purpose once a consent-backed grant actually
+        # confirmed compatibility (_resolve_applicable_consent()'s
+        # purpose check, above) -- never populate before compatibility
+        # is established, per the directive's own ordering requirement.
+        requested_purpose=action.purpose if consent is not None else None,
     )

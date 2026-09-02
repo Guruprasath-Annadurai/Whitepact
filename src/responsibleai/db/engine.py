@@ -475,6 +475,12 @@ governance_approvals = Table(
     Column("resolved_by", String(200), nullable=True),
     Column("resolved_at", String(32), nullable=True),
     Column("resolution_notes", Text, nullable=True),
+    # Enterprise Readiness Phase 5 (purpose binding). NULL for rows
+    # persisted before this column existed and for any approval whose
+    # requesting ActionRequest never set a purpose -- both cases mean
+    # "no requested purpose was declared," not "any purpose is
+    # authorized." See governance/approval.py's build_resume_action().
+    Column("purpose", Text, nullable=True),
     Index("idx_gap_org", "org_id"),
     Index("idx_gap_status", "status"),
     Index("idx_gap_requested", "requested_at"),
@@ -817,6 +823,12 @@ governance_consent_proofs = Table(
     Column("scope_description", Text, nullable=False),
     Column("purpose", Text, nullable=False),
     Column("consent_method", String(32), nullable=False),
+    # Heart Production Closure Gap A -- migration 0034. JSON lists;
+    # empty list means "no scope declared," treated as matching no
+    # action at the wiring layer (governance/authority_resolver.py),
+    # never as matching every action.
+    Column("allowed_action_types", Text, nullable=False, server_default="[]"),
+    Column("allowed_targets", Text, nullable=False, server_default="[]"),
     Column("evidence_refs", Text, nullable=False),  # JSON list
     Column("consented_at", String(32), nullable=False),
     Column("not_before", String(32), nullable=True),
@@ -827,6 +839,52 @@ governance_consent_proofs = Table(
     Column("canonical_digest", String(64), nullable=False),
     Index("idx_cp_grantee", "grantee_id"),
     Index("idx_cp_consenting_root", "consenting_root_id"),
+)
+
+governance_revocation_epochs = Table(
+    "governance_revocation_epochs",
+    metadata,
+    # Heart Phase H9 (governance/revocation_kernel.py) `RevocationEpoch`,
+    # persisted here for Heart Production Closure Gap B. That module's
+    # own docstring named the gap directly: the primitive existed with
+    # zero persistence and zero call sites, so its absence didn't make
+    # today's root/delegation revocation checking unsafe (both already
+    # hit the DB fresh on every check, no cache layer) -- but it meant
+    # the primitive provided no real capability yet either. This table
+    # is that persistence. `organization_id=""` (not NULL) is this
+    # codebase's established "no tenant" convention (see
+    # governance_crypto_keys.tenant_id above) rather than a nullable
+    # column, since a composite PRIMARY KEY cannot contain one.
+    Column("organization_id", String(36), primary_key=True),
+    Column("scope", String(64), primary_key=True),
+    Column("epoch", Integer, nullable=False, server_default="0"),
+    Column("updated_at", String(32), nullable=False),
+)
+
+governance_execution_nonces = Table(
+    "governance_execution_nonces",
+    metadata,
+    # Enterprise Readiness Phase 4 (replay protection) --
+    # governance/execution.py's ExecutionAuthorization.nonce already
+    # existed but had nowhere durable to record consumption: the
+    # in-memory `consumed: bool` flag correctly stops same-process
+    # replay (zero setup cost, always on) but provides nothing across
+    # a process restart or a second instance -- unlike
+    # ApprovalRepository.consume(), which was already durable. `nonce`
+    # itself is the primary key: the UNIQUE constraint IS the atomic
+    # consume-once-across-every-process guarantee, not something this
+    # repository has to build with its own locking.
+    Column("nonce", String(64), primary_key=True),
+    Column("authorization_id", String(36), nullable=False),
+    Column("organization_id", String(36), nullable=False),
+    Column("consumed_at", String(32), nullable=False),
+    # No automatic pruning job exists yet for this table -- named
+    # honestly rather than assumed: a long-running deployment
+    # accumulates one row per authorized execution forever. The
+    # `consumed_at` index below is exactly what a future pruning job
+    # (delete rows older than N days) would need; it is not itself
+    # that job.
+    Index("idx_execution_nonces_consumed_at", "consumed_at"),
 )
 
 governance_crypto_keys = Table(

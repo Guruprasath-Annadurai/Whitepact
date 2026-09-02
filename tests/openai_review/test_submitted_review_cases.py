@@ -1,6 +1,6 @@
 """OpenAI Plugins Directory submission — release-critical regression
 suite. Asserts every automatable case from review_contract.py against
-the real MCP tool handlers via dispatch_tool(), exactly as they would
+the real MCP tool handlers via _dispatch_tool_unchecked(), exactly as they would
 be invoked over the MCP transport.
 
 Scope, stated honestly: this suite verifies *server-side* correctness
@@ -18,7 +18,7 @@ import re
 
 import pytest
 
-from responsibleai.mcp.tools import TOOL_DEFS, dispatch_tool
+from responsibleai.mcp.tools import TOOL_DEFS, _dispatch_tool_unchecked
 from tests.openai_review.review_contract import REVIEW_CONTRACT as CONTRACT
 
 
@@ -53,7 +53,7 @@ class TestReviewContractGoldenFileIsValid:
 class TestPositiveCaseTCP1PiiScan:
     async def test_matches_documented_contract(self) -> None:
         case = next(c for c in CONTRACT["positive"] if c["review_test_id"] == "TC-P1")
-        result = await dispatch_tool(case["expected_tool"], case["expected_arguments"])
+        result = await _dispatch_tool_unchecked(case["expected_tool"], case["expected_arguments"])
         assert "error" not in result
         for key in case["expected_result_contract"]["required_keys"]:
             assert key in result, f"{case['review_test_id']}: missing key {key!r}"
@@ -64,9 +64,9 @@ class TestPositiveCaseTCP1PiiScan:
         """Determinism check (Phase 6): identical input, run repeatedly,
         must never change which keys are present or their types."""
         args = {"text": "Contact John at john@example.com or 555-123-4567."}
-        first = await dispatch_tool("rai_scan", args)
+        first = await _dispatch_tool_unchecked("rai_scan", args)
         for _ in range(19):
-            r = await dispatch_tool("rai_scan", args)
+            r = await _dispatch_tool_unchecked("rai_scan", args)
             assert set(r.keys()) == set(first.keys())
             assert r["is_blocked"] == first["is_blocked"]
             assert r["has_pii"] == first["has_pii"]
@@ -76,7 +76,7 @@ class TestPositiveCaseTCP1PiiScan:
 class TestPositiveCaseTCP2TrustScore:
     async def test_matches_documented_contract(self) -> None:
         case = next(c for c in CONTRACT["positive"] if c["review_test_id"] == "TC-P2")
-        result = await dispatch_tool(case["expected_tool"], case["expected_arguments"])
+        result = await _dispatch_tool_unchecked(case["expected_tool"], case["expected_arguments"])
         assert "error" not in result
         contract = case["expected_result_contract"]
         for key in contract["required_keys"]:
@@ -98,9 +98,9 @@ class TestPositiveCaseTCP2TrustScore:
             "compliance": 0.9,
             "authenticity": 0.95,
         }
-        first = await dispatch_tool("rai_trust_score", args)
+        first = await _dispatch_tool_unchecked("rai_trust_score", args)
         for _ in range(19):
-            r = await dispatch_tool("rai_trust_score", args)
+            r = await _dispatch_tool_unchecked("rai_trust_score", args)
             assert set(r.keys()) == set(first.keys())
             assert r["score"] == first["score"]
             assert r["grade"] == first["grade"]
@@ -113,7 +113,7 @@ class TestPositiveCaseTCP2TrustScore:
 class TestPositiveCaseTCP3EuAiAct:
     async def test_matches_documented_contract(self) -> None:
         case = next(c for c in CONTRACT["positive"] if c["review_test_id"] == "TC-P3")
-        result = await dispatch_tool(case["expected_tool"], case["expected_arguments"])
+        result = await _dispatch_tool_unchecked(case["expected_tool"], case["expected_arguments"])
         assert "error" not in result
         contract = case["expected_result_contract"]
         for key in contract["required_keys"]:
@@ -135,7 +135,7 @@ class TestPositiveCaseTCP3EuAiAct:
 class TestPositiveCaseTCP4Hallucination:
     async def test_matches_documented_contract(self) -> None:
         case = next(c for c in CONTRACT["positive"] if c["review_test_id"] == "TC-P4")
-        result = await dispatch_tool(case["expected_tool"], case["expected_arguments"])
+        result = await _dispatch_tool_unchecked(case["expected_tool"], case["expected_arguments"])
         assert "error" not in result
         contract = case["expected_result_contract"]
         for key in contract["required_keys"]:
@@ -148,7 +148,7 @@ class TestPositiveCaseTCP4Hallucination:
         this exact submitted prompt, split the way a well-behaved model
         would split it, previously produced risk_level='low' -- the
         opposite of the documented contract."""
-        result = await dispatch_tool(
+        result = await _dispatch_tool_unchecked(
             "rai_hallucination",
             {"text": "the meeting is Wednesday", "source": "the meeting is Tuesday"},
         )
@@ -158,11 +158,11 @@ class TestPositiveCaseTCP4Hallucination:
     async def test_no_source_supplied_does_not_false_positive(self) -> None:
         """The contradiction check must never fire when no source was
         given -- false positives would be worse than the original gap."""
-        result = await dispatch_tool("rai_hallucination", {"text": "The sky is blue."})
+        result = await _dispatch_tool_unchecked("rai_hallucination", {"text": "The sky is blue."})
         assert result["source_contradiction_detected"] is False
 
     async def test_agreeing_source_does_not_false_positive(self) -> None:
-        result = await dispatch_tool(
+        result = await _dispatch_tool_unchecked(
             "rai_hallucination",
             {"text": "the meeting is Tuesday", "source": "the meeting is Tuesday"},
         )
@@ -170,9 +170,9 @@ class TestPositiveCaseTCP4Hallucination:
 
     async def test_repeatable_20_runs_structurally_identical(self) -> None:
         args = {"text": "the meeting is Wednesday", "source": "the meeting is Tuesday"}
-        first = await dispatch_tool("rai_hallucination", args)
+        first = await _dispatch_tool_unchecked("rai_hallucination", args)
         for _ in range(19):
-            r = await dispatch_tool("rai_hallucination", args)
+            r = await _dispatch_tool_unchecked("rai_hallucination", args)
             assert r == first  # fully deterministic, no timestamp/uuid in this payload
 
 
@@ -182,14 +182,14 @@ class TestPositiveCaseTCP5OrgStatus:
         data comes from the hosted transport's authenticated request
         context (mcp/server.py's `_current_org`), not a caller-supplied
         argument; see tests/test_mcp_org_status_live.py for the
-        authenticated path. A direct dispatch_tool() call outside any
+        authenticated path. A direct _dispatch_tool_unchecked() call outside any
         request context (what this test exercises) has no such context,
         so it still returns the caller-supplied-only rollup -- this
         test exists so that fallback behavior cannot silently regress."""
         tool = next(t for t in TOOL_DEFS if t.name == "rai_org_status")
         assert "org_id" not in tool.inputSchema["properties"]
         assert "api_key" not in tool.inputSchema["properties"]
-        result = await dispatch_tool("rai_org_status", {})
+        result = await _dispatch_tool_unchecked("rai_org_status", {})
         assert "org_id" not in result  # no request context -> no real org data
         assert result["models"]["total"] == 0
         assert result["health_status"] == "HEALTHY"  # correct default, not fabricated
@@ -197,7 +197,7 @@ class TestPositiveCaseTCP5OrgStatus:
     async def test_corrected_contract_with_supplied_data(self) -> None:
         case = next(c for c in CONTRACT["positive"] if c["review_test_id"] == "TC-P5")
         contract = case["expected_result_contract"]
-        result = await dispatch_tool("rai_org_status", contract["corrected_arguments"])
+        result = await _dispatch_tool_unchecked("rai_org_status", contract["corrected_arguments"])
         assert "error" not in result
         for key in contract["required_keys"]:
             assert key in result
@@ -241,7 +241,7 @@ class TestNegativeCaseTCN3TrustScoreDefaultsAreSilent:
         for dim in ("fairness", "privacy", "security", "robustness", "compliance", "authenticity"):
             assert tool.inputSchema["properties"][dim]["default"] == 0.5
 
-        result = await dispatch_tool("rai_trust_score", {})
+        result = await _dispatch_tool_unchecked("rai_trust_score", {})
         assert result["score"] == 50.0
         assert result["grade"] in ("D", "F", "C")
 
@@ -252,11 +252,11 @@ class TestErrorHandlingHardening:
     predictably, not crash the dispatch loop."""
 
     async def test_unknown_tool_returns_structured_error_not_exception(self) -> None:
-        result = await dispatch_tool("rai_does_not_exist", {})
+        result = await _dispatch_tool_unchecked("rai_does_not_exist", {})
         assert result == {"error": "Unknown tool: rai_does_not_exist"}
 
     async def test_missing_required_field_does_not_leak_traceback(self) -> None:
-        result = await dispatch_tool("rai_eu_ai_act_classify", {})
+        result = await _dispatch_tool_unchecked("rai_eu_ai_act_classify", {})
         # Missing required "deployment_sector"/"system_description" --
         # MCP schema validation happens client-side per the spec, but the
         # server-side handler itself must not crash on missing keys.
@@ -264,7 +264,7 @@ class TestErrorHandlingHardening:
         assert 'File "' not in json.dumps(result)
 
     async def test_wrong_type_input_does_not_crash_dispatch(self) -> None:
-        result = await dispatch_tool("rai_trust_score", {"fairness": "not-a-number"})
+        result = await _dispatch_tool_unchecked("rai_trust_score", {"fairness": "not-a-number"})
         assert "error" in result
         assert "Traceback" not in json.dumps(result)
 

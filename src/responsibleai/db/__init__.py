@@ -29,6 +29,10 @@ from responsibleai.db.delegation_repository import (
 from responsibleai.db.engine import DatabaseEngine, create_engine
 from responsibleai.db.eval_repository import EvalRepository
 from responsibleai.db.evidence_repository import EvidenceRepository
+from responsibleai.db.execution_nonce_repository import (
+    ExecutionNonceRepository,
+    NonceAlreadyConsumedError,
+)
 from responsibleai.db.incident_repository import IncidentRepository
 from responsibleai.db.intent_repository import IntentContractRepository
 from responsibleai.db.leaderboard_repository import LeaderboardRepository
@@ -47,6 +51,7 @@ from responsibleai.db.policy_repository import PolicyRepository, PolicyRuleNotFo
 from responsibleai.db.principal_repository import PrincipalRepository
 from responsibleai.db.public_incident_repository import PublicIncidentRepository
 from responsibleai.db.repositories import CostRepository, TrustRepository
+from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
 from responsibleai.db.root_authority_repository import (
     RootAuthorityRecordNotFoundError,
     RootAuthorityRepository,
@@ -116,6 +121,9 @@ __all__ = [
     "NeuralVaultRepository",
     "RootAuthorityRecordNotFoundError",
     "RootAuthorityRepository",
+    "RevocationEpochRepository",
+    "ExecutionNonceRepository",
+    "NonceAlreadyConsumedError",
     "ConsentProofNotFoundError",
     "ConsentProofRepository",
 ]

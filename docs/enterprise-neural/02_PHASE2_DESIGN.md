@@ -80,10 +80,10 @@ Enumerate purposes as a closed, versioned set (mirrors the existing
 
 ```python
 class KeyPurpose(StrEnum):
-    FIELD_ENCRYPTION = "field_encryption"    # replaces RAI_FIELD_ENCRYPTION_KEY's current sole job
-    WEBHOOK_SIGNING = "webhook_signing"       # new: gives webhook secrets real rotation
-    SESSION_SIGNING = "session_signing"       # new: SAML/OIDC-adjacent session tokens
-    AUDIT_ANCHOR = "audit_anchor"             # new, Phase 13 dependency: external evidence-chain anchoring
+    FIELD_ENCRYPTION = "field_encryption"  # replaces RAI_FIELD_ENCRYPTION_KEY's current sole job
+    WEBHOOK_SIGNING = "webhook_signing"  # new: gives webhook secrets real rotation
+    SESSION_SIGNING = "session_signing"  # new: SAML/OIDC-adjacent session tokens
+    AUDIT_ANCHOR = "audit_anchor"  # new, Phase 13 dependency: external evidence-chain anchoring
 ```
 
 A DEK for one purpose must never decrypt/verify data written under
@@ -98,9 +98,9 @@ the wrong DEK and get a false negative/positive.
 @dataclass(frozen=True)
 class KeyId:
     purpose: KeyPurpose
-    tenant_id: str | None      # None = application-global (e.g. audit anchor)
-    version: int                # monotonic, starts at 1
-    environment: str            # "dev" | "test" | "prod" — never cross-loadable
+    tenant_id: str | None  # None = application-global (e.g. audit anchor)
+    version: int  # monotonic, starts at 1
+    environment: str  # "dev" | "test" | "prod" — never cross-loadable
 ```
 
 Ciphertext/ signatures produced under this design carry their `KeyId` as
@@ -152,7 +152,9 @@ compat notes).
 
 ```python
 class KeyProvider(Protocol):
-    async def get_encryption_key(self, purpose: KeyPurpose, tenant_id: str | None) -> tuple[KeyId, bytes]: ...
+    async def get_encryption_key(
+        self, purpose: KeyPurpose, tenant_id: str | None
+    ) -> tuple[KeyId, bytes]: ...
     async def get_decryption_key(self, key_id: KeyId) -> bytes: ...
     async def rotate(self, purpose: KeyPurpose, tenant_id: str | None) -> KeyId: ...
     async def revoke(self, key_id: KeyId) -> None: ...

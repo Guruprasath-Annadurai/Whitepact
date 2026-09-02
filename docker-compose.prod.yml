@@ -68,6 +68,22 @@ services:
       RAI_LOG_JSON: "true"
       RAI_AUTH_ENABLED: "true"
       RAI_WORKERS: "${RAI_WORKERS:-4}"
+    # Enterprise Readiness Phase 24 hardening. Verify against a real
+    # `docker compose up` before relying on this in production -- added
+    # per standard Docker hardening practice (Dockerfile's own USER
+    # appuser already confirmed non-root; these three are the
+    # orchestration-level pieces a Dockerfile alone can't set), not
+    # re-verified end-to-end against a live container in the
+    # environment that authored this file (no Docker daemon
+    # available). If startup fails with a read-only-filesystem error,
+    # the failing path needs its own tmpfs entry added below.
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8765/api/health"]
       interval: 30s
@@ -98,6 +114,15 @@ services:
       RAI_MCP_HTTP_HOST: "0.0.0.0"
       RAI_MCP_HTTP_PORT: "8766"
       RAI_MCP_LOG_LEVEL: "INFO"
+    # See the `dashboard` service's identical block above for why and
+    # what to check if this breaks startup.
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8766/health"]
       interval: 30s

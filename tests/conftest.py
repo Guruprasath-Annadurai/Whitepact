@@ -5,6 +5,41 @@ import pytest
 from biasbuster.providers.base import BaseProvider, CompletionRequest, CompletionResponse
 
 
+@pytest.fixture(autouse=True)
+def _reset_rest_auth_failure_limiter():
+    """Global, suite-wide reset of `dashboard.app`'s
+    `_auth_failure_limiter` (Enterprise Readiness Phase 6) before and
+    after every test, regardless of which file it's in.
+
+    Real bug found via the full suite, not hypothesized: this limiter
+    is a module-level singleton, keyed by `get_remote_address(request)`
+    — and every test using httpx's `ASGITransport` (dozens of files
+    across this suite) resolves to the *same* synthetic client address
+    regardless of test file. Without a reset, one test file's
+    intentionally-generated failed-auth attempts
+    (`tests/test_rest_auth_failure_limiter.py` makes 20+ by design)
+    could accumulate against that shared key and cause an unrelated
+    *later* test in a completely different file to get 429'd instead
+    of its expected response — confirmed directly:
+    `tests/test_saml_app_routes.py::TestResolveSamlContext::test_get_org_context_accepts_saml_session_token`
+    failed in a full-suite run and passed cleanly in isolation, with no
+    change to SAML-related code anywhere. The limiter's own 60-second
+    sliding window normally self-clears between tests in an
+    interactive run, but a fast, dense full-suite run can pack enough
+    tests into one 60-second window for this to bite. Local import
+    (not module-level) so files that never touch the dashboard app pay
+    no import cost until this fixture actually runs -- and since
+    pytest fully collects every file before running any test, this
+    import happens no earlier than `dashboard.app` would already have
+    been imported by some other test file's own collection anyway.
+    """
+    from responsibleai.dashboard.app import _auth_failure_limiter
+
+    _auth_failure_limiter._failures.clear()
+    yield
+    _auth_failure_limiter._failures.clear()
+
+
 class MockProvider(BaseProvider):
     """
     Deterministic provider for unit tests.

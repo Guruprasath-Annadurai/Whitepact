@@ -13,6 +13,7 @@ unbounded Text rather than a fixed 64-char String. This is a widening-only
 change: existing plaintext values remain valid Text values unchanged,
 and encryption only starts once a deployer sets the key.
 """
+
 from __future__ import annotations
 
 from collections.abc import Sequence

@@ -2,28 +2,63 @@
 
 from __future__ import annotations
 
-import os
-
 import httpx
 import pytest
-
-os.environ.setdefault("RAI_DB_PATH", ":memory:")
-os.environ.setdefault("RAI_AUTH_ENABLED", "false")
-os.environ.setdefault("RAI_LOG_JSON", "false")
-os.environ.setdefault("RAI_LOG_LEVEL", "WARNING")
-os.environ.setdefault("RAI_ALLOW_ALL_ORIGINS", "true")
-# Auto-migrate shells out to `alembic upgrade head` — meaningless (and slow)
-# against an ephemeral :memory: DB, since create_all() already builds the
-# current schema fresh for every test run. Covered separately by
-# tests/test_db_migrate.py against real on-disk SQLite files.
-os.environ.setdefault("RAI_AUTO_MIGRATE", "false")
-
 from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
 
 from responsibleai import __version__
-from responsibleai.dashboard.app import app
+from responsibleai.dashboard.app import app, settings
 from responsibleai.dashboard.config import Settings
+
+
+@pytest.fixture(autouse=True)
+def _default_test_settings(monkeypatch: pytest.MonkeyPatch):
+    """Enterprise Readiness (test-suite reliability investigation):
+    replaces a module-level `os.environ.setdefault("RAI_AUTH_ENABLED",
+    "false")` (and four siblings) this file used to rely on.
+
+    That pattern only worked by accident: `Settings` is a lazy
+    process-wide singleton (`dashboard.config.get_settings()`),
+    constructed once on whichever test file's import happens to
+    trigger it first across the entire pytest session -- `os.environ.
+    setdefault()` only has any effect if it runs *before* that first
+    construction. This file's own `os.environ.setdefault()` calls ran
+    at ITS OWN import time, which only reliably preceded the
+    singleton's construction as long as no other file imported
+    `responsibleai.dashboard.app` (whose module scope does
+    `settings = get_settings()`) first — a real, observed failure:
+    `tests/test_cross_tenant_isolation_sweep.py` (alphabetically
+    earlier, added in the Enterprise Readiness Phase 7 work) imports
+    `dashboard.app` during ITS OWN collection, freezing the singleton
+    with `auth_enabled`'s true Pydantic default (`True`) before this
+    file's `os.environ.setdefault("RAI_AUTH_ENABLED", "false")` line
+    ever ran — silently breaking every test in this file that assumed
+    auth was disabled by default, with no exception, just a changed
+    response. Confirmed via direct diagnostic instrumentation, not
+    guessed: `id(settings)` was identical throughout, and
+    `settings.auth_enabled` was `True` at the exact request that
+    should have seen `False`, while other monkeypatched attributes on
+    the SAME object correctly reverted -- because `auth_enabled=True`
+    *was* the object's genuine unpatched value the whole time.
+
+    The fix: monkeypatch the shared singleton's attributes explicitly,
+    like every other test file in this suite already does
+    (`test_governance_api.py`, `test_org_api.py`, etc.) — deterministic
+    regardless of module-import order, not dependent on this file
+    racing another to be the first to construct the settings object.
+    """
+    monkeypatch.setattr(settings, "db_path", ":memory:")
+    monkeypatch.setattr(settings, "auth_enabled", False)
+    monkeypatch.setattr(settings, "log_json", False)
+    monkeypatch.setattr(settings, "allow_all_origins", True)
+    # Auto-migrate shells out to `alembic upgrade head` — meaningless (and
+    # slow) against an ephemeral :memory: DB, since create_all() already
+    # builds the current schema fresh for every test run. Covered
+    # separately by tests/test_db_migrate.py against real on-disk SQLite
+    # files.
+    monkeypatch.setattr(settings, "auto_migrate", False)
+    yield
 
 
 @pytest.fixture()

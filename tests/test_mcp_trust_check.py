@@ -11,7 +11,7 @@ import httpx
 import pytest
 import respx
 
-from responsibleai.mcp.tools import TOOL_DEFS, _trust_client, dispatch_tool
+from responsibleai.mcp.tools import TOOL_DEFS, _dispatch_tool_unchecked, _trust_client
 
 
 @pytest.fixture(autouse=True)
@@ -34,7 +34,7 @@ class TestToolRegistration:
 
 class TestDispatchCheckTrust:
     async def test_missing_args_returns_error(self) -> None:
-        r = await dispatch_tool("rai_check_trust", {})
+        r = await _dispatch_tool_unchecked("rai_check_trust", {})
         assert "error" in r
 
     @respx.mock
@@ -55,7 +55,7 @@ class TestDispatchCheckTrust:
                 },
             )
         )
-        r = await dispatch_tool(
+        r = await _dispatch_tool_unchecked(
             "rai_check_trust", {"model_name": "gpt-4o", "provider": "openai", "min_score": 70}
         )
         assert r["known"] is True
@@ -79,7 +79,7 @@ class TestDispatchCheckTrust:
                 },
             )
         )
-        r = await dispatch_tool(
+        r = await _dispatch_tool_unchecked(
             "rai_check_trust",
             {"model_name": "sketchy-tool", "provider": "unknown", "min_score": 70},
         )
@@ -101,7 +101,7 @@ class TestDispatchCheckTrust:
                 },
             )
         )
-        r = await dispatch_tool(
+        r = await _dispatch_tool_unchecked(
             "rai_check_trust", {"model_name": "never-assessed", "provider": "nobody"}
         )
         assert r["known"] is False
@@ -112,6 +112,6 @@ class TestDispatchCheckTrust:
         respx.get("https://test.invalid/api/trust-index/check").mock(
             side_effect=httpx.ConnectError("connection refused")
         )
-        r = await dispatch_tool("rai_check_trust", {"model_name": "x", "provider": "y"})
+        r = await _dispatch_tool_unchecked("rai_check_trust", {"model_name": "x", "provider": "y"})
         assert r["passes"] is True
         assert r["error"] is not None

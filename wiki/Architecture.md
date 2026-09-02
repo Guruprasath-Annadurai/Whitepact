@@ -108,8 +108,8 @@ def _get_rate_limit_key(request):
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Bearer "):
         token = auth[7:].strip()
-        return "key:" + sha256(token)[:24]   # per-org bucket
-    return get_remote_address(request)        # fallback to IP
+        return "key:" + sha256(token)[:24]  # per-org bucket
+    return get_remote_address(request)  # fallback to IP
 ```
 
 This ensures each API key (and therefore each org) gets an independent rate limit bucket. When `RAI_REDIS_URL` is set, counters are stored in Redis and survive restarts.
