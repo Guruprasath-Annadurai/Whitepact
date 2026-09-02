@@ -39,7 +39,7 @@ begin until real, external findings actually exist.
 11. Role-matrix (RBAC) not exhaustively re-audited endpoint-by-endpoint beyond the org-scoping-specific Phase 7 sweep.
 
 **Infrastructure (out of this environment's reach, not fabricated):**
-12. **No GitHub Actions CI or CodeQL has ever run against this branch or PR #55** — verified root cause: PR #55's base branch doesn't match the workflow's `pull_request: branches: ["main"]` trigger. Every check in this freeze process was run manually/locally.
+12. ~~No GitHub Actions CI or CodeQL has ever run against this branch or PR #55~~ — **CLOSED (commits `adeb522` + `860c806`).** PR #55's base-branch trigger mismatch fixed by name-specific branch-filter widening; a genuine pre-existing formatting-debt failure this surfaced was then fixed (`ruff format`, mechanical, no logic change). At SHA `860c806c510d049ad53c94f8e3e449c0acf7265c`, all 12 GitHub Actions checks pass. See `CI_GAP_ROOT_CAUSE_AND_FIX.md`.
 13. Live AWS S3 Object Lock verification: BLOCKED, no credentials/infrastructure in this environment.
 14. Production container hardening flags added but not smoke-tested against a live Docker daemon (none available here).
 
@@ -65,8 +65,9 @@ exist.
 
 - **Branch:** `security/heart-production-closure`
 - **PR:** [#55](https://github.com/Guruprasath-Annadurai/Whitepact/pull/55), OPEN, unmerged, stacked on `security/enterprise-neural-remediation`
-- **Documents produced this freeze process:** `FROZEN_REVIEW_BASELINE.md`, `FROZEN_REVIEW_VERIFICATION.md`, `PR55_INDEPENDENT_SECURITY_REVIEW_PACKET.md`, `PR55_ATTACK_MAP.md`, `EXECUTION_PROCESS_BOUNDARY_STATEMENT.md`, this document, plus corrections to 3 pre-existing docs and PR #55's own description.
+- **Documents produced this freeze process:** `FROZEN_REVIEW_BASELINE.md`, `FROZEN_REVIEW_VERIFICATION.md`, `PR55_INDEPENDENT_SECURITY_REVIEW_PACKET.md`, `PR55_ATTACK_MAP.md`, `EXECUTION_PROCESS_BOUNDARY_STATEMENT.md`, `CI_GAP_ROOT_CAUSE_AND_FIX.md`, this document, plus corrections to 3 pre-existing docs and PR #55's own description.
 - **PR #50, #54, #55: not merged. Not touched for merge in any way during this process.**
+- **Post-gate SHA (2026-09-02, PM-authorized, option (b) + its follow-up only):** `860c806c510d049ad53c94f8e3e449c0acf7265c`. All 12 GitHub Actions checks pass against this exact SHA. Local full suite: 3442 passed, 0 failed, 0 errors, unchanged. Independent human security review: still NOT YET PERFORMED — GitHub-attested CI is not a substitute for it.
 
 ---
 

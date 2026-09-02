@@ -150,7 +150,7 @@ Enumerated fully in topics 17, 25–28 and the matrix's "Six real bypasses found
 
 ## 30. Known infrastructure gaps
 
-- **No CI/CodeQL has ever run on this branch or PR #55** (`FROZEN_REVIEW_VERIFICATION.md` §11) — base-branch trigger mismatch, verified root cause, not a flaky or broken pipeline. Every check in this packet's evidentiary base was run manually/locally.
+- ~~No CI/CodeQL has ever run on this branch or PR #55~~ — **CLOSED (2026-09-02).** Root cause was a base-branch trigger-filter mismatch (`FROZEN_REVIEW_VERIFICATION.md` §11), fixed and verified: at SHA `860c806c510d049ad53c94f8e3e449c0acf7265c`, real GitHub Actions CI now runs against PR #55 and all 12 checks pass. See [`CI_GAP_ROOT_CAUSE_AND_FIX.md`](CI_GAP_ROOT_CAUSE_AND_FIX.md). Every check in this packet's evidentiary base up to `54e9cb8` was run manually/locally only; from `860c806` onward, GitHub-attested CI evidence also exists.
 - Live AWS S3 Object Lock verification: BLOCKED, no credentials/infrastructure in this environment (Gap D, prior initiative) — implementation exists, live behavior unverified. See Stage 9 of the governing directive for the required future verification protocol; not attempted in this pass.
 - Docker/production-container verification: hardening flags added (`read_only`, `cap_drop: [ALL]`, `no-new-privileges`, image digest pinning) but **not smoke-tested against a live container** — no Docker daemon in this environment, stated honestly rather than claimed verified.
 - No key-rotation mechanism (topic 6), no independent chain-tamper attempt (topic 20), no plan-downgrade/entitlement-bypass test (topic 24), no webhook-delivery-replay test (topic 23) — each named as a real, currently-unfilled gap in this pass's own coverage, not asserted as safe by omission.
