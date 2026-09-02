@@ -13,14 +13,28 @@ options and recommends one; it does not execute anything.
 - **77 files were touched by both sides independently.** This sounds
   alarming; the actual risk is concentrated in far fewer files than
   that number suggests — see below.
+- **A real merge dry-run confirms it, not just inference.**
+  `git merge-tree --write-tree origin/main <PR55-head>` (git 2.50.1)
+  was actually run — not simulated — and produces exactly **7 real
+  textual conflicts**, all in tooling/ops files, **zero in any source
+  file under `src/`**:
+  `.github/workflows/ci.yml`, `.github/workflows/dependency-review.yml`,
+  `.github/workflows/publish.yml`, `.github/workflows/scorecard.yml`,
+  `Dockerfile`, `SUPPORT.md` (add/add — both sides independently
+  created this file), `scripts/rotate_field_encryption_key.py`. Every
+  one of the other ~70 overlapping files — including every core
+  security file — auto-merges cleanly with git's own trivial merge
+  strategy.
 - **The core security files (`execution.py`, `mcp/server.py`,
   `mcp/tools.py`, `mcp/governance_integration.py`,
   `dashboard/app.py`) were touched by `main` only trivially** — a
   repo-wide SPDX copyright-header sweep (`+2` lines per file, confirmed
-  by direct diff inspection, not assumed). PR #55's changes to the same
-  files are substantial and real (the actual Heart/governance work).
-  **This means the 77-file overlap is mostly false-positive risk**, not
-  77 files of genuine competing logic.
+  by direct diff inspection, not assumed) — consistent with the
+  merge-tree result above showing them as clean auto-merges. PR #55's
+  changes to the same files are substantial and real (the actual
+  Heart/governance work). **This means the 77-file overlap is almost
+  entirely false-positive risk, now confirmed by an actual merge
+  attempt rather than sampling.**
 - **Migrations do not conflict.** `main` has made zero schema changes
   since the merge-base. PR #55's migrations 0001–0029 differ from
   `main`'s copies only in formatting (a `ruff format` pass reflowed
@@ -46,13 +60,16 @@ options and recommends one; it does not execute anything.
 
 **A. Controlled merge** (`git merge main` into the PR #55 stack, or vice
 versa). *Pro*: preserves full commit history and DCO trail on both
-sides; git's own merge machinery handles the mostly-trivial 77-file
-overlap cheaply given the SPDX-header finding above. *Con*: still
-requires manual, careful reconciliation of the one real conflict
-(evidence-bundle handling); a merge commit of this size is hard for a
-human reviewer to re-review file-by-file even where auto-merge succeeds
-cleanly, because "no conflict markers" isn't the same as "no semantic
-interaction."
+sides; the actual `git merge-tree` dry-run above confirms only 7 files
+need real, hand-resolved conflict resolution (all tooling/ops, not
+source), with everything else — including every core security file —
+auto-merging cleanly. *Con*: the evidence-bundle overlap (not one of
+the 7 textual conflicts — it auto-merges without markers, which is the
+more dangerous case) still needs deliberate, manual review precisely
+because it *won't* surface as a conflict; a merge commit of this size is
+hard for a human reviewer to re-review file-by-file even where
+auto-merge succeeds cleanly, because "no conflict markers" isn't the
+same as "no semantic interaction."
 
 **B. Cumulative integration branch** (a fresh branch that pulls both
 `main`'s and PR #55's changes in, reviewed as a unit before ever
@@ -92,12 +109,17 @@ bundle reconciliation (the one real conflict identified above) done by
 hand, reviewed on its own before the branch is presented for
 independent review.
 
-Reasoning: Option A's git-mechanical merge would likely succeed with few
-or no textual conflicts (per the SPDX-header and migration findings
-above), but "few conflicts" is not the same as "reviewable" — a security
-reviewer should see one clean, intentional integration commit's diff
-against `main`, not a merge commit whose provenance requires
-reconstructing which side each hunk came from. Option C's
+Reasoning: Option A's git-mechanical merge is now confirmed (not
+estimated) to succeed with only 7 textual conflicts, none in source
+code — but "few conflicts" is not the same as "reviewable," and is
+actively misleading for the one file that matters most:
+`evidence_repository.py` auto-merges with zero conflict markers despite
+both sides having independently changed evidence-handling logic. A
+security reviewer should see one clean, intentional integration
+commit's diff against `main`, not a merge commit whose provenance
+requires reconstructing which side each hunk came from — least of all
+for the one file where "no conflict" hides a real reconciliation
+question rather than answering it. Option C's
 interdependency risk is real and specific to this codebase's own history
 of wiring gaps. Option D throws away real, tested work and orphans the
 existing review evidence for no corresponding safety benefit — the
