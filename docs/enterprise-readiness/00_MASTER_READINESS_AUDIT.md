@@ -6,6 +6,8 @@
 **Branch**: `security/heart-production-closure` (PR [#55](https://github.com/Guruprasath-Annadurai/Whitepact/pull/55), open, unmerged, stacked on PR #54)
 **Audit performed**: 2026-08-30
 
+> **Stage 2 correction (2026-09-02):** this document is a point-in-time snapshot as of the starting SHA above. It has since been superseded by [`docs/security-review/FROZEN_REVIEW_BASELINE.md`](../security-review/FROZEN_REVIEW_BASELINE.md) and [`FROZEN_REVIEW_VERIFICATION.md`](../security-review/FROZEN_REVIEW_VERIFICATION.md), which record a freshly reproduced full-suite result (3422 passed, 0 failed, 0 errors) and the current frozen review candidate. Treat the test counts and SHA below as historical, not current.
+
 ---
 
 ## Rule-0 evidence (per the directive's Governing Engineering Rules)

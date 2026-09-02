@@ -173,8 +173,9 @@ merely reasoned about) — reproduction commands in §9.
 
 ## 8. Coverage evidence and known limitations
 
-**Test evidence** (all run against this branch's actual head, not claimed
-from memory):
+**Test evidence** (as recorded at this branch's head *at the time this
+packet section was written* — since superseded by substantially more work;
+see the Stage 2 correction below for the current figures):
 - Full suite: 3300 passed, 1 skipped, 0 failed (after fixing two pre-existing
   tests this branch's own changes broke — see commit `da77fdb`).
 - `ruff check src/ tests/`: clean.
@@ -182,6 +183,17 @@ from memory):
 - `mypy src/`: clean except two pre-existing errors in unrelated
   `biasbuster`/`privacylabel` packages, confirmed present before this branch
   (not touched by it).
+
+> **Stage 2 correction (2026-09-02):** the branch has advanced well past
+> this snapshot (226 files changed vs. the merge-base as of the current
+> frozen candidate). Current, freshly reproduced figures live in
+> [`FROZEN_REVIEW_VERIFICATION.md`](FROZEN_REVIEW_VERIFICATION.md): 3422
+> passed / 0 failed / 0 errors; `ruff check` 2 minor errors and `ruff
+> format --check` 53 files outstanding (both outside this PR's own touched
+> files); `mypy` 4 errors in 2 unrelated files (was 2, now 4 — a real
+> increase, driven by the surrounding codebase moving, not by this
+> security work). Also newly discovered: no CI/CodeQL has ever run against
+> this branch (see that document's §11).
 
 **Known, explicitly-named limitations** (not fabricated as closed):
 1. **Purpose is not structurally enforced.** `ConsentProof.purpose` remains

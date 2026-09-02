@@ -4,7 +4,9 @@
 **Repo**: `Guruprasath-Annadurai/Whitepact`
 **Branch/PR**: `security/heart-production-closure` — [PR #55](https://github.com/Guruprasath-Annadurai/Whitepact/pull/55)
 **Base**: stacked on PR #54's exact tested head (`32eb2a6b`), against `security/enterprise-neural-remediation`. Does not merge, modify, or touch PR #50 or PR #54.
-**Status**: Open, unmerged. Full suite green (3339 passed, 1 skipped, 0 failed). **Independent human security review has not occurred.**
+**Status**: Open, unmerged. Full suite green (3422 passed, 0 failed, 0 errors — independently reproduced at commit `e1b1ddf`, see [`docs/security-review/FROZEN_REVIEW_VERIFICATION.md`](../security-review/FROZEN_REVIEW_VERIFICATION.md)). **Independent human security review has not occurred.**
+
+> **Stage 2 correction (2026-09-02):** the "3339 passed, 1 skipped" figure below (§ Current verified state) is superseded by the freshly reproduced Stage 1 result. Also newly discovered during the freeze/verification process: no GitHub Actions CI or CodeQL run has ever executed against this branch or PR #55 — its base branch (`security/enterprise-neural-remediation`) doesn't match the workflow's `pull_request: branches: ["main"]` trigger. See `FROZEN_REVIEW_VERIFICATION.md` §11 for the full root-cause.
 
 ---
 
@@ -66,11 +68,11 @@ Not rounded up. Every network-reachable path genuinely requires Heart legitimacy
 
 ## Current verified state
 
-- Full suite: **3339 passed, 1 skipped, 0 failed** (last full run)
-- `ruff check` / `ruff format --check` / `mypy`: clean across every commit (2 pre-existing, unrelated mypy errors in `biasbuster`/`privacylabel`, confirmed present before this branch)
-- Migrations 0034/0035 verified with real `alembic upgrade head` / `downgrade -1` / `upgrade head` round-trips against on-disk SQLite
-- 15 commits, each DCO-signed, each with its own focused test run recorded in its commit message
-- Everything pushed to GitHub; PR #55 open
+- Full suite: **3422 passed, 0 failed, 0 errors** (freshly reproduced at commit `e1b1ddf`, see `FROZEN_REVIEW_VERIFICATION.md` §1 — this supersedes the "3339 passed, 1 skipped" figure this line previously carried)
+- `ruff check`: 2 minor errors, `mypy`: 4 errors in 2 unrelated files (`biasbuster`/`privacylabel`, confirmed pre-existing and outside this PR's touched code) — `ruff format --check`: 53 files not yet conforming, never previously enforced. See `FROZEN_REVIEW_VERIFICATION.md` §2-4 for exact detail; none of this is silently dropped.
+- All 37 migrations (0001-0037) verified with a real `alembic upgrade head` / `downgrade base` round-trip against a real local PostgreSQL 17 database (not SQLite, not simulated) — see `FROZEN_REVIEW_VERIFICATION.md` §12.
+- 68 commits (merge-base to current HEAD), each DCO-signed — 100% verified, not sampled.
+- Everything pushed to GitHub; PR #55 open. **No GitHub Actions CI or CodeQL check has ever run against this branch** — see `FROZEN_REVIEW_VERIFICATION.md` §11 for why.
 
 ## What's explicitly deferred (named, not hidden)
 
