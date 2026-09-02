@@ -24,9 +24,9 @@ begin until real, external findings actually exist.
 **Structural (cannot be closed by this branch's own code):**
 1. In-process direct import of `_dispatch_tool_unchecked()` bypasses all governance for any code already executing inside the process. See `EXECUTION_PROCESS_BOUNDARY_STATEMENT.md` — this is the one item this whole freeze process centers on.
 
-**Configuration-dependent (closeable by a startup-invariant check, not yet added):**
-2. `enterprise_mode=true` does not require `auth_enabled=true` — a nonsensical-but-currently-unblocked combination that leaves dashboard REST auth optional even under "production authority-enforced mode."
-3. `migrations/env.py`'s `_resolve_url()` silently falls back to SQLite on an unrecognized DB-URL env-var name, with no warning — newly discovered during this pass's own PostgreSQL round-trip check (§12 of `FROZEN_REVIEW_VERIFICATION.md`).
+**Configuration-dependent — FIXED post-gate (commit `efb1915`):**
+2. ~~`enterprise_mode=true` does not require `auth_enabled=true`~~ — **CLOSED.** `verify_heart_production_enforcement()` now raises `HeartEnforcementError` at startup if `enterprise_mode=true` and `auth_enabled=false`. New tests in `TestAuthDisabledIncompatibleWithEnterpriseMode` (`tests/test_heart_production_gate.py`). This closure is itself unreviewed by an independent human — the fix exists and is tested, not independently verified by anyone but this same process.
+3. ~~`migrations/env.py`'s `_resolve_url()` silently falls back to SQLite on an unrecognized DB-URL env-var name~~ — **CLOSED.** Extracted to `responsibleai.db.url_resolution.resolve_migration_db_url()` and now raises `RuntimeError` naming the offending variable when `DATABASE_URL`/`DB_URL`/`POSTGRES_URL`/etc. is set without `RAI_DB_URL`/`RAI_DATABASE_URL`/`RAI_DB_PATH`. Re-verified against a real local PostgreSQL 17 database: correct env var still migrates cleanly through all 37 migrations; the wrong one now fails loudly instead of silently migrating SQLite. New tests in `tests/test_migrations_env_resolve_url.py`. Same caveat as item 2 — fixed and tested by this same process, not independently reviewed.
 
 **Coverage gaps in this pass's own verification (not proven safe, not proven unsafe — unverified):**
 4. `revocation_epoch` is never populated on `ExecutionAuthorization` at grant time.
