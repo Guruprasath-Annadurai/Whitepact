@@ -822,6 +822,19 @@ the CycloneDX SBOM. Independent consumer verification was repeated on 2026-08-31
 release-specific evidence is assessed as satisfying SLSA v1.2 Build L3; SLSA is a
 conformance framework, not a certification or a guarantee that an artifact is secure.
 
+**Independent human security review: NOT YET PERFORMED.** Separately from the release
+evidence above, the Heart Production Closure work
+([PR #55](https://github.com/Guruprasath-Annadurai/Whitepact/pull/55), open and
+unmerged) is in an active, disclosed security-freeze/review-readiness process — a
+frozen baseline, freshly reproduced test/lint/security-scan evidence, a full
+independent-review packet and attack map, and GitHub Actions CI now running against
+that PR. See that branch's
+[`docs/security-review/`](https://github.com/Guruprasath-Annadurai/Whitepact/tree/security/heart-production-closure/docs/security-review)
+directory for the complete, honestly-scoped record, including the one known
+structural limitation
+([`EXECUTION_PROCESS_BOUNDARY_STATEMENT.md`](https://github.com/Guruprasath-Annadurai/Whitepact/blob/security/heart-production-closure/docs/architecture/EXECUTION_PROCESS_BOUNDARY_STATEMENT.md))
+that process has not closed.
+
 ---
 
 ## Further reading
