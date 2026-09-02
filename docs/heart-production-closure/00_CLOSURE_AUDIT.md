@@ -36,7 +36,9 @@ At default (`governance is None`), the `if` on line 226 is false for **every** c
 If `mcp_governance_enabled=True` (non-default), `apply_governance()` does run — but `_heart_legitimacy_denied_reason()` (`mcp/governance_integration.py:167-224`) is a no-op unless **both** `services.root_authority_repo` is wired (true whenever governance is on) **and** `Settings.enterprise_mode` is also `True` (default `False`, `dashboard/config.py:216-217`):
 
 ```python
-if services.root_authority_repo is None or not get_settings().enterprise_mode:  # governance_integration.py:212
+if (
+    services.root_authority_repo is None or not get_settings().enterprise_mode
+):  # governance_integration.py:212
     return None
 ```
 

@@ -72,13 +72,16 @@ import asyncio
 from biasbuster import BiasBusterRunner, GenderBiasProbe, RacialBiasProbe
 from biasbuster.providers import OpenAIProvider
 
+
 async def main():
     provider = OpenAIProvider(api_key="sk-...", model="gpt-4o")
     runner = BiasBusterRunner(provider=provider)
-    suite = await runner.run([
-        GenderBiasProbe(threshold=0.20),
-        RacialBiasProbe(threshold=0.20),
-    ])
+    suite = await runner.run(
+        [
+            GenderBiasProbe(threshold=0.20),
+            RacialBiasProbe(threshold=0.20),
+        ]
+    )
 
     print(f"Overall score: {suite.overall_score:.4f}")
     print(f"{'PASSED' if suite.passed else 'FAILED'}")
@@ -86,6 +89,7 @@ async def main():
     for result in suite.probe_results:
         ci_low, ci_high = result.confidence_interval
         print(f"  {result.probe_name}: {result.bias_score:.4f} [{ci_low:.4f}–{ci_high:.4f}]")
+
 
 asyncio.run(main())
 ```

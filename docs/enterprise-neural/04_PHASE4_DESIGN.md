@@ -33,12 +33,14 @@ those phases will produce and consume data through.
 
 ```python
 class NeuralDataClass(StrEnum):
-    N0_RAW_NEURAL = "n0_raw_neural"                  # raw sensor stream
-    N1_NEURAL_FEATURES = "n1_neural_features"          # processed features/embeddings
+    N0_RAW_NEURAL = "n0_raw_neural"  # raw sensor stream
+    N1_NEURAL_FEATURES = "n1_neural_features"  # processed features/embeddings
     N2_PERSONAL_NEURAL_MODEL = "n2_personal_neural_model"  # calibration, decoder params
-    N3_NEURAL_INFERENCE = "n3_neural_inference"         # derived inference (attention, YES/NO, ...)
-    N4_NEURAL_AUTHORITY_EVIDENCE = "n4_neural_authority_evidence"  # minimal proof-of-authorization metadata
-    N5_OPERATIONAL_METADATA = "n5_operational_metadata"     # non-neural ops data
+    N3_NEURAL_INFERENCE = "n3_neural_inference"  # derived inference (attention, YES/NO, ...)
+    N4_NEURAL_AUTHORITY_EVIDENCE = (
+        "n4_neural_authority_evidence"  # minimal proof-of-authorization metadata
+    )
+    N5_OPERATIONAL_METADATA = "n5_operational_metadata"  # non-neural ops data
 ```
 
 **Sensitivity tiers**, explicit, not implied:
@@ -99,10 +101,11 @@ class NeuralPayload:
     through. Requires a NeuralDataClass at construction -- there is no
     way to hold neural-shaped data without declaring its sensitivity
     class."""
+
     data_class: NeuralDataClass
-    subject_id: str          # the human this data is about
+    subject_id: str  # the human this data is about
     session_id: str
-    payload: bytes            # opaque to this layer -- Phase 5/6/7 define the actual encoding
+    payload: bytes  # opaque to this layer -- Phase 5/6/7 define the actual encoding
     captured_at: datetime
     device_reference: str | None = None
 

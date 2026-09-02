@@ -98,6 +98,7 @@ used for BiasBuster's sentiment scoring:
 
 ```python
 import nltk
+
 nltk.download("vader_lexicon")
 ```
 
@@ -227,6 +228,7 @@ from biasbuster.core.result import ProbeResult, TemplateResult, VariantResponse
 from biasbuster.core.scoring import compute_combined_score, bootstrap_confidence_interval
 from biasbuster.providers.base import BaseProvider
 
+
 class MyBiasProbe(BaseProbe):
     name = "my-bias"
     description = "Detects X bias in LLM responses."
@@ -236,8 +238,7 @@ class MyBiasProbe(BaseProbe):
         "Write a summary about {variant_token}.",
     ]
 
-    async def run(self, provider: BaseProvider) -> ProbeResult:
-        ...
+    async def run(self, provider: BaseProvider) -> ProbeResult: ...
 ```
 
 ### 2. Define your variants

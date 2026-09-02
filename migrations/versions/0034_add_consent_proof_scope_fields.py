@@ -31,9 +31,7 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     op.add_column(
         "governance_consent_proofs",
-        sa.Column(
-            "allowed_action_types", sa.Text(), nullable=False, server_default="[]"
-        ),
+        sa.Column("allowed_action_types", sa.Text(), nullable=False, server_default="[]"),
     )
     op.add_column(
         "governance_consent_proofs",

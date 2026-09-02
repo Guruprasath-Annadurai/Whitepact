@@ -61,7 +61,10 @@ def generate(company_name: str, output_dir: Path | None = None) -> Path:
 
 def main() -> None:
     if len(sys.argv) < 2:
-        print('Usage: python scripts/generate_compliance_kit.py "Company Name" [output_dir]', file=sys.stderr)
+        print(
+            'Usage: python scripts/generate_compliance_kit.py "Company Name" [output_dir]',
+            file=sys.stderr,
+        )
         raise SystemExit(1)
 
     company_name = sys.argv[1]

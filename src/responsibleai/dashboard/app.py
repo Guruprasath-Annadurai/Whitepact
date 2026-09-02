@@ -816,9 +816,7 @@ async def get_org_context(request: Request) -> OrgContext:
 
     client_key = get_remote_address(request)
     if await _auth_failure_limiter.is_blocked(client_key):
-        raise HTTPException(
-            429, detail="Too many failed authentication attempts. Try again later."
-        )
+        raise HTTPException(429, detail="Too many failed authentication attempts. Try again later.")
 
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):

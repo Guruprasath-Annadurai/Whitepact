@@ -135,9 +135,7 @@ async def _hit_random_path(client: httpx.AsyncClient, path: str) -> RequestResul
         return RequestResult(path=path, status_code=0, elapsed_ms=elapsed_ms, error=str(exc))
 
 
-async def _worker(
-    client: httpx.AsyncClient, stop_at: float, results: list[RequestResult]
-) -> None:
+async def _worker(client: httpx.AsyncClient, stop_at: float, results: list[RequestResult]) -> None:
     i = 0
     while time.monotonic() < stop_at:
         path = READ_PATHS[i % len(READ_PATHS)]
@@ -172,7 +170,9 @@ async def run_load_test(base_url: str, concurrency: int, duration_seconds: float
     async with httpx.AsyncClient(base_url=base_url, follow_redirects=True) as client:
         stop_at = time.monotonic() + duration_seconds
         results: list[RequestResult] = []
-        workers = [asyncio.create_task(_worker(client, stop_at, results)) for _ in range(concurrency)]
+        workers = [
+            asyncio.create_task(_worker(client, stop_at, results)) for _ in range(concurrency)
+        ]
 
         # Fire the one real write partway through the read-load window,
         # concurrently with the read workers above -- proving a write

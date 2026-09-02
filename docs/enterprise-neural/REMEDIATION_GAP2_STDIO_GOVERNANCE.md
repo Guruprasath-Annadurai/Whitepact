@@ -99,10 +99,12 @@ if ctx is None:
     if get_settings().enterprise_mode:
         risk_tier = classify_action_risk("mcp_tool_call", name)
         if risk_tier not in (RiskTier.MINIMAL, RiskTier.LOW):
-            return _text_and_structured({
-                "error": "stdio_privileged_execution_blocked",
-                "message": (...),
-            })
+            return _text_and_structured(
+                {
+                    "error": "stdio_privileged_execution_blocked",
+                    "message": (...),
+                }
+            )
 ```
 
 Local imports match this file's own established convention (keep the

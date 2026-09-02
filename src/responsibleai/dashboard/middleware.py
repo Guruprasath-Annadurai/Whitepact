@@ -64,6 +64,7 @@ class AuthFailureLimiter:
             now = asyncio.get_running_loop().time()
             self._prune(key, now).append(now)
 
+
 # The dashboard's static pages (static/index.html etc.) load Tailwind and
 # Chart.js from CDN and use inline <style>/<script> blocks plus onclick=
 # attribute handlers rather than a build step — so script-src/style-src

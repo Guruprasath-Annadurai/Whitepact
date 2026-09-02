@@ -83,6 +83,7 @@ def mint_neural_intent_attestation(
     ttl_seconds: float,
 ) -> NeuralIntentAttestation: ...
 
+
 def verify_neural_intent_attestation(
     attestation: NeuralIntentAttestation,
     *,

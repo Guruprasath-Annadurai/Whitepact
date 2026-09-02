@@ -17,17 +17,17 @@ from responsibleai.trust.score import TrustScoreEngine
 
 # ── Configuration ──────────────────────────────────────────────────────────
 MODEL_NAME = "enterprise-llm-v2"
-PROVIDER   = "acme-corp"
+PROVIDER = "acme-corp"
 
 # ── Module initialization ───────────────────────────────────────────────────
-trust_engine  = TrustScoreEngine()
-passport_gen  = PassportGenerator()
-guardrails    = GuardrailsEngine()
+trust_engine = TrustScoreEngine()
+passport_gen = PassportGenerator()
+guardrails = GuardrailsEngine()
 hallucination = HallucinationDetector()
-compliance    = ComplianceEngine()
-red_team      = RedTeamSimulator()
-cost_tracker  = CostTracker()
-router        = ModelRouter()
+compliance = ComplianceEngine()
+red_team = RedTeamSimulator()
+cost_tracker = CostTracker()
+router = ModelRouter()
 drift_monitor = TrustDriftMonitor()
 
 print("\n" + "=" * 68)
@@ -38,16 +38,23 @@ print("=" * 68)
 # ── Step 1: Simulate model evaluation results ──────────────────────────────
 print("\n  [1/7] Trust Score Computation")
 score = trust_engine.compute(
-    fairness=0.82, privacy=0.87, security=0.84,
-    robustness=0.80, compliance=0.91, authenticity=0.88,
+    fairness=0.82,
+    privacy=0.87,
+    security=0.84,
+    robustness=0.80,
+    compliance=0.91,
+    authenticity=0.88,
 )
 print(f"  Overall: {score.overall:.1f}/100  Grade: {score.grade}  Risk: {score.risk_level}")
 
 # ── Step 2: Compliance ──────────────────────────────────────────────────────
 print("\n  [2/7] Compliance Evaluation")
 comp_report = compliance.evaluate(
-    fairness_score=0.82, privacy_score=0.87, security_score=0.84,
-    robustness_score=0.80, compliance_maturity=0.91,
+    fairness_score=0.82,
+    privacy_score=0.87,
+    security_score=0.84,
+    robustness_score=0.80,
+    compliance_maturity=0.91,
     use_case="general",
     frameworks=[Framework.NIST_AI_RMF, Framework.EU_AI_ACT, Framework.ISO_42001],
 )
@@ -84,7 +91,7 @@ for text in test_texts:
     result = guardrails.scan(text)
     status = "BLOCKED" if result.is_blocked else "CLEAN  "
     detail = f"({len(result.pii_findings)} PII)" if result.pii_findings else ""
-    print(f"  [{status}] {text[:55]}{'...' if len(text)>55 else ''} {detail}")
+    print(f"  [{status}] {text[:55]}{'...' if len(text) > 55 else ''} {detail}")
 
 # ── Step 5: Hallucination analysis ─────────────────────────────────────────
 print("\n  [5/7] Hallucination Detection")
@@ -101,7 +108,9 @@ for resp in responses:
 print("\n  [6/7] Red Team Simulation")
 payloads = red_team.get_attack_payloads()
 
-safe_reply = "I cannot and will not assist with that request. This falls outside what I'm able to help with."
+safe_reply = (
+    "I cannot and will not assist with that request. This falls outside what I'm able to help with."
+)
 mock_responses = {p["name"]: safe_reply for p in payloads}
 
 report = red_team.analyze_responses(MODEL_NAME, PROVIDER, mock_responses)
@@ -113,9 +122,12 @@ print(f"  Critical        : {len(report.critical_vulnerabilities)}")
 # ── Step 7: Cost tracking + routing ────────────────────────────────────────
 print("\n  [7/7] Cost Intelligence")
 usage = TokenUsage.create(
-    provider="anthropic", model="claude-sonnet-4",
-    input_tokens=2048, output_tokens=512,
-    team="governance-bot", application="compliance-scan",
+    provider="anthropic",
+    model="claude-sonnet-4",
+    input_tokens=2048,
+    output_tokens=512,
+    team="governance-bot",
+    application="compliance-scan",
 )
 record = cost_tracker.record(usage)
 print(f"  Eval cost       : ${record.total_cost:.6f}")
@@ -134,8 +146,12 @@ print("\n" + "=" * 68)
 print("  GOVERNANCE SUMMARY")
 print("=" * 68)
 print(f"  Trust Score     : {score.overall:.1f}/100  [{score.grade}]  {score.risk_level} RISK")
-print(f"  Compliance      : {comp_report.compliance_score*100:.1f}/100  EU AI Act: {tier}")
-print(f"  Security        : {report.security_score * 100:.1f}/100  ({len(report.vulnerabilities)} vulnerabilities)")
+print(f"  Compliance      : {comp_report.compliance_score * 100:.1f}/100  EU AI Act: {tier}")
+print(
+    f"  Security        : {report.security_score * 100:.1f}/100  ({len(report.vulnerabilities)} vulnerabilities)"
+)
 print(f"  Passport        : ISSUED  (verified: {passport.verify()})")
-print(f"  Pipeline Status : {'PASS' if score.passed and comp_report.compliance_score >= 0.70 else 'REVIEW REQUIRED'}")
+print(
+    f"  Pipeline Status : {'PASS' if score.passed and comp_report.compliance_score >= 0.70 else 'REVIEW REQUIRED'}"
+)
 print("=" * 68 + "\n")

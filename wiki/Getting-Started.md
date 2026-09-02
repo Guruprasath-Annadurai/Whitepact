@@ -117,8 +117,12 @@ from responsibleai import (
 
 engine = TrustScoreEngine()
 score = engine.compute(
-    fairness=0.80, privacy=0.85, security=0.82,
-    robustness=0.78, compliance=0.90, authenticity=0.88,
+    fairness=0.80,
+    privacy=0.85,
+    security=0.82,
+    robustness=0.78,
+    compliance=0.90,
+    authenticity=0.88,
 )
 print(f"{score.overall:.1f}/100  Grade: {score.grade}  Risk: {score.risk_level}")
 ```

@@ -65,9 +65,7 @@ class TestAuthFailureLimiter:
     async def test_repeated_invalid_keys_eventually_get_429(self, client: AsyncClient) -> None:
         last_status = None
         for i in range(25):
-            r = await client.get(
-                "/api/orgs", headers={"Authorization": f"Bearer guess-{i}"}
-            )
+            r = await client.get("/api/orgs", headers={"Authorization": f"Bearer guess-{i}"})
             last_status = r.status_code
         # 20 distinct wrong guesses is the configured threshold -- by
         # attempt 25 the IP must be blocked, regardless of each guess

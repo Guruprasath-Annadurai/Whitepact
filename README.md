@@ -149,7 +149,9 @@ result = gateway.evaluate(
     action=ActionRequest(tool_name="rai_scan", arguments={"text": "..."}),
     authority=AuthorityContext(org_id="acme", agent_id="agent-1"),
 )
-print(result.decision)  # GovernanceDecision.ALLOW | ALLOW_WITH_REDACTION | REQUIRE_APPROVAL | DENY | QUARANTINE
+print(
+    result.decision
+)  # GovernanceDecision.ALLOW | ALLOW_WITH_REDACTION | REQUIRE_APPROVAL | DENY | QUARANTINE
 ```
 
 - **Risk tiering** (`governance/risk.py`) — every MCP tool is classified
@@ -366,14 +368,20 @@ from responsibleai import TrustScoreEngine, PassportGenerator
 
 engine = TrustScoreEngine()
 score = engine.compute(
-    fairness=0.80, privacy=0.85, security=0.82,
-    robustness=0.78, compliance=0.90, authenticity=0.88,
+    fairness=0.80,
+    privacy=0.85,
+    security=0.82,
+    robustness=0.78,
+    compliance=0.90,
+    authenticity=0.88,
 )
 print(f"{score.overall:.1f} / 100  Grade: {score.grade}  Risk: {score.risk_level}")
 # → 83.7 / 100  Grade: B  Risk: LOW
 
 passport = PassportGenerator().generate(
-    model_name="gpt-4o", provider="openai", trust_score=score,
+    model_name="gpt-4o",
+    provider="openai",
+    trust_score=score,
     compliance_summary={"overall": 80.5},
 )
 print(passport.passport_id)
@@ -388,9 +396,9 @@ from responsibleai import GuardrailsEngine
 guardrails = GuardrailsEngine()
 result = guardrails.scan("Customer SSN is 123-45-6789, email: alice@company.com")
 
-print(result.is_blocked)      # True
-print(result.pii_count)       # 2
-print(result.redacted_text)   # "Customer SSN is [SSN], email: [EMAIL]"
+print(result.is_blocked)  # True
+print(result.pii_count)  # 2
+print(result.redacted_text)  # "Customer SSN is [SSN], email: [EMAIL]"
 ```
 
 ### Hallucination detection
@@ -416,9 +424,12 @@ from responsibleai import ComplianceEngine
 
 engine = ComplianceEngine()
 report = engine.evaluate(
-    fairness_score=0.80, privacy_score=0.85,
-    security_score=0.82, robustness_score=0.78,
-    compliance_maturity=0.90, use_case="credit_scoring",
+    fairness_score=0.80,
+    privacy_score=0.85,
+    security_score=0.82,
+    robustness_score=0.78,
+    compliance_maturity=0.90,
+    use_case="credit_scoring",
 )
 print(f"Score: {report.compliance_score * 100:.1f}%")
 print(f"EU AI Act tier: {report.eu_ai_act_tier.value}")  # high_risk
@@ -443,11 +454,15 @@ for v in report.critical_vulnerabilities:
 ```python
 from responsibleai import CostTracker, ModelRouter, TokenUsage, BudgetPolicy
 
-tracker = CostTracker(db_path="~/.responsibleai/data.db",
-                      policy=BudgetPolicy(monthly_limit_usd=500.0))
+tracker = CostTracker(
+    db_path="~/.responsibleai/data.db", policy=BudgetPolicy(monthly_limit_usd=500.0)
+)
 usage = TokenUsage.create(
-    provider="openai", model="gpt-4o",
-    input_tokens=2000, output_tokens=800, team="product",
+    provider="openai",
+    model="gpt-4o",
+    input_tokens=2000,
+    output_tokens=800,
+    team="product",
 )
 record = tracker.record(usage)
 print(f"This call: ${record.total_cost:.4f}")
@@ -467,8 +482,14 @@ monitor = TrustDriftMonitor(db_path=":memory:", alert_threshold=5.0)
 engine = TrustScoreEngine()
 
 for fairness in [0.90, 0.88, 0.85, 0.72]:
-    score = engine.compute(fairness=fairness, privacy=0.85, security=0.80,
-                           robustness=0.80, compliance=0.85, authenticity=0.85)
+    score = engine.compute(
+        fairness=fairness,
+        privacy=0.85,
+        security=0.80,
+        robustness=0.80,
+        compliance=0.85,
+        authenticity=0.85,
+    )
     alert = monitor.record("gpt-4o", "openai", score)
     if alert:
         print(f"Drift alert! {alert.severity}: {alert.delta:.1f} pt drop")
@@ -671,14 +692,18 @@ from biasbuster import BiasBusterRunner, GenderBiasProbe, RacialBiasProbe
 from biasbuster.providers import OpenAIProvider
 import asyncio
 
+
 async def main():
     provider = OpenAIProvider(api_key="sk-...", model="gpt-4o")
     runner = BiasBusterRunner(provider=provider)
-    suite = await runner.run([
-        GenderBiasProbe(threshold=0.20),
-        RacialBiasProbe(threshold=0.20),
-    ])
+    suite = await runner.run(
+        [
+            GenderBiasProbe(threshold=0.20),
+            RacialBiasProbe(threshold=0.20),
+        ]
+    )
     print(f"Score: {suite.overall_score:.4f}  {'PASSED' if suite.passed else 'FAILED'}")
+
 
 asyncio.run(main())
 ```
