@@ -1,5 +1,32 @@
 # Frozen Review Baseline — Stage 0
 
+> **FROZEN CANDIDATE (PM-confirmed, 2026-09-02, superseding the Stage-0
+> SHA below): `7df5bfb40cbb14543267f506cf18215b8f3395f0`.**
+>
+> This is the official, final commit for independent human security
+> review. Effective from this confirmation forward: no further commits,
+> modifications, or pushes to `security/heart-production-closure`; no
+> API-key rotation; no process-isolation work; no new phase; no merge of
+> PR #50, #54, or #55. The next permitted source-code work on this
+> branch is review-driven remediation only, once a real independent
+> finding is received.
+>
+> The rest of this document is the original Stage-0 capture (SHA
+> `6878cc7`, the branch's state at the very start of the freeze
+> process) — preserved unedited below as the historical record of where
+> the process began. Everything that happened between `6878cc7` and the
+> final `7df5bfb` (Stages 1–5, the CI-gap fix, the auth_enabled/DB-URL
+> fixes, and the README/wiki documentation pass) is recorded in this
+> directory's other documents, each dated and SHA-stamped in turn — see
+> `FROZEN_REVIEW_VERIFICATION.md`, `CI_GAP_ROOT_CAUSE_AND_FIX.md`, and
+> `STAGE5_INDEPENDENT_REVIEW_GATE.md`.
+>
+> **Local regression at the frozen candidate:** 3442 passed, 0 failed, 0
+> errors. **GitHub Actions:** all checks green. **Independent human
+> security review: NOT YET PERFORMED.**
+
+---
+
 This document is the recorded, independently-verified state of the review
 candidate at the moment the branch was frozen for independent security
 review. Every value below was captured directly from `git`, `gh`, and the
