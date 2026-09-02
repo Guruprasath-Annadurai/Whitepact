@@ -4,14 +4,16 @@
 formal, security-focused review of this specific PR at its frozen
 candidate SHA.
 
-> **Update, 2026-09-02:** a separate external human technical review
-> (reviewer: Keshavan) is recorded in
-> [`EXTERNAL_REVIEW_KESHAVAN.md`](EXTERNAL_REVIEW_KESHAVAN.md), gate
-> status **PARTIALLY CLOSED**. That review's scope was not confirmed
-> against this PR's specific SHA and did not confirm coverage of the
-> individual trust boundaries this packet exists to hand a reviewer —
-> this packet remains the artifact a structured review of PR #55 should
-> use.
+> **Update, 2026-09-02 (revised same day):** a separate external human
+> review (reviewer: Keshavan) is recorded in
+> [`EXTERNAL_REVIEW_KESHAVAN.md`](EXTERNAL_REVIEW_KESHAVAN.md) —
+> confirmed as hands-on, terminal-based, adversarial testing (not just a
+> conceptual opinion), Level 3 on this project's own scale. Gate status:
+> **CLOSED for "did WhitePact receive genuine external adversarial
+> testing" (Axis 1); NOT CONFIRMED for "was this exact PR #55 candidate
+> the version tested" (Axis 2)** — reviewed SHA and specific
+> trust-boundary coverage were not recorded. This packet remains the
+> artifact a structured, SHA-confirmed review of PR #55 should use.
 
 This document is prepared *for* a human security reviewer. It does not
 itself constitute review. It was assembled by an AI agent (Claude, via

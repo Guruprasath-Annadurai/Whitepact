@@ -3,17 +3,22 @@
 **Independent human review: NOT YET PERFORMED**, in the sense of a
 formal, security-focused review of the exact frozen candidate.
 
-> **Update, 2026-09-02:** an external human technical/security review
-> (reviewer: Keshavan, external to the implementation process,
-> personally known to the project owner) has since been recorded and
-> classified. Gate status is now **PARTIALLY CLOSED** — see
+> **Update, 2026-09-02 (revised same day):** an external human
+> technical/security review (reviewer: Keshavan, external to the
+> implementation process, personally known to the project owner) has
+> since been recorded, then re-classified after confirmation the
+> testing was **hands-on, terminal-based, adversarial** rather than a
+> conceptual opinion. See
 > [`EXTERNAL_REVIEW_KESHAVAN.md`](EXTERNAL_REVIEW_KESHAVAN.md) for the
-> full record. Formal independent penetration test: NOT PERFORMED.
-> Formal third-party security audit: NOT PERFORMED. This does not
-> substitute for a structured review of the frozen candidate
-> (`7df5bfb40cbb14543267f506cf18215b8f3395f0`) — the reviewed SHA for
-> Keshavan's review is not recorded and has not been established as
-> that commit.
+> full record. Two-axis result: **Axis 1 — did WhitePact receive
+> genuine external adversarial security testing: CLOSED.** **Axis 2 —
+> was the exact frozen candidate
+> (`7df5bfb40cbb14543267f506cf18215b8f3395f0`) the version tested: NOT
+> CONFIRMED**, reviewed SHA not recorded. Formal commercial third-party
+> penetration test: NOT CONFIRMED. Formal third-party security audit:
+> NOT PERFORMED. Neither axis alone should be quoted without the other
+> — collapsing them into a single unqualified "CLOSED" would overclaim
+> what the frozen candidate specifically has evidence for.
 
 This document is the closing artifact of the security-freeze process's
 Stages 0–5. It exists to state, plainly, whether the branch is ready for
