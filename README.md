@@ -832,6 +832,8 @@ See [`ROADMAP.md`](ROADMAP.md) for the canonical NOW/NEXT/LATER plan. The list b
 
 WhitePact holds two [OpenSSF](https://openssf.org/) self-certifications on its [bestpractices.dev project page](https://www.bestpractices.dev/projects/14112): the **Best Practices Passing** badge and **OSPS Baseline Level 1**. Both are voluntary, self-attested badges backed by real, inspectable evidence in this repository (see `compliance/OSPS_BASELINE_BRANCH_PROTECTION.md`, `compliance/OPENSSF_SECURITY_EVIDENCE.md`, `compliance/OPENSSF_SILVER_GAP_ANALYSIS.md`) — they are **not** an independent third-party audit, a penetration test, or equivalent to SOC 2 / ISO 27001 certification. None of those are claimed. See [`compliance/SOC2_ALTERNATIVE_PATH.md`](compliance/SOC2_ALTERNATIVE_PATH.md) for the honest path toward a real independent audit once there's budget for one.
 
+**Independent human security review: NOT YET PERFORMED.** The Heart Production Closure work ([PR #55](https://github.com/Guruprasath-Annadurai/Whitepact/pull/55)) is in an active, disclosed security-freeze/review-readiness process — frozen baseline, freshly reproduced test/lint/security-scan evidence, a full independent-review packet and attack map, and GitHub Actions CI now running against that PR (previously it wasn't, due to a branch-trigger gap — root-caused and fixed). See [`docs/security-review/`](docs/security-review/) for the complete, honestly-scoped record, including the one known structural limitation ([`docs/architecture/EXECUTION_PROCESS_BOUNDARY_STATEMENT.md`](docs/architecture/EXECUTION_PROCESS_BOUNDARY_STATEMENT.md)) that review process has not closed.
+
 ---
 
 ## Further reading
