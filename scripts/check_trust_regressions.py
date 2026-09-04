@@ -31,6 +31,28 @@ PROHIBITED_README_CLAIMS = (
     r"\bindependently penetration tested\b",
 )
 
+PUBLIC_PROMOTION_PATHS = (
+    "README.md",
+    "PROMOTION_READINESS.md",
+    "docs/promotion/LAUNCH_COPY.md",
+    "docs/mcp/README.md",
+    "docs/enterprise/README.md",
+)
+
+PROHIBITED_PROMOTION_CLAIMS = (
+    r"\bavailable on every LLM\b",
+    r"\bsupports all LLMs\b",
+    r"\b(?:trusted|used|deployed) by (?:enterprises|Fortune|MNCs)\b",
+    r"\bour enterprise customers\b",
+    r"\bstrategic partner(?:ship)? with\b",
+    r"\bindependently (?:audited|penetration tested|pentested)\b",
+    r"\bOpenSSF (?:Best Practices )?Gold certified\b",
+    r"\b(?:ISO(?:/IEC)? 42001|ISO 27001|SOC 2) certified\b",
+    r"\bBrain\*?AI (?:ships|is available|is production)\b",
+    r"\bproduction neural capability\b",
+    r"\b(?:thousands|millions) of (?:downloads|users)\b",
+)
+
 
 def main() -> int:
     failures: list[str] = []
@@ -69,6 +91,12 @@ def main() -> int:
     for pattern in PROHIBITED_README_CLAIMS:
         if re.search(pattern, readme, flags=re.IGNORECASE):
             failures.append(f"README contains a prohibited unevidenced trust claim: {pattern}")
+
+    for path in PUBLIC_PROMOTION_PATHS:
+        text = Path(path).read_text(encoding="utf-8")
+        for pattern in PROHIBITED_PROMOTION_CLAIMS:
+            if re.search(pattern, text, flags=re.IGNORECASE):
+                failures.append(f"{path} contains a prohibited promotion claim: {pattern}")
 
     caiq_seed = Path("scripts/caiq_answers.py").read_text(encoding="utf-8")
     if "Historical seed answers" not in caiq_seed or "not the authoritative" not in caiq_seed:

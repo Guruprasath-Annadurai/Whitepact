@@ -27,3 +27,9 @@ jobs:
 
       - name: Enforce non-SLSA trust controls and public claim boundaries
         run: python scripts/check_trust_regressions.py
+
+      - name: Enforce MCP public capability counts
+        run: python scripts/check_mcp_docs.py
+
+      - name: Check public launch-surface local links
+        run: python scripts/check_launch_links.py
