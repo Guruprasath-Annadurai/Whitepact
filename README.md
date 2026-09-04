@@ -1,76 +1,43 @@
 <!-- mcp-name: io.github.Guruprasath-Annadurai/whitepact -->
-<p align="center">
+# WhitePact
+
+## Authority for Intelligent Systems
+
+WhitePact is an open-source runtime authority layer for AI agents and autonomous
+systems. It sits between intelligence and execution and independently determines
+whether a proposed action may proceed. **Intelligence may propose. WhitePact decides.**
+
+```text
+AI agent  →  WhitePact  →  ALLOW | ALLOW_WITH_REDACTION | REQUIRE_APPROVAL | DENY | QUARANTINE  →  execution
+```
+
+Decisions are deterministic, policy- and authority-aware, and can produce
+hash-chained evidence. The current WhitePact v1.2.6 MCP surface exposes **30 tools
+and 20 advertised resources** (10 canonical resources under two compatible URI
+schemes), derived from the live registry definitions.
+
+[Try the five-minute quickstart](docs/QUICKSTART.md) ·
+[See WhitePact stop an agent action](#see-whitepact-stop-an-agent-action) ·
+[Connect an MCP client](docs/mcp/README.md) ·
+[Review security evidence](compliance/WHITEPACT_TRUST_STATUS.md) ·
+[Evaluate for enterprise use](docs/enterprise/README.md)
+
+<p>
   <a href="https://github.com/Guruprasath-Annadurai/Whitepact/actions"><img src="https://github.com/Guruprasath-Annadurai/Whitepact/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
   <a href="https://pypi.org/project/rai-governance-platform/"><img src="https://img.shields.io/pypi/v/rai-governance-platform" alt="PyPI version"/></a>
-  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"/></a>
   <a href="https://registry.modelcontextprotocol.io"><img src="https://img.shields.io/badge/MCP_Registry-listed-blue.svg" alt="Listed on the official MCP Registry"/></a>
-  <a href="https://smithery.ai/server/guruprasathannadurai-official/whitepact"><img src="https://img.shields.io/badge/Smithery-listed-blue.svg" alt="Listed on Smithery"/></a>
-  <a href="https://scorecard.dev/viewer/?uri=github.com/Guruprasath-Annadurai/Whitepact"><img src="https://api.scorecard.dev/projects/github.com/Guruprasath-Annadurai/Whitepact/badge" alt="OpenSSF Scorecard"/></a>
-  <a href="https://www.bestpractices.dev/projects/14112"><img src="https://www.bestpractices.dev/projects/14112/badge" alt="OpenSSF Best Practices"/></a>
-  <a href="https://www.bestpractices.dev/projects/14112"><img src="https://www.bestpractices.dev/projects/14112/baseline" alt="OpenSSF Baseline"/></a>
+  <a href="https://www.bestpractices.dev/projects/14112"><img src="https://www.bestpractices.dev/projects/14112/badge" alt="OpenSSF Best Practices Silver"/></a>
 </p>
 
-<p align="center"><strong>WhitePact — an independent runtime authority, governance, and assurance layer for autonomous systems: a five-way governance decision engine (ALLOW / ALLOW_WITH_REDACTION / REQUIRE_APPROVAL / DENY / QUARANTINE), trust scoring, bias detection, guardrails, hallucination detection, compliance mapping (NIST AI RMF / EU AI Act / ISO 42001), cost intelligence, drift monitoring, a public Trust Index / leaderboard / AI Incident Database, and an MCP server (30 tools, 20 resources) with LangChain, LangGraph, and Google ADK trust-gate integrations.</strong></p>
+## Why an independent authority layer?
 
-```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                        WhitePact  v1.2.6                                     │
-│                                                                              │
-│  ┌──────────────┐  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐  │
-│  │ Governance   │  │ Trust Score │  │  Compliance  │  │  Guardrails      │  │
-│  │ 5-way decide │  │ 6-dim A–F   │  │ NIST/EU/ISO  │  │  PII + Tox       │  │
-│  └──────────────┘  └─────────────┘  └──────────────┘  └──────────────────┘  │
-│  ┌──────────────┐  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐  │
-│  │ Hallucination│  │ Cost Intel  │  │   Red Team   │  │  Drift Monitor   │  │
-│  │ Self-consist.│  │ Route+Budget│  │ 10 attacks   │  │  Alerts+Trend    │  │
-│  └──────────────┘  └─────────────┘  └──────────────┘  └──────────────────┘  │
-│  ┌──────────────┐  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐  │
-│  │ AI Passport  │  │  BiasBuster │  │ PrivacyLabel │  │  MCP Server      │  │
-│  │ SHA-256 cert │  │ 6 probes+CI │  │  Federated   │  │  30 tools/HTTP   │  │
-│  └──────────────┘  └─────────────┘  └──────────────┘  └──────────────────┘  │
-│  ┌──────────────────────────────────────────────────────────────────────────┐ │
-│  │   Governance Dashboard — FastAPI · Per-org rate limit · Alembic · OTEL  │ │
-│  └──────────────────────────────────────────────────────────────────────────┘ │
-└──────────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## What this solves
-
-Every team deploying AI in production faces the same gap: **no unified way to
-prove a model — or an autonomous agent's actions — is safe, fair, compliant,
-and accountable.** Audits are manual, bias is discovered in production,
-compliance is a spreadsheet, an agent's tool calls go ungoverned, and nobody
-knows what the LLM bill will be next month.
-
-WhitePact gives you one platform — a REST API, a Python SDK, an MCP server,
-and a live dashboard — that covers the full governance lifecycle:
-
-| Problem | Module | Output |
-|---|---|---|
-| Should this agent action be allowed, redacted, held for approval, denied, or quarantined? | `WhitePactRuntimeGateway` (governance core) | A five-way `GovernanceDecision`, deterministic, no LLM call in the decision path |
-| Is this model trustworthy? | `TrustScoreEngine` | 0–100 score, A–F grade, risk level |
-| Does it comply with regulations? | `ComplianceEngine` | NIST AI RMF, EU AI Act tier, ISO 42001 |
-| Is it exposing PII? | `GuardrailsEngine` | Block / redact with audit log |
-| Is it hallucinating? | `HallucinationDetector` | Risk score, unsupported claims |
-| Can it be attacked? | `RedTeamSimulator` | 10 vectors, CVE IDs, safe-refusal rate |
-| How much is it costing? | `CostTracker` + `ModelRouter` | Per-model USD, routing to cheapest viable model |
-| Is it getting worse over time? | `TrustDriftMonitor` | 7/30-day trend, severity alerts |
-| Is it biased? | `BiasBuster` | 6 demographic probes, CI gate |
-| Is this data labeled privately? | `PrivacyLabel` | Federated DP labels, never leaves device |
-| Is this media real? | `DeepfakeDetector` | Ensemble confidence, method detected |
-| Can I trust a third-party MCP server before connecting to it? | `SupplyChainScanner` | VERIFIED_FACT / INFERRED_SIGNAL / UNKNOWN verdicts — typosquat, description-content, known-incident checks |
-| Is there a tamper-evident record of every governance decision? | `EvidenceRepository` | Hash-chained `EvidenceRecord`, per-org, `verify_chain()` |
-| Does a risky action get a human in the loop? | `ApprovalRepository` | Race-safe `PENDING → APPROVED/DENIED` workflow |
-| How does this model rank against others, independently? | `Public Leaderboard` | Cross-model trust ranking from actually calling each model's API, not self-reported |
-| Can I cite and verify a trust score anywhere? | `Trust Index` | Free self-assessed or human-reviewed certified passport, verifiable at `/verify/{id}`, embeddable badge |
-| Has this AI system failed publicly before? | `AI Incident Database` | Crowd-reported, moderator-reviewed, hash-chained public registry |
-| Should my agent trust this third-party tool before calling it? | `rai_check_trust` + LangChain/LangGraph/ADK integrations | Free lookup, plus a real block/pause gate in-agent |
-| Can any MCP client govern every AI call? | `MCP Server` | 27 governance tools over stdio, Streamable HTTP, or legacy HTTP+SSE |
-
----
+An AI model should not be the final authority over its own actions. WhitePact
+separates proposal from permission: identity, delegated authority, risk, policy,
+content controls, approval requirements, and recent behavior are evaluated before
+the execution boundary. Trust scoring, bias and hallucination evaluation,
+compliance-support mappings, cost intelligence, and integrations are supporting
+capabilities—not the authority claim itself.
 
 ## Install
 
@@ -98,40 +65,35 @@ see `MIGRATION_WHITEPACT_V2.md` Section 3 for why an alias package
 
 ---
 
-## 30-second quickstart
+## Five-minute quickstart
 
 ```bash
-# Start the governance dashboard
-pip install "rai-governance-platform[dashboard]"
-uvicorn responsibleai.dashboard.app:app --port 8765
-
-# Evaluate a model (no LLM key needed — supply your own scores)
-curl -X POST http://localhost:8765/api/evaluate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model_name": "gpt-4o",
-    "provider": "openai",
-    "fairness": 0.80,
-    "privacy": 0.85,
-    "security": 0.82,
-    "robustness": 0.78,
-    "compliance": 0.90,
-    "authenticity": 0.88
-  }'
+git clone https://github.com/Guruprasath-Annadurai/Whitepact.git
+cd Whitepact
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ".[mcp]"
+python examples/09_runtime_authority_demo.py
 ```
 
-```json
-{
-  "trust_score": { "trust_score": 83.65, "grade": "B", "risk": "LOW" },
-  "compliance": { "overall_score": 80.5, "eu_ai_act_tier": "limited_risk", "violations": 0 },
-  "passport_id": "rai-a3f7c2b1",
-  "passport_hash": "4d8e1f2a9c3b7e6d...",
-  "drift_alert": null
-}
+This needs no LLM or payment-provider key. Continue with the
+[`five-minute quickstart`](docs/QUICKSTART.md) to connect MCP Inspector,
+discover the current 30 tools/20 advertised resources, and invoke `rai_health`.
+
+## See WhitePact stop an agent action
+
+The demo proposes an $8,500 payment using the real runtime gateway. The agent
+has delegated payment authority, but the authority grant requires human approval:
+
+```text
+Agent proposes: payment.execute USD 8,500
+WhitePact decision: REQUIRE_APPROVAL
+Execution proceeded: NO
 ```
 
-Open `http://localhost:8765` for the live dashboard and
-`http://localhost:8765/api/docs` for interactive API docs.
+The script asserts nothing through prerecorded output: it evaluates the action
+and builds an evidence record from the returned decision. Review or run
+[`examples/09_runtime_authority_demo.py`](examples/09_runtime_authority_demo.py).
 
 ---
 
@@ -156,9 +118,9 @@ print(result.decision)  # GovernanceDecision.ALLOW | ALLOW_WITH_REDACTION | REQU
   against a hardcoded, drift-tested table, not inferred at call time.
 - **Policy engine** (`governance/policy.py`) — first-match-wins rules with
   `ALLOW` / `DENY` / `REQUIRE_APPROVAL` effects.
-- **Evidence** (`governance/evidence.py`) — every decision is written to a
-  per-org, hash-chained `EvidenceRecord`; `verify_chain()` detects tampering.
-  Raw argument values are never stored, only field-name keys.
+- **Evidence** (`governance/evidence.py`) — governed hosted paths can persist
+  per-org, hash-chained `EvidenceRecord` entries; `verify_chain()` detects
+  tampering. Raw argument values are never stored, only field-name keys.
 - **Approval workflow** (`governance/approval.py`) — `REQUIRE_APPROVAL`
   decisions queue a real, race-safe `ApprovalRequest` with a resolution API,
   not just a log line.
@@ -179,7 +141,7 @@ print(result.decision)  # GovernanceDecision.ALLOW | ALLOW_WITH_REDACTION | REQU
 No governance decision is LLM-based; see
 `DETERMINISTIC_VS_PROBABILISTIC.md` for why.
 
-**See it end-to-end**: `examples/08_whitepact_enterprise_scenario.py` runs a
+**Advanced end-to-end scenario**: `examples/08_whitepact_enterprise_scenario.py` runs a
 full scenario (an org onboarding an autonomous finance agent) through all
 eight machine-authority invariants — ceiling, delegation, attenuation,
 approval quorum, workflow composition, autonomy budget, memory firewall,
@@ -191,7 +153,7 @@ python examples/08_whitepact_enterprise_scenario.py
 
 ---
 
-## MCP Server — govern every AI call from Claude Code, Claude Desktop, or any MCP client
+## MCP server
 
 The MCP (Model Context Protocol) server exposes WhitePact as **30 tools and
 20 resources** (10 canonical resource URIs, dual-advertised under both
@@ -199,35 +161,24 @@ The MCP (Model Context Protocol) server exposes WhitePact as **30 tools and
 MCP-compatible client — Claude Code, Claude Desktop, Cursor, Windsurf, or your
 own agent runtime. Three transports are supported: stdio, Streamable HTTP
 (`/mcp`, current MCP spec), and legacy HTTP+SSE (`/sse` + `/messages/`, kept
-for older clients). When a team's client points at this server, every AI
-interaction is automatically governed — five-way governance decisions, trust
-scoring, guardrails, compliance checks (NIST AI RMF / EU AI Act / ISO 42001),
-bias evaluation, drift detection, cost tracking, and hash-chained audit
-evidence run on any call without code changes.
+for older clients). The MCP tools expose governance evaluators; the five-way
+runtime gateway and evidence persistence apply on hosted calls only when that
+deployment enables and configures MCP governance. See the
+[`MCP integration guide`](docs/mcp/README.md) for this boundary.
 
 ### Setup
 
 ```bash
-# Install
-pip install "rai-governance-platform[dashboard,mcp]"
-
-# Start the REST API (MCP tools call it internally)
-RAI_DB_PATH=/var/lib/rai/governance.db \
-RAI_API_KEYS=your-key-here \
-uvicorn responsibleai.dashboard.app:app --host 127.0.0.1 --port 8765 &
-
-# Add to Claude Code (~/.claude/claude_desktop_config.json or via /mcp)
+pip install "rai-governance-platform[mcp]==1.2.6"
 ```
+
+Add the local stdio server to an MCP client:
 
 ```json
 {
   "mcpServers": {
     "whitepact": {
-      "command": "whitepact-mcp",
-      "env": {
-        "RAI_API_URL": "http://localhost:8765",
-        "RAI_API_KEY": "your-key-here"
-      }
+      "command": "whitepact-mcp"
     }
   }
 }
@@ -235,9 +186,10 @@ uvicorn responsibleai.dashboard.app:app --host 127.0.0.1 --port 8765 &
 
 `whitepact-mcp` and `responsibleai-mcp` are the same entry point — see
 `pyproject.toml`'s `[project.scripts]`; both will keep working, use whichever
-name you prefer.
+name you prefer. Local stdio needs no WhitePact API key. Remote HTTP setup and
+its authentication boundary are documented in [`docs/mcp/README.md`](docs/mcp/README.md).
 
-### Available tools (27)
+### Available tools (30)
 
 | Tool | What it does |
 |---|---|
@@ -268,6 +220,9 @@ name you prefer.
 | `rai_org_status` | Governance status snapshot: models, grades, compliance, risk |
 | `rai_webhook_status` | Webhook delivery health, failure analysis, remediation actions |
 | `rai_check_trust` | Free public Trust Index lookup for a **third-party** model/tool, before an agent invokes it — unlike every other tool above, which evaluates output the caller itself produced |
+| `rai_memory_write_check` | Check a proposed persistent-memory write for injection patterns before storage |
+| `rai_memory_read_check` | Check the requested persistent-memory namespace before a read |
+| `rai_causal_influence_check` | Inspect upstream provenance for untrusted or injection-bearing influences |
 
 ### Agent-framework integrations — LangChain, LangGraph, Google ADK
 
@@ -314,23 +269,21 @@ See `GAME_CHANGER_BUILD_PLAN.md` Phase B for the reasoning behind each.
 WhitePact is listed and queryable today on real MCP directories — not
 aspirational, all verified live:
 
-- **Official MCP Registry** — `server.json` at the repository root
-  (schema `2025-12-11`, listing version `1.2.3`) is published as
-  `io.github.Guruprasath-Annadurai/whitepact`, confirmed queryable at
-  [registry.modelcontextprotocol.io](https://registry.modelcontextprotocol.io).
-  Advertises both the PyPI/stdio package (`whitepact-mcp`, self-hosted,
-  free, unrestricted) and a `remotes` entry pointing at the hosted
-  Streamable HTTP and SSE transports (`whitepact-mcp-http.onrender.com`)
-  — a one-click remote connector, not just an installable package.
+- **Official MCP Registry** — `io.github.Guruprasath-Annadurai/whitepact`
+  is listed. A live query on 2026-09-04 showed the latest published registry
+  record is still listing version `1.2.3`, pointing to package `1.2.2` and
+  the superseded twenty-seven-tool capability set. This branch prepares a `1.2.6` manifest
+  with the source-verified 30/20 counts; it is **not** a live registry claim
+  until that manifest is published after merge.
 - **Antigravity CLI plugin** — `plugins/whitepact/` at the repository
   root follows the [official Antigravity plugin manifest
   format](https://antigravity.google/docs/plugins), connecting to the
   same hosted Streamable HTTP transport via `serverUrl`. No official
   Antigravity plugin directory exists yet, so this is distributed
   directly from the repo — see `plugins/whitepact/README.md`.
-- **Smithery** — listed as
+- **Smithery** — previously verified listed as
   [`guruprasathannadurai-official/whitepact`](https://smithery.ai/server/guruprasathannadurai-official/whitepact),
-  30 tools and 20 resources discovered against the hosted Streamable
+  30 tools and 20 resources discovered on 2026-08-31 against the hosted Streamable
   HTTP transport (`whitepact-mcp-http.onrender.com/mcp`, a separate
   Render service from the main dashboard). This deployment has no
   OAuth authorization server configured — only static Bearer API
@@ -338,16 +291,17 @@ aspirational, all verified live:
   `/.well-known/mcp/server-card.json` serves the same live
   `TOOL_DEFS`/`RESOURCE_DEFS` the server itself advertises, for
   directories whose scanners can't complete a live authenticated
-  crawl.
+  crawl. The hosted endpoint timed out during the 2026-09-04 launch check,
+  so current remote availability remains a launch blocker.
 
 See `compliance/MCP_DISTRIBUTION_GUIDE.md` for the full distribution
 plan, including directories not yet submitted to.
 
 ### Platform integrations
 
-WhitePact connects to the major AI platforms as one MCP server through
-standards-compliant clients — no per-platform forks, no per-platform
-governance logic. See [`docs/integrations/`](docs/integrations/) for the
+WhitePact provides one MCP server plus evidence-qualified setup guidance for
+multiple AI clients—no per-platform governance fork. See
+[`docs/integrations/`](docs/integrations/) for the
 canonical compatibility matrix (`PLATFORM_COMPATIBILITY.md`), per-platform
 setup docs (GitHub Copilot, Microsoft Copilot, Claude, Grok, Gemini,
 Amazon Q, AWS Bedrock AgentCore, Mistral Le Chat, Cursor), and
