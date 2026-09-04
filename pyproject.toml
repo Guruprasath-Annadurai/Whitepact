@@ -117,6 +117,10 @@ agent-frameworks = ["rai-governance-platform[langchain,langgraph,adk,a2a]"]
 # the vulnerable path. Still opt-in only, so a default install never
 # carries the finding; installing this extra takes on that
 # (mitigated-here, unpatched-upstream) risk knowingly.
+# PYSEC-2026-3740 / CVE-2026-81726 affects separate NLTK model-artifact
+# import/export APIs. WhitePact does not import or call those APIs; its VADER
+# path neither accepts model paths nor enables pathsec. The machine-readable
+# reachability decision and review trigger are in security/whitepact.openvex.json.
 sentiment  = ["nltk>=3.10.0"]
 dev = [
     "pytest>=8.0.0",
