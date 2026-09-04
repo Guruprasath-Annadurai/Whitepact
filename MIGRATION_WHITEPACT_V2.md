@@ -15,6 +15,11 @@
 > source, not guessed) from **target name**, and states explicitly
 > whether the current name will keep working after the target ships.
 
+Current capability note: WhitePact v1.2.6 exposes 30 MCP tools and 20
+advertised resources (10 canonical resources under both `whitepact://` and
+`rai://`). Earlier phase entries preserve their historical counts and are not
+the current capability source of truth.
+
 Last reviewed: 2026-07-26 · Current package version: 1.2.0 · Repository:
 `Guruprasath-Annadurai/Whitepact` (renamed on GitHub from `ResponsibleAi`
 — confirmed via `gh api repos/.../ResponsibleAi` → `full_name:

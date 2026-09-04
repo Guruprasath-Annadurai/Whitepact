@@ -26,7 +26,7 @@ Authorization Server.
 1. Claude → **Settings** → **Connectors** → **Add custom connector**.
 2. URL: `https://whitepact-mcp-http.onrender.com/mcp`.
 3. Add header: `Authorization: Bearer <YOUR_WHITEPACT_API_KEY>`.
-4. Save. Claude will fetch `tools/list` immediately — 27 tools should
+4. Save. Claude will fetch `tools/list` immediately — 30 tools should
    appear.
 
 This flow requires an interactive browser session and was **not**
@@ -42,7 +42,7 @@ see `FOUNDER_ACTION_CHECKLIST.md`.
   header and confirm `initialize`, `tools/list`, and one `tools/call`
   succeed.
 - In Claude itself, after adding the connector, ask it to list available
-  WhitePact tools and confirm the count matches 27.
+WhitePact tools and confirm the count matches 30 for v1.2.6.
 
 ## Safe test prompt
 
@@ -70,4 +70,4 @@ account owner.
 
 **FOUNDER UI VALIDATION REQUIRED** — confirm the "Add custom connector"
 flow still matches the steps above (Claude's UI has changed layout before)
-and that all 27 tools render, using your own Claude session.
+and that all 30 tools render for v1.2.6, using your own Claude session.

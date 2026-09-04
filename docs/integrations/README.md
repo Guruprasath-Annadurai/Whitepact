@@ -1,9 +1,10 @@
 # WhitePact platform integrations
 
-WhitePact is one MCP server with one authority model. Every AI platform
-listed here connects to the **same** hosted endpoint through a
-standards-compliant MCP client — there is no per-platform fork, no
-per-platform governance logic, and no platform that can bypass a DENY.
+WhitePact is one MCP server with one authority model. Platforms listed here
+are evaluated against the same MCP surface; their actual status ranges from
+verified to blocked or untested in the matrix below. There is no per-platform
+governance fork. A DENY is enforced before downstream execution only on paths
+that use the governed dispatch/executor boundary.
 
 ```
 OpenAI / Claude / Gemini / Grok / Copilot / Amazon Q / Mistral / Cursor
@@ -56,7 +57,7 @@ OpenAI's Plugins Directory submission is tracked separately in
   setup today; see each platform's page for how that's handled.
   Self-hosting via `stdio` (no network, no key) is also available — see
   `server.json`'s `packages` entry.
-- **Tool count**: 27, all read-only (no destructive or state-mutating
+- **Tool count**: 30 in WhitePact v1.2.6, all read-only (no destructive or state-mutating
   tools exist in WhitePact today, so onboarding tests never risk real
   side effects).
 - **Security posture that applies everywhere**: HTTPS only, Origin

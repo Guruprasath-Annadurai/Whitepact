@@ -45,7 +45,7 @@ placeholder.
 ## Capability synchronization
 
 AgentCore Gateway caches a target's tool list at registration time.
-Because WhitePact tools may change across versions (currently 27, see
+Because WhitePact tools may change across versions (30 in v1.2.6, see
 `CHANGELOG.md`), a Gateway operator should re-sync the target's tool
 catalog after any WhitePact version bump that changes tool counts —
 WhitePact does not push change notifications to Gateway targets.

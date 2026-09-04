@@ -33,7 +33,7 @@ Bearer API key via the `headers` block, as shown in the example.
 
 ## Tool approval
 
-Cursor prompts for per-tool approval by default. Since all 27 WhitePact
+Cursor prompts for per-tool approval by default. Since all 30 WhitePact v1.2.6
 tools are read-only, approving "Always allow" for WhitePact tools carries
 no destructive risk — but that's your call to make, not a default this
 doc sets for you.
@@ -51,7 +51,7 @@ format directly against Cursor's docs.
 ## Verification steps
 
 Open Cursor's MCP settings panel after adding the config; `whitepact`
-should show as connected with 27 tools listed.
+should show as connected with 30 tools listed for WhitePact v1.2.6.
 
 **Verified live 2026-08-15**: added the `whitepact` entry to
 `~/.cursor/mcp.json` alongside an existing server, substituted the real

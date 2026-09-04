@@ -16,7 +16,7 @@ detection, bias eval, and a policy/approval engine that can gate or quarantine
 a tool call before it executes (`ALLOW / ALLOW_WITH_REDACTION /
 REQUIRE_APPROVAL / DENY / QUARANTINE`). It ships as a self-hosted stdio MCP
 server (free, unrestricted) and as a hosted HTTP+SSE/Streamable-HTTP server
-(`whitepact-mcp-http`, plan-gated, Bearer/apiKey-authenticated). 27 tools, 10
+(`whitepact-mcp-http`, plan-gated, Bearer/apiKey-authenticated). 30 tools, 20
 canonical resources (20 advertised across dual `whitepact://`/`rai://` URI
 schemes). MIT licensed.
 
@@ -30,7 +30,7 @@ schemes). MIT licensed.
 
 - **Individual/team connection**: works today, zero approval needed. Any
   Claude Code/Desktop user drops the README's JSON config block in and the
-  full 27-tool stdio server runs locally.
+  full 30-tool v1.2.6 stdio server runs locally.
 - **Claude.ai remote connectors (Team/Enterprise/Max)**: also works today —
   `whitepact-mcp-http` is a live, publicly reachable HTTPS endpoint
   (`whitepact-mcp-http.onrender.com`) speaking standard MCP HTTP+SSE, serving
@@ -191,5 +191,5 @@ pressure-testing are:
    multi-tenant traffic" an acceptable state to launch a directory listing
    in and fix reactively once traffic actually shows up?
 4. Anything in the actual MCP tool surface (`src/responsibleai/mcp/tools.py`,
-   27 tools) that reads as bloated, redundant, or missing an obvious
+   30 tools in v1.2.6) that reads as bloated, redundant, or missing an obvious
    governance primitive a reviewer would expect and not find?

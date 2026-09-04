@@ -19,7 +19,9 @@
 **Title** (HN convention: "Show HN: X – one factual line, no
 superlatives", under ~80 chars):
 
-> Show HN: WhitePact – open governance layer for AI agents, 27 MCP tools
+> Superseded by `docs/promotion/LAUNCH_COPY.md`. Retained for history; do not publish directly.
+
+> Show HN: WhitePact – runtime authority for AI agents, 30 MCP tools in v1.2.6
 
 **Body**:
 
@@ -32,7 +34,7 @@ single number you can act on in code.
 
 WhitePact is a governance/trust layer that sits in front of an agent's
 tool calls, not another model. It's a Python package, a REST API, and
-an MCP server (27 tools, works over stdio, Streamable HTTP, or legacy
+an MCP server (30 tools in v1.2.6, works over stdio, Streamable HTTP, or legacy
 SSE) that gives you:
 
 - A deterministic 5-way decision (ALLOW / ALLOW_WITH_REDACTION /
@@ -94,7 +96,7 @@ compliance mapping against NIST AI RMF, the EU AI Act, and ISO 42001.
 → A public, verifiable Trust Index — free self-assessment, a
 cross-model leaderboard built from actually calling each model's API
 (not self-reported), and a public API to check any cited score.
-→ An MCP server with 27 governance tools, so any MCP-compatible AI
+→ An MCP server with 30 governance tools in v1.2.6, so an MCP-compatible AI
 assistant can call into it directly.
 
 The part I care most about: every self-assessed score is explicitly
@@ -166,7 +168,7 @@ auto-shortens URLs.
 **Tweet 6 (Grok-specific, since it's genuinely fresh and true)**
 
 > Also just shipped: a WhitePact plugin for Grok Build, xAI's coding
-> agent — 27 governance tools available directly in-agent.
+> agent — 30 governance tools in v1.2.6 available directly in-agent.
 > github.com/xai-org/plugin-marketplace/pull/244
 
 **Tweet 7 (close)**
