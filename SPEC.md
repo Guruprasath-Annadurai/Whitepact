@@ -1243,6 +1243,19 @@ decision path (Phase 9's LOW tier) must be satisfiable using
 *deterministic* checks alone — an agent should never be forced through
 an LLM call just to get a routine, low-risk action approved.
 
+### 6.1 Hosted MCP review reliability **[TODAY, operational contract]**
+
+The OpenAI/ChatGPT review flow is tool-only; it does not add a view or
+change any tool schema. A production verification session connects to
+the public HTTPS `/mcp` Streamable HTTP endpoint, initializes one MCP
+session, confirms the complete tool and resource descriptors, and calls
+the real `rai_health`, `rai_scan`, `rai_trust_score`,
+`rai_eu_ai_act_classify`, and `rai_hallucination` handlers. The verifier
+must fail on a timeout, transport error, MCP tool error, descriptor-count
+drift, missing explicit tool annotations, or an output that does not
+demonstrate the requested behavior. It never substitutes stdio or local
+handler calls for the public production checks.
+
 ---
 
 ## 7. What this spec deliberately does not yet define
