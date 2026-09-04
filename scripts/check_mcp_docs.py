@@ -6,12 +6,17 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
-from responsibleai.mcp.resources import _CANONICAL_RESOURCE_DEFS, RESOURCE_DEFS
-from responsibleai.mcp.tools import TOOL_DEFS
-
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "src"))
+
+from responsibleai.mcp.resources import (  # noqa: E402
+    _CANONICAL_RESOURCE_DEFS,
+    RESOURCE_DEFS,
+)
+from responsibleai.mcp.tools import TOOL_DEFS  # noqa: E402
 
 CURRENT_DOCS = (
     "README.md",
