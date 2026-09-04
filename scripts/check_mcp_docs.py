@@ -5,18 +5,11 @@
 
 from __future__ import annotations
 
+import ast
 import json
-import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "src"))
-
-from responsibleai.mcp.resources import (  # noqa: E402
-    _CANONICAL_RESOURCE_DEFS,
-    RESOURCE_DEFS,
-)
-from responsibleai.mcp.tools import TOOL_DEFS  # noqa: E402
 
 CURRENT_DOCS = (
     "README.md",
@@ -38,10 +31,40 @@ CURRENT_DOCS = (
 )
 
 
+def _literal_list(path: str, variable: str) -> ast.List:
+    tree = ast.parse((ROOT / path).read_text(encoding="utf-8"), filename=path)
+    for node in tree.body:
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            if node.target.id == variable and isinstance(node.value, ast.List):
+                return node.value
+        if isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == variable for target in node.targets
+        ):
+            if isinstance(node.value, ast.List):
+                return node.value
+    raise RuntimeError(f"{path}: {variable} is no longer a literal list")
+
+
+def _tool_names() -> list[str]:
+    definitions = _literal_list("src/responsibleai/mcp/tools.py", "TOOL_DEFS")
+    names: list[str] = []
+    for definition in definitions.elts:
+        if not isinstance(definition, ast.Call):
+            raise RuntimeError("TOOL_DEFS contains a non-call entry")
+        name = next((item.value for item in definition.keywords if item.arg == "name"), None)
+        if not isinstance(name, ast.Constant) or not isinstance(name.value, str):
+            raise RuntimeError("TOOL_DEFS contains an entry without a literal name")
+        names.append(name.value)
+    return names
+
+
 def main() -> int:
-    expected_tools = len(TOOL_DEFS)
-    expected_resources = len(RESOURCE_DEFS)
-    expected_canonical = len(_CANONICAL_RESOURCE_DEFS)
+    tool_names = _tool_names()
+    expected_tools = len(tool_names)
+    expected_canonical = len(
+        _literal_list("src/responsibleai/mcp/resources.py", "_CANONICAL_RESOURCE_DEFS").elts
+    )
+    expected_resources = 2 * expected_canonical
     failures: list[str] = []
 
     manifest = json.loads((ROOT / "server.json").read_text(encoding="utf-8"))
@@ -66,9 +89,9 @@ def main() -> int:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     if f"Available tools ({expected_tools})" not in readme:
         failures.append("README tool-table heading does not match live definitions")
-    for tool in TOOL_DEFS:
-        if f"`{tool.name}`" not in readme:
-            failures.append(f"README tool table omits {tool.name}")
+    for tool_name in tool_names:
+        if f"`{tool_name}`" not in readme:
+            failures.append(f"README tool table omits {tool_name}")
 
     if failures:
         print("MCP documentation consistency check FAILED:")
