@@ -55,6 +55,14 @@ jobs:
           # hardcoded literal resource name; the attack requires
           # attacker-controlled input to that parameter, which never happens
           # in this code path. Re-check when nltk ships a patched release.
+          # PYSEC-2026-3740 / CVE-2026-81726: NLTK model-artifact APIs can
+          # bypass pathsec for caller-controlled model paths. No fixed release
+          # exists upstream. WhitePact does not import or call any affected API
+          # (TransitionParser train/parse, AveragedPerceptron save/load,
+          # PerceptronTagger.save_to_json, or save_maxent_params); its only NLTK
+          # use is VADER plus the hard-coded download above. This exception is
+          # recorded in security/whitepact.openvex.json and must be revisited by
+          # 2026-12-04, on an NLTK release, or if the call path changes.
           # --skip-editable: this project itself is installed via `pip install -e .`
           # (see "Install dependencies" above) and isn't published to PyPI under
           # this exact version yet, which otherwise makes pip-audit hard-fail
@@ -64,7 +72,9 @@ jobs:
           # --skip-editable's skip notices as fatal errors under --strict, which
           # defeats the point of skipping; the default (non-strict) mode already
           # fails on a real vulnerability finding, which is what this step is for.
-          pip-audit --skip-editable --ignore-vuln PYSEC-2026-597
+          pip-audit --skip-editable \
+            --ignore-vuln PYSEC-2026-597 \
+            --ignore-vuln PYSEC-2026-3740
 
       - name: Run tests with coverage
         run: |

@@ -59,7 +59,7 @@ Kiro auto-copies existing MCP settings into `~/.kiro/` on first install
 ## Verification steps
 
 Kiro CLI hot-reloads MCP config changes on save — no restart needed.
-Ask Kiro to list available tools and confirm `whitepact` shows 27 tools.
+Ask Kiro to list available tools and confirm `whitepact` shows 30 tools for v1.2.6.
 
 **Verified live 2026-08-16**: installed via `brew install --cask
 amazon-q` (which installs Kiro CLI, `kiro-cli` binary confirmed at
@@ -82,7 +82,7 @@ launched `kiro-cli`, and confirmed WhitePact's tools show up.
 
 ## Security notes
 
-All 27 tools are read-only (`readOnlyHint=True`, `destructiveHint=False`).
+All 30 tools in v1.2.6 are read-only (`readOnlyHint=True`, `destructiveHint=False`).
 Kiro's own per-tool approval / `autoApprove` list still applies —
 WhitePact does not bypass client-side approval.
 

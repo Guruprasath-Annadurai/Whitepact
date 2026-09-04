@@ -22,7 +22,7 @@ ResponsibleAI engine under **your own brand** (white-label — see
 `RAI_BRAND_NAME`/`RAI_BRAND_LOGO_URL` in `src/responsibleai/dashboard/config.py`,
 `GET /api/branding`), so your customers see your product and your
 compliance story. What's underneath is real, already-built governance
-tooling — 27 MCP tools, 6-dimension trust scoring, NIST AI RMF / EU AI Act
+tooling — 30 MCP tools in v1.2.6, 6-dimension trust scoring, NIST AI RMF / EU AI Act
 / ISO 42001 compliance mapping, hash-chained audit logging — not a
 placeholder.
 
@@ -46,7 +46,7 @@ status blocks the deal.
 - **White-label display layer** — `RAI_BRAND_NAME` and `RAI_BRAND_LOGO_URL`
   swap the product name/logo across every served dashboard page and the
   browser tab title, with zero frontend forking required.
-- **MCP server** (27 tools, 10 resources) embeddable in the licensee's own
+- **MCP server** (30 tools, 20 advertised resources in v1.2.6; 10 canonical) embeddable in the licensee's own
   agent/AI product under their own MCP server name if desired.
 - **Ongoing updates** — new governance features, compliance framework
   additions, and security fixes as they ship on `main`.

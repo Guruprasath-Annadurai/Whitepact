@@ -11,7 +11,7 @@ tools; pick whichever fits your workflow.
 See [`../../examples/grok/remote_mcp_example.py`](../../examples/grok/remote_mcp_example.py).
 Reads `XAI_API_KEY` and `WHITEPACT_API_KEY` from the environment only —
 never hardcode them. The example scopes `allowed_tools` to a small
-read-only set rather than enabling all 27 tools by default.
+read-only set rather than enabling all 30 v1.2.6 tools by default.
 
 ```bash
 export XAI_API_KEY=...        # your own key, not committed anywhere

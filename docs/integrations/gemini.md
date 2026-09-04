@@ -52,7 +52,7 @@ not a guess: the schema itself works, the account doesn't have quota.
 ## Verification steps (what the example checks)
 
 1. Server registers under the name `whitepact` (no hyphen).
-2. `tools/list` returns 27 tools.
+2. `tools/list` returns 30 tools for WhitePact v1.2.6.
 3. One `allowed_tools`-scoped call to `rai_scan` succeeds — `allowed_tools`
    is a real field on the Interactions API's MCP tool type
    (`[{"tools": [...]}]`, confirmed by reading the installed SDK's

@@ -45,7 +45,7 @@ copilot mcp list
 copilot mcp get whitepact
 ```
 
-Expected: `whitepact` listed, status connected, 27 tools discoverable.
+Expected for WhitePact v1.2.6: `whitepact` listed, status connected, 30 tools discoverable.
 
 ## Registry visibility
 
@@ -93,7 +93,7 @@ Expected: one tool call to `rai_scan`, a redacted copy returned, no writes.
 
 ## Security notes
 
-All 27 tools are read-only (`readOnlyHint=True`, `destructiveHint=False`).
+All 30 tools in v1.2.6 are read-only (`readOnlyHint=True`, `destructiveHint=False`).
 Copilot's own per-call approval UI still applies — WhitePact does not
 disable client-side approval prompts.
 

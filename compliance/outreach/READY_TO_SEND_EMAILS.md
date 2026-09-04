@@ -19,7 +19,7 @@ Hi [Name],
 
 I've built ResponsibleAI — an open-source AI governance engine (trust
 scoring, guardrails, hallucination detection, compliance mapping against
-NIST AI RMF/EU AI Act/ISO 42001, 27 MCP tools) — and I think it could slot
+NIST AI RMF/EU AI Act/ISO 42001, 30 MCP tools in v1.2.6) — and I think it could slot
 directly under [Their Product]'s own brand rather than you building
 governance tooling from scratch.
 
@@ -112,7 +112,7 @@ GitHub MCP Registry (github.com/mcp).
 
 WhitePact is an AI governance MCP server — trust scoring, PII/harmful-
 content guardrails, hallucination detection, and compliance checks
-(NIST AI RMF, EU AI Act, ISO 42001) for any AI agent's actions. All 27
+(NIST AI RMF, EU AI Act, ISO 42001) for AI-agent workflows. All 30 v1.2.6
 tools are read-only.
 
 It's already published to the official MCP Registry and live:

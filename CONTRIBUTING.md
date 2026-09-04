@@ -6,7 +6,7 @@ original `biasbuster`/`privacylabel`/`responsibleai` packages plus the new
 runtime-authority platform: trust scoring, guardrails, compliance mapping,
 bias evaluation, a governance decision engine (ALLOW / ALLOW_WITH_REDACTION /
 REQUIRE_APPROVAL / DENY / QUARANTINE), and an MCP server exposing all of it as
-27 tools. Contributions are welcome — bug reports, new probes/checks, provider
+30 tools in WhitePact v1.2.6. Contributions are welcome — bug reports, new probes/checks, provider
 integrations, documentation fixes, governance-policy improvements, anything
 that makes the platform more correct or more honest about what it does.
 

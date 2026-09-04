@@ -10,7 +10,10 @@
 > trust-check — as of this writing the registry is live and empty. This
 > kit is the fix for that, not more code.
 
-Last reviewed: 2026-07-26 · Platform version: 1.2.0 (27 MCP tools, 10 resources)
+> Historical v1.2.0 launch kit. Current copy lives in
+> `docs/promotion/LAUNCH_COPY.md`; do not use the counts below for v1.2.6.
+
+Last reviewed: 2026-07-26 · Platform version: 1.2.0 (historically 27 MCP tools, 10 resources)
 
 ---
 

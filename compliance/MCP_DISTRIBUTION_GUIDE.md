@@ -15,7 +15,8 @@ Last reviewed: 2026-07-23 · Platform version: 1.2.0
 ## 1. What was wrong before this pass (fixed)
 
 The README's MCP section claimed **10 tools and 5 resources** — the actual
-count as of this version is **27 tools and 10 resources**
+count for WhitePact v1.2.6 is **30 tools and 20 advertised resources**
+(10 canonical resources under two URI schemes)
 (`src/responsibleai/mcp/tools.py`, `src/responsibleai/mcp/resources.py`).
 This mattered specifically for directory submission: most MCP
 directories pull their listing copy directly from a project's README or ask

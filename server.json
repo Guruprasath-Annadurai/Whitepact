@@ -1,20 +1,20 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.Guruprasath-Annadurai/whitepact",
-  "description": "AI governance MCP server: trust scoring, guardrails, bias/hallucination detection, compliance.",
+  "description": "Runtime authority for AI agents: five-way decisions, guardrails, evidence, and governance.",
   "title": "WhitePact",
   "websiteUrl": "https://github.com/Guruprasath-Annadurai/Whitepact",
   "repository": {
     "url": "https://github.com/Guruprasath-Annadurai/Whitepact",
     "source": "github"
   },
-  "version": "1.2.3",
+  "version": "1.2.6",
   "packages": [
     {
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "rai-governance-platform",
-      "version": "1.2.2",
+      "version": "1.2.6",
       "runtimeHint": "uvx",
       "runtimeArguments": [
         {

@@ -70,7 +70,7 @@ amazon-q` (installs Kiro CLI), signed in, added `whitepact` to
 
 | Platform | Action | Why Claude can't do it | Evidence prepared | Next step |
 |---|---|---|---|---|
-| Claude | Add WhitePact as a custom connector via Settings → Connectors | Needs an interactive Claude session with your own account | Exact click-path in `claude.md` | Follow the steps, confirm 27 tools appear |
+| Claude | Add WhitePact as a custom connector via Settings → Connectors | Needs an interactive Claude session with your own account | Exact click-path in `claude.md` | Follow the steps, confirm 30 tools appear for v1.2.6 |
 | GitHub Copilot | Run `copilot mcp add ...` and confirm tool discovery | Copilot CLI not installed in this environment | Exact command in `github-copilot.md` | Install Copilot CLI, run the command |
 | Microsoft Copilot Studio (Mode 1) | Add WhitePact as a custom connector in your tenant | No live Copilot Studio tenant available | Endpoint/auth documented in `microsoft-copilot.md` | Add connector via Copilot Studio admin UI |
 | xAI Grok (connector path) | Add WhitePact in `grok.com/connectors` | Needs your own grok.com session | Click-path in `grok.md` | Add custom connector, paste API key |

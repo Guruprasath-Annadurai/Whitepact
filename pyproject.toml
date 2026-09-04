@@ -5,19 +5,19 @@ build-backend = "hatchling.build"
 [project]
 name = "rai-governance-platform"
 version = "1.2.6"
-description = "ResponsibleAI — Enterprise AI Governance Platform: trust scoring, bias detection, hallucination detection, guardrails, compliance (NIST AI RMF / EU AI Act / ISO 42001), cost intelligence, drift monitoring"
+description = "WhitePact — open-source runtime authority for AI agents and autonomous systems"
 readme = "README.md"
 license = { file = "LICENSE" }
 authors = [{ name = "Guruprasath Annadurai", email = "annaduraiguruprasath7@gmail.com" }]
 keywords = [
-    "llm", "bias", "fairness", "responsible-ai", "ai-governance",
+    "llm", "ai-agents", "runtime-security", "responsible-ai", "ai-governance",
     "federated-learning", "differential-privacy", "deepfake-detection",
     "hallucination", "guardrails", "compliance", "eu-ai-act", "nist-ai-rmf",
     "iso-42001", "ai-safety", "ai-trust", "red-teaming", "pii-detection",
     "cost-intelligence", "token-tracking", "drift-detection", "model-routing",
 ]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
+    "Development Status :: 4 - Beta",
     "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
@@ -45,7 +45,7 @@ dependencies = [
     # mimeType to mime_type, and relocated AnyUrl -- a real breaking
     # change, not a false-positive mypy issue. Every tool/resource
     # definition in mcp/tools.py and mcp/resources.py uses the pre-2.0
-    # camelCase kwargs; migrating ~27 tool defs + 10 resource defs to the
+    # camelCase kwargs; migrating ~30 tool defs + 10 resource defs to the
     # new API is real, separate work with its own test pass, not
     # something to fold into an unrelated commit. Bump this pin (and
     # migrate the kwargs) deliberately, in its own change.
@@ -117,6 +117,10 @@ agent-frameworks = ["rai-governance-platform[langchain,langgraph,adk,a2a]"]
 # the vulnerable path. Still opt-in only, so a default install never
 # carries the finding; installing this extra takes on that
 # (mitigated-here, unpatched-upstream) risk knowingly.
+# PYSEC-2026-3740 / CVE-2026-81726 affects separate NLTK model-artifact
+# import/export APIs. WhitePact does not import or call those APIs; its VADER
+# path neither accepts model paths nor enables pathsec. The machine-readable
+# reachability decision and review trigger are in security/whitepact.openvex.json.
 sentiment  = ["nltk>=3.10.0"]
 dev = [
     "pytest>=8.0.0",
