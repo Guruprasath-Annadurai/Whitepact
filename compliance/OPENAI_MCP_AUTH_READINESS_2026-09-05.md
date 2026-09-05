@@ -84,7 +84,21 @@ current field and compatibility metadata.
 
 Repository implementation and focused local tests: **PASS**.
 
-Public OAuth metadata and deployment verification: **PENDING DEPLOYMENT**.
+Production revision `7389772836bfc280b5484075ba64f167dded9fa7` was deployed
+through Render deployment `dep-daduvi740ujc73d3hjn0` on 2026-09-05. Public
+verification passed for `/health` (30 tools), RFC 9728 protected-resource
+metadata, OAuth authorization-server metadata, exact issuer/resource/scope
+advertisement, and the unauthenticated MCP failure path. An unauthenticated
+`POST /mcp` returns `401` with a `WWW-Authenticate` challenge pointing to the
+protected-resource metadata and requesting `whitepact:review`. Render's
+`RAI_MCP_HTTP_ALLOW_UNAUTHENTICATED_DEMO` setting was independently checked as
+`false`; its value and all other credentials are excluded from this record.
+
+Public OAuth discovery and negative-auth verification: **PASS**.
+
+Production token issuance, refresh, revocation, tenant binding, authenticated
+MCP initialization, and tool execution: **PENDING AN AUTHORIZED REVIEWER
+CREDENTIAL; LOCAL AUTOMATED COVERAGE PASSES BUT IS NOT PRODUCTION EVIDENCE**.
 
 Actual founder-bound ChatGPT authorization and five-tool execution:
 **PENDING; NOT YET A PASS**.
