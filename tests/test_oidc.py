@@ -260,6 +260,29 @@ class TestValidateTokenErrorPaths:
         with pytest.raises(ValueError, match="Invalid token"):
             await provider.validate_token(token)
 
+    async def test_invalid_issuer_raises_invalid_token_error(self, monkeypatch):
+        private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        jwk_dict = json.loads(
+            pyjwt.algorithms.RSAAlgorithm(pyjwt.algorithms.RSAAlgorithm.SHA256).to_jwk(
+                private.public_key()
+            )
+        )
+        jwk_dict["kid"] = "k1"
+        token = pyjwt.encode(
+            {"sub": "u1", "aud": "c1", "iss": "https://attacker.example.com"},
+            private,
+            algorithm="RS256",
+            headers={"kid": "k1"},
+        )
+        provider = OIDCProvider(issuer="https://issuer.example.com", client_id="c1")
+
+        async def _fake_get_signing_key(kid):
+            return jwk_dict
+
+        monkeypatch.setattr(provider._jwks, "get_signing_key", _fake_get_signing_key)
+        with pytest.raises(ValueError, match="Invalid token"):
+            await provider.validate_token(token)
+
     async def test_pyjwt_missing_raises_import_error(self, monkeypatch):
         import sys
 

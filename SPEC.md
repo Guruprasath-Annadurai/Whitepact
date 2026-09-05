@@ -588,6 +588,19 @@ an *agent* acting on a human's or organization's behalf. OIDC/SSO
 support exists (`src/responsibleai/auth/` — see `sso` extra in
 `pyproject.toml`). MFA (TOTP, RFC 6238) is implemented and tested.
 
+The hosted MCP transport also has a narrow OAuth 2.1 authorization-server
+profile for ChatGPT **[TODAY — OpenAI authentication closure]**. It uses
+authorization code with mandatory PKCE S256, exact ChatGPT redirect-URI
+matching, RFC 9728 protected-resource metadata, dynamic public-client
+registration, the single product scope `whitepact:review`, optional
+`offline_access`, 15-minute opaque access tokens, rotating one-use refresh
+tokens, revocation, and tenant/subject revalidation on every MCP request.
+Codes, request handles, and tokens are persisted only as SHA-256 digests.
+The interactive login accepts an existing tenant-bound VIEWER or ANALYST key;
+OWNER and ADMIN keys are rejected. Static `rai_...` keys remain a separate
+server-to-server authentication path and are never handed to ChatGPT as its
+Bearer credential.
+
 `IdentityContext` (`src/responsibleai/governance/models.py`) now
 generalizes `OrgContext` as described — `IdentityContext.from_org_context()`
 maps a real `OrgContext` (from a static API key or an OIDC JWT, see
@@ -1280,9 +1293,10 @@ speculative detail:
   cross-reference — but a full Unicode TR39 confusables implementation,
   publisher/domain identity verification, and actually connecting to a
   remote MCP server to fetch its manifest are all still undesigned).
-- OAuth/OIDC scope names for remote MCP authorization (Phase 6) — to be
-  designed against the actual current MCP specification, not guessed
-  here.
+- Broader OAuth/OIDC scope names for *upstream/remote* MCP authorization
+  (Phase 6) remain undesigned. This is separate from the implemented hosted
+  WhitePact resource scope `whitepact:review`; that scope does not authorize
+  WhitePact to call third-party MCP servers.
 
 ---
 
