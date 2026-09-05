@@ -27,15 +27,13 @@ Three transports:
    clients here. Run with: `responsibleai-mcp-http` (reads RAI_MCP_HTTP_*
    env vars).
 
-   The Bearer credential is either a static API key (`rai_...`, issued via
-   `OrgRepository.create_key`) or, when this deployment has SSO configured
-   (`Settings.oidc_issuer` — the exact same config the dashboard API's
-   `/api/auth/login/oidc` already uses), an OIDC-issued JWT. This makes the
-   hosted MCP server an OAuth/OIDC *resource server*: it validates tokens
-   issued by the org's existing Authorization Server rather than running
-   its own. When OIDC is configured, `/.well-known/oauth-protected-resource`
-   (RFC 9728) advertises it, and a `401` includes a `WWW-Authenticate:
-   Bearer resource_metadata="..."` header pointing there.
+   The Bearer credential is a static API key (`rai_...`, issued via
+   `OrgRepository.create_key`), a short-lived opaque OAuth access token
+   (`wp_at_...`) from WhitePact's optional MCP authorization server, or an
+   OIDC-issued JWT when enterprise SSO is configured. OAuth discovery uses
+   RFC 9728 protected-resource metadata, authorization code + PKCE S256,
+   dynamic client registration for exact ChatGPT callbacks, and rotating
+   refresh tokens. API keys remain available for server-to-server use.
 
 3. **HTTP+SSE** (hosted, billed, legacy) — the original MCP HTTP transport
    (spec 2024-11-05): separate `/sse` + `/messages/` endpoints. Same auth and
@@ -63,11 +61,15 @@ Environment variables (all optional):
     RAI_MCP_HTTP_AUTH_MAX_FAILURES        Failed Bearer-auth attempts allowed per client
                                            IP within the window below before 429s (default: 10).
     RAI_MCP_HTTP_AUTH_WINDOW_SECONDS      Sliding window for the above, in seconds (default: 60).
+    RAI_MCP_OAUTH_ISSUER                  Public HTTPS authorization-server issuer; empty disables it.
+    RAI_MCP_OAUTH_RESOURCE_URI            Exact public HTTPS /mcp resource identifier.
+    RAI_MCP_OAUTH_SCOPES                  Comma-separated scopes (default: whitepact:review,offline_access).
 """
 
 from __future__ import annotations
 
 import asyncio
+import html
 import json
 import logging
 import os
@@ -161,7 +163,18 @@ def _month_start_iso() -> str:
 
 @server.list_tools()
 async def _list_tools() -> list[types.Tool]:
+    ctx = _current_org.get()
+    if ctx is not None and ctx.key_id.startswith("oauth:"):
+        return [_with_oauth_security(tool) for tool in TOOL_DEFS]
     return TOOL_DEFS
+
+
+def _with_oauth_security(tool: types.Tool) -> types.Tool:
+    """Add current and compatibility OAuth declarations to one tool descriptor."""
+    security_schemes = [{"type": "oauth2", "scopes": ["whitepact:review"]}]
+    metadata = dict(tool.meta or {})
+    metadata["securitySchemes"] = security_schemes
+    return tool.model_copy(update={"securitySchemes": security_schemes, "meta": metadata})
 
 
 def _text_and_structured(
@@ -367,10 +380,11 @@ def _build_http_app() -> Any:
     from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
     from starlette.applications import Starlette
     from starlette.requests import Request
-    from starlette.responses import JSONResponse, PlainTextResponse
+    from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
     from starlette.routing import Mount, Route
     from starlette.types import Receive, Scope, Send
 
+    from responsibleai.auth.mcp_oauth import McpOAuthAuthorizationServer, OAuthProtocolError
     from responsibleai.auth.oidc import OIDCProvider
     from responsibleai.auth.verifiable_credential import (
         VerifiableCredentialProvider,
@@ -391,6 +405,19 @@ def _build_http_app() -> Any:
     _db_engine = create_engine(settings.effective_db_url)
     _org_repo = OrgRepository(_db_engine)
     _usage_repo = McpUsageRepository(_db_engine)
+    _mcp_oauth_server = (
+        McpOAuthAuthorizationServer(
+            _db_engine,
+            _org_repo,
+            issuer=settings.mcp_oauth_issuer,
+            resource=settings.mcp_oauth_resource_uri,
+            scopes=settings.mcp_oauth_scopes,
+            access_token_ttl_seconds=settings.mcp_oauth_access_token_ttl_seconds,
+            refresh_token_ttl_seconds=settings.mcp_oauth_refresh_token_ttl_seconds,
+        )
+        if settings.mcp_oauth_issuer
+        else None
+    )
 
     _governance_services: GovernanceServices | None = None
     _governance_webhook_manager: WebhookManager | None = None
@@ -517,6 +544,11 @@ def _build_http_app() -> Any:
             return None
 
         org = await _org_repo.get_org(claims.org_id) if claims.org_id else None
+        if org is None:
+            # A valid IdP signature proves who issued the JWT, not membership
+            # in a WhitePact tenant. Never manufacture a FREE tenant context
+            # for an unknown or missing org claim.
+            return None
         role = Role.VIEWER
         for raw_role in claims.roles:
             candidate = role_from_str(raw_role)
@@ -528,9 +560,9 @@ def _build_http_app() -> Any:
             key_id=f"oidc:{claims.sub}",
             role=role,
             org_id=claims.org_id,
-            org_name=org.name if org else None,
+            org_name=org.name,
             is_legacy=False,
-            plan=org.plan if org else Plan.FREE,
+            plan=org.plan,
         )
 
     async def _resolve_vc_context(token: str) -> OrgContext | None:
@@ -607,6 +639,10 @@ def _build_http_app() -> Any:
         raw_key = auth_header[7:].strip()
         if not raw_key:
             return None
+        if raw_key.startswith("wp_at_"):
+            if _mcp_oauth_server is None:
+                return None
+            return await _mcp_oauth_server.resolve_access_token(raw_key)
         oidc_ctx = await _resolve_oidc_context(raw_key)
         if oidc_ctx is not None:
             return oidc_ctx
@@ -616,6 +652,8 @@ def _build_http_app() -> Any:
         return await _org_repo.authenticate(raw_key)
 
     def _protected_resource_metadata_url(request: Request) -> str:
+        if _mcp_oauth_server is not None:
+            return f"{_mcp_oauth_server.issuer}/.well-known/oauth-protected-resource"
         return str(request.url.replace(path="/.well-known/oauth-protected-resource", query=""))
 
     async def _authenticate_or_error(
@@ -635,11 +673,27 @@ def _build_http_app() -> Any:
                 },
                 status_code=429,
             )
-        ctx = await _authenticate(request)
+        try:
+            ctx = await _authenticate(request)
+        except OAuthProtocolError as exc:
+            if _mcp_oauth_server is not None:
+                await _mcp_oauth_server.record_access_failure(exc.error)
+            if exc.status_code == 403:
+                return None, JSONResponse(
+                    {"error": exc.error, "message": exc.description},
+                    status_code=403,
+                    headers={
+                        "WWW-Authenticate": (
+                            f'Bearer resource_metadata="{_protected_resource_metadata_url(request)}", '
+                            f'error="insufficient_scope", scope="whitepact:review"'
+                        )
+                    },
+                )
+            ctx = None
         if ctx is None:
             await auth_limiter.record_failure(client_key)
             headers = {}
-            if _oidc_provider is not None:
+            if _oidc_provider is not None or _mcp_oauth_server is not None:
                 # RFC 9728 / MCP Authorization spec: point an OAuth-aware
                 # client at where to discover the Authorization Server,
                 # instead of leaving it to guess. Only advertised when an
@@ -647,10 +701,11 @@ def _build_http_app() -> Any:
                 # unconditionally would tell every client "use OAuth" even
                 # for deployments that only support static API keys.
                 headers["WWW-Authenticate"] = (
-                    f'Bearer resource_metadata="{_protected_resource_metadata_url(request)}"'
+                    f'Bearer resource_metadata="{_protected_resource_metadata_url(request)}", '
+                    f'scope="whitepact:review"'
                 )
             return None, JSONResponse(
-                {"error": "unauthorized", "message": "Provide a valid Bearer API key."},
+                {"error": "unauthorized", "message": "Provide a valid Bearer credential."},
                 status_code=401,
                 headers=headers,
             )
@@ -724,6 +779,8 @@ def _build_http_app() -> Any:
         """RFC 9728 Protected Resource Metadata. 404 when no OIDC provider
         is configured — this deployment then only supports static API
         keys, and there's no Authorization Server to point a client at."""
+        if _mcp_oauth_server is not None:
+            return JSONResponse(_mcp_oauth_server.protected_resource_metadata())
         if _oidc_provider is None:
             return JSONResponse({"error": "not_found"}, status_code=404)
         resource_url = str(request.url.replace(path="/mcp", query=""))
@@ -734,6 +791,158 @@ def _build_http_app() -> Any:
                 "bearer_methods_supported": ["header"],
             }
         )
+
+    async def authorization_server_metadata(request: Request) -> JSONResponse:
+        if _mcp_oauth_server is None:
+            return JSONResponse({"error": "not_found"}, status_code=404)
+        return JSONResponse(_mcp_oauth_server.authorization_server_metadata())
+
+    def _oauth_error(exc: OAuthProtocolError) -> JSONResponse:
+        return JSONResponse(
+            {"error": exc.error, "error_description": exc.description},
+            status_code=exc.status_code,
+            headers={"Cache-Control": "no-store"},
+        )
+
+    def _body_too_large(request: Request) -> bool:
+        try:
+            return int(request.headers.get("content-length", "0") or 0) > 16_384
+        except ValueError:
+            return True
+
+    async def _form(request: Request) -> dict[str, str]:
+        from urllib.parse import parse_qs
+
+        if _body_too_large(request):
+            raise OAuthProtocolError("invalid_request", "Form body is too large", status_code=413)
+        raw_body = await request.body()
+        if len(raw_body) > 16_384:
+            raise OAuthProtocolError("invalid_request", "Form body is too large", status_code=413)
+        body = raw_body.decode("utf-8", errors="strict")
+        return {key: values[-1] for key, values in parse_qs(body, keep_blank_values=True).items()}
+
+    async def oauth_register(request: Request) -> JSONResponse:
+        if _mcp_oauth_server is None:
+            return JSONResponse({"error": "not_found"}, status_code=404)
+        try:
+            if _body_too_large(request):
+                raise OAuthProtocolError(
+                    "invalid_client_metadata", "Registration body is too large", status_code=413
+                )
+            raw_body = await request.body()
+            if len(raw_body) > 16_384:
+                raise OAuthProtocolError(
+                    "invalid_client_metadata", "Registration body is too large", status_code=413
+                )
+            payload = json.loads(raw_body.decode("utf-8", errors="strict"))
+            if not isinstance(payload, dict):
+                raise OAuthProtocolError("invalid_client_metadata", "A JSON object is required")
+            registered = await _mcp_oauth_server.register_client(payload)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return _oauth_error(OAuthProtocolError("invalid_client_metadata", "Invalid JSON body"))
+        except OAuthProtocolError as exc:
+            return _oauth_error(exc)
+        return JSONResponse(registered, status_code=201, headers={"Cache-Control": "no-store"})
+
+    async def oauth_authorize_get(request: Request) -> HTMLResponse | JSONResponse:
+        if _mcp_oauth_server is None:
+            return JSONResponse({"error": "not_found"}, status_code=404)
+        try:
+            request_id, client_name = await _mcp_oauth_server.begin_authorization(
+                dict(request.query_params)
+            )
+        except OAuthProtocolError as exc:
+            return _oauth_error(exc)
+        page = f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>Authorize WhitePact</title></head><body><main>
+<h1>Authorize WhitePact review access</h1>
+<p><strong>{html.escape(client_name)}</strong> requests permission to run WhitePact review tools.</p>
+<p>Use a dedicated VIEWER or ANALYST API key. Administrative keys are rejected.</p>
+<form method="post" action="/oauth/authorize">
+<input type="hidden" name="request_id" value="{html.escape(request_id, quote=True)}">
+<label>WhitePact API key <input type="password" name="api_key" autocomplete="current-password" required></label>
+<button type="submit" name="action" value="allow">Authorize</button>
+<button type="submit" name="action" value="deny" formnovalidate>Deny</button>
+</form></main></body></html>"""
+        return HTMLResponse(
+            page,
+            headers={
+                "Cache-Control": "no-store",
+                "Content-Security-Policy": (
+                    "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; "
+                    "base-uri 'none'; frame-ancestors 'none'"
+                ),
+                "Referrer-Policy": "no-referrer",
+                "X-Content-Type-Options": "nosniff",
+                "X-WhitePact-OAuth-Request-ID": request_id,
+            },
+        )
+
+    async def oauth_authorize_post(request: Request) -> RedirectResponse | JSONResponse:
+        if _mcp_oauth_server is None:
+            return JSONResponse({"error": "not_found"}, status_code=404)
+        if await auth_limiter.is_blocked(_client_key(request)):
+            return _oauth_error(
+                OAuthProtocolError(
+                    "temporarily_unavailable", "Too many failed login attempts", status_code=429
+                )
+            )
+        try:
+            form = await _form(request)
+            location = await _mcp_oauth_server.complete_authorization(
+                form.get("request_id", ""),
+                form.get("api_key", ""),
+                form.get("action", "deny"),
+            )
+        except (UnicodeDecodeError, OAuthProtocolError) as exc:
+            protocol_error = (
+                exc
+                if isinstance(exc, OAuthProtocolError)
+                else OAuthProtocolError("invalid_request", "Invalid form body")
+            )
+            if protocol_error.status_code in {401, 403}:
+                await auth_limiter.record_failure(_client_key(request))
+            return _oauth_error(protocol_error)
+        return RedirectResponse(location, status_code=303, headers={"Cache-Control": "no-store"})
+
+    async def oauth_token(request: Request) -> JSONResponse:
+        if _mcp_oauth_server is None:
+            return JSONResponse({"error": "not_found"}, status_code=404)
+        if await auth_limiter.is_blocked(_client_key(request)):
+            return _oauth_error(
+                OAuthProtocolError(
+                    "temporarily_unavailable", "Too many failed token attempts", status_code=429
+                )
+            )
+        try:
+            form = await _form(request)
+            grant_type = form.get("grant_type")
+            if grant_type == "authorization_code":
+                payload = await _mcp_oauth_server.exchange_authorization_code(form)
+            elif grant_type == "refresh_token":
+                payload = await _mcp_oauth_server.refresh(form)
+            else:
+                raise OAuthProtocolError("unsupported_grant_type", "Unsupported grant type")
+        except (UnicodeDecodeError, OAuthProtocolError) as exc:
+            protocol_error = (
+                exc
+                if isinstance(exc, OAuthProtocolError)
+                else OAuthProtocolError("invalid_request", "Invalid form body")
+            )
+            await auth_limiter.record_failure(_client_key(request))
+            return _oauth_error(protocol_error)
+        return JSONResponse(payload, headers={"Cache-Control": "no-store", "Pragma": "no-cache"})
+
+    async def oauth_revoke(request: Request) -> JSONResponse:
+        if _mcp_oauth_server is None:
+            return JSONResponse({"error": "not_found"}, status_code=404)
+        try:
+            form = await _form(request)
+            await _mcp_oauth_server.revoke(form.get("token", ""))
+        except UnicodeDecodeError:
+            return _oauth_error(OAuthProtocolError("invalid_request", "Invalid form body"))
+        return JSONResponse({}, headers={"Cache-Control": "no-store"})
 
     async def mcp_server_card(request: Request) -> JSONResponse:
         """Static capability card for directories (e.g. Smithery) that
@@ -751,10 +960,13 @@ def _build_http_app() -> Any:
                 "serverInfo": {"name": "whitepact", "version": __version__},
                 "authentication": {
                     "required": True,
-                    "schemes": ["apiKey"],
+                    "schemes": (["oauth2", "apiKey"] if _mcp_oauth_server else ["apiKey"]),
                 },
                 "tools": [
-                    t.model_dump(mode="json", exclude_none=True, by_alias=True) for t in TOOL_DEFS
+                    (_with_oauth_security(t) if _mcp_oauth_server else t).model_dump(
+                        mode="json", exclude_none=True, by_alias=True
+                    )
+                    for t in TOOL_DEFS
                 ],
                 "resources": [
                     r.model_dump(mode="json", exclude_none=True, by_alias=True)
@@ -781,6 +993,15 @@ def _build_http_app() -> Any:
             Route("/sse", endpoint=handle_sse),
             Mount("/messages/", app=sse.handle_post_message),
             Route("/.well-known/oauth-protected-resource", endpoint=protected_resource_metadata),
+            Route(
+                "/.well-known/oauth-authorization-server",
+                endpoint=authorization_server_metadata,
+            ),
+            Route("/oauth/register", endpoint=oauth_register, methods=["POST"]),
+            Route("/oauth/authorize", endpoint=oauth_authorize_get, methods=["GET"]),
+            Route("/oauth/authorize", endpoint=oauth_authorize_post, methods=["POST"]),
+            Route("/oauth/token", endpoint=oauth_token, methods=["POST"]),
+            Route("/oauth/revoke", endpoint=oauth_revoke, methods=["POST"]),
             Route("/.well-known/mcp/server-card.json", endpoint=mcp_server_card),
             Route("/.well-known/openai-apps-challenge", endpoint=openai_apps_challenge),
         ],
