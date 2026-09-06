@@ -26,15 +26,15 @@ FROM python:3.12-slim@sha256:7a8b475003c4fe15a2cd4e55e5cfc2f3560bdc9333d624f24cd
 
 LABEL org.opencontainers.image.title="WhitePact Governance Platform"
 LABEL org.opencontainers.image.description="Runtime governance between AI agents and action"
-LABEL org.opencontainers.image.version="1.2.0"
+LABEL org.opencontainers.image.version="1.2.6"
 LABEL org.opencontainers.image.licenses="MIT"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    RAI_HOST=0.0.0.0 \
-    RAI_PORT=8765 \
-    RAI_LOG_JSON=true \
-    RAI_DB_PATH=/data/responsibleai.db
+    WHITEPACT_HOST=0.0.0.0 \
+    WHITEPACT_PORT=8765 \
+    WHITEPACT_LOG_JSON=true \
+    WHITEPACT_DB_PATH=/data/responsibleai.db
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
@@ -68,7 +68,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -fsS http://localhost:8765/api/health | python3 -c "import sys,json; d=json.load(sys.stdin); sys.exit(0 if d['status'] in ('healthy','degraded') else 1)"
 
 CMD ["sh", "-c", "uvicorn responsibleai.dashboard.app:app \
-    --host ${RAI_HOST} \
-    --port ${RAI_PORT} \
-    --workers ${RAI_WORKERS:-1} \
+    --host ${WHITEPACT_HOST} \
+    --port ${WHITEPACT_PORT} \
+    --workers ${WHITEPACT_WORKERS:-1} \
     --no-access-log"]

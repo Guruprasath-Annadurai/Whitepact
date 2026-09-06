@@ -110,6 +110,7 @@ class OrgRepository:
         stripe_customer_id: str | None = None,
         stripe_subscription_id: str | None = None,
         plan_renews_at: str | None = None,
+        subscription_status: str | None = None,
     ) -> bool:
         """Update an org's billing plan — called from Stripe webhook handlers."""
         values: dict[str, object] = {"plan": plan.value}
@@ -119,9 +120,18 @@ class OrgRepository:
             values["stripe_subscription_id"] = stripe_subscription_id
         if plan_renews_at is not None:
             values["plan_renews_at"] = plan_renews_at
+        if subscription_status is not None:
+            values["subscription_status"] = subscription_status
         async with self._engine.raw.begin() as conn:
             result = await conn.execute(
                 update(organizations).where(organizations.c.id == org_id).values(**values)
+            )
+        return result.rowcount > 0
+
+    async def update_org_name(self, org_id: str, name: str) -> bool:
+        async with self._engine.raw.begin() as conn:
+            result = await conn.execute(
+                update(organizations).where(organizations.c.id == org_id).values(name=name)
             )
         return result.rowcount > 0
 
@@ -441,6 +451,7 @@ class OrgRepository:
             stripe_customer_id=getattr(row, "stripe_customer_id", None),
             stripe_subscription_id=getattr(row, "stripe_subscription_id", None),
             plan_renews_at=getattr(row, "plan_renews_at", None),
+            subscription_status=getattr(row, "subscription_status", "inactive") or "inactive",
             sso_required=bool(getattr(row, "sso_required", 0)),
             mfa_required=bool(getattr(row, "mfa_required", 0)),
             provisioner_key_id=getattr(row, "provisioner_key_id", None),

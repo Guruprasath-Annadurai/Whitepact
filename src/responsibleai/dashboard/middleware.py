@@ -66,6 +66,14 @@ _WHITEPACT_PAGE_PATHS = {
     "/reset-password",
     "/onboarding",
     "/dashboard",
+    "/about",
+    "/contact",
+    "/docs",
+    "/privacy",
+    "/terms",
+    "/trust",
+    "/billing/success",
+    "/billing/cancelled",
 }
 
 
@@ -115,6 +123,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             response.headers[header] = value
         if _is_whitepact_spa_path(request.url.path):
             response.headers["Content-Security-Policy"] = _WHITEPACT_CONTENT_SECURITY_POLICY
+        if request.url.path.startswith("/static/whitepact/assets/"):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        elif request.url.path in {"/robots.txt", "/sitemap.xml"}:
+            response.headers["Cache-Control"] = "public, max-age=3600"
         return response
 
 

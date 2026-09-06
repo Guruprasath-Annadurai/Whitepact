@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import Any, Literal, TypeVar
 from urllib.parse import quote
 
-import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
@@ -85,6 +84,12 @@ from responsibleai.dashboard.telemetry import (
     record_guardrail_scan,
     setup_telemetry,
 )
+from responsibleai.dashboard.transactional_email import (
+    AuthenticatedWebhookEmailProvider,
+    EmailDeliveryError,
+    password_reset_email,
+    verification_email,
+)
 from responsibleai.dashboard.websocket_manager import ConnectionManager
 from responsibleai.db import (
     AlreadyVotedError,
@@ -97,6 +102,7 @@ from responsibleai.db import (
     AuditRepository,
     AuthorityPassportNotFoundError,
     AuthorityPassportRepository,
+    BillingEventRepository,
     CostRepository,
     CredentialIssuanceRepository,
     DelegationEscalationError,
@@ -306,6 +312,7 @@ _saml_config: SAMLConfig | None = None
 _saml_request_store: dict[str, float] = {}  # AuthnRequest ID → issued_at; cleared on use
 _SAML_REQUEST_TTL = 300.0  # seconds — matches OIDC's state window
 _stripe_service: StripeService | None = None
+_billing_event_repo: BillingEventRepository | None = None
 _plan_rate_limiter: PlanRateLimiter | None = None
 _pending_audit_writes: set[asyncio.Task[Any]] = set()
 
@@ -351,7 +358,7 @@ async def lifespan(application: FastAPI):
     global _workflow_rule_repo, _delegation_repo, _autonomy_budget_repo, _intent_repo
     global _authority_passport_repo
     global _eval_repo, _comparator, _benchmark_runner, _dataset_scanner
-    global _oidc_provider, _saml_config, _stripe_service, _plan_rate_limiter
+    global _oidc_provider, _saml_config, _stripe_service, _plan_rate_limiter, _billing_event_repo
 
     setup_telemetry(
         service_name=settings.otel_service_name,
@@ -380,6 +387,7 @@ async def lifespan(application: FastAPI):
     _cost_repo = CostRepository(_db_engine, policy=policy)
     _trust_repo = TrustRepository(_db_engine, alert_threshold=settings.alert_threshold)
     _org_repo = OrgRepository(_db_engine)
+    _billing_event_repo = BillingEventRepository(_db_engine)
     _web_identity_repo = WebIdentityRepository(_db_engine)
     _audit_repo = AuditRepository(_db_engine)
     _incident_repo = IncidentRepository(_db_engine)
@@ -1284,6 +1292,10 @@ class BillingPortalRequest(BaseModel):
     return_url: str | None = Field(None, max_length=2048)
 
 
+class UpdateWebOrganizationRequest(BaseModel):
+    name: str = Field(..., min_length=2, max_length=200)
+
+
 # ── Human web identity / console API ─────────────────────────────────────────
 
 
@@ -1343,46 +1355,46 @@ def _web_org_admin(principal: WebPrincipal) -> str:
     return principal.org_id
 
 
+def _safe_billing_return_url(value: str | None) -> str:
+    fallback = f"{settings.web_public_url.rstrip('/')}/dashboard/billing"
+    if not value:
+        return fallback
+    from urllib.parse import urlparse
+
+    requested = urlparse(value)
+    public = urlparse(settings.web_public_url)
+    if requested.scheme not in {"http", "https"} or (requested.scheme, requested.netloc) != (
+        public.scheme,
+        public.netloc,
+    ):
+        raise HTTPException(422, "Billing return URL must use the configured WhitePact origin.")
+    return value
+
+
 async def _deliver_verification(email: str, full_name: str, verification_url: str) -> None:
     if not settings.web_verification_delivery_url:
         return
-    headers = {"Content-Type": "application/json"}
-    if settings.web_verification_delivery_token:
-        headers["Authorization"] = f"Bearer {settings.web_verification_delivery_token}"
-    async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
-        response = await client.post(
-            settings.web_verification_delivery_url,
-            headers=headers,
-            json={
-                "template": "whitepact-email-verification",
-                "to": email,
-                "name": full_name,
-                "verification_url": verification_url,
-            },
-        )
-    if response.status_code < 200 or response.status_code >= 300:
-        raise HTTPException(502, "Verification email delivery failed. Please retry later.")
+    provider = AuthenticatedWebhookEmailProvider(
+        settings.web_verification_delivery_url,
+        settings.web_verification_delivery_token,
+    )
+    try:
+        await provider.deliver(verification_email(email, full_name, verification_url))
+    except EmailDeliveryError as exc:
+        raise HTTPException(502, "Verification email delivery failed. Please retry later.") from exc
 
 
 async def _deliver_password_reset(email: str, full_name: str, reset_url: str) -> None:
     if not settings.web_verification_delivery_url:
         return
-    headers = {"Content-Type": "application/json"}
-    if settings.web_verification_delivery_token:
-        headers["Authorization"] = f"Bearer {settings.web_verification_delivery_token}"
-    async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
-        response = await client.post(
-            settings.web_verification_delivery_url,
-            headers=headers,
-            json={
-                "template": "whitepact-password-reset",
-                "to": email,
-                "name": full_name,
-                "reset_url": reset_url,
-            },
-        )
-    if response.status_code < 200 or response.status_code >= 300:
-        raise HTTPException(502, "Password reset delivery failed. Please retry later.")
+    provider = AuthenticatedWebhookEmailProvider(
+        settings.web_verification_delivery_url,
+        settings.web_verification_delivery_token,
+    )
+    try:
+        await provider.deliver(password_reset_email(email, full_name, reset_url))
+    except EmailDeliveryError as exc:
+        raise HTTPException(502, "Password reset delivery failed. Please retry later.") from exc
 
 
 @app.post("/api/web/auth/register", tags=["web-auth"], status_code=202)
@@ -1593,12 +1605,26 @@ async def web_dashboard_summary(
     if not principal.org_id:
         raise HTTPException(409, "Complete organization onboarding first.")
     pending = await _ready(_approval_repo).list_pending(principal.org_id, limit=50)
+    evidence = await _ready(_evidence_repo).list_for_org(principal.org_id, limit=50)
+    agents = {record.agent_id for record in evidence if record.agent_id}
+    blocked = sum(1 for record in evidence if record.decision in {"DENY", "BLOCKED", "QUARANTINE"})
     return {
-        "decisions": 0,
-        "agents": 0,
+        "decisions": len(evidence),
+        "agents": len(agents),
         "pending_approvals": len(pending),
-        "blocked_actions": 0,
-        "recent_governance": [],
+        "blocked_actions": blocked,
+        "recent_governance": [
+            {
+                "id": record.evidence_id,
+                "agent": record.agent_id,
+                "action": record.action_type,
+                "policy": record.policy_version or "default",
+                "risk": record.risk_tier,
+                "decision": record.decision,
+                "timestamp": record.recorded_at or record.evaluated_at.isoformat(),
+            }
+            for record in evidence[:10]
+        ],
         "services": {
             "Policy engine": "configured",
             "MCP gateway": "configured" if settings.mcp_governance_enabled else "not enabled",
@@ -1650,7 +1676,7 @@ async def web_billing_portal(
     try:
         url = await _stripe_service.create_billing_portal_session(
             customer_id=org.stripe_customer_id,
-            return_url=req.return_url or settings.billing_success_url,
+            return_url=_safe_billing_return_url(req.return_url),
         )
     except StripeBillingError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -1676,7 +1702,59 @@ async def web_dashboard_domain(
         "settings",
     }:
         raise HTTPException(404, "Dashboard section not found.")
-    return {"items": [], "source": "organization_repository", "domain": domain}
+    if domain == "organization":
+        org = await _ready(_org_repo).get_org(principal.org_id)
+        return {
+            "items": [org.to_dict()] if org else [],
+            "source": "organization_repository",
+            "domain": domain,
+        }
+    if domain == "members":
+        return {
+            "items": await _ready(_web_identity_repo).list_members(principal.org_id),
+            "source": "membership_repository",
+            "domain": domain,
+        }
+    if domain == "approvals":
+        return {
+            "items": [
+                item.to_dict()
+                for item in await _ready(_approval_repo).list_pending(principal.org_id, limit=100)
+            ],
+            "source": "approval_repository",
+            "domain": domain,
+        }
+    if domain == "evidence":
+        return {
+            "items": [
+                item.to_dict()
+                for item in await _ready(_evidence_repo).list_for_org(principal.org_id, limit=100)
+            ],
+            "source": "evidence_repository",
+            "domain": domain,
+        }
+    if domain == "billing":
+        org = await _ready(_org_repo).get_org(principal.org_id)
+        return {
+            "items": [org.to_dict()] if org else [],
+            "source": "organization_repository",
+            "domain": domain,
+            "billing_configured": _stripe_service is not None,
+        }
+    return {"items": [], "source": "not_available", "domain": domain}
+
+
+@app.patch("/api/web/organization", tags=["web-console"])
+@limiter.limit("10/minute")
+async def web_update_organization(
+    request: Request,
+    req: UpdateWebOrganizationRequest,
+    principal: WebPrincipal = Depends(require_web_csrf),
+) -> dict[str, str]:
+    org_id = _web_org_admin(principal)
+    if not await _ready(_org_repo).update_org_name(org_id, req.name.strip()):
+        raise HTTPException(404, "Organization not found.")
+    return {"id": org_id, "name": req.name.strip()}
 
 
 # ── Root / HTML ────────────────────────────────────────────────────────────────
@@ -1699,20 +1777,65 @@ async def _whitepact_spa() -> HTMLResponse:
     return HTMLResponse(content=(_static_dir / "whitepact" / "index.html").read_text())
 
 
-for _spa_path in [
+_WHITEPACT_SPA_PATHS = [
+    "/about",
+    "/contact",
+    "/docs",
+    "/privacy",
+    "/terms",
+    "/trust",
+    "/billing/success",
+    "/billing/cancelled",
     "/login",
     "/verify-email",
     "/forgot-password",
     "/reset-password",
     "/onboarding",
     "/dashboard",
-]:
+]
+
+for _spa_path in _WHITEPACT_SPA_PATHS:
     app.get(_spa_path, response_class=HTMLResponse, include_in_schema=False)(_whitepact_spa)
+
+
+async def _whitepact_spa_head() -> Response:
+    return Response(media_type="text/html")
+
+
+for _spa_head_path in ["/", "/signup", *_WHITEPACT_SPA_PATHS]:
+    app.head(_spa_head_path, include_in_schema=False)(_whitepact_spa_head)
+
+
+@app.get("/robots.txt", response_class=PlainTextResponse, include_in_schema=False)
+async def robots_txt() -> PlainTextResponse:
+    return PlainTextResponse((_static_dir / "whitepact" / "robots.txt").read_text())
+
+
+@app.head("/robots.txt", include_in_schema=False)
+async def robots_txt_head() -> Response:
+    return Response(media_type="text/plain")
+
+
+@app.get("/sitemap.xml", response_class=Response, include_in_schema=False)
+async def sitemap_xml() -> Response:
+    return Response(
+        (_static_dir / "whitepact" / "sitemap.xml").read_text(), media_type="application/xml"
+    )
+
+
+@app.head("/sitemap.xml", include_in_schema=False)
+async def sitemap_xml_head() -> Response:
+    return Response(media_type="application/xml")
 
 
 @app.get("/dashboard/{spa_path:path}", response_class=HTMLResponse, include_in_schema=False)
 async def whitepact_dashboard_spa(spa_path: str) -> HTMLResponse:
     return await _whitepact_spa()
+
+
+@app.head("/dashboard/{spa_path:path}", include_in_schema=False)
+async def whitepact_dashboard_spa_head(spa_path: str) -> Response:
+    return await _whitepact_spa_head()
 
 
 _LLMS_TXT = """\
@@ -1779,8 +1902,8 @@ async def status_page() -> HTMLResponse:
     return HTMLResponse(content=page.read_text())
 
 
-@app.get("/trust", response_class=HTMLResponse, include_in_schema=False)
-async def trust_center() -> HTMLResponse:
+@app.get("/trust/legacy", response_class=HTMLResponse, include_in_schema=False)
+async def legacy_trust_center() -> HTMLResponse:
     """Public security/compliance posture page — links to CAIQ, NIST CSF,
     and enterprise security docs. States gaps plainly, not just controls."""
     page = _static_dir / "trust.html"
@@ -2465,7 +2588,7 @@ async def create_portal_session(
     try:
         url = await _stripe_service.create_billing_portal_session(
             customer_id=org.stripe_customer_id,
-            return_url=req.return_url or settings.billing_success_url,
+            return_url=_safe_billing_return_url(req.return_url),
         )
     except StripeBillingError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -2524,17 +2647,30 @@ async def stripe_webhook(request: Request) -> dict[str, Any]:
     except StripeBillingError as exc:
         raise HTTPException(400, str(exc)) from exc
 
+    event_id = str(getattr(event, "id", "") or "")
+    event_type = str(getattr(event, "type", "unknown"))
+    if not event_id:
+        raise HTTPException(400, "Stripe event ID is required.")
     update = _stripe_service.extract_plan_update(event)
+    org_id = update.org_id if update else None
+    if not await _ready(_billing_event_repo).begin(event_id, event_type, org_id):
+        return {"received": True, "processed": False, "duplicate": True}
     if update is None:
-        return {"received": True, "processed": False}
-
-    await _ready(_org_repo).set_plan(
-        org_id=update.org_id,
-        plan=update.plan,
-        stripe_customer_id=update.stripe_customer_id,
-        stripe_subscription_id=update.stripe_subscription_id,
-        plan_renews_at=update.plan_renews_at,
-    )
+        await _ready(_billing_event_repo).complete(event_id)
+        return {"received": True, "processed": False, "duplicate": False}
+    try:
+        await _ready(_org_repo).set_plan(
+            org_id=update.org_id,
+            plan=update.plan,
+            stripe_customer_id=update.stripe_customer_id,
+            stripe_subscription_id=update.stripe_subscription_id,
+            plan_renews_at=update.plan_renews_at,
+            subscription_status=update.subscription_status,
+        )
+        await _ready(_billing_event_repo).complete(event_id)
+    except Exception as exc:
+        await _ready(_billing_event_repo).fail(event_id, str(exc))
+        raise
     logger.info(
         "billing_plan_updated",
         org_id=update.org_id,
@@ -5538,3 +5674,19 @@ async def billing_usage(
         "cost_by_model": {k: round(v, 6) for k, v in model_breakdown.items()},
         "timestamp": datetime.now(UTC).isoformat(),
     }
+
+
+@app.get("/{spa_path:path}", response_class=HTMLResponse, include_in_schema=False)
+async def whitepact_spa_not_found(spa_path: str) -> HTMLResponse:
+    """Render the branded SPA 404 while preserving an actual HTTP 404 status."""
+    if spa_path.startswith(("api/", ".well-known/", "static/")):
+        raise HTTPException(404, "Not found")
+    index = _static_dir / "whitepact" / "index.html"
+    return HTMLResponse(content=index.read_text(), status_code=404)
+
+
+@app.head("/{spa_path:path}", include_in_schema=False)
+async def whitepact_spa_not_found_head(spa_path: str) -> Response:
+    if spa_path.startswith(("api/", ".well-known/", "static/")):
+        raise HTTPException(404, "Not found")
+    return Response(status_code=404, media_type="text/html")

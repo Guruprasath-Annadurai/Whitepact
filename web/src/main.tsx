@@ -12,6 +12,7 @@ import "@fontsource/manrope/latin-700.css";
 import "@fontsource/sora/latin-400.css";
 import "@fontsource/sora/latin-500.css";
 import "./styles.css";
+import "./closure.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

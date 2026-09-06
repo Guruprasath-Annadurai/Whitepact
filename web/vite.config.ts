@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Guruprasath Annadurai
 // SPDX-License-Identifier: MIT
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
 const stripGeneratedTrailingWhitespace = {
@@ -27,5 +27,10 @@ export default defineConfig({
   server: {
     port: 4173,
     proxy: { "/api": "http://127.0.0.1:8765" },
+  },
+  test: {
+    environment: "jsdom",
+    setupFiles: "./src/test/setup.ts",
+    restoreMocks: true,
   },
 });

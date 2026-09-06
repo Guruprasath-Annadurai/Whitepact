@@ -10,6 +10,7 @@ import logging
 from sqlalchemy import (
     Column,
     Float,
+    ForeignKey,
     Index,
     Integer,
     MetaData,
@@ -91,6 +92,7 @@ organizations = Table(
     Column("stripe_customer_id", String(64), nullable=True),
     Column("stripe_subscription_id", String(64), nullable=True),
     Column("plan_renews_at", String(32), nullable=True),
+    Column("subscription_status", String(32), nullable=False, default="inactive"),
     Column("sso_required", Integer, nullable=False, default=0),
     Column("mfa_required", Integer, nullable=False, default=0),
     Column("provisioner_key_id", String(64), nullable=True),
@@ -155,8 +157,10 @@ web_memberships = Table(
     "web_memberships",
     metadata,
     Column("id", String(36), primary_key=True),
-    Column("user_id", String(36), nullable=False),
-    Column("org_id", String(36), nullable=False),
+    Column("user_id", String(36), ForeignKey("web_users.id", ondelete="CASCADE"), nullable=False),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    ),
     Column("role", String(20), nullable=False),
     Column("created_at", String(32), nullable=False),
     UniqueConstraint("user_id", "org_id", name="uq_web_membership_user_org"),
@@ -168,8 +172,8 @@ web_sessions = Table(
     "web_sessions",
     metadata,
     Column("token_hash", String(64), primary_key=True),
-    Column("user_id", String(36), nullable=False),
-    Column("org_id", String(36), nullable=True),
+    Column("user_id", String(36), ForeignKey("web_users.id", ondelete="CASCADE"), nullable=False),
+    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True),
     Column("csrf_hash", String(64), nullable=False),
     Column("created_at", String(32), nullable=False),
     Column("expires_at", String(32), nullable=False),
@@ -183,7 +187,7 @@ web_verification_tokens = Table(
     "web_verification_tokens",
     metadata,
     Column("token_hash", String(64), primary_key=True),
-    Column("user_id", String(36), nullable=False),
+    Column("user_id", String(36), ForeignKey("web_users.id", ondelete="CASCADE"), nullable=False),
     Column("purpose", String(32), nullable=False),
     Column("created_at", String(32), nullable=False),
     Column("expires_at", String(32), nullable=False),
@@ -195,7 +199,9 @@ web_verification_tokens = Table(
 org_api_key_metadata = Table(
     "org_api_key_metadata",
     metadata,
-    Column("key_id", String(36), primary_key=True),
+    Column(
+        "key_id", String(36), ForeignKey("org_api_keys.id", ondelete="CASCADE"), primary_key=True
+    ),
     Column("prefix", String(20), nullable=False),
     Column("environment", String(8), nullable=False),
     Column("scopes", Text, nullable=False),
@@ -203,6 +209,23 @@ org_api_key_metadata = Table(
     Column("rotated_from_id", String(36), nullable=True),
     Index("idx_api_key_metadata_prefix", "prefix"),
 )
+
+stripe_webhook_events = Table(
+    "stripe_webhook_events",
+    metadata,
+    Column("event_id", String(255), primary_key=True),
+    Column("event_type", String(100), nullable=False),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True
+    ),
+    Column("status", String(24), nullable=False),
+    Column("received_at", String(32), nullable=False),
+    Column("processed_at", String(32), nullable=True),
+    Column("last_error", Text, nullable=True),
+    Index("idx_stripe_events_org", "org_id"),
+    Index("idx_stripe_events_status", "status"),
+)
+
 
 audit_log = Table(
     "audit_log",

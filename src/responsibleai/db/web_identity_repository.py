@@ -272,6 +272,33 @@ class WebIdentityRepository:
             ).fetchone()
         return str(row.org_id) if row else None
 
+    async def list_members(self, org_id: str) -> list[dict[str, str]]:
+        async with self._engine.raw.connect() as conn:
+            rows = (
+                await conn.execute(
+                    select(
+                        web_users.c.id,
+                        web_users.c.full_name,
+                        web_users.c.email,
+                        web_memberships.c.role,
+                        web_memberships.c.created_at,
+                    )
+                    .join(web_memberships, web_memberships.c.user_id == web_users.c.id)
+                    .where(web_memberships.c.org_id == org_id)
+                    .order_by(web_memberships.c.created_at)
+                )
+            ).fetchall()
+        return [
+            {
+                "id": row.id,
+                "full_name": row.full_name,
+                "email": row.email,
+                "role": row.role,
+                "joined_at": row.created_at,
+            }
+            for row in rows
+        ]
+
     async def create_session(
         self, user_id: str, *, org_id: str | None = None, ttl_hours: int = 12
     ) -> tuple[str, str]:

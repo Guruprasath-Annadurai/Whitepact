@@ -2,14 +2,17 @@
 // SPDX-License-Identifier: MIT
 import { FormEvent, useState } from "react";
 import { Eye, EyeOff, LoaderCircle } from "lucide-react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Brand } from "../../components/Brand";
 import { Button } from "../../components/Button";
+import { Seo } from "../../components/Seo";
 import { api } from "../../lib/api";
 import { publicAsset } from "../../lib/assets";
 
 function AuthLayout({ children, reversed = false }: { children: React.ReactNode; reversed?: boolean }) {
-  return <main className={`auth-layout ${reversed ? "auth-layout--reversed" : ""}`}><section className="auth-art" aria-hidden="true"><Brand /><img src={publicAsset("trust-core-head.png")} alt="" /><h2>The trust layer<br />between<br />AI and action<span>.</span></h2></section><section className="auth-panel">{children}</section></main>;
+  const { pathname } = useLocation();
+  const titles: Record<string, string> = { "/login": "Sign in", "/signup": "Create account", "/verify-email": "Verify email", "/forgot-password": "Password recovery", "/reset-password": "Reset password" };
+  return <><Seo title={`${titles[pathname] ?? "Account"} | WhitePact`} description="Secure access to the WhitePact AI governance workspace." path={pathname} noIndex /><main className={`auth-layout ${reversed ? "auth-layout--reversed" : ""}`}><section className="auth-art"><Brand /><img src={publicAsset("trust-core-head.webp")} alt="" /><h2>The trust layer<br />between<br />AI and action<span>.</span></h2></section><section className="auth-panel">{children}</section></main></>;
 }
 
 function PasswordField({ value, onChange, autoComplete }: { value: string; onChange: (value: string) => void; autoComplete: string }) {
@@ -44,7 +47,7 @@ export function SignupPage() {
     catch (err) { setError(err instanceof Error ? err.message : "Registration failed"); }
     finally { setBusy(false); }
   }
-  return <AuthLayout reversed><Brand /><div className="auth-form auth-form--signup"><h1>Create your<br />WhitePact account<span>.</span></h1><p>Your account is verified before an organization or API key can be activated.</p><form onSubmit={submit}><label className="field"><span>Full name</span><input value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} autoComplete="name" required /></label><label className="field"><span>Work email</span><input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} autoComplete="email" required /></label><PasswordField value={form.password} onChange={(password) => setForm({ ...form, password })} autoComplete="new-password" /><ul className="password-rules" aria-label="Password requirements">{["At least 12 characters", "Uppercase and lowercase letters", "At least one number", "At least one symbol"].map((rule, i) => <li className={requirements[i] ? "met" : ""} key={rule}>{rule}</li>)}</ul><label className="checkbox"><input type="checkbox" checked={form.accepted_terms} onChange={(e) => setForm({ ...form, accepted_terms: e.target.checked })} required /><span>I agree to the Terms of Service and acknowledge the Privacy Policy.</span></label>{error && <div className="form-error" role="alert">{error}</div>}<Button disabled={busy || requirements.some((item) => !item)}>{busy ? "Creating…" : "Create account →"}</Button></form><p className="auth-foot">Already have an account? <Link to="/login">Sign in</Link></p></div></AuthLayout>;
+  return <AuthLayout reversed><Brand /><div className="auth-form auth-form--signup"><h1>Create your<br />WhitePact account<span>.</span></h1><p>Your account is verified before an organization or API key can be activated.</p><form onSubmit={submit}><label className="field"><span>Full name</span><input value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} autoComplete="name" required /></label><label className="field"><span>Work email</span><input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} autoComplete="email" required /></label><PasswordField value={form.password} onChange={(password) => setForm({ ...form, password })} autoComplete="new-password" /><ul className="password-rules" aria-label="Password requirements">{["At least 12 characters", "Uppercase and lowercase letters", "At least one number", "At least one symbol"].map((rule, i) => <li className={requirements[i] ? "met" : ""} key={rule}>{rule}</li>)}</ul><label className="checkbox"><input type="checkbox" checked={form.accepted_terms} onChange={(e) => setForm({ ...form, accepted_terms: e.target.checked })} required /><span>I agree to the <Link to="/terms" target="_blank">Terms of Service</Link> and acknowledge the <Link to="/privacy" target="_blank">Privacy Policy</Link>.</span></label>{error && <div className="form-error" role="alert">{error}</div>}<Button disabled={busy || requirements.some((item) => !item)}>{busy ? "Creating…" : "Create account →"}</Button></form><p className="auth-foot">Already have an account? <Link to="/login">Sign in</Link></p></div></AuthLayout>;
 }
 
 export function VerifyEmailPage() {

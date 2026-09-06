@@ -270,3 +270,44 @@ async def test_password_reset_delivery_uses_authenticated_https_webhook(monkeypa
     request = delivery.calls.last.request
     assert request.headers["authorization"] == "Bearer delivery-token"
     assert b'"template":"whitepact-password-reset"' in request.content
+
+
+async def test_unknown_website_route_has_branded_http_404(web_client):
+    response = await web_client.get("/this-page-does-not-exist")
+    assert response.status_code == 404
+    assert '<div id="root"></div>' in response.text
+    assert response.headers["x-content-type-options"] == "nosniff"
+
+
+async def test_unknown_api_route_remains_json_404(web_client):
+    response = await web_client.get("/api/v1/this-endpoint-does-not-exist")
+    assert response.status_code == 404
+    assert response.headers["content-type"].startswith("application/json")
+
+
+async def test_public_and_dashboard_routes_support_head_requests(web_client):
+    for path in ["/", "/signup", "/trust", "/dashboard", "/dashboard/api-keys"]:
+        response = await web_client.head(path)
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/html")
+        assert response.content == b""
+
+
+async def test_head_requests_preserve_crawl_and_not_found_semantics(web_client):
+    assert (await web_client.head("/robots.txt")).status_code == 200
+    assert (await web_client.head("/sitemap.xml")).status_code == 200
+    assert (await web_client.head("/missing-page")).status_code == 404
+    api_response = await web_client.head("/api/v1/missing-endpoint")
+    assert api_response.status_code == 404
+    assert api_response.headers["content-type"].startswith("application/json")
+
+
+def test_billing_portal_return_url_is_same_origin_only(monkeypatch):
+    monkeypatch.setattr(app_module.settings, "web_public_url", "https://whitepact.com")
+    assert (
+        app_module._safe_billing_return_url("https://whitepact.com/dashboard/billing")
+        == "https://whitepact.com/dashboard/billing"
+    )
+    with pytest.raises(app_module.HTTPException) as blocked:
+        app_module._safe_billing_return_url("https://attacker.example/collect")
+    assert blocked.value.status_code == 422

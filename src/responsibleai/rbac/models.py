@@ -36,6 +36,7 @@ class Organization:
     stripe_customer_id: str | None = None
     stripe_subscription_id: str | None = None
     plan_renews_at: str | None = None
+    subscription_status: str = "inactive"
     sso_required: bool = False
     mfa_required: bool = False
     # Internal bootstrap-ownership binding. Never serialized to clients.
@@ -51,6 +52,7 @@ class Organization:
             "plan": self.plan.value if isinstance(self.plan, Plan) else self.plan,
             "stripe_customer_id": self.stripe_customer_id,
             "plan_renews_at": self.plan_renews_at,
+            "subscription_status": self.subscription_status,
             "sso_required": self.sso_required,
             "mfa_required": self.mfa_required,
         }

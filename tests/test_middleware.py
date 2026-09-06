@@ -8,7 +8,7 @@ booting the full dashboard app."""
 
 from __future__ import annotations
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.testclient import TestClient
 from starlette.requests import Request
 
@@ -79,6 +79,28 @@ class TestSecurityHeadersMiddleware:
         csp = client.get("/evaluate").headers["Content-Security-Policy"]
         assert "'unsafe-inline'" in csp
         assert "cdn.jsdelivr.net" in csp
+
+    def test_hashed_assets_receive_immutable_cache_policy(self):
+        app = FastAPI()
+        app.add_middleware(SecurityHeadersMiddleware)
+
+        @app.get("/static/whitepact/assets/app-123.js")
+        def _handler():
+            return Response(content="", media_type="application/javascript")
+
+        response = TestClient(app).get("/static/whitepact/assets/app-123.js")
+        assert response.headers["Cache-Control"] == "public, max-age=31536000, immutable"
+
+    def test_crawl_metadata_receives_bounded_cache_policy(self):
+        app = FastAPI()
+        app.add_middleware(SecurityHeadersMiddleware)
+
+        @app.get("/robots.txt")
+        def _handler():
+            return Response(content="User-agent: *", media_type="text/plain")
+
+        response = TestClient(app).get("/robots.txt")
+        assert response.headers["Cache-Control"] == "public, max-age=3600"
 
 
 class TestRequestLoggingMiddleware:

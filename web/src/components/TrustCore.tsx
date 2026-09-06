@@ -5,11 +5,12 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { TextureLoader } from "three";
 import type { Group } from "three";
 import { publicAsset } from "../lib/assets";
+import { StaticTrustCore } from "./TrustCoreBoundary";
 
 const stages = ["Request", "Identity", "Authority", "Policy", "Risk", "Approval", "Decision", "Evidence"];
 
 function CorePlane({ stage, reduced }: { stage: number; reduced: boolean }) {
-  const texture = useLoader(TextureLoader, publicAsset("trust-core-head.png"));
+  const texture = useLoader(TextureLoader, publicAsset("trust-core-head.webp"));
   const group = useRef<Group>(null);
 
   useFrame(({ pointer, clock }) => {
@@ -36,7 +37,9 @@ function CorePlane({ stage, reduced }: { stage: number; reduced: boolean }) {
 
 export function TrustCore() {
   const [stage, setStage] = useState(0);
+  const [webglFailed, setWebglFailed] = useState(false);
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const lowPower = navigator.hardwareConcurrency > 0 && navigator.hardwareConcurrency <= 4;
 
   useEffect(() => {
     if (reduced) return;
@@ -49,9 +52,10 @@ export function TrustCore() {
     return () => window.removeEventListener("scroll", onScroll);
   }, [reduced]);
 
+  if (reduced || lowPower || webglFailed || !supportsWebGL()) return <StaticTrustCore />;
   return (
-    <div className="trust-core" aria-hidden="true">
-      <Canvas dpr={[1, 1.5]} camera={{ position: [0, 0, 5.8], fov: 46 }} gl={{ alpha: true, antialias: true }}>
+    <div className="trust-core" role="img" aria-label={`WhitePact Trust Core visualizing the governance stage ${stages[stage]}`}>
+      <Canvas dpr={[1, 1.35]} camera={{ position: [0, 0, 5.8], fov: 46 }} gl={{ alpha: true, antialias: true, powerPreference: "high-performance" }} onCreated={({ gl }) => gl.domElement.addEventListener("webglcontextlost", () => setWebglFailed(true), { once: true })}>
         <Suspense fallback={null}>
           <CorePlane stage={stage} reduced={reduced} />
         </Suspense>
@@ -60,3 +64,5 @@ export function TrustCore() {
     </div>
   );
 }
+
+function supportsWebGL() { try { const canvas = document.createElement("canvas"); return Boolean(canvas.getContext("webgl2") || canvas.getContext("webgl")); } catch { return false; } }
