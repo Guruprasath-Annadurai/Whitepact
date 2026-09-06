@@ -12,11 +12,14 @@ venv/
 !.env.example
 !.env.prod.example
 *.json
+*.tsbuildinfo
 !compliance/SLSA_BUILD_PROVENANCE.json
 !package.json
 !package-lock.json
 !.pa11yci.json
 !tsconfig.json
+!web/tsconfig.app.json
+!web/tsconfig.node.json
 !grafana/dashboards/*.json
 !src/responsibleai/dashboard/static/locales/*.json
 !server.json

@@ -4,7 +4,8 @@
 
 Key security decisions:
 - Raw API keys are never stored — only SHA-256 hashes.
-- Key generation uses `secrets.token_urlsafe(32)` with "rai_" prefix.
+- Dashboard keys use environment-specific ``wp_test_``/``wp_live_``
+  prefixes; the legacy default remains ``rai_`` for compatibility.
 - `authenticate()` re-hashes the presented key and compares against stored hash.
 - Revoked keys are kept in DB for audit purposes (revoked=1 flag).
 """
@@ -19,7 +20,12 @@ from typing import Any
 
 from sqlalchemy import delete, insert, select, update
 
-from responsibleai.db.engine import DatabaseEngine, org_api_keys, organizations
+from responsibleai.db.engine import (
+    DatabaseEngine,
+    org_api_key_metadata,
+    org_api_keys,
+    organizations,
+)
 from responsibleai.rbac.models import Organization, OrgApiKey, OrgContext, Plan, Role
 from responsibleai.rbac.permissions import role_from_str
 
@@ -39,8 +45,14 @@ def _hash_key(raw: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
-def _generate_raw_key() -> str:
-    return "rai_" + secrets.token_urlsafe(32)
+def _generate_raw_key(environment: str | None = None) -> str:
+    if environment is None:
+        prefix = "rai_"
+    elif environment in {"test", "live"}:
+        prefix = f"wp_{environment}_"
+    else:
+        raise ValueError("environment must be 'test' or 'live'")
+    return prefix + secrets.token_urlsafe(32)
 
 
 class SSORequiredError(Exception):
@@ -67,6 +79,7 @@ class OrgRepository:
         slug: str,
         monthly_budget_usd: float = 10_000.0,
         plan: Plan = Plan.FREE,
+        provisioner_key_id: str | None = None,
     ) -> Organization:
         org = Organization(
             name=name,
@@ -74,6 +87,7 @@ class OrgRepository:
             monthly_budget_usd=monthly_budget_usd,
             created_at=_now(),
             plan=plan,
+            provisioner_key_id=provisioner_key_id,
         )
         async with self._engine.raw.begin() as conn:
             await conn.execute(
@@ -84,6 +98,7 @@ class OrgRepository:
                     monthly_budget_usd=org.monthly_budget_usd,
                     created_at=org.created_at,
                     plan=org.plan.value,
+                    provisioner_key_id=provisioner_key_id,
                 )
             )
         return org
@@ -164,15 +179,26 @@ class OrgRepository:
         org_id: str,
         name: str,
         role: Role = Role.ANALYST,
+        *,
+        environment: str | None = None,
+        scopes: tuple[str, ...] = (),
+        expires_at: str | None = None,
+        rotated_from_id: str | None = None,
     ) -> tuple[OrgApiKey, str]:
         """Create a new API key. Returns (OrgApiKey, raw_key).
         The raw_key is shown ONCE and never stored. Store it now."""
-        raw = _generate_raw_key()
+        raw = _generate_raw_key(environment)
+        prefix = "rai_" if environment is None else f"wp_{environment}_"
         key_rec = OrgApiKey(
             org_id=org_id,
             name=name,
             role=role,
             created_at=_now(),
+            prefix=prefix,
+            environment=environment or "legacy",
+            scopes=tuple(sorted(set(scopes))),
+            expires_at=expires_at,
+            rotated_from_id=rotated_from_id,
         )
         async with self._engine.raw.begin() as conn:
             await conn.execute(
@@ -186,20 +212,96 @@ class OrgRepository:
                     revoked=0,
                 )
             )
+            await conn.execute(
+                insert(org_api_key_metadata).values(
+                    key_id=key_rec.id,
+                    prefix=prefix,
+                    environment=environment or "legacy",
+                    scopes=json.dumps(list(key_rec.scopes)),
+                    expires_at=expires_at,
+                    rotated_from_id=rotated_from_id,
+                )
+            )
         return key_rec, raw
 
-    async def revoke_key(self, key_id: str) -> bool:
+    async def revoke_key(self, key_id: str, org_id: str | None = None) -> bool:
+        where = org_api_keys.c.id == key_id
+        if org_id is not None:
+            where = where & (org_api_keys.c.org_id == org_id)
         async with self._engine.raw.begin() as conn:
-            result = await conn.execute(
-                update(org_api_keys).where(org_api_keys.c.id == key_id).values(revoked=1)
-            )
+            result = await conn.execute(update(org_api_keys).where(where).values(revoked=1))
         return result.rowcount > 0
+
+    async def rotate_key(self, org_id: str, key_id: str) -> tuple[OrgApiKey, str] | None:
+        """Atomically revoke an active key and create its unique replacement."""
+        async with self._engine.raw.begin() as conn:
+            old = (
+                await conn.execute(
+                    select(org_api_keys, org_api_key_metadata)
+                    .outerjoin(
+                        org_api_key_metadata,
+                        org_api_key_metadata.c.key_id == org_api_keys.c.id,
+                    )
+                    .where(
+                        org_api_keys.c.id == key_id,
+                        org_api_keys.c.org_id == org_id,
+                        org_api_keys.c.revoked == 0,
+                    )
+                )
+            ).fetchone()
+            if old is None:
+                return None
+            environment = getattr(old, "environment", None)
+            environment = environment if environment in {"test", "live"} else "live"
+            replacement = OrgApiKey(
+                org_id=org_id,
+                name=old.name,
+                role=role_from_str(old.role),
+                created_at=_now(),
+                prefix=f"wp_{environment}_",
+                environment=environment,
+                scopes=tuple(json.loads(getattr(old, "scopes", "[]") or "[]")),
+                expires_at=getattr(old, "expires_at", None),
+                rotated_from_id=old.id,
+            )
+            raw = _generate_raw_key(environment)
+            await conn.execute(
+                update(org_api_keys)
+                .where(org_api_keys.c.id == old.id, org_api_keys.c.org_id == org_id)
+                .values(revoked=1)
+            )
+            await conn.execute(
+                insert(org_api_keys).values(
+                    id=replacement.id,
+                    org_id=org_id,
+                    key_hash=_hash_key(raw),
+                    name=replacement.name,
+                    role=replacement.role.value,
+                    created_at=replacement.created_at,
+                    revoked=0,
+                )
+            )
+            await conn.execute(
+                insert(org_api_key_metadata).values(
+                    key_id=replacement.id,
+                    prefix=replacement.prefix,
+                    environment=replacement.environment,
+                    scopes=json.dumps(list(replacement.scopes)),
+                    expires_at=replacement.expires_at,
+                    rotated_from_id=old.id,
+                )
+            )
+        return replacement, raw
 
     async def list_keys(self, org_id: str) -> list[OrgApiKey]:
         async with self._engine.raw.connect() as conn:
             rows = (
                 await conn.execute(
-                    select(org_api_keys)
+                    select(org_api_keys, org_api_key_metadata)
+                    .outerjoin(
+                        org_api_key_metadata,
+                        org_api_key_metadata.c.key_id == org_api_keys.c.id,
+                    )
                     .where(org_api_keys.c.org_id == org_id)
                     .where(org_api_keys.c.revoked == 0)
                 )
@@ -212,13 +314,21 @@ class OrgRepository:
         async with self._engine.raw.connect() as conn:
             row = (
                 await conn.execute(
-                    select(org_api_keys)
+                    select(org_api_keys, org_api_key_metadata)
+                    .outerjoin(
+                        org_api_key_metadata,
+                        org_api_key_metadata.c.key_id == org_api_keys.c.id,
+                    )
                     .where(org_api_keys.c.key_hash == key_hash)
                     .where(org_api_keys.c.revoked == 0)
                 )
             ).fetchone()
 
         if row is None:
+            return None
+
+        expires_at = getattr(row, "expires_at", None)
+        if expires_at and expires_at <= _now():
             return None
 
         org = await self.get_org(row.org_id)
@@ -245,6 +355,7 @@ class OrgRepository:
             mfa_enrolled=bool(getattr(row, "mfa_enrolled", 0)),
             is_legacy=False,
             plan=org.plan if org else Plan.FREE,
+            scopes=frozenset(json.loads(getattr(row, "scopes", "[]") or "[]")),
         )
 
     # ── MFA (TOTP) ────────────────────────────────────────────────────────────
@@ -255,7 +366,14 @@ class OrgRepository:
         client as-is; OrgApiKey.to_dict() already omits those fields."""
         async with self._engine.raw.connect() as conn:
             row = (
-                await conn.execute(select(org_api_keys).where(org_api_keys.c.id == key_id))
+                await conn.execute(
+                    select(org_api_keys, org_api_key_metadata)
+                    .outerjoin(
+                        org_api_key_metadata,
+                        org_api_key_metadata.c.key_id == org_api_keys.c.id,
+                    )
+                    .where(org_api_keys.c.id == key_id)
+                )
             ).fetchone()
         return self._row_to_key(row) if row else None
 
@@ -325,6 +443,7 @@ class OrgRepository:
             plan_renews_at=getattr(row, "plan_renews_at", None),
             sso_required=bool(getattr(row, "sso_required", 0)),
             mfa_required=bool(getattr(row, "mfa_required", 0)),
+            provisioner_key_id=getattr(row, "provisioner_key_id", None),
         )
 
     def _row_to_key(self, row: Any) -> OrgApiKey:
@@ -340,4 +459,9 @@ class OrgRepository:
             mfa_enrolled=bool(getattr(row, "mfa_enrolled", 0)),
             mfa_secret=getattr(row, "mfa_secret", None),
             mfa_backup_codes=json.loads(backup_codes_raw) if backup_codes_raw else None,
+            prefix=getattr(row, "prefix", "rai_") or "rai_",
+            environment=getattr(row, "environment", "legacy") or "legacy",
+            scopes=tuple(json.loads(getattr(row, "scopes", "[]") or "[]")),
+            expires_at=getattr(row, "expires_at", None),
+            rotated_from_id=getattr(row, "rotated_from_id", None),
         )

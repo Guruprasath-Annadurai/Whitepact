@@ -93,6 +93,7 @@ organizations = Table(
     Column("plan_renews_at", String(32), nullable=True),
     Column("sso_required", Integer, nullable=False, default=0),
     Column("mfa_required", Integer, nullable=False, default=0),
+    Column("provisioner_key_id", String(64), nullable=True),
     Index("idx_org_slug", "slug"),
     Index("idx_org_stripe_customer", "stripe_customer_id"),
 )
@@ -131,6 +132,76 @@ org_api_keys = Table(
     Column("mfa_backup_codes", Text, nullable=True),
     Index("idx_oak_org", "org_id"),
     Index("idx_oak_hash", "key_hash"),
+)
+
+# Human identities and browser sessions are intentionally separate from
+# machine API keys. API keys authenticate workloads; these tables authenticate
+# people and bind them to organizations through explicit memberships.
+web_users = Table(
+    "web_users",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("email", String(254), nullable=False, unique=True),
+    Column("full_name", String(200), nullable=False),
+    Column("password_hash", Text, nullable=False),
+    Column("email_verified_at", String(32), nullable=True),
+    Column("disabled", Integer, nullable=False, default=0),
+    Column("created_at", String(32), nullable=False),
+    Column("updated_at", String(32), nullable=False),
+    Index("idx_web_users_email", "email"),
+)
+
+web_memberships = Table(
+    "web_memberships",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("user_id", String(36), nullable=False),
+    Column("org_id", String(36), nullable=False),
+    Column("role", String(20), nullable=False),
+    Column("created_at", String(32), nullable=False),
+    UniqueConstraint("user_id", "org_id", name="uq_web_membership_user_org"),
+    Index("idx_web_memberships_user", "user_id"),
+    Index("idx_web_memberships_org", "org_id"),
+)
+
+web_sessions = Table(
+    "web_sessions",
+    metadata,
+    Column("token_hash", String(64), primary_key=True),
+    Column("user_id", String(36), nullable=False),
+    Column("org_id", String(36), nullable=True),
+    Column("csrf_hash", String(64), nullable=False),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("last_seen_at", String(32), nullable=False),
+    Column("revoked", Integer, nullable=False, default=0),
+    Index("idx_web_sessions_user", "user_id"),
+    Index("idx_web_sessions_expires", "expires_at"),
+)
+
+web_verification_tokens = Table(
+    "web_verification_tokens",
+    metadata,
+    Column("token_hash", String(64), primary_key=True),
+    Column("user_id", String(36), nullable=False),
+    Column("purpose", String(32), nullable=False),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("consumed_at", String(32), nullable=True),
+    Index("idx_web_verification_user", "user_id"),
+    Index("idx_web_verification_expiry", "expires_at"),
+)
+
+org_api_key_metadata = Table(
+    "org_api_key_metadata",
+    metadata,
+    Column("key_id", String(36), primary_key=True),
+    Column("prefix", String(20), nullable=False),
+    Column("environment", String(8), nullable=False),
+    Column("scopes", Text, nullable=False),
+    Column("expires_at", String(32), nullable=True),
+    Column("rotated_from_id", String(36), nullable=True),
+    Index("idx_api_key_metadata_prefix", "prefix"),
 )
 
 audit_log = Table(

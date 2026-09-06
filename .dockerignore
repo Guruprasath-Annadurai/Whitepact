@@ -11,6 +11,9 @@ htmlcov/
 coverage.xml
 dist/
 build/
+web/node_modules/
+web/dist/
+design/
 *.egg-info/
 .env
 .env.*

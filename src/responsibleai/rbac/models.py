@@ -38,6 +38,8 @@ class Organization:
     plan_renews_at: str | None = None
     sso_required: bool = False
     mfa_required: bool = False
+    # Internal bootstrap-ownership binding. Never serialized to clients.
+    provisioner_key_id: str | None = field(default=None, repr=False)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -69,6 +71,11 @@ class OrgApiKey:
     # response body, same discipline as the raw API key itself.
     mfa_secret: str | None = field(default=None, repr=False)
     mfa_backup_codes: list[str] | None = field(default=None, repr=False)
+    prefix: str = "rai_"
+    environment: str = "legacy"
+    scopes: tuple[str, ...] = ()
+    expires_at: str | None = None
+    rotated_from_id: str | None = None
 
     def to_dict(self, include_key: str | None = None) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -80,6 +87,10 @@ class OrgApiKey:
             "last_used_at": self.last_used_at,
             "revoked": self.revoked,
             "mfa_enrolled": self.mfa_enrolled,
+            "prefix": self.prefix,
+            "environment": self.environment,
+            "scopes": list(self.scopes),
+            "expires_at": self.expires_at,
         }
         if include_key is not None:
             d["key"] = include_key  # Only set on key creation; never stored
@@ -98,6 +109,7 @@ class OrgContext:
     mfa_enrolled: bool = False
     is_legacy: bool = False  # True for flat RAI_API_KEYS entries
     plan: Plan = Plan.ENTERPRISE  # legacy/anon keys default to unrestricted for backward compat
+    scopes: frozenset[str] = frozenset()
 
 
 @dataclass

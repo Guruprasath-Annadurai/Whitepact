@@ -71,6 +71,41 @@ class TestAllowedOriginsEnvParsing:
         ]
 
 
+class TestVerificationDeliveryTransport:
+    def test_https_delivery_is_accepted(self, fresh_settings_module) -> None:
+        settings = fresh_settings_module.Settings(
+            web_verification_delivery_url="https://mailer.example.com/verify"
+        )
+        assert settings.web_verification_delivery_url == "https://mailer.example.com/verify"
+
+    def test_plaintext_remote_delivery_is_rejected(self, fresh_settings_module) -> None:
+        with pytest.raises(ValueError, match="must use HTTPS"):
+            fresh_settings_module.Settings(
+                web_verification_delivery_url="http://mailer.example.com/verify"
+            )
+
+    def test_local_plaintext_delivery_is_accepted(self, fresh_settings_module) -> None:
+        settings = fresh_settings_module.Settings(
+            web_verification_delivery_url="http://127.0.0.1:9000/verify"
+        )
+        assert settings.web_verification_delivery_url == "http://127.0.0.1:9000/verify"
+
+    def test_blank_delivery_url_is_treated_as_disabled(self, fresh_settings_module) -> None:
+        settings = fresh_settings_module.Settings(web_verification_delivery_url="   ")
+        assert settings.web_verification_delivery_url is None
+
+
+class TestVcTrustedIssuerParsing:
+    def test_comma_separated_string_is_normalized(self, fresh_settings_module) -> None:
+        settings = fresh_settings_module.Settings(
+            vc_trusted_issuers="https://issuer-one.example, https://issuer-two.example"
+        )
+        assert settings.vc_trusted_issuers == [
+            "https://issuer-one.example",
+            "https://issuer-two.example",
+        ]
+
+
 class TestOidcScopesEnvParsing:
     def test_comma_separated_string_does_not_crash(
         self, monkeypatch, fresh_settings_module

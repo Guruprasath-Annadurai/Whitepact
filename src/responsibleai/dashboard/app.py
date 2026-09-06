@@ -5,6 +5,9 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
+import re
 import secrets
 import time
 from contextlib import asynccontextmanager
@@ -13,6 +16,7 @@ from pathlib import Path
 from typing import Any, Literal, TypeVar
 from urllib.parse import quote
 
+import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
@@ -97,6 +101,7 @@ from responsibleai.db import (
     CredentialIssuanceRepository,
     DelegationEscalationError,
     DelegationRepository,
+    DuplicateWebUserError,
     EvalRepository,
     EvidenceRepository,
     IncidentRepository,
@@ -119,6 +124,8 @@ from responsibleai.db import (
     UpstreamServerRepository,
     WebhookConfigRepository,
     WebhookDeliveryRepository,
+    WebIdentityRepository,
+    WebPrincipal,
     WorkflowRuleAlreadyExistsError,
     WorkflowRuleNotFoundError,
     WorkflowRuleRepository,
@@ -263,6 +270,7 @@ _cost_analyzer: CostAnalyzer | None = None
 _router: ModelRouter | None = None
 _trust_repo: TrustRepository | None = None
 _org_repo: OrgRepository | None = None
+_web_identity_repo: WebIdentityRepository | None = None
 _audit_repo: AuditRepository | None = None
 _incident_repo: IncidentRepository | None = None
 _leaderboard_repo: LeaderboardRepository | None = None
@@ -330,7 +338,13 @@ async def _oidc_state_cleanup() -> None:
 async def lifespan(application: FastAPI):
     global _trust_engine, _passport_gen, _guardrails, _hallucination
     global _compliance, _cost_repo, _cost_analyzer, _router, _trust_repo
-    global _org_repo, _audit_repo, _incident_repo, _leaderboard_repo, _leaderboard_runner
+    global \
+        _org_repo, \
+        _web_identity_repo, \
+        _audit_repo, \
+        _incident_repo, \
+        _leaderboard_repo, \
+        _leaderboard_runner
     global _passport_repo, _public_incident_repo, _db_engine, _mcp_usage_repo
     global _evidence_repo, _approval_repo, _policy_repo, _upstream_registry, _ceiling_repo
     global _tool_trust_repo, _credential_issuance_repo, _outcome_repo
@@ -366,6 +380,7 @@ async def lifespan(application: FastAPI):
     _cost_repo = CostRepository(_db_engine, policy=policy)
     _trust_repo = TrustRepository(_db_engine, alert_threshold=settings.alert_threshold)
     _org_repo = OrgRepository(_db_engine)
+    _web_identity_repo = WebIdentityRepository(_db_engine)
     _audit_repo = AuditRepository(_db_engine)
     _incident_repo = IncidentRepository(_db_engine)
     _leaderboard_repo = LeaderboardRepository(_db_engine)
@@ -736,9 +751,12 @@ async def get_org_context(request: Request) -> OrgContext:
     token = auth_header[7:].strip()
 
     if settings.api_keys and token in settings.api_keys:
-        ctx = OrgContext(key_id="legacy", role=Role.OWNER, is_legacy=True)
+        # A non-secret fingerprint lets bootstrap-created organizations bind
+        # back to the exact configured key without persisting that raw key.
+        legacy_key_id = f"legacy:{hashlib.sha256(token.encode()).hexdigest()[:32]}"
+        ctx = OrgContext(key_id=legacy_key_id, role=Role.OWNER, is_legacy=True)
         request.state.audit_org_id = None
-        request.state.audit_key_id = "legacy"
+        request.state.audit_key_id = legacy_key_id
         return ctx
 
     oidc_ctx = await _resolve_oidc_context(token)
@@ -774,11 +792,34 @@ async def get_org_context(request: Request) -> OrgContext:
         if resolved_ctx:
             if _plan_rate_limiter:
                 await _plan_rate_limiter.check(resolved_ctx.org_id, resolved_ctx.plan)
+            _enforce_machine_scope(request, resolved_ctx)
             request.state.audit_org_id = resolved_ctx.org_id
             request.state.audit_key_id = resolved_ctx.key_id
             return resolved_ctx
 
     raise HTTPException(401, detail="Invalid API key")
+
+
+def _enforce_machine_scope(request: Request, context: OrgContext) -> None:
+    """Enforce scopes for new dashboard-managed keys.
+
+    Empty scopes mean a pre-metadata legacy key and intentionally preserve
+    existing behavior. Every ``wp_test_``/``wp_live_`` key has non-empty
+    scopes and is denied outside its allowed API families.
+    """
+    if not context.scopes:
+        return
+    path = request.url.path
+    method = request.method.upper()
+    required: str | None = None
+    if path.startswith("/api/governance/evidence") and method in {"GET", "HEAD"}:
+        required = "evidence:read"
+    elif path.startswith("/api/governance"):
+        required = "governance:read" if method in {"GET", "HEAD"} else "governance:write"
+    elif path.startswith("/api/agents"):
+        required = "agents:read" if method in {"GET", "HEAD"} else "agents:write"
+    if required and required not in context.scopes:
+        raise HTTPException(403, detail=f"API key is missing required scope: {required}")
 
 
 def require_role(min_role: Role):
@@ -1102,6 +1143,93 @@ class CreateKeyRequest(BaseModel):
     role: str = Field("ANALYST", pattern="^(OWNER|ADMIN|ANALYST|VIEWER)$")
 
 
+class WebRegisterRequest(BaseModel):
+    full_name: str = Field(..., min_length=2, max_length=200)
+    email: EmailStr
+    password: str = Field(..., min_length=12, max_length=128)
+    accepted_terms: bool
+
+    @field_validator("password")
+    @classmethod
+    def strong_password(cls, value: str) -> str:
+        if not (
+            re.search(r"[a-z]", value)
+            and re.search(r"[A-Z]", value)
+            and re.search(r"\d", value)
+            and re.search(r"[^A-Za-z0-9]", value)
+        ):
+            raise ValueError("Password must include upper, lower, number, and symbol")
+        return value
+
+    @field_validator("accepted_terms")
+    @classmethod
+    def terms_required(cls, value: bool) -> bool:
+        if not value:
+            raise ValueError("Terms acceptance is required")
+        return value
+
+
+class WebLoginRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(..., min_length=1, max_length=128)
+
+
+class WebVerifyRequest(BaseModel):
+    token: str = Field(..., min_length=32, max_length=256)
+
+
+class WebPasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class WebPasswordResetConfirmRequest(BaseModel):
+    token: str = Field(..., min_length=32, max_length=256)
+    password: str = Field(..., min_length=12, max_length=128)
+
+    @field_validator("password")
+    @classmethod
+    def strong_password(cls, value: str) -> str:
+        return WebRegisterRequest.strong_password(value)
+
+
+class WebOnboardingRequest(BaseModel):
+    organization_name: str = Field(..., min_length=2, max_length=200)
+    website: str = Field("", max_length=2048)
+    role: str = Field("", max_length=100)
+    intended_use: str = Field("", max_length=1000)
+    use_case: str = Field(..., min_length=2, max_length=200)
+    plan: str = Field("FREE", pattern="^(FREE|DEVELOPER|PRO|BUSINESS|ENTERPRISE)$")
+
+
+class WebCreateKeyRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    environment: Literal["test", "live"] = "test"
+    scopes: list[str] = Field(default_factory=list, max_length=20)
+    expires_at: datetime | None = None
+
+    @field_validator("scopes")
+    @classmethod
+    def valid_scopes(cls, value: list[str]) -> list[str]:
+        allowed = {
+            "governance:read",
+            "governance:write",
+            "evidence:read",
+            "agents:read",
+            "agents:write",
+        }
+        unique = sorted(set(value))
+        if not unique or not set(unique).issubset(allowed):
+            raise ValueError("At least one valid API scope is required")
+        return unique
+
+    @field_validator("expires_at")
+    @classmethod
+    def timezone_required(cls, value: datetime | None) -> datetime | None:
+        if value is not None and value.tzinfo is None:
+            raise ValueError("API key expiration must include a timezone")
+        return value
+
+
 class SetSSORequest(BaseModel):
     sso_required: bool
 
@@ -1156,21 +1284,435 @@ class BillingPortalRequest(BaseModel):
     return_url: str | None = Field(None, max_length=2048)
 
 
+# ── Human web identity / console API ─────────────────────────────────────────
+
+
+def _web_token_hash(value: str) -> str:
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
+def _set_web_cookies(response: Response, session_token: str, csrf_token: str) -> None:
+    max_age = settings.web_session_ttl_hours * 3600
+    response.set_cookie(
+        "wp_session",
+        session_token,
+        max_age=max_age,
+        httponly=True,
+        secure=settings.web_session_secure,
+        samesite="lax",
+        path="/",
+    )
+    response.set_cookie(
+        "wp_csrf",
+        csrf_token,
+        max_age=max_age,
+        httponly=False,
+        secure=settings.web_session_secure,
+        samesite="strict",
+        path="/",
+    )
+
+
+async def get_web_principal(request: Request) -> WebPrincipal:
+    token = request.cookies.get("wp_session", "")
+    principal = await _ready(_web_identity_repo).get_principal(token) if token else None
+    if principal is None:
+        raise HTTPException(401, "Sign in is required.")
+    request.state.audit_org_id = principal.org_id
+    request.state.audit_key_id = f"web:{principal.user_id}"
+    return principal
+
+
+async def require_web_csrf(
+    request: Request, principal: WebPrincipal = Depends(get_web_principal)
+) -> WebPrincipal:
+    cookie_token = request.cookies.get("wp_csrf", "")
+    header_token = request.headers.get("X-WP-CSRF", "")
+    if not cookie_token or not header_token or not hmac.compare_digest(cookie_token, header_token):
+        raise HTTPException(403, "CSRF validation failed.")
+    if not hmac.compare_digest(_web_token_hash(cookie_token), principal.csrf_hash):
+        raise HTTPException(403, "CSRF validation failed.")
+    return principal
+
+
+def _web_org_admin(principal: WebPrincipal) -> str:
+    if not principal.org_id:
+        raise HTTPException(409, "Complete organization onboarding first.")
+    if principal.role not in {Role.OWNER, Role.ADMIN}:
+        raise HTTPException(403, "Organization administrator access is required.")
+    return principal.org_id
+
+
+async def _deliver_verification(email: str, full_name: str, verification_url: str) -> None:
+    if not settings.web_verification_delivery_url:
+        return
+    headers = {"Content-Type": "application/json"}
+    if settings.web_verification_delivery_token:
+        headers["Authorization"] = f"Bearer {settings.web_verification_delivery_token}"
+    async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
+        response = await client.post(
+            settings.web_verification_delivery_url,
+            headers=headers,
+            json={
+                "template": "whitepact-email-verification",
+                "to": email,
+                "name": full_name,
+                "verification_url": verification_url,
+            },
+        )
+    if response.status_code < 200 or response.status_code >= 300:
+        raise HTTPException(502, "Verification email delivery failed. Please retry later.")
+
+
+async def _deliver_password_reset(email: str, full_name: str, reset_url: str) -> None:
+    if not settings.web_verification_delivery_url:
+        return
+    headers = {"Content-Type": "application/json"}
+    if settings.web_verification_delivery_token:
+        headers["Authorization"] = f"Bearer {settings.web_verification_delivery_token}"
+    async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
+        response = await client.post(
+            settings.web_verification_delivery_url,
+            headers=headers,
+            json={
+                "template": "whitepact-password-reset",
+                "to": email,
+                "name": full_name,
+                "reset_url": reset_url,
+            },
+        )
+    if response.status_code < 200 or response.status_code >= 300:
+        raise HTTPException(502, "Password reset delivery failed. Please retry later.")
+
+
+@app.post("/api/web/auth/register", tags=["web-auth"], status_code=202)
+@limiter.limit("5/minute")
+async def web_register(request: Request, req: WebRegisterRequest) -> dict[str, Any]:
+    if not settings.web_verification_delivery_url and not settings.web_auth_dev_tokens:
+        raise HTTPException(503, "Email verification delivery is not configured.")
+    if is_disposable_email_domain(str(req.email)):
+        raise HTTPException(422, "Use a permanent work email address.")
+    if not _signup_window.allow():
+        raise HTTPException(429, "Signup capacity is temporarily exhausted. Try again later.")
+    try:
+        _, token = await _ready(_web_identity_repo).register(
+            req.full_name, str(req.email), req.password
+        )
+    except DuplicateWebUserError:
+        # Deliberately return the same accepted shape as a new registration.
+        return {"status": "verification_required"}
+    verification_url = (
+        f"{settings.web_public_url.rstrip('/')}/verify-email?token={quote(token, safe='')}"
+    )
+    await _deliver_verification(str(req.email), req.full_name, verification_url)
+    result: dict[str, Any] = {"status": "verification_required"}
+    if settings.web_auth_dev_tokens:
+        result["verification_url"] = verification_url
+    return result
+
+
+@app.post("/api/web/auth/verify", tags=["web-auth"])
+@limiter.limit("10/minute")
+async def web_verify(request: Request, req: WebVerifyRequest) -> dict[str, str]:
+    if not await _ready(_web_identity_repo).verify_email(req.token):
+        raise HTTPException(400, "This verification link is invalid or expired.")
+    return {"status": "verified", "next": "/login?verified=1"}
+
+
+@app.post("/api/web/auth/password-reset", tags=["web-auth"], status_code=202)
+@limiter.limit("5/minute")
+async def web_password_reset_request(
+    request: Request, req: WebPasswordResetRequest
+) -> dict[str, str]:
+    if not settings.web_verification_delivery_url and not settings.web_auth_dev_tokens:
+        raise HTTPException(503, "Password reset delivery is not configured.")
+    reset = await _ready(_web_identity_repo).create_password_reset(str(req.email))
+    result = {"status": "accepted"}
+    if reset is None:
+        return result
+    email, full_name, token = reset
+    reset_url = (
+        f"{settings.web_public_url.rstrip('/')}/reset-password?token={quote(token, safe='')}"
+    )
+    await _deliver_password_reset(email, full_name, reset_url)
+    if settings.web_auth_dev_tokens:
+        result["reset_url"] = reset_url
+    return result
+
+
+@app.post("/api/web/auth/password-reset/confirm", tags=["web-auth"])
+@limiter.limit("10/minute")
+async def web_password_reset_confirm(
+    request: Request, req: WebPasswordResetConfirmRequest
+) -> dict[str, str]:
+    if not await _ready(_web_identity_repo).reset_password(req.token, req.password):
+        raise HTTPException(400, "This password reset link is invalid or expired.")
+    return {"status": "password_updated", "next": "/login?reset=1"}
+
+
+@app.post("/api/web/auth/login", tags=["web-auth"])
+@limiter.limit("10/minute")
+async def web_login(request: Request, req: WebLoginRequest) -> JSONResponse:
+    identity = await _ready(_web_identity_repo).authenticate(str(req.email), req.password)
+    if identity is None:
+        raise HTTPException(401, "Invalid credentials or unverified email.")
+    user_id, _email, _full_name = identity
+    org_id = await _ready(_web_identity_repo).primary_org_id(user_id)
+    token, csrf = await _ready(_web_identity_repo).create_session(
+        user_id, org_id=org_id, ttl_hours=settings.web_session_ttl_hours
+    )
+    response = JSONResponse({"next": "/dashboard" if org_id else "/onboarding"})
+    _set_web_cookies(response, token, csrf)
+    return response
+
+
+@app.post("/api/web/auth/logout", tags=["web-auth"])
+async def web_logout(
+    request: Request, _principal: WebPrincipal = Depends(require_web_csrf)
+) -> JSONResponse:
+    token = request.cookies.get("wp_session", "")
+    if token:
+        await _ready(_web_identity_repo).revoke_session(token)
+    response = JSONResponse({"status": "signed_out"})
+    response.delete_cookie("wp_session", path="/")
+    response.delete_cookie("wp_csrf", path="/")
+    return response
+
+
+@app.get("/api/web/session", tags=["web-auth"])
+async def web_session(principal: WebPrincipal = Depends(get_web_principal)) -> dict[str, Any]:
+    organization = None
+    if principal.org_id:
+        organization = {
+            "id": principal.org_id,
+            "name": principal.org_name,
+            "plan": principal.org_plan.value if principal.org_plan else "FREE",
+            "role": principal.role.value if principal.role else None,
+        }
+    return {
+        "user": {
+            "id": principal.user_id,
+            "email": principal.email,
+            "full_name": principal.full_name,
+        },
+        "organization": organization,
+    }
+
+
+@app.post("/api/web/onboarding", tags=["web-console"])
+@limiter.limit("5/minute")
+async def web_onboarding(
+    request: Request,
+    req: WebOnboardingRequest,
+    principal: WebPrincipal = Depends(require_web_csrf),
+) -> dict[str, str]:
+    if principal.org_id:
+        raise HTTPException(409, "This account already belongs to an organization.")
+    slug_base = re.sub(r"[^a-z0-9]+", "-", req.organization_name.casefold()).strip("-")
+    slug = f"{slug_base[:70]}-{secrets.token_hex(3)}"
+    await _ready(_web_identity_repo).attach_organization(
+        principal.user_id, name=req.organization_name.strip(), slug=slug
+    )
+    # Paid entitlements are activated only by a signed Stripe webhook. The
+    # onboarding request itself never trusts a browser-selected plan.
+    return {"next": "/dashboard/billing" if req.plan != "FREE" else "/dashboard"}
+
+
+@app.get("/api/web/api-keys", tags=["web-console"])
+async def web_list_api_keys(
+    principal: WebPrincipal = Depends(get_web_principal),
+) -> dict[str, Any]:
+    org_id = _web_org_admin(principal)
+    keys = await _ready(_org_repo).list_keys(org_id)
+    return {"keys": [{**key.to_dict(), "status": "active"} for key in keys]}
+
+
+@app.post("/api/web/api-keys", tags=["web-console"], status_code=201)
+@limiter.limit("10/minute")
+async def web_create_api_key(
+    request: Request,
+    req: WebCreateKeyRequest,
+    principal: WebPrincipal = Depends(require_web_csrf),
+) -> dict[str, Any]:
+    org_id = _web_org_admin(principal)
+    org = await _ready(_org_repo).get_org(org_id)
+    if org is None:
+        raise HTTPException(404, "Organization not found.")
+    active_keys = await _ready(_org_repo).list_keys(org_id)
+    if org.plan == Plan.FREE and (req.environment == "live" or len(active_keys) >= 1):
+        raise HTTPException(
+            403,
+            "The Community plan supports one test key. A signed billing webhook must activate a paid entitlement before live or additional keys are issued.",
+        )
+    expires_at = req.expires_at.isoformat() if req.expires_at else None
+    if req.expires_at and req.expires_at <= datetime.now(UTC):
+        raise HTTPException(422, "API key expiration must be in the future.")
+    record, raw = await _ready(_org_repo).create_key(
+        org_id,
+        req.name,
+        Role.ANALYST,
+        environment=req.environment,
+        scopes=tuple(req.scopes),
+        expires_at=expires_at,
+    )
+    return {**record.to_dict(), "api_key": raw, "status": "active"}
+
+
+@app.post("/api/web/api-keys/{key_id}/rotate", tags=["web-console"])
+@limiter.limit("10/minute")
+async def web_rotate_api_key(
+    request: Request,
+    key_id: str,
+    principal: WebPrincipal = Depends(require_web_csrf),
+) -> dict[str, Any]:
+    org_id = _web_org_admin(principal)
+    result = await _ready(_org_repo).rotate_key(org_id, key_id)
+    if result is None:
+        raise HTTPException(404, "API key not found.")
+    record, raw = result
+    return {**record.to_dict(), "api_key": raw, "status": "active"}
+
+
+@app.delete("/api/web/api-keys/{key_id}", tags=["web-console"])
+@limiter.limit("10/minute")
+async def web_revoke_api_key(
+    request: Request,
+    key_id: str,
+    principal: WebPrincipal = Depends(require_web_csrf),
+) -> dict[str, str]:
+    org_id = _web_org_admin(principal)
+    if not await _ready(_org_repo).revoke_key(key_id, org_id=org_id):
+        raise HTTPException(404, "API key not found.")
+    return {"revoked": key_id}
+
+
+@app.get("/api/web/dashboard/summary", tags=["web-console"])
+async def web_dashboard_summary(
+    principal: WebPrincipal = Depends(get_web_principal),
+) -> dict[str, Any]:
+    if not principal.org_id:
+        raise HTTPException(409, "Complete organization onboarding first.")
+    pending = await _ready(_approval_repo).list_pending(principal.org_id, limit=50)
+    return {
+        "decisions": 0,
+        "agents": 0,
+        "pending_approvals": len(pending),
+        "blocked_actions": 0,
+        "recent_governance": [],
+        "services": {
+            "Policy engine": "configured",
+            "MCP gateway": "configured" if settings.mcp_governance_enabled else "not enabled",
+            "Billing": "configured" if _stripe_service else "not configured",
+        },
+    }
+
+
+@app.post("/api/web/billing/checkout", tags=["web-console"])
+@limiter.limit("10/minute")
+async def web_billing_checkout(
+    request: Request,
+    req: CheckoutRequest,
+    principal: WebPrincipal = Depends(require_web_csrf),
+) -> dict[str, str]:
+    org_id = _web_org_admin(principal)
+    if _stripe_service is None:
+        raise HTTPException(503, "Billing is not configured on this deployment.")
+    org = await _ready(_org_repo).get_org(org_id)
+    if org is None:
+        raise HTTPException(404, "Organization not found.")
+    try:
+        url = await _stripe_service.create_checkout_session(
+            org_id=org_id,
+            org_email=principal.email,
+            plan=Plan(req.plan),
+            success_url=settings.billing_success_url,
+            cancel_url=settings.billing_cancel_url,
+            existing_customer_id=org.stripe_customer_id,
+        )
+    except StripeBillingError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"checkout_url": url}
+
+
+@app.post("/api/web/billing/portal", tags=["web-console"])
+@limiter.limit("10/minute")
+async def web_billing_portal(
+    request: Request,
+    req: BillingPortalRequest,
+    principal: WebPrincipal = Depends(require_web_csrf),
+) -> dict[str, str]:
+    org_id = _web_org_admin(principal)
+    if _stripe_service is None:
+        raise HTTPException(503, "Billing is not configured on this deployment.")
+    org = await _ready(_org_repo).get_org(org_id)
+    if org is None or not org.stripe_customer_id:
+        raise HTTPException(404, "No active billing customer exists for this organization.")
+    try:
+        url = await _stripe_service.create_billing_portal_session(
+            customer_id=org.stripe_customer_id,
+            return_url=req.return_url or settings.billing_success_url,
+        )
+    except StripeBillingError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"portal_url": url}
+
+
+@app.get("/api/web/dashboard/{domain}", tags=["web-console"])
+async def web_dashboard_domain(
+    domain: str, principal: WebPrincipal = Depends(get_web_principal)
+) -> dict[str, Any]:
+    if not principal.org_id:
+        raise HTTPException(409, "Complete organization onboarding first.")
+    if domain not in {
+        "agents",
+        "approvals",
+        "evidence",
+        "usage",
+        "policies",
+        "mcp",
+        "organization",
+        "members",
+        "billing",
+        "settings",
+    }:
+        raise HTTPException(404, "Dashboard section not found.")
+    return {"items": [], "source": "organization_repository", "domain": domain}
+
+
 # ── Root / HTML ────────────────────────────────────────────────────────────────
 
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 async def root() -> HTMLResponse:
-    index = _static_dir / "index.html"
+    index = _static_dir / "whitepact" / "index.html"
     return HTMLResponse(content=index.read_text())
 
 
 @app.get("/signup", response_class=HTMLResponse, include_in_schema=False)
 async def signup_page() -> HTMLResponse:
-    """Self-serve onboarding wizard: workspace name -> POST /api/signup
-    -> API key issued -> straight into the dashboard, no sales call."""
-    page = _static_dir / "signup.html"
+    """WhitePact account signup. No machine key is issued until verification."""
+    page = _static_dir / "whitepact" / "index.html"
     return HTMLResponse(content=page.read_text())
+
+
+async def _whitepact_spa() -> HTMLResponse:
+    return HTMLResponse(content=(_static_dir / "whitepact" / "index.html").read_text())
+
+
+for _spa_path in [
+    "/login",
+    "/verify-email",
+    "/forgot-password",
+    "/reset-password",
+    "/onboarding",
+    "/dashboard",
+]:
+    app.get(_spa_path, response_class=HTMLResponse, include_in_schema=False)(_whitepact_spa)
+
+
+@app.get("/dashboard/{spa_path:path}", response_class=HTMLResponse, include_in_schema=False)
+async def whitepact_dashboard_spa(spa_path: str) -> HTMLResponse:
+    return await _whitepact_spa()
 
 
 _LLMS_TXT = """\
@@ -1326,7 +1868,6 @@ def _page_route(path: str, filename: str) -> None:
 
 
 for _path, _filename in [
-    ("/login", "login.html"),
     ("/auth/complete", "auth_complete.html"),
     ("/evaluate", "evaluate.html"),
     ("/guardrails", "guardrails.html"),
@@ -1512,7 +2053,12 @@ async def create_org(
     existing = await _ready(_org_repo).get_org_by_slug(req.slug)
     if existing:
         raise HTTPException(409, f"Slug '{req.slug}' is already taken")
-    org = await _ready(_org_repo).create_org(req.name, req.slug, req.monthly_budget_usd)
+    org = await _ready(_org_repo).create_org(
+        req.name,
+        req.slug,
+        req.monthly_budget_usd,
+        provisioner_key_id=_auth.key_id,
+    )
     return org.to_dict()
 
 
@@ -1751,6 +2297,8 @@ async def create_api_key(
     org = await _ready(_org_repo).get_org(org_id)
     if not org:
         raise HTTPException(404, "Organization not found")
+    if _auth.org_id != org_id and _auth.key_id != org.provisioner_key_id:
+        raise HTTPException(404, "Organization not found")
     role = role_from_str(req.role)
     key_rec, raw_key = await _ready(_org_repo).create_key(org_id, req.name, role)
     return key_rec.to_dict(include_key=raw_key)
@@ -1763,6 +2311,9 @@ async def list_api_keys(
     org_id: str,
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, Any]:
+    org = await _ready(_org_repo).get_org(org_id)
+    if not org or (_auth.org_id != org_id and _auth.key_id != org.provisioner_key_id):
+        raise HTTPException(404, "Organization not found")
     keys = await _ready(_org_repo).list_keys(org_id)
     return {"keys": [k.to_dict() for k in keys]}
 
@@ -1775,7 +2326,10 @@ async def revoke_api_key(
     key_id: str,
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, Any]:
-    revoked = await _ready(_org_repo).revoke_key(key_id)
+    org = await _ready(_org_repo).get_org(org_id)
+    if not org or (_auth.org_id != org_id and _auth.key_id != org.provisioner_key_id):
+        raise HTTPException(404, "Organization not found")
+    revoked = await _ready(_org_repo).revoke_key(key_id, org_id=org_id)
     if not revoked:
         raise HTTPException(404, "Key not found")
     return {"revoked": key_id}

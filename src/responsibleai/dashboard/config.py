@@ -382,6 +382,30 @@ class Settings(BaseSettings):
         description="Redirect URL after cancelled Stripe checkout.",
     )
 
+    # Browser identity. Human sessions are deliberately independent from
+    # workload API keys and use hashed opaque tokens in Secure cookies.
+    web_public_url: str = Field(
+        default="http://localhost:8765",
+        description="Canonical public origin used in email verification links.",
+    )
+    web_session_ttl_hours: int = Field(default=12, ge=1, le=168)
+    web_session_secure: bool = Field(
+        default=True,
+        description="Set false only for local HTTP development; production must keep Secure cookies.",
+    )
+    web_verification_delivery_url: str | None = Field(
+        default=None,
+        description="HTTPS webhook that accepts transactional verification-email payloads.",
+    )
+    web_verification_delivery_token: str | None = Field(
+        default=None,
+        description="Bearer credential for the verification delivery webhook.",
+    )
+    web_auth_dev_tokens: bool = Field(
+        default=False,
+        description="Local-only escape hatch that returns verification URLs in API responses.",
+    )
+
     # Alertmanager → incident bridge (optional — leave unset to disable)
     alerts_webhook_token: str | None = Field(
         default=None,
@@ -481,6 +505,21 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return [o.strip() for o in v.split(",") if o.strip()]
         return list(v) if v else []
+
+    @field_validator("web_verification_delivery_url")
+    @classmethod
+    def _verification_delivery_requires_https(cls, value: str | None) -> str | None:
+        """Keep email-verification tokens off plaintext production transports."""
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            return None
+        if normalized.startswith("https://"):
+            return normalized
+        if normalized.startswith(("http://localhost", "http://127.0.0.1", "http://[::1]")):
+            return normalized
+        raise ValueError("web_verification_delivery_url must use HTTPS outside local development")
 
     @property
     def otel_headers_dict(self) -> dict[str, str]:

@@ -53,6 +53,33 @@ class TestSecurityHeadersMiddleware:
         assert "Content-Security-Policy" in resp.headers
         assert "Strict-Transport-Security" in resp.headers
 
+    def test_whitepact_spa_uses_strict_csp(self):
+        app = FastAPI()
+        app.add_middleware(SecurityHeadersMiddleware)
+
+        @app.get("/dashboard/api-keys")
+        def _handler():
+            return {"ok": True}
+
+        client = TestClient(app)
+        csp = client.get("/dashboard/api-keys").headers["Content-Security-Policy"]
+        assert "script-src 'self'" in csp
+        assert "'unsafe-inline'" not in csp
+        assert "cdn.jsdelivr.net" not in csp
+
+    def test_legacy_page_retains_compatibility_csp(self):
+        app = FastAPI()
+        app.add_middleware(SecurityHeadersMiddleware)
+
+        @app.get("/evaluate")
+        def _handler():
+            return {"ok": True}
+
+        client = TestClient(app)
+        csp = client.get("/evaluate").headers["Content-Security-Policy"]
+        assert "'unsafe-inline'" in csp
+        assert "cdn.jsdelivr.net" in csp
+
 
 class TestRequestLoggingMiddleware:
     def test_adds_response_time_header(self):

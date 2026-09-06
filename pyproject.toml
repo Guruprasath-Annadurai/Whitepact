@@ -38,6 +38,7 @@ dependencies = [
     "numpy>=1.26.0",
     "scikit-learn>=1.4.0",
     "click>=8.1.0",
+    "rich>=13.7.0",
     "python-dotenv>=1.0.0",
     "anyio>=4.0.0",
     # <2.0.0: the official MCP Python SDK's 2.0.0 release renamed
@@ -150,6 +151,8 @@ dev = [
     "google-adk>=2.0.0",
     "hypothesis>=6.100.0",
     "PyYAML>=6.0.3",
+    "signxml>=3.2.0",
+    "lxml>=5.2.1",
 ]
 
 [project.scripts]

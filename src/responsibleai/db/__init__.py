@@ -44,6 +44,13 @@ from responsibleai.db.upstream_repository import (
     UpstreamServerNotFoundError,
     UpstreamServerRepository,
 )
+from responsibleai.db.web_identity_repository import (
+    DuplicateWebUserError,
+    WebIdentityRepository,
+    WebPrincipal,
+    hash_password,
+    verify_password,
+)
 from responsibleai.db.webhook_repository import (
     WebhookConfigRepository,
     WebhookDeliveryRepository,
@@ -98,4 +105,9 @@ __all__ = [
     "DelegationNotFoundError",
     "DelegationRepository",
     "OrgAutonomyBudgetRepository",
+    "DuplicateWebUserError",
+    "WebIdentityRepository",
+    "WebPrincipal",
+    "hash_password",
+    "verify_password",
 ]

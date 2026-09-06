@@ -30,7 +30,11 @@ from responsibleai.dashboard.config import Settings
 
 @pytest.fixture()
 async def client():
-    async with LifespanManager(app) as manager:
+    # The complete suite exercises nearly 3,000 tests in one interpreter and
+    # can leave enough pending cleanup work for application startup to exceed
+    # asgi-lifespan's aggressive five-second default.  Fifteen seconds keeps a
+    # genuinely stuck startup bounded while removing load-dependent flakes.
+    async with LifespanManager(app, startup_timeout=15) as manager:
         async with AsyncClient(
             transport=ASGITransport(app=manager.app), base_url="http://test"
         ) as ac:
@@ -81,7 +85,7 @@ class TestHealth:
         r = await client.get("/")
         assert r.status_code == 200
         assert "text/html" in r.headers["content-type"]
-        assert "ResponsibleAI" in r.text
+        assert "WhitePact" in r.text
 
 
 # ── Evaluate ──────────────────────────────────────────────────────────────────

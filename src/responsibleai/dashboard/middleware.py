@@ -38,6 +38,45 @@ _CONTENT_SECURITY_POLICY = "; ".join(
     ]
 )
 
+# The compiled WhitePact customer application has no inline JavaScript or
+# styles and loads no CDN resources.  Give it a substantially tighter policy
+# than the legacy operator pages, which still require the compatibility policy
+# above until their inline handlers are removed.
+_WHITEPACT_CONTENT_SECURITY_POLICY = "; ".join(
+    [
+        "default-src 'self'",
+        "script-src 'self'",
+        "style-src 'self'",
+        "img-src 'self' data:",
+        "font-src 'self' data:",
+        "connect-src 'self'",
+        "object-src 'none'",
+        "frame-ancestors 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+    ]
+)
+
+_WHITEPACT_PAGE_PATHS = {
+    "/",
+    "/signup",
+    "/login",
+    "/verify-email",
+    "/forgot-password",
+    "/reset-password",
+    "/onboarding",
+    "/dashboard",
+}
+
+
+def _is_whitepact_spa_path(path: str) -> bool:
+    return (
+        path in _WHITEPACT_PAGE_PATHS
+        or path.startswith("/dashboard/")
+        or path.startswith("/static/whitepact/")
+    )
+
+
 # Safe to set at the application layer even though TLS termination is the
 # deployer's job (DEPLOYMENT.md's nginx config): browsers ignore
 # Strict-Transport-Security on plain-HTTP responses per spec, so this is a
@@ -74,6 +113,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         for header, value in _SECURITY_HEADERS.items():
             response.headers[header] = value
+        if _is_whitepact_spa_path(request.url.path):
+            response.headers["Content-Security-Policy"] = _WHITEPACT_CONTENT_SECURITY_POLICY
         return response
 
 
