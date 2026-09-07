@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Guruprasath Annadurai
 // SPDX-License-Identifier: MIT
 import { lazy, Suspense } from "react";
-import { Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 import { Seo } from "./components/Seo";
 import { HomePage } from "./features/marketing/HomePage";
 import { AboutPage, BillingResultPage, ContactPage, DocsPage, LegalPage, NotFoundPage, TrustCenterPage } from "./features/marketing/PublicPages";
@@ -27,6 +27,9 @@ export default function App() {
       <Route path="/trust" element={<TrustCenterPage />} />
       <Route path="/terms" element={<LegalPage kind="terms" />} />
       <Route path="/privacy" element={<LegalPage kind="privacy" />} />
+      <Route path="/pricing" element={<LegalPage kind="pricing" />} />
+      <Route path="/refund-policy" element={<LegalPage kind="refund-policy" />} />
+      <Route path="/refunds" element={<Navigate to="/refund-policy" replace />} />
       <Route path="/billing/success" element={<BillingResultPage result="success" />} />
       <Route path="/billing/cancelled" element={<BillingResultPage result="cancelled" />} />
       <Route path="/login" element={<LoginPage />} />

@@ -8,10 +8,11 @@ import { ButtonLink } from "../../components/Button";
 import { Seo } from "../../components/Seo";
 import { publicAsset } from "../../lib/assets";
 import { TrustCoreBoundary } from "../../components/TrustCoreBoundary";
+import { PublicFooter } from "./PublicPages";
 
 const TrustCore = lazy(() => import("../../components/TrustCore").then((module) => ({ default: module.TrustCore })));
 
-const nav = [["Platform", "/#platform"], ["MCP Gateway", "/#mcp-gateway"], ["Enterprise", "/#enterprise"], ["Security", "/trust"], ["Developers", "/#developers"], ["Pricing", "/#pricing"], ["Docs", "/docs"]] as const;
+const nav = [["Platform", "/#platform"], ["MCP Gateway", "/#mcp-gateway"], ["Enterprise", "/#enterprise"], ["Security", "/trust"], ["Developers", "/#developers"], ["Pricing", "/pricing"], ["Docs", "/docs"]] as const;
 const scenarios = [
   ["Transfer funds", "agent://finance-agent", "Transfer ₹480,000 to a new beneficiary", "EXCEEDED", "CRITICAL"],
   ["Send sensitive email", "agent://support-agent", "Send customer export to an external address", "LIMITED", "HIGH"],
@@ -126,7 +127,7 @@ export function HomePage() {
         <GovernanceDemo /><PlatformSection /><McpSection /><EvidenceSection /><ProductClosureSections /><PricingSection />
         <section className="final-cta"><h2>Put WhitePact between your agents<br />and the real world<span>.</span></h2><ButtonLink to="/signup">Get API Key <ArrowRight size={18} /></ButtonLink></section>
       </main>
-      <footer className="public-footer"><Brand compact /><p>Runtime governance for autonomous intelligence.</p><a href="/about">About</a><a href="/contact">Contact</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="/.well-known/security.txt">Security</a><a href="/trust">Trust Center</a><a href="https://github.com/Guruprasath-Annadurai/Whitepact">GitHub</a></footer>
+      <PublicFooter />
     </div>
   );
 }

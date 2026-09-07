@@ -12,6 +12,7 @@ venv/
 !.env.example
 !.env.prod.example
 *.json
+!web/src/content/commerce.json
 *.tsbuildinfo
 !compliance/SLSA_BUILD_PROVENANCE.json
 !package.json

@@ -4,7 +4,7 @@ import AxeBuilder from "@axe-core/playwright";
 const baseUrl = process.env.WHITEPACT_TEST_BASE_URL ?? "http://127.0.0.1:8765";
 const urls = [
   "/", "/login", "/signup", "/verify-email", "/forgot-password", "/reset-password",
-  "/onboarding", "/terms", "/privacy", "/docs", "/contact", "/status", "/trust",
+  "/onboarding", "/terms", "/privacy", "/pricing", "/refund-policy", "/docs", "/contact", "/status", "/trust",
   "/leaderboard", "/registry", "/assess", "/incident-db", "/incident-db/report",
   "/static/login.html", "/static/signup.html", "/static/cost.html", "/static/eval.html",
   "/static/evaluate.html", "/static/guardrails.html", "/static/hallucination.html",
@@ -78,7 +78,7 @@ try {
       }
       const mobile = await context.newPage();
       await mobile.setViewportSize({ width: 390, height: 844 });
-      for (const path of ["/", "/signup", "/dashboard", "/dashboard/api-keys", "/dashboard/billing"]) {
+      for (const path of ["/", "/pricing", "/terms", "/privacy", "/refund-policy", "/signup", "/dashboard", "/dashboard/api-keys", "/dashboard/billing"]) {
         const url = `${baseUrl}${path}`;
         await mobile.goto(url, { waitUntil: "domcontentloaded", timeout: 15000 });
         const overflow = await mobile.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

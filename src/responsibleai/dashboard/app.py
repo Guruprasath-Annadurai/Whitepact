@@ -1762,7 +1762,7 @@ async def web_update_organization(
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 async def root() -> HTMLResponse:
-    index = _static_dir / "whitepact" / "index.html"
+    index = _static_dir / "whitepact" / "pages" / "home.html"
     return HTMLResponse(content=index.read_text())
 
 
@@ -1777,12 +1777,36 @@ async def _whitepact_spa() -> HTMLResponse:
     return HTMLResponse(content=(_static_dir / "whitepact" / "index.html").read_text())
 
 
+_WHITEPACT_COMMERCE_PATHS = {
+    "/pricing": "pricing.html",
+    "/terms": "terms.html",
+    "/privacy": "privacy.html",
+    "/refund-policy": "refund-policy.html",
+}
+
+
+async def _whitepact_commerce_page(request: Request) -> HTMLResponse:
+    """Serve built public metadata/content without depending on client JavaScript."""
+    filename = _WHITEPACT_COMMERCE_PATHS[request.url.path]
+    return HTMLResponse(content=(_static_dir / "whitepact" / "pages" / filename).read_text())
+
+
+for _commerce_path in _WHITEPACT_COMMERCE_PATHS:
+    app.get(_commerce_path, response_class=HTMLResponse, include_in_schema=False)(
+        _whitepact_commerce_page
+    )
+
+
+@app.get("/refunds", include_in_schema=False)
+@app.head("/refunds", include_in_schema=False)
+async def legacy_refunds_redirect() -> RedirectResponse:
+    return RedirectResponse("/refund-policy", status_code=308)
+
+
 _WHITEPACT_SPA_PATHS = [
     "/about",
     "/contact",
     "/docs",
-    "/privacy",
-    "/terms",
     "/trust",
     "/billing/success",
     "/billing/cancelled",
@@ -1802,7 +1826,7 @@ async def _whitepact_spa_head() -> Response:
     return Response(media_type="text/html")
 
 
-for _spa_head_path in ["/", "/signup", *_WHITEPACT_SPA_PATHS]:
+for _spa_head_path in ["/", "/signup", *_WHITEPACT_SPA_PATHS, *_WHITEPACT_COMMERCE_PATHS]:
     app.head(_spa_head_path, include_in_schema=False)(_whitepact_spa_head)
 
 

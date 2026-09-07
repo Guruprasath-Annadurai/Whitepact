@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Guruprasath Annadurai
 // SPDX-License-Identifier: MIT
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
@@ -15,6 +15,29 @@ function renderAt(path: string) {
 }
 
 describe("public website", () => {
+  it.each(["/", "/pricing", "/terms", "/privacy", "/refund-policy", "/docs", "/about", "/contact", "/trust"])("links all commerce pages from the footer at %s", async (path) => {
+    renderAt(path);
+    const footer = within(await screen.findByRole("navigation", { name: "Public footer" }));
+    for (const [label, destination] of [["Pricing", "/pricing"], ["Terms", "/terms"], ["Privacy", "/privacy"], ["Refund Policy", "/refund-policy"]]) {
+      expect(footer.getByRole("link", { name: label })).toHaveAttribute("href", destination);
+    }
+  });
+
+  it.each([["/pricing", "Pricing"], ["/terms", "Terms of Service"], ["/privacy", "Privacy Policy"], ["/refund-policy", "Refund Policy"]])("renders canonical commerce content at %s", async (path, title) => {
+    renderAt(path);
+    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent(title);
+    expect(document.title).toBe(`${title} | WhitePact`);
+    expect(document.querySelector('link[rel="canonical"]')).toHaveAttribute("href", `https://whitepact.com${path}`);
+    expect(document.querySelector('meta[name="robots"]')).toHaveAttribute("content", "index, follow");
+    expect(screen.queryByText(/repository-maintained draft|lorem ipsum|TODO|TBD/i)).not.toBeInTheDocument();
+  });
+
+  it("navigates from the homepage footer to the refund policy", async () => {
+    renderAt("/");
+    await userEvent.click(within(screen.getByRole("navigation", { name: "Public footer" })).getByRole("link", { name: "Refund Policy" }));
+    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("Refund Policy");
+    expect(screen.getByText(/duplicate charges, accidental duplicate purchases/i)).toBeInTheDocument();
+  });
   it("labels the governance console as simulated and exposes inspectable evidence", async () => {
     const user = userEvent.setup();
     renderAt("/");

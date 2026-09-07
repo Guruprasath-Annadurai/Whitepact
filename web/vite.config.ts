@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
+import { publicPages } from "./tooling/public-pages.ts";
 
 const stripGeneratedTrailingWhitespace = {
   name: "whitepact-strip-generated-trailing-whitespace",
@@ -18,7 +19,7 @@ const stripGeneratedTrailingWhitespace = {
 
 export default defineConfig({
   base: "/static/whitepact/",
-  plugins: [react(), stripGeneratedTrailingWhitespace],
+  plugins: [react(), stripGeneratedTrailingWhitespace, publicPages()],
   build: {
     outDir: "../src/responsibleai/dashboard/static/whitepact",
     emptyOutDir: true,
