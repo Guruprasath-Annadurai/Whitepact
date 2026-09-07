@@ -9,6 +9,7 @@ import { Seo } from "../../components/Seo";
 import { publicAsset } from "../../lib/assets";
 import { TrustCoreBoundary } from "../../components/TrustCoreBoundary";
 import { PublicFooter } from "./PublicPages";
+import { PricingCards } from "./PricingCards";
 
 const TrustCore = lazy(() => import("../../components/TrustCore").then((module) => ({ default: module.TrustCore })));
 
@@ -100,9 +101,8 @@ function EvidenceSection() {
 }
 
 function PricingSection() {
-  const plans = [["Community", "FREE", "One test key and self-hosted governance"], ["Pro", "PRO", "Production keys, evidence and managed billing"], ["Enterprise", "ENTERPRISE", "SSO, private deployment and contracted support"]];
   return (
-    <section className="section pricing" id="pricing"><header><h2>Three truthful paths<br />to governed action<span>.</span></h2><p>Plans map directly to the entitlement model. Paid access activates only after a verified billing event or signed enterprise agreement.</p></header><div className="pricing-rail">{plans.map((plan) => <article key={plan[0]}><h3>{plan[0]}</h3><span>{plan[1]}</span><p>{plan[2]}</p><strong>{plan[0] === "Community" ? "Available open source" : "Contact for current pricing"}</strong></article>)}</div><ButtonLink to="/signup">Get API Key <ArrowRight size={17} /></ButtonLink></section>
+    <section className="section pricing" id="pricing"><header><h2>Open source first.<br />Choose your operating model<span>.</span></h2><p>Launch prices in USD. Cloud plans are Early Access, not immediately purchasable. 2 months free with annual billing.</p></header><PricingCards /><ButtonLink to="/pricing">Pricing and availability <ArrowRight size={17} /></ButtonLink></section>
   );
 }
 
@@ -110,7 +110,7 @@ function ProductClosureSections() { return <>
   <section className="section feature-ledger" aria-labelledby="passport-title"><article><UserRoundCheck /><p>Agent Passport</p><h2 id="passport-title">Identity travels with authority<span>.</span></h2><span>Bind each workload to a verified principal, declared purpose, authority ceiling and revocation state before runtime access.</span></article><article><Power /><p>Revocation and kill switch</p><h2>Stop authority before the next action<span>.</span></h2><span>Revoke credentials and authority without waiting for an agent session to end. Enforcement happens at the action boundary.</span></article></section>
   <section className="section comparison" aria-labelledby="comparison-title"><header><p>Deployment choice</p><h2 id="comparison-title">Open source control.<br />Managed operational path<span>.</span></h2></header><div><article><Code2 /><h3>Community</h3><p>Run the MIT-licensed core in your environment. You own infrastructure, data operations and availability.</p></article><article><ShieldCheck /><h3>WhitePact Cloud</h3><p>Use hosted identity, API keys, billing and governance surfaces when the production service and your entitlement are active.</p></article></div></section>
   <section className="section developer-entry" id="developers"><div><p>Developers</p><h2>One boundary.<br />API or MCP<span>.</span></h2><span>Start with a scoped test credential and submit governed requests from server-side code or an MCP client.</span></div><div className="developer-steps"><p><strong>01</strong>Create a test key in your organization.</p><p><strong>02</strong>Connect a server or MCP client.</p><p><strong>03</strong>Inspect the decision and evidence.</p><a href="/docs">Open developer documentation <ArrowRight /></a></div></section>
-  <section className="section enterprise-section" id="enterprise"><div><p>Enterprise</p><h2>Private control<br />without false assurance<span>.</span></h2><span>Enterprise architecture can include SSO, private deployment and contracted support. SOC 2 and ISO 27001 certification are not currently claimed.</span></div><div className="enterprise-list">{["OIDC and SAML integration paths", "Tenant-scoped identities and machine credentials", "Private deployment architecture", "Documented security and assurance boundaries"].map(item=><p key={item}><Check />{item}</p>)}<a href="/contact">Discuss enterprise architecture <ArrowRight /></a></div></section>
+  <section className="section enterprise-section" id="enterprise"><div><p>Enterprise</p><h2>Private control<br />without false assurance<span>.</span></h2><span>Evaluate private or self-hosted deployment and negotiated support. SSO and SCIM production availability are not promised. SOC 2 and ISO 27001 certification are not currently claimed.</span></div><div className="enterprise-list">{["Identity integration requirements review", "Tenant and credential requirements review", "Private deployment architecture", "Documented security and assurance boundaries"].map(item=><p key={item}><Check />{item}</p>)}<a href="/contact">Discuss enterprise architecture <ArrowRight /></a></div></section>
   <section className="section trust-entry"><div><FileCheck2 /><h2>Trust is a record,<br />not a badge<span>.</span></h2><p>Review implemented controls, OpenSSF evidence, external-review status and known limitations without certification theatre.</p></div><a className="wp-button wp-button--secondary" href="/trust">Open Trust Center <ArrowRight /></a></section>
   </>; }
 

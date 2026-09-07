@@ -27,7 +27,8 @@ export function publicPages(): Plugin {
         html = html.replace(/<link rel="canonical" href="[^"]*"\s*\/?>/, `<link rel="canonical" href="${url}" />`);
         const footer = `<footer class="subpage-footer"><nav aria-label="Public footer">${links.map(([href, label]) => `<a href="${href}">${label}</a>`).join(" ")}</nav></footer>`;
         const fallback = `<noscript><header class="subpage-nav"><a href="/">WhitePact</a></header><main class="editorial-page"><h1>${escape(page.heading)}</h1><p class="page-lead">${escape(page.description)}</p>${page.sections.map(([title, copy], i) => `<section><span>${i + 1}</span><div><h2>${escape(title)}</h2><p>${escape(copy)}</p></div></section>`).join("")}<p><a href="mailto:annaduraiguruprasath7@gmail.com">Contact WhitePact</a></p></main>${footer}</noscript>`;
-        html = html.replace('<div id="root"></div>', `<div id="root"></div>${fallback}`);
+        const pricing = (key === "pricing" || key === "home") ? `<div class="launch-pricing" aria-label="Launch plans">${pages.pricing.plans.map(plan => `<article><h3>${escape(plan.name)}</h3><span class="plan-status">${escape(plan.status)}</span><strong>${escape(plan.monthly)}</strong><p>${escape(plan.annual)}</p><p>${escape(plan.copy)}</p><a class="wp-button wp-button--secondary" href="${escape(plan.href)}">${escape(plan.cta)}</a></article>`).join("")}</div>` : "";
+        html = html.replace('<div id="root"></div>', `<div id="root"></div>${fallback.replace("</main>", `${pricing}</main>`)}`);
         await writeFile(resolve(outDir, "pages", `${key}.html`), html);
       }
     },

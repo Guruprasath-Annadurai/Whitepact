@@ -15,6 +15,16 @@ function renderAt(path: string) {
 }
 
 describe("public website", () => {
+  it.each(["/", "/pricing"])("shows approved honest launch plans at %s", async (path) => {
+    renderAt(path);
+    const cards = document.querySelector('.launch-pricing')!;
+    expect(cards).toBeInTheDocument();
+    for (const price of ["$0 forever", "$0/year", "$29/month", "$290/year", "$99/month", "$990/year", "Custom annual pricing"]) expect(cards).toHaveTextContent(price);
+    expect(within(cards as HTMLElement).getAllByText("Early Access")).toHaveLength(2);
+    for (const link of within(cards as HTMLElement).getAllByRole("link", { name: /Early Access|Contact Sales/ })) expect(link).toHaveAttribute("href", "/contact");
+    expect(cards).not.toHaveTextContent(/SSO|SCIM|SLA|certified|unlimited|Buy now|retention|%/i);
+    expect(screen.getByText(/2 months free with annual billing/)).toBeInTheDocument();
+  });
   it.each(["/", "/pricing", "/terms", "/privacy", "/refund-policy", "/docs", "/about", "/contact", "/trust"])("links all commerce pages from the footer at %s", async (path) => {
     renderAt(path);
     const footer = within(await screen.findByRole("navigation", { name: "Public footer" }));

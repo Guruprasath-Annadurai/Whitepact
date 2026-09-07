@@ -5,13 +5,14 @@ import { Link } from "react-router-dom";
 import { Brand } from "../../components/Brand";
 import { Seo } from "../../components/Seo";
 import commerce from "../../content/commerce.json";
+import { PricingCards } from "./PricingCards";
 
 function PublicHeader() { return <header className="subpage-nav"><Brand /><nav aria-label="Page navigation"><Link to="/">Home</Link><Link to="/docs">Docs</Link><Link to="/trust">Trust</Link><Link to="/contact">Contact</Link><Link className="wp-button wp-button--primary" to="/signup">Get API Key</Link></nav></header>; }
 export function PublicFooter() { return <footer className="subpage-footer"><Brand compact /><p>Runtime governance for autonomous intelligence.</p><nav aria-label="Public footer"><Link to="/pricing">Pricing</Link><Link to="/terms">Terms</Link><Link to="/privacy">Privacy</Link><Link to="/refund-policy">Refund Policy</Link><Link to="/about">About</Link><Link to="/contact">Contact</Link><Link to="/trust">Trust Center</Link><a href="https://github.com/Guruprasath-Annadurai/Whitepact/blob/main/SECURITY.md">Security</a><a href="https://github.com/Guruprasath-Annadurai/Whitepact">GitHub</a></nav></footer>; }
 
 export function LegalPage({ kind }: { kind: Exclude<keyof typeof commerce, "home"> }) {
   const page = commerce[kind];
-  return <div className="subpage"><Seo title={page.title} description={page.description} path={page.path} /><PublicHeader /><main className="editorial-page"><p className="page-kicker">{kind === "pricing" ? "Digital software and services" : "WhitePact · Policies"}</p><h1>{page.heading}<span>.</span></h1><p className="page-lead">{page.description}</p>{page.sections.map(([title, copy], index) => <section key={title}><span>{String(index + 1).padStart(2, "0")}</span><div><h2>{title}</h2><p>{copy}</p></div></section>)}<a className="text-link" href="mailto:annaduraiguruprasath7@gmail.com">Contact WhitePact <Mail size={15} /></a>{kind !== "refund-policy" && <p><Link className="text-link" to="/refund-policy">Read the Refund Policy <ArrowRight size={15} /></Link></p>}</main><PublicFooter /></div>;
+  return <div className="subpage"><Seo title={page.title} description={page.description} path={page.path} /><PublicHeader /><main className="editorial-page"><p className="page-kicker">{kind === "pricing" ? "Digital software and services" : "WhitePact · Policies"}</p><h1>{page.heading}<span>.</span></h1><p className="page-lead">{page.description}</p>{kind === "pricing" && <PricingCards />}{page.sections.map(([title, copy], index) => <section key={title}><span>{String(index + 1).padStart(2, "0")}</span><div><h2>{title}</h2><p>{copy}</p></div></section>)}<a className="text-link" href="mailto:annaduraiguruprasath7@gmail.com">Contact WhitePact <Mail size={15} /></a>{kind !== "refund-policy" && <p><Link className="text-link" to="/refund-policy">Read the Refund Policy <ArrowRight size={15} /></Link></p>}</main><PublicFooter /></div>;
 }
 
 export function DocsPage() {

@@ -10,13 +10,17 @@
     "path": "/pricing",
     "title": "Pricing | WhitePact",
     "heading": "Pricing",
-    "description": "Compare free WhitePact Community software with contact-based pricing for cloud and enterprise digital software services.",
+    "description": "Open-source governance, managed cloud early access and negotiated private deployment. Transparent launch pricing in USD; price does not imply current service availability.",
+    "plans": [
+      {"name": "Community", "monthly": "$0 forever", "annual": "$0/year", "status": "Available", "copy": "MIT-licensed core governance for local development and self-managed use. Security fixes remain available to Community users.", "cta": "Run locally", "href": "https://github.com/Guruprasath-Annadurai/Whitepact#quick-start"},
+      {"name": "Cloud Starter", "monthly": "$29/month", "annual": "$290/year", "status": "Early Access", "copy": "For developers and small teams evaluating managed WhitePact. Hosted access and included capabilities must be confirmed before purchase.", "cta": "Contact for Early Access", "href": "/contact"},
+      {"name": "Cloud Team", "monthly": "$99/month", "annual": "$990/year", "status": "Early Access", "copy": "For teams evaluating managed WhitePact and organizational collaboration. Team workflows and service scope must be confirmed before purchase.", "cta": "Contact for Early Access", "href": "/contact"},
+      {"name": "Enterprise / Private", "monthly": "Custom", "annual": "Custom annual pricing", "status": "Contact Sales", "copy": "Evaluate private or self-hosted deployments with negotiated commercial deployment and support. Deliverables require a written agreement.", "cta": "Contact Sales", "href": "/contact"}
+    ],
     "sections": [
       ["What WhitePact offers", "WhitePact is an open-source trust and runtime governance platform for AI agents, with paid cloud and enterprise software/services for production deployment. These are digital products and services; no physical goods are sold."],
-      ["Community / Open Source — Free", "Use the MIT-licensed software for local and self-hosted governance, including policy evaluation and governance evidence capabilities. Local/community development does not require WhitePact activation. You operate your infrastructure and remain responsible for its configuration. Community support is available through the project repository."],
-      ["WhitePact Cloud / Pro — Contact for current pricing", "Discuss hosted access, production API credentials and managed capabilities. Commercial availability, included capabilities, usage allowances, billing currency and recurring charges are confirmed in an order or checkout before purchase. A contact inquiry does not create a paid subscription. Self-service paid checkout is available only when production billing is configured."],
-      ["Enterprise / Private Deployment — Contact for current pricing", "Discuss private deployment, identity-provider integration and software support services. Deliverables, implementation scope and any support commitments are defined in a written agreement. No uptime guarantee, response-time commitment or certification is implied by this page."],
-      ["Official production deployment identity — Planned", "Signed official deployment identity is being integrated and is not offered as an available purchase entitlement today. It is distinct from customer authority and does not replace your organization's governance controls. Community use does not depend on this planned commercial capability."],
+      ["Annual billing", "2 months free with annual billing compared with twelve monthly payments. All prices are USD. Applicable taxes are calculated at checkout where required."],
+      ["Availability before payment", "Cloud Starter and Cloud Team are Early Access digital software/SaaS offerings, not immediately purchasable subscriptions. Contacting us does not charge you or activate a paid entitlement. Confirm the service scope and availability before purchase. No uptime guarantee, response-time commitment or certification is implied."],
       ["Before you purchase", "Request a written quote using the contact link below. Review the agreed features, total price, taxes, billing period, renewal and cancellation terms before accepting. Subscription cancellation and refund requests are explained in the Refund Policy. Buying a plan never grants permission to bypass governance."]
     ]
   },

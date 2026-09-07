@@ -26,6 +26,14 @@ try {
         assert.equal(await page.locator('meta[name="robots"]').getAttribute("content"), "index, follow");
         assert.ok(await page.locator('meta[name="description"]').getAttribute("content"));
         assert.equal(await page.locator("vite-error-overlay").count(), 0);
+        if (path === "/" || path === "/pricing") {
+          const cards = page.locator('.launch-pricing');
+          const copy = await cards.innerText();
+          for (const price of ["$0 forever", "$0/year", "$29/month", "$290/year", "$99/month", "$990/year", "Custom annual pricing"]) assert.ok(copy.includes(price), `Missing price ${price}`);
+          assert.equal(await cards.getByText("Early Access", { exact: true }).count(), 2);
+          assert.equal(await cards.locator('a[href="/contact"]').count(), 3);
+          assert.doesNotMatch(copy, /Buy now|SSO|SCIM|SLA|certified|%/i);
+        }
         const footer = page.getByRole("navigation", { name: "Public footer" });
         for (const target of paths.slice(1)) {
           assert.equal(await footer.locator(`a[href="${target}"]`).count(), 1);
