@@ -58,8 +58,46 @@ logins or supplies wildcard fallback authority. Authority versions bind the
 resolved records. Root and consent digests now bind validity and evidence refs;
 legacy unsigned record digests are not silently upgraded.
 
-Focused authority/Heart/consent/root/grant/purpose suites: 136 passed. Added tests
+Focused authority/Heart/consent/root/grant/purpose suites: 184 passed. Added tests
 cover trusted context mismatch, empty scopes with valid digests, revoked consent,
 root revocation, expiry tampering, wrong purpose and cross-tenant hidden reads.
 This is the canonical resolver foundation; live transport adoption remains
 checkpoint 6, and revocation/nonce coordination remains checkpoint 4.
+
+## Checkpoint 4 — partial: durable admission foundation
+
+Added database-backed nonce consumption serialized on a tenant revocation epoch
+row. Root and consent creation/revocation advance that epoch inside their own
+mutation transactions. Permit matching now binds the authenticated principal;
+action/approval digests bind explicit purpose. Approval storage and reconstruction
+preserve purpose without rewriting historical purpose-less digests. Corrected a
+stale root repository docstring that incorrectly described automatic bootstrap.
+
+Fresh evidence (Python 3.12):
+
+- Initial test collection demonstrated the missing nonce repository. After the
+  first implementation, four tests exposed an incorrect identity attribute name;
+  corrected to `identity_id` before passing verification.
+- Purpose round-trip test initially failed with `None` instead of `reconcile`;
+  now passes through real approval persistence and reconstruction.
+- Execution, authority, approval, bypass and upstream combined suite: **99 passed,
+  1 skipped** (`WHITEPACT_TEST_POSTGRES_EXECUTION` absent in that invocation).
+- Separate real PostgreSQL 17 run: **1 passed, 6 deselected**. Both database
+  variants exercise 16 competing consumes across two engines (one admitted,
+  fifteen rejected), stale epoch rejection, 16 concurrent bumps without lost
+  increments, rollback, and replay rejection after connection pools reopen.
+- Scoped Ruff passed; mypy passed for 7 affected source files; documentation
+  consistency, tracked-source SPDX and `git diff --check` passed.
+- An earlier combined run recorded **53 passed, 1 skipped, 1 setup error**:
+  the existing five-second ASGI startup timeout. The failing case then passed
+  individually (1 passed), and the expanded combined run passed in 16.58 seconds.
+  Cause of that transient timeout is unconfirmed; no timeout was relaxed and no
+  test removed. It remains a reliability observation for full verification.
+
+Security boundary still **PARTIAL**: nonce consumption is not wired into live
+executors yet. Delegation/policy/credential mutation epoch wiring, full permit
+version binding, fresh approval authorization and the shared guarded execution
+chokepoint remain required before checkpoint 4 can close. These tests prove
+database admission behavior, not exactly-once external side effects, process
+isolation, full replica deployment or production readiness. Epoch comparison
+linearizes admission; revocation cannot undo an operation already dispatched.

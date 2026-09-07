@@ -73,7 +73,7 @@ class ApprovalStatus(StrEnum):
 
 def compute_action_digest(action: ActionRequest) -> str:
     """A stable SHA-256 digest over exactly the fields that define
-    "what a human approved" — action_type, target, and the argument
+    "what a human approved" — action_type, target, explicit purpose and argument
     values (not just their names, unlike `EvidenceRecord.argument_keys`
     — the mutation invariant needs to detect a *changed value*, e.g.
     the payment amount, not just a changed argument *name*).
@@ -85,12 +85,17 @@ def compute_action_digest(action: ActionRequest) -> str:
     only the *digest* is ever persisted (`ApprovalRequest.action_digest`),
     never the canonical JSON itself.
     """
+    fields = {
+        "action_type": action.action_type,
+        "target": action.target,
+        "arguments": action.arguments,
+    }
+    # Keep historical purpose-less approval digests comparable; canonical
+    # enterprise actions require an explicit purpose at authority resolution.
+    if action.purpose is not None:
+        fields["purpose"] = action.purpose
     canonical = json.dumps(
-        {
-            "action_type": action.action_type,
-            "target": action.target,
-            "arguments": action.arguments,
-        },
+        fields,
         sort_keys=True,
         default=str,
     )
@@ -158,6 +163,7 @@ class ApprovalRequest:
     # and encrypting the column doesn't change that exposure risk once
     # the API itself hands the plaintext back over HTTP.
     arguments: dict[str, Any] | None = None
+    purpose: str | None = None
 
     @property
     def is_resolved(self) -> bool:
@@ -222,6 +228,7 @@ def build_approval_request(action: ActionRequest, decision: DecisionResult) -> A
         risk_tier=decision.risk_tier.value if isinstance(decision.risk_tier, RiskTier) else None,
         requested_by=action.agent.identity.identity_id,
         arguments=dict(action.arguments),
+        purpose=action.purpose,
         required_approvals=default_required_approvals(decision.risk_tier),
     )
 
@@ -257,4 +264,5 @@ def build_resume_action(approval: ApprovalRequest, *, agent: AgentContext) -> Ac
         target=approval.target,
         arguments=approval.arguments,
         action_id=approval.action_id,
+        purpose=approval.purpose,
     )

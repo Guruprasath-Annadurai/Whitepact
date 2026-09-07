@@ -144,6 +144,7 @@ def _row_to_request(row: Any) -> ApprovalRequest:
         if getattr(row, "expires_at", None)
         else None,
         arguments=json.loads(row.arguments) if getattr(row, "arguments", None) else None,
+        purpose=row.purpose,
         required_approvals=getattr(row, "required_approvals", None) or 1,
         resolved_by=row.resolved_by,
         resolved_at=datetime.fromisoformat(row.resolved_at) if row.resolved_at else None,
@@ -181,6 +182,7 @@ class ApprovalRepository:
                     action_type=approval.action_type,
                     target=approval.target,
                     action_digest=approval.action_digest,
+                    purpose=approval.purpose,
                     reason_codes=json.dumps(approval.reason_codes),
                     risk_tier=approval.risk_tier,
                     status=approval.status.value,

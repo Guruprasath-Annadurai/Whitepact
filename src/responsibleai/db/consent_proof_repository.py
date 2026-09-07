@@ -19,6 +19,7 @@ from responsibleai.db.engine import (
     governance_consent_proofs,
     governance_root_authority_records,
 )
+from responsibleai.db.revocation_epoch_repository import bump_epoch_on_connection
 from responsibleai.governance.consent_proof import ConsentMethod, ConsentProof
 
 
@@ -60,6 +61,7 @@ class ConsentProofRepository:
         if not organization_id or proof.revoked_at is not None:
             raise ValueError("Active tenant-owned consent required")
         async with self._engine.raw.begin() as conn:
+            await bump_epoch_on_connection(conn, organization_id)
             await conn.execute(
                 insert(governance_consent_proofs).values(
                     consent_id=proof.consent_id,
@@ -136,6 +138,7 @@ class ConsentProofRepository:
         if existing is None:
             raise ConsentProofNotFoundError(consent_id)
         async with self._engine.raw.begin() as conn:
+            await bump_epoch_on_connection(conn, organization_id)
             await conn.execute(
                 update(governance_consent_proofs)
                 .where(

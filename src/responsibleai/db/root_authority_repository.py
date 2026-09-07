@@ -15,6 +15,7 @@ from typing import Any
 from sqlalchemy import insert, select, update
 
 from responsibleai.db.engine import DatabaseEngine, governance_root_authority_records
+from responsibleai.db.revocation_epoch_repository import bump_epoch_on_connection
 from responsibleai.governance.root_authority import RootAuthorityRecord, RootType
 
 
@@ -57,6 +58,7 @@ class RootAuthorityRepository:
         if record.revoked_at is not None:
             raise ValueError("Revoked root cannot be inserted as a new grant")
         async with self._engine.raw.begin() as conn:
+            await bump_epoch_on_connection(conn, record.organization_id)
             await conn.execute(
                 insert(governance_root_authority_records).values(
                     root_id=record.root_id,
@@ -94,18 +96,12 @@ class RootAuthorityRepository:
     async def get_latest_for_subject(
         self, subject_id: str, *, organization_id: str
     ) -> RootAuthorityRecord | None:
-        """The most recently issued root record for *subject_id*
-        (optionally narrowed to *organization_id*), or `None` if none
-        exists yet -- the bootstrap lookup `resolve_root_for_identity()`
-        (`governance/authority_resolver.py`) uses to decide whether a
-        new root needs issuing. Deliberately does not filter by
-        `revoked_at`/`expires_at` here -- returning the latest row
-        regardless of temporal validity lets a caller distinguish "no
-        root has ever been issued" (return `None`, issue a new one)
-        from "a root exists but is currently revoked/expired" (return
-        it, let `validate_root_chain()`'s own temporal check report
-        `REVOKED`/`EXPIRED` rather than silently issuing a fresh root
-        that would bypass a deliberate revocation)."""
+        """Return the latest root inside the mandatory trusted tenant.
+
+        Include revoked/expired records so callers cannot fall back to an older
+        active root. A missing record is not permission to manufacture authority;
+        canonical resolution denies it and never performs identity bootstrap.
+        """
         async with self._engine.raw.connect() as conn:
             conditions = [
                 governance_root_authority_records.c.subject_id == subject_id,
@@ -128,6 +124,7 @@ class RootAuthorityRepository:
         if existing is None:
             raise RootAuthorityRecordNotFoundError(root_id)
         async with self._engine.raw.begin() as conn:
+            await bump_epoch_on_connection(conn, organization_id)
             await conn.execute(
                 update(governance_root_authority_records)
                 .where(

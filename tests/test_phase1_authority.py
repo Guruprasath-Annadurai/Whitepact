@@ -11,6 +11,7 @@ from sqlalchemy import update
 from responsibleai.db.consent_proof_repository import ConsentProofRepository
 from responsibleai.db.delegation_repository import DelegationRepository
 from responsibleai.db.engine import create_engine, governance_consent_proofs, organizations
+from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
 from responsibleai.db.root_authority_repository import RootAuthorityRepository
 from responsibleai.governance.authority_resolver import AuthorityDenied, AuthorityResolver
 from responsibleai.governance.consent_proof import ConsentMethod, build_consent_proof
@@ -82,6 +83,17 @@ async def test_explicit_grant_resolves(governed):
     assert resolved.grant.root_reference == root.root_id
     assert resolved.authority.permits("read")
     assert resolved.authority_version
+
+
+async def test_root_and_consent_mutations_advance_epoch(governed):
+    engine, roots, consents, _, _, root, consent = governed
+    epochs = RevocationEpochRepository(engine)
+    before = (await epochs.current("acme")).epoch
+    assert before >= 2  # explicit root and consent creation
+    await roots.revoke(root.root_id, organization_id="acme", revoked_by="owner")
+    assert (await epochs.current("acme")).epoch == before + 1
+    await consents.revoke(consent.consent_id, organization_id="acme", revoked_by="owner")
+    assert (await epochs.current("acme")).epoch == before + 2
 
 
 @pytest.mark.parametrize("mutation", ["wrong_org", "wrong_subject", "legacy", "missing_org"])

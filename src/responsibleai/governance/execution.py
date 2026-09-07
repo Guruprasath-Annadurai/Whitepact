@@ -158,13 +158,17 @@ class ExecutionAuthorization:
         )
     )
     consumed: bool = False
+    principal_id: str | None = None
 
     @property
     def is_expired(self) -> bool:
         return datetime.now(UTC) >= self.expires_at
 
     def matches_action(self, action: ActionRequest) -> bool:
-        return self.action_digest == compute_action_digest(action)
+        return (
+            self.principal_id == action.agent.identity.identity_id
+            and self.action_digest == compute_action_digest(action)
+        )
 
 
 def authorize_execution(
@@ -205,6 +209,7 @@ def authorize_execution(
         action_digest=compute_action_digest(action),
         organization_id=action.agent.organization_id,
         decision=decision.decision,
+        principal_id=action.agent.identity.identity_id,
         target_fingerprint=target_fingerprint,
         expires_at=datetime.now(UTC) + timedelta(seconds=ttl_seconds),
     )
