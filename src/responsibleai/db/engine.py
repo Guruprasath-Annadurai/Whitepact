@@ -11,6 +11,7 @@ from sqlalchemy import (
     Column,
     Float,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     MetaData,
@@ -474,7 +475,12 @@ governance_evidence = Table(
     "governance_evidence",
     metadata,
     Column("id", String(36), primary_key=True),  # evidence_id
-    Column("org_id", String(36), nullable=True),
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", name="fk_evidence_org", ondelete="RESTRICT"),
+        nullable=False,
+    ),
     Column("action_id", String(36), nullable=False),
     Column("agent_id", String(36), nullable=False),
     Column("identity_id", String(200), nullable=False),
@@ -502,6 +508,21 @@ governance_evidence = Table(
     Index("idx_gev_action", "action_id"),
     Index("idx_gev_decision", "decision"),
     Index("idx_gev_recorded", "recorded_at"),
+    Index(
+        "idx_gev_chain_link",
+        "org_id",
+        "prev_hash",
+        unique=True,
+        sqlite_where=text("prev_hash IS NOT NULL"),
+        postgresql_where=text("prev_hash IS NOT NULL"),
+    ),
+    Index(
+        "idx_gev_chain_genesis",
+        "org_id",
+        unique=True,
+        sqlite_where=text("prev_hash IS NULL"),
+        postgresql_where=text("prev_hash IS NULL"),
+    ),
 )
 
 # Phase 11 — persisted GovernanceDecision.REQUIRE_APPROVAL requests,
@@ -550,6 +571,7 @@ governance_approvals = Table(
     Column("resolved_by", String(200), nullable=True),
     Column("resolved_at", String(32), nullable=True),
     Column("resolution_notes", Text, nullable=True),
+    Column("purpose", Text, nullable=True),
     Index("idx_gap_org", "org_id"),
     Index("idx_gap_status", "status"),
     Index("idx_gap_requested", "requested_at"),
@@ -925,6 +947,178 @@ oauth_auth_events = Table(
     Column("created_at", String(32), nullable=False),
     Index("idx_oae_created", "created_at"),
     Index("idx_oae_org", "org_id"),
+)
+
+
+governance_root_authority_records = Table(
+    "governance_root_authority_records",
+    metadata,
+    Column("root_id", String(36), primary_key=True),
+    Column("subject_id", String(255), nullable=False),
+    Column("root_type", String(32), nullable=False),
+    Column(
+        "organization_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("issuer", String(255), nullable=False),
+    Column("verification_method", String(128), nullable=False),
+    Column("authority_source", String(36), nullable=True),  # another root_id, or null
+    Column("jurisdiction", String(64), nullable=True),
+    Column("evidence_refs", Text, nullable=False),  # JSON list
+    Column("issued_at", String(32), nullable=False),
+    Column("not_before", String(32), nullable=True),
+    Column("expires_at", String(32), nullable=True),
+    Column("revoked_at", String(32), nullable=True),
+    Column("revoked_by", String(200), nullable=True),
+    Column("revoke_reason", Text, nullable=True),
+    Column("canonical_digest", String(64), nullable=False),
+    Index("idx_rar_subject", "subject_id"),
+    Index("idx_rar_org", "organization_id"),
+    Index("idx_rar_source", "authority_source"),
+    UniqueConstraint("root_id", "organization_id", name="uq_root_tenant"),
+    ForeignKeyConstraint(
+        ["authority_source", "organization_id"],
+        [
+            "governance_root_authority_records.root_id",
+            "governance_root_authority_records.organization_id",
+        ],
+        name="fk_root_parent_tenant",
+        ondelete="RESTRICT",
+    ),
+)
+
+governance_consent_proofs = Table(
+    "governance_consent_proofs",
+    metadata,
+    Column("consent_id", String(36), primary_key=True),
+    Column(
+        "organization_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("subject_id", String(255), nullable=False),
+    Column("consenting_root_id", String(36), nullable=False),
+    Column("grantee_id", String(200), nullable=False),
+    Column("scope_description", Text, nullable=False),
+    Column("purpose", Text, nullable=False),
+    Column("consent_method", String(32), nullable=False),
+    Column("allowed_action_types", Text, nullable=False, server_default="[]"),
+    Column("allowed_targets", Text, nullable=False, server_default="[]"),
+    Column("evidence_refs", Text, nullable=False),  # JSON list
+    Column("consented_at", String(32), nullable=False),
+    Column("not_before", String(32), nullable=True),
+    Column("expires_at", String(32), nullable=True),
+    Column("revoked_at", String(32), nullable=True),
+    Column("revoked_by", String(200), nullable=True),
+    Column("revoke_reason", Text, nullable=True),
+    Column("canonical_digest", String(64), nullable=False),
+    Index("idx_cp_grantee", "grantee_id"),
+    Index("idx_cp_consenting_root", "consenting_root_id"),
+    ForeignKeyConstraint(
+        ["consenting_root_id", "organization_id"],
+        [
+            "governance_root_authority_records.root_id",
+            "governance_root_authority_records.organization_id",
+        ],
+        name="fk_consent_root_tenant",
+        ondelete="RESTRICT",
+    ),
+)
+
+governance_revocation_epochs = Table(
+    "governance_revocation_epochs",
+    metadata,
+    Column(
+        "organization_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        primary_key=True,
+    ),
+    Column("scope", String(64), primary_key=True),
+    Column("epoch", Integer, nullable=False, server_default="0"),
+    Column("updated_at", String(32), nullable=False),
+)
+
+governance_execution_nonces = Table(
+    "governance_execution_nonces",
+    metadata,
+    Column("nonce", String(64), primary_key=True),
+    Column("authorization_id", String(36), nullable=False),
+    Column(
+        "organization_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("consumed_at", String(32), nullable=False),
+    Index("idx_execution_nonces_consumed_at", "consumed_at"),
+)
+
+governance_crypto_keys = Table(
+    "governance_crypto_keys",
+    metadata,
+    Column("key_id", String(300), primary_key=True),
+    Column("purpose", String(32), nullable=False),
+    Column(
+        "tenant_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
+    Column("environment", String(32), nullable=False),
+    Column("version", Integer, nullable=False),
+    Column("wrapped_dek", Text, nullable=False),  # base64, never plaintext DEK material
+    Column("status", String(16), nullable=False),  # active | retired | revoked
+    Column("created_at", String(32), nullable=False),
+    Index(
+        "idx_crypto_keys_lookup",
+        "purpose",
+        "tenant_id",
+        "environment",
+        "status",
+        "version",
+    ),
+)
+
+governance_neural_consent = Table(
+    "governance_neural_consent",
+    metadata,
+    Column("consent_id", String(64), primary_key=True),
+    Column("subject_id", String(200), nullable=False),
+    Column(
+        "organization_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("category", String(32), nullable=False),
+    Column("status", String(16), nullable=False),
+    Column("version", Integer, nullable=False),
+    Column("granted_at", String(32), nullable=False),
+    Column("revoked_at", String(32), nullable=True),
+    Index("idx_neural_consent_subject_category", "subject_id", "category"),
+)
+
+governance_neural_vault_index = Table(
+    "governance_neural_vault_index",
+    metadata,
+    Column("entry_id", String(64), primary_key=True),
+    Column(
+        "organization_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("subject_id", String(200), nullable=False),
+    Column("session_id", String(200), nullable=False),
+    Column("data_class", String(32), nullable=False),
+    Column("device_reference", String(200), nullable=True),
+    Column("captured_at", String(32), nullable=False),
+    Column("retention_expires_at", String(32), nullable=True),
+    Column("deleted_at", String(32), nullable=True),
+    Column("encrypted_sync_copy", Text, nullable=True),
+    Index("idx_neural_vault_subject", "subject_id"),
+    Index("idx_neural_vault_subject_session", "subject_id", "session_id"),
 )
 
 

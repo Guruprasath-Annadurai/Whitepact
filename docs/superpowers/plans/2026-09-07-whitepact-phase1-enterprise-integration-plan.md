@@ -22,7 +22,7 @@ Record exact tests and failures in `docs/phase1/`; no unsupported readiness clai
 
 - [x] Verify branch, exact frozen SHA and clean worktree; create integration branch.
 - [x] Read directive and source migration/resolver contracts; document design.
-- [ ] Review design/plan against scope, migration and security invariants; commit with DCO.
+- [x] Review design/plan against scope, migration and security invariants; commit with DCO.
 
 ## Checkpoint 2 — canonical database
 
@@ -30,10 +30,10 @@ Files: `migrations/versions/0033_*` through `0040_*`, `migrations/env.py`,
 `src/responsibleai/db/engine.py`, `src/responsibleai/db/migrate.py`,
 `tests/test_phase1_migrations.py`, `tests/test_db_migrate.py`.
 
-- [ ] Add tests requiring exactly one head and unchanged website 0030–0032.
-- [ ] Add real SQLite/PostgreSQL empty/0029/0032 upgrades, tenant constraints,
+- [x] Add tests requiring exactly one head; verify unchanged website 0030–0032 with Git.
+- [x] Add real SQLite/PostgreSQL empty/0029/0032 upgrades, tenant constraints,
   evidence-fork rejection and empty consent-scope assertions.
-- [ ] Implement schema from inspected intent; include tenant FKs and fail-closed
+- [x] Implement schema from inspected intent; include tenant FKs and fail-closed
   schema preflight. Reject unversioned and legacy-ID mismatches without stamping.
 - [ ] Run `.venv/bin/python -m pytest tests/test_phase1_migrations.py tests/test_db_migrate.py`;
   inspect migrations and focused lint; record evidence and DCO commit.

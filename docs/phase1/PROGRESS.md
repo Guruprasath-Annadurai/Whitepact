@@ -13,4 +13,37 @@ legacy neural storage, not a Heart runtime dependency: preserve only the explici
 requested storage compatibility, no deferred neural runtime features.
 
 Read-only helper failed at account usage limit; no helper result is evidence.
-Continuing inline. Design and plan saved; subsequent checkpoints are not started.
+Continuing inline. Design and plan saved in DCO commit `18e740d`.
+
+## Checkpoint 2 — canonical migrations
+
+Added forward revisions 0033–0040 from individually inspected PR55 schema intent.
+Website 0030–0032 remain unchanged. Added tenant FKs, same-tenant root/consent
+references, evidence fork/ownership preflight, scoped nonce/epoch storage and
+deny-by-default empty consent scope. Startup and direct online Alembic both reject
+unversioned nonempty or incompatible legacy schemas without stamping/deleting data.
+
+Fresh evidence:
+
+- Before implementation: new tests produced 6 expected failures and 3 environment
+  skips (missing head 0040 and unsafe unversioned/legacy acceptance).
+- SQLite migration/legacy/history tests: 22 passed, 3 PostgreSQL environment skips,
+  1 existing Alembic path-separator deprecation warning.
+- Separate real PostgreSQL 17 invocation: 3 passed (fresh, 0029, website 0032),
+  including repeated head upgrade, empty consent defaults and cross-tenant FK
+  rejection. The three databases were created fresh; none reset or stamped.
+- Governance API/evidence consumer regressions: 110 passed.
+- Alembic: exactly one head, 0040. Scoped Ruff and doc consistency passed.
+- Corrected an intermediate metadata ordering error before the passing runs.
+  Installed repository-locked asyncpg 0.31.0 in local venv for PostgreSQL tests.
+
+PostgreSQL test container: `whitepact-phase1-postgres`, loopback port 55439,
+disposable data only. Image digest:
+`sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73`.
+This digest identifies test infrastructure, not a WhitePact release artifact.
+
+Legacy PR55 bridge: not implemented or verified. No deployed legacy database was
+provided; incompatible revision/schema combinations are rejected with data intact.
+This remains an explicit customer-transition gap if such a deployment exists.
+
+Checkpoint 3 and later: not started. No candidate freeze or production claim.
