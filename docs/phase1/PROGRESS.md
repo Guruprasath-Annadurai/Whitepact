@@ -46,4 +46,20 @@ Legacy PR55 bridge: not implemented or verified. No deployed legacy database was
 provided; incompatible revision/schema combinations are rejected with data intact.
 This remains an explicit customer-transition gap if such a deployment exists.
 
-Checkpoint 3 and later: not started. No candidate freeze or production claim.
+Checkpoint 2 committed as `c4e5426`. DB mypy: 31 files, no issues.
+
+## Checkpoint 3 — trusted context and explicit authority
+
+Added a canonical normalized context and tenant-scoped root/consent repositories.
+The resolver reads explicit persisted delegation chains and consent, verifies
+tenant/subject/target/purpose/integrity/expiry, checks attenuation and composes
+Heart root, consent, purpose and delegation results. It never creates roots from
+logins or supplies wildcard fallback authority. Authority versions bind the
+resolved records. Root and consent digests now bind validity and evidence refs;
+legacy unsigned record digests are not silently upgraded.
+
+Focused authority/Heart/consent/root/grant/purpose suites: 136 passed. Added tests
+cover trusted context mismatch, empty scopes with valid digests, revoked consent,
+root revocation, expiry tampering, wrong purpose and cross-tenant hidden reads.
+This is the canonical resolver foundation; live transport adoption remains
+checkpoint 6, and revocation/nonce coordination remains checkpoint 4.
