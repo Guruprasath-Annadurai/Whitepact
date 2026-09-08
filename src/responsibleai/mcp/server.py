@@ -142,15 +142,18 @@ def _log_invocation_name(process_kind: str) -> None:
 
 
 # Set by the HTTP transport's auth middleware per-connection. None on stdio
-# (self-hosted) — absence of a context means unrestricted access, matching
-# the open-core design: self-hosted stdio is always free and full-featured.
+# (self-hosted). Only local stdio may use unrestricted community dispatch;
+# absent identity on a hosted request must instead fail closed.
 _current_org: ContextVar[OrgContext | None] = ContextVar("_current_org", default=None)
+# Transport identity is independent of authentication: losing an org context
+# on an HTTP request must never turn it into unrestricted community stdio.
+_current_hosted: ContextVar[bool] = ContextVar("_current_hosted", default=False)
 _current_usage_repo: ContextVar[McpUsageRepository | None] = ContextVar(
     "_current_usage_repo", default=None
 )
 # None unless Settings.mcp_governance_enabled is True — see that field's
-# docstring and governance_integration.py's module docstring for why
-# this is opt-in rather than always wired up.
+# docstring and governance_integration.py. Disabled service initialization
+# no longer permits direct hosted dispatch.
 _current_governance: ContextVar[GovernanceServices | None] = ContextVar(
     "_current_governance", default=None
 )
@@ -233,11 +236,21 @@ async def _call_tool(
                 }
                 return _text_and_structured(error)
 
-        if usage_repo is not None and ctx.org_id:
-            await usage_repo.record_call(ctx.org_id, name, ctx.plan.value, allowed=True)
-
     call_arguments = arguments or {}
     governance = _current_governance.get()
+    if (_current_hosted.get() or ctx is not None) and (
+        governance is None or ctx is None or not ctx.org_id or ctx.is_legacy
+    ):
+        if usage_repo is not None and ctx is not None and ctx.org_id:
+            await usage_repo.record_call(ctx.org_id, name, ctx.plan.value, allowed=False)
+        return _text_and_structured(
+            {
+                "error": "governance_unavailable",
+                "message": "Hosted tool execution requires tenant-scoped governance. No action was taken.",
+            }
+        )
+    if usage_repo is not None and ctx is not None and ctx.org_id:
+        await usage_repo.record_call(ctx.org_id, name, ctx.plan.value, allowed=True)
     if governance is not None and ctx is not None and ctx.org_id:
         # Local import: keeps the stdio transport's import graph free of
         # the DB/governance layer unless a hosted-HTTP connection with
@@ -435,6 +448,8 @@ def _build_http_app() -> Any:
             WebhookDeliveryRepository,
             WorkflowRuleRepository,
         )
+        from responsibleai.db.execution_nonce_repository import ExecutionNonceRepository
+        from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
         from responsibleai.governance import WhitePactRuntimeGateway
         from responsibleai.integrations.client import DEFAULT_CACHE_TTL_MINUTES, TrustClient
         from responsibleai.mcp.governance_integration import (
@@ -447,6 +462,8 @@ def _build_http_app() -> Any:
         _governance_webhook_manager.set_config_repository(WebhookConfigRepository(_db_engine))
 
         _governance_services = RuntimeGovernanceServices(
+            nonce_repo=ExecutionNonceRepository(_db_engine),
+            epoch_repo=RevocationEpochRepository(_db_engine),
             gateway=WhitePactRuntimeGateway(),
             evidence_repo=EvidenceRepository(_db_engine),
             approval_repo=ApprovalRepository(_db_engine),
@@ -719,6 +736,7 @@ def _build_http_app() -> Any:
         org_token = _current_org.set(ctx)
         usage_token = _current_usage_repo.set(_usage_repo)
         governance_token = _current_governance.set(_governance_services)
+        hosted_token = _current_hosted.set(True)
         try:
             async with sse.connect_sse(request.scope, request.receive, request._send) as (
                 read_stream,
@@ -730,6 +748,7 @@ def _build_http_app() -> Any:
             _current_org.reset(org_token)
             _current_usage_repo.reset(usage_token)
             _current_governance.reset(governance_token)
+            _current_hosted.reset(hosted_token)
         return JSONResponse({}, status_code=200)
 
     class _StreamableHttpEndpoint:
@@ -754,12 +773,14 @@ def _build_http_app() -> Any:
             org_token = _current_org.set(ctx)
             usage_token = _current_usage_repo.set(_usage_repo)
             governance_token = _current_governance.set(_governance_services)
+            hosted_token = _current_hosted.set(True)
             try:
                 await streamable_http.handle_request(scope, receive, send)
             finally:
                 _current_org.reset(org_token)
                 _current_usage_repo.reset(usage_token)
                 _current_governance.reset(governance_token)
+                _current_hosted.reset(hosted_token)
 
     handle_streamable_http = _StreamableHttpEndpoint()
 

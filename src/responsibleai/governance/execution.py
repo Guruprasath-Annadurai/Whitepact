@@ -36,7 +36,10 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
+
+if TYPE_CHECKING:
+    from responsibleai.db.execution_nonce_repository import ExecutionNonceRepository
 
 from responsibleai.governance.approval import compute_action_digest
 from responsibleai.governance.models import ActionRequest, DecisionResult, GovernanceDecision
@@ -129,11 +132,11 @@ class ExecutionAuthorization:
     ALLOW_WITH_REDACTION, for this exact action, this exact org, within
     a short validity window, and not yet spent.
 
-    `nonce` exists even though nothing currently transmits this object
-    anywhere — it's the field that would matter first if a future
-    executor did cross a process boundary and this got signed; keeping
-    it here now means that change doesn't require touching every
-    caller's field list later.
+    Hosted executors persist `nonce` at admission against `revocation_epoch`.
+    This is single-use admission, not exactly-once external side effects and
+    not proof that canonical authority has been resolved. Database-free local
+    helpers retain only in-process consumption; epoch-bound permits cannot use
+    that fallback. This object is never accepted as a network credential.
 
     `target_fingerprint` is Execution Permit v2 (Authority Everywhere
     Phase 9): an optional, executor-supplied hash of whatever the
@@ -159,6 +162,7 @@ class ExecutionAuthorization:
     )
     consumed: bool = False
     principal_id: str | None = None
+    revocation_epoch: int | None = None
 
     @property
     def is_expired(self) -> bool:
@@ -177,6 +181,7 @@ def authorize_execution(
     *,
     ttl_seconds: int = DEFAULT_AUTHORIZATION_TTL_SECONDS,
     target_fingerprint: str | None = None,
+    revocation_epoch: int | None = None,
 ) -> ExecutionAuthorization:
     """Turn a gateway decision into an `ExecutionAuthorization` — the
     only place one is ever constructed. Raises `DecisionNotExecutableError`
@@ -211,6 +216,7 @@ def authorize_execution(
         decision=decision.decision,
         principal_id=action.agent.identity.identity_id,
         target_fingerprint=target_fingerprint,
+        revocation_epoch=revocation_epoch,
         expires_at=datetime.now(UTC) + timedelta(seconds=ttl_seconds),
     )
 
@@ -240,6 +246,11 @@ def _validate_authorization(authorization: ExecutionAuthorization, action: Actio
     happened yet."""
     if authorization.consumed:
         raise AuthorizationAlreadyConsumedError(authorization.authorization_id)
+    if authorization.decision not in (
+        GovernanceDecision.ALLOW,
+        GovernanceDecision.ALLOW_WITH_REDACTION,
+    ):
+        raise DecisionNotExecutableError(authorization.decision)
     if authorization.is_expired:
         raise AuthorizationExpiredError(authorization.authorization_id)
     if authorization.organization_id != action.agent.organization_id:
@@ -264,6 +275,33 @@ def check_target_fingerprint(
         raise AuthorizationTargetDriftError(authorization.authorization_id)
 
 
+async def admit_execution(
+    authorization: ExecutionAuthorization,
+    action: ActionRequest,
+    nonce_repo: ExecutionNonceRepository | None,
+) -> None:
+    """Consume before dispatch; database failure never falls back to memory.
+
+    An epoch-bound permit cannot be downgraded to a local executor. The database
+    transaction is the admission point, not an exactly-once side-effect promise.
+    Revalidate after its await: expiry and mutable action binding may have changed.
+    """
+    _validate_authorization(authorization, action)
+    if nonce_repo is not None:
+        if authorization.revocation_epoch is None or not authorization.organization_id:
+            raise ExecutionNotAuthorizedError("Durable execution requires a tenant and epoch")
+        await nonce_repo.consume(
+            authorization.nonce,
+            authorization_id=authorization.authorization_id,
+            organization_id=authorization.organization_id,
+            expected_epoch=authorization.revocation_epoch,
+        )
+        _validate_authorization(authorization, action)
+    elif authorization.revocation_epoch is not None:
+        raise ExecutionNotAuthorizedError("Durable admission repository is unavailable")
+    authorization.consumed = True
+
+
 class InternalToolExecutor:
     """Executes one of this platform's own 27 MCP tools
     (`mcp.tools.dispatch_tool`) — the only executor that exists today.
@@ -273,11 +311,11 @@ class InternalToolExecutor:
     *external* systems).
     """
 
+    def __init__(self, *, nonce_repo: ExecutionNonceRepository | None = None) -> None:
+        self._nonce_repo = nonce_repo
+
     async def execute(self, authorization: ExecutionAuthorization, action: ActionRequest) -> Any:
-        _validate_authorization(authorization, action)
-        authorization.consumed = (
-            True  # single-use — a second call now hits AuthorizationAlreadyConsumedError
-        )
+        await admit_execution(authorization, action, self._nonce_repo)
 
         from responsibleai.mcp.tools import dispatch_tool
 

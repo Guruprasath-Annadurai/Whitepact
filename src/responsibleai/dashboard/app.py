@@ -138,7 +138,9 @@ from responsibleai.db import (
     create_engine,
 )
 from responsibleai.db.engine import DatabaseEngine
+from responsibleai.db.execution_nonce_repository import ExecutionNonceRepository
 from responsibleai.db.migrate import MigrationError, run_migrations_or_raise
+from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
 from responsibleai.eval import (
     BenchmarkRunner,
     BenchmarkSuite,
@@ -3892,6 +3894,8 @@ async def governance_execute_approval(
     try:
         result = await resume_approval(
             approval_id,
+            nonce_repo=ExecutionNonceRepository(_ready(_db_engine)),
+            epoch_repo=RevocationEpochRepository(_ready(_db_engine)),
             approval_repo=_ready(_approval_repo),
             evidence_repo=_ready(_evidence_repo),
             org_id=_auth.org_id,
@@ -4575,7 +4579,8 @@ async def upstream_call_tool(
             400, "Upstream calls require an org-scoped API key, not a legacy flat key."
         )
     executor = UpstreamMCPExecutor(
-        _ready(_upstream_registry), credential_issuance_repo=_ready(_credential_issuance_repo)
+        _ready(_upstream_registry), credential_issuance_repo=_ready(_credential_issuance_repo),
+        nonce_repo=ExecutionNonceRepository(_ready(_db_engine)),
     )
     try:
         outcome = await apply_upstream_governance(
@@ -4583,6 +4588,7 @@ async def upstream_call_tool(
             req.tool_name,
             req.arguments,
             _auth,
+            epoch_repo=RevocationEpochRepository(_ready(_db_engine)),
             gateway=_upstream_gateway,
             evidence_repo=_ready(_evidence_repo),
             policy_repo=_ready(_policy_repo),

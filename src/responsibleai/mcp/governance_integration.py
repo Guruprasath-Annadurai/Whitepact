@@ -7,9 +7,9 @@ governance-core work; no live MCP tool call routed through the gateway,
 which only existed as a separate, opt-in REST API
 (`/api/governance/*`).
 
-Opt-in via `Settings.mcp_governance_enabled` (default `False` — see its
-own docstring for why: this is a real behavior change for anyone who
-enables it, not a transparent addition). Kept in its own module, not
+Initialized via `Settings.mcp_governance_enabled` (default `False`).
+Hosted tool dispatch fails closed when disabled or tenant context is missing;
+local community stdio remains a distinct, ungoverned mode. Kept in its own module, not
 `mcp/server.py` directly, so the self-hosted stdio transport's import
 graph stays free of the DB/governance layer it never touches — `import
 responsibleai.mcp.server` for `main()` (stdio) never pulls this file
@@ -87,6 +87,8 @@ from responsibleai.rbac.models import OrgContext
 _executor = InternalToolExecutor()
 
 if TYPE_CHECKING:
+    from responsibleai.db.execution_nonce_repository import ExecutionNonceRepository
+    from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
     from responsibleai.webhooks.manager import WebhookManager
 
 _logger = logging.getLogger("responsibleai.mcp.governance")
@@ -135,6 +137,8 @@ class GovernanceServices:
     # to `WhitePactRuntimeGateway.evaluate()`, identical to behavior
     # before Intent Contracts existed.
     intent_repo: IntentContractRepository | None = None
+    nonce_repo: ExecutionNonceRepository | None = None
+    epoch_repo: RevocationEpochRepository | None = None
 
 
 @dataclass
@@ -171,6 +175,12 @@ async def apply_governance(
     see more than zero.
     """
     assert ctx.org_id is not None, "apply_governance() requires an org-scoped OrgContext"
+    if (services.nonce_repo is None) != (services.epoch_repo is None):
+        raise ValueError("Durable admission requires both nonce and epoch repositories")
+    epoch = (
+        (await services.epoch_repo.current(ctx.org_id)).epoch
+        if services.epoch_repo is not None else None
+    )
 
     identity = IdentityContext(
         identity_id=ctx.key_id,
@@ -459,9 +469,13 @@ async def apply_governance(
         arguments=final_arguments,
         action_id=action.action_id,
     )
-    authorization = authorize_execution(decision, final_action)
+    authorization = authorize_execution(decision, final_action, revocation_epoch=epoch)
+    executor = (
+        InternalToolExecutor(nonce_repo=services.nonce_repo)
+        if services.nonce_repo is not None else _executor
+    )
     try:
-        result = await _executor.execute(authorization, final_action)
+        result = await executor.execute(authorization, final_action)
     except Exception:
         await _record_outcome(
             services,
@@ -542,6 +556,8 @@ async def resume_approval(
     org_id: str,
     upstream_registry: Any = None,
     outcome_repo: OutcomeRepository | None = None,
+    nonce_repo: ExecutionNonceRepository | None = None,
+    epoch_repo: RevocationEpochRepository | None = None,
 ) -> dict[str, Any]:
     """The REQUIRE_APPROVAL -> resume-execution pipeline: given an
     approval a human has already resolved APPROVED, reconstruct the
@@ -576,6 +592,10 @@ async def resume_approval(
         # another org exists.
         raise ApprovalNotFoundError(approval_id)
 
+    if (nonce_repo is None) != (epoch_repo is None):
+        raise ValueError("Durable admission requires both nonce and epoch repositories")
+    epoch = (await epoch_repo.current(org_id)).epoch if epoch_repo is not None else None
+
     agent = _agent_from_approval(approval)
     action = build_resume_action(approval, agent=agent)
 
@@ -585,9 +605,9 @@ async def resume_approval(
                 f"Approval {approval.approval_id!r} is an upstream MCP tool call and "
                 "requires upstream_registry to resume."
             )
-        executor: Any = UpstreamMCPExecutor(upstream_registry)
+        executor: Any = UpstreamMCPExecutor(upstream_registry, nonce_repo=nonce_repo)
     else:
-        executor = _executor
+        executor = InternalToolExecutor(nonce_repo=nonce_repo) if nonce_repo is not None else _executor
 
     # consume() is called BEFORE execution, not after -- it's the
     # single-use guard (mutation + replay protection); a resume must
@@ -603,7 +623,7 @@ async def resume_approval(
         ],
         risk_tier=RiskTier(approval.risk_tier) if approval.risk_tier else None,
     )
-    authorization = authorize_execution(decision, action)
+    authorization = authorize_execution(decision, action, revocation_epoch=epoch)
     result = await executor.execute(authorization, action)
 
     authority = AuthorityContext(

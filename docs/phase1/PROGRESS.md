@@ -101,3 +101,29 @@ chokepoint remain required before checkpoint 4 can close. These tests prove
 database admission behavior, not exactly-once external side effects, process
 isolation, full replica deployment or production readiness. Epoch comparison
 linearizes admission; revocation cannot undo an operation already dispatched.
+
+### Checkpoint 4 continuation, 2026-09-08 — still PARTIAL
+
+Supersedes the earlier statement that executors have no durable wiring: hosted
+MCP, dashboard upstream dispatch and dashboard approval resume now provide the
+nonce/epoch repositories. Both executors share `admit_execution`, rejecting replay,
+stale epochs, missing durable configuration, database failure and changed bindings
+after admission awaits. Upstream dispatch copies admitted arguments before audit
+awaits. New executor tests cover independent consumers, copied permits, reopen,
+stale epochs and fail-closed behavior; hosted HTTP verifies a real admission row.
+
+POSTGRESQL: **7 passed, 0 failed, 0 skipped**, as freshly confirmed for this
+checkpoint. The continuation did not read or persist the fixture password again.
+The new executor race tests use SQLite; the confirmed PostgreSQL run covers the
+underlying nonce repository. These evidence layers are not interchangeable.
+
+Canonical hosted authority, canonical upstream authority and fresh approval
+resume remain OPEN P0. They are required in checkpoint 4 under the current Product
+Manager directive, not deferred to checkpoint 6. Full consequential-sink inventory
+and relevant mutation epoch wiring are also incomplete. DNS remains an OPEN P1
+release blocker. JIT/legitimacy digest allegation remains NOT A VULNERABILITY AS
+REPORTED. Independent patch review did not finish due to a review-service block.
+
+See `RELEASE_SECURITY_GATE.md` for the scoped inventory, verification evidence
+and remaining gaps. Accepted website unchanged. No commit, push, merge, deployment,
+Antigravity integration or new production candidate in this continuation.

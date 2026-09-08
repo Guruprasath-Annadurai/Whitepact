@@ -88,11 +88,12 @@ async def governed_app_with_key(monkeypatch: pytest.MonkeyPatch):
 
 @pytest.fixture()
 async def ungoverned_app(monkeypatch: pytest.MonkeyPatch):
-    """Same setup, but mcp_governance_enabled left at its False default
-    — proves the feature genuinely changes nothing when off."""
+    """Disabled governance keeps discovery usable but refuses execution."""
     import responsibleai.db as db_module
+    from responsibleai.dashboard.config import get_settings
     from responsibleai.mcp.server import _build_http_app
 
+    monkeypatch.setattr(get_settings(), "mcp_governance_enabled", False)
     engine = create_engine(":memory:")
     await engine.init()
     monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
@@ -130,18 +131,36 @@ async def _call(app, raw_key: str, tool_name: str, arguments: dict):
             return await session.call_tool(tool_name, arguments)
 
 
+async def test_hosted_path_persists_admission(governed_app):
+    from sqlalchemy import select
+
+    from responsibleai.db.engine import governance_execution_nonces
+
+    app, raw_key, org, engine = governed_app
+    response = await _call(app, raw_key, "rai_health", {})
+    assert not response.isError
+    async with engine.raw.connect() as conn:
+        rows = (await conn.execute(select(governance_execution_nonces).where(
+            governance_execution_nonces.c.organization_id == org
+        ))).fetchall()
+    assert len(rows) == 1
+
+
 class TestGovernanceDisabledByDefault:
-    async def test_toxic_content_still_executes_when_disabled(self, ungoverned_app) -> None:
-        """The exact same call that Section TestDenyBlocksExecution below
-        proves gets blocked when governance is ON must still succeed
-        normally when it's OFF (the default) — this is the concrete
-        backward-compatibility proof, not just a docstring claim."""
+    async def test_disabled_governance_refuses_hosted_execution(
+        self, ungoverned_app, monkeypatch
+    ) -> None:
+        """Disabling governance must not open an HTTP dispatch bypass."""
+        from unittest.mock import AsyncMock
+
+        dispatch = AsyncMock()
+        monkeypatch.setattr("responsibleai.mcp.server.dispatch_tool", dispatch)
         app, raw_key = ungoverned_app
         result = await _call(app, raw_key, "rai_scan", {"text": "This is a bomb threat."})
         assert result.isError is not True
         payload = json.loads(result.content[0].text)
-        assert payload["is_blocked"] is True  # rai_scan's own opinion, not a governance block
-        assert "error" not in payload or payload.get("error") is None
+        assert payload["error"] == "governance_unavailable"
+        dispatch.assert_not_awaited()
 
 
 class TestAllowPassesThrough:

@@ -8,12 +8,28 @@ what the HTTP/SSE transport's `handle_sse` does per-request.
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import pytest
 
 from responsibleai.db.engine import create_engine
 from responsibleai.db.mcp_usage_repository import McpUsageRepository
 from responsibleai.mcp import server as mcp_server
 from responsibleai.rbac.models import OrgContext, Plan, Role
+
+
+@pytest.fixture(autouse=True)
+def _governance_allows_for_billing_unit_tests(monkeypatch):
+    """Isolate billing checks from governance, whose real path has its own suite."""
+    from responsibleai.mcp.governance_integration import GovernanceOutcome
+
+    token = mcp_server._current_governance.set(object())
+    monkeypatch.setattr(
+        "responsibleai.mcp.governance_integration.apply_governance",
+        AsyncMock(return_value=GovernanceOutcome(proceed=True, arguments={}, result={"ok": True})),
+    )
+    yield
+    mcp_server._current_governance.reset(token)
 
 
 @pytest.fixture()
@@ -195,7 +211,7 @@ class TestQuotaEnforcement:
         assert "error" not in payload
 
     async def test_context_without_org_id_skips_metering(self, usage_repo):
-        """Legacy/anon contexts (org_id=None) aren't metered — nothing to bill."""
+        """Legacy keys have no tenant authority and cannot execute hosted tools."""
         ctx = OrgContext(key_id="legacy", role=Role.OWNER, org_id=None, is_legacy=True)
         tokens = _set_context(ctx, usage_repo)
         try:
@@ -203,4 +219,4 @@ class TestQuotaEnforcement:
         finally:
             _reset_context(tokens)
         payload = result[1]
-        assert "error" not in payload
+        assert payload["error"] == "governance_unavailable"

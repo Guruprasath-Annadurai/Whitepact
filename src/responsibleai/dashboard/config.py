@@ -164,14 +164,14 @@ class Settings(BaseSettings):
         ),
     )
 
-    # Governance dispatch-path gating (opt-in — see MIGRATION_WHITEPACT_V2.md)
+    # Governance service initialization. Disabled hosted execution fails closed.
     mcp_governance_enabled: bool = Field(
         default=False,
         description=(
             "Route every hosted-MCP-transport tool call through "
             "WhitePactRuntimeGateway.evaluate() before it executes, instead "
-            "of the gateway existing only as a separate, opt-in API "
-            "(GET/POST /api/governance/*). Off by default: turning this on "
+            "of permitting direct tool dispatch. Off by default: hosted tool "
+            "calls then return governance_unavailable. Turning this on "
             "for an existing hosted deployment is a real behavior change — "
             "a call that used to always execute can now come back DENY, "
             "QUARANTINE, or REQUIRE_APPROVAL (queued, not executed), and "

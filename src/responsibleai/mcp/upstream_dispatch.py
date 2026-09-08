@@ -17,7 +17,10 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
 
 from responsibleai.dashboard.prometheus import observe_governance_decision
 from responsibleai.db import (
@@ -108,6 +111,7 @@ async def apply_upstream_governance(
     executor: UpstreamMCPExecutor,
     tool_trust_repo: ToolTrustRepository,
     outcome_repo: OutcomeRepository | None = None,
+    epoch_repo: RevocationEpochRepository | None = None,
 ) -> UpstreamGovernanceOutcome:
     """Evaluate and, if governance allows it, execute one proxied call
     to an org-registered upstream MCP server. Requires an org-scoped
@@ -115,6 +119,7 @@ async def apply_upstream_governance(
     ``apply_governance()`` documents and its own callers assert.
     """
     assert ctx.org_id is not None, "apply_upstream_governance() requires an org-scoped OrgContext"
+    epoch = (await epoch_repo.current(ctx.org_id)).epoch if epoch_repo is not None else None
 
     identity = IdentityContext(
         identity_id=ctx.key_id,
@@ -282,7 +287,8 @@ async def apply_upstream_governance(
     # decision was actually made against, so UpstreamMCPExecutor.execute()
     # can detect if that config drifts before the permit is consumed.
     authorization = authorize_execution(
-        decision, final_action, target_fingerprint=compute_upstream_target_fingerprint(server)
+        decision, final_action, target_fingerprint=compute_upstream_target_fingerprint(server),
+        revocation_epoch=epoch,
     )
     try:
         result = await executor.execute(authorization, final_action)

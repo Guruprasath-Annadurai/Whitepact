@@ -587,6 +587,11 @@ class TestUpstreamCallEndToEnd:
         server_id = r.json()["server_id"]
 
         monkeypatch.setattr(db_module, "create_engine", lambda _url: upstream_engine)
+        # The real receiving HTTP service must have governance enabled; off now
+        # refuses tool execution instead of acting as an ungoverned test sink.
+        from responsibleai.dashboard.config import get_settings
+
+        monkeypatch.setattr(get_settings(), "mcp_governance_enabled", True)
         upstream_app = _build_http_app()
 
         def _fake_factory():
