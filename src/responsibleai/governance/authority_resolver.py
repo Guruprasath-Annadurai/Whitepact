@@ -41,6 +41,8 @@ class ResolvedAuthority:
     grant: AuthorityGrant
     authority: AuthorityContext
     authority_version: str
+    consent_id: str
+    consent_version: str
 
 
 def _root_integrity(root: RootAuthorityRecord) -> bool:
@@ -227,4 +229,10 @@ class AuthorityResolver:
             delegation_reference=chain[0].delegation_id,
             ttl_seconds=ttl,
         )
-        return ResolvedAuthority(grant, authority, version)
+        return ResolvedAuthority(
+            grant,
+            authority,
+            version,
+            consent.consent_id,
+            consent.canonical_digest,
+        )

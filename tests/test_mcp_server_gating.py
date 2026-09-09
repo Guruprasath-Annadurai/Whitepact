@@ -14,6 +14,7 @@ import pytest
 
 from responsibleai.db.engine import create_engine
 from responsibleai.db.mcp_usage_repository import McpUsageRepository
+from responsibleai.governance.outcome import OutcomeStatus
 from responsibleai.mcp import server as mcp_server
 from responsibleai.rbac.models import OrgContext, Plan, Role
 
@@ -63,6 +64,32 @@ def _reset_context(tokens):
     org_token, usage_token = tokens
     mcp_server._current_org.reset(org_token)
     mcp_server._current_usage_repo.reset(usage_token)
+
+
+async def test_unknown_evidence_outcome_is_exposed_to_hosted_client(
+    usage_repo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from responsibleai.mcp.governance_integration import GovernanceOutcome
+
+    monkeypatch.setattr(
+        "responsibleai.mcp.governance_integration.apply_governance",
+        AsyncMock(
+            return_value=GovernanceOutcome(
+                proceed=True,
+                arguments={},
+                result={"status": "success"},
+                outcome_status=OutcomeStatus.UNKNOWN,
+            )
+        ),
+    )
+    ctx = OrgContext(key_id="k1", role=Role.ANALYST, org_id="org-1", plan=Plan.PRO)
+    tokens = _set_context(ctx, usage_repo)
+    try:
+        result = await mcp_server._call_tool("rai_health", {})
+    finally:
+        _reset_context(tokens)
+    assert result[1]["_whitepact_evidence_outcome"] == "UNKNOWN"
+    assert result[1]["_whitepact_reconciliation_required"] is True
 
 
 class TestStdioUnrestricted:

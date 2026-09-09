@@ -3677,8 +3677,12 @@ async def governance_verify_evidence(
         raise HTTPException(
             400, "Governance evidence requires an org-scoped API key, not a legacy flat key."
         )
-    intact = await _ready(_evidence_repo).verify_chain(_auth.org_id)
-    return {"org_id": _auth.org_id, "chain_intact": intact}
+    status = await _ready(_evidence_repo).verify_chain_status(_auth.org_id)
+    return {
+        "org_id": _auth.org_id,
+        "chain_intact": status.value in {"VALID", "INCOMPLETE"},
+        "status": status.value,
+    }
 
 
 @app.get("/api/governance/evidence/bundle", tags=["governance"])
@@ -3759,8 +3763,8 @@ async def governance_report_outcome(
         raise HTTPException(
             400, "Governance evidence requires an org-scoped API key, not a legacy flat key."
         )
-    evidence = await _ready(_evidence_repo).get(evidence_id)
-    if evidence is None or evidence.organization_id != _auth.org_id:
+    evidence = await _ready(_evidence_repo).get_for_org(evidence_id, _auth.org_id)
+    if evidence is None:
         raise HTTPException(404, f"Evidence record {evidence_id!r} not found.")
     outcome = await _ready(_outcome_repo).record(
         build_outcome_record(
@@ -3791,10 +3795,10 @@ async def governance_get_attestation(
         raise HTTPException(
             400, "Governance evidence requires an org-scoped API key, not a legacy flat key."
         )
-    evidence = await _ready(_evidence_repo).get(evidence_id)
-    if evidence is None or evidence.organization_id != _auth.org_id:
+    evidence = await _ready(_evidence_repo).get_for_org(evidence_id, _auth.org_id)
+    if evidence is None:
         raise HTTPException(404, f"Evidence record {evidence_id!r} not found.")
-    outcome = await _ready(_outcome_repo).get_for_evidence(evidence_id)
+    outcome = await _ready(_outcome_repo).get_for_org(evidence_id, _auth.org_id)
     attestation = build_attestation_record(evidence, outcome)
     return attestation.to_dict()
 
@@ -4610,7 +4614,8 @@ async def upstream_call_tool(
             400, "Upstream calls require an org-scoped API key, not a legacy flat key."
         )
     executor = UpstreamMCPExecutor(
-        _ready(_upstream_registry), credential_issuance_repo=_ready(_credential_issuance_repo),
+        _ready(_upstream_registry),
+        credential_issuance_repo=_ready(_credential_issuance_repo),
         nonce_repo=ExecutionNonceRepository(_ready(_db_engine)),
     )
     try:
@@ -4639,7 +4644,13 @@ async def upstream_call_tool(
         raise HTTPException(404, str(exc)) from None
     if not outcome.proceed:
         return outcome.blocked_response or {"error": "governance_blocked"}
-    return {"server_id": server_id, "tool_name": req.tool_name, "result": outcome.result}
+    return {
+        "server_id": server_id,
+        "tool_name": req.tool_name,
+        "result": outcome.result,
+        "evidence_outcome": outcome.outcome_status.value if outcome.outcome_status else None,
+        "reconciliation_required": outcome.outcome_status is OutcomeStatus.UNKNOWN,
+    }
 
 
 # ── Tool Trust Network (Authority Everywhere Phase 8) ──────────────────────────

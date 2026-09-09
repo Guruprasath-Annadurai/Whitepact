@@ -219,6 +219,34 @@ class TestBuildResumeAction:
 
 
 class TestResumeApprovalEndToEnd:
+    async def test_executor_exception_records_unknown_outcome(
+        self,
+        client: AsyncClient,
+        org_and_admin_key,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from responsibleai.dashboard.app import _db_engine
+        from responsibleai.db import OutcomeRepository
+        from responsibleai.governance.outcome import OutcomeStatus
+
+        org_id, admin_key = org_and_admin_key
+        headers = {"Authorization": f"Bearer {admin_key}"}
+        approval_id = await _seed_dispatchable_approval(org_id)
+        await client.post(
+            f"/api/governance/approvals/{approval_id}/resolve",
+            json={"outcome": "APPROVED"},
+            headers=headers,
+        )
+        dispatch = AsyncMock(side_effect=RuntimeError("uncertain after admission"))
+        monkeypatch.setattr("responsibleai.mcp.tools.dispatch_tool", dispatch)
+        with pytest.raises(RuntimeError, match="uncertain after admission"):
+            await client.post(f"/api/governance/approvals/{approval_id}/execute", headers=headers)
+        evidence = await EvidenceRepository(_db_engine).list_for_org(org_id, decision="ALLOW")
+        resumed = next(item for item in evidence if item.approval_id == approval_id)
+        outcome = await OutcomeRepository(_db_engine).get_for_org(resumed.evidence_id, org_id)
+        assert outcome is not None
+        assert outcome.status is OutcomeStatus.UNKNOWN
+
     async def test_epoch_change_after_separate_approval_dispatches_zero_times(
         self,
         client: AsyncClient,

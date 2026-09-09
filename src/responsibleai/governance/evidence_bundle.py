@@ -38,7 +38,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from responsibleai.governance.evidence import EvidenceRecord
+from responsibleai.governance.evidence import EvidenceRecord, compute_canonical_evidence_hash
 
 _GENESIS_HASH = "0" * 64
 
@@ -48,6 +48,8 @@ def _compute_entry_hash(prev_hash: str | None, record: EvidenceRecord) -> str:
     ``_compute_entry_hash()``, deliberately duplicated (not imported)
     -- this module must stay independently verifiable from a bundle's
     own serialized data, with no DB-layer import at all."""
+    if record.integrity_version >= 2:
+        return compute_canonical_evidence_hash(prev_hash, record)
     material = "|".join(
         [
             prev_hash or _GENESIS_HASH,
@@ -134,6 +136,22 @@ def _record_from_dict(data: dict[str, Any]) -> EvidenceRecord:
         delegation_chain=list(data.get("delegation_chain") or []),
         risk_tier=data.get("risk_tier"),
         policy_version=data.get("policy_version"),
+        authentication_method=data.get("authentication_method"),
+        request_fingerprint=data.get("request_fingerprint"),
+        arguments_fingerprint=data.get("arguments_fingerprint"),
+        purpose=data.get("purpose"),
+        authority_version=data.get("authority_version"),
+        consent_id=data.get("consent_id"),
+        consent_version=data.get("consent_version"),
+        consent_state=data.get("consent_state"),
+        governance_epoch=data.get("governance_epoch"),
+        approval_id=data.get("approval_id"),
+        execution_authorization_id=data.get("execution_authorization_id"),
+        execution_nonce_reference=data.get("execution_nonce_reference"),
+        execution_target=data.get("execution_target"),
+        integrity_version=data.get("integrity_version", 1),
+        integrity_status=data.get("integrity_status", "LEGACY_CHAINED_V1"),
+        chain_sequence=data.get("chain_sequence"),
         decision=data["decision"],
         reason_codes=list(data.get("reason_codes") or []),
         framework=data.get("framework"),

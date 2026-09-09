@@ -495,6 +495,22 @@ governance_evidence = Table(
     # NULL when no Policy reached evaluation for this action at all --
     # see governance/policy.py's Policy.version docstring.
     Column("policy_version", Integer, nullable=True),
+    Column("authentication_method", String(20), nullable=True),
+    Column("request_fingerprint", String(64), nullable=True),
+    Column("arguments_fingerprint", String(64), nullable=True),
+    Column("purpose", Text, nullable=True),
+    Column("authority_version", String(64), nullable=True),
+    Column("consent_id", String(36), nullable=True),
+    Column("consent_version", String(64), nullable=True),
+    Column("consent_state", String(20), nullable=True),
+    Column("governance_epoch", Integer, nullable=True),
+    Column("approval_id", String(36), nullable=True),
+    Column("execution_authorization_id", String(36), nullable=True),
+    Column("execution_nonce_reference", String(64), nullable=True),
+    Column("execution_target", String(200), nullable=True),
+    Column("integrity_version", Integer, nullable=False, default=2),
+    Column("integrity_status", String(32), nullable=False, default="CANONICAL_CHAINED"),
+    Column("chain_sequence", Integer, nullable=True),
     Column("decision", String(30), nullable=False),
     Column("reason_codes", Text, nullable=False),  # JSON list
     Column("framework", String(50), nullable=True),
@@ -508,6 +524,7 @@ governance_evidence = Table(
     Index("idx_gev_action", "action_id"),
     Index("idx_gev_decision", "decision"),
     Index("idx_gev_recorded", "recorded_at"),
+    UniqueConstraint("org_id", "chain_sequence", name="uq_gev_org_sequence"),
     Index(
         "idx_gev_chain_link",
         "org_id",
@@ -523,6 +540,20 @@ governance_evidence = Table(
         sqlite_where=text("prev_hash IS NULL"),
         postgresql_where=text("prev_hash IS NULL"),
     ),
+)
+
+governance_evidence_chain_heads = Table(
+    "governance_evidence_chain_heads",
+    metadata,
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", name="fk_evidence_head_org", ondelete="RESTRICT"),
+        primary_key=True,
+    ),
+    Column("head_hash", String(64), nullable=True),
+    Column("sequence", Integer, nullable=False, default=0),
+    Column("updated_at", String(32), nullable=False),
 )
 
 # Phase 11 — persisted GovernanceDecision.REQUIRE_APPROVAL requests,

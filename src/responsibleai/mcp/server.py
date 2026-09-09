@@ -279,6 +279,9 @@ async def _call_tool(
         # double-execute the tool and reintroduce the exact bypass this
         # wiring exists to close.
         assert outcome.result is not None, "governed ALLOW outcome must carry an execution result"
+        if outcome.outcome_status is not None and outcome.outcome_status.value == "UNKNOWN":
+            outcome.result["_whitepact_evidence_outcome"] = "UNKNOWN"
+            outcome.result["_whitepact_reconciliation_required"] = True
         return _text_and_structured(outcome.result)
 
     result = await dispatch_tool(name, call_arguments)

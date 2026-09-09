@@ -153,7 +153,7 @@ class TestEvidenceEndpoints:
             "/api/governance/evidence/verify", headers={"Authorization": f"Bearer {key}"}
         )
         assert r.status_code == 200
-        assert r.json() == {"org_id": org_id, "chain_intact": True}
+        assert r.json() == {"org_id": org_id, "chain_intact": True, "status": "VALID"}
 
     async def test_evidence_scoped_to_caller_org_not_visible_across_orgs(
         self,
