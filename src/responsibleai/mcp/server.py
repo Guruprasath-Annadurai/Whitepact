@@ -90,7 +90,7 @@ from responsibleai.mcp.licensing import (
     upgrade_message,
 )
 from responsibleai.mcp.resources import RESOURCE_DEFS, dispatch_resource
-from responsibleai.mcp.tools import TOOL_DEFS, dispatch_tool
+from responsibleai.mcp.tools import TOOL_DEFS, WHITEPACT_PURPOSE_ARGUMENT, dispatch_tool
 from responsibleai.rbac.models import OrgContext
 
 if TYPE_CHECKING:
@@ -258,7 +258,19 @@ async def _call_tool(
         # — see governance_integration.py's module docstring.
         from responsibleai.mcp.governance_integration import apply_governance
 
-        outcome = await apply_governance(name, call_arguments, ctx, governance)
+        purpose = call_arguments.get(WHITEPACT_PURPOSE_ARGUMENT)
+        if not isinstance(purpose, str) or not purpose.strip():
+            return _text_and_structured(
+                {
+                    "error": "governance_purpose_required",
+                    "message": "Hosted tool execution requires an explicit _whitepact_purpose.",
+                }
+            )
+        governed_arguments = dict(call_arguments)
+        del governed_arguments[WHITEPACT_PURPOSE_ARGUMENT]
+        outcome = await apply_governance(
+            name, governed_arguments, ctx, governance, purpose=purpose.strip()
+        )
         if not outcome.proceed:
             return _text_and_structured(outcome.blocked_response or {"error": "governance_blocked"})
         # apply_governance() already ran the tool via InternalToolExecutor
@@ -448,9 +460,12 @@ def _build_http_app() -> Any:
             WebhookDeliveryRepository,
             WorkflowRuleRepository,
         )
+        from responsibleai.db.consent_proof_repository import ConsentProofRepository
         from responsibleai.db.execution_nonce_repository import ExecutionNonceRepository
         from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
+        from responsibleai.db.root_authority_repository import RootAuthorityRepository
         from responsibleai.governance import WhitePactRuntimeGateway
+        from responsibleai.governance.authority_resolver import AuthorityResolver
         from responsibleai.integrations.client import DEFAULT_CACHE_TTL_MINUTES, TrustClient
         from responsibleai.mcp.governance_integration import (
             GovernanceServices as RuntimeGovernanceServices,
@@ -464,6 +479,11 @@ def _build_http_app() -> Any:
         _governance_services = RuntimeGovernanceServices(
             nonce_repo=ExecutionNonceRepository(_db_engine),
             epoch_repo=RevocationEpochRepository(_db_engine),
+            authority_resolver=AuthorityResolver(
+                RootAuthorityRepository(_db_engine),
+                ConsentProofRepository(_db_engine),
+                DelegationRepository(_db_engine),
+            ),
             gateway=WhitePactRuntimeGateway(),
             evidence_repo=EvidenceRepository(_db_engine),
             approval_repo=ApprovalRepository(_db_engine),
@@ -580,6 +600,7 @@ def _build_http_app() -> Any:
             org_name=org.name,
             is_legacy=False,
             plan=org.plan,
+            authentication_method="oidc",
         )
 
     async def _resolve_vc_context(token: str) -> OrgContext | None:
@@ -632,6 +653,7 @@ def _build_http_app() -> Any:
             org_name=org.name if org else None,
             is_legacy=False,
             plan=org.plan if org else Plan.FREE,
+            authentication_method="vc",
         )
 
     async def _authenticate(request: Request) -> OrgContext | None:

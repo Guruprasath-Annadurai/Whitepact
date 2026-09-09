@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -45,6 +45,8 @@ from responsibleai.governance import (
     recent_violation_count,
 )
 from responsibleai.governance.approval import build_approval_request
+from responsibleai.governance.authority_resolver import AuthorityDenied, AuthorityResolver
+from responsibleai.governance.context import GovernanceContext
 from responsibleai.governance.evidence import EvidenceRecord, build_evidence_record
 from responsibleai.governance.outcome import OutcomeStatus, build_outcome_record
 from responsibleai.governance.risk import classify_action_risk
@@ -103,6 +105,8 @@ async def apply_upstream_governance(
     arguments: dict[str, Any],
     ctx: OrgContext,
     *,
+    purpose: str,
+    authority_resolver: AuthorityResolver,
     gateway: WhitePactRuntimeGateway,
     evidence_repo: EvidenceRepository,
     policy_repo: PolicyRepository,
@@ -134,16 +138,21 @@ async def apply_upstream_governance(
         framework="upstream-gateway",
     )
     target = build_upstream_target(server_id, tool_name)
-    action = ActionRequest(agent=agent, action_type=ACTION_TYPE, target=target, arguments=arguments)
-    authority = AuthorityContext(
-        delegated_by=ctx.org_id, granted_action_types=frozenset({ACTION_TYPE})
+    action = ActionRequest(
+        agent=agent,
+        action_type=ACTION_TYPE,
+        target=target,
+        arguments=arguments,
+        purpose=purpose,
     )
-
     # Registration IS the approval gate -- checked before the gateway
     # is even consulted, and denied with the reason code SPEC.md always
     # had reserved for exactly this case.
     server = await upstream_registry.get(server_id)
     if server is None or server.org_id != ctx.org_id or not server.enabled:
+        authority = AuthorityContext(
+            delegated_by="unresolved", granted_action_types=frozenset()
+        )
         decision = DecisionResult(
             decision=GovernanceDecision.DENY,
             action_id=action.action_id,
@@ -160,6 +169,41 @@ async def apply_upstream_governance(
                     "or belongs to a different organization."
                 ),
                 "action_id": decision.action_id,
+                "reason_codes": decision.reason_codes,
+            },
+        )
+
+    context = GovernanceContext.from_authenticated(
+        ctx, action, authentication_method=ctx.authentication_method
+    )
+    try:
+        resolved = await authority_resolver.resolve(context)
+        authority = replace(
+            resolved.authority,
+            granted_action_types=frozenset({ACTION_TYPE}),
+            require_approval_for=(
+                resolved.authority.require_approval_for & frozenset({ACTION_TYPE})
+            ),
+        )
+    except AuthorityDenied:
+        authority = AuthorityContext(
+            delegated_by="unresolved", granted_action_types=frozenset()
+        )
+        decision = DecisionResult(
+            decision=GovernanceDecision.DENY,
+            action_id=action.action_id,
+            reason_codes=[
+                format_reason(ReasonCode.AUTHORITY_NOT_DELEGATED, action_type=ACTION_TYPE)
+            ],
+            risk_tier=classify_action_risk(action.action_type, action.target),
+        )
+        await _record_evidence(evidence_repo, action, agent, authority, decision)
+        return UpstreamGovernanceOutcome(
+            proceed=False,
+            blocked_response={
+                "error": "governance_denied",
+                "message": "Explicit current authority and consent are required.",
+                "action_id": action.action_id,
                 "reason_codes": decision.reason_codes,
             },
         )
@@ -258,7 +302,16 @@ async def apply_upstream_governance(
         )
 
     if decision.decision == GovernanceDecision.REQUIRE_APPROVAL:
-        approval = await approval_repo.create(build_approval_request(action, decision))
+        approval = await approval_repo.create(
+            build_approval_request(
+                action,
+                decision,
+                authentication_method=ctx.authentication_method,
+                revocation_epoch=epoch,
+                authority_version=resolved.authority_version,
+                target_fingerprint=compute_upstream_target_fingerprint(server),
+            )
+        )
         return UpstreamGovernanceOutcome(
             proceed=False,
             blocked_response={
@@ -281,6 +334,7 @@ async def apply_upstream_governance(
         action_type=ACTION_TYPE,
         target=target,
         arguments=final_arguments,
+        purpose=action.purpose,
         action_id=action.action_id,
     )
     # Execution Permit v2 -- fingerprint the server config this

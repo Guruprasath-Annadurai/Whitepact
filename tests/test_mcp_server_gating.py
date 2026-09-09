@@ -28,6 +28,14 @@ def _governance_allows_for_billing_unit_tests(monkeypatch):
         "responsibleai.mcp.governance_integration.apply_governance",
         AsyncMock(return_value=GovernanceOutcome(proceed=True, arguments={}, result={"ok": True})),
     )
+    real_call_tool = mcp_server._call_tool
+
+    async def call_tool_with_explicit_test_purpose(name, arguments):
+        if mcp_server._current_org.get() is not None:
+            arguments = {**arguments, "_whitepact_purpose": "automated-test"}
+        return await real_call_tool(name, arguments)
+
+    monkeypatch.setattr(mcp_server, "_call_tool", call_tool_with_explicit_test_purpose)
     yield
     mcp_server._current_governance.reset(token)
 

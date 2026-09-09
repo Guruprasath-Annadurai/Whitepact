@@ -183,6 +183,7 @@ class WhitePactRuntimeGateway:
         intent: IntentContract | None = None,
     ) -> DecisionResult:
         risk_tier = classify_action_risk(action.action_type, action.target)
+        approval_reasons: list[str] = []
 
         if recent_violation_count >= QUARANTINE_VIOLATION_THRESHOLD:
             return DecisionResult(
@@ -246,13 +247,8 @@ class WhitePactRuntimeGateway:
             )
 
         if action.action_type in authority.require_approval_for:
-            return DecisionResult(
-                decision=GovernanceDecision.REQUIRE_APPROVAL,
-                action_id=action.action_id,
-                reason_codes=[
-                    format_reason(ReasonCode.APPROVAL_REQUIRED, action_type=action.action_type)
-                ],
-                risk_tier=risk_tier,
+            approval_reasons.append(
+                format_reason(ReasonCode.APPROVAL_REQUIRED, action_type=action.action_type)
             )
 
         constraint_violation = authority.constraint_violation(action)
@@ -282,18 +278,18 @@ class WhitePactRuntimeGateway:
                     # evidence still shows which rule matched.
                     else f"policy_allow:rule_id={match.rule.rule_id};rule_reason={match.rule.reason_code}"
                 )
-                if match.rule.effect in (
-                    GovernanceDecision.DENY,
-                    GovernanceDecision.REQUIRE_APPROVAL,
-                ):
+                if match.rule.effect == GovernanceDecision.DENY:
                     return DecisionResult(
-                        decision=match.rule.effect,
+                        decision=GovernanceDecision.DENY,
                         action_id=action.action_id,
                         reason_codes=[reason],
                         risk_tier=risk_tier,
                         policy_version=policy_version,
                     )
-                policy_reason_codes.append(reason)
+                if match.rule.effect == GovernanceDecision.REQUIRE_APPROVAL:
+                    approval_reasons.append(reason)
+                else:
+                    policy_reason_codes.append(reason)
 
         field_results, redacted_arguments = self._scan_arguments(action.arguments)
         return self._decide_from_scan(
@@ -305,6 +301,7 @@ class WhitePactRuntimeGateway:
             policy_version,
             autonomy_budget=autonomy_budget,
             recent_autonomous_action_count=recent_autonomous_action_count,
+            approval_reasons=approval_reasons,
         )
 
     def _scan_arguments(
@@ -333,7 +330,9 @@ class WhitePactRuntimeGateway:
         *,
         autonomy_budget: AutonomyBudgetPolicy | None = None,
         recent_autonomous_action_count: int = 0,
+        approval_reasons: list[str] | None = None,
     ) -> DecisionResult:
+        approval_reasons = list(approval_reasons or [])
         hard_block_reasons = [
             format_reason(ReasonCode.CONTENT_POLICY_VIOLATION, field=field, detail=reason)
             for field, result in field_results.items()
@@ -368,34 +367,33 @@ class WhitePactRuntimeGateway:
             autonomy_budget is not None
             and recent_autonomous_action_count >= autonomy_budget.max_autonomous_actions
         ):
-            return DecisionResult(
-                decision=GovernanceDecision.REQUIRE_APPROVAL,
-                action_id=action.action_id,
-                reason_codes=[
-                    *policy_reason_codes,
-                    format_reason(
+            approval_reasons.append(
+                format_reason(
                         ReasonCode.AUTONOMY_BUDGET_EXCEEDED,
                         recent_autonomous_actions=recent_autonomous_action_count,
                         limit=autonomy_budget.max_autonomous_actions,
                         window_minutes=autonomy_budget.window_minutes,
-                    ),
-                ],
-                risk_tier=risk_tier,
-                policy_version=policy_version,
+                    )
             )
 
         pii_fields = [field for field, result in field_results.items() if result.has_pii]
         if pii_fields:
-            return DecisionResult(
-                decision=GovernanceDecision.ALLOW_WITH_REDACTION,
-                action_id=action.action_id,
-                reason_codes=[
-                    *policy_reason_codes,
-                    *[
-                        format_reason(ReasonCode.REDACTION_REQUIRED, field=field)
-                        for field in pii_fields
-                    ],
+            reasons = [
+                *policy_reason_codes,
+                *approval_reasons,
+                *[
+                    format_reason(ReasonCode.REDACTION_REQUIRED, field=field)
+                    for field in pii_fields
                 ],
+            ]
+            return DecisionResult(
+                decision=(
+                    GovernanceDecision.REQUIRE_APPROVAL
+                    if approval_reasons
+                    else GovernanceDecision.ALLOW_WITH_REDACTION
+                ),
+                action_id=action.action_id,
+                reason_codes=reasons,
                 redacted_arguments=redacted_arguments,
                 risk_tier=risk_tier,
                 policy_version=policy_version,
@@ -403,10 +401,13 @@ class WhitePactRuntimeGateway:
 
         trust_reason = self._trust_reason(action)
         if trust_reason is not None:
+            approval_reasons.append(trust_reason)
+
+        if approval_reasons:
             return DecisionResult(
                 decision=GovernanceDecision.REQUIRE_APPROVAL,
                 action_id=action.action_id,
-                reason_codes=[*policy_reason_codes, trust_reason],
+                reason_codes=[*policy_reason_codes, *approval_reasons],
                 risk_tier=risk_tier,
                 policy_version=policy_version,
             )

@@ -28,12 +28,14 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections import defaultdict, deque
 from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import insert, select, update
 
 from responsibleai.db.engine import DatabaseEngine, governance_delegations
+from responsibleai.db.revocation_epoch_repository import bump_epoch_on_connection
 from responsibleai.governance.delegation import DelegationRecord
 from responsibleai.governance.delegation_graph import DelegationGraph, DelegationGraphNode
 from responsibleai.governance.models import validate_attenuation
@@ -121,6 +123,7 @@ class DelegationRepository:
         now = _now()
         delegation_id = str(uuid.uuid4())
         async with self._engine.raw.begin() as conn:
+            await bump_epoch_on_connection(conn, org_id)
             await conn.execute(
                 insert(governance_delegations).values(
                     id=delegation_id,
@@ -250,28 +253,43 @@ class DelegationRepository:
         recursion, so depth is bounded by actual data, not the call
         stack."""
         now = _now()
-        revoked_ids: list[str] = []
-        queue = [identity_id]
-        seen: set[str] = set()
-        while queue:
-            current = queue.pop(0)
-            if current in seen:
-                continue
-            seen.add(current)
-
-            active = await self.get_active_delegation(org_id, current)
-            if active is not None:
-                async with self._engine.raw.begin() as conn:
-                    await conn.execute(
-                        update(governance_delegations)
-                        .where(governance_delegations.c.id == active.delegation_id)
-                        .values(revoked_at=now, revoked_by=revoked_by, revoke_reason=reason)
+        async with self._engine.raw.begin() as conn:
+            rows = (
+                await conn.execute(
+                    select(governance_delegations).where(
+                        governance_delegations.c.org_id == org_id
                     )
-                revoked_ids.append(active.delegation_id)
+                )
+            ).fetchall()
+            records = [_row_to_record(row) for row in rows]
+            latest: dict[str, DelegationRecord] = {}
+            children: defaultdict[str, set[str]] = defaultdict(set)
+            for record in records:
+                children[record.from_identity_id or ""].add(record.to_identity_id)
+                existing = latest.get(record.to_identity_id)
+                if existing is None or record.granted_at > existing.granted_at:
+                    latest[record.to_identity_id] = record
 
-            children = await self._direct_children(org_id, current)
-            queue.extend(child.to_identity_id for child in children)
+            revoked_ids: list[str] = []
+            queue = deque([identity_id])
+            seen: set[str] = set()
+            while queue:
+                current = queue.popleft()
+                if current in seen:
+                    continue
+                seen.add(current)
+                active = latest.get(current)
+                if active is not None and active.is_active():
+                    revoked_ids.append(active.delegation_id)
+                queue.extend(children[current])
 
+            if revoked_ids:
+                await bump_epoch_on_connection(conn, org_id)
+                await conn.execute(
+                    update(governance_delegations)
+                    .where(governance_delegations.c.id.in_(revoked_ids))
+                    .values(revoked_at=now, revoked_by=revoked_by, revoke_reason=reason)
+                )
         return revoked_ids
 
     async def explain_authority(self, org_id: str, identity_id: str) -> dict[str, Any]:
@@ -326,8 +344,7 @@ class DelegationRepository:
         latest record's `from_identity_id`. Self-correcting for
         history: an identity re-delegated from a new parent after its
         original grant shows up under its *current* parent only, not
-        both -- `_direct_children()`'s raw-row walk (used by
-        `revoke_branch()`, which cares about historical rows for
+        both -- `revoke_branch()`'s raw-row walk (which cares about historical rows for
         cascading revocation) would not have this property, which is
         why this is a separate implementation rather than a reuse."""
         identity_ids = await self._all_to_identity_ids(org_id)

@@ -75,3 +75,28 @@ class GovernanceContext:
             or self.action.agent.organization_id != self.organization_id
         ):
             raise ValueError("Governance context binding mismatch")
+
+    @classmethod
+    def for_persisted_action(
+        cls,
+        organization_id: str,
+        subject_id: str,
+        action: ActionRequest,
+        *,
+        authentication_method: str,
+    ) -> GovernanceContext:
+        """Normalize an approval-bound identity for current authority resolution.
+
+        This is not authentication and grants nothing. The approval digest binds
+        tenant/principal/action/target/arguments/purpose; AuthorityResolver must
+        still establish current root, consent and delegation.
+        """
+        context = cls(
+            organization_id=organization_id,
+            subject_id=subject_id,
+            authentication_method=authentication_method,
+            membership_reference=subject_id,
+            action=copy.deepcopy(action),
+        )
+        context.validate_binding()
+        return context

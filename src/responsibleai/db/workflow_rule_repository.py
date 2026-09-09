@@ -17,6 +17,7 @@ from typing import Any
 from sqlalchemy import delete, insert, select
 
 from responsibleai.db.engine import DatabaseEngine, governance_workflow_rules
+from responsibleai.db.revocation_epoch_repository import bump_epoch_on_connection
 from responsibleai.governance.workflow import WorkflowSequenceRule
 
 
@@ -63,6 +64,7 @@ class WorkflowRuleRepository:
 
     async def add_rule(self, org_id: str, rule: WorkflowSequenceRule) -> None:
         async with self._engine.raw.begin() as conn:
+            await bump_epoch_on_connection(conn, org_id)
             existing = (
                 await conn.execute(
                     select(governance_workflow_rules.c.id)
@@ -87,6 +89,7 @@ class WorkflowRuleRepository:
 
     async def remove_rule(self, org_id: str, rule_id: str) -> None:
         async with self._engine.raw.begin() as conn:
+            await bump_epoch_on_connection(conn, org_id)
             result = await conn.execute(
                 delete(governance_workflow_rules)
                 .where(governance_workflow_rules.c.org_id == org_id)

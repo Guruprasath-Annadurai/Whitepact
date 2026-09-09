@@ -15,7 +15,9 @@ sockets) second MCP server.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -174,6 +176,62 @@ class TestUpstreamServerRepository:
         assert disabled.enabled is False
         enabled = await repo.set_enabled("org-1", server.server_id, True)
         assert enabled.enabled is True
+
+    async def test_disable_between_lookup_and_admission_dispatches_zero_times(
+        self,
+        engine,
+        repo: UpstreamServerRepository,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from responsibleai.db.execution_nonce_repository import (
+            ExecutionNonceRepository,
+            StaleRevocationEpochError,
+        )
+        from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
+        from responsibleai.governance.upstream_executor import (
+            compute_upstream_target_fingerprint,
+        )
+
+        _fake_public_dns(monkeypatch)
+        server = await repo.register(
+            "org-1", "racing-server", "https://partner.example.com/mcp"
+        )
+        epoch = (await RevocationEpochRepository(engine).current("org-1")).epoch
+        action = _upstream_action(server_id=server.server_id, tool_name="remote_tool")
+        authorization = authorize_execution(
+            _allow_decision(action.action_id),
+            action,
+            revocation_epoch=epoch,
+            target_fingerprint=compute_upstream_target_fingerprint(server),
+        )
+        entered = asyncio.Event()
+        release = asyncio.Event()
+
+        class PausingCredentialAudit:
+            async def record_issued(self, *args, **kwargs):
+                entered.set()
+                await release.wait()
+
+            async def record_consumed(self, *args, **kwargs):
+                return None
+
+        sink = AsyncMock()
+        monkeypatch.setattr(
+            "responsibleai.governance.upstream_executor._call_upstream_tool", sink
+        )
+        executor = UpstreamMCPExecutor(
+            repo,
+            credential_issuance_repo=PausingCredentialAudit(),
+            nonce_repo=ExecutionNonceRepository(engine),
+        )
+        pending = asyncio.create_task(executor.execute(authorization, action))
+        await entered.wait()
+        await repo.set_enabled("org-1", server.server_id, False)
+        release.set()
+
+        with pytest.raises(StaleRevocationEpochError):
+            await pending
+        sink.assert_not_awaited()
 
 
 class TestRiskTierDefaultsHighForUpstreamCalls:
@@ -492,13 +550,44 @@ class TestUpstreamRegistryRESTEndpoints:
 
 
 class TestUpstreamCallEndToEnd:
+    async def test_registered_server_without_authority_dispatches_zero_times(
+        self,
+        client: AsyncClient,
+        org_and_admin_key,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from unittest.mock import AsyncMock
+
+        _org_id, admin_key = org_and_admin_key
+        _fake_public_dns(monkeypatch)
+        headers = {"Authorization": f"Bearer {admin_key}"}
+        registered = await client.post(
+            "/api/governance/upstream/servers",
+            json={"name": "no-authority", "url": "https://partner.example.com/mcp"},
+            headers=headers,
+        )
+        server_id = registered.json()["server_id"]
+        sink = AsyncMock()
+        monkeypatch.setattr(
+            "responsibleai.governance.upstream_executor._call_upstream_tool", sink
+        )
+
+        response = await client.post(
+            f"/api/governance/upstream/servers/{server_id}/call",
+            json={"tool_name": "anything", "arguments": {}, "purpose": "automated-test"},
+            headers=headers,
+        )
+        assert response.status_code == 200
+        assert response.json()["error"] == "governance_denied"
+        sink.assert_not_awaited()
+
     async def test_call_to_unregistered_server_is_denied(
         self, client: AsyncClient, org_and_admin_key
     ) -> None:
         _org_id, admin_key = org_and_admin_key
         r = await client.post(
             "/api/governance/upstream/servers/does-not-exist/call",
-            json={"tool_name": "anything", "arguments": {}},
+            json={"tool_name": "anything", "arguments": {}, "purpose": "automated-test"},
             headers={"Authorization": f"Bearer {admin_key}"},
         )
         assert r.status_code == 200  # governance-blocked, not an HTTP error
@@ -528,7 +617,7 @@ class TestUpstreamCallEndToEnd:
 
         r = await client.post(
             f"/api/governance/upstream/servers/{server_id}/call",
-            json={"tool_name": "anything", "arguments": {}},
+            json={"tool_name": "anything", "arguments": {}, "purpose": "automated-test"},
             headers=headers,
         )
         body = r.json()
@@ -539,6 +628,7 @@ class TestUpstreamCallEndToEnd:
         client: AsyncClient,
         org_and_admin_key,
         monkeypatch: pytest.MonkeyPatch,
+        seed_runtime_authority,
     ) -> None:
         """Registers a server, monkeypatches UpstreamMCPExecutor's
         default HTTP client factory to point at a REAL second in-process
@@ -568,10 +658,17 @@ class TestUpstreamCallEndToEnd:
             "upstream-provider-co-2",
             plan=Plan.ENTERPRISE,
         )
-        _key_rec, upstream_raw_key = await upstream_org_repo.create_key(
+        upstream_key_rec, upstream_raw_key = await upstream_org_repo.create_key(
             upstream_org.id,
             "upstream-key",
             role=Role.ANALYST,
+        )
+        await seed_runtime_authority(
+            upstream_engine,
+            organization_id=upstream_org.id,
+            principal_id=upstream_key_rec.id,
+            action_types=("rai_health",),
+            targets=("rai_health",),
         )
 
         r = await client.post(
@@ -585,6 +682,18 @@ class TestUpstreamCallEndToEnd:
         )
         assert r.status_code == 201
         server_id = r.json()["server_id"]
+
+        from responsibleai.dashboard.app import _db_engine
+
+        caller = await OrgRepository(_db_engine).authenticate(admin_key)
+        assert caller is not None
+        await seed_runtime_authority(
+            _db_engine,
+            organization_id=org_id,
+            principal_id=caller.key_id,
+            action_types=(ACTION_TYPE,),
+            targets=(build_upstream_target(server_id, "rai_health"),),
+        )
 
         monkeypatch.setattr(db_module, "create_engine", lambda _url: upstream_engine)
         # The real receiving HTTP service must have governance enabled; off now
@@ -607,7 +716,11 @@ class TestUpstreamCallEndToEnd:
         async with LifespanManager(upstream_app):
             r = await client.post(
                 f"/api/governance/upstream/servers/{server_id}/call",
-                json={"tool_name": "rai_health", "arguments": {}},
+                json={
+                    "tool_name": "rai_health",
+                    "arguments": {"_whitepact_purpose": "automated-test"},
+                    "purpose": "automated-test",
+                },
                 headers=headers,
             )
         assert r.status_code == 200, r.text
@@ -616,7 +729,6 @@ class TestUpstreamCallEndToEnd:
         assert body["result"]["is_error"] is False
         assert any("ok" in c or "status" in c for c in body["result"]["content"])
 
-        from responsibleai.dashboard.app import _db_engine
         from responsibleai.db import EvidenceRepository
 
         records = await EvidenceRepository(_db_engine).list_for_org(org_id, decision="ALLOW")
@@ -651,7 +763,7 @@ class TestUpstreamCallEndToEnd:
 
         r = await client.post(
             f"/api/governance/upstream/servers/{other_server_id}/call",
-            json={"tool_name": "anything", "arguments": {}},
+            json={"tool_name": "anything", "arguments": {}, "purpose": "automated-test"},
             headers={"Authorization": f"Bearer {admin_key}"},
         )
         body = r.json()
@@ -667,10 +779,15 @@ class TestResumeApprovalWorksForUpstreamOriginatedApprovals:
     rather than the hardcoded InternalToolExecutor -- this proves that
     wiring, not just that it compiles."""
 
-    async def test_resume_without_upstream_registry_raises(self) -> None:
+    async def test_tampered_legacy_upstream_approval_fails_before_registry(self) -> None:
         from datetime import datetime as _dt
 
-        from responsibleai.db import ApprovalRepository, EvidenceRepository, create_engine
+        from responsibleai.db import (
+            ApprovalActionMismatchError,
+            ApprovalRepository,
+            EvidenceRepository,
+            create_engine,
+        )
         from responsibleai.governance.approval import ApprovalRequest, ApprovalStatus
         from responsibleai.mcp.governance_integration import resume_approval
 
@@ -694,7 +811,7 @@ class TestResumeApprovalWorksForUpstreamOriginatedApprovals:
             approval.approval_id, resolved_by="human-1", outcome=ApprovalStatus.APPROVED
         )
 
-        with pytest.raises(ValueError, match="upstream_registry"):
+        with pytest.raises(ApprovalActionMismatchError):
             await resume_approval(
                 approval.approval_id,
                 approval_repo=approval_repo,

@@ -112,6 +112,10 @@ class OrgContext:
     is_legacy: bool = False  # True for flat RAI_API_KEYS entries
     plan: Plan = Plan.ENTERPRISE  # legacy/anon keys default to unrestricted for backward compat
     scopes: frozenset[str] = frozenset()
+    # Set only by the credential verifier that constructed this context.
+    # Downstream governance records it as authentication evidence; it never
+    # becomes an authority grant.
+    authentication_method: str = "api_key"
 
 
 @dataclass

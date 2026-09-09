@@ -1107,6 +1107,20 @@ TOOL_DEFS: list[types.Tool] = [
     ),
 ]
 
+# WhitePact's hosted transport requires an explicit, human-readable purpose for
+# canonical authority resolution. It is an optional schema extension because
+# local community stdio remains intentionally ungovened; the hosted dispatcher
+# removes it before invoking tool handlers and binds it separately in the action.
+WHITEPACT_PURPOSE_ARGUMENT = "_whitepact_purpose"
+for _tool in TOOL_DEFS:
+    _properties = _tool.inputSchema.setdefault("properties", {})
+    _properties[WHITEPACT_PURPOSE_ARGUMENT] = {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2000,
+        "description": "Explicit purpose required for hosted WhitePact authority resolution.",
+    }
+
 # dispatch_tool() and its handler table are defined at the very end of this
 # file, after every _handle_* function below -- see "tool dispatch" section.
 # It has to come last: the table is built once at module-import time (not

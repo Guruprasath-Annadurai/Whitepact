@@ -355,6 +355,7 @@ class TestJitCredentialRestRoundTrip:
         self,
         client: AsyncClient,
         monkeypatch: pytest.MonkeyPatch,
+        seed_runtime_authority,
     ) -> None:
         """Same real-second-server pattern as
         test_upstream_gateway.py's full round-trip test -- proves the
@@ -390,8 +391,15 @@ class TestJitCredentialRestRoundTrip:
         upstream_org = await upstream_org_repo.create_org(
             "Upstream Provider Co", "jit-upstream-provider-co", plan=Plan.ENTERPRISE
         )
-        _key_rec, upstream_raw_key = await upstream_org_repo.create_key(
+        upstream_key_rec, upstream_raw_key = await upstream_org_repo.create_key(
             upstream_org.id, "upstream-key", role=Role.ANALYST
+        )
+        await seed_runtime_authority(
+            upstream_engine,
+            organization_id=upstream_org.id,
+            principal_id=upstream_key_rec.id,
+            action_types=("rai_health",),
+            targets=("rai_health",),
         )
 
         r = await client.post(
@@ -405,6 +413,19 @@ class TestJitCredentialRestRoundTrip:
         )
         assert r.status_code == 201
         server_id = r.json()["server_id"]
+
+        from responsibleai.dashboard.app import _db_engine
+        from responsibleai.governance.upstream_executor import ACTION_TYPE, build_upstream_target
+
+        caller = await OrgRepository(_db_engine).authenticate(admin_key)
+        assert caller is not None
+        await seed_runtime_authority(
+            _db_engine,
+            organization_id=org_id,
+            principal_id=caller.key_id,
+            action_types=(ACTION_TYPE,),
+            targets=(build_upstream_target(server_id, "rai_health"),),
+        )
 
         monkeypatch.setattr(db_module, "create_engine", lambda _url: upstream_engine)
         upstream_app = _build_http_app()
@@ -422,7 +443,11 @@ class TestJitCredentialRestRoundTrip:
         async with LifespanManager(upstream_app):
             r = await client.post(
                 f"/api/governance/upstream/servers/{server_id}/call",
-                json={"tool_name": "rai_health", "arguments": {}},
+                json={
+                    "tool_name": "rai_health",
+                    "arguments": {"_whitepact_purpose": "automated-test"},
+                    "purpose": "automated-test",
+                },
                 headers=headers,
             )
         assert r.status_code == 200, r.text
@@ -431,7 +456,6 @@ class TestJitCredentialRestRoundTrip:
 
         from sqlalchemy import select
 
-        from responsibleai.dashboard.app import _db_engine
         from responsibleai.db.engine import credential_issuances
 
         async with _db_engine.raw.connect() as conn:

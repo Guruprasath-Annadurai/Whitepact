@@ -26,6 +26,7 @@ from responsibleai.db.engine import (
     org_api_keys,
     organizations,
 )
+from responsibleai.db.revocation_epoch_repository import bump_epoch_on_connection
 from responsibleai.rbac.models import Organization, OrgApiKey, OrgContext, Plan, Role
 from responsibleai.rbac.permissions import role_from_str
 
@@ -239,6 +240,11 @@ class OrgRepository:
         if org_id is not None:
             where = where & (org_api_keys.c.org_id == org_id)
         async with self._engine.raw.begin() as conn:
+            resolved_org = await conn.scalar(
+                select(org_api_keys.c.org_id).where(where)
+            )
+            if resolved_org is not None:
+                await bump_epoch_on_connection(conn, resolved_org)
             result = await conn.execute(update(org_api_keys).where(where).values(revoked=1))
         return result.rowcount > 0
 
@@ -261,6 +267,7 @@ class OrgRepository:
             ).fetchone()
             if old is None:
                 return None
+            await bump_epoch_on_connection(conn, org_id)
             environment = getattr(old, "environment", None)
             environment = environment if environment in {"test", "live"} else "live"
             replacement = OrgApiKey(

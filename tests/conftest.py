@@ -2,9 +2,70 @@
 # SPDX-License-Identifier: MIT
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 
 from biasbuster.providers.base import BaseProvider, CompletionRequest, CompletionResponse
+
+TEST_GOVERNANCE_PURPOSE = "automated-test"
+
+
+@pytest.fixture
+def seed_runtime_authority():
+    """Seed explicit test-only root, consent, and delegation records."""
+    async def seed(
+        engine,
+        *,
+        organization_id: str,
+        principal_id: str,
+        action_types: tuple[str, ...],
+        targets: tuple[str, ...],
+        purpose: str = TEST_GOVERNANCE_PURPOSE,
+    ):
+        from responsibleai.db.consent_proof_repository import ConsentProofRepository
+        from responsibleai.db.delegation_repository import DelegationRepository
+        from responsibleai.db.root_authority_repository import RootAuthorityRepository
+        from responsibleai.governance.consent_proof import ConsentMethod, build_consent_proof
+        from responsibleai.governance.root_authority import RootType, build_root_authority_record
+
+        owner = f"test-owner:{organization_id}"
+        expires = datetime.now(UTC) + timedelta(hours=1)
+        root = build_root_authority_record(
+            owner,
+            RootType.HUMAN,
+            "whitepact-test-suite",
+            "explicit-test-fixture",
+            organization_id=organization_id,
+            evidence_refs=("test-root-evidence",),
+            expires_at=expires,
+        )
+        await RootAuthorityRepository(engine).create(root)
+        consent = build_consent_proof(
+            owner,
+            root.root_id,
+            principal_id,
+            "explicit test execution scope",
+            purpose,
+            ConsentMethod.EXPLICIT_UI_ACTION,
+            allowed_action_types=action_types,
+            allowed_targets=targets,
+            evidence_refs=("test-consent-evidence",),
+            expires_at=expires,
+        )
+        await ConsentProofRepository(engine).create(consent, organization_id=organization_id)
+        await DelegationRepository(engine).grant(
+            organization_id,
+            principal_id,
+            granted_action_types=frozenset(action_types),
+            constraints={"allowed_targets": list(targets)},
+            purpose=purpose,
+            granted_by=owner,
+            expires_at=expires,
+        )
+        return root, consent
+
+    return seed
 
 
 class MockProvider(BaseProvider):

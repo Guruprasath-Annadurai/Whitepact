@@ -487,13 +487,17 @@ class TestToolTrustRESTEndpoints:
         assert r.status_code == 403
 
     async def test_override_to_blocked_then_call_is_denied(
-        self, client: AsyncClient, org_and_admin_key, monkeypatch: pytest.MonkeyPatch
+        self,
+        client: AsyncClient,
+        org_and_admin_key,
+        monkeypatch: pytest.MonkeyPatch,
+        seed_runtime_authority,
     ) -> None:
         """The end-to-end proof this feature exists for: an admin
         override to BLOCKED must stop a subsequent governed call to
         that server before governance even evaluates it, with the
         UNTRUSTED_MCP_SERVER reason code."""
-        _org_id, admin_key = org_and_admin_key
+        org_id, admin_key = org_and_admin_key
         _fake_public_dns(monkeypatch)
         headers = {"Authorization": f"Bearer {admin_key}"}
         r = await client.post(
@@ -502,6 +506,20 @@ class TestToolTrustRESTEndpoints:
             headers=headers,
         )
         server_id = r.json()["server_id"]
+
+        from responsibleai.dashboard.app import _db_engine
+        from responsibleai.db import OrgRepository
+        from responsibleai.governance.upstream_executor import ACTION_TYPE, build_upstream_target
+
+        caller = await OrgRepository(_db_engine).authenticate(admin_key)
+        assert caller is not None
+        await seed_runtime_authority(
+            _db_engine,
+            organization_id=org_id,
+            principal_id=caller.key_id,
+            action_types=(ACTION_TYPE,),
+            targets=(build_upstream_target(server_id, "anything"),),
+        )
 
         r = await client.post(
             f"/api/governance/upstream/servers/{server_id}/trust/override",
@@ -513,7 +531,7 @@ class TestToolTrustRESTEndpoints:
 
         r = await client.post(
             f"/api/governance/upstream/servers/{server_id}/call",
-            json={"tool_name": "anything", "arguments": {}},
+            json={"tool_name": "anything", "arguments": {}, "purpose": "automated-test"},
             headers=headers,
         )
         assert r.status_code == 200  # governance-blocked, not an HTTP error

@@ -14,6 +14,7 @@ from typing import Any
 from sqlalchemy import delete, insert, select, update
 
 from responsibleai.db.engine import DatabaseEngine, org_autonomy_budgets
+from responsibleai.db.revocation_epoch_repository import bump_epoch_on_connection
 from responsibleai.governance.autonomy_budget import AutonomyBudgetPolicy
 
 
@@ -59,6 +60,7 @@ class OrgAutonomyBudgetRepository:
             "updated_at": now,
         }
         async with self._engine.raw.begin() as conn:
+            await bump_epoch_on_connection(conn, org_id)
             existing = (
                 await conn.execute(
                     select(org_autonomy_budgets.c.org_id).where(
@@ -77,6 +79,7 @@ class OrgAutonomyBudgetRepository:
 
     async def delete(self, org_id: str) -> None:
         async with self._engine.raw.begin() as conn:
+            await bump_epoch_on_connection(conn, org_id)
             await conn.execute(
                 delete(org_autonomy_budgets).where(org_autonomy_budgets.c.org_id == org_id)
             )

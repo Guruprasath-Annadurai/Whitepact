@@ -137,10 +137,12 @@ from responsibleai.db import (
     WorkflowRuleRepository,
     create_engine,
 )
+from responsibleai.db.consent_proof_repository import ConsentProofRepository
 from responsibleai.db.engine import DatabaseEngine
 from responsibleai.db.execution_nonce_repository import ExecutionNonceRepository
 from responsibleai.db.migrate import MigrationError, run_migrations_or_raise
 from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
+from responsibleai.db.root_authority_repository import RootAuthorityRepository
 from responsibleai.eval import (
     BenchmarkRunner,
     BenchmarkSuite,
@@ -157,6 +159,7 @@ from responsibleai.governance.authority_passport import (
     build_authority_passport_from_delegation,
     verify_passport,
 )
+from responsibleai.governance.authority_resolver import AuthorityResolver
 from responsibleai.governance.autonomy_budget import AutonomyBudgetPolicy
 from responsibleai.governance.ceiling import OrgAuthorityCeiling
 from responsibleai.governance.evidence_bundle import build_evidence_bundle, verify_evidence_bundle
@@ -185,7 +188,10 @@ from responsibleai.incidents.logic import build_incident_record
 from responsibleai.leaderboard.models import METHODOLOGY_VERSION
 from responsibleai.leaderboard.providers import ProviderNotConfiguredError, get_adapter
 from responsibleai.leaderboard.runner import LeaderboardRunner
-from responsibleai.mcp.governance_integration import resume_approval
+from responsibleai.mcp.governance_integration import (
+    ApprovalAuthorizationDeniedError,
+    resume_approval,
+)
 from responsibleai.mcp.licensing import monthly_quota, plan_catalog
 from responsibleai.mcp.upstream_dispatch import apply_upstream_governance
 from responsibleai.rbac import (
@@ -702,6 +708,7 @@ async def _resolve_oidc_context(token: str) -> OrgContext | None:
         org_name=org.name if org else None,
         is_legacy=False,
         plan=org.plan if org else Plan.FREE,
+        authentication_method="oidc",
     )
 
 
@@ -735,6 +742,7 @@ async def _resolve_saml_context(token: str) -> OrgContext | None:
         org_name=org.name if org else None,
         is_legacy=False,
         plan=org.plan if org else Plan.FREE,
+        authentication_method="saml",
     )
 
 
@@ -1074,6 +1082,7 @@ class UpstreamServerRegisterRequest(BaseModel):
 class UpstreamToolCallRequest(BaseModel):
     tool_name: str = Field(..., min_length=1, max_length=200)
     arguments: dict[str, Any] = Field(default_factory=dict)
+    purpose: str = Field(..., min_length=1, max_length=2000)
 
 
 class ToolTrustOverrideRequest(BaseModel):
@@ -3896,6 +3905,14 @@ async def governance_execute_approval(
             approval_id,
             nonce_repo=ExecutionNonceRepository(_ready(_db_engine)),
             epoch_repo=RevocationEpochRepository(_ready(_db_engine)),
+            authority_resolver=AuthorityResolver(
+                RootAuthorityRepository(_ready(_db_engine)),
+                ConsentProofRepository(_ready(_db_engine)),
+                _ready(_delegation_repo),
+            ),
+            policy_repo=_ready(_policy_repo),
+            gateway=_upstream_gateway,
+            upstream_registry=_ready(_upstream_registry),
             approval_repo=_ready(_approval_repo),
             evidence_repo=_ready(_evidence_repo),
             org_id=_auth.org_id,
@@ -3906,6 +3923,8 @@ async def governance_execute_approval(
     except ApprovalExpiredError as exc:
         raise HTTPException(409, str(exc)) from None
     except (ApprovalNotApprovedError, ApprovalActionMismatchError) as exc:
+        raise HTTPException(409, str(exc)) from None
+    except ApprovalAuthorizationDeniedError as exc:
         raise HTTPException(409, str(exc)) from None
     except ValueError as exc:
         # build_resume_action()'s "no persisted arguments" case -- a
@@ -4588,6 +4607,12 @@ async def upstream_call_tool(
             req.tool_name,
             req.arguments,
             _auth,
+            purpose=req.purpose,
+            authority_resolver=AuthorityResolver(
+                RootAuthorityRepository(_ready(_db_engine)),
+                ConsentProofRepository(_ready(_db_engine)),
+                _ready(_delegation_repo),
+            ),
             epoch_repo=RevocationEpochRepository(_ready(_db_engine)),
             gateway=_upstream_gateway,
             evidence_repo=_ready(_evidence_repo),

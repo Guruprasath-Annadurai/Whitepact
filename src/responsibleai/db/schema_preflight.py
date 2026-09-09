@@ -65,6 +65,24 @@ def validate_schema_lineage(connection: Connection) -> None:
             )
     if "organizations" not in tables:
         raise SchemaLineageError("Canonical organization table is missing")
+    if "governance_approvals" in tables:
+        approval_columns = {c["name"] for c in inspector.get_columns("governance_approvals")}
+        bound_approval_columns = {
+            "authentication_method",
+            "revocation_epoch",
+            "authority_version",
+            "policy_version",
+            "target_fingerprint",
+        }
+        if revision >= 41 and not bound_approval_columns <= approval_columns:
+            raise SchemaLineageError(
+                "Canonical approval security-binding columns are missing"
+            )
+        if revision < 41 and bound_approval_columns & approval_columns:
+            raise SchemaLineageError(
+                f"Unexpected future approval columns at revision {rows[0]}; "
+                "no automatic stamping or repair"
+            )
     if revision >= 31:
         cols = {c["name"] for c in inspector.get_columns("organizations")}
         if "provisioner_key_id" not in cols or (
