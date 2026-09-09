@@ -56,7 +56,7 @@ OpenAI's Plugins Directory submission is tracked separately in
   setup today; see each platform's page for how that's handled.
   Self-hosting via `stdio` (no network, no key) is also available — see
   `server.json`'s `packages` entry.
-- **Tool count**: 27, all read-only (no destructive or state-mutating
+- **Tool count**: 30, all read-only (no destructive or state-mutating
   tools exist in WhitePact today, so onboarding tests never risk real
   side effects).
 - **Security posture that applies everywhere**: HTTPS only, Origin
