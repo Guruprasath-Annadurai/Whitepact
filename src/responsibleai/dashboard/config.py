@@ -9,7 +9,7 @@ import warnings
 from pathlib import Path
 from typing import Annotated, Any
 
-from pydantic import Field, field_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import (
     BaseSettings,
     NoDecode,
@@ -139,9 +139,28 @@ class Settings(BaseSettings):
         description="Emit structured JSON logs (recommended for production).",
     )
 
+    # Deployment Environment
+    environment: str = Field(
+        default="development",
+        validation_alias=AliasChoices(
+            "WHITEPACT_ENV",
+            "RAI_ENV",
+            "ENVIRONMENT",
+            "ENV",
+            "environment",
+        ),
+        description="Deployment environment (development, staging, production).",
+    )
+
     # PostgreSQL (optional — defaults to SQLite via db_path)
     database_url: str | None = Field(
         default=None,
+        validation_alias=AliasChoices(
+            "WHITEPACT_DATABASE_URL",
+            "DATABASE_URL",
+            "RAI_DATABASE_URL",
+            "database_url",
+        ),
         description=(
             "Full database URL for async engine. "
             "postgresql://user:pass@host/db or leave unset to use SQLite."
@@ -520,6 +539,43 @@ class Settings(BaseSettings):
         if normalized.startswith(("http://localhost", "http://127.0.0.1", "http://[::1]")):
             return normalized
         raise ValueError("web_verification_delivery_url must use HTTPS outside local development")
+
+    @model_validator(mode="after")
+    def _enforce_production_database(self) -> Settings:
+        """Fail closed if production environment is configured without a valid database URL,
+        and validate conflicts across database URL environment variables."""
+        # Detect multiple different database URLs configured simultaneously
+        db_vars: dict[str, str] = {}
+        for key in ("WHITEPACT_DATABASE_URL", "DATABASE_URL", "RAI_DATABASE_URL"):
+            for env_k, env_v in os.environ.items():
+                if env_k.upper() == key and env_v:
+                    db_vars[key] = env_v
+                    break
+
+        unique_urls = set(db_vars.values())
+        if len(unique_urls) > 1:
+            configured_names = ", ".join(db_vars)
+            conflict_msg = (
+                f"Conflicting database URLs configured simultaneously in: {configured_names}. "
+                "Canonical precedence selected the highest-priority variable."
+            )
+            if self.environment.lower() in {"production", "prod"}:
+                raise ValueError(
+                    f"{conflict_msg} Multiple conflicting database URLs are not allowed in production."
+                )
+            warnings.warn(conflict_msg, UserWarning, stacklevel=2)
+
+        if self.environment.lower() in {"production", "prod"}:
+            if not self.database_url:
+                raise ValueError(
+                    "Production environment requires DATABASE_URL (or WHITEPACT_DATABASE_URL / RAI_DATABASE_URL). "
+                    "Refusing to fall back to SQLite in production."
+                )
+            if not self.database_url.startswith(("postgresql://", "postgresql+asyncpg://")):
+                raise ValueError(
+                    f"Production environment requires a PostgreSQL database URL, got: {self.database_url.split('://')[0]}://"
+                )
+        return self
 
     @property
     def otel_headers_dict(self) -> dict[str, str]:

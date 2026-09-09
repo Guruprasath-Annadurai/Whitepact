@@ -57,22 +57,33 @@ from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 from sqlalchemy import Text
 from sqlalchemy.types import TypeDecorator
 
-_ENV_VAR = "RAI_FIELD_ENCRYPTION_KEY"
+_WHITEPACT_ENV_VAR = "WHITEPACT_FIELD_ENCRYPTION_KEY"
+_LEGACY_ENV_VAR = "RAI_FIELD_ENCRYPTION_KEY"
+_ENV_VAR = _WHITEPACT_ENV_VAR
 
 
 def _load_fernet() -> Fernet | MultiFernet | None:
     """Read the encryption key(s) from the environment, once per column type.
 
-    Returns None (passthrough mode) if the env var is unset. Accepts either
-    one Fernet key or a comma-separated list for rotation (see this module's
-    docstring and `compliance/KEY_MANAGEMENT.md`) — a single key returns a
-    plain `Fernet` (unchanged behavior for the common case); multiple keys
-    return a `MultiFernet`, which encrypts with the first key and tries all
-    of them on decrypt. Raises at import/table-definition time if any key is
-    malformed — better to fail loudly at startup than silently store
-    unencrypted data because of a typo'd key.
+    Returns None (passthrough mode) if neither env var is set. Checks
+    WHITEPACT_FIELD_ENCRYPTION_KEY first, with fallback to legacy
+    RAI_FIELD_ENCRYPTION_KEY. If both are set and differ, raises ValueError
+    to fail closed against key mismatch. Accepts either one Fernet key or a
+    comma-separated list for rotation.
     """
-    raw = os.environ.get(_ENV_VAR)
+    raw_whitepact = os.environ.get(_WHITEPACT_ENV_VAR)
+    raw_legacy = os.environ.get(_LEGACY_ENV_VAR)
+
+    if raw_whitepact and raw_legacy and raw_whitepact.strip() != raw_legacy.strip():
+        raise ValueError(
+            f"Conflicting canonical and legacy field encryption keys configured: "
+            f"{_WHITEPACT_ENV_VAR} and {_LEGACY_ENV_VAR} are both set with different values. "
+            "Refusing to start."
+        )
+
+    raw = raw_whitepact if raw_whitepact is not None else raw_legacy
+    source_var = _WHITEPACT_ENV_VAR if raw_whitepact is not None else _LEGACY_ENV_VAR
+
     if not raw:
         return None
     key_strs = [k.strip() for k in raw.split(",") if k.strip()]
@@ -82,7 +93,7 @@ def _load_fernet() -> Fernet | MultiFernet | None:
         fernets = [Fernet(k.encode()) for k in key_strs]
     except (ValueError, TypeError) as exc:
         raise ValueError(
-            f"{_ENV_VAR} is set but contains an invalid Fernet key. Generate one with: "
+            f"{source_var} is set but contains an invalid Fernet key. Generate one with: "
             'python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
         ) from exc
     return fernets[0] if len(fernets) == 1 else MultiFernet(fernets)

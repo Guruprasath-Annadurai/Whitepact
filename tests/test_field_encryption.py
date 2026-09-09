@@ -54,6 +54,26 @@ class TestLoadFernet:
         monkeypatch.setenv("RAI_FIELD_ENCRYPTION_KEY", new_key)
         assert col.process_result_value(new_ciphertext, _FAKE_TYPE_PARAMS) == "203.0.113.5"
 
+    def test_whitepact_env_var_is_honored(self, monkeypatch):
+        monkeypatch.delenv("RAI_FIELD_ENCRYPTION_KEY", raising=False)
+        key = Fernet.generate_key().decode()
+        monkeypatch.setenv("WHITEPACT_FIELD_ENCRYPTION_KEY", key)
+        assert _load_fernet() is not None
+
+    def test_conflicting_keys_fail_loudly(self, monkeypatch):
+        key1 = Fernet.generate_key().decode()
+        key2 = Fernet.generate_key().decode()
+        monkeypatch.setenv("WHITEPACT_FIELD_ENCRYPTION_KEY", key1)
+        monkeypatch.setenv("RAI_FIELD_ENCRYPTION_KEY", key2)
+        with pytest.raises(ValueError, match="Conflicting.*field encryption"):
+            _load_fernet()
+
+    def test_matching_keys_succeed(self, monkeypatch):
+        key = Fernet.generate_key().decode()
+        monkeypatch.setenv("WHITEPACT_FIELD_ENCRYPTION_KEY", key)
+        monkeypatch.setenv("RAI_FIELD_ENCRYPTION_KEY", key)
+        assert _load_fernet() is not None
+
 
 class TestEncryptedStringTypeDecorator:
     def test_passthrough_when_key_unset(self, monkeypatch):

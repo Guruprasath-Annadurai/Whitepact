@@ -276,3 +276,122 @@ class TestWarnDeprecatedEnvVars:
         with warnings_module.catch_warnings():
             warnings_module.simplefilter("error")
             fresh_settings_module.get_settings()
+
+
+class TestDatabaseUrlConfiguration:
+    def test_only_whitepact_set(self, monkeypatch, fresh_settings_module) -> None:
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        monkeypatch.delenv("RAI_DATABASE_URL", raising=False)
+        monkeypatch.setenv("WHITEPACT_DATABASE_URL", "postgresql+asyncpg://user:pass@localhost/wp")
+        settings = fresh_settings_module.Settings()
+        assert settings.database_url == "postgresql+asyncpg://user:pass@localhost/wp"
+
+    def test_only_database_url_set(self, monkeypatch, fresh_settings_module) -> None:
+        monkeypatch.delenv("WHITEPACT_DATABASE_URL", raising=False)
+        monkeypatch.delenv("RAI_DATABASE_URL", raising=False)
+        monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost/std")
+        settings = fresh_settings_module.Settings()
+        assert settings.database_url == "postgresql+asyncpg://user:pass@localhost/std"
+
+    def test_only_rai_set(self, monkeypatch, fresh_settings_module) -> None:
+        monkeypatch.delenv("WHITEPACT_DATABASE_URL", raising=False)
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        monkeypatch.setenv("RAI_DATABASE_URL", "postgresql+asyncpg://user:pass@localhost/legacy")
+        settings = fresh_settings_module.Settings()
+        assert settings.database_url == "postgresql+asyncpg://user:pass@localhost/legacy"
+
+    def test_whitepact_and_database_same(self, monkeypatch, fresh_settings_module) -> None:
+        url = "postgresql+asyncpg://user:pass@localhost/same"
+        monkeypatch.delenv("RAI_DATABASE_URL", raising=False)
+        monkeypatch.setenv("WHITEPACT_DATABASE_URL", url)
+        monkeypatch.setenv("DATABASE_URL", url)
+
+        # In dev: resolves cleanly without conflict
+        settings_dev = fresh_settings_module.Settings()
+        assert settings_dev.database_url == url
+
+        # In prod: succeeds without error
+        monkeypatch.setenv("WHITEPACT_ENV", "production")
+        settings_prod = fresh_settings_module.Settings()
+        assert settings_prod.database_url == url
+
+    def test_whitepact_and_database_different(self, monkeypatch, fresh_settings_module) -> None:
+        wp_url = "postgresql+asyncpg://user:pass@localhost/wp"
+        std_url = "postgresql+asyncpg://user:pass@localhost/std"
+        monkeypatch.delenv("RAI_DATABASE_URL", raising=False)
+        monkeypatch.setenv("WHITEPACT_DATABASE_URL", wp_url)
+        monkeypatch.setenv("DATABASE_URL", std_url)
+
+        # In prod: raises loud configuration error
+        monkeypatch.setenv("WHITEPACT_ENV", "production")
+        with pytest.raises(ValueError, match="Conflicting database URLs.*not allowed in production"):
+            fresh_settings_module.Settings()
+
+        # In dev: warns and follows canonical precedence (WHITEPACT wins)
+        monkeypatch.setenv("WHITEPACT_ENV", "development")
+        with pytest.warns(UserWarning, match="Conflicting database URLs.*precedence"):
+            settings = fresh_settings_module.Settings()
+        assert settings.database_url == wp_url
+
+    def test_database_and_rai_same(self, monkeypatch, fresh_settings_module) -> None:
+        url = "postgresql+asyncpg://user:pass@localhost/same"
+        monkeypatch.delenv("WHITEPACT_DATABASE_URL", raising=False)
+        monkeypatch.setenv("DATABASE_URL", url)
+        monkeypatch.setenv("RAI_DATABASE_URL", url)
+
+        # In dev: resolves cleanly without conflict
+        settings_dev = fresh_settings_module.Settings()
+        assert settings_dev.database_url == url
+
+        # In prod: succeeds without error
+        monkeypatch.setenv("WHITEPACT_ENV", "production")
+        settings_prod = fresh_settings_module.Settings()
+        assert settings_prod.database_url == url
+
+    def test_database_and_rai_different(self, monkeypatch, fresh_settings_module) -> None:
+        std_url = "postgresql+asyncpg://user:pass@localhost/std"
+        rai_url = "postgresql+asyncpg://user:pass@localhost/legacy"
+        monkeypatch.delenv("WHITEPACT_DATABASE_URL", raising=False)
+        monkeypatch.setenv("DATABASE_URL", std_url)
+        monkeypatch.setenv("RAI_DATABASE_URL", rai_url)
+
+        # In prod: raises loud configuration error
+        monkeypatch.setenv("WHITEPACT_ENV", "production")
+        with pytest.raises(ValueError, match="Conflicting database URLs.*not allowed in production"):
+            fresh_settings_module.Settings()
+
+        # In dev: warns and follows canonical precedence (DATABASE_URL wins over legacy RAI)
+        monkeypatch.setenv("WHITEPACT_ENV", "development")
+        with pytest.warns(UserWarning, match="Conflicting database URLs.*precedence"):
+            settings = fresh_settings_module.Settings()
+        assert settings.database_url == std_url
+
+    def test_production_mode_fails_closed_without_database_url(
+        self, monkeypatch, fresh_settings_module
+    ) -> None:
+        monkeypatch.setenv("WHITEPACT_ENV", "production")
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        monkeypatch.delenv("RAI_DATABASE_URL", raising=False)
+        monkeypatch.delenv("WHITEPACT_DATABASE_URL", raising=False)
+        with pytest.raises(Exception, match="Production.*requires.*DATABASE_URL"):
+            fresh_settings_module.Settings()
+
+    def test_production_mode_fails_closed_with_sqlite(
+        self, monkeypatch, fresh_settings_module
+    ) -> None:
+        monkeypatch.setenv("WHITEPACT_ENV", "production")
+        monkeypatch.setenv("DATABASE_URL", "sqlite:///prod.db")
+        monkeypatch.delenv("RAI_DATABASE_URL", raising=False)
+        monkeypatch.delenv("WHITEPACT_DATABASE_URL", raising=False)
+        with pytest.raises(Exception, match="Production.*requires.*PostgreSQL"):
+            fresh_settings_module.Settings()
+
+    def test_production_mode_succeeds_with_postgres_url(
+        self, monkeypatch, fresh_settings_module
+    ) -> None:
+        monkeypatch.setenv("WHITEPACT_ENV", "production")
+        monkeypatch.delenv("RAI_DATABASE_URL", raising=False)
+        monkeypatch.delenv("WHITEPACT_DATABASE_URL", raising=False)
+        monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://user:pass@pg.prod:5432/whitepact")
+        settings = fresh_settings_module.Settings()
+        assert settings.database_url == "postgresql+asyncpg://user:pass@pg.prod:5432/whitepact"
