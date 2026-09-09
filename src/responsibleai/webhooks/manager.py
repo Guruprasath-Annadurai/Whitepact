@@ -209,6 +209,7 @@ class WebhookManager:
             webhook_id=config.id,
             event=event,
             payload=payload,
+            org_id=config.org_id,
         )
         if delivery_id:
             delivery.id = delivery_id
@@ -309,17 +310,30 @@ class WebhookManager:
 
     # ── Delivery log ──────────────────────────────────────────────────────────
 
-    def delivery_log(self, limit: int = 100) -> list[dict[str, Any]]:
-        entries = list(self._delivery_log)[-limit:]
+    def delivery_log(self, limit: int = 100, org_id: str | None = None) -> list[dict[str, Any]]:
+        if org_id is not None:
+            entries = [d for d in self._delivery_log if d.org_id == org_id][-limit:]
+        else:
+            entries = list(self._delivery_log)[-limit:]
         return [d.to_dict() for d in reversed(entries)]
+
+    def total_deliveries_for(self, org_id: str | None = None) -> int:
+        if org_id is None:
+            return len(self._delivery_log)
+        return sum(1 for d in self._delivery_log if d.org_id == org_id)
+
+    def failed_deliveries_for(self, org_id: str | None = None) -> int:
+        if org_id is None:
+            return sum(1 for d in self._delivery_log if not d.success)
+        return sum(1 for d in self._delivery_log if d.org_id == org_id and not d.success)
 
     @property
     def total_deliveries(self) -> int:
-        return len(self._delivery_log)
+        return self.total_deliveries_for(None)
 
     @property
     def failed_deliveries(self) -> int:
-        return sum(1 for d in self._delivery_log if not d.success)
+        return self.failed_deliveries_for(None)
 
     # ── Payload formatters ────────────────────────────────────────────────────
 

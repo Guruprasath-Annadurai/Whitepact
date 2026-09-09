@@ -149,8 +149,19 @@ class TestOrgMFAEnforcement:
         )
         return secret if r.status_code == 200 else ""
 
+    @pytest.fixture()
+    async def owner_auth(self, client: AsyncClient, org_and_key) -> dict[str, str]:
+        org_id, _, _ = org_and_key
+        r = await client.post(
+            f"/api/orgs/{org_id}/keys",
+            json={"name": "org-owner", "role": "OWNER"},
+            headers=BOOTSTRAP_AUTH,
+        )
+        assert r.status_code == 201, r.text
+        return {"Authorization": f"Bearer {r.json()['key']}"}
+
     async def test_login_without_code_reports_mfa_required(
-        self, client: AsyncClient, org_and_key
+        self, client: AsyncClient, org_and_key, owner_auth: dict[str, str]
     ) -> None:
         org_id, key_id, raw_key = org_and_key
         auth = {"Authorization": f"Bearer {raw_key}"}
@@ -158,7 +169,7 @@ class TestOrgMFAEnforcement:
         assert secret
 
         await client.put(
-            f"/api/orgs/{org_id}/mfa", json={"mfa_required": True}, headers=BOOTSTRAP_AUTH
+            f"/api/orgs/{org_id}/mfa", json={"mfa_required": True}, headers=owner_auth
         )
 
         r = await client.post("/api/auth/login-key", json={"api_key": raw_key})
@@ -166,13 +177,13 @@ class TestOrgMFAEnforcement:
         assert r.json() == {"ok": False, "mfa_required": True}
 
     async def test_login_with_correct_totp_code_succeeds(
-        self, client: AsyncClient, org_and_key
+        self, client: AsyncClient, org_and_key, owner_auth: dict[str, str]
     ) -> None:
         org_id, key_id, raw_key = org_and_key
         auth = {"Authorization": f"Bearer {raw_key}"}
         secret = await self._enroll(client, org_id, key_id, auth)
         await client.put(
-            f"/api/orgs/{org_id}/mfa", json={"mfa_required": True}, headers=BOOTSTRAP_AUTH
+            f"/api/orgs/{org_id}/mfa", json={"mfa_required": True}, headers=owner_auth
         )
 
         code = pyotp.TOTP(secret).now()
@@ -181,13 +192,13 @@ class TestOrgMFAEnforcement:
         assert r.json()["ok"] is True
 
     async def test_login_with_wrong_totp_code_rejected(
-        self, client: AsyncClient, org_and_key
+        self, client: AsyncClient, org_and_key, owner_auth: dict[str, str]
     ) -> None:
         org_id, key_id, raw_key = org_and_key
         auth = {"Authorization": f"Bearer {raw_key}"}
         await self._enroll(client, org_id, key_id, auth)
         await client.put(
-            f"/api/orgs/{org_id}/mfa", json={"mfa_required": True}, headers=BOOTSTRAP_AUTH
+            f"/api/orgs/{org_id}/mfa", json={"mfa_required": True}, headers=owner_auth
         )
 
         r = await client.post(
@@ -196,17 +207,17 @@ class TestOrgMFAEnforcement:
         assert r.status_code == 401
 
     async def test_unenrolled_key_blocked_when_org_requires_mfa(
-        self, client: AsyncClient, org_and_key
+        self, client: AsyncClient, org_and_key, owner_auth: dict[str, str]
     ) -> None:
         org_id, key_id, raw_key = org_and_key
         await client.put(
-            f"/api/orgs/{org_id}/mfa", json={"mfa_required": True}, headers=BOOTSTRAP_AUTH
+            f"/api/orgs/{org_id}/mfa", json={"mfa_required": True}, headers=owner_auth
         )
         r = await client.post("/api/auth/login-key", json={"api_key": raw_key})
         assert r.status_code == 403
 
     async def test_login_with_backup_code_succeeds_and_is_single_use(
-        self, client: AsyncClient, org_and_key
+        self, client: AsyncClient, org_and_key, owner_auth: dict[str, str]
     ) -> None:
         org_id, key_id, raw_key = org_and_key
         auth = {"Authorization": f"Bearer {raw_key}"}
@@ -218,7 +229,7 @@ class TestOrgMFAEnforcement:
         )
         backup_code = verify.json()["backup_codes"][0]
         await client.put(
-            f"/api/orgs/{org_id}/mfa", json={"mfa_required": True}, headers=BOOTSTRAP_AUTH
+            f"/api/orgs/{org_id}/mfa", json={"mfa_required": True}, headers=owner_auth
         )
 
         r = await client.post(

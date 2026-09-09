@@ -2238,7 +2238,7 @@ async def get_org(
     _auth: OrgContext = Depends(require_role(Role.VIEWER)),
 ) -> dict[str, Any]:
     org = await _ready(_org_repo).get_org(org_id)
-    if not org:
+    if not org or _auth.org_id != org_id:
         raise HTTPException(404, "Organization not found")
     return org.to_dict()
 
@@ -2250,6 +2250,9 @@ async def delete_org(
     org_id: str,
     _auth: OrgContext = Depends(require_role(Role.OWNER)),
 ) -> dict[str, Any]:
+    org = await _ready(_org_repo).get_org(org_id)
+    if not org or _auth.org_id != org_id:
+        raise HTTPException(404, "Organization not found")
     deleted = await _ready(_org_repo).delete_org(org_id)
     if not deleted:
         raise HTTPException(404, "Organization not found")
@@ -2278,7 +2281,7 @@ async def set_org_sso(
             "(set RAI_OIDC_ISSUER). Enabling this now would lock the organization out.",
         )
     org = await _ready(_org_repo).get_org(org_id)
-    if not org:
+    if not org or _auth.org_id != org_id:
         raise HTTPException(404, "Organization not found")
     await _ready(_org_repo).set_sso_required(org_id, req.sso_required)
     return {"org_id": org_id, "sso_required": req.sso_required}
@@ -2297,7 +2300,7 @@ async def set_org_mfa(
     (not from making API calls directly — see auth/mfa.py for why) until
     they enroll via POST /api/orgs/{org_id}/keys/{key_id}/mfa/enroll."""
     org = await _ready(_org_repo).get_org(org_id)
-    if not org:
+    if not org or _auth.org_id != org_id:
         raise HTTPException(404, "Organization not found")
     await _ready(_org_repo).set_org_mfa_required(org_id, req.mfa_required)
     return {"org_id": org_id, "mfa_required": req.mfa_required}
@@ -2316,7 +2319,7 @@ async def get_authority_ceiling(
     `validate_attenuation()`. `null` fields mean unrestricted; no row at
     all (every org before this feature existed) returns all-`null`."""
     org = await _ready(_org_repo).get_org(org_id)
-    if not org:
+    if not org or _auth.org_id != org_id:
         raise HTTPException(404, "Organization not found")
     ceiling = await _ready(_ceiling_repo).get(org_id)
     if ceiling is None:
@@ -2345,7 +2348,7 @@ async def set_authority_ceiling(
     onward (no restart needed, `mcp/governance_integration.py` fetches
     it fresh per call)."""
     org = await _ready(_org_repo).get_org(org_id)
-    if not org:
+    if not org or _auth.org_id != org_id:
         raise HTTPException(404, "Organization not found")
     ceiling = OrgAuthorityCeiling(
         org_id=org_id,
@@ -2382,7 +2385,7 @@ async def get_autonomy_budget(
     means no budget is set for this org -- identical to behavior before
     this feature existed."""
     org = await _ready(_org_repo).get_org(org_id)
-    if not org:
+    if not org or _auth.org_id != org_id:
         raise HTTPException(404, "Organization not found")
     policy = await _ready(_autonomy_budget_repo).get(org_id)
     if policy is None:
@@ -2413,7 +2416,7 @@ async def set_autonomy_budget(
     restart needed, `mcp/governance_integration.py` fetches it fresh
     per call)."""
     org = await _ready(_org_repo).get_org(org_id)
-    if not org:
+    if not org or _auth.org_id != org_id:
         raise HTTPException(404, "Organization not found")
     policy = AutonomyBudgetPolicy(
         max_autonomous_actions=req.max_autonomous_actions, window_minutes=req.window_minutes
@@ -2438,7 +2441,7 @@ async def delete_autonomy_budget(
     `PUT` (which always requires both fields), the only way back to
     "no cap configured."""
     org = await _ready(_org_repo).get_org(org_id)
-    if not org:
+    if not org or _auth.org_id != org_id:
         raise HTTPException(404, "Organization not found")
     await _ready(_autonomy_budget_repo).delete(org_id)
     return {"org_id": org_id, "configured": False}
@@ -2505,6 +2508,9 @@ async def enroll_mfa(
     add to their authenticator app. Not yet active — call .../mfa/verify
     with a real code from that app to confirm enrollment. Calling this
     again before verifying replaces the pending (unconfirmed) secret."""
+    org = await _ready(_org_repo).get_org(org_id)
+    if not org or _auth.org_id != org_id:
+        raise HTTPException(404, "Organization not found")
     key = await _ready(_org_repo).get_key(key_id)
     if key is None or key.org_id != org_id:
         raise HTTPException(404, "Key not found")
@@ -2531,6 +2537,9 @@ async def verify_mfa(
     authenticator app. Returns 10 one-time backup codes — shown exactly
     once, store them now. Each is consumed on use if the authenticator
     device is ever lost."""
+    org = await _ready(_org_repo).get_org(org_id)
+    if not org or _auth.org_id != org_id:
+        raise HTTPException(404, "Organization not found")
     key = await _ready(_org_repo).get_key(key_id)
     if key is None or key.org_id != org_id:
         raise HTTPException(404, "Key not found")
@@ -2556,6 +2565,9 @@ async def disable_mfa(
     key_id: str,
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, Any]:
+    org = await _ready(_org_repo).get_org(org_id)
+    if not org or _auth.org_id != org_id:
+        raise HTTPException(404, "Organization not found")
     key = await _ready(_org_repo).get_key(key_id)
     if key is None or key.org_id != org_id:
         raise HTTPException(404, "Key not found")
@@ -4854,10 +4866,11 @@ async def webhook_deliveries(
     limit: int = Query(default=50, ge=1, le=500),
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
 ) -> dict[str, Any]:
+    scoped_org_id = _auth.org_id if not (_auth.is_legacy and _auth.role == Role.OWNER) else None
     return {
-        "deliveries": _webhook_manager.delivery_log(limit),
-        "total": _webhook_manager.total_deliveries,
-        "failed": _webhook_manager.failed_deliveries,
+        "deliveries": _webhook_manager.delivery_log(limit, org_id=scoped_org_id),
+        "total": _webhook_manager.total_deliveries_for(scoped_org_id),
+        "failed": _webhook_manager.failed_deliveries_for(scoped_org_id),
     }
 
 
