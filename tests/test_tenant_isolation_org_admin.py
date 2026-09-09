@@ -240,4 +240,3 @@ async def test_global_vendor_bootstrap_admin_cannot_silently_cross_or_administer
             r_cust = await client.get(f"/api/orgs/{org_cust.id}", headers=headers_cust)
             assert r_cust.status_code == 200
             assert r_cust.json()["name"] == "Customer Enterprise"
-
