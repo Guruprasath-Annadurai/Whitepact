@@ -7,7 +7,6 @@
 # already-audited placeholders, not to silence real findings.
 DEPLOYMENT.md:generic-api-key:77
 DEPLOYMENT.md:curl-auth-header:80
-compliance/OPENSSF_SECRET_SCAN.md:generic-api-key:21
 wiki/Authentication-and-RBAC.md:curl-auth-header:26
 wiki/Authentication-and-RBAC.md:curl-auth-header:66
 wiki/Authentication-and-RBAC.md:curl-auth-header:75
@@ -17,3 +16,6 @@ wiki/Authentication-and-RBAC.md:curl-auth-header:86
 # during a negative SAML signature test. No key material or credential is
 # embedded in the repository.
 22f67d552b77a0b876ce46adc21bc6885269d0aa:tests/test_saml.py:generic-api-key:252
+
+# Historical false positive in early audit documentation (commit 911bb701):
+911bb7011f83839d3ba27bb96aa158c808aa2294:compliance/OPENSSF_SECRET_SCAN.md:generic-api-key:21
