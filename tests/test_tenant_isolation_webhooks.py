@@ -73,9 +73,11 @@ async def test_cross_tenant_webhook_deliveries_isolation():
             data_a = resp_a.json()
 
             # Org A must only see Org A's delivery, NOT Org B's delivery
-            assert data_a["total"] == 1, f"Expected total 1 for Org A, got {data_a['total']}"
-            assert len(data_a["deliveries"]) == 1, f"Expected 1 delivery for Org A, got {len(data_a['deliveries'])}"
-            assert data_a["deliveries"][0]["webhook_id"] == wh_a.id
+            ids_a = {delivery["webhook_id"] for delivery in data_a["deliveries"]}
+            assert data_a["total"] == len(data_a["deliveries"])
+            assert wh_a.id in ids_a
+            assert wh_b.id not in ids_a
+            assert all(delivery["org_id"] == org_a.id for delivery in data_a["deliveries"])
 
             # Org B queries deliveries
             resp_b = await client.get("/api/webhooks/deliveries", headers=headers_b)
@@ -83,6 +85,8 @@ async def test_cross_tenant_webhook_deliveries_isolation():
             data_b = resp_b.json()
 
             # Org B must only see Org B's delivery
-            assert data_b["total"] == 1, f"Expected total 1 for Org B, got {data_b['total']}"
-            assert len(data_b["deliveries"]) == 1, f"Expected 1 delivery for Org B, got {len(data_b['deliveries'])}"
-            assert data_b["deliveries"][0]["webhook_id"] == wh_b.id
+            ids_b = {delivery["webhook_id"] for delivery in data_b["deliveries"]}
+            assert data_b["total"] == len(data_b["deliveries"])
+            assert wh_b.id in ids_b
+            assert wh_a.id not in ids_b
+            assert all(delivery["org_id"] == org_b.id for delivery in data_b["deliveries"])
