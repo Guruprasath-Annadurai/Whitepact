@@ -13,13 +13,17 @@ from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
 
 import responsibleai.dashboard.app as app_module
-from responsibleai.dashboard.app import app
+from responsibleai.dashboard.app import app, settings
 from responsibleai.rbac.models import Role
 from responsibleai.webhooks.models import WebhookConfig, WebhookEvent
 
 
 @pytest.fixture(autouse=True)
 def _fake_dns(monkeypatch):
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setattr(settings, "db_path", ":memory:")
+    monkeypatch.setattr(settings, "database_url", None)
+    monkeypatch.setattr(settings, "auto_migrate", False)
     monkeypatch.setattr(
         "responsibleai.webhooks.manager.socket.getaddrinfo",
         lambda host, *args, **kwargs: [(2, 1, 6, "", ("93.184.216.34", 0))],
