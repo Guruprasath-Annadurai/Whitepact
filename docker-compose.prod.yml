@@ -54,7 +54,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: responsibleai:1.2.0
+    image: ${WHITEPACT_IMAGE:-${RAI_IMAGE:?WHITEPACT_IMAGE or RAI_IMAGE must be set}}
     container_name: rai-dashboard
     restart: unless-stopped
     depends_on:
@@ -67,11 +67,17 @@ services:
     env_file:
       - .env.prod
     environment:
+      WHITEPACT_DATABASE_URL: postgresql://${POSTGRES_USER:-rai_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-responsibleai}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-rai_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-responsibleai}
       RAI_DATABASE_URL: postgresql://${POSTGRES_USER:-rai_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-responsibleai}
-      RAI_REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
-      RAI_LOG_JSON: "true"
-      RAI_AUTH_ENABLED: "true"
-      RAI_WORKERS: "${RAI_WORKERS:-4}"
+      WHITEPACT_REDIS_URL: ${WHITEPACT_REDIS_URL:-${RAI_REDIS_URL:-redis://:${REDIS_PASSWORD}@redis:6379/0}}
+      RAI_REDIS_URL: ${WHITEPACT_REDIS_URL:-${RAI_REDIS_URL:-redis://:${REDIS_PASSWORD}@redis:6379/0}}
+      WHITEPACT_LOG_JSON: ${WHITEPACT_LOG_JSON:-${RAI_LOG_JSON:-true}}
+      RAI_LOG_JSON: ${WHITEPACT_LOG_JSON:-${RAI_LOG_JSON:-true}}
+      WHITEPACT_AUTH_ENABLED: ${WHITEPACT_AUTH_ENABLED:-${RAI_AUTH_ENABLED:-true}}
+      RAI_AUTH_ENABLED: ${WHITEPACT_AUTH_ENABLED:-${RAI_AUTH_ENABLED:-true}}
+      WHITEPACT_WORKERS: ${WHITEPACT_WORKERS:-${RAI_WORKERS:-4}}
+      RAI_WORKERS: ${WHITEPACT_WORKERS:-${RAI_WORKERS:-4}}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8765/api/health"]
       interval: 30s
@@ -86,7 +92,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: responsibleai:1.2.0
+    image: ${WHITEPACT_IMAGE:-${RAI_IMAGE:?WHITEPACT_IMAGE or RAI_IMAGE must be set}}
     container_name: rai-mcp-http
     restart: unless-stopped
     depends_on:
@@ -98,10 +104,15 @@ services:
     env_file:
       - .env.prod
     environment:
+      WHITEPACT_DATABASE_URL: postgresql://${POSTGRES_USER:-rai_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-responsibleai}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-rai_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-responsibleai}
       RAI_DATABASE_URL: postgresql://${POSTGRES_USER:-rai_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-responsibleai}
-      RAI_MCP_HTTP_HOST: "0.0.0.0"
-      RAI_MCP_HTTP_PORT: "8766"
-      RAI_MCP_LOG_LEVEL: "INFO"
+      WHITEPACT_MCP_HTTP_HOST: ${WHITEPACT_MCP_HTTP_HOST:-${RAI_MCP_HTTP_HOST:-0.0.0.0}}
+      RAI_MCP_HTTP_HOST: ${WHITEPACT_MCP_HTTP_HOST:-${RAI_MCP_HTTP_HOST:-0.0.0.0}}
+      WHITEPACT_MCP_HTTP_PORT: ${WHITEPACT_MCP_HTTP_PORT:-${RAI_MCP_HTTP_PORT:-8766}}
+      RAI_MCP_HTTP_PORT: ${WHITEPACT_MCP_HTTP_PORT:-${RAI_MCP_HTTP_PORT:-8766}}
+      WHITEPACT_MCP_LOG_LEVEL: ${WHITEPACT_MCP_LOG_LEVEL:-${RAI_MCP_LOG_LEVEL:-INFO}}
+      RAI_MCP_LOG_LEVEL: ${WHITEPACT_MCP_LOG_LEVEL:-${RAI_MCP_LOG_LEVEL:-INFO}}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8766/health"]
       interval: 30s
