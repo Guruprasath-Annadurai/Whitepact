@@ -35,6 +35,7 @@ from responsibleai.net.egress import (
     DNSResolutionError,
     ForbiddenDestinationError,
     InvalidURLError,
+    SafeAsyncHTTPTransport,
     SystemDNSResolver,
     create_safe_async_client,
     is_address_allowed,
@@ -721,6 +722,251 @@ async def test_rebinding_on_second_delivery_attempt_blocked(
         assert len(internal.received_requests) == 0, (
             "SECURITY FAILURE: Retry rebinding reached internal loopback!"
         )
+
+
+# ── 17. CNAME Resolution Proofs ───────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_cname_chain_resolving_to_private_ip_is_blocked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CNAME chain pointing to a loopback/private IP must fail closed.
+
+    public.example -> CNAME intermediate.example -> 127.0.0.1
+    UNSAFE FINAL CNAME DESTINATION: BLOCKED
+    """
+    original_getaddrinfo = socket.getaddrinfo
+
+    def cname_unsafe_getaddrinfo(host: Any, port: Any, *args: Any, **kwargs: Any) -> list[Any]:
+        hostname = host.decode("ascii") if isinstance(host, bytes) else str(host)
+        if hostname in ("public.example", "intermediate.example"):
+            return [
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "intermediate.example", ("127.0.0.1", port or 0))
+            ]
+        return original_getaddrinfo(host, port, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", cname_unsafe_getaddrinfo)
+
+    resolver = SystemDNSResolver()
+    with pytest.raises(ForbiddenDestinationError):
+        await resolver.resolve("public.example", 80, DestinationPolicy.PUBLIC_ONLY)
+
+    # validate_webhook_url must also reject at precheck
+    with pytest.raises(UnsafeWebhookURLError):
+        validate_webhook_url("http://public.example/hook")
+
+
+@pytest.mark.asyncio
+async def test_multilevel_cname_chain_resolving_to_safe_public_ip_passes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Multi-level CNAME chain pointing to a valid public IP must succeed.
+
+    cname1.example -> CNAME cname2.example -> CNAME cname3.example -> 93.184.216.34
+    SAFE FINAL CNAME DESTINATION: PASS
+    """
+    original_getaddrinfo = socket.getaddrinfo
+
+    def cname_safe_getaddrinfo(host: Any, port: Any, *args: Any, **kwargs: Any) -> list[Any]:
+        hostname = host.decode("ascii") if isinstance(host, bytes) else str(host)
+        if hostname in ("cname1.example", "cname2.example", "cname3.example"):
+            return [
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "cname3.example", ("93.184.216.34", port or 0))
+            ]
+        return original_getaddrinfo(host, port, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", cname_safe_getaddrinfo)
+
+    resolver = SystemDNSResolver()
+    addrs = await resolver.resolve("cname1.example", 443, DestinationPolicy.PUBLIC_ONLY)
+    assert len(addrs) == 1
+    assert str(addrs[0]) == "93.184.216.34"
+
+    # Precheck passes without error
+    validate_webhook_url("https://cname1.example/hook")
+
+
+# ── 18. TLS / SNI / Hostname & Certificate Validation Proofs ──────────────────
+
+def test_tls_verification_cannot_be_disabled() -> None:
+    """verify=False is strictly forbidden in SafeAsyncHTTPTransport."""
+    with pytest.raises(ValueError, match="TLS certificate verification cannot be disabled"):
+        SafeAsyncHTTPTransport(verify=False)
+
+
+@pytest.mark.asyncio
+async def test_tls_sni_and_host_header_preserves_original_hostname_with_pinned_ip() -> None:
+    """Prove that TCP connection uses validated pinned IP while preserving original SNI and Host."""
+    import datetime
+    import ssl
+    import tempfile
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
+
+    # Generate test cert for safe.example.test
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "safe.example.test")])
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(1000)
+        .not_valid_before(datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=1))
+        .not_valid_after(datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=1))
+        .add_extension(x509.SubjectAlternativeName([x509.DNSName("safe.example.test")]), critical=False)
+        .sign(key, hashes.SHA256())
+    )
+
+    with tempfile.NamedTemporaryFile(suffix=".pem") as cert_file, tempfile.NamedTemporaryFile(suffix=".pem") as key_file:
+        cert_file.write(cert.public_bytes(serialization.Encoding.PEM))
+        cert_file.flush()
+        key_file.write(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
+        key_file.flush()
+
+        received_sni: list[str | None] = []
+        received_host_headers: list[str] = []
+
+        server_ssl = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        server_ssl.load_cert_chain(cert_file.name, key_file.name)
+
+        def sni_callback(sock: Any, server_name: str | None, ctx: Any) -> None:
+            received_sni.append(server_name)
+
+        server_ssl.sni_callback = sni_callback
+        client_ssl = ssl.create_default_context(cafile=cert_file.name)
+
+        class PinnedLoopbackResolver:
+            async def resolve(self, host: str, port: int, policy: DestinationPolicy) -> list[ipaddress.IPv4Address]:
+                return [ipaddress.IPv4Address("127.0.0.1")]
+
+        async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+            data = await reader.read(4096)
+            for line in data.split(b"\r\n"):
+                if line.lower().startswith(b"host:"):
+                    received_host_headers.append(line.decode())
+            writer.write(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
+            await writer.drain()
+            writer.close()
+            await writer.wait_closed()
+
+        server = await asyncio.start_server(handle_client, "127.0.0.1", 0, ssl=server_ssl)
+        port = server.sockets[0].getsockname()[1]
+
+        transport = SafeAsyncHTTPTransport(
+            verify=client_ssl,
+            policy=DestinationPolicy.LOCAL_DEV,
+            resolver=PinnedLoopbackResolver(),
+        )
+        async with httpx.AsyncClient(transport=transport) as client:
+            resp = await client.get(f"https://safe.example.test:{port}/path")
+            assert resp.status_code == 200
+
+        server.close()
+        await server.wait_closed()
+
+        # Assertions
+        assert received_sni == ["safe.example.test"], f"TLS SNI mismatch: {received_sni}"
+        assert len(received_host_headers) == 1
+        assert received_host_headers[0].startswith("Host: safe.example.test:"), f"Host header mismatch: {received_host_headers}"
+
+
+@pytest.mark.asyncio
+async def test_tls_certificate_hostname_mismatch_is_rejected() -> None:
+    """Prove that certificate hostname mismatch is strictly REJECTED (no verify=False bypass)."""
+    import datetime
+    import ssl
+    import tempfile
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "safe.example.test")])
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(1000)
+        .not_valid_before(datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=1))
+        .not_valid_after(datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=1))
+        .add_extension(x509.SubjectAlternativeName([x509.DNSName("safe.example.test")]), critical=False)
+        .sign(key, hashes.SHA256())
+    )
+
+    with tempfile.NamedTemporaryFile(suffix=".pem") as cert_file, tempfile.NamedTemporaryFile(suffix=".pem") as key_file:
+        cert_file.write(cert.public_bytes(serialization.Encoding.PEM))
+        cert_file.flush()
+        key_file.write(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
+        key_file.flush()
+
+        server_ssl = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        server_ssl.load_cert_chain(cert_file.name, key_file.name)
+        client_ssl = ssl.create_default_context(cafile=cert_file.name)
+
+        class PinnedLoopbackResolver:
+            async def resolve(self, host: str, port: int, policy: DestinationPolicy) -> list[ipaddress.IPv4Address]:
+                return [ipaddress.IPv4Address("127.0.0.1")]
+
+        async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+            try:
+                await reader.read(4096)
+            except Exception:
+                pass
+            writer.close()
+            await writer.wait_closed()
+
+        server = await asyncio.start_server(handle_client, "127.0.0.1", 0, ssl=server_ssl)
+        port = server.sockets[0].getsockname()[1]
+
+        transport = SafeAsyncHTTPTransport(
+            verify=client_ssl,
+            policy=DestinationPolicy.LOCAL_DEV,
+            resolver=PinnedLoopbackResolver(),
+        )
+        async with httpx.AsyncClient(transport=transport) as client:
+            # Requesting wrong.example.test against a cert for safe.example.test MUST fail cert verification
+            with pytest.raises((httpx.ConnectError, ssl.SSLCertVerificationError)):
+                await client.get(f"https://wrong.example.test:{port}/path")
+
+        server.close()
+        await server.wait_closed()
+
+
+# ── 19. Destination Policy Mode Confusion Proofs ───────────────────────────────
+
+def test_untrusted_request_cannot_select_trusted_private_or_local_dev() -> None:
+    """Prove that untrusted request data (WebhookConfig, URL params, etc.) cannot select
+
+    TRUSTED_PRIVATE or LOCAL_DEV policies.
+    """
+    # WebhookConfig has no policy attribute
+    cfg = WebhookConfig(url="https://example.com/hook", events=[WebhookEvent.DRIFT_ALERT])
+    assert not hasattr(cfg, "policy")
+    assert not hasattr(cfg, "destination_policy")
+
+    # WebhookManager always uses DestinationPolicy.PUBLIC_ONLY
+    # In validate_webhook_url, policy is hardcoded to PUBLIC_ONLY
+    with pytest.raises(UnsafeWebhookURLError):
+        validate_webhook_url("http://10.0.0.1/hook")  # Would pass under TRUSTED_PRIVATE, but rejected
+
+
+def test_production_default_is_strictly_public_only() -> None:
+    """Prove that default production configurations cannot silently fall back to LOCAL_DEV."""
+    # create_safe_async_client default is PUBLIC_ONLY
+    client = create_safe_async_client()
+    assert isinstance(client._transport, SafeAsyncHTTPTransport)
+    assert client._transport.policy == DestinationPolicy.PUBLIC_ONLY
+
+    # SafeAsyncHTTPTransport default is PUBLIC_ONLY
+    transport = SafeAsyncHTTPTransport()
+    assert transport.policy == DestinationPolicy.PUBLIC_ONLY
 
 
 # ── End of adversarial test suite ────────────────────────────────────────────
