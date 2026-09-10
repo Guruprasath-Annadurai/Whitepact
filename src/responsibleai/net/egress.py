@@ -97,7 +97,7 @@ def is_address_allowed(
         ip = ip_str_or_obj
 
     # Recursively unwrap IPv4-mapped IPv6 addresses (e.g. ::ffff:127.0.0.1)
-    if ip.version == 6 and ip.ipv4_mapped is not None:
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
         return is_address_allowed(ip.ipv4_mapped, policy)
 
     if (
@@ -165,16 +165,17 @@ def normalize_and_validate_url(
     # Reject ambiguous or obfuscated IPv4 representations
     # 1. Plain integer IPv4 literal: http://2130706433
     if host_clean.isdigit():
+        int_ip: ipaddress.IPv4Address | None = None
         try:
             val = int(host_clean)
             if 0 <= val <= 0xFFFFFFFF:
-                ip = ipaddress.IPv4Address(val)
-                if not is_address_allowed(ip, policy):
-                    raise ForbiddenDestinationError(
-                        f"Integer IPv4 literal {host!r} resolves to forbidden destination {ip}"
-                    )
+                int_ip = ipaddress.IPv4Address(val)
         except ValueError:
             pass
+        if int_ip is not None and not is_address_allowed(int_ip, policy):
+            raise ForbiddenDestinationError(
+                f"Integer IPv4 literal {host!r} resolves to forbidden destination {int_ip}"
+            )
 
     # 2. Dotted IPv4 with leading zeroes (octal) or hex notation: http://0177.0.0.1 or http://0x7f.0.0.1
     parts = host_clean.split(".")
@@ -186,15 +187,17 @@ def normalize_and_validate_url(
                 )
 
     # 3. Direct IP address string: http://127.0.0.1 or http://[::1]
+    parsed_ip: ipaddress.IPv4Address | ipaddress.IPv6Address | None = None
     try:
         parsed_ip = ipaddress.ip_address(host_clean)
-        if not is_address_allowed(parsed_ip, policy):
-            raise ForbiddenDestinationError(
-                f"Target host {host!r} is a forbidden network address ({parsed_ip})"
-            )
     except ValueError:
         # Not a literal IP address; domain name will be resolved at connect time
         pass
+
+    if parsed_ip is not None and not is_address_allowed(parsed_ip, policy):
+        raise ForbiddenDestinationError(
+            f"Target host {host!r} is a forbidden network address ({parsed_ip})"
+        )
 
     port = parsed.port
     if port is None:

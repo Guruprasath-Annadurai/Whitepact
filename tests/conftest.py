@@ -17,7 +17,11 @@ os.environ.setdefault("XDG_CONFIG_HOME", str(Path(_HERMETIC_TEMP_HOME.name) / ".
 os.environ.setdefault("RAI_AUTH_ENABLED", "false")
 os.environ.setdefault("WHITEPACT_AUTH_ENABLED", "false")
 
-from biasbuster.providers.base import BaseProvider, CompletionRequest, CompletionResponse
+from biasbuster.providers.base import (  # noqa: E402
+    BaseProvider,
+    CompletionRequest,
+    CompletionResponse,
+)
 
 TEST_GOVERNANCE_PURPOSE = "automated-test"
 

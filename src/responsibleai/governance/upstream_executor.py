@@ -35,6 +35,7 @@ from responsibleai.governance.jit_credential import consume_jit_credential, issu
 from responsibleai.governance.models import ActionRequest
 from responsibleai.governance.risk import UPSTREAM_ACTION_TYPE
 from responsibleai.governance.upstream import validate_upstream_server_url
+from responsibleai.net.egress import create_safe_async_client
 
 ACTION_TYPE = UPSTREAM_ACTION_TYPE
 
@@ -112,7 +113,10 @@ class _HTTPClientFactory(Protocol):
 
 
 def _default_http_client_factory() -> httpx.AsyncClient:
-    return httpx.AsyncClient(timeout=UPSTREAM_CALL_TIMEOUT_SECONDS, follow_redirects=False)
+    # create_safe_async_client uses SafeAsyncHTTPTransport which enforces
+    # DNS-rebinding protection and destination policy at actual TCP-connect time
+    # (TOCTOU defence). follow_redirects is disabled inside the transport.
+    return create_safe_async_client(timeout=UPSTREAM_CALL_TIMEOUT_SECONDS)
 
 
 async def _call_upstream_tool(
