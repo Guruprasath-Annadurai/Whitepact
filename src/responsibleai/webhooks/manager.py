@@ -179,9 +179,24 @@ class WebhookManager:
 
     # ── Delivery ──────────────────────────────────────────────────────────────
 
-    async def fire(self, event: WebhookEvent, data: dict[str, Any]) -> list[WebhookDelivery]:
-        """Deliver *event* to all matching, enabled webhooks concurrently."""
-        targets = [c for c in self._configs.values() if c.enabled and event in c.events]
+    async def fire(
+        self,
+        event: WebhookEvent,
+        data: dict[str, Any],
+        *,
+        org_id: str | None = None,
+    ) -> list[WebhookDelivery]:
+        """Deliver a tenant event only to matching webhooks owned by that tenant.
+
+        ``None`` is an explicit legacy/local tenant, not a wildcard. Production
+        callers must pass the authenticated or persisted event owner so one
+        tenant's payload can never be fanned out to another tenant.
+        """
+        targets = [
+            config
+            for config in self._configs.values()
+            if config.enabled and config.org_id == org_id and event in config.events
+        ]
         if not targets:
             return []
 

@@ -61,11 +61,25 @@ async def test_cross_tenant_webhook_deliveries_isolation():
         )
         webhook_mgr.register(wh_b)
 
-        # Fire event to deliver to both
+        # Fire each tenant event independently; event payloads must never
+        # fan out across organization ownership boundaries.
         with respx.mock(assert_all_called=False) as mock:
-            mock.post(f"https://hooks.example.com/org-a-{run_id}").mock(return_value=httpx.Response(200))
-            mock.post(f"https://hooks.example.com/org-b-{run_id}").mock(return_value=httpx.Response(200))
-            await webhook_mgr.fire(WebhookEvent.DRIFT_ALERT, {"metric": "drift", "value": 0.42})
+            mock.post(f"https://hooks.example.com/org-a-{run_id}").mock(
+                return_value=httpx.Response(200)
+            )
+            mock.post(f"https://hooks.example.com/org-b-{run_id}").mock(
+                return_value=httpx.Response(200)
+            )
+            await webhook_mgr.fire(
+                WebhookEvent.DRIFT_ALERT,
+                {"metric": "drift", "value": 0.42},
+                org_id=org_a.id,
+            )
+            await webhook_mgr.fire(
+                WebhookEvent.DRIFT_ALERT,
+                {"metric": "drift", "value": 0.42},
+                org_id=org_b.id,
+            )
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             headers_a = {"Authorization": f"Bearer {raw_key_a}"}

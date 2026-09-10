@@ -209,7 +209,11 @@ class ApprovalRepository:
         if webhook_manager is not None:
             from responsibleai.webhooks.models import WebhookEvent
 
-            await webhook_manager.fire(WebhookEvent.APPROVAL_REQUESTED, approval.to_dict())
+            await webhook_manager.fire(
+                WebhookEvent.APPROVAL_REQUESTED,
+                approval.to_dict(),
+                org_id=approval.organization_id,
+            )
 
         return approval
 

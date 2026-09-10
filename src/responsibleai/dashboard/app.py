@@ -746,6 +746,43 @@ async def _resolve_saml_context(token: str) -> OrgContext | None:
     )
 
 
+async def _resolve_transport_identity(token: str) -> OrgContext | None:
+    """Normalize a verified transport credential into canonical identity.
+
+    This establishes identity and tenant only. Runtime authority remains the
+    responsibility of ``AuthorityResolver`` in the governance hall.
+    """
+    if settings.api_keys and token in settings.api_keys:
+        legacy_key_id = f"legacy:{hashlib.sha256(token.encode()).hexdigest()[:32]}"
+        return OrgContext(key_id=legacy_key_id, role=Role.OWNER, is_legacy=True)
+
+    oidc_ctx = await _resolve_oidc_context(token)
+    if oidc_ctx is not None:
+        return oidc_ctx
+
+    saml_ctx = await _resolve_saml_context(token)
+    if saml_ctx is not None:
+        return saml_ctx
+
+    if _org_repo:
+        try:
+            return await _ready(_org_repo).authenticate(token)
+        except SSORequiredError as exc:
+            sso_paths = [
+                path
+                for path, enabled in (("oidc", _oidc_provider), ("saml", _saml_config))
+                if enabled
+            ]
+            raise HTTPException(
+                403,
+                detail=(
+                    f"Organization {exc.org_id} requires SSO login. Static API keys are "
+                    f"disabled — authenticate via {' or '.join(f'/api/auth/login/{path}' for path in sso_paths) or '/api/auth/login/<provider>'}."
+                ),
+            ) from None
+    return None
+
+
 async def get_org_context(request: Request) -> OrgContext:
     """Resolve the presented Bearer credential to an OrgContext.
 
@@ -768,54 +805,15 @@ async def get_org_context(request: Request) -> OrgContext:
 
     token = auth_header[7:].strip()
 
-    if settings.api_keys and token in settings.api_keys:
-        # A non-secret fingerprint lets bootstrap-created organizations bind
-        # back to the exact configured key without persisting that raw key.
-        legacy_key_id = f"legacy:{hashlib.sha256(token.encode()).hexdigest()[:32]}"
-        ctx = OrgContext(key_id=legacy_key_id, role=Role.OWNER, is_legacy=True)
-        request.state.audit_org_id = None
-        request.state.audit_key_id = legacy_key_id
-        return ctx
-
-    oidc_ctx = await _resolve_oidc_context(token)
-    if oidc_ctx is not None:
-        if _plan_rate_limiter:
-            await _plan_rate_limiter.check(oidc_ctx.org_id, oidc_ctx.plan)
-        request.state.audit_org_id = oidc_ctx.org_id
-        request.state.audit_key_id = oidc_ctx.key_id
-        return oidc_ctx
-
-    saml_ctx = await _resolve_saml_context(token)
-    if saml_ctx is not None:
-        if _plan_rate_limiter:
-            await _plan_rate_limiter.check(saml_ctx.org_id, saml_ctx.plan)
-        request.state.audit_org_id = saml_ctx.org_id
-        request.state.audit_key_id = saml_ctx.key_id
-        return saml_ctx
-
-    if _org_repo:
-        try:
-            resolved_ctx = await _ready(_org_repo).authenticate(token)
-        except SSORequiredError as exc:
-            sso_paths = [
-                p for p, enabled in (("oidc", _oidc_provider), ("saml", _saml_config)) if enabled
-            ]
-            raise HTTPException(
-                403,
-                detail=(
-                    f"Organization {exc.org_id} requires SSO login. Static API keys are "
-                    f"disabled — authenticate via {' or '.join(f'/api/auth/login/{p}' for p in sso_paths) or '/api/auth/login/<provider>'}."
-                ),
-            ) from None
-        if resolved_ctx:
-            if _plan_rate_limiter:
-                await _plan_rate_limiter.check(resolved_ctx.org_id, resolved_ctx.plan)
-            _enforce_machine_scope(request, resolved_ctx)
-            request.state.audit_org_id = resolved_ctx.org_id
-            request.state.audit_key_id = resolved_ctx.key_id
-            return resolved_ctx
-
-    raise HTTPException(401, detail="Invalid API key")
+    context = await _resolve_transport_identity(token)
+    if context is None:
+        raise HTTPException(401, detail="Invalid API key")
+    if not context.is_legacy and _plan_rate_limiter:
+        await _plan_rate_limiter.check(context.org_id, context.plan)
+    _enforce_machine_scope(request, context)
+    request.state.audit_org_id = context.org_id
+    request.state.audit_key_id = context.key_id
+    return context
 
 
 def _enforce_machine_scope(request: Request, context: OrgContext) -> None:
@@ -4779,23 +4777,40 @@ async def websocket_dashboard(
     websocket: WebSocket,
     token: str = Query(default=""),
 ) -> None:
-    if settings.auth_enabled and settings.api_keys:
-        if token not in settings.api_keys:
+    if settings.auth_enabled:
+        if not token:
             await websocket.close(code=4001, reason="Unauthorized")
             return
+        try:
+            context = await _resolve_transport_identity(token)
+        except HTTPException:
+            context = None
+        if context is None:
+            await websocket.close(code=4001, reason="Unauthorized")
+            return
+        if not context.org_id:
+            await websocket.close(code=4003, reason="Tenant-scoped credential required")
+            return
+        channel_id = context.org_id
+    else:
+        channel_id = "anonymous"
 
-    api_key = token or "anonymous"
-    await _ws_manager.connect(websocket, api_key)
+    await _ws_manager.connect(websocket, channel_id)
     observe_websocket_connections(_ws_manager.connection_count)
 
     try:
         snapshot: dict[str, Any] = {"type": "connected", "version": "0.9.0"}
         if _cost_repo:
-            snapshot["monthly_spend_usd"] = round(await _ready(_cost_repo).total_cost(30), 4)
+            snapshot["monthly_spend_usd"] = round(
+                await _ready(_cost_repo).total_cost(
+                    30, org_id=None if channel_id == "anonymous" else channel_id
+                ),
+                4,
+            )
         if _trust_repo:
-            snapshot["models"] = await _ready(_trust_repo).all_models()
-        if _org_repo:
-            snapshot["org_count"] = len(await _ready(_org_repo).list_orgs())
+            snapshot["models"] = await _ready(_trust_repo).all_models(
+                org_id=None if channel_id == "anonymous" else channel_id
+            )
         await websocket.send_json(snapshot)
 
         while True:
@@ -4804,7 +4819,7 @@ async def websocket_dashboard(
     except WebSocketDisconnect:
         pass
     finally:
-        _ws_manager.disconnect(websocket, api_key)
+        _ws_manager.disconnect(websocket, channel_id)
         observe_websocket_connections(_ws_manager.connection_count)
 
 
@@ -4899,6 +4914,7 @@ async def test_webhook(
     deliveries = await _webhook_manager.fire(
         WebhookEvent.TRUST_SCORE_CHANGED,
         {"model": "test-model", "provider": "test", "score": 85.0, "test": True},
+        org_id=cfg.org_id,
     )
     result = next((d for d in deliveries if d.webhook_id == webhook_id), None)
     return result.to_dict() if result else {"success": False, "error": "no delivery"}
@@ -4956,7 +4972,8 @@ async def evaluate_model(
                 "grade": score.grade,
                 "timestamp": datetime.now(UTC).isoformat(),
             },
-        }
+        },
+        api_key=_auth.org_id,
     )
 
     if drift_alert:
@@ -4970,6 +4987,7 @@ async def evaluate_model(
                 "severity": drift_alert.get("severity"),
                 "score": score.overall,
             },
+            org_id=_auth.org_id,
         )
         for d in deliveries:
             observe_webhook_delivery(WebhookEvent.DRIFT_ALERT.value, d.success, org_id=_auth.org_id)
@@ -4977,7 +4995,8 @@ async def evaluate_model(
             {
                 "type": "drift_alert",
                 "data": {**drift_alert, "model": req.model_name, "provider": req.provider},
-            }
+            },
+            api_key=_auth.org_id,
         )
 
     logger.info(
@@ -5055,11 +5074,13 @@ async def scan_text(
                     "pii_count": len(result.pii_findings),
                     "timestamp": datetime.now(UTC).isoformat(),
                 },
-            }
+            },
+            api_key=_auth.org_id,
         )
         deliveries = await _webhook_manager.fire(
             WebhookEvent.GUARDRAIL_TRIGGERED,
             {"pii_count": len(result.pii_findings), "block_reasons": result.block_reasons},
+            org_id=_auth.org_id,
         )
         for d in deliveries:
             observe_webhook_delivery(
@@ -5145,7 +5166,8 @@ async def record_usage(
                 "tokens": req.input_tokens + req.output_tokens,
                 "timestamp": datetime.now(UTC).isoformat(),
             },
-        }
+        },
+        api_key=_auth.org_id,
     )
 
     budget = await _ready(_cost_repo).check_budget(org_id=_auth.org_id)
@@ -5157,6 +5179,7 @@ async def record_usage(
                 "total_spent_usd": budget.total_spent_usd,
                 "overage_usd": round(budget.total_spent_usd - budget.monthly_limit_usd, 4),
             },
+            org_id=_auth.org_id,
         )
         for d in deliveries:
             observe_webhook_delivery(
