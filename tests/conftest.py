@@ -2,13 +2,36 @@
 # SPDX-License-Identifier: MIT
 from __future__ import annotations
 
+import os
+import tempfile
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
+
+_HERMETIC_TEMP_HOME = tempfile.TemporaryDirectory(prefix="whitepact-pytest-home-")
+os.environ.setdefault("WHITEPACT_HERMETIC_TEST_HOME", _HERMETIC_TEMP_HOME.name)
+os.environ["HOME"] = _HERMETIC_TEMP_HOME.name
+os.environ.setdefault("XDG_DATA_HOME", str(Path(_HERMETIC_TEMP_HOME.name) / ".local" / "share"))
+os.environ.setdefault("XDG_CONFIG_HOME", str(Path(_HERMETIC_TEMP_HOME.name) / ".config"))
+os.environ.setdefault("RAI_AUTH_ENABLED", "false")
+os.environ.setdefault("WHITEPACT_AUTH_ENABLED", "false")
 
 from biasbuster.providers.base import BaseProvider, CompletionRequest, CompletionResponse
 
 TEST_GOVERNANCE_PURPOSE = "automated-test"
+
+
+@pytest.fixture(autouse=True)
+def clean_audit_writes_and_hermetic_state():
+    """Clear any residual background audit tasks from closed event loops."""
+    yield
+    try:
+        from responsibleai.dashboard.app import _pending_audit_writes
+
+        _pending_audit_writes.clear()
+    except (ImportError, AttributeError):
+        pass
 
 
 @pytest.fixture
