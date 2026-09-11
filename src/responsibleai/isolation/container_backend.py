@@ -120,6 +120,7 @@ if __name__ == "__main__":
                 f"--memory={limits.max_memory_mb}m",
                 f"--cpus={limits.cpu_cores}",
                 f"--pids-limit={limits.max_pids}",
+                f"--ulimit=nofile={limits.max_file_descriptors}:{limits.max_file_descriptors}",
                 "--cap-drop=ALL",
                 "--security-opt=no-new-privileges:true",
                 "--read-only",
