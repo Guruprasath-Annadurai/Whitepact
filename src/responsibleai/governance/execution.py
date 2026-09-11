@@ -316,13 +316,30 @@ class InternalToolExecutor:
         broker: Any | None = None,
     ) -> None:
         self._nonce_repo = nonce_repo
-        self._broker = broker
+        self._broker: Any = broker
+        if broker is None:
+            # In production or hosted execution, automatically initialize IsolationBroker
+            import os
+            is_prod = os.environ.get("ENVIRONMENT", "").lower() == "production"
+            if is_prod or os.environ.get("WHITEPACT_ISOLATION_BACKEND"):
+                from responsibleai.isolation.broker import IsolationBroker
+                self._broker = IsolationBroker()
+            else:
+                self._broker = None
 
     async def execute(self, authorization: ExecutionAuthorization, action: ActionRequest) -> Any:
         await admit_execution(authorization, action, self._nonce_repo)
 
         if self._broker is not None:
             return await self._broker.execute(authorization, action)
+
+        import os
+        if os.environ.get("ENVIRONMENT", "").lower() == "production":
+            from responsibleai.isolation.errors import IsolationError
+            raise IsolationError(
+                "Same-process tool execution is strictly forbidden in production. "
+                "An IsolationBroker is mandatory."
+            )
 
         from responsibleai.mcp.tools import dispatch_tool
 

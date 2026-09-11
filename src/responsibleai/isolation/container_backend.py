@@ -107,7 +107,8 @@ if __name__ == "__main__":
 
         with EphemeralWorkspace(request.action_id, request.organization_id) as workspace:
             workspace.populate(request.workspace_files)
-            workspace.populate({"runner.py": runner_script})
+            if "runner.py" not in request.workspace_files:
+                workspace.populate({"runner.py": runner_script})
 
             cmd = [
                 self.docker_cmd,
@@ -115,11 +116,14 @@ if __name__ == "__main__":
                 "--rm",
                 "-i",
                 f"--name={container_name}",
+                "--user=65534:65534",  # Non-root unprivileged (nobody:nogroup)
                 f"--memory={limits.max_memory_mb}m",
                 f"--cpus={limits.cpu_cores}",
                 f"--pids-limit={limits.max_pids}",
                 "--cap-drop=ALL",
                 "--security-opt=no-new-privileges:true",
+                "--read-only",
+                "--tmpfs=/tmp:rw,noexec,nosuid,size=64m",
                 f"-v={workspace.path}:/workspace:rw",
                 "-w=/workspace",
             ]
@@ -154,9 +158,14 @@ if __name__ == "__main__":
                 )
             except TimeoutError:
                 timed_out = True
-                # Kill and clean container via docker kill
+                # Kill and clean container synchronously
                 try:
-                    await asyncio.create_subprocess_exec(self.docker_cmd, "kill", container_name)
+                    kill_proc = await asyncio.create_subprocess_exec(
+                        self.docker_cmd, "rm", "-f", container_name,
+                        stdout=asyncio.subprocess.DEVNULL,
+                        stderr=asyncio.subprocess.DEVNULL,
+                    )
+                    await kill_proc.wait()
                 except Exception:
                     pass
                 try:

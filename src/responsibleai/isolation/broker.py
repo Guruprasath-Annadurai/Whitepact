@@ -40,15 +40,18 @@ class IsolationBroker:
         self.default_profile = default_profile or DEFAULT_STRICT_PROFILE
         env_mode = os.environ.get("WHITEPACT_ISOLATION_BACKEND")
 
-        if mode is None:
-            if env_mode:
-                self.mode = BackendMode(env_mode)
+        try:
+            if mode is None:
+                if env_mode:
+                    self.mode = BackendMode(env_mode)
+                else:
+                    self.mode = BackendMode.DOCKER
+            elif isinstance(mode, str):
+                self.mode = BackendMode(mode)
             else:
-                self.mode = BackendMode.DOCKER
-        elif isinstance(mode, str):
-            self.mode = BackendMode(mode)
-        else:
-            self.mode = mode
+                self.mode = mode
+        except ValueError as exc:
+            raise InvalidBackendModeError(f"Unknown backend mode: {mode or env_mode}") from exc
 
         if backend is not None:
             self.backend = backend
