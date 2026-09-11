@@ -1,0 +1,145 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
+"""Continuous Trust Monitor & Freshness Tracking.
+
+Core Invariants:
+- Trust is temporal: verified assertions degrade over time without re-verification.
+- Revocation cascade: revoking a credential or ending an employment relationship
+  immediately invalidates current trust decisions.
+- Cache discipline: Cached trust states expire with source TTL. If caching or
+  Redis fails, evaluation fails closed to the canonical database.
+- A stale cache entry NEVER widens authority or causes an invalid ALLOW.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
+from typing import Any
+
+from sqlalchemy import and_, select, update
+
+from responsibleai.db.engine import (
+    DatabaseEngine,
+    trust_fabric_authority_edges,
+    trust_fabric_identifiers,
+    trust_fabric_passports,
+    trust_fabric_relationships,
+)
+from responsibleai.trust_fabric.enums import (
+    IdentifierVerificationState,
+)
+
+
+class ContinuousTrustMonitor:
+    """Monitors freshness, handles revocation cascades, and enforces cache discipline."""
+
+    def __init__(self, db: DatabaseEngine) -> None:
+        self.db = db
+        self._local_cache: dict[str, tuple[Any, datetime]] = {}
+
+    async def revoke_credential(
+        self,
+        identifier_id: str,
+        *,
+        org_id: str,
+    ) -> None:
+        """Revoke an identifier credential and invalidate associated cached trust."""
+        now_iso = datetime.now(UTC).isoformat()
+        async with self.db.raw.begin() as conn:
+            await conn.execute(
+                update(trust_fabric_identifiers)
+                .where(
+                    and_(
+                        trust_fabric_identifiers.c.id == identifier_id,
+                        trust_fabric_identifiers.c.org_id == org_id,
+                    )
+                )
+                .values(
+                    revoked_at=now_iso,
+                    verification_state=IdentifierVerificationState.REVOKED.value,
+                )
+            )
+            # Cascade: invalidate active passports for this principal
+            ident_stmt = select(trust_fabric_identifiers).where(
+                trust_fabric_identifiers.c.id == identifier_id
+            )
+            row = (await conn.execute(ident_stmt)).first()
+            if row:
+                principal_id = row._mapping["principal_id"]
+                await conn.execute(
+                    update(trust_fabric_passports)
+                    .where(
+                        and_(
+                            trust_fabric_passports.c.principal_id == principal_id,
+                            trust_fabric_passports.c.org_id == org_id,
+                            trust_fabric_passports.c.revoked_at.is_(None),
+                        )
+                    )
+                    .values(revoked_at=now_iso)
+                )
+
+        # Clear cache immediately
+        self._local_cache.clear()
+
+    async def terminate_relationship(
+        self,
+        relationship_id: str,
+        *,
+        org_id: str,
+    ) -> None:
+        """Terminate an employment or ownership relationship and revoke delegated authority."""
+        now_iso = datetime.now(UTC).isoformat()
+        async with self.db.raw.begin() as conn:
+            # 1. Revoke relationship
+            rel_stmt = select(trust_fabric_relationships).where(
+                and_(
+                    trust_fabric_relationships.c.id == relationship_id,
+                    trust_fabric_relationships.c.org_id == org_id,
+                )
+            )
+            rel_row = (await conn.execute(rel_stmt)).first()
+            if not rel_row:
+                return
+
+            rel = dict(rel_row._mapping)
+            await conn.execute(
+                update(trust_fabric_relationships)
+                .where(trust_fabric_relationships.c.id == relationship_id)
+                .values(
+                    revoked_at=now_iso,
+                    verification_state=IdentifierVerificationState.REVOKED.value,
+                )
+            )
+
+            # 2. Cascade: Revoke all authority edges granted to this subject principal
+            await conn.execute(
+                update(trust_fabric_authority_edges)
+                .where(
+                    and_(
+                        trust_fabric_authority_edges.c.grantee_principal_id == rel["subject_principal_id"],
+                        trust_fabric_authority_edges.c.org_id == org_id,
+                        trust_fabric_authority_edges.c.revoked_at.is_(None),
+                    )
+                )
+                .values(
+                    revoked_at=now_iso,
+                    revoked_by="SYSTEM_RELATIONSHIP_TERMINATION",
+                )
+            )
+
+        self._local_cache.clear()
+
+    def get_cached_decision(self, cache_key: str) -> Any | None:
+        """Retrieve a cached decision respecting strict TTL; never widen trust."""
+        if cache_key not in self._local_cache:
+            return None
+        val, expiry = self._local_cache[cache_key]
+        if datetime.now(UTC) >= expiry:
+            del self._local_cache[cache_key]
+            return None
+        return val
+
+    def set_cached_decision(self, cache_key: str, decision: Any, ttl_seconds: int = 60) -> None:
+        """Store decision in cache with bounded TTL."""
+        expiry = datetime.now(UTC) + timedelta(seconds=ttl_seconds)
+        self._local_cache[cache_key] = (decision, expiry)
