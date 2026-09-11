@@ -19,3 +19,6 @@ wiki/Authentication-and-RBAC.md:curl-auth-header:86
 
 # Historical false positive in early audit documentation (commit 911bb701):
 911bb7011f83839d3ba27bb96aa158c808aa2294:compliance/OPENSSF_SECRET_SCAN.md:generic-api-key:21
+
+# Historical false positive in SRE test (commit 06ac6cc1): synthetic key in negative secret redaction test
+06ac6cc1b47eff9a74a1f75b9f07f8aeaa9b484c:tests/test_ops_secret_redaction.py:generic-api-key:44
