@@ -46,13 +46,10 @@ class TrustDecisionEngine:
 
     async def evaluate_decision(self, request: TrustDecisionRequest) -> TrustDecisionResponse:
         """Evaluate whether a requested interaction or transaction can legitimately proceed."""
-        cache_key = (
-            f"{request.requesting_org_id}:{request.target_org_id}:"
-            f"{request.subject_principal_id}:{request.requested_action}:"
-            f"{request.context.get('amount_usd')}"
-        )
+        req_digest = request.compute_digest()
+        cache_key = f"decision:{req_digest}"
         cached = self.monitor.get_cached_decision(cache_key)
-        if cached is not None:
+        if cached is not None and getattr(cached, "request_digest", "") == req_digest:
             return cached
 
         # 1. Identity Resolution
@@ -75,6 +72,7 @@ class TrustDecisionEngine:
                 explanation=f"Subject principal {request.subject_principal_id!r} is unknown to WhitePact.",
                 assurance=assurance,
                 evidence_references=(),
+                request_digest=req_digest,
             )
         except CrossTenantAccessError:
             assurance = AssuranceVector(
@@ -91,6 +89,7 @@ class TrustDecisionEngine:
                 explanation="Subject principal does not belong to target organization.",
                 assurance=assurance,
                 evidence_references=(),
+                request_digest=req_digest,
             )
 
         # 2. Lifecycle Check
@@ -104,6 +103,7 @@ class TrustDecisionEngine:
                 explanation=f"Subject principal is currently in {principal.lifecycle_state.value} state.",
                 assurance=assurance,
                 evidence_references=(),
+                request_digest=req_digest,
             )
 
         if principal.lifecycle_state == PrincipalState.REVOKED:
@@ -116,6 +116,7 @@ class TrustDecisionEngine:
                 explanation="Subject principal identity or credentials have been revoked.",
                 assurance=assurance,
                 evidence_references=(),
+                request_digest=req_digest,
             )
 
         # 3. Assurance & Conflict Evaluation
@@ -130,11 +131,12 @@ class TrustDecisionEngine:
                 explanation="Independent authoritative sources are in contradiction regarding this principal.",
                 assurance=assurance,
                 evidence_references=(),
+                request_digest=req_digest,
             )
 
         # 4. Authority Evaluation
-        amount_usd = request.context.get("amount_usd")
-        resource = request.context.get("resource", "*")
+        amount_usd = request.context.get("amount_usd", request.amount_usd)
+        resource = request.context.get("resource", request.resource)
 
         is_auth, auth_reason, auth_edge = await self.authority.check_authority(
             grantee_principal_id=principal.id,
@@ -157,6 +159,7 @@ class TrustDecisionEngine:
                 explanation=auth_reason,
                 assurance=assurance,
                 evidence_references=tuple([auth_edge.canonical_digest] if auth_edge else []),
+                request_digest=req_digest,
             )
             self.monitor.set_cached_decision(cache_key, resp, ttl_seconds=30)
             return resp
@@ -169,6 +172,7 @@ class TrustDecisionEngine:
             explanation="Identity verified, active affiliation confirmed, and delegated authority requirements satisfied.",
             assurance=assurance,
             evidence_references=ev_refs,
+            request_digest=req_digest,
         )
         self.monitor.set_cached_decision(cache_key, resp, ttl_seconds=60)
         return resp

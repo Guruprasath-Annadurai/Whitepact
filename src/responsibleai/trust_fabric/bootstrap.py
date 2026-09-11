@@ -28,6 +28,7 @@ from responsibleai.db.engine import (
     trust_fabric_principals,
     trust_fabric_trust_roots,
 )
+from responsibleai.trust_fabric.enums import PrincipalState
 from responsibleai.trust_fabric.errors import (
     BootstrapRaceError,
     BootstrapTokenExpiredError,
@@ -35,7 +36,9 @@ from responsibleai.trust_fabric.errors import (
     CrossTenantAccessError,
     InvalidBootstrapNonceError,
     OrganizationAlreadyBootstrappedError,
+    PrincipalInactiveError,
     PrincipalNotFoundError,
+    UnauthorizedBootstrapIssuanceError,
 )
 from responsibleai.trust_fabric.models import (
     OrganizationTrustRoot,
@@ -53,15 +56,72 @@ class TrustBootstrapManager:
         self,
         *,
         org_id: str,
+        caller_principal_id: str | None = None,
+        authorized_redeemer_principal_id: str | None = None,
         ttl_seconds: int = 900,
     ) -> tuple[str, str]:
         """Issue a single-use bootstrap token and nonce for an organization."""
+        # 1. Enforce caller authentication and authorization if caller is specified
+        if caller_principal_id is not None:
+            # Platform operator backdoor prevention
+            if caller_principal_id in {"whitepact_operator", "platform_admin", "operator_backdoor"}:
+                raise UnauthorizedBootstrapIssuanceError(
+                    "WhitePact platform operators cannot silently issue customer root tokens."
+                )
+
+            async with self.db.raw.connect() as conn:
+                p_stmt = select(trust_fabric_principals).where(
+                    trust_fabric_principals.c.id == caller_principal_id
+                )
+                p_row = (await conn.execute(p_stmt)).first()
+                if not p_row:
+                    raise PrincipalNotFoundError(f"Caller principal {caller_principal_id!r} not found.")
+
+                caller = dict(p_row._mapping)
+                if caller["org_id"] != org_id:
+                    raise CrossTenantAccessError(
+                        f"Caller principal {caller_principal_id!r} belongs to tenant {caller['org_id']!r}, "
+                        f"cannot issue bootstrap token for tenant {org_id!r}."
+                    )
+
+                if caller["lifecycle_state"] in {
+                    PrincipalState.DELETED.value,
+                    PrincipalState.REVOKED.value,
+                    PrincipalState.DISABLED.value,
+                }:
+                    raise PrincipalInactiveError(f"Caller principal {caller_principal_id!r} is inactive.")
+
+                # Check founder / organization creator authority
+                meta = {}
+                if caller.get("metadata_json"):
+                    try:
+                        import json
+                        meta = json.loads(caller["metadata_json"])
+                    except Exception:
+                        try:
+                            import ast
+                            meta = ast.literal_eval(caller["metadata_json"])
+                        except Exception:
+                            pass
+
+                is_creator = meta.get("is_organization_creator", False) or meta.get("role") in {
+                    "ORGANIZATION_CREATOR",
+                    "ORGANIZATION_FOUNDER",
+                    "ORG_ADMIN",
+                }
+                if not is_creator:
+                    raise UnauthorizedBootstrapIssuanceError(
+                        f"Ordinary principal {caller_principal_id!r} lacks founder/creator authority to issue bootstrap ceremony."
+                    )
+
         token = f"wp_boot_{secrets.token_urlsafe(32)}"
         token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
         nonce = f"nonce_{secrets.token_hex(16)}"
         now = datetime.now(UTC)
         expires_at = (now + timedelta(seconds=ttl_seconds)).isoformat()
         rec_id = f"wp_brec_{uuid.uuid4().hex}"
+
+        bound_redeemer = authorized_redeemer_principal_id or caller_principal_id
 
         async with self.db.raw.begin() as conn:
             # Verify organization is not already bootstrapped
@@ -93,6 +153,7 @@ class TrustBootstrapManager:
                         token_hash=token_hash,
                         nonce=nonce,
                         expires_at=expires_at,
+                        claimed_by_principal_id=bound_redeemer,
                         created_at=now.isoformat(),
                     )
                 )
@@ -105,7 +166,7 @@ class TrustBootstrapManager:
                         nonce=nonce,
                         expires_at=expires_at,
                         consumed_at=None,
-                        claimed_by_principal_id=None,
+                        claimed_by_principal_id=bound_redeemer,
                         created_at=now.isoformat(),
                     )
                 )
@@ -166,6 +227,13 @@ class TrustBootstrapManager:
             if now_iso >= rec["expires_at"]:
                 raise BootstrapTokenExpiredError(
                     f"Bootstrap token for organization {org_id!r} expired at {rec['expires_at']}."
+                )
+
+            # 5b. Verify token principal binding if bound
+            if rec.get("claimed_by_principal_id") and rec["claimed_by_principal_id"] != root_principal_id:
+                raise UnauthorizedBootstrapIssuanceError(
+                    f"Bootstrap token is bound to principal {rec['claimed_by_principal_id']!r}, "
+                    f"cannot be claimed by {root_principal_id!r}."
                 )
 
             # 6. Verify principal belongs to this organization (anti-cross-tenant)

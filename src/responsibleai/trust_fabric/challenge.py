@@ -104,6 +104,7 @@ class TrustChallengeProtocol:
         challenge_id: str,
         org_id: str,
         provided_response: str,
+        responder_principal_id: str | None = None,
     ) -> bool:
         """Verify the response to an issued trust challenge."""
         now_iso = datetime.now(UTC).isoformat()
@@ -120,6 +121,16 @@ class TrustChallengeProtocol:
                 raise CrossTenantAccessError(f"Challenge {challenge_id!r} not found for organization {org_id!r}.")
 
             data = dict(row._mapping)
+
+        # Principal substitution check
+        if (
+            responder_principal_id
+            and data["principal_id"]
+            and data["principal_id"] != responder_principal_id
+        ):
+            raise TrustChallengeFailedError(
+                f"Principal substitution detected: expected {data['principal_id']!r}, got {responder_principal_id!r}."
+            )
 
         if data["status"] != ChallengeStatus.PENDING.value:
             raise TrustChallengeFailedError(f"Challenge is already {data['status']}.")

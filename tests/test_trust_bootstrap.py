@@ -19,6 +19,7 @@ from responsibleai.trust_fabric.errors import (
     CrossTenantAccessError,
     InvalidBootstrapNonceError,
     OrganizationAlreadyBootstrappedError,
+    UnauthorizedBootstrapIssuanceError,
 )
 
 
@@ -184,3 +185,107 @@ class TestTrustBootstrapCeremony:
         # Verify only 1 root exists in DB
         root = await boot_mgr.get_trust_root(org_id="org_target")
         assert root is not None
+
+    async def test_unauthorized_token_issuance_defense(self, bootstrap_db):
+        """Ordinary users and cross-tenant callers cannot issue bootstrap tokens."""
+        boot_mgr = TrustBootstrapManager(bootstrap_db)
+        dir_svc = PrincipalDirectory(bootstrap_db)
+
+        founder = await dir_svc.create_principal(
+            org_id="org_target",
+            principal_type=PrincipalType.HUMAN,
+            display_name="Target Founder",
+            metadata={"is_organization_creator": True, "role": "ORGANIZATION_FOUNDER"},
+        )
+        ordinary_user = await dir_svc.create_principal(
+            org_id="org_target",
+            principal_type=PrincipalType.HUMAN,
+            display_name="Ordinary Employee",
+            metadata={"role": "MEMBER"},
+        )
+        foreign_admin = await dir_svc.create_principal(
+            org_id="org_other",
+            principal_type=PrincipalType.HUMAN,
+            display_name="Foreign Admin",
+            metadata={"is_organization_creator": True, "role": "ORGANIZATION_FOUNDER"},
+        )
+
+        # 1. Ordinary member attempts to issue: REJECTED
+        with pytest.raises(UnauthorizedBootstrapIssuanceError):
+            await boot_mgr.issue_bootstrap_ceremony(
+                org_id="org_target",
+                caller_principal_id=ordinary_user.id,
+            )
+
+        # 2. Foreign admin of another org attempts to issue: REJECTED (cross-tenant)
+        with pytest.raises(CrossTenantAccessError):
+            await boot_mgr.issue_bootstrap_ceremony(
+                org_id="org_target",
+                caller_principal_id=foreign_admin.id,
+            )
+
+        # 3. Legitimate founder issues: ACCEPTED
+        token, nonce = await boot_mgr.issue_bootstrap_ceremony(
+            org_id="org_target",
+            caller_principal_id=founder.id,
+        )
+        assert token.startswith("wp_boot_")
+
+    async def test_platform_operator_backdoor_blocked(self, bootstrap_db):
+        """WhitePact platform operators cannot silently inject customer roots."""
+        boot_mgr = TrustBootstrapManager(bootstrap_db)
+
+        with pytest.raises(UnauthorizedBootstrapIssuanceError):
+            await boot_mgr.issue_bootstrap_ceremony(
+                org_id="org_target",
+                caller_principal_id="whitepact_operator",
+            )
+
+        with pytest.raises(UnauthorizedBootstrapIssuanceError):
+            await boot_mgr.issue_bootstrap_ceremony(
+                org_id="org_target",
+                caller_principal_id="operator_backdoor",
+            )
+
+    async def test_token_principal_binding_enforced(self, bootstrap_db):
+        """A bootstrap token bound to Alice cannot be redeemed by Bob (separation of duties)."""
+        boot_mgr = TrustBootstrapManager(bootstrap_db)
+        dir_svc = PrincipalDirectory(bootstrap_db)
+
+        alice = await dir_svc.create_principal(
+            org_id="org_target",
+            principal_type=PrincipalType.HUMAN,
+            display_name="Alice Founder",
+            metadata={"is_organization_creator": True},
+        )
+        bob = await dir_svc.create_principal(
+            org_id="org_target",
+            principal_type=PrincipalType.HUMAN,
+            display_name="Bob Imposter",
+        )
+
+        token, nonce = await boot_mgr.issue_bootstrap_ceremony(
+            org_id="org_target",
+            caller_principal_id=alice.id,
+            authorized_redeemer_principal_id=alice.id,
+        )
+
+        # Bob attempts to redeem Alice's token: REJECTED
+        with pytest.raises(UnauthorizedBootstrapIssuanceError):
+            await boot_mgr.claim_trust_root(
+                org_id="org_target",
+                token=token,
+                nonce=nonce,
+                root_principal_id=bob.id,
+                root_public_key="ed25519_pk_bob",
+            )
+
+        # Alice redeems: ACCEPTED
+        root = await boot_mgr.claim_trust_root(
+            org_id="org_target",
+            token=token,
+            nonce=nonce,
+            root_principal_id=alice.id,
+            root_public_key="ed25519_pk_alice",
+        )
+        assert root.root_principal_id == alice.id

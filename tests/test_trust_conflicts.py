@@ -269,3 +269,240 @@ async def test_conflict_cross_tenant_isolation(sqlite_engine):
 
     with pytest.raises(CrossTenantAccessError):
         await conflict_engine.evaluate_and_resolve(conflict.id, org_id=org_b)
+
+
+@pytest.mark.asyncio
+async def test_old_registry_cannot_override_fresh_employment_termination(sqlite_engine):
+    """Old statutory registry (Tier B) cannot override fresh enterprise HRIS termination (Tier C)."""
+    org_id = "org_acme_corp"
+    dir_svc = PrincipalDirectory(sqlite_engine)
+    prov = TrustProvenanceEngine(sqlite_engine)
+    conflict_engine = TrustConflictEngine(sqlite_engine)
+
+    employee = await dir_svc.create_principal(
+        org_id=org_id, principal_type=PrincipalType.HUMAN, display_name="Former Employee"
+    )
+
+    src_reg = await prov.register_source(
+        name="State_Corporate_Filing_2yr_Old",
+        source_tier=SourceTier.TIER_B,
+        provider_type="STATUTORY_REGISTRY",
+        org_id=org_id,
+    )
+    src_hr = await prov.register_source(
+        name="Workday_HRIS_Live",
+        source_tier=SourceTier.TIER_C,
+        provider_type="ENTERPRISE_HRIS",
+        org_id=org_id,
+    )
+
+    asst_old_reg = await prov.record_assertion(
+        principal_id=employee.id,
+        org_id=org_id,
+        field_name="CURRENT_EMPLOYMENT",
+        field_value="EMPLOYED",
+        source_id=src_reg.id,
+        verification_method="ANNUAL_FILING",
+        assurance_level=AssuranceLevel.HIGH,
+        disclosure_class=DisclosureClass.BUSINESS_PUBLIC,
+    )
+    asst_fresh_hr = await prov.record_assertion(
+        principal_id=employee.id,
+        org_id=org_id,
+        field_name="CURRENT_EMPLOYMENT",
+        field_value="TERMINATED",
+        source_id=src_hr.id,
+        verification_method="HR_SCIM_EVENT",
+        assurance_level=AssuranceLevel.HIGH,
+        disclosure_class=DisclosureClass.TENANT_INTERNAL,
+    )
+
+    conflict = await conflict_engine.record_conflict(
+        principal_id=employee.id,
+        org_id=org_id,
+        field_or_claim="CURRENT_EMPLOYMENT",
+        assertion_id_a=asst_old_reg.id,
+        assertion_id_b=asst_fresh_hr.id,
+    )
+
+    status, reason = await conflict_engine.evaluate_and_resolve(conflict.id, org_id=org_id)
+    assert status == ConflictStatus.RESOLVED_SUPERSEDED
+    # Assertion B (Workday HRIS Tier C) strictly supersedes Assertion A (Statutory Filing Tier B) for employment
+    assert "Assertion B (TIER_C) is authoritative for CURRENT_EMPLOYMENT" in reason
+
+
+@pytest.mark.asyncio
+async def test_old_public_role_cannot_override_fresh_enterprise_role_removal(sqlite_engine):
+    """Old public directory role assertion cannot override fresh enterprise directory removal."""
+    org_id = "org_acme_corp"
+    dir_svc = PrincipalDirectory(sqlite_engine)
+    prov = TrustProvenanceEngine(sqlite_engine)
+    conflict_engine = TrustConflictEngine(sqlite_engine)
+
+    principal = await dir_svc.create_principal(
+        org_id=org_id, principal_type=PrincipalType.HUMAN, display_name="Demoted Executive"
+    )
+
+    src_pub = await prov.register_source(
+        name="Public_Business_Registry",
+        source_tier=SourceTier.TIER_E,
+        provider_type="PUBLIC_DIRECTORY",
+        org_id=org_id,
+    )
+    src_idp = await prov.register_source(
+        name="Okta_Directory_Live",
+        source_tier=SourceTier.TIER_C,
+        provider_type="ENTERPRISE_IDP",
+        org_id=org_id,
+    )
+
+    asst_old_pub = await prov.record_assertion(
+        principal_id=principal.id,
+        org_id=org_id,
+        field_name="CURRENT_ORGANIZATION_ROLE",
+        field_value="VP_SECURITY",
+        source_id=src_pub.id,
+        verification_method="WEB_SCRAPE",
+        assurance_level=AssuranceLevel.LOW,
+        disclosure_class=DisclosureClass.PUBLIC,
+    )
+    asst_fresh_idp = await prov.record_assertion(
+        principal_id=principal.id,
+        org_id=org_id,
+        field_name="CURRENT_ORGANIZATION_ROLE",
+        field_value="REMOVED",
+        source_id=src_idp.id,
+        verification_method="SCIM_ROLE_SYNC",
+        assurance_level=AssuranceLevel.HIGH,
+        disclosure_class=DisclosureClass.TENANT_INTERNAL,
+    )
+
+    conflict = await conflict_engine.record_conflict(
+        principal_id=principal.id,
+        org_id=org_id,
+        field_or_claim="CURRENT_ORGANIZATION_ROLE",
+        assertion_id_a=asst_old_pub.id,
+        assertion_id_b=asst_fresh_idp.id,
+    )
+
+    status, reason = await conflict_engine.evaluate_and_resolve(conflict.id, org_id=org_id)
+    assert status == ConflictStatus.RESOLVED_SUPERSEDED
+    assert "Assertion B (TIER_C) is authoritative for CURRENT_ORGANIZATION_ROLE" in reason
+
+
+@pytest.mark.asyncio
+async def test_old_key_assertion_cannot_override_fresh_cryptographic_revocation(sqlite_engine):
+    """Old key listing in directory cannot override fresh cryptographic revocation."""
+    org_id = "org_acme_corp"
+    dir_svc = PrincipalDirectory(sqlite_engine)
+    prov = TrustProvenanceEngine(sqlite_engine)
+    conflict_engine = TrustConflictEngine(sqlite_engine)
+
+    principal = await dir_svc.create_principal(
+        org_id=org_id, principal_type=PrincipalType.SERVICE, display_name="API Gateway"
+    )
+
+    src_dir = await prov.register_source(
+        name="Enterprise_Wiki_Keylist",
+        source_tier=SourceTier.TIER_E,
+        provider_type="WIKI",
+        org_id=org_id,
+    )
+    src_crypto = await prov.register_source(
+        name="HSM_Revocation_Endpoint",
+        source_tier=SourceTier.TIER_A,
+        provider_type="CRYPTO_CHALLENGE",
+        org_id=org_id,
+    )
+
+    asst_old_dir = await prov.record_assertion(
+        principal_id=principal.id,
+        org_id=org_id,
+        field_name="KEY_POSSESSION",
+        field_value="ed25519_pub_active",
+        source_id=src_dir.id,
+        verification_method="MANUAL_DOC",
+        assurance_level=AssuranceLevel.LOW,
+        disclosure_class=DisclosureClass.PUBLIC,
+    )
+    asst_fresh_crypto = await prov.record_assertion(
+        principal_id=principal.id,
+        org_id=org_id,
+        field_name="KEY_POSSESSION",
+        field_value="REVOKED",
+        source_id=src_crypto.id,
+        verification_method="CRL_HSM_CHECK",
+        assurance_level=AssuranceLevel.CRYPTOGRAPHIC,
+        disclosure_class=DisclosureClass.SECURITY_RESTRICTED,
+    )
+
+    conflict = await conflict_engine.record_conflict(
+        principal_id=principal.id,
+        org_id=org_id,
+        field_or_claim="KEY_POSSESSION",
+        assertion_id_a=asst_old_dir.id,
+        assertion_id_b=asst_fresh_crypto.id,
+    )
+
+    status, reason = await conflict_engine.evaluate_and_resolve(conflict.id, org_id=org_id)
+    assert status == ConflictStatus.RESOLVED_SUPERSEDED
+    assert "Assertion B (TIER_A) is authoritative for KEY_POSSESSION" in reason
+
+
+@pytest.mark.asyncio
+async def test_old_agent_ownership_cannot_override_current_owner_change(sqlite_engine):
+    """Old third-party owner claim cannot override current enterprise registry owner assignment."""
+    org_id = "org_acme_corp"
+    dir_svc = PrincipalDirectory(sqlite_engine)
+    prov = TrustProvenanceEngine(sqlite_engine)
+    conflict_engine = TrustConflictEngine(sqlite_engine)
+
+    agent = await dir_svc.create_principal(
+        org_id=org_id, principal_type=PrincipalType.AI_AGENT, display_name="Dev Agent"
+    )
+
+    src_third_party = await prov.register_source(
+        name="External_Vendor_Catalog",
+        source_tier=SourceTier.TIER_D,
+        provider_type="PARTNER_CATALOG",
+        org_id=org_id,
+    )
+    src_enterprise = await prov.register_source(
+        name="Enterprise_Agent_Controller",
+        source_tier=SourceTier.TIER_C,
+        provider_type="INTERNAL_CONTROLLER",
+        org_id=org_id,
+    )
+
+    asst_old_owner = await prov.record_assertion(
+        principal_id=agent.id,
+        org_id=org_id,
+        field_name="AGENT_OWNERSHIP",
+        field_value="external_vendor_llc",
+        source_id=src_third_party.id,
+        verification_method="PARTNER_API",
+        assurance_level=AssuranceLevel.MEDIUM,
+        disclosure_class=DisclosureClass.BUSINESS_PUBLIC,
+    )
+    asst_new_owner = await prov.record_assertion(
+        principal_id=agent.id,
+        org_id=org_id,
+        field_name="AGENT_OWNERSHIP",
+        field_value="acme_internal_engineering",
+        source_id=src_enterprise.id,
+        verification_method="INTERNAL_DISCOVERY",
+        assurance_level=AssuranceLevel.HIGH,
+        disclosure_class=DisclosureClass.TENANT_INTERNAL,
+    )
+
+    conflict = await conflict_engine.record_conflict(
+        principal_id=agent.id,
+        org_id=org_id,
+        field_or_claim="AGENT_OWNERSHIP",
+        assertion_id_a=asst_old_owner.id,
+        assertion_id_b=asst_new_owner.id,
+    )
+
+    status, reason = await conflict_engine.evaluate_and_resolve(conflict.id, org_id=org_id)
+    assert status == ConflictStatus.RESOLVED_SUPERSEDED
+    assert "Assertion B (TIER_C) is authoritative for AGENT_OWNERSHIP" in reason

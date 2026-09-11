@@ -91,3 +91,15 @@ class FederatedAssertionExpiredError(TrustFabricError):
 
 class FederatedAssertionReplayError(TrustFabricError):
     """Raised when a federated assertion nonce has already been consumed."""
+
+
+class UnauthorizedBootstrapIssuanceError(TrustFabricError):
+    """Raised when an unauthorized entity or platform operator attempts to issue a bootstrap token."""
+
+
+class PassportKeyRevokedError(TrustFabricError):
+    """Raised when a Trust Passport signing key has been revoked."""
+
+
+class PassportExpiredError(TrustFabricError):
+    """Raised when a Trust Passport is presented after its expiration date."""

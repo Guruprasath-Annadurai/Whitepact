@@ -488,6 +488,8 @@ class FederatedAssertion:
     expires_at: str
     revoked_at: str | None = None
 
+    algorithm: str = "Ed25519"
+
     @property
     def is_valid(self) -> bool:
         if self.revoked_at is not None:
@@ -508,6 +510,7 @@ class FederatedAssertion:
             "issued_at": self.issued_at,
             "expires_at": self.expires_at,
             "revoked_at": self.revoked_at,
+            "algorithm": self.algorithm,
             "is_valid": self.is_valid,
         }
 
@@ -521,6 +524,27 @@ class TrustDecisionRequest:
     target_org_id: str
     requested_action: str
     context: dict[str, Any] = field(default_factory=dict)
+    requesting_principal_id: str | None = None
+    resource: str = "*"
+    amount_usd: float | None = None
+    proof_type: str | None = None
+    source_snapshot: str | None = None
+    evidence_reference: str | None = None
+
+    def compute_digest(self) -> str:
+        payload = {
+            "requesting_org_id": self.requesting_org_id,
+            "requesting_principal_id": self.requesting_principal_id or self.context.get("requesting_principal_id"),
+            "target_org_id": self.target_org_id,
+            "subject_principal_id": self.subject_principal_id,
+            "requested_action": self.requested_action,
+            "resource": self.context.get("resource", self.resource),
+            "amount_usd": self.context.get("amount_usd", self.amount_usd),
+            "proof_type": self.context.get("proof_type", self.proof_type),
+            "source_snapshot": self.context.get("source_snapshot", self.source_snapshot),
+            "evidence_reference": self.context.get("evidence_reference", self.evidence_reference),
+        }
+        return compute_digest(payload)
 
 
 @dataclass(frozen=True)
@@ -532,6 +556,7 @@ class TrustDecisionResponse:
     explanation: str
     assurance: AssuranceVector
     evidence_references: tuple[str, ...] = ()
+    request_digest: str = ""
     timestamp: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def to_dict(self) -> dict[str, Any]:
@@ -541,5 +566,6 @@ class TrustDecisionResponse:
             "explanation": self.explanation,
             "assurance": self.assurance.to_dict(),
             "evidence_references": list(self.evidence_references),
+            "request_digest": self.request_digest,
             "timestamp": self.timestamp,
         }

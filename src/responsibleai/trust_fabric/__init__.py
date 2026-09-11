@@ -71,6 +71,12 @@ from responsibleai.trust_fabric.monitor import ContinuousTrustMonitor
 from responsibleai.trust_fabric.passport import TrustPassportEngine
 from responsibleai.trust_fabric.proofs import TrustProofEngine
 from responsibleai.trust_fabric.provenance import TrustProvenanceEngine
+from responsibleai.trust_fabric.provider import (
+    ProviderQueryResultStatus,
+    SourceQueryResult,
+    TrustSourceProvider,
+    TrustSourceRegistry,
+)
 
 __all__ = [
     "AssuranceLevel",
@@ -116,6 +122,8 @@ __all__ = [
     "PrincipalType",
     "ProofStatus",
     "RelationshipType",
+    "ProviderQueryResultStatus",
+    "SourceQueryResult",
     "SourceTier",
     "TrustBootstrapManager",
     "TrustChallenge",
@@ -135,5 +143,7 @@ __all__ = [
     "TrustProofEngine",
     "TrustProvenanceEngine",
     "TrustSource",
+    "TrustSourceProvider",
+    "TrustSourceRegistry",
     "normalize_identifier",
 ]

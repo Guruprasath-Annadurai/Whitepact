@@ -14,7 +14,9 @@ Enforces:
 
 from __future__ import annotations
 
+import json
 import re
+import unicodedata
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -47,7 +49,7 @@ from responsibleai.trust_fabric.models import (
 
 def normalize_identifier(identifier_type: IdentifierType, value: str) -> str:
     """Canonicalize an identifier value based on its type."""
-    val = value.strip()
+    val = unicodedata.normalize("NFKC", value.strip())
     if identifier_type == IdentifierType.EMAIL:
         val = val.lower()
         if "@" not in val or val.startswith("@") or val.endswith("@"):
@@ -108,7 +110,7 @@ class PrincipalDirectory:
                     lifecycle_state=principal.lifecycle_state.value,
                     created_at=principal.created_at,
                     updated_at=principal.updated_at,
-                    metadata_json=str(principal.metadata),
+                    metadata_json=json.dumps(principal.metadata or {}),
                 )
             )
 

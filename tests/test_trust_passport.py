@@ -16,8 +16,13 @@ from responsibleai.trust_fabric.enums import (
     PrincipalType,
     SourceTier,
 )
-from responsibleai.trust_fabric.errors import TrustPassportTamperedError
-from responsibleai.trust_fabric.passport import TrustPassportEngine
+from responsibleai.trust_fabric.errors import (
+    PassportExpiredError,
+    PassportKeyRevokedError,
+    PrincipalInactiveError,
+    TrustPassportTamperedError,
+)
+from responsibleai.trust_fabric.passport import PassportSigningKey, TrustPassportEngine
 from responsibleai.trust_fabric.provenance import TrustProvenanceEngine
 
 
@@ -151,3 +156,130 @@ class TestTrustPassport:
         )
         assert "public_role" in internal_view["disclosed_attributes"]
         assert "personal_phone" in internal_view["disclosed_attributes"]
+
+    async def test_passport_ed25519_key_lifecycle(self, passport_db):
+        """Dedicated Ed25519 key signing, rotation, and revocation defense."""
+        dir_svc = PrincipalDirectory(passport_db)
+        pass_svc = TrustPassportEngine(passport_db)
+
+        alice = await dir_svc.create_principal(
+            org_id="org_corp", principal_type=PrincipalType.HUMAN, display_name="Alice Crypto"
+        )
+
+        # 1. Generate dedicated signing key
+        key1 = PassportSigningKey.generate("pass_key_2026_a")
+        pass_svc.register_signing_key(key1)
+
+        # 2. Issue passport with key1
+        passport1 = await pass_svc.generate_passport(
+            principal_id=alice.id,
+            org_id="org_corp",
+            signing_key=key1,
+        )
+        assert passport1.signature is not None
+        assert passport1.signature.startswith("ed25519:")
+        assert await pass_svc.verify_passport_authority(passport1) is True
+
+        # 3. Rotate key: key1 -> key2
+        key2 = PassportSigningKey.generate("pass_key_2026_b")
+        pass_svc.rotate_key("pass_key_2026_a", key2)
+
+        passport2 = await pass_svc.generate_passport(
+            principal_id=alice.id,
+            org_id="org_corp",
+            signing_key=key2,
+        )
+        assert await pass_svc.verify_passport_authority(passport2) is True
+
+        # 4. Revoke key1
+        pass_svc.revoke_key("pass_key_2026_a")
+
+        # Verifying passport1 authority now FAILS because key1 is revoked
+        with pytest.raises(PassportKeyRevokedError):
+            await pass_svc.verify_passport_authority(passport1, check_current_authority=True)
+
+        # But historical integrity without claiming current authority remains verifiable
+        assert pass_svc.verify_passport_integrity(passport1) is True
+        assert pass_svc.verify_passport_signature(passport1) is True
+
+    async def test_passport_tampering_and_key_mismatch(self, passport_db):
+        """Forged signatures, wrong key IDs, and unknown signing keys are rejected."""
+        dir_svc = PrincipalDirectory(passport_db)
+        pass_svc = TrustPassportEngine(passport_db)
+
+        bob = await dir_svc.create_principal(
+            org_id="org_corp", principal_type=PrincipalType.HUMAN, display_name="Bob Security"
+        )
+        key = PassportSigningKey.generate("key_valid_bob")
+        pass_svc.register_signing_key(key)
+
+        passport = await pass_svc.generate_passport(
+            principal_id=bob.id,
+            org_id="org_corp",
+            signing_key=key,
+        )
+
+        # 1. Unknown signing key ID
+        tampered_key_id = replace(passport, signing_key_id="key_unknown_attacker")
+        with pytest.raises(TrustPassportTamperedError):
+            pass_svc.verify_passport_signature(tampered_key_id)
+
+        # 2. Mutated signature byte
+        orig_sig = passport.signature
+        assert orig_sig is not None
+        # Invert last hex char
+        last_char = "0" if orig_sig[-1] != "0" else "1"
+        tampered_sig = orig_sig[:-1] + last_char
+        tampered_passport = replace(passport, signature=tampered_sig)
+        with pytest.raises(TrustPassportTamperedError):
+            pass_svc.verify_passport_signature(tampered_passport)
+
+    async def test_stale_current_authority_passport_rejected(self, passport_db):
+        """Historical passport cannot confer current authority after principal is deleted/revoked."""
+        dir_svc = PrincipalDirectory(passport_db)
+        pass_svc = TrustPassportEngine(passport_db)
+
+        charlie = await dir_svc.create_principal(
+            org_id="org_corp", principal_type=PrincipalType.HUMAN, display_name="Charlie Officer"
+        )
+        key = PassportSigningKey.generate("key_charlie")
+        pass_svc.register_signing_key(key)
+
+        passport = await pass_svc.generate_passport(
+            principal_id=charlie.id,
+            org_id="org_corp",
+            signing_key=key,
+        )
+        assert await pass_svc.verify_passport_authority(passport) is True
+
+        # Charlie leaves organization: deleted/revoked in directory
+        await dir_svc.delete_principal(charlie.id, org_id="org_corp")
+
+        # Stale passport is strictly rejected for current authority
+        with pytest.raises(PrincipalInactiveError):
+            await pass_svc.verify_passport_authority(passport, check_current_authority=True)
+
+        # Historical integrity remains intact
+        assert pass_svc.verify_passport_integrity(passport) is True
+
+    async def test_expired_passport_rejected(self, passport_db):
+        """Expired passports are strictly rejected for current authority."""
+        dir_svc = PrincipalDirectory(passport_db)
+        pass_svc = TrustPassportEngine(passport_db)
+
+        dan = await dir_svc.create_principal(
+            org_id="org_corp", principal_type=PrincipalType.HUMAN, display_name="Dan Temporary"
+        )
+        key = PassportSigningKey.generate("key_dan")
+        pass_svc.register_signing_key(key)
+
+        # Generate passport with -1 day ttl (already expired)
+        passport = await pass_svc.generate_passport(
+            principal_id=dan.id,
+            org_id="org_corp",
+            ttl_days=-1,
+            signing_key=key,
+        )
+
+        with pytest.raises(PassportExpiredError):
+            await pass_svc.verify_passport_authority(passport, check_current_authority=True)
