@@ -304,18 +304,25 @@ async def admit_execution(
 
 class InternalToolExecutor:
     """Executes one of this platform's own 27 MCP tools
-    (`mcp.tools.dispatch_tool`) — the only executor that exists today.
-    Named to match the v3 spec's own suggested name for this exact
-    case (Section 28 lists `InternalToolExecutor` alongside the
-    not-yet-built `MCPExecutor`/`HTTPExecutor` for proxying to
-    *external* systems).
+    (`mcp.tools.dispatch_tool`). In Phase 2, can route execution through
+    the independent `IsolationBroker` to enforce OS/container-level
+    containment.
     """
 
-    def __init__(self, *, nonce_repo: ExecutionNonceRepository | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        nonce_repo: ExecutionNonceRepository | None = None,
+        broker: Any | None = None,
+    ) -> None:
         self._nonce_repo = nonce_repo
+        self._broker = broker
 
     async def execute(self, authorization: ExecutionAuthorization, action: ActionRequest) -> Any:
         await admit_execution(authorization, action, self._nonce_repo)
+
+        if self._broker is not None:
+            return await self._broker.execute(authorization, action)
 
         from responsibleai.mcp.tools import dispatch_tool
 
