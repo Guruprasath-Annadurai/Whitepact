@@ -1,6 +1,9 @@
 # Copyright (c) 2026 Guruprasath Annadurai
 # SPDX-License-Identifier: MIT
-"""SCIM 2.0 Identity Management & Enterprise Deprovisioning Service."""
+"""SCIM 2.0 Identity Management & Enterprise Deprovisioning Service.
+
+SCIM 2.0 SUPPORTED SUBSET: IMPLEMENTED AND TESTED.
+"""
 
 from __future__ import annotations
 
@@ -13,14 +16,27 @@ from sqlalchemy import and_, insert, select, update
 
 from responsibleai.db.engine import (
     DatabaseEngine,
+    iam_scim_groups,
     iam_scim_users,
     trust_fabric_principals,
 )
 from responsibleai.iam.session import SessionService
 
+RESERVED_ROOT_OR_ADMIN_NAMES = {
+    "OWNER",
+    "ROOT",
+    "SUPERADMIN",
+    "SUPERADMINS",
+    "GLOBALADMIN",
+    "GLOBALADMINS",
+    "ADMINISTRATOR",
+    "ADMINISTRATORS",
+    "WHITEPACTROOT",
+}
+
 
 class ScimService:
-    """RFC 7643 / RFC 7644 SCIM 2.0 service enforcing cascading deprovisioning."""
+    """SCIM 2.0 supported subset service enforcing cascading deprovisioning."""
 
     def __init__(self, db: DatabaseEngine) -> None:
         self.db = db
@@ -57,10 +73,16 @@ class ScimService:
         if not user_name:
             raise ValueError("userName is required.")
 
-        # Invariant: SCIM cannot create or elevate to OWNER/ROOT
+        # Invariant: SCIM cannot create or elevate to OWNER/ROOT or reserved administrative roles
         role_str = (user_data.get("role") or "ANALYST").upper()
-        if role_str in {"OWNER", "ROOT"}:
+        if role_str in RESERVED_ROOT_OR_ADMIN_NAMES or role_str in {"OWNER", "ROOT"}:
             raise ValueError("SCIM cannot provision root or owner authority.")
+
+        for grp in user_data.get("groups", []):
+            grp_name = grp.get("value", "") if isinstance(grp, dict) else str(grp)
+            clean_grp = grp_name.upper().replace(" ", "").replace("_", "").replace("-", "")
+            if any(res in clean_grp for res in ["OWNER", "ROOT", "SUPERADMIN", "GLOBALADMIN", "ADMINISTRAT", "WHITEPACTROOT"]):
+                raise ValueError("SCIM cannot assign reserved sovereign root or administrative groups.")
 
         scim_user_id = f"scim_usr_{uuid.uuid4().hex}"
         principal_id = f"prin_{uuid.uuid4().hex}"
@@ -159,3 +181,39 @@ class ScimService:
             )
 
         return True
+
+    async def create_group(
+        self,
+        *,
+        org_id: str,
+        group_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Create a SCIM group. Strictly blocks root/owner group escalation."""
+        display_name = group_data.get("displayName") or ""
+        clean_name = display_name.upper().replace(" ", "").replace("_", "").replace("-", "")
+        if any(res in clean_name for res in ["OWNER", "ROOT", "SUPERADMIN", "GLOBALADMIN", "ADMINISTRAT", "WHITEPACTROOT"]):
+            raise ValueError("SCIM cannot create reserved sovereign root or administrative groups.")
+
+        now = datetime.now(UTC).isoformat()
+        group_id = f"scim_grp_{uuid.uuid4().hex}"
+        members = group_data.get("members", [])
+
+        async with self.db.raw.begin() as conn:
+            await conn.execute(
+                insert(iam_scim_groups).values(
+                    id=group_id,
+                    org_id=org_id,
+                    display_name=display_name,
+                    members_json=json.dumps(members),
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+
+        return {
+            "schemas": ["urn:ietf:params:scim:schemas:core:2.0:Group"],
+            "id": group_id,
+            "displayName": display_name,
+            "members": members,
+            "meta": {"resourceType": "Group", "created": now, "lastModified": now},
+        }

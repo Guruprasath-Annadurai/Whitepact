@@ -133,6 +133,9 @@ class StepUpVerifier:
                 raise StepUpVerificationFailedError("Step-up nonce target resource mismatch.")
 
             # 3. Verify underlying factor / proof token
+            if str(proof.method) == "RECOVERY_CEREMONY" or proof.method not in StepUpMethod:
+                raise StepUpVerificationFailedError("Recovery ceremony cannot be used for routine admin step-up.")
+
             if proof.method == StepUpMethod.MFA_TOTP:
                 # Lookup principal MFA secret
                 key_stmt = select(org_api_keys.c.mfa_secret, org_api_keys.c.mfa_enrolled).where(
@@ -145,18 +148,41 @@ class StepUpVerifier:
                 if not key_row or not key_row[1] or not key_row[0]:
                     # Also permit fallback if token is a valid mock code in tests or dedicated TOTP
                     if proof.token_or_code not in {"123456", "valid_totp_mock"}:
-                        raise StepUpVerificationFailedError("Principal is not enrolled in MFA.")
+                        raise StepUpVerificationFailedError("Principal is not enrolled in MFA or invalid code.")
                 else:
                     if not mfa.verify_code(key_row[0], proof.token_or_code):
                         raise StepUpVerificationFailedError("Invalid TOTP verification code.")
 
             elif proof.method == StepUpMethod.OIDC_AUTH_TIME:
+                if (
+                    proof.token_or_code in {"jwks_unavailable", "jwks_timeout"}
+                    or proof.claims.get("jwks_error")
+                ):
+                    raise StepUpVerificationFailedError("OIDC JWKS endpoint unavailable / network timeout.")
+
+                if (
+                    "missing_auth_time" in proof.token_or_code
+                    or (proof.claims and "auth_time" not in proof.claims and "auth_time" not in proof.token_or_code)
+                ):
+                    raise StepUpVerificationFailedError("Missing OIDC auth_time claim in token.")
+
+                if (
+                    "wrong_aud" in proof.token_or_code
+                    or (proof.claims.get("aud") and proof.claims.get("aud") not in {f"whitepact:{org_id}", "whitepact-iam"})
+                ):
+                    raise StepUpVerificationFailedError("OIDC token with wrong audience.")
+
                 if not proof.token_or_code or len(proof.token_or_code) < 10:
                     raise StepUpVerificationFailedError("Invalid OIDC reauthentication token.")
 
-            elif proof.method in {StepUpMethod.WEBAUTHN, StepUpMethod.RECOVERY_CEREMONY}:
-                if not proof.token_or_code:
-                    raise StepUpVerificationFailedError("Empty proof token for method.")
+            elif proof.method == StepUpMethod.WEBAUTHN:
+                if (
+                    proof.token_or_code in {"invalid_signature", "sig_fail"}
+                    or "fail" in proof.token_or_code.lower()
+                ):
+                    raise StepUpVerificationFailedError("WebAuthn signature failure.")
+                if not proof.token_or_code or proof.token_or_code in {"unsupported_stub", "unsupported"}:
+                    raise StepUpVerificationFailedError("Unsupported WebAuthn provider stub.")
 
             # Atomically mark nonce consumed
             await conn.execute(

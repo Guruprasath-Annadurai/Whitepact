@@ -38,6 +38,7 @@ class StepUpProof:
     token_or_code: str
     user_agent: str | None = None
     ip_address: str | None = None
+    claims: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

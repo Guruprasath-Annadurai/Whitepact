@@ -266,10 +266,14 @@ async def test_vector_sovereign_recovery_forged_guardian_signature(redteam_db: D
     pub_b64 = base64.b64encode(priv.public_key().public_bytes_raw()).decode("utf-8")
     guardians = [{"name": "guardian_legit", "public_key": pub_b64}]
 
+    # Second legitimate guardian with distinct key
+    priv2 = ed25519.Ed25519PrivateKey.generate()
+    pub2_b64 = base64.b64encode(priv2.public_key().public_bytes_raw()).decode("utf-8")
+
     await rec_svc.register_recovery_policy(
         org_id="victim_tenant",
         threshold=2,
-        guardians=[guardians[0], {"name": "guardian_two", "public_key": pub_b64}],
+        guardians=[guardians[0], {"name": "guardian_two", "public_key": pub2_b64}],
     )
 
     challenge = await rec_svc.initiate_recovery_challenge(
@@ -299,4 +303,173 @@ async def test_vector_scim_root_escalation_blocked(redteam_db: DatabaseEngine):
         await scim.create_user(
             org_id="victim_tenant",
             user_data={"userName": "scim_attacker", "role": "ROOT"},
+        )
+
+
+@pytest.mark.asyncio
+async def test_vector_scim_reserved_group_attacks_blocked(redteam_db: DatabaseEngine):
+    scim = ScimService(redteam_db)
+    # Attack with group named SuperAdmins / WhitePactRoot / GlobalAdmins
+    for attack_grp in ["SuperAdmins", "GlobalAdmins", "WhitePactRoot", "Administrators"]:
+        with pytest.raises(ValueError, match="reserved sovereign root"):
+            await scim.create_user(
+                org_id="victim_tenant",
+                user_data={
+                    "userName": f"attacker_{attack_grp}",
+                    "groups": [attack_grp],
+                },
+            )
+        with pytest.raises(ValueError, match="reserved sovereign root"):
+            await scim.create_group(
+                org_id="victim_tenant",
+                group_data={"displayName": attack_grp},
+            )
+
+
+@pytest.mark.asyncio
+async def test_vector_recovery_ceremony_blocked_for_normal_step_up(redteam_db: DatabaseEngine):
+    step_up = StepUpVerifier(redteam_db)
+    nonce = await step_up.issue_step_up_nonce(
+        org_id="victim_tenant",
+        principal_id="admin_victim",
+        action="ROTATE_API_KEY",
+    )
+    now_iso = datetime.now(UTC).isoformat()
+    # Fabricated recovery ceremony proof presented as step-up
+    proof = StepUpProof(
+        nonce=nonce,
+        method="RECOVERY_CEREMONY",  # type: ignore[arg-type]
+        auth_time=now_iso,
+        token_or_code="guardian_signatures_bundle",
+    )
+    with pytest.raises(StepUpVerificationFailedError, match="Recovery ceremony cannot be used"):
+        await step_up.verify_and_consume_step_up(
+            org_id="victim_tenant",
+            principal_id="admin_victim",
+            action="ROTATE_API_KEY",
+            risk_tier=PrivilegeRiskTier.PRIVILEGED_HIGH,
+            proof=proof,
+        )
+
+
+@pytest.mark.asyncio
+async def test_vector_oidc_step_up_failure_modes(redteam_db: DatabaseEngine):
+    step_up = StepUpVerifier(redteam_db)
+    now_iso = datetime.now(UTC).isoformat()
+
+    # 1. JWKS unavailable / network timeout
+    nonce1 = await step_up.issue_step_up_nonce(
+        org_id="victim_tenant", principal_id="admin_victim", action="ROTATE_API_KEY"
+    )
+    proof_jwks = StepUpProof(
+        nonce=nonce1,
+        method=StepUpMethod.OIDC_AUTH_TIME,
+        auth_time=now_iso,
+        token_or_code="jwks_unavailable",
+    )
+    with pytest.raises(StepUpVerificationFailedError, match="JWKS endpoint unavailable"):
+        await step_up.verify_and_consume_step_up(
+            org_id="victim_tenant",
+            principal_id="admin_victim",
+            action="ROTATE_API_KEY",
+            risk_tier=PrivilegeRiskTier.PRIVILEGED_HIGH,
+            proof=proof_jwks,
+        )
+
+    # 2. Wrong audience
+    nonce2 = await step_up.issue_step_up_nonce(
+        org_id="victim_tenant", principal_id="admin_victim", action="ROTATE_API_KEY"
+    )
+    proof_aud = StepUpProof(
+        nonce=nonce2,
+        method=StepUpMethod.OIDC_AUTH_TIME,
+        auth_time=now_iso,
+        token_or_code="some_token_with_wrong_aud",
+    )
+    with pytest.raises(StepUpVerificationFailedError, match="wrong audience"):
+        await step_up.verify_and_consume_step_up(
+            org_id="victim_tenant",
+            principal_id="admin_victim",
+            action="ROTATE_API_KEY",
+            risk_tier=PrivilegeRiskTier.PRIVILEGED_HIGH,
+            proof=proof_aud,
+        )
+
+    # 3. Missing auth_time claim
+    nonce3 = await step_up.issue_step_up_nonce(
+        org_id="victim_tenant", principal_id="admin_victim", action="ROTATE_API_KEY"
+    )
+    proof_no_at = StepUpProof(
+        nonce=nonce3,
+        method=StepUpMethod.OIDC_AUTH_TIME,
+        auth_time=now_iso,
+        token_or_code="token_missing_auth_time",
+    )
+    with pytest.raises(StepUpVerificationFailedError, match="Missing OIDC auth_time claim"):
+        await step_up.verify_and_consume_step_up(
+            org_id="victim_tenant",
+            principal_id="admin_victim",
+            action="ROTATE_API_KEY",
+            risk_tier=PrivilegeRiskTier.PRIVILEGED_HIGH,
+            proof=proof_no_at,
+        )
+
+
+@pytest.mark.asyncio
+async def test_vector_webauthn_failure_modes(redteam_db: DatabaseEngine):
+    step_up = StepUpVerifier(redteam_db)
+    now_iso = datetime.now(UTC).isoformat()
+    nonce = await step_up.issue_step_up_nonce(
+        org_id="victim_tenant", principal_id="admin_victim", action="ROTATE_API_KEY"
+    )
+    proof = StepUpProof(
+        nonce=nonce,
+        method=StepUpMethod.WEBAUTHN,
+        auth_time=now_iso,
+        token_or_code="invalid_signature",
+    )
+    with pytest.raises(StepUpVerificationFailedError, match="WebAuthn signature failure"):
+        await step_up.verify_and_consume_step_up(
+            org_id="victim_tenant",
+            principal_id="admin_victim",
+            action="ROTATE_API_KEY",
+            risk_tier=PrivilegeRiskTier.PRIVILEGED_HIGH,
+            proof=proof,
+        )
+
+
+@pytest.mark.asyncio
+async def test_vector_break_glass_root_transfer_and_capability_mismatch(redteam_db: DatabaseEngine):
+    guard = PrivilegedSurfaceGuard(redteam_db)
+    bg_svc = BreakGlassService(redteam_db)
+    session = await bg_svc.initiate_break_glass(
+        org_id="victim_tenant",
+        principal_id="admin_victim",
+        incident_id="INC-3321",
+        capabilities=[BreakGlassCapability.RESTORE_IDP_CONFIGURATION],
+        justification="IdP restoration",
+    )
+
+    caller = PrivilegedCallerContext(
+        principal_id="admin_victim",
+        org_id="victim_tenant",
+        role=Role.ADMIN,
+    )
+
+    # 1. Break-glass attempting root transfer must be rejected!
+    with pytest.raises(PrivilegedAccessDeniedError, match="strictly prohibited under emergency break-glass"):
+        await guard.authorize_privileged_operation(
+            caller=caller,
+            target_org_id="victim_tenant",
+            action=PrivilegedAction.TRANSFER_ROOT_AUTHORITY,
+            break_glass_session_id=session.id,
+        )
+
+    # 2. Break-glass capability mismatch must be rejected!
+    with pytest.raises(PrivilegedAccessDeniedError, match="does not grant required capability"):
+        await guard.authorize_privileged_operation(
+            caller=caller,
+            target_org_id="victim_tenant",
+            action=PrivilegedAction.REVOKE_API_KEY,  # Requires REVOKE_COMPROMISED_CREDENTIAL, session only has RESTORE_IDP_CONFIGURATION
+            break_glass_session_id=session.id,
         )

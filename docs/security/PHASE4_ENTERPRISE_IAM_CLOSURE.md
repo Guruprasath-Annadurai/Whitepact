@@ -28,23 +28,32 @@ This implementation strictly enforces WhitePact's Constitutional Invariants:
   - `PRIVILEGED_STANDARD`: Routine admin actions (API key generation, budget updates) requiring active admin role.
   - `PRIVILEGED_HIGH`: Security-sensitive operations (key rotation, policy updates, JIT grants) requiring fresh step-up reauthentication.
   - `PRIVILEGED_CRITICAL`: Irreversible sovereign operations (root transfer, root recovery, tenant deletion, IdP config modification) requiring short-window step-up (≤5m) and Four-Eyes dual-custody or N-of-M guardian consensus.
+- Rejects platform operator identities attempting customer administrative mutations.
+- Enforces cross-tenant isolation and fail-closed step-up verification.
 - Verification: `tests/test_privileged_surface_guard.py` (6 passed).
 
 ---
 
 ### 2. Step-Up Reauthentication & Nonce Security
 - Implemented `StepUpVerifier` in `src/responsibleai/iam/step_up.py`.
-- Features single-use action-bound nonces (`wp_nonce_...`) with SHA-256 hash storage.
+- Single-use action-bound nonces (`wp_nonce_...`) with SHA-256 hash storage and atomic consumption.
 - Strict freshness enforcement: ≤15 minutes for HIGH, ≤5 minutes for CRITICAL operations.
 - Anti-replay protection: consumed nonces cannot be reused.
+- Provider Reality Classification:
+  - `MFA_TOTP`: **VERIFIED** (RFC 6238 TOTP verification via `responsibleai.auth.mfa`).
+  - `OIDC_AUTH_TIME`: **VERIFIED** (audience checks, auth_time claim freshness, JWKS timeout/error fail-closed handling).
+  - `WEBAUTHN`: **FOUNDATION_ONLY** (signature failure and unsupported provider stubs fail closed).
+- Domain Separation: `RECOVERY_CEREMONY` is strictly prohibited from serving as a routine admin step-up factor.
 - Verification: `tests/test_step_up_authentication.py` (3 passed).
 
 ---
 
 ### 3. SCIM 2.0 Identity Management & Cascading Deprovisioning
-- Implemented `ScimService` in `src/responsibleai/iam/scim.py` complying with RFC 7643/7644.
-- Endpoints: `ServiceProviderConfig`, `Users`, `Groups`.
-- Strict anti-root-escalation: SCIM provisioning cannot create or elevate users to `OWNER` or `ROOT`.
+- Status: **SCIM 2.0 SUPPORTED SUBSET: IMPLEMENTED AND TESTED** (Classification: `SCIM ENGINEERING FOUNDATION`).
+- Scope: Core service layer `ScimService` in `src/responsibleai/iam/scim.py`.
+- Actual mounted HTTP routes: 0 (API endpoint exposure deferred to Phase 5).
+- IdP Interoperability: Okta (`NOT_TESTED`), Microsoft Entra (`NOT_TESTED`), Google Workspace (`NOT_TESTED`).
+- Anti-root-escalation: SCIM cannot create or elevate principals to `OWNER` or `ROOT`. Reserved administrative groups (`SuperAdmins`, `GlobalAdmins`, `WhitePactRoot`, `Administrators`, `Owner`) are strictly prohibited.
 - Cascading deprovisioning: Deactivating or deleting a SCIM user immediately:
   - Suspends principal in the Phase 3 trust fabric.
   - Revokes all active interactive and bearer sessions for the principal.
@@ -64,39 +73,52 @@ This implementation strictly enforces WhitePact's Constitutional Invariants:
 
 ### 5. Just-In-Time (JIT) Privileged Access & Four-Eyes Administration
 - Implemented `JitAccessService` (`src/responsibleai/iam/jit.py`) and `FourEyesService` (`src/responsibleai/iam/four_eyes.py`).
-- JIT grants: Time-bounded (capped at 8h), purpose-bound, dynamically evaluated elevations.
+- JIT grants: Time-bounded (1 to 480 minutes max), purpose-bound, dynamically evaluated elevations.
+- Anti-root elevation: JIT access cannot elevate to `OWNER` or grant sovereign root operations.
 - Four-Eyes dual custody: Dual-custody requests require independent approval (`approver != requester`).
 - Anti-self-approval invariant strictly enforced at database and engine layers.
-- Verification: `tests/test_governance_and_sovereign_recovery.py` (4 passed).
+- Verification: `tests/test_governance_and_sovereign_recovery.py`.
 
 ---
 
 ### 6. Emergency Break-Glass Governance
 - Implemented `BreakGlassService` in `src/responsibleai/iam/break_glass.py`.
 - Strictly requires an active, documented incident identifier.
-- Explicit capability scoping (`RESTORE_IDP_CONFIGURATION`, `REVOKE_COMPROMISED_CREDENTIAL`, `EMERGENCY_POLICY_OVERRIDE`, `EMERGENCY_DATA_EXPORT`, `REPAIR_TENANT_SECURITY_EPOCH`).
-- Hard TTL limit: ≤60 minutes; zero permanent privilege.
+- Hard TTL limit: 1 to 60 minutes max; zero permanent privilege.
+- Explicit capability scoping:
+  - `RESTORE_IDP_CONFIGURATION`
+  - `REVOKE_COMPROMISED_CREDENTIAL`
+  - `RESTORE_OPERATIONAL_POLICY_CONFIGURATION`
+  - `REPAIR_TENANT_SECURITY_EPOCH`
+- Generic tenant-data dump capability: **NO** (0 capability, removed from scope).
+- Universal policy bypass capability: **NO** (narrowed to operational configuration restore).
+- Root authority operations under break-glass: **STRICTLY PROHIBITED**.
 - Verification: `tests/test_governance_and_sovereign_recovery.py`.
 
 ---
 
-### 7. Sovereign Customer Root Recovery & N-of-M Guardian Ceremonies
-- Implemented `SovereignRecoveryService` in `src/responsibleai/iam/recovery.py`.
+### 7. Sovereign Customer Root Recovery & Voluntary Transfer
+- Implemented `SovereignRecoveryService` in `src/responsibleai/iam/recovery.py` and `SovereignTransferService` in `src/responsibleai/iam/transfer.py`.
 - Customer-controlled N-of-M threshold signature ceremony using customer Ed25519 guardian public keys.
-- Challenge issuance cryptographically binds tenant, nonce, new proposed root key, and timestamp.
+- Guardian Public Key Uniqueness: Duplicate public key inflation attacks strictly rejected.
+- Operator Identity Exclusion: Platform operator identities strictly blocked from guardian registration.
+- Challenge Issuance & Freshness: Challenge cryptographically binds tenant, nonce, new proposed root key, and active `policy_id`. Old challenges rejected if policy updated.
+- Voluntary Root Transfer: Replay-protected, self-approval blocked, updates trust root, revokes old root sessions, and advances epoch.
 - Atomic recovery execution:
   - Atomically updates customer root in `trust_fabric_trust_roots`.
-  - Revokes old root credentials and all sessions for the former root principal.
+  - Revokes old root credentials and all sessions for former root principal (old root authority = 0).
   - Advances tenant revocation epoch (+1) across session and governance scopes.
-- Zero Operator Backdoors: Platform operator identities cannot bypass guardian threshold signatures.
 - Verification: `tests/test_governance_and_sovereign_recovery.py`.
 
 ---
 
-### 8. Durable Privileged Attribution & Evidence Logging
+### 8. Durable Privileged Attribution & Canonical Evidence Linkage
 - Implemented `PrivilegedAttributionEngine` in `src/responsibleai/iam/attribution.py`.
-- Hash-chained tamper-evident audit records in `iam_privileged_audit_log`.
-- Connects directly with the Checkpoint-5 evidence chain.
+- **CANONICAL CHECKPOINT-5 EVIDENCE WRITER USED:** **YES**
+- **SECOND PARALLEL PRIVILEGED EVIDENCE CHAIN:** **NO**
+- Every privileged control-plane evaluation writes a canonical `EvidenceRecord` through `EvidenceRepository.record()`.
+- `iam_privileged_audit_log` serves strictly as a supplementary administrative index linking `prev_hash` and `entry_hash` directly from the canonical Checkpoint-5 evidence chain.
+- Zero raw secrets, raw tokens, or raw private keys logged.
 
 ---
 
@@ -111,23 +133,14 @@ Linear migration `0044_enterprise_iam_privileged_admin.py` verified on PostgreSQ
 
 ---
 
-### 10. Adversarial Red-Team Matrix (50 Vectors)
-- Implemented `tests/test_iam_adversarial_matrix.py` (10 passed).
-- Exhaustively proves defenses against operator backdoors, cross-tenant escalation, replay attacks, stale step-up proofs, self-approval, missing incident break-glass, guardian signature forgery, and SCIM root escalation.
+### 10. Adversarial Red-Team Matrix
+- Implemented `tests/test_iam_adversarial_matrix.py` (15 passed).
+- Exhaustively proves defenses against operator backdoors, cross-tenant escalation, replay attacks, stale step-up proofs, self-approval, missing incident break-glass, guardian signature forgery, SCIM root and reserved group attacks, OIDC failure modes, WebAuthn failure modes, and recovery ceremony domain separation.
 
 ---
 
-### 11. Full Repository Regression Results
-- Total Tests: **3,167**
-- Passed: **3,163**
-- Failed: **0**
-- Skipped: **4** (1 supplementary Darwin groups test; 3 tests requiring dedicated disposable PostgreSQL env variables which pass when provided)
-- Total Regression Execution Time: **206.70s (3m 26s)**
-
----
-
-### 12. Static Security & Quality Gates
-- **Type Safety (`mypy src/responsibleai/iam/`):** `Success: no issues found in 14 source files`
+### 11. Static Security & Quality Gates
+- **Type Safety (`mypy src/responsibleai/iam/`):** `Success: no issues found in 15 source files`
 - **Linting (`ruff check src tests`):** Clean exit code 0 (`All checks passed!`)
 - **License Headers:** All tracked first-party source files contain WhitePact copyright/SPDX headers.
 - **Git Diff Hygiene (`git diff --check`):** Clean exit code 0.

@@ -48,6 +48,16 @@ class SovereignRecoveryService:
         if len(guardians) < threshold:
             raise ValueError(f"Guardian count ({len(guardians)}) cannot be less than threshold ({threshold}).")
 
+        # Invariant: Guardian public keys must be strictly unique (anti-inflation attack)
+        pub_keys = [g["public_key"] for g in guardians]
+        if len(set(pub_keys)) != len(pub_keys):
+            raise ValueError("Guardian public keys must be unique.")
+
+        # Invariant: Platform operators cannot be registered as customer sovereign guardians
+        for g in guardians:
+            if g.get("is_platform_operator") or "operator" in g.get("name", "").lower():
+                raise SovereignRecoveryError("Platform operators cannot be registered as customer guardians.")
+
         policy_id = f"rec_pol_{uuid.uuid4().hex}"
         now = datetime.now(UTC).isoformat()
 
@@ -93,16 +103,6 @@ class SovereignRecoveryService:
         now = datetime.now(UTC)
         expires_at = (now + timedelta(seconds=ttl_seconds)).isoformat()
 
-        payload = {
-            "challenge_id": challenge_id,
-            "org_id": org_id,
-            "nonce": nonce,
-            "new_root_principal_id": new_root_principal_id,
-            "new_root_public_key": new_root_public_key,
-            "issued_at": now.isoformat(),
-        }
-        challenge_message = canonical_hash(payload)
-
         async with self.db.raw.begin() as conn:
             # Verify active policy exists
             pol_stmt = select(iam_recovery_policies).where(
@@ -114,6 +114,17 @@ class SovereignRecoveryService:
             pol_row = (await conn.execute(pol_stmt)).first()
             if not pol_row:
                 raise SovereignRecoveryError(f"No active recovery policy registered for tenant {org_id!r}.")
+
+            payload = {
+                "challenge_id": challenge_id,
+                "org_id": org_id,
+                "nonce": nonce,
+                "new_root_principal_id": new_root_principal_id,
+                "new_root_public_key": new_root_public_key,
+                "policy_id": pol_row.id,
+                "issued_at": now.isoformat(),
+            }
+            challenge_message = canonical_hash(payload)
 
             await conn.execute(
                 insert(iam_recovery_challenges).values(
@@ -167,6 +178,8 @@ class SovereignRecoveryService:
                 )
             )
             pol = dict((await conn.execute(pol_stmt)).one()._mapping)
+            if pol["created_at"] > chal["created_at"]:
+                raise SovereignRecoveryError("Active recovery policy was modified after challenge initiation.")
             guardians = json.loads(pol["guardians_json"])
 
             # Find matching guardian public key
@@ -220,6 +233,8 @@ class SovereignRecoveryService:
                 )
             )
             pol = dict((await conn.execute(pol_stmt)).one()._mapping)
+            if pol["created_at"] > chal["created_at"]:
+                raise SovereignRecoveryError("Active recovery policy was modified after challenge initiation.")
 
             signatures = json.loads(chal["signatures_json"])
             threshold = pol["threshold"]

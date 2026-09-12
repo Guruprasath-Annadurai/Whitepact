@@ -33,11 +33,20 @@ class BreakGlassService:
         ttl_minutes: int = 60,
     ) -> BreakGlassSession:
         """Initiate an emergency break-glass session."""
-        if not incident_id or not incident_id.strip():
+        if not incident_id or not incident_id.strip() or len(incident_id.strip()) < 3:
             raise BreakGlassInvalidError("Break-glass requires a valid, documented incident identifier.")
 
-        if ttl_minutes > 60:
-            raise BreakGlassInvalidError("Emergency break-glass TTL cannot exceed 60 minutes.")
+        if ttl_minutes <= 0 or ttl_minutes > 60:
+            raise BreakGlassInvalidError(
+                "Emergency break-glass TTL must be between 1 and 60 minutes (cannot exceed 60 minutes)."
+            )
+
+        if not capabilities:
+            raise BreakGlassInvalidError("Break-glass requires explicitly declared capabilities.")
+
+        for c in capabilities:
+            if c not in BreakGlassCapability:
+                raise BreakGlassInvalidError(f"Invalid break-glass capability: {c!r}")
 
         session_id = f"bg_{uuid.uuid4().hex}"
         now = datetime.now(UTC)

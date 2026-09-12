@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from typing import Any
 
@@ -15,6 +16,7 @@ from responsibleai.db.engine import (
 from responsibleai.iam.attribution import PrivilegedAttributionEngine
 from responsibleai.iam.enums import (
     ACTION_RISK_TIERS,
+    BreakGlassCapability,
     FourEyesStatus,
     JitGrantStatus,
     PrivilegedAction,
@@ -36,6 +38,15 @@ from responsibleai.iam.models import (
 from responsibleai.iam.step_up import StepUpVerifier
 from responsibleai.rbac.models import Role
 from responsibleai.rbac.permissions import has_permission
+
+BREAK_GLASS_CAPABILITY_MAP: dict[PrivilegedAction, BreakGlassCapability] = {
+    PrivilegedAction.UPDATE_SSO_IDP_CONFIG: BreakGlassCapability.RESTORE_IDP_CONFIGURATION,
+    PrivilegedAction.REVOKE_API_KEY: BreakGlassCapability.REVOKE_COMPROMISED_CREDENTIAL,
+    PrivilegedAction.RESET_MFA: BreakGlassCapability.REVOKE_COMPROMISED_CREDENTIAL,
+    PrivilegedAction.REVOKE_PASSPORT: BreakGlassCapability.REVOKE_COMPROMISED_CREDENTIAL,
+    PrivilegedAction.MODIFY_POLICY_RULE: BreakGlassCapability.RESTORE_OPERATIONAL_POLICY_CONFIGURATION,
+    PrivilegedAction.MODIFY_WORKFLOW_RULE: BreakGlassCapability.RESTORE_OPERATIONAL_POLICY_CONFIGURATION,
+}
 
 
 class PrivilegedSurfaceGuard:
@@ -85,6 +96,16 @@ class PrivilegedSurfaceGuard:
         is_jit = False
 
         if break_glass_session_id:
+            # Sovereign root actions and tenant destruction are strictly prohibited under break-glass
+            if action in {
+                PrivilegedAction.TRANSFER_ROOT_AUTHORITY,
+                PrivilegedAction.RECOVER_ROOT_AUTHORITY,
+                PrivilegedAction.DESTROY_TENANT,
+            }:
+                raise PrivilegedAccessDeniedError(
+                    f"Action {action.value} is strictly prohibited under emergency break-glass."
+                )
+
             from responsibleai.db.engine import iam_break_glass_sessions
 
             async with self.db.raw.connect() as conn:
@@ -100,6 +121,18 @@ class PrivilegedSurfaceGuard:
                 bg = dict(bg_row._mapping)
                 if bg["status"] != "ACTIVE" or now >= bg["expires_at"]:
                     raise PrivilegedAccessDeniedError("Break-glass session expired or inactive.")
+
+                # Capability match verification
+                if action not in BREAK_GLASS_CAPABILITY_MAP:
+                    raise PrivilegedAccessDeniedError(
+                        f"Action {action.value} is not permissible under emergency break-glass."
+                    )
+                required_cap = BREAK_GLASS_CAPABILITY_MAP[action]
+                granted_caps = json.loads(bg["capabilities_json"])
+                if required_cap.value not in granted_caps:
+                    raise PrivilegedAccessDeniedError(
+                        f"Break-glass session does not grant required capability {required_cap.value} for {action.value}."
+                    )
                 is_break_glass = True
 
         elif jit_grant_id:
@@ -119,6 +152,11 @@ class PrivilegedSurfaceGuard:
                 jit = dict(jit_row._mapping)
                 if jit["status"] != JitGrantStatus.ACTIVE.value or now >= jit["expires_at"]:
                     raise PrivilegedAccessDeniedError("JIT access grant is expired or inactive.")
+                allowed_actions = json.loads(jit["allowed_actions_json"])
+                if action.value not in allowed_actions:
+                    raise PrivilegedAccessDeniedError(
+                        f"Action {action.value} is not authorized by JIT grant."
+                    )
                 is_jit = True
 
         elif not has_base_role:
@@ -209,11 +247,19 @@ class PrivilegedSurfaceGuard:
             break_glass_active=is_break_glass,
         )
 
-        # Record in tamper-evident audit log
+        enriched_context = dict(context_data or {})
+        enriched_context.update({
+            "four_eyes_approval_id": four_eyes_approval_id,
+            "jit_grant_id": jit_grant_id,
+            "break_glass_session_id": break_glass_session_id,
+            "step_up_method": step_up_proof.method.value if step_up_proof else None,
+        })
+
+        # Record in tamper-evident audit log linked to Checkpoint-5 evidence
         await self.attribution.record_privileged_event(
             result=result,
             target_resource_id=target_resource_id,
-            context_data=context_data,
+            context_data=enriched_context,
         )
 
         return result

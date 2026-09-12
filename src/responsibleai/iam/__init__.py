@@ -47,6 +47,7 @@ from responsibleai.iam.recovery import SovereignRecoveryService
 from responsibleai.iam.scim import ScimService
 from responsibleai.iam.session import SessionService
 from responsibleai.iam.step_up import StepUpVerifier
+from responsibleai.iam.transfer import SovereignTransferService
 
 __all__ = [
     "ACTION_RISK_TIERS",
@@ -80,6 +81,7 @@ __all__ = [
     "SovereignRecoveryError",
     "SovereignRecoveryPolicy",
     "SovereignRecoveryService",
+    "SovereignTransferService",
     "StepUpMethod",
     "StepUpProof",
     "StepUpRequiredError",

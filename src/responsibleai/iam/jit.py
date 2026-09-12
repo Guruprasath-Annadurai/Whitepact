@@ -34,8 +34,17 @@ class JitAccessService:
         ttl_minutes: int = 60,
     ) -> JitGrant:
         """Request temporary privilege elevation."""
-        if ttl_minutes > 480:  # 8 hours max
-            raise ValueError("JIT access cannot exceed 8 hours.")
+        if ttl_minutes <= 0 or ttl_minutes > 480:  # 8 hours max
+            raise ValueError("JIT access TTL must be between 1 and 480 minutes (8 hours max).")
+
+        if target_role == Role.OWNER:
+            raise ValueError("JIT access cannot elevate to OWNER role.")
+
+        if any(
+            a in {PrivilegedAction.TRANSFER_ROOT_AUTHORITY, PrivilegedAction.RECOVER_ROOT_AUTHORITY, PrivilegedAction.DESTROY_TENANT}
+            for a in allowed_actions
+        ):
+            raise ValueError("JIT access cannot grant sovereign root operations.")
 
         grant_id = f"jit_{uuid.uuid4().hex}"
         now = datetime.now(UTC)

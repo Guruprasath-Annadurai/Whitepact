@@ -25,12 +25,14 @@ from responsibleai.iam.enums import (
 )
 from responsibleai.iam.errors import (
     BreakGlassInvalidError,
+    PrivilegedAccessDeniedError,
     SelfApprovalBlockedError,
     SovereignRecoveryError,
 )
 from responsibleai.iam.four_eyes import FourEyesService
 from responsibleai.iam.jit import JitAccessService
 from responsibleai.iam.recovery import SovereignRecoveryService
+from responsibleai.iam.transfer import SovereignTransferService
 from responsibleai.rbac.models import Role
 
 
@@ -237,3 +239,138 @@ async def test_sovereign_root_recovery_n_of_m_ceremony(test_db: DatabaseEngine):
         assert root.status == "ACTIVE"
         assert root.root_principal_id == "prin_root_new"
         assert root.root_public_key == new_root_pub
+
+
+@pytest.mark.asyncio
+async def test_jit_ttl_bounds_rejection(test_db: DatabaseEngine):
+    jit_svc = JitAccessService(test_db)
+    # Zero TTL
+    with pytest.raises(ValueError, match="TTL must be between 1 and 480 minutes"):
+        await jit_svc.request_jit_access(
+            org_id="org_gov",
+            principal_id="user_charlie",
+            target_role=Role.ADMIN,
+            allowed_actions=[PrivilegedAction.MODIFY_POLICY_RULE],
+            justification="Zero TTL test",
+            ttl_minutes=0,
+        )
+    # Negative TTL
+    with pytest.raises(ValueError, match="TTL must be between 1 and 480 minutes"):
+        await jit_svc.request_jit_access(
+            org_id="org_gov",
+            principal_id="user_charlie",
+            target_role=Role.ADMIN,
+            allowed_actions=[PrivilegedAction.MODIFY_POLICY_RULE],
+            justification="Negative TTL test",
+            ttl_minutes=-10,
+        )
+
+
+@pytest.mark.asyncio
+async def test_break_glass_ttl_bounds_rejection(test_db: DatabaseEngine):
+    bg_svc = BreakGlassService(test_db)
+    # Zero TTL
+    with pytest.raises(BreakGlassInvalidError, match="TTL must be between 1 and 60 minutes"):
+        await bg_svc.initiate_break_glass(
+            org_id="org_gov",
+            principal_id="sre_oncall",
+            incident_id="INC-1234",
+            capabilities=[BreakGlassCapability.RESTORE_IDP_CONFIGURATION],
+            justification="Zero TTL test",
+            ttl_minutes=0,
+        )
+    # Negative TTL
+    with pytest.raises(BreakGlassInvalidError, match="TTL must be between 1 and 60 minutes"):
+        await bg_svc.initiate_break_glass(
+            org_id="org_gov",
+            principal_id="sre_oncall",
+            incident_id="INC-1234",
+            capabilities=[BreakGlassCapability.RESTORE_IDP_CONFIGURATION],
+            justification="Negative TTL test",
+            ttl_minutes=-5,
+        )
+
+
+@pytest.mark.asyncio
+async def test_guardian_key_uniqueness_and_operator_rejection(test_db: DatabaseEngine):
+    rec_svc = SovereignRecoveryService(test_db)
+    priv = ed25519.Ed25519PrivateKey.generate()
+    pub_b64 = base64.b64encode(priv.public_key().public_bytes_raw()).decode("utf-8")
+
+    # Duplicate public keys must be rejected
+    with pytest.raises(ValueError, match="Guardian public keys must be unique"):
+        await rec_svc.register_recovery_policy(
+            org_id="org_gov",
+            threshold=2,
+            guardians=[
+                {"name": "guardian_1", "public_key": pub_b64},
+                {"name": "guardian_2", "public_key": pub_b64},
+            ],
+        )
+
+    # Platform operator identity rejected
+    priv2 = ed25519.Ed25519PrivateKey.generate()
+    pub2_b64 = base64.b64encode(priv2.public_key().public_bytes_raw()).decode("utf-8")
+    with pytest.raises(SovereignRecoveryError, match="Platform operators cannot be registered"):
+        await rec_svc.register_recovery_policy(
+            org_id="org_gov",
+            threshold=2,
+            guardians=[
+                {"name": "platform_operator_alice", "public_key": pub_b64},
+                {"name": "guardian_customer", "public_key": pub2_b64},
+            ],
+        )
+
+
+@pytest.mark.asyncio
+async def test_voluntary_root_transfer_lifecycle(test_db: DatabaseEngine):
+    xfer_svc = SovereignTransferService(test_db)
+    token = xfer_svc.generate_transfer_token()
+
+    # 1. Self-transfer prohibited
+    with pytest.raises(SelfApprovalBlockedError):
+        await xfer_svc.transfer_root_authority(
+            org_id="org_gov",
+            current_root_principal_id="prin_root_old",
+            new_root_principal_id="prin_root_old",
+            new_root_public_key="new_key",
+            transfer_token=token,
+        )
+
+    # 2. Non-root caller prohibited
+    with pytest.raises(PrivilegedAccessDeniedError, match="is not the active sovereign root"):
+        await xfer_svc.transfer_root_authority(
+            org_id="org_gov",
+            current_root_principal_id="impostor",
+            new_root_principal_id="prin_root_successor",
+            new_root_public_key="successor_pub_key",
+            transfer_token=token,
+        )
+
+    # 3. Legitimate transfer succeeds
+    success = await xfer_svc.transfer_root_authority(
+        org_id="org_gov",
+        current_root_principal_id="prin_root_old",
+        new_root_principal_id="prin_root_successor",
+        new_root_public_key="successor_pub_key",
+        transfer_token=token,
+    )
+    assert success is True
+
+    # 4. Token cannot be replayed
+    with pytest.raises(PrivilegedAccessDeniedError, match="already been consumed"):
+        await xfer_svc.transfer_root_authority(
+            org_id="org_gov",
+            current_root_principal_id="prin_root_successor",
+            new_root_principal_id="another_successor",
+            new_root_public_key="another_key",
+            transfer_token=token,
+        )
+
+    # 5. Old root authority is 0 (no longer root)
+    async with test_db.raw.connect() as conn:
+        root_row = (await conn.execute(
+            select(trust_fabric_trust_roots).where(trust_fabric_trust_roots.c.org_id == "org_gov")
+        )).one()
+        assert root_row.root_principal_id == "prin_root_successor"
+        assert root_row.root_principal_id != "prin_root_old"
