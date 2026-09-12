@@ -79,14 +79,18 @@ def test_one_canonical_alembic_head():
     scripts = ScriptDirectory.from_config(Config(str(ini)))
     heads = scripts.get_heads()
     assert len(heads) == 1, f"Expected exactly 1 alembic head, got {len(heads)}: {heads}"
-    assert heads == ["0043"]
+    assert heads == ["0044"]
+    assert scripts.get_revision("0044").down_revision == "0043"
     assert scripts.get_revision("0043").down_revision == "0042"
 
 
 @pytest.mark.asyncio
 async def test_fresh_schema_to_0043_postgres(pg_test_db: str):
     """Prove fresh schema upgrades directly to 0043 on real PostgreSQL."""
-    await run_migrations_or_raise(pg_test_db)
+    ini = _find_alembic_ini()
+    assert ini is not None
+    env = _migration_env(pg_test_db)
+    await _run_alembic(ini, env, "upgrade", "0043")
 
     engine = create_engine(pg_test_db)
     try:
@@ -149,8 +153,8 @@ async def test_canonical_0042_to_0043_preserves_tenant_data_postgres(pg_test_db:
     finally:
         await engine.close()
 
-    # Step 3: Run migration to head (0043)
-    await run_migrations_or_raise(pg_test_db)
+    # Step 3: Run migration to 0043
+    await _run_alembic(ini, env, "upgrade", "0043")
 
     # Step 4: Verify migration succeeded and tenant data is preserved
     engine = create_engine(pg_test_db)
@@ -190,7 +194,7 @@ async def test_downgrade_0043_to_0042_and_reupgrade_postgres(pg_test_db: str):
     env = _migration_env(pg_test_db)
 
     # Step 1: Upgrade to 0043
-    await run_migrations_or_raise(pg_test_db)
+    await _run_alembic(ini, env, "upgrade", "0043")
 
     engine = create_engine(pg_test_db)
     try:
@@ -225,7 +229,7 @@ async def test_downgrade_0043_to_0042_and_reupgrade_postgres(pg_test_db: str):
         await engine.close()
 
     # Step 3: Re-upgrade to 0043
-    await run_migrations_or_raise(pg_test_db)
+    await _run_alembic(ini, env, "upgrade", "0043")
 
     engine = create_engine(pg_test_db)
     try:
