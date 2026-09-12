@@ -23,6 +23,11 @@ from datetime import UTC, datetime
 
 from sqlalchemy import delete, insert, select, update
 
+from responsibleai.data_governance.backup_defense import (
+    CurrentLifecycleStateProvider,
+    LifecycleState,
+    LifecycleStateRecord,
+)
 from responsibleai.data_governance.legal_hold import LegalHoldActiveError, LegalHoldManager
 from responsibleai.db.engine import (
     DatabaseEngine,
@@ -98,9 +103,14 @@ class TenantDeletionResult:
 class TenantDeletionOrchestrator:
     """Executes full governed tenant deletion and tombstone lifecycle."""
 
-    def __init__(self, engine: DatabaseEngine) -> None:
+    def __init__(
+        self,
+        engine: DatabaseEngine,
+        lifecycle_provider: CurrentLifecycleStateProvider | None = None,
+    ) -> None:
         self._engine = engine
         self._legal_hold = LegalHoldManager(engine)
+        self._lifecycle_provider = lifecycle_provider
 
     async def delete_tenant(
         self,
@@ -126,6 +136,21 @@ class TenantDeletionOrchestrator:
             if not org_row:
                 raise TenantDeletionError(f"Organization {org_id} does not exist")
             org_name = org_row.name
+
+        # Forward security state recorded in independent CurrentLifecycleStateProvider BEFORE destructive actions
+        if self._lifecycle_provider:
+            init_digest = hashlib.sha256(
+                f"{org_id}:{generation_id}:{LifecycleState.DELETION_IN_PROGRESS.value}:{now}".encode()
+            ).hexdigest()
+            self._lifecycle_provider.record_state(
+                LifecycleStateRecord(
+                    tenant_id=org_id,
+                    generation_id=generation_id,
+                    state=LifecycleState.DELETION_IN_PROGRESS,
+                    effective_at=now,
+                    digest=init_digest,
+                )
+            )
 
         # Quarantine tenant
         async with self._engine.raw.begin() as conn:
@@ -223,6 +248,21 @@ class TenantDeletionOrchestrator:
             "original_name": org_name,
             "purged_counts": purged_counts,
         }
+
+        # Record TOMBSTONED in independent CurrentLifecycleStateProvider
+        if self._lifecycle_provider:
+            final_digest = hashlib.sha256(
+                f"{org_id}:{generation_id}:{LifecycleState.TOMBSTONED.value}:{now}".encode()
+            ).hexdigest()
+            self._lifecycle_provider.record_state(
+                LifecycleStateRecord(
+                    tenant_id=org_id,
+                    generation_id=generation_id,
+                    state=LifecycleState.TOMBSTONED,
+                    effective_at=now,
+                    digest=final_digest,
+                )
+            )
 
         async with self._engine.raw.begin() as conn:
             await conn.execute(

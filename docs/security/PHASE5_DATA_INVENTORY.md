@@ -23,14 +23,14 @@ SPDX-License-Identifier: MIT
 | 7 | `org_api_keys` | SENSITIVE_SECURITY | CRITICAL | KEY_LIFETIME | Revoked & Deleted on erasure |
 | 8 | `incidents` | TENANT_OPERATIONAL | MEDIUM | 90D_DEFAULT | Hard deleted on erasure |
 | 9 | `public_incident_reports` | PUBLIC | LOW | INDEFINITE | Anonymized / Retained public |
-| 10 | `governance_evidence` | CANONICAL_SECURITY_EVIDENCE | CRITICAL | COMPLIANCE_7YR | Sealed / FK RESTRICT |
-| 11 | `governance_evidence_chain_heads` | CANONICAL_SECURITY_EVIDENCE | CRITICAL | COMPLIANCE_7YR | Sealed / FK RESTRICT |
+| 10 | `governance_evidence` | CANONICAL_SECURITY_EVIDENCE | CRITICAL | SECURITY_EVIDENCE_DEFAULT | Sealed / FK RESTRICT |
+| 11 | `governance_evidence_chain_heads` | CANONICAL_SECURITY_EVIDENCE | CRITICAL | SECURITY_EVIDENCE_DEFAULT | Sealed / FK RESTRICT |
 | 12 | `governance_approvals` | TENANT_OPERATIONAL | HIGH | 1YR_RETENTION | Hard deleted on erasure |
 | 13 | `governance_approval_votes` | TENANT_OPERATIONAL | MEDIUM | 1YR_RETENTION | Hard deleted on erasure |
 | 14 | `governance_policies` | TENANT_OPERATIONAL | HIGH | ACTIVE_LIFETIME | Deprecated / Replaced by 5A |
 | 15 | `governance_policy_versions` | TENANT_OPERATIONAL | HIGH | ACTIVE_LIFETIME | Deprecated / Replaced by 5A |
-| 16 | `governance_policy_revisions` | CANONICAL_SECURITY_EVIDENCE | HIGH | COMPLIANCE_7YR | Sealed / Immutably retained |
-| 17 | `governance_policy_activations` | CANONICAL_SECURITY_EVIDENCE | HIGH | COMPLIANCE_7YR | Sealed / Immutably retained |
+| 16 | `governance_policy_revisions` | CANONICAL_SECURITY_EVIDENCE | HIGH | SECURITY_EVIDENCE_DEFAULT | Sealed / Immutably retained |
+| 17 | `governance_policy_activations` | CANONICAL_SECURITY_EVIDENCE | HIGH | SECURITY_EVIDENCE_DEFAULT | Sealed / Immutably retained |
 | 18 | `upstream_mcp_servers` | TENANT_OPERATIONAL | MEDIUM | ACTIVE_LIFETIME | Hard deleted on erasure |
 | 19 | `org_authority_ceilings` | TENANT_OPERATIONAL | HIGH | ACTIVE_LIFETIME | Hard deleted on erasure |
 | 20 | `governance_workflow_rules` | TENANT_OPERATIONAL | MEDIUM | ACTIVE_LIFETIME | Hard deleted on erasure |
@@ -49,9 +49,9 @@ SPDX-License-Identifier: MIT
 | 33 | `mcp_auth_events` | TENANT_OPERATIONAL | MEDIUM | 90D_DEFAULT | Hard deleted on erasure |
 | 34 | `crypto_keys` | CREDENTIAL_SECRET | CRITICAL | KEY_LIFETIME | Zeroed / Hard deleted |
 | 35 | `neural_vault_indices` | TENANT_OPERATIONAL | MEDIUM | ACTIVE_LIFETIME | Hard deleted on erasure |
-| 36 | `neural_consent_records` | CANONICAL_SECURITY_EVIDENCE | HIGH | COMPLIANCE_7YR | Sealed / FK RESTRICT |
-| 37 | `governance_root_authority_records` | CANONICAL_SECURITY_EVIDENCE | CRITICAL | COMPLIANCE_7YR | Sealed / FK RESTRICT |
-| 38 | `governance_consent_proofs` | CANONICAL_SECURITY_EVIDENCE | CRITICAL | COMPLIANCE_7YR | Sealed / FK RESTRICT |
+| 36 | `neural_consent_records` | CANONICAL_SECURITY_EVIDENCE | HIGH | SECURITY_EVIDENCE_DEFAULT | Sealed / FK RESTRICT |
+| 37 | `governance_root_authority_records` | CANONICAL_SECURITY_EVIDENCE | CRITICAL | SECURITY_EVIDENCE_DEFAULT | Sealed / FK RESTRICT |
+| 38 | `governance_consent_proofs` | CANONICAL_SECURITY_EVIDENCE | CRITICAL | SECURITY_EVIDENCE_DEFAULT | Sealed / FK RESTRICT |
 | 39 | `governance_revocation_epochs` | TENANT_OPERATIONAL | HIGH | ACTIVE_LIFETIME | Invalidated & Reset |
 | 40 | `governance_execution_nonces` | SENSITIVE_SECURITY | HIGH | 1H_TTL | Hard deleted |
 | 41 | `eval_runs` | TENANT_OPERATIONAL | LOW | 30D_TTL | Hard deleted on erasure |
@@ -59,7 +59,7 @@ SPDX-License-Identifier: MIT
 | 43 | `mcp_tool_calls` | TENANT_OPERATIONAL | MEDIUM | 30D_TTL | Hard deleted on erasure |
 | 44 | `token_usage` | TENANT_OPERATIONAL | LOW | 90D_TTL | Hard deleted on erasure |
 | 45 | `cost_attribution` | TENANT_OPERATIONAL | LOW | 90D_TTL | Hard deleted on erasure |
-| 46 | `audit_log` | CANONICAL_SECURITY_EVIDENCE | HIGH | COMPLIANCE_7YR | Sealed / Immutably retained |
+| 46 | `audit_log` | CANONICAL_SECURITY_EVIDENCE | HIGH | SECURITY_EVIDENCE_DEFAULT | Sealed / Immutably retained |
 | 47 | `stripe_webhook_events` | TENANT_OPERATIONAL | MEDIUM | 30D_TTL | Hard deleted / Set Null |
 | 48 | `leaderboard_providers` | PUBLIC | LOW | INDEFINITE | Retained public |
 | 49 | `leaderboard_evaluations` | PUBLIC | LOW | INDEFINITE | Retained public |
@@ -74,13 +74,13 @@ SPDX-License-Identifier: MIT
 | 58 | `iam_break_glass_sessions` | SENSITIVE_SECURITY | CRITICAL | 24H_TTL | Revoked & Hard deleted |
 | 59 | `iam_recovery_policies` | SENSITIVE_SECURITY | CRITICAL | ACTIVE_LIFETIME | Revoked & Hard deleted |
 | 60 | `iam_recovery_challenges` | SENSITIVE_SECURITY | CRITICAL | 24H_TTL | Revoked & Hard deleted |
-| 61 | `iam_privileged_audit_log` | CANONICAL_SECURITY_EVIDENCE | CRITICAL | COMPLIANCE_7YR | Sealed / Immutably retained |
+| 61 | `iam_privileged_audit_log` | CANONICAL_SECURITY_EVIDENCE | CRITICAL | SECURITY_EVIDENCE_DEFAULT | Sealed / Immutably retained |
 | 62 | `iam_step_up_nonces` | SENSITIVE_SECURITY | CRITICAL | 15M_TTL | Hard deleted |
 | 63 | `data_retention_policies` | TENANT_OPERATIONAL | HIGH | ACTIVE_LIFETIME | Hard deleted on erasure |
-| 64 | `data_lifecycle_requests` | CANONICAL_SECURITY_EVIDENCE | HIGH | COMPLIANCE_7YR | Sealed / Immutably retained |
-| 65 | `data_holds` | CANONICAL_SECURITY_EVIDENCE | HIGH | COMPLIANCE_7YR | Sealed / Immutably retained |
+| 64 | `data_lifecycle_requests` | CANONICAL_SECURITY_EVIDENCE | HIGH | SECURITY_EVIDENCE_DEFAULT | Sealed / Immutably retained |
+| 65 | `data_holds` | CANONICAL_SECURITY_EVIDENCE | HIGH | SECURITY_EVIDENCE_DEFAULT | Sealed / Immutably retained |
 | 66 | `tenant_tombstones` | CANONICAL_SECURITY_EVIDENCE | CRITICAL | PERMANENT | Permanent ledger row |
-| 67 | `restore_reconciliation_records` | CANONICAL_SECURITY_EVIDENCE | CRITICAL | COMPLIANCE_7YR | Sealed / Immutably retained |
+| 67 | `restore_reconciliation_records` | CANONICAL_SECURITY_EVIDENCE | CRITICAL | SECURITY_EVIDENCE_DEFAULT | Sealed / Immutably retained |
 
 ---
 

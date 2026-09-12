@@ -33,7 +33,7 @@ class DataInventoryManager:
         unclassified_tables: list[str] = []
 
         for t in tables:
-            cl = classify_table(t)
+            cl = classify_table(t, fail_closed=False)
             classified_tables.append(cl)
             classification_counts[cl.classification.value] += 1
             if t not in TABLE_CLASSIFICATIONS:

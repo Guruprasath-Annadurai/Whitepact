@@ -25,6 +25,7 @@ from responsibleai.db.engine import (
     org_api_key_metadata,
     org_api_keys,
     organizations,
+    tenant_tombstones,
 )
 from responsibleai.db.revocation_epoch_repository import bump_epoch_on_connection
 from responsibleai.rbac.models import Organization, OrgApiKey, OrgContext, Plan, Role
@@ -91,6 +92,22 @@ class OrgRepository:
             provisioner_key_id=provisioner_key_id,
         )
         async with self._engine.raw.begin() as conn:
+            # Check tombstone ledger
+            ts = (
+                await conn.execute(
+                    select(tenant_tombstones).where(
+                        (tenant_tombstones.c.org_id == org.id)
+                        | (tenant_tombstones.c.original_name == name)
+                    )
+                )
+            ).fetchone()
+            if ts:
+                from responsibleai.data_governance.deletion_orchestrator import TenantDeletionError
+
+                raise TenantDeletionError(
+                    f"Cannot create tenant: identifier '{org.id}' or name '{name}' is tombstoned ({ts.org_id})"
+                )
+
             await conn.execute(
                 insert(organizations).values(
                     id=org.id,

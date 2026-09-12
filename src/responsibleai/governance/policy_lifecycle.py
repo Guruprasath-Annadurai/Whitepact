@@ -28,10 +28,18 @@ from responsibleai.db.engine import (
     governance_policy_revisions,
     governance_policy_versions,
 )
-from responsibleai.db.revocation_epoch_repository import bump_epoch_on_connection
+from responsibleai.db.revocation_epoch_repository import (
+    RevocationEpochRepository,
+    bump_epoch_on_connection,
+    lock_epoch,
+)
 from responsibleai.governance.models import GovernanceDecision
 from responsibleai.governance.policy import PolicyRule
 from responsibleai.governance.risk import RiskTier
+from responsibleai.iam.enums import PrivilegedAction
+from responsibleai.iam.errors import PrivilegedAccessDeniedError
+from responsibleai.iam.guard import PrivilegedSurfaceGuard
+from responsibleai.iam.models import PrivilegedCallerContext, StepUpProof
 
 
 def _now() -> str:
@@ -61,6 +69,27 @@ def deserialize_rule_canonical(d: dict[str, Any]) -> PolicyRule:
         targets=frozenset(d["targets"]) if d.get("targets") is not None else None,
     )
 
+
+
+def is_critical_policy(rules: list[PolicyRule]) -> bool:
+    """Determine if policy rules represent a critical authority expansion.
+
+    A policy change is CRITICAL if:
+    - Any rule has reason_code in {"RC_CRITICAL", "RC_WILDCARD", "RC_PERMISSIVE"}.
+    - Any rule grants explicit wildcard targets ("*" or "ALL") or action types ("*" or "ALL").
+    - Any rule explicitly permits HIGH risk tier.
+    """
+    for r in rules:
+        if r.reason_code in {"RC_CRITICAL", "RC_WILDCARD", "RC_PERMISSIVE"}:
+            return True
+        if r.effect == GovernanceDecision.ALLOW:
+            if r.targets and ("*" in r.targets or "ALL" in r.targets):
+                return True
+            if r.action_types and ("*" in r.action_types or "ALL" in r.action_types):
+                return True
+            if r.risk_tiers and RiskTier.HIGH in r.risk_tiers:
+                return True
+    return False
 
 def compute_policy_digest(rules: list[PolicyRule]) -> str:
     """Compute a deterministic canonical SHA-256 digest over ordered rules."""
@@ -116,6 +145,7 @@ class PolicyLifecycleManager:
 
     def __init__(self, engine: DatabaseEngine) -> None:
         self._engine = engine
+        self._guard = PrivilegedSurfaceGuard(engine)
 
     async def create_revision(
         self,
@@ -124,14 +154,45 @@ class PolicyLifecycleManager:
         created_by: str,
         change_reason: str,
         approval_id: str | None = None,
+        *,
+        caller: PrivilegedCallerContext | None = None,
+        step_up_proof: StepUpProof | None = None,
+        four_eyes_approval_id: str | None = None,
     ) -> PolicyRevision:
         """Create an immutable policy revision. Monotonically numbered per org."""
+        is_crit = is_critical_policy(rules)
         digest = compute_policy_digest(rules)
+
+        if is_crit:
+            if caller is None:
+                raise PrivilegedAccessDeniedError("Privileged caller context required for critical policy revision creation.")
+            effective_approval = four_eyes_approval_id or approval_id
+            await self._guard.authorize_privileged_operation(
+                caller=caller,
+                target_org_id=org_id,
+                action=PrivilegedAction.MUTATE_CRITICAL_POLICY,
+                target_resource_id=f"policy-digest-{digest[:16]}",
+                step_up_proof=step_up_proof,
+                four_eyes_approval_id=effective_approval,
+                context_data={"policy_digest": digest},
+            )
+        elif caller is not None:
+            await self._guard.authorize_privileged_operation(
+                caller=caller,
+                target_org_id=org_id,
+                action=PrivilegedAction.MODIFY_POLICY_RULE,
+                target_resource_id=f"policy-digest-{digest[:16]}",
+                step_up_proof=step_up_proof,
+                four_eyes_approval_id=four_eyes_approval_id,
+                context_data={"policy_digest": digest},
+            )
         serialized_rules = json.dumps([serialize_rule_canonical(r) for r in rules])
         revision_id = str(uuid.uuid4())
         now = _now()
 
         async with self._engine.raw.begin() as conn:
+            # Row-level lock to ensure strictly sequential revision numbering per org
+            await lock_epoch(conn, org_id, "governance")
             # Query current max revision
             res = await conn.execute(
                 select(governance_policy_revisions.c.revision_num)
@@ -228,14 +289,65 @@ class PolicyLifecycleManager:
         org_id: str,
         revision_id: str,
         activated_by: str,
+        *,
+        caller: PrivilegedCallerContext | None = None,
+        step_up_proof: StepUpProof | None = None,
+        four_eyes_approval_id: str | None = None,
     ) -> PolicyActivation:
         """Atomically activates a revision for an org.
 
         Ensures single-winner activation, increments governance epoch,
         and updates existing governance_policies table for compatibility.
         """
+        # 0. Fetch revision and verify rules against critical policy classification
+        async with self._engine.raw.connect() as conn:
+            rev_row_check = (
+                await conn.execute(
+                    select(governance_policy_revisions)
+                    .where(governance_policy_revisions.c.id == revision_id)
+                    .where(governance_policy_revisions.c.org_id == org_id)
+                )
+            ).fetchone()
+            if not rev_row_check:
+                raise PolicyRevisionNotFoundError(f"Revision {revision_id} not found for org {org_id}")
+
+            rules_raw = json.loads(rev_row_check.rules_json)
+            rules = [deserialize_rule_canonical(r) for r in rules_raw]
+
+        is_crit = is_critical_policy(rules)
+        if is_crit:
+            if caller is None:
+                raise PrivilegedAccessDeniedError("Privileged caller context required for critical policy activation.")
+            current_epoch = (await RevocationEpochRepository(self._engine).current(org_id)).epoch
+            await self._guard.authorize_privileged_operation(
+                caller=caller,
+                target_org_id=org_id,
+                action=PrivilegedAction.MUTATE_CRITICAL_POLICY,
+                target_resource_id=revision_id,
+                step_up_proof=step_up_proof,
+                four_eyes_approval_id=four_eyes_approval_id,
+                context_data={
+                    "policy_digest": rev_row_check.content_digest,
+                    "target_revision_id": revision_id,
+                    "current_epoch": current_epoch,
+                },
+            )
+        elif caller is not None:
+            await self._guard.authorize_privileged_operation(
+                caller=caller,
+                target_org_id=org_id,
+                action=PrivilegedAction.MODIFY_POLICY_RULE,
+                target_resource_id=revision_id,
+                step_up_proof=step_up_proof,
+                four_eyes_approval_id=four_eyes_approval_id,
+                context_data={"policy_digest": rev_row_check.content_digest},
+            )
+
         async with self._engine.raw.begin() as conn:
-            # 1. Fetch revision
+            # 1. Advance governance epoch with row-level lock on tenant counter to serialize activations
+            epoch = await bump_epoch_on_connection(conn, org_id)
+
+            # 2. Fetch revision
             rev_row = (
                 await conn.execute(
                     select(governance_policy_revisions)
@@ -246,7 +358,7 @@ class PolicyLifecycleManager:
             if not rev_row:
                 raise PolicyRevisionNotFoundError(f"Revision {revision_id} not found for org {org_id}")
 
-            # 2. Find currently active activation
+            # 3. Find currently active activation
             current_active = (
                 await conn.execute(
                     select(governance_policy_activations)
@@ -257,16 +369,13 @@ class PolicyLifecycleManager:
 
             prev_activation_id = current_active.id if current_active else None
 
-            # 3. Deactivate previous active
-            if current_active:
-                await conn.execute(
-                    update(governance_policy_activations)
-                    .where(governance_policy_activations.c.id == current_active.id)
-                    .values(is_active=False)
-                )
-
-            # 4. Bump governance epoch
-            epoch = await bump_epoch_on_connection(conn, org_id)
+            # 4. Deactivate previous active (and all active activations for org)
+            await conn.execute(
+                update(governance_policy_activations)
+                .where(governance_policy_activations.c.org_id == org_id)
+                .where(governance_policy_activations.c.is_active == True)  # noqa: E712
+                .values(is_active=False)
+            )
 
             # 5. Insert new activation
             activation_id = str(uuid.uuid4())
@@ -373,6 +482,10 @@ class PolicyLifecycleManager:
         target_revision_num: int,
         rolled_back_by: str,
         reason: str,
+        *,
+        caller: PrivilegedCallerContext | None = None,
+        step_up_proof: StepUpProof | None = None,
+        four_eyes_approval_id: str | None = None,
     ) -> PolicyActivation:
         """Roll back to a past revision without rewriting history.
 
@@ -389,4 +502,7 @@ class PolicyLifecycleManager:
             org_id=org_id,
             revision_id=target_rev.id,
             activated_by=rolled_back_by,
+            caller=caller,
+            step_up_proof=step_up_proof,
+            four_eyes_approval_id=four_eyes_approval_id,
         )

@@ -17,6 +17,11 @@ class DataClassification(StrEnum):
     CANONICAL_SECURITY_EVIDENCE = "CANONICAL_SECURITY_EVIDENCE"
     DERIVED_CACHE = "DERIVED_CACHE"
     SYSTEM_METADATA = "SYSTEM_METADATA"
+    UNCLASSIFIED = "UNCLASSIFIED"
+
+
+class UnclassifiedTableError(Exception):
+    """Raised when an unknown table lacks an explicit classification under fail-closed security."""
 
 
 class SensitivityTier(StrEnum):
@@ -37,38 +42,38 @@ class TableClassification:
 
 
 TABLE_CLASSIFICATIONS: dict[str, TableClassification] = {
-    "audit_log": TableClassification("audit_log", DataClassification.CANONICAL_SECURITY_EVIDENCE, SensitivityTier.CRITICAL, "COMPLIANCE_7YR", True, False),
+    "audit_log": TableClassification("audit_log", DataClassification.CANONICAL_SECURITY_EVIDENCE, SensitivityTier.CRITICAL, "SECURITY_EVIDENCE_DEFAULT", True, False),
     "credential_issuances": TableClassification("credential_issuances", DataClassification.SENSITIVE_SECURITY, SensitivityTier.HIGH, "ACTIVE_LIFETIME", False, True),
-    "data_holds": TableClassification("data_holds", DataClassification.CANONICAL_SECURITY_EVIDENCE, SensitivityTier.HIGH, "COMPLIANCE_7YR", True, False),
-    "data_lifecycle_requests": TableClassification("data_lifecycle_requests", DataClassification.CANONICAL_SECURITY_EVIDENCE, SensitivityTier.HIGH, "COMPLIANCE_7YR", True, False),
+    "data_holds": TableClassification("data_holds", DataClassification.CANONICAL_SECURITY_EVIDENCE, SensitivityTier.HIGH, "SECURITY_EVIDENCE_DEFAULT", True, False),
+    "data_lifecycle_requests": TableClassification("data_lifecycle_requests", DataClassification.CANONICAL_SECURITY_EVIDENCE, SensitivityTier.HIGH, "SECURITY_EVIDENCE_DEFAULT", True, False),
     "data_retention_policies": TableClassification("data_retention_policies", DataClassification.TENANT_OPERATIONAL, SensitivityTier.MEDIUM, "90D_DEFAULT", True, True),
     "eval_baselines": TableClassification("eval_baselines", DataClassification.TENANT_OPERATIONAL, SensitivityTier.MEDIUM, "90D_DEFAULT", True, True),
     "eval_runs": TableClassification("eval_runs", DataClassification.TENANT_OPERATIONAL, SensitivityTier.MEDIUM, "90D_DEFAULT", True, True),
     "governance_approval_votes": TableClassification("governance_approval_votes", DataClassification.TENANT_OPERATIONAL, SensitivityTier.MEDIUM, "90D_DEFAULT", True, True),
     "governance_approvals": TableClassification("governance_approvals", DataClassification.TENANT_OPERATIONAL, SensitivityTier.MEDIUM, "90D_DEFAULT", True, True),
     "governance_authority_passports": TableClassification("governance_authority_passports", DataClassification.TENANT_OPERATIONAL, SensitivityTier.MEDIUM, "90D_DEFAULT", True, True),
-    "governance_consent_proofs": TableClassification("governance_consent_proofs", DataClassification.CANONICAL_SECURITY_EVIDENCE, SensitivityTier.CRITICAL, "COMPLIANCE_7YR", True, False),
+    "governance_consent_proofs": TableClassification("governance_consent_proofs", DataClassification.CANONICAL_SECURITY_EVIDENCE, SensitivityTier.CRITICAL, "SECURITY_EVIDENCE_DEFAULT", True, False),
     "governance_crypto_keys": TableClassification("governance_crypto_keys", DataClassification.CREDENTIAL_SECRET, SensitivityTier.CRITICAL, "KEY_LIFETIME", False, True),
     "governance_delegations": TableClassification("governance_delegations", DataClassification.TENANT_OPERATIONAL, SensitivityTier.MEDIUM, "90D_DEFAULT", True, True),
-    "governance_evidence": TableClassification("governance_evidence", DataClassification.CANONICAL_SECURITY_EVIDENCE, SensitivityTier.CRITICAL, "COMPLIANCE_7YR", True, False),
-    "governance_evidence_chain_heads": TableClassification("governance_evidence_chain_heads", DataClassification.CANONICAL_SECURITY_EVIDENCE, SensitivityTier.CRITICAL, "COMPLIANCE_7YR", True, False),
+    "governance_evidence": TableClassification("governance_evidence", DataClassification.CANONICAL_SECURITY_EVIDENCE, SensitivityTier.CRITICAL, "SECURITY_EVIDENCE_DEFAULT", True, False),
+    "governance_evidence_chain_heads": TableClassification("governance_evidence_chain_heads", DataClassification.CANONICAL_SECURITY_EVIDENCE, SensitivityTier.CRITICAL, "SECURITY_EVIDENCE_DEFAULT", True, False),
     "governance_execution_nonces": TableClassification("governance_execution_nonces", DataClassification.SENSITIVE_SECURITY, SensitivityTier.HIGH, "ACTIVE_LIFETIME", False, True),
     "governance_intent_contracts": TableClassification("governance_intent_contracts", DataClassification.TENANT_OPERATIONAL, SensitivityTier.MEDIUM, "90D_DEFAULT", True, True),
-    "governance_neural_consent": TableClassification("governance_neural_consent", DataClassification.CANONICAL_SECURITY_EVIDENCE, SensitivityTier.HIGH, "COMPLIANCE_7YR", True, False),
+    "governance_neural_consent": TableClassification("governance_neural_consent", DataClassification.CANONICAL_SECURITY_EVIDENCE, SensitivityTier.HIGH, "SECURITY_EVIDENCE_DEFAULT", True, False),
     "governance_neural_vault_index": TableClassification("governance_neural_vault_index", DataClassification.TENANT_OPERATIONAL, SensitivityTier.MEDIUM, "90D_DEFAULT", True, True),
     "governance_outcomes": TableClassification("governance_outcomes", DataClassification.TENANT_OPERATIONAL, SensitivityTier.MEDIUM, "90D_DEFAULT", True, True),
     "governance_policies": TableClassification("governance_policies", DataClassification.TENANT_OPERATIONAL, SensitivityTier.MEDIUM, "90D_DEFAULT", True, True),
-    "governance_policy_activations": TableClassification("governance_policy_activations", DataClassification.CANONICAL_SECURITY_EVIDENCE, SensitivityTier.HIGH, "COMPLIANCE_7YR", True, False),
-    "governance_policy_revisions": TableClassification("governance_policy_revisions", DataClassification.CANONICAL_SECURITY_EVIDENCE, SensitivityTier.HIGH, "COMPLIANCE_7YR", True, False),
+    "governance_policy_activations": TableClassification("governance_policy_activations", DataClassification.CANONICAL_SECURITY_EVIDENCE, SensitivityTier.HIGH, "SECURITY_EVIDENCE_DEFAULT", True, False),
+    "governance_policy_revisions": TableClassification("governance_policy_revisions", DataClassification.CANONICAL_SECURITY_EVIDENCE, SensitivityTier.HIGH, "SECURITY_EVIDENCE_DEFAULT", True, False),
     "governance_policy_versions": TableClassification("governance_policy_versions", DataClassification.TENANT_OPERATIONAL, SensitivityTier.MEDIUM, "90D_DEFAULT", True, True),
     "governance_revocation_epochs": TableClassification("governance_revocation_epochs", DataClassification.TENANT_OPERATIONAL, SensitivityTier.MEDIUM, "90D_DEFAULT", True, True),
-    "governance_root_authority_records": TableClassification("governance_root_authority_records", DataClassification.CANONICAL_SECURITY_EVIDENCE, SensitivityTier.CRITICAL, "COMPLIANCE_7YR", True, False),
+    "governance_root_authority_records": TableClassification("governance_root_authority_records", DataClassification.CANONICAL_SECURITY_EVIDENCE, SensitivityTier.CRITICAL, "SECURITY_EVIDENCE_DEFAULT", True, False),
     "governance_workflow_rules": TableClassification("governance_workflow_rules", DataClassification.TENANT_OPERATIONAL, SensitivityTier.MEDIUM, "90D_DEFAULT", True, True),
     "iam_api_key_lineage": TableClassification("iam_api_key_lineage", DataClassification.SENSITIVE_SECURITY, SensitivityTier.CRITICAL, "ACTIVE_LIFETIME", False, True),
     "iam_break_glass_sessions": TableClassification("iam_break_glass_sessions", DataClassification.SENSITIVE_SECURITY, SensitivityTier.CRITICAL, "ACTIVE_LIFETIME", False, True),
     "iam_four_eyes_requests": TableClassification("iam_four_eyes_requests", DataClassification.TENANT_OPERATIONAL, SensitivityTier.MEDIUM, "90D_DEFAULT", True, True),
     "iam_jit_grants": TableClassification("iam_jit_grants", DataClassification.SENSITIVE_SECURITY, SensitivityTier.HIGH, "ACTIVE_LIFETIME", False, True),
-    "iam_privileged_audit_log": TableClassification("iam_privileged_audit_log", DataClassification.CANONICAL_SECURITY_EVIDENCE, SensitivityTier.CRITICAL, "COMPLIANCE_7YR", True, False),
+    "iam_privileged_audit_log": TableClassification("iam_privileged_audit_log", DataClassification.CANONICAL_SECURITY_EVIDENCE, SensitivityTier.CRITICAL, "SECURITY_EVIDENCE_DEFAULT", True, False),
     "iam_recovery_challenges": TableClassification("iam_recovery_challenges", DataClassification.SENSITIVE_SECURITY, SensitivityTier.CRITICAL, "ACTIVE_LIFETIME", False, True),
     "iam_recovery_policies": TableClassification("iam_recovery_policies", DataClassification.SENSITIVE_SECURITY, SensitivityTier.CRITICAL, "ACTIVE_LIFETIME", False, True),
     "iam_scim_groups": TableClassification("iam_scim_groups", DataClassification.TENANT_OPERATIONAL, SensitivityTier.MEDIUM, "90D_DEFAULT", True, True),
@@ -90,7 +95,7 @@ TABLE_CLASSIFICATIONS: dict[str, TableClassification] = {
     "org_autonomy_budgets": TableClassification("org_autonomy_budgets", DataClassification.TENANT_OPERATIONAL, SensitivityTier.MEDIUM, "90D_DEFAULT", True, True),
     "organizations": TableClassification("organizations", DataClassification.SYSTEM_METADATA, SensitivityTier.HIGH, "PERMANENT", False, False),
     "public_incident_reports": TableClassification("public_incident_reports", DataClassification.PUBLIC, SensitivityTier.LOW, "INDEFINITE", True, False),
-    "restore_reconciliation_records": TableClassification("restore_reconciliation_records", DataClassification.CANONICAL_SECURITY_EVIDENCE, SensitivityTier.CRITICAL, "COMPLIANCE_7YR", True, False),
+    "restore_reconciliation_records": TableClassification("restore_reconciliation_records", DataClassification.CANONICAL_SECURITY_EVIDENCE, SensitivityTier.CRITICAL, "SECURITY_EVIDENCE_DEFAULT", True, False),
     "stripe_webhook_events": TableClassification("stripe_webhook_events", DataClassification.TENANT_OPERATIONAL, SensitivityTier.MEDIUM, "90D_DEFAULT", True, True),
     "tenant_tombstones": TableClassification("tenant_tombstones", DataClassification.CANONICAL_SECURITY_EVIDENCE, SensitivityTier.CRITICAL, "PERMANENT", True, False),
     "token_usage": TableClassification("token_usage", DataClassification.TENANT_OPERATIONAL, SensitivityTier.MEDIUM, "90D_DEFAULT", True, True),
@@ -120,15 +125,23 @@ TABLE_CLASSIFICATIONS: dict[str, TableClassification] = {
 }
 
 
-def classify_table(table_name: str) -> TableClassification:
-    """Return classification for a table, defaulting to TENANT_OPERATIONAL if unknown."""
+def classify_table(table_name: str, *, fail_closed: bool = True) -> TableClassification:
+    """Return classification for a table.
+
+    Under fail-closed semantics (default): raises UnclassifiedTableError or classifies
+    as UNCLASSIFIED with exportable=False, erasable=False.
+    """
     if table_name in TABLE_CLASSIFICATIONS:
         return TABLE_CLASSIFICATIONS[table_name]
+    if fail_closed:
+        raise UnclassifiedTableError(
+            f"Table {table_name!r} is unclassified. Fail-closed policy prohibits export or erasure."
+        )
     return TableClassification(
         table_name=table_name,
-        classification=DataClassification.TENANT_OPERATIONAL,
-        sensitivity=SensitivityTier.MEDIUM,
-        retention_default="DEFAULT_30D",
-        exportable=True,
-        erasable=True,
+        classification=DataClassification.UNCLASSIFIED,
+        sensitivity=SensitivityTier.CRITICAL,
+        retention_default="SECURITY_EVIDENCE_DEFAULT",
+        exportable=False,
+        erasable=False,
     )

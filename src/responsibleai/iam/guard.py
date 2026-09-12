@@ -203,14 +203,49 @@ class PrivilegedSurfaceGuard:
                         f"Four-Eyes request is in state {fe['status']}, not APPROVED."
                     )
 
+                # Cannot be already consumed
+                if fe.get("executed_at") is not None:
+                    raise PrivilegedAccessDeniedError("Four-Eyes approval has already been consumed.")
+
+                # Cannot be expired
+                if now >= fe["expires_at"]:
+                    raise PrivilegedAccessDeniedError("Four-Eyes approval has expired.")
+
                 # Requester cannot approve their own action!
-                if fe["approver_principal_id"] == caller.principal_id:
+                if fe["approver_principal_id"] == caller.principal_id or fe["requester_principal_id"] == fe["approver_principal_id"]:
                     raise SelfApprovalBlockedError("Requester cannot approve their own privileged request.")
 
                 if fe["action"] != action.value:
                     raise PrivilegedAccessDeniedError("Four-Eyes request action mismatch.")
 
+                # Target resource verification
+                if target_resource_id and fe.get("target_resource_id") and fe["target_resource_id"] != target_resource_id:
+                    raise PrivilegedAccessDeniedError("Four-Eyes request target resource mismatch.")
+
+                # Digest and epoch verification if present in parameters
+                if fe.get("parameters_json"):
+                    try:
+                        params = json.loads(fe["parameters_json"])
+                        if isinstance(params, dict):
+                            if context_data and "policy_digest" in context_data:
+                                if "policy_digest" in params and params["policy_digest"] != context_data["policy_digest"]:
+                                    raise PrivilegedAccessDeniedError("Four-Eyes approval policy digest mismatch.")
+                            if context_data and "current_epoch" in context_data:
+                                if "governance_epoch" in params and params["governance_epoch"] != context_data["current_epoch"]:
+                                    raise PrivilegedAccessDeniedError("Four-Eyes approval security epoch mismatch.")
+                    except json.JSONDecodeError:
+                        pass
+
                 four_eyes_ok = True
+
+            # Mark Four-Eyes approval as EXECUTED to prevent replay
+            from sqlalchemy import update
+            async with self.db.raw.begin() as conn:
+                await conn.execute(
+                    update(iam_four_eyes_requests)
+                    .where(iam_four_eyes_requests.c.id == four_eyes_approval_id)
+                    .values(status="EXECUTED", executed_at=now)
+                )
 
         # Invariant 6: Sovereign Root Operations must verify Root Identity
         if action in {PrivilegedAction.TRANSFER_ROOT_AUTHORITY, PrivilegedAction.DESTROY_TENANT}:
