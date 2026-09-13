@@ -1157,6 +1157,333 @@ governance_neural_vault_index = Table(
     Index("idx_neural_vault_subject_session", "subject_id", "session_id"),
 )
 
+# --- Phase 3 Global Trust Fabric & Principal Intelligence ---
+
+trust_fabric_principals = Table(
+    "trust_fabric_principals",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("principal_type", String(32), nullable=False),
+    Column("display_name", String(255), nullable=False),
+    Column("lifecycle_state", String(32), nullable=False, default="PENDING_VERIFICATION"),
+    Column("created_at", String(32), nullable=False),
+    Column("updated_at", String(32), nullable=False),
+    Column("metadata_json", Text, nullable=True),
+    Index("idx_tf_prin_org", "org_id"),
+    Index("idx_tf_prin_state", "lifecycle_state"),
+    Index("idx_tf_prin_type", "principal_type"),
+)
+
+trust_fabric_identifiers = Table(
+    "trust_fabric_identifiers",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column(
+        "principal_id",
+        String(64),
+        ForeignKey("trust_fabric_principals.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("identifier_type", String(32), nullable=False),
+    Column("raw_value", String(512), nullable=False),
+    Column("normalized_value", String(512), nullable=False),
+    Column("is_primary", Integer, nullable=False, default=0),
+    Column("verification_state", String(32), nullable=False, default="UNVERIFIED"),
+    Column("verified_at", String(32), nullable=True),
+    Column("expires_at", String(32), nullable=True),
+    Column("revoked_at", String(32), nullable=True),
+    Column("source_id", String(64), nullable=True),
+    Column("created_at", String(32), nullable=False),
+    Index("idx_tf_ident_norm", "normalized_value", "identifier_type"),
+    Index("idx_tf_ident_prin", "principal_id"),
+    Index("idx_tf_ident_org", "org_id"),
+    Index(
+        "idx_tf_ident_active_uniq",
+        "org_id",
+        "identifier_type",
+        "normalized_value",
+        unique=True,
+        postgresql_where=text("revoked_at IS NULL"),
+        sqlite_where=text("revoked_at IS NULL"),
+    ),
+)
+
+trust_fabric_sources = Table(
+    "trust_fabric_sources",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column("org_id", String(36), nullable=True),
+    Column("name", String(200), nullable=False),
+    Column("source_tier", String(10), nullable=False),
+    Column("provider_type", String(64), nullable=False),
+    Column("endpoint_or_uri", String(512), nullable=True),
+    Column("is_active", Integer, nullable=False, default=1),
+    Column("created_at", String(32), nullable=False),
+    Index("idx_tf_src_tier", "source_tier"),
+    Index("idx_tf_src_org", "org_id"),
+)
+
+trust_fabric_assertions = Table(
+    "trust_fabric_assertions",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column(
+        "principal_id",
+        String(64),
+        ForeignKey("trust_fabric_principals.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("field_name", String(100), nullable=False),
+    Column("field_value", Text, nullable=False),
+    Column("source_id", String(64), nullable=False),
+    Column("source_tier", String(10), nullable=False),
+    Column("verification_method", String(64), nullable=False),
+    Column("assurance_level", String(20), nullable=False),
+    Column("disclosure_class", String(32), nullable=False),
+    Column("verified_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=True),
+    Column("last_checked_at", String(32), nullable=False),
+    Column("revoked_at", String(32), nullable=True),
+    Column("evidence_digest", String(64), nullable=False),
+    Index("idx_tf_asst_prin_field", "principal_id", "field_name"),
+    Index("idx_tf_asst_org", "org_id"),
+)
+
+trust_fabric_relationships = Table(
+    "trust_fabric_relationships",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column(
+        "subject_principal_id",
+        String(64),
+        ForeignKey("trust_fabric_principals.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "target_principal_id",
+        String(64),
+        ForeignKey("trust_fabric_principals.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("relationship_type", String(32), nullable=False),
+    Column("role_title", String(100), nullable=True),
+    Column("verification_state", String(32), nullable=False, default="UNVERIFIED"),
+    Column("valid_from", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=True),
+    Column("revoked_at", String(32), nullable=True),
+    Column("source_id", String(64), nullable=False),
+    Index("idx_tf_rel_subject", "subject_principal_id"),
+    Index("idx_tf_rel_target", "target_principal_id"),
+    Index("idx_tf_rel_org", "org_id"),
+)
+
+trust_fabric_authority_edges = Table(
+    "trust_fabric_authority_edges",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column(
+        "grantor_principal_id",
+        String(64),
+        ForeignKey("trust_fabric_principals.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column(
+        "grantee_principal_id",
+        String(64),
+        ForeignKey("trust_fabric_principals.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("action_type", String(100), nullable=False),
+    Column("resource_pattern", String(255), nullable=False, default="*"),
+    Column("ceiling_limit_usd", Float, nullable=True),
+    Column("currency", String(3), nullable=False, default="USD"),
+    Column("delegation_depth", Integer, nullable=False, default=0),
+    Column("valid_from", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=True),
+    Column("revoked_at", String(32), nullable=True),
+    Column("revoked_by", String(64), nullable=True),
+    Column("canonical_digest", String(64), nullable=False),
+    Index("idx_tf_auth_grantee", "grantee_principal_id"),
+    Index("idx_tf_auth_action", "action_type"),
+    Index("idx_tf_auth_org", "org_id"),
+)
+
+trust_fabric_trust_roots = Table(
+    "trust_fabric_trust_roots",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+        unique=True,
+    ),
+    Column(
+        "root_principal_id",
+        String(64),
+        ForeignKey("trust_fabric_principals.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("root_public_key", String(512), nullable=False),
+    Column("key_algorithm", String(32), nullable=False, default="Ed25519"),
+    Column("established_at", String(32), nullable=False),
+    Column("status", String(32), nullable=False, default="ACTIVE"),
+    Column("canonical_digest", String(64), nullable=False),
+    Index("idx_tf_root_org", "org_id"),
+)
+
+trust_fabric_bootstrap_records = Table(
+    "trust_fabric_bootstrap_records",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+        unique=True,
+    ),
+    Column("token_hash", String(64), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("consumed_at", String(32), nullable=True),
+    Column("claimed_by_principal_id", String(64), nullable=True),
+    Column("nonce", String(64), nullable=False, unique=True),
+    Column("created_at", String(32), nullable=False),
+    Index("idx_tf_boot_org", "org_id"),
+    Index("idx_tf_boot_nonce", "nonce"),
+)
+
+trust_fabric_passports = Table(
+    "trust_fabric_passports",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column(
+        "principal_id",
+        String(64),
+        ForeignKey("trust_fabric_principals.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("version", String(20), nullable=False, default="3.0"),
+    Column("passport_type", String(32), nullable=False),
+    Column("claims_json", Text, nullable=False),
+    Column("assurance_vector_json", Text, nullable=False),
+    Column("generated_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("verification_hash", String(64), nullable=False),
+    Column("signature", Text, nullable=True),
+    Column("signing_key_id", String(64), nullable=True),
+    Column("revoked_at", String(32), nullable=True),
+    Index("idx_tf_pass_prin", "principal_id"),
+    Index("idx_tf_pass_org", "org_id"),
+)
+
+trust_fabric_conflicts = Table(
+    "trust_fabric_conflicts",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column(
+        "principal_id",
+        String(64),
+        ForeignKey("trust_fabric_principals.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("field_or_claim", String(100), nullable=False),
+    Column("assertion_id_a", String(64), nullable=False),
+    Column("assertion_id_b", String(64), nullable=False),
+    Column("conflict_type", String(32), nullable=False),
+    Column("detected_at", String(32), nullable=False),
+    Column("status", String(32), nullable=False, default="UNRESOLVED"),
+    Column("resolution_reason", Text, nullable=True),
+    Column("resolved_at", String(32), nullable=True),
+    Index("idx_tf_conf_prin", "principal_id"),
+    Index("idx_tf_conf_org", "org_id"),
+)
+
+trust_fabric_challenges = Table(
+    "trust_fabric_challenges",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column("principal_id", String(64), nullable=True),
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("challenge_type", String(32), nullable=False),
+    Column("target_identifier", String(512), nullable=False),
+    Column("nonce", String(64), nullable=False, unique=True),
+    Column("expected_response_hash", String(64), nullable=False),
+    Column("status", String(32), nullable=False, default="PENDING"),
+    Column("issued_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("completed_at", String(32), nullable=True),
+    Index("idx_tf_chal_nonce", "nonce"),
+    Index("idx_tf_chal_org", "org_id"),
+)
+
+trust_fabric_federated_assertions = Table(
+    "trust_fabric_federated_assertions",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column("issuer_org_id", String(36), nullable=False),
+    Column("audience_org_id", String(36), nullable=False),
+    Column("subject_principal_id", String(64), nullable=False),
+    Column("claim_type", String(64), nullable=False),
+    Column("claim_payload_json", Text, nullable=False),
+    Column("nonce", String(64), nullable=False, unique=True),
+    Column("signature", Text, nullable=False),
+    Column("key_id", String(64), nullable=False),
+    Column("issued_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("revoked_at", String(32), nullable=True),
+    Index("idx_tf_fed_nonce", "nonce"),
+    Index("idx_tf_fed_audience", "audience_org_id"),
+)
+
 
 class DatabaseEngine:
     """Async database engine wrapping SQLAlchemy — SQLite or PostgreSQL.
@@ -1288,6 +1615,13 @@ def create_engine(db_url: str) -> DatabaseEngine:
             poolclass=AsyncAdaptedQueuePool,
             pool_size=1,
             max_overflow=0,
+            echo=False,
+        )
+    elif db_url.startswith("sqlite"):
+        url = db_url if "aiosqlite" in db_url else db_url.replace("sqlite://", "sqlite+aiosqlite://", 1)
+        engine = create_async_engine(
+            url,
+            connect_args={"check_same_thread": False},
             echo=False,
         )
     else:
