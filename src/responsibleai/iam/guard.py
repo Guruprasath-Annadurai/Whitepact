@@ -38,6 +38,17 @@ from responsibleai.iam.models import (
 from responsibleai.iam.step_up import StepUpVerifier
 from responsibleai.rbac.models import Role
 from responsibleai.rbac.permissions import has_permission
+from responsibleai.trust_fabric.enums import ProofStatus
+from responsibleai.trust_fabric.proofs import TrustProofEngine
+
+TRUST_ADMISSION_DENIED_STATES = {
+    ProofStatus.NOT_PROVEN,
+    ProofStatus.CONFLICTED,
+    ProofStatus.EXPIRED,
+    ProofStatus.REVOKED,
+    ProofStatus.UNKNOWN,
+    ProofStatus.REQUIRES_REVIEW,
+}
 
 BREAK_GLASS_CAPABILITY_MAP: dict[PrivilegedAction, BreakGlassCapability] = {
     PrivilegedAction.UPDATE_SSO_IDP_CONFIG: BreakGlassCapability.RESTORE_IDP_CONFIGURATION,
@@ -56,6 +67,7 @@ class PrivilegedSurfaceGuard:
         self.db = db
         self.step_up = StepUpVerifier(db)
         self.attribution = PrivilegedAttributionEngine(db)
+        self.trust_proofs = TrustProofEngine(db)
 
     async def authorize_privileged_operation(
         self,
@@ -69,12 +81,34 @@ class PrivilegedSurfaceGuard:
         jit_grant_id: str | None = None,
         break_glass_session_id: str | None = None,
         context_data: dict[str, Any] | None = None,
+        require_trust_admission: bool = False,
     ) -> PrivilegedAuthorizationResult:
-        """Authorize a privileged operation enforcing all constitutional security invariants."""
+        """Authorize a privileged operation enforcing all constitutional security invariants.
+
+        ``require_trust_admission`` is an explicit opt-in gate: when set, the caller's
+        Trust Fabric employment/membership proof must independently resolve to PROVEN
+        (evaluated fresh, right now, from the canonical ``TrustProofEngine`` -- never
+        from a caller-supplied state) before any of the existing role/step-up/four-eyes/
+        JIT/break-glass checks run. A PROVEN result is only a prerequisite: it does not
+        itself grant privilege, and every check below still applies unchanged. Root
+        recovery and root transfer are deliberately not routed through this gate --
+        those already use their own sovereign proof path in recovery.py/transfer.py.
+        """
         from responsibleai.data_governance.backup_defense import assert_restore_readiness_admitted
         assert_restore_readiness_admitted()
 
         now = datetime.now(UTC).isoformat()
+
+        if require_trust_admission:
+            proof_status = await self.trust_proofs.prove_employment(
+                principal_id=caller.principal_id, org_id=target_org_id
+            )
+            if proof_status in TRUST_ADMISSION_DENIED_STATES:
+                raise PrivilegedAccessDeniedError(
+                    f"Trust legitimacy for principal {caller.principal_id!r} in tenant "
+                    f"{target_org_id!r} is {proof_status.value}; privileged action "
+                    f"{action.value} denied."
+                )
 
         # Invariant 1: Platform Operator Backdoor Rejection
         # "NO WHITEPACT OPERATOR MAY SILENTLY BECOME A CUSTOMER'S ROOT AUTHORITY."
