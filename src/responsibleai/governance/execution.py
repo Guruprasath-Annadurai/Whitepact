@@ -304,18 +304,42 @@ async def admit_execution(
 
 class InternalToolExecutor:
     """Executes one of this platform's own 27 MCP tools
-    (`mcp.tools.dispatch_tool`) — the only executor that exists today.
-    Named to match the v3 spec's own suggested name for this exact
-    case (Section 28 lists `InternalToolExecutor` alongside the
-    not-yet-built `MCPExecutor`/`HTTPExecutor` for proxying to
-    *external* systems).
+    (`mcp.tools.dispatch_tool`). In Phase 2, can route execution through
+    the independent `IsolationBroker` to enforce OS/container-level
+    containment.
     """
 
-    def __init__(self, *, nonce_repo: ExecutionNonceRepository | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        nonce_repo: ExecutionNonceRepository | None = None,
+        broker: Any | None = None,
+    ) -> None:
         self._nonce_repo = nonce_repo
+        self._broker: Any = broker
+        if broker is None:
+            # In production or hosted execution, automatically initialize IsolationBroker
+            import os
+            is_prod = os.environ.get("ENVIRONMENT", "").lower() == "production"
+            if is_prod or os.environ.get("WHITEPACT_ISOLATION_BACKEND"):
+                from responsibleai.isolation.broker import IsolationBroker
+                self._broker = IsolationBroker()
+            else:
+                self._broker = None
 
     async def execute(self, authorization: ExecutionAuthorization, action: ActionRequest) -> Any:
         await admit_execution(authorization, action, self._nonce_repo)
+
+        if self._broker is not None:
+            return await self._broker.execute(authorization, action)
+
+        import os
+        if os.environ.get("ENVIRONMENT", "").lower() == "production":
+            from responsibleai.isolation.errors import IsolationError
+            raise IsolationError(
+                "Same-process tool execution is strictly forbidden in production. "
+                "An IsolationBroker is mandatory."
+            )
 
         from responsibleai.mcp.tools import dispatch_tool
 
