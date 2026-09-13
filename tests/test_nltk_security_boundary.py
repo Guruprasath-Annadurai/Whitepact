@@ -9,8 +9,6 @@ VADER lexicon download. Any expansion of the NLTK API surface must force a
 security re-review rather than silently inheriting this exception.
 """
 
-from __future__ import annotations
-
 import ast
 from pathlib import Path
 
