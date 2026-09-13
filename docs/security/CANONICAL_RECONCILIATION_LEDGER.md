@@ -42,3 +42,29 @@ candidate SHA that introduced or confirmed it.
 | Status | **CLOSED**, independently re-verified — the specific rebinding attack the mission names (public IP at validation time, private/loopback IP at connection time) is covered by a dedicated, passing test, not just a general assertion. |
 
 **What this closure does NOT cover**: `STATIC_SSRF_FILTERING` as a separately-named state (per the broader assurance-platform work in a sibling lane) — this entry closes DNS rebinding and egress validation specifically, per this phase's own scope. Live network behavior against a real external target was not additionally tested beyond what `test_dns_egress_security.py` already covers with mocked/local resolution.
+
+### Entry 2a — Wave-1 merge semantic audit (before starting Wave 2)
+
+Before beginning Phase 2, independently audited every one of the 7
+commits unique to `audit/dns-egress-security-closure` (merge-base
+`39fda2c` per `git log 39fda2c..c137ce4b`) by reading each commit's
+actual diff, not trusting the commit title alone:
+
+| Commit | Title | Files | Classification |
+|---|---|---|---|
+| `7333a35` | docs: specify architecture | 2 spec/plan docs | SUPPORTING_TEST_OR_DOC |
+| `5acf976` | test(conftest): hermetic temp home + auth defaults | `tests/conftest.py` | SUPPORTING_TEST_OR_DOC — flagged: this sets `HOME`/`XDG_*`/`RAI_AUTH_ENABLED`/`WHITEPACT_AUTH_ENABLED` defaults for the **entire test suite** via module-level side effect on conftest import, not scoped only to DNS tests. Read in full rather than assumed benign. Uses `setdefault`/direct-assign in a way that only affects tests relying on the unset default; already empirically validated safe by this session's own 251-test and 191-test regressions (Entries 1–2) passing cleanly with this change present. Necessary to make the DNS/egress reproduction tests hermetic (avoid touching the real developer's home directory) — the same category of real-disk-state-leak risk this reconciliation effort has independently encountered before in this project's history. |
+| `cfbf31a` | test: reproduce rebinding vuln | `tests/test_dns_egress_security.py` (new) | SUPPORTING_TEST_OR_DOC |
+| `e38beb2` | feat: implement SafeNetworkBackend | `src/responsibleai/net/egress.py`, `net/__init__.py` (new module) | DNS_EGRESS_REQUIRED |
+| `7f77c52` | feat: wire into webhooks/upstream | `webhooks/manager.py`, `governance/upstream.py`, `governance/upstream_executor.py` | DNS_EGRESS_REQUIRED — read the actual diff to `upstream.py`/`upstream_executor.py` line-by-line: confirmed narrowly scoped (replaces a raw `httpx.AsyncClient` with `create_safe_async_client()`, one docstring formatting nit; no authority/execution/governance logic touched). |
+| `c224630` | docs: closure summary | 1 doc | SUPPORTING_TEST_OR_DOC |
+| `c137ce4` | test: CNAME/TLS-SNI/policy-mode-confusion proofs | `tests/test_dns_egress_security.py` | SUPPORTING_TEST_OR_DOC |
+
+**Result: UNRELATED imported commits: 0. Unexpected migrations: 0** (no
+`migrations/` path touched by any of the 7 commits — confirmed against
+the full file list, not assumed). **Duplicate security planes: 0** (one
+canonical egress validator, `SafeNetworkBackend`/
+`create_safe_async_client`; the pre-existing `validate_webhook_url()`
+now delegates to it rather than competing with it).
+
+**Wave 1: ACCEPTED as merged.** No reconstruction required.
