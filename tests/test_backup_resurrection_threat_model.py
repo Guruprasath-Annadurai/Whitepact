@@ -32,6 +32,7 @@ from responsibleai.data_governance.backup_defense import (
     RestoreReadinessState,
     RestoreReconciliationEngine,
     RestoreReconciliationError,
+    compute_lifecycle_digest,
 )
 from responsibleai.data_governance.deletion_orchestrator import (
     TenantDeletionError,
@@ -387,13 +388,19 @@ async def test_restore_reconciliation_fails_closed_when_provider_corrupted(
     )
 
     # Record valid tombstone first
+    eff_time = _now()
     store_b_provider.record_state(
         LifecycleStateRecord(
             tenant_id="org_corrupt_test",
             generation_id="gen_1",
             state=LifecycleState.TOMBSTONED,
-            effective_at=_now(),
-            digest=hashlib.sha256(b"valid").hexdigest(),
+            effective_at=eff_time,
+            digest=compute_lifecycle_digest(
+                tenant_id="org_corrupt_test",
+                generation_id="gen_1",
+                state=LifecycleState.TOMBSTONED.value,
+                effective_at=eff_time,
+            ),
         )
     )
 

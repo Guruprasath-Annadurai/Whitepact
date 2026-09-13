@@ -19,6 +19,7 @@ from typing import Any
 
 from sqlalchemy import delete, insert, select, update
 
+from responsibleai.data_governance.backup_defense import assert_restore_readiness_admitted
 from responsibleai.data_governance.legal_hold import LegalHoldManager
 from responsibleai.db.engine import (
     DatabaseEngine,
@@ -114,6 +115,8 @@ class DataErasureManager:
 
     async def execute_erasure(self, request_id: str) -> LifecycleRequest:
         """Executes a requested erasure through validation, purging, and verification."""
+        assert_restore_readiness_admitted()
+
         # 1. Fetch request
         async with self._engine.raw.connect() as conn:
             row = (

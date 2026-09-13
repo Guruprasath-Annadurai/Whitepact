@@ -202,6 +202,20 @@ async def _call_tool(
 ) -> tuple[list[types.TextContent], dict[str, Any]]:
     _logger.debug("tool_call name=%s args=%s", name, arguments)
 
+    from responsibleai.data_governance.backup_defense import (
+        RestoreReadinessState,
+        get_restore_readiness_gate,
+    )
+
+    gate = get_restore_readiness_gate()
+    if gate.state != RestoreReadinessState.READY:
+        error = {
+            "error": "restore_quarantine",
+            "message": f"MCP tool execution blocked: system is in {gate.state.value} state pending restore reconciliation.",
+            "status": gate.state.value,
+        }
+        return _text_and_structured(error)
+
     ctx = _current_org.get()
     usage_repo = _current_usage_repo.get()
 

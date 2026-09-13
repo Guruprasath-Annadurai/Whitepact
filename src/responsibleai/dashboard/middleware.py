@@ -206,3 +206,52 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
         },
         headers=getattr(exc, "headers", None),
     )
+
+
+class RestoreReadinessMiddleware(BaseHTTPMiddleware):
+    """Enforce restore readiness admission gate on all incoming HTTP traffic.
+
+    Consequential HTTP mutations and operations are blocked (503 Service Unavailable)
+    whenever the system is in RESTORE_PENDING, RECONCILING, or FAILED state.
+    Only health check probes and narrow operator recovery endpoints remain admitted.
+    """
+
+    ALLOWED_RECOVERY_PATHS = {
+        "/health",
+        "/healthz",
+        "/readyz",
+        "/livez",
+        "/api/health",
+        "/api/restore/status",
+        "/api/v1/restore/status",
+        "/api/restore/reconcile",
+        "/api/v1/restore/reconcile",
+        "/robots.txt",
+        "/sitemap.xml",
+    }
+
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        from responsibleai.data_governance.backup_defense import (
+            RestoreReadinessState,
+            get_restore_readiness_gate,
+        )
+
+        gate = get_restore_readiness_gate()
+        current_state = gate.state
+        if current_state != RestoreReadinessState.READY:
+            path = request.url.path
+            if path not in self.ALLOWED_RECOVERY_PATHS:
+                return JSONResponse(
+                    status_code=503,
+                    content={
+                        "error": "restore_quarantine",
+                        "message": (
+                            f"Operational traffic blocked: system is in {current_state.value} "
+                            "state pending restore reconciliation."
+                        ),
+                        "status": current_state.value,
+                    },
+                    headers={"Retry-After": "10"},
+                )
+
+        return await call_next(request)

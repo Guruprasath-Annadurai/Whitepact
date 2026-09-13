@@ -15,12 +15,16 @@ Guarantees:
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
+import os
+import sqlite3
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import delete, insert, select, update
@@ -59,12 +63,62 @@ class RestoreQuarantineError(Exception):
     """Raised when operational traffic is attempted while system is quarantined/not ready."""
 
 
+class MissingLifecycleProviderError(RestoreReconciliationError):
+    """Raised when durable Store B provider is missing in production."""
+
+
+class LifecycleRollbackError(ValueError):
+    """Raised when an illegal backward state or epoch transition is attempted."""
+
+
+class LifecycleIntegrityError(RestoreReconciliationError):
+    """Raised when a lifecycle record fails cryptographic integrity verification."""
+
+
+class StoreBUnavailableError(RestoreReconciliationError):
+    """Raised when the Store B provider or database connection is unavailable."""
+
+
 class LifecycleState(StrEnum):
     """Security lifecycle state of a tenant."""
 
     ACTIVE = "ACTIVE"
     DELETION_IN_PROGRESS = "DELETION_IN_PROGRESS"
     TOMBSTONED = "TOMBSTONED"
+
+
+_STATE_RANK: dict[LifecycleState, int] = {
+    LifecycleState.ACTIVE: 1,
+    LifecycleState.DELETION_IN_PROGRESS: 2,
+    LifecycleState.TOMBSTONED: 3,
+}
+
+
+def compute_lifecycle_digest(
+    tenant_id: str,
+    generation_id: str,
+    state: str,
+    effective_at: str,
+    security_epoch: int = 1,
+    revocation_floor: int = 1,
+    erasure_request_ref: str = "",
+    secret_key: str = "",
+) -> str:
+    payload = f"{tenant_id}:{generation_id}:{state}:{effective_at}:{security_epoch}:{revocation_floor}:{erasure_request_ref}"
+    if secret_key:
+        return hmac.new(secret_key.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def is_production_environment() -> bool:
+    env = (
+        os.environ.get("WHITEPACT_ENV")
+        or os.environ.get("RAI_ENV")
+        or os.environ.get("ENVIRONMENT")
+        or os.environ.get("ENV")
+        or "development"
+    ).lower()
+    return env in ("production", "prod")
 
 
 class RestoreReadinessState(StrEnum):
@@ -123,23 +177,347 @@ class CurrentLifecycleStateProvider(ABC):
     def set_corrupted(self, corrupted: bool) -> None:
         """Configure corruption for integrity failure testing."""
 
+    @abstractmethod
+    def get_readiness_state(self) -> RestoreReadinessState | None:
+        """Get authoritative shared readiness state."""
+
+    @abstractmethod
+    def set_readiness_state(self, state: RestoreReadinessState, updated_by: str = "") -> None:
+        """Set authoritative shared readiness state."""
+
+
+class SqliteDurableLifecycleStateProvider(CurrentLifecycleStateProvider):
+    """Production-grade durable lifecycle state provider backed by an independent database outside Store A."""
+
+    def __init__(self, db_path: str | Path | None = None, secret_key: str = "") -> None:
+        if db_path is None:
+            db_path = (
+                os.environ.get("WHITEPACT_STORE_B_PATH")
+                or os.environ.get("WHITEPACT_LIFECYCLE_STORE_PATH")
+                or "/tmp/whitepact_store_b_lifecycle.db"
+            )
+        self._path = Path(db_path)
+        self._secret_key = secret_key or os.environ.get("WHITEPACT_STORE_B_KEY", "")
+        self._available: bool = True
+        self._corrupted: bool = False
+        self._init_db()
+
+    @property
+    def path(self) -> Path:
+        return self._path
+
+    def _get_connection(self) -> sqlite3.Connection:
+        if not self._available:
+            raise StoreBUnavailableError("CurrentLifecycleStateProvider is unavailable")
+        conn = sqlite3.connect(str(self._path), timeout=10.0, isolation_level=None)
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA synchronous=FULL;")
+        return conn
+
+    def _init_db(self) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        conn = self._get_connection()
+        try:
+            with conn:
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS durable_tenant_lifecycle_states (
+                        tenant_id TEXT PRIMARY KEY,
+                        generation_id TEXT NOT NULL,
+                        state TEXT NOT NULL,
+                        effective_at TEXT NOT NULL,
+                        security_epoch INTEGER NOT NULL DEFAULT 1,
+                        revocation_floor INTEGER NOT NULL DEFAULT 1,
+                        erasure_request_ref TEXT NOT NULL DEFAULT '',
+                        digest TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                """)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS durable_restore_readiness (
+                        key TEXT PRIMARY KEY,
+                        state TEXT NOT NULL,
+                        epoch INTEGER NOT NULL DEFAULT 1,
+                        updated_at TEXT NOT NULL,
+                        updated_by TEXT NOT NULL DEFAULT ''
+                    )
+                """)
+        finally:
+            conn.close()
+
+    def record_state(self, record: LifecycleStateRecord) -> None:
+        if not self._available:
+            raise StoreBUnavailableError("CurrentLifecycleStateProvider is unavailable")
+
+        expected_digest = compute_lifecycle_digest(
+            tenant_id=record.tenant_id,
+            generation_id=record.generation_id,
+            state=record.state.value,
+            effective_at=record.effective_at,
+            security_epoch=record.security_epoch,
+            revocation_floor=record.revocation_floor,
+            erasure_request_ref=record.erasure_request_ref,
+            secret_key=self._secret_key,
+        )
+        if record.digest and record.digest != expected_digest:
+            raise LifecycleIntegrityError("Tampered lifecycle state record digest")
+
+        digest_to_store = record.digest or expected_digest
+        now = datetime.now(UTC).isoformat()
+
+        conn = self._get_connection()
+        try:
+            with conn:
+                conn.execute("BEGIN IMMEDIATE")
+                cursor = conn.execute(
+                    "SELECT state, security_epoch, effective_at, generation_id FROM durable_tenant_lifecycle_states WHERE tenant_id = ?",
+                    (record.tenant_id,),
+                )
+                row = cursor.fetchone()
+                if row:
+                    curr_state_str, curr_epoch, curr_eff, curr_gen = row
+                    curr_rank = _STATE_RANK.get(LifecycleState(curr_state_str), 0)
+                    new_rank = _STATE_RANK.get(record.state, 0)
+                    if new_rank < curr_rank:
+                        raise LifecycleRollbackError(
+                            f"Lifecycle state rollback rejected: cannot transition from {curr_state_str} to {record.state.value}"
+                        )
+                    if record.security_epoch < curr_epoch:
+                        raise LifecycleRollbackError(
+                            f"Security epoch rollback rejected: {record.security_epoch} < {curr_epoch}"
+                        )
+                    if (
+                        new_rank == curr_rank
+                        and record.security_epoch == curr_epoch
+                        and record.effective_at <= curr_eff
+                        and record.generation_id == curr_gen
+                    ):
+                        return
+
+                conn.execute(
+                    """
+                    INSERT INTO durable_tenant_lifecycle_states (
+                        tenant_id, generation_id, state, effective_at, security_epoch, revocation_floor, erasure_request_ref, digest, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(tenant_id) DO UPDATE SET
+                        generation_id = excluded.generation_id,
+                        state = excluded.state,
+                        effective_at = excluded.effective_at,
+                        security_epoch = excluded.security_epoch,
+                        revocation_floor = excluded.revocation_floor,
+                        erasure_request_ref = excluded.erasure_request_ref,
+                        digest = excluded.digest,
+                        updated_at = excluded.updated_at
+                    """,
+                    (
+                        record.tenant_id,
+                        record.generation_id,
+                        record.state.value,
+                        record.effective_at,
+                        record.security_epoch,
+                        record.revocation_floor,
+                        record.erasure_request_ref,
+                        digest_to_store,
+                        now,
+                    ),
+                )
+        finally:
+            conn.close()
+
+    def get_state(self, tenant_id: str) -> LifecycleStateRecord | None:
+        if not self._available:
+            raise StoreBUnavailableError("CurrentLifecycleStateProvider is unavailable")
+        conn = self._get_connection()
+        try:
+            cursor = conn.execute(
+                "SELECT tenant_id, generation_id, state, effective_at, security_epoch, revocation_floor, erasure_request_ref, digest FROM durable_tenant_lifecycle_states WHERE tenant_id = ?",
+                (tenant_id,),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return None
+            return LifecycleStateRecord(
+                tenant_id=row[0],
+                generation_id=row[1],
+                state=LifecycleState(row[2]),
+                effective_at=row[3],
+                security_epoch=row[4],
+                revocation_floor=row[5],
+                erasure_request_ref=row[6],
+                digest=row[7],
+            )
+        finally:
+            conn.close()
+
+    def is_tombstoned(self, tenant_id: str) -> bool:
+        rec = self.get_state(tenant_id)
+        return rec is not None and rec.state == LifecycleState.TOMBSTONED
+
+    def is_deletion_in_progress(self, tenant_id: str) -> bool:
+        rec = self.get_state(tenant_id)
+        return rec is not None and rec.state in (LifecycleState.DELETION_IN_PROGRESS, LifecycleState.TOMBSTONED)
+
+    def list_tombstones(self) -> list[LifecycleStateRecord]:
+        if not self._available:
+            raise StoreBUnavailableError("CurrentLifecycleStateProvider is unavailable")
+        conn = self._get_connection()
+        try:
+            cursor = conn.execute(
+                "SELECT tenant_id, generation_id, state, effective_at, security_epoch, revocation_floor, erasure_request_ref, digest FROM durable_tenant_lifecycle_states WHERE state IN (?, ?)",
+                (LifecycleState.DELETION_IN_PROGRESS.value, LifecycleState.TOMBSTONED.value),
+            )
+            rows = cursor.fetchall()
+            return [
+                LifecycleStateRecord(
+                    tenant_id=r[0],
+                    generation_id=r[1],
+                    state=LifecycleState(r[2]),
+                    effective_at=r[3],
+                    security_epoch=r[4],
+                    revocation_floor=r[5],
+                    erasure_request_ref=r[6],
+                    digest=r[7],
+                )
+                for r in rows
+            ]
+        finally:
+            conn.close()
+
+    def verify_integrity(self) -> bool:
+        if not self._available or self._corrupted:
+            return False
+        try:
+            conn = self._get_connection()
+        except Exception:
+            return False
+        try:
+            cursor = conn.execute(
+                "SELECT tenant_id, generation_id, state, effective_at, security_epoch, revocation_floor, erasure_request_ref, digest FROM durable_tenant_lifecycle_states"
+            )
+            rows = cursor.fetchall()
+            for r in rows:
+                expected = compute_lifecycle_digest(
+                    tenant_id=r[0],
+                    generation_id=r[1],
+                    state=r[2],
+                    effective_at=r[3],
+                    security_epoch=r[4],
+                    revocation_floor=r[5],
+                    erasure_request_ref=r[6],
+                    secret_key=self._secret_key,
+                )
+                if r[7] != expected:
+                    return False
+            return True
+        except Exception:
+            return False
+        finally:
+            conn.close()
+
+    def set_available(self, available: bool) -> None:
+        self._available = available
+
+    def set_corrupted(self, corrupted: bool) -> None:
+        self._corrupted = corrupted
+
+    def get_readiness_state(self) -> RestoreReadinessState | None:
+        if not self._available:
+            raise StoreBUnavailableError("CurrentLifecycleStateProvider is unavailable")
+        conn = self._get_connection()
+        try:
+            cursor = conn.execute("SELECT state FROM durable_restore_readiness WHERE key = 'global'")
+            row = cursor.fetchone()
+            if not row:
+                return None
+            return RestoreReadinessState(row[0])
+        finally:
+            conn.close()
+
+    def set_readiness_state(self, state: RestoreReadinessState, updated_by: str = "") -> None:
+        if not self._available:
+            raise StoreBUnavailableError("CurrentLifecycleStateProvider is unavailable")
+        now = datetime.now(UTC).isoformat()
+        conn = self._get_connection()
+        try:
+            with conn:
+                conn.execute(
+                    """
+                    INSERT INTO durable_restore_readiness (key, state, epoch, updated_at, updated_by)
+                    VALUES ('global', ?, 1, ?, ?)
+                    ON CONFLICT(key) DO UPDATE SET
+                        state = excluded.state,
+                        epoch = durable_restore_readiness.epoch + 1,
+                        updated_at = excluded.updated_at,
+                        updated_by = excluded.updated_by
+                    """,
+                    (state.value, now, updated_by),
+                )
+        finally:
+            conn.close()
+
+
+DurableLifecycleStateProvider = SqliteDurableLifecycleStateProvider
+
 
 class InMemoryLifecycleStateProvider(CurrentLifecycleStateProvider):
-    """Thread-safe, independently persisted in-memory lifecycle state provider representing Store B."""
+    """Thread-safe, independently persisted in-memory lifecycle state provider representing Store B for test fixtures."""
 
     def __init__(self) -> None:
         self._records: dict[str, LifecycleStateRecord] = {}
         self._available: bool = True
         self._corrupted: bool = False
+        self._readiness_state: RestoreReadinessState | None = None
 
     def record_state(self, record: LifecycleStateRecord) -> None:
         if not self._available:
-            raise RuntimeError("CurrentLifecycleStateProvider is unavailable")
-        self._records[record.tenant_id] = record
+            raise StoreBUnavailableError("CurrentLifecycleStateProvider is unavailable")
+
+        expected_digest = compute_lifecycle_digest(
+            tenant_id=record.tenant_id,
+            generation_id=record.generation_id,
+            state=record.state.value,
+            effective_at=record.effective_at,
+            security_epoch=record.security_epoch,
+            revocation_floor=record.revocation_floor,
+            erasure_request_ref=record.erasure_request_ref,
+        )
+        if record.digest and record.digest != expected_digest:
+            raise LifecycleIntegrityError("Tampered lifecycle state record digest")
+
+        if record.tenant_id in self._records:
+            existing = self._records[record.tenant_id]
+            curr_rank = _STATE_RANK.get(existing.state, 0)
+            new_rank = _STATE_RANK.get(record.state, 0)
+            if new_rank < curr_rank:
+                raise LifecycleRollbackError(
+                    f"Lifecycle state rollback rejected: cannot transition from {existing.state.value} to {record.state.value}"
+                )
+            if record.security_epoch < existing.security_epoch:
+                raise LifecycleRollbackError(
+                    f"Security epoch rollback rejected: {record.security_epoch} < {existing.security_epoch}"
+                )
+            if (
+                new_rank == curr_rank
+                and record.security_epoch == existing.security_epoch
+                and record.effective_at <= existing.effective_at
+                and record.generation_id == existing.generation_id
+            ):
+                return
+
+        digest_to_store = record.digest or expected_digest
+        self._records[record.tenant_id] = LifecycleStateRecord(
+            tenant_id=record.tenant_id,
+            generation_id=record.generation_id,
+            state=record.state,
+            effective_at=record.effective_at,
+            security_epoch=record.security_epoch,
+            revocation_floor=record.revocation_floor,
+            erasure_request_ref=record.erasure_request_ref,
+            digest=digest_to_store,
+        )
 
     def get_state(self, tenant_id: str) -> LifecycleStateRecord | None:
         if not self._available:
-            raise RuntimeError("CurrentLifecycleStateProvider is unavailable")
+            raise StoreBUnavailableError("CurrentLifecycleStateProvider is unavailable")
         return self._records.get(tenant_id)
 
     def is_tombstoned(self, tenant_id: str) -> bool:
@@ -152,14 +530,22 @@ class InMemoryLifecycleStateProvider(CurrentLifecycleStateProvider):
 
     def list_tombstones(self) -> list[LifecycleStateRecord]:
         if not self._available:
-            raise RuntimeError("CurrentLifecycleStateProvider is unavailable")
+            raise StoreBUnavailableError("CurrentLifecycleStateProvider is unavailable")
         return [r for r in self._records.values() if r.state in (LifecycleState.DELETION_IN_PROGRESS, LifecycleState.TOMBSTONED)]
 
     def verify_integrity(self) -> bool:
         if not self._available or self._corrupted:
             return False
         for rec in self._records.values():
-            expected = hashlib.sha256(f"{rec.tenant_id}:{rec.generation_id}:{rec.state.value}:{rec.effective_at}".encode()).hexdigest()
+            expected = compute_lifecycle_digest(
+                tenant_id=rec.tenant_id,
+                generation_id=rec.generation_id,
+                state=rec.state.value,
+                effective_at=rec.effective_at,
+                security_epoch=rec.security_epoch,
+                revocation_floor=rec.revocation_floor,
+                erasure_request_ref=rec.erasure_request_ref,
+            )
             if rec.digest and rec.digest != expected:
                 return False
         return True
@@ -170,29 +556,105 @@ class InMemoryLifecycleStateProvider(CurrentLifecycleStateProvider):
     def set_corrupted(self, corrupted: bool) -> None:
         self._corrupted = corrupted
 
+    def get_readiness_state(self) -> RestoreReadinessState | None:
+        if not self._available:
+            raise StoreBUnavailableError("CurrentLifecycleStateProvider is unavailable")
+        return self._readiness_state
+
+    def set_readiness_state(self, state: RestoreReadinessState, updated_by: str = "") -> None:
+        if not self._available:
+            raise StoreBUnavailableError("CurrentLifecycleStateProvider is unavailable")
+        self._readiness_state = state
+
 
 class RestoreReadinessGate:
     """Operational readiness admission gate for restored environments."""
 
-    def __init__(self, initial_state: RestoreReadinessState = RestoreReadinessState.RESTORE_PENDING) -> None:
-        self._state = initial_state
+    def __init__(
+        self,
+        initial_state: RestoreReadinessState = RestoreReadinessState.RESTORE_PENDING,
+        provider: CurrentLifecycleStateProvider | None = None,
+    ) -> None:
+        self._local_state = initial_state
+        self._provider = provider
 
     @property
     def state(self) -> RestoreReadinessState:
-        return self._state
+        if self._provider is not None:
+            try:
+                shared = self._provider.get_readiness_state()
+                if shared is not None:
+                    return shared
+            except Exception:
+                return RestoreReadinessState.FAILED
+        return self._local_state
 
-    def set_state(self, state: RestoreReadinessState) -> None:
-        self._state = state
+    def set_state(self, state: RestoreReadinessState, updated_by: str = "") -> None:
+        self._local_state = state
+        if self._provider is not None:
+            try:
+                self._provider.set_readiness_state(state, updated_by=updated_by)
+            except Exception:
+                self._local_state = RestoreReadinessState.FAILED
+                raise
 
     def is_admitted(self) -> bool:
-        return self._state == RestoreReadinessState.READY
+        return self.state == RestoreReadinessState.READY
 
     def assert_traffic_admitted(self) -> None:
         """Enforce that traffic is only served once lifecycle reconciliation succeeds."""
-        if self._state != RestoreReadinessState.READY:
+        current_state = self.state
+        if current_state != RestoreReadinessState.READY:
             raise RestoreQuarantineError(
-                f"Operational traffic blocked: system is in {self._state.value} state."
+                f"Operational traffic blocked: system is in {current_state.value} state."
             )
+
+
+_GLOBAL_RESTORE_GATE: RestoreReadinessGate | None = None
+
+
+def is_restore_pending_default() -> bool:
+    return (
+        os.environ.get("WHITEPACT_RESTORE_MODE") == "1"
+        or os.environ.get("WHITEPACT_RESTORE_PENDING") == "1"
+    )
+
+
+def get_restore_readiness_gate() -> RestoreReadinessGate:
+    global _GLOBAL_RESTORE_GATE
+    if _GLOBAL_RESTORE_GATE is None:
+        initial = (
+            RestoreReadinessState.RESTORE_PENDING
+            if is_restore_pending_default()
+            else RestoreReadinessState.READY
+        )
+        provider = None
+        store_b_path = os.environ.get("WHITEPACT_STORE_B_PATH") or os.environ.get("WHITEPACT_LIFECYCLE_STORE_PATH")
+        if store_b_path:
+            try:
+                provider = DurableLifecycleStateProvider(store_b_path)
+            except Exception:
+                provider = None
+        _GLOBAL_RESTORE_GATE = RestoreReadinessGate(initial_state=initial, provider=provider)
+    return _GLOBAL_RESTORE_GATE
+
+
+def set_restore_readiness_gate(gate: RestoreReadinessGate | None) -> None:
+    global _GLOBAL_RESTORE_GATE
+    _GLOBAL_RESTORE_GATE = gate
+
+
+def reset_restore_readiness_gate(
+    state: RestoreReadinessState = RestoreReadinessState.RESTORE_PENDING,
+    provider: CurrentLifecycleStateProvider | None = None,
+) -> RestoreReadinessGate:
+    global _GLOBAL_RESTORE_GATE
+    _GLOBAL_RESTORE_GATE = RestoreReadinessGate(initial_state=state, provider=provider)
+    return _GLOBAL_RESTORE_GATE
+
+
+def assert_restore_readiness_admitted() -> None:
+    get_restore_readiness_gate().assert_traffic_admitted()
 
 
 @dataclass(frozen=True)
@@ -259,10 +721,52 @@ class RestoreReconciliationEngine:
         engine: DatabaseEngine,
         lifecycle_provider: CurrentLifecycleStateProvider | None = None,
         gate: RestoreReadinessGate | None = None,
+        require_durable: bool | None = None,
     ) -> None:
         self._engine = engine
-        self._provider: CurrentLifecycleStateProvider = lifecycle_provider or InMemoryLifecycleStateProvider()
-        self._gate: RestoreReadinessGate = gate or RestoreReadinessGate()
+        is_prod = is_production_environment()
+        must_require_durable = require_durable if require_durable is not None else is_prod
+
+        if must_require_durable:
+            if lifecycle_provider is None:
+                store_b_path = (
+                    os.environ.get("WHITEPACT_STORE_B_PATH")
+                    or os.environ.get("WHITEPACT_LIFECYCLE_STORE_PATH")
+                )
+                if store_b_path:
+                    try:
+                        lifecycle_provider = DurableLifecycleStateProvider(store_b_path)
+                    except Exception as e:
+                        if gate:
+                            gate.set_state(RestoreReadinessState.FAILED)
+                        raise MissingLifecycleProviderError(
+                            f"Failed to initialize durable Store-B provider: {e}"
+                        ) from e
+                else:
+                    if gate:
+                        gate.set_state(RestoreReadinessState.FAILED)
+                    raise MissingLifecycleProviderError(
+                        "Durable Store-B CurrentLifecycleStateProvider is required in production/strict restore reconciliation."
+                    )
+            elif isinstance(lifecycle_provider, InMemoryLifecycleStateProvider):
+                if gate:
+                    gate.set_state(RestoreReadinessState.FAILED)
+                raise MissingLifecycleProviderError(
+                    "InMemoryLifecycleStateProvider is forbidden in production/strict restore reconciliation."
+                )
+
+        if lifecycle_provider is None:
+            store_b_path = (
+                os.environ.get("WHITEPACT_STORE_B_PATH")
+                or os.environ.get("WHITEPACT_LIFECYCLE_STORE_PATH")
+            )
+            if store_b_path:
+                lifecycle_provider = DurableLifecycleStateProvider(store_b_path)
+            else:
+                lifecycle_provider = InMemoryLifecycleStateProvider()
+
+        self._provider: CurrentLifecycleStateProvider = lifecycle_provider
+        self._gate: RestoreReadinessGate = gate or RestoreReadinessGate(provider=self._provider)
         self._ledger = TombstoneLedger(engine)
 
     @property
@@ -291,7 +795,7 @@ class RestoreReconciliationEngine:
         erased_records = 0
 
         # Mark gate as RECONCILING
-        self._gate.set_state(RestoreReadinessState.RECONCILING)
+        self._gate.set_state(RestoreReadinessState.RECONCILING, updated_by=reconciled_by)
 
         try:
             # 1. Verify provider integrity and availability
@@ -395,7 +899,7 @@ class RestoreReconciliationEngine:
                 )
 
             # Reached here without error -> advance gate to READY
-            self._gate.set_state(RestoreReadinessState.READY)
+            self._gate.set_state(RestoreReadinessState.READY, updated_by=reconciled_by)
 
             return RestoreReconciliationReport(
                 id=rec_id,
@@ -409,7 +913,7 @@ class RestoreReconciliationEngine:
 
         except Exception as exc:
             # On failure, transition gate to FAILED so traffic remains blocked
-            self._gate.set_state(RestoreReadinessState.FAILED)
+            self._gate.set_state(RestoreReadinessState.FAILED, updated_by=reconciled_by)
             try:
                 async with self._engine.raw.begin() as conn:
                     await conn.execute(

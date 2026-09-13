@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -25,8 +26,11 @@ from sqlalchemy import delete, insert, select, update
 
 from responsibleai.data_governance.backup_defense import (
     CurrentLifecycleStateProvider,
+    DurableLifecycleStateProvider,
     LifecycleState,
     LifecycleStateRecord,
+    assert_restore_readiness_admitted,
+    compute_lifecycle_digest,
 )
 from responsibleai.data_governance.legal_hold import LegalHoldActiveError, LegalHoldManager
 from responsibleai.db.engine import (
@@ -120,8 +124,21 @@ class TenantDeletionOrchestrator:
         require_sovereignty: bool = True,
     ) -> TenantDeletionResult:
         """Executes end-to-end governed deletion of an organization."""
+        assert_restore_readiness_admitted()
+
         if await self._legal_hold.is_held(org_id):
             raise LegalHoldActiveError(f"Cannot delete tenant {org_id}: active legal hold exists")
+
+        if self._lifecycle_provider is None:
+            store_b_path = (
+                os.environ.get("WHITEPACT_STORE_B_PATH")
+                or os.environ.get("WHITEPACT_LIFECYCLE_STORE_PATH")
+            )
+            if store_b_path:
+                try:
+                    self._lifecycle_provider = DurableLifecycleStateProvider(store_b_path)
+                except Exception:
+                    pass
 
         now = _now()
         generation_id = f"gen-{uuid.uuid4().hex[:12]}"
@@ -139,9 +156,12 @@ class TenantDeletionOrchestrator:
 
         # Forward security state recorded in independent CurrentLifecycleStateProvider BEFORE destructive actions
         if self._lifecycle_provider:
-            init_digest = hashlib.sha256(
-                f"{org_id}:{generation_id}:{LifecycleState.DELETION_IN_PROGRESS.value}:{now}".encode()
-            ).hexdigest()
+            init_digest = compute_lifecycle_digest(
+                tenant_id=org_id,
+                generation_id=generation_id,
+                state=LifecycleState.DELETION_IN_PROGRESS.value,
+                effective_at=now,
+            )
             self._lifecycle_provider.record_state(
                 LifecycleStateRecord(
                     tenant_id=org_id,
@@ -251,9 +271,12 @@ class TenantDeletionOrchestrator:
 
         # Record TOMBSTONED in independent CurrentLifecycleStateProvider
         if self._lifecycle_provider:
-            final_digest = hashlib.sha256(
-                f"{org_id}:{generation_id}:{LifecycleState.TOMBSTONED.value}:{now}".encode()
-            ).hexdigest()
+            final_digest = compute_lifecycle_digest(
+                tenant_id=org_id,
+                generation_id=generation_id,
+                state=LifecycleState.TOMBSTONED.value,
+                effective_at=now,
+            )
             self._lifecycle_provider.record_state(
                 LifecycleStateRecord(
                     tenant_id=org_id,

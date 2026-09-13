@@ -71,6 +71,9 @@ class PrivilegedSurfaceGuard:
         context_data: dict[str, Any] | None = None,
     ) -> PrivilegedAuthorizationResult:
         """Authorize a privileged operation enforcing all constitutional security invariants."""
+        from responsibleai.data_governance.backup_defense import assert_restore_readiness_admitted
+        assert_restore_readiness_admitted()
+
         now = datetime.now(UTC).isoformat()
 
         # Invariant 1: Platform Operator Backdoor Rejection

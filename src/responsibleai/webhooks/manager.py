@@ -181,6 +181,9 @@ class WebhookManager:
 
     async def fire(self, event: WebhookEvent, data: dict[str, Any]) -> list[WebhookDelivery]:
         """Deliver *event* to all matching, enabled webhooks concurrently."""
+        from responsibleai.data_governance.backup_defense import assert_restore_readiness_admitted
+        assert_restore_readiness_admitted()
+
         targets = [c for c in self._configs.values() if c.enabled and event in c.events]
         if not targets:
             return []
