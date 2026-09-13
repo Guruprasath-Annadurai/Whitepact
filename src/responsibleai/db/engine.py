@@ -1484,6 +1484,191 @@ trust_fabric_federated_assertions = Table(
     Index("idx_tf_fed_audience", "audience_org_id"),
 )
 
+# ── Phase 4: Enterprise IAM & Privileged Control Plane ────────────────────────
+
+iam_step_up_nonces = Table(
+    "iam_step_up_nonces",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
+    Column("principal_id", String(64), nullable=False),
+    Column("nonce_hash", String(64), nullable=False, unique=True),
+    Column("action", String(64), nullable=False),
+    Column("target_resource_id", String(128), nullable=True),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("consumed_at", String(32), nullable=True),
+    Index("idx_iam_nonce_hash", "nonce_hash"),
+    Index("idx_iam_nonce_org_prin", "org_id", "principal_id"),
+)
+
+iam_sessions = Table(
+    "iam_sessions",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
+    Column("principal_id", String(64), nullable=False),
+    Column("token_hash", String(64), nullable=False, unique=True),
+    Column("session_type", String(32), nullable=False, default="INTERACTIVE"),
+    Column("status", String(32), nullable=False, default="ACTIVE"),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("last_seen_at", String(32), nullable=False),
+    Column("revoked_at", String(32), nullable=True),
+    Index("idx_iam_sess_token", "token_hash"),
+    Index("idx_iam_sess_org_prin", "org_id", "principal_id"),
+)
+
+iam_api_key_lineage = Table(
+    "iam_api_key_lineage",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
+    Column("name", String(200), nullable=False),
+    Column("fingerprint", String(64), nullable=False, unique=True),
+    Column("parent_key_id", String(64), nullable=True),
+    Column("status", String(32), nullable=False, default="ACTIVE"),
+    Column("scopes_json", Text, nullable=False, default="[]"),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("revoked_at", String(32), nullable=True),
+    Index("idx_iam_key_fprint", "fingerprint"),
+    Index("idx_iam_key_org", "org_id"),
+)
+
+iam_scim_users = Table(
+    "iam_scim_users",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
+    Column("principal_id", String(64), nullable=False),
+    Column("external_id", String(255), nullable=True),
+    Column("user_name", String(255), nullable=False),
+    Column("email", String(255), nullable=False),
+    Column("active", Integer, nullable=False, default=1),
+    Column("attributes_json", Text, nullable=False, default="{}"),
+    Column("created_at", String(32), nullable=False),
+    Column("updated_at", String(32), nullable=False),
+    Index("idx_iam_scim_usr_org", "org_id"),
+    Index("idx_iam_scim_usr_ext", "org_id", "external_id"),
+    Index("idx_iam_scim_usr_name", "org_id", "user_name"),
+)
+
+iam_scim_groups = Table(
+    "iam_scim_groups",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
+    Column("display_name", String(255), nullable=False),
+    Column("members_json", Text, nullable=False, default="[]"),
+    Column("created_at", String(32), nullable=False),
+    Column("updated_at", String(32), nullable=False),
+    Index("idx_iam_scim_grp_org", "org_id"),
+)
+
+iam_jit_grants = Table(
+    "iam_jit_grants",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
+    Column("principal_id", String(64), nullable=False),
+    Column("target_role", String(32), nullable=False),
+    Column("allowed_actions_json", Text, nullable=False),
+    Column("justification", Text, nullable=False),
+    Column("status", String(32), nullable=False, default="REQUESTED"),
+    Column("requested_at", String(32), nullable=False),
+    Column("approved_at", String(32), nullable=True),
+    Column("approver_principal_id", String(64), nullable=True),
+    Column("expires_at", String(32), nullable=False),
+    Column("revoked_at", String(32), nullable=True),
+    Index("idx_iam_jit_org_prin", "org_id", "principal_id"),
+)
+
+iam_four_eyes_requests = Table(
+    "iam_four_eyes_requests",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
+    Column("requester_principal_id", String(64), nullable=False),
+    Column("action", String(64), nullable=False),
+    Column("target_resource_id", String(128), nullable=True),
+    Column("parameters_json", Text, nullable=False),
+    Column("request_digest", String(64), nullable=False),
+    Column("status", String(32), nullable=False, default="PENDING"),
+    Column("approver_principal_id", String(64), nullable=True),
+    Column("approval_time", String(32), nullable=True),
+    Column("rejection_reason", Text, nullable=True),
+    Column("executed_at", String(32), nullable=True),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Index("idx_iam_fe_org", "org_id"),
+    Index("idx_iam_fe_req", "requester_principal_id"),
+)
+
+iam_break_glass_sessions = Table(
+    "iam_break_glass_sessions",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
+    Column("principal_id", String(64), nullable=False),
+    Column("incident_id", String(64), nullable=False),
+    Column("capabilities_json", Text, nullable=False),
+    Column("justification", Text, nullable=False),
+    Column("status", String(32), nullable=False, default="ACTIVE"),
+    Column("started_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("terminated_at", String(32), nullable=True),
+    Index("idx_iam_bg_org", "org_id"),
+    Index("idx_iam_bg_inc", "incident_id"),
+)
+
+iam_recovery_policies = Table(
+    "iam_recovery_policies",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
+    Column("threshold", Integer, nullable=False),
+    Column("guardians_json", Text, nullable=False),
+    Column("created_at", String(32), nullable=False),
+    Column("active", Integer, nullable=False, default=1),
+    Index("idx_iam_rec_pol_org", "org_id"),
+)
+
+iam_recovery_challenges = Table(
+    "iam_recovery_challenges",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
+    Column("new_root_principal_id", String(64), nullable=False),
+    Column("new_root_public_key", String(255), nullable=False),
+    Column("challenge_message", String(64), nullable=False, unique=True),
+    Column("status", String(32), nullable=False, default="PENDING"),
+    Column("signatures_json", Text, nullable=False, default="{}"),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("completed_at", String(32), nullable=True),
+    Index("idx_iam_chal_msg", "challenge_message"),
+    Index("idx_iam_chal_org", "org_id"),
+)
+
+iam_privileged_audit_log = Table(
+    "iam_privileged_audit_log",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
+    Column("principal_id", String(64), nullable=False),
+    Column("action", String(64), nullable=False),
+    Column("risk_tier", String(32), nullable=False),
+    Column("allowed", Integer, nullable=False),
+    Column("target_resource_id", String(128), nullable=True),
+    Column("recorded_at", String(32), nullable=False),
+    Column("prev_hash", String(64), nullable=False),
+    Column("entry_hash", String(64), nullable=False),
+    Column("details_json", Text, nullable=False, default="{}"),
+    Index("idx_iam_audit_org", "org_id"),
+    Index("idx_iam_audit_ts", "recorded_at"),
+)
+
 
 class DatabaseEngine:
     """Async database engine wrapping SQLAlchemy — SQLite or PostgreSQL.
