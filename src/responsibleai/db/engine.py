@@ -8,6 +8,7 @@ import asyncio
 import logging
 
 from sqlalchemy import (
+    Boolean,
     Column,
     Float,
     ForeignKey,
@@ -495,6 +496,7 @@ governance_evidence = Table(
     # NULL when no Policy reached evaluation for this action at all --
     # see governance/policy.py's Policy.version docstring.
     Column("policy_version", Integer, nullable=True),
+    Column("policy_digest", String(64), nullable=True),
     Column("authentication_method", String(20), nullable=True),
     Column("request_fingerprint", String(64), nullable=True),
     Column("arguments_fingerprint", String(64), nullable=True),
@@ -1667,6 +1669,111 @@ iam_privileged_audit_log = Table(
     Column("details_json", Text, nullable=False, default="{}"),
     Index("idx_iam_audit_org", "org_id"),
     Index("idx_iam_audit_ts", "recorded_at"),
+)
+
+# Phase 5: Policy Lifecycle, Data Governance & Tenant Erasure
+governance_policy_revisions = Table(
+    "governance_policy_revisions",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
+    Column("revision_num", Integer, nullable=False),
+    Column("rules_json", Text, nullable=False),
+    Column("content_digest", String(64), nullable=False),
+    Column("created_at", String(64), nullable=False),
+    Column("created_by", String(200), nullable=False),
+    Column("change_reason", Text, nullable=False),
+    Column("approval_id", String(36), nullable=True),
+    UniqueConstraint("org_id", "revision_num", name="uq_pol_rev_org_num"),
+    Index("idx_pol_rev_org_num", "org_id", "revision_num"),
+    Index("idx_pol_rev_digest", "org_id", "content_digest"),
+)
+
+governance_policy_activations = Table(
+    "governance_policy_activations",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
+    Column("revision_id", String(36), ForeignKey("governance_policy_revisions.id", ondelete="RESTRICT"), nullable=False),
+    Column("content_digest", String(64), nullable=False),
+    Column("activated_at", String(64), nullable=False),
+    Column("activated_by", String(200), nullable=False),
+    Column("governance_epoch", Integer, nullable=False),
+    Column("previous_activation_id", String(36), nullable=True),
+    Column("is_active", Boolean, nullable=False, default=True),
+    Index("idx_pol_act_org_active", "org_id", "is_active"),
+)
+
+data_retention_policies = Table(
+    "data_retention_policies",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
+    Column("data_category", String(50), nullable=False),
+    Column("retention_period_seconds", Integer, nullable=False),
+    Column("created_at", String(64), nullable=False),
+    Column("updated_at", String(64), nullable=False),
+    UniqueConstraint("org_id", "data_category", name="uq_retention_org_cat"),
+    Index("idx_retention_org", "org_id"),
+)
+
+data_lifecycle_requests = Table(
+    "data_lifecycle_requests",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
+    Column("request_type", String(32), nullable=False),
+    Column("status", String(32), nullable=False),
+    Column("requested_at", String(64), nullable=False),
+    Column("completed_at", String(64), nullable=True),
+    Column("requested_by", String(200), nullable=False),
+    Column("details_json", Text, nullable=False, default="{}"),
+    Column("verification_status", String(32), nullable=True),
+    Index("idx_lifecycle_org_status", "org_id", "status"),
+)
+
+data_holds = Table(
+    "data_holds",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
+    Column("data_category", String(50), nullable=False),
+    Column("hold_reason", Text, nullable=False),
+    Column("active", Boolean, nullable=False, default=True),
+    Column("created_at", String(64), nullable=False),
+    Column("created_by", String(200), nullable=False),
+    Column("released_at", String(64), nullable=True),
+    Column("released_by", String(200), nullable=True),
+    Index("idx_holds_org_cat_active", "org_id", "data_category", "active"),
+)
+
+tenant_tombstones = Table(
+    "tenant_tombstones",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("org_id", String(36), nullable=False, unique=True),
+    Column("original_name", String(255), nullable=False),
+    Column("generation_id", String(64), nullable=False),
+    Column("tombstoned_at", String(64), nullable=False),
+    Column("tombstoned_by", String(200), nullable=False),
+    Column("authority_hash", String(64), nullable=False),
+    Column("evidence_digest", String(64), nullable=False),
+    Column("details_json", Text, nullable=False, default="{}"),
+    Index("idx_tombstone_org", "org_id"),
+    Index("idx_tombstone_gen", "generation_id"),
+)
+
+restore_reconciliation_records = Table(
+    "restore_reconciliation_records",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("restored_at", String(64), nullable=False),
+    Column("status", String(32), nullable=False),
+    Column("tombstones_detected", Integer, nullable=False, default=0),
+    Column("tenants_quarantined", Integer, nullable=False, default=0),
+    Column("details_json", Text, nullable=False, default="{}"),
+    Column("reconciled_by", String(200), nullable=False),
+    Index("idx_restore_rec_status", "status"),
 )
 
 

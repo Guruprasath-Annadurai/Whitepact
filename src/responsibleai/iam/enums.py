@@ -49,6 +49,7 @@ class PrivilegedAction(StrEnum):
     UPDATE_SSO_IDP_CONFIG = "UPDATE_SSO_IDP_CONFIG"
     EXECUTE_BREAK_GLASS = "EXECUTE_BREAK_GLASS"
     EXECUTE_FOUR_EYES_ACTION = "EXECUTE_FOUR_EYES_ACTION"
+    MUTATE_CRITICAL_POLICY = "MUTATE_CRITICAL_POLICY"
 
 
 # Canonical mapping of privileged actions to risk tiers
@@ -81,6 +82,7 @@ ACTION_RISK_TIERS: dict[PrivilegedAction, PrivilegeRiskTier] = {
     PrivilegedAction.UPDATE_SSO_IDP_CONFIG: PrivilegeRiskTier.PRIVILEGED_CRITICAL,
     PrivilegedAction.EXECUTE_BREAK_GLASS: PrivilegeRiskTier.PRIVILEGED_CRITICAL,
     PrivilegedAction.EXECUTE_FOUR_EYES_ACTION: PrivilegeRiskTier.PRIVILEGED_CRITICAL,
+    PrivilegedAction.MUTATE_CRITICAL_POLICY: PrivilegeRiskTier.PRIVILEGED_CRITICAL,
 }
 
 

@@ -58,6 +58,7 @@ from responsibleai.dashboard.logging_config import configure_logging, get_logger
 from responsibleai.dashboard.middleware import (
     RequestIDMiddleware,
     RequestLoggingMiddleware,
+    RestoreReadinessMiddleware,
     SecurityHeadersMiddleware,
     global_exception_handler,
     http_exception_handler,
@@ -665,6 +666,7 @@ app.add_middleware(
 )
 app.state.limiter = limiter
 app.add_middleware(AuditLogMiddleware)
+app.add_middleware(RestoreReadinessMiddleware)
 app.add_middleware(APIVersionMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
@@ -2120,6 +2122,71 @@ async def health() -> JSONResponse:
         "stable_since": "1.0.0",
     }
     return JSONResponse(content=body, status_code=200 if db_ok else 503)
+
+
+@app.get("/health", tags=["ops"], include_in_schema=False)
+@app.get("/healthz", tags=["ops"], include_in_schema=False)
+@app.get("/readyz", tags=["ops"], include_in_schema=False)
+@app.get("/livez", tags=["ops"], include_in_schema=False)
+async def k8s_health() -> JSONResponse:
+    return JSONResponse(content={"status": "ok"}, status_code=200)
+
+
+@app.get("/api/restore/status", tags=["ops"], include_in_schema=False)
+@app.get("/api/v1/restore/status", tags=["ops"])
+async def restore_status() -> JSONResponse:
+    """Read-only restore admission status probe."""
+    from responsibleai.data_governance.backup_defense import get_restore_readiness_gate
+
+    gate = get_restore_readiness_gate()
+    return JSONResponse(
+        content={
+            "status": gate.state.value,
+            "is_admitted": gate.is_admitted(),
+        },
+        status_code=200,
+    )
+
+
+@app.post("/api/restore/reconcile", tags=["ops"], include_in_schema=False)
+@app.post("/api/v1/restore/reconcile", tags=["ops"])
+async def restore_reconcile(request: Request) -> JSONResponse:
+    """Narrow operator recovery endpoint to trigger post-restore lifecycle reconciliation."""
+    from responsibleai.data_governance.backup_defense import (
+        RestoreReconciliationEngine,
+        RestoreReconciliationError,
+        get_restore_readiness_gate,
+    )
+
+    if _db_engine is None:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "db_unavailable", "message": "Database is not initialized."},
+        )
+
+    gate = get_restore_readiness_gate()
+    engine = RestoreReconciliationEngine(engine=_db_engine, gate=gate)
+    try:
+        report = await engine.reconcile_post_restore(reconciled_by="operator-recovery-endpoint")
+        return JSONResponse(
+            content={
+                "status": "success",
+                "report_id": report.id,
+                "reconciliation_status": report.status,
+                "tombstones_detected": report.tombstones_detected,
+                "tenants_quarantined": report.tenants_quarantined,
+            },
+            status_code=200,
+        )
+    except RestoreReconciliationError as exc:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": "reconciliation_failed",
+                "message": str(exc),
+                "gate_state": gate.state.value,
+            },
+        )
 
 
 @app.get("/api/metrics", tags=["ops"])

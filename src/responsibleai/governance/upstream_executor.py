@@ -183,6 +183,9 @@ class UpstreamMCPExecutor:
         self._credential_issuance_repo = credential_issuance_repo
 
     async def execute(self, authorization: ExecutionAuthorization, action: ActionRequest) -> Any:
+        from responsibleai.data_governance.backup_defense import assert_restore_readiness_admitted
+        assert_restore_readiness_admitted()
+
         # Same precedence InternalToolExecutor uses: the authorization's
         # own shape (consumed/expired/org/action-match) is checked
         # before anything about the target is even looked up, so a

@@ -201,8 +201,16 @@ class WebhookManager:
 
         ``None`` is an explicit legacy/local tenant, not a wildcard. Production
         callers must pass the authenticated or persisted event owner so one
-        tenant's payload can never be fanned out to another tenant.
+        tenant's payload can never be fanned out to another tenant (Checkpoint
+        6). Also requires the durable lifecycle store to have admitted restore
+        readiness before any delivery is attempted (Phase 5) -- merged from two
+        independently-developed, non-overlapping fixes to this same method;
+        neither is dropped in favor of the other.
         """
+        from responsibleai.data_governance.backup_defense import assert_restore_readiness_admitted
+
+        assert_restore_readiness_admitted()
+
         targets = [
             config
             for config in self._configs.values()

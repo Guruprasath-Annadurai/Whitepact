@@ -328,6 +328,9 @@ class InternalToolExecutor:
                 self._broker = None
 
     async def execute(self, authorization: ExecutionAuthorization, action: ActionRequest) -> Any:
+        from responsibleai.data_governance.backup_defense import assert_restore_readiness_admitted
+        assert_restore_readiness_admitted()
+
         await admit_execution(authorization, action, self._nonce_repo)
 
         if self._broker is not None:
