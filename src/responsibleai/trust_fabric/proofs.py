@@ -219,6 +219,38 @@ class TrustProofEngine:
             else:
                 return ProofStatus.NOT_PROVEN
 
+    async def evaluate_privileged_legitimacy(self, *, principal_id: str, org_id: str) -> ProofStatus:
+        """Canonical legitimacy admission claim consulted by the IAM privileged surface guard.
+
+        Dispatches to the existing claim-specific proof appropriate to the principal's
+        registered type -- it introduces no new relationship type, claim type, or trust
+        score, only a routing layer over primitives that already exist in this engine.
+        A principal never registered in the trust fabric under this exact (principal_id,
+        org_id) pair is UNKNOWN, not NOT_PROVEN: those are deliberately distinct proof
+        states and callers must fail closed on both.
+        """
+        async with self.db.raw.connect() as conn:
+            p_stmt = select(trust_fabric_principals).where(
+                and_(
+                    trust_fabric_principals.c.id == principal_id,
+                    trust_fabric_principals.c.org_id == org_id,
+                )
+            )
+            p_row = (await conn.execute(p_stmt)).first()
+        if not p_row:
+            return ProofStatus.UNKNOWN
+
+        principal_type = p_row._mapping["principal_type"]
+        if principal_type in (PrincipalType.HUMAN.value, PrincipalType.ORGANIZATION.value):
+            return await self.prove_employment(principal_id=principal_id, org_id=org_id)
+        if principal_type == PrincipalType.AI_AGENT.value:
+            return await self.prove_agent_ownership(agent_principal_id=principal_id, org_id=org_id)
+
+        # WORKLOAD / SERVICE / MACHINE principals have no automated claim-specific proof
+        # primitive in this engine yet. Route to human review rather than fabricating a
+        # new proof primitive or silently allowing an unproven principal type.
+        return ProofStatus.REQUIRES_REVIEW
+
     async def prove_credential(
         self,
         *,

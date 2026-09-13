@@ -81,34 +81,27 @@ class PrivilegedSurfaceGuard:
         jit_grant_id: str | None = None,
         break_glass_session_id: str | None = None,
         context_data: dict[str, Any] | None = None,
-        require_trust_admission: bool = False,
     ) -> PrivilegedAuthorizationResult:
         """Authorize a privileged operation enforcing all constitutional security invariants.
 
-        ``require_trust_admission`` is an explicit opt-in gate: when set, the caller's
-        Trust Fabric employment/membership proof must independently resolve to PROVEN
-        (evaluated fresh, right now, from the canonical ``TrustProofEngine`` -- never
-        from a caller-supplied state) before any of the existing role/step-up/four-eyes/
-        JIT/break-glass checks run. A PROVEN result is only a prerequisite: it does not
-        itself grant privilege, and every check below still applies unchanged. Root
-        recovery and root transfer are deliberately not routed through this gate --
-        those already use their own sovereign proof path in recovery.py/transfer.py.
+        Trust Fabric legitimacy admission is mandatory and unconditional: every call
+        must independently resolve the caller's canonical legitimacy claim to PROVEN
+        (evaluated fresh, right now, via ``TrustProofEngine.evaluate_privileged_legitimacy``
+        -- never from a caller-supplied state) before any role/step-up/four-eyes/JIT/
+        break-glass check runs. There is no parameter to omit or flag to leave off: this
+        was previously an opt-in ``require_trust_admission`` parameter, which meant a
+        caller could bypass admission simply by not passing it -- a security-sensitive
+        check must not depend on every caller remembering to opt in, so the parameter
+        was removed rather than defaulted differently. A PROVEN result is only a
+        prerequisite: it does not itself grant privilege, and every check below still
+        applies unchanged. Root recovery and root transfer are deliberately not routed
+        through this gate -- those already use their own sovereign proof path in
+        recovery.py/transfer.py, and must not be able to reach this method as a bypass.
         """
         from responsibleai.data_governance.backup_defense import assert_restore_readiness_admitted
         assert_restore_readiness_admitted()
 
         now = datetime.now(UTC).isoformat()
-
-        if require_trust_admission:
-            proof_status = await self.trust_proofs.prove_employment(
-                principal_id=caller.principal_id, org_id=target_org_id
-            )
-            if proof_status in TRUST_ADMISSION_DENIED_STATES:
-                raise PrivilegedAccessDeniedError(
-                    f"Trust legitimacy for principal {caller.principal_id!r} in tenant "
-                    f"{target_org_id!r} is {proof_status.value}; privileged action "
-                    f"{action.value} denied."
-                )
 
         # Invariant 1: Platform Operator Backdoor Rejection
         # "NO WHITEPACT OPERATOR MAY SILENTLY BECOME A CUSTOMER'S ROOT AUTHORITY."
@@ -122,6 +115,20 @@ class PrivilegedSurfaceGuard:
             raise CrossTenantEscalationError(
                 f"Principal {caller.principal_id!r} of tenant {caller.org_id!r} "
                 f"cannot execute privileged actions on tenant {target_org_id!r}."
+            )
+
+        # Invariant 2.5: Trust Fabric legitimacy admission (mandatory, unconditional).
+        # Consulted only once caller.org_id == target_org_id is established above, so
+        # this check is inherently tenant-scoped and cannot be satisfied by a proof
+        # evaluated for a different tenant or a different principal_id.
+        proof_status = await self.trust_proofs.evaluate_privileged_legitimacy(
+            principal_id=caller.principal_id, org_id=target_org_id
+        )
+        if proof_status in TRUST_ADMISSION_DENIED_STATES:
+            raise PrivilegedAccessDeniedError(
+                f"Trust legitimacy for principal {caller.principal_id!r} in tenant "
+                f"{target_org_id!r} is {proof_status.value}; privileged action "
+                f"{action.value} denied."
             )
 
         # Risk tier determination

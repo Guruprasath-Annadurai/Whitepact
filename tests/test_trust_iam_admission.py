@@ -2,11 +2,12 @@
 # SPDX-License-Identifier: MIT
 """Adversarial tests for the Trust Fabric -> IAM privileged admission gate.
 
-Covers ``PrivilegedSurfaceGuard.authorize_privileged_operation(require_trust_admission=True)``:
-the opt-in prerequisite check that consults the canonical, freshly-evaluated
-``TrustProofEngine.prove_employment`` result before any role/step-up/four-eyes/JIT/
-break-glass check runs. A PROVEN result is a prerequisite only -- it must not itself
-grant privilege, so every scenario below still goes through the pre-existing checks.
+Covers ``PrivilegedSurfaceGuard.authorize_privileged_operation()``'s mandatory,
+unconditional legitimacy admission check: it consults the canonical, freshly-evaluated
+``TrustProofEngine.evaluate_privileged_legitimacy`` result before any role/step-up/
+four-eyes/JIT/break-glass check runs, on every call, with no parameter to omit and no
+flag to leave off. A PROVEN result is a prerequisite only -- it must not itself grant
+privilege, so every scenario below still goes through the pre-existing checks.
 """
 
 from __future__ import annotations
@@ -95,16 +96,29 @@ def _caller(principal_id: str, org_id: str = "org_alpha", role: Role = Role.ADMI
 
 
 @pytest.mark.asyncio
-async def test_default_behavior_unchanged_when_not_requested(trust_iam_db: DatabaseEngine):
-    """Backward compatibility: existing callers who never pass require_trust_admission are unaffected."""
+async def test_ordinary_caller_cannot_bypass_trust_by_omitting_argument(trust_iam_db: DatabaseEngine):
+    """There is no parameter to omit: legitimacy admission cannot be skipped by a caller
+    who simply does not pass anything trust-related. This is the prior design's exact
+    footgun (an opt-in ``require_trust_admission`` flag) with the fix verified: a caller
+    with no trust fabric record at all, calling the plain method signature, is denied.
+    """
     guard = PrivilegedSurfaceGuard(trust_iam_db)
     caller = _caller("admin_no_trust_record")
-    res = await guard.authorize_privileged_operation(
-        caller=caller,
-        target_org_id="org_alpha",
-        action=PrivilegedAction.CREATE_API_KEY,
-    )
-    assert res.allowed is True
+    with pytest.raises(PrivilegedAccessDeniedError, match="UNKNOWN"):
+        await guard.authorize_privileged_operation(
+            caller=caller,
+            target_org_id="org_alpha",
+            action=PrivilegedAction.CREATE_API_KEY,
+        )
+
+
+@pytest.mark.asyncio
+async def test_signature_has_no_trust_bypass_parameter():
+    """Structural guard against reintroducing an opt-in/opt-out trust parameter."""
+    import inspect
+
+    sig = inspect.signature(PrivilegedSurfaceGuard.authorize_privileged_operation)
+    assert "require_trust_admission" not in sig.parameters
 
 
 @pytest.mark.asyncio
@@ -115,7 +129,6 @@ async def test_proven_principal_with_valid_iam_allowed(trust_iam_db: DatabaseEng
         caller=_caller(principal_id),
         target_org_id="org_alpha",
         action=PrivilegedAction.CREATE_API_KEY,
-        require_trust_admission=True,
     )
     assert res.allowed is True
 
@@ -134,7 +147,6 @@ async def test_not_proven_principal_blocked(trust_iam_db: DatabaseEngine):
             caller=_caller(person.id),
             target_org_id="org_alpha",
             action=PrivilegedAction.CREATE_API_KEY,
-            require_trust_admission=True,
         )
 
 
@@ -147,7 +159,6 @@ async def test_unknown_principal_blocked(trust_iam_db: DatabaseEngine):
             caller=_caller("ghost_principal_never_created"),
             target_org_id="org_alpha",
             action=PrivilegedAction.CREATE_API_KEY,
-            require_trust_admission=True,
         )
 
 
@@ -163,7 +174,6 @@ async def test_revoked_relationship_blocked(trust_iam_db: DatabaseEngine):
             caller=_caller(principal_id),
             target_org_id="org_alpha",
             action=PrivilegedAction.CREATE_API_KEY,
-            require_trust_admission=True,
         )
 
 
@@ -176,7 +186,6 @@ async def test_expired_relationship_blocked(trust_iam_db: DatabaseEngine):
             caller=_caller(principal_id),
             target_org_id="org_alpha",
             action=PrivilegedAction.CREATE_API_KEY,
-            require_trust_admission=True,
         )
 
 
@@ -203,7 +212,6 @@ async def test_conflicted_principal_blocked(trust_iam_db: DatabaseEngine):
             caller=_caller(person.id),
             target_org_id="org_alpha",
             action=PrivilegedAction.CREATE_API_KEY,
-            require_trust_admission=True,
         )
 
 
@@ -219,7 +227,6 @@ async def test_cross_tenant_trust_decision_blocked(trust_iam_db: DatabaseEngine)
             caller=caller,
             target_org_id="org_beta",
             action=PrivilegedAction.CREATE_API_KEY,
-            require_trust_admission=True,
         )
 
 
@@ -233,7 +240,6 @@ async def test_wrong_principal_id_not_conflated(trust_iam_db: DatabaseEngine):
             caller=_caller("some_other_unrelated_principal_id"),
             target_org_id="org_alpha",
             action=PrivilegedAction.CREATE_API_KEY,
-            require_trust_admission=True,
         )
 
 
@@ -252,7 +258,6 @@ async def test_stale_result_blocked_after_revocation(trust_iam_db: DatabaseEngin
         caller=_caller(principal_id),
         target_org_id="org_alpha",
         action=PrivilegedAction.CREATE_API_KEY,
-        require_trust_admission=True,
     )
     assert res.allowed is True
 
@@ -266,7 +271,6 @@ async def test_stale_result_blocked_after_revocation(trust_iam_db: DatabaseEngin
             caller=_caller(principal_id),
             target_org_id="org_alpha",
             action=PrivilegedAction.CREATE_API_KEY,
-            require_trust_admission=True,
         )
 
 
@@ -279,7 +283,6 @@ async def test_caller_supplied_proof_state_is_not_authoritative(trust_iam_db: Da
             caller=_caller("attacker_principal"),
             target_org_id="org_alpha",
             action=PrivilegedAction.CREATE_API_KEY,
-            require_trust_admission=True,
             context_data={"proof_state": "PROVEN", "trust_status": "PROVEN"},
         )
 
@@ -300,7 +303,6 @@ async def test_provider_unavailable_fails_closed(trust_iam_db: DatabaseEngine, m
             caller=_caller(principal_id),
             target_org_id="org_alpha",
             action=PrivilegedAction.CREATE_API_KEY,
-            require_trust_admission=True,
         )
 
 
@@ -317,5 +319,42 @@ async def test_proven_trust_does_not_bypass_role_check(trust_iam_db: DatabaseEng
             caller=_caller(principal_id, role=Role.VIEWER),
             target_org_id="org_alpha",
             action=PrivilegedAction.CREATE_API_KEY,
-            require_trust_admission=True,
+        )
+
+
+@pytest.mark.asyncio
+async def test_real_policy_lifecycle_callsite_enforces_trust_admission(trust_iam_db: DatabaseEngine):
+    """Behavioral proof that the real production call site enforces admission.
+
+    PolicyLifecycleManager.create_revision() is one of the four real ordinary privileged
+    production call sites of PrivilegedSurfaceGuard.authorize_privileged_operation()
+    (src/responsibleai/governance/policy_lifecycle.py). This exercises that actual
+    production path end-to-end rather than only the guard's own unit surface, proving
+    there is no route through it that skips legitimacy admission.
+    """
+    from responsibleai.governance.models import GovernanceDecision
+    from responsibleai.governance.policy import PolicyRule
+    from responsibleai.governance.policy_lifecycle import PolicyLifecycleManager
+
+    mgr = PolicyLifecycleManager(trust_iam_db)
+    critical_rules = [
+        PolicyRule(
+            rule_id="crit-rule-1",
+            reason_code="RC_PERMISSIVE",
+            effect=GovernanceDecision.ALLOW,
+            risk_tiers=None,
+            action_types=None,
+            targets=None,
+        )
+    ]
+
+    # Caller has valid ADMIN role but no trust fabric record at all.
+    caller = _caller("no_trust_admin", org_id="org_alpha", role=Role.ADMIN)
+    with pytest.raises(PrivilegedAccessDeniedError, match="UNKNOWN"):
+        await mgr.create_revision(
+            org_id="org_alpha",
+            rules=critical_rules,
+            created_by="no_trust_admin",
+            change_reason="Attempted critical mutation without trust admission",
+            caller=caller,
         )

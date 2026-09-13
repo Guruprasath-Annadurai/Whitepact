@@ -220,8 +220,9 @@ async def test_cross_tenant_critical_mutation_blocked(
 
 @pytest.mark.asyncio
 async def test_insufficient_role_critical_mutation_blocked(
-    sqlite_engine: DatabaseEngine, critical_rules: list[PolicyRule]
+    sqlite_engine: DatabaseEngine, critical_rules: list[PolicyRule], seed_trust_employment
 ):
+    await seed_trust_employment(sqlite_engine, org_id="org_alpha", principal_id="viewer_alpha")
     mgr = PolicyLifecycleManager(sqlite_engine)
     caller = PrivilegedCallerContext(
         principal_id="viewer_alpha",
@@ -240,8 +241,9 @@ async def test_insufficient_role_critical_mutation_blocked(
 
 @pytest.mark.asyncio
 async def test_missing_step_up_critical_mutation_blocked(
-    sqlite_engine: DatabaseEngine, critical_rules: list[PolicyRule]
+    sqlite_engine: DatabaseEngine, critical_rules: list[PolicyRule], seed_trust_employment
 ):
+    await seed_trust_employment(sqlite_engine, org_id="org_alpha", principal_id="admin_alpha")
     mgr = PolicyLifecycleManager(sqlite_engine)
     caller = PrivilegedCallerContext(
         principal_id="admin_alpha",
@@ -261,8 +263,9 @@ async def test_missing_step_up_critical_mutation_blocked(
 
 @pytest.mark.asyncio
 async def test_missing_four_eyes_critical_mutation_blocked(
-    sqlite_engine: DatabaseEngine, critical_rules: list[PolicyRule]
+    sqlite_engine: DatabaseEngine, critical_rules: list[PolicyRule], seed_trust_employment
 ):
+    await seed_trust_employment(sqlite_engine, org_id="org_alpha", principal_id="admin_alpha")
     mgr = PolicyLifecycleManager(sqlite_engine)
     caller = PrivilegedCallerContext(
         principal_id="admin_alpha",
@@ -285,8 +288,9 @@ async def test_missing_four_eyes_critical_mutation_blocked(
 
 @pytest.mark.asyncio
 async def test_fabricated_approval_id_blocked(
-    sqlite_engine: DatabaseEngine, critical_rules: list[PolicyRule]
+    sqlite_engine: DatabaseEngine, critical_rules: list[PolicyRule], seed_trust_employment
 ):
+    await seed_trust_employment(sqlite_engine, org_id="org_alpha", principal_id="admin_alpha")
     mgr = PolicyLifecycleManager(sqlite_engine)
     caller = PrivilegedCallerContext(
         principal_id="admin_alpha",
@@ -309,8 +313,9 @@ async def test_fabricated_approval_id_blocked(
 
 @pytest.mark.asyncio
 async def test_expired_approval_blocked(
-    sqlite_engine: DatabaseEngine, critical_rules: list[PolicyRule]
+    sqlite_engine: DatabaseEngine, critical_rules: list[PolicyRule], seed_trust_employment
 ):
+    await seed_trust_employment(sqlite_engine, org_id="org_alpha", principal_id="admin_alpha")
     mgr = PolicyLifecycleManager(sqlite_engine)
     caller = PrivilegedCallerContext(
         principal_id="admin_alpha",
@@ -336,8 +341,9 @@ async def test_expired_approval_blocked(
 
 @pytest.mark.asyncio
 async def test_already_consumed_approval_blocked(
-    sqlite_engine: DatabaseEngine, critical_rules: list[PolicyRule]
+    sqlite_engine: DatabaseEngine, critical_rules: list[PolicyRule], seed_trust_employment
 ):
+    await seed_trust_employment(sqlite_engine, org_id="org_alpha", principal_id="admin_alpha")
     mgr = PolicyLifecycleManager(sqlite_engine)
     caller = PrivilegedCallerContext(
         principal_id="admin_alpha",
@@ -363,8 +369,9 @@ async def test_already_consumed_approval_blocked(
 
 @pytest.mark.asyncio
 async def test_cross_tenant_approval_blocked(
-    sqlite_engine: DatabaseEngine, critical_rules: list[PolicyRule]
+    sqlite_engine: DatabaseEngine, critical_rules: list[PolicyRule], seed_trust_employment
 ):
+    await seed_trust_employment(sqlite_engine, org_id="org_alpha", principal_id="admin_alpha")
     mgr = PolicyLifecycleManager(sqlite_engine)
     caller = PrivilegedCallerContext(
         principal_id="admin_alpha",
@@ -391,11 +398,12 @@ async def test_cross_tenant_approval_blocked(
 
 @pytest.mark.asyncio
 async def test_self_approval_prevention_real_enforcement(
-    sqlite_engine: DatabaseEngine, critical_rules: list[PolicyRule]
+    sqlite_engine: DatabaseEngine, critical_rules: list[PolicyRule], seed_trust_employment
 ):
     """Prove WhitePact actively blocks execution when requester == approver."""
     mgr = PolicyLifecycleManager(sqlite_engine)
     admin_id = "admin_maker_and_checker"
+    await seed_trust_employment(sqlite_engine, org_id="org_alpha", principal_id=admin_id)
 
     caller = PrivilegedCallerContext(
         principal_id=admin_id,
@@ -432,8 +440,9 @@ async def test_self_approval_prevention_real_enforcement(
 
 @pytest.mark.asyncio
 async def test_approval_policy_digest_mismatch_blocked(
-    sqlite_engine: DatabaseEngine, critical_rules: list[PolicyRule]
+    sqlite_engine: DatabaseEngine, critical_rules: list[PolicyRule], seed_trust_employment
 ):
+    await seed_trust_employment(sqlite_engine, org_id="org_alpha", principal_id="admin_alpha")
     mgr = PolicyLifecycleManager(sqlite_engine)
     caller = PrivilegedCallerContext(
         principal_id="admin_alpha",
@@ -464,8 +473,12 @@ async def test_approval_policy_digest_mismatch_blocked(
 
 @pytest.mark.asyncio
 async def test_security_epoch_changed_after_approval_blocked(
-    sqlite_engine: DatabaseEngine, standard_rules: list[PolicyRule], critical_rules: list[PolicyRule]
+    sqlite_engine: DatabaseEngine,
+    standard_rules: list[PolicyRule],
+    critical_rules: list[PolicyRule],
+    seed_trust_employment,
 ):
+    await seed_trust_employment(sqlite_engine, org_id="org_alpha", principal_id="admin_maker")
     mgr = PolicyLifecycleManager(sqlite_engine)
     # First create a revision so we have a revision_id to activate
     await mgr.create_revision(
@@ -524,9 +537,10 @@ async def test_security_epoch_changed_after_approval_blocked(
 
 @pytest.mark.asyncio
 async def test_fully_authorized_critical_policy_mutation_succeeds(
-    sqlite_engine: DatabaseEngine, critical_rules: list[PolicyRule]
+    sqlite_engine: DatabaseEngine, critical_rules: list[PolicyRule], seed_trust_employment
 ):
     """Prove authorized critical policy mutation succeeds and marks approval executed."""
+    await seed_trust_employment(sqlite_engine, org_id="org_alpha", principal_id="admin_maker")
     mgr = PolicyLifecycleManager(sqlite_engine)
     caller = PrivilegedCallerContext(
         principal_id="admin_maker",

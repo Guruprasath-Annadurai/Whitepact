@@ -95,6 +95,80 @@ def seed_runtime_authority():
     return seed
 
 
+@pytest.fixture
+def seed_trust_employment():
+    """Seed a VERIFIED EMPLOYED_BY relationship under an exact, caller-chosen principal_id.
+
+    PrivilegedSurfaceGuard.authorize_privileged_operation() unconditionally consults
+    TrustProofEngine.evaluate_privileged_legitimacy(principal_id, org_id) before any
+    role/step-up/four-eyes check runs. Existing IAM tests use fixed literal
+    principal_id strings (e.g. "admin_alpha") that must match PrivilegedCallerContext
+    exactly, so this seeds the trust fabric tables directly with that literal id
+    rather than going through PrincipalDirectory.create_principal(), which always
+    mints its own generated id.
+    """
+    async def seed(engine, *, org_id: str, principal_id: str) -> None:
+        from sqlalchemy import insert as sa_insert
+
+        from responsibleai.db.engine import (
+            trust_fabric_principals,
+            trust_fabric_relationships,
+            trust_fabric_sources,
+        )
+
+        now = datetime.now(UTC).isoformat()
+        company_id = f"{principal_id}__employer"
+        source_id = f"src_{principal_id}"
+        async with engine.raw.begin() as conn:
+            await conn.execute(
+                sa_insert(trust_fabric_sources).values(
+                    id=source_id,
+                    org_id=org_id,
+                    name="Test HR Source",
+                    source_tier="TIER_C",
+                    provider_type="IDP",
+                    is_active=1,
+                    created_at=now,
+                )
+            )
+            await conn.execute(
+                sa_insert(trust_fabric_principals).values(
+                    id=principal_id,
+                    org_id=org_id,
+                    principal_type="HUMAN",
+                    display_name=principal_id,
+                    lifecycle_state="ACTIVE",
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            await conn.execute(
+                sa_insert(trust_fabric_principals).values(
+                    id=company_id,
+                    org_id=org_id,
+                    principal_type="ORGANIZATION",
+                    display_name=f"{org_id} entity",
+                    lifecycle_state="ACTIVE",
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            await conn.execute(
+                sa_insert(trust_fabric_relationships).values(
+                    id=f"rel_{principal_id}",
+                    subject_principal_id=principal_id,
+                    target_principal_id=company_id,
+                    org_id=org_id,
+                    relationship_type="EMPLOYED_BY",
+                    verification_state="VERIFIED",
+                    valid_from=now,
+                    source_id=source_id,
+                )
+            )
+
+    return seed
+
+
 class MockProvider(BaseProvider):
     """
     Deterministic provider for unit tests.

@@ -101,7 +101,8 @@ async def test_cross_tenant_escalation_blocked(test_db: DatabaseEngine):
 
 
 @pytest.mark.asyncio
-async def test_unprivileged_role_denied(test_db: DatabaseEngine):
+async def test_unprivileged_role_denied(test_db: DatabaseEngine, seed_trust_employment):
+    await seed_trust_employment(test_db, org_id="org_alpha", principal_id="viewer_alpha")
     guard = PrivilegedSurfaceGuard(test_db)
     caller = PrivilegedCallerContext(
         principal_id="viewer_alpha",
@@ -117,7 +118,8 @@ async def test_unprivileged_role_denied(test_db: DatabaseEngine):
 
 
 @pytest.mark.asyncio
-async def test_standard_privileged_action_allowed_for_admin(test_db: DatabaseEngine):
+async def test_standard_privileged_action_allowed_for_admin(test_db: DatabaseEngine, seed_trust_employment):
+    await seed_trust_employment(test_db, org_id="org_alpha", principal_id="admin_alpha")
     guard = PrivilegedSurfaceGuard(test_db)
     caller = PrivilegedCallerContext(
         principal_id="admin_alpha",
@@ -135,7 +137,8 @@ async def test_standard_privileged_action_allowed_for_admin(test_db: DatabaseEng
 
 
 @pytest.mark.asyncio
-async def test_high_risk_requires_step_up_nonce(test_db: DatabaseEngine):
+async def test_high_risk_requires_step_up_nonce(test_db: DatabaseEngine, seed_trust_employment):
+    await seed_trust_employment(test_db, org_id="org_alpha", principal_id="admin_alpha")
     guard = PrivilegedSurfaceGuard(test_db)
     caller = PrivilegedCallerContext(
         principal_id="admin_alpha",
@@ -153,7 +156,8 @@ async def test_high_risk_requires_step_up_nonce(test_db: DatabaseEngine):
 
 
 @pytest.mark.asyncio
-async def test_critical_risk_requires_four_eyes_and_step_up(test_db: DatabaseEngine):
+async def test_critical_risk_requires_four_eyes_and_step_up(test_db: DatabaseEngine, seed_trust_employment):
+    await seed_trust_employment(test_db, org_id="org_alpha", principal_id="admin_requester")
     guard = PrivilegedSurfaceGuard(test_db)
 
     caller = PrivilegedCallerContext(

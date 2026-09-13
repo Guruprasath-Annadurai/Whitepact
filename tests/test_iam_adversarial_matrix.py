@@ -439,7 +439,10 @@ async def test_vector_webauthn_failure_modes(redteam_db: DatabaseEngine):
 
 
 @pytest.mark.asyncio
-async def test_vector_break_glass_root_transfer_and_capability_mismatch(redteam_db: DatabaseEngine):
+async def test_vector_break_glass_root_transfer_and_capability_mismatch(
+    redteam_db: DatabaseEngine, seed_trust_employment
+):
+    await seed_trust_employment(redteam_db, org_id="victim_tenant", principal_id="admin_victim")
     guard = PrivilegedSurfaceGuard(redteam_db)
     bg_svc = BreakGlassService(redteam_db)
     session = await bg_svc.initiate_break_glass(
