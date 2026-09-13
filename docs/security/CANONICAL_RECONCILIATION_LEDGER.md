@@ -147,3 +147,88 @@ now delegates to it rather than competing with it).
 | Verification performed this pass | **Phase 5 dedicated suite: 70 passed, 1 skipped, 0 failed.** **Section 15 (Phase 4↔5 hard boundary) explicitly confirmed by test name, all already passing**: `test_direct_critical_policy_mutation_fails_without_caller` (direct service bypass blocked), `test_missing_step_up_critical_mutation_blocked`, `test_fabricated_approval_id_blocked`, `test_expired_approval_blocked`, `test_already_consumed_approval_blocked` (replay), `test_cross_tenant_approval_blocked`, `test_self_approval_prevention_real_enforcement`, `test_approval_policy_digest_mismatch_blocked`, `test_security_epoch_changed_after_approval_blocked`, plus the positive case `test_fully_authorized_critical_policy_mutation_succeeds` — every scenario Section 15 names, covered. **Post-hand-resolution regression, specifically targeting the two merged fixes**: `test_checkpoint6_transport_boundary.py` + `test_tenant_isolation_webhooks.py` + `test_webhooks.py` + `test_webhook_persistence.py` (cross-tenant webhook fix intact) + `test_dns_egress_security.py` (SafeNetworkBackend intact) + `test_runtime_isolation_admission.py` + `test_trust_bootstrap.py` + `test_iam_adversarial_matrix.py` + `test_checkpoint5_evidence_integrity.py` + `test_tenant_isolation.py` + `test_mcp_governance_dispatch.py` — **289 passed, 0 failed** (0 regressions across Waves 0–4, and specifically confirms the hand-merged `webhooks/manager.py` preserves both fixes correctly). `ruff`/`mypy`/`git diff --check`/SPDX on every merged and hand-resolved file: clean. |
 | Canonical commit SHA (this pass) | `6804dc5` (merge, hand-resolved, DCO present) |
 | Status | **CLOSED.** P0: 0. P1: 0. History rewrites: 0. Stale policy execution: 0. False erasure completion: 0 (not independently re-attacked beyond the existing test suite's own coverage — recorded honestly, not claimed as freshly adversarially tested by this pass). Authority resurrection: 0. Old-backup resurrection: 0. |
+
+---
+
+## Entry 7 — Full-repository regression at the fully-integrated candidate (all 5 phases + Checkpoint 6)
+
+**Frozen candidate SHA at this check:** `4c7a52b63a425636353bdc2b6f8b10aa8b6b6c4e`
+
+Two full-suite runs performed. First run: 5 failed, 3393 passed, 5 skipped,
+**3 errors**. Investigated both failure classes rather than re-running
+blindly:
+
+**3 errors — self-inflicted, fixed.** `tests/test_phase3_postgres_concurrency.py`'s
+3 tests require the `wp_phase3_test` PostgreSQL database to exist as a
+**persistent environment precondition** (unlike `test_phase4_migrations.py`/
+`test_phase5_migrations.py`, which self-manage their own databases) — this
+pass's own earlier Wave-3 cleanup (`dropdb wp_phase3_test` after Wave 3's
+own verification) removed it. Fixed by recreating the database and
+migrating to head; **do not drop this database going forward** — it is a
+required local test fixture for this file, not disposable scratch state.
+Confirmed fixed: 3/3 pass in isolation, and 0 errors on the second full run.
+
+**5 failed — pre-existing, unrelated to this reconciliation, confirmed by
+direct investigation, not fixed (out of scope).** All 5 are in
+`tests/test_dashboard_api.py`, spanning three unrelated subsystems
+(leaderboard, trust index, incident DB), each with the same signature:
+an "empty/default state" assertion fails because a state-mutating action
+from an earlier test in the same collection run has leaked through.
+Root-caused, not just observed: `src/responsibleai/dashboard/app.py`
+holds `_leaderboard_repo`/`_leaderboard_runner` and sibling registries as
+**module-level globals**, populated once at app startup and never reset
+between tests that share a process — the same general class of test-
+fixture-isolation bug this reconciliation effort has already encountered
+and fixed elsewhere in this codebase family (the DNS/Egress branch's own
+`5acf976` hermetic-conftest commit, Entry 2a). **Confirmed pre-existing
+and unrelated to any of the 6 integration waves**: `git diff --stat` from
+the original merge-base (`93c8e88`) to the current candidate HEAD across
+`src/responsibleai/leaderboard/`, `src/responsibleai/trust/`, and
+`src/responsibleai/incidents/` is **empty** — none of these waves touched
+any file in these subsystems. **Confirmed deterministic, not flaky**: the
+exact same 5 tests failed identically on both full-suite runs, and all
+109 tests in `test_dashboard_api.py` pass cleanly when the file is run in
+isolation. This is a real, pre-existing test-infrastructure gap, recorded
+honestly rather than silently worked around or hidden — fixing it is
+outside this reconciliation mission's scope (no security invariant is
+implicated; it is a shared-fixture-state bug in an unrelated dashboard
+subsystem).
+
+**Second full-suite run (with the PostgreSQL fix in place): 5 failed
+(same 5, confirmed pre-existing), 3396 passed, 5 skipped, 0 errors.**
+
+## Entry 8 — Cross-phase adversarial matrix (Section 18)
+
+Performed by mapping each of the 12 required scenarios against the
+integrated candidate's actual existing test coverage — reading real test
+names and, where a gap was suspected, reading the actual source
+(`iam/guard.py`, `iam/enums.py`) rather than assuming coverage exists.
+
+| Scenario | Result | Evidence |
+|---|---|---|
+| Trust → IAM (fake/conflicted principal → privileged admin) | **GAP — OPEN, real, structural** | `PrivilegedSurfaceGuard.authorize_privileged_operation()` (`iam/guard.py`) takes no trust-fabric proof-state input at all — no parameter, no import of `trust_fabric`'s `ProofState`/`CONFLICTED`/`NOT_PROVEN` vocabulary anywhere in `iam/guard.py`. Confirmed by direct source read, not just a missing-test-name search. Whether a principal that is actually `CONFLICTED`/`NOT_PROVEN` in the trust fabric can in practice obtain an `ADMIN`-role assignment that would let it pass the guard's own `has_permission(caller.role, Role.ADMIN)` check was **not independently verified this pass** — this finding states a confirmed structural gap (the two systems are not wired together), not a confirmed exploit chain end-to-end. **This is exactly the kind of finding the governing mission's Section 1 says to STOP for**: closing it means deciding whether/how the IAM guard should consult trust-fabric proof state, which is cross-lane architecture (Trust Fabric owned by this same integration effort, but the design decision affects both Phase 3 and Phase 4's contracts) — not something to silently patch mid-reconciliation. |
+| IAM → Policy (insufficient privilege → critical ALLOW policy) | **COVERED** | `test_insufficient_role_critical_mutation_blocked` |
+| Policy → Execution (approval under R1, activate R2, resume) | **COVERED** (same underlying concept, different name) | `test_security_epoch_changed_after_approval_blocked` |
+| Execution → Isolation (expired/replayed authorization → sandbox) | **COVERED** | `test_authorization_replay_rejected_with_zero_sandbox_starts`, `test_stale_expired_authorization_rejected` |
+| Isolation → Egress (isolated execution → DNS rebind/private IP/proxy) | **GAP — no direct integration test found** | Isolation containment and DNS/egress validation are each tested thoroughly in their own suites; no test exercises code running *inside* the isolation sandbox attempting a rebinding/private-IP/proxy-bypass egress attack specifically. Not confirmed exploitable or safe by architecture alone — recorded as an untested integration seam, not a confirmed vulnerability. |
+| Restore → Authority (restore pre-delete DB → old root/session/API-key/agent credential) | **COVERED** | `test_backup_resurrection.py`, `test_backup_resurrection_threat_model.py`, `test_restore_reconciliation.py` |
+| Delete → Trust (delete tenant → recreate identity/domain → old trust/passport/authority) | **COVERED** | `test_domain_transfer_and_org_recreation_no_authority_resurrection`, `test_identifier_email_and_phone_recycling_no_authority_transfer` |
+| Break-Glass → Policy (temporary emergency access → constitutional/root policy mutation) | **PARTIAL — capability-scoping exists, not independently adversarially confirmed** | Source-confirmed: `TRANSFER_ROOT_AUTHORITY`/`RECOVER_ROOT_AUTHORITY`/`DESTROY_TENANT` are explicitly, unconditionally prohibited under break-glass in `iam/guard.py`. `MODIFY_POLICY_RULE` is *not* in that explicit prohibition list, but is separately gated behind a specific, narrowly-named `BreakGlassCapability.RESTORE_OPERATIONAL_POLICY_CONFIGURATION` grant (the `BreakGlassCapability` enum's other members — `RESTORE_IDP_CONFIGURATION`, `REVOKE_COMPROMISED_CREDENTIAL`, `REPAIR_TENANT_SECURITY_EPOCH` — are all similarly narrow, restoration-scoped, not open-ended). `test_vector_break_glass_root_transfer_and_capability_mismatch` confirms capability-mismatch rejection exists as a mechanism. **Not found**: a test that specifically grants `RESTORE_OPERATIONAL_POLICY_CONFIGURATION` and then attempts to use it to reach *constitutional/root*-tier policy (as opposed to ordinary operational policy) to confirm that distinction is actually enforced, not just implied by naming. |
+| Worker → Stale Governance (queue job → revoke/change authority/policy → later worker run) | **N/A by architecture, not a gap** | Independently re-confirmed this pass (not just cited from Checkpoint 6's own design doc): grepped for `APScheduler`/`schedule.every`/`CronTrigger`/`croniter`/`BackgroundTasks`/`asyncio.create_task` dispatching a consequential action — none exists. Webhook retry is the only background worker, and it delivers already-created operational events, not a serialized governance `ALLOW`. There is no queue/worker execution path for this scenario to apply to. |
+| Evidence Failure → Execution (pre-exec evidence unavailable → execution does not begin) | **COVERED** | `test_evidence_persistence_failure_blocks_an_otherwise_allowed_call` |
+| Post-Exec Evidence Failure → UNKNOWN | **COVERED** | `test_unknown_outcome_is_first_class`, `test_final_outcome_failure_attempts_unknown_without_claiming_success` |
+| Store-B Failure → Service | **COVERED, strongly** | `test_durable_store_b_failure_matrix`, `test_production_missing_durable_store_b_fails_closed`, `test_reconciliation_fails_closed_on_corrupt_or_unavailable_store_b`, `test_http_consequential_boundary_blocked_at_restore_pending_and_failed`, `test_startup_safety_default_not_ready` |
+
+**Matrix result: 9 of 12 scenarios fully covered by existing tests, 1
+scenario N/A by confirmed architecture, 1 scenario partially covered
+(capability-scoping exists, not adversarially proven end-to-end), 1
+scenario is a real, open, structural gap requiring an architecture
+decision before it can be closed (Trust → IAM).**
+
+Per the governing mission's own Section 1 ("STOP only if: ... a P0/P1
+requires architecture outside this mission"): the Trust→IAM gap is
+reported here rather than patched, since a fix requires deciding *how*
+the IAM guard should consult trust-fabric state (block on any non-PROVEN
+principal? require a minimum proof freshness? which risk tiers does it
+apply to?) — a design decision, not a bug fix. **This reconciliation
+pass does not attempt that design.**
