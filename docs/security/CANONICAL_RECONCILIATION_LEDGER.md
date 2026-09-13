@@ -22,4 +22,23 @@ candidate SHA that introduced or confirmed it.
 | Canonical commit SHA (this pass) | No new commit required — Checkpoint 6 was already correctly implemented at the starting SHA; this pass's own commit (below) only adds this ledger entry and the verification record. |
 | Status | **CLOSED**, independently re-verified. |
 
-**What this closure does NOT cover**: DNS rebinding remains an explicit, named-open P1 in the design doc itself ("DNS rebinding remains an open P1 release blocker and is not changed here") — this is Wave 1 of this reconciliation, not yet started. Process isolation, trust fabric, IAM, and policy/data governance (Phases 2–5) are entirely separate, unintegrated work — see the implementation plan.
+**What this closure does NOT cover**: DNS rebinding remains an explicit, named-open P1 in the design doc itself ("DNS rebinding remains an open P1 release blocker and is not changed here") — closed by Entry 2 below. Process isolation, trust fabric, IAM, and policy/data governance (Phases 2–5) are entirely separate, unintegrated work — see the implementation plan.
+
+---
+
+## Entry 2 — Wave 1: DNS / Egress Security Closure
+
+| Field | Value |
+|---|---|
+| Source branch | `audit/dns-egress-security-closure` |
+| Source SHA | `c137ce4b2c44ae34d814288b4dc03c111e786efd` |
+| Source commits | 7 commits: architecture spec, rebinding-vulnerability reproduction, `SafeNetworkBackend` implementation, webhook/upstream integration, closure docs, deterministic CNAME/TLS-SNI/policy-mode-confusion proofs |
+| Security invariant | Outbound network connections from tenant-controlled input (webhook delivery, upstream MCP tool invocation) resolve all A/AAAA records, fail closed if any resolved address is forbidden (private/loopback/link-local/etc.), connect to the specific validated address rather than re-resolving the hostname at connect time (the DNS-rebinding defense), perform post-connect peer validation, preserve the original hostname for TLS/SNI, reject certificate mismatches, and cannot be bypassed via proxy environment variables. `PUBLIC_ONLY` mode is enforced for untrusted input with no way for a request to select a more trusted mode. |
+| Canonical implementation location | `src/responsibleai/net/egress.py` (`SafeNetworkBackend`, new module), wired into `src/responsibleai/webhooks/manager.py`, `src/responsibleai/governance/upstream.py`, `src/responsibleai/governance/upstream_executor.py` |
+| Integration method | **Real `git merge` (not cherry-pick, not reimplementation)** — justified because a `git merge-tree` dry run confirmed zero textual conflicts before merging for real (the branch shares a very recent common ancestor, `39fda2c`, with the canonical candidate), and the change is a single coherent, well-tested unit. Merge commit: `6a46791` (amended once to add the missing DCO sign-off, still unpushed at that point). |
+| Tests | `tests/test_dns_egress_security.py` (114 tests, including the two explicit rebinding-attack tests: `test_patched_webhook_manager_blocks_dns_rebinding`, `test_rebinding_on_second_delivery_attempt_blocked`) |
+| Verification performed this pass | Ran `test_dns_egress_security.py` alone (114 passed), then a broader regression across `test_dns_egress_security.py` + `test_webhooks.py` + `test_webhook_persistence.py` + `test_upstream_gateway.py` + `test_checkpoint6_transport_boundary.py` + tenant-isolation tests (**251 passed, 0 failed** — confirms Wave 1 does not regress Wave 0). `ruff check` and `mypy` scoped to every merged file: clean. |
+| Canonical commit SHA (this pass) | `6a46791` (merge, DCO-amended) |
+| Status | **CLOSED**, independently re-verified — the specific rebinding attack the mission names (public IP at validation time, private/loopback IP at connection time) is covered by a dedicated, passing test, not just a general assertion. |
+
+**What this closure does NOT cover**: `STATIC_SSRF_FILTERING` as a separately-named state (per the broader assurance-platform work in a sibling lane) — this entry closes DNS rebinding and egress validation specifically, per this phase's own scope. Live network behavior against a real external target was not additionally tested beyond what `test_dns_egress_security.py` already covers with mocked/local resolution.
