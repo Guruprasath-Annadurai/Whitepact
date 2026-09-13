@@ -25,6 +25,7 @@ from typing import Any
 
 from responsibleai.isolation.backend import IsolationBackend
 from responsibleai.isolation.environment import build_isolated_environment
+from responsibleai.isolation.errors import IsolationPolicyViolationError
 from responsibleai.isolation.filesystem import EphemeralWorkspace
 from responsibleai.isolation.models import ExecutionOutcome, IsolatedExecutionRequest, NetworkPolicy
 
@@ -41,10 +42,12 @@ class LocalSubprocessBackend(IsolationBackend):
         return os.path.exists(self.python_bin)
 
     async def execute(self, request: IsolatedExecutionRequest) -> ExecutionOutcome:
-        # Check network policy: local subprocess cannot provide true network isolation
-        if request.profile.network_policy == NetworkPolicy.NONE:
-            # Enforce warning or check
-            pass
+        # Check network policy: direct network egress from isolated execution is forbidden
+        if request.profile.network_policy != NetworkPolicy.NONE:
+            raise IsolationPolicyViolationError(
+                "Direct network egress from isolated subprocess execution is forbidden; "
+                "all network operations must pass through canonical host-mediated egress chokepoints."
+            )
 
         clean_env = build_isolated_environment(
             organization_id=request.organization_id,

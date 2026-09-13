@@ -28,6 +28,7 @@ from responsibleai.isolation.backend import IsolationBackend
 from responsibleai.isolation.environment import build_isolated_environment
 from responsibleai.isolation.errors import (
     IsolationBackendUnavailableError,
+    IsolationPolicyViolationError,
 )
 from responsibleai.isolation.filesystem import EphemeralWorkspace
 from responsibleai.isolation.models import ExecutionOutcome, IsolatedExecutionRequest, NetworkPolicy
@@ -64,6 +65,12 @@ class DockerContainerBackend(IsolationBackend):
                 "Failing closed in production."
             )
 
+        if request.profile.network_policy != NetworkPolicy.NONE:
+            raise IsolationPolicyViolationError(
+                "Direct network egress from isolated container execution is forbidden; "
+                "all network operations must pass through canonical host-mediated egress chokepoints."
+            )
+
         clean_env = build_isolated_environment(
             organization_id=request.organization_id,
             action_id=request.action_id,
@@ -72,10 +79,6 @@ class DockerContainerBackend(IsolationBackend):
         )
 
         limits = request.profile.resources
-        network_flag = (
-            "--network=none" if request.profile.network_policy == NetworkPolicy.NONE else ""
-        )
-
         container_name = f"wp_iso_{request.organization_id}_{request.action_id}"[:63]
         start_time = time.monotonic()
 
@@ -127,10 +130,8 @@ if __name__ == "__main__":
                 "--tmpfs=/tmp:rw,noexec,nosuid,size=64m",
                 f"-v={workspace.path}:/workspace:rw",
                 "-w=/workspace",
+                "--network=none",
             ]
-
-            if network_flag:
-                cmd.append(network_flag)
 
             # Pass clean environment variables
             for k, v in clean_env.items():
