@@ -17,7 +17,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
-import ipaddress
 import json
 import logging
 import socket
@@ -26,8 +25,14 @@ from collections import deque
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
 
-import httpx
-
+from responsibleai.net.egress import (
+    DestinationPolicy,
+    ForbiddenDestinationError,
+    InvalidURLError,
+    create_safe_async_client,
+    is_address_allowed,
+    validate_outbound_url,
+)
 from responsibleai.webhooks.models import (
     WebhookConfig,
     WebhookDelivery,
@@ -53,33 +58,39 @@ class UnsafeWebhookURLError(ValueError):
 
 
 def validate_webhook_url(url: str) -> None:
-    """Reject webhook URLs that target private/loopback/link-local networks
-    or the cloud-metadata address — an org admin registering a webhook
-    shouldn't be able to make this server issue requests into its own
-    internal network or a cloud provider's instance-metadata endpoint.
+    """Reject webhook URLs that target private/loopback/link-local networks,
+    CGNAT, cloud-metadata endpoints, or any forbidden destination.
     Re-checked at every delivery (not just registration) since DNS can
-    resolve differently between the two."""
-    parsed = urlsplit(url)
+    resolve differently between the two.
+    """
+    try:
+        parsed = urlsplit(url)
+    except Exception as exc:
+        raise UnsafeWebhookURLError(f"malformed URL: {exc}") from exc
+
     if parsed.scheme not in ("http", "https"):
         raise UnsafeWebhookURLError(f"unsupported URL scheme: {parsed.scheme!r}")
     host = parsed.hostname
     if not host:
         raise UnsafeWebhookURLError("URL has no host")
+
+    # Static URL / host / IP literal validation via egress boundary
+    try:
+        validate_outbound_url(url, DestinationPolicy.PUBLIC_ONLY)
+    except (ForbiddenDestinationError, InvalidURLError) as exc:
+        raise UnsafeWebhookURLError(
+            f"webhook host {host!r} resolves to a non-public address ({exc})"
+        ) from exc
+
+    # Resolution-time check via socket.getaddrinfo
     try:
         infos = socket.getaddrinfo(host, None)
     except socket.gaierror as exc:
         raise UnsafeWebhookURLError(f"could not resolve host: {host}") from exc
+
     for info in infos:
-        addr = info[4][0]
-        ip = ipaddress.ip_address(addr)
-        if (
-            ip.is_private
-            or ip.is_loopback
-            or ip.is_link_local
-            or ip.is_reserved
-            or ip.is_multicast
-            or ip.is_unspecified
-        ):
+        addr = str(info[4][0])
+        if not is_address_allowed(addr, DestinationPolicy.PUBLIC_ONLY):
             raise UnsafeWebhookURLError(
                 f"webhook host {host!r} resolves to a non-public address ({addr})"
             )
@@ -259,7 +270,12 @@ class WebhookManager:
                     sig = hmac.new(config.secret.encode(), body, hashlib.sha256).hexdigest()
                     headers["X-RAI-Signature-256"] = f"sha256={sig}"
 
-                async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as http:
+                # create_safe_async_client enforces destination policy at actual
+                # TCP-connect time (TOCTOU defence): it re-resolves the hostname
+                # inside SafeNetworkBackend.connect_tcp and verifies every
+                # resolved IP before connecting — eliminating the window between
+                # validate_webhook_url (static/DNS pre-check) and the real socket.
+                async with create_safe_async_client(timeout=10.0) as http:
                     resp = await http.post(config.url, content=body, headers=headers)
                 status_code = resp.status_code
                 if resp.is_success:
