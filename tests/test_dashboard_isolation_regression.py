@@ -17,14 +17,23 @@ from responsibleai.dashboard.app import app, settings
 
 @pytest.fixture()
 async def dashboard_client():
+    orig_database_url = settings.database_url
+    orig_db_path = settings.db_path
+    orig_auto_migrate = settings.auto_migrate
+
     settings.database_url = None
     settings.db_path = ":memory:"
     settings.auto_migrate = False
-    async with LifespanManager(app, startup_timeout=15) as manager:
-        async with AsyncClient(
-            transport=ASGITransport(app=manager.app), base_url="http://test"
-        ) as ac:
-            yield ac
+    try:
+        async with LifespanManager(app, startup_timeout=15) as manager:
+            async with AsyncClient(
+                transport=ASGITransport(app=manager.app), base_url="http://test"
+            ) as ac:
+                yield ac
+    finally:
+        settings.database_url = orig_database_url
+        settings.db_path = orig_db_path
+        settings.auto_migrate = orig_auto_migrate
 
 
 # ── Cluster 1: Leaderboard Repository Isolation ─────────────────────────────
