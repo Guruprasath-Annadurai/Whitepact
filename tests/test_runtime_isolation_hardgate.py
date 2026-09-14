@@ -370,9 +370,9 @@ while True:
         assert outcome.timed_out is True
         assert outcome.exit_code != 0
 
-        # Verify no container remains
+        # Verify no container remains in any state (Created, Exited, or Running)
         container_prefix = f"wp_iso_{org_id}_{action_id}"[:63]
-        check = os.popen(f"docker ps -q --filter name={container_prefix}").read().strip()
+        check = os.popen(f"docker ps -aq --filter name={container_prefix}").read().strip()
         assert check == "", f"Container {container_prefix} lingered after timeout"
 
     async def test_cross_execution_cancellation_isolation(self):
@@ -602,6 +602,6 @@ sys.stdout.write(json.dumps({{
         # Item 6 (gamma, timeout)
         assert outcomes[5].timed_out
 
-        # Verify no orphan containers left behind
-        check = os.popen("docker ps -q --filter name=wp_iso_tenant-").read().strip()
+        # Verify no orphan containers left behind in any state (Created, Exited, or Running)
+        check = os.popen("docker ps -aq --filter name=wp_iso_tenant-").read().strip()
         assert check == "", "Orphan containers found after concurrent batch"

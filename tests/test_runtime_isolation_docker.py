@@ -276,8 +276,8 @@ time.sleep(10)
         assert outcome.timed_out is True
         assert outcome.exit_code != 0
 
-        # Verify no container named wp_iso_org-audit_probe-timeout is running
-        res = os.popen("docker ps -q --filter name=wp_iso_org-audit_probe-timeout").read().strip()
+        # Verify no container named wp_iso_org-audit_probe-timeout is present in any state
+        res = os.popen("docker ps -aq --filter name=wp_iso_org-audit_probe-timeout").read().strip()
         assert res == ""
 
     async def test_container_concurrent_execution_no_cross_tenant_collision(self):

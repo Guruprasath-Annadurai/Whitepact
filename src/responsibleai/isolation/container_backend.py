@@ -21,6 +21,7 @@ import json
 import logging
 import os
 import shutil
+import subprocess
 import time
 from typing import Any
 
@@ -160,21 +161,51 @@ if __name__ == "__main__":
                 )
             except TimeoutError:
                 timed_out = True
-                # Kill and clean container synchronously
-                try:
-                    kill_proc = await asyncio.create_subprocess_exec(
-                        self.docker_cmd, "rm", "-f", container_name,
-                        stdout=asyncio.subprocess.DEVNULL,
-                        stderr=asyncio.subprocess.DEVNULL,
-                    )
-                    await kill_proc.wait()
-                except Exception:
-                    pass
+                # Kill the docker client process to stop stdin/stdout pipes.
+                # Container cleanup is handled unconditionally in the finally block.
                 try:
                     proc.kill()
                 except Exception:
                     pass
-                await proc.wait()
+                try:
+                    await proc.wait()
+                except Exception:
+                    pass
+            finally:
+                # Guarantee container removal for ALL exit paths including
+                # asyncio.CancelledError, TimeoutError, and unexpected exceptions.
+                #
+                # docker run --rm removes the container when the container process
+                # exits cleanly.  This finally block covers the paths where --rm
+                # does not fire:
+                #   • Cancellation: except TimeoutError: is bypassed entirely.
+                #   • TOCTOU race: aggressive timeout fires before the Docker daemon
+                #     finishes registering the container; docker rm -f in the except
+                #     block then gets "No such container", but the daemon registers it
+                #     immediately after, leaving it in Created state.  The finally block
+                #     runs after the except handler, by which time the daemon has
+                #     registered the container and docker rm -f succeeds.
+                #
+                # subprocess.run is used (not asyncio) so that this call cannot be
+                # interrupted by asyncio task cancellation.  docker rm -f is idempotent:
+                # "No such container" (already removed by --rm) is silently ignored.
+                try:
+                    subprocess.run(  # noqa: S603
+                        [self.docker_cmd, "rm", "-f", container_name],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        timeout=10,
+                        check=False,
+                    )
+                except Exception:
+                    pass
+                # Ensure the docker client process is not left as a zombie.
+                if proc.returncode is None:
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
+
 
             duration = time.monotonic() - start_time
             max_out = limits.max_output_bytes
