@@ -103,7 +103,7 @@ def _make_action(
 def _make_authorization(
     action: ActionRequest,
     *,
-    ttl_seconds: float = 60.0,
+    ttl_seconds: int = 60,
     decision: GovernanceDecision = GovernanceDecision.ALLOW,
 ) -> ExecutionAuthorization:
     dec_result = DecisionResult(
@@ -453,6 +453,7 @@ def test_matrix_v15_untrusted_request_cannot_select_trusted_mode() -> None:
     assert not hasattr(action, "destination_policy")
     # All canonical egress factories hardcode PUBLIC_ONLY
     client = create_safe_async_client()
+    assert isinstance(client._transport, SafeAsyncHTTPTransport)
     assert client._transport.policy == DestinationPolicy.PUBLIC_ONLY
 
 
@@ -516,7 +517,7 @@ async def test_execution_boundary_unauthorized_action_rejected() -> None:
 async def test_execution_boundary_stale_authorization_rejected() -> None:
     """Expired authorization cannot start sandbox."""
     action = _make_action()
-    auth = _make_authorization(action, ttl_seconds=-1.0)
+    auth = _make_authorization(action, ttl_seconds=-1)
     assert auth.is_expired is True
 
     executor = InternalToolExecutor()
@@ -558,7 +559,11 @@ async def test_execution_boundary_production_same_process_forbidden() -> None:
     auth = _make_authorization(action)
 
     with patch.dict(os.environ, {"ENVIRONMENT": "production"}):
-        executor = InternalToolExecutor()
+        # Inject a sentinel broker so constructing the executor does not perform
+        # Docker discovery.  This test targets the independent execution-time
+        # invariant: production must never fall back to same-process dispatch
+        # when its configured broker is absent.
+        executor = InternalToolExecutor(broker=object())
         executor._broker = None
         with pytest.raises(IsolationError) as exc_info:
             await executor.execute(auth, action)

@@ -106,11 +106,18 @@ Phase 2 establishes a cryptographically bound, independently isolated execution 
    - Max PIDs: 64
    - Wall Timeout: 30 seconds
    - Filesystem: Ephemeral workspace
-3. `OUTBOUND_NETWORK` (Only when permitted by authority):
-   - Network: `ALLOWLISTED_EGRESS` (uses safe transport / egress IP binding)
-   - Memory Limit: 256 MB
-   - Max PIDs: 32
-   - Wall Timeout: 30 seconds
+3. Direct sandbox networking:
+   - The only supported isolated-execution network policy is `NONE`.
+   - Every Docker sandbox is created with `--network=none`.
+   - Any non-`NONE` `NetworkPolicy` fails closed before Docker or local-subprocess
+     execution begins.
+   - `ALLOWLISTED_EGRESS` remains an internal compatibility representation, but
+     it is not accepted as a direct production sandbox capability.
+   - Network-capable consequential operations run on the host through the
+     canonical `SafeNetworkBackend` controlled-egress plane; the sandbox never
+     receives a raw network interface for those operations.
+   - Tenant, user, and agent input cannot select a weaker destination policy,
+     trusted network mode, or raw transport.
 
 ### 3.3 Strict Environment Sanitization
 Control-plane secrets are scrubbed completely.
