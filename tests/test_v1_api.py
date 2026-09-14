@@ -145,10 +145,11 @@ class TestAsyncJWKSClient:
 
 @pytest.fixture()
 async def client():
-    from responsibleai.dashboard.app import app
+    from responsibleai.dashboard.app import app, settings
 
-    async with LifespanManager(app):
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+    settings.auto_migrate = False
+    async with LifespanManager(app, startup_timeout=15) as manager:
+        async with AsyncClient(transport=ASGITransport(app=manager.app), base_url="http://test") as c:
             yield c
 
 

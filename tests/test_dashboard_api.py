@@ -9,7 +9,6 @@ import os
 import httpx
 import pytest
 
-os.environ.setdefault("RAI_DB_PATH", ":memory:")
 os.environ.setdefault("RAI_AUTH_ENABLED", "false")
 os.environ.setdefault("RAI_LOG_JSON", "false")
 os.environ.setdefault("RAI_LOG_LEVEL", "WARNING")
@@ -24,12 +23,16 @@ from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
 
 from responsibleai import __version__
-from responsibleai.dashboard.app import app
+from responsibleai.dashboard.app import app, settings
 from responsibleai.dashboard.config import Settings
 
 
 @pytest.fixture()
 async def client():
+    # Guarantee dashboard API client runs against an isolated in-memory DB
+    settings.database_url = None
+    settings.db_path = ":memory:"
+    settings.auto_migrate = False
     # The complete suite exercises nearly 3,000 tests in one interpreter and
     # can leave enough pending cleanup work for application startup to exceed
     # asgi-lifespan's aggressive five-second default.  Fifteen seconds keeps a
