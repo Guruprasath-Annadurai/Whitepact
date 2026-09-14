@@ -31,9 +31,9 @@ def _container_name(org_id: str, action_id: str) -> str:
 
 
 def _container_exists(name: str) -> bool:
-    """Return True if any Docker container with this exact name exists (any state)."""
+    """Return True if any Docker container starting with this prefix exists (any state)."""
     result = subprocess.run(
-        ["docker", "ps", "-aq", "--filter", f"name=^{name}$"],
+        ["docker", "ps", "-aq", "--filter", f"name=^{name}"],
         capture_output=True,
         text=True,
         timeout=10,
@@ -43,12 +43,19 @@ def _container_exists(name: str) -> bool:
 
 def _clear_container(name: str) -> None:
     """Best-effort pre-test cleanup to ensure a clean baseline."""
-    subprocess.run(
-        ["docker", "rm", "-f", name],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+    res = subprocess.run(
+        ["docker", "ps", "-aq", "--filter", f"name=^{name}"],
+        capture_output=True,
+        text=True,
         timeout=10,
     )
+    for cid in res.stdout.strip().split():
+        subprocess.run(
+            ["docker", "rm", "-f", cid],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+        )
 
 
 def _make_req(

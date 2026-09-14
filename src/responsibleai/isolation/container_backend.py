@@ -23,6 +23,7 @@ import os
 import shutil
 import subprocess
 import time
+import uuid
 from typing import Any
 
 from responsibleai.isolation.backend import IsolationBackend
@@ -80,7 +81,9 @@ class DockerContainerBackend(IsolationBackend):
         )
 
         limits = request.profile.resources
-        container_name = f"wp_iso_{request.organization_id}_{request.action_id}"[:63]
+        execution_id = uuid.uuid4().hex[:12]
+        container_prefix = f"wp_iso_{request.organization_id}_{request.action_id}"[:63].rstrip("_-.")
+        container_name = f"{container_prefix}_{execution_id}"
         start_time = time.monotonic()
 
         runner_script = """
@@ -114,12 +117,15 @@ if __name__ == "__main__":
             if "runner.py" not in request.workspace_files:
                 workspace.populate({"runner.py": runner_script})
 
+            cid_file = workspace.path / ".container.cid"
+
             cmd = [
                 self.docker_cmd,
                 "run",
                 "--rm",
                 "-i",
                 f"--name={container_name}",
+                f"--cidfile={cid_file}",
                 "--user=65534:65534",  # Non-root unprivileged (nobody:nogroup)
                 f"--memory={limits.max_memory_mb}m",
                 f"--cpus={limits.cpu_cores}",
@@ -175,30 +181,64 @@ if __name__ == "__main__":
                 # Guarantee container removal for ALL exit paths including
                 # asyncio.CancelledError, TimeoutError, and unexpected exceptions.
                 #
-                # docker run --rm removes the container when the container process
-                # exits cleanly.  This finally block covers the paths where --rm
-                # does not fire:
-                #   • Cancellation: except TimeoutError: is bypassed entirely.
-                #   • TOCTOU race: aggressive timeout fires before the Docker daemon
-                #     finishes registering the container; docker rm -f in the except
-                #     block then gets "No such container", but the daemon registers it
-                #     immediately after, leaving it in Created state.  The finally block
-                #     runs after the except handler, by which time the daemon has
-                #     registered the container and docker rm -f succeeds.
+                # Execution-ownership-safe cleanup:
+                # 1. If --cidfile was written by Docker, clean up by exact 64-character container ID.
+                # 2. As fallback, clean up by unique container_name (which includes execution_id).
+                # Neither target can ever match or interfere with a concurrent invocation.
                 #
                 # subprocess.run is used (not asyncio) so that this call cannot be
                 # interrupted by asyncio task cancellation.  docker rm -f is idempotent:
                 # "No such container" (already removed by --rm) is silently ignored.
+                cleanup_targets: list[str] = []
                 try:
-                    subprocess.run(  # noqa: S603
-                        [self.docker_cmd, "rm", "-f", container_name],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        timeout=10,
-                        check=False,
-                    )
+                    if cid_file.is_file():
+                        cid = cid_file.read_text(encoding="utf-8").strip()
+                        if cid:
+                            cleanup_targets.append(cid)
                 except Exception:
                     pass
+                if container_name not in cleanup_targets:
+                    cleanup_targets.append(container_name)
+
+                # If execution timed out, dockerd may still be asynchronously processing
+                # the in-flight container creation request. Allow a brief window for
+                # dockerd to complete registration so rm -f removes the Created container.
+                if timed_out:
+                    time.sleep(0.3)
+
+                for target in cleanup_targets:
+                    for _ in range(3):
+                        try:
+                            subprocess.run(  # noqa: S603
+                                [self.docker_cmd, "rm", "-f", target],
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL,
+                                timeout=10,
+                                check=False,
+                            )
+                        except Exception:
+                            pass
+
+                        # Verify whether the container exists in any state
+                        filter_arg = (
+                            f"id=^{target}$"
+                            if len(target) == 64 and target.isalnum()
+                            else f"name=^{target}$"
+                        )
+                        try:
+                            check = subprocess.run(  # noqa: S603
+                                [self.docker_cmd, "ps", "-aq", "--filter", filter_arg],
+                                capture_output=True,
+                                text=True,
+                                timeout=5,
+                                check=False,
+                            )
+                            if not check.stdout.strip():
+                                break
+                        except Exception:
+                            break
+                        time.sleep(0.2)
+
                 # Ensure the docker client process is not left as a zombie.
                 if proc.returncode is None:
                     try:
