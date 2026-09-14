@@ -163,6 +163,8 @@ class PrivilegedSurfaceGuard:
                 if not bg_row:
                     raise PrivilegedAccessDeniedError("Invalid emergency break-glass session.")
                 bg = dict(bg_row._mapping)
+                if bg.get("principal_id") != caller.principal_id:
+                    raise PrivilegedAccessDeniedError("Break-glass session belongs to another principal.")
                 if bg["status"] != "ACTIVE" or now >= bg["expires_at"]:
                     raise PrivilegedAccessDeniedError("Break-glass session expired or inactive.")
 

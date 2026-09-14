@@ -158,6 +158,7 @@ class PolicyLifecycleManager:
         caller: PrivilegedCallerContext | None = None,
         step_up_proof: StepUpProof | None = None,
         four_eyes_approval_id: str | None = None,
+        break_glass_session_id: str | None = None,
     ) -> PolicyRevision:
         """Create an immutable policy revision. Monotonically numbered per org."""
         is_crit = is_critical_policy(rules)
@@ -174,9 +175,12 @@ class PolicyLifecycleManager:
                 target_resource_id=f"policy-digest-{digest[:16]}",
                 step_up_proof=step_up_proof,
                 four_eyes_approval_id=effective_approval,
+                break_glass_session_id=break_glass_session_id,
                 context_data={"policy_digest": digest},
             )
-        elif caller is not None:
+        elif caller is not None or break_glass_session_id is not None:
+            if caller is None:
+                raise PrivilegedAccessDeniedError("Privileged caller context required for policy revision creation.")
             await self._guard.authorize_privileged_operation(
                 caller=caller,
                 target_org_id=org_id,
@@ -184,6 +188,7 @@ class PolicyLifecycleManager:
                 target_resource_id=f"policy-digest-{digest[:16]}",
                 step_up_proof=step_up_proof,
                 four_eyes_approval_id=four_eyes_approval_id,
+                break_glass_session_id=break_glass_session_id,
                 context_data={"policy_digest": digest},
             )
         serialized_rules = json.dumps([serialize_rule_canonical(r) for r in rules])
@@ -293,6 +298,7 @@ class PolicyLifecycleManager:
         caller: PrivilegedCallerContext | None = None,
         step_up_proof: StepUpProof | None = None,
         four_eyes_approval_id: str | None = None,
+        break_glass_session_id: str | None = None,
     ) -> PolicyActivation:
         """Atomically activates a revision for an org.
 
@@ -326,13 +332,16 @@ class PolicyLifecycleManager:
                 target_resource_id=revision_id,
                 step_up_proof=step_up_proof,
                 four_eyes_approval_id=four_eyes_approval_id,
+                break_glass_session_id=break_glass_session_id,
                 context_data={
                     "policy_digest": rev_row_check.content_digest,
                     "target_revision_id": revision_id,
                     "current_epoch": current_epoch,
                 },
             )
-        elif caller is not None:
+        elif caller is not None or break_glass_session_id is not None:
+            if caller is None:
+                raise PrivilegedAccessDeniedError("Privileged caller context required for policy activation.")
             await self._guard.authorize_privileged_operation(
                 caller=caller,
                 target_org_id=org_id,
@@ -340,6 +349,7 @@ class PolicyLifecycleManager:
                 target_resource_id=revision_id,
                 step_up_proof=step_up_proof,
                 four_eyes_approval_id=four_eyes_approval_id,
+                break_glass_session_id=break_glass_session_id,
                 context_data={"policy_digest": rev_row_check.content_digest},
             )
 
@@ -486,6 +496,7 @@ class PolicyLifecycleManager:
         caller: PrivilegedCallerContext | None = None,
         step_up_proof: StepUpProof | None = None,
         four_eyes_approval_id: str | None = None,
+        break_glass_session_id: str | None = None,
     ) -> PolicyActivation:
         """Roll back to a past revision without rewriting history.
 
@@ -505,4 +516,5 @@ class PolicyLifecycleManager:
             caller=caller,
             step_up_proof=step_up_proof,
             four_eyes_approval_id=four_eyes_approval_id,
+            break_glass_session_id=break_glass_session_id,
         )
