@@ -1180,6 +1180,7 @@ trust_fabric_principals = Table(
     Index("idx_tf_prin_org", "org_id"),
     Index("idx_tf_prin_state", "lifecycle_state"),
     Index("idx_tf_prin_type", "principal_type"),
+    UniqueConstraint("id", "org_id", name="uq_tf_principals_id_org"),
 )
 
 trust_fabric_identifiers = Table(
@@ -1338,6 +1339,18 @@ trust_fabric_authority_edges = Table(
     Index("idx_tf_auth_grantee", "grantee_principal_id"),
     Index("idx_tf_auth_action", "action_type"),
     Index("idx_tf_auth_org", "org_id"),
+    ForeignKeyConstraint(
+        ["grantor_principal_id", "org_id"],
+        ["trust_fabric_principals.id", "trust_fabric_principals.org_id"],
+        name="fk_tf_auth_grantor_tenant",
+        ondelete="RESTRICT",
+    ),
+    ForeignKeyConstraint(
+        ["grantee_principal_id", "org_id"],
+        ["trust_fabric_principals.id", "trust_fabric_principals.org_id"],
+        name="fk_tf_auth_grantee_tenant",
+        ondelete="CASCADE",
+    ),
 )
 
 trust_fabric_trust_roots = Table(
