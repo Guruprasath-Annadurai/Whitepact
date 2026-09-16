@@ -110,6 +110,20 @@ def password_reset_email(recipient: str, name: str, action_url: str) -> Transact
     )
 
 
+def invitation_email(recipient: str, organization: str, action_url: str) -> TransactionalEmail:
+    return _action_email(
+        template="whitepact-organization-invitation",
+        recipient=recipient,
+        name=recipient,
+        subject=f"Join {organization} on WhitePact",
+        intro=f"An organization administrator invited you to join {organization} on WhitePact.",
+        button="Accept invitation",
+        action_field="invitation_url",
+        action_url=action_url,
+        expiry="This single-use link expires after 72 hours.",
+    )
+
+
 def _action_email(
     *,
     template: str,

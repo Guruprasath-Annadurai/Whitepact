@@ -98,8 +98,13 @@ organizations = Table(
     Column("sso_required", Integer, nullable=False, default=0),
     Column("mfa_required", Integer, nullable=False, default=0),
     Column("provisioner_key_id", String(64), nullable=True),
+    Column("paddle_customer_id", String(64), nullable=True),
+    Column("paddle_subscription_id", String(64), nullable=True),
+    Column("entitlement_version", Integer, nullable=False, default=0),
+    Column("entitlement_updated_at", String(32), nullable=True),
     Index("idx_org_slug", "slug"),
     Index("idx_org_stripe_customer", "stripe_customer_id"),
+    Index("idx_org_paddle_customer", "paddle_customer_id", unique=True),
 )
 
 mcp_tool_calls = Table(
@@ -198,6 +203,53 @@ web_verification_tokens = Table(
     Index("idx_web_verification_expiry", "expires_at"),
 )
 
+web_identity_providers = Table(
+    "web_identity_providers",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("user_id", String(36), ForeignKey("web_users.id", ondelete="CASCADE"), nullable=False),
+    Column("issuer", String(512), nullable=False),
+    Column("subject", String(255), nullable=False),
+    Column("email_at_link", String(254), nullable=True),
+    Column("created_at", String(32), nullable=False),
+    UniqueConstraint("issuer", "subject", name="uq_web_identity_provider_subject"),
+    Index("idx_web_identity_provider_user", "user_id"),
+)
+
+web_invitations = Table(
+    "web_invitations",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("token_hash", String(64), nullable=False, unique=True),
+    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False),
+    Column("email", String(254), nullable=False),
+    Column("role", String(20), nullable=False),
+    Column("invited_by_user_id", String(36), ForeignKey("web_users.id", ondelete="RESTRICT"), nullable=False),
+    Column("accepted_by_user_id", String(36), ForeignKey("web_users.id", ondelete="SET NULL"), nullable=True),
+    Column("status", String(24), nullable=False),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("consumed_at", String(32), nullable=True),
+    Index("idx_web_invitations_org", "org_id"),
+    Index("idx_web_invitations_email", "email"),
+)
+
+oauth_flow_states = Table(
+    "oauth_flow_states",
+    metadata,
+    Column("state_hash", String(64), primary_key=True),
+    Column("provider", String(64), nullable=False),
+    Column("tenant_id", String(36), nullable=True),
+    Column("session_id", String(64), nullable=True),
+    Column("nonce", String(64), nullable=False),
+    Column("pkce_verifier", String(128), nullable=True),
+    Column("redirect_uri", String(512), nullable=False),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("consumed_at", String(32), nullable=True),
+    Index("idx_oauth_flow_states_expiry", "expires_at"),
+)
+
 org_api_key_metadata = Table(
     "org_api_key_metadata",
     metadata,
@@ -226,6 +278,20 @@ stripe_webhook_events = Table(
     Column("last_error", Text, nullable=True),
     Index("idx_stripe_events_org", "org_id"),
     Index("idx_stripe_events_status", "status"),
+)
+
+paddle_webhook_events = Table(
+    "paddle_webhook_events",
+    metadata,
+    Column("event_id", String(100), primary_key=True),
+    Column("event_type", String(100), nullable=False),
+    Column("org_id", String(36), nullable=True),
+    Column("payload_hash", String(64), nullable=False),
+    Column("status", String(32), nullable=False, default="processing"),
+    Column("received_at", String(32), nullable=False),
+    Column("processed_at", String(32), nullable=True),
+    Column("last_error", Text, nullable=True),
+    Index("idx_paddle_events_org", "org_id"),
 )
 
 

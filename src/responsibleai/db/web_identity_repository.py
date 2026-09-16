@@ -18,12 +18,16 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import delete, insert, select, update
+import sqlalchemy as sa
+from sqlalchemy import delete, func, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
 from responsibleai.db.engine import (
     DatabaseEngine,
+    oauth_flow_states,
     organizations,
+    web_identity_providers,
+    web_invitations,
     web_memberships,
     web_sessions,
     web_users,
@@ -41,6 +45,14 @@ _DUMMY_PASSWORD_HASH = (
 
 class DuplicateWebUserError(Exception):
     """Raised when registration uses an existing normalized email."""
+
+
+class InvitationError(Exception):
+    """Raised when an invitation token is invalid, expired, or mismatch."""
+
+
+class SoleOwnerError(Exception):
+    """Raised when an owner attempts account deletion without transferring ownership."""
 
 
 @dataclass(frozen=True)
@@ -423,6 +435,480 @@ class WebIdentityRepository:
             )
         return org_id
 
+    async def list_organizations(self, user_id: str) -> list[dict[str, str]]:
+        async with self._engine.raw.connect() as conn:
+            rows = (
+                await conn.execute(
+                    select(
+                        organizations.c.id,
+                        organizations.c.name,
+                        organizations.c.slug,
+                        organizations.c.plan,
+                        web_memberships.c.role,
+                    )
+                    .join(web_memberships, web_memberships.c.org_id == organizations.c.id)
+                    .where(web_memberships.c.user_id == user_id)
+                    .order_by(organizations.c.name)
+                )
+            ).fetchall()
+        return [dict(row._mapping) for row in rows]
+
+    async def list_members(self, org_id: str) -> list[dict[str, str]]:
+        async with self._engine.raw.connect() as conn:
+            rows = (
+                await conn.execute(
+                    select(
+                        web_users.c.id,
+                        web_users.c.full_name,
+                        web_users.c.email,
+                        web_memberships.c.role,
+                        web_memberships.c.created_at,
+                    )
+                    .join(web_memberships, web_memberships.c.user_id == web_users.c.id)
+                    .where(web_memberships.c.org_id == org_id)
+                    .order_by(web_memberships.c.created_at)
+                )
+            ).fetchall()
+        return [
+            {
+                "id": row.id,
+                "full_name": row.full_name,
+                "email": row.email,
+                "role": row.role,
+                "joined_at": row.created_at,
+            }
+            for row in rows
+        ]
+
+    async def revoke_all_sessions(self, user_id: str) -> int:
+        async with self._engine.raw.begin() as conn:
+            result = await conn.execute(
+                update(web_sessions)
+                .where(web_sessions.c.user_id == user_id, web_sessions.c.revoked == 0)
+                .values(revoked=1)
+            )
+        return result.rowcount or 0
+
+    async def switch_organization(
+        self, token: str, user_id: str, org_id: str, *, ttl_hours: int = 12
+    ) -> tuple[str, str] | None:
+        """Rotate the browser session after validating durable membership."""
+        now = _now()
+        replacement = secrets.token_urlsafe(32)
+        csrf = secrets.token_urlsafe(32)
+        async with self._engine.raw.begin() as conn:
+            membership = (
+                await conn.execute(
+                    select(web_memberships.c.id).where(
+                        web_memberships.c.user_id == user_id,
+                        web_memberships.c.org_id == org_id,
+                    )
+                )
+            ).fetchone()
+            if membership is None:
+                return None
+            current = (
+                await conn.execute(
+                    select(web_sessions.c.token_hash).where(
+                        web_sessions.c.token_hash == _hash(token),
+                        web_sessions.c.user_id == user_id,
+                        web_sessions.c.revoked == 0,
+                        web_sessions.c.expires_at > _iso(now),
+                    )
+                )
+            ).fetchone()
+            if current is None:
+                return None
+            await conn.execute(
+                update(web_sessions)
+                .where(web_sessions.c.token_hash == current.token_hash)
+                .values(revoked=1)
+            )
+            await conn.execute(
+                insert(web_sessions).values(
+                    token_hash=_hash(replacement),
+                    user_id=user_id,
+                    org_id=org_id,
+                    csrf_hash=_hash(csrf),
+                    created_at=_iso(now),
+                    expires_at=_iso(now + timedelta(hours=ttl_hours)),
+                    last_seen_at=_iso(now),
+                    revoked=0,
+                )
+            )
+        return replacement, csrf
+
+    async def create_invitation(
+        self,
+        *,
+        org_id: str,
+        email: str,
+        role: Role,
+        invited_by_user_id: str,
+        ttl_hours: int = 168,
+    ) -> tuple[str, str]:
+        if role == Role.OWNER:
+            raise InvitationError("Cannot invite a direct owner; use ownership transfer.")
+        normalized = _normalize_email(email)
+        token = secrets.token_urlsafe(32)
+        invitation_id = str(uuid.uuid4())
+        now = _now()
+        async with self._engine.raw.begin() as conn:
+            await conn.execute(
+                update(web_invitations)
+                .where(
+                    web_invitations.c.org_id == org_id,
+                    web_invitations.c.email == normalized,
+                    web_invitations.c.status == "PENDING",
+                )
+                .values(status="REVOKED")
+            )
+            await conn.execute(
+                insert(web_invitations).values(
+                    id=invitation_id,
+                    token_hash=_hash(token),
+                    org_id=org_id,
+                    email=normalized,
+                    role=role.value,
+                    invited_by_user_id=invited_by_user_id,
+                    accepted_by_user_id=None,
+                    status="PENDING",
+                    created_at=_iso(now),
+                    expires_at=_iso(now + timedelta(hours=ttl_hours)),
+                    consumed_at=None,
+                )
+            )
+        return invitation_id, token
+
+    async def accept_invitation(self, token: str, user_id: str) -> str:
+        now = _now()
+        async with self._engine.raw.begin() as conn:
+            user = (
+                await conn.execute(
+                    select(web_users.c.email).where(
+                        web_users.c.id == user_id,
+                        web_users.c.disabled == 0,
+                        web_users.c.email_verified_at.is_not(None),
+                    )
+                )
+            ).fetchone()
+            invitation = (
+                await conn.execute(
+                    select(web_invitations).where(
+                        web_invitations.c.token_hash == _hash(token),
+                        web_invitations.c.status == "PENDING",
+                        web_invitations.c.consumed_at.is_(None),
+                        web_invitations.c.expires_at > _iso(now),
+                    )
+                )
+            ).fetchone()
+            if user is None or invitation is None or user.email != invitation.email:
+                raise InvitationError("This invitation is invalid, expired, or belongs to another account.")
+            try:
+                await conn.execute(
+                    insert(web_memberships).values(
+                        id=str(uuid.uuid4()),
+                        user_id=user_id,
+                        org_id=invitation.org_id,
+                        role=invitation.role,
+                        created_at=_iso(now),
+                    )
+                )
+            except IntegrityError as exc:
+                raise InvitationError("This invitation cannot be accepted.") from exc
+            await conn.execute(
+                update(web_invitations)
+                .where(web_invitations.c.id == invitation.id, web_invitations.c.status == "PENDING")
+                .values(status="ACCEPTED", accepted_by_user_id=user_id, consumed_at=_iso(now))
+            )
+        return str(invitation.org_id)
+
+    async def revoke_invitation(self, invitation_id: str, org_id: str) -> bool:
+        async with self._engine.raw.begin() as conn:
+            result = await conn.execute(
+                update(web_invitations)
+                .where(
+                    web_invitations.c.id == invitation_id,
+                    web_invitations.c.org_id == org_id,
+                    web_invitations.c.status == "PENDING",
+                )
+                .values(status="REVOKED")
+            )
+        return (result.rowcount or 0) > 0
+
+    async def list_invitations(self, org_id: str) -> list[dict[str, Any]]:
+        async with self._engine.raw.connect() as conn:
+            rows = (
+                await conn.execute(
+                    select(web_invitations).where(web_invitations.c.org_id == org_id)
+                )
+            ).fetchall()
+        return [
+            {
+                "id": r.id,
+                "email": r.email,
+                "role": r.role,
+                "status": r.status,
+                "invited_by_user_id": r.invited_by_user_id,
+                "created_at": r.created_at,
+                "expires_at": r.expires_at,
+                "consumed_at": r.consumed_at,
+            }
+            for r in rows
+        ]
+
+    async def update_membership_role(self, org_id: str, user_id: str, role: Role) -> bool:
+        if role == Role.OWNER:
+            raise InvitationError("Ownership transfer requires the canonical privileged workflow.")
+        async with self._engine.raw.begin() as conn:
+            result = await conn.execute(
+                update(web_memberships)
+                .where(
+                    web_memberships.c.org_id == org_id,
+                    web_memberships.c.user_id == user_id,
+                    web_memberships.c.role != Role.OWNER.value,
+                )
+                .values(role=role.value)
+            )
+            if result.rowcount:
+                await conn.execute(
+                    update(web_sessions)
+                    .where(web_sessions.c.user_id == user_id, web_sessions.c.org_id == org_id)
+                    .values(revoked=1)
+                )
+        return (result.rowcount or 0) > 0
+
+    async def remove_membership(self, org_id: str, user_id: str) -> bool:
+        async with self._engine.raw.begin() as conn:
+            membership = (
+                await conn.execute(
+                    select(web_memberships.c.role).where(
+                        web_memberships.c.org_id == org_id,
+                        web_memberships.c.user_id == user_id,
+                    )
+                )
+            ).fetchone()
+            if membership is None or membership.role == Role.OWNER.value:
+                return False
+            result = await conn.execute(
+                delete(web_memberships).where(
+                    web_memberships.c.org_id == org_id,
+                    web_memberships.c.user_id == user_id,
+                )
+            )
+            await conn.execute(
+                update(web_sessions)
+                .where(web_sessions.c.user_id == user_id, web_sessions.c.org_id == org_id)
+                .values(revoked=1)
+            )
+        return (result.rowcount or 0) > 0
+
+    async def transfer_organization_ownership(
+        self, *, org_id: str, current_owner_id: str, new_owner_id: str
+    ) -> bool:
+        if current_owner_id == new_owner_id:
+            return True
+        async with self._engine.raw.begin() as conn:
+            current_m = (
+                await conn.execute(
+                    select(web_memberships.c.role).where(
+                        web_memberships.c.org_id == org_id,
+                        web_memberships.c.user_id == current_owner_id,
+                        web_memberships.c.role == Role.OWNER.value,
+                    )
+                )
+            ).fetchone()
+            if not current_m:
+                return False
+            target_m = (
+                await conn.execute(
+                    select(web_memberships.c.role).where(
+                        web_memberships.c.org_id == org_id,
+                        web_memberships.c.user_id == new_owner_id,
+                    )
+                )
+            ).fetchone()
+            if not target_m:
+                return False
+            await conn.execute(
+                update(web_memberships)
+                .where(
+                    web_memberships.c.org_id == org_id,
+                    web_memberships.c.user_id == current_owner_id,
+                )
+                .values(role=Role.ADMIN.value)
+            )
+            await conn.execute(
+                update(web_memberships)
+                .where(
+                    web_memberships.c.org_id == org_id,
+                    web_memberships.c.user_id == new_owner_id,
+                )
+                .values(role=Role.OWNER.value)
+            )
+            await conn.execute(
+                update(web_sessions)
+                .where(
+                    web_sessions.c.user_id.in_([current_owner_id, new_owner_id]),
+                    web_sessions.c.org_id == org_id,
+                )
+                .values(revoked=1)
+            )
+        return True
+
+    async def is_sole_owner_of_any_org(self, user_id: str) -> bool:
+        async with self._engine.raw.connect() as conn:
+            owned_org_ids = (
+                await conn.execute(
+                    select(web_memberships.c.org_id).where(
+                        web_memberships.c.user_id == user_id,
+                        web_memberships.c.role == Role.OWNER.value,
+                    )
+                )
+            ).scalars().all()
+            for org_id in owned_org_ids:
+                count = await conn.scalar(
+                    select(func.count()).select_from(web_memberships).where(
+                        web_memberships.c.org_id == org_id,
+                        web_memberships.c.role == Role.OWNER.value,
+                    )
+                )
+                if (count or 0) <= 1:
+                    return True
+        return False
+
+    async def disable_account(self, user_id: str) -> bool:
+        """Disable and pseudonymize a human account while retaining security evidence.
+
+        Refuses deletion if user is the sole owner of an active organization.
+        """
+        if await self.is_sole_owner_of_any_org(user_id):
+            raise SoleOwnerError(
+                "Cannot delete account while being the sole owner of an organization. "
+                "Transfer ownership or delete the organization first."
+            )
+        now = _now()
+        async with self._engine.raw.begin() as conn:
+            result = await conn.execute(
+                update(web_users)
+                .where(web_users.c.id == user_id, web_users.c.disabled == 0)
+                .values(
+                    email=f"deleted+{uuid.uuid4().hex}@invalid.whitepact",
+                    full_name="Deleted WhitePact user",
+                    password_hash=hash_password(secrets.token_urlsafe(48)),
+                    disabled=1,
+                    updated_at=_iso(now),
+                )
+            )
+            if not result.rowcount:
+                return False
+            await conn.execute(update(web_sessions).where(web_sessions.c.user_id == user_id).values(revoked=1))
+            await conn.execute(delete(web_verification_tokens).where(web_verification_tokens.c.user_id == user_id))
+            await conn.execute(delete(web_identity_providers).where(web_identity_providers.c.user_id == user_id))
+            await conn.execute(delete(web_memberships).where(web_memberships.c.user_id == user_id))
+        return True
+
+    async def link_provider_identity(
+        self, *, user_id: str, issuer: str, subject: str, email: str | None
+    ) -> None:
+        if not issuer or not subject:
+            raise ValueError("OIDC issuer and subject are required")
+        async with self._engine.raw.begin() as conn:
+            await conn.execute(
+                insert(web_identity_providers).values(
+                    id=str(uuid.uuid4()),
+                    user_id=user_id,
+                    issuer=issuer,
+                    subject=subject,
+                    email_at_link=_normalize_email(email) if email else None,
+                    created_at=_iso(_now()),
+                )
+            )
+
+    async def resolve_provider_identity(self, issuer: str, subject: str) -> str | None:
+        async with self._engine.raw.connect() as conn:
+            row = (
+                await conn.execute(
+                    select(web_identity_providers.c.user_id).where(
+                        web_identity_providers.c.issuer == issuer,
+                        web_identity_providers.c.subject == subject,
+                    )
+                )
+            ).fetchone()
+        return str(row.user_id) if row else None
+
+    async def create_oauth_flow_state(
+        self,
+        *,
+        state: str,
+        provider: str,
+        nonce: str,
+        redirect_uri: str,
+        tenant_id: str | None = None,
+        session_id: str | None = None,
+        pkce_verifier: str | None = None,
+        ttl_seconds: int = 600,
+    ) -> None:
+        state_hash = hashlib.sha256(state.encode("utf-8")).hexdigest()
+        now = _now()
+        expires_at = _iso(now + timedelta(seconds=ttl_seconds))
+        async with self._engine.raw.begin() as conn:
+            await conn.execute(
+                insert(oauth_flow_states).values(
+                    state_hash=state_hash,
+                    provider=provider,
+                    tenant_id=tenant_id,
+                    session_id=session_id,
+                    nonce=nonce,
+                    pkce_verifier=pkce_verifier,
+                    redirect_uri=redirect_uri,
+                    created_at=_iso(now),
+                    expires_at=expires_at,
+                    consumed_at=None,
+                )
+            )
+
+    async def consume_oauth_flow_state(
+        self,
+        state: str,
+        expected_provider: str | None = None,
+    ) -> dict[str, Any] | None:
+        state_hash = hashlib.sha256(state.encode("utf-8")).hexdigest()
+        now = _now()
+        now_iso = _iso(now)
+        async with self._engine.raw.begin() as conn:
+            row = (
+                await conn.execute(
+                    select(oauth_flow_states).where(
+                        oauth_flow_states.c.state_hash == state_hash,
+                        oauth_flow_states.c.consumed_at.is_(None),
+                        oauth_flow_states.c.expires_at > now_iso,
+                    )
+                )
+            ).fetchone()
+            if row is None:
+                return None
+            if expected_provider and row.provider != expected_provider:
+                return None
+            await conn.execute(
+                update(oauth_flow_states)
+                .where(
+                    oauth_flow_states.c.state_hash == state_hash,
+                    oauth_flow_states.c.consumed_at.is_(None),
+                )
+                .values(consumed_at=now_iso)
+            )
+            return {
+                "provider": row.provider,
+                "tenant_id": row.tenant_id,
+                "session_id": row.session_id,
+                "nonce": row.nonce,
+                "pkce_verifier": row.pkce_verifier,
+                "redirect_uri": row.redirect_uri,
+                "created_at": row.created_at,
+                "expires_at": row.expires_at,
+            }
+
     async def delete_expired_state(self) -> None:
         now = _iso(_now())
         async with self._engine.raw.begin() as conn:
@@ -432,3 +918,9 @@ class WebIdentityRepository:
                     web_verification_tokens.c.expires_at <= now,
                 )
             )
+            await conn.execute(
+                delete(oauth_flow_states).where(
+                    oauth_flow_states.c.expires_at <= now,
+                )
+            )
+

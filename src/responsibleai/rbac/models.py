@@ -35,6 +35,10 @@ class Organization:
     plan: Plan = Plan.FREE
     stripe_customer_id: str | None = None
     stripe_subscription_id: str | None = None
+    paddle_customer_id: str | None = None
+    paddle_subscription_id: str | None = None
+    entitlement_version: int = 0
+    entitlement_updated_at: str | None = None
     plan_renews_at: str | None = None
     subscription_status: str = "inactive"
     sso_required: bool = False
@@ -51,8 +55,11 @@ class Organization:
             "created_at": self.created_at,
             "plan": self.plan.value if isinstance(self.plan, Plan) else self.plan,
             "stripe_customer_id": self.stripe_customer_id,
+            "paddle_customer_id": self.paddle_customer_id,
             "plan_renews_at": self.plan_renews_at,
             "subscription_status": self.subscription_status,
+            "entitlement_version": self.entitlement_version,
+            "entitlement_updated_at": self.entitlement_updated_at,
             "sso_required": self.sso_required,
             "mfa_required": self.mfa_required,
         }

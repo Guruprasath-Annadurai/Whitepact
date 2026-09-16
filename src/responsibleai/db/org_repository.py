@@ -176,6 +176,65 @@ class OrgRepository:
             ).fetchone()
         return self._row_to_org(row) if row else None
 
+    async def get_org_by_paddle_customer(self, paddle_customer_id: str) -> Organization | None:
+        async with self._engine.raw.connect() as conn:
+            row = (
+                await conn.execute(
+                    select(organizations).where(
+                        organizations.c.paddle_customer_id == paddle_customer_id
+                    )
+                )
+            ).fetchone()
+        return self._row_to_org(row) if row else None
+
+    async def apply_paddle_entitlement(
+        self,
+        *,
+        org_id: str,
+        customer_id: str,
+        subscription_id: str | None,
+        plan: Plan,
+        subscription_status: str,
+        event_version: int,
+        updated_at: str,
+    ) -> bool:
+        """Apply one already signature-verified Paddle event in monotonic order.
+
+        This repository method controls commercial features only. It is never
+        consulted by Trust, authority, policy, or ExecutionAuthorization.
+        """
+        if not customer_id.startswith("ctm_"):
+            raise ValueError("Paddle customer identity must use a ctm_ identifier")
+        if subscription_id is not None and not subscription_id.startswith("sub_"):
+            raise ValueError("Paddle subscription identity must use a sub_ identifier")
+        normalized_status = subscription_status.casefold()
+        effective_plan = plan if normalized_status in {"active", "trialing"} else Plan.FREE
+        async with self._engine.raw.begin() as conn:
+            existing_customer_org = await conn.scalar(
+                select(organizations.c.id).where(
+                    organizations.c.paddle_customer_id == customer_id,
+                    organizations.c.id != org_id,
+                )
+            )
+            if existing_customer_org is not None:
+                raise ValueError("Paddle customer is already bound to another tenant")
+            result = await conn.execute(
+                update(organizations)
+                .where(
+                    organizations.c.id == org_id,
+                    organizations.c.entitlement_version < event_version,
+                )
+                .values(
+                    paddle_customer_id=customer_id,
+                    paddle_subscription_id=subscription_id,
+                    plan=effective_plan.value,
+                    subscription_status=normalized_status,
+                    entitlement_version=event_version,
+                    entitlement_updated_at=updated_at,
+                )
+            )
+        return (result.rowcount or 0) > 0
+
     async def get_org(self, org_id: str) -> Organization | None:
         async with self._engine.raw.connect() as conn:
             row = (
@@ -474,6 +533,10 @@ class OrgRepository:
             plan=_plan_from_str(getattr(row, "plan", None)),
             stripe_customer_id=getattr(row, "stripe_customer_id", None),
             stripe_subscription_id=getattr(row, "stripe_subscription_id", None),
+            paddle_customer_id=getattr(row, "paddle_customer_id", None),
+            paddle_subscription_id=getattr(row, "paddle_subscription_id", None),
+            entitlement_version=getattr(row, "entitlement_version", 0) or 0,
+            entitlement_updated_at=getattr(row, "entitlement_updated_at", None),
             plan_renews_at=getattr(row, "plan_renews_at", None),
             subscription_status=getattr(row, "subscription_status", "inactive") or "inactive",
             sso_required=bool(getattr(row, "sso_required", 0)),

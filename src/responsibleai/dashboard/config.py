@@ -401,6 +401,24 @@ class Settings(BaseSettings):
         description="Redirect URL after cancelled Stripe checkout.",
     )
 
+    # Paddle billing (optional — leave unset to disable Paddle webhook handling)
+    paddle_api_key: str | None = Field(
+        default=None,
+        description="Paddle API key for server-to-server operations.",
+    )
+    paddle_webhook_secret: str | None = Field(
+        default=None,
+        description="Paddle webhook signing secret for verifying incoming events.",
+    )
+    paddle_price_id_pro: str | None = Field(
+        default=None,
+        description="Paddle Price ID for the PRO plan subscription.",
+    )
+    paddle_price_id_enterprise: str | None = Field(
+        default=None,
+        description="Paddle Price ID for the ENTERPRISE plan subscription.",
+    )
+
     # Browser identity. Human sessions are deliberately independent from
     # workload API keys and use hashed opaque tokens in Secure cookies.
     web_public_url: str = Field(

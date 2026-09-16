@@ -19,6 +19,7 @@ from responsibleai.db.authority_passport_repository import (
 )
 from responsibleai.db.billing_repository import BillingEventRepository
 from responsibleai.db.credential_issuance_repository import CredentialIssuanceRepository
+from responsibleai.db.paddle_billing_repository import PaddleBillingEventRepository
 from responsibleai.db.delegation_repository import (
     DelegationEscalationError,
     DelegationNotFoundError,
@@ -47,6 +48,8 @@ from responsibleai.db.upstream_repository import (
 )
 from responsibleai.db.web_identity_repository import (
     DuplicateWebUserError,
+    InvitationError,
+    SoleOwnerError,
     WebIdentityRepository,
     WebPrincipal,
     hash_password,
@@ -79,6 +82,7 @@ __all__ = [
     "PrincipalRepository",
     "AuditRepository",
     "BillingEventRepository",
+    "PaddleBillingEventRepository",
     "CredentialIssuanceRepository",
     "EvalRepository",
     "EvidenceRepository",
@@ -108,6 +112,8 @@ __all__ = [
     "DelegationRepository",
     "OrgAutonomyBudgetRepository",
     "DuplicateWebUserError",
+    "InvitationError",
+    "SoleOwnerError",
     "WebIdentityRepository",
     "WebPrincipal",
     "hash_password",

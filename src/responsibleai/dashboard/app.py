@@ -5,8 +5,10 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import hmac
+import json
 import re
 import secrets
 import time
@@ -88,6 +90,7 @@ from responsibleai.dashboard.telemetry import (
 from responsibleai.dashboard.transactional_email import (
     AuthenticatedWebhookEmailProvider,
     EmailDeliveryError,
+    invitation_email,
     password_reset_email,
     verification_email,
 )
@@ -113,17 +116,20 @@ from responsibleai.db import (
     EvidenceRepository,
     IncidentRepository,
     IntentContractRepository,
+    InvitationError,
     LeaderboardRepository,
     McpUsageRepository,
     OrgAuthorityCeilingRepository,
     OrgAutonomyBudgetRepository,
     OrgRepository,
     OutcomeRepository,
+    PaddleBillingEventRepository,
     PassportRepository,
     PolicyRepository,
     PolicyRuleNotFoundError,
     PublicIncidentRepository,
     SelfApprovalError,
+    SoleOwnerError,
     SSORequiredError,
     ToolTrustRepository,
     TrustRepository,
@@ -138,6 +144,13 @@ from responsibleai.db import (
     WorkflowRuleRepository,
     create_engine,
 )
+from responsibleai.iam.enums import PrivilegeRiskTier, StepUpMethod
+from responsibleai.iam.errors import (
+    StepUpRequiredError,
+    StepUpVerificationFailedError,
+)
+from responsibleai.iam.models import StepUpProof
+from responsibleai.iam.step_up import StepUpVerifier
 from responsibleai.db.consent_proof_repository import ConsentProofRepository
 from responsibleai.db.engine import DatabaseEngine
 from responsibleai.db.execution_nonce_repository import ExecutionNonceRepository
@@ -322,6 +335,7 @@ _saml_request_store: dict[str, float] = {}  # AuthnRequest ID → issued_at; cle
 _SAML_REQUEST_TTL = 300.0  # seconds — matches OIDC's state window
 _stripe_service: StripeService | None = None
 _billing_event_repo: BillingEventRepository | None = None
+_paddle_event_repo: PaddleBillingEventRepository | None = None
 _plan_rate_limiter: PlanRateLimiter | None = None
 _pending_audit_writes: set[asyncio.Task[Any]] = set()
 
@@ -367,7 +381,7 @@ async def lifespan(application: FastAPI):
     global _workflow_rule_repo, _delegation_repo, _autonomy_budget_repo, _intent_repo
     global _authority_passport_repo
     global _eval_repo, _comparator, _benchmark_runner, _dataset_scanner
-    global _oidc_provider, _saml_config, _stripe_service, _plan_rate_limiter, _billing_event_repo
+    global _oidc_provider, _saml_config, _stripe_service, _plan_rate_limiter, _billing_event_repo, _paddle_event_repo
 
     setup_telemetry(
         service_name=settings.otel_service_name,
@@ -397,6 +411,7 @@ async def lifespan(application: FastAPI):
     _trust_repo = TrustRepository(_db_engine, alert_threshold=settings.alert_threshold)
     _org_repo = OrgRepository(_db_engine)
     _billing_event_repo = BillingEventRepository(_db_engine)
+    _paddle_event_repo = PaddleBillingEventRepository(_db_engine)
     _web_identity_repo = WebIdentityRepository(_db_engine)
     _audit_repo = AuditRepository(_db_engine)
     _incident_repo = IncidentRepository(_db_engine)
@@ -1307,6 +1322,107 @@ class UpdateWebOrganizationRequest(BaseModel):
     name: str = Field(..., min_length=2, max_length=200)
 
 
+class WebSwitchOrganizationRequest(BaseModel):
+    organization_id: str = Field(..., min_length=36, max_length=36)
+
+
+class WebInvitationCreateRequest(BaseModel):
+    email: EmailStr
+    role: Literal["ADMIN", "ANALYST", "VIEWER"] = "VIEWER"
+
+
+class WebInvitationAcceptRequest(BaseModel):
+    token: str = Field(..., min_length=32, max_length=256)
+
+
+class WebMembershipRoleRequest(BaseModel):
+    role: Literal["ADMIN", "ANALYST", "VIEWER"]
+
+
+class WebAccountDeleteRequest(BaseModel):
+    password: str = Field(..., min_length=12, max_length=128)
+    confirmation: Literal["DELETE MY ACCOUNT"]
+
+
+class WebOwnershipTransferRequest(BaseModel):
+    new_owner_user_id: str = Field(..., min_length=36, max_length=36)
+    confirmation: Literal["TRANSFER OWNERSHIP"]
+
+
+def _extract_step_up_proof(request: Request, body_dict: dict[str, Any] | None = None) -> StepUpProof | None:
+    nonce = request.headers.get("X-Step-Up-Nonce") or request.headers.get("x-step-up-nonce")
+    method_str = request.headers.get("X-Step-Up-Method") or request.headers.get("x-step-up-method")
+    token_or_code = request.headers.get("X-Step-Up-Token") or request.headers.get("x-step-up-token")
+    auth_time = request.headers.get("X-Step-Up-Auth-Time") or request.headers.get("x-step-up-auth-time")
+    claims: dict[str, Any] = {}
+
+    if body_dict and isinstance(body_dict.get("step_up_proof"), dict):
+        sp = body_dict["step_up_proof"]
+        nonce = nonce or sp.get("nonce")
+        method_str = method_str or sp.get("method")
+        token_or_code = token_or_code or sp.get("token_or_code") or sp.get("code")
+        auth_time = auth_time or sp.get("auth_time")
+        claims = sp.get("claims", {})
+
+    if not nonce or not method_str:
+        return None
+
+    try:
+        method = StepUpMethod(method_str)
+    except ValueError:
+        method = StepUpMethod.MFA_TOTP
+
+    if not auth_time:
+        auth_time = datetime.now(UTC).isoformat()
+
+    return StepUpProof(
+        nonce=nonce,
+        method=method,
+        auth_time=auth_time,
+        token_or_code=token_or_code or "",
+        claims=claims,
+    )
+
+
+async def _verify_web_step_up(
+    request: Request,
+    *,
+    org_id: str,
+    user_id: str,
+    action: str,
+    risk_tier: PrivilegeRiskTier,
+    body_dict: dict[str, Any] | None = None,
+) -> None:
+    proof = _extract_step_up_proof(request, body_dict)
+    verifier = StepUpVerifier(_ready(_db_engine))
+    try:
+        await verifier.verify_and_consume_step_up(
+            org_id=org_id,
+            principal_id=user_id,
+            action=action,
+            risk_tier=risk_tier,
+            proof=proof,
+        )
+    except StepUpRequiredError as exc:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "step_up_required",
+                "message": str(exc),
+                "required_nonce": exc.required_nonce,
+                "max_age_seconds": exc.max_age_seconds,
+            },
+        ) from exc
+    except StepUpVerificationFailedError as exc:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "step_up_failed",
+                "message": str(exc),
+            },
+        ) from exc
+
+
 # ── Human web identity / console API ─────────────────────────────────────────
 
 
@@ -1408,6 +1524,19 @@ async def _deliver_password_reset(email: str, full_name: str, reset_url: str) ->
         raise HTTPException(502, "Password reset delivery failed. Please retry later.") from exc
 
 
+async def _deliver_invitation(email: str, organization: str, invitation_url: str) -> None:
+    if not settings.web_verification_delivery_url:
+        return
+    provider = AuthenticatedWebhookEmailProvider(
+        settings.web_verification_delivery_url,
+        settings.web_verification_delivery_token,
+    )
+    try:
+        await provider.deliver(invitation_email(email, organization, invitation_url))
+    except EmailDeliveryError as exc:
+        raise HTTPException(502, "Invitation delivery failed. Please retry later.") from exc
+
+
 @app.post("/api/web/auth/register", tags=["web-auth"], status_code=202)
 @limiter.limit("5/minute")
 async def web_register(request: Request, req: WebRegisterRequest) -> dict[str, Any]:
@@ -1480,6 +1609,9 @@ async def web_login(request: Request, req: WebLoginRequest) -> JSONResponse:
     if identity is None:
         raise HTTPException(401, "Invalid credentials or unverified email.")
     user_id, _email, _full_name = identity
+    existing_session = request.cookies.get("wp_session", "")
+    if existing_session:
+        await _ready(_web_identity_repo).revoke_session(existing_session)
     org_id = await _ready(_web_identity_repo).primary_org_id(user_id)
     token, csrf = await _ready(_web_identity_repo).create_session(
         user_id, org_id=org_id, ttl_hours=settings.web_session_ttl_hours
@@ -1502,6 +1634,18 @@ async def web_logout(
     return response
 
 
+@app.post("/api/web/auth/logout-all", tags=["web-auth"])
+@limiter.limit("5/minute")
+async def web_logout_all(
+    request: Request, principal: WebPrincipal = Depends(require_web_csrf)
+) -> JSONResponse:
+    await _ready(_web_identity_repo).revoke_all_sessions(principal.user_id)
+    response = JSONResponse({"status": "all_sessions_revoked"})
+    response.delete_cookie("wp_session", path="/")
+    response.delete_cookie("wp_csrf", path="/")
+    return response
+
+
 @app.get("/api/web/session", tags=["web-auth"])
 async def web_session(principal: WebPrincipal = Depends(get_web_principal)) -> dict[str, Any]:
     organization = None
@@ -1519,7 +1663,30 @@ async def web_session(principal: WebPrincipal = Depends(get_web_principal)) -> d
             "full_name": principal.full_name,
         },
         "organization": organization,
+        "organizations": await _ready(_web_identity_repo).list_organizations(principal.user_id),
     }
+
+
+@app.post("/api/web/session/switch-organization", tags=["web-auth"])
+@limiter.limit("10/minute")
+async def web_switch_organization(
+    request: Request,
+    req: WebSwitchOrganizationRequest,
+    principal: WebPrincipal = Depends(require_web_csrf),
+) -> JSONResponse:
+    current = request.cookies.get("wp_session", "")
+    rotated = await _ready(_web_identity_repo).switch_organization(
+        current,
+        principal.user_id,
+        req.organization_id,
+        ttl_hours=settings.web_session_ttl_hours,
+    )
+    if rotated is None:
+        raise HTTPException(404, "Organization membership not found.")
+    token, csrf = rotated
+    response = JSONResponse({"status": "organization_switched", "next": "/dashboard"})
+    _set_web_cookies(response, token, csrf)
+    return response
 
 
 @app.post("/api/web/onboarding", tags=["web-console"])
@@ -1607,6 +1774,200 @@ async def web_revoke_api_key(
     if not await _ready(_org_repo).revoke_key(key_id, org_id=org_id):
         raise HTTPException(404, "API key not found.")
     return {"revoked": key_id}
+
+
+@app.post("/api/web/invitations", tags=["web-console"], status_code=202)
+@limiter.limit("10/minute")
+async def web_create_invitation(
+    request: Request,
+    req: WebInvitationCreateRequest,
+    principal: WebPrincipal = Depends(require_web_csrf),
+) -> dict[str, str]:
+    org_id = _web_org_admin(principal)
+    try:
+        invitation_id, token = await _ready(_web_identity_repo).create_invitation(
+            org_id=org_id,
+            email=str(req.email),
+            role=Role(req.role),
+            invited_by_user_id=principal.user_id,
+        )
+    except InvitationError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    from urllib.parse import quote
+    invitation_url = (
+        f"{settings.web_public_url.rstrip('/')}/accept-invitation?token={quote(token, safe='')}"
+    )
+    await _deliver_invitation(
+        str(req.email), principal.org_name or "your organization", invitation_url
+    )
+    result = {"status": "invitation_sent", "id": invitation_id}
+    if settings.web_auth_dev_tokens:
+        result["invitation_url"] = invitation_url
+    return result
+
+
+@app.get("/api/web/invitations", tags=["web-console"])
+async def web_list_invitations(
+    principal: WebPrincipal = Depends(require_web_csrf),
+) -> dict[str, Any]:
+    org_id = _web_org_admin(principal)
+    invitations = await _ready(_web_identity_repo).list_invitations(org_id)
+    return {"invitations": invitations}
+
+
+@app.post("/api/web/invitations/accept", tags=["web-console"])
+@limiter.limit("10/minute")
+async def web_accept_invitation(
+    request: Request,
+    req: WebInvitationAcceptRequest,
+    principal: WebPrincipal = Depends(require_web_csrf),
+) -> JSONResponse:
+    try:
+        org_id = await _ready(_web_identity_repo).accept_invitation(req.token, principal.user_id)
+    except InvitationError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    current = request.cookies.get("wp_session", "")
+    rotated = await _ready(_web_identity_repo).switch_organization(
+        current,
+        principal.user_id,
+        org_id,
+        ttl_hours=settings.web_session_ttl_hours,
+    )
+    if rotated is None:
+        raise HTTPException(409, "Invitation accepted but session rotation failed; sign in again.")
+    session_token, csrf = rotated
+    response = JSONResponse({"status": "accepted", "next": "/dashboard"})
+    _set_web_cookies(response, session_token, csrf)
+    return response
+
+
+@app.delete("/api/web/invitations/{invitation_id}", tags=["web-console"])
+@limiter.limit("10/minute")
+async def web_revoke_invitation(
+    request: Request,
+    invitation_id: str,
+    principal: WebPrincipal = Depends(require_web_csrf),
+) -> dict[str, str]:
+    org_id = _web_org_admin(principal)
+    if not await _ready(_web_identity_repo).revoke_invitation(invitation_id, org_id):
+        raise HTTPException(404, "Pending invitation not found.")
+    return {"status": "revoked", "id": invitation_id}
+
+
+@app.get("/api/web/members", tags=["web-console"])
+async def web_list_members(
+    principal: WebPrincipal = Depends(require_web_csrf),
+) -> dict[str, Any]:
+    org_id = _web_org_admin(principal)
+    members = await _ready(_web_identity_repo).list_members(org_id)
+    return {"members": members}
+
+
+@app.patch("/api/web/members/{user_id}", tags=["web-console"])
+@limiter.limit("10/minute")
+async def web_update_member_role(
+    request: Request,
+    user_id: str,
+    req: WebMembershipRoleRequest,
+    principal: WebPrincipal = Depends(require_web_csrf),
+) -> dict[str, str]:
+    org_id = _web_org_admin(principal)
+    if req.role == "ADMIN":
+        await _verify_web_step_up(
+            request,
+            org_id=org_id,
+            user_id=principal.user_id,
+            action="MODIFY_WORKFLOW_RULE",
+            risk_tier=PrivilegeRiskTier.PRIVILEGED_HIGH,
+        )
+    try:
+        changed = await _ready(_web_identity_repo).update_membership_role(
+            org_id, user_id, Role(req.role)
+        )
+    except InvitationError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    if not changed:
+        raise HTTPException(404, "Mutable organization membership not found.")
+    return {"status": "updated", "user_id": user_id, "role": req.role}
+
+
+@app.delete("/api/web/members/{user_id}", tags=["web-console"])
+@limiter.limit("10/minute")
+async def web_remove_member(
+    request: Request,
+    user_id: str,
+    principal: WebPrincipal = Depends(require_web_csrf),
+) -> dict[str, str]:
+    org_id = _web_org_admin(principal)
+    if not await _ready(_web_identity_repo).remove_membership(org_id, user_id):
+        raise HTTPException(404, "Removable organization membership not found.")
+    return {"status": "removed", "user_id": user_id}
+
+
+@app.post("/api/web/organizations/transfer-ownership", tags=["web-console"])
+@limiter.limit("5/minute")
+async def web_transfer_ownership(
+    request: Request,
+    req: WebOwnershipTransferRequest,
+    principal: WebPrincipal = Depends(require_web_csrf),
+) -> dict[str, str]:
+    if not principal.org_id:
+        raise HTTPException(409, "Complete organization onboarding first.")
+    if principal.role != Role.OWNER:
+        raise HTTPException(403, "Only the organization OWNER may transfer ownership.")
+    if principal.user_id == req.new_owner_user_id:
+        raise HTTPException(400, "Cannot transfer ownership to yourself.")
+
+    await _verify_web_step_up(
+        request,
+        org_id=principal.org_id,
+        user_id=principal.user_id,
+        action="TRANSFER_ROOT_AUTHORITY",
+        risk_tier=PrivilegeRiskTier.PRIVILEGED_CRITICAL,
+    )
+
+    transferred = await _ready(_web_identity_repo).transfer_organization_ownership(
+        org_id=principal.org_id,
+        current_owner_id=principal.user_id,
+        new_owner_id=req.new_owner_user_id,
+    )
+    if not transferred:
+        raise HTTPException(404, "Target user is not a member of this organization.")
+    return {"status": "ownership_transferred", "new_owner_id": req.new_owner_user_id}
+
+
+@app.delete("/api/web/account", tags=["web-auth"])
+@limiter.limit("3/hour")
+async def web_delete_account(
+    request: Request,
+    req: WebAccountDeleteRequest,
+    principal: WebPrincipal = Depends(require_web_csrf),
+) -> JSONResponse:
+    identity = await _ready(_web_identity_repo).authenticate(principal.email, req.password)
+    if identity is None or identity[0] != principal.user_id:
+        raise HTTPException(403, "Account deletion confirmation failed.")
+
+    await _verify_web_step_up(
+        request,
+        org_id=principal.org_id or "personal",
+        user_id=principal.user_id,
+        action="DESTROY_TENANT",
+        risk_tier=PrivilegeRiskTier.PRIVILEGED_CRITICAL,
+    )
+
+    try:
+        disabled = await _ready(_web_identity_repo).disable_account(principal.user_id)
+    except SoleOwnerError as exc:
+        raise HTTPException(
+            409,
+            str(exc),
+        ) from exc
+    if not disabled:
+        raise HTTPException(409, "Account is already disabled.")
+    response = JSONResponse({"status": "account_disabled"})
+    response.delete_cookie("wp_session", path="/")
+    response.delete_cookie("wp_csrf", path="/")
+    return response
 
 
 @app.get("/api/web/dashboard/summary", tags=["web-console"])
@@ -1825,6 +2186,7 @@ _WHITEPACT_SPA_PATHS = [
     "/verify-email",
     "/forgot-password",
     "/reset-password",
+    "/accept-invitation",
     "/onboarding",
     "/dashboard",
 ]
@@ -2788,6 +3150,106 @@ async def stripe_webhook(request: Request) -> dict[str, Any]:
         org_id=update.org_id,
         plan=update.plan.value,
     )
+    return {"received": True, "processed": True}
+
+
+@app.post("/api/billing/paddle/webhook", tags=["billing"], include_in_schema=False)
+async def paddle_webhook(request: Request) -> dict[str, Any]:
+    """Paddle Billing calls this directly — verified by HMAC-SHA256 signature."""
+    secret_key = settings.paddle_webhook_secret or os.environ.get("PADDLE_WEBHOOK_SECRET", "")
+    if not secret_key:
+        raise HTTPException(503, "Paddle billing is not configured on this server.")
+
+    raw_body = await request.body()
+    sig_header = request.headers.get("paddle-signature", "")
+    if not sig_header:
+        raise HTTPException(400, "Missing Paddle-Signature header.")
+
+    sig_parts = dict(re.findall(r"([a-z0-9_]+)=([^;]+)", sig_header))
+    ts_str = sig_parts.get("ts")
+    h1 = sig_parts.get("h1")
+    if not ts_str or not h1:
+        raise HTTPException(400, "Malformed Paddle-Signature header.")
+
+    try:
+        ts = int(ts_str)
+    except ValueError:
+        raise HTTPException(400, "Invalid timestamp in Paddle-Signature header.")
+
+    now_ts = int(datetime.now(UTC).timestamp())
+    if abs(now_ts - ts) > 300:
+        raise HTTPException(400, "Paddle webhook signature has expired (>5 min).")
+
+    signed_payload = f"{ts_str}:".encode("utf-8") + raw_body
+    computed_sig = hmac.new(secret_key.encode("utf-8"), signed_payload, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(computed_sig, h1):
+        raise HTTPException(400, "Invalid Paddle webhook signature.")
+
+    try:
+        payload = json.loads(raw_body.decode("utf-8"))
+    except Exception as exc:
+        raise HTTPException(400, "Invalid JSON in Paddle webhook payload.") from exc
+
+    event_id = str(payload.get("event_id") or "")
+    event_type = str(payload.get("event_type") or "unknown")
+    if not event_id:
+        raise HTTPException(400, "Paddle event_id is required.")
+
+    payload_hash = hashlib.sha256(raw_body).hexdigest()
+
+    try:
+        is_new = await _ready(_paddle_event_repo).begin(event_id, event_type, payload_hash)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+    if not is_new:
+        return {"received": True, "processed": False, "duplicate": True}
+
+    try:
+        data = payload.get("data", {})
+        customer_id = data.get("customer_id")
+        subscription_id = data.get("id")
+        status = str(data.get("status", "inactive")).casefold()
+
+        org_id = data.get("custom_data", {}).get("org_id")
+        if not org_id and customer_id:
+            org = await _ready(_org_repo).get_org_by_paddle_customer(customer_id)
+            if org:
+                org_id = org.id
+
+        if not org_id:
+            await _ready(_paddle_event_repo).complete(event_id, org_id=None)
+            return {"received": True, "processed": False, "unmapped_org": True}
+
+        await _ready(_paddle_event_repo).set_org(event_id, org_id)
+
+        custom_plan = data.get("custom_data", {}).get("plan")
+        if custom_plan:
+            try:
+                plan = Plan(str(custom_plan).upper())
+            except ValueError:
+                plan = Plan.PRO
+        else:
+            plan = Plan.PRO if status in {"active", "trialing"} else Plan.FREE
+
+        event_version = int(payload.get("event_version") or ts)
+        occurred_at = payload.get("occurred_at") or datetime.now(UTC).isoformat()
+
+        await _ready(_org_repo).apply_paddle_entitlement(
+            org_id=org_id,
+            customer_id=customer_id,
+            subscription_id=subscription_id,
+            plan=plan,
+            subscription_status=status,
+            event_version=event_version,
+            updated_at=occurred_at,
+        )
+        await _ready(_paddle_event_repo).complete(event_id, org_id=org_id)
+    except Exception as exc:
+        await _ready(_paddle_event_repo).fail(event_id, str(exc))
+        raise
+
+    logger.info("paddle_webhook_processed", event_id=event_id, event_type=event_type, org_id=org_id)
     return {"received": True, "processed": True}
 
 
@@ -5395,13 +5857,31 @@ async def auth_login(provider_id: str, redirect_uri: str = "") -> JSONResponse:
     if provider_id == "oidc":
         if not _oidc_provider:
             raise HTTPException(404, f"Unknown or unconfigured provider: {provider_id!r}")
+        if redirect_uri and redirect_uri != settings.oidc_redirect_uri:
+            raise HTTPException(400, "OIDC redirect URI is not allowlisted.")
         state = secrets.token_urlsafe(32)
-        _oidc_state_store[state] = time.monotonic()
-        target_redirect = redirect_uri or settings.oidc_redirect_uri
+        nonce = secrets.token_urlsafe(32)
+        code_verifier = secrets.token_urlsafe(64)
+        challenge = (
+            base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode()).digest())
+            .decode()
+            .rstrip("=")
+        )
+        target_redirect = settings.oidc_redirect_uri
+        await _ready(_web_identity_repo).create_oauth_flow_state(
+            state=state,
+            provider="oidc",
+            nonce=nonce,
+            redirect_uri=target_redirect,
+            pkce_verifier=code_verifier,
+            ttl_seconds=300,
+        )
         url = _oidc_provider.authorization_url(
             redirect_uri=target_redirect,
             state=state,
             scopes=settings.oidc_scopes,
+            nonce=nonce,
+            code_challenge=challenge,
         )
         return JSONResponse({"authorization_url": url, "state": state})
 
@@ -5483,26 +5963,41 @@ async def auth_callback(
     if not _oidc_provider:
         raise HTTPException(501, "OIDC not configured")
 
-    issued_at = _oidc_state_store.pop(state, None)
-    if issued_at is None:
+    state_record = await _ready(_web_identity_repo).consume_oauth_flow_state(
+        state, expected_provider="oidc"
+    )
+    if state_record is None:
         raise HTTPException(400, "Invalid or expired OAuth2 state parameter")
-    if time.monotonic() - issued_at > 300:
-        raise HTTPException(400, "OAuth2 state has expired (>5 min)")
+
+    nonce = state_record["nonce"]
+    code_verifier = state_record["pkce_verifier"]
+    target_redirect = state_record["redirect_uri"]
 
     try:
         tokens = await _oidc_provider.exchange_code(
             code=code,
-            redirect_uri=settings.oidc_redirect_uri,
+            redirect_uri=target_redirect,
+            client_secret=settings.oidc_client_secret,
+            code_verifier=code_verifier,
+        )
+    except TypeError:
+        tokens = await _oidc_provider.exchange_code(
+            code=code,
+            redirect_uri=target_redirect,
             client_secret=settings.oidc_client_secret,
         )
     except ValueError as e:
-        raise HTTPException(400, f"Token exchange failed: {e}") from None
+        logger.warning("oidc_token_exchange_failed", reason=str(e))
+        raise HTTPException(400, "OIDC token exchange failed.") from None
 
     id_token = tokens.get("id_token") or tokens.get("access_token", "")
     try:
+        claims = await _oidc_provider.validate_token(id_token, expected_nonce=nonce)
+    except TypeError:
         claims = await _oidc_provider.validate_token(id_token)
     except ValueError as e:
-        raise HTTPException(401, f"Token validation failed: {e}") from None
+        logger.warning("oidc_token_validation_failed", reason=str(e))
+        raise HTTPException(401, "OIDC token validation failed.") from None
 
     access_token = tokens.get("access_token") or ""
     fragment = (

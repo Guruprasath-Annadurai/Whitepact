@@ -18,6 +18,7 @@ class StepUpRequiredError(IAMError):
 
     def __init__(self, message: str, required_nonce: str | None = None, max_age_seconds: int = 900) -> None:
         super().__init__(message)
+        self.message = message
         self.required_nonce = required_nonce
         self.max_age_seconds = max_age_seconds
 

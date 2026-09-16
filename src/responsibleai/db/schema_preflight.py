@@ -53,6 +53,12 @@ def validate_schema_lineage(connection: Connection) -> None:
         35: {"governance_root_authority_records", "governance_consent_proofs"},
         38: {"governance_revocation_epochs"},
         39: {"governance_execution_nonces"},
+        47: {
+            "web_identity_providers",
+            "web_invitations",
+            "oauth_flow_states",
+            "paddle_webhook_events",
+        },
     }
     for introduced, expected in requirements.items():
         if revision >= introduced and not expected <= tables:
@@ -89,3 +95,12 @@ def validate_schema_lineage(connection: Connection) -> None:
             revision >= 32 and "subscription_status" not in cols
         ):
             raise SchemaLineageError("Canonical website organization columns are missing")
+        if revision >= 47:
+            expected_entitlement_cols = {
+                "paddle_customer_id",
+                "paddle_subscription_id",
+                "entitlement_version",
+                "entitlement_updated_at",
+            }
+            if not expected_entitlement_cols <= cols:
+                raise SchemaLineageError("Canonical entitlement columns are missing")
