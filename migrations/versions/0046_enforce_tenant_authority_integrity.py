@@ -62,20 +62,68 @@ def upgrade() -> None:
             "where grantee does not belong to the authority edge's tenant."
         )
 
-    # Check relationships where subject or target does not belong to relationship tenant.
-    corrupt_relationships = bind.execute(
+    # Check relationships where subject does not belong to relationship tenant.
+    corrupt_rel_subjects = bind.execute(
         sa.text(
             """
             SELECT COUNT(*) FROM trust_fabric_relationships r
             JOIN trust_fabric_principals s ON r.subject_principal_id = s.id
-            JOIN trust_fabric_principals t ON r.target_principal_id = t.id
-            WHERE r.org_id != s.org_id OR r.org_id != t.org_id
+            WHERE r.org_id != s.org_id
             """
         )
     ).scalar()
-    if corrupt_relationships and corrupt_relationships > 0:
+    if corrupt_rel_subjects and corrupt_rel_subjects > 0:
         raise RuntimeError(
-            f"Migration 0046 aborted (FAIL CLOSED): Found {corrupt_relationships} cross-tenant relationship(s)."
+            f"Migration 0046 aborted (FAIL CLOSED): Found {corrupt_rel_subjects} cross-tenant relationship(s) "
+            "where subject does not belong to the relationship's tenant."
+        )
+
+    # Check relationships where target does not belong to relationship tenant.
+    corrupt_rel_targets = bind.execute(
+        sa.text(
+            """
+            SELECT COUNT(*) FROM trust_fabric_relationships r
+            JOIN trust_fabric_principals t ON r.target_principal_id = t.id
+            WHERE r.org_id != t.org_id
+            """
+        )
+    ).scalar()
+    if corrupt_rel_targets and corrupt_rel_targets > 0:
+        raise RuntimeError(
+            f"Migration 0046 aborted (FAIL CLOSED): Found {corrupt_rel_targets} cross-tenant relationship(s) "
+            "where target does not belong to the relationship's tenant."
+        )
+
+    # Check identifiers where principal does not belong to identifier tenant.
+    corrupt_identifiers = bind.execute(
+        sa.text(
+            """
+            SELECT COUNT(*) FROM trust_fabric_identifiers i
+            JOIN trust_fabric_principals p ON i.principal_id = p.id
+            WHERE i.org_id != p.org_id
+            """
+        )
+    ).scalar()
+    if corrupt_identifiers and corrupt_identifiers > 0:
+        raise RuntimeError(
+            f"Migration 0046 aborted (FAIL CLOSED): Found {corrupt_identifiers} cross-tenant identifier(s) "
+            "where principal does not belong to the identifier's tenant."
+        )
+
+    # Check trust roots where root principal does not belong to trust root tenant.
+    corrupt_trust_roots = bind.execute(
+        sa.text(
+            """
+            SELECT COUNT(*) FROM trust_fabric_trust_roots tr
+            JOIN trust_fabric_principals p ON tr.root_principal_id = p.id
+            WHERE tr.org_id != p.org_id
+            """
+        )
+    ).scalar()
+    if corrupt_trust_roots and corrupt_trust_roots > 0:
+        raise RuntimeError(
+            f"Migration 0046 aborted (FAIL CLOSED): Found {corrupt_trust_roots} cross-tenant trust root(s) "
+            "where root principal does not belong to the trust root's tenant."
         )
 
     # 2. Add composite unique constraint on trust_fabric_principals(id, org_id)
