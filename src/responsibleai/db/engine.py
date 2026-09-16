@@ -106,7 +106,7 @@ organizations = Table(
     Index("idx_org_slug", "slug"),
     Index("idx_org_stripe_customer", "stripe_customer_id"),
     Index("idx_org_paddle_customer", "paddle_customer_id", unique=True),
-    Index("idx_org_paddle_subscription", "paddle_subscription_id"),
+    Index("idx_org_paddle_subscription", "paddle_subscription_id", unique=True),
 )
 
 mcp_tool_calls = Table(

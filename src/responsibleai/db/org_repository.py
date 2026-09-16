@@ -18,7 +18,8 @@ import secrets
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import delete, insert, select, update
+from sqlalchemy import delete, insert, or_, select, update
+from sqlalchemy.exc import IntegrityError
 
 from responsibleai.db.engine import (
     DatabaseEngine,
@@ -240,7 +241,9 @@ class OrgRepository:
         """Apply one already signature-verified Paddle event in chronological order.
 
         Uses real Paddle occurred_at timestamp comparison for monotonic ordering.
-        Synthetic event_version is never depended upon.
+        Synthetic event_version is deprecated and non-operative.
+        Database-level row locking (FOR UPDATE) and unique index constraints
+        guarantee strict concurrency isolation and zero cross-tenant binding.
         This repository method controls commercial features only. It is never
         consulted by Trust, authority, policy, or ExecutionAuthorization.
         """
@@ -255,72 +258,89 @@ class OrgRepository:
         normalized_status = subscription_status.casefold()
         effective_plan = plan if normalized_status in {"active", "trialing"} else Plan.FREE
 
-        async with self._engine.raw.begin() as conn:
-            # 1. Verify target org exists and is not tombstoned
-            org_row = (await conn.execute(
-                select(organizations).where(organizations.c.id == org_id)
-            )).first()
-            if org_row is None:
-                raise ValueError(f"Organization '{org_id}' not found")
+        try:
+            async with self._engine.raw.begin() as conn:
+                # 1. Lock the organization row for update to ensure atomic chronology evaluation
+                org_row = (await conn.execute(
+                    select(organizations).where(organizations.c.id == org_id).with_for_update()
+                )).first()
+                if org_row is None:
+                    raise ValueError(f"Organization '{org_id}' not found")
 
-            # Check tombstone ledger
-            ts = await conn.scalar(
-                select(tenant_tombstones.c.id).where(tenant_tombstones.c.org_id == org_id)
-            )
-            if ts is not None:
-                raise ValueError(f"Cannot apply entitlement: organization '{org_id}' is tombstoned")
-
-            # 2. Prevent commercial identity reassignment across tenants
-            existing_customer_org = await conn.scalar(
-                select(organizations.c.id).where(
-                    organizations.c.paddle_customer_id == customer_id,
-                    organizations.c.id != org_id,
+                # Check tombstone ledger
+                ts = await conn.scalar(
+                    select(tenant_tombstones.c.id).where(tenant_tombstones.c.org_id == org_id)
                 )
-            )
-            if existing_customer_org is not None:
-                raise ValueError("Paddle customer is already bound to another tenant")
+                if ts is not None:
+                    raise ValueError(f"Cannot apply entitlement: organization '{org_id}' is tombstoned")
 
-            if subscription_id is not None:
-                existing_sub_org = await conn.scalar(
+                # 2. Prevent commercial identity reassignment across tenants
+                existing_customer_org = await conn.scalar(
                     select(organizations.c.id).where(
-                        organizations.c.paddle_subscription_id == subscription_id,
+                        organizations.c.paddle_customer_id == customer_id,
                         organizations.c.id != org_id,
                     )
                 )
-                if existing_sub_org is not None:
-                    raise ValueError("Paddle subscription is already bound to another tenant")
+                if existing_customer_org is not None:
+                    raise ValueError("Paddle customer is already bound to another tenant")
 
-            # 3. Chronological chronology check using occurred_at
-            org_map = dict(org_row._mapping)
-            current_occurred_at = org_map.get("paddle_last_occurred_at") or org_map.get("entitlement_updated_at")
-            current_status = org_map.get("subscription_status") or "inactive"
+                if subscription_id is not None:
+                    existing_sub_org = await conn.scalar(
+                        select(organizations.c.id).where(
+                            organizations.c.paddle_subscription_id == subscription_id,
+                            organizations.c.id != org_id,
+                        )
+                    )
+                    if existing_sub_org is not None:
+                        raise ValueError("Paddle subscription is already bound to another tenant")
 
-            if current_occurred_at:
-                if effective_occurred < current_occurred_at:
-                    # Out-of-order stale event: safely ignored
-                    return False
-                if effective_occurred == current_occurred_at:
-                    # Equal timestamp fail-safe: never allow reactivation of canceled/paused/past_due
-                    if current_status in {"canceled", "paused", "past_due"} and normalized_status in {"active", "trialing"}:
+                # 3. Chronological admission check using occurred_at
+                org_map = dict(org_row._mapping)
+                current_occurred_at = org_map.get("paddle_last_occurred_at") or org_map.get("entitlement_updated_at")
+                current_status = org_map.get("subscription_status") or "inactive"
+                current_plan_str = str(org_map.get("plan") or "FREE").upper()
+
+                if current_occurred_at:
+                    if effective_occurred < current_occurred_at:
+                        # Out-of-order stale event: safely ignored
                         return False
+                    if effective_occurred == current_occurred_at:
+                        # Equal timestamp fail-safe: never widen commercial entitlement on ambiguous equal timestamp
+                        if current_status in {"canceled", "paused", "past_due"} and normalized_status in {"active", "trialing"}:
+                            return False
+                        if current_plan_str == "FREE" and effective_plan != Plan.FREE:
+                            return False
 
-            values: dict[str, Any] = {
-                "paddle_customer_id": customer_id,
-                "paddle_subscription_id": subscription_id,
-                "plan": effective_plan.value,
-                "subscription_status": normalized_status,
-                "entitlement_updated_at": effective_occurred,
-                "entitlement_version": event_version,
-            }
-            if "paddle_last_occurred_at" in organizations.c:
-                values["paddle_last_occurred_at"] = effective_occurred
+                values: dict[str, Any] = {
+                    "paddle_customer_id": customer_id,
+                    "paddle_subscription_id": subscription_id,
+                    "plan": effective_plan.value,
+                    "subscription_status": normalized_status,
+                    "entitlement_updated_at": effective_occurred,
+                    "entitlement_version": 0,
+                }
+                if "paddle_last_occurred_at" in organizations.c:
+                    values["paddle_last_occurred_at"] = effective_occurred
 
-            await conn.execute(
-                update(organizations)
-                .where(organizations.c.id == org_id)
-                .values(**values)
-            )
-            return True
+                res = await conn.execute(
+                    update(organizations)
+                    .where(
+                        organizations.c.id == org_id,
+                        or_(
+                            organizations.c.paddle_last_occurred_at.is_(None),
+                            organizations.c.paddle_last_occurred_at <= effective_occurred,
+                        ),
+                    )
+                    .values(**values)
+                )
+                return res.rowcount > 0
+        except IntegrityError as exc:
+            err_str = str(exc).lower()
+            if "idx_org_paddle_subscription" in err_str or "paddle_subscription_id" in err_str:
+                raise ValueError("Paddle subscription is already bound to another tenant") from exc
+            if "idx_org_paddle_customer" in err_str or "paddle_customer_id" in err_str:
+                raise ValueError("Paddle customer is already bound to another tenant") from exc
+            raise
 
     async def get_org(self, org_id: str) -> Organization | None:
         async with self._engine.raw.connect() as conn:
@@ -623,6 +643,7 @@ class OrgRepository:
             paddle_subscription_id=getattr(row, "paddle_subscription_id", None),
             entitlement_version=getattr(row, "entitlement_version", 0) or 0,
             entitlement_updated_at=getattr(row, "entitlement_updated_at", None),
+            paddle_last_occurred_at=getattr(row, "paddle_last_occurred_at", None),
             plan_renews_at=getattr(row, "plan_renews_at", None),
             subscription_status=getattr(row, "subscription_status", "inactive") or "inactive",
             sso_required=bool(getattr(row, "sso_required", 0)),

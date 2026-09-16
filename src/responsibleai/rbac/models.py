@@ -39,6 +39,7 @@ class Organization:
     paddle_subscription_id: str | None = None
     entitlement_version: int = 0
     entitlement_updated_at: str | None = None
+    paddle_last_occurred_at: str | None = None
     plan_renews_at: str | None = None
     subscription_status: str = "inactive"
     sso_required: bool = False

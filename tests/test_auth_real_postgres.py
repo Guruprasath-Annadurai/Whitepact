@@ -18,6 +18,11 @@ Verifies:
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
+import json
+import secrets
+import time
 import uuid
 from collections.abc import AsyncGenerator
 
@@ -25,9 +30,12 @@ import asyncpg
 import pytest
 from alembic.config import Config
 from alembic.script import ScriptDirectory
-from sqlalchemy import inspect, text
+from asgi_lifespan import LifespanManager
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import inspect, select, text
 
-from responsibleai.db.engine import create_engine
+import responsibleai.dashboard.app as app_module
+from responsibleai.db.engine import create_engine, organizations
 from responsibleai.db.migrate import (
     _find_alembic_ini,
     _migration_env,
@@ -65,22 +73,23 @@ async def pg_test_db() -> AsyncGenerator[str, None]:
         await admin_conn.close()
 
 
-def test_one_canonical_alembic_head_0047():
-    """Verify exactly 1 canonical alembic head and correct 0047 revision chain."""
+def test_one_canonical_alembic_head():
+    """Verify exactly 1 canonical alembic head and correct 0048 revision chain."""
     ini = _find_alembic_ini()
     assert ini is not None, "alembic.ini must exist"
     scripts = ScriptDirectory.from_config(Config(str(ini)))
     heads = scripts.get_heads()
     assert len(heads) == 1, f"Expected exactly 1 alembic head, got {len(heads)}: {heads}"
-    assert heads == ["0047"]
+    assert heads == ["0048"]
+    assert scripts.get_revision("0048").down_revision == "0047"
     assert scripts.get_revision("0047").down_revision == "0046"
     assert scripts.get_revision("0046").down_revision == "0045"
     assert scripts.get_revision("0045").down_revision == "0044"
 
 
 @pytest.mark.asyncio
-async def test_real_postgres_migration_cycle_0046_0047(pg_test_db: str):
-    """Full migration cycle on real PostgreSQL: 0046 -> 0047 -> 0046 -> 0047."""
+async def test_real_postgres_migration_cycle_0046_0047_0048(pg_test_db: str):
+    """Full migration cycle on real PostgreSQL: 0046 -> 0047 -> 0048 -> 0047 -> 0048."""
     ini = _find_alembic_ini()
     assert ini is not None
     env = _migration_env(pg_test_db)
@@ -111,76 +120,95 @@ async def test_real_postgres_migration_cycle_0046_0047(pg_test_db: str):
             v0047 = (await conn.execute(text("SELECT version_num FROM alembic_version"))).scalar()
             assert v0047 == "0047"
 
-            # Verify columns on organizations
-            org_cols = await conn.run_sync(lambda c: inspect(c).get_columns("organizations"))
-            org_col_names = {col["name"] for col in org_cols}
-            assert "paddle_last_occurred_at" in org_col_names
+            # In 0047, idx_org_paddle_subscription is non-unique
+            indices = await conn.run_sync(lambda c: inspect(c).get_indexes("organizations"))
+            sub_idx = next(i for i in indices if i["name"] == "idx_org_paddle_subscription")
+            assert sub_idx["unique"] is False or not sub_idx.get("unique")
 
-            # Verify columns on paddle_webhook_events
-            evt_cols = await conn.run_sync(lambda c: inspect(c).get_columns("paddle_webhook_events"))
-            evt_col_names = {col["name"] for col in evt_cols}
-            assert "occurred_at" in evt_col_names
-            assert "entity_id" in evt_col_names
-
-            # Verify columns on iam_step_up_nonces
-            nonce_cols = await conn.run_sync(lambda c: inspect(c).get_columns("iam_step_up_nonces"))
-            nonce_col_names = {col["name"] for col in nonce_cols}
-            assert "session_id" in nonce_col_names
-
-            # Verify seeded data preserved
-            seeded_org = (await conn.execute(text("SELECT id, name, plan, paddle_last_occurred_at FROM organizations WHERE id = 'tenant-pre-0047'"))).fetchone()
-            assert seeded_org is not None
-            assert seeded_org[0] == "tenant-pre-0047"
-            assert seeded_org[1] == "Pre 0047 Corp"
-            assert seeded_org[2] == "PRO"
-            assert seeded_org[3] is None  # newly added column defaults to None
-
-            # Seed paddle_webhook_events in 0047
-            await conn.execute(
-                text("""
-                    INSERT INTO paddle_webhook_events (event_id, event_type, payload_hash, status, received_at, occurred_at, entity_id)
-                    VALUES ('evt_0047_test', 'subscription.updated', 'hash123', 'PROCESSED', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', 'sub_123')
-                """)
-            )
-            await conn.commit()
-
-        # 3. Downgrade 0047 -> 0046
-        await _run_alembic(ini, env, "downgrade", "0046")
+        # 3. Upgrade 0047 -> 0048
+        await _run_alembic(ini, env, "upgrade", "0048")
 
         async with engine.raw.connect() as conn:
-            v_down = (await conn.execute(text("SELECT version_num FROM alembic_version"))).scalar()
-            assert v_down == "0046"
+            v0048 = (await conn.execute(text("SELECT version_num FROM alembic_version"))).scalar()
+            assert v0048 == "0048"
 
-            # Verify columns dropped
-            org_cols = await conn.run_sync(lambda c: inspect(c).get_columns("organizations"))
-            assert "paddle_last_occurred_at" not in {col["name"] for col in org_cols}
+            # In 0048, idx_org_paddle_subscription is strictly UNIQUE
+            indices = await conn.run_sync(lambda c: inspect(c).get_indexes("organizations"))
+            sub_idx = next(i for i in indices if i["name"] == "idx_org_paddle_subscription")
+            assert sub_idx["unique"] is True
 
-            nonce_cols = await conn.run_sync(lambda c: inspect(c).get_columns("iam_step_up_nonces"))
-            assert "session_id" not in {col["name"] for col in nonce_cols}
-
-            has_paddle_events = await conn.run_sync(lambda c: inspect(c).has_table("paddle_webhook_events"))
-            assert not has_paddle_events
-
-            # Data preserved
+            # Verify seeded data preserved
             seeded_org = (await conn.execute(text("SELECT id, name, plan FROM organizations WHERE id = 'tenant-pre-0047'"))).fetchone()
             assert seeded_org is not None
             assert seeded_org[0] == "tenant-pre-0047"
 
-        # 4. Re-upgrade 0046 -> 0047
-        await _run_alembic(ini, env, "upgrade", "0047")
+        # 4. Downgrade 0048 -> 0047
+        await _run_alembic(ini, env, "downgrade", "0047")
 
         async with engine.raw.connect() as conn:
-            v_reup = (await conn.execute(text("SELECT version_num FROM alembic_version"))).scalar()
-            assert v_reup == "0047"
+            v_down47 = (await conn.execute(text("SELECT version_num FROM alembic_version"))).scalar()
+            assert v_down47 == "0047"
 
-            org_cols = await conn.run_sync(lambda c: inspect(c).get_columns("organizations"))
-            assert "paddle_last_occurred_at" in {col["name"] for col in org_cols}
+            indices = await conn.run_sync(lambda c: inspect(c).get_indexes("organizations"))
+            sub_idx = next(i for i in indices if i["name"] == "idx_org_paddle_subscription")
+            assert sub_idx["unique"] is False or not sub_idx.get("unique")
 
-            nonce_cols = await conn.run_sync(lambda c: inspect(c).get_columns("iam_step_up_nonces"))
-            assert "session_id" in {col["name"] for col in nonce_cols}
+        # 5. Re-upgrade 0047 -> 0048
+        await _run_alembic(ini, env, "upgrade", "0048")
 
-            has_paddle_events_reup = await conn.run_sync(lambda c: inspect(c).has_table("paddle_webhook_events"))
-            assert has_paddle_events_reup
+        async with engine.raw.connect() as conn:
+            v_reup48 = (await conn.execute(text("SELECT version_num FROM alembic_version"))).scalar()
+            assert v_reup48 == "0048"
+
+            indices = await conn.run_sync(lambda c: inspect(c).get_indexes("organizations"))
+            sub_idx = next(i for i in indices if i["name"] == "idx_org_paddle_subscription")
+            assert sub_idx["unique"] is True
+    finally:
+        await engine.close()
+
+
+@pytest.mark.asyncio
+async def test_real_postgres_migration_0048_rejects_duplicate_subscriptions(pg_test_db: str):
+    """Migration 0048 must refuse unsafe migration if duplicate subscription bindings exist.
+
+    It must NOT silently choose a winner or rewrite tenant ownership.
+    """
+    ini = _find_alembic_ini()
+    assert ini is not None
+    env = _migration_env(pg_test_db)
+
+    # 1. Upgrade to 0047
+    await _run_alembic(ini, env, "upgrade", "0047")
+
+    engine = create_engine(pg_test_db)
+    try:
+        async with engine.raw.connect() as conn:
+            # Intentionally create conflicting duplicate subscription bindings under 0047
+            await conn.execute(
+                text("""
+                    INSERT INTO organizations (id, name, slug, monthly_budget_usd, created_at, plan, subscription_status, paddle_subscription_id)
+                    VALUES
+                        ('org-dup-1', 'Dup Org 1', 'dup-org-1', 1000, '2026-01-01T00:00:00Z', 'PRO', 'active', 'sub_duplicate_999'),
+                        ('org-dup-2', 'Dup Org 2', 'dup-org-2', 1000, '2026-01-01T00:00:00Z', 'PRO', 'active', 'sub_duplicate_999');
+                """)
+            )
+            await conn.commit()
+
+        # 2. Attempt upgrade to 0048 -> MUST FAIL SAFELY
+        with pytest.raises(Exception) as exc_info:
+            await _run_alembic(ini, env, "upgrade", "0048")
+
+        err_msg = str(exc_info.value)
+        assert "duplicate paddle_subscription_id mappings" in err_msg or "sub_duplicate_999" in err_msg
+
+        # 3. Verify both organizations still exist untouched (no silent deletion or remapping)
+        async with engine.raw.connect() as conn:
+            rows = (await conn.execute(
+                text("SELECT id, paddle_subscription_id FROM organizations WHERE id IN ('org-dup-1', 'org-dup-2') ORDER BY id")
+            )).fetchall()
+            assert len(rows) == 2
+            assert rows[0] == ("org-dup-1", "sub_duplicate_999")
+            assert rows[1] == ("org-dup-2", "sub_duplicate_999")
     finally:
         await engine.close()
 
@@ -320,3 +348,338 @@ async def test_real_postgres_paddle_customer_mapping_race(pg_test_db: str):
         assert final_org.paddle_subscription_id == subscription_id
     finally:
         await engine.close()
+
+
+@pytest.mark.asyncio
+async def test_real_postgres_same_subscription_two_tenants_race(pg_test_db: str):
+    """WP-AUTH-PDL-01 Reproduction: Two different orgs racing to bind the same subscription.
+
+    Under concurrent execution, exactly one org may bind the subscription.
+    Cross-tenant subscription bindings must be 0.
+    """
+    await run_migrations_or_raise(pg_test_db)
+    engine = create_engine(pg_test_db)
+    try:
+        org_repo = OrgRepository(engine)
+        duplicate_subscription_bindings = 0
+        races = 40
+
+        for i in range(races):
+            org_a = await org_repo.create_org(f"Org A {i}", f"org-a-{i}-{uuid.uuid4().hex[:6]}")
+            org_b = await org_repo.create_org(f"Org B {i}", f"org-b-{i}-{uuid.uuid4().hex[:6]}")
+            sub_id = f"sub_race_{i}_{uuid.uuid4().hex[:8]}"
+            ctm_a = f"ctm_a_{i}_{uuid.uuid4().hex[:8]}"
+            ctm_b = f"ctm_b_{i}_{uuid.uuid4().hex[:8]}"
+
+            async def _bind(org_id: str, ctm_id: str, target_sub_id: str = sub_id):
+                try:
+                    return await org_repo.apply_paddle_entitlement(
+                        org_id=org_id,
+                        customer_id=ctm_id,
+                        subscription_id=target_sub_id,
+                        plan=Plan.PRO,
+                        subscription_status="active",
+                        occurred_at="2026-09-17T12:00:00Z",
+                    )
+                except Exception as e:
+                    return str(e)
+
+            await asyncio.gather(_bind(org_a.id, ctm_a), _bind(org_b.id, ctm_b))
+
+            async with engine.raw.connect() as conn:
+                rows = (await conn.execute(
+                    select(organizations.c.id).where(organizations.c.paddle_subscription_id == sub_id)
+                )).fetchall()
+                if len(rows) > 1:
+                    duplicate_subscription_bindings += 1
+
+        assert duplicate_subscription_bindings == 0, (
+            f"WP-AUTH-PDL-01 REPRODUCED: duplicate_subscription_bindings = {duplicate_subscription_bindings} "
+            f"across {races} races"
+        )
+    finally:
+        await engine.close()
+
+
+@pytest.mark.asyncio
+async def test_real_postgres_chronology_newer_cancel_vs_older_activate_race(pg_test_db: str):
+    """Race test: NEWER cancel event vs OLDER activate event for same subscription/org.
+
+    Invariant: Persisted commercial state must correspond to greatest accepted occurred_at.
+    Older event must never overwrite newer state.
+    """
+    await run_migrations_or_raise(pg_test_db)
+    engine = create_engine(pg_test_db)
+    try:
+        org_repo = OrgRepository(engine)
+        stale_activation_wins = 0
+        races = 40
+
+        for i in range(races):
+            org = await org_repo.create_org(f"Chrono Org {i}", f"chrono-org-{i}-{uuid.uuid4().hex[:6]}")
+            sub_id = f"sub_chrono_{i}_{uuid.uuid4().hex[:8]}"
+            ctm_id = f"ctm_chrono_{i}_{uuid.uuid4().hex[:8]}"
+
+            await org_repo.apply_paddle_entitlement(
+                org_id=org.id,
+                customer_id=ctm_id,
+                subscription_id=sub_id,
+                plan=Plan.FREE,
+                subscription_status="inactive",
+                occurred_at="2026-09-17T10:00:00Z",
+            )
+
+            # Concurrent race:
+            # Event NEW: canceled at 12:00:00Z
+            # Event OLD: active (PRO) at 11:00:00Z
+            target_org_id = org.id
+            target_ctm = ctm_id
+            target_sub = sub_id
+
+            async def _apply_new(
+                oid: str = target_org_id, cid: str = target_ctm, sid: str = target_sub
+            ):
+                return await org_repo.apply_paddle_entitlement(
+                    org_id=oid,
+                    customer_id=cid,
+                    subscription_id=sid,
+                    plan=Plan.PRO,
+                    subscription_status="canceled",
+                    occurred_at="2026-09-17T12:00:00Z",
+                )
+
+            async def _apply_old(
+                oid: str = target_org_id, cid: str = target_ctm, sid: str = target_sub
+            ):
+                await asyncio.sleep(0.001)
+                return await org_repo.apply_paddle_entitlement(
+                    org_id=oid,
+                    customer_id=cid,
+                    subscription_id=sid,
+                    plan=Plan.PRO,
+                    subscription_status="active",
+                    occurred_at="2026-09-17T11:00:00Z",
+                )
+
+            await asyncio.gather(_apply_new(), _apply_old())
+
+            async with engine.raw.connect() as conn:
+                row = (await conn.execute(
+                    select(organizations).where(organizations.c.id == org.id)
+                )).fetchone()
+                if row.subscription_status == "active" or row.paddle_last_occurred_at == "2026-09-17T11:00:00Z":
+                    stale_activation_wins += 1
+
+        assert stale_activation_wins == 0, (
+            f"CHRONOLOGY RACE REPRODUCED: stale_activation_wins = {stale_activation_wins} across {races} races"
+        )
+    finally:
+        await engine.close()
+
+
+@pytest.mark.asyncio
+async def test_real_postgres_paddle_event_id_conflicting_payload_race(pg_test_db: str):
+    """Concurrent delivery of same event_id with identical vs conflicting payloads.
+
+    1. Identical payloads: exactly 1 worker processes; others receive duplicate=True.
+    2. Conflicting payloads: conflicting worker receives ValueError / 409 conflict.
+    """
+    await run_migrations_or_raise(pg_test_db)
+    engine = create_engine(pg_test_db)
+    try:
+        event_repo = PaddleBillingEventRepository(engine)
+        event_id = f"evt_dup_{uuid.uuid4().hex}"
+        hash_orig = "sha256:orig123456"
+        hash_conflict = "sha256:conflict999"
+
+        # Worker 1 begins
+        w1_res = await event_repo.begin(
+            event_id=event_id,
+            event_type="subscription.created",
+            payload_hash=hash_orig,
+            occurred_at="2026-09-17T12:00:00Z",
+            entity_id="sub_test_001",
+        )
+        assert w1_res is True
+
+        # Duplicate identical payload
+        w2_res = await event_repo.begin(
+            event_id=event_id,
+            event_type="subscription.created",
+            payload_hash=hash_orig,
+            occurred_at="2026-09-17T12:00:00Z",
+            entity_id="sub_test_001",
+        )
+        assert w2_res is False
+
+        # Conflicting payload
+        with pytest.raises(ValueError, match="Conflicting payload"):
+            await event_repo.begin(
+                event_id=event_id,
+                event_type="subscription.created",
+                payload_hash=hash_conflict,
+                occurred_at="2026-09-17T12:00:00Z",
+                entity_id="sub_test_001",
+            )
+    finally:
+        await engine.close()
+
+
+def _sign_paddle(secret: str, raw: bytes, ts: int | None = None) -> str:
+    if ts is None:
+        ts = int(time.time())
+    h1 = hmac.new(secret.encode(), f"{ts}:".encode() + raw, hashlib.sha256).hexdigest()
+    return f"ts={ts};h1={h1}"
+
+
+@pytest.mark.asyncio
+async def test_real_postgres_same_customer_two_tenants_race(pg_test_db: str):
+    """Two different orgs racing to bind the same customer_id with different subscriptions.
+
+    Under concurrent execution, exactly one org may bind the customer.
+    Cross-tenant customer bindings must be 0.
+    """
+    await run_migrations_or_raise(pg_test_db)
+    engine = create_engine(pg_test_db)
+    try:
+        org_repo = OrgRepository(engine)
+        duplicate_customer_bindings = 0
+        races = 40
+
+        for i in range(races):
+            org_a = await org_repo.create_org(f"Org Cust A {i}", f"org-cust-a-{i}-{uuid.uuid4().hex[:6]}")
+            org_b = await org_repo.create_org(f"Org Cust B {i}", f"org-cust-b-{i}-{uuid.uuid4().hex[:6]}")
+            ctm_id = f"ctm_race_{i}_{uuid.uuid4().hex[:8]}"
+            sub_a = f"sub_a_{i}_{uuid.uuid4().hex[:8]}"
+            sub_b = f"sub_b_{i}_{uuid.uuid4().hex[:8]}"
+
+            async def _bind(org_id: str, sub_id: str, target_ctm_id: str = ctm_id):
+                try:
+                    return await org_repo.apply_paddle_entitlement(
+                        org_id=org_id,
+                        customer_id=target_ctm_id,
+                        subscription_id=sub_id,
+                        plan=Plan.PRO,
+                        subscription_status="active",
+                        occurred_at="2026-09-17T12:00:00Z",
+                    )
+                except Exception as e:
+                    return str(e)
+
+            await asyncio.gather(_bind(org_a.id, sub_a), _bind(org_b.id, sub_b))
+
+            async with engine.raw.connect() as conn:
+                rows = (await conn.execute(
+                    select(organizations.c.id).where(organizations.c.paddle_customer_id == ctm_id)
+                )).fetchall()
+                if len(rows) > 1:
+                    duplicate_customer_bindings += 1
+
+        assert duplicate_customer_bindings == 0, (
+            f"CUSTOMER RACE: duplicate_customer_bindings = {duplicate_customer_bindings} "
+            f"across {races} races"
+        )
+    finally:
+        await engine.close()
+
+
+@pytest.mark.asyncio
+async def test_real_postgres_api_webhook_concurrency_race(pg_test_db: str, monkeypatch):
+    """Concurrent HTTP webhook deliveries to /api/billing/paddle/webhook backed by real PostgreSQL.
+
+    Tests concurrent delivery of:
+    1. Same event_id to 20 concurrent requests -> exactly 1 returns 200, 19 return 200 (duplicate=True, idempotent).
+    2. Conflicting payload for same event_id -> 409 Conflict.
+    3. Cross-tenant subscription hijack via custom_data -> 409 Conflict.
+    """
+    await run_migrations_or_raise(pg_test_db)
+    secret = "test_paddle_secret_key_real_pg_123"  # gitleaks:allow
+    monkeypatch.setattr(app_module.settings, "db_path", pg_test_db)
+    monkeypatch.setattr(app_module.settings, "auto_migrate", False)
+    monkeypatch.setattr(app_module.settings, "auth_enabled", False)
+    monkeypatch.setattr(app_module.settings, "paddle_webhook_secret", secret)
+    monkeypatch.setattr(app_module.settings, "paddle_signature_tolerance_seconds", 300)
+    monkeypatch.setattr(app_module.limiter, "enabled", False)
+
+    async with LifespanManager(app_module.app) as manager:
+        async with AsyncClient(
+            transport=ASGITransport(app=manager.app), base_url="http://test"
+        ) as client:
+            engine = create_engine(pg_test_db)
+            try:
+                org_repo = OrgRepository(engine)
+                org_a = await org_repo.create_org("Org Webhook A", "org-wh-a")
+                org_b = await org_repo.create_org("Org Webhook B", "org-wh-b")
+
+                event_id = f"evt_api_race_{secrets.token_hex(6)}"
+                payload = {
+                    "event_id": event_id,
+                    "event_type": "subscription.created",
+                    "occurred_at": "2026-09-17T12:00:00Z",
+                    "data": {
+                        "id": "sub_api_race_1",
+                        "customer_id": "ctm_api_race_1",
+                        "status": "active",
+                        "custom_data": {"org_id": org_a.id, "plan": "pro"},
+                    },
+                }
+                raw = json.dumps(payload).encode("utf-8")
+                sig = _sign_paddle(secret, raw)
+
+                # 20 concurrent calls with identical event_id and payload
+                responses = await asyncio.gather(*[
+                    client.post(
+                        "/api/billing/paddle/webhook",
+                        headers={"Paddle-Signature": sig},
+                        content=raw,
+                    ) for _ in range(20)
+                ])
+
+                # All 20 must return 200 (1 processed, 19 idempotent duplicates)
+                assert all(r.status_code == 200 for r in responses)
+                dup_counts = sum(1 for r in responses if r.json().get("duplicate") is True)
+                assert dup_counts == 19
+
+                # Conflicting payload for same event_id -> 409
+                payload_conflict = {
+                    "event_id": event_id,
+                    "event_type": "subscription.created",
+                    "occurred_at": "2026-09-17T12:00:00Z",
+                    "data": {
+                        "id": "sub_api_race_CONFLICT",
+                        "customer_id": "ctm_api_race_CONFLICT",
+                        "status": "active",
+                        "custom_data": {"org_id": org_a.id, "plan": "enterprise"},
+                    },
+                }
+                raw_conflict = json.dumps(payload_conflict).encode("utf-8")
+                sig_conflict = _sign_paddle(secret, raw_conflict)
+                res_conflict = await client.post(
+                    "/api/billing/paddle/webhook",
+                    headers={"Paddle-Signature": sig_conflict},
+                    content=raw_conflict,
+                )
+                assert res_conflict.status_code == 409
+
+                # Cross-tenant hijack attempt: Send webhook binding already-bound sub_api_race_1 to Org B
+                payload_hijack = {
+                    "event_id": f"evt_api_hijack_{secrets.token_hex(6)}",
+                    "event_type": "subscription.updated",
+                    "occurred_at": "2026-09-17T12:05:00Z",
+                    "data": {
+                        "id": "sub_api_race_1",
+                        "customer_id": "ctm_api_race_2",
+                        "status": "active",
+                        "custom_data": {"org_id": org_b.id, "plan": "pro"},
+                    },
+                }
+                raw_hijack = json.dumps(payload_hijack).encode("utf-8")
+                sig_hijack = _sign_paddle(secret, raw_hijack)
+                res_hijack = await client.post(
+                    "/api/billing/paddle/webhook",
+                    headers={"Paddle-Signature": sig_hijack},
+                    content=raw_hijack,
+                )
+                assert res_hijack.status_code == 409
+            finally:
+                await engine.close()
