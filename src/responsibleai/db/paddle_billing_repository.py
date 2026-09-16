@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import insert, select, update
+from sqlalchemy.exc import IntegrityError
 
 from responsibleai.db.engine import DatabaseEngine, paddle_webhook_events
 
@@ -26,6 +27,8 @@ class PaddleBillingEventRepository:
         event_type: str,
         payload_hash: str,
         org_id: str | None = None,
+        occurred_at: str | None = None,
+        entity_id: str | None = None,
     ) -> bool:
         """Record the receipt of a Paddle webhook event atomically.
 
@@ -33,32 +36,44 @@ class PaddleBillingEventRepository:
         Returns False if this event was already received with the same payload.
         Raises ValueError if an event with the same ID arrives with a different payload hash.
         """
-        async with self._engine.raw.begin() as conn:
-            existing = (
-                await conn.execute(
-                    select(paddle_webhook_events).where(
-                        paddle_webhook_events.c.event_id == event_id
+        try:
+            async with self._engine.raw.begin() as conn:
+                existing = (
+                    await conn.execute(
+                        select(paddle_webhook_events).where(
+                            paddle_webhook_events.c.event_id == event_id
+                        )
                     )
-                )
-            ).fetchone()
-            if existing is not None:
-                if existing.payload_hash != payload_hash:
-                    raise ValueError(
-                        f"Conflicting payload for identical Paddle event ID: {event_id}"
-                    )
-                return False
+                ).fetchone()
+                if existing is not None:
+                    if existing.payload_hash != payload_hash:
+                        raise ValueError(
+                            f"Conflicting payload for identical Paddle event ID: {event_id}"
+                        )
+                    return False
 
-            await conn.execute(
-                insert(paddle_webhook_events).values(
-                    event_id=event_id,
-                    event_type=event_type,
-                    org_id=org_id,
-                    payload_hash=payload_hash,
-                    status="processing",
-                    received_at=_now(),
-                )
-            )
-            return True
+                values: dict[str, Any] = {
+                    "event_id": event_id,
+                    "event_type": event_type,
+                    "org_id": org_id,
+                    "payload_hash": payload_hash,
+                    "status": "processing",
+                    "received_at": _now(),
+                }
+                if "occurred_at" in paddle_webhook_events.c:
+                    values["occurred_at"] = occurred_at
+                if "entity_id" in paddle_webhook_events.c:
+                    values["entity_id"] = entity_id
+
+                await conn.execute(insert(paddle_webhook_events).values(**values))
+                return True
+        except IntegrityError:
+            existing_rec = await self.get(event_id)
+            if existing_rec is not None and existing_rec.get("payload_hash") != payload_hash:
+                raise ValueError(
+                    f"Conflicting payload for identical Paddle event ID: {event_id}"
+                ) from None
+            return False
 
     async def set_org(self, event_id: str, org_id: str) -> None:
         async with self._engine.raw.begin() as conn:

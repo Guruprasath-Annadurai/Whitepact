@@ -289,7 +289,6 @@ async def test_unified_lifecycle_dataset_round_trip(pg_test_db: str) -> None:
     await _run_alembic(ini, env, "upgrade", "0045")
 
     engine = create_engine(pg_test_db)
-    await engine.init()
 
     # Identifiers for the unified dataset
     org_active_id = f"org-act-{uuid.uuid4().hex[:6]}"

@@ -19,7 +19,6 @@ from responsibleai.db.authority_passport_repository import (
 )
 from responsibleai.db.billing_repository import BillingEventRepository
 from responsibleai.db.credential_issuance_repository import CredentialIssuanceRepository
-from responsibleai.db.paddle_billing_repository import PaddleBillingEventRepository
 from responsibleai.db.delegation_repository import (
     DelegationEscalationError,
     DelegationNotFoundError,
@@ -36,6 +35,7 @@ from responsibleai.db.org_authority_ceiling_repository import OrgAuthorityCeilin
 from responsibleai.db.org_autonomy_budget_repository import OrgAutonomyBudgetRepository
 from responsibleai.db.org_repository import OrgRepository, SSORequiredError
 from responsibleai.db.outcome_repository import OutcomeRepository
+from responsibleai.db.paddle_billing_repository import PaddleBillingEventRepository
 from responsibleai.db.passport_repository import PassportRepository
 from responsibleai.db.policy_repository import PolicyRepository, PolicyRuleNotFoundError
 from responsibleai.db.principal_repository import PrincipalRepository

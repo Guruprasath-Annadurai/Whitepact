@@ -75,7 +75,10 @@ def test_one_canonical_alembic_head():
     scripts = ScriptDirectory.from_config(Config(str(ini)))
     heads = scripts.get_heads()
     assert len(heads) == 1, f"Expected exactly 1 alembic head, got {len(heads)}: {heads}"
-    assert heads == ["0046"]
+    assert heads == ["0047"]
+
+    rev_0047 = scripts.get_revision("0047")
+    assert rev_0047.down_revision == "0046"
 
     rev_0046 = scripts.get_revision("0046")
     assert rev_0046.down_revision == "0045"
@@ -108,7 +111,7 @@ async def test_fresh_install_to_head_postgres(pg_disposable_db: str):
     try:
         async with engine.raw.connect() as conn:
             version = (await conn.execute(text("SELECT version_num FROM alembic_version"))).scalar()
-            assert version == "0046"
+            assert version == "0047"
 
         def _get_tables(sync_conn):
             return inspect(sync_conn).get_table_names()
@@ -295,7 +298,7 @@ async def test_upgrade_0042_to_head_preserves_data_and_invariants(pg_disposable_
         # 4. Verify post-upgrade state and security invariants
         async with engine.raw.connect() as conn:
             head_ver = (await conn.execute(text("SELECT version_num FROM alembic_version"))).scalar()
-            assert head_ver == "0046"
+            assert head_ver == "0047"
 
             # Invariant 1: Organizations preserved
             orgs = (await conn.execute(text("SELECT id, name, plan FROM organizations ORDER BY id"))).fetchall()
@@ -477,7 +480,7 @@ async def test_upgrade_0043_to_head_preserves_trust_fabric_and_invariants(pg_dis
         # 3. Verify invariants
         async with engine.raw.connect() as conn:
             head_ver = (await conn.execute(text("SELECT version_num FROM alembic_version"))).scalar()
-            assert head_ver == "0046"
+            assert head_ver == "0047"
 
             # Invariant: Principals preserved and states NOT widened
             prins = (await conn.execute(text("SELECT id, org_id, principal_type, lifecycle_state FROM trust_fabric_principals ORDER BY id"))).fetchall()
@@ -622,7 +625,7 @@ async def test_upgrade_0044_to_head_preserves_iam_and_invariants(pg_disposable_d
         # 3. Verify invariants
         async with engine.raw.connect() as conn:
             head_ver = (await conn.execute(text("SELECT version_num FROM alembic_version"))).scalar()
-            assert head_ver == "0046"
+            assert head_ver == "0047"
 
             # Invariant: Sessions preserved and revoked stays revoked
             sessions = (await conn.execute(text("SELECT id, org_id, status, revoked_at FROM iam_sessions ORDER BY id"))).fetchall()
@@ -716,7 +719,7 @@ async def test_downgrade_and_reupgrade_idempotence(pg_disposable_db: str):
 
         async with engine.raw.connect() as conn:
             head_ver = (await conn.execute(text("SELECT version_num FROM alembic_version"))).scalar()
-            assert head_ver == "0046"
+            assert head_ver == "0047"
 
             # Verify 0044 data remains clean
             sess = (await conn.execute(text("SELECT id, org_id, status FROM iam_sessions WHERE id = 'sess_rt'"))).fetchone()

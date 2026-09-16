@@ -101,6 +101,11 @@ def validate_schema_lineage(connection: Connection) -> None:
                 "paddle_subscription_id",
                 "entitlement_version",
                 "entitlement_updated_at",
+                "paddle_last_occurred_at",
             }
             if not expected_entitlement_cols <= cols:
                 raise SchemaLineageError("Canonical entitlement columns are missing")
+            if "iam_step_up_nonces" in tables:
+                nonce_cols = {c["name"] for c in inspector.get_columns("iam_step_up_nonces")}
+                if "session_id" not in nonce_cols:
+                    raise SchemaLineageError("Canonical step-up session_id column is missing")

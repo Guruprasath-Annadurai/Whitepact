@@ -102,9 +102,11 @@ organizations = Table(
     Column("paddle_subscription_id", String(64), nullable=True),
     Column("entitlement_version", Integer, nullable=False, default=0),
     Column("entitlement_updated_at", String(32), nullable=True),
+    Column("paddle_last_occurred_at", String(36), nullable=True),
     Index("idx_org_slug", "slug"),
     Index("idx_org_stripe_customer", "stripe_customer_id"),
     Index("idx_org_paddle_customer", "paddle_customer_id", unique=True),
+    Index("idx_org_paddle_subscription", "paddle_subscription_id"),
 )
 
 mcp_tool_calls = Table(
@@ -285,6 +287,8 @@ paddle_webhook_events = Table(
     metadata,
     Column("event_id", String(100), primary_key=True),
     Column("event_type", String(100), nullable=False),
+    Column("occurred_at", String(36), nullable=True),
+    Column("entity_id", String(100), nullable=True),
     Column("org_id", String(36), nullable=True),
     Column("payload_hash", String(64), nullable=False),
     Column("status", String(32), nullable=False, default="processing"),
@@ -1573,6 +1577,7 @@ iam_step_up_nonces = Table(
     Column("id", String(64), primary_key=True),
     Column("org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
     Column("principal_id", String(64), nullable=False),
+    Column("session_id", String(128), nullable=True),
     Column("nonce_hash", String(64), nullable=False, unique=True),
     Column("action", String(64), nullable=False),
     Column("target_resource_id", String(128), nullable=True),

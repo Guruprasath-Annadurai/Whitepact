@@ -194,6 +194,7 @@ addopts      = "--cov=src/responsibleai --cov=src/biasbuster --cov=src/privacyla
 target-version = "py311"
 line-length    = 100
 src            = ["src", "tests"]
+exclude        = ["examples", "scripts"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "N"]

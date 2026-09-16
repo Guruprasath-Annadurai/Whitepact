@@ -17,14 +17,17 @@ import unicodedata
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
-import sqlalchemy as sa
-from sqlalchemy import delete, func, insert, select, update
+from sqlalchemy import delete, func, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
+from responsibleai.data_governance.legal_hold import LegalHoldActiveError, LegalHoldManager
 from responsibleai.db.engine import (
     DatabaseEngine,
+    iam_sessions,
     oauth_flow_states,
+    org_api_keys,
     organizations,
     web_identity_providers,
     web_invitations,
@@ -453,33 +456,6 @@ class WebIdentityRepository:
             ).fetchall()
         return [dict(row._mapping) for row in rows]
 
-    async def list_members(self, org_id: str) -> list[dict[str, str]]:
-        async with self._engine.raw.connect() as conn:
-            rows = (
-                await conn.execute(
-                    select(
-                        web_users.c.id,
-                        web_users.c.full_name,
-                        web_users.c.email,
-                        web_memberships.c.role,
-                        web_memberships.c.created_at,
-                    )
-                    .join(web_memberships, web_memberships.c.user_id == web_users.c.id)
-                    .where(web_memberships.c.org_id == org_id)
-                    .order_by(web_memberships.c.created_at)
-                )
-            ).fetchall()
-        return [
-            {
-                "id": row.id,
-                "full_name": row.full_name,
-                "email": row.email,
-                "role": row.role,
-                "joined_at": row.created_at,
-            }
-            for row in rows
-        ]
-
     async def revoke_all_sessions(self, user_id: str) -> int:
         async with self._engine.raw.begin() as conn:
             result = await conn.execute(
@@ -780,15 +756,35 @@ class WebIdentityRepository:
     async def disable_account(self, user_id: str) -> bool:
         """Disable and pseudonymize a human account while retaining security evidence.
 
-        Refuses deletion if user is the sole owner of an active organization.
+        Refuses deletion if user is the sole owner of an active organization
+        or if any associated organization is under active legal hold.
         """
         if await self.is_sole_owner_of_any_org(user_id):
             raise SoleOwnerError(
                 "Cannot delete account while being the sole owner of an organization. "
                 "Transfer ownership or delete the organization first."
             )
+
+        org_list = await self.list_organizations(user_id)
+        legal_hold_mgr = LegalHoldManager(self._engine)
+        for org in org_list:
+            if await legal_hold_mgr.is_held(org["id"]):
+                raise LegalHoldActiveError(
+                    f"Cannot delete account: Organization '{org['name']}' ({org['id']}) is under an active legal hold."
+                )
+
         now = _now()
         async with self._engine.raw.begin() as conn:
+            # Find user's original email and session token hashes
+            user_row = (await conn.execute(
+                select(web_users.c.email).where(web_users.c.id == user_id)
+            )).first()
+            old_email = user_row[0] if user_row else ""
+
+            sess_rows = (await conn.execute(
+                select(web_sessions.c.token_hash).where(web_sessions.c.user_id == user_id)
+            )).scalars().all()
+
             result = await conn.execute(
                 update(web_users)
                 .where(web_users.c.id == user_id, web_users.c.disabled == 0)
@@ -802,18 +798,98 @@ class WebIdentityRepository:
             )
             if not result.rowcount:
                 return False
+
+            # 1. Revoke all web sessions
             await conn.execute(update(web_sessions).where(web_sessions.c.user_id == user_id).values(revoked=1))
+
+            # 2. Invalidate OAuth flow states associated with user's sessions
+            if sess_rows:
+                await conn.execute(
+                    delete(oauth_flow_states).where(oauth_flow_states.c.session_id.in_(sess_rows))
+                )
+
+            # 3. Revoke IAM sessions
+            await conn.execute(
+                update(iam_sessions)
+                .where(iam_sessions.c.principal_id == user_id)
+                .values(status="REVOKED", revoked_at=_iso(now))
+            )
+
+            # 4. Revoke user's API keys
+            await conn.execute(
+                update(org_api_keys)
+                .where(or_(org_api_keys.c.id == user_id, org_api_keys.c.name.like(f"%{user_id}%")))
+                .values(revoked=1)
+            )
+
+            # 5. Invalidate verification and password reset tokens
             await conn.execute(delete(web_verification_tokens).where(web_verification_tokens.c.user_id == user_id))
+
+            # 6. Invalidate pending invitations (sent to user or created by user)
+            if old_email:
+                await conn.execute(
+                    update(web_invitations)
+                    .where(or_(web_invitations.c.invited_by_user_id == user_id, web_invitations.c.email == old_email))
+                    .values(status="REVOKED")
+                )
+            else:
+                await conn.execute(
+                    update(web_invitations)
+                    .where(web_invitations.c.invited_by_user_id == user_id)
+                    .values(status="REVOKED")
+                )
+
+            # 7. Delete provider linkages and memberships
             await conn.execute(delete(web_identity_providers).where(web_identity_providers.c.user_id == user_id))
             await conn.execute(delete(web_memberships).where(web_memberships.c.user_id == user_id))
         return True
 
     async def link_provider_identity(
-        self, *, user_id: str, issuer: str, subject: str, email: str | None
+        self,
+        *,
+        user_id: str,
+        issuer: str,
+        subject: str,
+        email: str | None,
+        email_verified: bool = True,
+        tenant_id: str | None = None,
     ) -> None:
         if not issuer or not subject:
             raise ValueError("OIDC issuer and subject are required")
+        if not email_verified:
+            raise ValueError("Cannot link provider identity with unverified email")
+
         async with self._engine.raw.begin() as conn:
+            # 1. Target user must exist and not be disabled
+            u_row = (await conn.execute(
+                select(web_users.c.id, web_users.c.disabled).where(web_users.c.id == user_id)
+            )).first()
+            if not u_row or u_row.disabled:
+                raise ValueError("Target user does not exist or is disabled")
+
+            # 2. Check if (issuer, subject) is already linked
+            existing = (await conn.execute(
+                select(web_identity_providers.c.user_id).where(
+                    web_identity_providers.c.issuer == issuer,
+                    web_identity_providers.c.subject == subject,
+                )
+            )).first()
+            if existing is not None:
+                if existing.user_id != user_id:
+                    raise ValueError("Provider identity is already linked to a different account")
+                return  # Idempotent re-link for same user
+
+            # 3. Cross-tenant check: if tenant_id given, verify membership
+            if tenant_id:
+                m_row = (await conn.execute(
+                    select(web_memberships.c.id).where(
+                        web_memberships.c.user_id == user_id,
+                        web_memberships.c.org_id == tenant_id,
+                    )
+                )).first()
+                if not m_row:
+                    raise ValueError(f"User is not a member of organization {tenant_id}")
+
             await conn.execute(
                 insert(web_identity_providers).values(
                     id=str(uuid.uuid4()),
@@ -872,25 +948,30 @@ class WebIdentityRepository:
         self,
         state: str,
         expected_provider: str | None = None,
+        expected_session_id: str | None = None,
+        expected_tenant_id: str | None = None,
     ) -> dict[str, Any] | None:
         state_hash = hashlib.sha256(state.encode("utf-8")).hexdigest()
         now = _now()
         now_iso = _iso(now)
         async with self._engine.raw.begin() as conn:
-            row = (
-                await conn.execute(
-                    select(oauth_flow_states).where(
-                        oauth_flow_states.c.state_hash == state_hash,
-                        oauth_flow_states.c.consumed_at.is_(None),
-                        oauth_flow_states.c.expires_at > now_iso,
-                    )
-                )
-            ).fetchone()
+            stmt = select(oauth_flow_states).where(
+                oauth_flow_states.c.state_hash == state_hash,
+                oauth_flow_states.c.consumed_at.is_(None),
+                oauth_flow_states.c.expires_at > now_iso,
+            )
+            if self._engine.raw.dialect.name == "postgresql":
+                stmt = stmt.with_for_update()
+            row = (await conn.execute(stmt)).fetchone()
             if row is None:
                 return None
             if expected_provider and row.provider != expected_provider:
                 return None
-            await conn.execute(
+            if expected_tenant_id and row.tenant_id and row.tenant_id != expected_tenant_id:
+                return None
+            if row.session_id and expected_session_id != row.session_id:
+                return None
+            res = await conn.execute(
                 update(oauth_flow_states)
                 .where(
                     oauth_flow_states.c.state_hash == state_hash,
@@ -898,6 +979,8 @@ class WebIdentityRepository:
                 )
                 .values(consumed_at=now_iso)
             )
+            if not res.rowcount:
+                return None
             return {
                 "provider": row.provider,
                 "tenant_id": row.tenant_id,

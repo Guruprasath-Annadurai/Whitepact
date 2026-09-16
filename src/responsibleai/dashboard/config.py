@@ -418,6 +418,10 @@ class Settings(BaseSettings):
         default=None,
         description="Paddle Price ID for the ENTERPRISE plan subscription.",
     )
+    paddle_signature_tolerance_seconds: int = Field(
+        default=300,
+        description="Paddle webhook signature timestamp drift tolerance in seconds.",
+    )
 
     # Browser identity. Human sessions are deliberately independent from
     # workload API keys and use hashed opaque tokens in Secure cookies.

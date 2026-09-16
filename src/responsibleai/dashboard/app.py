@@ -9,6 +9,7 @@ import base64
 import hashlib
 import hmac
 import json
+import os
 import re
 import secrets
 import time
@@ -95,6 +96,7 @@ from responsibleai.dashboard.transactional_email import (
     verification_email,
 )
 from responsibleai.dashboard.websocket_manager import ConnectionManager
+from responsibleai.data_governance.legal_hold import LegalHoldActiveError
 from responsibleai.db import (
     AlreadyVotedError,
     ApprovalActionMismatchError,
@@ -144,13 +146,6 @@ from responsibleai.db import (
     WorkflowRuleRepository,
     create_engine,
 )
-from responsibleai.iam.enums import PrivilegeRiskTier, StepUpMethod
-from responsibleai.iam.errors import (
-    StepUpRequiredError,
-    StepUpVerificationFailedError,
-)
-from responsibleai.iam.models import StepUpProof
-from responsibleai.iam.step_up import StepUpVerifier
 from responsibleai.db.consent_proof_repository import ConsentProofRepository
 from responsibleai.db.engine import DatabaseEngine
 from responsibleai.db.execution_nonce_repository import ExecutionNonceRepository
@@ -198,6 +193,13 @@ from responsibleai.governance.upstream_executor import (
 from responsibleai.governance.workflow import WorkflowSequenceRule
 from responsibleai.guardrails.engine import GuardrailsEngine
 from responsibleai.hallucination.detector import HallucinationDetector
+from responsibleai.iam.enums import PrivilegeRiskTier, StepUpMethod
+from responsibleai.iam.errors import (
+    StepUpRequiredError,
+    StepUpVerificationFailedError,
+)
+from responsibleai.iam.models import StepUpProof
+from responsibleai.iam.step_up import StepUpVerifier
 from responsibleai.incidents.logic import build_incident_record
 from responsibleai.leaderboard.models import METHODOLOGY_VERSION
 from responsibleai.leaderboard.providers import ProviderNotConfiguredError, get_adapter
@@ -1393,6 +1395,12 @@ async def _verify_web_step_up(
     risk_tier: PrivilegeRiskTier,
     body_dict: dict[str, Any] | None = None,
 ) -> None:
+    session_token = request.cookies.get("wp_session")
+    session_id = (
+        hashlib.sha256(session_token.encode("utf-8")).hexdigest()
+        if session_token
+        else None
+    )
     proof = _extract_step_up_proof(request, body_dict)
     verifier = StepUpVerifier(_ready(_db_engine))
     try:
@@ -1402,6 +1410,7 @@ async def _verify_web_step_up(
             action=action,
             risk_tier=risk_tier,
             proof=proof,
+            session_id=session_id,
         )
     except StepUpRequiredError as exc:
         raise HTTPException(
@@ -1957,7 +1966,7 @@ async def web_delete_account(
 
     try:
         disabled = await _ready(_web_identity_repo).disable_account(principal.user_id)
-    except SoleOwnerError as exc:
+    except (SoleOwnerError, LegalHoldActiveError) as exc:
         raise HTTPException(
             409,
             str(exc),
@@ -3174,13 +3183,16 @@ async def paddle_webhook(request: Request) -> dict[str, Any]:
     try:
         ts = int(ts_str)
     except ValueError:
-        raise HTTPException(400, "Invalid timestamp in Paddle-Signature header.")
+        raise HTTPException(400, "Invalid timestamp in Paddle-Signature header.") from None
 
+    tolerance = getattr(settings, "paddle_signature_tolerance_seconds", 300)
     now_ts = int(datetime.now(UTC).timestamp())
-    if abs(now_ts - ts) > 300:
-        raise HTTPException(400, "Paddle webhook signature has expired (>5 min).")
+    if (now_ts - ts) > tolerance:
+        raise HTTPException(400, f"Paddle webhook signature has expired (> {tolerance}s).")
+    if (ts - now_ts) > tolerance:
+        raise HTTPException(400, f"Paddle webhook signature timestamp is in the future (> {tolerance}s).")
 
-    signed_payload = f"{ts_str}:".encode("utf-8") + raw_body
+    signed_payload = f"{ts_str}:".encode() + raw_body
     computed_sig = hmac.new(secret_key.encode("utf-8"), signed_payload, hashlib.sha256).hexdigest()
     if not hmac.compare_digest(computed_sig, h1):
         raise HTTPException(400, "Invalid Paddle webhook signature.")
@@ -3195,10 +3207,24 @@ async def paddle_webhook(request: Request) -> dict[str, Any]:
     if not event_id:
         raise HTTPException(400, "Paddle event_id is required.")
 
+    occurred_at = payload.get("occurred_at")
+    if not occurred_at or not isinstance(occurred_at, str):
+        raise HTTPException(400, "Missing occurred_at in Paddle webhook payload.")
+
+    data = payload.get("data", {})
+    if not isinstance(data, dict):
+        data = {}
+
+    subscription_id = data.get("id")
+    customer_id = data.get("customer_id")
+    entity_id = subscription_id or customer_id or event_id
+
     payload_hash = hashlib.sha256(raw_body).hexdigest()
 
     try:
-        is_new = await _ready(_paddle_event_repo).begin(event_id, event_type, payload_hash)
+        is_new = await _ready(_paddle_event_repo).begin(
+            event_id, event_type, payload_hash, occurred_at=occurred_at, entity_id=entity_id
+        )
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
 
@@ -3206,24 +3232,44 @@ async def paddle_webhook(request: Request) -> dict[str, Any]:
         return {"received": True, "processed": False, "duplicate": True}
 
     try:
-        data = payload.get("data", {})
-        customer_id = data.get("customer_id")
-        subscription_id = data.get("id")
-        status = str(data.get("status", "inactive")).casefold()
+        custom_org_id = data.get("custom_data", {}).get("org_id") if isinstance(data.get("custom_data"), dict) else None
 
-        org_id = data.get("custom_data", {}).get("org_id")
-        if not org_id and customer_id:
-            org = await _ready(_org_repo).get_org_by_paddle_customer(customer_id)
-            if org:
-                org_id = org.id
+        # Cross-tenant reassignment protection: verify existing customer/subscription mappings
+        cust_org = await _ready(_org_repo).get_org_by_paddle_customer(customer_id) if customer_id else None
+        sub_org = await _ready(_org_repo).get_org_by_paddle_subscription(subscription_id) if subscription_id else None
+
+        if cust_org and custom_org_id and custom_org_id != cust_org.id:
+            raise HTTPException(409, f"Paddle customer is already bound to org {cust_org.id}; cannot reassign to {custom_org_id}.")
+        if sub_org and custom_org_id and custom_org_id != sub_org.id:
+            raise HTTPException(409, f"Paddle subscription is already bound to org {sub_org.id}; cannot reassign to {custom_org_id}.")
+        if cust_org and sub_org and cust_org.id != sub_org.id:
+            raise HTTPException(409, "Paddle customer and subscription are bound to conflicting organizations.")
+
+        org_id = custom_org_id or (cust_org.id if cust_org else (sub_org.id if sub_org else None))
 
         if not org_id:
             await _ready(_paddle_event_repo).complete(event_id, org_id=None)
             return {"received": True, "processed": False, "unmapped_org": True}
 
+        # Verify target org exists and is not tombstoned
+        org = await _ready(_org_repo).get_org(org_id)
+        if org is None:
+            raise HTTPException(404, f"Organization '{org_id}' not found.")
+
+        async with _ready(_db_engine).raw.begin() as conn:
+            from sqlalchemy import select
+
+            from responsibleai.db.engine import tenant_tombstones
+            ts_row = (await conn.execute(
+                select(tenant_tombstones.c.id).where(tenant_tombstones.c.org_id == org_id)
+            )).first()
+            if ts_row is not None:
+                raise HTTPException(409, f"Cannot apply entitlement: organization '{org_id}' is tombstoned.")
+
         await _ready(_paddle_event_repo).set_org(event_id, org_id)
 
-        custom_plan = data.get("custom_data", {}).get("plan")
+        status = str(data.get("status", "inactive")).casefold()
+        custom_plan = data.get("custom_data", {}).get("plan") if isinstance(data.get("custom_data"), dict) else None
         if custom_plan:
             try:
                 plan = Plan(str(custom_plan).upper())
@@ -3232,19 +3278,33 @@ async def paddle_webhook(request: Request) -> dict[str, Any]:
         else:
             plan = Plan.PRO if status in {"active", "trialing"} else Plan.FREE
 
-        event_version = int(payload.get("event_version") or ts)
-        occurred_at = payload.get("occurred_at") or datetime.now(UTC).isoformat()
+        if not customer_id:
+            customer_id = org.paddle_customer_id or f"ctm_inferred_{org_id}"
 
-        await _ready(_org_repo).apply_paddle_entitlement(
+        applied = await _ready(_org_repo).apply_paddle_entitlement(
             org_id=org_id,
             customer_id=customer_id,
             subscription_id=subscription_id,
             plan=plan,
             subscription_status=status,
-            event_version=event_version,
+            occurred_at=occurred_at,
             updated_at=occurred_at,
         )
+        if not applied:
+            await _ready(_paddle_event_repo).complete(event_id, org_id=org_id)
+            return {"received": True, "processed": False, "stale_event_ignored": True}
+
         await _ready(_paddle_event_repo).complete(event_id, org_id=org_id)
+    except HTTPException:
+        await _ready(_paddle_event_repo).fail(event_id, "HTTP error during processing")
+        raise
+    except ValueError as exc:
+        await _ready(_paddle_event_repo).fail(event_id, str(exc))
+        if "tombstoned" in str(exc).lower() or "already bound" in str(exc).lower():
+            raise HTTPException(409, str(exc)) from exc
+        if "not found" in str(exc).lower():
+            raise HTTPException(404, str(exc)) from exc
+        raise HTTPException(400, str(exc)) from exc
     except Exception as exc:
         await _ready(_paddle_event_repo).fail(event_id, str(exc))
         raise
@@ -5851,7 +5911,11 @@ async def list_auth_providers() -> dict[str, Any]:
 
 
 @app.get("/api/auth/login/{provider_id}", tags=["auth"])
-async def auth_login(provider_id: str, redirect_uri: str = "") -> JSONResponse:
+async def auth_login(
+    request: Request,
+    provider_id: str,
+    redirect_uri: str = "",
+) -> Response:
     """Initiate SSO login — OAuth2 authorization code flow for ``oidc``,
     or a SAML AuthnRequest redirect for ``saml``."""
     if provider_id == "oidc":
@@ -5868,6 +5932,13 @@ async def auth_login(provider_id: str, redirect_uri: str = "") -> JSONResponse:
             .rstrip("=")
         )
         target_redirect = settings.oidc_redirect_uri
+
+        initiating_session = request.cookies.get("wp_session")
+        oauth_tx = request.cookies.get("wp_oauth_tx") or (
+            _web_token_hash(initiating_session) if initiating_session else secrets.token_urlsafe(32)
+        )
+        bound_session_id = _web_token_hash(oauth_tx)
+
         await _ready(_web_identity_repo).create_oauth_flow_state(
             state=state,
             provider="oidc",
@@ -5875,6 +5946,7 @@ async def auth_login(provider_id: str, redirect_uri: str = "") -> JSONResponse:
             redirect_uri=target_redirect,
             pkce_verifier=code_verifier,
             ttl_seconds=300,
+            session_id=bound_session_id,
         )
         url = _oidc_provider.authorization_url(
             redirect_uri=target_redirect,
@@ -5883,7 +5955,17 @@ async def auth_login(provider_id: str, redirect_uri: str = "") -> JSONResponse:
             nonce=nonce,
             code_challenge=challenge,
         )
-        return JSONResponse({"authorization_url": url, "state": state})
+        resp = JSONResponse({"authorization_url": url, "state": state})
+        resp.set_cookie(
+            "wp_oauth_tx",
+            oauth_tx,
+            httponly=True,
+            samesite="lax",
+            secure=settings.web_session_secure,
+            path="/",
+            max_age=300,
+        )
+        return resp
 
     if provider_id == "saml":
         if not _saml_config:
@@ -5953,6 +6035,7 @@ async def saml_acs(request: Request) -> Response:
 
 @app.get("/api/auth/callback", tags=["auth"])
 async def auth_callback(
+    request: Request,
     code: str = Query(...),
     state: str = Query(...),
 ) -> Response:
@@ -5963,8 +6046,14 @@ async def auth_callback(
     if not _oidc_provider:
         raise HTTPException(501, "OIDC not configured")
 
+    initiating_session = request.cookies.get("wp_session")
+    oauth_tx = request.cookies.get("wp_oauth_tx") or (
+        _web_token_hash(initiating_session) if initiating_session else None
+    )
+    expected_session_id = _web_token_hash(oauth_tx) if oauth_tx else None
+
     state_record = await _ready(_web_identity_repo).consume_oauth_flow_state(
-        state, expected_provider="oidc"
+        state, expected_provider="oidc", expected_session_id=expected_session_id
     )
     if state_record is None:
         raise HTTPException(400, "Invalid or expired OAuth2 state parameter")
@@ -6003,7 +6092,9 @@ async def auth_callback(
     fragment = (
         f"token={quote(access_token)}&name={quote(claims.name or claims.email or claims.sub)}"
     )
-    return RedirectResponse(url=f"/auth/complete#{fragment}", status_code=302)
+    redirect_resp = RedirectResponse(url=f"/auth/complete#{fragment}", status_code=302)
+    redirect_resp.delete_cookie("wp_oauth_tx", path="/")
+    return redirect_resp
 
 
 @app.post("/api/auth/logout", tags=["auth"])

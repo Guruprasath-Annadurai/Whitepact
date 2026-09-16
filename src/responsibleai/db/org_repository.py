@@ -67,11 +67,41 @@ class SSORequiredError(Exception):
         )
 
 
+_BASE_ORG_COLUMNS = (
+    organizations.c.id,
+    organizations.c.name,
+    organizations.c.slug,
+    organizations.c.monthly_budget_usd,
+    organizations.c.created_at,
+    organizations.c.plan,
+    organizations.c.stripe_customer_id,
+    organizations.c.stripe_subscription_id,
+    organizations.c.plan_renews_at,
+    organizations.c.subscription_status,
+    organizations.c.sso_required,
+    organizations.c.mfa_required,
+    organizations.c.provisioner_key_id,
+)
+
+
 class OrgRepository:
     """CRUD operations for organizations and their API keys."""
 
     def __init__(self, engine: DatabaseEngine) -> None:
         self._engine = engine
+
+    async def _execute_org_select(self, conn: Any, where_clause: Any = None) -> Any:
+        stmt = select(organizations)
+        if where_clause is not None:
+            stmt = stmt.where(where_clause)
+        try:
+            return await conn.execute(stmt)
+        except Exception:
+            await conn.rollback()
+            fallback_stmt = select(*_BASE_ORG_COLUMNS).select_from(organizations)
+            if where_clause is not None:
+                fallback_stmt = fallback_stmt.where(where_clause)
+            return await conn.execute(fallback_stmt)
 
     # ── Organizations ─────────────────────────────────────────────────────────
 
@@ -167,13 +197,10 @@ class OrgRepository:
 
     async def get_org_by_stripe_customer(self, stripe_customer_id: str) -> Organization | None:
         async with self._engine.raw.connect() as conn:
-            row = (
-                await conn.execute(
-                    select(organizations).where(
-                        organizations.c.stripe_customer_id == stripe_customer_id
-                    )
-                )
-            ).fetchone()
+            res = await self._execute_org_select(
+                conn, organizations.c.stripe_customer_id == stripe_customer_id
+            )
+            row = res.fetchone()
         return self._row_to_org(row) if row else None
 
     async def get_org_by_paddle_customer(self, paddle_customer_id: str) -> Organization | None:
@@ -187,6 +214,17 @@ class OrgRepository:
             ).fetchone()
         return self._row_to_org(row) if row else None
 
+    async def get_org_by_paddle_subscription(self, paddle_subscription_id: str) -> Organization | None:
+        async with self._engine.raw.connect() as conn:
+            row = (
+                await conn.execute(
+                    select(organizations).where(
+                        organizations.c.paddle_subscription_id == paddle_subscription_id
+                    )
+                )
+            ).fetchone()
+        return self._row_to_org(row) if row else None
+
     async def apply_paddle_entitlement(
         self,
         *,
@@ -194,12 +232,15 @@ class OrgRepository:
         customer_id: str,
         subscription_id: str | None,
         plan: Plan,
-        subscription_status: str,
-        event_version: int,
-        updated_at: str,
+        subscription_status: str = "active",
+        occurred_at: str | None = None,
+        event_version: int = 0,
+        updated_at: str | None = None,
     ) -> bool:
-        """Apply one already signature-verified Paddle event in monotonic order.
+        """Apply one already signature-verified Paddle event in chronological order.
 
+        Uses real Paddle occurred_at timestamp comparison for monotonic ordering.
+        Synthetic event_version is never depended upon.
         This repository method controls commercial features only. It is never
         consulted by Trust, authority, policy, or ExecutionAuthorization.
         """
@@ -207,9 +248,29 @@ class OrgRepository:
             raise ValueError("Paddle customer identity must use a ctm_ identifier")
         if subscription_id is not None and not subscription_id.startswith("sub_"):
             raise ValueError("Paddle subscription identity must use a sub_ identifier")
+        effective_occurred = occurred_at or updated_at
+        if not effective_occurred:
+            raise ValueError("Paddle occurred_at timestamp is required for entitlement updates")
+
         normalized_status = subscription_status.casefold()
         effective_plan = plan if normalized_status in {"active", "trialing"} else Plan.FREE
+
         async with self._engine.raw.begin() as conn:
+            # 1. Verify target org exists and is not tombstoned
+            org_row = (await conn.execute(
+                select(organizations).where(organizations.c.id == org_id)
+            )).first()
+            if org_row is None:
+                raise ValueError(f"Organization '{org_id}' not found")
+
+            # Check tombstone ledger
+            ts = await conn.scalar(
+                select(tenant_tombstones.c.id).where(tenant_tombstones.c.org_id == org_id)
+            )
+            if ts is not None:
+                raise ValueError(f"Cannot apply entitlement: organization '{org_id}' is tombstoned")
+
+            # 2. Prevent commercial identity reassignment across tenants
             existing_customer_org = await conn.scalar(
                 select(organizations.c.id).where(
                     organizations.c.paddle_customer_id == customer_id,
@@ -218,40 +279,65 @@ class OrgRepository:
             )
             if existing_customer_org is not None:
                 raise ValueError("Paddle customer is already bound to another tenant")
-            result = await conn.execute(
+
+            if subscription_id is not None:
+                existing_sub_org = await conn.scalar(
+                    select(organizations.c.id).where(
+                        organizations.c.paddle_subscription_id == subscription_id,
+                        organizations.c.id != org_id,
+                    )
+                )
+                if existing_sub_org is not None:
+                    raise ValueError("Paddle subscription is already bound to another tenant")
+
+            # 3. Chronological chronology check using occurred_at
+            org_map = dict(org_row._mapping)
+            current_occurred_at = org_map.get("paddle_last_occurred_at") or org_map.get("entitlement_updated_at")
+            current_status = org_map.get("subscription_status") or "inactive"
+
+            if current_occurred_at:
+                if effective_occurred < current_occurred_at:
+                    # Out-of-order stale event: safely ignored
+                    return False
+                if effective_occurred == current_occurred_at:
+                    # Equal timestamp fail-safe: never allow reactivation of canceled/paused/past_due
+                    if current_status in {"canceled", "paused", "past_due"} and normalized_status in {"active", "trialing"}:
+                        return False
+
+            values: dict[str, Any] = {
+                "paddle_customer_id": customer_id,
+                "paddle_subscription_id": subscription_id,
+                "plan": effective_plan.value,
+                "subscription_status": normalized_status,
+                "entitlement_updated_at": effective_occurred,
+                "entitlement_version": event_version,
+            }
+            if "paddle_last_occurred_at" in organizations.c:
+                values["paddle_last_occurred_at"] = effective_occurred
+
+            await conn.execute(
                 update(organizations)
-                .where(
-                    organizations.c.id == org_id,
-                    organizations.c.entitlement_version < event_version,
-                )
-                .values(
-                    paddle_customer_id=customer_id,
-                    paddle_subscription_id=subscription_id,
-                    plan=effective_plan.value,
-                    subscription_status=normalized_status,
-                    entitlement_version=event_version,
-                    entitlement_updated_at=updated_at,
-                )
+                .where(organizations.c.id == org_id)
+                .values(**values)
             )
-        return (result.rowcount or 0) > 0
+            return True
 
     async def get_org(self, org_id: str) -> Organization | None:
         async with self._engine.raw.connect() as conn:
-            row = (
-                await conn.execute(select(organizations).where(organizations.c.id == org_id))
-            ).fetchone()
+            res = await self._execute_org_select(conn, organizations.c.id == org_id)
+            row = res.fetchone()
         return self._row_to_org(row) if row else None
 
     async def get_org_by_slug(self, slug: str) -> Organization | None:
         async with self._engine.raw.connect() as conn:
-            row = (
-                await conn.execute(select(organizations).where(organizations.c.slug == slug))
-            ).fetchone()
+            res = await self._execute_org_select(conn, organizations.c.slug == slug)
+            row = res.fetchone()
         return self._row_to_org(row) if row else None
 
     async def list_orgs(self) -> list[Organization]:
         async with self._engine.raw.connect() as conn:
-            rows = (await conn.execute(select(organizations))).fetchall()
+            res = await self._execute_org_select(conn)
+            rows = res.fetchall()
         return [self._row_to_org(r) for r in rows]
 
     async def delete_org(self, org_id: str) -> bool:

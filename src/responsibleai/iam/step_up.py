@@ -8,11 +8,18 @@ import hashlib
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from sqlalchemy import and_, insert, select, update
 
 from responsibleai.auth import mfa
-from responsibleai.db.engine import DatabaseEngine, iam_step_up_nonces, org_api_keys
+from responsibleai.db.engine import (
+    DatabaseEngine,
+    iam_sessions,
+    iam_step_up_nonces,
+    org_api_keys,
+    web_sessions,
+)
 from responsibleai.iam.enums import PrivilegeRiskTier, StepUpMethod
 from responsibleai.iam.errors import (
     StepUpRequiredError,
@@ -34,6 +41,7 @@ class StepUpVerifier:
         principal_id: str,
         action: str,
         target_resource_id: str | None = None,
+        session_id: str | None = None,
         ttl_seconds: int = 900,
     ) -> str:
         """Issue a cryptographically secure, single-use action-bound nonce."""
@@ -43,19 +51,20 @@ class StepUpVerifier:
         expires_at = (now + timedelta(seconds=ttl_seconds)).isoformat()
 
         async with self.db.raw.begin() as conn:
-            await conn.execute(
-                insert(iam_step_up_nonces).values(
-                    id=f"stn_{uuid.uuid4().hex}",
-                    org_id=org_id,
-                    principal_id=principal_id,
-                    nonce_hash=nonce_hash,
-                    action=action,
-                    target_resource_id=target_resource_id,
-                    created_at=now.isoformat(),
-                    expires_at=expires_at,
-                    consumed_at=None,
-                )
-            )
+            values: dict[str, Any] = {
+                "id": f"stn_{uuid.uuid4().hex}",
+                "org_id": org_id,
+                "principal_id": principal_id,
+                "nonce_hash": nonce_hash,
+                "action": action,
+                "target_resource_id": target_resource_id,
+                "created_at": now.isoformat(),
+                "expires_at": expires_at,
+                "consumed_at": None,
+            }
+            if "session_id" in iam_step_up_nonces.c:
+                values["session_id"] = session_id
+            await conn.execute(insert(iam_step_up_nonces).values(**values))
 
         return nonce
 
@@ -68,6 +77,7 @@ class StepUpVerifier:
         risk_tier: PrivilegeRiskTier,
         proof: StepUpProof | None,
         target_resource_id: str | None = None,
+        session_id: str | None = None,
     ) -> bool:
         """Verify the presented proof meets freshness and method requirements, consuming the nonce."""
         if proof is None:
@@ -76,6 +86,7 @@ class StepUpVerifier:
                 principal_id=principal_id,
                 action=action,
                 target_resource_id=target_resource_id,
+                session_id=session_id,
             )
             raise StepUpRequiredError(
                 f"Action {action} requires step-up reauthentication.",
@@ -131,6 +142,34 @@ class StepUpVerifier:
                 )
             if rec["target_resource_id"] and rec["target_resource_id"] != target_resource_id:
                 raise StepUpVerificationFailedError("Step-up nonce target resource mismatch.")
+
+            # Session binding verification
+            bound_session = rec.get("session_id")
+            if bound_session is not None:
+                if session_id is None or session_id != bound_session:
+                    raise StepUpVerificationFailedError(
+                        f"Step-up nonce session mismatch: issued for session {bound_session}, presented under {session_id}."
+                    )
+
+            # Check if session is revoked
+            if session_id is not None:
+                iam_sess = (await conn.execute(
+                    select(iam_sessions.c.status, iam_sessions.c.revoked_at, iam_sessions.c.expires_at).where(
+                        and_(iam_sessions.c.id == session_id, iam_sessions.c.org_id == org_id)
+                    )
+                )).first()
+                if iam_sess is not None:
+                    if iam_sess[0] != "ACTIVE" or iam_sess[1] is not None or now.isoformat() >= iam_sess[2]:
+                        raise StepUpVerificationFailedError("Step-up session has been revoked or expired.")
+
+                web_sess = (await conn.execute(
+                    select(web_sessions.c.revoked, web_sessions.c.expires_at).where(
+                        web_sessions.c.token_hash == session_id
+                    )
+                )).first()
+                if web_sess is not None:
+                    if web_sess[0] != 0 or now.isoformat() >= web_sess[1]:
+                        raise StepUpVerificationFailedError("Step-up web session has been revoked or expired.")
 
             # 3. Verify underlying factor / proof token
             if str(proof.method) == "RECOVERY_CEREMONY" or proof.method not in StepUpMethod:
