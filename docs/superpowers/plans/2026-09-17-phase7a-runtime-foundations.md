@@ -270,7 +270,7 @@
   - CREATE `src/responsibleai/db/execution_attempt_repository.py`
   - CREATE `tests/runtime/test_execution_attempt_state_machine.py`
 - **Interfaces Consumed:** PostgreSQL database engine (down_revision strictly `0050`).
-- **Interfaces Produced:** `runtime_execution_attempts` schema with nullable lease fields in `PENDING`, `evidence_status` column (`PENDING`, `COMMITTED`, `INCOMPLETE`), state-dependent CHECK constraint `chk_attempt_lease_fields`, active partial unique index, and `ExecutionAttemptRepository` (`create_initial_attempt()`, state transitions).
+- **Interfaces Produced:** `runtime_execution_attempts` schema with nullable lease fields in `PENDING`, `evidence_status` column (`PENDING`, `COMMITTED`, `INCOMPLETE`), `backend_start_token_hash` column (F4.3-02), state-dependent CHECK constraint `chk_attempt_lease_fields`, active partial unique index, and `ExecutionAttemptRepository` (`create_initial_attempt()`, state transitions).
 - **Step 1 Failing Test:** Write `tests/runtime/test_execution_attempt_state_machine.py` verifying:
   1. `PENDING` attempt requires NULL worker_id, lease_id, lease_generation, and `evidence_status = 'PENDING'`.
   2. Transition to `LEASED` requires all three lease fields.
@@ -351,18 +351,18 @@
 
 ---
 
-### Task 9A: Worker Lease Acquisition, Monotonic Fencing & Backend-Start Claim
+### Task 9A: Worker Lease Acquisition, Monotonic Fencing & Backend-Start Claim (F4.3-02)
 - **Files:**
   - MODIFY `src/responsibleai/db/execution_attempt_repository.py`
   - MODIFY `src/responsibleai/db/admission_lease_repository.py`
   - CREATE `tests/runtime/test_one_shot_backend_start.py`
 - **Interfaces Consumed:** `runtime_worker_leases`, `runtime_execution_attempts`, `runtime_execution_fences`.
-- **Interfaces Produced:** `ExecutionAttemptRepository.claim_backend_start()` returning clean `BackendExecutionClaim`, synchronous lease expiry check inside lock, and one-shot transition (`ADMITTED -> BACKEND_STARTING` with `rowcount == 1`).
+- **Interfaces Produced:** `ExecutionAttemptRepository.claim_backend_start()` generating raw `backend_start_token`, storing `backend_start_token_hash` in `runtime_execution_attempts`, returning `BackendExecutionClaim` (with raw token and `target_fingerprint`), synchronous lease expiry check inside lock, and one-shot transition (`ADMITTED -> BACKEND_STARTING` with `rowcount == 1`).
 - **Step 1 Failing Test:** Write `tests/runtime/test_one_shot_backend_start.py` verifying:
   1. Expired-but-ACTIVE lease fails backend-start claim synchronously (`expires_at > CURRENT_TIMESTAMP`).
   2. Stale worker holding generation N fails closed if active generation is N+1.
   3. One-shot transition succeeds exactly once; second call with same receipt returns `rowcount == 0` and fails.
-  4. Returns clean `BackendExecutionClaim` (zero unverified decorative tokens).
+  4. Returns `BackendExecutionClaim` with raw `backend_start_token` and `target_fingerprint`, while DB stores only `backend_start_token_hash`.
 - **Step 2 Run RED:** `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_one_shot_backend_start.py -v`
 - **Step 3 Minimal Code:** Implement `claim_backend_start()` in `ExecutionAttemptRepository` and synchronous lock in `AdmissionLeaseRepository`.
 - **Step 4 Run GREEN:** `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_one_shot_backend_start.py -v`
@@ -372,7 +372,7 @@
 
 ---
 
-### Task 9B: Atomic Pre-Effect CAS, SafeNetwork IP Pinning & Evidence Precedence (F4.2-02, F4.2-04, F4.2-05)
+### Task 9B: Atomic Pre-Effect CAS with Lease Revalidation, Target Pinning & Evidence Precedence (F4.3-01, F4.3-02, F4.3-03, F4.3-04)
 - **Files:**
   - MODIFY `src/responsibleai/db/execution_attempt_repository.py`
   - MODIFY `src/responsibleai/governance/execution.py`
@@ -381,15 +381,22 @@
   - CREATE `tests/runtime/test_direct_executor_bypass_prevention.py`
   - CREATE `tests/runtime/test_concurrent_claim_replay.py`
   - CREATE `tests/runtime/test_evidence_precedence_ordering.py`
+  - CREATE `tests/runtime/test_lease_fencing_at_final_cas.py`
 - **Interfaces Consumed:** `BackendExecutionClaim`, `ExecutionAttemptRepository.claim_local_effect_start()`, `ExecutionAttemptRepository.claim_external_effect_transmission()`, `SafeNetworkBackend`, `EvidenceStore`.
-- **Interfaces Produced:** Pre-effect atomic CAS transitions in PostgreSQL (`rowcount == 1`) closing all read/write races, SafeNetwork IP pinning, strict evidence persistence preceding normal attempt completion (`evidence_status = 'COMMITTED'`), and failure handling (`evidence_status = 'INCOMPLETE'`).
-- **Step 1 Failing Test:** Write `tests/runtime/test_direct_executor_bypass_prevention.py`, `test_concurrent_claim_replay.py`, and `test_evidence_precedence_ordering.py` asserting:
-  1. Two concurrent local calls with same `BackendExecutionClaim` result in exactly ONE container launch (`rowcount == 1`); second call matches 0 rows and fails closed.
-  2. Two concurrent upstream calls with same `BackendExecutionClaim` result in exactly ONE socket transmission (`rowcount == 1`); second call matches 0 rows and fails closed.
-  3. Fabricated claim raises `ExecutionSecurityError` with zero side-effects.
-  4. Stale claim after `RUNNING` or terminal state raises `ExecutionSecurityError` with zero side-effects.
-  5. Normal success path commits evidence before setting attempt `COMPLETED`.
-  6. Evidence persistence failure after confirmed effect marks attempt `COMPLETED` with `evidence_status = 'INCOMPLETE'` without re-running the tool.
+- **Interfaces Produced:** Pre-effect atomic CAS transactions in PostgreSQL (`rowcount == 1`) that synchronously revalidate active unexpired lease `FOR UPDATE`, verify durable request `action_digest` and `target_fingerprint`, consume `backend_start_token_hash`, close read/write races, pin SafeNetwork IP, enforce strict evidence persistence preceding normal attempt completion (`evidence_status = 'COMMITTED'`), and handle failures (`evidence_status = 'INCOMPLETE'`).
+- **Step 1 Failing Test:** Write `tests/runtime/test_direct_executor_bypass_prevention.py`, `test_concurrent_claim_replay.py`, `test_lease_fencing_at_final_cas.py`, and `test_evidence_precedence_ordering.py` asserting:
+  1. Expired lease before local CAS -> zero container launches (F4.3-01).
+  2. Expired lease before network CAS -> zero transmitted bytes (F4.3-01).
+  3. Generation N superseded by N+1 before CAS -> generation N fails closed (F4.3-01).
+  4. Fabricated claim with visible public IDs but random token -> zero effect (F4.3-02).
+  5. Fabricated claim with modified ActionRequest -> zero effect (F4.3-02).
+  6. Valid token with mismatching ActionRequest -> zero effect (F4.3-02).
+  7. Correct action but wrong durable action digest -> zero effect (F4.3-02).
+  8. Reuse of raw backend token after successful CAS -> zero effect (F4.3-02).
+  9. Two concurrent calls with same genuine claim -> exactly one effect (F4.3-02).
+  10. Forged target_fingerprint -> zero transmission (F4.3-03).
+  11. Normal success path commits evidence in EvidenceStore while attempt remains `RUNNING`, followed by terminal attempt CAS (`evidence_status = 'COMMITTED'`) (F4.3-04).
+  12. Evidence persistence failure after confirmed effect marks attempt `COMPLETED` with `evidence_status = 'INCOMPLETE'` without re-running tool (F4.2-04).
 - **Step 2 Run RED:** `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_direct_executor_bypass_prevention.py tests/runtime/test_concurrent_claim_replay.py tests/runtime/test_evidence_precedence_ordering.py -v`
 - **Step 3 Minimal Code:** Implement `claim_local_effect_start()` and `claim_external_effect_transmission()` in `ExecutionAttemptRepository`, update `InternalToolExecutor` and `UpstreamMCPExecutor`, and enforce evidence precedence order.
 - **Step 4 Run GREEN:** `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_direct_executor_bypass_prevention.py tests/runtime/test_concurrent_claim_replay.py tests/runtime/test_evidence_precedence_ordering.py -v`
@@ -405,7 +412,7 @@
   - CREATE `src/responsibleai/runtime/worker/worker.py`
   - CREATE `tests/runtime/test_dispatcher.py`
   - CREATE `tests/runtime/test_execution_worker.py`
-- **Activation Gate Preconditions (ALL 15 Required):**
+- **Activation Gate Preconditions (ALL 16 Required):**
   1. Durable immutable request storage (`0049_runtime_execution_requests`, trigger-protected append-only).
   2. Tenant-scoped idempotent issuance (`UNIQUE(organization_id, idempotency_key)`, universal key requirement).
   3. All 3 production issuance paths closed via PostgreSQL persistence.
@@ -413,14 +420,15 @@
   5. Canonical admission transaction combining nonce insert, authorization status update, and attempt transition `LEASED -> ADMITTED` (`rowcount == 1`).
   6. Universal epoch invalidation covering all 14 authority mutations.
   7. Monotonic worker fencing (`runtime_execution_fences` atomic counter + synchronous expiry check).
-  8. Durable attempt state machine (`0051_runtime_execution_attempts`, `evidence_status` column).
-  9. One-shot backend-start claim (`claim_backend_start` with `rowcount == 1` returning clean `BackendExecutionClaim`).
-  10. Atomic pre-effect CAS transitions (`claim_local_effect_start` & `claim_external_effect_transmission`) closing read/write races.
-  11. Target resolution and IP pinning in `SafeNetworkBackend`.
-  12. Complete append-only request immutability trigger rejecting all UPDATE/DELETE.
-  13. Concurrency-safe idempotency insertion handling duplicate key collisions.
-  14. Universal capacity reservation and release on all terminal paths.
-  15. Preservation of `SafeNetworkBackend` and container isolation.
+  8. Durable attempt state machine (`0051_runtime_execution_attempts`, `evidence_status` and `backend_start_token_hash` columns).
+  9. One-shot backend-start claim generating raw `backend_start_token` and storing `backend_start_token_hash` on attempt.
+  10. Atomic pre-effect CAS transitions (`claim_local_effect_start` & `claim_external_effect_transmission`) synchronously revalidating active unexpired lease `FOR UPDATE` and closing read/write races.
+  11. Pre-effect CAS validation of durable request `action_digest` and single-use consumption of token hash (`NULL`).
+  12. Upstream execution binding to durable `target_fingerprint` and IP pinning in `SafeNetworkBackend`.
+  13. Strict evidence precedence: EvidenceStore record committed while attempt remains `RUNNING`, followed by terminal CAS to `COMPLETED` (`evidence_status = 'COMMITTED'`).
+  14. Deterministic crash recovery for Crash Point O via supervisor EvidenceStore inspection.
+  15. Complete append-only request immutability trigger rejecting all UPDATE/DELETE.
+  16. Universal capacity reservation and release on all terminal paths.
 - **Interfaces Consumed:** Tasks 6, 7, 8B, 9B.
 - **Interfaces Produced:** Non-bypassable `ExecutionDispatcher` and `ExecutionWorker.process_next()` pipeline.
 - **Step 1 Failing Test:** Write `tests/runtime/test_dispatcher.py` and `test_execution_worker.py` asserting:

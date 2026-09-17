@@ -1,6 +1,6 @@
 # WhitePact Phase 7A: Execution Attempt State Machine & One-Shot Backend Start
 
-**Document Status:** CANONICAL SPECIFICATION PASS 4.2 (SECURITY CONSISTENCY CLOSURE)
+**Document Status:** CANONICAL SPECIFICATION PASS 4.3 (SECURITY BOUNDARY CLOSURE)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
 **Proposed Migration:** `0051_runtime_execution_attempts.py` (down-revision: `0050`)
@@ -10,10 +10,11 @@
 ## 1. Problem Statement: The One-Shot Invariant & Attempt Lifecycle
 
 In asynchronous and distributed execution, execution authority, operational progress, and side-effects must be decoupled and strictly linearized:
-1. **Admission Atomicity Gap (F4.2-01):** Canonical admission must not merely consume the authorization and burn the nonce; it must atomically transition the attempt from `LEASED` to `ADMITTED` in the same PostgreSQL transaction.
-2. **Pre-Effect Race Closure (F4.2-02):** A check-then-write pattern (`assert_backend_start_claim` followed by `mark_running`) permits concurrent race conditions. Downstream execution requires an atomic pre-effect Compare-And-Swap (CAS) with `rowcount == 1` immediately before container launch or network socket transmission.
-3. **Zero Decorative Tokens (F4.2-03):** `BackendExecutionClaim` relies on durable PostgreSQL state, exact database bindings, and atomic CAS transitions, eliminating unverified in-memory tokens.
-4. **Strict Evidence Ordering & Durable Schema Ownership (F4.2-04):** Normal successful completion requires evidence persistence BEFORE attempt completion. The durable field `evidence_status` on `runtime_execution_attempts` tracks evidence state (`PENDING`, `COMMITTED`, `INCOMPLETE`).
+1. **Admission Atomicity Gap (F4.2-01):** Canonical admission must not merely consume the authorization and burn the nonce; it must atomically transition the attempt from `LEASED` to `ADMITTED` in the same PostgreSQL transaction (`rowcount == 1`).
+2. **Synchronous Lease Revalidation at Final CAS (F4.3-01):** A pre-effect CAS that checks only the attempt row is vulnerable to worker pause/GC stalls where a lease expires or is superseded before the CAS executes. Both `claim_local_effect_start()` and `claim_external_effect_transmission()` must execute as a PostgreSQL transaction that synchronously verifies the CURRENT active unexpired lease under row lock immediately prior to winning the side-effect boundary. Fencing correctness does not depend on background reaper timing.
+3. **Non-Reconstructible Backend Claim & Action Binding (F4.3-02):** A plain dataclass of visible public IDs is reconstructible. During `claim_backend_start()`, a cryptographically random secret token (`backend_start_token`) is generated and returned raw in `BackendExecutionClaim`, while ONLY its cryptographic hash (`backend_start_token_hash`) is persisted in PostgreSQL. The final pre-effect CAS verifies the token hash, verifies the immutable durable request `action_digest`, and consumes the token (`backend_start_token_hash = NULL`).
+4. **Target Fingerprint Contract (F4.3-03):** `BackendExecutionClaim` carries `target_fingerprint: str | None` sourced from the durable authorization/request. Upstream execution enforces that caller-provided fingerprints cannot override the durable authorization fingerprint, resolves the target via `SafeNetworkBackend`, and pins the IP before the final CAS.
+5. **Evidence Crash Consistency (F4.3-04):** `EvidenceStore` commits its durable record while attempt `evidence_status` remains `PENDING` in state `RUNNING`. The terminal attempt CAS sets `state = 'COMPLETED'`, `effect_state = 'EFFECT_CONFIRMED'`, and `evidence_status = 'COMMITTED'`. If a crash occurs after EvidenceStore commit but before attempt terminalization, supervisor/reconciler detects the durable evidence record and completes the attempt.
 
 ---
 
@@ -35,6 +36,7 @@ CREATE TABLE runtime_execution_attempts (
     effect_id VARCHAR(64) NOT NULL,
     effect_state VARCHAR(32) NOT NULL DEFAULT 'NO_EFFECT',
     evidence_status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
+    backend_start_token_hash VARCHAR(64) NULL, -- SHA-256 hash of single-use raw token (F4.3-02)
     admitted_at TIMESTAMPTZ NULL,
     backend_started_at TIMESTAMPTZ NULL,
     completed_at TIMESTAMPTZ NULL,
@@ -81,7 +83,7 @@ CREATE TABLE runtime_execution_attempts (
             'EFFECT_UNCERTAIN'
         )),
 
-    -- Durable evidence status ownership (F4.2-04)
+    -- Durable evidence status ownership (F4.2-04, F4.3-04)
     CONSTRAINT chk_attempt_evidence_status
         CHECK (evidence_status IN (
             'PENDING',
@@ -105,7 +107,7 @@ CREATE TABLE runtime_execution_attempts (
                 (worker_id IS NULL AND lease_id IS NULL AND lease_generation IS NULL)
                 OR
                 -- Case B: Failed after lease assignment (pre-flight failure, lease expired before backend start)
-                (worker_id NOT NULL AND lease_id NOT NULL AND lease_generation NOT NULL)
+                (worker_id IS NOT NULL AND lease_id NOT NULL AND lease_generation NOT NULL)
             )
         )
         OR
@@ -147,9 +149,9 @@ stateDiagram-v2
     PENDING --> FAILED_PRE_EXECUTION: Early Invalidation / Queue Timeout (No Lease)
     LEASED --> ADMITTED: Canonical admit_execution Succeeded (Atomic with Nonce & Auth)
     LEASED --> FAILED_PRE_EXECUTION: Pre-Flight Check Failed / Stale Epoch (Lease Preserved)
-    ADMITTED --> BACKEND_STARTING: claim_backend_start() (rowcount == 1)
+    ADMITTED --> BACKEND_STARTING: claim_backend_start() (rowcount == 1, persists token hash)
     ADMITTED --> FAILED_PRE_EXECUTION: Lease Expired Before Backend Start
-    BACKEND_STARTING --> RUNNING: claim_local_effect_start() OR claim_external_effect_transmission()
+    BACKEND_STARTING --> RUNNING: claim_local_effect_start() OR claim_external_effect_transmission() (Revalidates Lease + Action + Token)
     RUNNING --> COMPLETED: Backend Returned Cleanly & Evidence Store Succeeded (evidence_status='COMMITTED')
     RUNNING --> COMPLETED: Backend Returned Cleanly but Evidence Write Failed (evidence_status='INCOMPLETE')
     RUNNING --> FAILED: Backend Returned Failure / Non-Zero Exit Code
@@ -241,10 +243,17 @@ class AdmissionReceipt:
 
 ---
 
-## 6. One-Shot Backend-Start Claim: `claim_backend_start`
+## 6. One-Shot Backend-Start Claim & Secret Token Generation (F4.3-02)
 
 Worker converts `AdmissionReceipt` into `BackendExecutionClaim` via `ExecutionAttemptRepository.claim_backend_start()`:
 
+```python
+# 1. Generate cryptographically random single-use token
+backend_start_token = secrets.token_urlsafe(32)
+token_hash = hashlib.sha256(backend_start_token.encode()).hexdigest()
+```
+
+Database transaction:
 ```sql
 BEGIN TRANSACTION;
 
@@ -252,20 +261,26 @@ BEGIN TRANSACTION;
 SELECT lease_generation, worker_id, lease_id, expires_at
 FROM runtime_worker_leases
 WHERE execution_id = :execution_id
+  AND attempt_id = :attempt_id
+  AND lease_id = :lease_id
+  AND worker_id = :worker_id
+  AND lease_generation = :lease_generation
   AND status = 'ACTIVE'
   AND expires_at > CURRENT_TIMESTAMP
 FOR UPDATE;
--- Assert active lease matches worker_id, lease_id, and lease_generation; rollback if mismatch.
+-- Assert active lease matches; rollback if mismatch or 0 rows.
 
--- 2. Atomic one-shot transition: ADMITTED -> BACKEND_STARTING
+-- 2. Atomic one-shot transition: ADMITTED -> BACKEND_STARTING with token hash
 UPDATE runtime_execution_attempts
 SET state = 'BACKEND_STARTING',
     effect_state = 'EFFECT_STARTING',
+    backend_start_token_hash = :token_hash,
     backend_started_at = CURRENT_TIMESTAMP,
     updated_at = CURRENT_TIMESTAMP
 WHERE attempt_id = :attempt_id
   AND execution_id = :execution_id
   AND authorization_id = :authorization_id
+  AND organization_id = :organization_id
   AND worker_id = :worker_id
   AND lease_id = :lease_id
   AND lease_generation = :lease_generation
@@ -275,77 +290,165 @@ WHERE attempt_id = :attempt_id
 COMMIT;
 ```
 
-### Clean BackendExecutionClaim (F4.2-03):
+### Non-Reconstructible BackendExecutionClaim (F4.3-02, F4.3-03):
 ```python
 @dataclass(frozen=True)
 class BackendExecutionClaim:
     """Durable backend-start claim proving atomic transition to BACKEND_STARTING.
-    Zero decorative tokens; validity is enforced by PostgreSQL atomic CAS.
+    Contains non-reconstructible raw secret token and immutable target fingerprint.
+    Raw token exists ONLY in this claim; database stores ONLY its SHA-256 hash.
     """
     execution_id: str
     attempt_id: str
     authorization_id: str
     organization_id: str
-    action_digest: str
+    worker_id: str
     lease_id: str
     lease_generation: int
+    action_digest: str
+    target_fingerprint: str | None
     effect_id: str
+    backend_start_token: str
     started_at: datetime
 ```
 
 ---
 
-## 7. Atomic Pre-Effect Compare-And-Swap (CAS) (F4.2-02)
+## 7. Atomic Pre-Effect Compare-And-Swap (CAS) with Lease Revalidation (F4.3-01, F4.3-02, F4.3-03)
 
-To eliminate any read/write race condition, executors do NOT rely on a check-then-write pattern. Instead, they execute an atomic, conditional CAS update immediately prior to invoking compute or transmitting network bytes:
+To eliminate read/write races, zombie worker executions, and fabricated claim attacks, executors do NOT rely on a check-then-write pattern. Instead, they execute an atomic, conditional CAS transaction immediately prior to invoking compute or transmitting network bytes.
 
 ### 7.1 Local Container Execution: `claim_local_effect_start`
 Immediately before `ContainerIsolationBackend.execute()`:
+
+```python
+# 1. In-memory structural verification
+if claim.action_digest != compute_action_digest(action):
+    raise SecurityBindingMismatchError("Action digest mismatch")
+if claim.organization_id != action.agent.organization_id:
+    raise SecurityBindingMismatchError("Organization mismatch")
+expected_token_hash = hashlib.sha256(claim.backend_start_token.encode()).hexdigest()
+```
+
+PostgreSQL atomic transaction:
 ```sql
+BEGIN TRANSACTION;
+
+-- 1. Synchronously revalidate and lock CURRENT active unexpired lease (F4.3-01)
+SELECT lease_id, worker_id, lease_generation, status, expires_at
+FROM runtime_worker_leases
+WHERE execution_id = :execution_id
+  AND attempt_id = :attempt_id
+  AND lease_id = :lease_id
+  AND worker_id = :worker_id
+  AND lease_generation = :lease_generation
+  AND status = 'ACTIVE'
+  AND expires_at > CURRENT_TIMESTAMP
+FOR UPDATE;
+-- Require exactly 1 row; rollback and raise LeaseFencingError if 0.
+
+-- 2. Verify durable execution request action binding (F4.3-02)
+SELECT action_digest
+FROM runtime_execution_requests
+WHERE execution_id = :execution_id
+  AND organization_id = :organization_id;
+-- Assert row.action_digest == :claim_action_digest; rollback if mismatch.
+
+-- 3. Atomic one-shot attempt transition consuming token (F4.3-01, F4.3-02)
 UPDATE runtime_execution_attempts
 SET state = 'RUNNING',
+    backend_start_token_hash = NULL, -- Token consumed / invalidated
     updated_at = CURRENT_TIMESTAMP
 WHERE attempt_id = :attempt_id
   AND execution_id = :execution_id
   AND authorization_id = :authorization_id
   AND organization_id = :organization_id
+  AND worker_id = :worker_id
   AND lease_id = :lease_id
   AND lease_generation = :lease_generation
   AND effect_id = :effect_id
   AND state = 'BACKEND_STARTING'
-  AND effect_state = 'EFFECT_STARTING';
+  AND effect_state = 'EFFECT_STARTING'
+  AND backend_start_token_hash = :expected_token_hash;
+-- Require rowcount == 1; rollback if 0.
+
+COMMIT;
 ```
-- **Require `rowcount == 1`:** Only the caller whose update returns 1 receives permission to spawn the container.
-- If two callers concurrently pass the same `BackendExecutionClaim` to local execution, exactly ONE caller receives `rowcount == 1`. The other caller matches 0 rows and raises `ExecutionSecurityError` with zero container spawns.
+
+- **Execution Linearization Point:** Only the caller whose transaction commits receives permission to spawn the container.
+- **Zombie Worker Protection:** If the lease expires (`expires_at <= CURRENT_TIMESTAMP`) or generation N is superseded during a GC stall, the lease query returns 0 rows and the transaction rolls back. Fencing correctness does NOT depend on reaper timing.
+- **Single-Use Token Invalidation:** `backend_start_token_hash` is cleared to `NULL`, guaranteeing the token cannot be reused even if attempt state could somehow be rewound.
 
 ### 7.2 External Network Execution: `claim_external_effect_transmission`
 Immediately before writing bytes to the network socket:
+
+```python
+# 1. In-memory structural verification
+if claim.action_digest != compute_action_digest(action):
+    raise SecurityBindingMismatchError("Action digest mismatch")
+if claim.organization_id != action.agent.organization_id:
+    raise SecurityBindingMismatchError("Organization mismatch")
+expected_token_hash = hashlib.sha256(claim.backend_start_token.encode()).hexdigest()
+```
+
+PostgreSQL atomic transaction:
 ```sql
+BEGIN TRANSACTION;
+
+-- 1. Synchronously revalidate and lock CURRENT active unexpired lease (F4.3-01)
+SELECT lease_id, worker_id, lease_generation, status, expires_at
+FROM runtime_worker_leases
+WHERE execution_id = :execution_id
+  AND attempt_id = :attempt_id
+  AND lease_id = :lease_id
+  AND worker_id = :worker_id
+  AND lease_generation = :lease_generation
+  AND status = 'ACTIVE'
+  AND expires_at > CURRENT_TIMESTAMP
+FOR UPDATE;
+-- Require exactly 1 row; rollback and raise LeaseFencingError if 0.
+
+-- 2. Verify durable execution request action binding & target fingerprint (F4.3-02, F4.3-03)
+SELECT action_digest, target_fingerprint
+FROM runtime_execution_requests
+WHERE execution_id = :execution_id
+  AND organization_id = :organization_id;
+-- Assert row.action_digest == :claim_action_digest; rollback if mismatch.
+-- Assert row.target_fingerprint == :claim_target_fingerprint; rollback if mismatch.
+
+-- 3. Atomic one-shot attempt transition consuming token (F4.3-01, F4.3-02)
 UPDATE runtime_execution_attempts
 SET state = 'RUNNING',
     effect_state = 'EFFECT_TRANSMITTING',
+    backend_start_token_hash = NULL, -- Token consumed / invalidated
     updated_at = CURRENT_TIMESTAMP
 WHERE attempt_id = :attempt_id
   AND execution_id = :execution_id
   AND authorization_id = :authorization_id
   AND organization_id = :organization_id
+  AND worker_id = :worker_id
   AND lease_id = :lease_id
   AND lease_generation = :lease_generation
   AND effect_id = :effect_id
   AND state = 'BACKEND_STARTING'
-  AND effect_state = 'EFFECT_STARTING';
+  AND effect_state = 'EFFECT_STARTING'
+  AND backend_start_token_hash = :expected_token_hash;
+-- Require rowcount == 1; rollback if 0.
+
+COMMIT;
 ```
-- **Require `rowcount == 1`:** Only the caller whose update returns 1 receives permission to transmit bytes to the socket.
-- Concurrent callers: exactly ONE transmits bytes; the second matches 0 rows and fails closed without transmitting a single byte.
+
+- **Linearization Point:** Only after this transaction commits may the first network byte be transmitted.
+- **Concurrent Callers:** Exactly ONE transmits bytes; the second matches 0 rows and fails closed without transmitting a single byte.
 
 ---
 
-## 8. Evidence Persistence and Completion Ordering (F4.2-04)
+## 8. Evidence Persistence and Completion Ordering (F4.2-04, F4.3-04)
 
 Normal successful execution follows this strict sequence:
 1. **Backend Returns Clean Result:** Tool exit code 0 or HTTP 200 received.
 2. **Durable Outcome Persisted:** Output payload and execution summary recorded in PostgreSQL.
-3. **Durable Evidence Persisted:** `EvidenceStore.store_execution_evidence()` successfully commits cryptographic attestation.
+3. **Durable Evidence Persisted in EvidenceStore:** `EvidenceStore.store_execution_evidence()` successfully commits cryptographic attestation. While the attempt is still in state `RUNNING`, `runtime_execution_attempts.evidence_status` remains `PENDING`.
 4. **Attempt Terminal Transition (Success):**
    ```sql
    UPDATE runtime_execution_attempts
@@ -359,6 +462,12 @@ Normal successful execution follows this strict sequence:
    ```
 5. **Lease Finalized:** Worker lease transitioned to `status = 'COMPLETED'`.
 6. **Capacity Released:** `AdmissionController.release_execution()`.
+
+### Crash Point O Handling (Crash After EvidenceStore Commit Before Attempt Terminalization):
+- `runtime_execution_attempts` remains `state = 'RUNNING'` with `evidence_status = 'PENDING'`.
+- The supervisor/reconciler queries `EvidenceStore` using `execution_id` and `attempt_id`.
+- Detecting the durable committed evidence record, the reconciler transitions the attempt to `state = 'COMPLETED'`, `effect_state = 'EFFECT_CONFIRMED'`, `evidence_status = 'COMMITTED'`.
+- Reconciler finalizes the lease and releases capacity.
 
 ### Incomplete Evidence Handling:
 If the external side-effect succeeded cleanly but `EvidenceStore` persistence fails:
@@ -379,13 +488,23 @@ If the external side-effect succeeded cleanly but `EvidenceStore` persistence fa
 
 ---
 
-## 9. Future Concurrency & Replay Test Requirements (F4.2-05)
+## 9. Future Security Test Requirements (F4.2-05, F4.3-01, F4.3-02, F4.3-03)
 
 The following tests are required for implementation verification:
-1. **Concurrent Local Claim Replay:** Two parallel tasks invoke `InternalToolExecutor.execute()` with the same `BackendExecutionClaim`. Exactly one container executes; second task raises `ExecutionSecurityError`.
-2. **Concurrent Upstream Claim Replay:** Two parallel tasks invoke `UpstreamMCPExecutor.execute()` with the same `BackendExecutionClaim`. Exactly one socket transmission occurs; second task fails closed before transmitting bytes.
-3. **Fabricated Claim Test:** Calling executor with fabricated `BackendExecutionClaim` (matching visible IDs but absent/invalid state in PostgreSQL) raises `ExecutionSecurityError` with zero backend calls.
-4. **Stale Claim After RUNNING:** Passing a claim for an attempt already in `RUNNING` state returns `rowcount == 0` and fails closed.
-5. **Stale Claim After Terminal:** Passing a claim for an attempt in `COMPLETED`, `FAILED`, or `UNCERTAIN` state returns `rowcount == 0` and fails closed.
-6. **Admission Transaction Atomicity:** Simulate DB error during attempt update: verify authorization remains `ISSUED`, nonce is uninserted, attempt remains `LEASED`.
-7. **Attempt Mismatch Rejection:** Simulate attempt update with wrong `worker_id` or `lease_generation`: admission transaction rolls back completely.
+1. **Expired Lease Before Local CAS (F4.3-01):** Lease expires after `claim_backend_start()` but before local CAS -> zero container launches.
+2. **Expired Lease Before Network CAS (F4.3-01):** Lease expires after `claim_backend_start()` but before network CAS -> zero transmitted bytes.
+3. **Replaced Lease Generation Before CAS (F4.3-01):** Generation N is superseded by generation N+1 before CAS -> generation N fails closed.
+4. **Revoked/Expired Lease Status Before CAS (F4.3-01):** Lease status becomes `REVOKED` or `EXPIRED` before CAS -> zero effect.
+5. **Reaper Independence Fencing (F4.3-01):** Reaper has not yet run but `expires_at <= CURRENT_TIMESTAMP` -> zero effect.
+6. **Fabricated Claim Visible IDs Test (F4.3-02):** Claim with correct visible IDs but random token -> zero effect.
+7. **Fabricated Claim Malicious Action (F4.3-02):** Claim with correct IDs/lease/effect ID but modified `ActionRequest` -> zero effect.
+8. **Valid Token Mismatching Action (F4.3-02):** Valid token but different `ActionRequest` -> zero effect.
+9. **Wrong Durable Action Digest (F4.3-02):** Correct action but wrong durable action digest -> zero effect.
+10. **Token Reuse After CAS (F4.3-02):** Reuse of raw backend token after successful CAS -> zero effect.
+11. **Concurrent Claim Replay (F4.3-02):** Concurrent use of same genuine claim -> exactly one effect; second call fails closed.
+12. **Database Hash Exposure (F4.3-02):** Database compromise exposing only token HASH must not reveal reusable raw capability.
+13. **Forged Target Fingerprint (F4.3-03):** Forged target_fingerprint -> zero transmission.
+14. **Missing Target Fingerprint (F4.3-03):** Missing fingerprint where authorization requires one -> fail closed.
+15. **Target Drift & IP Pinning (F4.3-03):** DNS drift or redirect to different target fails closed; actual connected IP must equal pinned validated IP.
+16. **Crash Point O Reconciliation (F4.3-04):** Crash after EvidenceStore commit before attempt terminalization is deterministically resolved by reconciler.
+17. **Admission Transaction Atomicity:** Admission failure rolls back authorization consumption, nonce insertion, and attempt admission together.

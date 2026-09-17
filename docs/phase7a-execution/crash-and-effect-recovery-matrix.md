@@ -1,6 +1,6 @@
 # WhitePact Phase 7A: Comprehensive Crash & Effect Recovery Matrix
 
-**Document Status:** CANONICAL SPECIFICATION PASS 4.2 (SECURITY CONSISTENCY CLOSURE)
+**Document Status:** CANONICAL SPECIFICATION PASS 4.3 (SECURITY BOUNDARY CLOSURE)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
 
@@ -29,13 +29,13 @@ WhitePact adheres to four non-negotiable recovery principles:
 | **F. During admission transaction (F4.2-01)** | Transaction rolls back. Auth remains ISSUED, Nonce uninserted, Attempt remains LEASED. | YES (Re-attempt after lease expiration). | YES | NO | NO | DB error logged; zero partial records. | Released on abort. |
 | **G. After admission commit before backend-start claim** | Auth CONSUMED, Nonce inserted, Attempt ADMITTED, Lease ACTIVE (expired). | **NO** (Nonce is already burned). | **NO** (Authorization is CONSUMED). | **YES** | NO (Guaranteed `NO_EFFECT`). | `AUDIT_ADMISSION_COMMITTED`, `AUDIT_ATTEMPT_ABORTED_PRE_EXECUTION` (No effect began). | Released by supervisor reaper. |
 | **H. During backend-start claim transaction** | Transaction rolls back. Attempt remains ADMITTED. | **NO** | **NO** | **YES** | NO (Guaranteed `NO_EFFECT`). | `AUDIT_BACKEND_START_FAILED_TX`. | Released on rollback. |
-| **I. After backend-start claim before local/external CAS** | Attempt BACKEND_STARTING, effect_state EFFECT_STARTING. | **NO** (Automatic replay forbidden). | **NO** | **YES** | YES (Verify effect did not execute). | `AUDIT_BACKEND_START_COMMITTED`, reaper marks `UNCERTAIN` pending verification. | Released by supervisor. |
-| **J. During local container execution** | Attempt RUNNING, Docker container ID registered, lease ACTIVE (expired). | **NO** (Automatic replay forbidden). | **NO** | **YES** | YES (Inspect Docker container exit status & stdout). | Container orphan cleaned by reaper; attempt marked `FAILED` or `UNCERTAIN`. | Released by supervisor. |
+| **I. After backend-start claim before local/external CAS (F4.3-01, F4.3-02)** | Attempt BACKEND_STARTING (token hash stored), effect_state EFFECT_STARTING. Lease ACTIVE (expired). | **NO** (Automatic replay forbidden). If zombie worker wakes, final CAS rejects expired lease synchronously. | **NO** | **YES** | YES (Verify effect did not execute). | `AUDIT_BACKEND_START_COMMITTED`, reaper marks `UNCERTAIN` pending verification. | Released by supervisor. |
+| **J. During local container execution** | Attempt RUNNING (token hash consumed/NULL), Docker container ID registered, lease ACTIVE (expired). | **NO** (Automatic replay forbidden). | **NO** | **YES** | YES (Inspect Docker container exit status & stdout). | Container orphan cleaned by reaper; attempt marked `FAILED` or `UNCERTAIN`. | Released by supervisor. |
 | **K. Before external transmission** | Attempt BACKEND_STARTING, effect_state EFFECT_STARTING. Socket not opened. | **NO** (Automatic replay forbidden). | **NO** | **YES** | YES (Upstream check via `effect_id`). | `AUDIT_EFFECT_ABORTED_PRE_TRANSMIT`. | Released by supervisor. |
 | **L. After external transmission before response** | Attempt RUNNING, effect_state EFFECT_TRANSMITTING. | **NO** (STRICTLY FORBIDDEN). | **NO** | **YES** | **YES** (Mandatory upstream query via `effect_id`). | Attempt marked `UNCERTAIN`, `AUDIT_EFFECT_TRANSMIT_DISRUPTED`. | Released on transition to UNCERTAIN. |
 | **M. After response before durable outcome** | Effect finished on remote server. Outcome not yet committed. | **NO** | **NO** | **YES** | **YES** (Upstream reconciliation via `effect_id`). | Attempt marked `UNCERTAIN`, reconciler updates to `COMPLETED` once response recovered. | Released on transition to UNCERTAIN. |
 | **N. After durable outcome before evidence (F4.2-04)** | Attempt RUNNING, outcome committed, evidence write failed. | **NO** (Do NOT replay effect). | **NO** | **YES** | NO (Effect already final). | Attempt transitioned to `COMPLETED` with `evidence_status='INCOMPLETE'`. Reconstructed evidence bundle stored. | Released upon terminal attempt update. |
-| **O. After evidence before attempt terminalization (F4.2-04)** | Outcome committed, evidence committed (`evidence_status='COMMITTED'`), attempt state RUNNING. | NO | NO | NO | NO | Reaper observes completed evidence and marks attempt `COMPLETED`. | Released by reaper. |
+| **O. After evidence before attempt terminalization (F4.2-04, F4.3-04)** | Outcome committed, EvidenceStore record committed, attempt state remains RUNNING with `evidence_status='PENDING'`. | NO | NO | NO | NO | Reconciler inspects EvidenceStore, detects committed evidence, and updates attempt `COMPLETED` (`evidence_status='COMMITTED'`). | Released by reconciler. |
 | **P. After attempt finalization before lease release** | Attempt COMPLETED, lease ACTIVE (expired). | NO | NO | NO | NO | Reaper releases lease cleanly; zero impact on execution result. | Released by reaper. |
 | **Q. After lease release before capacity release** | Lease COMPLETED, capacity reservation unreleased in Redis. | NO | NO | NO | NO | Background capacity reconciler audits active leases and releases orphaned slot. | Reconciler releases slot. |
 
@@ -64,3 +64,23 @@ WhitePact adheres to four non-negotiable recovery principles:
 - **Durable State:** The side-effect succeeded cleanly. However, a database connection blip caused the `EvidenceStore` write to fail.
 - **Fatal Error to Avoid:** Retrying the tool or external request to "get fresh evidence." This duplicates the real-world side-effect.
 - **Resolution:** The worker transitions the attempt to `state = 'COMPLETED'` with `evidence_status = 'INCOMPLETE'` and `effect_state = 'EFFECT_CONFIRMED'`. Capacity is released. A background evidence recovery worker reconstructs the cryptographic evidence bundle from stdout/result logs and the committed durable outcome row without re-running the tool.
+
+### 3.4 Failure Point O: Crash After EvidenceStore Commit Before Attempt Terminalization (F4.3-04)
+- **Durable State:** Result and durable outcome row committed in PostgreSQL. `EvidenceStore` record durably committed. `runtime_execution_attempts.state` remains `RUNNING` and `evidence_status` remains `PENDING`. Worker crashes before executing terminal attempt UPDATE.
+- **Physical Fact:** The side-effect succeeded cleanly and compliance evidence is durably preserved in `EvidenceStore`.
+- **Resolution:**
+  1. The supervisor / reaper detects an expired lease on an attempt in state `RUNNING`.
+  2. The supervisor queries `EvidenceStore` using `execution_id` and `attempt_id`.
+  3. Detecting the durable committed evidence record, the supervisor executes the terminal update on `runtime_execution_attempts`:
+     ```sql
+     UPDATE runtime_execution_attempts
+     SET state = 'COMPLETED',
+         effect_state = 'EFFECT_CONFIRMED',
+         evidence_status = 'COMMITTED',
+         completed_at = CURRENT_TIMESTAMP,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE attempt_id = :attempt_id
+       AND state = 'RUNNING';
+     ```
+  4. The supervisor marks the lease `COMPLETED` and releases capacity.
+  5. No side-effect is repeated; execution terminates cleanly and deterministically.

@@ -1,6 +1,6 @@
 # WhitePact Phase 7A: Concrete Parallelization Map & Subagent Task Plan
 
-**Document Status:** CANONICAL SPECIFICATION PASS 4.1 (SECURITY CONSISTENCY REMEDIATION)
+**Document Status:** CANONICAL SPECIFICATION PASS 4.3 (SECURITY BOUNDARY CLOSURE)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
 **Proposed Migrations:** `0049_runtime_execution_requests.py` through `0052_runtime_worker_leases.py`
@@ -14,7 +14,7 @@ This document establishes the verified concurrent execution waves for Phase 7A i
 ### Core Concurrency Rules:
 1. **Zero File Collisions:** No two subagents or tasks in the same wave may write to the same file.
 2. **Linear Migration Sequencing:** Migration `0049` -> `0050` -> `0051` -> `0052`.
-3. **Dispatcher Activation Gate (Task 10 Gate):** Task 10 requires all 15 security prerequisites proven in implementation before activation.
+3. **Dispatcher Activation Gate (Task 10 Gate):** Task 10 requires all 16 security prerequisites proven in implementation before activation.
 4. **Decoupled Business Logic:** Commercial billing attributes (`Plan`, `subscription_status`) are strictly excluded from all runtime scheduling, admission, and queueing logic.
 
 ---
@@ -87,7 +87,7 @@ This document establishes the verified concurrent execution waves for Phase 7A i
 ---
 
 ### Lane C1: Fencing, Backend-Start Claim & Executor Verification
-- **Primary Responsibility:** Monotonic fencing, synchronous lease expiry checks, `claim_backend_start()` returning clean `BackendExecutionClaim`, pre-effect atomic CAS (`claim_local_effect_start`, `claim_external_effect_transmission`), and `SafeNetworkBackend` IP pinning.
+- **Primary Responsibility:** Monotonic fencing, synchronous lease expiry checks, `claim_backend_start()` generating raw `backend_start_token` and storing `backend_start_token_hash`, pre-effect atomic CAS (`claim_local_effect_start`, `claim_external_effect_transmission`) with synchronous lease revalidation `FOR UPDATE`, durable request action/fingerprint binding, and `SafeNetworkBackend` IP pinning.
 - **Tasks Owned:** Tasks 9A, 9B.
 - **Files Owned:**
   - `src/responsibleai/db/execution_attempt_repository.py` (`claim_backend_start`, `claim_local_effect_start`, `claim_external_effect_transmission`) [MODIFY]
@@ -100,7 +100,7 @@ This document establishes the verified concurrent execution waves for Phase 7A i
 ---
 
 ### Lane C2: Crash Recovery & Worker Supervision
-- **Primary Responsibility:** Worker process execution loop, heartbeat streams, background lease reaper for dead workers, capacity reservation reconciliation, and `UNCERTAIN` state handling for interrupted external effects.
+- **Primary Responsibility:** Worker process execution loop, heartbeat streams, background lease reaper for dead workers, Crash Point O evidence reconciliation, capacity reservation reconciliation, and `UNCERTAIN` state handling for interrupted external effects.
 - **Tasks Owned:** Tasks 10, 11, 12.
 - **Files Owned:**
   - `src/responsibleai/runtime/dispatcher.py` [CREATE]
@@ -163,7 +163,7 @@ TIME ─────────────────────────
    │   └── Subagent 3 (Lane D):  Task 21 (Config Bounds & HOSTED_GOVERNANCE_STRICT)
    │
    ├── INTEGRATION GATE: TASK 10 DISPATCHER ACTIVATION
-   │   Preconditions: ALL 15 Security Prerequisites Fully Verified
+   │   Preconditions: ALL 16 Security Prerequisites Fully Verified
    │   └── Subagent 7: Task 10 (Worker Dispatcher & Execution Worker Gate)
    │
    ├── WAVE 3: WORKER RECOVERY, SHUTDOWN & HEALTH

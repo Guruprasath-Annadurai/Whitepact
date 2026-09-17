@@ -1,6 +1,6 @@
 # WhitePact Phase 7A Critical Path Analysis
 
-**Document Status:** CANONICAL SPECIFICATION PASS 4.1 (SECURITY CONSISTENCY REMEDIATION)
+**Document Status:** CANONICAL SPECIFICATION PASS 4.3 (SECURITY BOUNDARY CLOSURE)
 **Source Design SHA:** `dfbeb2e6d9fad575fc45b64789c63b1c1c0b5b01` (Worktree: `/Users/ag/whitepact-phase7a-runtime-preparation`)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
@@ -49,7 +49,7 @@ Because tasks in Lane B (WP-ISO-01 compute and filesystem limits) and Lane D (Ob
 [CP-08A2] Task 8A2: Durable Auth Schema (Mig 0050, UNIQUE approval_id) & Repository
       │
       ▼ (Critical Task 8A3: Migration 0051 & Attempt Repo)
-[CP-08A3] Task 8A3: Execution Attempt Schema (Mig 0051, Nullable Lease Fields, CHECK) & Repository
+[CP-08A3] Task 8A3: Execution Attempt Schema (Mig 0051, Nullable Lease Fields, evidence_status & backend_start_token_hash) & Repository
       │
       ▼ (Critical Task 8A4: Migration 0052, Lease & Fence Repos)
 [CP-08A4] Task 8A4: Worker Lease & Execution Fence Schema (Mig 0052) & Repositories
@@ -61,18 +61,18 @@ Because tasks in Lane B (WP-ISO-01 compute and filesystem limits) and Lane D (Ob
 [CP-08B] Task 8B: Universal 14-Mutation Epoch Coverage, Atomic Admission Transaction & AdmissionReceipt
       │
       ▼ (Critical Task 9A: Fencing & Backend Start Claim)
-[CP-09A] Task 9A: Monotonic Fencing, Synchronous Expiry Check & claim_backend_start()
+[CP-09A] Task 9A: Monotonic Fencing, Synchronous Expiry Check & claim_backend_start() (Token Hash Persistence)
       │
       ▼ (Critical Task 9B: Downstream Executor Verification & SafeNetwork IP Pinning)
-[CP-09B] Task 9B: Pre-Effect Atomic CAS (claim_local/external), SafeNetwork IP Pinning, Evidence Precedence & Capacity Release
+[CP-09B] Task 9B: Pre-Effect Atomic CAS with Lease Revalidation (claim_local/external), SafeNetwork IP Pinning, Evidence Precedence & Capacity Release
       │
       ▼ [CHECKPOINT 1: Coordination, All-Path Durable Issuance & Single Admission Core Verification]
       │
       ▼ (Critical Task 10: INTEGRATION GATE)
-[CP-10] Task 10 Gate: Worker Dispatcher & Execution Worker (Requires ALL 15 Security Prerequisites Proven)
+[CP-10] Task 10 Gate: Worker Dispatcher & Execution Worker (Requires ALL 16 Security Prerequisites Proven)
       │
       ▼ (Critical Task 11: Lane C2)
-[CP-11] Task 11: Worker Heartbeats, Crash Recovery, Stale Lease Reaper & Capacity Reconciler
+[CP-11] Task 11: Worker Heartbeats, Crash Recovery, Crash Point O Reconciler & Stale Lease Reaper
       │
       ▼ (Critical Task 12: Lane C2)
 [CP-12] Task 12: Side-Effect Safety & Uncertain State Handling (Zero Blind Replay)

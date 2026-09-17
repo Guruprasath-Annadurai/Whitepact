@@ -1,6 +1,6 @@
 # WhitePact Phase 7A: Worker Fencing, Lease Generation & Crash Recovery
 
-**Document Status:** CANONICAL SPECIFICATION PASS 4.1 (SECURITY CONSISTENCY REMEDIATION)
+**Document Status:** CANONICAL SPECIFICATION PASS 4.3 (SECURITY BOUNDARY CLOSURE)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
 **Proposed Migration:** `0052_runtime_worker_leases.py` (down-revision: `0051`)
@@ -109,9 +109,10 @@ RETURNING current_generation;
 
 ---
 
-## 4. Synchronous Pre-Backend Start Fencing Verification (4.1-F05, 4.1-F10)
+## 4. Synchronous Fencing Verification at Backend-Start & Final Pre-Effect CAS (F4.3-01, F4.3-02)
 
-Immediately before backend invocation, `ExecutionAttemptRepository.claim_backend_start()` runs the following transaction:
+### 4.1 Stage 3: `claim_backend_start()`
+Worker transitions `ADMITTED -> BACKEND_STARTING` under row lock and generates a single-use secret token:
 
 ```sql
 BEGIN TRANSACTION;
@@ -120,20 +121,19 @@ BEGIN TRANSACTION;
 SELECT lease_generation, worker_id, lease_id, expires_at
 FROM runtime_worker_leases
 WHERE execution_id = :execution_id
+  AND attempt_id = :attempt_id
+  AND lease_id = :lease_id
+  AND worker_id = :worker_id
+  AND lease_generation = :lease_generation
   AND status = 'ACTIVE'
   AND expires_at > CURRENT_TIMESTAMP
 FOR UPDATE;
 
--- Application Verification Rules:
--- A. If no row returned: lease is EXPIRED or REVOKED -> ROLLBACK & raise LeaseExpiredError.
--- B. If worker_id != :my_worker_id: lease reassigned to another worker -> ROLLBACK & raise ZombieWorkerFencedError.
--- C. If lease_generation != :my_generation: worker holds stale generation -> ROLLBACK & raise ZombieWorkerFencedError.
--- D. If lease_id != :my_lease_id: lease replaced -> ROLLBACK & raise ZombieWorkerFencedError.
-
--- 2. Execute one-shot backend-start transition
+-- 2. Execute one-shot backend-start transition with token hash
 UPDATE runtime_execution_attempts
 SET state = 'BACKEND_STARTING',
     effect_state = 'EFFECT_STARTING',
+    backend_start_token_hash = :token_hash,
     backend_started_at = CURRENT_TIMESTAMP,
     updated_at = CURRENT_TIMESTAMP
 WHERE attempt_id = :attempt_id
@@ -143,15 +143,60 @@ WHERE attempt_id = :attempt_id
   AND lease_id = :lease_id
   AND lease_generation = :my_generation
   AND state = 'ADMITTED';
+-- Assert rowcount == 1 (Rollback if 0)
 
--- Assert rowcount == 1:
--- If rowcount == 0: attempt was already started or invalid -> ROLLBACK & raise BackendStartOwnershipLostError.
+COMMIT;
+```
+
+### 4.2 Stage 4: Synchronous Lease Revalidation at Final Pre-Effect CAS (F4.3-01)
+Time can pass between `claim_backend_start()` and side-effect execution (e.g., thread pause, GC stall). Therefore, executors execute an atomic PostgreSQL transaction immediately prior to container execution or socket byte transmission:
+
+```sql
+BEGIN TRANSACTION;
+
+-- 1. Synchronously revalidate and lock CURRENT active, unexpired lease (F4.3-01)
+SELECT lease_id, worker_id, lease_generation, status, expires_at
+FROM runtime_worker_leases
+WHERE execution_id = :execution_id
+  AND attempt_id = :attempt_id
+  AND lease_id = :lease_id
+  AND worker_id = :worker_id
+  AND lease_generation = :lease_generation
+  AND status = 'ACTIVE'
+  AND expires_at > CURRENT_TIMESTAMP
+FOR UPDATE;
+-- Require exactly 1 row; rollback and fail closed if 0.
+
+-- 2. Verify immutable durable request action_digest (and target_fingerprint for external) (F4.3-02, F4.3-03)
+SELECT action_digest, target_fingerprint
+FROM runtime_execution_requests
+WHERE execution_id = :execution_id
+  AND organization_id = :organization_id;
+-- Assert match; rollback if mismatch.
+
+-- 3. Atomic one-shot attempt transition consuming token (F4.3-01, F4.3-02)
+UPDATE runtime_execution_attempts
+SET state = 'RUNNING',
+    backend_start_token_hash = NULL, -- Token consumed / invalidated
+    updated_at = CURRENT_TIMESTAMP
+WHERE attempt_id = :attempt_id
+  AND execution_id = :execution_id
+  AND authorization_id = :authorization_id
+  AND organization_id = :organization_id
+  AND worker_id = :worker_id
+  AND lease_id = :lease_id
+  AND lease_generation = :lease_generation
+  AND effect_id = :effect_id
+  AND state = 'BACKEND_STARTING'
+  AND effect_state = 'EFFECT_STARTING'
+  AND backend_start_token_hash = :expected_token_hash;
+-- Require rowcount == 1; rollback if 0.
 
 COMMIT;
 ```
 
 ### Independence from Background Reaper:
-The condition `expires_at > CURRENT_TIMESTAMP` is checked **synchronously** inside the lock. If a worker's lease expired 10 milliseconds ago, the check fails immediately, even if the background reaper has not yet run. **Correctness never relies on background reaper timing.**
+The condition `expires_at > CURRENT_TIMESTAMP` is checked **synchronously** inside the lock at both `claim_backend_start()` AND the final pre-effect CAS. If a worker's lease expired 10 milliseconds ago or generation was replaced during a GC stall, the check fails immediately, even if the background reaper has not yet run. **Correctness never relies on background reaper timing, and zombie workers are strictly prevented from executing side effects.**
 
 ---
 
