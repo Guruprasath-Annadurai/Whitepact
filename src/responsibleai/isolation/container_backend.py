@@ -204,14 +204,15 @@ if __name__ == "__main__":
                 if container_name not in cleanup_targets:
                     cleanup_targets.append(container_name)
 
-                # If execution timed out, dockerd may still be asynchronously processing
-                # the in-flight container creation request. Allow a brief window for
-                # dockerd to complete registration so rm -f removes the Created container.
-                if timed_out:
-                    time.sleep(0.5)
+                # Client kill (timeout or CancelledError) can race dockerd's
+                # asynchronous create. Retry rm -f until the uniquely named
+                # container is gone; never filter by org/action prefix.
+                incomplete = timed_out or proc.returncode is None
+                if incomplete:
+                    time.sleep(0.4)
 
                 for target in cleanup_targets:
-                    for _ in range(8):
+                    for _ in range(12):
                         try:
                             subprocess.run(  # noqa: S603
                                 [self.docker_cmd, "rm", "-f", target],
@@ -223,11 +224,10 @@ if __name__ == "__main__":
                         except Exception:
                             pass
 
-                        # Verify whether the container exists in any state
                         filter_arg = (
-                            f"id=^{target}$"
+                            f"id={target}"
                             if len(target) == 64 and target.isalnum()
-                            else f"name=^{target}$"
+                            else f"name={target}"
                         )
                         try:
                             check = subprocess.run(  # noqa: S603
@@ -237,11 +237,16 @@ if __name__ == "__main__":
                                 timeout=5,
                                 check=False,
                             )
-                            if not check.stdout.strip():
+                            leftover = [
+                                line
+                                for line in check.stdout.split()
+                                if line
+                            ]
+                            if not leftover:
                                 break
                         except Exception:
                             break
-                        time.sleep(0.2)
+                        time.sleep(0.25)
 
                 # Ensure the docker client process is not left as a zombie.
                 if proc.returncode is None:
