@@ -59,7 +59,7 @@ sequenceDiagram
 
     Note over Dispatcher: Stage 1: Early Invalidation
     Dispatcher->>DB: Read Authorization Status & Expiration
-    Dispatcher->>DB: Check Tenant Active & now < expires_at
+    Dispatcher->>DB: Check Org Governance Lifecycle (organizations.governance_status == 'ACTIVE') & now < expires_at
     alt Early Invalidation Fails (e.g. Expired or Revoked)
         Dispatcher->>DB: UPDATE runtime_execution_attempts SET state=FAILED_PRE_EXECUTION
         Dispatcher->>AdmCtrl: release_execution()
@@ -151,7 +151,7 @@ sequenceDiagram
 - **Action:** `AdmissionController.reserve_execution()` acquires capacity slot. `QueueTicket` enqueued. Client receives HTTP 202.
 
 ### Step 3: Dequeue & Early Invalidation (Stage 1)
-- **Action:** Dispatcher checks authorization expiration and tenant active. On failure, attempt marked `FAILED_PRE_EXECUTION`, capacity released. On success, fence incremented to generation N, lease acquired (`status = 'ACTIVE'`), attempt updated to `state = 'LEASED'`.
+- **Action:** Dispatcher checks authorization expiration and organization governance lifecycle (`organizations.governance_status == 'ACTIVE'`). Billing subscription status (`plan`, `subscription_status`) is strictly excluded from governance validity. On failure, attempt marked `FAILED_PRE_EXECUTION`, outbox marked `CANCELLED`, capacity released. On success, fence incremented to generation N, lease acquired (`status = 'ACTIVE'`), attempt updated to `state = 'LEASED'`, outbox updated to `status = 'ACKNOWLEDGED'`.
 
 ### Step 4: Canonical Admission & Attempt Admission (Stage 2 - F4.2-01)
 - **Action:** Single PostgreSQL transaction in `ExecutionNonceRepository.consume()`:

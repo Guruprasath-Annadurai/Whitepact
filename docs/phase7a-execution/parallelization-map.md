@@ -1,6 +1,6 @@
 # WhitePact Phase 7A: Concrete Parallelization Map & Subagent Task Plan
 
-**Document Status:** CANONICAL SPECIFICATION PASS 4.3 (SECURITY BOUNDARY CLOSURE)
+**Document Status:** CANONICAL SPECIFICATION PASS 4.4 (SECURITY BOUNDARY CLOSURE)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
 **Proposed Migrations:** `0049_runtime_execution_requests.py` through `0052_runtime_worker_leases.py`
@@ -58,7 +58,7 @@ This document establishes the verified concurrent execution waves for Phase 7A i
 ---
 
 ### Lane A2: Centralized Issuance & Canonical Admission
-- **Primary Responsibility:** Centralized issuance service (`DurableExecutionAuthorizationIssuer`), approval atomicity (`ApprovalExecutionService`), universal epoch invalidation (all 14 mutations), and canonical admission transaction (`admit_execution`).
+- **Primary Responsibility:** Centralized issuance service (`DurableExecutionAuthorizationIssuer`), approval atomicity (`ApprovalExecutionService`), universal epoch invalidation (all 26 mutations), and canonical admission transaction (`admit_execution`).
 - **Tasks Owned:** Tasks 8A5, 8B.
 - **Files Owned:**
   - `src/responsibleai/governance/execution_issuer.py` [CREATE]
@@ -156,7 +156,7 @@ TIME ─────────────────────────
    ├── WAVE 2: ISSUANCE, CONCURRENCY & CANONICAL ADMISSION
    │   ├── Subagent 1 (Lane A1): Task 4 (Redis Coordinator) -> Task 5 (Fail-Closed) -> Task 6 (Concurrency) -> Task 7 (Fair Queue)
    │   ├── Subagent 5 (Lane A2): Task 8A5 (Centralized Issuance & Approval Atomicity) [after 8A4 completes]
-   │   │                         -> Task 8B (Epoch Coverage 14 Mutations, Atomic Admission, AdmissionReceipt)
+   │   │                         -> Task 8B (Epoch Coverage 26 Audited Mutations, Atomic Admission, AdmissionReceipt)
    │   ├── Subagent 6 (Lane C1): Task 9A (Monotonic Fencing, Synchronous Expiry & claim_backend_start) [after 8A5]
    │   │                         -> Task 9B (Pre-Effect Atomic CAS & SafeNetwork IP Pinning) [after 8B & 9A]
    │   ├── Subagent 2 (Lane B):  Task 15 (Container Timeout/Cancellation)

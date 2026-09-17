@@ -1,6 +1,6 @@
 # WhitePact Phase 7A Design Reconciliation
 
-**Document Status:** CANONICAL SPECIFICATION PASS 4.3 (SECURITY BOUNDARY CLOSURE)
+**Document Status:** CANONICAL SPECIFICATION PASS 4.4 (FINAL SPECIFICATION CLOSURE)
 **Source Design SHA:** `dfbeb2e6d9fad575fc45b64789c63b1c1c0b5b01` (Worktree: `/Users/ag/whitepact-phase7a-runtime-preparation`)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
@@ -20,7 +20,7 @@ Pass 4.3 definitively closes all remaining security consistency and boundary gap
 5. **Strict Evidence Precedence & Crash Consistency (F4.2-04, F4.3-04):** Normal success commits evidence in EvidenceStore before attempt completion. While attempt is in state `RUNNING`, `evidence_status` remains `PENDING`. Terminal attempt CAS sets `evidence_status = 'COMMITTED'`. Crash Point O is deterministically reconciled by supervisor detecting the durable EvidenceStore record.
 6. **Durable Immutable Execution Requests:** Append-only `runtime_execution_requests` (Migration `0049`), trigger rejects UPDATE/DELETE, universal idempotency key requirement.
 7. **Approval Consumption & Authorization Atomicity:** Single transaction in `governance_execution_authorizations` (Migration `0050`) with `UNIQUE(approval_id)`.
-8. **Monotonic Generation Allocation & Fencing:** Dedicated table `runtime_execution_fences` (Migration `0052`) provides atomic monotonic generation increments; synchronous lease expiry verification.
+8. **Monotonic Generation Allocation & Fencing:** Dedicated table `runtime_execution_fences` (Migration `0052`) provides atomic monotonic generation increments; `runtime_execution_dispatch_outbox` closes the PostgreSQL-to-queue crash gap with durable publication state.
 
 ---
 
@@ -38,7 +38,7 @@ Pass 4.3 definitively closes all remaining security consistency and boundary gap
 | **Monotonic Fencing** | RECONCILED & HARDENED | Dedicated `runtime_execution_fences` counter table (Migration 0052). Atomic `UPDATE ... RETURNING`. Fence synchronously checks unexpired lease (`expires_at > now`). |
 | **SafeNetwork Boundary** | HARDENED | Resolves DNS, validates durable target fingerprint, pins IP address, and executes atomic CAS immediately pre-socket. |
 | **Capacity Management** | HARDENED | Every reservation has an explicit release path on completion, failure, early invalidation, or background reconciliation. |
-| **PostgreSQL Migration Sequence** | RESOLVED & ORDERED | Canonical head `0048` -> `0049_runtime_execution_requests` -> `0050_runtime_execution_authorizations` -> `0051_runtime_execution_attempts` -> `0052_runtime_worker_leases`. |
+| **PostgreSQL Migration Sequence** | RESOLVED & ORDERED | Canonical head `0048` -> `0049_runtime_execution_requests` -> `0050_runtime_execution_authorizations` -> `0051_runtime_execution_attempts` -> `0052_runtime_worker_leases` (incorporating `runtime_execution_dispatch_outbox`). |
 
 ---
 

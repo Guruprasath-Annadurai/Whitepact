@@ -1,6 +1,6 @@
 # WhitePact Phase 7A: Execution Attempt State Machine & One-Shot Backend Start
 
-**Document Status:** CANONICAL SPECIFICATION PASS 4.3 (SECURITY BOUNDARY CLOSURE)
+**Document Status:** CANONICAL SPECIFICATION PASS 4.4 (SECURITY BOUNDARY CLOSURE)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
 **Proposed Migration:** `0051_runtime_execution_attempts.py` (down-revision: `0050`)

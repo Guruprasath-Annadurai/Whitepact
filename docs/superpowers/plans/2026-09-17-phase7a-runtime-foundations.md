@@ -284,7 +284,7 @@
 
 ---
 
-### Task 8A4: Worker Lease & Fence Schema (Mig 0052) & Repositories
+### Task 8A4: Worker Lease, Fence & Dispatch Outbox Schema (Mig 0052) & Repositories
 - **Files:**
   - CREATE `migrations/versions/0052_runtime_worker_leases.py`
   - CREATE `src/responsibleai/db/execution_fence_repository.py`
@@ -312,7 +312,7 @@
   - CREATE `tests/runtime/test_durable_issuance_all_paths.py`
   - CREATE `tests/governance/test_approval_issuance_atomicity.py`
 - **Interfaces Consumed:** `ExecutionRequestRepository`, `ExecutionAuthorizationRepository`, `ExecutionAttemptRepository`, `ExecutionFenceRepository`, `governance_approvals`.
-- **Interfaces Produced:** Centralized `DurableExecutionAuthorizationIssuer.issue()` (atomic insert of request + authorization + initial attempt + fence row) and `ApprovalExecutionService.consume_and_issue()`.
+- **Interfaces Produced:** Centralized `DurableExecutionAuthorizationIssuer.issue()` (atomic insert of request + authorization + initial attempt + fence row + dispatch outbox) and `ApprovalExecutionService.consume_and_issue()`.
 - **Step 1 Failing Test:** Write `tests/runtime/test_durable_issuance_all_paths.py` and `test_approval_issuance_atomicity.py` asserting:
   1. All 3 production issuance paths commit request, auth, initial PENDING attempt, and fence row in ONE transaction before queueing.
   2. Approval consumption and authorization issuance occur in ONE transaction with `UNIQUE(approval_id)`.
@@ -326,7 +326,7 @@
 
 ---
 
-### Task 8B: Universal Epoch Coverage (14 Mutations), Revalidation & Atomic Admission (F4.2-01)
+### Task 8B: Universal Epoch Coverage (26 Audited Mutations), Revalidation & Atomic Admission (F4.2-01)
 - **Files:**
   - MODIFY `src/responsibleai/db/execution_nonce_repository.py`
   - MODIFY `src/responsibleai/governance/execution.py`
@@ -340,7 +340,7 @@
 - **Step 1 Failing Test:** Write `tests/runtime/test_atomic_admission.py` and `test_epoch_coverage_all_mutations.py` asserting:
   1. Nonce insertion, authorization status update (`ISSUED -> CONSUMED`), and attempt transition (`LEASED -> ADMITTED`) execute in the SAME PostgreSQL transaction.
   2. If attempt update fails (e.g. wrong worker/lease/generation), entire transaction rolls back; nonce is NOT consumed and authorization remains `ISSUED`.
-  3. All 14 authority mutations advance `scope="governance"` epoch under row lock.
+  3. All 26 audited authority mutations across 13 domain subsystems advance `scope="governance"` epoch under row lock.
   4. `admit_execution()` returns typed `AdmissionReceipt`.
 - **Step 2 Run RED:** `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_atomic_admission.py tests/runtime/test_epoch_coverage_all_mutations.py -v`
 - **Step 3 Minimal Code:** Modify `execution_nonce_repository.py:consume()` to combine epoch lock, nonce insert, authorization update (`rowcount == 1`), and attempt update (`rowcount == 1`). Update `execution.py:admit_execution()`.
@@ -418,7 +418,7 @@
   3. All 3 production issuance paths closed via PostgreSQL persistence.
   4. Atomic approval consumption and authorization issuance (`UNIQUE(approval_id)`).
   5. Canonical admission transaction combining nonce insert, authorization status update, and attempt transition `LEASED -> ADMITTED` (`rowcount == 1`).
-  6. Universal epoch invalidation covering all 14 authority mutations.
+  6. Universal epoch invalidation covering all 26 audited authority mutations across 13 domain subsystems.
   7. Monotonic worker fencing (`runtime_execution_fences` atomic counter + synchronous expiry check).
   8. Durable attempt state machine (`0051_runtime_execution_attempts`, `evidence_status` and `backend_start_token_hash` columns).
   9. One-shot backend-start claim generating raw `backend_start_token` and storing `backend_start_token_hash` on attempt.

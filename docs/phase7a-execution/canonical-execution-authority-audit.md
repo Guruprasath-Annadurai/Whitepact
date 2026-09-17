@@ -28,8 +28,8 @@ This audit verifies the physical reality of `ExecutionAuthorization` and all rel
    - `runtime_execution_requests` (Migration 0049): RFC 8785 canonical JSON action payload, append-only, trigger rejects UPDATE/DELETE, universal idempotency key.
    - `governance_execution_authorizations` (Migration 0050): Losslessly persists all 11 fields; `UNIQUE(approval_id)`.
    - `runtime_execution_attempts` (Migration 0051): Durable attempt and effect lifecycle, nullable lease fields in `PENDING`, state CHECK constraints, active partial unique index.
-   - `runtime_worker_leases` and `runtime_execution_fences` (Migration 0052): Monotonic generation counter, synchronous expiry fencing, DB-enforced active exclusivity.
-5. **Universal Epoch Revocation:** All 14 authority mutations advance `governance_revocation_epochs.epoch` under a row lock, closing TOCTOU windows between issuance and admission.
+   - `runtime_worker_leases`, `runtime_execution_fences`, and `runtime_execution_dispatch_outbox` (Migration 0052): Monotonic generation counter, synchronous expiry fencing, transactional dispatch outbox, DB-enforced active exclusivity.
+5. **Universal Epoch Revocation:** All 26 audited authority mutations across 13 domain subsystems advance `governance_revocation_epochs.epoch` under a row lock, closing TOCTOU windows between issuance and admission.
 
 ---
 
@@ -54,7 +54,7 @@ This audit verifies the physical reality of `ExecutionAuthorization` and all rel
 ## 3. Revocation & Expiration Semantics
 
 ### 3.1 Revocation: Singular Epoch Architecture (No Dual-Source Ambiguity)
-- **Elimination of `status = REVOKED`:** The epoch repository remains the singular source of truth for revocation. All 14 authority mutations advance `governance_revocation_epochs.epoch` under row lock.
+- **Elimination of `status = REVOKED`:** The epoch repository remains the singular source of truth for revocation. All 26 audited authority mutations across 13 domain subsystems advance `governance_revocation_epochs.epoch` under row lock.
 - **Admission Enforcement:** `admit_execution()` verifies `expected_epoch == current_epoch` under a row lock in `lock_epoch()`. If the epoch was bumped while a request waited in queue, admission fails closed immediately with `StaleRevocationEpochError`.
 
 ### 3.2 Expiration: Purely Derived (Zero Background Mutation)
@@ -72,7 +72,7 @@ This audit verifies the physical reality of `ExecutionAuthorization` and all rel
 
 ## 4. Centralized Durable Issuance & Single Admission
 
-- **Issuance Boundary:** `DurableExecutionAuthorizationIssuer.issue()` persists `runtime_execution_requests`, `governance_execution_authorizations`, initial `runtime_execution_attempts` (`PENDING`, `evidence_status=PENDING`), and `runtime_execution_fences` in ONE transaction before calling `AdmissionController.reserve_execution()` or enqueueing a `QueueTicket`.
+- **Issuance Boundary:** `DurableExecutionAuthorizationIssuer.issue()` persists `runtime_execution_requests`, `governance_execution_authorizations`, initial `runtime_execution_attempts` (`PENDING`, `evidence_status=PENDING`), `runtime_execution_fences`, and `runtime_execution_dispatch_outbox` (`PENDING`) in ONE transaction before calling `AdmissionController.reserve_execution()` or enqueueing a `QueueTicket`.
 - **Single Admission Owner (F4.2-01):** The worker process owns canonical `admit_execution()`, executing an atomic PostgreSQL transaction in `ExecutionNonceRepository.consume()` that burns the single-use nonce, updates authorization `ISSUED -> CONSUMED` (`rowcount == 1`), and transitions the attempt from `LEASED` to `ADMITTED` (`rowcount == 1`). Emits in-process `AdmissionReceipt`.
 - **Backend-Start Claim & Secret Token Hash (F4.3-02):** The worker calls `claim_backend_start()` to verify lease validity/generation under lock and transition the attempt to `BACKEND_STARTING` (`rowcount == 1`). A cryptographically secure random token (`backend_start_token`) is generated and returned raw in `BackendExecutionClaim`, with only `backend_start_token_hash` stored in PostgreSQL.
 - **Pre-Effect CAS with Synchronous Lease Revalidation (F4.3-01, F4.3-02, F4.3-03):** Downstream executors require `BackendExecutionClaim` and execute an atomic CAS transaction (`claim_local_effect_start()` or `claim_external_effect_transmission()`) with `rowcount == 1` immediately prior to container or socket invocation. The transaction synchronously revalidates the active unexpired lease under row lock, asserts immutable durable request `action_digest` (and `target_fingerprint`), validates and clears `backend_start_token_hash = NULL`, and transitions attempt state to `RUNNING`. Fencing correctness does not depend on reaper timing; zombie workers fail closed.

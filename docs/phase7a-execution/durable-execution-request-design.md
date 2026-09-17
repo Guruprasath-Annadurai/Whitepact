@@ -182,3 +182,57 @@ class QueueTicket:
 - Redis stores only `QueueTicket` JSON primitives.
 - No sensitive arguments, passwords, or tokens ever enter Redis.
 - If Redis is intercepted or corrupted, no execution permit is compromised because all authority checks and payloads reside exclusively in PostgreSQL.
+
+---
+
+## 8. Canonical Transactional Dispatch Outbox (`runtime_execution_dispatch_outbox`)
+
+To eliminate the crash window between PostgreSQL durable authorization issuance and Redis/memory queue publication (Finding `7A-F01`), Migration `0052_runtime_worker_leases.py` creates `runtime_execution_dispatch_outbox`:
+
+```sql
+CREATE TABLE runtime_execution_dispatch_outbox (
+    outbox_id VARCHAR(64) PRIMARY KEY,
+    execution_id VARCHAR(64) NOT NULL,
+    organization_id VARCHAR(64) NOT NULL,
+    authorization_id VARCHAR(64) NOT NULL,
+    attempt_id VARCHAR(64) NOT NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
+    publish_attempts INTEGER NOT NULL DEFAULT 0,
+    last_attempted_at TIMESTAMPTZ NULL,
+    published_at TIMESTAMPTZ NULL,
+    acknowledged_at TIMESTAMPTZ NULL,
+    error_detail TEXT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_outbox_exec_req
+        FOREIGN KEY (execution_id)
+        REFERENCES runtime_execution_requests(execution_id)
+        ON DELETE RESTRICT,
+
+    CONSTRAINT fk_outbox_auth
+        FOREIGN KEY (authorization_id)
+        REFERENCES governance_execution_authorizations(authorization_id)
+        ON DELETE RESTRICT,
+
+    CONSTRAINT fk_outbox_attempt
+        FOREIGN KEY (attempt_id)
+        REFERENCES runtime_execution_attempts(attempt_id)
+        ON DELETE RESTRICT,
+
+    CONSTRAINT chk_outbox_status
+        CHECK (status IN ('PENDING', 'PUBLISHED', 'ACKNOWLEDGED', 'CANCELLED', 'EXPIRED'))
+);
+
+CREATE INDEX idx_outbox_pending ON runtime_execution_dispatch_outbox (status, created_at)
+WHERE status IN ('PENDING', 'PUBLISHED');
+
+CREATE UNIQUE INDEX uq_outbox_execution ON runtime_execution_dispatch_outbox (execution_id);
+```
+
+### Outbox Lifecycle & Invariants:
+1. **Atomic Issuance Insertion:** An outbox row is inserted with `status = 'PENDING'` inside the EXACT SAME transaction that inserts `runtime_execution_requests`, `governance_execution_authorizations`, initial `runtime_execution_attempts`, and `runtime_execution_fences`.
+2. **Immediate Publisher Flow:** Immediately post-commit, the gateway reserves capacity idempotently (`AdmissionController.reserve_execution(execution_id, org_id)`) and enqueues `QueueTicket`. Upon confirmed enqueue, `status = 'PUBLISHED'` and `published_at = CURRENT_TIMESTAMP`.
+3. **Outbox Reconciler (Crash Recovery):** A background daemon scans `idx_outbox_pending` for rows with `status = 'PENDING'` older than 5 seconds. If the initial attempt is still `PENDING`, it idempotently reserves capacity, publishes `QueueTicket`, and marks `PUBLISHED`.
+4. **Worker Acknowledgement:** When a worker acquires the lease and transitions attempt `PENDING -> LEASED` (or at admission `LEASED -> ADMITTED`), it updates outbox `status = 'ACKNOWLEDGED'`.
+5. **Infrastructure State Only:** Outbox possession or row presence NEVER authorizes execution; only the complete cryptographic authorization chain in PostgreSQL permits admission.

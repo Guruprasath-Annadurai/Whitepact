@@ -1,6 +1,6 @@
 # WhitePact Phase 7A: Validated Dependency Graph & Execution Sequence
 
-**Document Status:** CANONICAL SPECIFICATION PASS 4.3 (SECURITY BOUNDARY CLOSURE)
+**Document Status:** CANONICAL SPECIFICATION PASS 4.4 (SECURITY BOUNDARY CLOSURE)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
 **Current Migration Head:** `0048` (`migrations/versions/0048_enforce_paddle_binding_atomicity.py`)
@@ -25,7 +25,7 @@ This document defines the strict, mathematically sound dependency graph for Phas
    - 3. All 3 production issuance paths closed via PostgreSQL persistence.
    - 4. Atomic approval consumption and authorization issuance (`UNIQUE(approval_id)`).
    - 5. Canonical admission transaction combining nonce insert, authorization status update, and attempt transition `LEASED -> ADMITTED` (`rowcount == 1`).
-   - 6. Universal epoch invalidation covering all 14 authority mutations.
+   - 6. Universal epoch invalidation covering all 26 audited authority mutations across 13 domain subsystems.
    - 7. Monotonic worker fencing (`runtime_execution_fences` atomic counter + synchronous expiry check).
    - 8. Durable attempt state machine (`0051_runtime_execution_attempts`, `evidence_status` and `backend_start_token_hash` columns).
    - 9. One-shot backend-start claim (`claim_backend_start` with `rowcount == 1` generating raw `backend_start_token` and storing `backend_start_token_hash`).
@@ -56,7 +56,7 @@ This document defines the strict, mathematically sound dependency graph for Phas
 | **Task 8A3** | Execution Attempt Schema (Mig 0051) & Repository | SERIAL CORE | Task 8A2 | `migrations/0051_*.py`, `db/execution_attempt_repository.py` | NO (Migration chain) |
 | **Task 8A4** | Worker Lease & Fence Schema (Mig 0052) & Repositories | SERIAL CORE | Task 8A3 | `migrations/0052_*.py`, `db/execution_fence_repository.py`, `db/admission_lease_repository.py` | NO (Migration chain) |
 | **Task 8A5** | Centralized Issuer & Approval Atomicity | SERIAL CORE | Tasks 8A1-8A4 | `governance/execution_issuer.py`, `governance/approval_service.py`, `mcp/governance_integration.py`, `mcp/upstream_dispatch.py` | NO (Requires full schema) |
-| **Task 8B** | Universal Epoch Coverage (14 Mutations), Revalidation & Atomic Admission (F4.2-01) | SERIAL CORE | Task 8A5 | `db/execution_nonce_repository.py`, `governance/execution.py`, `iam/session.py`, `iam/break_glass.py`, `runtime/revalidation.py` | NO (Database atomic) |
+| **Task 8B** | Universal Epoch Coverage (26 Audited Mutations), Revalidation & Atomic Admission (F4.2-01) | SERIAL CORE | Task 8A5 | `db/execution_nonce_repository.py`, `governance/execution.py`, `iam/session.py`, `iam/break_glass.py`, `runtime/revalidation.py` | NO (Database atomic) |
 | **Task 9A** | Worker Lease Acquisition, Monotonic Fencing & Backend-Start Claim (F4.3-02) | SERIAL CORE | Tasks 8A4, 8A5 | `runtime/worker/lease.py`, `db/execution_attempt_repository.py` (`claim_backend_start`) | NO (Requires leases & attempts) |
 | **Task 9B** | Pre-Effect CAS with Lease Revalidation, Action/Target Pinning & Evidence Precedence (F4.3-01, F4.3-02, F4.3-03, F4.3-04) | SERIAL CORE | Tasks 8B, 9A | `governance/execution.py` (`InternalToolExecutor`), `governance/upstream_executor.py` (`UpstreamMCPExecutor`), `db/execution_attempt_repository.py`, `runtime/admission/controller.py` | NO (Requires claim & receipt) |
 | **Task 10** | Dispatcher Activation Gate (16 Mandatory Prerequisites) | INTEGRATION GATE | Tasks 6, 7, 8B, 9B | `runtime/dispatcher.py`, `runtime/worker/worker.py` | NO (Activation Gate) |

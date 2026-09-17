@@ -1,6 +1,6 @@
 # WhitePact Phase 7A Critical Path Analysis
 
-**Document Status:** CANONICAL SPECIFICATION PASS 4.3 (SECURITY BOUNDARY CLOSURE)
+**Document Status:** CANONICAL SPECIFICATION PASS 4.4 (SECURITY BOUNDARY CLOSURE)
 **Source Design SHA:** `dfbeb2e6d9fad575fc45b64789c63b1c1c0b5b01` (Worktree: `/Users/ag/whitepact-phase7a-runtime-preparation`)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
@@ -58,7 +58,7 @@ Because tasks in Lane B (WP-ISO-01 compute and filesystem limits) and Lane D (Ob
 [CP-08A5] Task 8A5: Centralized Issuer, Approval Atomicity & Universal Idempotency
       │
       ▼ (Critical Task 8B: Canonical Admission)
-[CP-08B] Task 8B: Universal 14-Mutation Epoch Coverage, Atomic Admission Transaction & AdmissionReceipt
+[CP-08B] Task 8B: Universal 26-Mutation Audited Epoch Coverage, Atomic Admission Transaction & AdmissionReceipt
       │
       ▼ (Critical Task 9A: Fencing & Backend Start Claim)
 [CP-09A] Task 9A: Monotonic Fencing, Synchronous Expiry Check & claim_backend_start() (Token Hash Persistence)

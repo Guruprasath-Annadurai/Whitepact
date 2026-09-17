@@ -1,6 +1,6 @@
 # WhitePact Phase 7A: Execution Call-Path and Single-Admission Closure
 
-**Document Status:** CANONICAL SPECIFICATION PASS 4.3 (SECURITY BOUNDARY CLOSURE)
+**Document Status:** CANONICAL SPECIFICATION PASS 4.4 (SECURITY BOUNDARY CLOSURE)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
 **Proposed Migrations:** `0049_runtime_execution_requests.py` through `0052_runtime_worker_leases.py`
@@ -154,7 +154,7 @@ Task 10 (Dispatcher & Worker Activation) remains strictly closed until all prere
 3. All 3 production issuance paths closed via PostgreSQL persistence.
 4. Atomic approval consumption and authorization issuance (`UNIQUE(approval_id)`).
 5. Canonical admission transaction combining nonce insert, authorization status update, and attempt transition `LEASED -> ADMITTED` (`rowcount == 1`).
-6. Universal epoch invalidation covering all 14 authority mutations.
+6. Universal epoch invalidation covering all 26 audited authority mutations across 13 domain subsystems.
 7. Monotonic worker fencing (`0052_runtime_worker_leases` & `runtime_execution_fences`).
 8. Durable attempt state machine (`0051_runtime_execution_attempts`, `evidence_status` column).
 9. One-shot backend-start claim generating raw `backend_start_token` and storing `backend_start_token_hash` on attempt.
