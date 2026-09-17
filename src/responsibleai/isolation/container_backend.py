@@ -261,8 +261,8 @@ if __name__ == "__main__":
                 incomplete = timed_out or proc.returncode is None
                 self._remove_containers(
                     cleanup_targets,
-                    stable_seconds=0.8 if incomplete else 0.0,
-                    wait_seconds=12.0 if incomplete else 2.0,
+                    stable_seconds=3.0 if incomplete else 0.0,
+                    wait_seconds=25.0 if incomplete else 2.0,
                 )
 
                 # Ensure the docker client process is not left as a zombie.
