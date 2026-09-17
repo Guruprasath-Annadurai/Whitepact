@@ -1,115 +1,110 @@
 # WhitePact Phase 7A Implementation Dependency Graph
 
-**Document Status:** Approved Architecture Specification
-**Target Worktree:** `/Users/ag/whitepact-phase7a-final-plan`
-**Base Candidate SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c`
-**Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
-**Current Alembic Head:** `0048` (`0048_enforce_paddle_binding_atomicity.py`)
+**Document Status:** CANDIDATE IMPLEMENTATION PLAN (PENDING INDEPENDENT REVIEW)
+**Source Design SHA:** `dfbeb2e6d9fad575fc45b64789c63b1c1c0b5b01` (Worktree: `/Users/ag/whitepact-phase7a-runtime-preparation`)
+**Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (Auth Candidate Under Codex Review)
+**Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
+**Assumed Alembic Head:** `0048` (`migrations/versions/0048_enforce_paddle_binding_atomicity.py`, conditional upon Codex approval of `13e8de0`)
 
 ---
 
 ## 1. Architectural Categorization of Tasks
 
-To ensure maximum implementation velocity without risking concurrent corruption of critical security invariants, Phase 7A tasks are partitioned into three distinct operational categories:
+To guarantee that implementation proceeds with maximum velocity while strictly protecting canonical security boundaries, Phase 7A tasks are categorized as:
 
-1. **SERIAL SECURITY CORE (Red Lane):**
-   Tasks that define or modify foundational governance, admission gatekeeping, worker lease mutual exclusion, and authorization revalidation. These tasks must be executed strictly serially. No two agents may concurrently edit files in this category.
-2. **PARALLEL-SAFE SUPPORT (Green Lane):**
-   Tasks that operate on self-contained leaf subsystems (e.g., container resource limits, observability metrics, Redis client wrappers) that share stable, decoupled interfaces. These tasks can be executed concurrently by separate agent lanes once their parent interface is stable.
-3. **INTEGRATION REQUIRED (Blue Lane):**
-   Tasks that join the admission controller, worker pool, isolation plane, and health systems into a unified distributed runtime. These require comprehensive end-to-end and regression testing.
+1. **SERIAL SECURITY CORE:**
+   Tasks defining admission domain models, authorization revalidation, distributed semaphores, fail-closed boundaries, worker lease mutual exclusion, and side-effect guards. These must execute strictly in security-dependency order.
+2. **PARALLEL-SAFE SUPPORT:**
+   Tasks operating on decoupled leaves (e.g., container isolation limits, telemetry, provisional configuration validation) that share stable interfaces.
+3. **INTEGRATION & GATES:**
+   Tasks that join the distributed components and execute real-infrastructure multi-process validation and canonical security regression.
 
 ---
 
-## 2. Dependency Matrix and Lane Allocation
+## 2. Corrected Dependency Matrix and Lane Allocation
 
 | Task ID | Task Description | Category | Direct Pre-requisites | Files Owned | Concurrent Safe? |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Task 1** | Admission Domain Models | SERIAL CORE | None (Auth Approval) | `runtime/admission/models.py` | NO (Foundation) |
+| **Task 1** | Admission Domain Models | SERIAL CORE | Auth Candidate Approved | `runtime/admission/models.py` | NO (Foundation) |
 | **Task 2** | Local Admission Controller | SERIAL CORE | Task 1 | `runtime/admission/controller.py` | NO |
-| **Task 3** | Global Concurrency Limit | SERIAL CORE | Task 2 | `runtime/admission/controller.py` | NO (Shared file) |
-| **Task 4** | Tenant Quota Enforcement | SERIAL CORE | Task 2 | `runtime/admission/controller.py` | NO (Shared file) |
-| **Task 5** | Workload Partitioning | SERIAL CORE | Task 2 | `runtime/admission/controller.py` | NO (Shared file) |
-| **Task 6** | Bounded Fair Queue | SERIAL CORE | Task 1, Task 4 | `runtime/queue/*` | YES (after Task 4) |
-| **Task 7** | EA Queue Revalidation | SERIAL CORE | Task 1 | `runtime/revalidation.py` | YES (Leaf module) |
-| **Task 8** | Worker Lease & Migration 0049 | SERIAL CORE | None (Database) | `migrations/0049_*.py`, `runtime/worker/lease.py` | YES (after 0048) |
-| **Task 9** | Dispatcher & Worker Decoupling | INTEGRATION | Tasks 2, 6, 8 | `runtime/dispatcher.py`, `runtime/worker/worker.py` | NO |
-| **Task 10** | Crash Recovery & Reaper | SERIAL CORE | Tasks 8, 9 | `runtime/worker/supervisor.py` | NO |
-| **Task 11** | Side-Effect Uncertainty | SERIAL CORE | Tasks 9, 10 | `runtime/worker/worker.py` | NO |
-| **Task 12** | Redis Coordinator Primitives | PARALLEL SUPPORT | None | `runtime/coordination/*` | YES (Isolated leaf) |
-| **Task 13** | Redis Fail-Closed Behavior | SERIAL CORE | Tasks 2, 12 | `runtime/admission/controller.py` | NO |
-| **Task 14** | WP-ISO-01 Compute Limits | PARALLEL SUPPORT | None | `isolation/models.py`, `isolation/container_backend.py` | YES (Isolation lane) |
-| **Task 15** | WP-ISO-01 Workspace Limits | PARALLEL SUPPORT | Task 14 | `isolation/filesystem.py` | YES (Isolation lane) |
-| **Task 16** | Timeout and Cancellation | PARALLEL SUPPORT | Task 14 | `isolation/container_backend.py` | YES (Isolation lane) |
-| **Task 17** | Graceful Shutdown Supervisor | INTEGRATION | Tasks 9, 14, 16 | `runtime/shutdown.py`, `dashboard/app.py` | NO |
-| **Task 18** | Health Probe Decoupling | INTEGRATION | Task 17 | `runtime/health.py`, `dashboard/app.py` | NO |
-| **Task 19** | Observability & Metrics | PARALLEL SUPPORT | Task 1 | `dashboard/prometheus.py` | YES (Metrics only) |
-| **Task 20** | Real Infrastructure Tests | INTEGRATION | Tasks 1-19 | `tests/runtime/test_real_infra_*.py` | NO |
-| **Task 21** | Canonical Security Regression | INTEGRATION | Task 20 | `tests/runtime/test_phase7a_security_regression.py` | NO |
-| **Task 22** | Freeze & Evidence Pack | INTEGRATION | Task 21 | `docs/phase7a-execution/*` | NO |
+| **Task 3** | Coordination Base Contract | SERIAL CORE | Task 1 | `runtime/coordination/base.py` | YES (after Task 1) |
+| **Task 4** | Redis Coordinator Implementation | SERIAL CORE | Task 3 | `runtime/coordination/redis_coordinator.py` | YES (Leaf module) |
+| **Task 5** | Redis Fail-Closed Behavior | SERIAL CORE | Tasks 2, 4 | `runtime/admission/controller.py` | NO |
+| **Task 6** | Integrated Multi-Tenant Concurrency | SERIAL CORE | Tasks 2, 5 | `runtime/admission/controller.py` | NO |
+| **Task 7** | Bounded Fair Queue (Plan-Neutral) | SERIAL CORE | Tasks 1, 6 | `runtime/queue/*` | YES (after Task 6) |
+| **Task 8** | EA Queue Revalidation | SERIAL CORE | Task 1 | `runtime/revalidation.py` | YES (Leaf module) |
+| **Task 9** | Worker Lease & Mig 0049 | SERIAL CORE | Task 8 | `migrations/0049_*.py`, `runtime/worker/lease.py` | NO (PostgreSQL) |
+| **Task 10** | Dispatcher & Worker Decoupling | INTEGRATION | Tasks 6, 7, 9 | `runtime/dispatcher.py`, `runtime/worker/worker.py` | NO (Activation Gate) |
+| **Task 11** | Crash Recovery & Reaper | SERIAL CORE | Tasks 9, 10 | `runtime/worker/supervisor.py` | NO |
+| **Task 12** | Side-Effect Safety & Idempotency | SERIAL CORE | Tasks 10, 11 | `runtime/worker/worker.py` | NO |
+| **Task 13** | WP-ISO-01 Compute Limits | PARALLEL SUPPORT | None | `isolation/models.py`, `isolation/container_backend.py` | YES (Isolation lane) |
+| **Task 14** | WP-ISO-01 Workspace Limits | PARALLEL SUPPORT | Task 13 | `isolation/filesystem.py` | YES (Isolation lane) |
+| **Task 15** | Timeout and Cancellation | PARALLEL SUPPORT | Task 13 | `isolation/container_backend.py` | YES (Isolation lane) |
+| **Task 16** | Graceful Shutdown Supervisor | INTEGRATION | Tasks 10, 15 | `runtime/shutdown.py`, `dashboard/app.py` | NO |
+| **Task 17** | Health Probe Decoupling | INTEGRATION | Task 16 | `runtime/health.py`, `dashboard/app.py` | NO |
+| **Task 18** | Observability & Metrics | PARALLEL SUPPORT | Task 1 | `dashboard/prometheus.py` | YES (Metrics only) |
+| **Task 19** | Real Infrastructure Tests | INTEGRATION | Tasks 1-18 | `tests/runtime/test_real_infra_*.py` | NO |
+| **Task 20** | Canonical Security Regression | INTEGRATION | Task 19 | `tests/runtime/test_phase7a_security_regression.py` | NO |
+| **Task 21** | Configuration Audit & Bounds | PARALLEL SUPPORT | Task 6 | `dashboard/config.py` | YES |
+| **Task 22** | Freeze & Evidence Pack | INTEGRATION | Tasks 20, 21 | `docs/phase7a-execution/*` | NO |
 
 ---
 
-## 3. Dependency Graph Visualization
+## 3. Corrected Dependency Graph Visualization
 
 ```mermaid
 flowchart TD
-    subgraph S0 [Phase 7A Prerequisite]
+    subgraph S0 [Phase 7A Prerequisites]
         AUTH[Auth Candidate Approved: 13e8de0]
+        SPEC[Spec Input: dfbeb2e & 1157493]
     end
 
-    subgraph LANE_A [Lane A: Admission and Concurrency]
-        T1[Task 1: Models] --> T2[Task 2: Local Controller]
-        T2 --> T3[Task 3: Global Concurrency]
-        T2 --> T4[Task 4: Tenant Concurrency]
-        T2 --> T5[Task 5: Workload Partitioning]
-        T4 --> T6[Task 6: Bounded Fair Queue]
-        T1 --> T7[Task 7: EA Revalidation]
+    subgraph ADMISSION_LANE [Admission & Distributed Coordination]
+        T1[Task 1: Domain Models] --> T2[Task 2: Local Controller]
+        T1 --> T3[Task 3: Coordination Base]
+        T3 --> T4[Task 4: Redis Coordinator]
+        T2 & T4 --> T5[Task 5: Redis Fail-Closed]
+        T5 --> T6[Task 6: Multi-Tenant Concurrency]
+        T6 --> T7[Task 7: Plan-Neutral Fair Queue]
+        T1 --> T8[Task 8: EA Queue Revalidation]
     end
 
-    subgraph LANE_B [Lane B: Worker Lease and Durability]
-        T8[Task 8: Worker Lease & Mig 0049] --> T9[Task 9: Dispatcher & Worker]
-        T9 --> T10[Task 10: Crash Recovery & Reaper]
-        T10 --> T11[Task 11: Side-Effect Uncertainty]
+    subgraph LEASE_LANE [Worker Lease & Durability]
+        T8 --> T9[Task 9: Worker Lease & Mig 0049]
+        T6 & T7 & T9 --> T10[Task 10: Dispatcher Activation]
+        T10 --> T11[Task 11: Crash Recovery & Reaper]
+        T11 --> T12[Task 12: Side-Effect Uncertainty]
     end
 
-    subgraph LANE_C [Lane C: Distributed Coordination]
-        T12[Task 12: Redis Coordinator] --> T13[Task 13: Redis Fail-Closed]
+    subgraph ISOLATION_LANE [WP-ISO-01 Container Hardening]
+        T13[Task 13: Compute Limits CPU/RAM/PID] --> T14[Task 14: Workspace Limits 10MB/100 Files]
+        T13 --> T15[Task 15: Timeout & Cancellation]
     end
 
-    subgraph LANE_D [Lane D: WP-ISO-01 Isolation Hardening]
-        T14[Task 14: Compute Limits CPU/RAM/PID] --> T15[Task 15: Workspace & File Limits]
-        T14 --> T16[Task 16: Timeout Cancellation]
+    subgraph OPS_LANE [Health & Observability]
+        T10 & T15 --> T16[Task 16: Graceful Shutdown]
+        T16 --> T17[Task 17: Health Probes]
+        T1 --> T18[Task 18: Observability 15 Metrics]
+        T6 --> T21[Task 21: Config Bounds Audit]
     end
 
-    subgraph LANE_E [Lane E: Telemetry]
-        T19[Task 19: Prometheus Metrics]
+    subgraph INTEGRATION_LANE [System Verification & Freeze]
+        T12 & T14 & T17 & T18 & T21 --> T19[Task 19: Real Infra Integration PG/Redis/Docker]
+        T19 --> T20[Task 20: Canonical Security Regression]
+        T20 --> T22[Task 22: Candidate Freeze & Evidence]
     end
 
-    subgraph INTEGRATION [System Integration & Verification]
-        T6 & T7 & T11 & T13 & T15 & T16 --> T17[Task 17: Graceful Shutdown]
-        T17 --> T18[Task 18: Health Probe Decoupling]
-        T18 & T19 --> T20[Task 20: Real Infra Tests PG/Redis/Docker]
-        T20 --> T21[Task 21: Canonical Security Regression]
-        T21 --> T22[Task 22: Candidate Freeze & Evidence]
-    end
-
-    AUTH --> T1
-    AUTH --> T8
-    AUTH --> T12
-    AUTH --> T14
-    AUTH --> T19
-    T2 & T12 --> T13
-    T2 & T6 & T8 --> T9
+    AUTH & SPEC --> T1
+    AUTH & SPEC --> T13
 ```
 
 ---
 
 ## 4. Multi-Agent Concurrency Guardrails
 
-To prevent race conditions, merge conflicts, or divergent assumptions when multiple agents or subagents participate:
-
-1. **Strict File Ownership:** No two active agents may touch the same file simultaneously.
-2. **Boundary Stability:** Lane D (Isolation) has zero dependency on Lane A (Admission). Agent working on WP-ISO-01 can run to completion in parallel with Agent working on Admission.
-3. **No Branch Divergence:** All branches merge into the central integration branch following atomic verification.
-4. **Independent Review Points:** Each completed lane must undergo CodeRabbit/Codex review before integration into the master candidate branch.
+1. **Activation Gate Enforcement:** Task 10 (Worker Dispatcher Decoupling & Activation) cannot begin until Task 5 (Redis Fail-Closed) and Task 9 (Worker Lease Contract) are green and verified.
+2. **Strict File Isolation:**
+   - `isolation/*` is modified exclusively in Tasks 13, 14, 15.
+   - `dashboard/app.py` is modified exclusively in Tasks 16 and 17.
+   - `migrations/*` is modified exclusively in Task 9.
+3. **Plan-Neutrality Invariant:** No task may introduce plan-based queue weighting or priority elevation.
