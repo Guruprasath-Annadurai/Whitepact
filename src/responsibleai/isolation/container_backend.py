@@ -60,6 +60,62 @@ class DockerContainerBackend(IsolationBackend):
         except Exception:
             return False
 
+    def _remove_containers(
+        self,
+        targets: list[str],
+        *,
+        stable_seconds: float,
+        wait_seconds: float,
+    ) -> None:
+        """Remove uniquely named containers, waiting out late dockerd registration."""
+        deadline = time.monotonic() + wait_seconds
+        gone_since: dict[str, float | None] = {target: None for target in targets}
+        while time.monotonic() < deadline:
+            remaining = False
+            for target in targets:
+                try:
+                    subprocess.run(  # noqa: S603
+                        [self.docker_cmd, "rm", "-f", target],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        timeout=10,
+                        check=False,
+                    )
+                except Exception:
+                    pass
+                filter_arg = (
+                    f"id={target}"
+                    if len(target) == 64 and target.isalnum()
+                    else f"name={target}"
+                )
+                exists = False
+                try:
+                    check = subprocess.run(  # noqa: S603
+                        [self.docker_cmd, "ps", "-aq", "--filter", filter_arg],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                        check=False,
+                    )
+                    exists = bool(check.stdout.strip())
+                except Exception:
+                    exists = False
+                if exists:
+                    gone_since[target] = None
+                    remaining = True
+                    continue
+                if stable_seconds <= 0:
+                    continue
+                now = time.monotonic()
+                if gone_since[target] is None:
+                    gone_since[target] = now
+                    remaining = True
+                elif now - gone_since[target] < stable_seconds:  # type: ignore[operator]
+                    remaining = True
+            if not remaining:
+                return
+            time.sleep(0.2)
+
     async def execute(self, request: IsolatedExecutionRequest) -> ExecutionOutcome:
         if not self.is_available():
             raise IsolationBackendUnavailableError(
@@ -208,45 +264,11 @@ if __name__ == "__main__":
                 # asynchronous create. Retry rm -f until the uniquely named
                 # container is gone; never filter by org/action prefix.
                 incomplete = timed_out or proc.returncode is None
-                if incomplete:
-                    time.sleep(0.4)
-
-                for target in cleanup_targets:
-                    for _ in range(12):
-                        try:
-                            subprocess.run(  # noqa: S603
-                                [self.docker_cmd, "rm", "-f", target],
-                                stdout=subprocess.DEVNULL,
-                                stderr=subprocess.DEVNULL,
-                                timeout=10,
-                                check=False,
-                            )
-                        except Exception:
-                            pass
-
-                        filter_arg = (
-                            f"id={target}"
-                            if len(target) == 64 and target.isalnum()
-                            else f"name={target}"
-                        )
-                        try:
-                            check = subprocess.run(  # noqa: S603
-                                [self.docker_cmd, "ps", "-aq", "--filter", filter_arg],
-                                capture_output=True,
-                                text=True,
-                                timeout=5,
-                                check=False,
-                            )
-                            leftover = [
-                                line
-                                for line in check.stdout.split()
-                                if line
-                            ]
-                            if not leftover:
-                                break
-                        except Exception:
-                            break
-                        time.sleep(0.25)
+                self._remove_containers(
+                    cleanup_targets,
+                    stable_seconds=0.8 if incomplete else 0.0,
+                    wait_seconds=8.0 if incomplete else 2.0,
+                )
 
                 # Ensure the docker client process is not left as a zombie.
                 if proc.returncode is None:
