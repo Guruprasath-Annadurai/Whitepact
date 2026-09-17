@@ -1,6 +1,6 @@
 # WhitePact Phase 7A Critical Path Analysis
 
-**Document Status:** CANONICAL SPECIFICATION PASS 4 (SECURITY REMEDIATION)
+**Document Status:** CANONICAL SPECIFICATION PASS 4.1 (SECURITY CONSISTENCY REMEDIATION)
 **Source Design SHA:** `dfbeb2e6d9fad575fc45b64789c63b1c1c0b5b01` (Worktree: `/Users/ag/whitepact-phase7a-runtime-preparation`)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
@@ -42,19 +42,34 @@ Because tasks in Lane B (WP-ISO-01 compute and filesystem limits) and Lane D (Ob
       ▼ (Critical Task 7)
 [CP-07] Task 7: Bounded Multi-Tenant Fair Queue
       │
-      ▼ (Critical Task 8A: Lane A2)
-[CP-08A] Task 8A: Durable Request (Mig 0049), Auth (Mig 0050), Centralized Issuer, Approval Atomicity & Idempotency
+      ▼ (Critical Task 8A1: Migration 0049 & Request Repo)
+[CP-08A1] Task 8A1: Durable Request Schema (Mig 0049, Append-Only) & Repository
       │
-      ▼ (Critical Task 8B: Lane A2)
+      ▼ (Critical Task 8A2: Migration 0050 & Auth Repo)
+[CP-08A2] Task 8A2: Durable Auth Schema (Mig 0050, UNIQUE approval_id) & Repository
+      │
+      ▼ (Critical Task 8A3: Migration 0051 & Attempt Repo)
+[CP-08A3] Task 8A3: Execution Attempt Schema (Mig 0051, Nullable Lease Fields, CHECK) & Repository
+      │
+      ▼ (Critical Task 8A4: Migration 0052, Lease & Fence Repos)
+[CP-08A4] Task 8A4: Worker Lease & Execution Fence Schema (Mig 0052) & Repositories
+      │
+      ▼ (Critical Task 8A5: Centralized Issuance Service)
+[CP-08A5] Task 8A5: Centralized Issuer, Approval Atomicity & Universal Idempotency
+      │
+      ▼ (Critical Task 8B: Canonical Admission)
 [CP-08B] Task 8B: Universal 14-Mutation Epoch Coverage, Atomic Admission Transaction & AdmissionReceipt
       │
-      ▼ (Critical Task 9: Lane C1)
-[CP-09] Task 9: Attempt State Machine (Mig 0051), Worker Lease Fencing (Mig 0052) & One-Shot Backend Start
+      ▼ (Critical Task 9A: Fencing & Backend Start Claim)
+[CP-09A] Task 9A: Monotonic Fencing, Synchronous Expiry Check & claim_backend_start()
+      │
+      ▼ (Critical Task 9B: Downstream Executor Verification & SafeNetwork IP Pinning)
+[CP-09B] Task 9B: Executor assert_backend_start_claim(), SafeNetwork Pinning, EFFECT_TRANSMITTING & Capacity Release
       │
       ▼ [CHECKPOINT 1: Coordination, All-Path Durable Issuance & Single Admission Core Verification]
       │
       ▼ (Critical Task 10: INTEGRATION GATE)
-[CP-10] Task 10 Gate: Worker Dispatcher & Execution Worker (Requires ALL 10 Security Prerequisites Proven)
+[CP-10] Task 10 Gate: Worker Dispatcher & Execution Worker (Requires ALL 15 Security Prerequisites Proven)
       │
       ▼ (Critical Task 11: Lane C2)
 [CP-11] Task 11: Worker Heartbeats, Crash Recovery, Stale Lease Reaper & Capacity Reconciler
@@ -84,7 +99,7 @@ Because tasks in Lane B (WP-ISO-01 compute and filesystem limits) and Lane D (Ob
 [CP-17] Task 22: Candidate Freeze & Review Evidence Pack
       │
       ▼
-[FINAL] Freeze Phase 7A Candidate for Codex Independent Review
+[FINAL] Freeze Phase 7A Candidate for Independent Review
 ```
 
 ---

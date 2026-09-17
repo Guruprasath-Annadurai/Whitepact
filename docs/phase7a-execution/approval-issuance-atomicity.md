@@ -1,9 +1,9 @@
 # WhitePact Phase 7A: Approval Consumption & Authorization Issuance Atomicity
 
-**Document Status:** CANONICAL SPECIFICATION PASS 4 (SECURITY REMEDIATION)
+**Document Status:** CANONICAL SPECIFICATION PASS 4.1 (SECURITY CONSISTENCY REMEDIATION)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
-**Related Migrations:** `0049_runtime_execution_requests.py`, `0050_runtime_execution_authorizations.py`
+**Related Migrations:** `0049_runtime_execution_requests.py` through `0052_runtime_worker_leases.py`
 
 ---
 
@@ -15,7 +15,7 @@ When an action requires human approval (`REQUIRE_APPROVAL`), the execution permi
    - Or, authorization is inserted, but approval consumption fails: the same approval can be used again to mint a second authorization, violating single-use governance.
 2. **Duplicate Minting Race:** If two approval-resolution requests arrive concurrently for the same `approval_id`, both could pass validation and mint duplicate execution authorizations.
 
-Phase 7A eliminates this window by combining approval consumption, execution request creation, and authorization issuance into **one atomic PostgreSQL transaction**.
+Phase 7A eliminates this window by combining approval consumption, execution request creation, authorization issuance, initial `PENDING` attempt creation, and fence initialization into **one atomic PostgreSQL transaction**.
 
 ---
 
@@ -62,7 +62,8 @@ sequenceDiagram
     Gateway->>DB: INSERT INTO governance_execution_authorizations (authorization_id, execution_id, approval_id, status='ISSUED', ...)
     Note over DB: DB enforces UNIQUE(approval_id)
 
-    Gateway->>DB: INSERT INTO runtime_execution_attempts (attempt_id, execution_id, state='PENDING', ...)
+    Gateway->>DB: INSERT INTO runtime_execution_attempts (attempt_id, execution_id, state='PENDING', worker_id=NULL, lease_id=NULL, lease_generation=NULL, ...)
+    Gateway->>DB: INSERT INTO runtime_execution_fences (execution_id, current_generation=0)
     Gateway->>DB: COMMIT TRANSACTION
 
     Note over Gateway,Queue: Enqueue happens strictly AFTER commit
@@ -81,6 +82,6 @@ sequenceDiagram
 2. **Database Failure Mid-Transaction:** If PostgreSQL disconnects during the request or authorization insert:
    - Transaction automatically rolls back.
    - `governance_approvals.status` reverts to `APPROVED`.
-   - No row is written to `runtime_execution_requests` or `governance_execution_authorizations`.
+   - No row is written to `runtime_execution_requests`, `governance_execution_authorizations`, `runtime_execution_attempts`, or `runtime_execution_fences`.
    - Zero `QueueTicket` objects are emitted to Redis or in-memory queues.
 3. **Queue Emission Boundary:** The enqueuing of the `QueueTicket` occurs strictly outside and after the successful transaction commit. An enqueued ticket is therefore mathematically guaranteed to reference durably committed PostgreSQL rows.

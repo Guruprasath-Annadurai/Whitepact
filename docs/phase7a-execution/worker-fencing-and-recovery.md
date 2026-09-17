@@ -1,6 +1,6 @@
 # WhitePact Phase 7A: Worker Fencing, Lease Generation & Crash Recovery
 
-**Document Status:** CANONICAL SPECIFICATION PASS 4 (SECURITY REMEDIATION)
+**Document Status:** CANONICAL SPECIFICATION PASS 4.1 (SECURITY CONSISTENCY REMEDIATION)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
 **Proposed Migration:** `0052_runtime_worker_leases.py` (down-revision: `0051`)
@@ -13,17 +13,33 @@ Distributed worker architectures face the split-brain / zombie worker vulnerabil
 1. **Network Partition / Deep GC Pause:** Worker 1 acquires an execution lease. Due to a network pause or thread stall, Worker 1 fails to heartbeat.
 2. **Lease Expiry & Reassignment:** The supervisor declares Worker 1 dead and assigns the execution to Worker 2.
 3. **Resumption of Zombie Worker:** Worker 1 awakens and executes the side-effect (launching a container or making an external HTTP call), while Worker 2 simultaneously executes the same side-effect.
-4. **Failure of `UNIQUE WHERE status = 'ACTIVE'`:** A simple active unique index prevents two active database rows at the exact same millisecond, but it does NOT stop Worker 1 if Worker 1 already read the database earlier and proceeds to execute against local Docker or network sockets.
+4. **Failure of Incomplete Fencing:** An in-memory active lease flag or non-atomic generation computation (`SELECT MAX + 1`) permits concurrent workers to compute identical generations or execute with expired leases before the supervisor reaper runs.
 
-To eliminate this vulnerability, WhitePact enforces **Monotonic Worker Fencing** directly inside PostgreSQL.
+To eliminate this vulnerability, WhitePact enforces:
+- **Dedicated Atomic Generation Counter:** Monotonically increasing generations allocated via `runtime_execution_fences`.
+- **Synchronous Expiry Fencing:** Backend start verifies lease status, worker identity, generation, and `expires_at > CURRENT_TIMESTAMP` under row lock.
+- **Reaper-Independent Correctness:** Stale workers fail closed immediately, regardless of background reaper timing.
 
 ---
 
-## 2. Table Schema: `runtime_worker_leases`
+## 2. Table Schemas: `runtime_execution_fences` and `runtime_worker_leases`
 
-Migration `0052_runtime_worker_leases.py` introduces monotonic lease generations and fencing tokens:
+Migration `0052_runtime_worker_leases.py` establishes the dedicated fence counters and worker leases:
 
 ```sql
+-- Dedicated execution fence counter table (4.1-F04)
+CREATE TABLE runtime_execution_fences (
+    execution_id VARCHAR(64) PRIMARY KEY,
+    current_generation BIGINT NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_fence_exec_req
+        FOREIGN KEY (execution_id)
+        REFERENCES runtime_execution_requests(execution_id)
+        ON DELETE RESTRICT
+);
+
+-- Worker lease table
 CREATE TABLE runtime_worker_leases (
     lease_id VARCHAR(64) PRIMARY KEY,
     execution_id VARCHAR(64) NOT NULL,
@@ -73,87 +89,93 @@ WHERE status = 'ACTIVE';
 
 ---
 
-## 3. Monotonic Fencing Protocol
+## 3. Atomic Monotonic Lease Generation Allocation (4.1-F04)
 
-### 3.1 Strict Generation Increment
-Every time a lease is created or reassigned for an `execution_id`, the system computes the next generation monotonically:
+During centralized issuance, a fence row is created with `current_generation = 0`.
+
+When a worker acquires an initial lease or reassigns an execution, it allocates the next generation atomically:
+
 ```sql
-SELECT COALESCE(MAX(lease_generation), 0) + 1
-FROM runtime_worker_leases
-WHERE execution_id = :execution_id;
+UPDATE runtime_execution_fences
+SET current_generation = current_generation + 1
+WHERE execution_id = :execution_id
+RETURNING current_generation;
 ```
-Worker 1 receives Generation 1. If Worker 1 stalls and a replacement worker is leased, Worker 2 receives Generation 2.
 
-### 3.2 Atomic Pre-Start Fencing Check
-Immediately before starting the backend, Worker 1 must atomically prove its lease generation is still the authoritative generation in PostgreSQL:
+### Invariants:
+1. **Strict Monotonicity:** Generations are strictly increasing integers: 1, 2, 3...
+2. **Zero Concurrency Race:** Row-level locking inside PostgreSQL ensures concurrent lease acquisition attempts never compute or allocate identical generation numbers.
+3. **Auditability:** `runtime_execution_fences` records the exact total generation counter for every execution.
+
+---
+
+## 4. Synchronous Pre-Backend Start Fencing Verification (4.1-F05, 4.1-F10)
+
+Immediately before backend invocation, `ExecutionAttemptRepository.claim_backend_start()` runs the following transaction:
 
 ```sql
 BEGIN TRANSACTION;
 
--- 1. Lock the active lease row
-SELECT lease_generation, worker_id, status
+-- 1. Lock and synchronously verify active, unexpired lease
+SELECT lease_generation, worker_id, lease_id, expires_at
 FROM runtime_worker_leases
-WHERE execution_id = :execution_id AND status = 'ACTIVE'
+WHERE execution_id = :execution_id
+  AND status = 'ACTIVE'
+  AND expires_at > CURRENT_TIMESTAMP
 FOR UPDATE;
 
--- 2. Validate lease belongs to this worker and generation matches
--- If generation != :my_generation OR worker_id != :my_worker_id:
---    ROLLBACK and raise ZombieWorkerFencedError
+-- Application Verification Rules:
+-- A. If no row returned: lease is EXPIRED or REVOKED -> ROLLBACK & raise LeaseExpiredError.
+-- B. If worker_id != :my_worker_id: lease reassigned to another worker -> ROLLBACK & raise ZombieWorkerFencedError.
+-- C. If lease_generation != :my_generation: worker holds stale generation -> ROLLBACK & raise ZombieWorkerFencedError.
+-- D. If lease_id != :my_lease_id: lease replaced -> ROLLBACK & raise ZombieWorkerFencedError.
 
--- 3. Execute one-shot backend-start transition
+-- 2. Execute one-shot backend-start transition
 UPDATE runtime_execution_attempts
 SET state = 'BACKEND_STARTING',
+    effect_state = 'EFFECT_STARTING',
     backend_started_at = CURRENT_TIMESTAMP,
     updated_at = CURRENT_TIMESTAMP
-WHERE execution_id = :execution_id
-  AND attempt_id = :attempt_id
+WHERE attempt_id = :attempt_id
+  AND execution_id = :execution_id
+  AND authorization_id = :authorization_id
+  AND worker_id = :worker_id
+  AND lease_id = :lease_id
   AND lease_generation = :my_generation
   AND state = 'ADMITTED';
 
--- If rowcount != 1:
---    ROLLBACK and raise BackendStartOwnershipLostError
+-- Assert rowcount == 1:
+-- If rowcount == 0: attempt was already started or invalid -> ROLLBACK & raise BackendStartOwnershipLostError.
 
 COMMIT;
 ```
 
-### 3.3 Zombie Worker Exclusion
-If Worker 1 awakens after Worker 2 has acquired Generation 2:
-- Worker 1's lock query reveals that the active lease generation is 2 (or that Worker 1's lease is `EXPIRED`).
-- Worker 1's atomic update matches `rowcount == 0`.
-- Worker 1's transaction rolls back and execution halts immediately.
-- **Worker 1 never invokes Docker or transmits an HTTP packet.**
+### Independence from Background Reaper:
+The condition `expires_at > CURRENT_TIMESTAMP` is checked **synchronously** inside the lock. If a worker's lease expired 10 milliseconds ago, the check fails immediately, even if the background reaper has not yet run. **Correctness never relies on background reaper timing.**
 
 ---
 
-## 4. Stale Lease Reaper & Crash Recovery Rules
+## 5. Stale Lease Reaper & Capacity Recovery Rules (4.1-F13)
 
-The background `WorkerSupervisor` runs periodically (every 5 seconds) to detect dead workers:
+The background `WorkerSupervisor` runs periodically (every 5 seconds) to clean up stale resources and reconcile capacity:
 
 ```mermaid
 flowchart TD
     POLL[Reaper Scans runtime_worker_leases WHERE status = 'ACTIVE' AND expires_at < now] --> EXPIRE[Mark Lease status = 'EXPIRED']
     EXPIRE --> INSPECT[Inspect runtime_execution_attempts for execution_id]
     INSPECT --> CHECK{Attempt State?}
-    CHECK -- PENDING or LEASED --> REQUEUE[Mark FAILED_PRE_EXECUTION<br/>Safe to Re-Enqueue if attempt < max]
-    CHECK -- ADMITTED --> ABORT_ADMITTED[Mark FAILED_PRE_EXECUTION<br/>Nonce Already Burned. Require New Authorization.]
-    CHECK -- BACKEND_STARTING or RUNNING --> UNCERTAIN[Mark UNCERTAIN & EFFECT_UNCERTAIN<br/>AUTOMATIC REPLAY FORBIDDEN]
+    CHECK -- PENDING or LEASED --> REQUEUE[Mark FAILED_PRE_EXECUTION<br/>Release Capacity<br/>Safe to Re-Enqueue if attempt < max]
+    CHECK -- ADMITTED --> ABORT_ADMITTED[Mark FAILED_PRE_EXECUTION<br/>Release Capacity<br/>Nonce Already Burned. Require New Authorization.]
+    CHECK -- BACKEND_STARTING or RUNNING --> UNCERTAIN[Mark UNCERTAIN & EFFECT_UNCERTAIN<br/>Release Capacity<br/>AUTOMATIC REPLAY FORBIDDEN]
 ```
 
-### Recovery Matrix Rules:
-1. **Pre-Admission Death (`PENDING`, `LEASED`):**
-   - Zero side-effects began.
-   - Nonce was NOT consumed.
-   - Supervisor marks attempt `FAILED_PRE_EXECUTION` and releases capacity.
-   - Safe to re-enqueue.
-2. **Post-Admission / Pre-Backend Death (`ADMITTED`):**
-   - Canonical admission succeeded and nonce was committed to PostgreSQL.
-   - However, `BACKEND_STARTING` was never reached (guaranteed `NO_EFFECT`).
-   - Because the single-use nonce is burned, the ticket CANNOT be re-run directly.
-   - Attempt is marked `FAILED_PRE_EXECUTION` with failure code `ADMISSION_EXPIRED_PRE_EXECUTION`.
-   - Client must re-issue an `ActionRequest`.
-3. **In-Flight Death (`BACKEND_STARTING`, `RUNNING`):**
-   - Container was launched or HTTP request was transmitted.
-   - Outcome is unknown.
-   - Attempt is marked `UNCERTAIN` and `effect_state = 'EFFECT_UNCERTAIN'`.
-   - **Automatic retry is strictly prohibited.**
-   - Upstream reconciliation is triggered via `effect_id`. If reconciliation cannot prove absence of effect, the task remains terminal pending human administrator review.
+### Comprehensive Capacity Release Matrix (4.1-F13):
+Every capacity reservation made at enqueue time (`AdmissionController.reserve_execution`) MUST terminate in an explicit release:
+1. **Queue Rejection / Timeout:** Capacity released immediately by AdmissionController / Queue.
+2. **Early Queue Invalidation:** Dispatcher drops ticket -> calls `AdmissionController.release_execution()`.
+3. **Lease Acquisition Failure:** Attempt remains `PENDING` or marked `FAILED_PRE_EXECUTION` -> capacity released.
+4. **Preflight / Admission Failure:** Lease marked `FAILED`, attempt marked `FAILED_PRE_EXECUTION` -> capacity released.
+5. **Backend Start Claim Failure:** Attempt fails to transition -> lease released -> capacity released.
+6. **Normal Execution Completion (`COMPLETED`, `FAILED`):** Evidence written -> lease `COMPLETED` -> capacity released.
+7. **Disrupted / Ambiguous Execution (`UNCERTAIN`):** Attempt marked `UNCERTAIN` -> lease `EXPIRED` -> capacity released.
+8. **Worker / Node Crash:** Supervisor reconciler inspects active Redis capacity reservations against active PostgreSQL leases and releases orphaned reservations.

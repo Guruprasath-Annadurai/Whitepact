@@ -1,9 +1,9 @@
 # WhitePact Phase 7A: Durable Immutable Execution Request Design
 
-**Document Status:** CANONICAL SPECIFICATION PASS 4 (SECURITY REMEDIATION)
+**Document Status:** CANONICAL SPECIFICATION PASS 4.1 (SECURITY CONSISTENCY REMEDIATION)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
-**Proposed Migration:** `0049_runtime_execution_requests.py` (down-revision: `0048`)
+**Proposed Migrations:** `0049_runtime_execution_requests.py` (down-revision: `0048`) and `0052_runtime_worker_leases.py` (for execution fences)
 
 ---
 
@@ -14,6 +14,7 @@ In asynchronous and distributed execution, in-memory actions or lightweight dige
 2. **Policy Re-Evaluation Prohibition:** A worker MUST NOT re-evaluate governance policies at dequeue time to "re-derive" the action. Doing so violates policy immutability, introduces temporal inconsistency, and breaks auditability.
 3. **Queue Payload Exposure:** Storing raw action arguments, authentication tokens, or credentials in Redis queues violates the zero-trust principle and exposes sensitive payload data to queue interception.
 4. **Idempotency & Duplicate Minting:** Client retries following network timeouts must not produce multiple distinct execution permits for the same logical operation.
+5. **Separation of Input from Progress:** The execution request is an immutable historical record of approved inputs. Operational lifecycle progress belongs strictly in `runtime_execution_attempts`, and permit validity belongs strictly in `governance_execution_authorizations`. The request table contains zero mutable lifecycle status.
 
 ---
 
@@ -26,7 +27,7 @@ CREATE TABLE runtime_execution_requests (
     execution_id VARCHAR(64) PRIMARY KEY,
     organization_id VARCHAR(64) NOT NULL,
     principal_id VARCHAR(64) NOT NULL,
-    idempotency_key VARCHAR(128) NULL,
+    idempotency_key VARCHAR(128) NOT NULL,
     action_type VARCHAR(128) NOT NULL,
     target VARCHAR(256) NOT NULL,
     server_id VARCHAR(128) NULL,
@@ -39,7 +40,6 @@ CREATE TABLE runtime_execution_requests (
     canonical_action_payload TEXT NOT NULL,
     action_digest VARCHAR(64) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    status VARCHAR(32) NOT NULL DEFAULT 'COMMITTED',
 
     CONSTRAINT fk_exec_req_org
         FOREIGN KEY (organization_id)
@@ -49,16 +49,12 @@ CREATE TABLE runtime_execution_requests (
     CONSTRAINT fk_exec_req_approval
         FOREIGN KEY (approval_id)
         REFERENCES governance_approvals(id)
-        ON DELETE RESTRICT,
-
-    CONSTRAINT chk_exec_req_status
-        CHECK (status IN ('COMMITTED', 'TERMINATED'))
+        ON DELETE RESTRICT
 );
 
--- Tenant-scoped idempotency constraint
+-- Tenant-scoped idempotency constraint (every hosted request has an idempotency key)
 CREATE UNIQUE INDEX idx_exec_req_org_idempotency
-ON runtime_execution_requests (organization_id, idempotency_key)
-WHERE idempotency_key IS NOT NULL;
+ON runtime_execution_requests (organization_id, idempotency_key);
 
 -- Action digest verification index
 CREATE INDEX idx_exec_req_action_digest
@@ -73,6 +69,7 @@ ON runtime_execution_requests (organization_id, created_at DESC);
 - `organization_id` uses `ON DELETE RESTRICT`: organizations with execution history cannot be casually deleted.
 - `approval_id` uses `ON DELETE RESTRICT`: human approvals linked to execution requests cannot be deleted.
 - All timestamps use timezone-aware `TIMESTAMPTZ`.
+- No `status` column: operational status belongs exclusively in `runtime_execution_attempts`.
 
 ---
 
@@ -93,62 +90,92 @@ To guarantee deterministic, byte-identical representations across all system rep
 
 ---
 
-## 4. Immutability Enforcement
+## 4. Complete Immutability Enforcement
 
 Security-critical action fields MUST NOT be altered once written. Immutability is enforced at three defense layers:
-1. **Database Role Privileges:** The runtime application database role is granted only `SELECT` and `INSERT` on `runtime_execution_requests`. `UPDATE` and `DELETE` privileges are explicitly revoked.
+1. **Database Role Privileges:** The runtime application database role is granted only `SELECT` and `INSERT` on `runtime_execution_requests`. `UPDATE` and `DELETE` privileges are explicitly revoked via `REVOKE UPDATE, DELETE ON runtime_execution_requests FROM app_role`.
 2. **PostgreSQL Immutability Trigger:**
+   All `UPDATE` and `DELETE` operations are unconditionally rejected by a database trigger:
    ```sql
-   CREATE OR REPLACE FUNCTION trg_prevent_execution_request_update()
+   CREATE OR REPLACE FUNCTION reject_execution_request_mutation()
    RETURNS TRIGGER AS $$
    BEGIN
-       IF (NEW.execution_id <> OLD.execution_id OR
-           NEW.organization_id <> OLD.organization_id OR
-           NEW.principal_id <> OLD.principal_id OR
-           NEW.action_digest <> OLD.action_digest OR
-           NEW.canonical_action_payload <> OLD.canonical_action_payload OR
-           NEW.approved_arguments <> OLD.approved_arguments) THEN
-           RAISE EXCEPTION 'Modification of immutable execution request fields is forbidden';
-       END IF;
-       RETURN NEW;
+       RAISE EXCEPTION 'runtime_execution_requests is immutable and append-only: UPDATE and DELETE are prohibited';
    END;
    $$ LANGUAGE plpgsql;
 
-   CREATE TRIGGER enforce_execution_request_immutability
-   BEFORE UPDATE ON runtime_execution_requests
-   FOR EACH ROW EXECUTE FUNCTION trg_prevent_execution_request_update();
+   CREATE TRIGGER prevent_execution_request_mutation
+   BEFORE UPDATE OR DELETE ON runtime_execution_requests
+   FOR EACH ROW EXECUTE FUNCTION reject_execution_request_mutation();
    ```
-3. **Repository Interface:** The `ExecutionRequestRepository` provides only `create()` and `get()` methods. No update method is implemented.
+   This prevents forgetting newly added security columns later and ensures defense in depth even if database user privileges are misconfigured.
+3. **Repository Interface:** The `ExecutionRequestRepository` provides only `create()` and `get()` methods. No update or delete methods exist in the repository interface.
 
 ---
 
-## 5. Tenant-Scoped Idempotent Issuance Semantics
+## 5. Tenant-Scoped Concurrency-Safe Idempotency Semantics
 
 To prevent duplicate execution permits from being minted on client retries:
-1. **Idempotency Key Scope:** The partial unique index `(organization_id, idempotency_key)` guarantees that idempotency keys are strictly isolated per tenant.
-2. **Atomic Get-or-Create Logic:**
-   - When a client submits an `ActionRequest` with an `idempotency_key`:
-     - Gateway queries `runtime_execution_requests` for `(organization_id, idempotency_key)`.
-     - **Match Found & Same Digest:** Returns the existing `execution_id` and durable authorization state. Zero duplicate authorizations or queue tickets are emitted.
-     - **Match Found & Different Digest:** Fails closed immediately with HTTP 409 Conflict (`IdempotencyConflictError`). An idempotency key cannot be reused for a different payload.
-     - **No Match Found:** Begins transaction, inserts request, inserts authorization, and commits.
-3. **Missing Idempotency Key:** If the client provides no idempotency key:
-   - The gateway generates a cryptographically secure random UUIDv4 correlation key (`req_corr_<uuid4>`) bound to the HTTP session, or treats the operation as explicitly non-idempotent (`idempotency_key = NULL`).
+1. **Universal Idempotency Key Requirement:** Every hosted consequential `ActionRequest` receives a stable idempotency key.
+   - If the client supplies an `idempotency_key` header/parameter, that key is used.
+   - If the client omits `idempotency_key`, the hosted gateway generates a cryptographically secure UUIDv4 key (`idempotency_key = f"gen_idemp_{uuid.uuid4().hex}"`) BEFORE beginning the first durable transaction. This key is stored in `runtime_execution_requests` and returned in the HTTP response (`X-Idempotency-Key` and response body) alongside `execution_id`.
+   - **Documented Limitation:** If a client request disconnects or times out before receiving the gateway's response containing the generated key, a subsequent client retry without a key cannot be deduplicated and will create a distinct execution. Therefore, clients executing consequential mutating actions SHOULD provide a client-generated idempotency key on their initial request.
+2. **Atomic Concurrency-Safe Insertion:**
+   The gateway does NOT use an unsafe check-then-insert pattern (`SELECT` followed by `INSERT`). Instead:
+   - The gateway attempts `INSERT INTO runtime_execution_requests (...)`.
+   - Under concurrent requests submitting the same `(organization_id, idempotency_key)`, PostgreSQL raises a `UniqueViolation` on `idx_exec_req_org_idempotency`.
+   - Upon catching `UniqueViolation`:
+     - The transaction rolls back and queries:
+       `SELECT execution_id, action_digest FROM runtime_execution_requests WHERE organization_id = :org_id AND idempotency_key = :key;`
+     - Compares `existing.action_digest == incoming.action_digest`:
+       - **Identical Digest:** Deduplication succeeds. Returns the existing `execution_id` and existing authorization state without re-evaluating policy, minting new authorizations, or queueing duplicate work.
+       - **Different Digest:** Fails closed immediately by raising `IdempotencyConflictError` (HTTP 409 Conflict). An idempotency key cannot be reused with a different action payload.
 
 ---
 
-## 6. Queue Isolation: Non-Privileged Queue Tickets
+## 6. Dedicated Execution Fence Counter Table
+
+To support strictly monotonic, concurrency-safe worker fencing without race conditions, Migration `0052_runtime_worker_leases.py` creates `runtime_execution_fences`:
+
+```sql
+CREATE TABLE runtime_execution_fences (
+    execution_id VARCHAR(64) PRIMARY KEY,
+    current_generation BIGINT NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_fence_exec_req
+        FOREIGN KEY (execution_id)
+        REFERENCES runtime_execution_requests(execution_id)
+        ON DELETE RESTRICT
+);
+```
+
+During the initial centralized issuance transaction, a fence row is inserted with `current_generation = 0`. When a worker acquires or reassigns a lease, it executes:
+```sql
+UPDATE runtime_execution_fences
+SET current_generation = current_generation + 1
+WHERE execution_id = :execution_id
+RETURNING current_generation;
+```
+This guarantees strictly monotonic, race-free generation allocation under high concurrency.
+
+---
+
+## 7. Queue Isolation: Non-Privileged Queue Tickets
 
 The queue (`BoundedMultiTenantQueue` backed by Redis or in-memory) holds strictly non-authoritative pointers:
 
 ```python
+@dataclass(frozen=True)
 class QueueTicket:
-    # Non-privileged pointer enqueued for fair scheduling.
-    # Contains zero authority credentials, zero tokens, and zero action arguments.
-    # Possession of a QueueTicket grants no execution authority.
+    """Non-privileged pointer enqueued for fair scheduling.
+    Contains zero authority credentials, zero tokens, and zero action arguments.
+    Possession of a QueueTicket grants no execution authority.
+    """
     execution_id: str
     organization_id: str
     authorization_id: str
+    attempt_id: str
     enqueued_at: datetime
 ```
 

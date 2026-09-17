@@ -1,6 +1,6 @@
 # WhitePact Phase 7A: Concrete Parallelization Map & Subagent Task Plan
 
-**Document Status:** CANONICAL SPECIFICATION PASS 4 (SECURITY REMEDIATION)
+**Document Status:** CANONICAL SPECIFICATION PASS 4.1 (SECURITY CONSISTENCY REMEDIATION)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
 **Proposed Migrations:** `0049_runtime_execution_requests.py` through `0052_runtime_worker_leases.py`
@@ -14,7 +14,7 @@ This document establishes the verified concurrent execution waves for Phase 7A i
 ### Core Concurrency Rules:
 1. **Zero File Collisions:** No two subagents or tasks in the same wave may write to the same file.
 2. **Linear Migration Sequencing:** Migration `0049` -> `0050` -> `0051` -> `0052`.
-3. **Dispatcher Activation Gate (Task 10 Gate):** Task 10 requires all 10 security prerequisites proven in implementation before activation.
+3. **Dispatcher Activation Gate (Task 10 Gate):** Task 10 requires all 15 security prerequisites proven in implementation before activation.
 4. **Decoupled Business Logic:** Commercial billing attributes (`Plan`, `subscription_status`) are strictly excluded from all runtime scheduling, admission, and queueing logic.
 
 ---
@@ -40,32 +40,36 @@ This document establishes the verified concurrent execution waves for Phase 7A i
 
 ---
 
-### Lane A2: Durable Authority & Universal Epoch Coverage
-- **Primary Responsibility:** Durable request storage (migration `0049`), authorization storage (migration `0050`), centralized issuer, atomic approval consumption, universal epoch invalidation (all 14 mutations), and single atomic admission transaction returning `AdmissionReceipt`.
-- **Tasks Owned:** Tasks 8A, 8B.
+### Lane Schema & Persistence: Migrations & Repositories (Lane S)
+- **Primary Responsibility:** Sequential PostgreSQL migrations `0049` through `0052` and their respective domain repositories.
+- **Tasks Owned:** Tasks 8A1, 8A2, 8A3, 8A4.
 - **Files Owned:**
   - `migrations/versions/0049_runtime_execution_requests.py` [CREATE]
   - `src/responsibleai/db/execution_request_repository.py` [CREATE]
   - `migrations/versions/0050_runtime_execution_authorizations.py` [CREATE]
   - `src/responsibleai/db/execution_authorization_repository.py` [CREATE]
+  - `migrations/versions/0051_runtime_execution_attempts.py` [CREATE]
+  - `src/responsibleai/db/execution_attempt_repository.py` [CREATE]
+  - `migrations/versions/0052_runtime_worker_leases.py` [CREATE]
+  - `src/responsibleai/db/execution_fence_repository.py` [CREATE]
+  - `src/responsibleai/runtime/worker/lease.py` [CREATE]
+  - `src/responsibleai/db/admission_lease_repository.py` [CREATE]
+
+---
+
+### Lane A2: Centralized Issuance & Canonical Admission
+- **Primary Responsibility:** Centralized issuance service (`DurableExecutionAuthorizationIssuer`), approval atomicity (`ApprovalExecutionService`), universal epoch invalidation (all 14 mutations), and canonical admission transaction (`admit_execution`).
+- **Tasks Owned:** Tasks 8A5, 8B.
+- **Files Owned:**
   - `src/responsibleai/governance/execution_issuer.py` [CREATE]
   - `src/responsibleai/governance/approval_service.py` [CREATE]
   - `src/responsibleai/mcp/governance_integration.py` [MODIFY]
   - `src/responsibleai/mcp/upstream_dispatch.py` [MODIFY]
   - `src/responsibleai/db/execution_nonce_repository.py` [MODIFY]
   - `src/responsibleai/governance/execution.py` [MODIFY]
-  - `src/responsibleai/governance/upstream_executor.py` [MODIFY]
   - `src/responsibleai/iam/session.py` [MODIFY]
   - `src/responsibleai/iam/break_glass.py` [MODIFY]
   - `src/responsibleai/runtime/revalidation.py` [CREATE]
-  - `tests/runtime/test_durable_execution_request.py` [CREATE]
-  - `tests/runtime/test_durable_execution_authorization.py` [CREATE]
-  - `tests/runtime/test_durable_issuance_all_paths.py` [CREATE]
-  - `tests/governance/test_approval_issuance_atomicity.py` [CREATE]
-  - `tests/runtime/test_atomic_admission.py` [CREATE]
-  - `tests/runtime/test_single_admission_internal_tool.py` [CREATE]
-  - `tests/runtime/test_single_admission_upstream.py` [CREATE]
-  - `tests/runtime/test_epoch_coverage_all_mutations.py` [CREATE]
 
 ---
 
@@ -79,19 +83,16 @@ This document establishes the verified concurrent execution waves for Phase 7A i
   - `tests/isolation/test_resource_limits.py` [CREATE]
   - `tests/isolation/test_filesystem.py` [CREATE]
   - `tests/isolation/test_container_backend.py` [CREATE]
-- **Lane Independence:** Zero dependencies on runtime admission, queues, or Redis. Can execute in parallel from Day 1.
 
 ---
 
-### Lane C1: Attempt State Machine, Worker Lease & Fencing
-- **Primary Responsibility:** Attempt table schema (migration `0051`), worker lease schema (migration `0052`), monotonic `lease_generation` tokens, one-shot backend-start transition (`ADMITTED -> BACKEND_STARTING` with `rowcount == 1`), and active lease exclusivity.
-- **Tasks Owned:** Task 9.
+### Lane C1: Fencing, Backend-Start Claim & Executor Verification
+- **Primary Responsibility:** Monotonic fencing, synchronous lease expiry checks, `claim_backend_start()` returning `BackendExecutionClaim`, executor `assert_backend_start_claim(claim)` verification, and `SafeNetworkBackend` IP pinning.
+- **Tasks Owned:** Tasks 9A, 9B.
 - **Files Owned:**
-  - `migrations/versions/0051_runtime_execution_attempts.py` [CREATE]
-  - `src/responsibleai/db/execution_attempt_repository.py` [CREATE]
-  - `migrations/versions/0052_runtime_worker_leases.py` [CREATE]
-  - `src/responsibleai/runtime/worker/lease.py` [CREATE]
-  - `src/responsibleai/db/admission_lease_repository.py` [CREATE]
+  - `src/responsibleai/db/execution_attempt_repository.py` (`claim_backend_start`, `assert_backend_start_claim`) [MODIFY]
+  - `src/responsibleai/governance/execution.py` (`InternalToolExecutor`) [MODIFY]
+  - `src/responsibleai/governance/upstream_executor.py` (`UpstreamMCPExecutor`) [MODIFY]
   - `tests/runtime/test_execution_attempt_state_machine.py` [CREATE]
   - `tests/runtime/test_worker_lease_fencing.py` [CREATE]
   - `tests/runtime/test_one_shot_backend_start.py` [CREATE]
@@ -129,7 +130,7 @@ This document establishes the verified concurrent execution waves for Phase 7A i
 ---
 
 ### Lane E: Multi-Process Real Infrastructure Integration & Freeze
-- **Primary Responsibility:** Multi-process independent OS process race tests against real PostgreSQL and real Redis (`test_multi_process_lease_and_admission_race.py`), real Docker container integration, canonical security regression, candidate freeze.
+- **Primary Responsibility:** Multi-process independent OS process race tests against real PostgreSQL and real Redis, real Docker container integration, canonical security regression, candidate freeze.
 - **Tasks Owned:** Tasks 19, 20, 22.
 - **Files Owned:**
   - `tests/runtime/conftest.py` [CREATE]
@@ -146,29 +147,31 @@ This document establishes the verified concurrent execution waves for Phase 7A i
 TIME ──────────────────────────────────────────────────────────────────────────────────────────►
 [Approved Canonical Base: 13e8de0 | Head: 0048]
    │
-   ├── WAVE 1: FOUNDATIONS & LEAF CONTRACTS
+   ├── WAVE 1: FOUNDATIONS & SEQUENTIAL MIGRATIONS
    │   ├── Subagent 1 (Lane A1): Task 1 (Admission Models) -> Task 2 (Local Controller) & Task 3 (Coordination Base)
    │   ├── Subagent 2 (Lane B):  Task 13 (Compute Limits) & Task 14 (Workspace 10MB/100 Files)
-   │   └── Subagent 3 (Lane D):  Task 18 (15 Prometheus Metrics)
+   │   ├── Subagent 3 (Lane D):  Task 18 (15 Prometheus Metrics)
+   │   └── Subagent 4 (Lane S):  Task 8A1 (Mig 0049) -> Task 8A2 (Mig 0050) -> Task 8A3 (Mig 0051) -> Task 8A4 (Mig 0052)
    │
-   ├── WAVE 2: PERSISTENCE, CONCURRENCY & FENCING
+   ├── WAVE 2: ISSUANCE, CONCURRENCY & CANONICAL ADMISSION
    │   ├── Subagent 1 (Lane A1): Task 4 (Redis Coordinator) -> Task 5 (Fail-Closed) -> Task 6 (Concurrency) -> Task 7 (Fair Queue)
-   │   ├── Subagent 4 (Lane A2): Task 8A (Mig 0049 Request, Mig 0050 Auth, Centralized Issuer, Approval Atomicity)
+   │   ├── Subagent 5 (Lane A2): Task 8A5 (Centralized Issuance & Approval Atomicity) [after 8A4 completes]
    │   │                         -> Task 8B (Epoch Coverage 14 Mutations, Atomic Admission, AdmissionReceipt)
-   │   ├── Subagent 5 (Lane C1): Task 9 (Mig 0051 Attempt, Mig 0052 Lease Fencing, One-Shot Backend Start) [after 8A commits 0050]
+   │   ├── Subagent 6 (Lane C1): Task 9A (Monotonic Fencing, Synchronous Expiry & claim_backend_start) [after 8A5]
+   │   │                         -> Task 9B (Executor assert_backend_start_claim & SafeNetwork IP Pinning) [after 8B & 9A]
    │   ├── Subagent 2 (Lane B):  Task 15 (Container Timeout/Cancellation)
    │   └── Subagent 3 (Lane D):  Task 21 (Config Bounds & HOSTED_GOVERNANCE_STRICT)
    │
    ├── INTEGRATION GATE: TASK 10 DISPATCHER ACTIVATION
-   │   Preconditions: ALL 10 Security Prerequisites Fully Verified
-   │   └── Subagent 6: Task 10 (Worker Dispatcher & Execution Worker Gate)
+   │   Preconditions: ALL 15 Security Prerequisites Fully Verified
+   │   └── Subagent 7: Task 10 (Worker Dispatcher & Execution Worker Gate)
    │
    ├── WAVE 3: WORKER RECOVERY, SHUTDOWN & HEALTH
-   │   ├── Subagent 6 (Lane C2): Task 11 (Worker Heartbeats, Reaper & Capacity Reconciler) -> Task 12 (Uncertain Side-Effects)
+   │   ├── Subagent 7 (Lane C2): Task 11 (Worker Heartbeats, Reaper & Capacity Reconciler) -> Task 12 (Uncertain Side-Effects)
    │   └── Subagent 3 (Lane D):  Task 16 (Graceful Shutdown) -> Task 17 (Health Probes)
    │
    └── WAVE 4: REAL INFRASTRUCTURE INTEGRATION & CANONICAL FREEZE
-       └── Subagent 7 (Lane E): Task 19 (Multi-Process PG/Redis/Docker Suite)
+       └── Subagent 8 (Lane E): Task 19 (Multi-Process PG/Redis/Docker Suite)
                                  -> Task 20 (Phase 7A Security Regression)
                                  -> Task 22 (Evidence Pack & Freeze)
 ```

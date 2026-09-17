@@ -1,6 +1,6 @@
 # WhitePact Phase 7A: Canonical Execution Authority Codebase Audit
 
-**Document Status:** CANONICAL SPECIFICATION PASS 4 (SECURITY REMEDIATION)
+**Document Status:** CANONICAL SPECIFICATION PASS 4.1 (SECURITY CONSISTENCY REMEDIATION)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
 **Proposed Migrations:** `0049_runtime_execution_requests.py` through `0052_runtime_worker_leases.py`
@@ -25,10 +25,10 @@ This audit verifies the physical reality of `ExecutionAuthorization` and all rel
 2. **Missing Action Payload Storage:** Prior to Phase 7A, no table persisted the serialized action payload for asynchronous execution. Digest hashing was present, but payloads could not be reconstructed without re-evaluating policies.
 3. **Approval Consumption Was Disconnected:** Approval consumption was handled in a separate transaction from authorization issuance, risking split state.
 4. **Durable Architecture Introduced:**
-   - `runtime_execution_requests` (Migration 0049): RFC 8785 canonical JSON action payload, append-only, tenant-scoped idempotency.
+   - `runtime_execution_requests` (Migration 0049): RFC 8785 canonical JSON action payload, append-only, trigger rejects UPDATE/DELETE, universal idempotency key.
    - `governance_execution_authorizations` (Migration 0050): Losslessly persists all 11 fields; `UNIQUE(approval_id)`.
-   - `runtime_execution_attempts` (Migration 0051): Durable attempt and effect lifecycle, one-shot backend-start transition (`ADMITTED -> BACKEND_STARTING`).
-   - `runtime_worker_leases` (Migration 0052): Monotonic `lease_generation` fencing tokens, DB-enforced active exclusivity.
+   - `runtime_execution_attempts` (Migration 0051): Durable attempt and effect lifecycle, nullable lease fields in `PENDING`, state CHECK constraints, active partial unique index.
+   - `runtime_worker_leases` and `runtime_execution_fences` (Migration 0052): Monotonic generation counter, synchronous expiry fencing, DB-enforced active exclusivity.
 5. **Universal Epoch Revocation:** All 14 authority mutations advance `governance_revocation_epochs.epoch` under a row lock, closing TOCTOU windows between issuance and admission.
 
 ---
@@ -72,6 +72,6 @@ This audit verifies the physical reality of `ExecutionAuthorization` and all rel
 
 ## 4. Centralized Durable Issuance & Single Admission
 
-- **Issuance Boundary:** `DurableExecutionAuthorizationIssuer.issue()` persists `runtime_execution_requests` and `governance_execution_authorizations` in ONE transaction before calling `AdmissionController.reserve_execution()` or enqueueing a `QueueTicket`.
+- **Issuance Boundary:** `DurableExecutionAuthorizationIssuer.issue()` persists `runtime_execution_requests`, `governance_execution_authorizations`, initial `runtime_execution_attempts` (`PENDING`), and `runtime_execution_fences` in ONE transaction before calling `AdmissionController.reserve_execution()` or enqueueing a `QueueTicket`.
 - **Single Admission Owner:** The worker process owns canonical `admit_execution()`, burning the single-use nonce and emitting an in-process `AdmissionReceipt`.
-- **One-Shot Backend Start:** Before delegating to `InternalToolExecutor.execute()` or `UpstreamMCPExecutor.execute()`, the worker atomically transitions `runtime_execution_attempts` from `ADMITTED` to `BACKEND_STARTING` with `rowcount == 1`. Downstream executors consume `AdmissionReceipt` without re-admission.
+- **Backend-Start Claim & Executor Verification:** The worker calls `claim_backend_start()` to verify lease validity/generation and transition the attempt to `BACKEND_STARTING`, returning a `BackendExecutionClaim`. Downstream executors (`InternalToolExecutor`, `UpstreamMCPExecutor`) require `BackendExecutionClaim` and call `assert_backend_start_claim(claim)` against PostgreSQL, preventing direct executor bypass.
