@@ -25,6 +25,63 @@ class Plan(StrEnum):
     ENTERPRISE = "ENTERPRISE"
 
 
+PLAN_RANK: dict[Plan, int] = {
+    Plan.FREE: 0,
+    Plan.PRO: 1,
+    Plan.ENTERPRISE: 2,
+}
+
+ACTIVE_LIKE_STATUSES: frozenset[str] = frozenset({"active", "trialing"})
+RESTRICTIVE_STATUSES: frozenset[str] = frozenset(
+    {"canceled", "paused", "past_due", "inactive", "dissolved"}
+)
+
+
+def get_plan_rank(plan: Plan | str) -> int:
+    """Return the integer rank for a Plan (FREE < PRO < ENTERPRISE)."""
+    if isinstance(plan, Plan):
+        return PLAN_RANK.get(plan, 0)
+    try:
+        return PLAN_RANK.get(Plan(str(plan).upper()), 0)
+    except (ValueError, KeyError):
+        return 0
+
+
+def is_equal_timestamp_transition_allowed(
+    current_plan: Plan | str,
+    current_status: str,
+    incoming_plan: Plan | str,
+    incoming_status: str,
+) -> bool:
+    """Evaluate whether an entitlement update with equal occurred_at is permissible.
+
+    Equal occurred_at timestamps represent ambiguous provider chronology. Under WhitePact's
+    zero-trust commercial invariant, equal timestamp events must NEVER widen commercial entitlement:
+    1. Upward plan elevation (e.g. FREE -> PRO, PRO -> ENTERPRISE) is strictly rejected.
+    2. Restrictive -> active-like status transitions (e.g. canceled -> active) are strictly rejected.
+    3. Idempotent same-state events (same plan and status) and downward narrowing transitions are permitted.
+    """
+    c_rank = get_plan_rank(current_plan)
+    i_rank = get_plan_rank(incoming_plan)
+
+    # 1. Reject upward plan elevation (widening)
+    if i_rank > c_rank:
+        return False
+
+    c_norm_status = (current_status or "inactive").casefold()
+    i_norm_status = (incoming_status or "inactive").casefold()
+
+    c_active = c_norm_status in ACTIVE_LIKE_STATUSES
+    i_active = i_norm_status in ACTIVE_LIKE_STATUSES
+
+    # 2. Reject restrictive -> active-like reactivation
+    if not c_active and i_active:
+        return False
+
+    # 3. Non-widening transition (downward plan, same plan, narrowing status, or idempotent)
+    return True
+
+
 @dataclass
 class Organization:
     name: str

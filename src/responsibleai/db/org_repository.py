@@ -29,7 +29,14 @@ from responsibleai.db.engine import (
     tenant_tombstones,
 )
 from responsibleai.db.revocation_epoch_repository import bump_epoch_on_connection
-from responsibleai.rbac.models import Organization, OrgApiKey, OrgContext, Plan, Role
+from responsibleai.rbac.models import (
+    Organization,
+    OrgApiKey,
+    OrgContext,
+    Plan,
+    Role,
+    is_equal_timestamp_transition_allowed,
+)
 from responsibleai.rbac.permissions import role_from_str
 
 
@@ -306,9 +313,12 @@ class OrgRepository:
                         return False
                     if effective_occurred == current_occurred_at:
                         # Equal timestamp fail-safe: never widen commercial entitlement on ambiguous equal timestamp
-                        if current_status in {"canceled", "paused", "past_due"} and normalized_status in {"active", "trialing"}:
-                            return False
-                        if current_plan_str == "FREE" and effective_plan != Plan.FREE:
+                        if not is_equal_timestamp_transition_allowed(
+                            current_plan=current_plan_str,
+                            current_status=current_status,
+                            incoming_plan=plan,
+                            incoming_status=normalized_status,
+                        ):
                             return False
 
                 values: dict[str, Any] = {
