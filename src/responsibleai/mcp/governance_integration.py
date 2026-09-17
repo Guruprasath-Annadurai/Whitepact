@@ -53,6 +53,7 @@ from responsibleai.db import (
     IntentContractRepository,
     OrgAuthorityCeilingRepository,
     OrgAutonomyBudgetRepository,
+    OrgRepository,
     OutcomeRepository,
     PolicyRepository,
     WorkflowRuleRepository,
@@ -85,7 +86,7 @@ from responsibleai.governance.context import GovernanceContext
 from responsibleai.governance.evidence import build_evidence_record
 from responsibleai.governance.outcome import OutcomeStatus, build_outcome_record
 from responsibleai.integrations.client import TrustClient
-from responsibleai.rbac.models import OrgContext
+from responsibleai.rbac.models import GovernanceStatus, OrgContext
 
 _executor = InternalToolExecutor()
 
@@ -153,6 +154,7 @@ class GovernanceServices:
     nonce_repo: ExecutionNonceRepository | None = None
     epoch_repo: RevocationEpochRepository | None = None
     authority_resolver: AuthorityResolver | None = None
+    org_repo: OrgRepository | None = None
 
 
 @dataclass
@@ -192,6 +194,23 @@ async def apply_governance(
     see more than zero.
     """
     assert ctx.org_id is not None, "apply_governance() requires an org-scoped OrgContext"
+    if services.org_repo is not None:
+        org = await services.org_repo.get_org(ctx.org_id)
+        status = (
+            getattr(org, "governance_status", GovernanceStatus.ACTIVE.value)
+            if org is not None
+            else None
+        )
+        if org is None or status != GovernanceStatus.ACTIVE.value:
+            return GovernanceOutcome(
+                proceed=False,
+                arguments=arguments,
+                blocked_response={
+                    "error": "organization_not_governable",
+                    "message": "Organization is not ACTIVE for governed execution.",
+                    "governance_status": status or "UNKNOWN",
+                },
+            )
     if (services.nonce_repo is None) != (services.epoch_repo is None):
         raise ValueError("Durable admission requires both nonce and epoch repositories")
     epoch = (

@@ -25,7 +25,8 @@ from responsibleai.db.migrate import (
 
 def test_one_canonical_head():
     scripts = ScriptDirectory.from_config(Config("alembic.ini"))
-    assert scripts.get_heads() == ["0048"]
+    assert scripts.get_heads() == ["0049"]
+    assert scripts.get_revision("0049").down_revision == "0048"
     assert scripts.get_revision("0048").down_revision == "0047"
     assert scripts.get_revision("0047").down_revision == "0046"
     assert scripts.get_revision("0046").down_revision == "0045"
@@ -53,7 +54,7 @@ async def _verify_upgrade(url: str, start: str):
         async with engine.raw.connect() as conn:
             assert (
                 await conn.execute(text("SELECT version_num FROM alembic_version"))
-            ).scalar() == "0048"
+            ).scalar() == "0049"
             tables = await conn.run_sync(lambda c: inspect(c).get_table_names())
             assert {
                 "oauth_clients",

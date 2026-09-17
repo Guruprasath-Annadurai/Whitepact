@@ -74,13 +74,14 @@ async def pg_test_db() -> AsyncGenerator[str, None]:
 
 
 def test_one_canonical_alembic_head():
-    """Verify exactly 1 canonical alembic head and correct 0048 revision chain."""
+    """Verify exactly 1 canonical alembic head and correct 0049 revision chain."""
     ini = _find_alembic_ini()
     assert ini is not None, "alembic.ini must exist"
     scripts = ScriptDirectory.from_config(Config(str(ini)))
     heads = scripts.get_heads()
     assert len(heads) == 1, f"Expected exactly 1 alembic head, got {len(heads)}: {heads}"
-    assert heads == ["0048"]
+    assert heads == ["0049"]
+    assert scripts.get_revision("0049").down_revision == "0048"
     assert scripts.get_revision("0048").down_revision == "0047"
     assert scripts.get_revision("0047").down_revision == "0046"
     assert scripts.get_revision("0046").down_revision == "0045"

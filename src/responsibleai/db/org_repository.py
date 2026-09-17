@@ -30,6 +30,7 @@ from responsibleai.db.engine import (
 )
 from responsibleai.db.revocation_epoch_repository import bump_epoch_on_connection
 from responsibleai.rbac.models import (
+    GovernanceStatus,
     Organization,
     OrgApiKey,
     OrgContext,
@@ -183,6 +184,26 @@ class OrgRepository:
                 update(organizations).where(organizations.c.id == org_id).values(**values)
             )
         return result.rowcount > 0
+
+    async def set_governance_status(self, org_id: str, status: str | GovernanceStatus) -> bool:
+        """Human/admin organization lifecycle. Never called from billing webhooks.
+
+        Atomically updates ``organizations.governance_status`` and bumps the
+        governance revocation epoch in the same transaction.
+        """
+        normalized = status.value if isinstance(status, GovernanceStatus) else str(status).upper()
+        if normalized not in {item.value for item in GovernanceStatus}:
+            raise ValueError(f"invalid governance_status: {status!r}")
+        async with self._engine.raw.begin() as conn:
+            result = await conn.execute(
+                update(organizations)
+                .where(organizations.c.id == org_id)
+                .values(governance_status=normalized)
+            )
+            if result.rowcount == 0:
+                return False
+            await bump_epoch_on_connection(conn, org_id)
+        return True
 
     async def update_org_name(self, org_id: str, name: str) -> bool:
         async with self._engine.raw.begin() as conn:
@@ -656,6 +677,8 @@ class OrgRepository:
             paddle_last_occurred_at=getattr(row, "paddle_last_occurred_at", None),
             plan_renews_at=getattr(row, "plan_renews_at", None),
             subscription_status=getattr(row, "subscription_status", "inactive") or "inactive",
+            governance_status=getattr(row, "governance_status", GovernanceStatus.ACTIVE.value)
+            or GovernanceStatus.ACTIVE.value,
             sso_required=bool(getattr(row, "sso_required", 0)),
             mfa_required=bool(getattr(row, "mfa_required", 0)),
             provisioner_key_id=getattr(row, "provisioner_key_id", None),

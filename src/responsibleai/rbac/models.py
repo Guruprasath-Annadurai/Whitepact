@@ -25,6 +25,14 @@ class Plan(StrEnum):
     ENTERPRISE = "ENTERPRISE"
 
 
+class GovernanceStatus(StrEnum):
+    """Human/admin organization lifecycle — independent of billing plan."""
+
+    ACTIVE = "ACTIVE"
+    SUSPENDED = "SUSPENDED"
+    DISABLED = "DISABLED"
+
+
 PLAN_RANK: dict[Plan, int] = {
     Plan.FREE: 0,
     Plan.PRO: 1,
@@ -99,6 +107,7 @@ class Organization:
     paddle_last_occurred_at: str | None = None
     plan_renews_at: str | None = None
     subscription_status: str = "inactive"
+    governance_status: str = GovernanceStatus.ACTIVE.value
     sso_required: bool = False
     mfa_required: bool = False
     # Internal bootstrap-ownership binding. Never serialized to clients.
@@ -116,6 +125,7 @@ class Organization:
             "paddle_customer_id": self.paddle_customer_id,
             "plan_renews_at": self.plan_renews_at,
             "subscription_status": self.subscription_status,
+            "governance_status": self.governance_status,
             "entitlement_version": self.entitlement_version,
             "entitlement_updated_at": self.entitlement_updated_at,
             "sso_required": self.sso_required,
