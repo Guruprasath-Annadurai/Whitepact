@@ -405,7 +405,7 @@ async def lifespan(application: FastAPI):
             ) from exc
 
     _db_engine = create_engine(settings.effective_db_url)
-    await _db_engine.init()
+    await _db_engine.init(auto_create_tables=not settings.is_production)
     _plan_rate_limiter = PlanRateLimiter(redis_url=settings.redis_url)
 
     policy = BudgetPolicy(monthly_limit_usd=settings.monthly_budget_usd)
@@ -2497,10 +2497,30 @@ async def health() -> JSONResponse:
 
 @app.get("/health", tags=["ops"], include_in_schema=False)
 @app.get("/healthz", tags=["ops"], include_in_schema=False)
-@app.get("/readyz", tags=["ops"], include_in_schema=False)
 @app.get("/livez", tags=["ops"], include_in_schema=False)
-async def k8s_health() -> JSONResponse:
+async def k8s_liveness() -> JSONResponse:
     return JSONResponse(content={"status": "ok"}, status_code=200)
+
+
+@app.get("/ready", tags=["ops"], include_in_schema=False)
+@app.get("/readyz", tags=["ops"], include_in_schema=False)
+async def k8s_readiness() -> JSONResponse:
+    db_ok = True
+    try:
+        if _db_engine is not None:
+            db_ok = await _db_engine.ping(timeout_seconds=2.0)
+        elif _cost_repo:
+            await _ready(_cost_repo).request_count()
+        else:
+            db_ok = False
+    except Exception:
+        db_ok = False
+    if db_ok:
+        return JSONResponse(content={"status": "ready", "database": "connected"}, status_code=200)
+    return JSONResponse(
+        content={"status": "unavailable", "database": "disconnected"},
+        status_code=503,
+    )
 
 
 @app.get("/api/restore/status", tags=["ops"], include_in_schema=False)

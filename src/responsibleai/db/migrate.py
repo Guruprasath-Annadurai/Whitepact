@@ -31,6 +31,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import site
 import sys
 from pathlib import Path
 
@@ -119,6 +120,11 @@ def _migration_env(effective_db_url: str) -> dict[str, str]:
 
 
 async def _run_alembic(ini_path: Path, env: dict[str, str], *args: str) -> None:
+    pythonpath = env.get("PYTHONPATH", "")
+    user_site = site.getusersitepackages()
+    extras = [p for p in (user_site, pythonpath) if p]
+    if extras:
+        env = {**env, "PYTHONPATH": os.pathsep.join(extras)}
     proc = await asyncio.create_subprocess_exec(
         sys.executable,
         "-m",

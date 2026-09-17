@@ -79,7 +79,7 @@ services:
       WHITEPACT_WORKERS: ${WHITEPACT_WORKERS:-${RAI_WORKERS:-4}}
       RAI_WORKERS: ${WHITEPACT_WORKERS:-${RAI_WORKERS:-4}}
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8765/api/health"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8765/ready"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -113,6 +113,10 @@ services:
       RAI_MCP_HTTP_PORT: ${WHITEPACT_MCP_HTTP_PORT:-${RAI_MCP_HTTP_PORT:-8766}}
       WHITEPACT_MCP_LOG_LEVEL: ${WHITEPACT_MCP_LOG_LEVEL:-${RAI_MCP_LOG_LEVEL:-INFO}}
       RAI_MCP_LOG_LEVEL: ${WHITEPACT_MCP_LOG_LEVEL:-${RAI_MCP_LOG_LEVEL:-INFO}}
+      WHITEPACT_ENV: production
+      RAI_ENV: production
+      RAI_MCP_GOVERNANCE_ENABLED: ${RAI_MCP_GOVERNANCE_ENABLED:-true}
+      RAI_MCP_HTTP_ALLOWED_HOSTS: ${RAI_MCP_HTTP_ALLOWED_HOSTS:-whitepact-mcp-http.onrender.com}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8766/ready"]
       interval: 30s

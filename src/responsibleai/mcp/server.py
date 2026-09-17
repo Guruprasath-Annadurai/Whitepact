@@ -200,7 +200,11 @@ async def _call_tool(
     name: str,
     arguments: dict[str, Any] | None,
 ) -> tuple[list[types.TextContent], dict[str, Any]]:
-    _logger.debug("tool_call name=%s args=%s", name, arguments)
+    _logger.debug(
+        "tool_call name=%s arg_keys=%s",
+        name,
+        sorted((arguments or {}).keys()),
+    )
 
     from responsibleai.data_governance.backup_defense import (
         RestoreReadinessState,
@@ -343,6 +347,44 @@ def _env_bool(name: str, *, default: bool) -> bool:
     return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
+class HostedProductionSecurityError(RuntimeError):
+    """Raised when a production hosted-MCP process would boot unsafely."""
+
+
+def hosted_production_preflight(
+    settings: Any,
+    *,
+    allowed_hosts: list[str] | None = None,
+) -> None:
+    """Fail closed before serving if production hosted MCP is misconfigured.
+
+    Non-production environments are unchanged: developers may run without an
+    allowlist, and hosted calls still refuse ungated dispatch_tool().
+    """
+    if not getattr(settings, "is_production", False):
+        return
+    if settings.mcp_http_allow_unauthenticated_demo:
+        raise HostedProductionSecurityError(
+            "mcp_http_allow_unauthenticated_demo is forbidden in production."
+        )
+    if not settings.mcp_governance_enabled:
+        raise HostedProductionSecurityError(
+            "Production hosted MCP requires mcp_governance_enabled=true. "
+            "Hosted execution must not start without tenant-scoped governance."
+        )
+    hosts = (
+        allowed_hosts
+        if allowed_hosts is not None
+        else _split_csv(os.environ.get("RAI_MCP_HTTP_ALLOWED_HOSTS", ""))
+    )
+    if not hosts:
+        raise HostedProductionSecurityError(
+            "Production hosted MCP requires RAI_MCP_HTTP_ALLOWED_HOSTS so "
+            "DNS-rebinding protection is active. Refusing to start with an "
+            "empty Host allowlist."
+        )
+
+
 def _build_transport_security() -> Any:
     """DNS rebinding protection for both hosted transports (spec: MCP servers
     must validate Host/Origin headers to prevent a malicious webpage from
@@ -416,6 +458,7 @@ def _build_http_app() -> Any:
     """Construct the ASGI app for hosted MCP. Imports are local — this path
     pulls in Starlette + the DB layer, which self-hosted stdio users never need.
 
+    Production startups fail closed via hosted_production_preflight().
     Serves both hosted transports on one app — see the module docstring:
     `/mcp` (Streamable HTTP, preferred) and `/sse` + `/messages/` (legacy
     HTTP+SSE, unmodified). Both share the same auth (`_authenticate`) and
@@ -449,6 +492,7 @@ def _build_http_app() -> Any:
     from responsibleai.rbac.permissions import role_from_str
 
     settings = get_settings()
+    hosted_production_preflight(settings)
     _db_engine = create_engine(settings.effective_db_url)
     _org_repo = OrgRepository(_db_engine)
     _usage_repo = McpUsageRepository(_db_engine)
@@ -501,6 +545,7 @@ def _build_http_app() -> Any:
         _governance_services = RuntimeGovernanceServices(
             nonce_repo=ExecutionNonceRepository(_db_engine),
             epoch_repo=RevocationEpochRepository(_db_engine),
+            org_repo=_org_repo,
             authority_resolver=AuthorityResolver(
                 RootAuthorityRepository(_db_engine),
                 ConsentProofRepository(_db_engine),
@@ -574,8 +619,7 @@ def _build_http_app() -> Any:
 
     @asynccontextmanager
     async def _lifespan(_app: Starlette) -> Any:
-        is_production = settings.environment.lower() in {"production", "prod"}
-        await _db_engine.init(auto_create_tables=not is_production)
+        await _db_engine.init(auto_create_tables=not settings.is_production)
         if _governance_webhook_manager is not None:
             await _governance_webhook_manager.load_configs()
             _governance_webhook_manager.start_retry_worker()
@@ -866,7 +910,7 @@ def _build_http_app() -> Any:
         )
 
     async def ready(request: Request) -> JSONResponse:
-        db_ok = await _db_engine.ping()
+        db_ok = await _db_engine.ping(timeout_seconds=2.0)
         if db_ok:
             return JSONResponse(
                 {

@@ -95,6 +95,7 @@ organizations = Table(
     Column("stripe_subscription_id", String(64), nullable=True),
     Column("plan_renews_at", String(32), nullable=True),
     Column("subscription_status", String(32), nullable=False, default="inactive"),
+    Column("governance_status", String(16), nullable=False, default="ACTIVE", server_default="ACTIVE"),
     Column("sso_required", Integer, nullable=False, default=0),
     Column("mfa_required", Integer, nullable=False, default=0),
     Column("provisioner_key_id", String(64), nullable=True),
@@ -1933,13 +1934,14 @@ class DatabaseEngine:
     async def connect(self) -> AsyncConnection:
         return await self._engine.connect()
 
-    async def ping(self) -> bool:
-        """Execute a quick connectivity probe against the underlying database engine."""
+    async def ping(self, timeout_seconds: float = 2.0) -> bool:
+        """Execute a bounded connectivity probe. Never raises; never leaks errors."""
         from sqlalchemy import text
 
         try:
-            async with self._engine.connect() as conn:
-                await conn.execute(text("SELECT 1"))
+            async with asyncio.timeout(timeout_seconds):
+                async with self._engine.connect() as conn:
+                    await conn.execute(text("SELECT 1"))
             return True
         except Exception:
             return False

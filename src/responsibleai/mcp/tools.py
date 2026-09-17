@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import UTC, datetime
 from typing import Any
@@ -26,7 +27,7 @@ from responsibleai.redteam.simulator import RedTeamSimulator
 from responsibleai.trust.passport import PassportGenerator
 from responsibleai.trust.score import TrustScoreEngine
 
-# ── module singletons ─────────────────────────────────────────────────────────
+_logger = logging.getLogger("responsibleai.mcp.tools")
 
 _guardrails = GuardrailsEngine()
 _hallucination = HallucinationDetector()
@@ -2552,5 +2553,6 @@ async def dispatch_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
         return {"error": f"Unknown tool: {name}"}
     try:
         return await handler(args)
-    except Exception as exc:
-        return {"error": str(exc), "tool": name}
+    except Exception:
+        _logger.exception("mcp_tool_failed tool=%s", name)
+        return {"error": "tool_execution_failed", "tool": name}

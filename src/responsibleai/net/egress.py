@@ -353,21 +353,29 @@ class SafeNetworkBackend(httpcore.AsyncNetworkBackend):
                 raise last_error
             raise httpcore.ConnectError(f"Could not connect to any resolved address for {host_str}")
 
-        # Post-connect peer verification (defense-in-depth)
+        # Post-connect peer verification (defense-in-depth). Fail closed if
+        # the connected address cannot be verified — never skip the check.
         try:
             server_addr = stream.get_extra_info("server_addr")
-            if server_addr and len(server_addr) >= 1:
-                peer_ip = server_addr[0]
-                if not is_address_allowed(peer_ip, self.policy):
-                    await stream.aclose()
-                    raise PeerMismatchError(
-                        f"Connected socket peer address {peer_ip} violates egress security policy"
-                    )
+            if not server_addr or len(server_addr) < 1:
+                await stream.aclose()
+                raise PeerMismatchError(
+                    "Connected socket peer address unavailable; refusing outbound connection"
+                )
+            peer_ip = server_addr[0]
+            if not is_address_allowed(peer_ip, self.policy):
+                await stream.aclose()
+                raise PeerMismatchError(
+                    f"Connected socket peer address {peer_ip} violates egress security policy"
+                )
         except PeerMismatchError:
             raise
-        except Exception:
-            # If get_extra_info is unavailable or raises, allow stream to proceed
-            pass
+        except Exception as exc:
+            if stream is not None:
+                await stream.aclose()
+            raise PeerMismatchError(
+                "Could not verify connected socket peer address; refusing outbound connection"
+            ) from exc
 
         return stream
 

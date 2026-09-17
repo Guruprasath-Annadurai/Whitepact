@@ -24,6 +24,12 @@ from pydantic_settings.sources import EnvSettingsSource
 # these two constants so the precedence rule stays in one place.
 WHITEPACT_ENV_PREFIX = "WHITEPACT_"
 LEGACY_ENV_PREFIX = "RAI_"
+PRODUCTION_ENVIRONMENTS = frozenset({"production", "prod"})
+
+
+def is_production_environment(environment: str) -> bool:
+    """True only for explicit production identifiers — never inferred from infra."""
+    return environment.strip().lower() in PRODUCTION_ENVIRONMENTS
 
 
 class Settings(BaseSettings):
@@ -183,24 +189,21 @@ class Settings(BaseSettings):
         ),
     )
 
-    # Governance service initialization. Disabled hosted execution fails closed.
+    # Governance service initialization. Hosted execution fails closed when disabled.
+    # Production hosted MCP *startup* requires this to be true (see
+    # mcp.server.hosted_production_preflight). Non-production may leave it
+    # false; hosted tool calls then return governance_unavailable rather than
+    # raw dispatch_tool().
     mcp_governance_enabled: bool = Field(
         default=False,
         description=(
-            "Route every hosted-MCP-transport tool call through "
-            "WhitePactRuntimeGateway.evaluate() before it executes, instead "
-            "of permitting direct tool dispatch. Off by default: hosted tool "
-            "calls then return governance_unavailable. Turning this on "
-            "for an existing hosted deployment is a real behavior change — "
-            "a call that used to always execute can now come back DENY, "
-            "QUARANTINE, or REQUIRE_APPROVAL (queued, not executed), and "
-            "PII-bearing arguments can get silently redacted before the "
-            "underlying tool sees them. Only applies to org-scoped calls "
-            "over Streamable HTTP/SSE; the self-hosted stdio transport has "
-            "no organizational identity to evaluate authority/policy "
-            "against and is unaffected either way. See THREAT_MODEL.md's "
-            "governance-pipeline section for what this does and doesn't "
-            "cover once enabled."
+            "Initialize WhitePactRuntimeGateway on the hosted-MCP process and "
+            "route org-scoped Streamable HTTP/SSE tool calls through it. "
+            "Hosted calls never fall through to ungated dispatch_tool() even "
+            "when this is false — they fail closed with governance_unavailable. "
+            "Production hosted startup refuses to boot if this is false. "
+            "The self-hosted stdio transport has no organizational identity "
+            "and remains a distinct, documented trust domain."
         ),
     )
 
@@ -338,13 +341,11 @@ class Settings(BaseSettings):
     mcp_http_allow_unauthenticated_demo: bool = Field(
         default=False,
         description=(
-            "DANGER — demo/recording use only. When true, whitepact-mcp-http "
-            "grants every request read-only VIEWER access with no Bearer key "
-            "required, so a reviewer/demo-recording session can exercise the "
-            "live tools without provisioning a key. There is no expiry or "
-            "time limit enforced in code — this must be manually unset and "
-            "the service redeployed immediately after the recording is done. "
-            "Never leave this true in a long-running deployment."
+            "DANGER — local demo/recording only. When true, whitepact-mcp-http "
+            "accepts requests with no Bearer key as a VIEWER. Production and "
+            "prod environments refuse to start if this is true. Hosted tool "
+            "execution still requires tenant-scoped governance (demo identity "
+            "is not an organization)."
         ),
     )
     mcp_oauth_issuer: str = Field(
@@ -509,6 +510,10 @@ class Settings(BaseSettings):
         default="",
         description="Optional logo image URL shown in the sidebar instead of the brand name text.",
     )
+
+    @property
+    def is_production(self) -> bool:
+        return is_production_environment(self.environment)
 
     @property
     def leaderboard_api_keys(self) -> dict[str, str | None]:
