@@ -9,6 +9,7 @@ Raising RLIMIT_AS would weaken the sandbox; the product fix is lazy loading.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import textwrap
@@ -29,12 +30,17 @@ def test_dispatch_import_under_strict_as_limit_does_not_load_sklearn() -> None:
         assert callable(dispatch_tool)
         assert "sklearn" not in sys.modules
         assert "scipy" not in sys.modules
+        assert "numpy" not in sys.modules
         """
     )
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(p for p in sys.path if p)
+    env["OPENBLAS_NUM_THREADS"] = "1"
     proc = subprocess.run(
         [sys.executable, "-c", script, str(mem_bytes)],
         capture_output=True,
         text=True,
         timeout=30,
+        env=env,
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr

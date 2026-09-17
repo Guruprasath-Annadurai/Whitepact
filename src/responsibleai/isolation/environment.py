@@ -75,6 +75,10 @@ def build_isolated_environment(
     clean_env["WHITEPACT_ACTION_ID"] = action_id
     clean_env["PYTHONUNBUFFERED"] = "1"
     clean_env["PYTHONDONTWRITEBYTECODE"] = "1"
+    # Isolated RLIMIT_AS cannot host OpenBLAS's default thread pool.
+    clean_env.setdefault("OPENBLAS_NUM_THREADS", "1")
+    clean_env.setdefault("OMP_NUM_THREADS", "1")
+    clean_env.setdefault("MKL_NUM_THREADS", "1")
 
     if extra_env:
         for k, v in extra_env.items():

@@ -116,6 +116,10 @@ if __name__ == "__main__":
             workspace.populate(request.workspace_files)
             if "runner.py" not in request.workspace_files:
                 workspace.populate({"runner.py": runner_script})
+            # Host mkdtemp is 0700; the container runs as nobody (65534) and
+            # must be able to read runner.py without weakening the sandbox
+            # (world-readable, not world-writable).
+            workspace.make_world_readable()
 
             cid_file = workspace.path / ".container.cid"
 
@@ -204,10 +208,10 @@ if __name__ == "__main__":
                 # the in-flight container creation request. Allow a brief window for
                 # dockerd to complete registration so rm -f removes the Created container.
                 if timed_out:
-                    time.sleep(0.3)
+                    time.sleep(0.5)
 
                 for target in cleanup_targets:
-                    for _ in range(3):
+                    for _ in range(8):
                         try:
                             subprocess.run(  # noqa: S603
                                 [self.docker_cmd, "rm", "-f", target],

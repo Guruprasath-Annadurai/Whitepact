@@ -52,6 +52,19 @@ class EphemeralWorkspace:
             else:
                 target.write_bytes(content)
 
+    def make_world_readable(self) -> None:
+        """Allow an unprivileged container UID to read workspace files.
+
+        Directories are 0755 and files 0644. The mount stays host-owned; the
+        container user cannot rewrite the tree.
+        """
+        root = self.path
+        os.chmod(root, 0o755)
+        for dirpath, dirnames, filenames in os.walk(root):
+            os.chmod(dirpath, 0o755)
+            for name in filenames:
+                os.chmod(os.path.join(dirpath, name), 0o644)
+
     def cleanup(self) -> None:
         """Purge all workspace contents from disk."""
         if self._temp_dir and os.path.exists(self._temp_dir):
