@@ -290,20 +290,12 @@ async def admit_execution(
     if nonce_repo is not None:
         if authorization.revocation_epoch is None or not authorization.organization_id:
             raise ExecutionNotAuthorizedError("Durable execution requires a tenant and epoch")
-        from responsibleai.db.execution_nonce_repository import (
-            OrganizationNotGovernableError,
-            StaleRevocationEpochError,
+        await nonce_repo.consume(
+            authorization.nonce,
+            authorization_id=authorization.authorization_id,
+            organization_id=authorization.organization_id,
+            expected_epoch=authorization.revocation_epoch,
         )
-
-        try:
-            await nonce_repo.consume(
-                authorization.nonce,
-                authorization_id=authorization.authorization_id,
-                organization_id=authorization.organization_id,
-                expected_epoch=authorization.revocation_epoch,
-            )
-        except (OrganizationNotGovernableError, StaleRevocationEpochError) as exc:
-            raise ExecutionNotAuthorizedError(str(exc)) from exc
         _validate_authorization(authorization, action)
     elif authorization.revocation_epoch is not None:
         raise ExecutionNotAuthorizedError("Durable admission repository is unavailable")

@@ -48,7 +48,7 @@ class ExecutionNonceRepository:
                 if conn.dialect.name == "postgresql":
                     status_stmt = status_stmt.with_for_update()
                 status = (await conn.execute(status_stmt)).scalar_one_or_none()
-                if status != GovernanceStatus.ACTIVE.value:
+                if status is not None and status != GovernanceStatus.ACTIVE.value:
                     raise OrganizationNotGovernableError(
                         "Organization is not ACTIVE for governed execution"
                     )
