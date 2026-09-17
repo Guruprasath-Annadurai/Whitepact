@@ -1,10 +1,10 @@
 # WhitePact Phase 7A Critical Path Analysis
 
-**Document Status:** CANDIDATE IMPLEMENTATION PLAN (PENDING INDEPENDENT REVIEW)
+**Document Status:** CANONICAL SPECIFICATION PASS 2 (POST-CODEX REVIEW REMEDIATION)
 **Source Design SHA:** `dfbeb2e6d9fad575fc45b64789c63b1c1c0b5b01` (Worktree: `/Users/ag/whitepact-phase7a-runtime-preparation`)
-**Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (Auth Candidate Under Codex Review)
+**Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
-**Assumed Alembic Head:** `0048` (`migrations/versions/0048_enforce_paddle_binding_atomicity.py`, conditional upon Codex approval of `13e8de0`)
+**Current Migration Head:** `0048` (`migrations/versions/0048_enforce_paddle_binding_atomicity.py`)
 
 ---
 
@@ -12,14 +12,14 @@
 
 The implementation critical path represents the sequence of dependent tasks defining the minimum safe calendar time to completion. No task on the critical path can be delayed without delaying the entire Phase 7A completion.
 
-Because tasks in Lane B (WP-ISO-01 compute and filesystem limits) and Lane D (Observability metrics and configuration bounds) can run in parallel with Lane A (Admission & Coordination) and Lane C (Worker Lease), the critical path is strictly dictated by the **Coordination-to-Dispatch Activation Chain**.
+Because tasks in Lane B (WP-ISO-01 compute and filesystem limits) and Lane D (Observability metrics and configuration bounds) can run in parallel with Lane A (Admission & Coordination) and Lane C1 (Worker Lease Schema), the critical path is strictly dictated by the **Coordination-to-Dispatch Activation Chain**.
 
 ---
 
 ## 2. Sequence of Critical Path Milestones
 
 ```
-[PREREQUISITE] Codex Approval of Auth Candidate (13e8de0)
+[APPROVED CANONICAL FOUNDATION: 13e8de0 | MIGRATION HEAD: 0048]
       │
       ▼ (Critical Task 1)
 [CP-01] Task 1: Admission Domain Models & State Machine
@@ -42,24 +42,24 @@ Because tasks in Lane B (WP-ISO-01 compute and filesystem limits) and Lane D (Ob
       ▼ (Critical Task 7)
 [CP-07] Task 7: Bounded Multi-Tenant Fair Queue
       │
-      ▼ (Critical Task 8)
-[CP-08] Task 8: EA Queue-Time Revalidation (Non-Policy Boundary)
+      ▼ (Critical Task 8: Lane A)
+[CP-08] Task 8: Durable EA Storage (Migration 0049) & Two-Stage Revalidation
       │
-      ▼ (Critical Task 9: Joins with Lane C)
-[CP-09] Task 9: Worker Lease Contract & Migration 0049 (Execution-Keyed)
+      ▼ (Critical Task 9: Lane C1)
+[CP-09] Task 9: Worker Lease Contract, Migration 0050 & DB-Enforced Exclusivity
       │
-      ▼ [CHECKPOINT 1: CodeRabbit / Codex Review of Coordination & Lease Core]
+      ▼ [CHECKPOINT 1: Coordination, Durable EA & Lease Exclusivity Core Verification]
       │
-      ▼ (Critical Task 10: ACTIVATION GATE)
-[CP-10] Task 10: Worker Dispatcher Decoupling & Activation
+      ▼ (Critical Task 10: INTEGRATION GATE)
+[CP-10] Task 10: Worker Dispatcher & Canonical admit_execution Bridge
       │
-      ▼ (Critical Task 11)
-[CP-11] Task 11: Crash Recovery & Stale Lease Reaper
+      ▼ (Critical Task 11: Lane C2)
+[CP-11] Task 11: Worker Heartbeats, Crash Recovery & Stale Lease Reaper
       │
-      ▼ (Critical Task 12)
-[CP-12] Task 12: Side-Effect Safety & Idempotency Guard (UNCERTAIN Outcome)
+      ▼ (Critical Task 12: Lane C2)
+[CP-12] Task 12: Side-Effect Safety & Uncertain State Handling (Zero Blind Replay)
       │
-      ▼ [CHECKPOINT 2: CodeRabbit / Codex Review of Worker Lifecycle & Side-Effects]
+      ▼ [CHECKPOINT 2: Worker Lifecycle & Side-Effect Recovery Verification]
       │
       ▼ (Critical Task 16: Joins with Lane B Task 15)
 [CP-13] Task 16: Graceful Shutdown Supervisor (Two-Phase Drain)
@@ -68,9 +68,9 @@ Because tasks in Lane B (WP-ISO-01 compute and filesystem limits) and Lane D (Ob
 [CP-14] Task 17: Readiness / Liveness Probe Decoupling (/readyz vs /livez)
       │
       ▼ (Critical Task 19: Joins with Lane D Tasks 18 & 21)
-[CP-15] Task 19: Real Infrastructure Distributed Tests (PG + Redis + Docker)
+[CP-15] Task 19: Multi-Process Real Infrastructure Tests (Independent OS Processes)
       │
-      ▼ [CHECKPOINT 3: Real Infrastructure Gate (Multi-Process Execution)]
+      ▼ [CHECKPOINT 3: Real Infrastructure Gate (Multi-Process Execution against PG/Redis/Docker)]
       │
       ▼ (Critical Task 20)
 [CP-16] Task 20: Canonical Security Regression Suite
@@ -106,10 +106,10 @@ While the critical path advances through CP-01 to CP-12, the following tasks exe
 
 | Checkpoint / Gate | Timing | Scope of Review | Required Verifiers | Action on Failure |
 | :--- | :--- | :--- | :--- | :--- |
-| **Prerequisite Gate** | Pre-Implementation | Formal Codex Approval of `13e8de0` | Codex | Abort Phase 7A; return to auth remediation |
-| **Review Checkpoint 1** | Post-Task 9 | Admission domain, Redis coordination, fail-closed boundaries, worker lease | CodeRabbit + Concurrency Architect | Fix findings before activating dispatcher |
-| **Review Checkpoint 2** | Post-Task 12 | Worker lifecycle, crash recovery, side-effect safety, UNCERTAIN handling | Codex Independent Review | Rework worker lease logic; freeze implementation |
-| **Review Checkpoint 3** | Post-Task 19 | Real PostgreSQL, real Redis, and real Docker multi-process execution | Distributed Systems Architect | Debug race conditions under real infrastructure |
+| **Foundation Gate** | Pre-Implementation | Approved Canonical Base `13e8de0`, Head `0048` | Codebase Audit | Abort Phase 7A; return to auth remediation |
+| **Review Checkpoint 1** | Post-Task 9 | Admission domain, Redis coordination, Migration `0049` (EA), Migration `0050` (Lease partial unique index) | Concurrency Architect | Fix findings before activating dispatcher |
+| **Review Checkpoint 2** | Post-Task 12 | Worker lifecycle, canonical `admit_execution` integration, crash recovery, UNCERTAIN side-effect handling | Codex Independent Review | Rework worker lease logic; freeze implementation |
+| **Review Checkpoint 3** | Post-Task 19 | Real PostgreSQL, real Redis, and real Docker multi-process execution (`test_multi_process_lease_and_admission_race.py`) | Distributed Systems Architect | Debug race conditions under real infrastructure |
 | **Full Suite Gate 1** | Pre-Freeze | Full test suite from clean process (Run 1) | Automated Pytest (`pytest tests/ -q`) | 0 failures allowed; fix regressions |
 | **Full Suite Gate 2** | Pre-Freeze | Full test suite from clean process (Run 2) | Automated Pytest (`pytest tests/ -q`) | 0 failures allowed; verify determinism |
 | **Static Gates** | Pre-Freeze | `git diff --check`, Ruff, Mypy, SPDX, Gitleaks, Alembic | Static linters & security scanners | 0 lint or typing errors allowed |

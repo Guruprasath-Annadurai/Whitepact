@@ -1,27 +1,28 @@
 # WhitePact Phase 7A Runtime Foundations Implementation Plan
 
-**Document Status:** CANDIDATE IMPLEMENTATION PLAN (PENDING INDEPENDENT REVIEW)
+**Document Status:** CANONICAL SPECIFICATION PASS 2 (POST-CODEX REVIEW REMEDIATION)
 **Goal:** Implement resilient, multi-tenant runtime admission control, plan-neutral fair queueing, distributed worker leases, crash recovery, WP-ISO-01 resource limits, two-phase graceful shutdown, and decoupled health probes without compromising canonical governance authority.
 **Architecture:** Distributed Runtime Foundations with decoupled admission, ephemeral Redis coordination, durable PostgreSQL lease checkpoints, and air-gapped Docker container execution.
 **Tech Stack:** Python 3.11+, FastAPI, SQLAlchemy, Alembic, PostgreSQL 16, Redis 7, Docker, Prometheus Client.
 **Primary Specification:** `dfbeb2e6d9fad575fc45b64789c63b1c1c0b5b01` (`/Users/ag/whitepact-phase7a-runtime-preparation/docs/phase7a-prep/PHASE7A_RUNTIME_FOUNDATIONS_MASTER_DESIGN.md`)
-**Base Candidate SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (Auth Candidate Under Codex Review)
+**Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
-**Assumed Alembic Head:** `0048` (`migrations/versions/0048_enforce_paddle_binding_atomicity.py`, conditional upon Codex approval of `13e8de0`)
+**Current Migration Head:** `0048` (`migrations/versions/0048_enforce_paddle_binding_atomicity.py`)
 
 ---
 
 ## 1. Global Constraints and Core Architecture Rules
 
-1. **Codex Prerequisite & Artifact Handoff:**
-   - The runtime implementation must start strictly from the eventual Codex-approved auth canonical SHA.
-   - The design artifact (`dfbeb2e6d9fad575fc45b64789c63b1c1c0b5b01` in `/Users/ag/whitepact-phase7a-runtime-preparation`) and previous plan artifact (`11574930b3768a3886eabad0581ef2fa791a0a22` in `/Users/ag/whitepact-phase7a-final-plan`) are read-only specification inputs.
+1. **Approved Canonical Baseline:**
+   - The runtime implementation starts strictly from the approved enterprise auth canonical SHA: `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA`).
+   - The design artifact (`dfbeb2e6d9fad575fc45b64789c63b1c1c0b5b01` in `/Users/ag/whitepact-phase7a-runtime-preparation`) and previous plan artifacts are read-only specification inputs.
    - Documentation branches must NEVER be merged into runtime to make paths exist.
-   - The implementation engineer must verify the exact approved auth SHA and design inputs before Task 1.
 
-2. **Migration Ancestry Conditionality:**
-   - Migration `0049` is valid ONLY if Codex approves auth candidate `13e8de034f8b31bd7cae4f47398f71b24c923c3c` with head `0048`.
-   - If the approved auth canonical SHA or head differs, the implementation team must STOP and reconcile migration ancestry before creating any migration.
+2. **Migration Sequencing:**
+   - Migration head is verified as `0048` (`0048_enforce_paddle_binding_atomicity.py`).
+   - Phase 7A introduces two clean, independently reversible migrations:
+     - `migrations/versions/0049_runtime_execution_authorizations.py` (down_revision: `0048`)
+     - `migrations/versions/0050_runtime_worker_leases.py` (down_revision: `0049`)
 
 3. **Commercial / Governance Decoupling:**
    - Commercial entitlement != governance authority.
@@ -34,35 +35,34 @@
    - Tenant lifecycle revalidation must query canonical tenant records via `OrgRepository.get_org(org_id)`. Do not use `organizations.subscription_status` as a proxy for tenant liveness.
    - Default Phase 7A fairness is strictly **plan-neutral** (per-tenant round robin). Commercial plan weighting is prohibited in Phase 7A.
 
-4. **Queue Authorization Contract:**
-   - `QueueTicket != authority`.
-   - `QueueTicket` and `QueuedPayload` must NEVER contain reusable authority credentials.
-   - Allowed fields: `execution_id`, `authorization_id`, `org_id`, `principal_id`, `action_ref`, `idempotency_key`, `enqueued_at`.
-   - Holding an `authorization_id` pointer does not grant authority. Workers must resolve and revalidate canonical `ExecutionAuthorization` from durable PostgreSQL storage at the execution boundary.
+4. **Durable Authority Storage & Queue Contract (P0-1):**
+   - `ExecutionAuthorization` is an in-memory dataclass today; for Phase 7A async worker execution, it is persisted durably in PostgreSQL (`governance_execution_authorizations`, migration `0049`) at policy decision time.
+   - `QueueTicket != authority`. Queue tickets and payloads must NEVER contain reusable authority credentials or serialized permit secrets.
+   - Allowed fields: `execution_id`, `authorization_id`, `org_id`, `principal_id`, `action_digest`, `idempotency_key`, `enqueued_at`.
+   - Holding an `authorization_id` pointer does not grant authority. Workers load canonical `ExecutionAuthorization` directly from PostgreSQL and revalidate it.
 
-5. **Worker Lease Identity:**
-   - Lease identity is based on execution identity (`execution_id` and `attempt`), NOT `UNIQUE(authorization_id)`.
-   - Required lease binding: `lease_id, execution_id, authorization_id, org_id, worker_id, attempt, issued_at, expires_at, heartbeat_at`.
-   - Invariant: Exactly one worker may hold an `ACTIVE` lease for a given `execution_id` at any time.
+5. **Worker Lease Identity & DB-Enforced Exclusivity (P0-3):**
+   - Lease identity is based on `execution_id` and `attempt`.
+   - Required lease binding: `lease_id, execution_id, authorization_id, org_id, worker_id, attempt, status, issued_at, expires_at, heartbeat_at, completed_at`.
+   - **Database-Enforced Invariant:** Exactly one worker may hold an `ACTIVE` lease for a given `execution_id` at any time, enforced by PostgreSQL partial unique index:
+     `CREATE UNIQUE INDEX idx_runtime_worker_leases_active_execution ON runtime_worker_leases (execution_id) WHERE status = 'ACTIVE';`
+   - Concurrent lease acquisitions fail closed at the database constraint level.
 
-6. **Distributed Coordination Order & Activation Gate:**
+6. **Distributed Coordination Order & Integration Gate (P0-2, P1-2):**
    - No multi-process execution path may become active while capacity enforcement is process-local only.
-   - The worker dispatcher must remain disabled behind an explicit integration gate until Redis distributed coordination (Tasks 3, 4, 5) has been implemented, tested, and verified.
+   - The worker dispatcher (Task 10) acts as the non-bypassable Integration Gate between Lane A (coordination & durable authority), Lane C1 (worker lease schema), and Lane C2 (worker recovery).
+   - The dispatcher loop MUST NOT bypass canonical `admit_execution()`, which executes the singular atomic transaction locking the tenant epoch and burning the nonce.
 
-7. **Side-Effect Safety & Idempotency:**
+7. **Side-Effect Safety & Idempotency Guard:**
    - The runtime explicitly separates `execution_id`, `attempt_id`, `effect_id`, and `idempotency_key`.
    - For non-idempotent or uncertain external side effects: a worker crash after external action dispatch but before local acknowledgement must NEVER trigger blind replay.
    - The crash recovery reaper records state `UNCERTAIN`. Worker lease expiry does NOT grant permission to repeat an uncertain external effect.
 
-8. **Authorization Revalidation Semantics:**
-   - Worker dispatch revalidates:
-     1. `ExecutionAuthorization` existence in database.
-     2. EA expiry (`expires_at > now`).
-     3. EA unconsumed / unrevoked status (`consumed is False`).
-     4. Tenant existence and active status in `OrgRepository`.
-     5. Principal/session validity where canonical contract requires it.
-     6. BreakGlass session validity and TTL if the EA was authorized via BreakGlass.
-   - Worker dispatch does NOT re-evaluate policy. An already-issued EA is not invalidated merely because an unrelated policy revision occurred.
+8. **Two-Stage Authorization Revalidation (P1-1):**
+   - Revalidation is strictly partitioned into:
+     - **Stage 1: Early Queue Invalidation:** Evaluated by Dispatcher before acquiring lease or burning nonce. Checks EA existence, expiration (`now < expires_at`), unconsumed state (`status == 'ISSUED'`), and tenant lifecycle in `OrgRepository` (active, non-tombstoned).
+     - **Stage 2: Final Canonical Admission:** Evaluated by Worker immediately before execution. Checks action digest match, principal/session validity, target fingerprint drift, BreakGlass TTL, delegation chain, and consent proof, followed by atomic `admit_execution()`.
+   - Worker dispatch does NOT re-evaluate policy.
 
 9. **Resource & Capacity Bounds Classification:**
    - **Canonical Security Bounds (Verified Existing Defaults):** CPU 0.5 cores, Memory 256 MB, PIDs 32, File Descriptors 128, Timeout 15.0s, Output 64 KB (from `ResourceLimits`).
@@ -221,72 +221,91 @@
 
 ---
 
-### Task 8: ExecutionAuthorization Queue-Time Revalidation
+### Task 8: Durable ExecutionAuthorization Storage (Migration 0049) & Full Revalidation
 - **Files:**
+  - CREATE `migrations/versions/0049_runtime_execution_authorizations.py`
+  - CREATE `src/responsibleai/db/execution_authorization_repository.py`
   - CREATE `src/responsibleai/runtime/revalidation.py`
+  - CREATE `tests/runtime/test_durable_execution_authorization.py`
   - CREATE `tests/runtime/test_revalidation.py`
-- **Interfaces Consumed:** `ExecutionAuthorization`, `OrgRepository`, `IamRepository`.
-- **Interfaces Produced:** `revalidate_queued_authorization(auth_id, org_id, principal_id, db_session) -> RevalidationResult`.
-- **Step 1 Failing Test:** Write `tests/runtime/test_revalidation.py` testing exact revalidation boundaries:
-  1. EA expired while queued -> `EXPIRED`.
-  2. EA consumed while queued -> `ALREADY_CONSUMED`.
-  3. Tenant deleted/tombstoned in `OrgRepository` -> `TENANT_NOT_FOUND`.
-  4. BreakGlass session expired while queued -> `BREAK_GLASS_EXPIRED`.
-  5. Policy is NOT re-evaluated; valid unexpired EA remains executable.
+- **Interfaces Consumed:** `ExecutionAuthorization`, `OrgRepository`, `governance_revocation_epochs`, `SessionService`, `BreakGlassService`.
+- **Interfaces Produced:** `ExecutionAuthorizationRepository.create()`, `get()`, `mark_consumed()`, `mark_revoked()`, and `revalidate_queued_authorization()`.
+- **Step 1 Failing Test:** Write `tests/runtime/test_durable_execution_authorization.py` and `test_revalidation.py` verifying:
+  1. Lossless persistence of all 11 fields (`authorization_id`, `organization_id`, `principal_id`, `action_digest`, `target_fingerprint`, `decision`, `revocation_epoch`, `nonce`, `issued_at`, `expires_at`, `status`).
+  2. Authorization survives process restart and queue delay.
+  3. Cross-tenant authorization lookup is rejected (`WHERE organization_id = :org_id`).
+  4. Early Queue Invalidation rejects expired, consumed, revoked authorizations and deleted/tombstoned tenants.
+  5. Pre-flight revalidation verifies action digest match, principal identity, session validity, and BreakGlass TTL.
+  6. Policy is NOT re-evaluated.
 - **Step 2 Run RED:**
-  `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_revalidation.py -v`
-- **Step 3 Minimal Code:** Implement `revalidate_queued_authorization` performing database validation without second policy engine.
+  `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_durable_execution_authorization.py tests/runtime/test_revalidation.py -v`
+- **Step 3 Minimal Code:**
+  1. Implement migration `0049` creating `governance_execution_authorizations` table.
+  2. Implement `ExecutionAuthorizationRepository` with atomic single-use status transitions.
+  3. Implement `revalidation.py` partitioned into Stage 1 (early queue invalidation) and Stage 2 (pre-flight validation).
 - **Step 4 Run GREEN:**
-  `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_revalidation.py -v`
-- **Step 5 Focused Regression:** Run `pytest tests/runtime/test_revalidation.py tests/test_auth_canonical_seams.py -q`.
+  `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_durable_execution_authorization.py tests/runtime/test_revalidation.py -v`
+- **Step 5 Focused Regression:** Run migration tests and `pytest tests/runtime/test_durable_execution_authorization.py -q`.
 - **Step 6 Commit:**
-  `git add src/responsibleai/runtime/revalidation.py tests/runtime/test_revalidation.py`
-  `git commit -m "security(runtime): enforce queue-time authorization revalidation"`
+  `git add migrations/versions/0049_runtime_execution_authorizations.py src/responsibleai/db/execution_authorization_repository.py src/responsibleai/runtime/revalidation.py tests/runtime/test_durable_execution_authorization.py tests/runtime/test_revalidation.py`
+  `git commit -m "feat(runtime): introduce durable execution authorization storage and full revalidation"`
 
 ---
 
-### Task 9: Worker Lease Contract & Database Migration 0049
+### Task 9: Worker Lease Contract, Database Migration 0050 & DB-Enforced Exclusivity
 - **Files:**
-  - CREATE `migrations/versions/0049_runtime_worker_leases.py`
+  - CREATE `migrations/versions/0050_runtime_worker_leases.py`
   - CREATE `src/responsibleai/runtime/worker/lease.py`
   - CREATE `src/responsibleai/db/admission_lease_repository.py`
   - CREATE `tests/runtime/test_worker_lease.py`
-- **Interfaces Consumed:** PostgreSQL database engine (down_revision strictly `0048`, conditional on Codex approval).
-- **Interfaces Produced:** `AdmissionLeaseRepository.acquire_lease(execution_id, authorization_id, org_id, worker_id, attempt, ttl_seconds)`, `heartbeat_lease(lease_id)`, `release_lease(lease_id)`.
-- **Step 1 Failing Test:** Write `tests/runtime/test_worker_lease.py` verifying:
+  - CREATE `tests/runtime/test_worker_lease_db_concurrency.py`
+- **Interfaces Consumed:** PostgreSQL database engine (down_revision strictly `0049`).
+- **Interfaces Produced:** `AdmissionLeaseRepository.acquire_lease(execution_id, authorization_id, org_id, worker_id, attempt, ttl_seconds)`, `heartbeat_lease(lease_id)`, `finalize_lease(lease_id, status)`.
+- **Step 1 Failing Test:** Write `tests/runtime/test_worker_lease.py` and `test_worker_lease_db_concurrency.py` verifying:
   1. Lease identity is keyed on `execution_id` and `attempt`.
-  2. At most one worker can hold an `ACTIVE` lease for a given `execution_id` at any time.
-  3. Two concurrent workers competing for the same `execution_id`: exactly one succeeds.
+  2. Database-enforced mutual exclusion: PostgreSQL partial unique index `idx_runtime_worker_leases_active_execution` on `(execution_id) WHERE status = 'ACTIVE'` prevents concurrent active leases.
+  3. Two racing workers competing for the same `execution_id`: exactly one succeeds, the loser catches `IntegrityError` and aborts.
+  4. Stale lease heartbeat expiration and clean lease release.
 - **Step 2 Run RED:**
-  `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_worker_lease.py -v`
-- **Step 3 Minimal Code:** Create migration `0049` with table `runtime_worker_leases` (`lease_id` PK, indexed `execution_id`, `status`) and repository with row-level locking.
+  `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_worker_lease.py tests/runtime/test_worker_lease_db_concurrency.py -v`
+- **Step 3 Minimal Code:**
+  1. Create migration `0050` with table `runtime_worker_leases` and partial unique index on `ACTIVE`.
+  2. Implement `AdmissionLeaseRepository` with row-level `FOR UPDATE` locking and constraint-violation handling.
 - **Step 4 Run GREEN:**
-  `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_worker_lease.py -v`
-- **Step 5 Focused Regression:** Verify real PostgreSQL migration cycle `0048 -> 0049 -> 0048 -> 0049`.
+  `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_worker_lease.py tests/runtime/test_worker_lease_db_concurrency.py -v`
+- **Step 5 Focused Regression:** Verify real PostgreSQL migration cycle `0048 -> 0049 -> 0050 -> 0049 -> 0048 -> 0049 -> 0050`.
 - **Step 6 Commit:**
-  `git add migrations/versions/0049_runtime_worker_leases.py src/responsibleai/runtime/worker/lease.py src/responsibleai/db/admission_lease_repository.py tests/runtime/test_worker_lease.py`
-  `git commit -m "feat(runtime): introduce execution-keyed worker lease contract and repository"`
+  `git add migrations/versions/0050_runtime_worker_leases.py src/responsibleai/runtime/worker/lease.py src/responsibleai/db/admission_lease_repository.py tests/runtime/test_worker_lease.py tests/runtime/test_worker_lease_db_concurrency.py`
+  `git commit -m "feat(runtime): introduce db-enforced worker lease exclusivity and repository"`
 
 ---
 
-### Task 10: Worker Dispatcher Decoupling & Activation
+### Task 10: Integration Gate — Worker Dispatcher Decoupling & Canonical admit_execution Bridge
 - **Files:**
   - CREATE `src/responsibleai/runtime/dispatcher.py`
   - CREATE `src/responsibleai/runtime/worker/worker.py`
   - MODIFY `src/responsibleai/mcp/governance_integration.py`
   - CREATE `tests/runtime/test_dispatcher.py`
-- **Interfaces Consumed:** `ExecutionAdmissionController`, `MultiTenantFairQueue`, `AdmissionLeaseRepository`, `revalidate_queued_authorization`.
-- **Interfaces Produced:** Activated `ExecutionDispatcher` and `ExecutionWorker.process_next()`.
-- **Step 1 Failing Test:** Write `tests/runtime/test_dispatcher.py` asserting that dispatcher successfully routes requests through admission, enqueues if necessary, dispatches to worker, revalidates EA, acquires lease, and executes container.
+  - CREATE `tests/runtime/test_execution_worker.py`
+- **Interfaces Consumed:** `ExecutionAdmissionController`, `MultiTenantFairQueue`, `ExecutionAuthorizationRepository`, `AdmissionLeaseRepository`, `ExecutionNonceRepository`, `revocation_epoch_repository`, canonical `admit_execution()`.
+- **Interfaces Produced:** Non-bypassable `ExecutionDispatcher` and `ExecutionWorker.process_next()` pipeline.
+- **Step 1 Failing Test:** Write `tests/runtime/test_dispatcher.py` and `test_execution_worker.py` asserting:
+  1. Dispatcher decouples admission from immediate inline execution.
+  2. Enqueues lightweight `QueueTicket` carrying zero credentials.
+  3. Worker pulls ticket, runs Stage 1 Early Queue Invalidation.
+  4. Worker acquires exclusive `ACTIVE` lease via `AdmissionLeaseRepository`.
+  5. Worker runs Stage 2 Pre-flight Revalidation against durable authorization record.
+  6. Worker invokes canonical `admit_execution()`, atomically locking epoch and burning nonce.
+  7. No tool execution or container launch is permitted without successful `admit_execution()`.
 - **Step 2 Run RED:**
-  `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_dispatcher.py -v`
-- **Step 3 Minimal Code:** Connect `governance_integration.py` to the dispatcher and activate worker loop.
+  `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_dispatcher.py tests/runtime/test_execution_worker.py -v`
+- **Step 3 Minimal Code:** Connect `governance_integration.py` to the dispatcher, implement worker loop with canonical `admit_execution()`, and bridge to isolation backend.
 - **Step 4 Run GREEN:**
-  `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_dispatcher.py -v`
-- **Step 5 Focused Regression:** Run `pytest tests/mcp/test_governance_integration.py tests/runtime/test_dispatcher.py -q`.
+  `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_dispatcher.py tests/runtime/test_execution_worker.py -v`
+- **Step 5 Focused Regression:** Run `pytest tests/mcp/test_governance_integration.py tests/runtime/test_dispatcher.py tests/runtime/test_execution_worker.py -q`.
 - **Step 6 Commit:**
-  `git add src/responsibleai/runtime/dispatcher.py src/responsibleai/runtime/worker/worker.py src/responsibleai/mcp/governance_integration.py tests/runtime/test_dispatcher.py`
-  `git commit -m "feat(runtime): activate decoupled worker pool dispatch behind verified coordination"`
+  `git add src/responsibleai/runtime/dispatcher.py src/responsibleai/runtime/worker/worker.py src/responsibleai/mcp/governance_integration.py tests/runtime/test_dispatcher.py tests/runtime/test_execution_worker.py`
+  `git commit -m "feat(runtime): activate worker dispatcher with non-bypassable canonical admission bridge"`
 
 ---
 
@@ -294,7 +313,7 @@
 - **Files:**
   - CREATE `src/responsibleai/runtime/worker/supervisor.py`
   - CREATE `tests/runtime/test_crash_recovery.py`
-- **Interfaces Consumed:** `AdmissionLeaseRepository`, `ContainerIsolationBackend`.
+- **Interfaces Consumed:** Integration Gate Task 10, `AdmissionLeaseRepository`, `ContainerIsolationBackend`.
 - **Interfaces Produced:** `WorkerSupervisor.reap_stale_leases() -> int`.
 - **Step 1 Failing Test:** Write `test_crash_recovery.py` simulating worker process death during container execution (missing heartbeat); verify reaper identifies the dead lease, marks status `WORKER_CRASHED`, cleans up orphan containers, and releases capacity semaphores.
 - **Step 2 Run RED:**
@@ -313,7 +332,7 @@
 - **Files:**
   - MODIFY `src/responsibleai/runtime/worker/worker.py`
   - CREATE `tests/runtime/test_external_effect_idempotency.py`
-- **Interfaces Consumed:** Tool metadata (`is_idempotent: bool`, `has_external_side_effects: bool`).
+- **Interfaces Consumed:** Integration Gate Task 10, Task 11, tool metadata (`is_idempotent: bool`, `has_external_side_effects: bool`).
 - **Interfaces Produced:** Separation of `execution_id`, `attempt_id`, `effect_id`, and `idempotency_key`.
 - **Step 1 Failing Test:** Write `test_external_effect_idempotency.py` asserting that a worker crashing after dispatching a non-idempotent action records outcome `UNCERTAIN` and REFUSES automatic replay. Verify lease expiry does NOT grant permission to repeat an uncertain external effect.
 - **Step 2 Run RED:**
@@ -456,25 +475,27 @@
 
 ---
 
-### Task 19: Real Infrastructure Distributed Integration Tests
+### Task 19: Multi-Process Real Infrastructure Integration Tests
 - **Files:**
+  - CREATE `tests/runtime/test_multi_process_lease_and_admission_race.py`
   - CREATE `tests/runtime/test_real_infra_distributed.py`
 - **Interfaces Consumed:** Real PostgreSQL, Real Redis, Real Docker daemon.
-- **Interfaces Produced:** Multi-process distributed integration suite.
+- **Interfaces Produced:** Multi-process distributed integration suite testing kernel-level concurrency.
 - **Step 1 Failing Test:** Write tests exercising:
-  1. 40 concurrent workers across 2 processes competing for execution leases in real PostgreSQL.
-  2. Redis distributed semaphore under simulated network latency.
-  3. Real Docker container executing with WP-ISO-01 limits.
-  4. Graceful shutdown of worker nodes while containers are active.
+  1. Independent OS processes (Process A and Process B via `multiprocessing.Process`) competing for active worker leases and authorization nonce consumption in real PostgreSQL; verify at most 1 process succeeds.
+  2. 40 concurrent workers across multiple processes competing for execution leases in real PostgreSQL.
+  3. Redis distributed semaphore under simulated network latency and fail-closed partition.
+  4. Real Docker container executing with WP-ISO-01 limits.
+  5. Graceful shutdown of worker nodes while containers are active.
 - **Step 2 Run RED:**
-  `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_real_infra_distributed.py -v`
+  `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_multi_process_lease_and_admission_race.py tests/runtime/test_real_infra_distributed.py -v`
 - **Step 3 Minimal Code:** Refine coordination timeouts and integration plumbing.
 - **Step 4 Run GREEN:**
-  `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_real_infra_distributed.py -v`
+  `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_multi_process_lease_and_admission_race.py tests/runtime/test_real_infra_distributed.py -v`
 - **Step 5 Focused Regression:** Verify real infrastructure tests pass cleanly.
 - **Step 6 Commit:**
-  `git add tests/runtime/test_real_infra_distributed.py`
-  `git commit -m "test(runtime): add real infrastructure distributed integration suite"`
+  `git add tests/runtime/test_multi_process_lease_and_admission_race.py tests/runtime/test_real_infra_distributed.py`
+  `git commit -m "test(runtime): add multi-process real infrastructure integration suite"`
 
 ---
 
@@ -536,7 +557,7 @@
      `/Users/ag/Whitepact/.venv/bin/mypy src/`
      `python3 scripts/manage_license_headers.py --check`
      `gitleaks detect -v`
-     `/Users/ag/Whitepact/.venv/bin/alembic -c alembic.ini heads` (must equal 1: `0049`)
+     `/Users/ag/Whitepact/.venv/bin/alembic -c alembic.ini heads` (must equal 1: `0050`)
 - **Step 2 Evidence Compilation:** Record exact outputs and commit hashes in `docs/phase7a-execution/implementation-evidence.md`.
 - **Step 3 Commit:**
   `git add docs/phase7a-execution/implementation-evidence.md`

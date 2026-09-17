@@ -1,9 +1,10 @@
 # WhitePact Phase 7A Fast-Track Parallelization Map
 
-**Document Status:** CANDIDATE IMPLEMENTATION PLAN (PENDING INDEPENDENT REVIEW)
+**Document Status:** CANONICAL SPECIFICATION PASS 2 (POST-CODEX REVIEW REMEDIATION)
 **Source Design SHA:** `dfbeb2e6d9fad575fc45b64789c63b1c1c0b5b01` (Worktree: `/Users/ag/whitepact-phase7a-runtime-preparation`)
-**Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (Auth Candidate Under Codex Review)
+**Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
+**Current Migration Head:** `0048` (`migrations/versions/0048_enforce_paddle_binding_atomicity.py`)
 
 ---
 
@@ -11,16 +12,17 @@
 
 Parallelization in Phase 7A must never compromise the integrity of WhitePact's core security doctrine:
 1. **Disjoint File Sets:** No two parallel lanes may edit or create the same source or test file.
-2. **Disjoint Invariants:** Each lane owns a separate security dimension (e.g., Lane A owns capacity limits and distributed coordination; Lane B owns container resource isolation; Lane C owns worker lease durability).
-3. **Plan-Neutrality:** Fairness across all lanes is plan-neutral; commercial plan does not influence queue scheduling or governance authority.
-4. **Stable Contracts:** Inter-lane communication relies exclusively on immutable typed dataclasses and abstract interfaces defined upfront in Task 1.
+2. **Disjoint Invariants:** Each lane owns a separate security dimension (e.g., Lane A owns capacity limits and durable authorization; Lane B owns container resource isolation; Lane C1 owns worker lease database exclusivity).
+3. **Strict Gate Sequencing:** Tasks with functional dependencies across lanes must pass explicit integration gates. Specifically, crash recovery and side-effect handling (Lane C2) cannot begin until the dispatcher integration gate (Task 10) is verified green.
+4. **Plan-Neutrality:** Fairness across all lanes is plan-neutral; commercial plan does not influence queue scheduling or governance authority.
+5. **Stable Contracts:** Inter-lane communication relies exclusively on immutable typed dataclasses and abstract interfaces defined upfront in Task 1.
 
 ---
 
 ## 2. Parallel Implementation Lanes
 
-### Lane A: Admission & Distributed Coordination Engine
-- **Primary Responsibility:** Admission state machine, in-process controller, Redis distributed semaphores, fail-closed boundaries, multi-tenant concurrency quotas, plan-neutral fair queueing, and queue-time authorization revalidation.
+### Lane A: Admission, Coordination & Durable Authority Engine
+- **Primary Responsibility:** Admission state machine, in-process controller, Redis distributed semaphores, fail-closed boundaries, multi-tenant concurrency quotas, plan-neutral fair queueing, migration `0049` (durable execution authorizations), and two-stage revalidation.
 - **Tasks Owned:** Tasks 1, 2, 3, 4, 5, 6, 7, 8.
 - **Files Owned:**
   - `src/responsibleai/runtime/admission/models.py` [CREATE]
@@ -30,16 +32,18 @@ Parallelization in Phase 7A must never compromise the integrity of WhitePact's c
   - `src/responsibleai/runtime/queue/models.py` [CREATE]
   - `src/responsibleai/runtime/queue/bounded_queue.py` [CREATE]
   - `src/responsibleai/runtime/queue/fair_scheduler.py` [CREATE]
+  - `migrations/versions/0049_runtime_execution_authorizations.py` [CREATE]
+  - `src/responsibleai/db/execution_authorization_repository.py` [CREATE]
   - `src/responsibleai/runtime/revalidation.py` [CREATE]
   - `tests/runtime/test_admission_*.py` [CREATE]
   - `tests/runtime/test_coordination_contract.py` [CREATE]
   - `tests/runtime/test_redis_*.py` [CREATE]
   - `tests/runtime/test_integrated_concurrency.py` [CREATE]
   - `tests/runtime/test_bounded_queue.py` [CREATE]
+  - `tests/runtime/test_durable_execution_authorization.py` [CREATE]
   - `tests/runtime/test_revalidation.py` [CREATE]
-- **Lane Dependency:** Auth canonical approval (`13e8de0`).
-- **Merge / Reconciliation Point:** Milestone 1 (Coordination & Admission Core Verification).
-- **Security Reviewer:** Codex Independent Review.
+- **Lane Dependency:** Approved auth canonical (`13e8de0`), Migration Head `0048`.
+- **Merge / Gate Point:** Gate A (Admission & Authority Core Verification).
 
 ---
 
@@ -52,26 +56,48 @@ Parallelization in Phase 7A must never compromise the integrity of WhitePact's c
   - `src/responsibleai/isolation/container_backend.py` [MODIFY]
   - `tests/isolation/test_wp_iso_01_*.py` [CREATE]
   - `tests/isolation/test_container_cancellation.py` [CREATE]
-- **Lane Dependency:** Zero dependency on Lane A or Lane C. Can begin immediately upon auth approval.
-- **Merge / Reconciliation Point:** Milestone 2 (Isolation Hardening Verification).
-- **Security Reviewer:** CodeRabbit + Security Architect Review.
+- **Lane Dependency:** Zero dependency on Lane A or Lane C. Begins immediately upon base confirmation.
+- **Merge / Gate Point:** Gate B (Isolation Hardening Verification).
 
 ---
 
-### Lane C: Worker Lease & Durable Checkpoint Engine
-- **Primary Responsibility:** Worker lease lifecycle, execution-keyed lease identity (`execution_id`, `attempt`), database schema migration `0049` (conditional on head `0048`), row-level locking, heartbeat renewal, crash recovery reaper, and side-effect safety (`UNCERTAIN` state).
-- **Tasks Owned:** Tasks 9, 11, 12.
+### Lane C1: Worker Lease Schema & Database Exclusivity
+- **Primary Responsibility:** Worker lease lifecycle, execution-keyed lease identity (`execution_id`, `attempt`), database schema migration `0050` (down_revision `0049`), PostgreSQL partial unique index on `ACTIVE` leases, and row-level locking.
+- **Tasks Owned:** Task 9.
 - **Files Owned:**
-  - `migrations/versions/0049_runtime_worker_leases.py` [CREATE]
+  - `migrations/versions/0050_runtime_worker_leases.py` [CREATE]
   - `src/responsibleai/runtime/worker/lease.py` [CREATE]
-  - `src/responsibleai/runtime/worker/supervisor.py` [CREATE]
   - `src/responsibleai/db/admission_lease_repository.py` [CREATE]
   - `tests/runtime/test_worker_lease.py` [CREATE]
+  - `tests/runtime/test_worker_lease_db_concurrency.py` [CREATE]
+- **Lane Dependency:** Task 8 (requires `0049` for FK `runtime_worker_leases.authorization_id -> governance_execution_authorizations.authorization_id`). Can be developed concurrently with later Lane A tasks.
+- **Merge / Gate Point:** Gate C1 (Worker Lease Exclusivity Verification).
+
+---
+
+### INTEGRATION GATE: Task 10 — Worker Dispatcher & Canonical Admission Bridge
+- **Primary Responsibility:** Decouples inline execution in `mcp/governance_integration.py` into enqueue and worker dispatch. Bridges queue tickets to worker execution loop, enforces Stage 1 early invalidation, acquires worker lease, and invokes canonical `admit_execution()`.
+- **Task Owned:** Task 10.
+- **Files Owned:**
+  - `src/responsibleai/runtime/dispatcher.py` [CREATE]
+  - `src/responsibleai/runtime/worker/worker.py` [CREATE]
+  - `src/responsibleai/mcp/governance_integration.py` [MODIFY]
+  - `tests/runtime/test_dispatcher.py` [CREATE]
+  - `tests/runtime/test_execution_worker.py` [CREATE]
+- **Gate Pre-requisites:** Gate A (Tasks 1-8) and Gate C1 (Task 9).
+- **Security Invariant:** No tool execution or container launch can bypass `admit_execution()`.
+
+---
+
+### Lane C2: Worker Recovery, Heartbeats & Side-Effect Safety
+- **Primary Responsibility:** Worker pool supervisor, heartbeat stream renewal, stale lease background reaper, and external side-effect uncertainty management (`UNCERTAIN` state handling, zero blind replays).
+- **Tasks Owned:** Tasks 11, 12.
+- **Files Owned:**
+  - `src/responsibleai/runtime/worker/supervisor.py` [CREATE]
   - `tests/runtime/test_crash_recovery.py` [CREATE]
   - `tests/runtime/test_external_effect_idempotency.py` [CREATE]
-- **Lane Dependency:** Migration head `0048` verified. Can run in parallel with Lane A and Lane B.
-- **Merge / Reconciliation Point:** Milestone 3 (Worker Durability Verification).
-- **Security Reviewer:** Codex Independent Review.
+- **Lane Dependency:** **STRICTLY DEPENDS ON INTEGRATION GATE (TASK 10).** Cannot begin until Dispatcher and Worker Loop are integrated and verified.
+- **Merge / Gate Point:** Gate C2 (Worker Durability & Recovery Verification).
 
 ---
 
@@ -88,51 +114,64 @@ Parallelization in Phase 7A must never compromise the integrity of WhitePact's c
   - `tests/dashboard/test_health_probes.py` [CREATE]
   - `tests/runtime/test_graceful_shutdown.py` [CREATE]
   - `tests/dashboard/test_runtime_config_bounds.py` [CREATE]
-- **Lane Dependency:** Integrates with outputs of Lanes A, B, and C.
-- **Merge / Reconciliation Point:** Milestone 4 (System Integration).
-- **Security Reviewer:** SRE / Observability Architect.
+- **Lane Dependency:** Tasks 18 and 21 can run early; Tasks 16 and 17 integrate after Task 10 and Task 15.
+- **Merge / Gate Point:** Gate D (Operations & Observability Verification).
+
+---
+
+### Lane E: Multi-Process Real Infrastructure Integration & Freeze
+- **Primary Responsibility:** Multi-process independent OS process race tests against real PostgreSQL and real Redis (`test_multi_process_lease_and_admission_race.py`), real Docker container integration, canonical security regression, candidate freeze.
+- **Tasks Owned:** Tasks 19, 20, 22.
+- **Files Owned:**
+  - `tests/runtime/conftest.py` [CREATE]
+  - `tests/runtime/test_multi_process_lease_and_admission_race.py` [CREATE]
+  - `tests/runtime/test_real_infra_distributed.py` [CREATE]
+  - `tests/runtime/test_phase7a_security_regression.py` [CREATE]
+  - `docs/phase7a-execution/*` [UPDATE]
+- **Lane Dependency:** All prior tasks (1-18, 21).
+- **Merge / Gate Point:** Final Phase 7A Freeze.
 
 ---
 
 ## 3. Parallel Execution Timeline and Activation Gates
 
 ```
-TIME ────────────────────────────────────────────────────────────────────────►
-[Auth Approved: 13e8de0]
+TIME ──────────────────────────────────────────────────────────────────────────────────────────►
+[Approved Canonical Base: 13e8de0 | Head: 0048]
    │
-   ├─► LANE A: Admission & Coordination (Tasks 1-8) ─────────────► [Gate A Pass]
-   │                                                                    │
-   ├─► LANE B: WP-ISO-01 Isolation Hardening (Tasks 13-15) ─────────────┤
-   │                                                                    │
-   ├─► LANE C: Worker Lease & Mig 0049 (Tasks 9, 11, 12) ────────► [Gate C Pass]
-   │                                                                    │
-   └─► LANE D: Config & Metrics Foundation (Tasks 18, 21) ──────────────┤
-                                                                        ▼
-                                                [DISPATCHER ACTIVATION GATE]
-                                                 (Requires Gate A & Gate C)
-                                                                        │
-   ┌────────────────────────────────────────────────────────────────────┘
+   ├─► LANE A: Admission, Coordination & Durable EA (Tasks 1-8) ──────────────► [GATE A PASS]
+   │     │                                                                           │
+   │     └─► LANE C1: Worker Lease Schema & DB Exclusivity (Task 9) ──► [GATE C1 PASS]│
+   │                                                                           │     │
+   ├─► LANE B: WP-ISO-01 Isolation Hardening (Tasks 13-15) ────────────────────┼─────┤
+   │                                                                           │     │
+   ├─► LANE D1: Config & Metrics Foundation (Tasks 18, 21) ────────────────────┼─────┤
+   │                                                                           ▼     ▼
+   │                                                      [INTEGRATION GATE: TASK 10 DISPATCHER]
+   │                                                       (Requires Gate A and Gate C1)
+   │                                                                           │
+   ├───────────────────────────────────────────────────────────────────────────┴─────┐
+   │                                                                                 │
+   ├─► LANE C2: Worker Recovery, Heartbeats & Side-Effects (Tasks 11, 12) ───────────┤
+   │                                                                                 │
+   ├─► LANE D2: Graceful Shutdown & Decoupled Health Probes (Tasks 16, 17) ──────────┤
+   │                                                                                 │
+   ▼                                                                                 ▼
+[MILESTONE: ALL COMPONENT GATES GREEN]
    │
-   ├─► Task 10: Dispatcher & Worker Decoupling (Activation)
-   ├─► Task 16: Graceful Shutdown Integration
-   ├─► Task 17: Health Probes Integration
-   │
-   ▼
-[MILESTONE: INTEGRATED SYSTEM VERIFICATION]
-   │
-   ├─► Task 19: Real Infra Distributed Tests (PG + Redis + Docker)
-   ├─► Task 20: Phase 7A Canonical Security Regression
-   └─► Task 22: Candidate Freeze & Evidence Pack
-   │
-   ▼
-[PHASE 7A CANDIDATE READY FOR CODEX FINAL REVIEW]
+   └─► LANE E: Multi-Process Integration & Security Regression (Tasks 19, 20, 22)
+         │
+         ▼
+[PHASE 7A CANDIDATE FREEZE READY FOR CODEX FINAL REVIEW]
 ```
 
 ---
 
-## 4. Conflict Avoidance Protocols
+## 4. Conflict Avoidance & Disjoint Integrity
 
-1. **Dispatcher Activation Barrier:** `src/responsibleai/mcp/governance_integration.py` is modified ONLY in Task 10, after both Lane A (coordination) and Lane C (worker leases) are verified green.
-2. **Shared File Lockout:** `src/responsibleai/dashboard/app.py` is touched ONLY in Lane D (Tasks 16 and 17).
-3. **Database Migration Lockout:** Migration `0049` is created exclusively in Lane C (Task 9).
-4. **Zero Contention Verification:** Prior to any merge, `git diff --name-only` is run against base to verify zero overlapping paths.
+1. **Zero Unsafe Overlaps:** Every file path is owned by exactly one task. No two concurrent tasks edit the same file.
+2. **Strict Migration Sequencing:**
+   - Migration `0049_runtime_execution_authorizations.py` is owned strictly by Lane A (Task 8).
+   - Migration `0050_runtime_worker_leases.py` is owned strictly by Lane C1 (Task 9) and chains from `0049`.
+3. **Integration Gate Separation:** Lane C2 does not begin until Task 10 is green, eliminating the circular dependency identified by Codex.
+4. **Independent Process Proof:** Lane E executes multi-process tests (`Process`) against real PostgreSQL to guarantee race conditions are verified beyond Python asyncio.
