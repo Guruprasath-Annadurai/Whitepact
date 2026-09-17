@@ -1,6 +1,6 @@
 # WhitePact Phase 7A: Canonical Execution Authority Codebase Audit
 
-**Document Status:** CANONICAL SPECIFICATION PASS 2 (ATOMIC AUTHORITY INTEGRATION CORRECTION)
+**Document Status:** CANONICAL SPECIFICATION PASS 3 (FINAL CALL-PATH & SINGLE-ADMISSION CLOSURE)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
 **Current Migration Head:** `0048` (`migrations/versions/0048_enforce_paddle_binding_atomicity.py`)
@@ -25,8 +25,9 @@ This audit verifies the physical reality of `ExecutionAuthorization` and all rel
 2. **No table stores `ExecutionAuthorization` at issuance:** Unlike `REQUIRE_APPROVAL` decisions (which persist an `ApprovalRequest` row in `governance_approvals`), direct `ALLOW` decisions have no persistent database representation prior to execution.
 3. **Only the single-use `nonce` is durably stored at admission:** `ExecutionNonceRepository.consume()` in `src/responsibleai/db/execution_nonce_repository.py` inserts into `governance_execution_nonces` and verifies against `governance_revocation_epochs` inside `self._engine.raw.begin()`.
 4. **Deterministic reconstruction from existing tables is IMPOSSIBLE for queued async executions:** A worker process cannot reconstruct an in-memory `ExecutionAuthorization` without re-evaluating policy (which violates policy immutability and temporal auditability).
-5. **Durable Issuance Owner:** `src/responsibleai/mcp/governance_integration.py` must persist `ExecutionAuthorization` in PostgreSQL (`governance_execution_authorizations`) BEFORE creating a `QueueTicket`. If DB persistence fails, queueing is aborted immediately.
+5. **Centralized Durable Issuance Owner:** All 3 `authorize_execution()` call sites (`execute_governed_action`, `resolve_approval_and_execute` in `governance_integration.py`, and `dispatch_upstream_action` in `upstream_dispatch.py`) must route through `DurableExecutionAuthorizationIssuer.issue()` to persist `ExecutionAuthorization` in PostgreSQL (`governance_execution_authorizations`) BEFORE creating a `QueueTicket`. If DB persistence fails, queueing is aborted immediately (HTTP 500/503).
 6. **Atomic Consumption Owner:** `src/responsibleai/db/execution_nonce_repository.py` owns the singular PostgreSQL transaction combining the revocation epoch lock, nonce insertion, and conditional authorization status update (`ISSUED -> CONSUMED` with `rowcount == 1`).
+7. **Single Admission Ownership & Admitted Context:** Canonical `admit_execution()` is owned exclusively by the execution worker immediately prior to container or network side effects. Successful admission returns a typed `AdmittedExecution` context. Downstream executors (`InternalToolExecutor.execute` and `UpstreamServer.execute`) accept this context and do not re-invoke `admit_execution()`, eliminating double-admission.
 
 ---
 
@@ -71,10 +72,14 @@ This audit verifies the physical reality of `ExecutionAuthorization` and all rel
 
 ## 4. Durable Issuance Architecture
 
-- **Call Site Owner:** `src/responsibleai/mcp/governance_integration.py` (`execute_governed_action` and `resolve_approval_and_execute`).
+- **Centralized Service:** `src/responsibleai/governance/execution_issuer.py` (`DurableExecutionAuthorizationIssuer`).
+- **Call Sites Covered:**
+  1. `src/responsibleai/mcp/governance_integration.py` (`execute_governed_action`)
+  2. `src/responsibleai/mcp/governance_integration.py` (`resolve_approval_and_execute`)
+  3. `src/responsibleai/mcp/upstream_dispatch.py` (`dispatch_upstream_action`)
 - **Control Flow:**
   1. `authorize_execution()` produces in-memory `ExecutionAuthorization`.
-  2. `ExecutionAuthorizationRepository.create(authorization)` executes `INSERT INTO governance_execution_authorizations`.
+  2. `DurableExecutionAuthorizationIssuer.issue(authorization)` executes `INSERT INTO governance_execution_authorizations`.
   3. **Non-Bypassable Gate:** ONLY after successful database transaction commit may `AdmissionController.reserve_execution()` and `FairExecutionScheduler.enqueue(QueueTicket)` be called.
   4. If database insert fails (e.g. PostgreSQL disconnect or constraint failure):
      - Exception is raised immediately.
@@ -128,3 +133,15 @@ This audit verifies the physical reality of `ExecutionAuthorization` and all rel
   - The transaction aborts and PostgreSQL rolls back the nonce insert.
   - If nonce insert fails (e.g. duplicate nonce), `IntegrityError` is caught and rolls back the transaction.
   - Zero possibility of split state: nonce committed without authorization consumed, or authorization consumed without nonce committed.
+
+---
+
+## 6. Single Admission Ownership & Downstream Adaptation
+
+- **Chosen Architecture:** Option A — Worker Owns Admission.
+- **Worker Gatekeeper:** `ResponsibleWorker` invokes canonical `admit_execution()` immediately before side-effect execution.
+- **Post-Admission Proof:** Successful admission returns an immutable, unforgeable `AdmittedExecution` context containing `execution_id`, `authorization_id`, `organization_id`, `principal_id`, `action_digest`, `lease_id`, and `nonce`.
+- **Downstream Adaptation:**
+  - `InternalToolExecutor.execute()`: modified to accept `AdmittedExecution` context and assert matching `action_digest` and `organization_id`. It does NOT call `admit_execution()`.
+  - `UpstreamServer.execute()`: modified to accept `AdmittedExecution` context, assert matching `action_digest`, `organization_id`, and `target_fingerprint`. It does NOT call `admit_execution()`.
+- **Zero Double Admission:** Because executors no longer invoke `admit_execution()`, double admission and duplicate nonce consumption bugs are eliminated entirely.

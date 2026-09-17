@@ -1,6 +1,6 @@
 # WhitePact Phase 7A Critical Path Analysis
 
-**Document Status:** CANONICAL SPECIFICATION PASS 2 (ATOMIC AUTHORITY INTEGRATION CORRECTION)
+**Document Status:** CANONICAL SPECIFICATION PASS 3 (FINAL CALL-PATH & SINGLE-ADMISSION CLOSURE)
 **Source Design SHA:** `dfbeb2e6d9fad575fc45b64789c63b1c1c0b5b01` (Worktree: `/Users/ag/whitepact-phase7a-runtime-preparation`)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
@@ -43,18 +43,18 @@ Because tasks in Lane B (WP-ISO-01 compute and filesystem limits) and Lane D (Ob
 [CP-07] Task 7: Bounded Multi-Tenant Fair Queue
       │
       ▼ (Critical Task 8A: Lane A2)
-[CP-08A] Task 8A: Durable EA Storage (Migration 0049), Repo & Durable Issuance Gate
+[CP-08A] Task 8A: Durable EA Storage (Migration 0049), Centralized Issuer & All-Path Issuance Integration
       │
       ▼ (Critical Task 8B: Lane A2)
-[CP-08B] Task 8B: Two-Stage Revalidation & Atomic Admission Transaction Integration
+[CP-08B] Task 8B: Two-Stage Revalidation, Atomic Admission Transaction Integration & Admitted Context
       │
       ▼ (Critical Task 9: Lane C1)
 [CP-09] Task 9: Worker Lease Contract, Migration 0050 & DB-Enforced Exclusivity
       │
-      ▼ [CHECKPOINT 1: Coordination, Durable Issuance & Atomic Admission Core Verification]
+      ▼ [CHECKPOINT 1: Coordination, All-Path Durable Issuance & Single Admission Core Verification]
       │
       ▼ (Critical Task 10: INTEGRATION GATE)
-[CP-10] Task 10: Worker Dispatcher & Canonical admit_execution Bridge
+[CP-10] Task 10 Gate: Worker Dispatcher & Execution Worker (Requires All Issuance Paths Closed & Single Admission Proven)
       │
       ▼ (Critical Task 11: Lane C2)
 [CP-11] Task 11: Worker Heartbeats, Crash Recovery & Stale Lease Reaper

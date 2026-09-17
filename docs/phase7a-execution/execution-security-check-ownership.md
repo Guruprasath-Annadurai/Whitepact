@@ -1,6 +1,6 @@
 # WhitePact Phase 7A: Execution Security Check Ownership Matrix
 
-**Document Status:** CANONICAL SPECIFICATION PASS 2 (ATOMIC AUTHORITY INTEGRATION CORRECTION)
+**Document Status:** CANONICAL SPECIFICATION PASS 3 (FINAL CALL-PATH & SINGLE-ADMISSION CLOSURE)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
 **Current Migration Head:** `0048` (`migrations/versions/0048_enforce_paddle_binding_atomicity.py`)
@@ -13,9 +13,10 @@ This document defines the strict, single-owner security verification model acros
 
 ### Core Invariants:
 1. **Single Canonical Owner:** Every security check has exactly one authoritative owner.
-2. **Durable Issuance Boundary:** `src/responsibleai/mcp/governance_integration.py` guarantees that no `QueueTicket` can be generated before its `ExecutionAuthorization` is committed in PostgreSQL.
-3. **Singular Atomic Admission Transaction:** `ExecutionNonceRepository.consume()` in `src/responsibleai/db/execution_nonce_repository.py` owns the singular PostgreSQL transaction combining the epoch lock, nonce insert, and conditional authorization status update (`ISSUED -> CONSUMED` with `rowcount == 1`).
-4. **Derived Expiration & Singular Revocation:** Expiration is derived from `now >= expires_at`. Revocation is owned exclusively by `governance_revocation_epochs`. No dual-source revocation exists.
+2. **Centralized Durable Issuance Boundary:** `DurableExecutionAuthorizationIssuer` guarantees that no `QueueTicket` can be generated before its `ExecutionAuthorization` is committed in PostgreSQL, across all 3 production call sites (`governance_integration.py` and `upstream_dispatch.py`).
+3. **Single Canonical Admission Gate:** `ResponsibleWorker` owns canonical `admit_execution()`, generating a typed `AdmittedExecution` context. Downstream executors (`InternalToolExecutor` and `UpstreamServer`) consume this context and do not re-admit, preventing double admission.
+4. **Singular Atomic Admission Transaction:** `ExecutionNonceRepository.consume()` in `src/responsibleai/db/execution_nonce_repository.py` owns the singular PostgreSQL transaction combining the epoch lock, nonce insert, and conditional authorization status update (`ISSUED -> CONSUMED` with `rowcount == 1`).
+5. **Derived Expiration & Singular Revocation:** Expiration is derived from `now >= expires_at`. Revocation is owned exclusively by `governance_revocation_epochs`. No dual-source revocation exists.
 
 ---
 
@@ -23,7 +24,8 @@ This document defines the strict, single-owner security verification model acros
 
 | Security Check | Canonical Owner | Queue-Time Check? | Pre-Dispatch Check? | Canonical Durable Check? | Duplication Allowed? | Rationale & Failure Mode |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Durable Authorization Issuance** | `mcp/governance_integration.py` + `ExecutionAuthRepository` | YES (Persisted prior to enqueue) | NO (Already durable) | YES (Foreign key & primary key constraints) | NO (Sole owner of issuance persistence) | If DB write fails, request fails closed immediately. Queue entry = 0, dispatch = 0. |
+| **Durable Authorization Issuance** | `DurableExecutionAuthorizationIssuer` (`mcp/governance_integration.py` & `mcp/upstream_dispatch.py`) + `ExecutionAuthRepository` | YES (Persisted prior to enqueue) | NO (Already durable) | YES (Foreign key & primary key constraints) | NO (Sole owner of issuance persistence) | If DB write fails, request fails closed immediately. Queue entry = 0, dispatch = 0. |
+| **Canonical Admission Gate** | `ResponsibleWorker` (calls canonical `admit_execution()`) | NO | NO | YES (Combined atomic PG transaction) | NO (Exactly one admission per execution attempt) | Emits immutable `AdmittedExecution` context. Downstream executors (`InternalToolExecutor`, `UpstreamServer`) consume context without re-admission. |
 | **Authorization Expiry** | `ExecutionAuthorization.is_expired` | YES (Fast drop) | YES (Pre-flight) | YES (Enforced via `WHERE expires_at > :now` in atomic UPDATE) | YES (Read-only timestamp comparison) | Expiration is derived, never persisted. Early drops prevent queue congestion; final atomic query guard guarantees zero clock-drift execution. |
 | **Authorization Consumed State** | `ExecutionNonceRepository.consume()` | YES (Status != ISSUED) | YES (Pre-flight check) | YES (Atomic conditional UPDATE asserting `rowcount == 1`) | NO (Single atomic transition is authoritative) | Conditional update `WHERE status = 'ISSUED' AND expires_at > :now` on same DB connection as nonce insert. If rowcount != 1, transaction rolls back. |
 | **Revocation / Governance Epoch** | `governance_revocation_epochs` + `lock_epoch()` | NO (Avoids DB lock) | NO (Avoids unneeded lock) | YES (Sole owner: `admit_execution` via `lock_epoch`) | NO (Must execute under row lock) | Singular authoritative revocation mechanism. Individual `REVOKED` state is eliminated to avoid dual-source ambiguity. |
@@ -47,9 +49,9 @@ This document defines the strict, single-owner security verification model acros
 
 ```mermaid
 flowchart TD
-    subgraph ISSUANCE [Durable Issuance Phase - Policy Gateway]
+    subgraph ISSUANCE [Durable Issuance Phase - Centralized Issuer]
         DEC[Policy Decision: ALLOW / ALLOW_WITH_REDACTION] --> EA_MEM[authorize_execution: In-Memory Dataclass]
-        EA_MEM --> DB_WRITE[ExecutionAuthRepository.create: Persist to Postgres]
+        EA_MEM --> DB_WRITE[DurableExecutionAuthorizationIssuer.issue: Persist to Postgres]
         DB_WRITE -- DB Failure --> ABORT_QUEUE[Abort Request: Fail Closed, No QueueTicket]
         DB_WRITE -- DB Success --> ENQUEUE[AdmissionController.reserve & FairQueue.enqueue]
     end
@@ -68,7 +70,7 @@ flowchart TD
     subgraph STAGE2 [Stage 2: Final Canonical Admission - admit_execution]
         LEASE --> P1[Pre-Flight Binding Verification: Action Digest + BreakGlass + Delegation]
         P1 -- Mismatch / Revoked --> ABORT_LEASE[Release Lease as FAILED, Abort]
-        P1 -- Passed --> ADMIT[Invoke Canonical admit_execution]
+        P1 -- Passed --> ADMIT[Worker Invokes Canonical admit_execution]
         ADMIT --> TX[BEGIN POSTGRES TRANSACTION via ExecutionNonceRepository.consume]
         TX --> LOCK[SELECT epoch FROM governance_revocation_epochs WHERE org_id = :id FOR UPDATE]
         LOCK --> VERIFY_EPOCH{Current Epoch == Expected Epoch?}
@@ -79,6 +81,8 @@ flowchart TD
         UPDATE_AUTH --> CHECK_ROWCOUNT{rowcount == 1?}
         CHECK_ROWCOUNT -- rowcount == 0 --> ROLLBACK3[ROLLBACK & Raise AuthorizationAlreadyConsumedError]
         CHECK_ROWCOUNT -- rowcount == 1 --> COMMIT[COMMIT TRANSACTION]
-        COMMIT --> EXEC[Invoke Container Backend / External Transport]
+        COMMIT --> CONTEXT[Return Immutable AdmittedExecution Context]
+        CONTEXT --> EXEC[Pass AdmittedExecution to InternalToolExecutor / UpstreamServer]
+        EXEC --> BACKEND[Execute in Sandboxed Container OR SafeNetworkBackend Without Re-Admission]
     end
 ```

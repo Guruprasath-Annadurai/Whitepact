@@ -225,63 +225,72 @@
 
 ---
 
-### Task 8A: Durable Authorization Storage (Migration 0049) & Issuance Integration
+### Task 8A: Durable Authorization Storage (Migration 0049), Centralized Issuance Service & All-Path Integration
 - **Files:**
   - CREATE `migrations/versions/0049_runtime_execution_authorizations.py`
   - CREATE `src/responsibleai/db/execution_authorization_repository.py`
+  - CREATE `src/responsibleai/governance/execution_issuer.py`
   - MODIFY `src/responsibleai/mcp/governance_integration.py`
+  - MODIFY `src/responsibleai/mcp/upstream_dispatch.py`
   - CREATE `tests/runtime/test_durable_execution_authorization.py`
   - CREATE `tests/runtime/test_durable_issuance.py`
+  - CREATE `tests/runtime/test_durable_issuance_all_paths.py`
 - **Interfaces Consumed:** `ExecutionAuthorization`, `OrgRepository`, `governance_revocation_epochs`.
-- **Interfaces Produced:** `ExecutionAuthorizationRepository.create()`, `get()`, and durable issuance integration in `mcp/governance_integration.py`.
-- **Step 1 Failing Test:** Write `tests/runtime/test_durable_issuance.py` and `test_durable_execution_authorization.py` verifying:
+- **Interfaces Produced:** `ExecutionAuthorizationRepository.create()`, `get()`, `DurableExecutionAuthorizationIssuer.issue()`, and all-path durable issuance integration.
+- **Step 1 Failing Test:** Write `tests/runtime/test_durable_issuance_all_paths.py` and `test_durable_execution_authorization.py` verifying:
   1. Lossless persistence of all 11 fields (`authorization_id`, `organization_id`, `principal_id`, `action_digest`, `target_fingerprint`, `decision`, `revocation_epoch`, `nonce`, `issued_at`, `expires_at`, `status`).
-  2. **Durable Issuance Invariant:** `ExecutionAuthorization` is persisted in PostgreSQL at decision time BEFORE enqueueing.
+  2. **All-Path Durable Issuance Invariant:** `ExecutionAuthorization` is persisted in PostgreSQL at decision time BEFORE enqueueing across all 3 call sites (`execute_governed_action`, `resolve_approval_and_execute`, `dispatch_upstream_action`).
   3. If DB persistence fails: request fails closed (HTTP 500/503), ZERO `QueueTicket` rows created (`queue_depth == 0`), no authority usable by worker.
   4. Cross-tenant authorization lookup rejected (`WHERE organization_id = :org_id`).
 - **Step 2 Run RED:**
-  `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_durable_execution_authorization.py tests/runtime/test_durable_issuance.py -v`
+  `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_durable_execution_authorization.py tests/runtime/test_durable_issuance_all_paths.py -v`
 - **Step 3 Minimal Code:**
   1. Create migration `0049` creating `governance_execution_authorizations` table.
   2. Implement `ExecutionAuthorizationRepository.create()` and `get()`.
-  3. Modify `src/responsibleai/mcp/governance_integration.py` to persist `ExecutionAuthorization` prior to calling `reserve_execution()` and queueing.
+  3. Implement `DurableExecutionAuthorizationIssuer.issue()` in `governance/execution_issuer.py`.
+  4. Modify `src/responsibleai/mcp/governance_integration.py` and `src/responsibleai/mcp/upstream_dispatch.py` to route through issuer before calling `reserve_execution()` and queueing.
 - **Step 4 Run GREEN:**
-  `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_durable_execution_authorization.py tests/runtime/test_durable_issuance.py -v`
-- **Step 5 Focused Regression:** Run migration tests and `pytest tests/runtime/test_durable_issuance.py -q`.
+  `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_durable_execution_authorization.py tests/runtime/test_durable_issuance_all_paths.py -v`
+- **Step 5 Focused Regression:** Run migration tests and `pytest tests/runtime/test_durable_issuance_all_paths.py -q`.
 - **Step 6 Commit:**
-  `git add migrations/versions/0049_runtime_execution_authorizations.py src/responsibleai/db/execution_authorization_repository.py src/responsibleai/mcp/governance_integration.py tests/runtime/test_durable_execution_authorization.py tests/runtime/test_durable_issuance.py`
-  `git commit -m "feat(runtime): introduce durable authorization storage and issuance gate"`
+  `git add migrations/versions/0049_runtime_execution_authorizations.py src/responsibleai/db/execution_authorization_repository.py src/responsibleai/governance/execution_issuer.py src/responsibleai/mcp/governance_integration.py src/responsibleai/mcp/upstream_dispatch.py tests/runtime/test_durable_execution_authorization.py tests/runtime/test_durable_issuance_all_paths.py`
+  `git commit -m "feat(runtime): introduce centralized durable authorization storage and issuance gate"`
 
 ---
 
-### Task 8B: Two-Stage Revalidation & Atomic Admission Transaction Integration
+### Task 8B: Two-Stage Revalidation, Atomic Admission Transaction & Admitted Context
 - **Files:**
   - MODIFY `src/responsibleai/db/execution_nonce_repository.py`
   - MODIFY `src/responsibleai/governance/execution.py`
+  - MODIFY `src/responsibleai/governance/upstream_executor.py`
   - CREATE `src/responsibleai/runtime/revalidation.py`
   - CREATE `tests/runtime/test_atomic_admission.py`
+  - CREATE `tests/runtime/test_single_admission_internal_tool.py`
+  - CREATE `tests/runtime/test_single_admission_upstream.py`
   - CREATE `tests/runtime/test_revalidation.py`
 - **Interfaces Consumed:** `ExecutionNonceRepository`, `ExecutionAuthorizationRepository`, `governance_revocation_epochs`, `OrgRepository`, `SessionService`, `BreakGlassService`.
-- **Interfaces Produced:** Atomic `ExecutionNonceRepository.consume()` and preserved canonical `admit_execution()` gatekeeper.
-- **Step 1 Failing Test:** Write `tests/runtime/test_atomic_admission.py` and `test_revalidation.py` asserting:
+- **Interfaces Produced:** Atomic `ExecutionNonceRepository.consume()`, canonical `admit_execution()` returning `AdmittedExecution` context, and adapted downstream executors (`InternalToolExecutor`, `UpstreamServer`) with zero re-admission.
+- **Step 1 Failing Test:** Write `tests/runtime/test_atomic_admission.py`, `test_single_admission_internal_tool.py`, and `test_single_admission_upstream.py` asserting:
   1. Nonce insertion and authorization status update (`ISSUED -> CONSUMED`) execute in the SAME PostgreSQL transaction on `self._engine.raw.begin()`.
   2. If nonce insert succeeds but conditional authorization update returns `rowcount == 0` (concurrent consumption race): entire transaction rolls back, 0 nonce rows committed.
   3. If authorization update succeeds but forced error occurs before commit: authorization remains `ISSUED`, nonce absent.
   4. Stale revocation epoch: transaction rolls back, nonce absent, authorization unconsumed.
   5. Two independent PostgreSQL processes consuming same authorization concurrently: exactly 1 process succeeds (`rowcount == 1`), loser rolls back.
   6. Two-stage revalidation covers all 11 security dimensions.
+  7. **Single Admission Invariant:** `InternalToolExecutor.execute()` and `UpstreamServer.execute()` accept `AdmittedExecution` and do NOT call `admit_execution()`; call count is exactly 1 per execution attempt.
 - **Step 2 Run RED:**
-  `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_atomic_admission.py tests/runtime/test_revalidation.py -v`
+  `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_atomic_admission.py tests/runtime/test_single_admission_internal_tool.py tests/runtime/test_single_admission_upstream.py -v`
 - **Step 3 Minimal Code:**
   1. Modify `src/responsibleai/db/execution_nonce_repository.py:consume()` to combine epoch lock, nonce insert, and conditional update on `governance_execution_authorizations` (`status = 'CONSUMED'`) asserting `rowcount == 1`.
-  2. Preserve `src/responsibleai/governance/execution.py:admit_execution()` calling `nonce_repo.consume()`.
-  3. Implement `src/responsibleai/runtime/revalidation.py` (Stage 1 early invalidation, Stage 2 pre-flight verification).
+  2. Update `src/responsibleai/governance/execution.py:admit_execution()` to return typed `AdmittedExecution` context.
+  3. Adapt `InternalToolExecutor.execute()` and `UpstreamServer.execute()` to accept `AdmittedExecution` context and eliminate internal calls to `admit_execution()`.
+  4. Implement `src/responsibleai/runtime/revalidation.py` (Stage 1 early invalidation, Stage 2 pre-flight verification).
 - **Step 4 Run GREEN:**
-  `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_atomic_admission.py tests/runtime/test_revalidation.py -v`
-- **Step 5 Focused Regression:** Run `pytest tests/runtime/test_atomic_admission.py tests/runtime/test_revalidation.py -q`.
+  `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_atomic_admission.py tests/runtime/test_single_admission_internal_tool.py tests/runtime/test_single_admission_upstream.py tests/runtime/test_revalidation.py -v`
+- **Step 5 Focused Regression:** Run `pytest tests/runtime/test_atomic_admission.py tests/runtime/test_single_admission_internal_tool.py tests/runtime/test_single_admission_upstream.py -q`.
 - **Step 6 Commit:**
-  `git add src/responsibleai/db/execution_nonce_repository.py src/responsibleai/governance/execution.py src/responsibleai/runtime/revalidation.py tests/runtime/test_atomic_admission.py tests/runtime/test_revalidation.py`
-  `git commit -m "security(runtime): bind atomic nonce and authorization admission transaction"`
+  `git add src/responsibleai/db/execution_nonce_repository.py src/responsibleai/governance/execution.py src/responsibleai/governance/upstream_executor.py src/responsibleai/runtime/revalidation.py tests/runtime/test_atomic_admission.py tests/runtime/test_single_admission_internal_tool.py tests/runtime/test_single_admission_upstream.py tests/runtime/test_revalidation.py`
+  `git commit -m "security(runtime): bind atomic admission transaction and single admission context"`
 
 ---
 
@@ -318,8 +327,13 @@
   - CREATE `src/responsibleai/runtime/dispatcher.py`
   - CREATE `src/responsibleai/runtime/worker/worker.py`
   - MODIFY `src/responsibleai/mcp/governance_integration.py`
+  - MODIFY `src/responsibleai/mcp/upstream_dispatch.py`
   - CREATE `tests/runtime/test_dispatcher.py`
   - CREATE `tests/runtime/test_execution_worker.py`
+- **Activation Gate Preconditions:**
+  1. ALL 3 production `authorize_execution()` issuance paths closed via durable PostgreSQL persistence.
+  2. Single canonical `admit_execution()` ownership proven (Worker owns admission; `InternalToolExecutor` and `UpstreamServer` consume `AdmittedExecution` without re-admission).
+  3. No Task 10 activation permitted before these preconditions pass.
 - **Interfaces Consumed:** Tasks 6, 7, 8A, 8B, 9 (`ExecutionAdmissionController`, `MultiTenantFairQueue`, `ExecutionAuthorizationRepository`, `AdmissionLeaseRepository`, `ExecutionNonceRepository`, `revocation_epoch_repository`, canonical `admit_execution()`).
 - **Interfaces Produced:** Non-bypassable `ExecutionDispatcher` and `ExecutionWorker.process_next()` pipeline.
 - **Step 1 Failing Test:** Write `tests/runtime/test_dispatcher.py` and `test_execution_worker.py` asserting:
@@ -328,16 +342,17 @@
   3. Worker pulls ticket, runs Stage 1 Early Queue Invalidation.
   4. Worker acquires exclusive `ACTIVE` lease via `AdmissionLeaseRepository`.
   5. Worker runs Stage 2 Pre-flight Revalidation against durable authorization record.
-  6. Worker invokes canonical `admit_execution()`, atomically locking epoch and burning nonce.
-  7. No tool execution or container launch is permitted without successful `admit_execution()`.
+  6. Worker invokes canonical `admit_execution()`, atomically locking epoch and burning nonce, receiving `AdmittedExecution` context.
+  7. Worker hands `AdmittedExecution` to downstream executor (`InternalToolExecutor` or `UpstreamServer`). Zero double admission.
+  8. No tool execution or container launch is permitted without successful `admit_execution()`.
 - **Step 2 Run RED:**
   `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_dispatcher.py tests/runtime/test_execution_worker.py -v`
-- **Step 3 Minimal Code:** Connect `governance_integration.py` to the dispatcher, implement worker loop with canonical `admit_execution()`, and bridge to isolation backend.
+- **Step 3 Minimal Code:** Connect `governance_integration.py` and `upstream_dispatch.py` to the dispatcher, implement worker loop with canonical `admit_execution()`, and bridge to isolation backend and upstream server.
 - **Step 4 Run GREEN:**
   `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_dispatcher.py tests/runtime/test_execution_worker.py -v`
 - **Step 5 Focused Regression:** Run `pytest tests/mcp/test_governance_integration.py tests/runtime/test_dispatcher.py tests/runtime/test_execution_worker.py -q`.
 - **Step 6 Commit:**
-  `git add src/responsibleai/runtime/dispatcher.py src/responsibleai/runtime/worker/worker.py src/responsibleai/mcp/governance_integration.py tests/runtime/test_dispatcher.py tests/runtime/test_execution_worker.py`
+  `git add src/responsibleai/runtime/dispatcher.py src/responsibleai/runtime/worker/worker.py src/responsibleai/mcp/governance_integration.py src/responsibleai/mcp/upstream_dispatch.py tests/runtime/test_dispatcher.py tests/runtime/test_execution_worker.py`
   `git commit -m "feat(runtime): activate worker dispatcher with non-bypassable canonical admission bridge"`
 
 ---

@@ -1,6 +1,6 @@
 # WhitePact Phase 7A: Final Implementation File Map
 
-**Document Status:** CANONICAL SPECIFICATION PASS 2 (ATOMIC AUTHORITY INTEGRATION CORRECTION)
+**Document Status:** CANONICAL SPECIFICATION PASS 3 (FINAL CALL-PATH & SINGLE-ADMISSION CLOSURE)
 **Source Design SHA:** `dfbeb2e6d9fad575fc45b64789c63b1c1c0b5b01` (Worktree: `/Users/ag/whitepact-phase7a-runtime-preparation`)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
@@ -27,8 +27,10 @@ Commercial attributes (`Plan`, `subscription_status`, billing) are strictly deco
 
 | Existing Production File | Function / Symbol Modified | Why Modification Is Required |
 | :--- | :--- | :--- |
-| `src/responsibleai/mcp/governance_integration.py` | `execute_governed_action()`, `resolve_approval_and_execute()` | **Durable Issuance Owner:** Persists `ExecutionAuthorization` in PostgreSQL (`governance_execution_authorizations`) via `ExecutionAuthorizationRepository.create()` before enqueueing. Decouples inline execution into queue dispatch. |
-| `src/responsibleai/governance/execution.py` | `admit_execution()` | **Canonical Admission Gate:** Retains exact signature `admit_execution(authorization, action, nonce_repo)`. Verifies authorization before and after await, delegating atomic durable admission to `ExecutionNonceRepository.consume()`. |
+| `src/responsibleai/mcp/governance_integration.py` | `execute_governed_action()`, `resolve_approval_and_execute()` | **Durable Issuance Integration:** Routes through `DurableExecutionAuthorizationIssuer.issue()` to persist `ExecutionAuthorization` in PostgreSQL (`governance_execution_authorizations`) before enqueueing. Decouples inline execution into queue dispatch. |
+| `src/responsibleai/mcp/upstream_dispatch.py` | `dispatch_upstream_action()` | **Upstream Issuance Integration:** Routes through `DurableExecutionAuthorizationIssuer.issue()` before queueing/dispatch. Eliminates upstream issuance bypass, guaranteeing that external MCP actions are durably persisted before execution. |
+| `src/responsibleai/governance/execution.py` | `admit_execution()`, `InternalToolExecutor.execute()` | **Canonical Admission & Downstream Adaptation:** Returns typed `AdmittedExecution` context upon atomic transaction commit. Adapts `InternalToolExecutor.execute()` to accept `AdmittedExecution` and not call `admit_execution()` again, eliminating double-admission. |
+| `src/responsibleai/governance/upstream_executor.py` | `UpstreamServer.execute()` | **Single Admission for Upstream:** Adapts `UpstreamServer.execute()` to accept `AdmittedExecution` context instead of invoking `admit_execution()` again. Strictly preserves `SafeNetworkBackend`, fingerprint validation, and SSRF protections. |
 | `src/responsibleai/db/execution_nonce_repository.py` | `ExecutionNonceRepository.consume()` | **Atomic Transaction Owner:** Adapts the existing `self._engine.raw.begin()` transaction to combine: (1) epoch lock; (2) epoch comparison; (3) nonce insert; (4) conditional update on `governance_execution_authorizations` (`status = 'CONSUMED'`) asserting `rowcount == 1`. |
 | `src/responsibleai/isolation/models.py` | `ResourceLimits`, `IsolationProfile` | Extends `ResourceLimits` with WP-ISO-01 frozen design requirements (`max_workspace_bytes: 10MB`, `max_workspace_files: 100`, `max_artifacts: 20`). |
 | `src/responsibleai/isolation/filesystem.py` | `EphemeralWorkspace.populate()` | Enforces workspace bounds during directory population (10MB byte ceiling, 100 file count ceiling). |
@@ -65,9 +67,12 @@ Commercial attributes (`Plan`, `subscription_status`, billing) are strictly deco
 | :--- | :--- | :--- | :--- | :--- |
 | `migrations/versions/0049_runtime_execution_authorizations.py` | CREATE | Creates `governance_execution_authorizations` table. Down-revision: `0048`. Losslessly persists all 11 fields; status machine (`ISSUED`, `CONSUMED`). | Task 8 | `tests/test_postgres_migrations.py` |
 | `src/responsibleai/db/execution_authorization_repository.py` | CREATE | Async PostgreSQL repository for `governance_execution_authorizations` (`create()`, `get()`). | Task 8 | `tests/db/test_execution_authorization_repository.py` |
-| `src/responsibleai/mcp/governance_integration.py` | MODIFY | **Durable Issuance Integration:** Calls `ExecutionAuthorizationRepository.create()` before enqueueing. | Task 8 | `tests/runtime/test_durable_issuance.py` |
+| `src/responsibleai/governance/execution_issuer.py` | CREATE | Centralized `DurableExecutionAuthorizationIssuer` service ensuring PostgreSQL persistence prior to queueing. | Task 8 | `tests/runtime/test_durable_issuance_all_paths.py` |
+| `src/responsibleai/mcp/governance_integration.py` | MODIFY | **Durable Issuance Integration:** Routes `execute_governed_action()` and `resolve_approval_and_execute()` through issuer before enqueueing. | Task 8 | `tests/runtime/test_durable_issuance_all_paths.py` |
+| `src/responsibleai/mcp/upstream_dispatch.py` | MODIFY | **Upstream Durable Issuance:** Routes `dispatch_upstream_action()` through issuer before enqueueing, closing upstream gap. | Task 8 | `tests/runtime/test_durable_issuance_all_paths.py` |
 | `src/responsibleai/db/execution_nonce_repository.py` | MODIFY | **Atomic Admission Transaction:** Adapts `consume()` to lock epoch, insert nonce, and conditionally update authorization with `rowcount == 1` in single transaction. | Task 8 | `tests/runtime/test_atomic_admission.py` |
-| `src/responsibleai/governance/execution.py` | MODIFY | **Canonical Admission API:** Preserves `admit_execution()`, enforcing fail-closed durable admission boundary. | Task 8 | `tests/runtime/test_atomic_admission.py` |
+| `src/responsibleai/governance/execution.py` | MODIFY | **Canonical Admission API & Typed Context:** Preserves `admit_execution()`, returns `AdmittedExecution`. Adapts `InternalToolExecutor.execute()` to accept `AdmittedExecution`. | Task 8 | `tests/runtime/test_atomic_admission.py`, `tests/runtime/test_single_admission_internal_tool.py` |
+| `src/responsibleai/governance/upstream_executor.py` | MODIFY | **Upstream Single Admission:** Adapts `UpstreamServer.execute()` to accept `AdmittedExecution` context and avoid duplicate admission. | Task 8, 10 | `tests/runtime/test_single_admission_upstream.py` |
 | `src/responsibleai/runtime/revalidation.py` | CREATE | Two-stage revalidation: Stage 1 `early_queue_invalidation()`; Stage 2 `pre_flight_revalidation()`. | Task 8 | `tests/runtime/test_revalidation.py` |
 
 ---
@@ -84,8 +89,8 @@ Commercial attributes (`Plan`, `subscription_status`, billing) are strictly deco
 ### 5. DISPATCHER, WORKER & RECOVERY
 | Exact Path | Action | Responsibility / Symbols | Dependent Tasks | Tests |
 | :--- | :--- | :--- | :--- | :--- |
-| `src/responsibleai/runtime/dispatcher.py` | CREATE | Bridges queue to worker pools. Runs early invalidation, acquires lease, and dispatches. | Task 10 (Gate) | `tests/runtime/test_dispatcher.py` |
-| `src/responsibleai/runtime/worker/worker.py` | CREATE | Execution worker process loop: pre-flight revalidation, canonical `admit_execution()`, container invocation, heartbeat stream. | Task 10 (Gate) | `tests/runtime/test_execution_worker.py` |
+| `src/responsibleai/runtime/dispatcher.py` | CREATE | Bridges queue to worker pools. Runs early invalidation, acquires lease, and dispatches. Gated on all issuance paths closed & single admission proven. | Task 10 (Gate) | `tests/runtime/test_dispatcher.py` |
+| `src/responsibleai/runtime/worker/worker.py` | CREATE | Execution worker process loop: pre-flight revalidation, canonical `admit_execution()`, container invocation via `AdmittedExecution`, heartbeat stream. | Task 10 (Gate) | `tests/runtime/test_execution_worker.py` |
 | `src/responsibleai/runtime/worker/supervisor.py` | CREATE | Background reaper for stale leases and dead worker cleanup. | Task 11 (C2) | `tests/runtime/test_crash_recovery.py` |
 | `src/responsibleai/runtime/worker/worker.py` | MODIFY | Enforces `UNCERTAIN` state on disrupted external side-effects (zero blind replay). | Task 12 (C2) | `tests/runtime/test_external_effect_idempotency.py` |
 

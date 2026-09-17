@@ -1,6 +1,6 @@
 # WhitePact Phase 7A: Canonical Worker Execution Flow
 
-**Document Status:** CANONICAL SPECIFICATION PASS 2 (ATOMIC AUTHORITY INTEGRATION CORRECTION)
+**Document Status:** CANONICAL SPECIFICATION PASS 3 (FINAL CALL-PATH & SINGLE-ADMISSION CLOSURE)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
 **Current Migration Head:** `0048` (`migrations/versions/0048_enforce_paddle_binding_atomicity.py`)
@@ -12,12 +12,13 @@
 This document specifies the authoritative, end-to-end execution control chain for Phase 7A.
 
 ### Core Architectural Invariants:
-1. **Durable Issuance Precedes Queueing:** No `QueueTicket` may be generated until the `ExecutionAuthorization` is durably committed to PostgreSQL (`governance_execution_authorizations`).
-2. **Zero Execution Without Canonical Admission:** No worker may execute a container or invoke a tool without successfully completing `admit_execution()` in `src/responsibleai/governance/execution.py`.
-3. **Combined Atomic Admission Transaction:** `ExecutionNonceRepository.consume()` in `src/responsibleai/db/execution_nonce_repository.py` executes a single database transaction combining the epoch lock, nonce insertion, and conditional authorization status update (`ISSUED -> CONSUMED` with `rowcount == 1`).
-4. **Queue Isolation:** Queue tickets (`QueueTicket`) contain strictly non-privileged pointers (`execution_id`, `authorization_id`, `org_id`, `principal_id`, `action_digest`).
-5. **Database-Enforced Lease Exclusivity:** A worker must acquire an exclusive `ACTIVE` lease row in `runtime_worker_leases` before invoking `admit_execution()`.
-6. **No Exactly-Once Network Promise:** If a remote network side-effect is interrupted, its outcome is marked `UNCERTAIN` and requires reconciliation or proof of idempotency; blind replay is forbidden.
+1. **Durable Issuance Precedes Queueing:** No `QueueTicket` may be generated until the `ExecutionAuthorization` is durably committed to PostgreSQL (`governance_execution_authorizations`) via `DurableExecutionAuthorizationIssuer.issue()`. Applies to all internal tools and upstream MCP dispatch.
+2. **Single Canonical Admission Gate:** No worker may execute a container or invoke a network tool without successfully completing `admit_execution()` in `src/responsibleai/governance/execution.py`.
+3. **Worker-Owned Admission with Typed `AdmittedExecution`:** The worker exclusively calls `admit_execution()`, obtaining an immutable `AdmittedExecution` token. Downstream executors (`InternalToolExecutor` and `UpstreamServer`) consume this token and MUST NOT call `admit_execution()` again, eliminating double admission.
+4. **Combined Atomic Admission Transaction:** `ExecutionNonceRepository.consume()` in `src/responsibleai/db/execution_nonce_repository.py` executes a single database transaction combining the epoch lock, nonce insertion, and conditional authorization status update (`ISSUED -> CONSUMED` with `rowcount == 1`).
+5. **Queue Isolation:** Queue tickets (`QueueTicket`) contain strictly non-privileged pointers (`execution_id`, `authorization_id`, `org_id`, `principal_id`, `action_digest`). Zero credentials in Redis.
+6. **Database-Enforced Lease Exclusivity:** A worker must acquire an exclusive `ACTIVE` lease row in `runtime_worker_leases` before invoking `admit_execution()`.
+7. **No Exactly-Once Network Promise:** If a remote network side-effect is interrupted, its outcome is marked `UNCERTAIN` and requires reconciliation or proof of idempotency; blind replay is forbidden.
 
 ---
 
@@ -27,22 +28,25 @@ This document specifies the authoritative, end-to-end execution control chain fo
 sequenceDiagram
     autonumber
     participant Client
-    participant Gateway as Policy Gateway (mcp/governance_integration.py)
+    participant Gateway as Policy Gateway / Upstream Dispatch
+    participant Issuer as DurableExecutionAuthorizationIssuer
     participant EA_Repo as ExecutionAuthRepository (PostgreSQL)
     participant AdmCtrl as Admission Controller & Queue
     participant Dispatcher as Worker Dispatcher
     participant LeaseRepo as WorkerLeaseRepository (PostgreSQL)
+    participant Worker as Execution Worker
     participant NonceRepo as ExecutionNonceRepository (PostgreSQL)
     participant EpochRepo as RevocationEpochRepository (PostgreSQL)
-    participant Worker as Execution Worker
-    participant Backend as Container Isolation Backend
+    participant Executor as InternalToolExecutor / UpstreamServer
+    participant Backend as Container / SafeNetworkBackend
 
-    Client->>Gateway: Submit ActionRequest
+    Client->>Gateway: Submit ActionRequest (Local Tool or Upstream MCP)
     Gateway->>Gateway: Evaluate Policies, Ceilings & Passports
     Note over Gateway: Decision: ALLOW or ALLOW_WITH_REDACTION
     Gateway->>Gateway: authorize_execution() -> In-Memory ExecutionAuthorization
 
-    Gateway->>EA_Repo: create(authorization) [INSERT INTO governance_execution_authorizations]
+    Gateway->>Issuer: issue(authorization)
+    Issuer->>EA_Repo: create(authorization) [INSERT INTO governance_execution_authorizations]
     Note over Gateway,EA_Repo: If DB write fails, fail closed (HTTP 500/503). Zero queue tickets created.
 
     Gateway->>AdmCtrl: reserve_execution() & enqueue(QueueTicket)
@@ -61,7 +65,7 @@ sequenceDiagram
 
     Dispatcher->>Worker: Dispatch to Worker Process with Lease Token
 
-    Note over Worker: Stage 2: Final Canonical Admission
+    Note over Worker: Stage 2: Final Canonical Admission (Worker Owned)
     Worker->>EA_Repo: Load Full ExecutionAuthorization & Action Payload
     Worker->>Worker: Revalidate Action Digest & Principal/Session Binding
     Worker->>Worker: Check BreakGlass Session Active & Unexpired (if applicable)
@@ -76,13 +80,16 @@ sequenceDiagram
         NonceRepo->>EA_Repo: UPDATE governance_execution_authorizations SET status = CONSUMED WHERE status = ISSUED AND expires_at > now
         NonceRepo->>NonceRepo: Assert rowcount == 1 (if 0: ROLLBACK & raise error)
     end
-    NonceRepo-->>Worker: Admission Confirmed
+    NonceRepo-->>Worker: Admission Confirmed -> Returns AdmittedExecution Context
 
-    Worker->>Backend: Execute in Sandboxed Container (--network=none, limits)
+    Worker->>Executor: execute(action, admitted_context)
+    Note over Executor: Verifies admitted_context. Zero re-admission.
+    Executor->>Backend: Execute in Sandboxed Container (--network=none) OR SafeNetworkBackend
     par Heartbeat Loop
         Worker->>LeaseRepo: Record Heartbeat (heartbeat_at = now())
-    and Container Wait
-        Backend-->>Worker: Return Result / stdout / exit_code
+    and Backend Wait
+        Backend-->>Executor: Return Result / stdout / exit_code
+        Executor-->>Worker: Forward Result
     end
 
     Worker->>LeaseRepo: Finalize Lease (status: COMPLETED)
@@ -94,10 +101,12 @@ sequenceDiagram
 
 ## 3. Step-by-Step State Transitions and Failure Exits
 
-### Step 1: Policy Gateway Decision & Durable Issuance
-- **Actor:** `src/responsibleai/mcp/governance_integration.py` (`execute_governed_action` and `resolve_approval_and_execute`).
+### Step 1: Decision & Centralized Durable Issuance
+- **Actors:**
+  - `src/responsibleai/mcp/governance_integration.py` (`execute_governed_action`, `resolve_approval_and_execute`)
+  - `src/responsibleai/mcp/upstream_dispatch.py` (`dispatch_upstream_action`)
 - **Action:** Evaluates policies; if decision is `ALLOW` or `ALLOW_WITH_REDACTION`, calls `authorize_execution()`.
-- **Durable Issuance Gate:** Immediately invokes `ExecutionAuthorizationRepository.create(authorization)`.
+- **Durable Issuance Gate:** Immediately invokes `DurableExecutionAuthorizationIssuer.issue(authorization)`.
 - **Failure Exit:** If DB insert fails:
   - Exception is caught and logged.
   - NO `QueueTicket` is generated.
@@ -119,42 +128,22 @@ sequenceDiagram
   3. `organization_id` active in `OrgRepository` (not suspended, deleted, or tombstoned).
 - **Failure Exit:** If any check fails, ticket is discarded / sent to dead-letter. **No worker lease is acquired, no nonce is burned.**
 
-### Step 4: Exclusive Worker Lease Acquisition
-- **Actor:** Worker Dispatcher.
-- **Action:** Inserts a lease record in `runtime_worker_leases` (`status = ACTIVE`).
-- **Enforcement:** PostgreSQL partial unique index `idx_runtime_worker_leases_active_execution` on `(execution_id) WHERE status = ACTIVE`.
-- **Failure Exit:** If another worker already holds an `ACTIVE` lease, `IntegrityError` is raised and the loser aborts cleanly.
+### Step 4: Worker Lease Acquisition & Stage 2 Revalidation
+- **Actor:** Worker Process.
+- **Action:** Acquires exclusive lease in `runtime_worker_leases` (`status = 'ACTIVE'`).
+- **Pre-Flight Checks:**
+  1. `action_digest == compute_action_digest(action)`.
+  2. Principal exists and is not disabled.
+  3. Session active and valid in `SessionService`.
+  4. BreakGlass active and unexpired (if applicable).
+  5. Delegation/Consent chain active (if applicable).
+- **Failure Exit:** If checks fail, lease is marked `FAILED` with failure reason. Nonce is not consumed.
 
-### Step 5: Worker Pre-Flight Binding Revalidation
-- **Actor:** Execution Worker.
-- **Action:**
-  1. Verifies `compute_action_digest(action) == authorization.action_digest`.
-  2. Verifies principal identity matches `authorization.principal_id`.
-  3. Verifies session validity via `SessionService` (if session-bound).
-  4. If BreakGlass: queries `iam_break_glass_sessions` to verify session is `ACTIVE` and unexpired.
-  5. If target requires drift verification: invokes `check_target_fingerprint()`.
-- **Failure Exit:** On mismatch, transitions lease to `FAILED`, releases capacity, and exits.
+### Step 5: Canonical Admission (Last-Moment Admission)
+- **Actor:** Worker Process exclusively.
+- **Action:** Invokes `admit_execution()`, executing the atomic PostgreSQL transaction in `ExecutionNonceRepository.consume()`.
+- **Outcome:** Generates typed, unforgeable `AdmittedExecution` context.
 
-### Step 6: Final Canonical Admission (`admit_execution`)
-- **Actor:** Execution Worker invoking `src/responsibleai/governance/execution.py:admit_execution()`.
-- **Transaction Owner:** `ExecutionNonceRepository.consume()` in `src/responsibleai/db/execution_nonce_repository.py`.
-- **Atomic Sequence (Single Connection, Single Transaction):**
-  1. `lock_epoch(conn, organization_id)` (`SELECT ... FOR UPDATE`).
-  2. Verify `current_epoch == expected_epoch`. (Mismatch raises `StaleRevocationEpochError`).
-  3. `INSERT INTO governance_execution_nonces (nonce, authorization_id, organization_id, consumed_at)`. (Duplicate raises `NonceAlreadyConsumedError`).
-  4. `UPDATE governance_execution_authorizations SET status = CONSUMED, consumed_at = :now, updated_at = :now WHERE authorization_id = :id AND organization_id = :org_id AND status = ISSUED AND expires_at > :now`.
-  5. Assert `rowcount == 1`. If `rowcount == 0`, raises `AuthorizationAlreadyConsumedError`.
-  6. Commit transaction.
-- **Failure Exit:** If any check fails, the transaction rolls back completely. Nonce is NOT inserted, authorization is NOT consumed.
-
-### Step 7: Isolated Container Execution
-- **Actor:** `ContainerIsolationBackend`.
-- **Action:** Ephemeral container launched with `--network=none`, `--memory=256m`, `--cpus=0.5`, `--pids-limit=32`, timeout 15.0s.
-- **Heartbeat:** Periodically updates `runtime_worker_leases.heartbeat_at`.
-
-### Step 8: Evidence Recording & Lease Finalization
-- **Actor:** Execution Worker.
-- **Action:**
-  1. Records outcome in `governance_evidence` and `governance_outcomes`.
-  2. Updates `runtime_worker_leases` to `COMPLETED` (`completed_at = now()`).
-  3. Calls `AdmissionController.release_execution()`.
+### Step 6: Downstream Execution Without Re-Admission
+- **Actor:** `InternalToolExecutor.execute` (container) or `UpstreamServer.execute` (remote MCP).
+- **Action:** Accepts `AdmittedExecution` context, verifies match against action and target, executes backend effect directly. Does NOT invoke `admit_execution()`.
