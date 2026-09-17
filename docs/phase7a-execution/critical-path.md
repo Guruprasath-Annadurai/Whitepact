@@ -64,7 +64,7 @@ Because tasks in Lane B (WP-ISO-01 compute and filesystem limits) and Lane D (Ob
 [CP-09A] Task 9A: Monotonic Fencing, Synchronous Expiry Check & claim_backend_start()
       │
       ▼ (Critical Task 9B: Downstream Executor Verification & SafeNetwork IP Pinning)
-[CP-09B] Task 9B: Executor assert_backend_start_claim(), SafeNetwork Pinning, EFFECT_TRANSMITTING & Capacity Release
+[CP-09B] Task 9B: Pre-Effect Atomic CAS (claim_local/external), SafeNetwork IP Pinning, Evidence Precedence & Capacity Release
       │
       ▼ [CHECKPOINT 1: Coordination, All-Path Durable Issuance & Single Admission Core Verification]
       │

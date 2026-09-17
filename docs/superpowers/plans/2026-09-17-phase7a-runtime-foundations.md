@@ -270,9 +270,9 @@
   - CREATE `src/responsibleai/db/execution_attempt_repository.py`
   - CREATE `tests/runtime/test_execution_attempt_state_machine.py`
 - **Interfaces Consumed:** PostgreSQL database engine (down_revision strictly `0050`).
-- **Interfaces Produced:** `runtime_execution_attempts` schema with nullable lease fields in `PENDING`, state-dependent CHECK constraint `chk_attempt_lease_fields`, active partial unique index, and `ExecutionAttemptRepository` (`create_initial_attempt()`, state transitions).
+- **Interfaces Produced:** `runtime_execution_attempts` schema with nullable lease fields in `PENDING`, `evidence_status` column (`PENDING`, `COMMITTED`, `INCOMPLETE`), state-dependent CHECK constraint `chk_attempt_lease_fields`, active partial unique index, and `ExecutionAttemptRepository` (`create_initial_attempt()`, state transitions).
 - **Step 1 Failing Test:** Write `tests/runtime/test_execution_attempt_state_machine.py` verifying:
-  1. `PENDING` attempt requires NULL worker_id, lease_id, lease_generation.
+  1. `PENDING` attempt requires NULL worker_id, lease_id, lease_generation, and `evidence_status = 'PENDING'`.
   2. Transition to `LEASED` requires all three lease fields.
   3. Partial unique index prevents duplicate active attempts.
 - **Step 2 Run RED:** `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_execution_attempt_state_machine.py -v`
@@ -280,7 +280,7 @@
 - **Step 4 Run GREEN:** `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_execution_attempt_state_machine.py -v`
 - **Step 5 Commit:**
   `git add migrations/versions/0051_runtime_execution_attempts.py src/responsibleai/db/execution_attempt_repository.py tests/runtime/test_execution_attempt_state_machine.py`
-  `git commit -m "feat(runtime): implement execution attempt state machine schema"`
+  `git commit -m "feat(runtime): implement execution attempt state machine schema with evidence status"`
 
 ---
 
@@ -326,7 +326,7 @@
 
 ---
 
-### Task 8B: Universal Epoch Coverage (14 Mutations), Two-Stage Revalidation & Atomic Admission
+### Task 8B: Universal Epoch Coverage (14 Mutations), Revalidation & Atomic Admission (F4.2-01)
 - **Files:**
   - MODIFY `src/responsibleai/db/execution_nonce_repository.py`
   - MODIFY `src/responsibleai/governance/execution.py`
@@ -335,18 +335,19 @@
   - CREATE `src/responsibleai/runtime/revalidation.py`
   - CREATE `tests/runtime/test_atomic_admission.py`
   - CREATE `tests/runtime/test_epoch_coverage_all_mutations.py`
-- **Interfaces Consumed:** `ExecutionNonceRepository`, `ExecutionAuthorizationRepository`, `governance_revocation_epochs`, `SessionService`, `BreakGlassService`.
-- **Interfaces Produced:** Atomic `ExecutionNonceRepository.consume()`, canonical `admit_execution()` returning `AdmissionReceipt`, and universal epoch coverage across all 14 mutations.
+- **Interfaces Consumed:** `ExecutionNonceRepository`, `ExecutionAuthorizationRepository`, `ExecutionAttemptRepository`, `governance_revocation_epochs`, `SessionService`, `BreakGlassService`.
+- **Interfaces Produced:** Atomic `ExecutionNonceRepository.consume()` executing in ONE transaction: (1) epoch lock/check; (2) nonce insert; (3) authorization `ISSUED -> CONSUMED` (`rowcount == 1`); (4) attempt transition `LEASED -> ADMITTED` (`rowcount == 1`). Emits in-process `AdmissionReceipt`.
 - **Step 1 Failing Test:** Write `tests/runtime/test_atomic_admission.py` and `test_epoch_coverage_all_mutations.py` asserting:
-  1. Nonce insertion and authorization status update (`ISSUED -> CONSUMED`) execute in the SAME PostgreSQL transaction.
-  2. All 14 authority mutations advance `scope="governance"` epoch under row lock.
-  3. `admit_execution()` returns typed `AdmissionReceipt`.
+  1. Nonce insertion, authorization status update (`ISSUED -> CONSUMED`), and attempt transition (`LEASED -> ADMITTED`) execute in the SAME PostgreSQL transaction.
+  2. If attempt update fails (e.g. wrong worker/lease/generation), entire transaction rolls back; nonce is NOT consumed and authorization remains `ISSUED`.
+  3. All 14 authority mutations advance `scope="governance"` epoch under row lock.
+  4. `admit_execution()` returns typed `AdmissionReceipt`.
 - **Step 2 Run RED:** `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_atomic_admission.py tests/runtime/test_epoch_coverage_all_mutations.py -v`
-- **Step 3 Minimal Code:** Modify `execution_nonce_repository.py:consume()`, `execution.py:admit_execution()`, `iam/session.py`, `iam/break_glass.py`, and implement `revalidation.py`.
+- **Step 3 Minimal Code:** Modify `execution_nonce_repository.py:consume()` to combine epoch lock, nonce insert, authorization update (`rowcount == 1`), and attempt update (`rowcount == 1`). Update `execution.py:admit_execution()`.
 - **Step 4 Run GREEN:** `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_atomic_admission.py tests/runtime/test_epoch_coverage_all_mutations.py -v`
 - **Step 5 Commit:**
   `git add src/responsibleai/db/execution_nonce_repository.py src/responsibleai/governance/execution.py src/responsibleai/iam/session.py src/responsibleai/iam/break_glass.py src/responsibleai/runtime/revalidation.py tests/runtime/test_atomic_admission.py tests/runtime/test_epoch_coverage_all_mutations.py`
-  `git commit -m "security(runtime): bind atomic admission transaction and universal epoch coverage"`
+  `git commit -m "security(runtime): bind atomic admission transaction with attempt state transition"`
 
 ---
 
@@ -356,12 +357,12 @@
   - MODIFY `src/responsibleai/db/admission_lease_repository.py`
   - CREATE `tests/runtime/test_one_shot_backend_start.py`
 - **Interfaces Consumed:** `runtime_worker_leases`, `runtime_execution_attempts`, `runtime_execution_fences`.
-- **Interfaces Produced:** `ExecutionAttemptRepository.claim_backend_start()` returning `BackendExecutionClaim`, synchronous lease expiry check inside lock, and one-shot transition (`ADMITTED -> BACKEND_STARTING` with `rowcount == 1`).
+- **Interfaces Produced:** `ExecutionAttemptRepository.claim_backend_start()` returning clean `BackendExecutionClaim`, synchronous lease expiry check inside lock, and one-shot transition (`ADMITTED -> BACKEND_STARTING` with `rowcount == 1`).
 - **Step 1 Failing Test:** Write `tests/runtime/test_one_shot_backend_start.py` verifying:
   1. Expired-but-ACTIVE lease fails backend-start claim synchronously (`expires_at > CURRENT_TIMESTAMP`).
   2. Stale worker holding generation N fails closed if active generation is N+1.
   3. One-shot transition succeeds exactly once; second call with same receipt returns `rowcount == 0` and fails.
-  4. Returns typed `BackendExecutionClaim`.
+  4. Returns clean `BackendExecutionClaim` (zero unverified decorative tokens).
 - **Step 2 Run RED:** `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_one_shot_backend_start.py -v`
 - **Step 3 Minimal Code:** Implement `claim_backend_start()` in `ExecutionAttemptRepository` and synchronous lock in `AdmissionLeaseRepository`.
 - **Step 4 Run GREEN:** `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_one_shot_backend_start.py -v`
@@ -371,26 +372,30 @@
 
 ---
 
-### Task 9B: Downstream Executor Verification, Target/IP Pinning & Capacity Management
+### Task 9B: Atomic Pre-Effect CAS, SafeNetwork IP Pinning & Evidence Precedence (F4.2-02, F4.2-04, F4.2-05)
 - **Files:**
+  - MODIFY `src/responsibleai/db/execution_attempt_repository.py`
   - MODIFY `src/responsibleai/governance/execution.py`
   - MODIFY `src/responsibleai/governance/upstream_executor.py`
   - MODIFY `src/responsibleai/runtime/admission/controller.py`
   - CREATE `tests/runtime/test_direct_executor_bypass_prevention.py`
-  - CREATE `tests/runtime/test_safe_network_pinning.py`
-- **Interfaces Consumed:** `BackendExecutionClaim`, `ExecutionAttemptRepository.assert_backend_start_claim()`, `SafeNetworkBackend`.
-- **Interfaces Produced:** Adapted downstream executors (`InternalToolExecutor`, `UpstreamMCPExecutor`) accepting only `BackendExecutionClaim` and verifying it against PostgreSQL, `SafeNetworkBackend` IP pinning and pre-socket `EFFECT_TRANSMITTING` commit, and explicit capacity release on all terminal paths.
-- **Step 1 Failing Test:** Write `tests/runtime/test_direct_executor_bypass_prevention.py` and `test_safe_network_pinning.py` asserting:
-  1. Passing fabricated `AdmissionReceipt` or `BackendExecutionClaim` to executor raises `ExecutionSecurityError`; zero backend calls made.
-  2. Direct executor invocation without prior committed `BACKEND_STARTING` state fails.
-  3. `SafeNetworkBackend` validates target, pins IP address, and commits `effect_state = 'EFFECT_TRANSMITTING'` immediately pre-socket.
-  4. Early invalidation and failure exits explicitly release capacity.
-- **Step 2 Run RED:** `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_direct_executor_bypass_prevention.py tests/runtime/test_safe_network_pinning.py -v`
-- **Step 3 Minimal Code:** Update `InternalToolExecutor.execute()`, `UpstreamMCPExecutor.execute()`, and add terminal capacity release paths.
-- **Step 4 Run GREEN:** `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_direct_executor_bypass_prevention.py tests/runtime/test_safe_network_pinning.py -v`
+  - CREATE `tests/runtime/test_concurrent_claim_replay.py`
+  - CREATE `tests/runtime/test_evidence_precedence_ordering.py`
+- **Interfaces Consumed:** `BackendExecutionClaim`, `ExecutionAttemptRepository.claim_local_effect_start()`, `ExecutionAttemptRepository.claim_external_effect_transmission()`, `SafeNetworkBackend`, `EvidenceStore`.
+- **Interfaces Produced:** Pre-effect atomic CAS transitions in PostgreSQL (`rowcount == 1`) closing all read/write races, SafeNetwork IP pinning, strict evidence persistence preceding normal attempt completion (`evidence_status = 'COMMITTED'`), and failure handling (`evidence_status = 'INCOMPLETE'`).
+- **Step 1 Failing Test:** Write `tests/runtime/test_direct_executor_bypass_prevention.py`, `test_concurrent_claim_replay.py`, and `test_evidence_precedence_ordering.py` asserting:
+  1. Two concurrent local calls with same `BackendExecutionClaim` result in exactly ONE container launch (`rowcount == 1`); second call matches 0 rows and fails closed.
+  2. Two concurrent upstream calls with same `BackendExecutionClaim` result in exactly ONE socket transmission (`rowcount == 1`); second call matches 0 rows and fails closed.
+  3. Fabricated claim raises `ExecutionSecurityError` with zero side-effects.
+  4. Stale claim after `RUNNING` or terminal state raises `ExecutionSecurityError` with zero side-effects.
+  5. Normal success path commits evidence before setting attempt `COMPLETED`.
+  6. Evidence persistence failure after confirmed effect marks attempt `COMPLETED` with `evidence_status = 'INCOMPLETE'` without re-running the tool.
+- **Step 2 Run RED:** `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_direct_executor_bypass_prevention.py tests/runtime/test_concurrent_claim_replay.py tests/runtime/test_evidence_precedence_ordering.py -v`
+- **Step 3 Minimal Code:** Implement `claim_local_effect_start()` and `claim_external_effect_transmission()` in `ExecutionAttemptRepository`, update `InternalToolExecutor` and `UpstreamMCPExecutor`, and enforce evidence precedence order.
+- **Step 4 Run GREEN:** `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_direct_executor_bypass_prevention.py tests/runtime/test_concurrent_claim_replay.py tests/runtime/test_evidence_precedence_ordering.py -v`
 - **Step 5 Commit:**
-  `git add src/responsibleai/governance/execution.py src/responsibleai/governance/upstream_executor.py src/responsibleai/runtime/admission/controller.py tests/runtime/test_direct_executor_bypass_prevention.py tests/runtime/test_safe_network_pinning.py`
-  `git commit -m "security(runtime): close direct executor bypass and bind SafeNetwork IP pinning"`
+  `git add src/responsibleai/db/execution_attempt_repository.py src/responsibleai/governance/execution.py src/responsibleai/governance/upstream_executor.py src/responsibleai/runtime/admission/controller.py tests/runtime/test_direct_executor_bypass_prevention.py tests/runtime/test_concurrent_claim_replay.py tests/runtime/test_evidence_precedence_ordering.py`
+  `git commit -m "security(runtime): implement atomic pre-effect CAS and evidence precedence ordering"`
 
 ---
 
@@ -405,12 +410,12 @@
   2. Tenant-scoped idempotent issuance (`UNIQUE(organization_id, idempotency_key)`, universal key requirement).
   3. All 3 production issuance paths closed via PostgreSQL persistence.
   4. Atomic approval consumption and authorization issuance (`UNIQUE(approval_id)`).
-  5. Canonical admission transaction combining nonce insert and authorization status update (`rowcount == 1`).
+  5. Canonical admission transaction combining nonce insert, authorization status update, and attempt transition `LEASED -> ADMITTED` (`rowcount == 1`).
   6. Universal epoch invalidation covering all 14 authority mutations.
   7. Monotonic worker fencing (`runtime_execution_fences` atomic counter + synchronous expiry check).
-  8. Durable attempt state machine with nullable lease fields in `PENDING` and state CHECK constraints.
-  9. One-shot backend-start claim (`claim_backend_start` with `rowcount == 1` returning `BackendExecutionClaim`).
-  10. Downstream executor verification (`assert_backend_start_claim`) closing direct bypass.
+  8. Durable attempt state machine (`0051_runtime_execution_attempts`, `evidence_status` column).
+  9. One-shot backend-start claim (`claim_backend_start` with `rowcount == 1` returning clean `BackendExecutionClaim`).
+  10. Atomic pre-effect CAS transitions (`claim_local_effect_start` & `claim_external_effect_transmission`) closing read/write races.
   11. Target resolution and IP pinning in `SafeNetworkBackend`.
   12. Complete append-only request immutability trigger rejecting all UPDATE/DELETE.
   13. Concurrency-safe idempotency insertion handling duplicate key collisions.
@@ -423,9 +428,9 @@
   2. Worker pulls ticket, runs Stage 1 Early Queue Invalidation (releasing capacity on drop).
   3. Worker acquires exclusive `ACTIVE` lease with monotonic generation N.
   4. Worker runs Stage 2 Pre-flight Revalidation against durable request and authorization.
-  5. Worker invokes canonical `admit_execution()`, receiving `AdmissionReceipt`.
+  5. Worker invokes canonical `admit_execution()`, atomically transitioning attempt `LEASED -> ADMITTED` and receiving `AdmissionReceipt`.
   6. Worker invokes atomic `claim_backend_start()`, receiving `BackendExecutionClaim`.
-  7. Executor verifies claim with `assert_backend_start_claim(claim)` before launching container or transmitting socket.
+  7. Executor invokes atomic pre-effect CAS (`rowcount == 1`) before launching container or transmitting socket.
 - **Step 2 Run RED:** `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_dispatcher.py tests/runtime/test_execution_worker.py -v`
 - **Step 3 Minimal Code:** Implement `dispatcher.py` and `worker.py`.
 - **Step 4 Run GREEN:** `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_dispatcher.py tests/runtime/test_execution_worker.py -v`

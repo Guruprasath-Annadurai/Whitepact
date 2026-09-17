@@ -1,6 +1,6 @@
 # WhitePact Phase 7A: Validated Dependency Graph & Execution Sequence
 
-**Document Status:** CANONICAL SPECIFICATION PASS 4.1 (SECURITY CONSISTENCY REMEDIATION)
+**Document Status:** CANONICAL SPECIFICATION PASS 4.2 (SECURITY CONSISTENCY CLOSURE)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
 **Current Migration Head:** `0048` (`migrations/versions/0048_enforce_paddle_binding_atomicity.py`)
@@ -18,18 +18,18 @@ This document defines the strict, mathematically sound dependency graph for Phas
    -> `0050_runtime_execution_authorizations.py`
    -> `0051_runtime_execution_attempts.py`
    -> `0052_runtime_worker_leases.py`.
-2. **PostgreSQL Schema Before Logic (4.1-F02):** No repository or transaction logic may execute before its underlying migration is committed. All migrations (0049–0052) and underlying repositories exist BEFORE the centralized issuance service is declared operational.
+2. **PostgreSQL Schema Before Logic:** All migrations (0049–0052) and underlying repositories exist BEFORE the centralized issuance service is declared operational.
 3. **Dispatcher Activation Gate (Task 10 Gate):** Task 10 requires all 15 security prerequisites to be fully verified in design and implementation:
    - 1. Durable immutable request storage (`0049_runtime_execution_requests`, trigger-protected append-only).
    - 2. Tenant-scoped idempotent issuance (`UNIQUE(organization_id, idempotency_key)`, universal key requirement).
    - 3. All 3 production issuance paths closed via PostgreSQL persistence.
    - 4. Atomic approval consumption and authorization issuance (`UNIQUE(approval_id)`).
-   - 5. Canonical admission transaction combining nonce insert and authorization status update (`rowcount == 1`).
+   - 5. Canonical admission transaction combining nonce insert, authorization status update, and attempt transition `LEASED -> ADMITTED` (`rowcount == 1`).
    - 6. Universal epoch invalidation covering all 14 authority mutations.
    - 7. Monotonic worker fencing (`runtime_execution_fences` atomic counter + synchronous expiry check).
-   - 8. Durable attempt state machine with nullable lease fields in `PENDING` and state CHECK constraints.
-   - 9. One-shot backend-start claim (`claim_backend_start` with `rowcount == 1` returning `BackendExecutionClaim`).
-   - 10. Downstream executor verification (`assert_backend_start_claim`) closing direct bypass.
+   - 8. Durable attempt state machine (`0051_runtime_execution_attempts`, `evidence_status` column).
+   - 9. One-shot backend-start claim (`claim_backend_start` with `rowcount == 1` returning clean `BackendExecutionClaim`).
+   - 10. Atomic pre-effect CAS transitions (`claim_local_effect_start` & `claim_external_effect_transmission`) closing read/write races.
    - 11. Target resolution and IP pinning in `SafeNetworkBackend`.
    - 12. Complete append-only request immutability trigger rejecting all UPDATE/DELETE.
    - 13. Concurrency-safe idempotency insertion handling duplicate key collisions.
@@ -55,9 +55,9 @@ This document defines the strict, mathematically sound dependency graph for Phas
 | **Task 8A3** | Execution Attempt Schema (Mig 0051) & Repository | SERIAL CORE | Task 8A2 | `migrations/0051_*.py`, `db/execution_attempt_repository.py` | NO (Migration chain) |
 | **Task 8A4** | Worker Lease & Fence Schema (Mig 0052) & Repositories | SERIAL CORE | Task 8A3 | `migrations/0052_*.py`, `db/execution_fence_repository.py`, `db/admission_lease_repository.py` | NO (Migration chain) |
 | **Task 8A5** | Centralized Issuer & Approval Atomicity | SERIAL CORE | Tasks 8A1-8A4 | `governance/execution_issuer.py`, `governance/approval_service.py`, `mcp/governance_integration.py`, `mcp/upstream_dispatch.py` | NO (Requires full schema) |
-| **Task 8B** | Universal Epoch Coverage (14 Mutations), Revalidation & Atomic Admission | SERIAL CORE | Task 8A5 | `db/execution_nonce_repository.py`, `governance/execution.py`, `iam/session.py`, `iam/break_glass.py`, `runtime/revalidation.py` | NO (Database atomic) |
+| **Task 8B** | Universal Epoch Coverage (14 Mutations), Revalidation & Atomic Admission (F4.2-01) | SERIAL CORE | Task 8A5 | `db/execution_nonce_repository.py`, `governance/execution.py`, `iam/session.py`, `iam/break_glass.py`, `runtime/revalidation.py` | NO (Database atomic) |
 | **Task 9A** | Worker Lease Acquisition, Monotonic Fencing & Backend-Start Claim | SERIAL CORE | Tasks 8A4, 8A5 | `runtime/worker/lease.py`, `db/execution_attempt_repository.py` (`claim_backend_start`) | NO (Requires leases & attempts) |
-| **Task 9B** | Downstream Executor Verification, Target/IP Pinning & Capacity Management | SERIAL CORE | Tasks 8B, 9A | `governance/execution.py` (`InternalToolExecutor`), `governance/upstream_executor.py` (`UpstreamMCPExecutor`), `runtime/admission/controller.py` | NO (Requires claim & receipt) |
+| **Task 9B** | Pre-Effect CAS, Executor Verification, Target/IP Pinning & Capacity Management (F4.2-02, F4.2-04) | SERIAL CORE | Tasks 8B, 9A | `governance/execution.py` (`InternalToolExecutor`), `governance/upstream_executor.py` (`UpstreamMCPExecutor`), `db/execution_attempt_repository.py`, `runtime/admission/controller.py` | NO (Requires claim & receipt) |
 | **Task 10** | Dispatcher Activation Gate (15 Mandatory Prerequisites) | INTEGRATION GATE | Tasks 6, 7, 8B, 9B | `runtime/dispatcher.py`, `runtime/worker/worker.py` | NO (Activation Gate) |
 | **Task 11** | Worker Lease Heartbeat, Crash Recovery & Stale Reaper | SERIAL CORE | Task 10 | `runtime/worker/supervisor.py` | NO (Depends on Gate) |
 | **Task 12** | Side-Effect Safety & Uncertain State Handling | SERIAL CORE | Task 11 | `runtime/worker/worker.py` | NO (Depends on Task 11) |
@@ -92,18 +92,18 @@ flowchart TD
     subgraph LANE_SCHEMA [Lane Schema: Linear PostgreSQL Migrations 0049-0052]
         HEAD --> T8A1[Task 8A1: Mig 0049 Execution Requests & Repo]
         T8A1 --> T8A2[Task 8A2: Mig 0050 Execution Auths & Repo]
-        T8A2 --> T8A3[Task 8A3: Mig 0051 Execution Attempts & Repo]
+        T8A2 --> T8A3[Task 8A3: Mig 0051 Execution Attempts & Repo with evidence_status]
         T8A3 --> T8A4[Task 8A4: Mig 0052 Worker Leases & Fences Repo]
     end
 
     subgraph LANE_A2 [Lane A2: Durable Issuance & Canonical Admission]
         T8A4 --> T8A5[Task 8A5: Centralized Issuance Service & Approval Atomicity]
-        T8A5 --> T8B[Task 8B: 14 Authority Mutation Epoch Bump & Canonical admit_execution]
+        T8A5 --> T8B[Task 8B: 14 Mutation Epoch Bump & Atomic admit_execution + LEASED->ADMITTED]
     end
 
-    subgraph LANE_C1 [Lane C1: Fencing, Backend-Start Claim & Executor Verification]
+    subgraph LANE_C1 [Lane C1: Fencing, Backend-Start Claim & Pre-Effect CAS]
         T8A4 & T8A5 --> T9A[Task 9A: Monotonic Fencing & claim_backend_start]
-        T8B & T9A --> T9B[Task 9B: Executor assert_backend_start_claim & SafeNetwork IP Pinning]
+        T8B & T9A --> T9B[Task 9B: Atomic CAS claim_local_effect_start / claim_external_effect_transmission & Evidence Precedence]
     end
 
     subgraph GATE_10 [Integration Gate: Dispatcher Activation]

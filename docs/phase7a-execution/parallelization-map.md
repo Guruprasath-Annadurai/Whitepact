@@ -87,10 +87,10 @@ This document establishes the verified concurrent execution waves for Phase 7A i
 ---
 
 ### Lane C1: Fencing, Backend-Start Claim & Executor Verification
-- **Primary Responsibility:** Monotonic fencing, synchronous lease expiry checks, `claim_backend_start()` returning `BackendExecutionClaim`, executor `assert_backend_start_claim(claim)` verification, and `SafeNetworkBackend` IP pinning.
+- **Primary Responsibility:** Monotonic fencing, synchronous lease expiry checks, `claim_backend_start()` returning clean `BackendExecutionClaim`, pre-effect atomic CAS (`claim_local_effect_start`, `claim_external_effect_transmission`), and `SafeNetworkBackend` IP pinning.
 - **Tasks Owned:** Tasks 9A, 9B.
 - **Files Owned:**
-  - `src/responsibleai/db/execution_attempt_repository.py` (`claim_backend_start`, `assert_backend_start_claim`) [MODIFY]
+  - `src/responsibleai/db/execution_attempt_repository.py` (`claim_backend_start`, `claim_local_effect_start`, `claim_external_effect_transmission`) [MODIFY]
   - `src/responsibleai/governance/execution.py` (`InternalToolExecutor`) [MODIFY]
   - `src/responsibleai/governance/upstream_executor.py` (`UpstreamMCPExecutor`) [MODIFY]
   - `tests/runtime/test_execution_attempt_state_machine.py` [CREATE]
@@ -158,7 +158,7 @@ TIME ─────────────────────────
    │   ├── Subagent 5 (Lane A2): Task 8A5 (Centralized Issuance & Approval Atomicity) [after 8A4 completes]
    │   │                         -> Task 8B (Epoch Coverage 14 Mutations, Atomic Admission, AdmissionReceipt)
    │   ├── Subagent 6 (Lane C1): Task 9A (Monotonic Fencing, Synchronous Expiry & claim_backend_start) [after 8A5]
-   │   │                         -> Task 9B (Executor assert_backend_start_claim & SafeNetwork IP Pinning) [after 8B & 9A]
+   │   │                         -> Task 9B (Pre-Effect Atomic CAS & SafeNetwork IP Pinning) [after 8B & 9A]
    │   ├── Subagent 2 (Lane B):  Task 15 (Container Timeout/Cancellation)
    │   └── Subagent 3 (Lane D):  Task 21 (Config Bounds & HOSTED_GOVERNANCE_STRICT)
    │

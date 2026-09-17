@@ -1,6 +1,6 @@
 # WhitePact Phase 7A: Canonical Worker Execution Flow
 
-**Document Status:** CANONICAL SPECIFICATION PASS 4.1 (SECURITY CONSISTENCY REMEDIATION)
+**Document Status:** CANONICAL SPECIFICATION PASS 4.2 (SECURITY CONSISTENCY CLOSURE)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
 **Proposed Migrations:** `0049_runtime_execution_requests.py` through `0052_runtime_worker_leases.py`
@@ -13,15 +13,12 @@ This document specifies the authoritative, end-to-end execution control chain fo
 
 ### Core Architectural Invariants:
 1. **Durable Issuance Precedes Queueing:** No `QueueTicket` may be generated until `runtime_execution_requests`, `governance_execution_authorizations`, initial `runtime_execution_attempts` (state=`PENDING`), and `runtime_execution_fences` are durably committed in PostgreSQL.
-2. **Single Canonical Admission Gate:** No worker may begin backend execution without successfully completing `admit_execution()` in `src/responsibleai/governance/execution.py`.
-3. **One-Shot Backend Start Transition:** Possession of an `AdmissionReceipt` is insufficient to execute. Downstream execution requires calling `ExecutionAttemptRepository.claim_backend_start()` to atomically verify unexpired active lease status and transition `ADMITTED` to `BACKEND_STARTING` in `runtime_execution_attempts` with `rowcount == 1`, returning a `BackendExecutionClaim`.
-4. **Direct Executor Verification:** Executors (`InternalToolExecutor`, `UpstreamMCPExecutor`) accept ONLY `BackendExecutionClaim` and MUST call `assert_backend_start_claim(claim)` against PostgreSQL before initiating any compute or network side-effect.
-5. **Monotonic Worker Fencing:** Each lease acquisition increments `runtime_execution_fences.current_generation`. A stale worker holding an expired or superseded generation cannot start backend execution.
-6. **Queue Isolation:** Queue tickets (`QueueTicket`) contain strictly non-privileged pointers (`execution_id`, `authorization_id`, `org_id`, `attempt_id`, `enqueued_at`). Zero credentials or arguments in Redis.
-7. **Safe Network Boundary:** `SafeNetworkBackend` validates targets, checks target fingerprints, pins the socket IP, commits `effect_state = 'EFFECT_TRANSMITTING'`, and transmits socket bytes.
-8. **No Blind Replay:** If an external side-effect is interrupted or fails after `EFFECT_TRANSMITTING`, the attempt is marked `UNCERTAIN`; automatic blind replay is strictly prohibited.
-9. **Universal Capacity Release:** Every capacity reservation made at enqueue time has an explicit terminal release path (on completion, failure, rejection, or crash reconciliation).
-10. **Evidence Precedes Lease Finalization:** Result captured -> durable effect/outcome state -> durable evidence write -> mark attempt terminal -> finalize lease -> release capacity.
+2. **Atomic Canonical Admission (F4.2-01):** `admit_execution()` executes an atomic transaction combining: (1) epoch lock/verification; (2) single-use nonce insertion; (3) authorization transition `ISSUED -> CONSUMED`; (4) attempt transition `LEASED -> ADMITTED` (rowcount == 1). Emits in-process `AdmissionReceipt`.
+3. **One-Shot Backend Start Claim:** Worker calls `claim_backend_start()` to verify active unexpired lease under row lock and transition `ADMITTED -> BACKEND_STARTING` (rowcount == 1), returning clean `BackendExecutionClaim`.
+4. **Final Pre-Effect Atomic CAS (F4.2-02):** Eliminates all check-then-write races. Executors invoke `claim_local_effect_start()` or `claim_external_effect_transmission()` immediately before container execution or socket transmission, asserting `rowcount == 1`.
+5. **Strict Evidence Precedence (F4.2-04):** Normal successful execution requires: Result -> Durable outcome -> Evidence store (`evidence_status = 'COMMITTED'`) -> Attempt `COMPLETED` -> Lease `COMPLETED` -> Capacity released.
+6. **No Blind Replay:** If an external side-effect is interrupted or fails after `EFFECT_TRANSMITTING`, the attempt is marked `UNCERTAIN`; automatic blind replay is strictly prohibited.
+7. **Universal Capacity Release:** Every capacity reservation made at enqueue time has an explicit terminal release path.
 
 ---
 
@@ -49,7 +46,7 @@ sequenceDiagram
     Issuer->>DB: BEGIN TRANSACTION
     Issuer->>DB: INSERT runtime_execution_requests (RFC 8785 Canonical JSON, Append-Only)
     Issuer->>DB: INSERT governance_execution_authorizations (status=ISSUED, UNIQUE approval_id)
-    Issuer->>DB: INSERT runtime_execution_attempts (state=PENDING, lease fields NULL)
+    Issuer->>DB: INSERT runtime_execution_attempts (state=PENDING, lease fields NULL, evidence_status=PENDING)
     Issuer->>DB: INSERT runtime_execution_fences (current_generation=0)
     Issuer->>DB: COMMIT TRANSACTION
 
@@ -65,7 +62,7 @@ sequenceDiagram
     Dispatcher->>DB: Check Tenant Active & now < expires_at
     alt Early Invalidation Fails (e.g. Expired or Revoked)
         Dispatcher->>DB: UPDATE runtime_execution_attempts SET state=FAILED_PRE_EXECUTION
-        Dispatcher->>AdmCtrl: release_execution() [4.1-F13]
+        Dispatcher->>AdmCtrl: release_execution()
         Note over Dispatcher: Abort dispatch; ticket dropped cleanly
     end
 
@@ -73,22 +70,21 @@ sequenceDiagram
     Dispatcher->>DB: UPDATE runtime_execution_attempts SET state=LEASED, worker_id=W, lease_id=L, lease_generation=N WHERE state=PENDING
     Dispatcher->>Worker: Dispatch to Worker Process with Lease Token
 
-    Note over Worker: Stage 2: Canonical Admission
+    Note over Worker: Stage 2: Canonical Admission (Atomic Auth & Attempt Transition)
     Worker->>DB: Load Canonical Action Payload & Recompute Digest Match
     Worker->>Worker: Pre-Flight Checks: Principal, Session, BreakGlass, Delegation
     alt Preflight Checks Fail
         Worker->>DB: Mark Lease FAILED & Attempt FAILED_PRE_EXECUTION
-        Worker->>AdmCtrl: release_execution() [4.1-F13]
+        Worker->>AdmCtrl: release_execution()
     end
 
     Worker->>DB: admit_execution(authorization, action, nonce_repo)
     rect rgb(240, 248, 255)
         Note over DB: Atomic Admission Transaction in ExecutionNonceRepository.consume()
-        DB->>DB: SELECT epoch FROM governance_revocation_epochs FOR UPDATE
-        DB->>DB: Verify expected_epoch == current_epoch
+        DB->>DB: SELECT epoch FROM governance_revocation_epochs FOR UPDATE (Assert match)
         DB->>DB: INSERT INTO governance_execution_nonces
-        DB->>DB: UPDATE governance_execution_authorizations SET status = CONSUMED WHERE status = ISSUED
-        DB->>DB: Assert rowcount == 1 (Rollback if 0)
+        DB->>DB: UPDATE governance_execution_authorizations SET status = CONSUMED WHERE status = ISSUED (Assert rowcount == 1)
+        DB->>DB: UPDATE runtime_execution_attempts SET state = ADMITTED WHERE state = LEASED (Assert rowcount == 1)
     end
     DB-->>Worker: Admission Confirmed -> Returns in-process AdmissionReceipt
 
@@ -98,30 +94,34 @@ sequenceDiagram
         Note over DB: Atomic Backend-Start Claim Transaction
         DB->>DB: SELECT lease_generation, expires_at FROM runtime_worker_leases WHERE status=ACTIVE AND expires_at > now FOR UPDATE
         DB->>DB: Assert active lease_generation == N (Fail if Stale / Fenced / Expired)
-        DB->>DB: UPDATE runtime_execution_attempts SET state = BACKEND_STARTING, effect_state = EFFECT_STARTING WHERE state = ADMITTED
-        DB->>DB: Assert rowcount == 1 (Fail if Already Started)
+        DB->>DB: UPDATE runtime_execution_attempts SET state = BACKEND_STARTING, effect_state = EFFECT_STARTING WHERE state = ADMITTED (Assert rowcount == 1)
     end
     DB-->>Worker: Backend Start Confirmed -> Returns BackendExecutionClaim
 
-    Note over Worker,Executor: Stage 4: Executor Verification & Side-Effect Invocation
+    Note over Worker,Executor: Stage 4: Executor Pre-Effect Atomic CAS & Invocation
     Worker->>Executor: execute(action, claim=BackendExecutionClaim)
-    Executor->>DB: ExecutionAttemptRepository.assert_backend_start_claim(claim)
-    Note over Executor,DB: Verifies attempt is BACKEND_STARTING, lease matches, digest matches
     alt Local Execution
-        Executor->>DB: UPDATE runtime_execution_attempts SET state = RUNNING
+        Executor->>DB: ExecutionAttemptRepository.claim_local_effect_start(claim)
+        Note over DB: Atomic CAS: BACKEND_STARTING/EFFECT_STARTING -> RUNNING (Assert rowcount == 1)
         Executor->>Backend: ContainerIsolationBackend.execute(--network=none)
     else External Network Execution
         Executor->>Backend: SafeNetworkBackend target verification & DNS resolution
         Backend->>Backend: Pin IP address & compare target fingerprint
-        Backend->>DB: UPDATE runtime_execution_attempts SET effect_state = EFFECT_TRANSMITTING, state = RUNNING
+        Executor->>DB: ExecutionAttemptRepository.claim_external_effect_transmission(claim)
+        Note over DB: Atomic CAS: BACKEND_STARTING/EFFECT_STARTING -> RUNNING/EFFECT_TRANSMITTING (Assert rowcount == 1)
         Backend->>Backend: Transmit HTTP socket bytes with effect_id header
     end
     Backend-->>Executor: Return Result / exit_code
     Executor-->>Worker: Forward Result
 
-    Note over Worker: Stage 5: Evidence & Finalization
-    Worker->>DB: Record Durable Outcome & Attempt State (RUNNING -> COMPLETED)
-    Worker->>DB: Record Durable Evidence & Compliance Attestation (EvidenceStore)
+    Note over Worker: Stage 5: Evidence & Finalization (Strict Precedence)
+    Worker->>DB: Record Durable Outcome Row
+    Worker->>DB: Record Durable Evidence in EvidenceStore
+    alt Evidence Persistence Succeeded
+        Worker->>DB: UPDATE runtime_execution_attempts SET state=COMPLETED, effect_state=EFFECT_CONFIRMED, evidence_status=COMMITTED
+    else Evidence Persistence Failed After Confirmed Effect
+        Worker->>DB: UPDATE runtime_execution_attempts SET state=COMPLETED, effect_state=EFFECT_CONFIRMED, evidence_status=INCOMPLETE
+    end
     Worker->>DB: Finalize Lease (status = COMPLETED)
     Worker->>AdmCtrl: Release Capacity Reservation
 ```
@@ -131,45 +131,33 @@ sequenceDiagram
 ## 3. Step-by-Step State Transitions and Failure Exits
 
 ### Step 1: Decision & Centralized Durable Issuance
-- **Actors:** `mcp/governance_integration.py` (`execute_governed_action`, `resolve_approval_and_execute`) and `mcp/upstream_dispatch.py` (`dispatch_upstream_action`).
-- **Action:** Evaluates idempotency; if decision is `ALLOW` or `ALLOW_WITH_REDACTION`, issues in ONE atomic transaction:
-  1. Append-only `runtime_execution_requests` row (RFC 8785 canonical JSON, trigger-protected).
+- **Action:** In ONE atomic transaction:
+  1. Append-only `runtime_execution_requests` row.
   2. `governance_execution_authorizations` row (`status = 'ISSUED'`, `UNIQUE(approval_id)`).
-  3. `runtime_execution_attempts` row (`state = 'PENDING'`, lease fields NULL).
+  3. `runtime_execution_attempts` row (`state = 'PENDING'`, lease fields NULL, `evidence_status = 'PENDING'`).
   4. `runtime_execution_fences` row (`current_generation = 0`).
-- **Failure Exit:** If DB write fails or idempotency conflict arises, request fails closed (HTTP 409 or 500). Zero `QueueTicket` records emitted.
 
 ### Step 2: Admission Reservation & Queueing
-- **Action:** `AdmissionController.reserve_execution()` acquires capacity slot.
-- **Enqueuing:** Lightweight `QueueTicket` enqueued to `FairExecutionScheduler`.
-- **Response:** Client receives HTTP 202 with `execution_id` and `idempotency_key`.
+- **Action:** `AdmissionController.reserve_execution()` acquires capacity slot. `QueueTicket` enqueued. Client receives HTTP 202.
 
 ### Step 3: Dequeue & Early Invalidation (Stage 1)
-- **Actor:** Worker Dispatcher.
-- **Early Checks:** `now < expires_at`, `status == 'ISSUED'`, tenant active.
-- **Early Drop:** If checks fail, attempt marked `FAILED_PRE_EXECUTION`, capacity released, ticket dropped.
-- **Lease Acquisition:** Atomically increments fence counter to generation N, acquires `runtime_worker_leases` row (`status = 'ACTIVE'`), transitions attempt to `LEASED`.
+- **Action:** Dispatcher checks authorization expiration and tenant active. On failure, attempt marked `FAILED_PRE_EXECUTION`, capacity released. On success, fence incremented to generation N, lease acquired (`status = 'ACTIVE'`), attempt updated to `state = 'LEASED'`.
 
-### Step 4: Canonical Admission (Stage 2)
-- **Actor:** Execution Worker.
-- **Pre-Flight Checks:** Recomputes action digest from `canonical_action_payload`, verifies principal/session/BreakGlass. If failed, marks lease `FAILED`, releases capacity.
-- **Canonical Admission:** Calls `admit_execution()`, atomically locking epoch, burning nonce, updating authorization to `CONSUMED`.
-- **Output:** In-process `AdmissionReceipt`.
+### Step 4: Canonical Admission & Attempt Admission (Stage 2 - F4.2-01)
+- **Action:** Single PostgreSQL transaction in `ExecutionNonceRepository.consume()`:
+  1. `lock_epoch()` validates current epoch.
+  2. Nonce inserted into `governance_execution_nonces`.
+  3. Authorization updated to `CONSUMED` (`rowcount == 1`).
+  4. Attempt updated from `LEASED` to `ADMITTED` (`rowcount == 1`, binding worker_id, lease_id, lease_generation).
+  5. Commit -> emits in-process `AdmissionReceipt`.
 
-### Step 5: One-Shot Backend Start & Fencing (Stage 3)
-- **Actor:** Execution Worker.
-- **API Call:** `ExecutionAttemptRepository.claim_backend_start(receipt, worker_id, lease_id, lease_generation)`.
-- **Fence & Expiry Verification:** Synchronously verifies `status == 'ACTIVE' AND expires_at > now AND lease_generation == N` under row lock.
-- **Atomic Transition:** Updates `runtime_execution_attempts` from `ADMITTED` to `BACKEND_STARTING` asserting `rowcount == 1`.
-- **Output:** Returns `BackendExecutionClaim`.
+### Step 5: One-Shot Backend Start Claim (Stage 3 - F4.2-03)
+- **Action:** `ExecutionAttemptRepository.claim_backend_start(receipt, ...)` verifies unexpired active lease under row lock, transitions attempt `ADMITTED -> BACKEND_STARTING` with `rowcount == 1`, returns `BackendExecutionClaim`.
 
-### Step 6: Downstream Execution & Direct Bypass Closure (Stage 4)
-- **Actors:** `InternalToolExecutor` or `UpstreamMCPExecutor`.
-- **Signature:** Accepts `claim: BackendExecutionClaim` (rejects `AdmissionReceipt`).
-- **Durable Check:** Calls `ExecutionAttemptRepository.assert_backend_start_claim(claim)` against PostgreSQL.
-- **Local:** Sets state `RUNNING`, launches Docker container with `--network=none`.
-- **Remote:** `SafeNetworkBackend` pins resolved IP, updates `effect_state = 'EFFECT_TRANSMITTING'`, and transmits socket bytes.
+### Step 6: Atomic Pre-Effect CAS & Execution (Stage 4 - F4.2-02)
+- **Local:** `claim_local_effect_start(claim)` executes atomic CAS (`rowcount == 1`) transitioning to `RUNNING`. Invokes container.
+- **Remote:** SafeNetworkBackend resolves DNS, pins IP, validates fingerprint. `claim_external_effect_transmission(claim)` executes atomic CAS (`rowcount == 1`) transitioning to `RUNNING` and `EFFECT_TRANSMITTING`. Transmits socket bytes.
+- **Race Condition Closed:** Any concurrent duplicate call matches 0 rows and fails closed with `ExecutionSecurityError` before any side-effect.
 
-### Step 7: Evidence Persistence & Lease Finalization (Stage 5)
-- **Order:** Result -> Outcome row -> Evidence store -> Attempt `COMPLETED` -> Lease `COMPLETED` -> Capacity released.
-- **Failure Handling:** If evidence write fails after confirmed effect, attempt remains `COMPLETED` with `evidence_status = 'INCOMPLETE'` to prevent effect duplication; capacity is released.
+### Step 7: Evidence Persistence & Lease Finalization (Stage 5 - F4.2-04)
+- **Order:** Result -> Outcome row -> Evidence store -> Attempt terminal update (with `evidence_status = 'COMMITTED'` or `'INCOMPLETE'`) -> Lease `COMPLETED` -> Capacity released.
