@@ -83,21 +83,16 @@ class DockerContainerBackend(IsolationBackend):
                     )
                 except Exception:
                     pass
-                filter_arg = (
-                    f"id={target}"
-                    if len(target) == 64 and target.isalnum()
-                    else f"name={target}"
-                )
                 exists = False
                 try:
                     check = subprocess.run(  # noqa: S603
-                        [self.docker_cmd, "ps", "-aq", "--filter", filter_arg],
-                        capture_output=True,
-                        text=True,
+                        [self.docker_cmd, "inspect", target],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
                         timeout=5,
                         check=False,
                     )
-                    exists = bool(check.stdout.strip())
+                    exists = check.returncode == 0
                 except Exception:
                     exists = False
                 if exists:
@@ -267,7 +262,7 @@ if __name__ == "__main__":
                 self._remove_containers(
                     cleanup_targets,
                     stable_seconds=0.8 if incomplete else 0.0,
-                    wait_seconds=8.0 if incomplete else 2.0,
+                    wait_seconds=12.0 if incomplete else 2.0,
                 )
 
                 # Ensure the docker client process is not left as a zombie.
