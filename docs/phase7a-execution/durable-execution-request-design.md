@@ -221,7 +221,7 @@ CREATE TABLE runtime_execution_dispatch_outbox (
         ON DELETE RESTRICT,
 
     CONSTRAINT chk_outbox_status
-        CHECK (status IN ('PENDING', 'PUBLISHED', 'ACKNOWLEDGED', 'CANCELLED', 'EXPIRED'))
+        CHECK (status IN ('PENDING', 'PUBLISHING', 'PUBLISHED', 'ACKNOWLEDGED', 'CANCELLED', 'EXPIRED'))
 );
 
 CREATE INDEX idx_outbox_pending ON runtime_execution_dispatch_outbox (status, created_at)
@@ -232,7 +232,9 @@ CREATE UNIQUE INDEX uq_outbox_execution ON runtime_execution_dispatch_outbox (ex
 
 ### Outbox Lifecycle & Invariants:
 1. **Atomic Issuance Insertion:** An outbox row is inserted with `status = 'PENDING'` inside the EXACT SAME transaction that inserts `runtime_execution_requests`, `governance_execution_authorizations`, initial `runtime_execution_attempts`, and `runtime_execution_fences`.
-2. **Immediate Publisher Flow:** Immediately post-commit, the gateway reserves capacity idempotently (`AdmissionController.reserve_execution(execution_id, org_id)`) and enqueues `QueueTicket`. Upon confirmed enqueue, `status = 'PUBLISHED'` and `published_at = CURRENT_TIMESTAMP`.
+2. **Publisher claim:** A publisher atomically CAS `PENDING -> PUBLISHING` with `publisher_id`, `claimed_at`, and a claim timeout (or `SELECT … FOR UPDATE SKIP LOCKED` then the same CAS). Only the claimant may enqueue Redis. Duplicate QueueTicket delivery can still occur and must be tolerated by durable admission/CAS. Redis is not authority.
+3. **Confirmed enqueue:** After Redis accept, CAS `PUBLISHING -> PUBLISHED`. If the process dies after Redis and before this CAS, another publisher may reclaim a timed-out `PUBLISHING` row; downstream CAS still admits at most once.
+4. **Capacity:** `AdmissionController.reserve_execution` uses one atomic Redis Lua EVAL (see `runtime/capacity_reservation.py`). NX+INCR as two commands is forbidden.
 3. **Outbox Reconciler (Crash Recovery):** A background daemon scans `idx_outbox_pending` for rows with `status = 'PENDING'` older than 5 seconds. If the initial attempt is still `PENDING`, it idempotently reserves capacity, publishes `QueueTicket`, and marks `PUBLISHED`.
 4. **Worker Acknowledgement:** When a worker acquires the lease and transitions attempt `PENDING -> LEASED` (or at admission `LEASED -> ADMITTED`), it updates outbox `status = 'ACKNOWLEDGED'`.
 5. **Infrastructure State Only:** Outbox possession or row presence NEVER authorizes execution; only the complete cryptographic authorization chain in PostgreSQL permits admission.

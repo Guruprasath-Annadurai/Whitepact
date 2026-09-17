@@ -4,7 +4,8 @@
 **Source Design SHA:** `dfbeb2e6d9fad575fc45b64789c63b1c1c0b5b01` (Worktree: `/Users/ag/whitepact-phase7a-runtime-preparation`)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
-**Current Migration Head:** `0048` (`migrations/versions/0048_enforce_paddle_binding_atomicity.py`)
+**Current Migration Head:** `0049` (`migrations/versions/0049_add_organization_governance_status.py`)
+**Phase 7A runtime tables:** planned `0050`–`0053` (not activated)
 
 ---
 
@@ -38,7 +39,7 @@ Pass 4.3 definitively closes all remaining security consistency and boundary gap
 | **Monotonic Fencing** | RECONCILED & HARDENED | Dedicated `runtime_execution_fences` counter table (Migration 0052). Atomic `UPDATE ... RETURNING`. Fence synchronously checks unexpired lease (`expires_at > now`). |
 | **SafeNetwork Boundary** | HARDENED | Resolves DNS, validates durable target fingerprint, pins IP address, and executes atomic CAS immediately pre-socket. |
 | **Capacity Management** | HARDENED | Every reservation has an explicit release path on completion, failure, early invalidation, or background reconciliation. |
-| **PostgreSQL Migration Sequence** | RESOLVED & ORDERED | Canonical head `0048` -> `0049_runtime_execution_requests` -> `0050_runtime_execution_authorizations` -> `0051_runtime_execution_attempts` -> `0052_runtime_worker_leases` (incorporating `runtime_execution_dispatch_outbox`). |
+| **PostgreSQL Migration Sequence** | RESOLVED & ORDERED | Implemented head `0049` (`organizations.governance_status`). Unactivated Phase 7A chain: `0050_runtime_execution_requests` -> `0051_runtime_execution_authorizations` -> `0052_runtime_execution_attempts` -> `0053_runtime_worker_leases` (outbox + fences). See `cursor-hardening-specification-closure.md`. |
 
 ---
 
