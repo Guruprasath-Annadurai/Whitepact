@@ -35,11 +35,10 @@
    - Tenant lifecycle revalidation must query canonical tenant records via `OrgRepository.get_org(org_id)`. Do not use `organizations.subscription_status` as a proxy for tenant liveness.
    - Default Phase 7A fairness is strictly **plan-neutral** (per-tenant round robin). Commercial plan weighting is prohibited in Phase 7A.
 
-4. **Durable Authority Storage & Queue Contract (P0-1):**
-   - `ExecutionAuthorization` is an in-memory dataclass today; for Phase 7A async worker execution, it is persisted durably in PostgreSQL (`governance_execution_authorizations`, migration `0049`) at policy decision time.
-   - `QueueTicket != authority`. Queue tickets and payloads must NEVER contain reusable authority credentials or serialized permit secrets.
-   - Allowed fields: `execution_id`, `authorization_id`, `org_id`, `principal_id`, `action_digest`, `idempotency_key`, `enqueued_at`.
-   - Holding an `authorization_id` pointer does not grant authority. Workers load canonical `ExecutionAuthorization` directly from PostgreSQL and revalidate it.
+4. **Durable Issuance Integration & Queue Contract (P0-1):**
+   - `ExecutionAuthorization` is persisted in PostgreSQL (`governance_execution_authorizations`, migration `0049`) by `src/responsibleai/mcp/governance_integration.py` immediately at decision time.
+   - **Non-Bypassable Issuance Invariant:** NO `QueueTicket` may be generated until database insertion of the `ExecutionAuthorization` commits successfully. If database persistence fails, the request fails closed immediately (HTTP 500/503), leaving 0 queue entries and 0 dispatchable authority.
+   - `QueueTicket != authority`. Queue tickets contain strictly unprivileged references (`execution_id`, `authorization_id`, `org_id`, `principal_id`, `action_digest`, `enqueued_at`).
 
 5. **Worker Lease Identity & DB-Enforced Exclusivity (P0-3):**
    - Lease identity is based on `execution_id` and `attempt`.
@@ -48,21 +47,26 @@
      `CREATE UNIQUE INDEX idx_runtime_worker_leases_active_execution ON runtime_worker_leases (execution_id) WHERE status = 'ACTIVE';`
    - Concurrent lease acquisitions fail closed at the database constraint level.
 
-6. **Distributed Coordination Order & Integration Gate (P0-2, P1-2):**
-   - No multi-process execution path may become active while capacity enforcement is process-local only.
-   - The worker dispatcher (Task 10) acts as the non-bypassable Integration Gate between Lane A (coordination & durable authority), Lane C1 (worker lease schema), and Lane C2 (worker recovery).
-   - The dispatcher loop MUST NOT bypass canonical `admit_execution()`, which executes the singular atomic transaction locking the tenant epoch and burning the nonce.
+6. **Atomic Canonical Admission & Integration Gate (P0-2, P1-2):**
+   - The worker dispatcher (Task 10) acts as the non-bypassable Integration Gate between Lane A1 (coordination), Lane A2 (durable issuance & atomic admission), Lane C1 (worker lease schema), and Lane C2 (worker recovery).
+   - Dispatcher and worker loops MUST NOT bypass `src/responsibleai/governance/execution.py:admit_execution()`.
+   - `ExecutionNonceRepository.consume()` in `src/responsibleai/db/execution_nonce_repository.py` owns the singular PostgreSQL transaction combining:
+     1. Revocation epoch row lock (`lock_epoch`) and epoch verification.
+     2. Single-use nonce insertion into `governance_execution_nonces`.
+     3. Conditional update on `governance_execution_authorizations` (`status = 'CONSUMED', consumed_at = now() WHERE status = 'ISSUED' AND expires_at > now()`) asserting `rowcount == 1`.
+     If rowcount is 0, the entire transaction rolls back, undoing nonce insertion.
 
 7. **Side-Effect Safety & Idempotency Guard:**
    - The runtime explicitly separates `execution_id`, `attempt_id`, `effect_id`, and `idempotency_key`.
    - For non-idempotent or uncertain external side effects: a worker crash after external action dispatch but before local acknowledgement must NEVER trigger blind replay.
    - The crash recovery reaper records state `UNCERTAIN`. Worker lease expiry does NOT grant permission to repeat an uncertain external effect.
 
-8. **Two-Stage Authorization Revalidation (P1-1):**
-   - Revalidation is strictly partitioned into:
-     - **Stage 1: Early Queue Invalidation:** Evaluated by Dispatcher before acquiring lease or burning nonce. Checks EA existence, expiration (`now < expires_at`), unconsumed state (`status == 'ISSUED'`), and tenant lifecycle in `OrgRepository` (active, non-tombstoned).
-     - **Stage 2: Final Canonical Admission:** Evaluated by Worker immediately before execution. Checks action digest match, principal/session validity, target fingerprint drift, BreakGlass TTL, delegation chain, and consent proof, followed by atomic `admit_execution()`.
-   - Worker dispatch does NOT re-evaluate policy.
+8. **Two-Stage Revalidation, Derived Expiration & Singular Revocation (P1-1):**
+   - **Singular Revocation:** Tenant-wide epoch revocation (`governance_revocation_epochs`) is the sole revocation engine. Individual authorization `REVOKED` state is eliminated to prevent dual-source ambiguity.
+   - **Derived Expiration:** Expiration is derived from `now >= expires_at`. No background daemon mutates rows to `EXPIRED`. Atomic query guard `WHERE expires_at > now()` prevents expired permit consumption.
+   - **Two-Stage Partitioning:**
+     - **Stage 1: Early Queue Invalidation:** Evaluated by Dispatcher before acquiring lease or burning nonce. Fast-aborts on expired authorization (`now >= expires_at`), consumed authorization (`status != 'ISSUED'`), or inactive/deleted tenant in `OrgRepository`.
+     - **Stage 2: Final Pre-Flight Revalidation:** Evaluated by Worker immediately before `admit_execution()`. Verifies action digest match, principal identity, session validity, target fingerprint drift, and BreakGlass TTL.
 
 9. **Resource & Capacity Bounds Classification:**
    - **Canonical Security Bounds (Verified Existing Defaults):** CPU 0.5 cores, Memory 256 MB, PIDs 32, File Descriptors 128, Timeout 15.0s, Output 64 KB (from `ResourceLimits`).
@@ -221,34 +225,63 @@
 
 ---
 
-### Task 8: Durable ExecutionAuthorization Storage (Migration 0049) & Full Revalidation
+### Task 8A: Durable Authorization Storage (Migration 0049) & Issuance Integration
 - **Files:**
   - CREATE `migrations/versions/0049_runtime_execution_authorizations.py`
   - CREATE `src/responsibleai/db/execution_authorization_repository.py`
-  - CREATE `src/responsibleai/runtime/revalidation.py`
+  - MODIFY `src/responsibleai/mcp/governance_integration.py`
   - CREATE `tests/runtime/test_durable_execution_authorization.py`
-  - CREATE `tests/runtime/test_revalidation.py`
-- **Interfaces Consumed:** `ExecutionAuthorization`, `OrgRepository`, `governance_revocation_epochs`, `SessionService`, `BreakGlassService`.
-- **Interfaces Produced:** `ExecutionAuthorizationRepository.create()`, `get()`, `mark_consumed()`, `mark_revoked()`, and `revalidate_queued_authorization()`.
-- **Step 1 Failing Test:** Write `tests/runtime/test_durable_execution_authorization.py` and `test_revalidation.py` verifying:
+  - CREATE `tests/runtime/test_durable_issuance.py`
+- **Interfaces Consumed:** `ExecutionAuthorization`, `OrgRepository`, `governance_revocation_epochs`.
+- **Interfaces Produced:** `ExecutionAuthorizationRepository.create()`, `get()`, and durable issuance integration in `mcp/governance_integration.py`.
+- **Step 1 Failing Test:** Write `tests/runtime/test_durable_issuance.py` and `test_durable_execution_authorization.py` verifying:
   1. Lossless persistence of all 11 fields (`authorization_id`, `organization_id`, `principal_id`, `action_digest`, `target_fingerprint`, `decision`, `revocation_epoch`, `nonce`, `issued_at`, `expires_at`, `status`).
-  2. Authorization survives process restart and queue delay.
-  3. Cross-tenant authorization lookup is rejected (`WHERE organization_id = :org_id`).
-  4. Early Queue Invalidation rejects expired, consumed, revoked authorizations and deleted/tombstoned tenants.
-  5. Pre-flight revalidation verifies action digest match, principal identity, session validity, and BreakGlass TTL.
-  6. Policy is NOT re-evaluated.
+  2. **Durable Issuance Invariant:** `ExecutionAuthorization` is persisted in PostgreSQL at decision time BEFORE enqueueing.
+  3. If DB persistence fails: request fails closed (HTTP 500/503), ZERO `QueueTicket` rows created (`queue_depth == 0`), no authority usable by worker.
+  4. Cross-tenant authorization lookup rejected (`WHERE organization_id = :org_id`).
 - **Step 2 Run RED:**
-  `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_durable_execution_authorization.py tests/runtime/test_revalidation.py -v`
+  `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_durable_execution_authorization.py tests/runtime/test_durable_issuance.py -v`
 - **Step 3 Minimal Code:**
-  1. Implement migration `0049` creating `governance_execution_authorizations` table.
-  2. Implement `ExecutionAuthorizationRepository` with atomic single-use status transitions.
-  3. Implement `revalidation.py` partitioned into Stage 1 (early queue invalidation) and Stage 2 (pre-flight validation).
+  1. Create migration `0049` creating `governance_execution_authorizations` table.
+  2. Implement `ExecutionAuthorizationRepository.create()` and `get()`.
+  3. Modify `src/responsibleai/mcp/governance_integration.py` to persist `ExecutionAuthorization` prior to calling `reserve_execution()` and queueing.
 - **Step 4 Run GREEN:**
-  `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_durable_execution_authorization.py tests/runtime/test_revalidation.py -v`
-- **Step 5 Focused Regression:** Run migration tests and `pytest tests/runtime/test_durable_execution_authorization.py -q`.
+  `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_durable_execution_authorization.py tests/runtime/test_durable_issuance.py -v`
+- **Step 5 Focused Regression:** Run migration tests and `pytest tests/runtime/test_durable_issuance.py -q`.
 - **Step 6 Commit:**
-  `git add migrations/versions/0049_runtime_execution_authorizations.py src/responsibleai/db/execution_authorization_repository.py src/responsibleai/runtime/revalidation.py tests/runtime/test_durable_execution_authorization.py tests/runtime/test_revalidation.py`
-  `git commit -m "feat(runtime): introduce durable execution authorization storage and full revalidation"`
+  `git add migrations/versions/0049_runtime_execution_authorizations.py src/responsibleai/db/execution_authorization_repository.py src/responsibleai/mcp/governance_integration.py tests/runtime/test_durable_execution_authorization.py tests/runtime/test_durable_issuance.py`
+  `git commit -m "feat(runtime): introduce durable authorization storage and issuance gate"`
+
+---
+
+### Task 8B: Two-Stage Revalidation & Atomic Admission Transaction Integration
+- **Files:**
+  - MODIFY `src/responsibleai/db/execution_nonce_repository.py`
+  - MODIFY `src/responsibleai/governance/execution.py`
+  - CREATE `src/responsibleai/runtime/revalidation.py`
+  - CREATE `tests/runtime/test_atomic_admission.py`
+  - CREATE `tests/runtime/test_revalidation.py`
+- **Interfaces Consumed:** `ExecutionNonceRepository`, `ExecutionAuthorizationRepository`, `governance_revocation_epochs`, `OrgRepository`, `SessionService`, `BreakGlassService`.
+- **Interfaces Produced:** Atomic `ExecutionNonceRepository.consume()` and preserved canonical `admit_execution()` gatekeeper.
+- **Step 1 Failing Test:** Write `tests/runtime/test_atomic_admission.py` and `test_revalidation.py` asserting:
+  1. Nonce insertion and authorization status update (`ISSUED -> CONSUMED`) execute in the SAME PostgreSQL transaction on `self._engine.raw.begin()`.
+  2. If nonce insert succeeds but conditional authorization update returns `rowcount == 0` (concurrent consumption race): entire transaction rolls back, 0 nonce rows committed.
+  3. If authorization update succeeds but forced error occurs before commit: authorization remains `ISSUED`, nonce absent.
+  4. Stale revocation epoch: transaction rolls back, nonce absent, authorization unconsumed.
+  5. Two independent PostgreSQL processes consuming same authorization concurrently: exactly 1 process succeeds (`rowcount == 1`), loser rolls back.
+  6. Two-stage revalidation covers all 11 security dimensions.
+- **Step 2 Run RED:**
+  `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_atomic_admission.py tests/runtime/test_revalidation.py -v`
+- **Step 3 Minimal Code:**
+  1. Modify `src/responsibleai/db/execution_nonce_repository.py:consume()` to combine epoch lock, nonce insert, and conditional update on `governance_execution_authorizations` (`status = 'CONSUMED'`) asserting `rowcount == 1`.
+  2. Preserve `src/responsibleai/governance/execution.py:admit_execution()` calling `nonce_repo.consume()`.
+  3. Implement `src/responsibleai/runtime/revalidation.py` (Stage 1 early invalidation, Stage 2 pre-flight verification).
+- **Step 4 Run GREEN:**
+  `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_atomic_admission.py tests/runtime/test_revalidation.py -v`
+- **Step 5 Focused Regression:** Run `pytest tests/runtime/test_atomic_admission.py tests/runtime/test_revalidation.py -q`.
+- **Step 6 Commit:**
+  `git add src/responsibleai/db/execution_nonce_repository.py src/responsibleai/governance/execution.py src/responsibleai/runtime/revalidation.py tests/runtime/test_atomic_admission.py tests/runtime/test_revalidation.py`
+  `git commit -m "security(runtime): bind atomic nonce and authorization admission transaction"`
 
 ---
 
@@ -287,7 +320,7 @@
   - MODIFY `src/responsibleai/mcp/governance_integration.py`
   - CREATE `tests/runtime/test_dispatcher.py`
   - CREATE `tests/runtime/test_execution_worker.py`
-- **Interfaces Consumed:** `ExecutionAdmissionController`, `MultiTenantFairQueue`, `ExecutionAuthorizationRepository`, `AdmissionLeaseRepository`, `ExecutionNonceRepository`, `revocation_epoch_repository`, canonical `admit_execution()`.
+- **Interfaces Consumed:** Tasks 6, 7, 8A, 8B, 9 (`ExecutionAdmissionController`, `MultiTenantFairQueue`, `ExecutionAuthorizationRepository`, `AdmissionLeaseRepository`, `ExecutionNonceRepository`, `revocation_epoch_repository`, canonical `admit_execution()`).
 - **Interfaces Produced:** Non-bypassable `ExecutionDispatcher` and `ExecutionWorker.process_next()` pipeline.
 - **Step 1 Failing Test:** Write `tests/runtime/test_dispatcher.py` and `test_execution_worker.py` asserting:
   1. Dispatcher decouples admission from immediate inline execution.

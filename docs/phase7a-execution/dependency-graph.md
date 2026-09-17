@@ -1,6 +1,6 @@
 # WhitePact Phase 7A Implementation Dependency Graph
 
-**Document Status:** CANONICAL SPECIFICATION PASS 2 (POST-CODEX REVIEW REMEDIATION)
+**Document Status:** CANONICAL SPECIFICATION PASS 2 (ATOMIC AUTHORITY INTEGRATION CORRECTION)
 **Source Design SHA:** `dfbeb2e6d9fad575fc45b64789c63b1c1c0b5b01` (Worktree: `/Users/ag/whitepact-phase7a-runtime-preparation`)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
@@ -10,14 +10,12 @@
 
 ## 1. Architectural Categorization of Tasks
 
-To guarantee that implementation proceeds with maximum velocity while strictly protecting canonical security boundaries, Phase 7A tasks are categorized as:
-
 1. **SERIAL SECURITY CORE:**
-   Tasks defining admission domain models, durable authorization storage, two-stage revalidation, distributed coordination, fail-closed boundaries, worker lease mutual exclusion, and side-effect guards. These must execute strictly in security-dependency order.
+   Tasks defining admission models, durable authorization storage, durable issuance integration, atomic admission transactions, worker lease database exclusivity, and side-effect safety.
 2. **PARALLEL-SAFE SUPPORT:**
-   Tasks operating on decoupled leaves (e.g., container isolation limits, telemetry, provisional configuration validation) that share stable interfaces.
+   Decoupled leaf tasks (container isolation, metrics, configuration validation) sharing stable typed interfaces.
 3. **INTEGRATION GATES:**
-   Tasks that join distributed components (e.g., Task 10 Dispatcher Bridge, Task 16 Graceful Shutdown, Task 19 Multi-Process Integration) and enforce non-bypassable admission gates.
+   Tasks that join distributed components (Task 10 Dispatcher Gate, Task 16 Shutdown, Task 19 Multi-Process Integration). The dispatcher cannot activate until both durable issuance and atomic admission are verified.
 
 ---
 
@@ -32,9 +30,10 @@ To guarantee that implementation proceeds with maximum velocity while strictly p
 | **Task 5** | Redis Fail-Closed Behavior | SERIAL CORE | Tasks 2, 4 | `runtime/admission/controller.py` | NO |
 | **Task 6** | Integrated Multi-Tenant Concurrency | SERIAL CORE | Tasks 2, 5 | `runtime/admission/controller.py` | NO |
 | **Task 7** | Bounded Fair Queue (Plan-Neutral) | SERIAL CORE | Tasks 1, 6 | `runtime/queue/*` | YES (after Task 6) |
-| **Task 8** | Durable EA Storage (Mig 0049) & Revalidation | SERIAL CORE | Task 1, Canonical Head `0048` | `migrations/0049_*.py`, `db/execution_authorization_repository.py`, `runtime/revalidation.py` | YES (after Task 1) |
-| **Task 9** | Worker Lease Schema (Mig 0050) & DB Exclusivity | SERIAL CORE | Task 8 | `migrations/0050_*.py`, `runtime/worker/lease.py`, `db/admission_lease_repository.py` | NO (PostgreSQL) |
-| **Task 10** | Dispatcher & Canonical Admission Integration | INTEGRATION GATE | Tasks 6, 7, 8, 9 | `runtime/dispatcher.py`, `runtime/worker/worker.py`, `mcp/governance_integration.py` | NO (Activation Gate) |
+| **Task 8A** | Durable EA Storage (Mig 0049) & Issuance Integration | SERIAL CORE | Task 1, Head `0048` | `migrations/0049_*.py`, `db/execution_authorization_repository.py`, `mcp/governance_integration.py` | YES (after Task 1) |
+| **Task 8B** | Full Two-Stage Revalidation & Atomic Admission Transaction | SERIAL CORE | Task 8A | `db/execution_nonce_repository.py`, `governance/execution.py`, `runtime/revalidation.py` | NO (Database atomic) |
+| **Task 9** | Worker Lease Schema (Mig 0050) & DB Exclusivity | SERIAL CORE | Task 8A | `migrations/0050_*.py`, `runtime/worker/lease.py`, `db/admission_lease_repository.py` | NO (PostgreSQL) |
+| **Task 10** | Dispatcher & Canonical Admission Integration | INTEGRATION GATE | Tasks 6, 7, 8B, 9 | `runtime/dispatcher.py`, `runtime/worker/worker.py`, `mcp/governance_integration.py` | NO (Activation Gate) |
 | **Task 11** | Worker Lease Heartbeat & Crash Recovery | SERIAL CORE | Task 10 | `runtime/worker/supervisor.py` | NO (Depends on Gate) |
 | **Task 12** | Side-Effect Safety & Uncertain State Handling | SERIAL CORE | Task 11 | `runtime/worker/worker.py` | NO (Depends on Task 11) |
 | **Task 13** | WP-ISO-01 Compute Limits (CPU/RAM/PID) | PARALLEL SUPPORT | None | `isolation/models.py`, `isolation/container_backend.py` | YES (Isolation lane) |
@@ -59,22 +58,26 @@ flowchart TD
         HEAD[Migration Head: 0048 - VERIFIED]
     end
 
-    subgraph LANE_A [Lane A: Admission & Distributed Coordination]
+    subgraph LANE_A1 [Lane A1: Admission & Distributed Coordination]
         T1[Task 1: Domain Models] --> T2[Task 2: Local Controller]
         T1 --> T3[Task 3: Coordination Base]
         T3 --> T4[Task 4: Redis Coordinator]
         T2 & T4 --> T5[Task 5: Redis Fail-Closed]
         T5 --> T6[Task 6: Multi-Tenant Concurrency]
         T6 --> T7[Task 7: Plan-Neutral Fair Queue]
-        T1 & HEAD --> T8[Task 8: Durable EA Mig 0049 & Revalidation]
+    end
+
+    subgraph LANE_A2 [Lane A2: Durable Authority & Atomic Admission]
+        T1 & HEAD --> T8A[Task 8A: Durable EA Mig 0049, Repo & Durable Issuance Integration]
+        T8A --> T8B[Task 8B: Two-Stage Revalidation & Atomic admit_execution Transaction]
     end
 
     subgraph LANE_C1 [Lane C1: Worker Lease Schema & DB Exclusivity]
-        T8 --> T9[Task 9: Worker Lease Mig 0050 & DB Exclusivity]
+        T8A --> T9[Task 9: Worker Lease Mig 0050 & DB Exclusivity]
     end
 
-    subgraph GATE_10 [Integration Gate: Dispatcher & Canonical Admission]
-        T6 & T7 & T8 & T9 --> T10[Task 10: Dispatcher & Canonical admit_execution Bridge]
+    subgraph GATE_10 [Integration Gate: Dispatcher Activation]
+        T6 & T7 & T8B & T9 --> T10[Task 10: Dispatcher & Canonical admit_execution Bridge]
     end
 
     subgraph LANE_C2 [Lane C2: Crash Recovery & Side-Effect Safety]
@@ -108,9 +111,11 @@ flowchart TD
 
 ## 4. Key Dependency Assertions
 
-1. **Task 8 (Durable EA) precedes Task 9 (Worker Lease):**
-   `runtime_worker_leases.authorization_id` has a strict Foreign Key referencing `governance_execution_authorizations.authorization_id`. Migration `0049` must execute before `0050`.
-2. **Task 10 (Dispatcher) is the Non-Bypassable Gate:**
-   Task 10 bridges the queue (Task 7), the durable authorization (Task 8), and the worker lease (Task 9) to canonical `admit_execution()`. No worker execution or container launch can occur without Task 10.
-3. **Lane C2 strictly depends on Task 10:**
-   Crash recovery (Task 11) and uncertain side-effect handling (Task 12) operate directly on the worker dispatch and completion loop created in Task 10. They cannot be developed or tested in isolation from the dispatcher.
+1. **Durable Issuance (Task 8A) precedes Queueing & Leases:**
+   No `QueueTicket` can be generated before `ExecutionAuthorizationRepository.create()` succeeds in `mcp/governance_integration.py`. Migration `0049` provides the schema required by both durable issuance and migration `0050` (FK from `runtime_worker_leases.authorization_id`).
+2. **Atomic Admission Transaction (Task 8B) precedes Dispatcher Gate:**
+   `ExecutionNonceRepository.consume()` and `admit_execution()` must be adapted to combine epoch locking, nonce insertion, and conditional authorization update (`rowcount == 1`) in a single transaction before the dispatcher connects queue items to workers.
+3. **Task 10 (Dispatcher) is the Non-Bypassable Gate:**
+   Dispatcher cannot be activated until Lane A1, Lane A2, and Lane C1 are all green.
+4. **Lane C2 strictly depends on Task 10:**
+   Crash recovery (Task 11) and uncertain side-effects (Task 12) operate directly on the dispatcher/worker loop.
