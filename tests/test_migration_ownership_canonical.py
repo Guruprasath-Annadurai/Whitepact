@@ -1,0 +1,55 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
+"""One Alembic head and one Phase 7A migration ownership map."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from alembic.config import Config
+from alembic.script import ScriptDirectory
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_alembic_single_head_is_0049_governance() -> None:
+    script = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
+    assert script.get_heads() == ["0049"]
+    rev = script.get_revision("0049")
+    assert rev.down_revision == "0048"
+    path = ROOT / "migrations" / "versions" / "0049_add_organization_governance_status.py"
+    assert path.is_file()
+    for name in (
+        "0050_runtime_execution_requests.py",
+        "0051_runtime_execution_authorizations.py",
+        "0052_runtime_execution_attempts.py",
+        "0053_runtime_worker_leases.py",
+    ):
+        assert not (ROOT / "migrations" / "versions" / name).exists()
+
+
+def test_no_obsolete_0049_runtime_request_ownership() -> None:
+    hits = []
+    for path in ROOT.rglob("*"):
+        if not path.is_file():
+            continue
+        if any(part in {".git", ".venv", "node_modules", "static"} for part in path.parts):
+            continue
+        if path.suffix not in {".md", ".py", ".txt"}:
+            continue
+        if path.name == "test_migration_ownership_canonical.py":
+            continue
+        text = path.read_text(errors="replace")
+        if "0049_runtime_execution_requests" in text:
+            hits.append(str(path.relative_to(ROOT)))
+    assert hits == []
+
+
+def test_canonical_map_matches_implemented_history() -> None:
+    text = (ROOT / "docs" / "phase7a-execution" / "migration-ownership.md").read_text()
+    assert "0049" in text and "Organization governance lifecycle" in text
+    assert "0050" in text and "runtime_execution_requests" in text
+    assert "0051" in text and "governance_execution_authorizations" in text
+    assert "0052" in text and "runtime_execution_attempts" in text
+    assert "0053" in text and "runtime_execution_fences" in text
+    assert "Implemented Alembic head" in text

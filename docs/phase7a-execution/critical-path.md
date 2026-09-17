@@ -4,7 +4,7 @@
 **Source Design SHA:** `dfbeb2e6d9fad575fc45b64789c63b1c1c0b5b01` (Worktree: `/Users/ag/whitepact-phase7a-runtime-preparation`)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
-**Current Migration Head:** `0048` (`migrations/versions/0048_enforce_paddle_binding_atomicity.py`)
+**Current Migration Head:** `0049` (`migrations/versions/0049_add_organization_governance_status.py`). Unactivated Phase 7A chain: `0050` requests → `0051` authorizations → `0052` attempts → `0053` leases/fences/outbox. Canonical map: `docs/phase7a-execution/migration-ownership.md`.
 
 ---
 
@@ -42,17 +42,17 @@ Because tasks in Lane B (WP-ISO-01 compute and filesystem limits) and Lane D (Ob
       ▼ (Critical Task 7)
 [CP-07] Task 7: Bounded Multi-Tenant Fair Queue
       │
-      ▼ (Critical Task 8A1: Migration 0049 & Request Repo)
-[CP-08A1] Task 8A1: Durable Request Schema (Mig 0049, Append-Only) & Repository
+      ▼ (Critical Task 8A1: Migration 0050 & Request Repo)
+[CP-08A1] Task 8A1: Durable Request Schema (Mig 0050, Append-Only) & Repository
       │
-      ▼ (Critical Task 8A2: Migration 0050 & Auth Repo)
-[CP-08A2] Task 8A2: Durable Auth Schema (Mig 0050, UNIQUE approval_id) & Repository
+      ▼ (Critical Task 8A2: Migration 0051 & Auth Repo)
+[CP-08A2] Task 8A2: Durable Auth Schema (Mig 0051, UNIQUE approval_id) & Repository
       │
-      ▼ (Critical Task 8A3: Migration 0051 & Attempt Repo)
-[CP-08A3] Task 8A3: Execution Attempt Schema (Mig 0051, Nullable Lease Fields, evidence_status & backend_start_token_hash) & Repository
+      ▼ (Critical Task 8A3: Migration 0052 & Attempt Repo)
+[CP-08A3] Task 8A3: Execution Attempt Schema (Mig 0052, Nullable Lease Fields, evidence_status & backend_start_token_hash) & Repository
       │
-      ▼ (Critical Task 8A4: Migration 0052, Lease & Fence Repos)
-[CP-08A4] Task 8A4: Worker Lease & Execution Fence Schema (Mig 0052) & Repositories
+      ▼ (Critical Task 8A4: Migration 0053, Lease & Fence Repos)
+[CP-08A4] Task 8A4: Worker Lease & Execution Fence Schema (Mig 0053) & Repositories
       │
       ▼ (Critical Task 8A5: Centralized Issuance Service)
 [CP-08A5] Task 8A5: Centralized Issuer, Approval Atomicity & Universal Idempotency

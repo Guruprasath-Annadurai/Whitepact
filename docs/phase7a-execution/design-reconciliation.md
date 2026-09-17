@@ -7,6 +7,8 @@
 **Current Migration Head:** `0049` (`migrations/versions/0049_add_organization_governance_status.py`)
 **Phase 7A runtime tables:** planned `0050`–`0053` (not activated)
 
+**Canonical migration ownership:** `docs/phase7a-execution/migration-ownership.md` (implemented `0049` = org governance lifecycle).
+
 ---
 
 ## 1. Executive Summary
@@ -29,14 +31,14 @@ Pass 4.3 definitively closes all remaining security consistency and boundary gap
 
 | Subsystem / Dimension | Status | Detailed Findings & Adaptations |
 | :--- | :--- | :--- |
-| **Execution Request Storage** | SECURITY-RELEVANT ADAPTATION | Persisted in `runtime_execution_requests` (Migration 0049). Append-only, trigger rejects UPDATE/DELETE, zero mutable status. |
+| **Execution Request Storage** | SECURITY-RELEVANT ADAPTATION | Persisted in `runtime_execution_requests` (Migration 0050). Append-only, trigger rejects UPDATE/DELETE, zero mutable status. |
 | **Idempotency & Deduplication** | RECONCILED & CONCURRENCY-SAFE | Universal key requirement. Atomic insert on conflict loads existing row and compares digest. Identical -> return existing; different -> HTTP 409. |
-| **Approval Consumption** | SECURITY-RELEVANT ADAPTATION | Combined with authorization issuance in ONE transaction. `UNIQUE(approval_id)` in `governance_execution_authorizations` (Migration 0050) guarantees single use. |
+| **Approval Consumption** | SECURITY-RELEVANT ADAPTATION | Combined with authorization issuance in ONE transaction. `UNIQUE(approval_id)` in `governance_execution_authorizations` (Migration 0051) guarantees single use. |
 | **Canonical Admission & Attempt Transition** | SECURITY-RELEVANT ADAPTATION (F4.2-01) | `admit_execution()` in ONE atomic transaction: burns nonce, updates authorization `ISSUED -> CONSUMED`, and transitions attempt `LEASED -> ADMITTED` (`rowcount == 1`). |
 | **One-Shot Backend-Start Claim** | SECURITY-RELEVANT ADAPTATION (F4.3-02) | `claim_backend_start()` verifies unexpired lease under lock, generates raw `backend_start_token`, stores `backend_start_token_hash` on attempt, transitions `ADMITTED -> BACKEND_STARTING` (`rowcount == 1`), returns `BackendExecutionClaim`. |
 | **Atomic Pre-Effect CAS** | SECURITY-RELEVANT ADAPTATION (F4.3-01, F4.3-02, F4.3-03) | `claim_local_effect_start` / `claim_external_effect_transmission` execute atomic CAS with `rowcount == 1` immediately pre-container/pre-socket. Synchronously revalidates lease `FOR UPDATE`, checks immutable request `action_digest` and `target_fingerprint`, and consumes token hash (`NULL`). Eliminates check-then-write race and zombie worker execution. |
 | **Evidence Precedence & Status Ownership** | RECONCILED & ORDERED (F4.2-04, F4.3-04) | Evidence write precedes normal attempt completion. Durable `evidence_status` on `runtime_execution_attempts` records `COMMITTED` or `INCOMPLETE`. Crash Point O is deterministically reconciled. |
-| **Monotonic Fencing** | RECONCILED & HARDENED | Dedicated `runtime_execution_fences` counter table (Migration 0052). Atomic `UPDATE ... RETURNING`. Fence synchronously checks unexpired lease (`expires_at > now`). |
+| **Monotonic Fencing** | RECONCILED & HARDENED | Dedicated `runtime_execution_fences` counter table (Migration 0053). Atomic `UPDATE ... RETURNING`. Fence synchronously checks unexpired lease (`expires_at > now`). |
 | **SafeNetwork Boundary** | HARDENED | Resolves DNS, validates durable target fingerprint, pins IP address, and executes atomic CAS immediately pre-socket. |
 | **Capacity Management** | HARDENED | Every reservation has an explicit release path on completion, failure, early invalidation, or background reconciliation. |
 | **PostgreSQL Migration Sequence** | RESOLVED & ORDERED | Implemented head `0049` (`organizations.governance_status`). Unactivated Phase 7A chain: `0050_runtime_execution_requests` -> `0051_runtime_execution_authorizations` -> `0052_runtime_execution_attempts` -> `0053_runtime_worker_leases` (outbox + fences). See `cursor-hardening-specification-closure.md`. |

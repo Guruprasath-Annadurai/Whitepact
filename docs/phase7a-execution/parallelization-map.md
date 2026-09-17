@@ -3,7 +3,9 @@
 **Document Status:** CANONICAL SPECIFICATION PASS 4.4 (SECURITY BOUNDARY CLOSURE)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
-**Proposed Migrations:** `0049_runtime_execution_requests.py` through `0052_runtime_worker_leases.py`
+**Proposed Migrations:** `0050_runtime_execution_requests.py` through `0053_runtime_worker_leases.py`
+
+**Canonical migration ownership:** `docs/phase7a-execution/migration-ownership.md` (implemented `0049` = org governance lifecycle).
 
 ---
 
@@ -44,13 +46,13 @@ This document establishes the verified concurrent execution waves for Phase 7A i
 - **Primary Responsibility:** Sequential PostgreSQL migrations `0049` through `0052` and their respective domain repositories.
 - **Tasks Owned:** Tasks 8A1, 8A2, 8A3, 8A4.
 - **Files Owned:**
-  - `migrations/versions/0049_runtime_execution_requests.py` [CREATE]
+  - `migrations/versions/0050_runtime_execution_requests.py` [CREATE]
   - `src/responsibleai/db/execution_request_repository.py` [CREATE]
-  - `migrations/versions/0050_runtime_execution_authorizations.py` [CREATE]
+  - `migrations/versions/0051_runtime_execution_authorizations.py` [CREATE]
   - `src/responsibleai/db/execution_authorization_repository.py` [CREATE]
-  - `migrations/versions/0051_runtime_execution_attempts.py` [CREATE]
+  - `migrations/versions/0052_runtime_execution_attempts.py` [CREATE]
   - `src/responsibleai/db/execution_attempt_repository.py` [CREATE]
-  - `migrations/versions/0052_runtime_worker_leases.py` [CREATE]
+  - `migrations/versions/0053_runtime_worker_leases.py` [CREATE]
   - `src/responsibleai/db/execution_fence_repository.py` [CREATE]
   - `src/responsibleai/runtime/worker/lease.py` [CREATE]
   - `src/responsibleai/db/admission_lease_repository.py` [CREATE]
@@ -151,7 +153,7 @@ TIME ─────────────────────────
    │   ├── Subagent 1 (Lane A1): Task 1 (Admission Models) -> Task 2 (Local Controller) & Task 3 (Coordination Base)
    │   ├── Subagent 2 (Lane B):  Task 13 (Compute Limits) & Task 14 (Workspace 10MB/100 Files)
    │   ├── Subagent 3 (Lane D):  Task 18 (15 Prometheus Metrics)
-   │   └── Subagent 4 (Lane S):  Task 8A1 (Mig 0049) -> Task 8A2 (Mig 0050) -> Task 8A3 (Mig 0051) -> Task 8A4 (Mig 0052)
+   │   └── Subagent 4 (Lane S):  Task 8A1 (Mig 0050) -> Task 8A2 (Mig 0051) -> Task 8A3 (Mig 0052) -> Task 8A4 (Mig 0053)
    │
    ├── WAVE 2: ISSUANCE, CONCURRENCY & CANONICAL ADMISSION
    │   ├── Subagent 1 (Lane A1): Task 4 (Redis Coordinator) -> Task 5 (Fail-Closed) -> Task 6 (Concurrency) -> Task 7 (Fair Queue)

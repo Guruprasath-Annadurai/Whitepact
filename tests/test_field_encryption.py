@@ -11,7 +11,7 @@ import pytest
 from cryptography.fernet import Fernet, MultiFernet
 
 from responsibleai.db.audit_repository import AuditRepository
-from responsibleai.db.encryption import EncryptedString, _load_fernet
+from responsibleai.db.encryption import EncryptedString, SENSITIVE_ENCRYPTED_COLUMNS, _load_fernet
 from responsibleai.db.engine import create_engine
 from responsibleai.rbac.models import AuditEntry
 
@@ -135,3 +135,12 @@ class TestAuditLogIpAddressEncryption:
         # it must have zero effect on chain integrity.
         result = await repo.verify_chain()
         assert result["intact"] is True
+
+
+def test_sensitive_encrypted_column_inventory_includes_launch_critical_secrets() -> None:
+    tables = {table for table, _column in SENSITIVE_ENCRYPTED_COLUMNS}
+    assert "org_api_keys" in tables
+    assert "webhook_configs" in tables
+    assert "governance_approvals" in tables
+    assert "upstream_mcp_servers" in tables
+

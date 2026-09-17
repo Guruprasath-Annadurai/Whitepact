@@ -3,7 +3,9 @@
 **Document Status:** CANONICAL SPECIFICATION PASS 4.3 (SECURITY BOUNDARY CLOSURE)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
-**Proposed Migration:** `0052_runtime_worker_leases.py` (down-revision: `0051`)
+**Proposed Migration:** `0053_runtime_worker_leases.py` (down-revision: `0052`)
+
+**Canonical migration ownership:** `docs/phase7a-execution/migration-ownership.md` (implemented `0049` = org governance lifecycle).
 
 ---
 
@@ -24,7 +26,7 @@ To eliminate this vulnerability, WhitePact enforces:
 
 ## 2. Table Schemas: `runtime_execution_fences` and `runtime_worker_leases`
 
-Migration `0052_runtime_worker_leases.py` establishes the dedicated fence counters and worker leases:
+Migration `0053_runtime_worker_leases.py` establishes the dedicated fence counters and worker leases:
 
 ```sql
 -- Dedicated execution fence counter table (4.1-F04)

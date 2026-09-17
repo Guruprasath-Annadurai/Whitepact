@@ -3,7 +3,9 @@
 **Document Status:** CANONICAL SPECIFICATION PASS 4.4 (SECURITY BOUNDARY CLOSURE)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
-**Proposed Migration:** `0051_runtime_execution_attempts.py` (down-revision: `0050`)
+**Proposed Migration:** `0052_runtime_execution_attempts.py` (down-revision: `0051`)
+
+**Canonical migration ownership:** `docs/phase7a-execution/migration-ownership.md` (implemented `0049` = org governance lifecycle).
 
 ---
 
@@ -20,7 +22,7 @@ In asynchronous and distributed execution, execution authority, operational prog
 
 ## 2. Table Schema: `runtime_execution_attempts`
 
-Migration `0051_runtime_execution_attempts.py` establishes the durable attempt and effect tracking table:
+Migration `0052_runtime_execution_attempts.py` establishes the durable attempt and effect tracking table:
 
 ```sql
 CREATE TABLE runtime_execution_attempts (

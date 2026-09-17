@@ -17,6 +17,12 @@ from __future__ import annotations
 import importlib
 
 import pytest
+from cryptography.fernet import Fernet
+
+
+def _enable_prod_field_encryption(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WHITEPACT_FIELD_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    monkeypatch.delenv("RAI_FIELD_ENCRYPTION_KEY", raising=False)
 
 
 @pytest.fixture()
@@ -312,6 +318,7 @@ class TestDatabaseUrlConfiguration:
 
         # In prod: succeeds without error
         monkeypatch.setenv("WHITEPACT_ENV", "production")
+        _enable_prod_field_encryption(monkeypatch)
         settings_prod = fresh_settings_module.Settings()
         assert settings_prod.database_url == url
 
@@ -345,6 +352,7 @@ class TestDatabaseUrlConfiguration:
 
         # In prod: succeeds without error
         monkeypatch.setenv("WHITEPACT_ENV", "production")
+        _enable_prod_field_encryption(monkeypatch)
         settings_prod = fresh_settings_module.Settings()
         assert settings_prod.database_url == url
 
@@ -393,5 +401,27 @@ class TestDatabaseUrlConfiguration:
         monkeypatch.delenv("RAI_DATABASE_URL", raising=False)
         monkeypatch.delenv("WHITEPACT_DATABASE_URL", raising=False)
         monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://user:pass@pg.prod:5432/whitepact")
+        _enable_prod_field_encryption(monkeypatch)
         settings = fresh_settings_module.Settings()
         assert settings.database_url == "postgresql+asyncpg://user:pass@pg.prod:5432/whitepact"
+
+    def test_production_mode_fails_closed_without_field_encryption_key(
+        self, monkeypatch, fresh_settings_module
+    ) -> None:
+        monkeypatch.setenv("WHITEPACT_ENV", "production")
+        monkeypatch.delenv("RAI_DATABASE_URL", raising=False)
+        monkeypatch.delenv("WHITEPACT_DATABASE_URL", raising=False)
+        monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://user:pass@pg.prod:5432/whitepact")
+        monkeypatch.delenv("WHITEPACT_FIELD_ENCRYPTION_KEY", raising=False)
+        monkeypatch.delenv("RAI_FIELD_ENCRYPTION_KEY", raising=False)
+        with pytest.raises(ValueError, match="FIELD_ENCRYPTION_KEY"):
+            fresh_settings_module.Settings()
+
+    def test_development_mode_allows_missing_field_encryption_key(
+        self, monkeypatch, fresh_settings_module
+    ) -> None:
+        monkeypatch.setenv("WHITEPACT_ENV", "development")
+        monkeypatch.delenv("WHITEPACT_FIELD_ENCRYPTION_KEY", raising=False)
+        monkeypatch.delenv("RAI_FIELD_ENCRYPTION_KEY", raising=False)
+        settings = fresh_settings_module.Settings()
+        assert settings.is_production is False

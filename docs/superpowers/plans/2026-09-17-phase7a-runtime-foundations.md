@@ -7,7 +7,9 @@
 **Primary Specification:** `dfbeb2e6d9fad575fc45b64789c63b1c1c0b5b01` (`/Users/ag/whitepact-phase7a-runtime-preparation/docs/phase7a-prep/PHASE7A_RUNTIME_FOUNDATIONS_MASTER_DESIGN.md`)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
-**Current Migration Head:** `0048` (`migrations/versions/0048_enforce_paddle_binding_atomicity.py`)
+**Current Migration Head:** `0049` (`migrations/versions/0049_add_organization_governance_status.py`). Unactivated Phase 7A chain: `0050` requests → `0051` authorizations → `0052` attempts → `0053` leases/fences/outbox. Canonical map: `docs/phase7a-execution/migration-ownership.md`.
+
+**Canonical migration ownership:** `docs/phase7a-execution/migration-ownership.md` (implemented `0049` = org governance lifecycle).
 
 ---
 
@@ -19,12 +21,12 @@
    - Documentation branches must NEVER be merged into runtime to make paths exist.
 
 2. **Migration Sequencing:**
-   - Migration head is verified as `0048` (`0048_enforce_paddle_binding_atomicity.py`).
-   - Phase 7A introduces four clean, linearly ordered, independently reversible migrations:
-     - `migrations/versions/0049_runtime_execution_requests.py` (down_revision: `0048`)
-     - `migrations/versions/0050_runtime_execution_authorizations.py` (down_revision: `0049`)
-     - `migrations/versions/0051_runtime_execution_attempts.py` (down_revision: `0050`)
-     - `migrations/versions/0052_runtime_worker_leases.py` (down_revision: `0051`)
+   - Implemented Alembic head is `0049` (`0049_add_organization_governance_status.py`). See `docs/phase7a-execution/migration-ownership.md`.
+   - Phase 7A introduces four planned, unactivated, linearly ordered migrations:
+     - `migrations/versions/0050_runtime_execution_requests.py` (down_revision: `0049`)
+     - `migrations/versions/0051_runtime_execution_authorizations.py` (down_revision: `0050`)
+     - `migrations/versions/0052_runtime_execution_attempts.py` (down_revision: `0051`)
+     - `migrations/versions/0053_runtime_worker_leases.py` (down_revision: `0052`)
 
 3. **Commercial / Governance Decoupling:**
    - Commercial entitlement != governance authority.
@@ -38,7 +40,7 @@
    - Default Phase 7A fairness is strictly **plan-neutral** (per-tenant round robin). Commercial plan weighting is prohibited in Phase 7A.
 
 4. **Durable Issuance Integration & Queue Contract (P0-1):**
-   - `runtime_execution_requests` (migration `0049`, append-only) and `governance_execution_authorizations` (migration `0050`, `UNIQUE(approval_id)`) are persisted in PostgreSQL by `src/responsibleai/mcp/governance_integration.py` and `src/responsibleai/mcp/upstream_dispatch.py` immediately at decision time.
+   - `runtime_execution_requests` (migration `0050`, append-only) and `governance_execution_authorizations` (migration `0051`, `UNIQUE(approval_id)`) are persisted in PostgreSQL by `src/responsibleai/mcp/governance_integration.py` and `src/responsibleai/mcp/upstream_dispatch.py` immediately at decision time.
    - **Non-Bypassable Issuance Invariant:** NO `QueueTicket` may be generated until database insertion of the `ExecutionAuthorization` commits successfully. If database persistence fails, the request fails closed immediately (HTTP 500/503), leaving 0 queue entries and 0 dispatchable authority.
    - `QueueTicket != authority`. Queue tickets contain strictly unprivileged references (`execution_id`, `authorization_id`, `org_id`, `principal_id`, `action_digest`, `enqueued_at`).
 
@@ -227,78 +229,78 @@
 
 ---
 
-### Task 8A1: Durable Request Storage (Mig 0049) & Repository
+### Task 8A1: Durable Request Storage (Mig 0050) & Repository
 - **Files:**
-  - CREATE `migrations/versions/0049_runtime_execution_requests.py`
+  - CREATE `migrations/versions/0050_runtime_execution_requests.py`
   - CREATE `src/responsibleai/db/execution_request_repository.py`
   - CREATE `tests/runtime/test_durable_execution_request.py`
-- **Interfaces Consumed:** PostgreSQL database engine (down_revision strictly `0048`).
+- **Interfaces Consumed:** PostgreSQL database engine (down_revision strictly `0049`).
 - **Interfaces Produced:** Append-only `runtime_execution_requests` schema, trigger rejecting UPDATE/DELETE, universal idempotency key requirement, and `ExecutionRequestRepository` (`create()`, `get()`).
 - **Step 1 Failing Test:** Write `tests/runtime/test_durable_execution_request.py` verifying:
   1. RFC 8785 canonical JSON serialization, action digest computation, and append-only immutability.
   2. Database trigger rejects all UPDATE and DELETE operations.
   3. Tenant-scoped idempotency via `UNIQUE(organization_id, idempotency_key)` with concurrency-safe deduplication.
 - **Step 2 Run RED:** `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_durable_execution_request.py -v`
-- **Step 3 Minimal Code:** Implement migration `0049` and `ExecutionRequestRepository`.
+- **Step 3 Minimal Code:** Implement migration `0050` and `ExecutionRequestRepository`.
 - **Step 4 Run GREEN:** `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_durable_execution_request.py -v`
 - **Step 5 Commit:**
-  `git add migrations/versions/0049_runtime_execution_requests.py src/responsibleai/db/execution_request_repository.py tests/runtime/test_durable_execution_request.py`
+  `git add migrations/versions/0050_runtime_execution_requests.py src/responsibleai/db/execution_request_repository.py tests/runtime/test_durable_execution_request.py`
   `git commit -m "feat(runtime): implement durable immutable execution request storage"`
 
 ---
 
-### Task 8A2: Durable Auth Storage (Mig 0050) & Repository
+### Task 8A2: Durable Auth Storage (Mig 0051) & Repository
 - **Files:**
-  - CREATE `migrations/versions/0050_runtime_execution_authorizations.py`
+  - CREATE `migrations/versions/0051_runtime_execution_authorizations.py`
   - CREATE `src/responsibleai/db/execution_authorization_repository.py`
   - CREATE `tests/runtime/test_durable_execution_authorization.py`
-- **Interfaces Consumed:** PostgreSQL database engine (down_revision strictly `0049`).
+- **Interfaces Consumed:** PostgreSQL database engine (down_revision strictly `0050`).
 - **Interfaces Produced:** Losslessly persists all 11 fields of `ExecutionAuthorization`, status machine (`ISSUED`, `CONSUMED`), `UNIQUE(approval_id)`, and `ExecutionAuthorizationRepository`.
 - **Step 1 Failing Test:** Write `tests/runtime/test_durable_execution_authorization.py` asserting all fields persisted, `UNIQUE(approval_id)` enforced, and `create()`/`get()` work cleanly.
 - **Step 2 Run RED:** `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_durable_execution_authorization.py -v`
-- **Step 3 Minimal Code:** Implement migration `0050` and `ExecutionAuthorizationRepository`.
+- **Step 3 Minimal Code:** Implement migration `0051` and `ExecutionAuthorizationRepository`.
 - **Step 4 Run GREEN:** `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_durable_execution_authorization.py -v`
 - **Step 5 Commit:**
-  `git add migrations/versions/0050_runtime_execution_authorizations.py src/responsibleai/db/execution_authorization_repository.py tests/runtime/test_durable_execution_authorization.py`
+  `git add migrations/versions/0051_runtime_execution_authorizations.py src/responsibleai/db/execution_authorization_repository.py tests/runtime/test_durable_execution_authorization.py`
   `git commit -m "feat(runtime): implement durable execution authorization storage"`
 
 ---
 
-### Task 8A3: Execution Attempt Schema (Mig 0051) & Repository
+### Task 8A3: Execution Attempt Schema (Mig 0052) & Repository
 - **Files:**
-  - CREATE `migrations/versions/0051_runtime_execution_attempts.py`
+  - CREATE `migrations/versions/0052_runtime_execution_attempts.py`
   - CREATE `src/responsibleai/db/execution_attempt_repository.py`
   - CREATE `tests/runtime/test_execution_attempt_state_machine.py`
-- **Interfaces Consumed:** PostgreSQL database engine (down_revision strictly `0050`).
+- **Interfaces Consumed:** PostgreSQL database engine (down_revision strictly `0051`).
 - **Interfaces Produced:** `runtime_execution_attempts` schema with nullable lease fields in `PENDING`, `evidence_status` column (`PENDING`, `COMMITTED`, `INCOMPLETE`), `backend_start_token_hash` column (F4.3-02), state-dependent CHECK constraint `chk_attempt_lease_fields`, active partial unique index, and `ExecutionAttemptRepository` (`create_initial_attempt()`, state transitions).
 - **Step 1 Failing Test:** Write `tests/runtime/test_execution_attempt_state_machine.py` verifying:
   1. `PENDING` attempt requires NULL worker_id, lease_id, lease_generation, and `evidence_status = 'PENDING'`.
   2. Transition to `LEASED` requires all three lease fields.
   3. Partial unique index prevents duplicate active attempts.
 - **Step 2 Run RED:** `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_execution_attempt_state_machine.py -v`
-- **Step 3 Minimal Code:** Implement migration `0051` and `ExecutionAttemptRepository`.
+- **Step 3 Minimal Code:** Implement migration `0052` and `ExecutionAttemptRepository`.
 - **Step 4 Run GREEN:** `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_execution_attempt_state_machine.py -v`
 - **Step 5 Commit:**
-  `git add migrations/versions/0051_runtime_execution_attempts.py src/responsibleai/db/execution_attempt_repository.py tests/runtime/test_execution_attempt_state_machine.py`
+  `git add migrations/versions/0052_runtime_execution_attempts.py src/responsibleai/db/execution_attempt_repository.py tests/runtime/test_execution_attempt_state_machine.py`
   `git commit -m "feat(runtime): implement execution attempt state machine schema with evidence status"`
 
 ---
 
-### Task 8A4: Worker Lease, Fence & Dispatch Outbox Schema (Mig 0052) & Repositories
+### Task 8A4: Worker Lease, Fence & Dispatch Outbox Schema (Mig 0053) & Repositories
 - **Files:**
-  - CREATE `migrations/versions/0052_runtime_worker_leases.py`
+  - CREATE `migrations/versions/0053_runtime_worker_leases.py`
   - CREATE `src/responsibleai/db/execution_fence_repository.py`
   - CREATE `src/responsibleai/runtime/worker/lease.py`
   - CREATE `src/responsibleai/db/admission_lease_repository.py`
   - CREATE `tests/runtime/test_worker_lease_fencing.py`
-- **Interfaces Consumed:** PostgreSQL database engine (down_revision strictly `0051`).
+- **Interfaces Consumed:** PostgreSQL database engine (down_revision strictly `0052`).
 - **Interfaces Produced:** `runtime_worker_leases` table with active partial unique index, dedicated `runtime_execution_fences` counter table, `ExecutionFenceRepository` (`increment_generation()`), and `AdmissionLeaseRepository`.
 - **Step 1 Failing Test:** Write `tests/runtime/test_worker_lease_fencing.py` verifying atomic monotonic generation increments and active lease exclusivity.
 - **Step 2 Run RED:** `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_worker_lease_fencing.py -v`
-- **Step 3 Minimal Code:** Implement migration `0052`, `ExecutionFenceRepository`, and `AdmissionLeaseRepository`.
+- **Step 3 Minimal Code:** Implement migration `0053`, `ExecutionFenceRepository`, and `AdmissionLeaseRepository`.
 - **Step 4 Run GREEN:** `PYTHONPATH=src /Users/ag/Whitepact/.venv/bin/pytest tests/runtime/test_worker_lease_fencing.py -v`
 - **Step 5 Commit:**
-  `git add migrations/versions/0052_runtime_worker_leases.py src/responsibleai/db/execution_fence_repository.py src/responsibleai/runtime/worker/lease.py src/responsibleai/db/admission_lease_repository.py tests/runtime/test_worker_lease_fencing.py`
+  `git add migrations/versions/0053_runtime_worker_leases.py src/responsibleai/db/execution_fence_repository.py src/responsibleai/runtime/worker/lease.py src/responsibleai/db/admission_lease_repository.py tests/runtime/test_worker_lease_fencing.py`
   `git commit -m "feat(runtime): implement worker lease and dedicated execution fence schema"`
 
 ---
@@ -413,14 +415,14 @@
   - CREATE `tests/runtime/test_dispatcher.py`
   - CREATE `tests/runtime/test_execution_worker.py`
 - **Activation Gate Preconditions (ALL 16 Required):**
-  1. Durable immutable request storage (`0049_runtime_execution_requests`, trigger-protected append-only).
+  1. Durable immutable request storage (`0050_runtime_execution_requests`, trigger-protected append-only).
   2. Tenant-scoped idempotent issuance (`UNIQUE(organization_id, idempotency_key)`, universal key requirement).
   3. All 3 production issuance paths closed via PostgreSQL persistence.
   4. Atomic approval consumption and authorization issuance (`UNIQUE(approval_id)`).
   5. Canonical admission transaction combining nonce insert, authorization status update, and attempt transition `LEASED -> ADMITTED` (`rowcount == 1`).
   6. Universal epoch invalidation covering all 26 audited authority mutations across 13 domain subsystems.
   7. Monotonic worker fencing (`runtime_execution_fences` atomic counter + synchronous expiry check).
-  8. Durable attempt state machine (`0051_runtime_execution_attempts`, `evidence_status` and `backend_start_token_hash` columns).
+  8. Durable attempt state machine (`0052_runtime_execution_attempts`, `evidence_status` and `backend_start_token_hash` columns).
   9. One-shot backend-start claim generating raw `backend_start_token` and storing `backend_start_token_hash` on attempt.
   10. Atomic pre-effect CAS transitions (`claim_local_effect_start` & `claim_external_effect_transmission`) synchronously revalidating active unexpired lease `FOR UPDATE` and closing read/write races.
   11. Pre-effect CAS validation of durable request `action_digest` and single-use consumption of token hash (`NULL`).
@@ -696,7 +698,7 @@
      `/Users/ag/Whitepact/.venv/bin/mypy src/`
      `python3 scripts/manage_license_headers.py --check`
      `gitleaks detect -v`
-     `/Users/ag/Whitepact/.venv/bin/alembic -c alembic.ini heads` (must equal 1: `0052`)
+     `/Users/ag/Whitepact/.venv/bin/alembic -c alembic.ini heads` (must equal 1: implemented `0049`; planned unactivated chain ends at `0053`)
 - **Step 2 Evidence Compilation:** Record exact outputs and commit hashes in `docs/phase7a-execution/implementation-evidence.md`.
 - **Step 3 Commit:**
   `git add docs/phase7a-execution/implementation-evidence.md`

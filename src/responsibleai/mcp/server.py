@@ -383,6 +383,13 @@ def hosted_production_preflight(
             "DNS-rebinding protection is active. Refusing to start with an "
             "empty Host allowlist."
         )
+    if getattr(settings, "multi_replica", False):
+        raise HostedProductionSecurityError(
+            "V1 production hosted MCP is constrained to one authenticated "
+            "application replica. _AuthFailureLimiter is per-process; extra "
+            "replicas multiply the failure budget. Keep RAI_MULTI_REPLICA/"
+            "WHITEPACT_MULTI_REPLICA unset until a shared limiter exists."
+        )
 
 
 def _build_transport_security() -> Any:
@@ -412,6 +419,9 @@ def _build_transport_security() -> Any:
 
 class _AuthFailureLimiter:
     """Per-process sliding-window limiter on failed Bearer-auth attempts.
+
+    V1 production constraint: one authenticated MCP application replica.
+    This limiter is not cluster-wide. Extra replicas multiply the budget.
 
     Dual-budget partitioning:
     - Credential-specific budget: Keyed by non-secret SHA-256 fingerprint of the supplied credential (`cred:<token_fp>`).

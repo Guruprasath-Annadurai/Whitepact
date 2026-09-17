@@ -602,6 +602,15 @@ class Settings(BaseSettings):
                 raise ValueError(
                     f"Production environment requires a PostgreSQL database URL, got: {self.database_url.split('://')[0]}://"
                 )
+            from responsibleai.db.encryption import field_encryption_is_configured
+
+            if not field_encryption_is_configured():
+                raise ValueError(
+                    "Production environment requires WHITEPACT_FIELD_ENCRYPTION_KEY "
+                    "or RAI_FIELD_ENCRYPTION_KEY. MFA seeds, webhook HMAC secrets, "
+                    "upstream auth tokens, and approval arguments use EncryptedString "
+                    "and must not start in plaintext."
+                )
         return self
 
     @property

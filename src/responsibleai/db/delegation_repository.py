@@ -251,7 +251,14 @@ class DelegationRepository:
         list of ``delegation_id``s actually revoked (already-inactive
         ones are skipped, not re-touched). BFS over the graph, not
         recursion, so depth is bounded by actual data, not the call
-        stack."""
+        stack.
+
+        WP-AUD-015: the entire descendant set is revoked in **one**
+        database transaction together with the governance epoch bump.
+        A crash mid-operation rolls the subtree and the epoch back
+        together. There is no per-node commit that could leave a live
+        descendant after a parent branch revocation starts.
+        """
         now = _now()
         async with self._engine.raw.begin() as conn:
             rows = (

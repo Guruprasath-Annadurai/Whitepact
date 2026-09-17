@@ -17,14 +17,22 @@ Columns currently using `EncryptedString` (audit via
 - `public_incident_reports.reporter_name`, `.reporter_contact`
 - `org_api_keys.mfa_secret` (TOTP seed — see `auth/mfa.py`)
 - `webhook_configs.secret` (HMAC signing secret)
+- `governance_approvals.arguments` (approved action payloads)
+- `governance_upstream_servers.auth_token` (upstream credentials)
+
+Production (`WHITEPACT_ENV`/`RAI_ENV` = production|prod) refuses to
+start unless `WHITEPACT_FIELD_ENCRYPTION_KEY` or
+`RAI_FIELD_ENCRYPTION_KEY` is configured. Local development may leave
+the key unset; `EncryptedString` remains a transparent passthrough.
 
 Design choices, stated plainly:
-- Opt-in via `RAI_FIELD_ENCRYPTION_KEY`. Unset by default so existing
-  self-hosted installs aren't broken by a new required env var — this
-  mirrors how `RAI_OIDC_CLIENT_SECRET` etc. are optional until a
-  deployer configures SSO. When unset, `EncryptedString` is a
-  transparent passthrough (plaintext in, plaintext out) and a decrypt
-  failure is impossible because nothing was ever encrypted.
+- Development remains opt-in via `RAI_FIELD_ENCRYPTION_KEY`. Unset by
+  default so existing self-hosted installs aren't broken by a new
+  required env var — this mirrors how `RAI_OIDC_CLIENT_SECRET` etc.
+  are optional until a deployer configures SSO. When unset,
+  `EncryptedString` is a transparent passthrough (plaintext in,
+  plaintext out) and a decrypt failure is impossible because nothing
+  was ever encrypted.
 - **Key rotation**: `RAI_FIELD_ENCRYPTION_KEY` accepts either one Fernet
   key or a comma-separated list of them. New writes always encrypt with
   the *first* key in the list; reads try every key in the list in order
@@ -97,6 +105,22 @@ def _load_fernet() -> Fernet | MultiFernet | None:
             'python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
         ) from exc
     return fernets[0] if len(fernets) == 1 else MultiFernet(fernets)
+
+
+SENSITIVE_ENCRYPTED_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("org_api_keys", "mfa_secret"),
+    ("webhook_configs", "secret"),
+    ("governance_approvals", "arguments"),
+    ("upstream_mcp_servers", "auth_token"),
+    ("audit_log", "ip_address"),
+    ("public_incident_reports", "reporter_name"),
+    ("public_incident_reports", "reporter_contact"),
+)
+
+
+def field_encryption_is_configured() -> bool:
+    """True when a usable Fernet key is present in the environment."""
+    return _load_fernet() is not None
 
 
 class EncryptedString(TypeDecorator):

@@ -3,7 +3,9 @@
 **Document Status:** CANONICAL SPECIFICATION PASS 4.3 (SECURITY BOUNDARY CLOSURE)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
-**Proposed Migrations:** `0049_runtime_execution_requests.py` through `0052_runtime_worker_leases.py`
+**Proposed Migrations:** `0050_runtime_execution_requests.py` through `0053_runtime_worker_leases.py`
+
+**Canonical migration ownership:** `docs/phase7a-execution/migration-ownership.md` (implemented `0049` = org governance lifecycle).
 
 ---
 
@@ -25,10 +27,10 @@ This audit verifies the physical reality of `ExecutionAuthorization` and all rel
 2. **Missing Action Payload Storage:** Prior to Phase 7A, no table persisted the serialized action payload for asynchronous execution. Digest hashing was present, but payloads could not be reconstructed without re-evaluating policies.
 3. **Approval Consumption Was Disconnected:** Approval consumption was handled in a separate transaction from authorization issuance, risking split state.
 4. **Durable Architecture Introduced:**
-   - `runtime_execution_requests` (Migration 0049): RFC 8785 canonical JSON action payload, append-only, trigger rejects UPDATE/DELETE, universal idempotency key.
-   - `governance_execution_authorizations` (Migration 0050): Losslessly persists all 11 fields; `UNIQUE(approval_id)`.
-   - `runtime_execution_attempts` (Migration 0051): Durable attempt and effect lifecycle, nullable lease fields in `PENDING`, state CHECK constraints, active partial unique index.
-   - `runtime_worker_leases`, `runtime_execution_fences`, and `runtime_execution_dispatch_outbox` (Migration 0052): Monotonic generation counter, synchronous expiry fencing, transactional dispatch outbox, DB-enforced active exclusivity.
+   - `runtime_execution_requests` (Migration 0050): RFC 8785 canonical JSON action payload, append-only, trigger rejects UPDATE/DELETE, universal idempotency key.
+   - `governance_execution_authorizations` (Migration 0051): Losslessly persists all 11 fields; `UNIQUE(approval_id)`.
+   - `runtime_execution_attempts` (Migration 0052): Durable attempt and effect lifecycle, nullable lease fields in `PENDING`, state CHECK constraints, active partial unique index.
+   - `runtime_worker_leases`, `runtime_execution_fences`, and `runtime_execution_dispatch_outbox` (Migration 0053): Monotonic generation counter, synchronous expiry fencing, transactional dispatch outbox, DB-enforced active exclusivity.
 5. **Universal Epoch Revocation:** All 26 audited authority mutations across 13 domain subsystems advance `governance_revocation_epochs.epoch` under a row lock, closing TOCTOU windows between issuance and admission.
 
 ---
@@ -37,7 +39,7 @@ This audit verifies the physical reality of `ExecutionAuthorization` and all rel
 
 | Field Name | Type | Current Codebase Reality | Classification | Durability / Source of Truth |
 | :--- | :--- | :--- | :--- | :--- |
-| `authorization_id` | `str` (UUIDv4) | Generated in memory. Recorded in `governance_execution_nonces` only *after* admission. | **IN MEMORY TODAY** | Primary key in `governance_execution_authorizations` (Mig 0050). |
+| `authorization_id` | `str` (UUIDv4) | Generated in memory. Recorded in `governance_execution_nonces` only *after* admission. | **IN MEMORY TODAY** | Primary key in `governance_execution_authorizations` (Mig 0051). |
 | `organization_id` | `str | None` | Extracted from `action.agent.organization_id`. Verified in `admit_execution()`. | **IN MEMORY TODAY** (Tenant is durable) | Stored in `governance_execution_authorizations` with `ForeignKey("organizations.id", ondelete="RESTRICT")`. |
 | `principal_id` | `str | None` | Extracted from `action.agent.identity.identity_id`. Used in `matches_action()`. | **IN MEMORY TODAY** (Principal is durable) | Stored in `governance_execution_authorizations` to bind subject authority. |
 | `action_digest` | `str` | Computed via `compute_action_digest(action)` (SHA-256 hex). | **IN MEMORY TODAY** | Stored in `governance_execution_authorizations` (VARCHAR(64)) to guarantee tamper-proof action immutability. |

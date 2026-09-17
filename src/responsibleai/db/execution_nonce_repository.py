@@ -13,7 +13,9 @@ from sqlalchemy.exc import IntegrityError
 
 from responsibleai.db.engine import DatabaseEngine
 from responsibleai.db.engine import governance_execution_nonces as nonces
+from responsibleai.db.engine import organizations
 from responsibleai.db.revocation_epoch_repository import lock_epoch
+from responsibleai.rbac.models import GovernanceStatus
 
 
 class NonceAlreadyConsumedError(Exception):
@@ -22,6 +24,10 @@ class NonceAlreadyConsumedError(Exception):
 
 class StaleRevocationEpochError(Exception):
     """Authority changed since the permit was evaluated."""
+
+
+class OrganizationNotGovernableError(Exception):
+    """The organization is missing or not ACTIVE at admission."""
 
 
 class ExecutionNonceRepository:
@@ -35,6 +41,17 @@ class ExecutionNonceRepository:
             raise ValueError("An explicit tenant-bound permit and epoch are required")
         try:
             async with self._engine.raw.begin() as conn:
+                # Canonical lock order: organizations before epochs.
+                status_stmt = select(organizations.c.governance_status).where(
+                    organizations.c.id == organization_id
+                )
+                if conn.dialect.name == "postgresql":
+                    status_stmt = status_stmt.with_for_update()
+                status = (await conn.execute(status_stmt)).scalar_one_or_none()
+                if status != GovernanceStatus.ACTIVE.value:
+                    raise OrganizationNotGovernableError(
+                        "Organization is not ACTIVE for governed execution"
+                    )
                 current = await lock_epoch(conn, organization_id)
                 if current != expected_epoch:
                     raise StaleRevocationEpochError("Permit revocation epoch is stale")

@@ -9,6 +9,8 @@ This document resolves remaining architecture decisions. It does **not**
 activate `PHASE7A_DISPATCHER_ENABLED`. Redis, QueueTicket, worker leases,
 and billing are never execution authority.
 
+**Canonical migration ownership:** `docs/phase7a-execution/migration-ownership.md` (implemented `0049` = org governance lifecycle).
+
 ---
 
 ## 1. Authorization lifecycle (single source of truth)

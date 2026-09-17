@@ -3,7 +3,7 @@
 **Document Status:** CANONICAL SPECIFICATION PASS 2 (ATOMIC AUTHORITY INTEGRATION CORRECTION)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
-**Current Migration Head:** `0048` (`migrations/versions/0048_enforce_paddle_binding_atomicity.py`)
+**Current Migration Head:** `0049` (`migrations/versions/0049_add_organization_governance_status.py`). Unactivated Phase 7A chain: `0050` requests → `0051` authorizations → `0052` attempts → `0053` leases/fences/outbox. Canonical map: `docs/phase7a-execution/migration-ownership.md`.
 
 ---
 

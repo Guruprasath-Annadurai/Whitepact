@@ -3,7 +3,9 @@
 **Document Status:** CANONICAL SPECIFICATION PASS 4.4 (SECURITY BOUNDARY CLOSURE)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
-**Proposed Migrations:** `0049_runtime_execution_requests.py` through `0052_runtime_worker_leases.py`
+**Proposed Migrations:** `0050_runtime_execution_requests.py` through `0053_runtime_worker_leases.py`
+
+**Canonical migration ownership:** `docs/phase7a-execution/migration-ownership.md` (implemented `0049` = org governance lifecycle).
 
 ---
 
@@ -45,9 +47,9 @@ An exhaustive audit of the canonical codebase (`13e8de034f8b31bd7cae4f47398f71b2
 
 | Call Path | Execution Mode | Initial Entrypoint | Issuance Site | Durable Issuance Mechanism | Admission & Queueing | Dispatch & Worker | Execution Linearization & Claim | Pre-Effect CAS | Downstream Execution Backend | Evidence & Audit Pipeline |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Path 1: Governed Local Tool** | HOSTED GOVERNED | `execute_governed_action` in `mcp/governance_integration.py` | `governance_integration.py:468` | `DurableExecutionAuthorizationIssuer.issue` (Mig 0049/0050) | `AdmissionController` + `FairExecutionScheduler` | `ResponsibleWorker` | `ResponsibleWorker` (`admit_execution` + `LEASED->ADMITTED`) | `claim_backend_start` -> `claim_local_effect_start` | `InternalToolExecutor.execute(action, claim)` | `EvidenceStore` (evidence_status=`COMMITTED`) |
+| **Path 1: Governed Local Tool** | HOSTED GOVERNED | `execute_governed_action` in `mcp/governance_integration.py` | `governance_integration.py:468` | `DurableExecutionAuthorizationIssuer.issue` (Mig 0050/0051) | `AdmissionController` + `FairExecutionScheduler` | `ResponsibleWorker` | `ResponsibleWorker` (`admit_execution` + `LEASED->ADMITTED`) | `claim_backend_start` -> `claim_local_effect_start` | `InternalToolExecutor.execute(action, claim)` | `EvidenceStore` (evidence_status=`COMMITTED`) |
 | **Path 2: Approval Local Tool** | HOSTED GOVERNED | `resolve_approval_and_execute` in `mcp/governance_integration.py` | `governance_integration.py:816` | `ApprovalExecutionService.consume_and_issue` (Atomic TX) | `AdmissionController` + `FairExecutionScheduler` | `ResponsibleWorker` | `ResponsibleWorker` (`admit_execution` + `LEASED->ADMITTED`) | `claim_backend_start` -> `claim_local_effect_start` | `InternalToolExecutor.execute(action, claim)` | `EvidenceStore` (evidence_status=`COMMITTED`) |
-| **Path 3: Upstream MCP Dispatch** | HOSTED GOVERNED | `dispatch_upstream_action` in `mcp/upstream_dispatch.py` | `upstream_dispatch.py:322` | `DurableExecutionAuthorizationIssuer.issue` (Mig 0049/0050) | `AdmissionController` + `FairExecutionScheduler` | `ResponsibleWorker` | `ResponsibleWorker` (`admit_execution` + `LEASED->ADMITTED`) | `claim_backend_start` -> `claim_external_effect_transmission` | `UpstreamMCPExecutor.execute(action, claim, target)` | `EvidenceStore` (evidence_status=`COMMITTED`) |
+| **Path 3: Upstream MCP Dispatch** | HOSTED GOVERNED | `dispatch_upstream_action` in `mcp/upstream_dispatch.py` | `upstream_dispatch.py:322` | `DurableExecutionAuthorizationIssuer.issue` (Mig 0050/0051) | `AdmissionController` + `FairExecutionScheduler` | `ResponsibleWorker` | `ResponsibleWorker` (`admit_execution` + `LEASED->ADMITTED`) | `claim_backend_start` -> `claim_external_effect_transmission` | `UpstreamMCPExecutor.execute(action, claim, target)` | `EvidenceStore` (evidence_status=`COMMITTED`) |
 | **Path 4: Approval Upstream MCP** | HOSTED GOVERNED | `resolve_approval_and_execute` with upstream target | `governance_integration.py:816` | `ApprovalExecutionService.consume_and_issue` (Atomic TX) | `AdmissionController` + `FairExecutionScheduler` | `ResponsibleWorker` | `ResponsibleWorker` (`admit_execution` + `LEASED->ADMITTED`) | `claim_backend_start` -> `claim_external_effect_transmission` | `UpstreamMCPExecutor.execute(action, claim, target)` | `EvidenceStore` (evidence_status=`COMMITTED`) |
 
 ---
@@ -149,14 +151,14 @@ async def execute(
 ## 6. Activation Gate (Task 10 Dispatcher Gate)
 
 Task 10 (Dispatcher & Worker Activation) remains strictly closed until all prerequisites are implemented and tested:
-1. Durable immutable request storage (`0049_runtime_execution_requests`).
+1. Durable immutable request storage (`0050_runtime_execution_requests`).
 2. Tenant-scoped idempotent issuance (`UNIQUE(organization_id, idempotency_key)`).
 3. All 3 production issuance paths closed via PostgreSQL persistence.
 4. Atomic approval consumption and authorization issuance (`UNIQUE(approval_id)`).
 5. Canonical admission transaction combining nonce insert, authorization status update, and attempt transition `LEASED -> ADMITTED` (`rowcount == 1`).
 6. Universal epoch invalidation covering all 26 audited authority mutations across 13 domain subsystems.
-7. Monotonic worker fencing (`0052_runtime_worker_leases` & `runtime_execution_fences`).
-8. Durable attempt state machine (`0051_runtime_execution_attempts`, `evidence_status` column).
+7. Monotonic worker fencing (`0053_runtime_worker_leases` & `runtime_execution_fences`).
+8. Durable attempt state machine (`0052_runtime_execution_attempts`, `evidence_status` column).
 9. One-shot backend-start claim generating raw `backend_start_token` and storing `backend_start_token_hash` on attempt.
 10. Atomic pre-effect CAS transitions (`claim_local_effect_start` & `claim_external_effect_transmission`) synchronously revalidating active unexpired lease `FOR UPDATE` and closing read/write races.
 11. Pre-effect CAS validation of durable request `action_digest` and single-use consumption of token hash (`NULL`).

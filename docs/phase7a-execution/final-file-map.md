@@ -4,7 +4,7 @@
 **Source Design SHA:** `dfbeb2e6d9fad575fc45b64789c63b1c1c0b5b01` (Worktree: `/Users/ag/whitepact-phase7a-runtime-preparation`)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
-**Current Migration Head:** `0048` (`migrations/versions/0048_enforce_paddle_binding_atomicity.py`)
+**Current Migration Head:** `0049` (`migrations/versions/0049_add_organization_governance_status.py`). Unactivated Phase 7A chain: `0050` requests → `0051` authorizations → `0052` attempts → `0053` leases/fences/outbox. Canonical map: `docs/phase7a-execution/migration-ownership.md`.
 
 ---
 
@@ -61,13 +61,13 @@ Phase 7A adheres to the core architecture rule:
 ## 3. DURABLE AUTHORITY, ATTEMPTS & CANONICAL ADMISSION
 | Exact Path | Action | Responsibility / Symbols | Dependent Tasks | Tests |
 | :--- | :--- | :--- | :--- | :--- |
-| `migrations/versions/0049_runtime_execution_requests.py` | CREATE | Creates `runtime_execution_requests` table. Down-revision: `0048`. RFC 8785 canonical JSON payload, `action_digest`, universal idempotency key, trigger rejects all UPDATE/DELETE. | Task 8A1 | `tests/test_postgres_migrations.py` |
+| `migrations/versions/0050_runtime_execution_requests.py` | CREATE | Creates `runtime_execution_requests` table. Down-revision: `0048`. RFC 8785 canonical JSON payload, `action_digest`, universal idempotency key, trigger rejects all UPDATE/DELETE. | Task 8A1 | `tests/test_postgres_migrations.py` |
 | `src/responsibleai/db/execution_request_repository.py` | CREATE | Async PostgreSQL repository for execution requests (`create()`, `get()`). | Task 8A1 | `tests/db/test_execution_request_repository.py` |
-| `migrations/versions/0050_runtime_execution_authorizations.py` | CREATE | Creates `governance_execution_authorizations` table. Down-revision: `0049`. Losslessly persists all 11 fields; `UNIQUE(approval_id)`; status machine (`ISSUED`, `CONSUMED`). | Task 8A2 | `tests/test_postgres_migrations.py` |
+| `migrations/versions/0051_runtime_execution_authorizations.py` | CREATE | Creates `governance_execution_authorizations` table. Down-revision: `0049`. Losslessly persists all 11 fields; `UNIQUE(approval_id)`; status machine (`ISSUED`, `CONSUMED`). | Task 8A2 | `tests/test_postgres_migrations.py` |
 | `src/responsibleai/db/execution_authorization_repository.py` | CREATE | Async PostgreSQL repository for authorizations (`create()`, `get()`). | Task 8A2 | `tests/db/test_execution_authorization_repository.py` |
-| `migrations/versions/0051_runtime_execution_attempts.py` | CREATE | Creates `runtime_execution_attempts` table. Down-revision: `0050`. Nullable lease fields in PENDING, `evidence_status` column (`PENDING`, `COMMITTED`, `INCOMPLETE`), `backend_start_token_hash` column (F4.3-02), CHECK constraints, active partial unique index. | Task 8A3 | `tests/test_postgres_migrations.py` |
+| `migrations/versions/0052_runtime_execution_attempts.py` | CREATE | Creates `runtime_execution_attempts` table. Down-revision: `0050`. Nullable lease fields in PENDING, `evidence_status` column (`PENDING`, `COMMITTED`, `INCOMPLETE`), `backend_start_token_hash` column (F4.3-02), CHECK constraints, active partial unique index. | Task 8A3 | `tests/test_postgres_migrations.py` |
 | `src/responsibleai/db/execution_attempt_repository.py` | CREATE | PostgreSQL repository for execution attempts: `create_initial_attempt()`, `claim_backend_start()` (stores token hash), `claim_local_effect_start()` (revalidates lease `FOR UPDATE`, checks request `action_digest`, verifies/consumes token hash), `claim_external_effect_transmission()` (revalidates lease `FOR UPDATE`, checks request `action_digest` and `target_fingerprint`, verifies/consumes token hash). | Task 8A3, 9A, 9B | `tests/db/test_execution_attempt_repository.py` |
-| `migrations/versions/0052_runtime_worker_leases.py` | CREATE | Creates `runtime_worker_leases` and `runtime_execution_fences` tables. Down-revision: `0051`. Monotonic generation allocation, partial unique index `WHERE status = 'ACTIVE'`. | Task 8A4 | `tests/test_postgres_migrations.py` |
+| `migrations/versions/0053_runtime_worker_leases.py` | CREATE | Creates `runtime_worker_leases` and `runtime_execution_fences` tables. Down-revision: `0051`. Monotonic generation allocation, partial unique index `WHERE status = 'ACTIVE'`. | Task 8A4 | `tests/test_postgres_migrations.py` |
 | `src/responsibleai/db/execution_fence_repository.py` | CREATE | PostgreSQL repository for atomic fence generation increment: `create_fence()`, `increment_generation()`. | Task 8A4 | `tests/db/test_execution_fence_repository.py` |
 | `src/responsibleai/runtime/worker/lease.py` | CREATE | `WorkerLease` data contract keyed on `execution_id`, `lease_generation`, and `attempt_id`. | Task 8A4 | `tests/runtime/test_worker_lease.py` |
 | `src/responsibleai/db/admission_lease_repository.py` | CREATE | PostgreSQL repository for worker leases with row-level `FOR UPDATE` locking, synchronous expiry checking, and heartbeat updates. | Task 8A4, 9A | `tests/db/test_admission_lease_repository.py` |

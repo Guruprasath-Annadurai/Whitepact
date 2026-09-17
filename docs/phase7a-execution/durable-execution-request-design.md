@@ -3,7 +3,9 @@
 **Document Status:** CANONICAL SPECIFICATION PASS 4.1 (SECURITY CONSISTENCY REMEDIATION)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
-**Proposed Migrations:** `0049_runtime_execution_requests.py` (down-revision: `0048`) and `0052_runtime_worker_leases.py` (for execution fences)
+**Proposed Migrations:** `0050_runtime_execution_requests.py` (down-revision: `0049`) and `0053_runtime_worker_leases.py` (for execution fences)
+
+**Canonical migration ownership:** `docs/phase7a-execution/migration-ownership.md` (implemented `0049` = org governance lifecycle).
 
 ---
 
@@ -20,7 +22,7 @@ In asynchronous and distributed execution, in-memory actions or lightweight dige
 
 ## 2. Table Schema: `runtime_execution_requests`
 
-Migration `0049_runtime_execution_requests.py` establishes the durable, append-only store for canonical execution inputs:
+Migration `0050_runtime_execution_requests.py` establishes the durable, append-only store for canonical execution inputs:
 
 ```sql
 CREATE TABLE runtime_execution_requests (
@@ -135,7 +137,7 @@ To prevent duplicate execution permits from being minted on client retries:
 
 ## 6. Dedicated Execution Fence Counter Table
 
-To support strictly monotonic, concurrency-safe worker fencing without race conditions, Migration `0052_runtime_worker_leases.py` creates `runtime_execution_fences`:
+To support strictly monotonic, concurrency-safe worker fencing without race conditions, Migration `0053_runtime_worker_leases.py` creates `runtime_execution_fences`:
 
 ```sql
 CREATE TABLE runtime_execution_fences (
@@ -187,7 +189,7 @@ class QueueTicket:
 
 ## 8. Canonical Transactional Dispatch Outbox (`runtime_execution_dispatch_outbox`)
 
-To eliminate the crash window between PostgreSQL durable authorization issuance and Redis/memory queue publication (Finding `7A-F01`), Migration `0052_runtime_worker_leases.py` creates `runtime_execution_dispatch_outbox`:
+To eliminate the crash window between PostgreSQL durable authorization issuance and Redis/memory queue publication (Finding `7A-F01`), Migration `0053_runtime_worker_leases.py` creates `runtime_execution_dispatch_outbox`:
 
 ```sql
 CREATE TABLE runtime_execution_dispatch_outbox (
