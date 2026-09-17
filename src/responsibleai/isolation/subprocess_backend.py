@@ -55,8 +55,9 @@ class LocalSubprocessBackend(IsolationBackend):
             extra_env=request.environment_overrides,
         )
 
-        # Runner script executed inside the child process
-        # Invokes responsibleai.mcp.tools:dispatch_tool
+        # Runner imports dispatch_tool without the package-root sklearn tax.
+        # STRICT profiles cap RLIMIT_AS at 256 MiB; HallucinationDetector is
+        # lazy-loaded only for rai_hallucination.
         runner_code = """
 import sys
 import json

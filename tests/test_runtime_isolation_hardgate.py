@@ -26,6 +26,8 @@ from typing import Any
 
 import pytest
 
+from tests.docker_runtime import DOCKER_UNAVAILABLE_REASON
+
 from responsibleai.governance.execution import (
     AuthorizationActionMismatchError,
     AuthorizationAlreadyConsumedError,
@@ -65,7 +67,7 @@ def _docker_available() -> bool:
 
 
 pytestmark = pytest.mark.skipif(
-    not _docker_available(), reason="Docker daemon is required for real container hard-gate tests"
+    not _docker_available(), reason=DOCKER_UNAVAILABLE_REASON
 )
 
 

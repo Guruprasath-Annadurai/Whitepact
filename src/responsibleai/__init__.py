@@ -3,88 +3,91 @@
 """
 ResponsibleAI — Enterprise AI Governance Platform.
 
-Core governance modules:
-- TrustScoreEngine      : composite AI trust metric (0-100, A-F grade)
-- AIPassport            : verifiable trust certification artifact
-- GuardrailsEngine      : PII detection, toxicity filtering, policy enforcement
-- HallucinationDetector : factual reliability estimation
-- ComplianceEngine      : NIST AI RMF, EU AI Act, ISO 42001 evaluation
-- RedTeamSimulator      : automated adversarial probing
-
-Cost Intelligence:
-- CostTracker           : SQLite-backed token usage and cost tracking
-- CostAnalyzer          : prompt efficiency and waste detection
-- ModelRouter           : cheapest acceptable model for a given task
-
-Drift Monitoring:
-- TrustDriftMonitor     : detect trust score degradation over time
+Public names are resolved lazily. Isolated execution children import this
+package under a STRICT 256 MiB address-space ceiling; eagerly importing
+sklearn/scipy (via HallucinationDetector) is an accidental import tax and
+is not required for the isolation dispatch path.
 """
 
-from responsibleai.compliance.engine import (
-    ComplianceEngine,
-    ComplianceReport,
-    ComplianceStatus,
-    EUAIActRiskTier,
-    Framework,
-)
-from responsibleai.cost.analyzer import CostAnalyzer
-from responsibleai.cost.models import BudgetPolicy, ModelPricing, TokenUsage
-from responsibleai.cost.router import ModelRouter
-from responsibleai.cost.tracker import CostTracker
-from responsibleai.drift.monitor import DriftAlert, TrustDriftMonitor
-from responsibleai.guardrails.engine import (
-    GuardrailsEngine,
-    GuardrailsPolicy,
-    GuardrailsResult,
-    PIICategory,
-    ToxicityCategory,
-)
-from responsibleai.hallucination.detector import HallucinationDetector, HallucinationResult
-from responsibleai.redteam.simulator import (
-    AttackCategory,
-    AttackVector,
-    RedTeamReport,
-    RedTeamSimulator,
-)
-from responsibleai.trust.passport import AIPassport, PassportGenerator
-from responsibleai.trust.score import TrustScore, TrustScoreEngine
+from __future__ import annotations
+
+import importlib
+from typing import Any
 
 __version__ = "1.2.6"
 
 __all__ = [
-    # Trust
     "TrustScoreEngine",
     "TrustScore",
     "AIPassport",
     "PassportGenerator",
-    # Guardrails
     "GuardrailsEngine",
     "GuardrailsPolicy",
     "GuardrailsResult",
     "PIICategory",
     "ToxicityCategory",
-    # Hallucination
     "HallucinationDetector",
     "HallucinationResult",
-    # Compliance
     "ComplianceEngine",
     "ComplianceReport",
     "ComplianceStatus",
     "EUAIActRiskTier",
     "Framework",
-    # Red Team
     "RedTeamSimulator",
     "RedTeamReport",
     "AttackVector",
     "AttackCategory",
-    # Cost Intelligence
     "CostTracker",
     "CostAnalyzer",
     "ModelRouter",
     "TokenUsage",
     "ModelPricing",
     "BudgetPolicy",
-    # Drift
     "TrustDriftMonitor",
     "DriftAlert",
 ]
+
+_EXPORTS: dict[str, tuple[str, str]] = {
+    "TrustScoreEngine": ("responsibleai.trust.score", "TrustScoreEngine"),
+    "TrustScore": ("responsibleai.trust.score", "TrustScore"),
+    "AIPassport": ("responsibleai.trust.passport", "AIPassport"),
+    "PassportGenerator": ("responsibleai.trust.passport", "PassportGenerator"),
+    "GuardrailsEngine": ("responsibleai.guardrails.engine", "GuardrailsEngine"),
+    "GuardrailsPolicy": ("responsibleai.guardrails.engine", "GuardrailsPolicy"),
+    "GuardrailsResult": ("responsibleai.guardrails.engine", "GuardrailsResult"),
+    "PIICategory": ("responsibleai.guardrails.engine", "PIICategory"),
+    "ToxicityCategory": ("responsibleai.guardrails.engine", "ToxicityCategory"),
+    "HallucinationDetector": ("responsibleai.hallucination.detector", "HallucinationDetector"),
+    "HallucinationResult": ("responsibleai.hallucination.detector", "HallucinationResult"),
+    "ComplianceEngine": ("responsibleai.compliance.engine", "ComplianceEngine"),
+    "ComplianceReport": ("responsibleai.compliance.engine", "ComplianceReport"),
+    "ComplianceStatus": ("responsibleai.compliance.engine", "ComplianceStatus"),
+    "EUAIActRiskTier": ("responsibleai.compliance.engine", "EUAIActRiskTier"),
+    "Framework": ("responsibleai.compliance.engine", "Framework"),
+    "RedTeamSimulator": ("responsibleai.redteam.simulator", "RedTeamSimulator"),
+    "RedTeamReport": ("responsibleai.redteam.simulator", "RedTeamReport"),
+    "AttackVector": ("responsibleai.redteam.simulator", "AttackVector"),
+    "AttackCategory": ("responsibleai.redteam.simulator", "AttackCategory"),
+    "CostTracker": ("responsibleai.cost.tracker", "CostTracker"),
+    "CostAnalyzer": ("responsibleai.cost.analyzer", "CostAnalyzer"),
+    "ModelRouter": ("responsibleai.cost.router", "ModelRouter"),
+    "TokenUsage": ("responsibleai.cost.models", "TokenUsage"),
+    "ModelPricing": ("responsibleai.cost.models", "ModelPricing"),
+    "BudgetPolicy": ("responsibleai.cost.models", "BudgetPolicy"),
+    "TrustDriftMonitor": ("responsibleai.drift.monitor", "TrustDriftMonitor"),
+    "DriftAlert": ("responsibleai.drift.monitor", "DriftAlert"),
+}
+
+
+def __getattr__(name: str) -> Any:
+    spec = _EXPORTS.get(name)
+    if spec is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module = importlib.import_module(spec[0])
+    value = getattr(module, spec[1])
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted(list(globals().keys()) + list(__all__))

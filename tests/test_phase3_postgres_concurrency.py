@@ -9,6 +9,9 @@ import asyncio
 import pytest
 from sqlalchemy import select
 
+from tests.pg_test_url import isolated_pg_url
+
+from responsibleai.db.migrate import run_migrations_or_raise
 from responsibleai.db.engine import (
     create_engine,
     organizations,
@@ -39,39 +42,37 @@ from responsibleai.trust_fabric.errors import (
     OrganizationAlreadyBootstrappedError,
 )
 
-PG_TEST_URL = "postgresql://ag@/wp_phase3_test?host=/tmp"
-
-
 @pytest.fixture
 async def pg_engine():
-    engine = create_engine(PG_TEST_URL)
-    await engine.init()
-    async with engine.raw.begin() as conn:
-        # Clean test tables in child-to-parent order
-        await conn.execute(trust_fabric_federated_assertions.delete())
-        await conn.execute(trust_fabric_challenges.delete())
-        await conn.execute(trust_fabric_conflicts.delete())
-        await conn.execute(trust_fabric_passports.delete())
-        await conn.execute(trust_fabric_bootstrap_records.delete())
-        await conn.execute(trust_fabric_authority_edges.delete())
-        await conn.execute(trust_fabric_relationships.delete())
-        await conn.execute(trust_fabric_assertions.delete())
-        await conn.execute(trust_fabric_sources.delete())
-        await conn.execute(trust_fabric_identifiers.delete())
-        await conn.execute(trust_fabric_trust_roots.delete())
-        await conn.execute(trust_fabric_principals.delete())
-        await conn.execute(organizations.delete())
-        await conn.execute(
-            organizations.insert(),
-            [
-                {"id": "org_pg_race", "name": "PG Race Org", "slug": "pgrace", "created_at": "now"},
-                {"id": "org_pg_ident", "name": "PG Ident Org", "slug": "pgident", "created_at": "now"},
-            ],
-        )
-    try:
-        yield engine
-    finally:
-        await engine.close()
+    async for url in isolated_pg_url("wp_phase3"):
+        engine = create_engine(url)
+        await run_migrations_or_raise(url)
+        async with engine.raw.begin() as conn:
+            # Clean test tables in child-to-parent order
+            await conn.execute(trust_fabric_federated_assertions.delete())
+            await conn.execute(trust_fabric_challenges.delete())
+            await conn.execute(trust_fabric_conflicts.delete())
+            await conn.execute(trust_fabric_passports.delete())
+            await conn.execute(trust_fabric_bootstrap_records.delete())
+            await conn.execute(trust_fabric_authority_edges.delete())
+            await conn.execute(trust_fabric_relationships.delete())
+            await conn.execute(trust_fabric_assertions.delete())
+            await conn.execute(trust_fabric_sources.delete())
+            await conn.execute(trust_fabric_identifiers.delete())
+            await conn.execute(trust_fabric_trust_roots.delete())
+            await conn.execute(trust_fabric_principals.delete())
+            await conn.execute(organizations.delete())
+            await conn.execute(
+                organizations.insert(),
+                [
+                    {"id": "org_pg_race", "name": "PG Race Org", "slug": "pgrace", "created_at": "now"},
+                    {"id": "org_pg_ident", "name": "PG Ident Org", "slug": "pgident", "created_at": "now"},
+                ],
+            )
+        try:
+            yield engine
+        finally:
+            await engine.close()
 
 
 @pytest.mark.asyncio

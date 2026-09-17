@@ -20,7 +20,6 @@ from responsibleai.eval.models import BenchmarkSuite
 from responsibleai.governance.causal_influence import analyze_causal_influence, parse_provenance
 from responsibleai.governance.memory_firewall import scan_memory_write
 from responsibleai.guardrails.engine import GuardrailsEngine
-from responsibleai.hallucination.detector import HallucinationDetector
 from responsibleai.incidents.logic import build_incident_record
 from responsibleai.integrations.client import TrustClient
 from responsibleai.redteam.simulator import RedTeamSimulator
@@ -30,7 +29,7 @@ from responsibleai.trust.score import TrustScoreEngine
 _logger = logging.getLogger("responsibleai.mcp.tools")
 
 _guardrails = GuardrailsEngine()
-_hallucination = HallucinationDetector()
+_hallucination = None
 _trust_engine = TrustScoreEngine()
 _redteam = RedTeamSimulator()
 _compliance = ComplianceEngine()
@@ -1240,11 +1239,21 @@ def _source_contradicts_response(source: str, text: str) -> bool:
     return False
 
 
+def _get_hallucination():
+    """Load sklearn-backed detector only when rai_hallucination is invoked."""
+    global _hallucination
+    if _hallucination is None:
+        from responsibleai.hallucination.detector import HallucinationDetector
+
+        _hallucination = HallucinationDetector()
+    return _hallucination
+
+
 async def _handle_hallucination(args: dict[str, Any]) -> dict[str, Any]:
     text = str(args.get("text", ""))
     candidates = args.get("candidates", [])
     source = args.get("source")
-    result = _hallucination.analyze(text, candidates=candidates if candidates else None)
+    result = _get_hallucination().analyze(text, candidates=candidates if candidates else None)
     payload = result.to_dict()
 
     contradicts_source = bool(source) and _source_contradicts_response(str(source), text)
@@ -1367,7 +1376,7 @@ async def _handle_health(args: dict[str, Any]) -> dict[str, Any]:
     modules = {
         "guardrails": "ok" if _guardrails is not None else "unavailable",
         "trust_score": "ok" if _trust_engine is not None else "unavailable",
-        "hallucination": "ok" if _hallucination is not None else "unavailable",
+        "hallucination": "ok",
         "compliance": "ok" if _compliance is not None else "unavailable",
         "redteam": "ok" if _redteam is not None else "unavailable",
         "passport": "ok" if _passport_gen is not None else "unavailable",

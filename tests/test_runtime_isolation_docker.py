@@ -23,6 +23,8 @@ import shutil
 
 import pytest
 
+from tests.docker_runtime import DOCKER_UNAVAILABLE_REASON
+
 from responsibleai.governance.execution import (
     ExecutionAuthorization,
     authorize_execution,
@@ -50,7 +52,7 @@ def _docker_available() -> bool:
     return os.system("docker info >/dev/null 2>&1") == 0
 
 
-pytestmark = pytest.mark.skipif(not _docker_available(), reason="Docker daemon is required for real container tests")
+pytestmark = pytest.mark.skipif(not _docker_available(), reason=DOCKER_UNAVAILABLE_REASON)
 
 
 def _make_action(tool_name: str, args: dict, *, org_id: str = "tenant-alpha") -> ActionRequest:

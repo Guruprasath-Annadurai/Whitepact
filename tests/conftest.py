@@ -23,6 +23,16 @@ from biasbuster.providers.base import (  # noqa: E402
     CompletionResponse,
 )
 
+
+def pytest_configure(config):
+    """Point env-gated PostgreSQL tests at the isolated instance when reachable."""
+    try:
+        from tests.pg_test_url import configure_session_pg_env
+
+        configure_session_pg_env()
+    except Exception:
+        pass
+
 TEST_GOVERNANCE_PURPOSE = "automated-test"
 
 

@@ -9,7 +9,6 @@ Skipped only when PostgreSQL / asyncpg are genuinely unavailable.
 from __future__ import annotations
 
 import asyncio
-import os
 import uuid
 from collections.abc import AsyncGenerator
 
@@ -33,70 +32,18 @@ from responsibleai.governance import (
 from responsibleai.governance.approval import ApprovalStatus, build_approval_request
 from responsibleai.rbac.models import GovernanceStatus, Plan
 
-DEFAULT_ADMIN_URLS = (
-    os.environ.get("WHITEPACT_TEST_PG_ADMIN_URL", ""),
-    "postgresql://wp:wp@127.0.0.1:55432/postgres",
-    "postgresql://ag@localhost/postgres?host=/tmp",
-)
-
-
-async def _first_reachable_admin() -> str | None:
-    try:
-        import asyncpg
-    except ImportError:
-        return None
-    for url in DEFAULT_ADMIN_URLS:
-        if not url:
-            continue
-        try:
-            conn = await asyncpg.connect(url, timeout=2)
-            await conn.close()
-            return url
-        except Exception:
-            continue
-    return None
-
-
-def _db_url(admin_url: str, db_name: str) -> str:
-    if admin_url.endswith("/postgres"):
-        return admin_url[: -len("postgres")] + db_name
-    if "localhost/postgres?" in admin_url:
-        return admin_url.replace("localhost/postgres?", f"localhost/{db_name}?")
-    return admin_url.rsplit("/", 1)[0] + "/" + db_name
+from tests.pg_test_url import isolated_pg_url
 
 
 @pytest.fixture
 async def pg_url() -> AsyncGenerator[str, None]:
-    admin_url = await _first_reachable_admin()
-    if admin_url is None:
-        pytest.skip("PostgreSQL test instance not available")
-    import asyncpg
-
-    db_name = f"wp_v1_c3_{uuid.uuid4().hex[:12]}"
-    admin = await asyncpg.connect(admin_url)
-    await admin.execute(f'CREATE DATABASE "{db_name}"')
-    await admin.close()
-    url = _db_url(admin_url, db_name)
-    engine = create_engine(url)
-    try:
-        await engine.init()
-    except Exception:
-        await engine.close()
-        pytest.skip("PostgreSQL test database could not be initialized")
-    await engine.close()
-    try:
+    async for url in isolated_pg_url("wp_v1_c3"):
+        engine = create_engine(url)
+        try:
+            await engine.init()
+        finally:
+            await engine.close()
         yield url
-    finally:
-        admin = await asyncpg.connect(admin_url)
-        await admin.execute(
-            f"""
-            SELECT pg_terminate_backend(pid)
-            FROM pg_stat_activity
-            WHERE datname = '{db_name}' AND pid <> pg_backend_pid()
-            """
-        )
-        await admin.execute(f'DROP DATABASE IF EXISTS "{db_name}"')
-        await admin.close()
 
 
 @pytest.mark.asyncio

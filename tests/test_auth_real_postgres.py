@@ -26,6 +26,8 @@ import time
 import uuid
 from collections.abc import AsyncGenerator
 
+from tests.pg_test_url import isolated_pg_url
+
 import asyncpg
 import pytest
 from alembic.config import Config
@@ -47,30 +49,12 @@ from responsibleai.db.paddle_billing_repository import PaddleBillingEventReposit
 from responsibleai.db.web_identity_repository import WebIdentityRepository
 from responsibleai.rbac.models import Plan
 
-PG_ADMIN_URL = "postgresql://ag@localhost/postgres?host=/tmp"
-PG_BASE_URL = "postgresql://ag@localhost/{db_name}?host=/tmp"
-
 
 @pytest.fixture
 async def pg_test_db() -> AsyncGenerator[str, None]:
     """Create a temporary isolated PostgreSQL database and drop it on cleanup."""
-    db_name = f"wp_auth_pg_{uuid.uuid4().hex[:12]}"
-    admin_conn = await asyncpg.connect(PG_ADMIN_URL)
-    await admin_conn.execute(f'CREATE DATABASE "{db_name}"')
-    await admin_conn.close()
-
-    db_url = PG_BASE_URL.format(db_name=db_name)
-    try:
-        yield db_url
-    finally:
-        admin_conn = await asyncpg.connect(PG_ADMIN_URL)
-        await admin_conn.execute(f"""
-            SELECT pg_terminate_backend(pid)
-            FROM pg_stat_activity
-            WHERE datname = '{db_name}' AND pid <> pg_backend_pid()
-        """)
-        await admin_conn.execute(f'DROP DATABASE IF EXISTS "{db_name}"')
-        await admin_conn.close()
+    async for url in isolated_pg_url('wp_auth_pg'):
+        yield url
 
 
 def test_one_canonical_alembic_head():

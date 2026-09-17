@@ -17,6 +17,8 @@ import shutil
 
 import pytest
 
+from tests.docker_runtime import DOCKER_UNAVAILABLE_REASON
+
 from responsibleai.isolation.broker import IsolationBroker
 from responsibleai.isolation.container_backend import DockerContainerBackend
 from responsibleai.isolation.errors import (
@@ -37,7 +39,7 @@ def _docker_available() -> bool:
     return os.system("docker info >/dev/null 2>&1") == 0
 
 
-pytestmark = pytest.mark.skipif(not _docker_available(), reason="Docker daemon is required for container resource tests")
+pytestmark = pytest.mark.skipif(not _docker_available(), reason=DOCKER_UNAVAILABLE_REASON)
 
 
 @pytest.mark.asyncio

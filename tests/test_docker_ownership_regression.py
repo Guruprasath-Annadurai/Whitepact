@@ -14,6 +14,8 @@ import uuid
 
 import pytest
 
+from tests.docker_runtime import DOCKER_UNAVAILABLE_REASON, docker_available
+
 from responsibleai.isolation.container_backend import DockerContainerBackend
 from responsibleai.isolation.models import (
     DEFAULT_STRICT_PROFILE,
@@ -21,6 +23,8 @@ from responsibleai.isolation.models import (
     IsolationProfile,
     ResourceLimits,
 )
+
+pytestmark = pytest.mark.skipif(not docker_available(), reason=DOCKER_UNAVAILABLE_REASON)
 
 SLOW_SUCCESS_SCRIPT = """
 import sys, json, time
