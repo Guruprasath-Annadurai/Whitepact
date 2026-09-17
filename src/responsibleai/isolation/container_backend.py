@@ -67,7 +67,11 @@ class DockerContainerBackend(IsolationBackend):
         stable_seconds: float,
         wait_seconds: float,
     ) -> None:
-        """Remove uniquely named containers, waiting out late dockerd registration."""
+        """Remove uniquely named containers, waiting out late dockerd registration.
+
+        Synchronous on purpose so it can run in a worker thread. Callers must
+        not run this on the asyncio event loop.
+        """
         deadline = time.monotonic() + wait_seconds
         gone_since: dict[str, float | None] = {target: None for target in targets}
         while time.monotonic() < deadline:
@@ -110,6 +114,34 @@ class DockerContainerBackend(IsolationBackend):
             if not remaining:
                 return
             time.sleep(0.2)
+
+    async def _remove_containers_uninterruptible(
+        self,
+        targets: list[str],
+        *,
+        stable_seconds: float,
+        wait_seconds: float,
+    ) -> None:
+        """Run container removal off the event loop, even if this task is cancelled."""
+        current = asyncio.current_task()
+        restored = 0
+        if current is not None and hasattr(current, "uncancel"):
+            while current.cancelling() > 0:
+                current.uncancel()
+                restored += 1
+        try:
+            await asyncio.shield(
+                asyncio.to_thread(
+                    self._remove_containers,
+                    targets,
+                    stable_seconds=stable_seconds,
+                    wait_seconds=wait_seconds,
+                )
+            )
+        finally:
+            for _ in range(restored):
+                if current is not None:
+                    current.cancel()
 
     async def execute(self, request: IsolatedExecutionRequest) -> ExecutionOutcome:
         if not self.is_available():
@@ -259,10 +291,10 @@ if __name__ == "__main__":
                 # asynchronous create. Retry rm -f until the uniquely named
                 # container is gone; never filter by org/action prefix.
                 incomplete = timed_out or proc.returncode is None
-                self._remove_containers(
+                await self._remove_containers_uninterruptible(
                     cleanup_targets,
                     stable_seconds=3.0 if incomplete else 0.0,
-                    wait_seconds=25.0 if incomplete else 2.0,
+                    wait_seconds=12.0 if incomplete else 2.0,
                 )
 
                 # Ensure the docker client process is not left as a zombie.
