@@ -265,6 +265,7 @@ if __name__ == "__main__":
                 except Exception:
                     pass
             finally:
+                duration = time.monotonic() - start_time
                 # Guarantee container removal for ALL exit paths including
                 # asyncio.CancelledError, TimeoutError, and unexpected exceptions.
                 #
@@ -305,7 +306,6 @@ if __name__ == "__main__":
                         pass
 
 
-            duration = time.monotonic() - start_time
             max_out = limits.max_output_bytes
             stdout_str = stdout_data[:max_out].decode("utf-8", errors="replace")
             stderr_str = stderr_data[:max_out].decode("utf-8", errors="replace")
