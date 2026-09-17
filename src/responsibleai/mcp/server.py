@@ -369,25 +369,24 @@ def _build_transport_security() -> Any:
 
 
 class _AuthFailureLimiter:
-    """Per-process sliding-window limiter on failed Bearer-auth attempts,
-    keyed by client IP — blocks credential-stuffing/brute-force probing of
-    `/mcp` and `/sse` before it reaches `OrgRepository.authenticate`'s
-    database round trip. Deliberately separate from `PlanRateLimiter`
-    (dashboard/plan_rate_limiter.py): that one meters *successful*,
-    authenticated tool calls against a billing plan; this one guards the
-    auth boundary itself and has no concept of an org or plan yet.
+    """Per-process sliding-window limiter on failed Bearer-auth attempts.
 
-    In-memory, so this is per-replica, not cluster-wide — same documented
-    limitation as everything else in this codebase that isn't backed by
-    Postgres/Redis (see `DatabaseEngine`'s docstring). A determined
-    attacker distributing requests across replicas isn't stopped by this
-    alone; it's a real speed bump against the common single-source case,
-    not a claim of distributed rate limiting.
+    Dual-budget partitioning:
+    - Credential-specific budget: Keyed by non-secret SHA-256 fingerprint of the supplied credential (`cred:<token_fp>`).
+      Prevents an attacker using a bad token from exhausting the failure budget of other clients on the same proxy/IP.
+    - Anonymous / IP budget: Keyed by peer host (`anon:<ip>`) for requests with no Authorization header.
+    - Peer aggregate budget: An IP-level safety ceiling across multiple distinct failing credentials to prevent distributed brute-force.
     """
 
-    def __init__(self, max_failures: int, window_seconds: float) -> None:
+    def __init__(
+        self,
+        max_failures: int,
+        window_seconds: float,
+        peer_max_failures: int = 50,
+    ) -> None:
         self._max_failures = max_failures
         self._window_seconds = window_seconds
+        self._peer_max_failures = peer_max_failures
         self._failures: dict[str, list[float]] = {}
         self._lock = asyncio.Lock()
 
@@ -396,15 +395,21 @@ class _AuthFailureLimiter:
         self._failures[key] = attempts
         return attempts
 
-    async def is_blocked(self, key: str) -> bool:
+    async def is_blocked(self, key: str, peer_key: str | None = None) -> bool:
         async with self._lock:
             now = asyncio.get_running_loop().time()
-            return len(self._prune(key, now)) >= self._max_failures
+            if len(self._prune(key, now)) >= self._max_failures:
+                return True
+            if peer_key and len(self._prune(f"peer_agg:{peer_key}", now)) >= self._peer_max_failures:
+                return True
+            return False
 
-    async def record_failure(self, key: str) -> None:
+    async def record_failure(self, key: str, peer_key: str | None = None) -> None:
         async with self._lock:
             now = asyncio.get_running_loop().time()
             self._prune(key, now).append(now)
+            if peer_key:
+                self._prune(f"peer_agg:{peer_key}", now).append(now)
 
 
 def _build_http_app() -> Any:
@@ -569,7 +574,8 @@ def _build_http_app() -> Any:
 
     @asynccontextmanager
     async def _lifespan(_app: Starlette) -> Any:
-        await _db_engine.init()
+        is_production = settings.environment.lower() in {"production", "prod"}
+        await _db_engine.init(auto_create_tables=not is_production)
         if _governance_webhook_manager is not None:
             await _governance_webhook_manager.load_configs()
             _governance_webhook_manager.start_retry_worker()
@@ -580,8 +586,32 @@ def _build_http_app() -> Any:
             if _governance_webhook_manager is not None:
                 _governance_webhook_manager.stop_retry_worker()
 
-    def _client_key(request: Request) -> str:
+    trust_forwarded = _env_bool("WHITEPACT_MCP_TRUST_FORWARDED_HEADERS", default=False) or _env_bool(
+        "RAI_MCP_HTTP_TRUST_FORWARDED_HEADERS", default=False
+    )
+
+    def _peer_ip(request: Request) -> str:
+        if trust_forwarded:
+            xff = request.headers.get("x-forwarded-for")
+            if xff:
+                client = xff.split(",")[0].strip()
+                if client:
+                    return client
         return request.client.host if request.client else "unknown"
+
+    def _client_key(request: Request) -> tuple[str, str]:
+        """Returns (rate_limit_key, peer_ip) using non-secret credential fingerprinting.
+        Never exposes or logs raw bearer tokens."""
+        import hashlib
+
+        peer = _peer_ip(request)
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.lower().startswith("bearer "):
+            token = auth_header[7:].strip()
+            if token:
+                token_fp = hashlib.sha256(token.encode("utf-8")).hexdigest()[:16]
+                return f"cred:{token_fp}", peer
+        return f"anon:{peer}", peer
 
     async def _resolve_oidc_context(token: str) -> OrgContext | None:
         """Validate an OIDC-issued Bearer JWT and map its claims to an
@@ -720,8 +750,8 @@ def _build_http_app() -> Any:
         records a fresh failure on rejection. Shared by both hosted
         transports so a probe against one doesn't get a bigger budget by
         switching to the other."""
-        client_key = _client_key(request)
-        if await auth_limiter.is_blocked(client_key):
+        client_key, peer_ip = _client_key(request)
+        if await auth_limiter.is_blocked(client_key, peer_key=peer_ip):
             return None, JSONResponse(
                 {
                     "error": "too_many_attempts",
@@ -747,7 +777,7 @@ def _build_http_app() -> Any:
                 )
             ctx = None
         if ctx is None:
-            await auth_limiter.record_failure(client_key)
+            await auth_limiter.record_failure(client_key, peer_key=peer_ip)
             headers = {}
             if _oidc_provider is not None or _mcp_oauth_server is not None:
                 # RFC 9728 / MCP Authorization spec: point an OAuth-aware
@@ -833,6 +863,23 @@ def _build_http_app() -> Any:
                 "transports": ["streamable-http", "http+sse"],
                 "tools": len(TOOL_DEFS),
             }
+        )
+
+    async def ready(request: Request) -> JSONResponse:
+        db_ok = await _db_engine.ping()
+        if db_ok:
+            return JSONResponse(
+                {
+                    "status": "ready",
+                    "database": "connected",
+                }
+            )
+        return JSONResponse(
+            {
+                "status": "unavailable",
+                "database": "disconnected",
+            },
+            status_code=503,
         )
 
     async def protected_resource_metadata(request: Request) -> JSONResponse:
@@ -942,7 +989,8 @@ def _build_http_app() -> Any:
     async def oauth_authorize_post(request: Request) -> RedirectResponse | JSONResponse:
         if _mcp_oauth_server is None:
             return JSONResponse({"error": "not_found"}, status_code=404)
-        if await auth_limiter.is_blocked(_client_key(request)):
+        client_key, peer_ip = _client_key(request)
+        if await auth_limiter.is_blocked(client_key, peer_key=peer_ip):
             return _oauth_error(
                 OAuthProtocolError(
                     "temporarily_unavailable", "Too many failed login attempts", status_code=429
@@ -962,14 +1010,15 @@ def _build_http_app() -> Any:
                 else OAuthProtocolError("invalid_request", "Invalid form body")
             )
             if protocol_error.status_code in {401, 403}:
-                await auth_limiter.record_failure(_client_key(request))
+                await auth_limiter.record_failure(client_key, peer_key=peer_ip)
             return _oauth_error(protocol_error)
         return RedirectResponse(location, status_code=303, headers={"Cache-Control": "no-store"})
 
     async def oauth_token(request: Request) -> JSONResponse:
         if _mcp_oauth_server is None:
             return JSONResponse({"error": "not_found"}, status_code=404)
-        if await auth_limiter.is_blocked(_client_key(request)):
+        client_key, peer_ip = _client_key(request)
+        if await auth_limiter.is_blocked(client_key, peer_key=peer_ip):
             return _oauth_error(
                 OAuthProtocolError(
                     "temporarily_unavailable", "Too many failed token attempts", status_code=429
@@ -990,7 +1039,7 @@ def _build_http_app() -> Any:
                 if isinstance(exc, OAuthProtocolError)
                 else OAuthProtocolError("invalid_request", "Invalid form body")
             )
-            await auth_limiter.record_failure(_client_key(request))
+            await auth_limiter.record_failure(client_key, peer_key=peer_ip)
             return _oauth_error(protocol_error)
         return JSONResponse(payload, headers={"Cache-Control": "no-store", "Pragma": "no-cache"})
 
@@ -1049,6 +1098,7 @@ def _build_http_app() -> Any:
     app = Starlette(
         routes=[
             Route("/health", endpoint=health),
+            Route("/ready", endpoint=ready),
             Route("/mcp", endpoint=handle_streamable_http),
             Route("/sse", endpoint=handle_sse),
             Mount("/messages/", app=sse.handle_post_message),

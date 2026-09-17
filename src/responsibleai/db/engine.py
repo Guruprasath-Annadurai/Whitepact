@@ -1883,8 +1883,18 @@ class DatabaseEngine:
     def raw(self) -> AsyncEngine:
         return self._engine
 
-    async def init(self, *, max_attempts: int = 5, base_delay_seconds: float = 1.0) -> None:
-        """Create all tables if they don't exist.
+    async def init(
+        self,
+        *,
+        max_attempts: int = 5,
+        base_delay_seconds: float = 1.0,
+        auto_create_tables: bool = True,
+    ) -> None:
+        """Initialize database connection, optionally verifying schema.
+
+        If auto_create_tables is True (development/testing), creates all tables if they don't exist.
+        If auto_create_tables is False (production), executes a lightweight connectivity check (`SELECT 1`)
+        without running metadata.create_all, respecting Alembic migration ownership.
 
         Retries transient connection failures (OperationalError/DBAPIError —
         covers "connection refused", "server closed the connection
@@ -1897,10 +1907,13 @@ class DatabaseEngine:
         while True:
             try:
                 async with self._engine.begin() as conn:
-                    if "sqlite" in str(self._engine.url):
-                        await conn.execute(text("PRAGMA journal_mode=WAL"))
-                        await conn.execute(text("PRAGMA synchronous=NORMAL"))
-                    await conn.run_sync(metadata.create_all)
+                    if auto_create_tables:
+                        if "sqlite" in str(self._engine.url):
+                            await conn.execute(text("PRAGMA journal_mode=WAL"))
+                            await conn.execute(text("PRAGMA synchronous=NORMAL"))
+                        await conn.run_sync(metadata.create_all)
+                    else:
+                        await conn.execute(text("SELECT 1"))
                 return
             except (OperationalError, DBAPIError):
                 attempt += 1
@@ -1919,6 +1932,17 @@ class DatabaseEngine:
 
     async def connect(self) -> AsyncConnection:
         return await self._engine.connect()
+
+    async def ping(self) -> bool:
+        """Execute a quick connectivity probe against the underlying database engine."""
+        from sqlalchemy import text
+
+        try:
+            async with self._engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+            return True
+        except Exception:
+            return False
 
     async def close(self) -> None:
         await self._engine.dispose()
