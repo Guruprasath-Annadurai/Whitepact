@@ -55,13 +55,13 @@ class EphemeralWorkspace:
     def make_world_readable(self) -> None:
         """Allow an unprivileged container UID to read workspace files.
 
-        Directories are 0755 and files 0644. The mount stays host-owned; the
-        container user cannot rewrite the tree.
+        Directories use the sticky bit (01777) so the container can create
+        ephemeral files without overwriting host-owned runner.py (0644).
         """
         root = self.path
-        os.chmod(root, 0o755)
+        os.chmod(root, 0o1777)
         for dirpath, dirnames, filenames in os.walk(root):
-            os.chmod(dirpath, 0o755)
+            os.chmod(dirpath, 0o1777)
             for name in filenames:
                 os.chmod(os.path.join(dirpath, name), 0o644)
 
