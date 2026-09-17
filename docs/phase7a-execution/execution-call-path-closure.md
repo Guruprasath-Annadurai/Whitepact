@@ -1,30 +1,33 @@
 # WhitePact Phase 7A: Execution Call-Path and Single-Admission Closure
 
-**Document Status:** CANONICAL SPECIFICATION PASS 3 (FINAL CALL-PATH & SINGLE-ADMISSION CLOSURE)
+**Document Status:** CANONICAL SPECIFICATION PASS 4 (SECURITY REMEDIATION)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
-**Current Migration Head:** `0048` (`migrations/versions/0048_enforce_paddle_binding_atomicity.py`)
+**Proposed Migrations:** `0049_runtime_execution_requests.py` through `0052_runtime_worker_leases.py`
 
 ---
 
 ## 1. Executive Summary & Problem Resolution
 
-An exhaustive audit of the canonical codebase (`13e8de034f8b31bd7cae4f47398f71b24c923c3c`) identified two critical authority integration challenges:
+An exhaustive audit of the canonical codebase (`13e8de034f8b31bd7cae4f47398f71b24c923c3c`) identified critical authority integration challenges:
 1. **Uncovered Issuance Path in Upstream Dispatch:**
    - Canonical `authorize_execution()` is called at 3 production sites:
      - `src/responsibleai/mcp/governance_integration.py:468` (`execute_governed_action`)
      - `src/responsibleai/mcp/governance_integration.py:816` (`resolve_approval_and_execute`)
      - `src/responsibleai/mcp/upstream_dispatch.py:322` (`dispatch_upstream_action`)
-   - Prior drafts only assigned durable issuance persistence to `governance_integration.py`, leaving `upstream_dispatch.py` vulnerable to an issuance bypass where an authorization could enter queued or distributed execution without a durable PostgreSQL record in `governance_execution_authorizations`.
-2. **Double `admit_execution()` Risk:**
-   - Existing production `admit_execution()` call sites:
+   - Prior drafts only assigned durable issuance persistence to `governance_integration.py`.
+2. **Double `admit_execution()` Risk & Replayability:**
+   - Production `admit_execution()` call sites:
      - `src/responsibleai/governance/execution.py:334` (`InternalToolExecutor.execute`)
-     - `src/responsibleai/governance/upstream_executor.py:226` (`UpstreamServer.execute`)
-   - If the new Phase 7A worker invokes `admit_execution()` prior to dispatching to `InternalToolExecutor` or `UpstreamServer`, and those executors retain their existing internal call to `admit_execution()`, the second invocation will fail due to duplicate nonce consumption (`rowcount == 0`), aborting valid executions or corrupting state.
+     - `src/responsibleai/governance/upstream_executor.py:226` (`UpstreamMCPExecutor.execute`)
+   - An in-memory dataclass does not prevent double-calling the backend or duplicate execution.
+3. **Execution Scope Ambiguity (Hosted vs Community-Local):**
+   - Self-hosted stdio transport contains a direct `dispatch_tool()` path that does not invoke hosted governance.
 
-This specification definitively resolves both issues:
-- **Centralized Durable Issuance:** All 3 `authorize_execution()` call sites are routed through a shared issuance boundary (`DurableExecutionAuthorizationIssuer.issue`), guaranteeing that every `ExecutionAuthorization` is durably committed to PostgreSQL before any `QueueTicket` is created.
-- **Worker-Owned Single Admission (Option A):** The worker exclusively owns the canonical `admit_execution()` invocation immediately before execution. It binds a typed, unforgeable `AdmittedExecution` context that is handed off to `InternalToolExecutor.execute()` or `UpstreamServer.execute()`. Downstream executors consume this context and MUST NOT invoke `admit_execution()` again.
+This specification definitively resolves all three:
+- **Centralized Durable Issuance:** All 3 `authorize_execution()` call sites route through `DurableExecutionAuthorizationIssuer.issue()`, ensuring that `runtime_execution_requests` and `governance_execution_authorizations` are durably committed in PostgreSQL before any `QueueTicket` is emitted.
+- **Worker-Owned Admission with One-Shot Backend Start:** The worker calls `admit_execution()`, obtaining an `AdmissionReceipt`. Before any container or socket is invoked, the worker must atomically execute a one-shot database transition (`ADMITTED -> BACKEND_STARTING` with `rowcount == 1`) in `runtime_execution_attempts`. Downstream executors (`InternalToolExecutor` and `UpstreamMCPExecutor`) verify this transition and MUST NOT invoke `admit_execution()`.
+- **Explicit Scope Classification:** Clear boundary between Hosted Governed Mode (mandatory full chain) and Community Local Direct Mode (stdio non-governed).
 
 ---
 
@@ -32,36 +35,62 @@ This specification definitively resolves both issues:
 
 ### 2.1 Complete Production Call Paths
 
-| Call Path | Entry Point | `authorize_execution` Owner | Durable Issuance Owner | Queueing Owner | Worker Owner | `admit_execution` Owner | Downstream Executor | Evidence Owner |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Path 1: Governed Local Tool** | `execute_governed_action` in `mcp/governance_integration.py` | `governance_integration.py:468` | `DurableExecutionAuthorizationIssuer.issue` (`governance_execution_authorizations`) | `AdmissionController` + `FairExecutionScheduler` | `ResponsibleWorker` | `ResponsibleWorker` (calls canonical `admit_execution`) | `InternalToolExecutor.execute(admitted_context)` -> `ContainerIsolationBackend` | `EvidenceStore` + `AuditLedger` |
-| **Path 2: Approval Resolution** | `resolve_approval_and_execute` in `mcp/governance_integration.py` | `governance_integration.py:816` | `DurableExecutionAuthorizationIssuer.issue` (`governance_execution_authorizations`) | `AdmissionController` + `FairExecutionScheduler` | `ResponsibleWorker` | `ResponsibleWorker` (calls canonical `admit_execution`) | `InternalToolExecutor.execute(admitted_context)` -> `ContainerIsolationBackend` | `EvidenceStore` + `AuditLedger` |
-| **Path 3: Upstream MCP Dispatch** | `dispatch_upstream_action` in `mcp/upstream_dispatch.py` | `upstream_dispatch.py:322` | `DurableExecutionAuthorizationIssuer.issue` (`governance_execution_authorizations`) | `AdmissionController` + `FairExecutionScheduler` | `ResponsibleWorker` | `ResponsibleWorker` (calls canonical `admit_execution`) | `UpstreamServer.execute(admitted_context)` with `SafeNetworkBackend` | `EvidenceStore` + `AuditLedger` |
+| Call Path | Execution Scope | Entry Point | `authorize_execution` Owner | Durable Issuance Owner | Queueing Owner | Worker Owner | `admit_execution` Owner | Backend Start Owner | Downstream Executor | Evidence Owner |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Path 1: Governed Local Tool** | HOSTED GOVERNED | `execute_governed_action` in `mcp/governance_integration.py` | `governance_integration.py:468` | `DurableExecutionAuthorizationIssuer.issue` (Mig 0049/0050) | `AdmissionController` + `FairExecutionScheduler` | `ResponsibleWorker` | `ResponsibleWorker` (`admit_execution`) | `ResponsibleWorker` (`ADMITTED -> BACKEND_STARTING` in Mig 0051) | `InternalToolExecutor.execute` -> `ContainerIsolationBackend` | `EvidenceStore` + `AuditLedger` |
+| **Path 2: Approval Local Tool** | HOSTED GOVERNED | `resolve_approval_and_execute` in `mcp/governance_integration.py` | `governance_integration.py:816` | `ApprovalExecutionService.consume_and_issue` (Atomic TX) | `AdmissionController` + `FairExecutionScheduler` | `ResponsibleWorker` | `ResponsibleWorker` (`admit_execution`) | `ResponsibleWorker` (`ADMITTED -> BACKEND_STARTING` in Mig 0051) | `InternalToolExecutor.execute` -> `ContainerIsolationBackend` | `EvidenceStore` + `AuditLedger` |
+| **Path 3: Upstream MCP Dispatch** | HOSTED GOVERNED | `dispatch_upstream_action` in `mcp/upstream_dispatch.py` | `upstream_dispatch.py:322` | `DurableExecutionAuthorizationIssuer.issue` (Mig 0049/0050) | `AdmissionController` + `FairExecutionScheduler` | `ResponsibleWorker` | `ResponsibleWorker` (`admit_execution`) | `ResponsibleWorker` (`ADMITTED -> BACKEND_STARTING` in Mig 0051) | `UpstreamMCPExecutor.execute` with `SafeNetworkBackend` | `EvidenceStore` + `AuditLedger` |
+| **Path 4: Approval Upstream MCP** | HOSTED GOVERNED | `resolve_approval_and_execute` with upstream target | `governance_integration.py:816` | `ApprovalExecutionService.consume_and_issue` (Atomic TX) | `AdmissionController` + `FairExecutionScheduler` | `ResponsibleWorker` | `ResponsibleWorker` (`admit_execution`) | `ResponsibleWorker` (`ADMITTED -> BACKEND_STARTING` in Mig 0051) | `UpstreamMCPExecutor.execute` with `SafeNetworkBackend` | `EvidenceStore` + `AuditLedger` |
+| **Path 5: Hosted MCP `_call_tool`** | HOSTED GOVERNED | `server.py:_call_tool` (with hosted context) | Routed to `apply_governance()` -> Path 1/2/3/4 | Routes through centralized issuer | Routes through worker queue | `ResponsibleWorker` | `ResponsibleWorker` | `ResponsibleWorker` | Routed to `InternalToolExecutor` or `UpstreamMCPExecutor` | `EvidenceStore` |
+| **Path 6: Community Local stdio** | EXPLICIT NON-HOSTED LOCAL MODE | `server.py:_call_tool` (without hosted context) | None (Community mode) | None | None | None | None | None | Direct `dispatch_tool(name, args)` | None (Local stdio only) |
+| **Path 7: Subprocess Isolation** | EXPLICIT NON-HOSTED LOCAL MODE | `isolation/subprocess_backend.py` | Development / local test only | None | None | None | None | None | Local host subprocess | None (Forbidden in hosted) |
 
 ---
 
-## 3. Centralized Durable Issuance Architecture
+## 3. Explicit Deployment & Scope Classification
 
-### 3.1 Principle: Non-Bypassable Durable Issuance
-To eliminate duplicate persistence logic and prevent future call-path leaks, Phase 7A introduces a centralized issuance boundary:
-`src/responsibleai/governance/execution_issuer.py`: `DurableExecutionAuthorizationIssuer`.
+### 3.1 Hosted / Enterprise Governed Mode
+In hosted cloud, SaaS, and enterprise on-premise deployments:
+- **Mandatory Invariant:** ALL consequential execution MUST pass through the complete chain:
+  `runtime_execution_requests` -> `governance_execution_authorizations` -> `FairExecutionScheduler` -> `runtime_worker_leases` (fencing generation) -> preflight revalidation -> canonical `admit_execution()` -> `runtime_execution_attempts` (`ADMITTED -> BACKEND_STARTING`) -> `ContainerIsolationBackend` (`--network=none`, limits) OR `UpstreamMCPExecutor` (`SafeNetworkBackend`) -> `EvidenceStore`.
+- **Direct Dispatch Prohibition:** In hosted configuration, `server.py` checks `config.HOSTED_GOVERNANCE_STRICT == True`. If no governance context is present, the request fails closed immediately with HTTP 403 Forbidden. Direct `dispatch_tool()` is completely unreachable.
+
+### 3.2 Community Local / Self-Hosted Direct Mode
+- WhitePact supports a local single-user CLI mode over stdio where tools execute directly on the developer's laptop.
+- **Explicit Trust Boundary:** Community local direct mode is a separate, non-governed deployment profile.
+- **Enterprise Security Claims:** All enterprise security guarantees (auditability, non-repudiation, policy enforcement, container isolation, worker fencing) strictly apply to **Hosted Governed Mode** and explicitly exclude Community Local Direct Mode.
+
+---
+
+## 4. Centralized Durable Issuance Architecture
+
+### 4.1 Principle: Non-Bypassable Durable Issuance
+All 3 production `authorize_execution()` call sites route through `DurableExecutionAuthorizationIssuer.issue()`:
 
 ```python
 class DurableExecutionAuthorizationIssuer:
     """Centralized durable issuer for ExecutionAuthorizations.
 
-    Guarantees that an ExecutionAuthorization is durably committed to PostgreSQL
-    in `governance_execution_authorizations` before it can be handed to the
-    admission controller or queued.
+    Guarantees that `runtime_execution_requests` and `governance_execution_authorizations`
+    are durably committed to PostgreSQL in ONE transaction before handing to the
+    admission controller or queue.
     """
-    def __init__(self, repository: ExecutionAuthorizationRepository) -> None:
-        self._repository = repository
+    def __init__(
+        self,
+        request_repo: ExecutionRequestRepository,
+        auth_repo: ExecutionAuthorizationRepository,
+        attempt_repo: ExecutionAttemptRepository,
+    ) -> None:
+        self._request_repo = request_repo
+        self._auth_repo = auth_repo
+        self._attempt_repo = attempt_repo
 
     async def issue(
         self,
         authorization: ExecutionAuthorization,
+        action: ActionRequest,
+        idempotency_key: str | None = None,
     ) -> ExecutionAuthorization:
-        # Enforce valid allow decision
         if authorization.decision not in (
             GovernanceDecision.ALLOW,
             GovernanceDecision.ALLOW_WITH_REDACTION,
@@ -70,217 +99,115 @@ class DurableExecutionAuthorizationIssuer:
                 f"Cannot issue authorization with decision {authorization.decision}"
             )
 
-        # Persist durably in PostgreSQL (status = 'ISSUED')
-        await self._repository.create(authorization)
+        # Single PostgreSQL transaction: request + authorization + initial attempt
+        async with self._request_repo.transaction() as tx:
+            await self._request_repo.create(action, idempotency_key=idempotency_key, tx=tx)
+            await self._auth_repo.create(authorization, tx=tx)
+            await self._attempt_repo.create_initial_attempt(
+                execution_id=action.action_id,
+                authorization_id=authorization.authorization_id,
+                org_id=action.agent.organization_id,
+                tx=tx,
+            )
         return authorization
 ```
 
-### 3.2 Integration Across All Call Sites
-1. **`execute_governed_action` (`src/responsibleai/mcp/governance_integration.py`):**
+### 4.2 Integration Across All Call Sites
+1. **`execute_governed_action` (`src/responsibleai/mcp/governance_integration.py:468`):**
    ```python
    auth = authorize_execution(policy_result, action, expected_epoch=epoch)
-   await self._issuer.issue(auth)  # Durably committed to PostgreSQL
+   await self._issuer.issue(auth, action, idempotency_key=idempotency_key)
    ticket = await self._admission_controller.reserve_and_enqueue(auth, action)
    ```
-2. **`resolve_approval_and_execute` (`src/responsibleai/mcp/governance_integration.py`):**
+2. **`resolve_approval_and_execute` (`src/responsibleai/mcp/governance_integration.py:816`):**
+   ```python
+   # Uses atomic ApprovalExecutionService.consume_and_issue(...)
+   auth = await self._approval_service.consume_and_issue(approval_id, action, expected_epoch=epoch)
+   ticket = await self._admission_controller.reserve_and_enqueue(auth, action)
+   ```
+3. **`dispatch_upstream_action` (`src/responsibleai/mcp/upstream_dispatch.py:322`):**
    ```python
    auth = authorize_execution(policy_result, action, expected_epoch=epoch)
-   await self._issuer.issue(auth)  # Durably committed to PostgreSQL
+   await self._issuer.issue(auth, action, idempotency_key=idempotency_key)
    ticket = await self._admission_controller.reserve_and_enqueue(auth, action)
    ```
-3. **`dispatch_upstream_action` (`src/responsibleai/mcp/upstream_dispatch.py`):**
-   ```python
-   auth = authorize_execution(policy_result, action, expected_epoch=epoch)
-   await self._issuer.issue(auth)  # Durably committed to PostgreSQL
-   ticket = await self._admission_controller.reserve_and_enqueue(auth, action)
-   ```
-
-### 3.3 Strict Invariant
-- **Every `QueueTicket` references a durably committed `governance_execution_authorizations` row.**
-- If the database write fails (e.g. timeout, disconnect, constraint violation), the request fails closed with HTTP 500/503.
-- No `QueueTicket` is emitted; no item enters Redis or in-memory queues; unpersisted authority count = 0.
 
 ---
 
-## 4. Single Admission Ownership & `AdmittedExecution` Context
+## 5. Single Admission Ownership & `AdmissionReceipt`
 
-### 4.1 Comparison of Admission Architecture Options
-
-| Dimension | Option A: Worker Owns Admission (CHOSEN) | Option B: Executor Owns Admission | Option C: Shared Execution Proxy |
-| :--- | :--- | :--- | :--- |
-| **Admission Invocation Site** | `ResponsibleWorker.execute_task()` | `InternalToolExecutor.execute()` and `UpstreamServer.execute()` | Separate standalone execution service |
-| **Last-Moment Preservation** | **EXCELLENT:** Invoked immediately before backend handoff, after queue wait and lease acquisition. | **EXCELLENT:** Invoked inside executor right before transport. | **FAIR:** Adds network RPC hop between admission and transport. |
-| **Double-Admission Risk** | **ZERO:** Downstream executors accept `AdmittedExecution` context and do not admit. | **MODERATE:** Worker might inadvertently call admit, causing conflict. | **HIGH:** Complex ownership boundary across multiple hops. |
-| **Upstream & Container Symmetry** | **PERFECT:** Identical admission flow for both local Docker and remote MCP servers. | **POOR:** Requires duplicating lease & epoch checks in multiple executors. | **POOR:** Requires new service daemon. |
-| **Codebase Alignment** | **HIGH:** Minimal change to canonical contracts, highly testable. | **MEDIUM:** Inconsistent with Phase 7A worker isolation model. | **LOW:** High architectural complexity. |
-
-### 4.2 Architecture Choice: OPTION A — Worker-Owned Admission
-Phase 7A selects **Option A**. The worker process performs canonical `admit_execution()` exactly once, immediately before delegating side-effect execution to the concrete backend.
-
-### 4.3 The Typed `AdmittedExecution` Context
-To ensure downstream executors cannot be invoked without valid canonical admission, `admit_execution()` returns an immutable, unforgeable `AdmittedExecution` token:
+### 5.1 The `AdmissionReceipt`
+Upon successful commit of the canonical admission transaction, `admit_execution()` returns an in-process `AdmissionReceipt`:
 
 ```python
 @dataclass(frozen=True)
-class AdmittedExecution:
-    """Proof of successful canonical admission for a specific execution attempt.
-
-    This object cannot be casually forged: it is constructed ONLY within
-    `admit_execution()` upon successful commit of the atomic PostgreSQL
-    transaction (epoch verification, nonce consumption, authorization update).
-    """
+class AdmissionReceipt:
     execution_id: str
+    attempt_id: str
     authorization_id: str
     organization_id: str
     principal_id: str
     action_digest: str
     target_fingerprint: str | None
     lease_id: str
+    lease_generation: int
+    effect_id: str
     admitted_at: datetime
     nonce: str
-
-    def __post_init__(self) -> None:
-        if not self.authorization_id or not self.nonce or not self.action_digest:
-            raise ValueError("Malformed AdmittedExecution context")
 ```
 
-### 4.4 Downstream Executor Signatures & Guardrails
+### 5.2 Downstream Executor Signatures & One-Shot Verification
 1. **`InternalToolExecutor.execute` (`src/responsibleai/governance/execution.py`):**
    ```python
    async def execute(
        self,
-       action: GovernedAction,
-       admitted_context: AdmittedExecution,
+       action: ActionRequest,
+       receipt: AdmissionReceipt,
        workspace: EphemeralWorkspace | None = None,
    ) -> ToolResult:
-       # Verify that admitted_context matches action
-       if admitted_context.action_digest != compute_action_digest(action):
-           raise SecurityBindingMismatchError("Admitted action digest mismatch")
-       if admitted_context.organization_id != action.agent.organization_id:
-           raise SecurityBindingMismatchError("Admitted organization mismatch")
+       if receipt.action_digest != compute_action_digest(action):
+           raise SecurityBindingMismatchError("Action digest mismatch")
+       if receipt.organization_id != action.agent.organization_id:
+           raise SecurityBindingMismatchError("Organization mismatch")
 
-       # DO NOT call admit_execution() again.
-       # Proceed directly to IsolationBroker / ContainerIsolationBackend.execute()
+       # Zero re-admission. The worker already executed the one-shot backend-start transition.
        return await self._broker.execute(action, workspace=workspace)
    ```
-2. **`UpstreamServer.execute` (`src/responsibleai/governance/upstream_executor.py`):**
+2. **`UpstreamMCPExecutor.execute` (`src/responsibleai/governance/upstream_executor.py`):**
    ```python
    async def execute(
        self,
-       action: GovernedAction,
-       admitted_context: AdmittedExecution,
+       action: ActionRequest,
+       receipt: AdmissionReceipt,
        target: UpstreamTarget,
    ) -> UpstreamResult:
-       # Verify that admitted_context matches action
-       if admitted_context.action_digest != compute_action_digest(action):
-           raise SecurityBindingMismatchError("Admitted action digest mismatch")
-       if admitted_context.organization_id != action.agent.organization_id:
-           raise SecurityBindingMismatchError("Admitted organization mismatch")
+       if receipt.action_digest != compute_action_digest(action):
+           raise SecurityBindingMismatchError("Action digest mismatch")
+       if receipt.organization_id != action.agent.organization_id:
+           raise SecurityBindingMismatchError("Organization mismatch")
 
        # Verify target fingerprint hasn't drifted
-       if admitted_context.target_fingerprint:
-           check_target_fingerprint(target, admitted_context.target_fingerprint)
+       if receipt.target_fingerprint:
+           check_target_fingerprint(receipt, compute_upstream_target_fingerprint(target))
 
-       # DO NOT call admit_execution() again.
-       # Proceed directly through SafeNetworkBackend to external MCP endpoint
-       return await self._safe_network.dispatch_http(target, action)
+       # Zero re-admission. Dispatch via SafeNetworkBackend with stable effect_id as idempotency key
+       return await self._safe_network.dispatch_http(
+           target, action, idempotency_key=receipt.effect_id
+       )
    ```
 
 ---
 
-## 5. Preservation of Last-Moment Admission
+## 6. Activation Gate (Task 10 Dispatcher Gate)
 
-Canonical admission MUST occur as late as safely possible:
-- **NOT** at request arrival time.
-- **NOT** before entering the wait queue.
-- **NOT** before acquiring the distributed worker lease.
-- **NOT** before pre-flight binding revalidation.
-
-The worker executes canonical admission:
-1. Dequeues `QueueTicket` from fair scheduler.
-2. Acquires exclusive `ACTIVE` lease in `runtime_worker_leases`.
-3. Performs pre-flight revalidation (organization active, principal valid, BreakGlass unexpired, action digest match).
-4. **LAST MOMENT:** Calls canonical `admit_execution()`, atomically executing in PostgreSQL:
-   - Row-level lock on `governance_revocation_epochs` (`lock_epoch`).
-   - Epoch freshness check (`current == expected`).
-   - Insertion of single-use `nonce` into `governance_execution_nonces`.
-   - Conditional atomic update of `governance_execution_authorizations` (`status = 'ISSUED' -> 'CONSUMED'`, `expires_at > now`).
-   - Assertion of `rowcount == 1`.
-5. Receives `AdmittedExecution` context.
-6. Immediately passes `AdmittedExecution` to `InternalToolExecutor` or `UpstreamServer` for container/network execution.
-
-There is zero async wait or queueing between Step 4 and Step 6.
-
----
-
-## 6. Direct / Legacy Execution Bypass Audit
-
-A complete scan of the canonical codebase (`13e8de034f8b31bd7cae4f47398f71b24c923c3c`) was performed for direct invocations of execution backends:
-
-| Backend / Component | Direct Invocations Found | Classification | Verification & Protection |
-| :--- | :--- | :--- | :--- |
-| **`InternalToolExecutor.execute`** | 1 production site (`governance_integration.py:488`) | **ROUTED THROUGH PHASE 7A GATE** | Replaced by worker dispatch loop in Phase 7A. Direct callers adapted to require `AdmittedExecution`. |
-| **`UpstreamServer.execute`** | 1 production site (`upstream_dispatch.py:340`) | **ROUTED THROUGH PHASE 7A GATE** | Replaced by worker dispatch loop in Phase 7A. Requires `AdmittedExecution`. |
-| **`ContainerIsolationBackend.execute`** | 1 internal site (`isolation/broker.py:112`) | **ROUTED THROUGH PHASE 7A GATE** | Accessible only via `IsolationBroker` inside `InternalToolExecutor`. Cannot be reached directly. |
-| **`SafeNetworkBackend`** | 1 internal site (`upstream_executor.py:245`) | **ROUTED THROUGH PHASE 7A GATE** | Mandatory component of `UpstreamServer.execute`. Egress rules, SSRF protection, and DNS pinning preserved. |
-| **Webhook Transport** | 0 direct unmediated sites | **NON-CONSEQUENTIAL / NONE** | No standalone webhook dispatch exists outside governed MCP tool calls. |
-| **MCP Upstream Transport** | 1 production site (`mcp/client.py`) | **ROUTED THROUGH PHASE 7A GATE** | Invoked strictly via `UpstreamServer.execute`. |
-
-### Summary of Audit:
-- Total production consequential paths inspected: **6**
-- Production bypasses found: **0**
-- Unmediated network or tool invocations: **0**
-
----
-
-## 7. Activation Gate (Task 10 Dispatcher Gate)
-
-To guarantee that the worker dispatcher and execution workers cannot be activated prematurely, Task 10 enforces an explicit activation gate.
-
-### Mandatory Preconditions for Task 10 Activation:
-1. **All Issuance Paths Closed:**
-   - Durable issuance verified for `execute_governed_action`.
-   - Durable issuance verified for `resolve_approval_and_execute`.
-   - Durable issuance verified for `dispatch_upstream_action`.
-   - PostgreSQL persistence precedes queueing in 100% of cases.
-2. **Single Admission Proven:**
-   - Worker owns canonical `admit_execution()`.
-   - `InternalToolExecutor` requires `AdmittedExecution` and does not call `admit_execution()`.
-   - `UpstreamServer` requires `AdmittedExecution` and does not call `admit_execution()`.
-   - Double-admission test proves zero duplicate nonce consumption.
-3. **Target Fingerprint & Safe Network Preserved:**
-   - Upstream target drift detection verified.
-   - `SafeNetworkBackend` remains mandatory on all external HTTP/MCP calls.
-
-No execution dispatcher may be activated before all preconditions pass.
-
----
-
-## 8. Test Plan for Call-Path & Admission Closure
-
-The following automated tests will be authored during Phase 7A implementation:
-
-1. `tests/runtime/test_durable_issuance_all_paths.py`:
-   - Proves `execute_governed_action` persists authorization before queueing.
-   - Proves `resolve_approval_and_execute` persists authorization before queueing.
-   - Proves `dispatch_upstream_action` persists authorization before queueing.
-   - Proves that DB disconnect or write failure produces HTTP 500/503 with zero `QueueTicket` emissions.
-2. `tests/runtime/test_single_admission_internal_tool.py`:
-   - Mock `admit_execution` and assert `call_count == 1` across entire execution lifecycle.
-   - Verify `InternalToolExecutor.execute` succeeds with valid `AdmittedExecution`.
-   - Verify calling `InternalToolExecutor.execute` without `AdmittedExecution` raises `TypeError`.
-3. `tests/runtime/test_single_admission_upstream.py`:
-   - Mock `admit_execution` and assert `call_count == 1` across entire upstream dispatch lifecycle.
-   - Verify `UpstreamServer.execute` succeeds with valid `AdmittedExecution`.
-   - Verify `SafeNetworkBackend` is invoked with resolved target.
-4. `tests/runtime/test_double_admission_rejection.py`:
-   - Manually trigger a simulated second `admit_execution` attempt with the same authorization.
-   - Assert `AuthorizationAlreadyConsumedError` is raised and tool/network execution is aborted.
-5. `tests/runtime/test_admitted_context_integrity.py`:
-   - Attempt to execute `InternalToolExecutor` with an `AdmittedExecution` containing a modified `action_digest`.
-   - Assert `SecurityBindingMismatchError` is raised immediately.
-   - Attempt to execute with an `AdmittedExecution` from a different tenant (`organization_id`).
-   - Assert `SecurityBindingMismatchError` is raised immediately.
-6. `tests/runtime/test_upstream_target_drift.py`:
-   - Change resolved IP address or fingerprint between policy evaluation and execution.
-   - Assert `TargetFingerprintMismatchError` is raised before network dispatch.
+Task 10 (Dispatcher & Worker Activation) remains strictly closed until all 10 prerequisites are implemented and tested:
+1. Durable immutable request storage (`0049_runtime_execution_requests`).
+2. Tenant-scoped idempotent issuance (`UNIQUE(organization_id, idempotency_key)`).
+3. All 3 production issuance paths closed via PostgreSQL persistence.
+4. Atomic approval consumption and authorization issuance (`UNIQUE(approval_id)`).
+5. Canonical admission transaction combining nonce insert and authorization status update (`rowcount == 1`).
+6. Universal epoch invalidation covering all 14 authority mutations.
+7. Monotonic worker fencing (`0052_runtime_worker_leases.lease_generation`).
+8. Durable attempt and effect state machine (`0051_runtime_execution_attempts`).
+9. One-shot backend-start transition (`ADMITTED -> BACKEND_STARTING` with `rowcount == 1`).
+10. Preservation of `SafeNetworkBackend` and container isolation.

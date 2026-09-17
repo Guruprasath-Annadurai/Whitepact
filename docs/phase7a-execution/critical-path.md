@@ -1,6 +1,6 @@
 # WhitePact Phase 7A Critical Path Analysis
 
-**Document Status:** CANONICAL SPECIFICATION PASS 3 (FINAL CALL-PATH & SINGLE-ADMISSION CLOSURE)
+**Document Status:** CANONICAL SPECIFICATION PASS 4 (SECURITY REMEDIATION)
 **Source Design SHA:** `dfbeb2e6d9fad575fc45b64789c63b1c1c0b5b01` (Worktree: `/Users/ag/whitepact-phase7a-runtime-preparation`)
 **Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
 **Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
@@ -12,7 +12,7 @@
 
 The implementation critical path represents the sequence of dependent tasks defining the minimum safe calendar time to completion. No task on the critical path can be delayed without delaying Phase 7A completion.
 
-Because tasks in Lane B (WP-ISO-01 compute and filesystem limits) and Lane D (Observability metrics and configuration bounds) run in parallel with Lane A1 (Admission & Coordination) and Lane C1 (Worker Lease Schema), the critical path is strictly dictated by the **Durable Authority, Issuance, Atomic Admission, and Dispatch Activation Chain**.
+Because tasks in Lane B (WP-ISO-01 compute and filesystem limits) and Lane D (Observability metrics and configuration bounds) run in parallel with Lane A1 (Admission & Coordination) and Lane C1 (Attempt state machine & worker lease fencing), the critical path is strictly dictated by the **Durable Authority, Issuance, Atomic Admission, Attempt Fencing, and Dispatch Activation Chain**.
 
 ---
 
@@ -43,21 +43,21 @@ Because tasks in Lane B (WP-ISO-01 compute and filesystem limits) and Lane D (Ob
 [CP-07] Task 7: Bounded Multi-Tenant Fair Queue
       │
       ▼ (Critical Task 8A: Lane A2)
-[CP-08A] Task 8A: Durable EA Storage (Migration 0049), Centralized Issuer & All-Path Issuance Integration
+[CP-08A] Task 8A: Durable Request (Mig 0049), Auth (Mig 0050), Centralized Issuer, Approval Atomicity & Idempotency
       │
       ▼ (Critical Task 8B: Lane A2)
-[CP-08B] Task 8B: Two-Stage Revalidation, Atomic Admission Transaction Integration & Admitted Context
+[CP-08B] Task 8B: Universal 14-Mutation Epoch Coverage, Atomic Admission Transaction & AdmissionReceipt
       │
       ▼ (Critical Task 9: Lane C1)
-[CP-09] Task 9: Worker Lease Contract, Migration 0050 & DB-Enforced Exclusivity
+[CP-09] Task 9: Attempt State Machine (Mig 0051), Worker Lease Fencing (Mig 0052) & One-Shot Backend Start
       │
       ▼ [CHECKPOINT 1: Coordination, All-Path Durable Issuance & Single Admission Core Verification]
       │
       ▼ (Critical Task 10: INTEGRATION GATE)
-[CP-10] Task 10 Gate: Worker Dispatcher & Execution Worker (Requires All Issuance Paths Closed & Single Admission Proven)
+[CP-10] Task 10 Gate: Worker Dispatcher & Execution Worker (Requires ALL 10 Security Prerequisites Proven)
       │
       ▼ (Critical Task 11: Lane C2)
-[CP-11] Task 11: Worker Heartbeats, Crash Recovery & Stale Lease Reaper
+[CP-11] Task 11: Worker Heartbeats, Crash Recovery, Stale Lease Reaper & Capacity Reconciler
       │
       ▼ (Critical Task 12: Lane C2)
 [CP-12] Task 12: Side-Effect Safety & Uncertain State Handling (Zero Blind Replay)
