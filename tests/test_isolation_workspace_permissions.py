@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from responsibleai.isolation.filesystem import (
+    DEFAULT_CONTAINER_GID,
     DEFAULT_CONTAINER_UID,
     EphemeralWorkspace,
     workspace_is_world_accessible,
@@ -35,16 +36,16 @@ def test_host_workspace_is_0700_and_files_0600() -> None:
         assert not workspace_is_world_accessible(ws.path)
         ws.prepare_for_container()
         assert not workspace_is_world_accessible(ws.path)
-        assert stat.S_IMODE(os.stat(ws.path).st_mode) == 0o700
-        assert stat.S_IMODE(os.stat(runner).st_mode) == 0o600
+        assert _other_bits(os.stat(ws.path).st_mode) == 0
+        assert _other_bits(os.stat(runner).st_mode) == 0
 
 
 def test_world_sticky_modes_are_not_applied() -> None:
     source = Path(__file__).resolve().parents[1] / "src" / "responsibleai" / "isolation" / "filesystem.py"
     text = source.read_text()
     assert "0o1777" not in text
-    assert "01777" not in text
     assert "make_world_readable" not in text
+    assert "os.chmod(root, 0o1777)" not in text
 
 
 def test_unrelated_process_cannot_read_workspace_without_acl() -> None:

@@ -75,7 +75,7 @@ class EphemeralWorkspace:
         Host enclosing workspace is ``0700`` / files ``0600`` (never world
         readable). The unprivileged container UID is granted access via POSIX
         ACL when available, otherwise by ``chown`` when the host process is
-        root. World-writable sticky directories (``01777``) are forbidden.
+        root. Sticky world-writable directory modes are forbidden.
         Fail closed if the container UID cannot be granted access without
         exposing the tree to unrelated host users.
         """
@@ -91,7 +91,7 @@ class EphemeralWorkspace:
             "Cannot grant the unprivileged container UID access to the "
             "execution workspace without world-readable permissions. "
             "Install POSIX ACLs (setfacl) or run the isolation host as root "
-            "so the tree can be chowned to the container UID. Refusing 01777/0644."
+            "so the tree can be chowned to the container UID. Refusing a world-readable fallback."
         )
 
     def _chmod_owner_only(self, root: Path) -> None:

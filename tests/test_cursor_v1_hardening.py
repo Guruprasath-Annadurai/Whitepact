@@ -71,6 +71,17 @@ def test_hosted_production_preflight_skips_non_production() -> None:
     hosted_production_preflight(settings, allowed_hosts=[])
 
 
+def test_hosted_production_preflight_rejects_multi_replica() -> None:
+    settings = SimpleNamespace(
+        is_production=True,
+        mcp_http_allow_unauthenticated_demo=False,
+        mcp_governance_enabled=True,
+        multi_replica=True,
+    )
+    with pytest.raises(HostedProductionSecurityError, match="one authenticated"):
+        hosted_production_preflight(settings, allowed_hosts=["mcp.example.com"])
+
+
 def test_hosted_production_preflight_rejects_phase7a_dispatcher() -> None:
     settings = SimpleNamespace(
         is_production=True,

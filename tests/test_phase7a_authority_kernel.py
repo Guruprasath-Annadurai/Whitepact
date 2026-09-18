@@ -433,6 +433,7 @@ async def test_redis_capacity_is_not_authority(pg_url: str) -> None:
             def eval(self, *a, **k):
                 raise ConnectionError("redis gone")
 
+        await kernel.issue(**_issue_kwargs(org.id))
         with pytest.raises(AuthorityKernelError):
             await kernel.publish_outbox(
                 publisher_id="pub",
