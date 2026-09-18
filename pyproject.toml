@@ -49,7 +49,7 @@ dependencies = [
     # new API is real, separate work with its own test pass, not
     # something to fold into an unrelated commit. Bump this pin (and
     # migrate the kwargs) deliberately, in its own change.
-    "mcp>=1.0.0,<2.0.0",
+    "mcp>=1.0.0,<3.0.0",
     "alembic>=1.13.0",
 ]
 
@@ -86,7 +86,7 @@ huggingface = ["transformers>=4.40.0", "torch>=2.0.0"]
 privacy    = ["fastapi>=0.110.0", "uvicorn>=0.29.0"]
 deepfake   = ["torch>=2.0.0", "torchvision>=0.15.0", "pillow>=10.0.0", "opencv-python>=4.8.0"]
 all        = ["rai-governance-platform[dashboard,postgres,redis,telemetry,openai,anthropic,google,huggingface,deepfake,sso]"]
-mcp        = ["mcp>=1.0.0,<2.0.0"]
+mcp        = ["mcp>=1.0.0,<3.0.0"]
 billing    = ["stripe>=9.0.0"]
 # Agent-framework integrations (src/responsibleai/integrations/) — the
 # rai_check_trust MCP tool and its LangChain/LangGraph/ADK adapters.
@@ -143,7 +143,7 @@ dev = [
     "opentelemetry-exporter-otlp-proto-http>=1.24.0",
     "opentelemetry-instrumentation-fastapi>=0.45b0",
     "opentelemetry-instrumentation-httpx>=0.45b0",
-    "mcp>=1.0.0,<2.0.0",
+    "mcp>=1.0.0,<3.0.0",
     "pyotp>=2.9.0",
     "langchain>=1.0.0",
     "langgraph>=1.0.0",
