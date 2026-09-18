@@ -59,6 +59,14 @@ def validate_schema_lineage(connection: Connection) -> None:
             "oauth_flow_states",
             "paddle_webhook_events",
         },
+        50: {"runtime_execution_requests"},
+        51: {"governance_execution_authorizations"},
+        52: {"runtime_execution_attempts"},
+        53: {
+            "runtime_worker_leases",
+            "runtime_execution_fences",
+            "runtime_execution_dispatch_outbox",
+        },
     }
     for introduced, expected in requirements.items():
         if revision >= introduced and not expected <= tables:

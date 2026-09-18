@@ -34,3 +34,7 @@ class InvalidBackendModeError(IsolationError):
 
 class FilesystemEscapeError(IsolationError):
     """Raised when an isolated task attempts to access paths outside its workspace."""
+
+
+class IsolationFilesystemPermissionError(IsolationError):
+    """Raised when the host cannot grant container access without weakening isolation."""

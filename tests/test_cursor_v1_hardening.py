@@ -71,14 +71,15 @@ def test_hosted_production_preflight_skips_non_production() -> None:
     hosted_production_preflight(settings, allowed_hosts=[])
 
 
-def test_hosted_production_preflight_rejects_multi_replica() -> None:
+def test_hosted_production_preflight_rejects_phase7a_dispatcher() -> None:
     settings = SimpleNamespace(
         is_production=True,
         mcp_http_allow_unauthenticated_demo=False,
         mcp_governance_enabled=True,
-        multi_replica=True,
+        multi_replica=False,
+        phase7a_dispatcher_enabled=True,
     )
-    with pytest.raises(HostedProductionSecurityError, match="one authenticated"):
+    with pytest.raises(HostedProductionSecurityError, match="Gate B"):
         hosted_production_preflight(settings, allowed_hosts=["mcp.example.com"])
 
 
@@ -174,7 +175,10 @@ def test_capacity_reserve_release_idempotent() -> None:
 
 def test_canonical_lock_order_starts_with_organization() -> None:
     assert CANONICAL_LOCK_ORDER[0] == "organizations"
-    assert "governance_execution_authorizations" in CANONICAL_LOCK_ORDER
+    assert CANONICAL_LOCK_ORDER[1] == "governance_revocation_epochs"
+    assert CANONICAL_LOCK_ORDER.index("runtime_execution_requests") < CANONICAL_LOCK_ORDER.index(
+        "governance_execution_authorizations"
+    )
     assert CANONICAL_LOCK_ORDER.index("runtime_execution_attempts") > CANONICAL_LOCK_ORDER.index(
         "runtime_execution_requests"
     )

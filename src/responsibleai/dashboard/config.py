@@ -348,6 +348,18 @@ class Settings(BaseSettings):
             "is not an organization)."
         ),
     )
+    phase7a_dispatcher_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "PHASE7A_DISPATCHER_ENABLED",
+            "WHITEPACT_PHASE7A_DISPATCHER_ENABLED",
+            "RAI_PHASE7A_DISPATCHER_ENABLED",
+        ),
+        description=(
+            "Development/staging Phase 7A dispatcher. Default false. "
+            "Production Gate B is CLOSED; production must refuse activation."
+        ),
+    )
     mcp_oauth_issuer: str = Field(
         default="",
         description=(
@@ -611,6 +623,12 @@ class Settings(BaseSettings):
                     "upstream auth tokens, and approval arguments use EncryptedString "
                     "and must not start in plaintext."
                 )
+            from responsibleai.runtime.gate import refuse_production_phase7a
+
+            refuse_production_phase7a(
+                environment=self.environment,
+                enabled=self.phase7a_dispatcher_enabled,
+            )
         return self
 
     @property

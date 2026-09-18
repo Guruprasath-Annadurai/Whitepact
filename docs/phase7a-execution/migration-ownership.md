@@ -1,24 +1,21 @@
 # WhitePact V1 — Canonical Alembic / Phase 7A Migration Ownership
 
-**Status:** CANONICAL at candidate HEAD. Implemented database history is
-authoritative. Pass 4.4 planning documents that assigned `0049` to
-`runtime_execution_requests` are superseded.
+**Status:** CANONICAL. Implemented database history is authoritative.
 
-**Implemented Alembic head:** `0049`
-**File:** `migrations/versions/0049_add_organization_governance_status.py`
-**Down-revision:** `0048`
+**Implemented Alembic head:** `0053`
+**File:** `migrations/versions/0053_runtime_worker_leases.py`
+**Down-revision:** `0052` → `0051` → `0050` → `0049` → `0048`
 
-Phase 7A runtime table migrations `0050`–`0053` are **planned and not
-created**. Do not invent files until the independent implementation gate
-authorizes non-activated foundations.
+There is one linear chain. There is no branch split and no orphan
+revision. `alembic heads` must equal `0053`.
 
 | Revision | Ownership | Status |
 | :--- | :--- | :--- |
 | `0049` | Organization governance lifecycle (`organizations.governance_status` ACTIVE / SUSPENDED / DISABLED) | **Implemented** |
-| `0050` | `runtime_execution_requests` (append-only durable requests) | Planned, not created |
-| `0051` | `governance_execution_authorizations` (`UNIQUE(approval_id)`) | Planned, not created |
-| `0052` | `runtime_execution_attempts` | Planned, not created |
-| `0053` | Worker leases + `runtime_execution_fences` + `runtime_execution_dispatch_outbox` | Planned, not created |
+| `0050` | `runtime_execution_requests` (append-only durable requests) | **Implemented** |
+| `0051` | `governance_execution_authorizations` (`ISSUED` / `CONSUMED` only) | **Implemented** |
+| `0052` | `runtime_execution_attempts` | **Implemented** |
+| `0053` | Worker leases + `runtime_execution_fences` + `runtime_execution_dispatch_outbox` | **Implemented** |
 
 Pass 4.4 numbering (obsolete):
 
@@ -30,5 +27,5 @@ Pass 4.4 numbering (obsolete):
 | 0052 | worker leases / fences / outbox |
 | 0053 | organization governance lifecycle |
 
-There is one linear chain. There is no branch split and no orphan
-revision. `alembic heads` must equal `0049`.
+Production Gate B remains CLOSED. `PHASE7A_DISPATCHER_ENABLED` defaults to
+false. Schema presence is not dispatcher activation.

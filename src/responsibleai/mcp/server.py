@@ -367,6 +367,11 @@ def hosted_production_preflight(
         raise HostedProductionSecurityError(
             "mcp_http_allow_unauthenticated_demo is forbidden in production."
         )
+    if getattr(settings, "phase7a_dispatcher_enabled", False):
+        raise HostedProductionSecurityError(
+            "Production Gate B is CLOSED. PHASE7A_DISPATCHER_ENABLED is forbidden "
+            "in production."
+        )
     if not settings.mcp_governance_enabled:
         raise HostedProductionSecurityError(
             "Production hosted MCP requires mcp_governance_enabled=true. "

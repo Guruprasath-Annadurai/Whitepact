@@ -12,20 +12,21 @@ from alembic.script import ScriptDirectory
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_alembic_single_head_is_0049_governance() -> None:
+def test_alembic_single_head_is_0053_phase7a() -> None:
     script = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
-    assert script.get_heads() == ["0049"]
-    rev = script.get_revision("0049")
-    assert rev.down_revision == "0048"
-    path = ROOT / "migrations" / "versions" / "0049_add_organization_governance_status.py"
-    assert path.is_file()
+    assert script.get_heads() == ["0053"]
+    assert script.get_revision("0053").down_revision == "0052"
+    assert script.get_revision("0052").down_revision == "0051"
+    assert script.get_revision("0051").down_revision == "0050"
+    assert script.get_revision("0050").down_revision == "0049"
+    assert script.get_revision("0049").down_revision == "0048"
     for name in (
         "0050_runtime_execution_requests.py",
         "0051_runtime_execution_authorizations.py",
         "0052_runtime_execution_attempts.py",
         "0053_runtime_worker_leases.py",
     ):
-        assert not (ROOT / "migrations" / "versions" / name).exists()
+        assert (ROOT / "migrations" / "versions" / name).is_file()
 
 
 def test_no_obsolete_0049_runtime_request_ownership() -> None:
@@ -53,3 +54,4 @@ def test_canonical_map_matches_implemented_history() -> None:
     assert "0052" in text and "runtime_execution_attempts" in text
     assert "0053" in text and "runtime_execution_fences" in text
     assert "Implemented Alembic head" in text
+    assert "`0053`" in text

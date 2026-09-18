@@ -2,8 +2,8 @@
 
 **Status:** CANONICAL (Cursor hardening pass; does not open the implementation gate)
 **Frozen parent:** `7bed526e3d631632b4108b0ef6c7ff13728fa914`
-**Current Alembic head after this pass:** `0049` (`organizations.governance_status`)
-**Phase 7A runtime migrations (not activated):** `0050` → `0053`
+**Current Alembic head after this pass:** `0053` (`runtime_worker_leases` + fences + outbox)
+**Phase 7A runtime migrations:** `0050` → `0053` (development/staging implementation; Production Gate B CLOSED)
 
 This document resolves remaining architecture decisions. It does **not**
 activate `PHASE7A_DISPATCHER_ENABLED`. Redis, QueueTicket, worker leases,
@@ -175,8 +175,8 @@ See `src/responsibleai/runtime/lock_order.py`:
 
 1. `organizations`
 2. `governance_revocation_epochs`
-3. `governance_execution_authorizations`
-4. `runtime_execution_requests`
+3. `runtime_execution_requests`
+4. `governance_execution_authorizations`
 5. `runtime_execution_attempts`
 6. `runtime_worker_leases`
 7. `runtime_execution_fences`
