@@ -11,7 +11,21 @@
   <a href="https://www.bestpractices.dev/projects/14112"><img src="https://www.bestpractices.dev/projects/14112/baseline" alt="OpenSSF Baseline"/></a>
 </p>
 
-<p align="center"><strong>WhitePact — an independent runtime authority, governance, and assurance layer for autonomous systems: a five-way governance decision engine (ALLOW / ALLOW_WITH_REDACTION / REQUIRE_APPROVAL / DENY / QUARANTINE), trust scoring, bias detection, guardrails, hallucination detection, compliance mapping (NIST AI RMF / EU AI Act / ISO 42001), cost intelligence, drift monitoring, a public Trust Index / leaderboard / AI Incident Database, and an MCP server (30 tools, 20 resources) with LangChain, LangGraph, and Google ADK trust-gate integrations.</strong></p>
+# WhitePact
+
+<p align="center"><strong>Independent runtime authority for AI agents and autonomous systems.</strong></p>
+
+<p align="center">AI can reason and plan freely. WhitePact governs whether high-impact actions are allowed to execute.</p>
+
+### Why developers are watching WhitePact
+
+- **Runtime authority, not another chatbot guardrail** — five-way decisions: `ALLOW`, `ALLOW_WITH_REDACTION`, `REQUIRE_APPROVAL`, `DENY`, or `QUARANTINE`.
+- **Built for tool-using agents and MCP workflows** — governance, approvals, trust checks, evidence, and policy controls exposed through MCP-compatible surfaces.
+- **Externally discoverable today** — listed in the official MCP Registry and Smithery, and independently indexed by MCP ecosystem directories including Glama.
+
+> **Following agent runtime governance?** Star or watch this repository to follow WhitePact's V1 progress. Teams interested in early evaluation can use the [black-box design-partner track](https://github.com/Guruprasath-Annadurai/Whitepact/issues/87); no source-code, repository, or internal implementation access is offered through that program.
+
+
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
