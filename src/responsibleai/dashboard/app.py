@@ -53,6 +53,8 @@ from responsibleai.cost.router import ModelRouter
 from responsibleai.dashboard.config import get_settings, multi_replica_problems
 from responsibleai.dashboard.logging_config import configure_logging, get_logger
 from responsibleai.dashboard.middleware import (
+    AuthFailureLimiter,
+    MaxBodySizeMiddleware,
     RequestIDMiddleware,
     RequestLoggingMiddleware,
     SecurityHeadersMiddleware,
@@ -231,6 +233,9 @@ if settings.redis_url:
     _limiter_kwargs["storage_uri"] = settings.redis_url
 
 limiter = Limiter(**_limiter_kwargs)
+
+# IP-keyed protection against credential guessing across changing Bearer tokens.
+_auth_failure_limiter = AuthFailureLimiter(max_failures=20, window_seconds=60.0)
 
 # Site-wide cap on self-serve signups, independent of per-IP rate
 # limiting — see signup_guard.py's own docstring for why and its
@@ -638,6 +643,8 @@ app.add_middleware(APIVersionMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(RequestIDMiddleware)
+# Outermost application-level body-size defense. Reverse proxies remain a second layer.
+app.add_middleware(MaxBodySizeMiddleware)
 
 # ── Static files ───────────────────────────────────────────────────────────────
 _static_dir = Path(__file__).parent / "static"
@@ -729,8 +736,13 @@ async def get_org_context(request: Request) -> OrgContext:
         request.state.audit_key_id = "anon"
         return ctx
 
+    client_key = get_remote_address(request)
+    if await _auth_failure_limiter.is_blocked(client_key):
+        raise HTTPException(429, detail="Too many failed authentication attempts. Try again later.")
+
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
+        await _auth_failure_limiter.record_failure(client_key)
         raise HTTPException(401, detail="Missing or invalid Authorization header")
 
     token = auth_header[7:].strip()
@@ -778,7 +790,37 @@ async def get_org_context(request: Request) -> OrgContext:
             request.state.audit_key_id = resolved_ctx.key_id
             return resolved_ctx
 
+    await _auth_failure_limiter.record_failure(client_key)
     raise HTTPException(401, detail="Invalid API key")
+
+
+def _require_caller_owns_org(_auth: OrgContext, org_id: str) -> None:
+    """Enterprise Readiness Phase 7 (cross-tenant isolation sweep):
+    every ``/api/orgs/{org_id}/...`` handler took ``org_id`` from the
+    URL path and used it directly against the repository layer, while
+    ``require_role()`` only checks the caller's ROLE, never that the
+    caller's own ``OrgContext.org_id`` actually matches the path's
+    ``org_id`` -- a real, exploitable cross-tenant IDOR (any org-scoped
+    key with sufficient role could read/modify/delete another org's
+    settings, API keys, SSO/MFA config, authority ceiling, or autonomy
+    budget just by supplying that org's id). Found by
+    ``tests/test_cross_tenant_isolation_sweep.py``, fixed here with one
+    shared guard rather than fifteen inconsistent inline checks.
+
+    A caller with ``org_id is None`` (legacy flat ``RAI_API_KEYS``/dev
+    anonymous auth) is deliberately exempt -- that's this codebase's
+    existing "sees everything" super-admin persona, the same one
+    ``list_webhooks()``/``list_incidents()`` already carve out via
+    ``is_legacy and role == Role.OWNER``. Every org-scoped key must
+    match exactly.
+
+    Raises the same 404 (not 403) this codebase already uses
+    everywhere else for a cross-org access attempt -- never confirms
+    whether the other org's id even exists.
+    """
+    if _auth.org_id is not None and _auth.org_id != org_id:
+        raise HTTPException(404, "Organization not found")
+
 
 
 def require_role(min_role: Role):
@@ -1533,6 +1575,7 @@ async def get_org(
     org_id: str,
     _auth: OrgContext = Depends(require_role(Role.VIEWER)),
 ) -> dict[str, Any]:
+    _require_caller_owns_org(_auth, org_id)
     org = await _ready(_org_repo).get_org(org_id)
     if not org:
         raise HTTPException(404, "Organization not found")
@@ -1546,6 +1589,7 @@ async def delete_org(
     org_id: str,
     _auth: OrgContext = Depends(require_role(Role.OWNER)),
 ) -> dict[str, Any]:
+    _require_caller_owns_org(_auth, org_id)
     deleted = await _ready(_org_repo).delete_org(org_id)
     if not deleted:
         raise HTTPException(404, "Organization not found")
@@ -1567,6 +1611,7 @@ async def set_org_sso(
     RAI_OIDC_ISSUER to be configured on the server, otherwise enabling this
     would lock the org out entirely.
     """
+    _require_caller_owns_org(_auth, org_id)
     if req.sso_required and _oidc_provider is None:
         raise HTTPException(
             400,
@@ -1592,6 +1637,7 @@ async def set_org_mfa(
     /login. Keys that haven't enrolled yet are blocked from logging in
     (not from making API calls directly — see auth/mfa.py for why) until
     they enroll via POST /api/orgs/{org_id}/keys/{key_id}/mfa/enroll."""
+    _require_caller_owns_org(_auth, org_id)
     org = await _ready(_org_repo).get_org(org_id)
     if not org:
         raise HTTPException(404, "Organization not found")
@@ -1611,6 +1657,7 @@ async def get_authority_ceiling(
     enforced live on every hosted MCP tool call via
     `validate_attenuation()`. `null` fields mean unrestricted; no row at
     all (every org before this feature existed) returns all-`null`."""
+    _require_caller_owns_org(_auth, org_id)
     org = await _ready(_org_repo).get_org(org_id)
     if not org:
         raise HTTPException(404, "Organization not found")
@@ -1640,6 +1687,7 @@ async def set_authority_ceiling(
     tool call under this org is checked against it from the next call
     onward (no restart needed, `mcp/governance_integration.py` fetches
     it fresh per call)."""
+    _require_caller_owns_org(_auth, org_id)
     org = await _ready(_org_repo).get_org(org_id)
     if not org:
         raise HTTPException(404, "Organization not found")
@@ -1677,6 +1725,7 @@ async def get_autonomy_budget(
     to REQUIRE_APPROVAL. `configured: false` (both other fields `null`)
     means no budget is set for this org -- identical to behavior before
     this feature existed."""
+    _require_caller_owns_org(_auth, org_id)
     org = await _ready(_org_repo).get_org(org_id)
     if not org:
         raise HTTPException(404, "Organization not found")
@@ -1708,6 +1757,7 @@ async def set_autonomy_budget(
     under this org is checked against it from the next call onward (no
     restart needed, `mcp/governance_integration.py` fetches it fresh
     per call)."""
+    _require_caller_owns_org(_auth, org_id)
     org = await _ready(_org_repo).get_org(org_id)
     if not org:
         raise HTTPException(404, "Organization not found")
@@ -1733,6 +1783,7 @@ async def delete_autonomy_budget(
     """Removes the org's autonomy budget entirely -- distinct from
     `PUT` (which always requires both fields), the only way back to
     "no cap configured."""
+    _require_caller_owns_org(_auth, org_id)
     org = await _ready(_org_repo).get_org(org_id)
     if not org:
         raise HTTPException(404, "Organization not found")
@@ -1748,6 +1799,7 @@ async def create_api_key(
     req: CreateKeyRequest,
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, Any]:
+    _require_caller_owns_org(_auth, org_id)
     org = await _ready(_org_repo).get_org(org_id)
     if not org:
         raise HTTPException(404, "Organization not found")
@@ -1763,6 +1815,7 @@ async def list_api_keys(
     org_id: str,
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, Any]:
+    _require_caller_owns_org(_auth, org_id)
     keys = await _ready(_org_repo).list_keys(org_id)
     return {"keys": [k.to_dict() for k in keys]}
 
@@ -1775,6 +1828,15 @@ async def revoke_api_key(
     key_id: str,
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, Any]:
+    _require_caller_owns_org(_auth, org_id)
+    # revoke_key() itself is org-agnostic (revokes by key_id alone) --
+    # confirm the key actually belongs to the org named in the path
+    # first, same as the mfa endpoints below already do, so a caller
+    # can't revoke a DIFFERENT org's key just by guessing its key_id
+    # while supplying their own org_id in the URL.
+    key = await _ready(_org_repo).get_key(key_id)
+    if key is None or key.org_id != org_id:
+        raise HTTPException(404, "Key not found")
     revoked = await _ready(_org_repo).revoke_key(key_id)
     if not revoked:
         raise HTTPException(404, "Key not found")
@@ -1793,6 +1855,7 @@ async def enroll_mfa(
     add to their authenticator app. Not yet active — call .../mfa/verify
     with a real code from that app to confirm enrollment. Calling this
     again before verifying replaces the pending (unconfirmed) secret."""
+    _require_caller_owns_org(_auth, org_id)
     key = await _ready(_org_repo).get_key(key_id)
     if key is None or key.org_id != org_id:
         raise HTTPException(404, "Key not found")
@@ -1819,6 +1882,7 @@ async def verify_mfa(
     authenticator app. Returns 10 one-time backup codes — shown exactly
     once, store them now. Each is consumed on use if the authenticator
     device is ever lost."""
+    _require_caller_owns_org(_auth, org_id)
     key = await _ready(_org_repo).get_key(key_id)
     if key is None or key.org_id != org_id:
         raise HTTPException(404, "Key not found")
@@ -1844,6 +1908,7 @@ async def disable_mfa(
     key_id: str,
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, Any]:
+    _require_caller_owns_org(_auth, org_id)
     key = await _ready(_org_repo).get_key(key_id)
     if key is None or key.org_id != org_id:
         raise HTTPException(404, "Key not found")
