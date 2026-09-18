@@ -10,11 +10,11 @@ security re-review rather than silently inheriting this exception.
 """
 
 import ast
-from pathlib import Path
+import pathlib
 
 
-_SRC = Path("src")
-_SCORING = Path("src/biasbuster/core/scoring.py")
+_SRC = pathlib.Path("src")
+_SCORING = pathlib.Path("src/biasbuster/core/scoring.py")
 _EXPECTED_NLTK_IMPORTS = {
     (_SCORING.as_posix(), "import", "nltk", ""),
     (
