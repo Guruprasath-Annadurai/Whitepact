@@ -752,6 +752,87 @@ governance_authority_passports = Table(
     Index("idx_ap_principal", "org_id", "principal_id"),
 )
 
+# OAuth 2.1 state for hosted MCP clients. Secrets (authorization codes,
+# access tokens, refresh tokens, and pending-request handles) are represented
+# only by SHA-256 digests. Raw values exist only in the response that creates
+# them and are never persisted.
+oauth_clients = Table(
+    "oauth_clients",
+    metadata,
+    Column("client_id", String(80), primary_key=True),
+    Column("client_name", String(200), nullable=False),
+    Column("redirect_uris", Text, nullable=False),  # JSON list
+    Column("created_at", String(32), nullable=False),
+    Column("revoked", Integer, nullable=False, default=0),
+)
+
+oauth_authorization_requests = Table(
+    "oauth_authorization_requests",
+    metadata,
+    Column("request_hash", String(64), primary_key=True),
+    Column("client_id", String(80), nullable=False),
+    Column("redirect_uri", String(512), nullable=False),
+    Column("state", String(512), nullable=False),
+    Column("code_challenge", String(128), nullable=False),
+    Column("scopes", Text, nullable=False),  # JSON list
+    Column("resource", String(512), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("used", Integer, nullable=False, default=0),
+    Index("idx_oar_client", "client_id"),
+)
+
+oauth_authorization_codes = Table(
+    "oauth_authorization_codes",
+    metadata,
+    Column("code_hash", String(64), primary_key=True),
+    Column("client_id", String(80), nullable=False),
+    Column("redirect_uri", String(512), nullable=False),
+    Column("code_challenge", String(128), nullable=False),
+    Column("org_id", String(36), nullable=False),
+    Column("subject_id", String(80), nullable=False),
+    Column("role", String(20), nullable=False),
+    Column("scopes", Text, nullable=False),
+    Column("resource", String(512), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("used", Integer, nullable=False, default=0),
+    Index("idx_oac_client", "client_id"),
+)
+
+oauth_credentials = Table(
+    "oauth_credentials",
+    metadata,
+    Column("token_hash", String(64), primary_key=True),
+    Column("token_type", String(16), nullable=False),
+    Column("family_id", String(80), nullable=False),
+    Column("client_id", String(80), nullable=False),
+    Column("org_id", String(36), nullable=False),
+    Column("subject_id", String(80), nullable=False),
+    Column("role", String(20), nullable=False),
+    Column("scopes", Text, nullable=False),
+    Column("resource", String(512), nullable=False),
+    Column("issued_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("revoked", Integer, nullable=False, default=0),
+    Column("consumed_at", String(32), nullable=True),
+    Index("idx_oc_family", "family_id"),
+    Index("idx_oc_org", "org_id"),
+    Index("idx_oc_subject", "subject_id"),
+)
+
+oauth_auth_events = Table(
+    "oauth_auth_events",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("event_type", String(64), nullable=False),
+    Column("outcome", String(16), nullable=False),
+    Column("org_id", String(36), nullable=True),
+    Column("subject_id", String(80), nullable=True),
+    Column("client_id", String(80), nullable=True),
+    Column("created_at", String(32), nullable=False),
+    Index("idx_oae_created", "created_at"),
+    Index("idx_oae_org", "org_id"),
+)
+
 
 class DatabaseEngine:
     """Async database engine wrapping SQLAlchemy — SQLite or PostgreSQL.

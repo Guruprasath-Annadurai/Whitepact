@@ -126,26 +126,17 @@ class TestOidcJwtAuth:
                 async with asyncio.timeout(0.5):
                     await client.get("/sse", headers={"Authorization": f"Bearer {token}"})
 
-    async def test_unknown_org_id_falls_back_to_free_plan(self, mcp_app) -> None:
-        """A JWT with an org_id the DB doesn't know about still
-        authenticates (identity is proven by the token signature/issuer,
-        not by DB membership) but gets no elevated plan. A FREE-plan
-        context has zero hosted quota (see mcp/licensing.py), so `rai_health`
-        -- otherwise free -- comes back as `hosted_access_unavailable`
-        rather than a 401/429: proof auth succeeded and plan-gating, not
-        rejection, is what's shaping the response."""
+    async def test_unknown_org_id_is_rejected(self, mcp_app) -> None:
+        """A valid issuer alone never creates WhitePact tenant membership."""
         build, _org_id, _raw_key = mcp_app
         app = await build(oidc_issuer="https://idp.example.com")
         token = _make_jwt({"sub": "user-2", "org_id": "org-does-not-exist", "roles": []})
-        async with streamable_http_client(
-            "/mcp",
-            http_client=_asgi_http_client(app, token),
-        ) as (read_stream, write_stream, _get_session_id):
-            async with ClientSession(read_stream, write_stream) as session:
-                await session.initialize()
-                result = await session.call_tool("rai_health", {})
-        payload = json.loads(result.content[0].text)
-        assert payload["error"] == "hosted_access_unavailable"
+        async with await _raw_client(app) as client:
+            response = await client.post(
+                "/mcp",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert response.status_code == 401
 
     async def test_static_api_key_still_works_when_oidc_configured(self, mcp_app) -> None:
         """rai_-prefixed tokens are never treated as JWTs, even with OIDC

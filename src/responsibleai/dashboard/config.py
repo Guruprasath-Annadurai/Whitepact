@@ -328,6 +328,33 @@ class Settings(BaseSettings):
             "Never leave this true in a long-running deployment."
         ),
     )
+    mcp_oauth_issuer: str = Field(
+        default="",
+        description=(
+            "Canonical HTTPS issuer for WhitePact's hosted-MCP OAuth 2.1 authorization "
+            "server. Empty disables the built-in authorization server."
+        ),
+    )
+    mcp_oauth_resource_uri: str = Field(
+        default="",
+        description="Canonical HTTPS resource identifier for the hosted /mcp endpoint.",
+    )
+    mcp_oauth_scopes: Annotated[list[str], NoDecode] = Field(
+        default=["whitepact:review", "offline_access"],
+        description="OAuth scopes available to hosted MCP clients.",
+    )
+    mcp_oauth_access_token_ttl_seconds: int = Field(
+        default=900,
+        ge=300,
+        le=3600,
+        description="Lifetime of an OAuth MCP access token in seconds.",
+    )
+    mcp_oauth_refresh_token_ttl_seconds: int = Field(
+        default=2_592_000,
+        ge=3600,
+        le=7_776_000,
+        description="Lifetime of a rotating OAuth MCP refresh token in seconds.",
+    )
 
     # Stripe billing (optional — leave unset to disable paid-tier checkout)
     stripe_secret_key: str | None = Field(
@@ -427,7 +454,7 @@ class Settings(BaseSettings):
             "azure-openai": self.leaderboard_azure_openai_api_key,
         }
 
-    @field_validator("oidc_scopes", mode="before")
+    @field_validator("oidc_scopes", "mcp_oauth_scopes", mode="before")
     @classmethod
     def _parse_scopes(cls, v: Any) -> list[str]:
         if isinstance(v, str):

@@ -110,13 +110,13 @@ agent-frameworks = ["rai-governance-platform[langchain,langgraph,adk,a2a]"]
 # three (PYSEC-2026-3582/3583/3584) are fixed in 3.10.0, verified by
 # upgrading and re-running tests/test_scoring.py + tests/test_gender_bias.py
 # (57/57 pass, no regression) -- the floor below reflects that fix.
-# PYSEC-2026-597 / CVE-2026-12243 (path traversal) remains open upstream
-# with no fixed release as of this writing. Our only call site passes the
-# hardcoded literal "vader_lexicon" to nltk.download() — never an
-# attacker-controlled resource name — so this codebase does not trigger
-# the vulnerable path. Still opt-in only, so a default install never
-# carries the finding; installing this extra takes on that
-# (mitigated-here, unpatched-upstream) risk knowingly.
+# PYSEC-2026-597 / CVE-2026-12243 and PYSEC-2026-3740 / CVE-2026-81726
+# remain open upstream with no fixed release as of this writing. Our only
+# call site passes the hardcoded literal "vader_lexicon" to nltk.download().
+# It never calls the affected data.load/find or model-artifact import/export
+# APIs, so this codebase does not trigger either vulnerable path. Still
+# opt-in only, so a default install never carries the findings; installing
+# this extra takes on that (mitigated-here, unpatched-upstream) risk knowingly.
 sentiment  = ["nltk>=3.10.0"]
 dev = [
     "pytest>=8.0.0",
