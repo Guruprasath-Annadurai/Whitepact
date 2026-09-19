@@ -115,6 +115,9 @@ SENSITIVE_ENCRYPTED_COLUMNS: tuple[tuple[str, str], ...] = (
     ("audit_log", "ip_address"),
     ("public_incident_reports", "reporter_name"),
     ("public_incident_reports", "reporter_contact"),
+    ("human_totp_factors", "secret_encrypted"),
+    ("human_totp_factors", "pending_secret_encrypted"),
+    ("organization_sso_configs", "client_secret_encrypted"),
 )
 
 

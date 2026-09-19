@@ -586,8 +586,10 @@ app = FastAPI(
 )
 
 from responsibleai.enterprise.router import router as enterprise_router
+from responsibleai.enterprise.security.router import router as enterprise_security_router
 
 app.include_router(enterprise_router)
+app.include_router(enterprise_security_router)
 
 
 # ── Audit log middleware ───────────────────────────────────────────────────────
@@ -1694,18 +1696,29 @@ async def web_password_reset_confirm(
 @app.post("/api/web/auth/login", tags=["web-auth"])
 @limiter.limit("10/minute")
 async def web_login(request: Request, req: WebLoginRequest) -> JSONResponse:
-    identity = await _ready(_web_identity_repo).authenticate(str(req.email), req.password)
-    if identity is None:
-        raise HTTPException(401, "Invalid credentials or unverified email.")
-    user_id, _email, _full_name = identity
+    from responsibleai.enterprise.errors import EnterpriseError as EntErr
+    from responsibleai.enterprise.security.service import IdentitySecurityService
+
     existing_session = request.cookies.get("wp_session", "")
     if existing_session:
         await _ready(_web_identity_repo).revoke_session(existing_session)
-    org_id = await _ready(_web_identity_repo).primary_org_id(user_id)
-    token, csrf = await _ready(_web_identity_repo).create_session(
-        user_id, org_id=org_id, ttl_hours=settings.web_session_ttl_hours
+    try:
+        result = await IdentitySecurityService(_ready(_db_engine)).authenticate_password(
+            str(req.email), req.password
+        )
+    except EntErr as exc:
+        if exc.http_status == 403:
+            raise HTTPException(exc.http_status, exc.code) from exc
+        raise HTTPException(401, "Invalid credentials or unverified email.") from exc
+    if result is None:
+        raise HTTPException(401, "Invalid credentials or unverified email.")
+    token, csrf, assurance = result
+    response = JSONResponse(
+        {
+            "next": "/dashboard" if assurance.org_id else "/onboarding",
+            "assurance": assurance.level,
+        }
     )
-    response = JSONResponse({"next": "/dashboard" if org_id else "/onboarding"})
     _set_web_cookies(response, token, csrf)
     return response
 

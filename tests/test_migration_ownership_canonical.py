@@ -12,9 +12,10 @@ from alembic.script import ScriptDirectory
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_alembic_single_head_is_0055_enterprise_saas() -> None:
+def test_alembic_single_head_is_0056_enterprise_saas() -> None:
     script = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
-    assert script.get_heads() == ["0055"]
+    assert script.get_heads() == ["0056"]
+    assert script.get_revision("0056").down_revision == "0055"
     assert script.get_revision("0055").down_revision == "0054"
     assert script.get_revision("0054").down_revision == "0053"
     assert script.get_revision("0053").down_revision == "0052"
@@ -29,6 +30,7 @@ def test_alembic_single_head_is_0055_enterprise_saas() -> None:
         "0053_runtime_worker_leases.py",
         "0054_enterprise_saas_identity.py",
         "0055_verified_principal_gate.py",
+        "0056_identity_security_fortress.py",
     ):
         assert (ROOT / "migrations" / "versions" / name).is_file()
 
@@ -59,6 +61,7 @@ def test_canonical_map_matches_implemented_history() -> None:
     assert "0053" in text and "runtime_execution_fences" in text
     assert "0054" in text and "Enterprise SaaS Layer 1" in text
     assert "0055" in text and "Verified principal" in text
+    assert "0056" in text and "identity security fortress" in text
     assert "Current implemented Alembic head" in text
-    assert "`0055`" in text
+    assert "`0056`" in text
     assert "`0053`" in text

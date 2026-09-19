@@ -126,3 +126,6 @@ def assert_identity_webhook_boot_safe(settings: Any) -> None:
 def assert_hosted_enterprise_boot_safe(settings: Any) -> None:
     assert_legacy_api_keys_boot_safe(settings)
     assert_identity_webhook_boot_safe(settings)
+    from responsibleai.enterprise.security.preflight import assert_layer2_provider_boot_safe
+
+    assert_layer2_provider_boot_safe(settings)

@@ -215,6 +215,15 @@ web_sessions = Table(
     Column("expires_at", String(32), nullable=False),
     Column("last_seen_at", String(32), nullable=False),
     Column("revoked", Integer, nullable=False, default=0),
+    Column("assurance_level", String(32), nullable=False, server_default="PASSWORD"),
+    Column("auth_methods_json", Text, nullable=False, server_default="[]"),
+    Column("auth_time", String(32), nullable=True),
+    Column("phishing_resistant", Integer, nullable=False, server_default="0"),
+    Column("ip_label", String(64), nullable=True),
+    Column("user_agent", String(512), nullable=True),
+    Column("last_step_up_at", String(32), nullable=True),
+    Column("inactivity_expires_at", String(32), nullable=True),
+    Column("rotated_from", String(64), nullable=True),
     Index("idx_web_sessions_user", "user_id"),
     Index("idx_web_sessions_expires", "expires_at"),
 )
@@ -2289,6 +2298,214 @@ api_key_issuance_decisions = Table(
     Column("requested_scopes", Text, nullable=False, default="[]", server_default="[]"),
     Column("created_at", String(32), nullable=False),
     Index("idx_api_key_issuance_org", "org_id"),
+)
+
+# Layer 2 identity security fortress. Authentication is not identity
+# verification and never grants execution authority.
+webauthn_challenges = Table(
+    "webauthn_challenges",
+    metadata,
+    Column("challenge_hash", String(64), primary_key=True),
+    Column("user_id", String(36), nullable=True),
+    Column("session_id", String(64), nullable=True),
+    Column("org_id", String(36), nullable=True),
+    Column("ceremony", String(32), nullable=False),
+    Column("rp_id", String(255), nullable=False),
+    Column("origin", String(512), nullable=False),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("consumed_at", String(32), nullable=True),
+    CheckConstraint("ceremony IN ('register','authenticate')", name="chk_webauthn_ceremony"),
+    Index("idx_webauthn_challenges_user", "user_id"),
+    Index("idx_webauthn_challenges_expiry", "expires_at"),
+)
+
+passkey_credentials = Table(
+    "passkey_credentials",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("user_id", String(36), ForeignKey("web_users.id", ondelete="CASCADE"), nullable=False),
+    Column("credential_id", String(512), nullable=False),
+    Column("public_key", Text, nullable=False),
+    Column("sign_count", Integer, nullable=False, server_default="0"),
+    Column("rp_id", String(255), nullable=False),
+    Column("transports_json", Text, nullable=False, server_default="[]"),
+    Column("aaguid", String(64), nullable=True),
+    Column("backup_eligible", Integer, nullable=True),
+    Column("backup_state", Integer, nullable=True),
+    Column("display_name", String(200), nullable=False, server_default="Passkey"),
+    Column("status", String(32), nullable=False, server_default="ACTIVE"),
+    Column("created_at", String(32), nullable=False),
+    Column("last_used_at", String(32), nullable=True),
+    UniqueConstraint("rp_id", "credential_id", name="uq_passkey_rp_credential"),
+    Index("idx_passkey_user", "user_id"),
+    Index("idx_passkey_credential", "credential_id"),
+)
+
+human_totp_factors = Table(
+    "human_totp_factors",
+    metadata,
+    Column("user_id", String(36), ForeignKey("web_users.id", ondelete="CASCADE"), primary_key=True),
+    Column("secret_encrypted", EncryptedString(), nullable=False),
+    Column("pending_secret_encrypted", EncryptedString(), nullable=True),
+    Column("status", String(32), nullable=False, server_default="PENDING"),
+    Column("last_timestep", Integer, nullable=True),
+    Column("failed_attempts", Integer, nullable=False, server_default="0"),
+    Column("created_at", String(32), nullable=False),
+    Column("confirmed_at", String(32), nullable=True),
+)
+
+recovery_code_hashes = Table(
+    "recovery_code_hashes",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("user_id", String(36), ForeignKey("web_users.id", ondelete="CASCADE"), nullable=False),
+    Column("code_hash", String(64), nullable=False),
+    Column("generation", Integer, nullable=False),
+    Column("consumed_at", String(32), nullable=True),
+    Column("created_at", String(32), nullable=False),
+    UniqueConstraint("user_id", "code_hash", name="uq_recovery_code_user_hash"),
+    Index("idx_recovery_codes_user", "user_id"),
+)
+
+account_recovery_requests = Table(
+    "account_recovery_requests",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("user_id", String(36), ForeignKey("web_users.id", ondelete="CASCADE"), nullable=False),
+    Column("token_hash", String(64), nullable=False, unique=True),
+    Column("status", String(32), nullable=False, server_default="RECOVERY_REQUESTED"),
+    Column("privileged", Integer, nullable=False, server_default="0"),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("consumed_at", String(32), nullable=True),
+    Column("evidence_json", Text, nullable=False, server_default="{}"),
+    Index("idx_account_recovery_user", "user_id"),
+)
+
+provider_identities = Table(
+    "provider_identities",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("user_id", String(36), ForeignKey("web_users.id", ondelete="CASCADE"), nullable=False),
+    Column("provider", String(64), nullable=False),
+    Column("subject", String(255), nullable=False),
+    Column("tenant_id", String(255), nullable=True),
+    Column("hosted_domain", String(255), nullable=True),
+    Column("account_kind", String(32), nullable=False, server_default="PERSONAL"),
+    Column("email_at_link", String(254), nullable=True),
+    Column("status", String(32), nullable=False, server_default="ACTIVE"),
+    Column("created_at", String(32), nullable=False),
+    UniqueConstraint("provider", "subject", "tenant_id", name="uq_provider_identity_subject"),
+    Index("idx_provider_identities_user", "user_id"),
+)
+
+organization_idp_bindings = Table(
+    "organization_idp_bindings",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False),
+    Column("provider", String(64), nullable=False),
+    Column("tenant_id", String(255), nullable=True),
+    Column("issuer", String(512), nullable=False),
+    Column("verified_domain", String(255), nullable=True),
+    Column("status", String(32), nullable=False, server_default="ACTIVE"),
+    Column("configured_by", String(36), nullable=False),
+    Column("verified_at", String(32), nullable=True),
+    Column("policy_json", Text, nullable=False, server_default="{}"),
+    Column("created_at", String(32), nullable=False),
+    UniqueConstraint("org_id", "provider", name="uq_org_idp_provider"),
+    Index("idx_org_idp_tenant", "provider", "tenant_id"),
+)
+
+organization_sso_configs = Table(
+    "organization_sso_configs",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, unique=True),
+    Column("protocol", String(16), nullable=False),
+    Column("issuer", String(512), nullable=False),
+    Column("client_id", String(255), nullable=False),
+    Column("client_secret_encrypted", EncryptedString(), nullable=True),
+    Column("discovery_url", String(512), nullable=True),
+    Column("jwks_url", String(512), nullable=True),
+    Column("redirect_uri", String(512), nullable=False),
+    Column("enforcement", String(32), nullable=False, server_default="SSO_OPTIONAL"),
+    Column("provisioning", String(32), nullable=False, server_default="INVITE_ONLY"),
+    Column("idp_entity_id", String(512), nullable=True),
+    Column("idp_sso_url", String(512), nullable=True),
+    Column("idp_x509_cert", Text, nullable=True),
+    Column("created_by", String(36), nullable=False),
+    Column("created_at", String(32), nullable=False),
+    Column("updated_at", String(32), nullable=False),
+    CheckConstraint("enforcement IN ('SSO_OPTIONAL','SSO_REQUIRED')", name="chk_sso_enforcement"),
+    CheckConstraint("provisioning IN ('INVITE_ONLY','JIT_OPT_IN')", name="chk_sso_provisioning"),
+)
+
+step_up_grants = Table(
+    "step_up_grants",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("grant_hash", String(64), nullable=False, unique=True),
+    Column("user_id", String(36), ForeignKey("web_users.id", ondelete="CASCADE"), nullable=False),
+    Column("session_id", String(64), nullable=False),
+    Column("action", String(64), nullable=False),
+    Column("org_id", String(36), nullable=True),
+    Column("assurance_required", String(32), nullable=False),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("consumed_at", String(32), nullable=True),
+    Index("idx_step_up_grants_session", "session_id"),
+)
+
+auth_replay_records = Table(
+    "auth_replay_records",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("kind", String(32), nullable=False),
+    Column("replay_key", String(128), nullable=False),
+    Column("created_at", String(32), nullable=False),
+    UniqueConstraint("kind", "replay_key", name="uq_auth_replay_kind_key"),
+)
+
+org_security_policies = Table(
+    "org_security_policies",
+    metadata,
+    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True),
+    Column("phishing_resistant_required", Integer, nullable=False, server_default="0"),
+    Column("privileged_roles_json", Text, nullable=False, server_default='["OWNER","SECURITY_ADMIN"]'),
+    Column("sso_enforcement", String(32), nullable=False, server_default="SSO_OPTIONAL"),
+    Column("dual_control_json", Text, nullable=False, server_default="[]"),
+    Column("break_glass_user_id", String(36), nullable=True),
+    Column("updated_at", String(32), nullable=False),
+    Column("updated_by", String(36), nullable=True),
+)
+
+company_domain_challenges = Table(
+    "company_domain_challenges",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False),
+    Column("domain", String(255), nullable=False),
+    Column("method", String(32), nullable=False),
+    Column("token_hash", String(64), nullable=False),
+    Column("status", String(32), nullable=False, server_default="PENDING"),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("verified_at", String(32), nullable=True),
+    UniqueConstraint("org_id", "domain", "method", name="uq_company_domain_challenge"),
+)
+
+identity_security_notifications = Table(
+    "identity_security_notifications",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("user_id", String(36), nullable=True),
+    Column("org_id", String(36), nullable=True),
+    Column("event_type", String(64), nullable=False),
+    Column("created_at", String(32), nullable=False),
+    Column("payload_json", Text, nullable=False, server_default="{}"),
+    Index("idx_identity_security_notifications_user", "user_id"),
 )
 
 

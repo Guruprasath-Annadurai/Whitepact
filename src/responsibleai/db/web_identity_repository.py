@@ -362,6 +362,8 @@ class WebIdentityRepository:
             ).fetchone()
             if user is None:
                 return None
+            if getattr(user, "verification_status", None) == "SUSPENDED":
+                return None
             membership = None
             org = None
             if session.org_id:
@@ -386,7 +388,7 @@ class WebIdentityRepository:
                 if org is None:
                     return None
                 gov = getattr(org, "governance_status", "ACTIVE") or "ACTIVE"
-                if gov == "DISABLED":
+                if gov == "DISABLED" or gov == "SUSPENDED":
                     return None
             await conn.execute(
                 update(web_sessions)
