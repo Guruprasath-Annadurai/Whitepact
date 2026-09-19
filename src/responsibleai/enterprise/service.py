@@ -905,18 +905,28 @@ class EnterpriseIAM:
         now = _now()
         async with self._engine.raw.begin() as conn:
             dialect = conn.engine.dialect.name
-            stmt = (
-                select(org_api_keys, org_api_key_metadata)
-                .outerjoin(org_api_key_metadata, org_api_key_metadata.c.key_id == org_api_keys.c.id)
-                .where(org_api_keys.c.id == key_id, org_api_keys.c.org_id == org_id)
+            lock_stmt = select(org_api_keys).where(
+                org_api_keys.c.id == key_id, org_api_keys.c.org_id == org_id
             )
             if dialect != "sqlite":
-                stmt = stmt.with_for_update()
-            old = (await conn.execute(stmt)).fetchone()
+                lock_stmt = lock_stmt.with_for_update()
+            locked = (await conn.execute(lock_stmt)).fetchone()
+            if locked is None:
+                raise forbidden(WRONG_TENANT, "API key not found.")
+            if locked.revoked:
+                raise forbidden(KEY_REVOKED, "Revoked keys cannot be rotated or resurrected.")
+            old = (
+                await conn.execute(
+                    select(org_api_keys, org_api_key_metadata)
+                    .outerjoin(
+                        org_api_key_metadata,
+                        org_api_key_metadata.c.key_id == org_api_keys.c.id,
+                    )
+                    .where(org_api_keys.c.id == key_id, org_api_keys.c.org_id == org_id)
+                )
+            ).fetchone()
             if old is None:
                 raise forbidden(WRONG_TENANT, "API key not found.")
-            if old.revoked:
-                raise forbidden(KEY_REVOKED, "Revoked keys cannot be rotated or resurrected.")
             env_id = getattr(old, "environment_id", None)
             env_type = getattr(old, "environment", None) or "DEVELOPMENT"
             prefix, raw = self._generate_raw_key(str(env_type))
