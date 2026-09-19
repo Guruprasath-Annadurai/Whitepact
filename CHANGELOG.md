@@ -8,6 +8,37 @@ Follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-09-19
+
+### Security / Runtime Authority
+
+- Hardened WhitePact V1 isolation workspaces so host execution trees stay
+  owner-only (`0700` directories, `0600` files) and grant container UID
+  `65534` access via POSIX ACL or root `chown`. World-readable sticky
+  modes are refused.
+- Added durable Phase 7A execution foundations for development/staging:
+  immutable execution requests, short-lived `ISSUED`/`CONSUMED`
+  authorizations, independent attempts, worker leases with fencing
+  generations, and a dispatch outbox. PostgreSQL remains authority;
+  Redis and QueueTicket remain transport only.
+- Final pre-effect compare-and-set remains mandatory. Uncertain external
+  outcomes stay `UNCERTAIN` and are not automatically replayed.
+- `PHASE7A_DISPATCHER_ENABLED` defaults to `false`. Production Gate B
+  remains independently closed; this version does not activate hosted
+  production execution.
+
+### Tests
+
+- Made Linux `RLIMIT_AS` and POSIX ACL verification capability-aware so
+  unsupported developer hosts skip only the primitives they cannot run,
+  without weakening the Linux security checks.
+
+### Release Engineering
+
+- Bumped the package version from `1.2.6` to `1.3.0` so this source
+  state is not published under a previously released version. Existing
+  `v1.2.6` tags, artifacts, and provenance are not modified.
+
 ## [1.2.6] - 2026-08-31
 
 ### Security / Release Engineering

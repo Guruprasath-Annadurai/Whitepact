@@ -14,7 +14,7 @@ from __future__ import annotations
 import importlib
 from typing import Any
 
-__version__ = "1.2.6"
+__version__ = "1.3.0"
 
 __all__ = [
     "TrustScoreEngine",
