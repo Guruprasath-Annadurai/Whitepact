@@ -11,9 +11,21 @@ from typing import Any
 
 
 class Role(StrEnum):
+    """Administrative RBAC roles.
+
+    These roles never confer WhitePact execution authority. OWNER is the
+    strongest *administrative* role and still cannot manufacture a
+    short-lived execution grant.
+    """
+
     OWNER = "OWNER"
     ADMIN = "ADMIN"
+    SECURITY_ADMIN = "SECURITY_ADMIN"
+    APPROVER = "APPROVER"
+    DEVELOPER = "DEVELOPER"
     ANALYST = "ANALYST"
+    AUDITOR = "AUDITOR"
+    BILLING_ADMIN = "BILLING_ADMIN"
     VIEWER = "VIEWER"
 
 
@@ -110,6 +122,10 @@ class Organization:
     governance_status: str = GovernanceStatus.ACTIVE.value
     sso_required: bool = False
     mfa_required: bool = False
+    # ORGANIZATION (multi-member) or INDIVIDUAL (verified personal workspace).
+    workspace_kind: str = "ORGANIZATION"
+    owner_user_id: str | None = None
+    deactivated_at: str | None = None
     # Internal bootstrap-ownership binding. Never serialized to clients.
     provisioner_key_id: str | None = field(default=None, repr=False)
 
@@ -130,6 +146,9 @@ class Organization:
             "entitlement_updated_at": self.entitlement_updated_at,
             "sso_required": self.sso_required,
             "mfa_required": self.mfa_required,
+            "workspace_kind": self.workspace_kind,
+            "owner_user_id": self.owner_user_id,
+            "deactivated_at": self.deactivated_at,
         }
 
 

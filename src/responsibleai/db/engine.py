@@ -10,6 +10,7 @@ import logging
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     Column,
     DateTime,
     Float,
@@ -107,6 +108,10 @@ organizations = Table(
     Column("entitlement_version", Integer, nullable=False, default=0),
     Column("entitlement_updated_at", String(32), nullable=True),
     Column("paddle_last_occurred_at", String(36), nullable=True),
+    Column("workspace_kind", String(20), nullable=False, default="ORGANIZATION", server_default="ORGANIZATION"),
+    Column("owner_user_id", String(36), nullable=True),
+    Column("settings_json", Text, nullable=False, default="{}", server_default="{}"),
+    Column("deactivated_at", String(32), nullable=True),
     Index("idx_org_slug", "slug"),
     Index("idx_org_stripe_customer", "stripe_customer_id"),
     Index("idx_org_paddle_customer", "paddle_customer_id", unique=True),
@@ -145,8 +150,17 @@ org_api_keys = Table(
     Column("mfa_secret", EncryptedString(), nullable=True),
     Column("mfa_enrolled", Integer, nullable=False, default=0),
     Column("mfa_backup_codes", Text, nullable=True),
+    Column("created_by_user_id", String(36), nullable=True),
+    Column("accountable_human_user_id", String(36), nullable=True),
+    Column("service_account_id", String(36), nullable=True),
+    Column("environment_id", String(36), nullable=True),
+    Column("holder_kind", String(32), nullable=False, default="human_key", server_default="human_key"),
+    Column("overlap_expires_at", String(32), nullable=True),
+    Column("revoked_at", String(32), nullable=True),
     Index("idx_oak_org", "org_id"),
     Index("idx_oak_hash", "key_hash"),
+    Index("idx_oak_environment", "environment_id"),
+    Index("idx_oak_service_account", "service_account_id"),
 )
 
 # Human identities and browser sessions are intentionally separate from
@@ -161,6 +175,9 @@ web_users = Table(
     Column("password_hash", Text, nullable=False),
     Column("email_verified_at", String(32), nullable=True),
     Column("disabled", Integer, nullable=False, default=0),
+    Column("verification_status", String(32), nullable=False, default="UNVERIFIED", server_default="UNVERIFIED"),
+    Column("phone_verified_at", String(32), nullable=True),
+    Column("abuse_hold", Integer, nullable=False, default=0),
     Column("created_at", String(32), nullable=False),
     Column("updated_at", String(32), nullable=False),
     Index("idx_web_users_email", "email"),
@@ -175,6 +192,11 @@ web_memberships = Table(
         "org_id", String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
     ),
     Column("role", String(20), nullable=False),
+    Column("status", String(20), nullable=False, default="ACTIVE", server_default="ACTIVE"),
+    Column("invited_by_user_id", String(36), nullable=True),
+    Column("accepted_at", String(32), nullable=True),
+    Column("revoked_at", String(32), nullable=True),
+    Column("updated_at", String(32), nullable=True),
     Column("created_at", String(32), nullable=False),
     UniqueConstraint("user_id", "org_id", name="uq_web_membership_user_org"),
     Index("idx_web_memberships_user", "user_id"),
@@ -185,6 +207,7 @@ web_sessions = Table(
     "web_sessions",
     metadata,
     Column("token_hash", String(64), primary_key=True),
+    Column("session_id", String(36), nullable=True, unique=True),
     Column("user_id", String(36), ForeignKey("web_users.id", ondelete="CASCADE"), nullable=False),
     Column("org_id", String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True),
     Column("csrf_hash", String(64), nullable=False),
@@ -263,7 +286,7 @@ org_api_key_metadata = Table(
         "key_id", String(36), ForeignKey("org_api_keys.id", ondelete="CASCADE"), primary_key=True
     ),
     Column("prefix", String(20), nullable=False),
-    Column("environment", String(8), nullable=False),
+    Column("environment", String(16), nullable=False),
     Column("scopes", Text, nullable=False),
     Column("expires_at", String(32), nullable=True),
     Column("rotated_from_id", String(36), nullable=True),
@@ -2070,6 +2093,202 @@ runtime_execution_dispatch_outbox = Table(
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("updated_at", DateTime(timezone=True), nullable=False),
     Index("idx_outbox_status_created", "status", "created_at"),
+)
+
+# ── Enterprise SaaS Layer 1 (administrative identity; not execution authority)
+
+enterprise_environments = Table(
+    "enterprise_environments",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("type", String(16), nullable=False),
+    Column("name", String(100), nullable=False),
+    Column("status", String(20), nullable=False, default="ACTIVE", server_default="ACTIVE"),
+    Column("created_at", String(32), nullable=False),
+    Column("metadata_json", Text, nullable=False, default="{}", server_default="{}"),
+    CheckConstraint(
+        "type IN ('DEVELOPMENT','STAGING','PRODUCTION')",
+        name="chk_enterprise_environment_type",
+    ),
+    CheckConstraint(
+        "status IN ('ACTIVE','DISABLED','DELETED')",
+        name="chk_enterprise_environment_status",
+    ),
+    UniqueConstraint("org_id", "name", name="uq_enterprise_environment_org_name"),
+    Index("idx_enterprise_env_org", "org_id"),
+)
+
+enterprise_service_accounts = Table(
+    "enterprise_service_accounts",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("display_name", String(200), nullable=False),
+    Column("status", String(20), nullable=False, default="ACTIVE", server_default="ACTIVE"),
+    Column("role", String(20), nullable=False),
+    Column(
+        "created_by_user_id",
+        String(36),
+        ForeignKey("web_users.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("created_at", String(32), nullable=False),
+    Column("revoked_at", String(32), nullable=True),
+    CheckConstraint(
+        "status IN ('ACTIVE','DISABLED','REVOKED')",
+        name="chk_enterprise_sa_status",
+    ),
+    CheckConstraint(
+        "role <> 'OWNER'",
+        name="chk_enterprise_sa_not_owner",
+    ),
+    Index("idx_enterprise_sa_org", "org_id"),
+)
+
+enterprise_service_account_environments = Table(
+    "enterprise_service_account_environments",
+    metadata,
+    Column(
+        "service_account_id",
+        String(36),
+        ForeignKey("enterprise_service_accounts.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "environment_id",
+        String(36),
+        ForeignKey("enterprise_environments.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+)
+
+enterprise_security_audit = Table(
+    "enterprise_security_audit",
+    metadata,
+    Column("event_id", String(36), primary_key=True),
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=True,
+    ),
+    Column("environment_id", String(36), nullable=True),
+    Column("actor_type", String(32), nullable=False),
+    Column("actor_id", String(64), nullable=False),
+    Column("action", String(64), nullable=False),
+    Column("target_type", String(64), nullable=False),
+    Column("target_id", String(64), nullable=True),
+    Column("result", String(24), nullable=False),
+    Column("timestamp", String(32), nullable=False),
+    Column("request_id", String(64), nullable=True),
+    Column("metadata_json", Text, nullable=False, default="{}", server_default="{}"),
+    Index("idx_enterprise_audit_org_ts", "org_id", "timestamp"),
+    Index("idx_enterprise_audit_action", "action"),
+)
+
+identity_verifications = Table(
+    "identity_verifications",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column(
+        "user_id",
+        String(36),
+        ForeignKey("web_users.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("status", String(32), nullable=False, default="UNVERIFIED", server_default="UNVERIFIED"),
+    Column("provider", String(64), nullable=False),
+    Column("provider_reference_id", String(128), nullable=True),
+    Column("legal_name_encrypted", EncryptedString(), nullable=True),
+    Column("country", String(2), nullable=True),
+    Column("assurance_level", String(32), nullable=True),
+    Column("review_status", String(32), nullable=True),
+    Column("verified_at", String(32), nullable=True),
+    Column("expires_at", String(32), nullable=True),
+    Column("created_at", String(32), nullable=False),
+    Column("updated_at", String(32), nullable=False),
+    CheckConstraint(
+        "status IN ('UNVERIFIED','BASIC_VERIFIED','IDENTITY_VERIFIED','REVIEW_REQUIRED','REJECTED','SUSPENDED')",
+        name="chk_identity_verification_status",
+    ),
+    Index("idx_identity_verifications_user", "user_id"),
+    Index("idx_identity_verifications_provider_ref", "provider", "provider_reference_id"),
+)
+
+organization_verifications = Table(
+    "organization_verifications",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    ),
+    Column("status", String(32), nullable=False, default="UNVERIFIED", server_default="UNVERIFIED"),
+    Column("legal_name", String(300), nullable=True),
+    Column("domain", String(255), nullable=True),
+    Column("registration_reference", String(128), nullable=True),
+    Column(
+        "accountable_owner_user_id",
+        String(36),
+        ForeignKey("web_users.id", ondelete="RESTRICT"),
+        nullable=True,
+    ),
+    Column("provider", String(64), nullable=True),
+    Column("provider_reference_id", String(128), nullable=True),
+    Column("verified_at", String(32), nullable=True),
+    Column("created_at", String(32), nullable=False),
+    Column("updated_at", String(32), nullable=False),
+    CheckConstraint(
+        "status IN ('UNVERIFIED','DOMAIN_VERIFIED','ORGANIZATION_VERIFIED','REVIEW_REQUIRED','REJECTED','SUSPENDED')",
+        name="chk_org_verification_status",
+    ),
+)
+
+identity_provider_events = Table(
+    "identity_provider_events",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("provider", String(64), nullable=False),
+    Column("event_id", String(128), nullable=False),
+    Column("user_id", String(36), nullable=True),
+    Column("org_id", String(36), nullable=True),
+    Column("payload_hash", String(64), nullable=False),
+    Column("received_at", String(32), nullable=False),
+    UniqueConstraint("provider", "event_id", name="uq_identity_provider_event"),
+)
+
+api_key_issuance_decisions = Table(
+    "api_key_issuance_decisions",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("org_id", String(36), nullable=True),
+    Column("principal_user_id", String(36), nullable=True),
+    Column("environment_id", String(36), nullable=True),
+    Column("allowed", Integer, nullable=False),
+    Column("reason_code", String(64), nullable=False),
+    Column("requested_scopes", Text, nullable=False, default="[]", server_default="[]"),
+    Column("created_at", String(32), nullable=False),
+    Index("idx_api_key_issuance_org", "org_id"),
 )
 
 

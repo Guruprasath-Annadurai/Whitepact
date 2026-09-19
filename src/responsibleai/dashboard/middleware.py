@@ -196,6 +196,17 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
 
 async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
     rid = getattr(request.state, "request_id", "?")
+    if isinstance(exc.detail, dict) and "error" in exc.detail:
+        content = {
+            **exc.detail,
+            "status_code": exc.status_code,
+            "request_id": rid,
+        }
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=content,
+            headers=getattr(exc, "headers", None),
+        )
     return JSONResponse(
         status_code=exc.status_code,
         content={

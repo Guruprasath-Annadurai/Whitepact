@@ -12,9 +12,11 @@ from alembic.script import ScriptDirectory
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_alembic_single_head_is_0053_phase7a() -> None:
+def test_alembic_single_head_is_0055_enterprise_saas() -> None:
     script = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
-    assert script.get_heads() == ["0053"]
+    assert script.get_heads() == ["0055"]
+    assert script.get_revision("0055").down_revision == "0054"
+    assert script.get_revision("0054").down_revision == "0053"
     assert script.get_revision("0053").down_revision == "0052"
     assert script.get_revision("0052").down_revision == "0051"
     assert script.get_revision("0051").down_revision == "0050"
@@ -25,6 +27,8 @@ def test_alembic_single_head_is_0053_phase7a() -> None:
         "0051_runtime_execution_authorizations.py",
         "0052_runtime_execution_attempts.py",
         "0053_runtime_worker_leases.py",
+        "0054_enterprise_saas_identity.py",
+        "0055_verified_principal_gate.py",
     ):
         assert (ROOT / "migrations" / "versions" / name).is_file()
 
@@ -53,5 +57,8 @@ def test_canonical_map_matches_implemented_history() -> None:
     assert "0051" in text and "governance_execution_authorizations" in text
     assert "0052" in text and "runtime_execution_attempts" in text
     assert "0053" in text and "runtime_execution_fences" in text
-    assert "Implemented Alembic head" in text
+    assert "0054" in text and "Enterprise SaaS Layer 1" in text
+    assert "0055" in text and "Verified principal" in text
+    assert "Current implemented Alembic head" in text
+    assert "`0055`" in text
     assert "`0053`" in text

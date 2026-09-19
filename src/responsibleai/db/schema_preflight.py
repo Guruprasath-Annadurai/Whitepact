@@ -67,6 +67,18 @@ def validate_schema_lineage(connection: Connection) -> None:
             "runtime_execution_fences",
             "runtime_execution_dispatch_outbox",
         },
+        54: {
+            "enterprise_environments",
+            "enterprise_service_accounts",
+            "enterprise_service_account_environments",
+            "enterprise_security_audit",
+            "api_key_issuance_decisions",
+        },
+        55: {
+            "identity_verifications",
+            "organization_verifications",
+            "identity_provider_events",
+        },
     }
     for introduced, expected in requirements.items():
         if revision >= introduced and not expected <= tables:

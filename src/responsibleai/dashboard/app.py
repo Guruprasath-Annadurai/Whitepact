@@ -415,6 +415,9 @@ async def lifespan(application: FastAPI):
     _billing_event_repo = BillingEventRepository(_db_engine)
     _paddle_event_repo = PaddleBillingEventRepository(_db_engine)
     _web_identity_repo = WebIdentityRepository(_db_engine)
+    from responsibleai.enterprise.runtime import configure_enterprise
+
+    configure_enterprise(_db_engine)
     _audit_repo = AuditRepository(_db_engine)
     _incident_repo = IncidentRepository(_db_engine)
     _leaderboard_repo = LeaderboardRepository(_db_engine)
@@ -566,6 +569,10 @@ app = FastAPI(
     contact={"name": "Guruprasath Annadurai", "email": "annaduraiguruprasath7@gmail.com"},
     license_info={"name": "MIT"},
 )
+
+from responsibleai.enterprise.router import router as enterprise_router
+
+app.include_router(enterprise_router)
 
 
 # ── Audit log middleware ───────────────────────────────────────────────────────

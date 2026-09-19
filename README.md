@@ -762,10 +762,11 @@ cd Whitepact
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-# Full test suite (run it to see the current test count and coverage —
-# see CONTRIBUTING.md's Running Tests section for why no number is
-# hardcoded here)
-pytest
+# Full test suite
+PYTHONPATH=src pytest tests/ -ra
+
+# Enterprise SaaS Layer 1 (identity, RBAC, verified principal gate)
+PYTHONPATH=src pytest tests/test_enterprise_saas_layer1.py tests/test_enterprise_saas_layer1_pg.py -ra
 
 # Dashboard tests only
 RAI_DB_PATH=:memory: RAI_AUTH_ENABLED=false pytest tests/test_dashboard_api.py

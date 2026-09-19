@@ -37,6 +37,7 @@ from responsibleai.db.engine import (
     web_verification_tokens,
 )
 from responsibleai.rbac.models import Plan, Role
+from responsibleai.rbac.permissions import role_from_str
 
 _SCRYPT_N = 1 << 14
 _SCRYPT_R = 8
@@ -324,6 +325,7 @@ class WebIdentityRepository:
             await conn.execute(
                 insert(web_sessions).values(
                     token_hash=_hash(token),
+                    session_id=str(uuid.uuid4()),
                     user_id=user_id,
                     org_id=org_id,
                     csrf_hash=_hash(csrf),
@@ -373,12 +375,18 @@ class WebIdentityRepository:
                 ).fetchone()
                 if membership is None:
                     return None
+                membership_status = getattr(membership, "status", "ACTIVE") or "ACTIVE"
+                if membership_status != "ACTIVE":
+                    return None
                 org = (
                     await conn.execute(
                         select(organizations).where(organizations.c.id == session.org_id)
                     )
                 ).fetchone()
                 if org is None:
+                    return None
+                gov = getattr(org, "governance_status", "ACTIVE") or "ACTIVE"
+                if gov == "DISABLED":
                     return None
             await conn.execute(
                 update(web_sessions)
@@ -392,7 +400,7 @@ class WebIdentityRepository:
             org_id=org.id if org else None,
             org_name=org.name if org else None,
             org_plan=Plan(org.plan) if org else None,
-            role=Role(membership.role) if membership else None,
+            role=role_from_str(membership.role) if membership else None,
             csrf_hash=session.csrf_hash,
         )
 
@@ -420,6 +428,9 @@ class WebIdentityRepository:
                     plan=Plan.FREE.value,
                     sso_required=0,
                     mfa_required=0,
+                    workspace_kind="ORGANIZATION",
+                    owner_user_id=user_id,
+                    settings_json="{}",
                 )
             )
             await conn.execute(
@@ -428,7 +439,11 @@ class WebIdentityRepository:
                     user_id=user_id,
                     org_id=org_id,
                     role=role.value,
+                    status="ACTIVE",
+                    invited_by_user_id=None,
+                    accepted_at=_iso(now),
                     created_at=_iso(now),
+                    updated_at=_iso(now),
                 )
             )
             await conn.execute(
@@ -450,7 +465,10 @@ class WebIdentityRepository:
                         web_memberships.c.role,
                     )
                     .join(web_memberships, web_memberships.c.org_id == organizations.c.id)
-                    .where(web_memberships.c.user_id == user_id)
+                    .where(
+                        web_memberships.c.user_id == user_id,
+                        web_memberships.c.status == "ACTIVE",
+                    )
                     .order_by(organizations.c.name)
                 )
             ).fetchall()
@@ -478,6 +496,7 @@ class WebIdentityRepository:
                     select(web_memberships.c.id).where(
                         web_memberships.c.user_id == user_id,
                         web_memberships.c.org_id == org_id,
+                        web_memberships.c.status == "ACTIVE",
                     )
                 )
             ).fetchone()
@@ -503,6 +522,7 @@ class WebIdentityRepository:
             await conn.execute(
                 insert(web_sessions).values(
                     token_hash=_hash(replacement),
+                    session_id=str(uuid.uuid4()),
                     user_id=user_id,
                     org_id=org_id,
                     csrf_hash=_hash(csrf),
@@ -572,7 +592,7 @@ class WebIdentityRepository:
                 await conn.execute(
                     select(web_invitations).where(
                         web_invitations.c.token_hash == _hash(token),
-                        web_invitations.c.status == "PENDING",
+                        web_invitations.c.status.in_(("PENDING", "INVITED")),
                         web_invitations.c.consumed_at.is_(None),
                         web_invitations.c.expires_at > _iso(now),
                     )
@@ -587,14 +607,21 @@ class WebIdentityRepository:
                         user_id=user_id,
                         org_id=invitation.org_id,
                         role=invitation.role,
+                        status="ACTIVE",
+                        invited_by_user_id=invitation.invited_by_user_id,
+                        accepted_at=_iso(now),
                         created_at=_iso(now),
+                        updated_at=_iso(now),
                     )
                 )
             except IntegrityError as exc:
                 raise InvitationError("This invitation cannot be accepted.") from exc
             await conn.execute(
                 update(web_invitations)
-                .where(web_invitations.c.id == invitation.id, web_invitations.c.status == "PENDING")
+                .where(
+                    web_invitations.c.id == invitation.id,
+                    web_invitations.c.status.in_(("PENDING", "INVITED")),
+                )
                 .values(status="ACCEPTED", accepted_by_user_id=user_id, consumed_at=_iso(now))
             )
         return str(invitation.org_id)

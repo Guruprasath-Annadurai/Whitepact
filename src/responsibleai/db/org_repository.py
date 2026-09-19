@@ -13,6 +13,7 @@ Key security decisions:
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import secrets
 from datetime import UTC, datetime
@@ -557,6 +558,10 @@ class OrgRepository:
         if row is None:
             return None
 
+        stored_hash = getattr(row, "key_hash", None)
+        if stored_hash is None or not hmac.compare_digest(str(stored_hash), key_hash):
+            return None
+
         expires_at = getattr(row, "expires_at", None)
         if expires_at and expires_at <= _now():
             return None
@@ -681,6 +686,9 @@ class OrgRepository:
             or GovernanceStatus.ACTIVE.value,
             sso_required=bool(getattr(row, "sso_required", 0)),
             mfa_required=bool(getattr(row, "mfa_required", 0)),
+            workspace_kind=getattr(row, "workspace_kind", None) or "ORGANIZATION",
+            owner_user_id=getattr(row, "owner_user_id", None),
+            deactivated_at=getattr(row, "deactivated_at", None),
             provisioner_key_id=getattr(row, "provisioner_key_id", None),
         )
 
