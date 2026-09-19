@@ -822,7 +822,10 @@ async def test_real_postgres_api_webhook_concurrency_race(pg_test_db: str, monke
     monkeypatch.setattr(app_module.settings, "paddle_signature_tolerance_seconds", 300)
     monkeypatch.setattr(app_module.limiter, "enabled", False)
 
-    async with LifespanManager(app_module.app) as manager:
+    # Real PostgreSQL boot (engine + repository construction) can exceed
+    # asgi-lifespan's default 5s bound even after skipping redundant
+    # metadata.create_all. Bound the harness, do not sleep.
+    async with LifespanManager(app_module.app, startup_timeout=30) as manager:
         async with AsyncClient(
             transport=ASGITransport(app=manager.app), base_url="http://test"
         ) as client:

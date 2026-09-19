@@ -409,7 +409,18 @@ async def lifespan(application: FastAPI):
             ) from exc
 
     _db_engine = create_engine(settings.effective_db_url)
-    await _db_engine.init(auto_create_tables=not settings.is_production)
+    # Production: Alembic owns the schema; never metadata.create_all.
+    # Non-prod SQLite: create_all remains the test/dev convenience path.
+    # PostgreSQL with auto_migrate=False: migrations were applied out of band
+    # (real-PG tests call run_migrations_or_raise first). Repeating create_all
+    # inspects every mapped table against information_schema and can exceed
+    # ASGI lifespan's default 5s startup bound under concurrent PG load.
+    # Issuance policy, webhook fail-closed, and Gate B are unchanged.
+    auto_create_tables = (not settings.is_production) and not (
+        (not settings.auto_migrate)
+        and str(settings.effective_db_url).startswith("postgresql")
+    )
+    await _db_engine.init(auto_create_tables=auto_create_tables)
     _plan_rate_limiter = PlanRateLimiter(redis_url=settings.redis_url)
 
     policy = BudgetPolicy(monthly_limit_usd=settings.monthly_budget_usd)

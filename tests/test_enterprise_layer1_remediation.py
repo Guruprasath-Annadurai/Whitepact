@@ -40,6 +40,8 @@ from responsibleai.mcp.server import HostedProductionSecurityError, hosted_produ
 from responsibleai.rbac.models import Role
 from responsibleai.runtime.gate import PRODUCTION_GATE_B_OPEN
 
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+
 STRONG_SECRET = "prod-identity-webhook-secret-value-32b"
 
 
@@ -426,8 +428,8 @@ async def test_webhook_forged_modified_replay_stale_wrong_binding(engine) -> Non
 
 
 def test_hosted_routes_never_call_org_repository_create_key() -> None:
-    app_src = Path("/tmp/whitepact/src/responsibleai/dashboard/app.py").read_text()
-    router_src = Path("/tmp/whitepact/src/responsibleai/enterprise/router.py").read_text()
+    app_src = (_REPO_ROOT / "src/responsibleai/dashboard/app.py").read_text()
+    router_src = (_REPO_ROOT / "src/responsibleai/enterprise/router.py").read_text()
     assert "_canonical_hosted_api_key" in app_src
     assert "await _ready(_org_repo).create_key" not in app_src
     source = inspect.getsource(_canonical_hosted_api_key)
@@ -451,7 +453,7 @@ def test_gate_b_still_closed() -> None:
 
 
 def test_create_key_call_graph_documents_internal_fixture() -> None:
-    src_root = Path("/tmp/whitepact/src")
+    src_root = _REPO_ROOT / "src"
     hosted = []
     for path in src_root.rglob("*.py"):
         text = path.read_text()
