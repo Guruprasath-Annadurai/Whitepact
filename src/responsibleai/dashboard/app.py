@@ -845,7 +845,7 @@ async def get_org_context(request: Request) -> OrgContext:
 
     Resolution order:
     1. Auth disabled → anonymous OWNER (dev mode)
-    2. Flat RAI_API_KEYS (legacy) → OWNER
+    2. Flat RAI_API_KEYS (legacy, non-production only) → VIEWER + legacy:compat
     3. OIDC-issued JWT (when SSO configured) → role/org from token claims
     4. DB-backed org key → role from DB, rejected if the org enforces SSO
     5. No match → 401
