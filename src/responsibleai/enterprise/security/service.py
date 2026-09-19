@@ -798,7 +798,7 @@ class IdentitySecurityService:
 
     async def authenticate_password(self, email: str, password: str, *, org_id: str | None = None) -> tuple[str, SessionAssurance] | None:
         self.limiter.check(f"login:{email.casefold()}", limit=10, window_seconds=60)
-        from responsibleai.db.web_identity_repository import WebIdentityRepository, verify_password
+        from responsibleai.db.web_identity_repository import WebIdentityRepository
 
         repo = WebIdentityRepository(self.engine)
         identity = await repo.authenticate(email, password)
