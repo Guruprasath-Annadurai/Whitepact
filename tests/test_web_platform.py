@@ -4,7 +4,11 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
 import os
+from datetime import UTC, datetime
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -171,6 +175,41 @@ async def test_csrf_onboarding_and_one_time_key_lifecycle(web_client):
         json={"organization_name": "Compilers Inc", "use_case": "Agent development"},
     )
     assert onboarded.status_code == 200
+    unverified = await web_client.post(
+        "/api/v1/web/api-keys",
+        headers={"X-WP-CSRF": csrf},
+        json={
+            "name": "test agent",
+            "environment": "test",
+            "scopes": ["governance:read", "evidence:read"],
+        },
+    )
+    assert unverified.status_code == 403
+    body = unverified.json()
+    assert "IDENTITY_VERIFICATION_REQUIRED" in json.dumps(body)
+
+    from sqlalchemy import select
+
+    from responsibleai.dashboard import app as app_mod
+    from responsibleai.db.engine import web_users
+    from responsibleai.enterprise.verification import HmacVerificationProvider, VerificationService
+
+    async with app_mod._db_engine.raw.connect() as conn:
+        user_id = (await conn.execute(select(web_users.c.id))).scalar_one()
+    provider = HmacVerificationProvider("test-webhook-secret")
+    verification = VerificationService(app_mod._db_engine, provider)
+    timestamp = datetime.now(UTC).isoformat()
+    payload = json.dumps(
+        {"event_id": "evt-web-idv", "subject_id": user_id, "outcome": "VERIFIED"},
+        separators=(",", ":"),
+    ).encode()
+    signature = hmac.new(
+        b"test-webhook-secret", payload + timestamp.encode(), hashlib.sha256
+    ).hexdigest()
+    await verification.apply_provider_event(
+        payload=payload, signature=signature, timestamp=timestamp, expected_user_id=user_id
+    )
+
     created = await web_client.post(
         "/api/v1/web/api-keys",
         headers={"X-WP-CSRF": csrf},
