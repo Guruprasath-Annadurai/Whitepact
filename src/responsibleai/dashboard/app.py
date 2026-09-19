@@ -1888,10 +1888,24 @@ async def web_rotate_api_key(
     principal: WebPrincipal = Depends(require_web_csrf),
 ) -> dict[str, Any]:
     org_id = _web_org_admin(principal)
-    result = await _ready(_org_repo).rotate_key(org_id, key_id)
-    if result is None:
-        raise HTTPException(404, "API key not found.")
-    record, raw = result
+    from responsibleai.enterprise.errors import EnterpriseError
+    from responsibleai.enterprise.runtime import get_enterprise_engine
+    from responsibleai.enterprise.service import Actor, EnterpriseIAM
+
+    iam = EnterpriseIAM(get_enterprise_engine())
+    actor = Actor(
+        actor_type="human",
+        actor_id=principal.user_id,
+        user_id=principal.user_id,
+        org_id=org_id,
+        role=principal.role or Role.VIEWER,
+        membership_status="ACTIVE",
+    )
+    try:
+        record, raw = await iam.rotate_api_key(actor, org_id, key_id)
+    except EnterpriseError as exc:
+        raise HTTPException(exc.http_status, detail=exc.as_detail()) from exc
+    return {**record, "api_key": raw, "status": "active"}
     return {**record.to_dict(), "api_key": raw, "status": "active"}
 
 

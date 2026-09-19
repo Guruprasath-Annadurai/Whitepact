@@ -917,6 +917,43 @@ class EnterpriseIAM:
         self, actor: Actor, org_id: str, key_id: str, *, overlap_seconds: int = 0
     ) -> tuple[dict[str, Any], str]:
         await self.authorize(actor, Permission.API_KEYS_ROTATE, org_id=org_id)
+        if actor.actor_type != "human" or not actor.user_id:
+            raise forbidden(API_KEY_ISSUANCE_NOT_ALLOWED, "Only an authenticated IDENTITY_VERIFIED human may rotate credentials.")
+        async with self._engine.raw.connect() as conn:
+            peek = (
+                await conn.execute(
+                    select(org_api_keys, org_api_key_metadata)
+                    .outerjoin(org_api_key_metadata, org_api_key_metadata.c.key_id == org_api_keys.c.id)
+                    .where(org_api_keys.c.id == key_id, org_api_keys.c.org_id == org_id)
+                )
+            ).fetchone()
+        if peek is None:
+            raise forbidden(WRONG_TENANT, "API key not found.")
+        env_id = getattr(peek, "environment_id", None)
+        if not env_id:
+            raise forbidden(
+                API_KEY_ISSUANCE_NOT_ALLOWED,
+                "Keys without an environment binding cannot be rotated on the hosted path.",
+            )
+        from responsibleai.enterprise.eligibility import EligibilityGate
+        from responsibleai.enterprise.preflight import identity_webhook_secret_from_env
+        from responsibleai.enterprise.verification import HmacVerificationProvider, VerificationService
+
+        scopes = tuple(json.loads(getattr(peek, "scopes", "[]") or "[]"))
+        gate = EligibilityGate(
+            self._engine,
+            VerificationService(self._engine, HmacVerificationProvider(identity_webhook_secret_from_env())),
+        )
+        decision = await gate.may_issue_api_key(
+            principal_user_id=actor.user_id,
+            organization_id=org_id,
+            environment_id=env_id,
+            requested_scopes=scopes or ("usage:read",),
+            role=actor.role,
+            request_id=actor.request_id,
+        )
+        if not decision.allowed:
+            raise EnterpriseError(decision.reason_code, decision.message, 403)
         now = _now()
         async with self._engine.raw.begin() as conn:
             dialect = conn.engine.dialect.name
