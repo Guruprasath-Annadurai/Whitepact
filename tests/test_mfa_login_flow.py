@@ -25,6 +25,8 @@ from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
 
 from responsibleai.dashboard.app import app, limiter, settings
+from tests.org_http_fixtures import seed_org_with_key
+from responsibleai.rbac.models import Role
 
 BOOTSTRAP_AUTH = {"Authorization": "Bearer bootstrap-test-key"}
 
@@ -64,22 +66,10 @@ async def client():
 
 @pytest.fixture()
 async def org_and_key(client: AsyncClient):
-    """Bootstrap an org + an ADMIN-role key via the legacy flat key,
-    the same way a fresh self-hosted deployment would."""
-    r = await client.post(
-        "/api/orgs", json={"name": "MFA Test Co", "slug": "mfa-test-co"}, headers=BOOTSTRAP_AUTH
+    org_id, key_id, raw = await seed_org_with_key(
+        name="MFA Test Co", slug="mfa-test-co", key_name="jane-dashboard", role=Role.ADMIN
     )
-    assert r.status_code == 201, r.text
-    org_id = r.json()["id"]
-
-    r = await client.post(
-        f"/api/orgs/{org_id}/keys",
-        json={"name": "jane-dashboard", "role": "ADMIN"},
-        headers=BOOTSTRAP_AUTH,
-    )
-    assert r.status_code == 201, r.text
-    key_body = r.json()
-    return org_id, key_body["id"], key_body["key"]
+    return org_id, key_id, raw
 
 
 class TestLoginWithoutMFA:
@@ -152,13 +142,13 @@ class TestOrgMFAEnforcement:
     @pytest.fixture()
     async def owner_auth(self, client: AsyncClient, org_and_key) -> dict[str, str]:
         org_id, _, _ = org_and_key
-        r = await client.post(
-            f"/api/orgs/{org_id}/keys",
-            json={"name": "org-owner", "role": "OWNER"},
-            headers=BOOTSTRAP_AUTH,
+        from responsibleai.dashboard.app import _org_repo
+        from responsibleai.rbac.models import Role
+
+        _rec, raw = await _org_repo.create_key(
+            org_id, "org-owner", Role.OWNER, internal_unverified_fixture=True
         )
-        assert r.status_code == 201, r.text
-        return {"Authorization": f"Bearer {r.json()['key']}"}
+        return {"Authorization": f"Bearer {raw}"}
 
     async def test_login_without_code_reports_mfa_required(
         self, client: AsyncClient, org_and_key, owner_auth: dict[str, str]

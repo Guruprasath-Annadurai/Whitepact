@@ -47,7 +47,8 @@ from responsibleai.governance.upstream_executor import (
     build_upstream_target,
 )
 
-BOOTSTRAP_AUTH = {"Authorization": "Bearer bootstrap-test-key"}
+from tests.org_http_fixtures import seed_org_with_key
+from responsibleai.rbac.models import Role
 
 
 def _fake_public_dns(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -370,19 +371,12 @@ class TestJitCredentialRestRoundTrip:
 
         _fake_public_dns(monkeypatch)
 
-        r = await client.post(
-            "/api/orgs",
-            json={"name": "JIT Credential Test Co", "slug": "jit-credential-test-co"},
-            headers=BOOTSTRAP_AUTH,
+        org_id, _kid, admin_key = await seed_org_with_key(
+            name="JIT Credential Test Co",
+            slug="jit-credential-test-co",
+            key_name="admin-key",
+            role=Role.ADMIN,
         )
-        assert r.status_code == 201, r.text
-        org_id = r.json()["id"]
-        r = await client.post(
-            f"/api/orgs/{org_id}/keys",
-            json={"name": "admin-key", "role": "ADMIN"},
-            headers=BOOTSTRAP_AUTH,
-        )
-        admin_key = r.json()["key"]
         headers = {"Authorization": f"Bearer {admin_key}"}
 
         upstream_engine = create_engine(":memory:")

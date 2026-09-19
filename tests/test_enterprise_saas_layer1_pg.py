@@ -14,8 +14,10 @@ from responsibleai.db.engine import create_engine
 from responsibleai.db.web_identity_repository import WebIdentityRepository
 from responsibleai.enterprise.errors import EnterpriseError
 from responsibleai.enterprise.service import Actor, EnterpriseIAM
+from responsibleai.enterprise.verification import HmacVerificationProvider, VerificationService
 from responsibleai.rbac.models import Role
 from tests.pg_test_url import isolated_pg_url
+from tests.test_enterprise_saas_layer1 import _verify_human
 
 
 @pytest.fixture
@@ -144,6 +146,7 @@ async def test_postgres_concurrent_api_key_rotation(pg_url: str) -> None:
         )
         actor = _actor(owner, org["id"], Role.OWNER)
         envs = {e["type"]: e for e in await iam_a.list_environments(actor, org["id"])}
+        await _verify_human(engine_a, owner, "evt-pg-rot")
         rec, old_secret = await iam_a.create_api_key(
             actor,
             org["id"],

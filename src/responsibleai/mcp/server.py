@@ -395,6 +395,22 @@ def hosted_production_preflight(
             "replicas multiply the failure budget. Keep RAI_MULTI_REPLICA/"
             "WHITEPACT_MULTI_REPLICA unset until a shared limiter exists."
         )
+    from types import SimpleNamespace
+
+    from responsibleai.enterprise.preflight import (
+        HostedEnterpriseSecurityError,
+        assert_hosted_enterprise_boot_safe,
+    )
+
+    boot = SimpleNamespace(
+        environment=getattr(settings, "environment", None) or "production",
+        api_keys=list(getattr(settings, "api_keys", []) or []),
+        is_production=True,
+    )
+    try:
+        assert_hosted_enterprise_boot_safe(boot)
+    except HostedEnterpriseSecurityError as exc:
+        raise HostedProductionSecurityError(str(exc)) from exc
 
 
 def _build_transport_security() -> Any:

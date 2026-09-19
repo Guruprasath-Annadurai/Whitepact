@@ -100,7 +100,9 @@ def _iam() -> EnterpriseIAM:
 
 
 def _verification() -> VerificationService:
-    secret = os.environ.get("WHITEPACT_IDENTITY_WEBHOOK_SECRET", "dev-identity-webhook-secret")
+    from responsibleai.enterprise.preflight import identity_webhook_secret_from_env
+
+    secret = identity_webhook_secret_from_env()
     return VerificationService(get_enterprise_engine(), HmacVerificationProvider(secret))
 
 
@@ -339,27 +341,6 @@ async def key_eligibility(org_id: str, request: Request, environment_id: str, sc
 async def create_key(org_id: str, request: Request, body: CreateKeyBody) -> Any:
     try:
         actor = await _require_org(request, org_id)
-        if not has_rbac_permission(actor.role, Permission.API_KEYS_CREATE):
-            raise EnterpriseError("FORBIDDEN", "Role cannot issue API keys.", 403)
-        gate = EligibilityGate(get_enterprise_engine(), _verification())
-        decision = await gate.may_issue_api_key(
-            principal_user_id=actor.user_id or "",
-            organization_id=org_id,
-            environment_id=body.environment_id,
-            requested_scopes=tuple(body.scopes),
-            role=actor.role,
-            request_id=actor.request_id,
-        )
-        await _iam().record_issuance_decision(
-            org_id=org_id,
-            principal_user_id=actor.user_id,
-            environment_id=body.environment_id,
-            allowed=decision.allowed,
-            reason_code=decision.reason_code,
-            requested_scopes=tuple(body.scopes),
-        )
-        if not decision.allowed:
-            raise EnterpriseError(decision.reason_code, decision.message, 403)
         record, raw = await _iam().create_api_key(
             actor,
             org_id,

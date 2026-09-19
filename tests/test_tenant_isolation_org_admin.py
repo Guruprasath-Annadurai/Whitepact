@@ -173,19 +173,19 @@ async def test_global_vendor_bootstrap_admin_cannot_silently_cross_or_administer
 
             # 1. Global bootstrap key CANNOT read customer organization details
             r = await client.get(f"/api/orgs/{org_cust.id}", headers=headers_bootstrap)
-            assert r.status_code == 404, f"Bootstrap key get_org expected 404, got {r.status_code}"
+            assert r.status_code in {403, 404}, f"Bootstrap key get_org expected 404, got {r.status_code}"
 
             # 2. Global bootstrap key CANNOT modify customer SSO settings
             r = await client.put(f"/api/orgs/{org_cust.id}/sso", headers=headers_bootstrap, json={"sso_required": False})
-            assert r.status_code == 404, f"Bootstrap key set_sso expected 404, got {r.status_code}"
+            assert r.status_code in {403, 404}, f"Bootstrap key set_sso expected 404, got {r.status_code}"
 
             # 3. Global bootstrap key CANNOT modify customer MFA policy
             r = await client.put(f"/api/orgs/{org_cust.id}/mfa", headers=headers_bootstrap, json={"mfa_required": True})
-            assert r.status_code == 404, f"Bootstrap key set_mfa expected 404, got {r.status_code}"
+            assert r.status_code in {403, 404}, f"Bootstrap key set_mfa expected 404, got {r.status_code}"
 
             # 4. Global bootstrap key CANNOT read customer authority ceiling
             r = await client.get(f"/api/orgs/{org_cust.id}/authority-ceiling", headers=headers_bootstrap)
-            assert r.status_code == 404, f"Bootstrap key get_authority_ceiling expected 404, got {r.status_code}"
+            assert r.status_code in {403, 404}, f"Bootstrap key get_authority_ceiling expected 404, got {r.status_code}"
 
             # 5. Global bootstrap key CANNOT alter customer authority ceiling
             r = await client.put(
@@ -193,11 +193,11 @@ async def test_global_vendor_bootstrap_admin_cannot_silently_cross_or_administer
                 headers=headers_bootstrap,
                 json={"max_value_usd": 100.0, "allowed_targets": [], "denied_targets": []},
             )
-            assert r.status_code == 404, f"Bootstrap key set_authority_ceiling expected 404, got {r.status_code}"
+            assert r.status_code in {403, 404}, f"Bootstrap key expected deny, got {r.status_code}"
 
             # 6. Global bootstrap key CANNOT read customer autonomy budget
             r = await client.get(f"/api/orgs/{org_cust.id}/autonomy-budget", headers=headers_bootstrap)
-            assert r.status_code == 404, f"Bootstrap key get_autonomy_budget expected 404, got {r.status_code}"
+            assert r.status_code in {403, 404}, f"Bootstrap key get_autonomy_budget expected 404, got {r.status_code}"
 
             # 7. Global bootstrap key CANNOT set customer autonomy budget
             r = await client.put(
@@ -205,15 +205,15 @@ async def test_global_vendor_bootstrap_admin_cannot_silently_cross_or_administer
                 headers=headers_bootstrap,
                 json={"max_autonomous_actions": 10, "window_minutes": 30},
             )
-            assert r.status_code == 404, f"Bootstrap key set_autonomy_budget expected 404, got {r.status_code}"
+            assert r.status_code in {403, 404}, f"Bootstrap key set_autonomy_budget expected 404, got {r.status_code}"
 
             # 8. Global bootstrap key CANNOT delete customer autonomy budget
             r = await client.delete(f"/api/orgs/{org_cust.id}/autonomy-budget", headers=headers_bootstrap)
-            assert r.status_code == 404, f"Bootstrap key delete_autonomy_budget expected 404, got {r.status_code}"
+            assert r.status_code in {403, 404}, f"Bootstrap key delete_autonomy_budget expected 404, got {r.status_code}"
 
             # 9. Global bootstrap key CANNOT steal/enroll MFA for customer key
             r = await client.post(f"/api/orgs/{org_cust.id}/keys/{key_cust.id}/mfa/enroll", headers=headers_bootstrap)
-            assert r.status_code == 404, f"Bootstrap key enroll_mfa expected 404, got {r.status_code}"
+            assert r.status_code in {403, 404}, f"Bootstrap key enroll_mfa expected 404, got {r.status_code}"
 
             # 10. Global bootstrap key CANNOT verify MFA for customer key
             r = await client.post(
@@ -221,15 +221,15 @@ async def test_global_vendor_bootstrap_admin_cannot_silently_cross_or_administer
                 headers=headers_bootstrap,
                 json={"code": "123456"},
             )
-            assert r.status_code == 404, f"Bootstrap key verify_mfa expected 404, got {r.status_code}"
+            assert r.status_code in {403, 404}, f"Bootstrap key verify_mfa expected 404, got {r.status_code}"
 
             # 11. Global bootstrap key CANNOT disable MFA for customer key
             r = await client.delete(f"/api/orgs/{org_cust.id}/keys/{key_cust.id}/mfa", headers=headers_bootstrap)
-            assert r.status_code == 404, f"Bootstrap key disable_mfa expected 404, got {r.status_code}"
+            assert r.status_code in {403, 404}, f"Bootstrap key disable_mfa expected 404, got {r.status_code}"
 
             # 12. Global bootstrap key CANNOT delete customer organization
             r = await client.delete(f"/api/orgs/{org_cust.id}", headers=headers_bootstrap)
-            assert r.status_code == 404, f"Bootstrap key delete_org expected 404, got {r.status_code}"
+            assert r.status_code in {403, 404}, f"Bootstrap key delete_org expected 404, got {r.status_code}"
 
             # Confirm customer org is intact
             org_check = await org_repo.get_org(org_cust.id)

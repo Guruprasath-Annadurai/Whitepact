@@ -409,9 +409,30 @@ class OrgRepository:
         scopes: tuple[str, ...] = (),
         expires_at: str | None = None,
         rotated_from_id: str | None = None,
+        accountable_human_user_id: str | None = None,
+        internal_unverified_fixture: bool = False,
     ) -> tuple[OrgApiKey, str]:
-        """Create a new API key. Returns (OrgApiKey, raw_key).
-        The raw_key is shown ONCE and never stored. Store it now."""
+        """INTERNAL fixture / migration insert. Hosted HTTP must not call this.
+
+        Production-reachable issuance goes through EnterpriseIAM.create_api_key
+        and CredentialIssuancePolicy. Tests and migrations may pass
+        ``internal_unverified_fixture=True``.
+        """
+        import os
+
+        from responsibleai.dashboard.config import is_production_environment
+
+        env_name = os.environ.get("WHITEPACT_ENV") or os.environ.get("RAI_ENV") or os.environ.get(
+            "ENVIRONMENT", "development"
+        )
+        if not accountable_human_user_id:
+            internal_unverified_fixture = True
+        if is_production_environment(env_name) and internal_unverified_fixture:
+            raise RuntimeError("Unverified fixture API keys cannot be inserted in production.")
+        if not internal_unverified_fixture and not accountable_human_user_id:
+            raise ValueError(
+                "accountable_human_user_id is required unless internal_unverified_fixture=True"
+            )
         raw = _generate_raw_key(environment)
         prefix = "rai_" if environment is None else f"wp_{environment}_"
         key_rec = OrgApiKey(
@@ -435,6 +456,8 @@ class OrgRepository:
                     role=role.value,
                     created_at=key_rec.created_at,
                     revoked=0,
+                    accountable_human_user_id=accountable_human_user_id,
+                    created_by_user_id=accountable_human_user_id,
                 )
             )
             await conn.execute(

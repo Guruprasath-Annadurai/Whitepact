@@ -55,7 +55,8 @@ from responsibleai.governance.upstream_executor import (
     parse_upstream_target,
 )
 
-BOOTSTRAP_AUTH = {"Authorization": "Bearer bootstrap-test-key"}
+from tests.org_http_fixtures import seed_org_with_key
+from responsibleai.rbac.models import Role
 
 
 def _fake_public_dns(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -469,20 +470,10 @@ async def client():
 
 @pytest.fixture()
 async def org_and_admin_key(client: AsyncClient):
-    r = await client.post(
-        "/api/orgs",
-        json={"name": "Upstream Test Co", "slug": "upstream-test-co"},
-        headers=BOOTSTRAP_AUTH,
+    org_id, _kid, raw = await seed_org_with_key(
+        name="Upstream Test Co", slug="upstream-test-co", key_name="admin-key", role=Role.ADMIN
     )
-    assert r.status_code == 201, r.text
-    org_id = r.json()["id"]
-    r = await client.post(
-        f"/api/orgs/{org_id}/keys",
-        json={"name": "admin-key", "role": "ADMIN"},
-        headers=BOOTSTRAP_AUTH,
-    )
-    assert r.status_code == 201, r.text
-    return org_id, r.json()["key"]
+    return org_id, raw
 
 
 class TestUpstreamRegistryRESTEndpoints:
@@ -491,12 +482,11 @@ class TestUpstreamRegistryRESTEndpoints:
     ) -> None:
         org_id, admin_key = org_and_admin_key
         _fake_public_dns(monkeypatch)
-        r = await client.post(
-            f"/api/orgs/{org_id}/keys",
-            json={"name": "analyst-key", "role": "ANALYST"},
-            headers=BOOTSTRAP_AUTH,
+        from responsibleai.dashboard.app import _org_repo
+
+        _rec, analyst_key = await _org_repo.create_key(
+            org_id, "analyst-key", Role.ANALYST, internal_unverified_fixture=True
         )
-        analyst_key = r.json()["key"]
         r = await client.post(
             "/api/governance/upstream/servers",
             json={"name": "partner", "url": "https://partner.example.com/mcp"},
@@ -742,18 +732,9 @@ class TestUpstreamCallEndToEnd:
         _org_id, admin_key = org_and_admin_key
         _fake_public_dns(monkeypatch)
 
-        r = await client.post(
-            "/api/orgs",
-            json={"name": "Other Upstream Co", "slug": "other-upstream-co"},
-            headers=BOOTSTRAP_AUTH,
+        other_org_id, _kid, other_admin_key = await seed_org_with_key(
+            name="Other Upstream Co", slug="other-upstream-co", key_name="other-admin", role=Role.ADMIN
         )
-        other_org_id = r.json()["id"]
-        r = await client.post(
-            f"/api/orgs/{other_org_id}/keys",
-            json={"name": "other-admin", "role": "ADMIN"},
-            headers=BOOTSTRAP_AUTH,
-        )
-        other_admin_key = r.json()["key"]
         r = await client.post(
             "/api/governance/upstream/servers",
             json={"name": "other-org-server", "url": "https://other.example.com/mcp"},

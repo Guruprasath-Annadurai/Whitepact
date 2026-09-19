@@ -385,6 +385,10 @@ async def lifespan(application: FastAPI):
     global _eval_repo, _comparator, _benchmark_runner, _dataset_scanner
     global _oidc_provider, _saml_config, _stripe_service, _plan_rate_limiter, _billing_event_repo, _paddle_event_repo
 
+    from responsibleai.enterprise.preflight import assert_hosted_enterprise_boot_safe
+
+    assert_hosted_enterprise_boot_safe(settings)
+
     setup_telemetry(
         service_name=settings.otel_service_name,
         otlp_endpoint=settings.otel_endpoint,
@@ -603,7 +607,12 @@ class AuditLogMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
 
         path = request.url.path
-        if path.startswith("/static") or path == "/metrics":
+        if (
+            path.startswith("/static")
+            or path == "/metrics"
+            or path.endswith("/webhook")
+            or "/identity/verification/webhook" in path
+        ):
             return response
 
         duration_ms = round((time.monotonic() - start) * 1000, 2)
@@ -779,8 +788,30 @@ async def _resolve_transport_identity(token: str) -> OrgContext | None:
     responsibility of ``AuthorityResolver`` in the governance hall.
     """
     if settings.api_keys and token in settings.api_keys:
+        import warnings
+
+        from responsibleai.enterprise.preflight import HostedEnterpriseSecurityError
+
+        if settings.is_production:
+            raise HostedEnterpriseSecurityError(
+                "Static RAI_API_KEYS cannot authenticate production traffic."
+            )
+        warnings.warn(
+            "RAI_API_KEYS is deprecated and restricted to non-production compatibility.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        logger.warning("legacy_static_api_key_used")
         legacy_key_id = f"legacy:{hashlib.sha256(token.encode()).hexdigest()[:32]}"
-        return OrgContext(key_id=legacy_key_id, role=Role.OWNER, is_legacy=True)
+        return OrgContext(
+            key_id=legacy_key_id,
+            role=Role.VIEWER,
+            is_legacy=True,
+            org_id=None,
+            plan=Plan.FREE,
+            scopes=frozenset({"legacy:compat"}),
+            authentication_method="legacy_static",
+        )
 
     oidc_ctx = await _resolve_oidc_context(token)
     if oidc_ctx is not None:
@@ -834,6 +865,8 @@ async def get_org_context(request: Request) -> OrgContext:
     context = await _resolve_transport_identity(token)
     if context is None:
         raise HTTPException(401, detail="Invalid API key")
+    if context.authentication_method == "legacy_static":
+        _enforce_legacy_static_compat(request)
     if not context.is_legacy and _plan_rate_limiter:
         await _plan_rate_limiter.check(context.org_id, context.plan)
     _enforce_machine_scope(request, context)
@@ -842,13 +875,42 @@ async def get_org_context(request: Request) -> OrgContext:
     return context
 
 
-def _enforce_machine_scope(request: Request, context: OrgContext) -> None:
-    """Enforce scopes for new dashboard-managed keys.
+def _enforce_legacy_static_compat(request: Request) -> None:
+    """Non-production RAI_API_KEYS: never OWNER, never enterprise authority."""
+    path = request.url.path
+    method = request.method.upper()
+    blocked = (
+        path.startswith("/api/enterprise")
+        or path.startswith("/api/v1/enterprise")
+        or path.startswith("/api/web/")
+        or "service-account" in path
+        or path.startswith("/api/governance")
+        or "execute" in path
+        or "dispatch" in path
+        or (method == "POST" and (path.endswith("/keys") or "/api-keys" in path))
+    )
+    if blocked:
+        raise HTTPException(
+            403,
+            detail={
+                "error": "LEGACY_CREDENTIAL_FORBIDDEN",
+                "message": (
+                    "Static RAI_API_KEYS cannot access enterprise, tenant-admin, "
+                    "credential-issuance, or Phase 7A routes. Migrate to verified-principal keys."
+                ),
+            },
+        )
 
-    Empty scopes mean a pre-metadata legacy key and intentionally preserve
-    existing behavior. Every ``wp_test_``/``wp_live_`` key has non-empty
-    scopes and is denied outside its allowed API families.
+
+def _enforce_machine_scope(request: Request, context: OrgContext) -> None:
+    """Enforce scopes for dashboard-managed keys.
+
+    Empty scopes on non-legacy org keys preserve pre-metadata fixture keys.
+    Legacy static keys never have empty scopes; ``legacy:compat`` is not
+    governance, evidence, or execution authority.
     """
+    if context.authentication_method == "legacy_static":
+        return
     if not context.scopes:
         return
     path = request.url.path
@@ -1733,6 +1795,58 @@ async def web_list_api_keys(
     return {"keys": [{**key.to_dict(), "status": "active"} for key in keys]}
 
 
+async def _canonical_hosted_api_key(
+    *,
+    user_id: str,
+    org_id: str,
+    role: Role,
+    name: str,
+    environment_type: str,
+    scopes: tuple[str, ...],
+    expires_at: str | None,
+) -> tuple[dict[str, Any], str]:
+    """Single hosted issuance path. Never calls the low-level repository insert."""
+    from responsibleai.enterprise.errors import EnterpriseError
+    from responsibleai.enterprise.runtime import get_enterprise_engine
+    from responsibleai.enterprise.service import Actor, EnterpriseIAM
+
+    try:
+        engine = get_enterprise_engine()
+    except RuntimeError as exc:
+        raise HTTPException(
+            403, detail={"error": "FORBIDDEN", "message": "Authorization backend unavailable."}
+        ) from exc
+    iam = EnterpriseIAM(engine)
+    await iam.ensure_default_environments(org_id)
+    actor = Actor(
+        actor_type="human",
+        actor_id=user_id,
+        user_id=user_id,
+        org_id=org_id,
+        role=role,
+        membership_status="ACTIVE",
+    )
+    envs = {row["type"]: row for row in await iam.list_environments(actor, org_id)}
+    env = envs.get(environment_type)
+    if env is None:
+        raise HTTPException(
+            403,
+            detail={"error": "WRONG_ENVIRONMENT", "message": f"{environment_type} environment is not available."},
+        )
+    try:
+        record, raw = await iam.create_api_key(
+            actor,
+            org_id,
+            name=name,
+            environment_id=env["id"],
+            scopes=scopes,
+            expires_at=expires_at,
+        )
+    except EnterpriseError as exc:
+        raise HTTPException(exc.http_status, detail=exc.as_detail()) from exc
+    return record, raw
+
+
 @app.post("/api/web/api-keys", tags=["web-console"], status_code=201)
 @limiter.limit("10/minute")
 async def web_create_api_key(
@@ -1753,53 +1867,17 @@ async def web_create_api_key(
     expires_at = req.expires_at.isoformat() if req.expires_at else None
     if req.expires_at and req.expires_at <= datetime.now(UTC):
         raise HTTPException(422, "API key expiration must be in the future.")
-    if req.environment == "live":
-        from responsibleai.enterprise.eligibility import EligibilityGate
-        from responsibleai.enterprise.errors import EnterpriseError
-        from responsibleai.enterprise.runtime import get_enterprise_engine
-        from responsibleai.enterprise.service import Actor, EnterpriseIAM
-        from responsibleai.enterprise.verification import HmacVerificationProvider, VerificationService
-
-        try:
-            engine = get_enterprise_engine()
-        except RuntimeError as exc:
-            raise HTTPException(403, detail={"error": "FORBIDDEN", "message": "Authorization backend unavailable."}) from exc
-        iam = EnterpriseIAM(engine)
-        await iam.ensure_default_environments(org_id)
-        actor = Actor(
-            actor_type="human",
-            actor_id=principal.user_id,
-            user_id=principal.user_id,
-            org_id=org_id,
-            role=principal.role or Role.VIEWER,
-            membership_status="ACTIVE",
-        )
-        envs = {row["type"]: row for row in await iam.list_environments(actor, org_id)}
-        production = envs.get("PRODUCTION")
-        if production is None:
-            raise HTTPException(403, detail={"error": "WRONG_ENVIRONMENT", "message": "Production environment is not available."})
-        gate = EligibilityGate(engine, VerificationService(engine, HmacVerificationProvider("dev-identity-webhook-secret")))
-        decision = await gate.may_issue_api_key(
-            principal_user_id=principal.user_id,
-            organization_id=org_id,
-            environment_id=production["id"],
-            requested_scopes=tuple(req.scopes),
-            role=principal.role,
-        )
-        if not decision.allowed:
-            raise HTTPException(
-                403,
-                detail={"error": decision.reason_code, "message": decision.message},
-            )
-    record, raw = await _ready(_org_repo).create_key(
-        org_id,
-        req.name,
-        Role.ANALYST,
-        environment=req.environment,
+    env_type = {"test": "DEVELOPMENT", "live": "PRODUCTION", "staging": "STAGING"}[req.environment]
+    record, raw = await _canonical_hosted_api_key(
+        user_id=principal.user_id,
+        org_id=org_id,
+        role=principal.role or Role.VIEWER,
+        name=req.name,
+        environment_type=env_type,
         scopes=tuple(req.scopes),
         expires_at=expires_at,
     )
-    return {**record.to_dict(), "api_key": raw, "status": "active"}
+    return {**record, "api_key": raw, "status": "active"}
 
 
 @app.post("/api/web/api-keys/{key_id}/rotate", tags=["web-console"])
@@ -2965,14 +3043,65 @@ async def create_api_key(
     req: CreateKeyRequest,
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, Any]:
+    if _auth.authentication_method == "legacy_static" or _auth.is_legacy:
+        raise HTTPException(
+            403,
+            detail={
+                "error": "LEGACY_CREDENTIAL_FORBIDDEN",
+                "message": "Static or anonymous credentials cannot issue API keys.",
+            },
+        )
     org = await _ready(_org_repo).get_org(org_id)
     if not org:
         raise HTTPException(404, "Organization not found")
     if _auth.org_id != org_id and _auth.key_id != org.provisioner_key_id:
         raise HTTPException(404, "Organization not found")
-    role = role_from_str(req.role)
-    key_rec, raw_key = await _ready(_org_repo).create_key(org_id, req.name, role)
-    return key_rec.to_dict(include_key=raw_key)
+    from responsibleai.db.engine import org_api_keys, web_memberships, web_users
+    from sqlalchemy import select
+
+    from responsibleai.enterprise.runtime import get_enterprise_engine
+
+    engine = get_enterprise_engine()
+    async with engine.raw.connect() as conn:
+        key_row = (
+            await conn.execute(select(org_api_keys).where(org_api_keys.c.id == _auth.key_id))
+        ).fetchone()
+        accountable = getattr(key_row, "accountable_human_user_id", None) if key_row is not None else None
+        if not accountable:
+            raise HTTPException(
+                403,
+                detail={
+                    "error": "API_KEY_ISSUANCE_NOT_ALLOWED",
+                    "message": "Only an IDENTITY_VERIFIED accountable human may issue reusable credentials.",
+                },
+            )
+        user = (await conn.execute(select(web_users).where(web_users.c.id == accountable))).fetchone()
+        membership = (
+            await conn.execute(
+                select(web_memberships).where(
+                    web_memberships.c.user_id == accountable,
+                    web_memberships.c.org_id == org_id,
+                )
+            )
+        ).fetchone()
+    if user is None or membership is None:
+        raise HTTPException(
+            403,
+            detail={
+                "error": "API_KEY_ISSUANCE_NOT_ALLOWED",
+                "message": "Accountable human membership is required to issue credentials.",
+            },
+        )
+    record, raw_key = await _canonical_hosted_api_key(
+        user_id=accountable,
+        org_id=org_id,
+        role=role_from_str(membership.role),
+        name=req.name,
+        environment_type="DEVELOPMENT",
+        scopes=("usage:read",),
+        expires_at=None,
+    )
+    return {**record, "key": raw_key, "id": record["id"]}
 
 
 @app.get("/api/orgs/{org_id}/keys", tags=["rbac"])

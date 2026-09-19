@@ -25,7 +25,28 @@ from responsibleai.governance import (
 from responsibleai.governance.approval import build_approval_request
 from responsibleai.governance.evidence import build_evidence_record
 
+from tests.org_http_fixtures import seed_org_with_key
+from responsibleai.rbac.models import Role
+
+
 BOOTSTRAP_AUTH = {"Authorization": "Bearer bootstrap-test-key"}
+
+
+async def _other_org(name: str, slug: str) -> str:
+    org_id, _kid, _raw = await seed_org_with_key(name=name, slug=slug, key_name="k", role=Role.ANALYST)
+    return org_id
+
+
+async def _other_org_with_key(name: str, slug: str, role: Role = Role.ANALYST) -> tuple[str, str]:
+    org_id, _kid, raw = await seed_org_with_key(name=name, slug=slug, key_name="k", role=role)
+    return org_id, raw
+
+
+async def _add_org_key(org_id: str, name: str, role: Role) -> str:
+    from responsibleai.dashboard.app import _org_repo
+
+    _rec, raw = await _org_repo.create_key(org_id, name, role, internal_unverified_fixture=True)
+    return raw
 
 
 @pytest.fixture(autouse=True)
@@ -55,33 +76,19 @@ async def client():
 
 @pytest.fixture()
 async def org_and_admin_key(client: AsyncClient):
-    r = await client.post(
-        "/api/orgs",
-        json={"name": "Governance Test Co", "slug": "governance-test-co"},
-        headers=BOOTSTRAP_AUTH,
+    org_id, _key_id, raw = await seed_org_with_key(
+        name="Governance Test Co", slug="governance-test-co", key_name="admin-key", role=Role.ADMIN
     )
-    assert r.status_code == 201, r.text
-    org_id = r.json()["id"]
-
-    r = await client.post(
-        f"/api/orgs/{org_id}/keys",
-        json={"name": "admin-key", "role": "ADMIN"},
-        headers=BOOTSTRAP_AUTH,
-    )
-    assert r.status_code == 201, r.text
-    return org_id, r.json()["key"]
+    return org_id, raw
 
 
 @pytest.fixture()
 async def org_and_analyst_key(client: AsyncClient, org_and_admin_key):
     org_id, _admin_key = org_and_admin_key
-    r = await client.post(
-        f"/api/orgs/{org_id}/keys",
-        json={"name": "analyst-key", "role": "ANALYST"},
-        headers=BOOTSTRAP_AUTH,
-    )
-    assert r.status_code == 201, r.text
-    return org_id, r.json()["key"]
+    from responsibleai.dashboard.app import _org_repo
+
+    _rec, raw = await _org_repo.create_key(org_id, "analyst-key", Role.ANALYST, internal_unverified_fixture=True)
+    return org_id, raw
 
 
 async def _seed_evidence(org_id: str, *, decision_target: str = "rai_health") -> None:
@@ -163,18 +170,7 @@ class TestEvidenceEndpoints:
         org_id, key = org_and_analyst_key
         await _seed_evidence(org_id)
 
-        r = await client.post(
-            "/api/orgs",
-            json={"name": "Other Co", "slug": "other-co"},
-            headers=BOOTSTRAP_AUTH,
-        )
-        other_org_id = r.json()["id"]
-        r = await client.post(
-            f"/api/orgs/{other_org_id}/keys",
-            json={"name": "k", "role": "ANALYST"},
-            headers=BOOTSTRAP_AUTH,
-        )
-        other_key = r.json()["key"]
+        other_org_id, other_key = await _other_org_with_key("Other Co", "other-co", Role.ANALYST)
 
         r = await client.get(
             "/api/governance/evidence", headers={"Authorization": f"Bearer {other_key}"}
@@ -262,18 +258,7 @@ class TestEvidenceBundleEndpoints:
         org_id, key = org_and_analyst_key
         await _seed_evidence(org_id)
 
-        r = await client.post(
-            "/api/orgs",
-            json={"name": "Other Bundle Co", "slug": "other-bundle-co"},
-            headers=BOOTSTRAP_AUTH,
-        )
-        other_org_id = r.json()["id"]
-        r = await client.post(
-            f"/api/orgs/{other_org_id}/keys",
-            json={"name": "k", "role": "ANALYST"},
-            headers=BOOTSTRAP_AUTH,
-        )
-        other_key = r.json()["key"]
+        other_org_id, other_key = await _other_org_with_key("Other Bundle Co", "other-bundle-co", Role.ANALYST)
 
         r = await client.get(
             "/api/governance/evidence/bundle", headers={"Authorization": f"Bearer {other_key}"}
@@ -364,12 +349,7 @@ class TestApprovalEndpoints:
         the ID exists -- 404, never 403, for another org's approval."""
         _org_id, admin_key = org_and_admin_key
 
-        r = await client.post(
-            "/api/orgs",
-            json={"name": "Other Co 2", "slug": "other-co-2"},
-            headers=BOOTSTRAP_AUTH,
-        )
-        other_org_id = r.json()["id"]
+        other_org_id = await _other_org("Other Co 2", "other-co-2")
         other_approval_id = await _seed_approval(other_org_id)
 
         r = await client.post(
@@ -442,12 +422,7 @@ class TestApprovalQuorumEndpoints:
         org_id, admin_key = org_and_admin_key
         approval_id = await _seed_quorum_approval(org_id, required_approvals=2)
 
-        r = await client.post(
-            f"/api/orgs/{org_id}/keys",
-            json={"name": "second-admin", "role": "ADMIN"},
-            headers=BOOTSTRAP_AUTH,
-        )
-        second_admin_key = r.json()["key"]
+        second_admin_key = await _add_org_key(org_id, "second-admin", Role.ADMIN)
 
         await client.post(
             f"/api/governance/approvals/{approval_id}/resolve",
@@ -505,12 +480,7 @@ class TestApprovalQuorumEndpoints:
         self, client: AsyncClient, org_and_admin_key
     ) -> None:
         _org_id, admin_key = org_and_admin_key
-        r = await client.post(
-            "/api/orgs",
-            json={"name": "Other Quorum Co", "slug": "other-quorum-co"},
-            headers=BOOTSTRAP_AUTH,
-        )
-        other_org_id = r.json()["id"]
+        other_org_id = await _other_org("Other Quorum Co", "other-quorum-co")
         other_approval_id = await _seed_quorum_approval(other_org_id)
 
         r = await client.get(
@@ -716,18 +686,7 @@ class TestPolicyEndpoints:
             headers={"Authorization": f"Bearer {admin_key}"},
         )
 
-        r = await client.post(
-            "/api/orgs",
-            json={"name": "Other Policy Co", "slug": "other-policy-co"},
-            headers=BOOTSTRAP_AUTH,
-        )
-        other_org_id = r.json()["id"]
-        r = await client.post(
-            f"/api/orgs/{other_org_id}/keys",
-            json={"name": "k", "role": "ADMIN"},
-            headers=BOOTSTRAP_AUTH,
-        )
-        other_key = r.json()["key"]
+        other_org_id, other_key = await _other_org_with_key("Other Policy Co", "other-policy-co", Role.ADMIN)
 
         r = await client.get(
             "/api/governance/policy", headers={"Authorization": f"Bearer {other_key}"}
@@ -737,20 +696,10 @@ class TestPolicyEndpoints:
 
 @pytest.fixture()
 async def org_and_owner_key(client: AsyncClient):
-    r = await client.post(
-        "/api/orgs",
-        json={"name": "Ceiling Test Co", "slug": "ceiling-test-co"},
-        headers=BOOTSTRAP_AUTH,
+    org_id, _key_id, raw = await seed_org_with_key(
+        name="Ceiling Test Co", slug="ceiling-test-co", key_name="owner-key", role=Role.OWNER
     )
-    assert r.status_code == 201, r.text
-    org_id = r.json()["id"]
-    r = await client.post(
-        f"/api/orgs/{org_id}/keys",
-        json={"name": "owner-key", "role": "OWNER"},
-        headers=BOOTSTRAP_AUTH,
-    )
-    assert r.status_code == 201, r.text
-    return org_id, r.json()["key"]
+    return org_id, raw
 
 
 class TestAuthorityCeilingEndpoints:
@@ -1073,18 +1022,7 @@ class TestWorkflowRuleEndpoints:
             headers={"Authorization": f"Bearer {admin_key}"},
         )
 
-        r = await client.post(
-            "/api/orgs",
-            json={"name": "Other Workflow Co", "slug": "other-workflow-co"},
-            headers=BOOTSTRAP_AUTH,
-        )
-        other_org_id = r.json()["id"]
-        r = await client.post(
-            f"/api/orgs/{other_org_id}/keys",
-            json={"name": "k", "role": "ADMIN"},
-            headers=BOOTSTRAP_AUTH,
-        )
-        other_key = r.json()["key"]
+        other_org_id, other_key = await _other_org_with_key("Other Workflow Co", "other-workflow-co", Role.ADMIN)
 
         r = await client.get(
             "/api/governance/workflow-rules",
@@ -1257,18 +1195,7 @@ class TestDelegationEndpoints:
             headers={"Authorization": f"Bearer {admin_key}"},
         )
 
-        r = await client.post(
-            "/api/orgs",
-            json={"name": "Other Delegation Co", "slug": "other-delegation-co"},
-            headers=BOOTSTRAP_AUTH,
-        )
-        other_org_id = r.json()["id"]
-        r = await client.post(
-            f"/api/orgs/{other_org_id}/keys",
-            json={"name": "k", "role": "ADMIN"},
-            headers=BOOTSTRAP_AUTH,
-        )
-        other_key = r.json()["key"]
+        other_org_id, other_key = await _other_org_with_key("Other Delegation Co", "other-delegation-co", Role.ADMIN)
 
         r = await client.get(
             "/api/governance/delegations/shared-name-agent/chain",
@@ -1382,18 +1309,7 @@ class TestDelegationEndpoints:
             headers={"Authorization": f"Bearer {admin_key}"},
         )
 
-        r = await client.post(
-            "/api/orgs",
-            json={"name": "Other Graph Co", "slug": "other-graph-co"},
-            headers=BOOTSTRAP_AUTH,
-        )
-        other_org_id = r.json()["id"]
-        r = await client.post(
-            f"/api/orgs/{other_org_id}/keys",
-            json={"name": "k", "role": "ANALYST"},
-            headers=BOOTSTRAP_AUTH,
-        )
-        other_key = r.json()["key"]
+        other_org_id, other_key = await _other_org_with_key("Other Graph Co", "other-graph-co", Role.ANALYST)
 
         r = await client.get(
             "/api/governance/delegations/graph",
@@ -1490,18 +1406,7 @@ class TestIntentContractEndpoints:
             headers={"Authorization": f"Bearer {key}"},
         )
 
-        r = await client.post(
-            "/api/orgs",
-            json={"name": "Other Intent Co", "slug": "other-intent-co"},
-            headers=BOOTSTRAP_AUTH,
-        )
-        other_org_id = r.json()["id"]
-        r = await client.post(
-            f"/api/orgs/{other_org_id}/keys",
-            json={"name": "k", "role": "ANALYST"},
-            headers=BOOTSTRAP_AUTH,
-        )
-        other_key = r.json()["key"]
+        other_org_id, other_key = await _other_org_with_key("Other Intent Co", "other-intent-co", Role.ANALYST)
 
         r = await client.get(
             "/api/governance/intent-contracts/shared-agent-name/active",
@@ -1672,12 +1577,7 @@ class TestAuthorityPassportEndpoints:
         )
         passport_id = r.json()["passport_id"]
 
-        r = await client.post(
-            f"/api/orgs/{org_id}/keys",
-            json={"name": "analyst-key-2", "role": "ANALYST"},
-            headers=BOOTSTRAP_AUTH,
-        )
-        analyst_key = r.json()["key"]
+        analyst_key = await _add_org_key(org_id, "analyst-key-2", Role.ANALYST)
 
         r = await client.post(
             f"/api/governance/authority-passports/{passport_id}/revoke",
@@ -1698,18 +1598,7 @@ class TestAuthorityPassportEndpoints:
         )
         passport_id = r.json()["passport_id"]
 
-        r = await client.post(
-            "/api/orgs",
-            json={"name": "Other Passport Co", "slug": "other-passport-co"},
-            headers=BOOTSTRAP_AUTH,
-        )
-        other_org_id = r.json()["id"]
-        r = await client.post(
-            f"/api/orgs/{other_org_id}/keys",
-            json={"name": "k", "role": "ANALYST"},
-            headers=BOOTSTRAP_AUTH,
-        )
-        other_key = r.json()["key"]
+        other_org_id, other_key = await _other_org_with_key("Other Passport Co", "other-passport-co", Role.ANALYST)
 
         r = await client.get(
             f"/api/governance/authority-passports/{passport_id}",

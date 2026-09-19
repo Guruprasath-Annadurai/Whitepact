@@ -45,7 +45,8 @@ from responsibleai.governance.upstream_executor import (
 )
 from responsibleai.supplychain.models import Finding, SupplyChainReport, Verdict
 
-BOOTSTRAP_AUTH = {"Authorization": "Bearer bootstrap-test-key"}
+from tests.org_http_fixtures import seed_org_with_key
+from responsibleai.rbac.models import Role
 
 
 def _fake_public_dns(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -414,20 +415,10 @@ async def client():
 
 @pytest.fixture()
 async def org_and_admin_key(client: AsyncClient):
-    r = await client.post(
-        "/api/orgs",
-        json={"name": "Tool Trust Test Co", "slug": "tool-trust-test-co"},
-        headers=BOOTSTRAP_AUTH,
+    org_id, _kid, raw = await seed_org_with_key(
+        name="Tool Trust Test Co", slug="tool-trust-test-co", key_name="admin-key", role=Role.ADMIN
     )
-    assert r.status_code == 201, r.text
-    org_id = r.json()["id"]
-    r = await client.post(
-        f"/api/orgs/{org_id}/keys",
-        json={"name": "admin-key", "role": "ADMIN"},
-        headers=BOOTSTRAP_AUTH,
-    )
-    assert r.status_code == 201, r.text
-    return org_id, r.json()["key"]
+    return org_id, raw
 
 
 class TestToolTrustRESTEndpoints:
@@ -473,12 +464,11 @@ class TestToolTrustRESTEndpoints:
         )
         server_id = r.json()["server_id"]
 
-        r = await client.post(
-            f"/api/orgs/{org_id}/keys",
-            json={"name": "analyst-key", "role": "ANALYST"},
-            headers=BOOTSTRAP_AUTH,
+        from responsibleai.dashboard.app import _org_repo
+
+        _rec, analyst_key = await _org_repo.create_key(
+            org_id, "analyst-key", Role.ANALYST, internal_unverified_fixture=True
         )
-        analyst_key = r.json()["key"]
         r = await client.post(
             f"/api/governance/upstream/servers/{server_id}/trust/override",
             json={"tier": "BLOCKED", "reason": "test"},

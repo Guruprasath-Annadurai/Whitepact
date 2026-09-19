@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import func, insert, select, update
+from sqlalchemy import func, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from responsibleai.db.engine import (
@@ -52,6 +52,7 @@ from responsibleai.enterprise.errors import (
     ORG_DISABLED,
     ORG_SUSPENDED,
     SERVICE_ACCOUNT_FORBIDDEN,
+    VERIFICATION_SUSPENDED,
     WRONG_ENVIRONMENT,
     WRONG_TENANT,
     EnterpriseError,
@@ -624,8 +625,11 @@ class EnterpriseIAM:
                 update(org_api_keys)
                 .where(
                     org_api_keys.c.org_id == org_id,
-                    org_api_keys.c.created_by_user_id == user_id,
                     org_api_keys.c.revoked == 0,
+                    or_(
+                        org_api_keys.c.created_by_user_id == user_id,
+                        org_api_keys.c.accountable_human_user_id == user_id,
+                    ),
                 )
                 .values(revoked=1, revoked_at=_iso())
             )
@@ -804,13 +808,20 @@ class EnterpriseIAM:
             actor, Permission.API_KEYS_CREATE, org_id=org_id, environment_id=environment_id
         )
         from responsibleai.enterprise.eligibility import EligibilityGate
+        from responsibleai.enterprise.preflight import identity_webhook_secret_from_env
         from responsibleai.enterprise.verification import HmacVerificationProvider, VerificationService
 
         if not actor.user_id:
             raise forbidden(API_KEY_ISSUANCE_NOT_ALLOWED, "Credential provenance cannot be established.")
+        if actor.actor_type != "human":
+            raise forbidden(
+                API_KEY_ISSUANCE_NOT_ALLOWED,
+                "Only an authenticated IDENTITY_VERIFIED human may issue reusable credentials.",
+            )
+        secret = identity_webhook_secret_from_env()
         gate = EligibilityGate(
             self._engine,
-            VerificationService(self._engine, HmacVerificationProvider("dev-identity-webhook-secret")),
+            VerificationService(self._engine, HmacVerificationProvider(secret)),
         )
         decision = await gate.may_issue_api_key(
             principal_user_id=actor.user_id,
@@ -837,7 +848,7 @@ class EnterpriseIAM:
         if env is None or env["status"] != "ACTIVE":
             raise forbidden(WRONG_ENVIRONMENT, "Environment is not usable.")
         holder_kind = "service_account" if service_account_id else "human_key"
-        accountable = actor.user_id
+        accountable = decision.accountable_human_user_id or actor.user_id
         if not accountable:
             raise forbidden(API_KEY_ISSUANCE_NOT_ALLOWED, "Credential provenance cannot be established.")
         prefix, raw = self._generate_raw_key(str(env["type"]))
@@ -897,6 +908,10 @@ class EnterpriseIAM:
             "accountable_human_user_id": accountable,
         }
         return record, raw
+
+    async def issue_api_key(self, *args: Any, **kwargs: Any) -> tuple[dict[str, Any], str]:
+        """Canonical hosted issuance alias. Never skip CredentialIssuancePolicy."""
+        return await self.create_api_key(*args, **kwargs)
 
     async def rotate_api_key(
         self, actor: Actor, org_id: str, key_id: str, *, overlap_seconds: int = 0
@@ -1076,6 +1091,29 @@ class EnterpriseIAM:
         org = await self._load_org(row.org_id)
         if org is None or org["governance_status"] == GovernanceStatus.DISABLED.value:
             raise forbidden(ORG_DISABLED, "Organization is disabled.")
+        if org["governance_status"] == GovernanceStatus.SUSPENDED.value:
+            raise forbidden(ORG_SUSPENDED, "Organization is suspended.")
+        accountable = getattr(row, "accountable_human_user_id", None)
+        if accountable:
+            async with self._engine.raw.connect() as conn:
+                human = (
+                    await conn.execute(select(web_users).where(web_users.c.id == accountable))
+                ).fetchone()
+                membership = (
+                    await conn.execute(
+                        select(web_memberships).where(
+                            web_memberships.c.user_id == accountable,
+                            web_memberships.c.org_id == row.org_id,
+                        )
+                    )
+                ).fetchone()
+            if human is None or human.disabled:
+                raise forbidden(KEY_REVOKED, "Accountable human is no longer active.")
+            status = getattr(human, "verification_status", None) or "UNVERIFIED"
+            if status in {"SUSPENDED", "REJECTED"}:
+                raise forbidden(VERIFICATION_SUSPENDED, "Accountable human identity is suspended.")
+            if membership is None or membership.status != "ACTIVE":
+                raise forbidden(MEMBERSHIP_REVOKED, "Accountable human membership is not active.")
         try:
             async with self._engine.raw.begin() as conn:
                 await conn.execute(
@@ -1161,6 +1199,8 @@ class EnterpriseIAM:
         environment_ids: tuple[str, ...],
     ) -> dict[str, Any]:
         await self.authorize(actor, Permission.SA_CREATE, org_id=org_id)
+        if actor.actor_type != "human":
+            raise forbidden(SERVICE_ACCOUNT_FORBIDDEN, "A service account cannot be its own accountability root.")
         if role == Role.OWNER:
             raise forbidden(SERVICE_ACCOUNT_FORBIDDEN, "Service accounts cannot receive OWNER.")
         if actor.actor_type == "service_account":
@@ -1172,6 +1212,31 @@ class EnterpriseIAM:
             raise forbidden(SERVICE_ACCOUNT_FORBIDDEN, "Cannot assign a service-account role at or above your own.")
         if not actor.user_id:
             raise forbidden(SERVICE_ACCOUNT_FORBIDDEN, "Service account requires accountable human provenance.")
+        from responsibleai.enterprise.eligibility import EligibilityGate
+        from responsibleai.enterprise.issuance import CredentialIssuancePolicy
+        from responsibleai.enterprise.preflight import identity_webhook_secret_from_env
+        from responsibleai.enterprise.verification import HmacVerificationProvider, VerificationService
+
+        secret = identity_webhook_secret_from_env()
+        verification = VerificationService(self._engine, HmacVerificationProvider(secret))
+        sponsor = await CredentialIssuancePolicy(self._engine, verification).assert_sponsor_eligible(
+            principal_user_id=actor.user_id,
+            organization_id=org_id,
+            role=actor.role,
+        )
+        await EligibilityGate(self._engine, verification).audit.record(
+            org_id=org_id,
+            actor_type=actor.actor_type,
+            actor_id=actor.actor_id,
+            action="service_account.sponsor_checked",
+            target_type="user",
+            target_id=actor.user_id,
+            result="ALLOWED" if sponsor.allowed else "DENIED",
+            request_id=actor.request_id,
+            metadata={"reason_code": sponsor.reason_code},
+        )
+        if not sponsor.allowed:
+            raise EnterpriseError(sponsor.reason_code, sponsor.message, 403)
         sa_id = str(uuid.uuid4())
         now = _iso()
         async with self._engine.raw.begin() as conn:

@@ -40,7 +40,17 @@ class ApiKeyService:
         scopes: list[str] | None = None,
         ttl_days: int = 90,
     ) -> tuple[str, str, str]:
-        """Create an enterprise API key, returning (key_id, raw_key, fingerprint)."""
+        """INTERNAL lineage helper. Hosted issuance must use EnterpriseIAM.create_api_key."""
+        import os
+
+        from responsibleai.dashboard.config import is_production_environment
+
+        env_name = os.environ.get("WHITEPACT_ENV") or os.environ.get("RAI_ENV") or "development"
+        if is_production_environment(env_name):
+            raise RuntimeError(
+                "ApiKeyService.create_key is not a production issuance path. "
+                "Use EnterpriseIAM.create_api_key after CredentialIssuancePolicy."
+            )
         raw_key = self.generate_raw_key(environment)
         fingerprint = self.compute_fingerprint(raw_key)
         key_id = f"wpk_{uuid.uuid4().hex}"

@@ -54,6 +54,23 @@ def _actor(user_id: str, org_id: str, role: Role) -> Actor:
     )
 
 
+async def _verify_human(engine, user_id: str, event_id: str) -> None:
+    provider = HmacVerificationProvider("test-webhook-secret")
+    verification = VerificationService(engine, provider)
+    payload, sig, ts = await _signed_event(
+        provider,
+        {
+            "event_id": event_id,
+            "subject_id": user_id,
+            "outcome": "VERIFIED",
+            "assurance_level": "government_id",
+        },
+    )
+    await verification.apply_provider_event(
+        payload=payload, signature=sig, timestamp=ts, expected_user_id=user_id
+    )
+
+
 async def _signed_event(provider: HmacVerificationProvider, body: dict, ts: str | None = None) -> tuple[bytes, str, str]:
     timestamp = ts or datetime.now(UTC).isoformat()
     payload = json.dumps(body, separators=(",", ":")).encode()
@@ -254,16 +271,16 @@ async def test_unverified_and_email_only_production_key_denied(engine) -> None:
             expires_at=None,
         )
     assert unverified_prod.value.code == IDENTITY_VERIFICATION_REQUIRED
-    rec, secret = await iam.create_api_key(
-        actor,
-        org["id"],
-        name="dev",
-        environment_id=envs["DEVELOPMENT"]["id"],
-        scopes=("usage:read",),
-        expires_at=None,
-    )
-    assert rec["id"]
-    assert secret
+    with pytest.raises(EnterpriseError) as unverified_dev:
+        await iam.create_api_key(
+            actor,
+            org["id"],
+            name="dev",
+            environment_id=envs["DEVELOPMENT"]["id"],
+            scopes=("usage:read",),
+            expires_at=None,
+        )
+    assert unverified_dev.value.code == IDENTITY_VERIFICATION_REQUIRED
 
 
 @pytest.mark.asyncio
@@ -375,6 +392,7 @@ async def test_service_account_cannot_be_owner_or_unattributable(engine) -> None
     )
     actor = _actor(owner, org["id"], Role.OWNER)
     envs = await iam.list_environments(actor, org["id"])
+    await _verify_human(engine, owner, "evt-sa-owner")
     with pytest.raises(EnterpriseError):
         await iam.create_service_account(
             actor, org["id"], display_name="bot", role=Role.OWNER, environment_ids=(envs[0]["id"],)
@@ -408,6 +426,7 @@ async def test_rotation_overlap_then_revoke(engine) -> None:
     )
     actor = _actor(owner, org["id"], Role.OWNER)
     envs = {e["type"]: e for e in await iam.list_environments(actor, org["id"])}
+    await _verify_human(engine, owner, "evt-rot")
     rec, old_secret = await iam.create_api_key(
         actor,
         org["id"],

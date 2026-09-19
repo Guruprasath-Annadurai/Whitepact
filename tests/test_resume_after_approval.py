@@ -40,7 +40,8 @@ from responsibleai.governance.approval import (
 )
 from responsibleai.mcp.governance_integration import resume_approval
 
-BOOTSTRAP_AUTH = {"Authorization": "Bearer bootstrap-test-key"}
+from tests.org_http_fixtures import seed_org_with_key
+from responsibleai.rbac.models import Role
 
 
 @pytest.fixture(autouse=True)
@@ -70,20 +71,10 @@ async def client():
 
 @pytest.fixture()
 async def org_and_admin_key(client: AsyncClient):
-    r = await client.post(
-        "/api/orgs",
-        json={"name": "Resume Test Co", "slug": "resume-test-co"},
-        headers=BOOTSTRAP_AUTH,
+    org_id, _kid, raw = await seed_org_with_key(
+        name="Resume Test Co", slug="resume-test-co", key_name="admin-key", role=Role.ADMIN
     )
-    assert r.status_code == 201, r.text
-    org_id = r.json()["id"]
-    r = await client.post(
-        f"/api/orgs/{org_id}/keys",
-        json={"name": "admin-key", "role": "ADMIN"},
-        headers=BOOTSTRAP_AUTH,
-    )
-    assert r.status_code == 201, r.text
-    return org_id, r.json()["key"]
+    return org_id, raw
 
 
 async def _seed_dispatchable_approval(org_id: str, *, arguments: dict | None = None) -> str:
@@ -362,12 +353,12 @@ class TestResumeApprovalEndToEnd:
             headers=admin_headers,
         )
 
-        r = await client.post(
-            f"/api/orgs/{org_id}/keys",
-            json={"name": "analyst-key", "role": "ANALYST"},
-            headers=BOOTSTRAP_AUTH,
+        from responsibleai.dashboard.app import _org_repo
+        from responsibleai.rbac.models import Role
+
+        _rec, analyst_key = await _org_repo.create_key(
+            org_id, "analyst-key", Role.ANALYST, internal_unverified_fixture=True
         )
-        analyst_key = r.json()["key"]
 
         r = await client.post(
             f"/api/governance/approvals/{approval_id}/execute",
@@ -389,12 +380,9 @@ class TestResumeApprovalEndToEnd:
         self, client: AsyncClient, org_and_admin_key
     ) -> None:
         _org_id, admin_key = org_and_admin_key
-        r = await client.post(
-            "/api/orgs",
-            json={"name": "Other Resume Co", "slug": "other-resume-co"},
-            headers=BOOTSTRAP_AUTH,
+        other_org_id, _kid, _raw = await seed_org_with_key(
+            name="Other Resume Co", slug="other-resume-co", key_name="k", role=Role.ANALYST
         )
-        other_org_id = r.json()["id"]
         other_approval_id = await _seed_dispatchable_approval(other_org_id)
 
         r = await client.post(
