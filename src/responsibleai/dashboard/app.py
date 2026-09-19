@@ -1753,6 +1753,44 @@ async def web_create_api_key(
     expires_at = req.expires_at.isoformat() if req.expires_at else None
     if req.expires_at and req.expires_at <= datetime.now(UTC):
         raise HTTPException(422, "API key expiration must be in the future.")
+    if req.environment == "live":
+        from responsibleai.enterprise.eligibility import EligibilityGate
+        from responsibleai.enterprise.errors import EnterpriseError
+        from responsibleai.enterprise.runtime import get_enterprise_engine
+        from responsibleai.enterprise.service import Actor, EnterpriseIAM
+        from responsibleai.enterprise.verification import HmacVerificationProvider, VerificationService
+
+        try:
+            engine = get_enterprise_engine()
+        except RuntimeError as exc:
+            raise HTTPException(403, detail={"error": "FORBIDDEN", "message": "Authorization backend unavailable."}) from exc
+        iam = EnterpriseIAM(engine)
+        await iam.ensure_default_environments(org_id)
+        actor = Actor(
+            actor_type="human",
+            actor_id=principal.user_id,
+            user_id=principal.user_id,
+            org_id=org_id,
+            role=principal.role or Role.VIEWER,
+            membership_status="ACTIVE",
+        )
+        envs = {row["type"]: row for row in await iam.list_environments(actor, org_id)}
+        production = envs.get("PRODUCTION")
+        if production is None:
+            raise HTTPException(403, detail={"error": "WRONG_ENVIRONMENT", "message": "Production environment is not available."})
+        gate = EligibilityGate(engine, VerificationService(engine, HmacVerificationProvider("dev-identity-webhook-secret")))
+        decision = await gate.may_issue_api_key(
+            principal_user_id=principal.user_id,
+            organization_id=org_id,
+            environment_id=production["id"],
+            requested_scopes=tuple(req.scopes),
+            role=principal.role,
+        )
+        if not decision.allowed:
+            raise HTTPException(
+                403,
+                detail={"error": decision.reason_code, "message": decision.message},
+            )
     record, raw = await _ready(_org_repo).create_key(
         org_id,
         req.name,
