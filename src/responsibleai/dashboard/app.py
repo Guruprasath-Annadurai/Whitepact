@@ -2697,9 +2697,18 @@ async def signup(request: Request, req: SignupRequest) -> dict[str, Any]:
         raise HTTPException(409, f"Workspace URL '{req.slug}' is already taken.")
 
     org = await _ready(_org_repo).create_org(req.name, req.slug)
-    key_rec, raw_key = await _ready(_org_repo).create_key(org.id, "Default key", Role.OWNER)
     logger.info("self_serve_signup", org_id=org.id, slug=req.slug)
-    return {"org": org.to_dict(), "api_key": raw_key, "key_id": key_rec.id}
+    return {
+        "org": org.to_dict(),
+        "api_key": None,
+        "key_id": None,
+        "reason_code": "API_KEY_ISSUANCE_NOT_ALLOWED",
+        "message": (
+            "Organization created. Production API credentials require a verified "
+            "accountable human (and organization verification where applicable). "
+            "Use the enterprise identity APIs after verification."
+        ),
+    }
 
 
 @app.post("/api/orgs", tags=["rbac"], status_code=201)
