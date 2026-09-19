@@ -122,6 +122,80 @@ class TestStreamableHttpTransport:
         assert result.structuredContent is not None
         assert json.loads(result.content[0].text) == result.structuredContent
 
+    async def test_openai_review_workflow_over_real_transport(self, seeded_app) -> None:
+        """Exercise review inputs through the real MCP layer, not handler stubs."""
+        app, raw_key = seeded_app
+        calls = {
+            "rai_health": {},
+            "rai_scan": {
+                "text": (
+                    "Contact John at john@example.com or 555-123-4567. His employee ID is EMP-2048."
+                ),
+                "redact": True,
+            },
+            "rai_trust_score": {
+                "fairness": 0.80,
+                "privacy": 0.90,
+                "security": 0.70,
+                "robustness": 0.85,
+                "compliance": 0.90,
+                "authenticity": 0.95,
+            },
+            "rai_eu_ai_act_classify": {
+                "system_description": (
+                    "An automated resume-screening system used by employers to rank "
+                    "candidates and decide who proceeds to interviews."
+                ),
+                "deployment_sector": "employment",
+                "affects_natural_persons": True,
+                "is_fully_automated": True,
+            },
+            "rai_hallucination": {
+                "source": "The project review meeting is scheduled for Tuesday at 3 PM.",
+                "text": "The project review meeting is scheduled for Wednesday at 3 PM.",
+            },
+        }
+
+        async with (
+            _asgi_http_client(app, raw_key) as http_client,
+            streamable_http_client("/mcp", http_client=http_client) as (
+                read_stream,
+                write_stream,
+                _get_session_id,
+            ),
+        ):
+            async with ClientSession(read_stream, write_stream) as session:
+                await session.initialize()
+                tools = (await session.list_tools()).tools
+                resources = (await session.list_resources()).resources
+                results = {
+                    name: await session.call_tool(name, arguments)
+                    for name, arguments in calls.items()
+                }
+
+        assert len(tools) == 30
+        assert len(resources) == 20
+        assert all(
+            tool.annotations is not None
+            and tool.annotations.readOnlyHint is not None
+            and tool.annotations.openWorldHint is not None
+            and tool.annotations.destructiveHint is not None
+            for tool in tools
+        )
+        assert all(result.isError is not True for result in results.values())
+
+        payloads = {name: result.structuredContent for name, result in results.items()}
+        assert payloads["rai_health"]["status"] == "ok"
+        assert payloads["rai_health"]["tools"] == 30
+        assert payloads["rai_scan"]["has_pii"] is True
+        assert "john@example.com" not in payloads["rai_scan"]["redacted_text"]
+        assert "555-123-4567" not in payloads["rai_scan"]["redacted_text"]
+        assert isinstance(payloads["rai_trust_score"]["score"], float)
+        assert isinstance(payloads["rai_trust_score"]["risk_tier"], str)
+        assert payloads["rai_eu_ai_act_classify"]["risk_tier"] == "HIGH"
+        assert payloads["rai_hallucination"]["source_contradiction_detected"] is True
+        assert payloads["rai_hallucination"]["hallucination_detected"] is True
+
 
 class TestLegacySseTransportUnaffected:
     """The legacy /sse + /messages/ transport must keep working exactly as
