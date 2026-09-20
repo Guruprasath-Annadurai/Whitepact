@@ -2508,6 +2508,60 @@ identity_security_notifications = Table(
     Index("idx_identity_security_notifications_user", "user_id"),
 )
 
+# Layer 2 remediation: durable OAuth transactions, abuse counters, four-eyes.
+# These tables are identity-security state. They are not execution authority.
+identity_oauth_transactions = Table(
+    "identity_oauth_transactions",
+    metadata,
+    Column("state_hash", String(64), primary_key=True),
+    Column("provider", String(32), nullable=False),
+    Column("nonce", String(64), nullable=False),
+    Column("pkce_verifier", String(128), nullable=False),
+    Column("redirect_uri", String(512), nullable=False),
+    Column("intended_org_id", String(36), nullable=True),
+    Column("session_id", String(64), nullable=True),
+    Column("status", String(32), nullable=False, server_default="PENDING"),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("consumed_at", String(32), nullable=True),
+    Column("code_hash", String(64), nullable=True),
+    CheckConstraint("status IN ('PENDING','CONSUMED','EXPIRED')", name="chk_identity_oauth_status"),
+    Index("idx_identity_oauth_expiry", "expires_at"),
+)
+
+identity_rate_counters = Table(
+    "identity_rate_counters",
+    metadata,
+    Column("bucket_key", String(256), primary_key=True),
+    Column("window_start", String(32), nullable=False),
+    Column("count", Integer, nullable=False, server_default="0"),
+    Column("updated_at", String(32), nullable=False),
+)
+
+identity_four_eyes_requests = Table(
+    "identity_four_eyes_requests",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
+    Column("requester_user_id", String(36), ForeignKey("web_users.id", ondelete="RESTRICT"), nullable=False),
+    Column("approver_user_id", String(36), ForeignKey("web_users.id", ondelete="RESTRICT"), nullable=True),
+    Column("action", String(64), nullable=False),
+    Column("parameters_json", Text, nullable=False),
+    Column("action_digest", String(64), nullable=False),
+    Column("security_version", String(64), nullable=True),
+    Column("status", String(32), nullable=False, server_default="PENDING"),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("approved_at", String(32), nullable=True),
+    Column("consumed_at", String(32), nullable=True),
+    CheckConstraint(
+        "status IN ('PENDING','APPROVED','DENIED','EXPIRED','CONSUMED','REVOKED')",
+        name="chk_identity_four_eyes_status",
+    ),
+    Index("idx_identity_four_eyes_org", "org_id"),
+    Index("idx_identity_four_eyes_requester", "requester_user_id"),
+)
+
 
 class DatabaseEngine:
     """Async database engine wrapping SQLAlchemy — SQLite or PostgreSQL.

@@ -79,6 +79,26 @@ def validate_schema_lineage(connection: Connection) -> None:
             "organization_verifications",
             "identity_provider_events",
         },
+        56: {
+            "webauthn_challenges",
+            "passkey_credentials",
+            "human_totp_factors",
+            "recovery_code_hashes",
+            "account_recovery_requests",
+            "provider_identities",
+            "organization_idp_bindings",
+            "organization_sso_configs",
+            "step_up_grants",
+            "auth_replay_records",
+            "org_security_policies",
+            "company_domain_challenges",
+            "identity_security_notifications",
+        },
+        57: {
+            "identity_oauth_transactions",
+            "identity_rate_counters",
+            "identity_four_eyes_requests",
+        },
     }
     for introduced, expected in requirements.items():
         if revision >= introduced and not expected <= tables:
@@ -101,9 +121,7 @@ def validate_schema_lineage(connection: Connection) -> None:
             "target_fingerprint",
         }
         if revision >= 41 and not bound_approval_columns <= approval_columns:
-            raise SchemaLineageError(
-                "Canonical approval security-binding columns are missing"
-            )
+            raise SchemaLineageError("Canonical approval security-binding columns are missing")
         if revision < 41 and bound_approval_columns & approval_columns:
             raise SchemaLineageError(
                 f"Unexpected future approval columns at revision {rows[0]}; "

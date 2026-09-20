@@ -13,10 +13,14 @@ import hashlib
 import json
 from dataclasses import dataclass
 
-from cryptography.hazmat.primitives.asymmetric.ec import ECDSA, EllipticCurvePublicNumbers
-from cryptography.hazmat.primitives.asymmetric.ec import SECP256R1, EllipticCurvePublicKey
-from cryptography.hazmat.primitives.hashes import SHA256
 from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ec import (
+    ECDSA,
+    SECP256R1,
+    EllipticCurvePublicKey,
+    EllipticCurvePublicNumbers,
+)
+from cryptography.hazmat.primitives.hashes import SHA256
 
 FLAG_UP = 0x01
 FLAG_UV = 0x04
@@ -80,7 +84,11 @@ def parse_auth_data(auth_data: bytes) -> tuple[bytes, int, int, bytes | None, by
 
 
 def cose_ec2_uncompressed(cose_bytes: bytes) -> bytes:
-    """Decode a COSE_Key EC2 P-256 public key to uncompressed 0x04||x||y."""
+    """Decode a COSE_Key EC2 P-256 public key to uncompressed 0x04||x||y.
+
+    V1 supports ES256 (COSE alg -7, P-256) only. Other COSE algorithms are
+    rejected. This is an interoperability limitation, not algorithm agility.
+    """
     try:
         import cbor2
     except ImportError as exc:

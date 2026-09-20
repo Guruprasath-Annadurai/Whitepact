@@ -25,6 +25,7 @@ class PasskeyFinishBody(BaseModel):
     credential_id: str | None = None
     display_name: str = "Passkey"
     transports: list[str] = Field(default_factory=list)
+    grant: str | None = None
 
 
 class TotpConfirmBody(BaseModel):
@@ -45,10 +46,21 @@ class StepUpBody(BaseModel):
     grant: str | None = None
 
 
-class ProviderTokenBody(BaseModel):
-    id_token: str
-    nonce: str
+class OAuthCallbackBody(BaseModel):
+    state: str
+    code: str
+    redirect_uri: str | None = None
     org_id: str | None = None
+
+
+class FourEyesRequestBody(BaseModel):
+    action: str
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    grant: str | None = None
+
+
+class FourEyesApproveBody(BaseModel):
+    request_id: str
     grant: str | None = None
 
 
@@ -64,12 +76,17 @@ class SsoConfigBody(BaseModel):
     idp_entity_id: str | None = None
     idp_sso_url: str | None = None
     idp_x509_cert: str | None = None
+    four_eyes_id: str | None = None
 
 
 def _error(exc: EnterpriseError, request: Request) -> JSONResponse:
     return JSONResponse(
         status_code=exc.http_status,
-        content={**exc.as_detail(), "status_code": exc.http_status, "request_id": getattr(request.state, "request_id", None)},
+        content={
+            **exc.as_detail(),
+            "status_code": exc.http_status,
+            "request_id": getattr(request.state, "request_id", None),
+        },
     )
 
 
@@ -83,17 +100,23 @@ async def _session(request: Request):
         raise unauthenticated()
     if request.method.upper() not in {"GET", "HEAD"}:
         csrf_cookie = request.cookies.get("wp_csrf", "")
-        header = request.headers.get("x-whitepact-csrf") or request.headers.get("x-csrf-token") or ""
+        header = (
+            request.headers.get("x-whitepact-csrf") or request.headers.get("x-csrf-token") or ""
+        )
         if not csrf_cookie or csrf_cookie != header:
             raise EnterpriseError("FORBIDDEN", "CSRF validation failed.", 403)
-    return await _svc().load_session(token if "." in token else f"{token}.{request.cookies.get('wp_csrf', '')}")
+    return await _svc().load_session(
+        token if "." in token else f"{token}.{request.cookies.get('wp_csrf', '')}"
+    )
 
 
 @router.post("/passkeys/register/begin")
 async def passkey_register_begin(request: Request) -> Any:
     try:
         _token, _csrf, assurance = await _session(request)
-        return await _svc().begin_webauthn(user_id=assurance.user_id, session_id=assurance.session_id, ceremony="register")
+        return await _svc().begin_webauthn(
+            user_id=assurance.user_id, session_id=assurance.session_id, ceremony="register"
+        )
     except EnterpriseError as exc:
         return _error(exc, request)
 
@@ -109,6 +132,7 @@ async def passkey_register_finish(request: Request, body: PasskeyFinishBody) -> 
             authenticator_data_b64=body.authenticator_data,
             display_name=body.display_name,
             transports=body.transports,
+            grant=body.grant,
         )
     except EnterpriseError as exc:
         return _error(exc, request)
@@ -177,7 +201,12 @@ async def sessions(request: Request) -> Any:
 async def logout_all(request: Request, body: RecoveryCodesBody) -> Any:
     try:
         _token, _csrf, assurance = await _session(request)
-        await _svc().require_step_up(assurance, SensitiveAction.REVOKE_ALL_SESSIONS, org_id=assurance.org_id, grant=body.grant)
+        await _svc().require_step_up(
+            assurance,
+            SensitiveAction.REVOKE_ALL_SESSIONS,
+            org_id=assurance.org_id,
+            grant=body.grant,
+        )
         count = await _svc().revoke_all_sessions(assurance.user_id)
         return {"revoked": count}
     except EnterpriseError as exc:
@@ -188,7 +217,9 @@ async def logout_all(request: Request, body: RecoveryCodesBody) -> Any:
 async def recovery_codes(request: Request, body: RecoveryCodesBody) -> Any:
     try:
         _token, _csrf, assurance = await _session(request)
-        codes = await _svc().issue_recovery_codes(assurance.user_id, session=assurance, grant=body.grant)
+        codes = await _svc().issue_recovery_codes(
+            assurance.user_id, session=assurance, grant=body.grant
+        )
         return {"codes": codes, "reveal": "once"}
     except EnterpriseError as exc:
         return _error(exc, request)
@@ -220,18 +251,112 @@ async def step_up(request: Request, body: StepUpBody) -> Any:
         return _error(exc, request)
 
 
-@router.post("/identity-providers/google/login")
-async def google_login(request: Request, body: ProviderTokenBody) -> Any:
+@router.post("/identity-providers/google/authorize")
+async def google_authorize(request: Request) -> Any:
     try:
-        return await _svc().google_login(id_token=body.id_token, nonce=body.nonce, intended_org_id=body.org_id)
+        payload = await request.json()
+        return await _svc().begin_hosted_oauth(
+            provider="GOOGLE",
+            redirect_uri=payload.get("redirect_uri"),
+            intended_org_id=payload.get("org_id"),
+        )
     except EnterpriseError as exc:
         return _error(exc, request)
 
 
-@router.post("/identity-providers/microsoft/login")
-async def microsoft_login(request: Request, body: ProviderTokenBody) -> Any:
+@router.post("/identity-providers/google/callback")
+async def google_callback(request: Request, body: OAuthCallbackBody) -> Any:
     try:
-        return await _svc().microsoft_login(id_token=body.id_token, nonce=body.nonce, intended_org_id=body.org_id)
+        return await _svc().complete_hosted_oauth(
+            provider="GOOGLE",
+            state=body.state,
+            code=body.code,
+            redirect_uri=body.redirect_uri,
+        )
+    except EnterpriseError as exc:
+        return _error(exc, request)
+
+
+@router.post("/identity-providers/microsoft/authorize")
+async def microsoft_authorize(request: Request) -> Any:
+    try:
+        payload = await request.json()
+        return await _svc().begin_hosted_oauth(
+            provider="MICROSOFT",
+            redirect_uri=payload.get("redirect_uri"),
+            intended_org_id=payload.get("org_id"),
+        )
+    except EnterpriseError as exc:
+        return _error(exc, request)
+
+
+@router.post("/identity-providers/microsoft/callback")
+async def microsoft_callback(request: Request, body: OAuthCallbackBody) -> Any:
+    try:
+        return await _svc().complete_hosted_oauth(
+            provider="MICROSOFT",
+            state=body.state,
+            code=body.code,
+            redirect_uri=body.redirect_uri,
+        )
+    except EnterpriseError as exc:
+        return _error(exc, request)
+
+
+@router.post("/identity-providers/google/login")
+async def google_login(request: Request) -> Any:
+    return _error(
+        EnterpriseError(
+            "PROVIDER_TOKEN_INVALID",
+            "Hosted Google login requires the authorization-code + PKCE callback.",
+            401,
+        ),
+        request,
+    )
+
+
+@router.post("/identity-providers/microsoft/login")
+async def microsoft_login(request: Request) -> Any:
+    return _error(
+        EnterpriseError(
+            "PROVIDER_TOKEN_INVALID",
+            "Hosted Microsoft login requires the authorization-code + PKCE callback.",
+            401,
+        ),
+        request,
+    )
+
+
+@router.post("/security/four-eyes/request")
+async def four_eyes_request(request: Request, body: FourEyesRequestBody) -> Any:
+    try:
+        _token, _csrf, assurance = await _session(request)
+        org_id = assurance.org_id
+        if not org_id:
+            raise unauthenticated("Organization context required.")
+        await _svc().require_step_up(assurance, body.action, org_id=org_id, grant=body.grant)
+        rec = await _svc().four_eyes.request(
+            org_id=org_id,
+            requester=assurance,
+            action=body.action,
+            parameters=body.parameters,
+        )
+        return {"id": rec.id, "status": rec.status, "digest": rec.digest}
+    except EnterpriseError as exc:
+        return _error(exc, request)
+
+
+@router.post("/security/four-eyes/approve")
+async def four_eyes_approve(request: Request, body: FourEyesApproveBody) -> Any:
+    try:
+        _token, _csrf, assurance = await _session(request)
+        org_id = assurance.org_id
+        if not org_id:
+            raise unauthenticated("Organization context required.")
+        rec = await _svc().four_eyes.approve(
+            org_id=org_id, request_id=body.request_id, approver=assurance
+        )
+        return {"id": rec.id, "status": rec.status}
     except EnterpriseError as exc:
         return _error(exc, request)
 
@@ -257,6 +382,7 @@ async def sso_configure(request: Request, body: SsoConfigBody) -> Any:
             idp_entity_id=body.idp_entity_id,
             idp_sso_url=body.idp_sso_url,
             idp_x509_cert=body.idp_x509_cert,
+            four_eyes_id=body.four_eyes_id,
         )
         return {"status": "configured"}
     except EnterpriseError as exc:

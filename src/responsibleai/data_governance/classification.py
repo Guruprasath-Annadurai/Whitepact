@@ -151,6 +151,9 @@ TABLE_CLASSIFICATIONS: dict[str, TableClassification] = {
     "org_security_policies": TableClassification("org_security_policies", DataClassification.SENSITIVE_SECURITY, SensitivityTier.HIGH, "ACTIVE_LIFETIME", True, False),
     "company_domain_challenges": TableClassification("company_domain_challenges", DataClassification.SENSITIVE_SECURITY, SensitivityTier.HIGH, "SESSION_EXPIRY", False, True),
     "identity_security_notifications": TableClassification("identity_security_notifications", DataClassification.CANONICAL_SECURITY_EVIDENCE, SensitivityTier.HIGH, "SECURITY_EVIDENCE_DEFAULT", True, False),
+    "identity_oauth_transactions": TableClassification("identity_oauth_transactions", DataClassification.PERSONAL, SensitivityTier.HIGH, "SESSION_EXPIRY", False, True),
+    "identity_rate_counters": TableClassification("identity_rate_counters", DataClassification.SENSITIVE_SECURITY, SensitivityTier.HIGH, "SESSION_EXPIRY", False, True),
+    "identity_four_eyes_requests": TableClassification("identity_four_eyes_requests", DataClassification.TENANT_OPERATIONAL, SensitivityTier.MEDIUM, "90D_DEFAULT", True, True),
     "webhook_configs": TableClassification("webhook_configs", DataClassification.TENANT_OPERATIONAL, SensitivityTier.MEDIUM, "90D_DEFAULT", True, True),
     "webhook_deliveries": TableClassification("webhook_deliveries", DataClassification.TENANT_OPERATIONAL, SensitivityTier.MEDIUM, "90D_DEFAULT", True, True),
 }

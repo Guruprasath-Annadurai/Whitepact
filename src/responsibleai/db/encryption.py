@@ -118,6 +118,7 @@ SENSITIVE_ENCRYPTED_COLUMNS: tuple[tuple[str, str], ...] = (
     ("human_totp_factors", "secret_encrypted"),
     ("human_totp_factors", "pending_secret_encrypted"),
     ("organization_sso_configs", "client_secret_encrypted"),
+    ("identity_verifications", "legal_name_encrypted"),
 )
 
 
@@ -126,12 +127,57 @@ def field_encryption_is_configured() -> bool:
     return _load_fernet() is not None
 
 
+_ENVELOPE_V1 = "wpenc:v1:"
+_LEGACY_PLAINTEXT = "wplegacy:v0:"
+_FERNET_PREFIX = "gAAAA"
+
+
+class FieldEncryptionError(ValueError):
+    """Encrypted field could not be authenticated. Never includes secrets."""
+
+
+def _environment_name() -> str:
+    return (
+        (os.environ.get("WHITEPACT_ENV") or os.environ.get("RAI_ENV") or "development")
+        .strip()
+        .lower()
+    )
+
+
+def _is_production() -> bool:
+    return _environment_name() in {"production", "prod"}
+
+
+def _legacy_plaintext_allowed() -> bool:
+    if _is_production():
+        return False
+    flag = (
+        (
+            os.environ.get("WHITEPACT_ALLOW_LEGACY_PLAINTEXT")
+            or os.environ.get("RAI_ALLOW_LEGACY_PLAINTEXT")
+            or ""
+        )
+        .strip()
+        .lower()
+    )
+    return flag in {"1", "true", "yes"}
+
+
+def _looks_like_fernet_token(value: str) -> bool:
+    return value.startswith(_FERNET_PREFIX)
+
+
 class EncryptedString(TypeDecorator):
     """A Text column that transparently encrypts/decrypts its value.
 
-    No-op passthrough when `RAI_FIELD_ENCRYPTION_KEY` is unset, so this
-    is safe to apply to a column in an existing deployment without
-    forcing encryption on immediately.
+    Envelope:
+    - ``wpenc:v1:<fernet>`` current ciphertext
+    - ``gAAAA...`` historical Fernet tokens written before the envelope
+    - ``wplegacy:v0:<text>`` explicit legacy plaintext (non-production only)
+
+    Production and any environment without WHITEPACT_ALLOW_LEGACY_PLAINTEXT
+    fail closed on unknown formats and authentication failure. Ciphertext is
+    never returned as plaintext. Secrets are never logged.
     """
 
     impl = Text
@@ -143,20 +189,31 @@ class EncryptedString(TypeDecorator):
         fernet = _load_fernet()
         if fernet is None:
             return value
-        # Fernet tokens are already URL-safe base64 text.
-        return fernet.encrypt(value.encode()).decode()
+        token = fernet.encrypt(value.encode()).decode()
+        return f"{_ENVELOPE_V1}{token}"
 
     def process_result_value(self, value: str | None, dialect) -> str | None:  # noqa: ANN001
         if value is None:
             return None
         fernet = _load_fernet()
+        if value.startswith(_ENVELOPE_V1) or _looks_like_fernet_token(value):
+            if fernet is None:
+                raise FieldEncryptionError(
+                    "Encrypted identity data is present but field encryption is not configured."
+                )
+            token = value[len(_ENVELOPE_V1) :] if value.startswith(_ENVELOPE_V1) else value
+            try:
+                return fernet.decrypt(token.encode()).decode()
+            except (InvalidToken, ValueError) as exc:
+                raise FieldEncryptionError("Ciphertext authentication failed.") from exc
+        if value.startswith(_LEGACY_PLAINTEXT):
+            if not _legacy_plaintext_allowed():
+                raise FieldEncryptionError(
+                    "Explicit legacy plaintext is not permitted in this environment."
+                )
+            return value[len(_LEGACY_PLAINTEXT) :]
         if fernet is None:
             return value
-        try:
-            return fernet.decrypt(value.encode()).decode()
-        except (InvalidToken, ValueError):
-            # Value was written before encryption was enabled (or the key
-            # rotated) — return it as-is rather than crashing the request;
-            # this is stored plaintext from before the feature was turned
-            # on, not corrupted data.
+        if _legacy_plaintext_allowed():
             return value
+        raise FieldEncryptionError("Unrecognized encrypted field format.")

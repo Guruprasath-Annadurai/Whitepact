@@ -16,8 +16,12 @@ from typing import Any
 from urllib.parse import urlparse
 
 from responsibleai.auth.crypto_policy import validate_rsa_key_size
-from responsibleai.enterprise.errors import EnterpriseError, PROVIDER_TOKEN_INVALID
-from responsibleai.net.egress import DestinationPolicy, create_safe_async_client, validate_outbound_url
+from responsibleai.enterprise.errors import PROVIDER_TOKEN_INVALID, EnterpriseError
+from responsibleai.net.egress import (
+    DestinationPolicy,
+    create_safe_async_client,
+    validate_outbound_url,
+)
 
 ALLOWED_ALGS = ("RS256", "RS384", "RS512", "ES256", "ES384", "ES512")
 GOOGLE_ISSUERS = frozenset({"https://accounts.google.com", "accounts.google.com"})
@@ -82,7 +86,9 @@ class TrustedJWKS:
         return self._keys[0] if len(self._keys) == 1 else None
 
     async def refresh(self) -> None:
-        async with create_safe_async_client(timeout=5.0, policy=DestinationPolicy.PUBLIC_ONLY) as client:
+        async with create_safe_async_client(
+            timeout=5.0, policy=DestinationPolicy.PUBLIC_ONLY
+        ) as client:
             response = await client.get(self._url)
             response.raise_for_status()
             if len(response.content) > 256_000:
@@ -106,6 +112,8 @@ class VerifiedIDToken:
     nonce: str | None
     expires_at: int
     raw: dict[str, Any]
+    amr: tuple[str, ...] = ()
+    acr: str | None = None
 
 
 class OIDCTokenValidator:
@@ -115,9 +123,13 @@ class OIDCTokenValidator:
         issuer: str,
         audience: str,
         jwks_url: str | None = None,
+        strict_issuer: bool = True,
+        allowed_issuer_hosts: frozenset[str] | None = None,
     ) -> None:
         self.issuer = issuer.rstrip("/")
         self.audience = audience
+        self._strict_issuer = strict_issuer
+        self._allowed_issuer_hosts = allowed_issuer_hosts or frozenset()
         jwks = jwks_url or f"{self.issuer}/.well-known/jwks.json"
         self._jwks = TrustedJWKS(jwks, issuer=self.issuer)
 
@@ -155,14 +167,22 @@ class OIDCTokenValidator:
             if not isinstance(public_key, RSAPublicKey):
                 raise _deny("JWKS key is not an RSA public key.")
             validate_rsa_key_size(public_key)
-            payload = pyjwt.decode(
-                token,
-                public_key,
-                algorithms=list(ALLOWED_ALGS),
-                audience=self.audience,
-                issuer=self.issuer,
-                options={"require": ["exp", "iat", "iss", "aud", "sub"]},
-            )
+            decode_kwargs: dict[str, Any] = {
+                "algorithms": list(ALLOWED_ALGS),
+                "audience": self.audience,
+                "options": {
+                    "require": ["exp", "iat", "iss", "aud", "sub"],
+                    "verify_iss": self._strict_issuer,
+                },
+            }
+            if self._strict_issuer:
+                decode_kwargs["issuer"] = self.issuer
+            payload = pyjwt.decode(token, public_key, **decode_kwargs)
+            iss = str(payload.get("iss", ""))
+            if self._strict_issuer:
+                pass
+            elif issuer_host(iss) not in self._allowed_issuer_hosts:
+                raise _deny("JWT issuer host is not allowed.")
         except EnterpriseError:
             raise
         except Exception as exc:
@@ -175,6 +195,14 @@ class OIDCTokenValidator:
         aud = payload.get("aud")
         if isinstance(aud, list):
             aud = aud[0] if aud else ""
+        amr_raw = payload.get("amr") or ()
+        amr_vals: tuple[str, ...]
+        if isinstance(amr_raw, str):
+            amr_vals = (amr_raw,)
+        elif isinstance(amr_raw, list):
+            amr_vals = tuple(str(item) for item in amr_raw)
+        else:
+            amr_vals = ()
         return VerifiedIDToken(
             issuer=str(payload.get("iss", "")),
             subject=str(payload.get("sub", "")),
@@ -185,6 +213,8 @@ class OIDCTokenValidator:
             nonce=payload.get("nonce"),
             expires_at=int(payload["exp"]),
             raw=payload,
+            amr=amr_vals,
+            acr=str(payload["acr"]) if payload.get("acr") else None,
         )
 
 
@@ -194,7 +224,9 @@ async def fetch_discovery(issuer: str) -> dict[str, Any]:
     if issuer_host(url) != issuer_host(issuer):
         raise _deny("Discovery host must match issuer.")
     validate_outbound_url(url, DestinationPolicy.PUBLIC_ONLY)
-    async with create_safe_async_client(timeout=5.0, policy=DestinationPolicy.PUBLIC_ONLY) as client:
+    async with create_safe_async_client(
+        timeout=5.0, policy=DestinationPolicy.PUBLIC_ONLY
+    ) as client:
         response = await client.get(url)
         response.raise_for_status()
         if len(response.content) > 256_000:

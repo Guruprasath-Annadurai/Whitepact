@@ -53,7 +53,15 @@ class SensitiveAction(StrEnum):
 
 PHISHING_RESISTANT = frozenset({AuthMethod.PASSKEY_UV, AuthMethod.ENTERPRISE_SSO})
 STRONG_BUT_PHISHABLE = frozenset({AuthMethod.TOTP})
-NOT_STRONG = frozenset({AuthMethod.PASSWORD, AuthMethod.PHONE, AuthMethod.RECOVERY, AuthMethod.GOOGLE_OIDC, AuthMethod.MICROSOFT_OIDC})
+NOT_STRONG = frozenset(
+    {
+        AuthMethod.PASSWORD,
+        AuthMethod.PHONE,
+        AuthMethod.RECOVERY,
+        AuthMethod.GOOGLE_OIDC,
+        AuthMethod.MICROSOFT_OIDC,
+    }
+)
 
 # Provider OIDC is not automatically phishing-resistant.
 ASSURANCE_RANK = {
@@ -106,7 +114,9 @@ class PolicyDecision:
 class AuthenticationSecurityPolicy:
     """Answers required factor, assurance, step-up, SSO, recovery, and downgrade questions."""
 
-    def required_assurance_for(self, action: SensitiveAction | str, *, role: str | None, org: OrgAuthPolicy) -> str:
+    def required_assurance_for(
+        self, action: SensitiveAction | str, *, role: str | None, org: OrgAuthPolicy
+    ) -> str:
         action_s = str(action)
         if org.phishing_resistant_required and role in org.privileged_roles:
             return "PASSKEY_UV"
@@ -141,7 +151,7 @@ class AuthenticationSecurityPolicy:
                 return PolicyDecision(True, "BREAK_GLASS_SSO", required_assurance="PASSKEY_UV")
             return PolicyDecision(False, "SSO_REQUIRED", required_assurance="ENTERPRISE_SSO")
         if org.phishing_resistant_required and role in org.privileged_roles:
-            if AuthMethod.PASSKEY_UV not in methods and AuthMethod.ENTERPRISE_SSO not in methods:
+            if AuthMethod.PASSKEY_UV not in methods:
                 return PolicyDecision(
                     False,
                     "PASSKEY_REQUIRED",
@@ -183,15 +193,16 @@ class AuthenticationSecurityPolicy:
             if remaining_strong_factors <= 0 or session.rank() < ASSURANCE_RANK["TOTP"]:
                 return PolicyDecision(False, "SECURITY_DOWNGRADE_BLOCKED", require_step_up=True)
             if org.phishing_resistant_required and not session.phishing_resistant:
-                return PolicyDecision(False, "SECURITY_DOWNGRADE_BLOCKED", phishing_resistant_required=True)
+                return PolicyDecision(
+                    False, "SECURITY_DOWNGRADE_BLOCKED", phishing_resistant_required=True
+                )
         return PolicyDecision(True, "OK")
 
-    def provider_is_phishing_resistant(self, method: str, *, sso_satisfies_org_policy: bool = False) -> bool:
-        if method == AuthMethod.PASSKEY_UV:
-            return True
-        if method == AuthMethod.ENTERPRISE_SSO:
-            return sso_satisfies_org_policy
-        return False
+    def provider_is_phishing_resistant(
+        self, method: str, *, sso_satisfies_org_policy: bool = False
+    ) -> bool:
+        del sso_satisfies_org_policy
+        return method == AuthMethod.PASSKEY_UV
 
     @staticmethod
     def _login_level(methods: tuple[str, ...]) -> str:
