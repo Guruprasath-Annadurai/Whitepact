@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
 from collections.abc import Callable
@@ -15,6 +16,40 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from responsibleai.dashboard.logging_config import get_logger, set_request_id
 
 logger = get_logger("middleware")
+
+
+class AuthFailureLimiter:
+    """Per-process sliding-window limiter on failed Bearer-auth attempts, keyed by IP.
+
+    Dashboard slowapi buckets by presented Bearer token when one is present, so
+    credential guessing with distinct tokens never accumulates. This limiter is
+    IP-keyed and independent of the token tried.
+
+    In-memory, so it is per-replica — documented later-V1 operational debt, not
+    a substitute for Layer 2 durable identity counters.
+    """
+
+    def __init__(self, max_failures: int, window_seconds: float) -> None:
+        self._max_failures = max_failures
+        self._window_seconds = window_seconds
+        self._failures: dict[str, list[float]] = {}
+        self._lock = asyncio.Lock()
+
+    def _prune(self, key: str, now: float) -> list[float]:
+        attempts = [t for t in self._failures.get(key, []) if now - t < self._window_seconds]
+        self._failures[key] = attempts
+        return attempts
+
+    async def is_blocked(self, key: str) -> bool:
+        async with self._lock:
+            now = asyncio.get_running_loop().time()
+            return len(self._prune(key, now)) >= self._max_failures
+
+    async def record_failure(self, key: str) -> None:
+        async with self._lock:
+            now = asyncio.get_running_loop().time()
+            self._prune(key, now).append(now)
+
 
 # The dashboard's static pages (static/index.html etc.) load Tailwind and
 # Chart.js from CDN and use inline <style>/<script> blocks plus onclick=
@@ -100,6 +135,36 @@ _SECURITY_HEADERS = {
     "Content-Security-Policy": _CONTENT_SECURITY_POLICY,
     "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
 }
+
+
+MAX_REQUEST_BODY_BYTES = 10 * 1024 * 1024
+
+
+class MaxBodySizeMiddleware(BaseHTTPMiddleware):
+    """Reject oversized requests by Content-Length before handlers run.
+
+    Chunked bodies without Content-Length are out of this defense-in-depth
+    check; reverse proxies remain a second layer.
+    """
+
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        content_length = request.headers.get("content-length")
+        if content_length is not None:
+            try:
+                length = int(content_length)
+            except ValueError:
+                length = None
+            if length is not None and length > MAX_REQUEST_BODY_BYTES:
+                return JSONResponse(
+                    status_code=413,
+                    content={
+                        "error": "payload_too_large",
+                        "message": (
+                            f"Request body exceeds the {MAX_REQUEST_BODY_BYTES} byte limit."
+                        ),
+                    },
+                )
+        return await call_next(request)
 
 
 class RequestIDMiddleware(BaseHTTPMiddleware):

@@ -59,6 +59,8 @@ from responsibleai.cost.router import ModelRouter
 from responsibleai.dashboard.config import get_settings, multi_replica_problems
 from responsibleai.dashboard.logging_config import configure_logging, get_logger
 from responsibleai.dashboard.middleware import (
+    AuthFailureLimiter,
+    MaxBodySizeMiddleware,
     RequestIDMiddleware,
     RequestLoggingMiddleware,
     RestoreReadinessMiddleware,
@@ -269,6 +271,11 @@ if settings.redis_url:
 
 limiter = Limiter(**_limiter_kwargs)
 
+# IP-keyed protection against credential guessing across changing Bearer tokens.
+# Process-local (later-V1 operational debt). Layer 2 identity counters remain
+# durable in PostgreSQL and are not replaced by this dashboard limiter.
+_auth_failure_limiter = AuthFailureLimiter(max_failures=20, window_seconds=60.0)
+
 # Site-wide cap on self-serve signups, independent of per-IP rate
 # limiting — see signup_guard.py's own docstring for why and its
 # honest single-process scope.
@@ -383,7 +390,13 @@ async def lifespan(application: FastAPI):
     global _workflow_rule_repo, _delegation_repo, _autonomy_budget_repo, _intent_repo
     global _authority_passport_repo
     global _eval_repo, _comparator, _benchmark_runner, _dataset_scanner
-    global _oidc_provider, _saml_config, _stripe_service, _plan_rate_limiter, _billing_event_repo, _paddle_event_repo
+    global \
+        _oidc_provider, \
+        _saml_config, \
+        _stripe_service, \
+        _plan_rate_limiter, \
+        _billing_event_repo, \
+        _paddle_event_repo
 
     from responsibleai.enterprise.preflight import assert_hosted_enterprise_boot_safe
 
@@ -417,8 +430,7 @@ async def lifespan(application: FastAPI):
     # ASGI lifespan's default 5s startup bound under concurrent PG load.
     # Issuance policy, webhook fail-closed, and Gate B are unchanged.
     auto_create_tables = (not settings.is_production) and not (
-        (not settings.auto_migrate)
-        and str(settings.effective_db_url).startswith("postgresql")
+        (not settings.auto_migrate) and str(settings.effective_db_url).startswith("postgresql")
     )
     await _db_engine.init(auto_create_tables=auto_create_tables)
     _plan_rate_limiter = PlanRateLimiter(redis_url=settings.redis_url)
@@ -717,6 +729,7 @@ app.add_middleware(APIVersionMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(RequestIDMiddleware)
+app.add_middleware(MaxBodySizeMiddleware)
 
 # ── Static files ───────────────────────────────────────────────────────────────
 _static_dir = Path(__file__).parent / "static"
@@ -869,14 +882,20 @@ async def get_org_context(request: Request) -> OrgContext:
         request.state.audit_key_id = "anon"
         return ctx
 
+    client_key = get_remote_address(request)
+    if await _auth_failure_limiter.is_blocked(client_key):
+        raise HTTPException(429, detail="Too many failed authentication attempts. Try again later.")
+
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
+        await _auth_failure_limiter.record_failure(client_key)
         raise HTTPException(401, detail="Missing or invalid Authorization header")
 
     token = auth_header[7:].strip()
 
     context = await _resolve_transport_identity(token)
     if context is None:
+        await _auth_failure_limiter.record_failure(client_key)
         raise HTTPException(401, detail="Invalid API key")
     if context.authentication_method == "legacy_static":
         _enforce_legacy_static_compat(request)
@@ -937,6 +956,17 @@ def _enforce_machine_scope(request: Request, context: OrgContext) -> None:
         required = "agents:read" if method in {"GET", "HEAD"} else "agents:write"
     if required and required not in context.scopes:
         raise HTTPException(403, detail=f"API key is missing required scope: {required}")
+
+
+def _require_caller_owns_org(_auth: OrgContext, org_id: str) -> None:
+    """Fail closed on path org_id that is not the caller's tenant.
+
+    Returns the same 404 used elsewhere so a cross-tenant probe does not
+    disclose whether the other organization exists. Legacy credentials with
+    no org_id cannot satisfy this check.
+    """
+    if _auth.org_id != org_id:
+        raise HTTPException(404, "Organization not found")
 
 
 def require_role(min_role: Role):
@@ -1433,11 +1463,15 @@ class WebOwnershipTransferRequest(BaseModel):
     confirmation: Literal["TRANSFER OWNERSHIP"]
 
 
-def _extract_step_up_proof(request: Request, body_dict: dict[str, Any] | None = None) -> StepUpProof | None:
+def _extract_step_up_proof(
+    request: Request, body_dict: dict[str, Any] | None = None
+) -> StepUpProof | None:
     nonce = request.headers.get("X-Step-Up-Nonce") or request.headers.get("x-step-up-nonce")
     method_str = request.headers.get("X-Step-Up-Method") or request.headers.get("x-step-up-method")
     token_or_code = request.headers.get("X-Step-Up-Token") or request.headers.get("x-step-up-token")
-    auth_time = request.headers.get("X-Step-Up-Auth-Time") or request.headers.get("x-step-up-auth-time")
+    auth_time = request.headers.get("X-Step-Up-Auth-Time") or request.headers.get(
+        "x-step-up-auth-time"
+    )
     claims: dict[str, Any] = {}
 
     if body_dict and isinstance(body_dict.get("step_up_proof"), dict):
@@ -1479,9 +1513,7 @@ async def _verify_web_step_up(
 ) -> None:
     session_token = request.cookies.get("wp_session")
     session_id = (
-        hashlib.sha256(session_token.encode("utf-8")).hexdigest()
-        if session_token
-        else None
+        hashlib.sha256(session_token.encode("utf-8")).hexdigest() if session_token else None
     )
     proof = _extract_step_up_proof(request, body_dict)
     verifier = StepUpVerifier(_ready(_db_engine))
@@ -1855,7 +1887,10 @@ async def _canonical_hosted_api_key(
     if env is None:
         raise HTTPException(
             403,
-            detail={"error": "WRONG_ENVIRONMENT", "message": f"{environment_type} environment is not available."},
+            detail={
+                "error": "WRONG_ENVIRONMENT",
+                "message": f"{environment_type} environment is not available.",
+            },
         )
     try:
         record, raw = await iam.create_api_key(
@@ -1964,6 +1999,7 @@ async def web_create_invitation(
     except InvitationError as exc:
         raise HTTPException(409, str(exc)) from exc
     from urllib.parse import quote
+
     invitation_url = (
         f"{settings.web_public_url.rstrip('/')}/accept-invitation?token={quote(token, safe='')}"
     )
@@ -2863,8 +2899,9 @@ async def get_org(
     org_id: str,
     _auth: OrgContext = Depends(require_role(Role.VIEWER)),
 ) -> dict[str, Any]:
+    _require_caller_owns_org(_auth, org_id)
     org = await _ready(_org_repo).get_org(org_id)
-    if not org or _auth.org_id != org_id:
+    if not org:
         raise HTTPException(404, "Organization not found")
     return org.to_dict()
 
@@ -2876,8 +2913,9 @@ async def delete_org(
     org_id: str,
     _auth: OrgContext = Depends(require_role(Role.OWNER)),
 ) -> dict[str, Any]:
+    _require_caller_owns_org(_auth, org_id)
     org = await _ready(_org_repo).get_org(org_id)
-    if not org or _auth.org_id != org_id:
+    if not org:
         raise HTTPException(404, "Organization not found")
     deleted = await _ready(_org_repo).delete_org(org_id)
     if not deleted:
@@ -2900,6 +2938,7 @@ async def set_org_sso(
     RAI_OIDC_ISSUER to be configured on the server, otherwise enabling this
     would lock the org out entirely.
     """
+    _require_caller_owns_org(_auth, org_id)
     if req.sso_required and _oidc_provider is None:
         raise HTTPException(
             400,
@@ -2907,7 +2946,7 @@ async def set_org_sso(
             "(set RAI_OIDC_ISSUER). Enabling this now would lock the organization out.",
         )
     org = await _ready(_org_repo).get_org(org_id)
-    if not org or _auth.org_id != org_id:
+    if not org:
         raise HTTPException(404, "Organization not found")
     await _ready(_org_repo).set_sso_required(org_id, req.sso_required)
     return {"org_id": org_id, "sso_required": req.sso_required}
@@ -2925,8 +2964,9 @@ async def set_org_mfa(
     /login. Keys that haven't enrolled yet are blocked from logging in
     (not from making API calls directly — see auth/mfa.py for why) until
     they enroll via POST /api/orgs/{org_id}/keys/{key_id}/mfa/enroll."""
+    _require_caller_owns_org(_auth, org_id)
     org = await _ready(_org_repo).get_org(org_id)
-    if not org or _auth.org_id != org_id:
+    if not org:
         raise HTTPException(404, "Organization not found")
     await _ready(_org_repo).set_org_mfa_required(org_id, req.mfa_required)
     return {"org_id": org_id, "mfa_required": req.mfa_required}
@@ -2944,8 +2984,9 @@ async def get_authority_ceiling(
     enforced live on every hosted MCP tool call via
     `validate_attenuation()`. `null` fields mean unrestricted; no row at
     all (every org before this feature existed) returns all-`null`."""
+    _require_caller_owns_org(_auth, org_id)
     org = await _ready(_org_repo).get_org(org_id)
-    if not org or _auth.org_id != org_id:
+    if not org:
         raise HTTPException(404, "Organization not found")
     ceiling = await _ready(_ceiling_repo).get(org_id)
     if ceiling is None:
@@ -2973,8 +3014,9 @@ async def set_authority_ceiling(
     tool call under this org is checked against it from the next call
     onward (no restart needed, `mcp/governance_integration.py` fetches
     it fresh per call)."""
+    _require_caller_owns_org(_auth, org_id)
     org = await _ready(_org_repo).get_org(org_id)
-    if not org or _auth.org_id != org_id:
+    if not org:
         raise HTTPException(404, "Organization not found")
     ceiling = OrgAuthorityCeiling(
         org_id=org_id,
@@ -3010,8 +3052,9 @@ async def get_autonomy_budget(
     to REQUIRE_APPROVAL. `configured: false` (both other fields `null`)
     means no budget is set for this org -- identical to behavior before
     this feature existed."""
+    _require_caller_owns_org(_auth, org_id)
     org = await _ready(_org_repo).get_org(org_id)
-    if not org or _auth.org_id != org_id:
+    if not org:
         raise HTTPException(404, "Organization not found")
     policy = await _ready(_autonomy_budget_repo).get(org_id)
     if policy is None:
@@ -3041,8 +3084,9 @@ async def set_autonomy_budget(
     under this org is checked against it from the next call onward (no
     restart needed, `mcp/governance_integration.py` fetches it fresh
     per call)."""
+    _require_caller_owns_org(_auth, org_id)
     org = await _ready(_org_repo).get_org(org_id)
-    if not org or _auth.org_id != org_id:
+    if not org:
         raise HTTPException(404, "Organization not found")
     policy = AutonomyBudgetPolicy(
         max_autonomous_actions=req.max_autonomous_actions, window_minutes=req.window_minutes
@@ -3066,8 +3110,9 @@ async def delete_autonomy_budget(
     """Removes the org's autonomy budget entirely -- distinct from
     `PUT` (which always requires both fields), the only way back to
     "no cap configured."""
+    _require_caller_owns_org(_auth, org_id)
     org = await _ready(_org_repo).get_org(org_id)
-    if not org or _auth.org_id != org_id:
+    if not org:
         raise HTTPException(404, "Organization not found")
     await _ready(_autonomy_budget_repo).delete(org_id)
     return {"org_id": org_id, "configured": False}
@@ -3104,7 +3149,9 @@ async def create_api_key(
         key_row = (
             await conn.execute(select(org_api_keys).where(org_api_keys.c.id == _auth.key_id))
         ).fetchone()
-        accountable = getattr(key_row, "accountable_human_user_id", None) if key_row is not None else None
+        accountable = (
+            getattr(key_row, "accountable_human_user_id", None) if key_row is not None else None
+        )
         if not accountable:
             raise HTTPException(
                 403,
@@ -3113,7 +3160,9 @@ async def create_api_key(
                     "message": "Only an IDENTITY_VERIFIED accountable human may issue reusable credentials.",
                 },
             )
-        user = (await conn.execute(select(web_users).where(web_users.c.id == accountable))).fetchone()
+        user = (
+            await conn.execute(select(web_users).where(web_users.c.id == accountable))
+        ).fetchone()
         membership = (
             await conn.execute(
                 select(web_memberships).where(
@@ -3167,6 +3216,9 @@ async def revoke_api_key(
     org = await _ready(_org_repo).get_org(org_id)
     if not org or (_auth.org_id != org_id and _auth.key_id != org.provisioner_key_id):
         raise HTTPException(404, "Organization not found")
+    key = await _ready(_org_repo).get_key(key_id)
+    if key is None or key.org_id != org_id:
+        raise HTTPException(404, "Key not found")
     revoked = await _ready(_org_repo).revoke_key(key_id, org_id=org_id)
     if not revoked:
         raise HTTPException(404, "Key not found")
@@ -3185,8 +3237,9 @@ async def enroll_mfa(
     add to their authenticator app. Not yet active — call .../mfa/verify
     with a real code from that app to confirm enrollment. Calling this
     again before verifying replaces the pending (unconfirmed) secret."""
+    _require_caller_owns_org(_auth, org_id)
     org = await _ready(_org_repo).get_org(org_id)
-    if not org or _auth.org_id != org_id:
+    if not org:
         raise HTTPException(404, "Organization not found")
     key = await _ready(_org_repo).get_key(key_id)
     if key is None or key.org_id != org_id:
@@ -3214,8 +3267,9 @@ async def verify_mfa(
     authenticator app. Returns 10 one-time backup codes — shown exactly
     once, store them now. Each is consumed on use if the authenticator
     device is ever lost."""
+    _require_caller_owns_org(_auth, org_id)
     org = await _ready(_org_repo).get_org(org_id)
-    if not org or _auth.org_id != org_id:
+    if not org:
         raise HTTPException(404, "Organization not found")
     key = await _ready(_org_repo).get_key(key_id)
     if key is None or key.org_id != org_id:
@@ -3242,8 +3296,9 @@ async def disable_mfa(
     key_id: str,
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, Any]:
+    _require_caller_owns_org(_auth, org_id)
     org = await _ready(_org_repo).get_org(org_id)
-    if not org or _auth.org_id != org_id:
+    if not org:
         raise HTTPException(404, "Organization not found")
     key = await _ready(_org_repo).get_key(key_id)
     if key is None or key.org_id != org_id:
@@ -3431,7 +3486,9 @@ async def paddle_webhook(request: Request) -> dict[str, Any]:
     if (now_ts - ts) > tolerance:
         raise HTTPException(400, f"Paddle webhook signature has expired (> {tolerance}s).")
     if (ts - now_ts) > tolerance:
-        raise HTTPException(400, f"Paddle webhook signature timestamp is in the future (> {tolerance}s).")
+        raise HTTPException(
+            400, f"Paddle webhook signature timestamp is in the future (> {tolerance}s)."
+        )
 
     signed_payload = f"{ts_str}:".encode() + raw_body
     computed_sig = hmac.new(secret_key.encode("utf-8"), signed_payload, hashlib.sha256).hexdigest()
@@ -3473,18 +3530,36 @@ async def paddle_webhook(request: Request) -> dict[str, Any]:
         return {"received": True, "processed": False, "duplicate": True}
 
     try:
-        custom_org_id = data.get("custom_data", {}).get("org_id") if isinstance(data.get("custom_data"), dict) else None
+        custom_org_id = (
+            data.get("custom_data", {}).get("org_id")
+            if isinstance(data.get("custom_data"), dict)
+            else None
+        )
 
         # Cross-tenant reassignment protection: verify existing customer/subscription mappings
-        cust_org = await _ready(_org_repo).get_org_by_paddle_customer(customer_id) if customer_id else None
-        sub_org = await _ready(_org_repo).get_org_by_paddle_subscription(subscription_id) if subscription_id else None
+        cust_org = (
+            await _ready(_org_repo).get_org_by_paddle_customer(customer_id) if customer_id else None
+        )
+        sub_org = (
+            await _ready(_org_repo).get_org_by_paddle_subscription(subscription_id)
+            if subscription_id
+            else None
+        )
 
         if cust_org and custom_org_id and custom_org_id != cust_org.id:
-            raise HTTPException(409, f"Paddle customer is already bound to org {cust_org.id}; cannot reassign to {custom_org_id}.")
+            raise HTTPException(
+                409,
+                f"Paddle customer is already bound to org {cust_org.id}; cannot reassign to {custom_org_id}.",
+            )
         if sub_org and custom_org_id and custom_org_id != sub_org.id:
-            raise HTTPException(409, f"Paddle subscription is already bound to org {sub_org.id}; cannot reassign to {custom_org_id}.")
+            raise HTTPException(
+                409,
+                f"Paddle subscription is already bound to org {sub_org.id}; cannot reassign to {custom_org_id}.",
+            )
         if cust_org and sub_org and cust_org.id != sub_org.id:
-            raise HTTPException(409, "Paddle customer and subscription are bound to conflicting organizations.")
+            raise HTTPException(
+                409, "Paddle customer and subscription are bound to conflicting organizations."
+            )
 
         org_id = custom_org_id or (cust_org.id if cust_org else (sub_org.id if sub_org else None))
 
@@ -3501,16 +3576,25 @@ async def paddle_webhook(request: Request) -> dict[str, Any]:
             from sqlalchemy import select
 
             from responsibleai.db.engine import tenant_tombstones
-            ts_row = (await conn.execute(
-                select(tenant_tombstones.c.id).where(tenant_tombstones.c.org_id == org_id)
-            )).first()
+
+            ts_row = (
+                await conn.execute(
+                    select(tenant_tombstones.c.id).where(tenant_tombstones.c.org_id == org_id)
+                )
+            ).first()
             if ts_row is not None:
-                raise HTTPException(409, f"Cannot apply entitlement: organization '{org_id}' is tombstoned.")
+                raise HTTPException(
+                    409, f"Cannot apply entitlement: organization '{org_id}' is tombstoned."
+                )
 
         await _ready(_paddle_event_repo).set_org(event_id, org_id)
 
         status = str(data.get("status", "inactive")).casefold()
-        custom_plan = data.get("custom_data", {}).get("plan") if isinstance(data.get("custom_data"), dict) else None
+        custom_plan = (
+            data.get("custom_data", {}).get("plan")
+            if isinstance(data.get("custom_data"), dict)
+            else None
+        )
         if custom_plan:
             try:
                 plan = Plan(str(custom_plan).upper())
