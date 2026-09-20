@@ -53,7 +53,7 @@ from responsibleai.rbac.models import Plan
 @pytest.fixture
 async def pg_test_db() -> AsyncGenerator[str, None]:
     """Create a temporary isolated PostgreSQL database and drop it on cleanup."""
-    async for url in isolated_pg_url('wp_auth_pg'):
+    async for url in isolated_pg_url("wp_auth_pg"):
         yield url
 
 
@@ -64,7 +64,7 @@ def test_one_canonical_alembic_head():
     scripts = ScriptDirectory.from_config(Config(str(ini)))
     heads = scripts.get_heads()
     assert len(heads) == 1, f"Expected exactly 1 alembic head, got {len(heads)}: {heads}"
-    assert heads == ["0056"]
+    assert heads == ["0057"]
     assert scripts.get_revision("0049").down_revision == "0048"
     assert scripts.get_revision("0048").down_revision == "0047"
     assert scripts.get_revision("0047").down_revision == "0046"
@@ -114,7 +114,9 @@ async def test_real_postgres_migration_cycle_0046_0047(pg_test_db: str):
             assert "paddle_last_occurred_at" in org_col_names
 
             # Verify columns on paddle_webhook_events
-            evt_cols = await conn.run_sync(lambda c: inspect(c).get_columns("paddle_webhook_events"))
+            evt_cols = await conn.run_sync(
+                lambda c: inspect(c).get_columns("paddle_webhook_events")
+            )
             evt_col_names = {col["name"] for col in evt_cols}
             assert "occurred_at" in evt_col_names
             assert "entity_id" in evt_col_names
@@ -125,7 +127,13 @@ async def test_real_postgres_migration_cycle_0046_0047(pg_test_db: str):
             assert "session_id" in nonce_col_names
 
             # Verify seeded data preserved
-            seeded_org = (await conn.execute(text("SELECT id, name, plan, paddle_last_occurred_at FROM organizations WHERE id = 'tenant-pre-0047'"))).fetchone()
+            seeded_org = (
+                await conn.execute(
+                    text(
+                        "SELECT id, name, plan, paddle_last_occurred_at FROM organizations WHERE id = 'tenant-pre-0047'"
+                    )
+                )
+            ).fetchone()
             assert seeded_org is not None
             assert seeded_org[0] == "tenant-pre-0047"
             assert seeded_org[1] == "Pre 0047 Corp"
@@ -155,11 +163,17 @@ async def test_real_postgres_migration_cycle_0046_0047(pg_test_db: str):
             nonce_cols = await conn.run_sync(lambda c: inspect(c).get_columns("iam_step_up_nonces"))
             assert "session_id" not in {col["name"] for col in nonce_cols}
 
-            has_paddle_events = await conn.run_sync(lambda c: inspect(c).has_table("paddle_webhook_events"))
+            has_paddle_events = await conn.run_sync(
+                lambda c: inspect(c).has_table("paddle_webhook_events")
+            )
             assert not has_paddle_events
 
             # Data preserved
-            seeded_org = (await conn.execute(text("SELECT id, name, plan FROM organizations WHERE id = 'tenant-pre-0047'"))).fetchone()
+            seeded_org = (
+                await conn.execute(
+                    text("SELECT id, name, plan FROM organizations WHERE id = 'tenant-pre-0047'")
+                )
+            ).fetchone()
             assert seeded_org is not None
             assert seeded_org[0] == "tenant-pre-0047"
 
@@ -176,7 +190,9 @@ async def test_real_postgres_migration_cycle_0046_0047(pg_test_db: str):
             nonce_cols = await conn.run_sync(lambda c: inspect(c).get_columns("iam_step_up_nonces"))
             assert "session_id" in {col["name"] for col in nonce_cols}
 
-            has_paddle_events_reup = await conn.run_sync(lambda c: inspect(c).has_table("paddle_webhook_events"))
+            has_paddle_events_reup = await conn.run_sync(
+                lambda c: inspect(c).has_table("paddle_webhook_events")
+            )
             assert has_paddle_events_reup
     finally:
         await engine.close()
@@ -226,7 +242,9 @@ async def test_real_postgres_migration_cycle_0046_0047_0048(pg_test_db: str):
             assert "paddle_customer_id" in org_col_names
             assert "paddle_subscription_id" in org_col_names
 
-            evt_cols = await conn.run_sync(lambda c: inspect(c).get_columns("paddle_webhook_events"))
+            evt_cols = await conn.run_sync(
+                lambda c: inspect(c).get_columns("paddle_webhook_events")
+            )
             evt_col_names = {col["name"] for col in evt_cols}
             assert "occurred_at" in evt_col_names
             assert "entity_id" in evt_col_names
@@ -236,7 +254,13 @@ async def test_real_postgres_migration_cycle_0046_0047_0048(pg_test_db: str):
             assert "session_id" in nonce_col_names
 
             # Verify pre-0047 data preserved
-            seeded_org = (await conn.execute(text("SELECT id, name, plan, paddle_last_occurred_at FROM organizations WHERE id = 'tenant-pre-0047'"))).fetchone()
+            seeded_org = (
+                await conn.execute(
+                    text(
+                        "SELECT id, name, plan, paddle_last_occurred_at FROM organizations WHERE id = 'tenant-pre-0047'"
+                    )
+                )
+            ).fetchone()
             assert seeded_org is not None
             assert seeded_org[0] == "tenant-pre-0047"
             assert seeded_org[1] == "Pre 0047 Corp"
@@ -295,7 +319,9 @@ async def test_real_postgres_migration_cycle_0046_0047_0048(pg_test_db: str):
             assert "paddle_customer_id" in org_col_names
             assert "paddle_subscription_id" in org_col_names
 
-            evt_cols = await conn.run_sync(lambda c: inspect(c).get_columns("paddle_webhook_events"))
+            evt_cols = await conn.run_sync(
+                lambda c: inspect(c).get_columns("paddle_webhook_events")
+            )
             evt_col_names = {col["name"] for col in evt_cols}
             assert "occurred_at" in evt_col_names
             assert "entity_id" in evt_col_names
@@ -305,7 +331,13 @@ async def test_real_postgres_migration_cycle_0046_0047_0048(pg_test_db: str):
             assert "session_id" in nonce_col_names
 
             # Verify seeded org data preserved
-            seeded_org = (await conn.execute(text("SELECT id, name, plan, paddle_customer_id, paddle_subscription_id, paddle_last_occurred_at FROM organizations WHERE id = 'tenant-pre-0047'"))).fetchone()
+            seeded_org = (
+                await conn.execute(
+                    text(
+                        "SELECT id, name, plan, paddle_customer_id, paddle_subscription_id, paddle_last_occurred_at FROM organizations WHERE id = 'tenant-pre-0047'"
+                    )
+                )
+            ).fetchone()
             assert seeded_org is not None
             assert seeded_org[0] == "tenant-pre-0047"
             assert seeded_org[1] == "Pre 0047 Corp"
@@ -315,14 +347,26 @@ async def test_real_postgres_migration_cycle_0046_0047_0048(pg_test_db: str):
             assert seeded_org[5] == "2026-01-01T00:00:00Z"
 
             # Verify webhook event preserved
-            evt = (await conn.execute(text("SELECT event_id, occurred_at, entity_id FROM paddle_webhook_events WHERE event_id = 'evt_0047_cycle'"))).fetchone()
+            evt = (
+                await conn.execute(
+                    text(
+                        "SELECT event_id, occurred_at, entity_id FROM paddle_webhook_events WHERE event_id = 'evt_0047_cycle'"
+                    )
+                )
+            ).fetchone()
             assert evt is not None
             assert evt[0] == "evt_0047_cycle"
             assert evt[1] == "2026-01-01T00:00:00Z"
             assert evt[2] == "sub_cycle_123"
 
             # Verify auth seam data preserved
-            nonce = (await conn.execute(text("SELECT id, session_id FROM iam_step_up_nonces WHERE id = 'nonce_0047_cycle'"))).fetchone()
+            nonce = (
+                await conn.execute(
+                    text(
+                        "SELECT id, session_id FROM iam_step_up_nonces WHERE id = 'nonce_0047_cycle'"
+                    )
+                )
+            ).fetchone()
             assert nonce is not None
             assert nonce[0] == "nonce_0047_cycle"
             assert nonce[1] == "sess_0047_cycle"
@@ -331,7 +375,9 @@ async def test_real_postgres_migration_cycle_0046_0047_0048(pg_test_db: str):
         await _run_alembic(ini, env, "downgrade", "0047")
 
         async with engine.raw.connect() as conn:
-            v_down47 = (await conn.execute(text("SELECT version_num FROM alembic_version"))).scalar()
+            v_down47 = (
+                await conn.execute(text("SELECT version_num FROM alembic_version"))
+            ).scalar()
             assert v_down47 == "0047"
 
             indices = await conn.run_sync(lambda c: inspect(c).get_indexes("organizations"))
@@ -345,20 +391,40 @@ async def test_real_postgres_migration_cycle_0046_0047_0048(pg_test_db: str):
             assert "paddle_last_occurred_at" in {col["name"] for col in org_cols}
             nonce_cols = await conn.run_sync(lambda c: inspect(c).get_columns("iam_step_up_nonces"))
             assert "session_id" in {col["name"] for col in nonce_cols}
-            evt_cols = await conn.run_sync(lambda c: inspect(c).get_columns("paddle_webhook_events"))
+            evt_cols = await conn.run_sync(
+                lambda c: inspect(c).get_columns("paddle_webhook_events")
+            )
             assert "occurred_at" in {col["name"] for col in evt_cols}
 
             # Data preserved
-            seeded_org = (await conn.execute(text("SELECT id, name, plan, paddle_customer_id, paddle_subscription_id FROM organizations WHERE id = 'tenant-pre-0047'"))).fetchone()
+            seeded_org = (
+                await conn.execute(
+                    text(
+                        "SELECT id, name, plan, paddle_customer_id, paddle_subscription_id FROM organizations WHERE id = 'tenant-pre-0047'"
+                    )
+                )
+            ).fetchone()
             assert seeded_org is not None
             assert seeded_org[0] == "tenant-pre-0047"
             assert seeded_org[3] == "ctm_cycle_47"
             assert seeded_org[4] == "sub_cycle_47"
 
-            evt = (await conn.execute(text("SELECT event_id FROM paddle_webhook_events WHERE event_id = 'evt_0047_cycle'"))).fetchone()
+            evt = (
+                await conn.execute(
+                    text(
+                        "SELECT event_id FROM paddle_webhook_events WHERE event_id = 'evt_0047_cycle'"
+                    )
+                )
+            ).fetchone()
             assert evt is not None
 
-            nonce = (await conn.execute(text("SELECT id, session_id FROM iam_step_up_nonces WHERE id = 'nonce_0047_cycle'"))).fetchone()
+            nonce = (
+                await conn.execute(
+                    text(
+                        "SELECT id, session_id FROM iam_step_up_nonces WHERE id = 'nonce_0047_cycle'"
+                    )
+                )
+            ).fetchone()
             assert nonce is not None
             assert nonce[1] == "sess_0047_cycle"
 
@@ -366,7 +432,9 @@ async def test_real_postgres_migration_cycle_0046_0047_0048(pg_test_db: str):
         await _run_alembic(ini, env, "upgrade", "0048")
 
         async with engine.raw.connect() as conn:
-            v_reup48 = (await conn.execute(text("SELECT version_num FROM alembic_version"))).scalar()
+            v_reup48 = (
+                await conn.execute(text("SELECT version_num FROM alembic_version"))
+            ).scalar()
             assert v_reup48 == "0048"
 
             indices = await conn.run_sync(lambda c: inspect(c).get_indexes("organizations"))
@@ -374,14 +442,32 @@ async def test_real_postgres_migration_cycle_0046_0047_0048(pg_test_db: str):
             assert sub_idx["unique"] is True
 
             # Data remains preserved
-            seeded_org = (await conn.execute(text("SELECT id, paddle_subscription_id FROM organizations WHERE id = 'tenant-pre-0047'"))).fetchone()
+            seeded_org = (
+                await conn.execute(
+                    text(
+                        "SELECT id, paddle_subscription_id FROM organizations WHERE id = 'tenant-pre-0047'"
+                    )
+                )
+            ).fetchone()
             assert seeded_org is not None
             assert seeded_org[1] == "sub_cycle_47"
 
-            evt = (await conn.execute(text("SELECT event_id FROM paddle_webhook_events WHERE event_id = 'evt_0047_cycle'"))).fetchone()
+            evt = (
+                await conn.execute(
+                    text(
+                        "SELECT event_id FROM paddle_webhook_events WHERE event_id = 'evt_0047_cycle'"
+                    )
+                )
+            ).fetchone()
             assert evt is not None
 
-            nonce = (await conn.execute(text("SELECT id, session_id FROM iam_step_up_nonces WHERE id = 'nonce_0047_cycle'"))).fetchone()
+            nonce = (
+                await conn.execute(
+                    text(
+                        "SELECT id, session_id FROM iam_step_up_nonces WHERE id = 'nonce_0047_cycle'"
+                    )
+                )
+            ).fetchone()
             assert nonce is not None
             assert nonce[1] == "sess_0047_cycle"
     finally:
@@ -420,13 +506,19 @@ async def test_real_postgres_migration_0048_rejects_duplicate_subscriptions(pg_t
             await _run_alembic(ini, env, "upgrade", "0048")
 
         err_msg = str(exc_info.value)
-        assert "duplicate paddle_subscription_id mappings" in err_msg or "sub_duplicate_999" in err_msg
+        assert (
+            "duplicate paddle_subscription_id mappings" in err_msg or "sub_duplicate_999" in err_msg
+        )
 
         # 3. Verify both organizations still exist untouched (no silent deletion or remapping)
         async with engine.raw.connect() as conn:
-            rows = (await conn.execute(
-                text("SELECT id, paddle_subscription_id FROM organizations WHERE id IN ('org-dup-1', 'org-dup-2') ORDER BY id")
-            )).fetchall()
+            rows = (
+                await conn.execute(
+                    text(
+                        "SELECT id, paddle_subscription_id FROM organizations WHERE id IN ('org-dup-1', 'org-dup-2') ORDER BY id"
+                    )
+                )
+            ).fetchall()
             assert len(rows) == 2
             assert rows[0] == ("org-dup-1", "sub_duplicate_999")
             assert rows[1] == ("org-dup-2", "sub_duplicate_999")
@@ -608,9 +700,13 @@ async def test_real_postgres_same_subscription_two_tenants_race(pg_test_db: str)
             await asyncio.gather(_bind(org_a.id, ctm_a), _bind(org_b.id, ctm_b))
 
             async with engine.raw.connect() as conn:
-                rows = (await conn.execute(
-                    select(organizations.c.id).where(organizations.c.paddle_subscription_id == sub_id)
-                )).fetchall()
+                rows = (
+                    await conn.execute(
+                        select(organizations.c.id).where(
+                            organizations.c.paddle_subscription_id == sub_id
+                        )
+                    )
+                ).fetchall()
                 if len(rows) > 1:
                     duplicate_subscription_bindings += 1
 
@@ -637,7 +733,9 @@ async def test_real_postgres_chronology_newer_cancel_vs_older_activate_race(pg_t
         races = 40
 
         for i in range(races):
-            org = await org_repo.create_org(f"Chrono Org {i}", f"chrono-org-{i}-{uuid.uuid4().hex[:6]}")
+            org = await org_repo.create_org(
+                f"Chrono Org {i}", f"chrono-org-{i}-{uuid.uuid4().hex[:6]}"
+            )
             sub_id = f"sub_chrono_{i}_{uuid.uuid4().hex[:8]}"
             ctm_id = f"ctm_chrono_{i}_{uuid.uuid4().hex[:8]}"
 
@@ -685,10 +783,13 @@ async def test_real_postgres_chronology_newer_cancel_vs_older_activate_race(pg_t
             await asyncio.gather(_apply_new(), _apply_old())
 
             async with engine.raw.connect() as conn:
-                row = (await conn.execute(
-                    select(organizations).where(organizations.c.id == org.id)
-                )).fetchone()
-                if row.subscription_status == "active" or row.paddle_last_occurred_at == "2026-09-17T11:00:00Z":
+                row = (
+                    await conn.execute(select(organizations).where(organizations.c.id == org.id))
+                ).fetchone()
+                if (
+                    row.subscription_status == "active"
+                    or row.paddle_last_occurred_at == "2026-09-17T11:00:00Z"
+                ):
                     stale_activation_wins += 1
 
         assert stale_activation_wins == 0, (
@@ -768,8 +869,12 @@ async def test_real_postgres_same_customer_two_tenants_race(pg_test_db: str):
         races = 40
 
         for i in range(races):
-            org_a = await org_repo.create_org(f"Org Cust A {i}", f"org-cust-a-{i}-{uuid.uuid4().hex[:6]}")
-            org_b = await org_repo.create_org(f"Org Cust B {i}", f"org-cust-b-{i}-{uuid.uuid4().hex[:6]}")
+            org_a = await org_repo.create_org(
+                f"Org Cust A {i}", f"org-cust-a-{i}-{uuid.uuid4().hex[:6]}"
+            )
+            org_b = await org_repo.create_org(
+                f"Org Cust B {i}", f"org-cust-b-{i}-{uuid.uuid4().hex[:6]}"
+            )
             ctm_id = f"ctm_race_{i}_{uuid.uuid4().hex[:8]}"
             sub_a = f"sub_a_{i}_{uuid.uuid4().hex[:8]}"
             sub_b = f"sub_b_{i}_{uuid.uuid4().hex[:8]}"
@@ -790,9 +895,13 @@ async def test_real_postgres_same_customer_two_tenants_race(pg_test_db: str):
             await asyncio.gather(_bind(org_a.id, sub_a), _bind(org_b.id, sub_b))
 
             async with engine.raw.connect() as conn:
-                rows = (await conn.execute(
-                    select(organizations.c.id).where(organizations.c.paddle_customer_id == ctm_id)
-                )).fetchall()
+                rows = (
+                    await conn.execute(
+                        select(organizations.c.id).where(
+                            organizations.c.paddle_customer_id == ctm_id
+                        )
+                    )
+                ).fetchall()
                 if len(rows) > 1:
                     duplicate_customer_bindings += 1
 
@@ -851,13 +960,16 @@ async def test_real_postgres_api_webhook_concurrency_race(pg_test_db: str, monke
                 sig = _sign_paddle(secret, raw)
 
                 # 20 concurrent calls with identical event_id and payload
-                responses = await asyncio.gather(*[
-                    client.post(
-                        "/api/billing/paddle/webhook",
-                        headers={"Paddle-Signature": sig},
-                        content=raw,
-                    ) for _ in range(20)
-                ])
+                responses = await asyncio.gather(
+                    *[
+                        client.post(
+                            "/api/billing/paddle/webhook",
+                            headers={"Paddle-Signature": sig},
+                            content=raw,
+                        )
+                        for _ in range(20)
+                    ]
+                )
 
                 # All 20 must return 200 (1 processed, 19 idempotent duplicates)
                 assert all(r.status_code == 200 for r in responses)
@@ -950,8 +1062,12 @@ async def test_real_postgres_equal_timestamp_reproduction_pro_to_enterprise(pg_t
         )
         org_final = await org_repo.get_org(org.id)
         assert org_final is not None
-        assert applied is False, "Equal-timestamp plan elevation (PRO -> ENTERPRISE) must be rejected"
-        assert org_final.plan == Plan.PRO, f"Plan was elevated to {org_final.plan.value} on equal timestamp"
+        assert applied is False, (
+            "Equal-timestamp plan elevation (PRO -> ENTERPRISE) must be rejected"
+        )
+        assert org_final.plan == Plan.PRO, (
+            f"Plan was elevated to {org_final.plan.value} on equal timestamp"
+        )
     finally:
         await engine.close()
 
@@ -1007,13 +1123,17 @@ async def test_real_postgres_equal_timestamp_plan_matrix(pg_test_db: str):
 
                 if plan_rank[incoming_plan] > plan_rank[current_plan]:
                     # Plan widening -> REJECTED
-                    assert res is False, f"Widening {current_plan.value} -> {incoming_plan.value} must return False"
+                    assert res is False, (
+                        f"Widening {current_plan.value} -> {incoming_plan.value} must return False"
+                    )
                     assert final_org.plan == current_plan, (
                         f"Widening occurred: {current_plan.value} became {final_org.plan.value}"
                     )
                 else:
                     # Idempotent or narrowing -> ALLOWED
-                    assert res is True, f"Non-widening {current_plan.value} -> {incoming_plan.value} should be accepted"
+                    assert res is True, (
+                        f"Non-widening {current_plan.value} -> {incoming_plan.value} should be accepted"
+                    )
                     assert final_org.plan == incoming_plan
     finally:
         await engine.close()
@@ -1067,7 +1187,9 @@ async def test_real_postgres_equal_timestamp_status_matrix(pg_test_db: str):
                     subscription_status=inc_status,
                     occurred_at=ts,
                 )
-                assert res is False, f"Reactivation {cur_status} -> {inc_status} at equal occurred_at must return False"
+                assert res is False, (
+                    f"Reactivation {cur_status} -> {inc_status} at equal occurred_at must return False"
+                )
                 final_org = await org_repo.get_org(org.id)
                 assert final_org is not None
                 assert final_org.subscription_status == cur_status
@@ -1099,7 +1221,9 @@ async def test_real_postgres_equal_timestamp_status_matrix(pg_test_db: str):
                     subscription_status=inc_status,
                     occurred_at=ts,
                 )
-                assert res is True, f"Narrowing {cur_status} -> {inc_status} at equal occurred_at should be accepted"
+                assert res is True, (
+                    f"Narrowing {cur_status} -> {inc_status} at equal occurred_at should be accepted"
+                )
                 final_org = await org_repo.get_org(org.id)
                 assert final_org is not None
                 assert final_org.subscription_status == inc_status

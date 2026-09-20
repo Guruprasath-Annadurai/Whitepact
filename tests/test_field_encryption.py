@@ -11,7 +11,7 @@ import pytest
 from cryptography.fernet import Fernet, MultiFernet
 
 from responsibleai.db.audit_repository import AuditRepository
-from responsibleai.db.encryption import EncryptedString, SENSITIVE_ENCRYPTED_COLUMNS, _load_fernet
+from responsibleai.db.encryption import SENSITIVE_ENCRYPTED_COLUMNS, EncryptedString, _load_fernet
 from responsibleai.db.engine import create_engine
 from responsibleai.rbac.models import AuditEntry
 
@@ -96,16 +96,49 @@ class TestEncryptedStringTypeDecorator:
         assert ciphertext != "203.0.113.5"  # actually encrypted, not a no-op
         assert col.process_result_value(ciphertext, _FAKE_TYPE_PARAMS) == "203.0.113.5"
 
-    def test_pre_encryption_plaintext_survives_key_being_enabled_later(self, monkeypatch):
-        """A value written before the key was ever set (plaintext in the DB)
-        must still be readable once encryption is turned on, rather than
-        crashing the request with an InvalidToken error."""
+    def test_pre_encryption_plaintext_fails_closed_when_key_enabled(self, monkeypatch):
         monkeypatch.delenv("RAI_FIELD_ENCRYPTION_KEY", raising=False)
+        monkeypatch.delenv("WHITEPACT_ALLOW_LEGACY_PLAINTEXT", raising=False)
+        monkeypatch.delenv("WHITEPACT_ENV", raising=False)
         col = EncryptedString()
         stored = col.process_bind_param("203.0.113.5", _FAKE_TYPE_PARAMS)
 
         monkeypatch.setenv("RAI_FIELD_ENCRYPTION_KEY", Fernet.generate_key().decode())
-        assert col.process_result_value(stored, _FAKE_TYPE_PARAMS) == "203.0.113.5"
+        from responsibleai.db.encryption import FieldEncryptionError
+
+        with pytest.raises(FieldEncryptionError, match="Unrecognized encrypted field format"):
+            col.process_result_value(stored, _FAKE_TYPE_PARAMS)
+
+    def test_explicit_legacy_plaintext_allowed_only_when_flagged(self, monkeypatch):
+        from responsibleai.db.encryption import _LEGACY_PLAINTEXT, FieldEncryptionError
+
+        monkeypatch.setenv("RAI_FIELD_ENCRYPTION_KEY", Fernet.generate_key().decode())
+        monkeypatch.delenv("WHITEPACT_ALLOW_LEGACY_PLAINTEXT", raising=False)
+        col = EncryptedString()
+        with pytest.raises(FieldEncryptionError):
+            col.process_result_value(f"{_LEGACY_PLAINTEXT}203.0.113.5", _FAKE_TYPE_PARAMS)
+        monkeypatch.setenv("WHITEPACT_ALLOW_LEGACY_PLAINTEXT", "1")
+        assert (
+            col.process_result_value(f"{_LEGACY_PLAINTEXT}203.0.113.5", _FAKE_TYPE_PARAMS)
+            == "203.0.113.5"
+        )
+
+    def test_corrupt_ciphertext_and_wrong_key_fail_closed(self, monkeypatch):
+        from responsibleai.db.encryption import FieldEncryptionError
+
+        key = Fernet.generate_key().decode()
+        monkeypatch.setenv("RAI_FIELD_ENCRYPTION_KEY", key)
+        col = EncryptedString()
+        ciphertext = col.process_bind_param("secret-value", _FAKE_TYPE_PARAMS)
+        monkeypatch.setenv("RAI_FIELD_ENCRYPTION_KEY", Fernet.generate_key().decode())
+        with pytest.raises(FieldEncryptionError, match="Ciphertext authentication failed"):
+            col.process_result_value(ciphertext, _FAKE_TYPE_PARAMS)
+        monkeypatch.setenv("RAI_FIELD_ENCRYPTION_KEY", key)
+        with pytest.raises(FieldEncryptionError):
+            col.process_result_value("wpenc:v1:not-a-token", _FAKE_TYPE_PARAMS)
+        monkeypatch.setenv("WHITEPACT_ENV", "production")
+        with pytest.raises(FieldEncryptionError):
+            col.process_result_value("not-ciphertext", _FAKE_TYPE_PARAMS)
 
 
 class TestAuditLogIpAddressEncryption:
@@ -143,4 +176,3 @@ def test_sensitive_encrypted_column_inventory_includes_launch_critical_secrets()
     assert "webhook_configs" in tables
     assert "governance_approvals" in tables
     assert "upstream_mcp_servers" in tables
-

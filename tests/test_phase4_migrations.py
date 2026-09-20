@@ -48,7 +48,7 @@ IAM_PHASE4_TABLES = {
 @pytest.fixture
 async def pg_test_db() -> AsyncGenerator[str, None]:
     """Create a temporary isolated PostgreSQL database and drop it on cleanup."""
-    async for url in isolated_pg_url('wp_mig_p4'):
+    async for url in isolated_pg_url("wp_mig_p4"):
         yield url
 
 
@@ -59,7 +59,7 @@ def test_one_canonical_alembic_head():
     scripts = ScriptDirectory.from_config(Config(str(ini)))
     heads = scripts.get_heads()
     assert len(heads) == 1, f"Expected exactly 1 alembic head, got {len(heads)}: {heads}"
-    assert heads == ["0056"]
+    assert heads == ["0057"]
     assert scripts.get_revision("0049").down_revision == "0048"
     assert scripts.get_revision("0048").down_revision == "0047"
     assert scripts.get_revision("0047").down_revision == "0046"
@@ -135,10 +135,18 @@ async def test_canonical_0043_to_0044_preserves_tenant_data_postgres(pg_test_db:
             assert version == "0044"
 
             # Verify seeded data was preserved
-            org_name = (await conn.execute(text("SELECT name FROM organizations WHERE id = 'tenant-p4'"))).scalar()
+            org_name = (
+                await conn.execute(text("SELECT name FROM organizations WHERE id = 'tenant-p4'"))
+            ).scalar()
             assert org_name == "Phase 4 Enterprise"
 
-            prin_name = (await conn.execute(text("SELECT display_name FROM trust_fabric_principals WHERE id = 'prin-p4-root'"))).scalar()
+            prin_name = (
+                await conn.execute(
+                    text(
+                        "SELECT display_name FROM trust_fabric_principals WHERE id = 'prin-p4-root'"
+                    )
+                )
+            ).scalar()
             assert prin_name == "Root Admin"
     finally:
         await engine2.close()

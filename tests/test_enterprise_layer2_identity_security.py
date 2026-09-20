@@ -4,10 +4,8 @@
 
 from __future__ import annotations
 
-import json
 import time
 import uuid
-from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
 import jwt
@@ -15,11 +13,10 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.asymmetric.ec import SECP256R1, generate_private_key
 
-from responsibleai.db.engine import create_engine, org_security_policies, web_users
+from responsibleai.db.engine import create_engine, web_users
 from responsibleai.db.web_identity_repository import WebIdentityRepository
 from responsibleai.enterprise.errors import (
     ACCOUNT_LINK_CONFLICT,
-    AUTHENTICATION_FAILED,
     CHALLENGE_REPLAY,
     ENTRA_TENANT_MISMATCH,
     GOOGLE_WORKSPACE_MISMATCH,
@@ -35,7 +32,6 @@ from responsibleai.enterprise.security.oidc import OIDCTokenValidator, VerifiedI
 from responsibleai.enterprise.security.policy import AuthMethod, SensitiveAction
 from responsibleai.enterprise.security.preflight import assert_layer2_provider_boot_safe
 from responsibleai.enterprise.security.service import IdentitySecurityService
-from responsibleai.enterprise.security.webauthn import b64url_encode
 from responsibleai.runtime.gate import PRODUCTION_GATE_B_OPEN
 from tests.webauthn_fakes import assertion_blob, registration_blob
 
@@ -75,13 +71,27 @@ def _rsa():
         raw = n.to_bytes((n.bit_length() + 7) // 8, "big")
         return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
 
-    jwk = {"kty": "RSA", "kid": "kid-1", "n": b64int(pub.n), "e": b64int(pub.e), "alg": "RS256", "use": "sig"}
+    jwk = {
+        "kty": "RSA",
+        "kid": "kid-1",
+        "n": b64int(pub.n),
+        "e": b64int(pub.e),
+        "alg": "RS256",
+        "use": "sig",
+    }
     return key, jwk
 
 
 def _token(key, *, iss, aud, sub, nonce="n1", extra=None, exp=None, kid="kid-1"):
     now = int(time.time())
-    payload = {"iss": iss, "aud": aud, "sub": sub, "iat": now, "exp": exp or now + 300, "nonce": nonce}
+    payload = {
+        "iss": iss,
+        "aud": aud,
+        "sub": sub,
+        "iat": now,
+        "exp": exp or now + 300,
+        "nonce": nonce,
+    }
     if extra:
         payload.update(extra)
     return jwt.encode(payload, key, algorithm="RS256", headers={"kid": kid})
@@ -93,36 +103,69 @@ async def test_passkey_challenge_replay_and_wrong_origin_rpid_user(engine) -> No
     other = await _user(engine, "other@example.com")
     svc = await _svc(engine)
     token, csrf, session = await _passkey_session(svc, user_id)
-    begin = await svc.begin_webauthn(user_id=user_id, session_id=session.session_id, ceremony="register")
+    begin = await svc.begin_webauthn(
+        user_id=user_id, session_id=session.session_id, ceremony="register"
+    )
     from responsibleai.enterprise.security.webauthn import b64url_decode
 
     challenge = b64url_decode(begin["challenge"])
     key = generate_private_key(SECP256R1())
-    cdata, adata, cred_b64, _ = registration_blob(rp_id="localhost", origin="http://localhost", challenge=challenge, private_key=key)
+    cdata, adata, cred_b64, _ = registration_blob(
+        rp_id="localhost", origin="http://localhost", challenge=challenge, private_key=key
+    )
+    grant = await svc.issue_step_up(session, SensitiveAction.ADD_PASSKEY, org_id=None)
     rec = await svc.finish_passkey_registration(
-        user_id=user_id, session=session, client_data_b64=cdata, authenticator_data_b64=adata, display_name="Laptop"
+        user_id=user_id,
+        session=session,
+        client_data_b64=cdata,
+        authenticator_data_b64=adata,
+        display_name="Laptop",
+        grant=grant,
     )
     assert rec["credential_id"]
+    grant_replay = await svc.issue_step_up(session, SensitiveAction.ADD_PASSKEY, org_id=None)
     with pytest.raises(EnterpriseError) as replay:
         await svc.finish_passkey_registration(
-            user_id=user_id, session=session, client_data_b64=cdata, authenticator_data_b64=adata
+            user_id=user_id,
+            session=session,
+            client_data_b64=cdata,
+            authenticator_data_b64=adata,
+            grant=grant_replay,
         )
     assert replay.value.code == CHALLENGE_REPLAY
 
-    begin2 = await svc.begin_webauthn(user_id=user_id, session_id=session.session_id, ceremony="register")
+    begin2 = await svc.begin_webauthn(
+        user_id=user_id, session_id=session.session_id, ceremony="register"
+    )
     ch2 = b64url_decode(begin2["challenge"])
-    bad_origin, adata2, _, _ = registration_blob(rp_id="localhost", origin="https://evil.example", challenge=ch2, private_key=key)
+    bad_origin, adata2, _, _ = registration_blob(
+        rp_id="localhost", origin="https://evil.example", challenge=ch2, private_key=key
+    )
+    grant_origin = await svc.issue_step_up(session, SensitiveAction.ADD_PASSKEY, org_id=None)
     with pytest.raises(EnterpriseError) as origin:
         await svc.finish_passkey_registration(
-            user_id=user_id, session=session, client_data_b64=bad_origin, authenticator_data_b64=adata2
+            user_id=user_id,
+            session=session,
+            client_data_b64=bad_origin,
+            authenticator_data_b64=adata2,
+            grant=grant_origin,
         )
     assert origin.value.code in {WEBAUTHN_INVALID, CHALLENGE_REPLAY}
 
     begin3 = await svc.begin_webauthn(user_id=other, session_id="s", ceremony="register")
     ch3 = b64url_decode(begin3["challenge"])
-    c3, a3, _, _ = registration_blob(rp_id="localhost", origin="http://localhost", challenge=ch3, private_key=key)
+    c3, a3, _, _ = registration_blob(
+        rp_id="localhost", origin="http://localhost", challenge=ch3, private_key=key
+    )
+    grant_bind = await svc.issue_step_up(session, SensitiveAction.ADD_PASSKEY, org_id=None)
     with pytest.raises(EnterpriseError):
-        await svc.finish_passkey_registration(user_id=user_id, session=session, client_data_b64=c3, authenticator_data_b64=a3)
+        await svc.finish_passkey_registration(
+            user_id=user_id,
+            session=session,
+            client_data_b64=c3,
+            authenticator_data_b64=a3,
+            grant=grant_bind,
+        )
 
 
 @pytest.mark.asyncio
@@ -130,34 +173,58 @@ async def test_passkey_authenticate_wrong_credential_and_removed(engine) -> None
     user_id = await _user(engine)
     svc = await _svc(engine)
     _, _, session = await _passkey_session(svc, user_id)
-    begin = await svc.begin_webauthn(user_id=user_id, session_id=session.session_id, ceremony="register")
+    begin = await svc.begin_webauthn(
+        user_id=user_id, session_id=session.session_id, ceremony="register"
+    )
     from responsibleai.enterprise.security.webauthn import b64url_decode
 
     challenge = b64url_decode(begin["challenge"])
     key = generate_private_key(SECP256R1())
-    cdata, adata, cred_b64, _ = registration_blob(rp_id="localhost", origin="http://localhost", challenge=challenge, private_key=key)
-    rec = await svc.finish_passkey_registration(
-        user_id=user_id, session=session, client_data_b64=cdata, authenticator_data_b64=adata
+    cdata, adata, cred_b64, _ = registration_blob(
+        rp_id="localhost", origin="http://localhost", challenge=challenge, private_key=key
     )
-    auth_begin = await svc.begin_webauthn(user_id=user_id, session_id=session.session_id, ceremony="authenticate")
+    rec = await svc.finish_passkey_registration(
+        user_id=user_id,
+        session=session,
+        client_data_b64=cdata,
+        authenticator_data_b64=adata,
+        grant=await svc.issue_step_up(session, SensitiveAction.ADD_PASSKEY, org_id=None),
+    )
+    auth_begin = await svc.begin_webauthn(
+        user_id=user_id, session_id=session.session_id, ceremony="authenticate"
+    )
     ach = b64url_decode(auth_begin["challenge"])
-    ac, aa, asig = assertion_blob(rp_id="localhost", origin="http://localhost", challenge=ach, private_key=key, sign_count=2)
+    ac, aa, asig = assertion_blob(
+        rp_id="localhost", origin="http://localhost", challenge=ach, private_key=key, sign_count=2
+    )
     token, csrf, assurance = await svc.authenticate_passkey(
         client_data_b64=ac, authenticator_data_b64=aa, signature_b64=asig, credential_id=cred_b64
     )
     assert assurance.phishing_resistant is True
     with pytest.raises(EnterpriseError):
         await svc.authenticate_passkey(
-            client_data_b64=ac, authenticator_data_b64=aa, signature_b64=asig, credential_id="missing"
+            client_data_b64=ac,
+            authenticator_data_b64=aa,
+            signature_b64=asig,
+            credential_id="missing",
         )
     grant = await svc.issue_step_up(assurance, SensitiveAction.REMOVE_PASSKEY, org_id=None)
-    await svc.remove_passkey(user_id=user_id, credential_row_id=rec["id"], session=assurance, grant=grant)
-    auth_begin2 = await svc.begin_webauthn(user_id=user_id, session_id=assurance.session_id, ceremony="authenticate")
+    await svc.remove_passkey(
+        user_id=user_id, credential_row_id=rec["id"], session=assurance, grant=grant
+    )
+    auth_begin2 = await svc.begin_webauthn(
+        user_id=user_id, session_id=assurance.session_id, ceremony="authenticate"
+    )
     ach2 = b64url_decode(auth_begin2["challenge"])
-    ac2, aa2, asig2 = assertion_blob(rp_id="localhost", origin="http://localhost", challenge=ach2, private_key=key, sign_count=3)
+    ac2, aa2, asig2 = assertion_blob(
+        rp_id="localhost", origin="http://localhost", challenge=ach2, private_key=key, sign_count=3
+    )
     with pytest.raises(EnterpriseError):
         await svc.authenticate_passkey(
-            client_data_b64=ac2, authenticator_data_b64=aa2, signature_b64=asig2, credential_id=cred_b64
+            client_data_b64=ac2,
+            authenticator_data_b64=aa2,
+            signature_b64=asig2,
+            credential_id=cred_b64,
         )
 
 
@@ -167,11 +234,18 @@ async def test_totp_replay_and_removal_requires_step_up(engine) -> None:
     svc = await _svc(engine)
     started = await svc.start_totp(user_id)
     assert "otpauth_uri" in started
-    from responsibleai.db.engine import human_totp_factors
     from sqlalchemy import select
 
+    from responsibleai.db.engine import human_totp_factors
+
     async with engine.raw.connect() as conn:
-        secret = (await conn.execute(select(human_totp_factors.c.pending_secret_encrypted).where(human_totp_factors.c.user_id == user_id))).scalar()
+        secret = (
+            await conn.execute(
+                select(human_totp_factors.c.pending_secret_encrypted).where(
+                    human_totp_factors.c.user_id == user_id
+                )
+            )
+        ).scalar()
     import pyotp
 
     code = pyotp.TOTP(secret).now()
@@ -179,7 +253,9 @@ async def test_totp_replay_and_removal_requires_step_up(engine) -> None:
     with pytest.raises(EnterpriseError) as replay:
         await svc.verify_totp(user_id, code)
     assert replay.value.code == CHALLENGE_REPLAY
-    _, _, session = await svc.issue_session(user_id=user_id, methods=(AuthMethod.PASSWORD,), ip_label=None, user_agent=None)
+    _, _, session = await svc.issue_session(
+        user_id=user_id, methods=(AuthMethod.PASSWORD,), ip_label=None, user_agent=None
+    )
     with pytest.raises(EnterpriseError) as step:
         await svc.remove_totp(user_id=user_id, session=session)
     assert step.value.code == STEP_UP_REQUIRED
@@ -203,12 +279,13 @@ async def test_recovery_codes_one_time_and_owner_email_only_blocked(engine) -> N
     with pytest.raises(EnterpriseError):
         await svc.consume_recovery_token(token)
 
-    from responsibleai.enterprise.service import Actor, EnterpriseIAM
-    from responsibleai.rbac.models import Role
+    from responsibleai.enterprise.service import EnterpriseIAM
 
     iam = EnterpriseIAM(engine)
     owner = user_id
-    org = await iam.create_workspace(actor_user_id=owner, name="Co", slug=f"co-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION")
+    await iam.create_workspace(
+        actor_user_id=owner, name="Co", slug=f"co-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION"
+    )
     await svc.request_recovery("human@example.com")
     token2 = svc.last_recovery_token_for_tests
     with pytest.raises(EnterpriseError) as review:
@@ -220,39 +297,80 @@ async def test_recovery_codes_one_time_and_owner_email_only_blocked(engine) -> N
 async def test_google_forged_issuer_audience_nonce_hd(engine) -> None:
     user_id = await _user(engine)
     key, jwk = _rsa()
-    svc = await _svc(engine, google_client_id="google-client")
+    svc = await _svc(engine, google_client_id="google-client", allow_raw_id_token=True)
     _, _, session = await _passkey_session(svc, user_id)
 
     async def _get(self, kid, allow_refresh=True):
         return jwk
 
     with patch("responsibleai.enterprise.security.oidc.TrustedJWKS.get", new=_get):
-        good = _token(key, iss="https://accounts.google.com", aud="google-client", sub="sub-1", extra={"hd": "acme.com", "email": "a@acme.com"})
+        good = _token(
+            key,
+            iss="https://accounts.google.com",
+            aud="google-client",
+            sub="sub-1",
+            extra={"hd": "acme.com", "email": "a@acme.com"},
+        )
         claims = await OIDCTokenValidator(
-            issuer="https://accounts.google.com", audience="google-client", jwks_url="https://www.googleapis.com/oauth2/v3/certs"
+            issuer="https://accounts.google.com",
+            audience="google-client",
+            jwks_url="https://www.googleapis.com/oauth2/v3/certs",
         ).validate(good, expected_nonce="n1")
         assert claims.hosted_domain == "acme.com"
         with pytest.raises(EnterpriseError):
             await OIDCTokenValidator(
-                issuer="https://accounts.google.com", audience="google-client", jwks_url="https://www.googleapis.com/oauth2/v3/certs"
-            ).validate(_token(key, iss="https://evil.example", aud="google-client", sub="sub-1"), expected_nonce="n1")
+                issuer="https://accounts.google.com",
+                audience="google-client",
+                jwks_url="https://www.googleapis.com/oauth2/v3/certs",
+            ).validate(
+                _token(key, iss="https://evil.example", aud="google-client", sub="sub-1"),
+                expected_nonce="n1",
+            )
         with pytest.raises(EnterpriseError):
             await OIDCTokenValidator(
-                issuer="https://accounts.google.com", audience="google-client", jwks_url="https://www.googleapis.com/oauth2/v3/certs"
-            ).validate(_token(key, iss="https://accounts.google.com", aud="other", sub="sub-1"), expected_nonce="n1")
+                issuer="https://accounts.google.com",
+                audience="google-client",
+                jwks_url="https://www.googleapis.com/oauth2/v3/certs",
+            ).validate(
+                _token(key, iss="https://accounts.google.com", aud="other", sub="sub-1"),
+                expected_nonce="n1",
+            )
         with pytest.raises(EnterpriseError):
             await OIDCTokenValidator(
-                issuer="https://accounts.google.com", audience="google-client", jwks_url="https://www.googleapis.com/oauth2/v3/certs"
+                issuer="https://accounts.google.com",
+                audience="google-client",
+                jwks_url="https://www.googleapis.com/oauth2/v3/certs",
             ).validate(good, expected_nonce="wrong")
-        expired = _token(key, iss="https://accounts.google.com", aud="google-client", sub="sub-1", exp=int(time.time()) - 10)
+        expired = _token(
+            key,
+            iss="https://accounts.google.com",
+            aud="google-client",
+            sub="sub-1",
+            exp=int(time.time()) - 10,
+        )
         with pytest.raises(EnterpriseError):
             await OIDCTokenValidator(
-                issuer="https://accounts.google.com", audience="google-client", jwks_url="https://www.googleapis.com/oauth2/v3/certs"
+                issuer="https://accounts.google.com",
+                audience="google-client",
+                jwks_url="https://www.googleapis.com/oauth2/v3/certs",
             ).validate(expired, expected_nonce="n1")
-        none_tok = jwt.encode({"iss": "https://accounts.google.com", "aud": "google-client", "sub": "x", "exp": int(time.time()) + 60, "iat": int(time.time())}, "", algorithm="none", headers={"kid": "kid-1"})
+        none_tok = jwt.encode(
+            {
+                "iss": "https://accounts.google.com",
+                "aud": "google-client",
+                "sub": "x",
+                "exp": int(time.time()) + 60,
+                "iat": int(time.time()),
+            },
+            "",
+            algorithm="none",
+            headers={"kid": "kid-1"},
+        )
         with pytest.raises(EnterpriseError):
             await OIDCTokenValidator(
-                issuer="https://accounts.google.com", audience="google-client", jwks_url="https://www.googleapis.com/oauth2/v3/certs"
+                issuer="https://accounts.google.com",
+                audience="google-client",
+                jwks_url="https://www.googleapis.com/oauth2/v3/certs",
             ).validate(none_tok, expected_nonce="n1")
 
     # Personal Google cannot use company path; email domain is insufficient.
@@ -270,9 +388,15 @@ async def test_google_forged_issuer_audience_nonce_hd(engine) -> None:
     from responsibleai.enterprise.service import EnterpriseIAM
 
     iam = EnterpriseIAM(engine)
-    org = await iam.create_workspace(actor_user_id=user_id, name="Acme", slug=f"acme-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION")
+    org = await iam.create_workspace(
+        actor_user_id=user_id, name="Acme", slug=f"acme-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION"
+    )
     svc.google_client_id = "google-client"
-    with patch.object(IdentitySecurityService, "_binding", AsyncMock(return_value={"verified_domain": "acme.com", "tenant_id": None})):
+    with patch.object(
+        IdentitySecurityService,
+        "_binding",
+        AsyncMock(return_value={"verified_domain": "acme.com", "tenant_id": None}),
+    ):
         with patch.object(OIDCTokenValidator, "validate", AsyncMock(return_value=personal)):
             with pytest.raises(EnterpriseError) as err:
                 await svc.google_login(id_token="x.y.z", nonce="n1", intended_org_id=org["id"])
@@ -282,11 +406,13 @@ async def test_google_forged_issuer_audience_nonce_hd(engine) -> None:
 @pytest.mark.asyncio
 async def test_microsoft_wrong_tenant_and_personal_org_path(engine) -> None:
     user_id = await _user(engine)
-    svc = await _svc(engine, microsoft_client_id="ms-client")
+    svc = await _svc(engine, microsoft_client_id="ms-client", allow_raw_id_token=True)
     from responsibleai.enterprise.service import EnterpriseIAM
 
     iam = EnterpriseIAM(engine)
-    org = await iam.create_workspace(actor_user_id=user_id, name="Ent", slug=f"ent-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION")
+    org = await iam.create_workspace(
+        actor_user_id=user_id, name="Ent", slug=f"ent-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION"
+    )
     personal = VerifiedIDToken(
         issuer="https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0",
         subject="oid-1",
@@ -298,11 +424,20 @@ async def test_microsoft_wrong_tenant_and_personal_org_path(engine) -> None:
         expires_at=int(time.time()) + 60,
         raw={},
     )
-    with patch.object(IdentitySecurityService, "_binding", AsyncMock(return_value={"tenant_id": "tenant-real", "verified_domain": "company.com"})):
-        with patch("responsibleai.enterprise.security.service._unverified_iss", return_value="https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0"):
+    with patch.object(
+        IdentitySecurityService,
+        "_binding",
+        AsyncMock(return_value={"tenant_id": "tenant-real", "verified_domain": "company.com"}),
+    ):
+        with patch(
+            "responsibleai.enterprise.security.service._unverified_iss",
+            return_value="https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0",
+        ):
             with patch.object(OIDCTokenValidator, "validate", AsyncMock(return_value=personal)):
                 with pytest.raises(EnterpriseError) as err:
-                    await svc.microsoft_login(id_token="a.b.c", nonce="n1", intended_org_id=org["id"])
+                    await svc.microsoft_login(
+                        id_token="a.b.c", nonce="n1", intended_org_id=org["id"]
+                    )
                 assert err.value.code == ENTRA_TENANT_MISMATCH
     foreign = VerifiedIDToken(
         issuer="https://login.microsoftonline.com/foreign/v2.0",
@@ -315,11 +450,20 @@ async def test_microsoft_wrong_tenant_and_personal_org_path(engine) -> None:
         expires_at=int(time.time()) + 60,
         raw={},
     )
-    with patch.object(IdentitySecurityService, "_binding", AsyncMock(return_value={"tenant_id": "tenant-real", "verified_domain": "company.com"})):
-        with patch("responsibleai.enterprise.security.service._unverified_iss", return_value="https://login.microsoftonline.com/foreign/v2.0"):
+    with patch.object(
+        IdentitySecurityService,
+        "_binding",
+        AsyncMock(return_value={"tenant_id": "tenant-real", "verified_domain": "company.com"}),
+    ):
+        with patch(
+            "responsibleai.enterprise.security.service._unverified_iss",
+            return_value="https://login.microsoftonline.com/foreign/v2.0",
+        ):
             with patch.object(OIDCTokenValidator, "validate", AsyncMock(return_value=foreign)):
                 with pytest.raises(EnterpriseError) as err:
-                    await svc.microsoft_login(id_token="a.b.c", nonce="n1", intended_org_id=org["id"])
+                    await svc.microsoft_login(
+                        id_token="a.b.c", nonce="n1", intended_org_id=org["id"]
+                    )
                 assert err.value.code == ENTRA_TENANT_MISMATCH
 
 
@@ -341,11 +485,19 @@ async def test_account_link_conflict_and_email_not_merge(engine) -> None:
         raw={},
     )
     grant = await svc.issue_step_up(session_a, SensitiveAction.LINK_GOOGLE, org_id=None)
-    await svc.link_provider(session=session_a, provider="GOOGLE", claims=claims, grant=grant, account_kind="PERSONAL")
+    await svc.link_provider(
+        session=session_a, provider="GOOGLE", claims=claims, grant=grant, account_kind="PERSONAL"
+    )
     _, _, session_b = await _passkey_session(svc, b)
     grant_b = await svc.issue_step_up(session_b, SensitiveAction.LINK_GOOGLE, org_id=None)
     with pytest.raises(EnterpriseError) as conflict:
-        await svc.link_provider(session=session_b, provider="GOOGLE", claims=claims, grant=grant_b, account_kind="PERSONAL")
+        await svc.link_provider(
+            session=session_b,
+            provider="GOOGLE",
+            claims=claims,
+            grant=grant_b,
+            account_kind="PERSONAL",
+        )
     assert conflict.value.code == ACCOUNT_LINK_CONFLICT
 
 
@@ -353,7 +505,9 @@ async def test_account_link_conflict_and_email_not_merge(engine) -> None:
 async def test_step_up_action_binding_and_stolen_session(engine) -> None:
     user_id = await _user(engine)
     svc = await _svc(engine)
-    _, _, low = await svc.issue_session(user_id=user_id, methods=(AuthMethod.PASSWORD,), ip_label=None, user_agent=None)
+    _, _, low = await svc.issue_session(
+        user_id=user_id, methods=(AuthMethod.PASSWORD,), ip_label=None, user_agent=None
+    )
     grant = await svc.issue_step_up(low, SensitiveAction.TRANSFER_OWNERSHIP, org_id=None)
     with pytest.raises(EnterpriseError):
         await svc.consume_step_up(low, SensitiveAction.CREATE_PRODUCTION_API_KEY, grant)
@@ -379,7 +533,11 @@ async def test_session_revoke_and_suspension(engine) -> None:
     from sqlalchemy import update
 
     async with engine.raw.begin() as conn:
-        await conn.execute(update(web_users).where(web_users.c.id == user_id).values(verification_status="SUSPENDED"))
+        await conn.execute(
+            update(web_users)
+            .where(web_users.c.id == user_id)
+            .values(verification_status="SUSPENDED")
+        )
     with pytest.raises(EnterpriseError):
         await svc.load_session(f"{token2}.{csrf2}")
 
@@ -390,7 +548,12 @@ async def test_sso_required_blocks_password_and_downgrade(engine) -> None:
     from responsibleai.enterprise.service import EnterpriseIAM
 
     iam = EnterpriseIAM(engine)
-    org = await iam.create_workspace(actor_user_id=user_id, name="SSO Co", slug=f"sso-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION")
+    org = await iam.create_workspace(
+        actor_user_id=user_id,
+        name="SSO Co",
+        slug=f"sso-{uuid.uuid4().hex[:8]}",
+        kind="ORGANIZATION",
+    )
     svc = await _svc(engine)
     _, _, session = await _passkey_session(svc, user_id)
     grant = await svc.issue_step_up(session, SensitiveAction.CONFIGURE_SSO, org_id=org["id"])
@@ -407,7 +570,9 @@ async def test_sso_required_blocks_password_and_downgrade(engine) -> None:
         provisioning="INVITE_ONLY",
     )
     with pytest.raises(EnterpriseError) as denied:
-        await svc.authenticate_password("human@example.com", "correct-horse-battery-staple-9", org_id=org["id"])
+        await svc.authenticate_password(
+            "human@example.com", "correct-horse-battery-staple-9", org_id=org["id"]
+        )
     assert denied.value.code == SSO_REQUIRED
     grant2 = await svc.issue_step_up(session, SensitiveAction.CONFIGURE_SSO, org_id=org["id"])
     with pytest.raises(EnterpriseError) as down:
@@ -423,7 +588,10 @@ async def test_sso_required_blocks_password_and_downgrade(engine) -> None:
             enforcement="SSO_OPTIONAL",
             provisioning="INVITE_ONLY",
         )
-    assert down.value.code in {SECURITY_DOWNGRADE_BLOCKED, "FORBIDDEN"} or down.value.http_status in {403, 409}
+    assert down.value.code in {
+        SECURITY_DOWNGRADE_BLOCKED,
+        "FORBIDDEN",
+    } or down.value.http_status in {403, 409}
 
 
 @pytest.mark.asyncio
@@ -453,7 +621,9 @@ def test_production_preflight_rejects_placeholders(monkeypatch: pytest.MonkeyPat
         is_production = True
         google_client_id = "changeme"
 
-    with pytest.raises(Exception):
+    from responsibleai.enterprise.preflight import HostedEnterpriseSecurityError
+
+    with pytest.raises(HostedEnterpriseSecurityError):
         assert_layer2_provider_boot_safe(S())
 
 
@@ -468,7 +638,9 @@ async def test_unknown_kid_denies_after_refresh() -> None:
     with patch("responsibleai.enterprise.security.oidc.TrustedJWKS.get", new=empty):
         with pytest.raises(EnterpriseError) as err:
             await OIDCTokenValidator(
-                issuer="https://accounts.google.com", audience="c", jwks_url="https://www.googleapis.com/oauth2/v3/certs"
+                issuer="https://accounts.google.com",
+                audience="c",
+                jwks_url="https://www.googleapis.com/oauth2/v3/certs",
             ).validate(token, expected_nonce="n1")
         assert err.value.code == PROVIDER_TOKEN_INVALID
 

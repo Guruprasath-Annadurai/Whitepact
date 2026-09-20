@@ -56,22 +56,31 @@ async def test_postgres_challenge_and_recovery_code_races(pg_url: str) -> None:
             user_id=user_id, methods=(AuthMethod.PASSKEY_UV,), ip_label=None, user_agent=None
         )
 
-        async def finish() -> str | Exception:
+        ga = await svc.issue_step_up(session, SensitiveAction.ADD_PASSKEY, org_id=None)
+        gb = await svc.issue_step_up(session, SensitiveAction.ADD_PASSKEY, org_id=None)
+
+        async def finish(grant: str) -> str | Exception:
             try:
                 rec = await svc.finish_passkey_registration(
-                    user_id=user_id, session=session, client_data_b64=cdata, authenticator_data_b64=adata
+                    user_id=user_id,
+                    session=session,
+                    client_data_b64=cdata,
+                    authenticator_data_b64=adata,
+                    grant=grant,
                 )
                 return rec["id"]
             except Exception as exc:  # noqa: BLE001
                 return exc
 
-        first, second = await asyncio.gather(finish(), finish())
+        first, second = await asyncio.gather(finish(ga), finish(gb))
         successes = [r for r in (first, second) if isinstance(r, str)]
         failures = [r for r in (first, second) if isinstance(r, Exception)]
         assert len(successes) == 1
         assert len(failures) == 1
 
-        grant = await svc.issue_step_up(session, SensitiveAction.CHANGE_RECOVERY_METHODS, org_id=None)
+        grant = await svc.issue_step_up(
+            session, SensitiveAction.CHANGE_RECOVERY_METHODS, org_id=None
+        )
         codes = await svc.issue_recovery_codes(user_id, session=session, grant=grant)
 
         async def consume() -> str | Exception:
@@ -99,8 +108,9 @@ async def test_postgres_account_link_race(pg_url: str) -> None:
         svc = IdentitySecurityService(engine)
         a = await _user(engine, "pg-a@example.com")
         b = await _user(engine, "pg-b@example.com")
-        from responsibleai.enterprise.security.oidc import VerifiedIDToken
         import time
+
+        from responsibleai.enterprise.security.oidc import VerifiedIDToken
 
         claims = VerifiedIDToken(
             issuer="https://accounts.google.com",
@@ -113,14 +123,24 @@ async def test_postgres_account_link_race(pg_url: str) -> None:
             expires_at=int(time.time()) + 60,
             raw={},
         )
-        _, _, sa = await svc.issue_session(user_id=a, methods=(AuthMethod.PASSKEY_UV,), ip_label=None, user_agent=None)
-        _, _, sb = await svc.issue_session(user_id=b, methods=(AuthMethod.PASSKEY_UV,), ip_label=None, user_agent=None)
+        _, _, sa = await svc.issue_session(
+            user_id=a, methods=(AuthMethod.PASSKEY_UV,), ip_label=None, user_agent=None
+        )
+        _, _, sb = await svc.issue_session(
+            user_id=b, methods=(AuthMethod.PASSKEY_UV,), ip_label=None, user_agent=None
+        )
         ga = await svc.issue_step_up(sa, SensitiveAction.LINK_GOOGLE, org_id=None)
         gb = await svc.issue_step_up(sb, SensitiveAction.LINK_GOOGLE, org_id=None)
 
         async def link(session, grant):
             try:
-                await svc.link_provider(session=session, provider="GOOGLE", claims=claims, grant=grant, account_kind="PERSONAL")
+                await svc.link_provider(
+                    session=session,
+                    provider="GOOGLE",
+                    claims=claims,
+                    grant=grant,
+                    account_kind="PERSONAL",
+                )
                 return "ok"
             except Exception as exc:  # noqa: BLE001
                 return exc
@@ -128,5 +148,46 @@ async def test_postgres_account_link_race(pg_url: str) -> None:
         r1, r2 = await asyncio.gather(link(sa, ga), link(sb, gb))
         oks = [r for r in (r1, r2) if r == "ok"]
         assert len(oks) == 1
+    finally:
+        await engine.close()
+
+
+@pytest.mark.asyncio
+async def test_postgres_oauth_state_and_rate_limit_and_four_eyes(pg_url: str) -> None:
+    engine = create_engine(pg_url)
+    await engine.init()
+    try:
+        from responsibleai.enterprise.security.rate_limit import DurableIdentityRateLimiter
+
+        a = DurableIdentityRateLimiter(engine)
+        b = DurableIdentityRateLimiter(engine)
+        await a.check("oauth:google", limit=2, window_seconds=60)
+        await b.check("oauth:google", limit=2, window_seconds=60)
+        with pytest.raises(EnterpriseError):
+            await a.check("oauth:google", limit=2, window_seconds=60)
+
+        svc = IdentitySecurityService(
+            engine,
+            google_client_id="google-client",
+            google_client_secret="confidential-secret-value",
+            hosted_redirect_uri="https://app.example.com/callback",
+        )
+        started = await svc.begin_hosted_oauth(
+            provider="GOOGLE", redirect_uri="https://app.example.com/callback"
+        )
+        with pytest.raises(EnterpriseError):
+            await svc.complete_hosted_oauth(
+                provider="GOOGLE",
+                state=started["state"],
+                code="x",
+                redirect_uri="https://evil.example/callback",
+            )
+        with pytest.raises(EnterpriseError):
+            await svc.complete_hosted_oauth(
+                provider="GOOGLE",
+                state=started["state"],
+                code="x",
+                redirect_uri="https://app.example.com/callback",
+            )
     finally:
         await engine.close()

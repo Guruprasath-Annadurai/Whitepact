@@ -51,7 +51,7 @@ TRUST_FABRIC_TABLES = {
 @pytest.fixture
 async def pg_test_db() -> AsyncGenerator[str, None]:
     """Create a temporary isolated PostgreSQL database and drop it on cleanup."""
-    async for url in isolated_pg_url('wp_mig_test'):
+    async for url in isolated_pg_url("wp_mig_test"):
         yield url
 
 
@@ -62,7 +62,7 @@ def test_one_canonical_alembic_head():
     scripts = ScriptDirectory.from_config(Config(str(ini)))
     heads = scripts.get_heads()
     assert len(heads) == 1, f"Expected exactly 1 alembic head, got {len(heads)}: {heads}"
-    assert heads == ["0056"]
+    assert heads == ["0057"]
     assert scripts.get_revision("0056").down_revision == "0055"
     assert scripts.get_revision("0055").down_revision == "0054"
     assert scripts.get_revision("0054").down_revision == "0053"
@@ -156,17 +156,27 @@ async def test_canonical_0042_to_0043_preserves_tenant_data_postgres(pg_test_db:
             assert version == "0043"
 
             # Check pre-existing tenant records are intact
-            org_rows = (await conn.execute(text("SELECT id, name, slug FROM organizations ORDER BY id"))).fetchall()
+            org_rows = (
+                await conn.execute(text("SELECT id, name, slug FROM organizations ORDER BY id"))
+            ).fetchall()
             assert len(org_rows) == 2
             assert org_rows[0] == ("tenant-corp-a", "Corp Alpha", "corp-alpha")
             assert org_rows[1] == ("tenant-corp-b", "Corp Beta", "corp-beta")
 
-            root_rows = (await conn.execute(text("SELECT root_id, organization_id FROM governance_root_authority_records ORDER BY root_id"))).fetchall()
+            root_rows = (
+                await conn.execute(
+                    text(
+                        "SELECT root_id, organization_id FROM governance_root_authority_records ORDER BY root_id"
+                    )
+                )
+            ).fetchall()
             assert len(root_rows) == 2
             assert root_rows[0] == ("root-1", "tenant-corp-a")
             assert root_rows[1] == ("root-2", "tenant-corp-b")
 
-            ev_rows = (await conn.execute(text("SELECT id, org_id FROM governance_evidence ORDER BY id"))).fetchall()
+            ev_rows = (
+                await conn.execute(text("SELECT id, org_id FROM governance_evidence ORDER BY id"))
+            ).fetchall()
             assert len(ev_rows) == 2
             assert ev_rows[0] == ("ev-1", "tenant-corp-a")
             assert ev_rows[1] == ("ev-2", "tenant-corp-b")
@@ -212,10 +222,16 @@ async def test_downgrade_0043_to_0042_and_reupgrade_postgres(pg_test_db: str):
 
             tables = set(await conn.run_sync(lambda c: inspect(c).get_table_names()))
             # Trust fabric tables must be dropped
-            assert not (TRUST_FABRIC_TABLES & tables), f"Tables not dropped: {TRUST_FABRIC_TABLES & tables}"
+            assert not (TRUST_FABRIC_TABLES & tables), (
+                f"Tables not dropped: {TRUST_FABRIC_TABLES & tables}"
+            )
 
             # Pre-existing tenant data must still be intact
-            org = (await conn.execute(text("SELECT id, name FROM organizations WHERE id='tenant-preserve'"))).fetchone()
+            org = (
+                await conn.execute(
+                    text("SELECT id, name FROM organizations WHERE id='tenant-preserve'")
+                )
+            ).fetchone()
             assert org == ("tenant-preserve", "Preserve Org")
     finally:
         await engine.close()
@@ -232,7 +248,11 @@ async def test_downgrade_0043_to_0042_and_reupgrade_postgres(pg_test_db: str):
             tables = set(await conn.run_sync(lambda c: inspect(c).get_table_names()))
             assert TRUST_FABRIC_TABLES <= tables
 
-            org = (await conn.execute(text("SELECT id, name FROM organizations WHERE id='tenant-preserve'"))).fetchone()
+            org = (
+                await conn.execute(
+                    text("SELECT id, name FROM organizations WHERE id='tenant-preserve'")
+                )
+            ).fetchone()
             assert org == ("tenant-preserve", "Preserve Org")
     finally:
         await engine.close()

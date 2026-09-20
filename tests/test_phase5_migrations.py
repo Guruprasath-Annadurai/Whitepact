@@ -45,7 +45,7 @@ PHASE5_TABLES = {
 @pytest.fixture
 async def pg_test_db() -> AsyncGenerator[str, None]:
     """Create a temporary isolated PostgreSQL database and drop it on cleanup."""
-    async for url in isolated_pg_url('wp_mig_p5'):
+    async for url in isolated_pg_url("wp_mig_p5"):
         yield url
 
 
@@ -56,7 +56,7 @@ def test_one_canonical_alembic_head():
     scripts = ScriptDirectory.from_config(Config(str(ini)))
     heads = scripts.get_heads()
     assert len(heads) == 1, f"Expected exactly 1 alembic head, got {len(heads)}: {heads}"
-    assert heads == ["0056"]
+    assert heads == ["0057"]
     assert scripts.get_revision("0049").down_revision == "0048"
     assert scripts.get_revision("0048").down_revision == "0047"
     assert scripts.get_revision("0047").down_revision == "0046"
@@ -75,7 +75,7 @@ async def test_fresh_schema_to_0045_postgres(pg_test_db: str):
     try:
         async with engine.raw.connect() as conn:
             version = (await conn.execute(text("SELECT version_num FROM alembic_version"))).scalar()
-            assert version == "0056"
+            assert version == "0057"
 
             tables = await conn.run_sync(lambda c: inspect(c).get_table_names())
             assert PHASE5_TABLES <= set(tables), (
@@ -134,10 +134,18 @@ async def test_canonical_0044_to_0045_preserves_tenant_data_postgres(pg_test_db:
             assert version == "0045"
 
             # Verify seeded data was preserved
-            org_name = (await conn.execute(text("SELECT name FROM organizations WHERE id = 'tenant-p5'"))).scalar()
+            org_name = (
+                await conn.execute(text("SELECT name FROM organizations WHERE id = 'tenant-p5'"))
+            ).scalar()
             assert org_name == "Phase 5 Enterprise"
 
-            prin_name = (await conn.execute(text("SELECT display_name FROM trust_fabric_principals WHERE id = 'prin-p5-root'"))).scalar()
+            prin_name = (
+                await conn.execute(
+                    text(
+                        "SELECT display_name FROM trust_fabric_principals WHERE id = 'prin-p5-root'"
+                    )
+                )
+            ).scalar()
             assert prin_name == "Gov Root Admin"
     finally:
         await engine2.close()

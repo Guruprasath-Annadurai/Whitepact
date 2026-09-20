@@ -43,7 +43,7 @@ from responsibleai.db.migrate import (
 @pytest.fixture
 async def pg_disposable_db() -> AsyncGenerator[str, None]:
     """Create a temporary isolated PostgreSQL database and drop it on cleanup."""
-    async for url in isolated_pg_url('wp_hist_mig'):
+    async for url in isolated_pg_url("wp_hist_mig"):
         yield url
 
 
@@ -56,7 +56,7 @@ def test_one_canonical_alembic_head():
     scripts = ScriptDirectory.from_config(Config(str(ini)))
     heads = scripts.get_heads()
     assert len(heads) == 1, f"Expected exactly 1 alembic head, got {len(heads)}: {heads}"
-    assert heads == ["0056"]
+    assert heads == ["0057"]
 
     rev_0049 = scripts.get_revision("0049")
     assert rev_0049.down_revision == "0048"
@@ -98,7 +98,7 @@ async def test_fresh_install_to_head_postgres(pg_disposable_db: str):
     try:
         async with engine.raw.connect() as conn:
             version = (await conn.execute(text("SELECT version_num FROM alembic_version"))).scalar()
-            assert version == "0056"
+            assert version == "0057"
 
         def _get_tables(sync_conn):
             return inspect(sync_conn).get_table_names()
@@ -284,40 +284,73 @@ async def test_upgrade_0042_to_head_preserves_data_and_invariants(pg_disposable_
 
         # 4. Verify post-upgrade state and security invariants
         async with engine.raw.connect() as conn:
-            head_ver = (await conn.execute(text("SELECT version_num FROM alembic_version"))).scalar()
-            assert head_ver == "0056"
+            head_ver = (
+                await conn.execute(text("SELECT version_num FROM alembic_version"))
+            ).scalar()
+            assert head_ver == "0057"
 
             # Invariant 1: Organizations preserved
-            orgs = (await conn.execute(text("SELECT id, name, plan FROM organizations ORDER BY id"))).fetchall()
+            orgs = (
+                await conn.execute(text("SELECT id, name, plan FROM organizations ORDER BY id"))
+            ).fetchall()
             assert len(orgs) == 2
             assert orgs[0] == ("tenant_alpha", "Tenant Alpha Corp", "ENTERPRISE")
             assert orgs[1] == ("tenant_beta", "Tenant Beta LLC", "PRO")
 
             # Invariant 2: Privilege preservation in web_memberships (viewer did NOT become admin)
-            mems = (await conn.execute(text("SELECT id, user_id, org_id, role FROM web_memberships ORDER BY id"))).fetchall()
+            mems = (
+                await conn.execute(
+                    text("SELECT id, user_id, org_id, role FROM web_memberships ORDER BY id")
+                )
+            ).fetchall()
             assert len(mems) == 3
             mem_map = {m[0]: m for m in mems}
-            assert mem_map["mem_alpha_viw"] == ("mem_alpha_viw", "usr_alpha_viewer", "tenant_alpha", "viewer"), "Viewer role widened!"
-            assert mem_map["mem_alpha_adm"] == ("mem_alpha_adm", "usr_alpha_admin", "tenant_alpha", "admin")
-            assert mem_map["mem_beta_mem"] == ("mem_beta_mem", "usr_beta_member", "tenant_beta", "member"), "Member role widened!"
+            assert mem_map["mem_alpha_viw"] == (
+                "mem_alpha_viw",
+                "usr_alpha_viewer",
+                "tenant_alpha",
+                "viewer",
+            ), "Viewer role widened!"
+            assert mem_map["mem_alpha_adm"] == (
+                "mem_alpha_adm",
+                "usr_alpha_admin",
+                "tenant_alpha",
+                "admin",
+            )
+            assert mem_map["mem_beta_mem"] == (
+                "mem_beta_mem",
+                "usr_beta_member",
+                "tenant_beta",
+                "member",
+            ), "Member role widened!"
 
             # Invariant 3: Revocation preservation (revoked key did NOT reactivate)
-            keys = (await conn.execute(text("SELECT id, revoked, org_id FROM org_api_keys ORDER BY id"))).fetchall()
+            keys = (
+                await conn.execute(text("SELECT id, revoked, org_id FROM org_api_keys ORDER BY id"))
+            ).fetchall()
             key_map = {k[0]: (k[1], k[2]) for k in keys}
             assert key_map["key_alpha_rev"] == (1, "tenant_alpha"), "Revoked key resurrected!"
             assert key_map["key_alpha_act"] == (0, "tenant_alpha")
 
             # Invariant 4: Policy preservation (DENY remained DENY)
-            pols = (await conn.execute(text("SELECT id, effect, org_id FROM governance_policies ORDER BY id"))).fetchall()
+            pols = (
+                await conn.execute(
+                    text("SELECT id, effect, org_id FROM governance_policies ORDER BY id")
+                )
+            ).fetchall()
             pol_map = {p[0]: (p[1], p[2]) for p in pols}
             assert pol_map["pol_alpha_deny"] == ("DENY", "tenant_alpha")
             assert pol_map["pol_beta_allow"] == ("ALLOW", "tenant_beta")
 
             # Invariant 5: Evidence preservation & integrity status
-            evidence = (await conn.execute(text("""
+            evidence = (
+                await conn.execute(
+                    text("""
                 SELECT id, org_id, decision, integrity_status, chain_sequence, policy_digest
                 FROM governance_evidence ORDER BY id
-            """))).fetchall()
+            """)
+                )
+            ).fetchall()
             assert len(evidence) == 3
             ev_map = {e[0]: e for e in evidence}
             assert ev_map["ev_alpha_1"][1] == "tenant_alpha"
@@ -329,24 +362,48 @@ async def test_upgrade_0042_to_head_preserves_data_and_invariants(pg_disposable_
             assert ev_map["ev_beta_1"][2] == "DENY"
 
             # Invariant 6: Chain heads preserved
-            heads = (await conn.execute(text("SELECT org_id, sequence, head_hash FROM governance_evidence_chain_heads ORDER BY org_id"))).fetchall()
+            heads = (
+                await conn.execute(
+                    text(
+                        "SELECT org_id, sequence, head_hash FROM governance_evidence_chain_heads ORDER BY org_id"
+                    )
+                )
+            ).fetchall()
             assert len(heads) == 2
             assert heads[0] == ("tenant_alpha", 2, "hash_head_alpha")
             assert heads[1] == ("tenant_beta", 1, "hash_head_beta")
 
             # Invariant 7: Security epochs preserved
-            epochs = (await conn.execute(text("SELECT organization_id, scope, epoch FROM governance_revocation_epochs ORDER BY organization_id"))).fetchall()
+            epochs = (
+                await conn.execute(
+                    text(
+                        "SELECT organization_id, scope, epoch FROM governance_revocation_epochs ORDER BY organization_id"
+                    )
+                )
+            ).fetchall()
             assert epochs[0] == ("tenant_alpha", "global", 42)
             assert epochs[1] == ("tenant_beta", "global", 17)
 
             # Invariant 8: Execution nonces preserved
-            nonce_row = (await conn.execute(text("SELECT nonce, organization_id, authorization_id FROM governance_execution_nonces"))).fetchone()
+            nonce_row = (
+                await conn.execute(
+                    text(
+                        "SELECT nonce, organization_id, authorization_id FROM governance_execution_nonces"
+                    )
+                )
+            ).fetchone()
             assert nonce_row == ("nonce_alpha_1", "tenant_alpha", "auth_a1")
 
             # Invariant 9: Approvals preserved (pending did NOT auto-approve)
-            apps = (await conn.execute(text("SELECT id, status, org_id FROM governance_approvals ORDER BY id"))).fetchall()
+            apps = (
+                await conn.execute(
+                    text("SELECT id, status, org_id FROM governance_approvals ORDER BY id")
+                )
+            ).fetchall()
             app_map = {a[0]: (a[1], a[2]) for a in apps}
-            assert app_map["app_alpha_pnd"] == ("PENDING", "tenant_alpha"), "Pending approval mutated!"
+            assert app_map["app_alpha_pnd"] == ("PENDING", "tenant_alpha"), (
+                "Pending approval mutated!"
+            )
             assert app_map["app_beta_rej"] == ("REJECTED", "tenant_beta")
     finally:
         await engine.close()
@@ -466,39 +523,86 @@ async def test_upgrade_0043_to_head_preserves_trust_fabric_and_invariants(pg_dis
 
         # 3. Verify invariants
         async with engine.raw.connect() as conn:
-            head_ver = (await conn.execute(text("SELECT version_num FROM alembic_version"))).scalar()
-            assert head_ver == "0056"
+            head_ver = (
+                await conn.execute(text("SELECT version_num FROM alembic_version"))
+            ).scalar()
+            assert head_ver == "0057"
 
             # Invariant: Principals preserved and states NOT widened
-            prins = (await conn.execute(text("SELECT id, org_id, principal_type, lifecycle_state FROM trust_fabric_principals ORDER BY id"))).fetchall()
+            prins = (
+                await conn.execute(
+                    text(
+                        "SELECT id, org_id, principal_type, lifecycle_state FROM trust_fabric_principals ORDER BY id"
+                    )
+                )
+            ).fetchall()
             assert len(prins) == 3
             prin_map = {p[0]: p for p in prins}
-            assert prin_map["prin_alpha_agent"] == ("prin_alpha_agent", "tenant_alpha", "AI_AGENT", "PENDING_VERIFICATION"), "Trust state widened!"
-            assert prin_map["prin_beta_agent"] == ("prin_beta_agent", "tenant_beta", "AI_AGENT", "PENDING_VERIFICATION")
-            assert prin_map["prin_alpha_human"] == ("prin_alpha_human", "tenant_alpha", "HUMAN", "ACTIVE")
+            assert prin_map["prin_alpha_agent"] == (
+                "prin_alpha_agent",
+                "tenant_alpha",
+                "AI_AGENT",
+                "PENDING_VERIFICATION",
+            ), "Trust state widened!"
+            assert prin_map["prin_beta_agent"] == (
+                "prin_beta_agent",
+                "tenant_beta",
+                "AI_AGENT",
+                "PENDING_VERIFICATION",
+            )
+            assert prin_map["prin_alpha_human"] == (
+                "prin_alpha_human",
+                "tenant_alpha",
+                "HUMAN",
+                "ACTIVE",
+            )
 
             # Invariant: Identifiers preserved, revocation preserved, unverified NOT widened
-            idents = (await conn.execute(text("SELECT id, org_id, verification_state, revoked_at FROM trust_fabric_identifiers ORDER BY id"))).fetchall()
+            idents = (
+                await conn.execute(
+                    text(
+                        "SELECT id, org_id, verification_state, revoked_at FROM trust_fabric_identifiers ORDER BY id"
+                    )
+                )
+            ).fetchall()
             assert len(idents) == 3
             ident_map = {i[0]: i for i in idents}
             assert ident_map["id_alpha_rev"][2] == "REVOKED", "Revoked identifier resurrected!"
             assert ident_map["id_alpha_rev"][3] == "2026-01-01T12:00:00Z"
-            assert ident_map["id_beta_unv"][2] == "UNVERIFIED", "Unverified identifier mutated to proven!"
+            assert ident_map["id_beta_unv"][2] == "UNVERIFIED", (
+                "Unverified identifier mutated to proven!"
+            )
             assert ident_map["id_beta_unv"][1] == "tenant_beta"
 
             # Invariant: Relationships and Authority edges preserved
-            rel = (await conn.execute(text("SELECT id, org_id, relationship_type, verification_state FROM trust_fabric_relationships"))).fetchone()
+            rel = (
+                await conn.execute(
+                    text(
+                        "SELECT id, org_id, relationship_type, verification_state FROM trust_fabric_relationships"
+                    )
+                )
+            ).fetchone()
             assert rel == ("rel_alpha_1", "tenant_alpha", "DELEGATES_TO", "VERIFIED")
 
-            edge = (await conn.execute(text("SELECT id, org_id, action_type, delegation_depth FROM trust_fabric_authority_edges"))).fetchone()
+            edge = (
+                await conn.execute(
+                    text(
+                        "SELECT id, org_id, action_type, delegation_depth FROM trust_fabric_authority_edges"
+                    )
+                )
+            ).fetchone()
             assert edge == ("edge_alpha_1", "tenant_alpha", "execute_tool", 1)
 
             # Invariant: Conflicts remain UNRESOLVED
-            conf = (await conn.execute(text("SELECT id, org_id, status FROM trust_fabric_conflicts"))).fetchone()
+            conf = (
+                await conn.execute(text("SELECT id, org_id, status FROM trust_fabric_conflicts"))
+            ).fetchone()
             assert conf == ("conf_alpha_1", "tenant_alpha", "UNRESOLVED")
 
             # Invariant: Challenges remain PENDING
-            chal = (await conn.execute(text("SELECT id, org_id, status FROM trust_fabric_challenges"))).fetchone()
+            chal = (
+                await conn.execute(text("SELECT id, org_id, status FROM trust_fabric_challenges"))
+            ).fetchone()
             assert chal == ("chal_beta_1", "tenant_beta", "PENDING")
     finally:
         await engine.close()
@@ -611,11 +715,17 @@ async def test_upgrade_0044_to_head_preserves_iam_and_invariants(pg_disposable_d
 
         # 3. Verify invariants
         async with engine.raw.connect() as conn:
-            head_ver = (await conn.execute(text("SELECT version_num FROM alembic_version"))).scalar()
-            assert head_ver == "0056"
+            head_ver = (
+                await conn.execute(text("SELECT version_num FROM alembic_version"))
+            ).scalar()
+            assert head_ver == "0057"
 
             # Invariant: Sessions preserved and revoked stays revoked
-            sessions = (await conn.execute(text("SELECT id, org_id, status, revoked_at FROM iam_sessions ORDER BY id"))).fetchall()
+            sessions = (
+                await conn.execute(
+                    text("SELECT id, org_id, status, revoked_at FROM iam_sessions ORDER BY id")
+                )
+            ).fetchall()
             assert len(sessions) == 3
             sess_map = {s[0]: s for s in sessions}
             assert sess_map["sess_alpha_rev"][2] == "REVOKED", "Revoked session resurrected!"
@@ -624,25 +734,37 @@ async def test_upgrade_0044_to_head_preserves_iam_and_invariants(pg_disposable_d
             assert sess_map["sess_beta_act"][1] == "tenant_beta"
 
             # Invariant: API key lineage scopes preserved (no scope escalation)
-            keys = (await conn.execute(text("SELECT id, org_id, scopes_json FROM iam_api_key_lineage ORDER BY id"))).fetchall()
+            keys = (
+                await conn.execute(
+                    text("SELECT id, org_id, scopes_json FROM iam_api_key_lineage ORDER BY id")
+                )
+            ).fetchall()
             assert len(keys) == 2
             key_map = {k[0]: (k[1], json.loads(k[2])) for k in keys}
             assert key_map["lineage_beta_empty"] == ("tenant_beta", []), "Empty scope escalated!"
             assert key_map["lineage_alpha_1"] == ("tenant_alpha", ["read:evidence"])
 
             # Invariant: JIT grants preserved
-            jits = (await conn.execute(text("SELECT id, org_id, target_role, status FROM iam_jit_grants ORDER BY id"))).fetchall()
+            jits = (
+                await conn.execute(
+                    text("SELECT id, org_id, target_role, status FROM iam_jit_grants ORDER BY id")
+                )
+            ).fetchall()
             assert len(jits) == 2
             jit_map = {j[0]: j for j in jits}
             assert jit_map["jit_alpha_rev"][3] == "REVOKED", "Revoked JIT grant resurrected!"
             assert jit_map["jit_alpha_act"][3] == "ACTIVE"
 
             # Invariant: Four-eyes pending request did NOT approve
-            four_eyes = (await conn.execute(text("SELECT id, org_id, status FROM iam_four_eyes_requests"))).fetchone()
+            four_eyes = (
+                await conn.execute(text("SELECT id, org_id, status FROM iam_four_eyes_requests"))
+            ).fetchone()
             assert four_eyes == ("4eyes_alpha_pnd", "tenant_alpha", "PENDING")
 
             # Invariant: Break-glass terminated session did NOT resurrect
-            bg = (await conn.execute(text("SELECT id, org_id, status FROM iam_break_glass_sessions"))).fetchone()
+            bg = (
+                await conn.execute(text("SELECT id, org_id, status FROM iam_break_glass_sessions"))
+            ).fetchone()
             assert bg == ("bg_alpha_term", "tenant_alpha", "TERMINATED")
     finally:
         await engine.close()
@@ -698,18 +820,28 @@ async def test_downgrade_and_reupgrade_idempotence(pg_disposable_db: str):
             assert ver == "0044"
 
             # Verify 0044 data survived the rollback of 0045
-            sess = (await conn.execute(text("SELECT id, org_id, status FROM iam_sessions WHERE id = 'sess_rt'"))).fetchone()
+            sess = (
+                await conn.execute(
+                    text("SELECT id, org_id, status FROM iam_sessions WHERE id = 'sess_rt'")
+                )
+            ).fetchone()
             assert sess == ("sess_rt", "tenant_rt", "ACTIVE")
 
         # 3. Re-upgrade to 0045 (head)
         await _run_alembic(ini, env, "upgrade", "head")
 
         async with engine.raw.connect() as conn:
-            head_ver = (await conn.execute(text("SELECT version_num FROM alembic_version"))).scalar()
-            assert head_ver == "0056"
+            head_ver = (
+                await conn.execute(text("SELECT version_num FROM alembic_version"))
+            ).scalar()
+            assert head_ver == "0057"
 
             # Verify 0044 data remains clean
-            sess = (await conn.execute(text("SELECT id, org_id, status FROM iam_sessions WHERE id = 'sess_rt'"))).fetchone()
+            sess = (
+                await conn.execute(
+                    text("SELECT id, org_id, status FROM iam_sessions WHERE id = 'sess_rt'")
+                )
+            ).fetchone()
             assert sess == ("sess_rt", "tenant_rt", "ACTIVE")
     finally:
         await engine.close()
