@@ -5,12 +5,12 @@
 **Phase 7A frozen runtime head:** `0053`
 **File:** `migrations/versions/0053_runtime_worker_leases.py`
 
-**Current implemented Alembic head:** `0056`
-**File:** `migrations/versions/0056_identity_security_fortress.py`
-**Down-revision:** `0055` → `0054` → `0053` → `0052` → `0051` → `0050` → `0049` → `0048`
+**Current implemented Alembic head:** `0057`
+**File:** `migrations/versions/0057_layer2_identity_remediation.py`
+**Down-revision:** `0056` → `0055` → `0054` → `0053` → `0052` → `0051` → `0050` → `0049` → `0048`
 
 There is one linear chain. There is no branch split and no orphan
-revision. `alembic heads` must equal `0056`.
+revision. `alembic heads` must equal `0057`.
 
 Phase 7A runtime schema (`0050`–`0053`) is frozen. Enterprise SaaS Layer 1
 and Layer 2 extend administrative identity only. Production Gate B remains CLOSED.
@@ -27,6 +27,7 @@ dispatcher activation.
 | `0054` | Enterprise SaaS Layer 1 identity: workspace columns, membership lifecycle, environments, API-key provenance, service accounts, security audit | **Implemented** |
 | `0055` | Verified principal gate: human/org verification + provider event replay protection | **Implemented** |
 | `0056` | Enterprise SaaS Layer 2 identity security fortress: passkeys, TOTP, recovery, provider bindings, SSO, sessions, step-up | **Implemented** |
+| `0057` | Layer 2 remediation: durable OAuth transactions, distributed identity abuse counters, four-eyes requests | **Implemented** |
 
 Pass 4.4 numbering (obsolete):
 
