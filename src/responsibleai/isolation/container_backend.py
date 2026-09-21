@@ -51,12 +51,29 @@ class DockerContainerBackend(IsolationBackend):
         self.docker_cmd = docker_cmd or shutil.which("docker") or "docker"
 
     def is_available(self) -> bool:
-        """Check if docker binary is present and daemon responds."""
-        if not shutil.which(self.docker_cmd):
+        """Check if docker binary is present and daemon responds.
+
+        Uses an argv subprocess with shell=False. The docker executable is
+        never interpolated into a shell string.
+        """
+        executable = self.docker_cmd
+        if os.path.sep in executable or executable.startswith("."):
+            if not os.path.isfile(executable) or not os.access(executable, os.X_OK):
+                return False
+        elif shutil.which(executable) is None:
             return False
         try:
-            res = os.system(f"{self.docker_cmd} info >/dev/null 2>&1")
-            return res == 0
+            completed = subprocess.run(
+                [executable, "info"],
+                shell=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=8,
+                check=False,
+            )
+            return completed.returncode == 0
+        except (OSError, subprocess.TimeoutExpired):
+            return False
         except Exception:
             return False
 
@@ -165,7 +182,9 @@ class DockerContainerBackend(IsolationBackend):
 
         limits = request.profile.resources
         execution_id = uuid.uuid4().hex[:12]
-        container_prefix = f"wp_iso_{request.organization_id}_{request.action_id}"[:63].rstrip("_-.")
+        container_prefix = f"wp_iso_{request.organization_id}_{request.action_id}"[:63].rstrip(
+            "_-."
+        )
         container_name = f"{container_prefix}_{execution_id}"
         start_time = time.monotonic()
 
@@ -303,7 +322,6 @@ if __name__ == "__main__":
                         proc.kill()
                     except Exception:
                         pass
-
 
             max_out = limits.max_output_bytes
             stdout_str = stdout_data[:max_out].decode("utf-8", errors="replace")

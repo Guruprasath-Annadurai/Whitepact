@@ -19,6 +19,7 @@ import hmac
 import json
 import os
 import sqlite3
+import stat
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -106,7 +107,9 @@ def compute_lifecycle_digest(
 ) -> str:
     payload = f"{tenant_id}:{generation_id}:{state}:{effective_at}:{security_epoch}:{revocation_floor}:{erasure_request_ref}"
     if secret_key:
-        return hmac.new(secret_key.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+        return hmac.new(
+            secret_key.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256
+        ).hexdigest()
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -186,17 +189,62 @@ class CurrentLifecycleStateProvider(ABC):
         """Set authoritative shared readiness state."""
 
 
+_FORBIDDEN_STORE_B_FILENAMES = frozenset(
+    {
+        "whitepact_store_b_lifecycle.db",
+    }
+)
+
+
+def resolve_store_b_path(db_path: str | Path | None = None) -> Path:
+    """Resolve Store B path. Never silently fall back to a shared /tmp file."""
+    raw: str | Path | None = db_path
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        env = os.environ.get("WHITEPACT_STORE_B_PATH") or os.environ.get(
+            "WHITEPACT_LIFECYCLE_STORE_PATH"
+        )
+        raw = env.strip() if env else None
+    if raw is None or (isinstance(raw, str) and not str(raw).strip()):
+        raise MissingLifecycleProviderError(
+            "Durable Store-B path is required. Set WHITEPACT_STORE_B_PATH to an "
+            "operator-owned location. There is no shared /tmp fallback."
+        )
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        path = path.resolve()
+    if path.name in _FORBIDDEN_STORE_B_FILENAMES:
+        raise MissingLifecycleProviderError(
+            "Refusing the well-known shared Store-B filename. Choose an "
+            "unpredictable operator-owned path."
+        )
+    return path
+
+
+def _secure_create_store_b_file(path: Path) -> None:
+    """Create the SQLite file without following symlinks; mode 0600."""
+    if path.exists() and path.is_symlink():
+        raise MissingLifecycleProviderError("Store B path must not be a symlink")
+    parent = path.parent
+    parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    flags = os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW
+    try:
+        fd = os.open(path, flags, 0o600)
+    except OSError as exc:
+        raise MissingLifecycleProviderError(f"Cannot open Store B path: {exc}") from exc
+    try:
+        os.fchmod(fd, 0o600)
+        st = os.fstat(fd)
+        if stat.S_ISLNK(st.st_mode):
+            raise MissingLifecycleProviderError("Store B path must not be a symlink")
+    finally:
+        os.close(fd)
+
+
 class SqliteDurableLifecycleStateProvider(CurrentLifecycleStateProvider):
     """Production-grade durable lifecycle state provider backed by an independent database outside Store A."""
 
     def __init__(self, db_path: str | Path | None = None, secret_key: str = "") -> None:
-        if db_path is None:
-            db_path = (
-                os.environ.get("WHITEPACT_STORE_B_PATH")
-                or os.environ.get("WHITEPACT_LIFECYCLE_STORE_PATH")
-                or "/tmp/whitepact_store_b_lifecycle.db"
-            )
-        self._path = Path(db_path)
+        self._path = resolve_store_b_path(db_path)
         self._secret_key = secret_key or os.environ.get("WHITEPACT_STORE_B_KEY", "")
         self._available: bool = True
         self._corrupted: bool = False
@@ -215,7 +263,7 @@ class SqliteDurableLifecycleStateProvider(CurrentLifecycleStateProvider):
         return conn
 
     def _init_db(self) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
+        _secure_create_store_b_file(self._path)
         conn = self._get_connection()
         try:
             with conn:
@@ -354,7 +402,10 @@ class SqliteDurableLifecycleStateProvider(CurrentLifecycleStateProvider):
 
     def is_deletion_in_progress(self, tenant_id: str) -> bool:
         rec = self.get_state(tenant_id)
-        return rec is not None and rec.state in (LifecycleState.DELETION_IN_PROGRESS, LifecycleState.TOMBSTONED)
+        return rec is not None and rec.state in (
+            LifecycleState.DELETION_IN_PROGRESS,
+            LifecycleState.TOMBSTONED,
+        )
 
     def list_tombstones(self) -> list[LifecycleStateRecord]:
         if not self._available:
@@ -424,7 +475,9 @@ class SqliteDurableLifecycleStateProvider(CurrentLifecycleStateProvider):
             raise StoreBUnavailableError("CurrentLifecycleStateProvider is unavailable")
         conn = self._get_connection()
         try:
-            cursor = conn.execute("SELECT state FROM durable_restore_readiness WHERE key = 'global'")
+            cursor = conn.execute(
+                "SELECT state FROM durable_restore_readiness WHERE key = 'global'"
+            )
             row = cursor.fetchone()
             if not row:
                 return None
@@ -526,12 +579,19 @@ class InMemoryLifecycleStateProvider(CurrentLifecycleStateProvider):
 
     def is_deletion_in_progress(self, tenant_id: str) -> bool:
         rec = self.get_state(tenant_id)
-        return rec is not None and rec.state in (LifecycleState.DELETION_IN_PROGRESS, LifecycleState.TOMBSTONED)
+        return rec is not None and rec.state in (
+            LifecycleState.DELETION_IN_PROGRESS,
+            LifecycleState.TOMBSTONED,
+        )
 
     def list_tombstones(self) -> list[LifecycleStateRecord]:
         if not self._available:
             raise StoreBUnavailableError("CurrentLifecycleStateProvider is unavailable")
-        return [r for r in self._records.values() if r.state in (LifecycleState.DELETION_IN_PROGRESS, LifecycleState.TOMBSTONED)]
+        return [
+            r
+            for r in self._records.values()
+            if r.state in (LifecycleState.DELETION_IN_PROGRESS, LifecycleState.TOMBSTONED)
+        ]
 
     def verify_integrity(self) -> bool:
         if not self._available or self._corrupted:
@@ -629,7 +689,9 @@ def get_restore_readiness_gate() -> RestoreReadinessGate:
             else RestoreReadinessState.READY
         )
         provider = None
-        store_b_path = os.environ.get("WHITEPACT_STORE_B_PATH") or os.environ.get("WHITEPACT_LIFECYCLE_STORE_PATH")
+        store_b_path = os.environ.get("WHITEPACT_STORE_B_PATH") or os.environ.get(
+            "WHITEPACT_LIFECYCLE_STORE_PATH"
+        )
         if store_b_path:
             try:
                 provider = DurableLifecycleStateProvider(store_b_path)
@@ -729,9 +791,8 @@ class RestoreReconciliationEngine:
 
         if must_require_durable:
             if lifecycle_provider is None:
-                store_b_path = (
-                    os.environ.get("WHITEPACT_STORE_B_PATH")
-                    or os.environ.get("WHITEPACT_LIFECYCLE_STORE_PATH")
+                store_b_path = os.environ.get("WHITEPACT_STORE_B_PATH") or os.environ.get(
+                    "WHITEPACT_LIFECYCLE_STORE_PATH"
                 )
                 if store_b_path:
                     try:
@@ -756,9 +817,8 @@ class RestoreReconciliationEngine:
                 )
 
         if lifecycle_provider is None:
-            store_b_path = (
-                os.environ.get("WHITEPACT_STORE_B_PATH")
-                or os.environ.get("WHITEPACT_LIFECYCLE_STORE_PATH")
+            store_b_path = os.environ.get("WHITEPACT_STORE_B_PATH") or os.environ.get(
+                "WHITEPACT_LIFECYCLE_STORE_PATH"
             )
             if store_b_path:
                 lifecycle_provider = DurableLifecycleStateProvider(store_b_path)
@@ -833,13 +893,23 @@ class RestoreReconciliationEngine:
                         quarantined_orgs.append(org.id)
 
                         # Purge restored sessions
-                        r_s = await conn.execute(delete(web_sessions).where(web_sessions.c.org_id == org.id))
-                        r_is = await conn.execute(delete(iam_sessions).where(iam_sessions.c.org_id == org.id))
+                        r_s = await conn.execute(
+                            delete(web_sessions).where(web_sessions.c.org_id == org.id)
+                        )
+                        r_is = await conn.execute(
+                            delete(iam_sessions).where(iam_sessions.c.org_id == org.id)
+                        )
                         revoked_sessions += (r_s.rowcount or 0) + (r_is.rowcount or 0)
 
                         # Purge restored API keys
-                        r_k = await conn.execute(delete(org_api_keys).where(org_api_keys.c.org_id == org.id))
-                        r_ik = await conn.execute(delete(iam_api_key_lineage).where(iam_api_key_lineage.c.org_id == org.id))
+                        r_k = await conn.execute(
+                            delete(org_api_keys).where(org_api_keys.c.org_id == org.id)
+                        )
+                        r_ik = await conn.execute(
+                            delete(iam_api_key_lineage).where(
+                                iam_api_key_lineage.c.org_id == org.id
+                            )
+                        )
                         revoked_keys += (r_k.rowcount or 0) + (r_ik.rowcount or 0)
 
                         # Cascade erase of all restored tenant operational/eval data
@@ -857,7 +927,7 @@ class RestoreReconciliationEngine:
                         ]:
                             c_attr = getattr(tbl.c, col)
                             r_del = await conn.execute(delete(tbl).where(c_attr == org.id))
-                            erased_records += (r_del.rowcount or 0)
+                            erased_records += r_del.rowcount or 0
 
                     # Ensure Store A tenant_tombstones contains all Store B tombstones
                     existing_a_ids = {t.org_id for t in tombstones_a}
