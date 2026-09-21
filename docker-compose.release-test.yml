@@ -1,0 +1,24 @@
+# Disposable PostgreSQL for release-validation preparation only.
+# Never point at production. Credentials are test-only defaults.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: whitepact-release-test-pg
+    restart: unless-stopped
+    ports:
+      - "55432:5432"
+    environment:
+      POSTGRES_USER: wp
+      POSTGRES_PASSWORD: wp
+      POSTGRES_DB: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wp -d postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - whitepact-release-test-pg-data:/var/lib/postgresql/data
+
+volumes:
+  whitepact-release-test-pg-data:
+    driver: local
