@@ -126,9 +126,7 @@ class SovereignCapabilities(BaseModel):
                 CapabilityAvailability.EXPERIMENTAL,
             ):
                 return
-            raise SovereignCapabilityError(
-                f"Feature {feature.value} is {desc.availability.value}"
-            )
+            raise SovereignCapabilityError(f"Feature {feature.value} is {desc.availability.value}")
         raise SovereignCapabilityError(f"Feature {feature.value} is unknown")
 
 
@@ -136,8 +134,7 @@ class SovereignStatus(BaseModel):
     sovereign_version: str
     protocol_version: str
     doctrine: str = (
-        "WhitePact Sovereign exposes WhitePact's power; "
-        "it never becomes WhitePact's authority."
+        "WhitePact Sovereign exposes WhitePact's power; it never becomes WhitePact's authority."
     )
     capabilities: SovereignCapabilities
     metadata: dict[str, Any] = Field(default_factory=dict)

@@ -107,11 +107,7 @@ def apply_graph_budget(
     node_count: int,
     edge_count: int,
 ) -> AuthorityGraph:
-    if (
-        depth > budget.max_depth
-        or node_count > budget.max_nodes
-        or edge_count > budget.max_edges
-    ):
+    if depth > budget.max_depth or node_count > budget.max_nodes or edge_count > budget.max_edges:
         raise SovereignGraphBudgetError(
             "Authority graph query exceeded budget "
             f"(depth={depth}, nodes={node_count}, edges={edge_count})"

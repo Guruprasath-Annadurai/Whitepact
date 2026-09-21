@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import contextvars
 import functools
+import inspect
 from collections.abc import Callable
 from typing import Any, TypeVar
 
@@ -39,6 +40,19 @@ def reset_consequential_invocation_count() -> None:
 
 
 def zero_effect_operation(fn: F) -> F:
+    if inspect.iscoroutinefunction(fn):
+
+        @functools.wraps(fn)
+        async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+            token = _ZERO_EFFECT.set(True)
+            reset_consequential_invocation_count()
+            try:
+                return await fn(*args, **kwargs)
+            finally:
+                _ZERO_EFFECT.reset(token)
+
+        return async_wrapper  # type: ignore[return-value]
+
     @functools.wraps(fn)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
         token = _ZERO_EFFECT.set(True)
