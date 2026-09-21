@@ -1,0 +1,23 @@
+schema_version: "1.0"
+organization_id: example-org
+environment: development
+actors:
+  - actor_id: agent-support-1
+    kind: agent
+    display_name: Support Agent
+capabilities:
+  - capability_id: crm.read_customer
+    requires_approval: false
+  - capability_id: email.send_external
+    requires_approval: true
+delegations:
+  - from_actor_id: human-admin
+    to_actor_id: agent-support-1
+    capability_ids:
+      - crm.read_customer
+policies:
+  - policy_id: default-governance
+    version: "1"
+tools:
+  - rai_scan
+mcp_servers: []
