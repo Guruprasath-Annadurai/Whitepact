@@ -4,11 +4,12 @@
 
 from __future__ import annotations
 
+from enum import StrEnum
+
 from responsibleai.sovereign.context import SovereignContext
 from responsibleai.sovereign.protocol import SovereignCapabilities, SovereignStatus
 from responsibleai.sovereign.service import SovereignService
 from responsibleai.sovereign.sources import SovereignCanonicalStore
-from enum import StrEnum
 
 
 class RetryClass(StrEnum):
@@ -84,3 +85,53 @@ class SovereignClient:
 
     async def correlate(self, ctx: SovereignContext, evidence_id: str):
         return await self._service.correlate_evidence_async(ctx, evidence_id)
+
+    async def compare(self, ctx: SovereignContext, manifest):
+        return await self._service.compare_manifest_async(ctx, manifest)
+
+    async def drift(self, ctx: SovereignContext, manifest):
+        return await self._service.detect_drift_async(ctx, manifest)
+
+    async def shadow(
+        self,
+        ctx: SovereignContext,
+        *,
+        agent_id: str,
+        action_type: str,
+        target: str = "shadow:target",
+    ):
+        return self._service.evaluate_shadow(
+            ctx, agent_id=agent_id, action_type=action_type, target=target
+        )
+
+    def lint_policy(self, rules):
+        return self._service.lint_policy_rules(rules)
+
+    async def policy_test(self, ctx: SovereignContext, cases):
+        return await self._service.run_policy_tests_async(ctx, cases)
+
+    async def policy_diff(self, ctx: SovereignContext, rules):
+        return await self._service.diff_policy_async(ctx, rules)
+
+    async def policy_simulate(self, ctx: SovereignContext, *, rules, action_types: list[str]):
+        return await self._service.simulate_policy_async(
+            ctx, candidate_rules=rules, action_types=action_types
+        )
+
+    async def flight_recorder(self, ctx: SovereignContext, evidence_id: str):
+        return await self._service.flight_recorder_async(ctx, evidence_id)
+
+    async def time_machine(self, ctx: SovereignContext, then_snapshot=None):
+        return await self._service.time_machine_async(ctx, then_snapshot=then_snapshot)
+
+    def create_capsule(self, ctx: SovereignContext, **kwargs):
+        return self._service.create_capsule(ctx, **kwargs)
+
+    def validate_capsule(self, capsule):
+        return self._service.validate_capsule(capsule)
+
+    def reproduce_capsule(self, capsule):
+        return self._service.reproduce_capsule(capsule)
+
+    async def authority_bom(self, ctx: SovereignContext):
+        return await self._service.authority_bom_async(ctx)

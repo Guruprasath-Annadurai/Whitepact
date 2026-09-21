@@ -4,29 +4,17 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
-import sys
 from pathlib import Path
 
 import click
 
-from responsibleai.db import create_engine
-from responsibleai.sovereign.context import SovereignContext
-from responsibleai.sovereign.manifest import load_manifest
+from responsibleai.sovereign import cli_core
 from responsibleai.sovereign.service import SovereignService
-from responsibleai.sovereign.sources import SovereignCanonicalStore
 
 
 def _emit(data: object, human: str | None, json_mode: bool) -> None:
-    if json_mode:
-        click.echo(json.dumps(data, default=str))
-    elif human:
-        click.echo(human)
-
-
-def _ctx_from_flags(org: str, env: str | None) -> SovereignContext:
-    return SovereignContext(organization_id=org, environment=env or "development")
+    cli_core.emit(data, human, json_mode)
 
 
 @click.group()
@@ -37,13 +25,7 @@ def sovereign() -> None:
 @sovereign.command("status")
 @click.option("--json", "json_mode", is_flag=True)
 def status_cmd(json_mode: bool) -> None:
-    svc = SovereignService()
-    st = svc.get_status()
-    _emit(
-        st.model_dump(),
-        f"Sovereign {st.sovereign_version} protocol {st.protocol_version}",
-        json_mode,
-    )
+    cli_core.run_async(cli_core.cmd_status(json_mode))
 
 
 @sovereign.command("version")
@@ -63,17 +45,7 @@ def simulate_group() -> None:
 @click.option("--extra-cap", multiple=True)
 @click.option("--json", "json_mode", is_flag=True)
 def blast_radius(org: str, actor: str, extra_cap: tuple[str, ...], json_mode: bool) -> None:
-    async def _run() -> None:
-        engine = create_engine(":memory:")
-        await engine.init()
-        svc = SovereignService(store=SovereignCanonicalStore.from_engine(engine))
-        ctx = _ctx_from_flags(org, None)
-        result = await svc.simulate_blast_radius_async(
-            ctx, actor_identity_id=actor, hypothetical_extra_capabilities=frozenset(extra_cap)
-        )
-        _emit(result.model_dump(), None, json_mode)
-
-    asyncio.run(_run())
+    cli_core.run_async(cli_core.cmd_blast_radius(org, actor, extra_cap, json_mode))
 
 
 @sovereign.group("manifest")
@@ -95,29 +67,7 @@ def manifest_validate(path: Path, json_mode: bool) -> None:
 @click.option("--manifest", type=click.Path(path_type=Path))
 @click.option("--json", "json_mode", is_flag=True)
 def doctor(org: str | None, manifest: Path | None, json_mode: bool) -> None:
-    checks: list[dict[str, str]] = []
-    svc = SovereignService()
-    checks.append({"name": "protocol", "result": "PASS"})
-    caps = svc.get_capabilities()
-    unavailable = [f.name.value for f in caps.features if f.availability.value == "UNAVAILABLE"]
-    checks.append(
-        {
-            "name": "capabilities",
-            "result": "WARN" if unavailable else "PASS",
-            "detail": ",".join(unavailable) if unavailable else "",
-        }
-    )
-    if manifest:
-        try:
-            load_manifest(manifest)
-            checks.append({"name": "manifest", "result": "PASS"})
-        except Exception as exc:  # noqa: BLE001
-            checks.append({"name": "manifest", "result": "FAIL", "detail": str(exc)})
-    if not org:
-        checks.append({"name": "context", "result": "WARN", "detail": "no --org"})
-    _emit({"checks": checks}, None, json_mode)
-    if any(c["result"] == "FAIL" for c in checks):
-        sys.exit(2)
+    cli_core.run_async(cli_core.cmd_doctor(org, manifest, json_mode))
 
 
 @sovereign.command("ci")
@@ -125,28 +75,7 @@ def doctor(org: str | None, manifest: Path | None, json_mode: bool) -> None:
 @click.option("--org", required=True)
 @click.option("--json", "json_mode", is_flag=True)
 def ci(manifest: Path, org: str, json_mode: bool) -> None:
-    async def _run() -> None:
-        engine = create_engine(":memory:")
-        await engine.init()
-        svc = SovereignService(store=SovereignCanonicalStore.from_engine(engine))
-        m = load_manifest(manifest)
-        ctx = _ctx_from_flags(org, None)
-        drift = await svc.detect_drift_async(ctx, m)
-        report = {
-            "manifest_valid": True,
-            "drift_facts": len(drift.facts),
-            "production_opened": False,
-        }
-        _emit(report, None, json_mode)
-        sys.exit(0 if report["drift_facts"] == 0 else 3)
-
-    asyncio.run(_run())
-
-
-async def _service() -> SovereignService:
-    engine = create_engine(":memory:")
-    await engine.init()
-    return SovereignService(store=SovereignCanonicalStore.from_engine(engine))
+    cli_core.run_async(cli_core.cmd_ci(manifest, org, json_mode))
 
 
 @sovereign.command("gauntlet")
@@ -154,51 +83,30 @@ async def _service() -> SovereignService:
 @click.option("--probe", multiple=True)
 @click.option("--json", "json_mode", is_flag=True)
 def gauntlet_cmd(org: str, probe: tuple[str, ...], json_mode: bool) -> None:
-    async def _run() -> None:
-        svc = await _service()
-        ctx = _ctx_from_flags(org, None)
-        report = await svc.run_gauntlet_async(ctx, probe_ids=list(probe) or None)
-        _emit(report.model_dump(), None, json_mode)
-
-    asyncio.run(_run())
+    cli_core.run_async(cli_core.cmd_gauntlet(org, list(probe), json_mode))
 
 
 @sovereign.command("shadow")
 @click.option("--org", required=True)
 @click.option("--agent", required=True)
 @click.option("--action", required=True)
+@click.option("--persist", is_flag=True)
 @click.option("--json", "json_mode", is_flag=True)
-def shadow_cmd(org: str, agent: str, action: str, json_mode: bool) -> None:
-    svc = SovereignService()
-    obs = svc.evaluate_shadow(
-        _ctx_from_flags(org, None),
-        agent_id=agent,
-        action_type=action,
-        granted_action_types=frozenset({action}),
-    )
-    _emit(obs.model_dump(), None, json_mode)
+def shadow_cmd(org: str, agent: str, action: str, persist: bool, json_mode: bool) -> None:
+    cli_core.run_async(cli_core.cmd_shadow(org, agent, action, persist, json_mode))
 
 
 @sovereign.command("xray")
 @click.option("--org", required=True)
 @click.option("--json", "json_mode", is_flag=True)
 def xray_cmd(org: str, json_mode: bool) -> None:
-    async def _run() -> None:
-        svc = await _service()
-        result = await svc.build_xray_async(_ctx_from_flags(org, None))
-        _emit(result.model_dump(), None, json_mode)
-
-    asyncio.run(_run())
+    cli_core.run_async(cli_core.cmd_xray(org, json_mode))
 
 
 @sovereign.command("sandbox")
 @click.option("--json", "json_mode", is_flag=True)
 def sandbox_cmd(json_mode: bool) -> None:
-    _emit(
-        {"labels": ["SANDBOX", "SIMULATED", "NON_PRODUCTION"], "zero_effect": True},
-        "Sovereign sandbox — simulated only",
-        json_mode,
-    )
+    cli_core.run_async(cli_core.cmd_sandbox(json_mode))
 
 
 def register_top_level(main: click.Group) -> None:

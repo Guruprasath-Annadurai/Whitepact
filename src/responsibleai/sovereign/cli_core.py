@@ -13,6 +13,8 @@ from typing import Any
 import click
 
 from responsibleai.db import create_engine
+from responsibleai.governance.policy import PolicyRule
+from responsibleai.sovereign.capsule import SovereignCapsule, create_capsule
 from responsibleai.sovereign.context import SovereignContext
 from responsibleai.sovereign.exit_codes import (
     EXIT_GOVERNANCE,
@@ -23,6 +25,7 @@ from responsibleai.sovereign.exit_codes import (
     EXIT_UNKNOWN,
 )
 from responsibleai.sovereign.manifest import load_manifest
+from responsibleai.sovereign.policy_lab import PolicyTestCase
 from responsibleai.sovereign.redaction import redact_for_debugger
 from responsibleai.sovereign.service import SovereignService
 from responsibleai.sovereign.sources import SovereignCanonicalStore
@@ -78,7 +81,9 @@ async def cmd_trace(org: str, evidence_id: str, json_mode: bool) -> int:
     return EXIT_OK
 
 
-async def cmd_explain(org: str, evidence_id: str | None, identity_id: str | None, json_mode: bool) -> int:
+async def cmd_explain(
+    org: str, evidence_id: str | None, identity_id: str | None, json_mode: bool
+) -> int:
     svc = await service()
     ctx = ctx_from(org)
     if evidence_id:
@@ -99,6 +104,222 @@ async def cmd_gauntlet(org: str, probes: list[str], json_mode: bool) -> int:
     emit(payload, None, json_mode)
     if any(c.get("status") == "FAIL" for c in payload.get("cases", [])):
         return EXIT_GOVERNANCE
+    return EXIT_OK
+
+
+async def cmd_doctor(org: str | None, manifest: Path | None, json_mode: bool) -> int:
+    checks: list[dict[str, str]] = []
+    svc = SovereignService()
+    checks.append({"name": "protocol", "result": "PASS"})
+    caps = svc.get_capabilities()
+    unavailable = [f.name.value for f in caps.features if f.availability.value == "UNAVAILABLE"]
+    checks.append(
+        {
+            "name": "capabilities",
+            "result": "WARN" if unavailable else "PASS",
+            "detail": ",".join(unavailable) if unavailable else "",
+        }
+    )
+    if manifest:
+        try:
+            load_manifest(manifest)
+            checks.append({"name": "manifest", "result": "PASS"})
+        except Exception as exc:  # noqa: BLE001
+            checks.append({"name": "manifest", "result": "FAIL", "detail": str(exc)})
+    if not org:
+        checks.append({"name": "context", "result": "WARN", "detail": "no --org"})
+    emit({"checks": checks}, None, json_mode)
+    if any(c["result"] == "FAIL" for c in checks):
+        return EXIT_INVALID
+    return EXIT_OK
+
+
+async def cmd_blast_radius(
+    org: str, actor: str, extra_cap: tuple[str, ...], json_mode: bool
+) -> int:
+    svc = await service()
+    result = await svc.simulate_blast_radius_async(
+        ctx_from(org),
+        actor_identity_id=actor,
+        hypothetical_extra_capabilities=frozenset(extra_cap),
+    )
+    emit(redact_for_debugger(result.model_dump()), None, json_mode)
+    return EXIT_OK
+
+
+async def cmd_mission(org: str, agent: str, steps: list[str], json_mode: bool) -> int:
+    svc = await service()
+    report = await svc.simulate_mission_async(ctx_from(org), agent_id=agent, steps=steps)
+    payload = report.model_dump()
+    emit(redact_for_debugger(payload), None, json_mode)
+    for step in payload.get("steps", []):
+        code = disposition_exit(step)
+        if code != EXIT_OK:
+            return code
+    return EXIT_OK
+
+
+async def cmd_shadow(org: str, agent: str, action: str, persist: bool, json_mode: bool) -> int:
+    svc = await service()
+    ctx = ctx_from(org)
+    if persist:
+        obs = await svc.evaluate_shadow_persisted_async(
+            ctx, agent_id=agent, action_type=action, target="shadow:target"
+        )
+        payload = obs.model_dump()
+    else:
+        payload = svc.evaluate_shadow(
+            ctx,
+            agent_id=agent,
+            action_type=action,
+            granted_action_types=frozenset({action}),
+        ).model_dump()
+    emit(redact_for_debugger(payload), None, json_mode)
+    return disposition_exit(payload)
+
+
+async def cmd_authority_compare(org: str, manifest: Path, json_mode: bool) -> int:
+    svc = await service()
+    m = load_manifest(manifest)
+    result = await svc.compare_manifest_async(ctx_from(org), m)
+    emit(result.model_dump(), None, json_mode)
+    return EXIT_OK if not result.diffs else EXIT_GOVERNANCE
+
+
+async def cmd_authority_drift(org: str, manifest: Path, json_mode: bool) -> int:
+    svc = await service()
+    m = load_manifest(manifest)
+    report = await svc.detect_drift_async(ctx_from(org), m)
+    emit(report.model_dump(), None, json_mode)
+    return EXIT_OK if not report.facts else EXIT_GOVERNANCE
+
+
+async def cmd_authority_diff(org: str, manifest: Path, json_mode: bool) -> int:
+    """Human-facing diff alias — drift facts vs manifest."""
+    return await cmd_authority_drift(org, manifest, json_mode)
+
+
+def _load_rules(path: Path | None, inline: str | None) -> list[PolicyRule]:
+    if path:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        items = raw if isinstance(raw, list) else raw.get("rules", [])
+    elif inline:
+        items = json.loads(inline)
+        if not isinstance(items, list):
+            items = items.get("rules", [])
+    else:
+        raise click.ClickException("--rules-file or --rules-json required")
+    rules: list[PolicyRule] = []
+    for r in items:
+        try:
+            rules.append(PolicyRule(**r))
+        except (TypeError, ValueError) as exc:
+            raise click.ClickException(f"invalid policy rule: {exc}") from exc
+    return rules
+
+
+async def cmd_policy_lint(
+    org: str, rules_file: Path | None, rules_json: str | None, json_mode: bool
+) -> int:
+    svc = await service()
+    rules = _load_rules(rules_file, rules_json)
+    errors = svc.lint_policy_rules(rules)
+    emit({"errors": errors, "organization_id": org}, None, json_mode)
+    return EXIT_OK if not errors else EXIT_INVALID
+
+
+async def cmd_policy_validate(
+    org: str, rules_file: Path | None, rules_json: str | None, json_mode: bool
+) -> int:
+    return await cmd_policy_lint(org, rules_file, rules_json, json_mode)
+
+
+async def cmd_policy_test(
+    org: str, cases_file: Path | None, cases_json: str | None, json_mode: bool
+) -> int:
+    svc = await service()
+    if cases_file:
+        raw = json.loads(cases_file.read_text(encoding="utf-8"))
+    elif cases_json:
+        raw = json.loads(cases_json)
+    else:
+        emit({"error": "cases required"}, None, json_mode)
+        return EXIT_INVALID
+    cases = [PolicyTestCase(**c) for c in raw]
+    report = await svc.run_policy_tests_async(ctx_from(org), cases)
+    payload = report.model_dump()
+    emit(payload, None, json_mode)
+    if any(r.get("passed") is False for r in payload.get("results", [])):
+        return EXIT_GOVERNANCE
+    return EXIT_OK
+
+
+async def cmd_policy_diff(
+    org: str, rules_file: Path | None, rules_json: str | None, json_mode: bool
+) -> int:
+    svc = await service()
+    rules = _load_rules(rules_file, rules_json)
+    report = await svc.diff_policy_async(ctx_from(org), rules)
+    emit(report.model_dump(), None, json_mode)
+    return EXIT_OK
+
+
+async def cmd_policy_simulate(
+    org: str,
+    rules_file: Path | None,
+    rules_json: str | None,
+    action_types: list[str],
+    json_mode: bool,
+) -> int:
+    svc = await service()
+    rules = _load_rules(rules_file, rules_json)
+    report = await svc.simulate_policy_async(
+        ctx_from(org), candidate_rules=rules, action_types=action_types
+    )
+    emit(report.model_dump(), None, json_mode)
+    return EXIT_OK
+
+
+async def cmd_capsule_create(org: str, json_mode: bool) -> int:
+    cap = create_capsule(ctx_from(org))
+    emit(redact_for_debugger(cap.model_dump()), None, json_mode)
+    return EXIT_OK
+
+
+async def cmd_capsule_inspect(capsule_file: Path, json_mode: bool) -> int:
+    data = json.loads(capsule_file.read_text(encoding="utf-8"))
+    cap = SovereignCapsule.model_validate(data)
+    emit(redact_for_debugger(cap.model_dump()), None, json_mode)
+    return EXIT_OK
+
+
+async def cmd_capsule_validate(capsule_file: Path | None, org: str | None, json_mode: bool) -> int:
+    svc = await service()
+    if capsule_file:
+        cap = SovereignCapsule.model_validate(json.loads(capsule_file.read_text(encoding="utf-8")))
+    elif org:
+        cap = create_capsule(ctx_from(org))
+    else:
+        emit({"error": "--capsule or --org required"}, None, json_mode)
+        return EXIT_INVALID
+    valid = svc.validate_capsule(cap)
+    emit({"valid": valid, "capsule_id": cap.capsule_id}, None, json_mode)
+    return EXIT_OK if valid else EXIT_GOVERNANCE
+
+
+async def cmd_capsule_reproduce(capsule_file: Path, json_mode: bool) -> int:
+    svc = await service()
+    cap = SovereignCapsule.model_validate(json.loads(capsule_file.read_text(encoding="utf-8")))
+    emit(svc.reproduce_capsule(cap), None, json_mode)
+    return EXIT_OK
+
+
+async def cmd_sandbox(json_mode: bool) -> int:
+    emit(
+        {"labels": ["SANDBOX", "SIMULATED", "NON_PRODUCTION"], "zero_effect": True},
+        "Sovereign sandbox — simulated only",
+        json_mode,
+    )
     return EXIT_OK
 
 
@@ -128,8 +349,9 @@ def run_async(coro) -> None:
     try:
         code = asyncio.run(coro)
         sys.exit(code)
-    except click.ClickException:
-        raise
+    except click.ClickException as exc:
+        emit({"error": str(exc), "disposition": "INVALID_INPUT"}, str(exc), False)
+        sys.exit(EXIT_INVALID)
     except Exception as exc:  # noqa: BLE001
         emit({"error": str(exc), "disposition": "INTERNAL_ERROR"}, str(exc), False)
         sys.exit(EXIT_INTERNAL)

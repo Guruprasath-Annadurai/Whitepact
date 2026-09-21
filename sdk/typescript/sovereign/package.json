@@ -8,7 +8,6 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && npx tsc -p tsconfig.test.json && node --test dist/client.test.js"
   },
   "devDependencies": {
