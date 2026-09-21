@@ -5,7 +5,9 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
+from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import Any
 
@@ -1129,6 +1131,37 @@ TOOL_DEFS: list[types.Tool] = [
     ),
 ]
 
+TEST_TOOL_NAME = "test.counter.increment"
+PRODUCTION_TOOL_DEFS: list[types.Tool] = [t for t in TOOL_DEFS if t.name != TEST_TOOL_NAME]
+
+_mcp_dispatch_hosted: ContextVar[bool] = ContextVar("_mcp_dispatch_hosted", default=False)
+
+
+def set_mcp_dispatch_hosted(hosted: bool) -> None:
+    _mcp_dispatch_hosted.set(hosted)
+
+
+def test_tools_enabled() -> bool:
+    """Server-controlled gate — never honor client-supplied flags."""
+    return os.environ.get("RAI_MCP_ALLOW_TEST_TOOLS", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
+def advertised_tool_defs(*, hosted: bool) -> list[types.Tool]:
+    if hosted:
+        return list(PRODUCTION_TOOL_DEFS)
+    if test_tools_enabled():
+        return list(TOOL_DEFS)
+    return list(PRODUCTION_TOOL_DEFS)
+
+
+def production_tool_count() -> int:
+    return len(PRODUCTION_TOOL_DEFS)
+
+
 # WhitePact's hosted transport requires an explicit, human-readable purpose for
 # canonical authority resolution. It is an optional schema extension because
 # local community stdio remains intentionally ungovened; the hosted dispatcher
@@ -1390,7 +1423,7 @@ async def _handle_audit_summary(args: dict[str, Any]) -> dict[str, Any]:
         "days_requested": days,
         "governance_engine": {
             "version": __version__,
-            "tools_available": len(TOOL_DEFS),
+            "tools_available": production_tool_count(),
             "frameworks": ["NIST_AI_RMF", "EU_AI_ACT", "ISO_42001"],
             "attack_vectors": len(payloads),
             "attack_categories": list({p["category"] for p in payloads}),
@@ -2448,7 +2481,7 @@ async def _handle_org_status(args: dict[str, Any]) -> dict[str, Any]:
             else "EXCEEDED",
         },
         "mcp_capabilities": {
-            "tools_available": len(TOOL_DEFS),
+            "tools_available": production_tool_count(),
             "version": __version__,
         },
         **await _real_org_status_fields(org_name),
@@ -2588,6 +2621,14 @@ _TOOL_HANDLERS: dict[str, Any] = {
 
 
 async def dispatch_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
+    if name == TEST_TOOL_NAME and (_mcp_dispatch_hosted.get() or not test_tools_enabled()):
+        return {
+            "error": "tool_unavailable",
+            "message": (
+                f"{TEST_TOOL_NAME} is available only when RAI_MCP_ALLOW_TEST_TOOLS is set "
+                "and the request is not on a hosted MCP transport."
+            ),
+        }
     handler = _TOOL_HANDLERS.get(name)
     if not handler:
         return {"error": f"Unknown tool: {name}"}
