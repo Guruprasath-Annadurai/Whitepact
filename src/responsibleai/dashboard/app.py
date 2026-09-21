@@ -345,8 +345,6 @@ _benchmark_runner: BenchmarkRunner | None = None
 _regression_detector: RegressionDetector = RegressionDetector()
 _dataset_scanner: DatasetBiasScanner | None = None
 _oidc_provider: OIDCProvider | None = None
-_oidc_state_store: dict[str, float] = {}  # state → issued_at; cleared on use
-_OIDC_STATE_TTL = 300.0  # seconds — matches callback expiry window
 _saml_config: SAMLConfig | None = None
 _saml_txn_store: DurableSamlAuthnStore | None = None
 _SAML_REQUEST_TTL = 300.0  # seconds — matches OIDC's state window
@@ -369,16 +367,6 @@ def _ready(value: _T | None) -> _T:
     """
     assert value is not None, "accessed before application startup completed"
     return value
-
-
-async def _oidc_state_cleanup() -> None:
-    """Periodic task: evict OIDC states that were never exchanged (abandoned logins)."""
-    while True:
-        await asyncio.sleep(60)
-        now = asyncio.get_event_loop().time()
-        stale = [k for k, t in list(_oidc_state_store.items()) if now - t > _OIDC_STATE_TTL]
-        for k in stale:
-            _oidc_state_store.pop(k, None)
 
 
 @asynccontextmanager
@@ -549,7 +537,6 @@ async def lifespan(application: FastAPI):
     _webhook_manager.set_config_repository(_webhook_config_repo)
     loaded_webhooks = await _webhook_manager.load_configs()
     _webhook_manager.start_retry_worker()
-    _oidc_cleanup_task = asyncio.create_task(_oidc_state_cleanup())
 
     _ws_manager.start()
 
@@ -584,7 +571,6 @@ async def lifespan(application: FastAPI):
 
     yield
 
-    _oidc_cleanup_task.cancel()
     _webhook_manager.stop_retry_worker()
     _ws_manager.stop()
     if _plan_rate_limiter:

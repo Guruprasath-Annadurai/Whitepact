@@ -2,6 +2,8 @@ ae306a0c22d9c22be509b69456e6d77fcb5f63df:tests/test_auth_canonical_seams.py:gene
 ae306a0c22d9c22be509b69456e6d77fcb5f63df:tests/test_auth_canonical_seams.py:generic-api-key:784
 ae306a0c22d9c22be509b69456e6d77fcb5f63df:tests/test_auth_canonical_seams.py:generic-api-key:821
 ae306a0c22d9c22be509b69456e6d77fcb5f63df:tests/test_auth_canonical_seams.py:generic-api-key:960
+# Historical test fixture (paddle webhook placeholder) in Step 4 lint SHA; current tree no longer uses that string.
+b39c99f36a282489159a4352a2d09219497b9e36:tests/test_auth_canonical_seams.py:generic-api-key:83
 06ac6cc1b47eff9a74a1f75b9f07f8aeaa9b484c:tests/test_ops_secret_redaction.py:generic-api-key:44
 22f67d552b77a0b876ce46adc21bc6885269d0aa:tests/test_saml.py:generic-api-key:252
 911bb7011f83839d3ba27bb96aa158c808aa2294:compliance/OPENSSF_SECRET_SCAN.md:generic-api-key:21
@@ -13,3 +15,5 @@ dcac49c01c81df7dc4ff91ccb6ed89635338a458:wiki/Authentication-and-RBAC.md:curl-au
 5f3c0aacfeba1f03238dac5f366bcbbdf1bba2bf:DEPLOYMENT.md:generic-api-key:77
 a7ac0faca984f77eee0c367e71116ad34fa5d366:DEPLOYMENT.md:curl-auth-header:80
 a7ac0faca984f77eee0c367e71116ad34fa5d366:DEPLOYMENT.md:generic-api-key:77
+# Historical plan document: git commit id misclassified as generic-api-key (not a credential).
+b0be15f389eab5df6c650d5ac7e65d8b8fbfcbcc:docs/superpowers/plans/2026-09-17-phase7a-runtime-foundations.md:generic-api-key:17

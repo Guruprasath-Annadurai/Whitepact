@@ -80,8 +80,8 @@ async def web_client(monkeypatch):
     monkeypatch.setattr(app_module.settings, "web_session_secure", False)
     monkeypatch.setattr(app_module.settings, "web_verification_delivery_url", None)
     monkeypatch.setattr(
-        app_module.settings, "paddle_webhook_secret", "test_paddle_secret_key_123"
-    )  # gitleaks:allow
+        app_module.settings, "paddle_webhook_secret", "paddle-test-placeholder"
+    )
     monkeypatch.setattr(app_module.settings, "paddle_signature_tolerance_seconds", 300)
     monkeypatch.setattr(app_module.limiter, "enabled", False)
     async with LifespanManager(app_module.app) as manager:
@@ -641,6 +641,25 @@ class TestDurableOIDCAndAccountTakeover:
 
         # Replay -> None
         assert await repo.consume_oauth_flow_state(state_key, expected_provider="oidc") is None
+
+    async def test_oauth_flow_state_shared_across_repository_instances(self, db_engine):
+        """Two repository objects on one engine share durable OAuth state (replica-safe)."""
+        writer = WebIdentityRepository(db_engine)
+        reader = WebIdentityRepository(db_engine)
+        state_key = secrets.token_urlsafe(32)
+        await writer.create_oauth_flow_state(
+            state=state_key,
+            provider="oidc",
+            nonce="n-shared",
+            redirect_uri="https://app.example.com/callback",
+            pkce_verifier="v-shared",
+            ttl_seconds=300,
+        )
+        first = await reader.consume_oauth_flow_state(state_key, expected_provider="oidc")
+        assert first is not None
+        assert first["nonce"] == "n-shared"
+        assert first["pkce_verifier"] == "v-shared"
+        assert await writer.consume_oauth_flow_state(state_key, expected_provider="oidc") is None
 
     async def test_oauth_flow_state_expiry(self, db_engine):
         repo = WebIdentityRepository(db_engine)
@@ -1256,7 +1275,7 @@ class TestAccountLifecycleAndSoleOwnerProtection:
 
 class TestPaddleWebhookVerificationAndReplay:
     async def test_paddle_webhook_hmac_signature_validation(self, web_client):
-        secret = "test_paddle_secret_key_123"  # gitleaks:allow
+        secret = "paddle-test-placeholder"  # gitleaks:allow
         payload = {
             "event_id": "evt_pad_sig_test",
             "event_type": "subscription.created",
@@ -1309,7 +1328,7 @@ class TestPaddleWebhookVerificationAndReplay:
         assert "future" in res_future.text.lower()
 
     async def test_paddle_webhook_durable_replay_and_conflict_defense(self, web_client):
-        secret = "test_paddle_secret_key_123"  # gitleaks:allow
+        secret = "paddle-test-placeholder"  # gitleaks:allow
 
         _, _, csrf = await _register_and_login(web_client, "Paddle User", "paddle_test@example.com")
         org_id = await _onboard_org(web_client, csrf, "Paddle Org")
@@ -1451,7 +1470,7 @@ class TestPaddleWebhookVerificationAndReplay:
         assert (await orgs.get_org(org.id)).subscription_status == "canceled"
 
     async def test_paddle_missing_occurred_at_rejected(self, web_client):
-        secret = "test_paddle_secret_key_123"  # gitleaks:allow
+        secret = "paddle-test-placeholder"  # gitleaks:allow
         payload = {
             "event_id": "evt_no_occurred",
             "event_type": "subscription.activated",
@@ -1472,7 +1491,7 @@ class TestPaddleWebhookVerificationAndReplay:
         assert "missing occurred_at" in resp.text.lower()
 
     async def test_paddle_customer_subscription_tenant_binding(self, web_client):
-        secret = "test_paddle_secret_key_123"  # gitleaks:allow
+        secret = "paddle-test-placeholder"  # gitleaks:allow
 
         _, _, csrf_a = await _register_and_login(web_client, "User A", "user_a@example.com")
         org_a_id = await _onboard_org(web_client, csrf_a, "Org A")
@@ -1596,7 +1615,7 @@ class TestCommercialEntitlementGovernanceSeparation:
         assert len(keys) == 0
 
     async def test_billing_delinquency_never_bypasses_or_weakens_security(self, web_client):
-        secret = "test_paddle_secret_key_123"  # gitleaks:allow
+        secret = "paddle-test-placeholder"  # gitleaks:allow
         _, _, csrf = await _register_and_login(
             web_client, "Delinquent User", "delinquent@example.com"
         )

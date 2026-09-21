@@ -16,8 +16,8 @@
 ## 1. Global Constraints and Core Architecture Rules
 
 1. **Approved Canonical Baseline:**
-   - The runtime implementation starts strictly from the approved enterprise auth canonical SHA: `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA`).
-   - The design artifact (`dfbeb2e6d9fad575fc45b64789c63b1c1c0b5b01` in `/Users/ag/whitepact-phase7a-runtime-preparation`) and previous plan artifacts are read-only specification inputs.
+   - The runtime implementation starts strictly from the approved enterprise auth canonical git commit `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA`).
+   - The design artifact git commit `dfbeb2e6d9fad575fc45b64789c63b1c1c0b5b01` in `/Users/ag/whitepact-phase7a-runtime-preparation` and previous plan artifacts are read-only specification inputs.
    - Documentation branches must NEVER be merged into runtime to make paths exist.
 
 2. **Migration Sequencing:**
