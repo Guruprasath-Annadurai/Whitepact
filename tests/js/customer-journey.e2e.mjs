@@ -238,6 +238,11 @@ try {
   await adminPage.goto(`${baseUrl}/dashboard/approvals`, { waitUntil: "domcontentloaded" });
   await adminPage.getByRole("button", { name: "Approve" }).click();
   await adminPage.getByRole("button", { name: /confirm approve/i }).click();
+  await adminPage.getByRole("heading", { name: "Execution succeeded" }).waitFor({ timeout: 15000 });
+  await adminPage.getByRole("link", { name: "View evidence" }).click();
+  await adminPage.getByRole("heading", { name: "Evidence details" }).waitFor({ timeout: 15000 });
+  check(await adminPage.getByRole("heading", { name: "Evidence attestation" }).isVisible(), "successful execution links to evidence attestation");
+  check(await adminPage.getByRole("heading", { name: "Evidence chain" }).isVisible(), "evidence chain verification is visible");
   let afterBody = { counter: -1, downstream_call_count: -1 };
   for (let i = 0; i < 20; i += 1) {
     const afterApprove = await context.request.get(`${baseUrl}/api/v1/governance/test-counter`, {
@@ -249,9 +254,28 @@ try {
   }
   check(afterBody.counter === 1 && afterBody.downstream_call_count === 1, `after approve ${JSON.stringify(afterBody)}`);
 
+  const unknownPending = await callTool(true);
+  const unknownPendingBody = await unknownPending.json();
+  check(unknownPendingBody.error === "governance_approval_required", "UNKNOWN mutation requires approval");
+  await page.goto(`${baseUrl}/dashboard/approvals`, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Approve" }).click();
+  await page.getByRole("button", { name: /confirm approve/i }).click();
+  await page.getByRole("heading", { name: /1 of 2 approvals recorded/i }).waitFor({ timeout: 10000 });
+  await adminPage.goto(`${baseUrl}/dashboard/approvals`, { waitUntil: "domcontentloaded" });
+  await adminPage.getByRole("button", { name: "Approve" }).click();
+  await adminPage.getByRole("button", { name: /confirm approve/i }).click();
+  await adminPage.getByRole("heading", { name: "Execution outcome is uncertain" }).waitFor({ timeout: 15000 });
+  check(await adminPage.getByText("Reconciliation required").isVisible(), "UNKNOWN requires reconciliation");
+  check(await adminPage.getByText(/Evidence ID:/).isVisible(), "UNKNOWN exposes evidence identifier");
+  check(await adminPage.getByText(/Outcome ID:/).isVisible(), "UNKNOWN exposes outcome identifier");
+  check(await adminPage.getByRole("heading", { name: "Execution succeeded" }).count() === 0, "UNKNOWN is not shown as success");
+  await adminPage.getByRole("link", { name: "View evidence" }).click();
+  await adminPage.getByRole("heading", { name: "Evidence attestation" }).waitFor({ timeout: 15000 });
+  check(await adminPage.getByText("Reconciliation required").isVisible(), "UNKNOWN evidence attestation shows reconciliation state");
+
   const denyPending = await callTool();
   const denyBody = await denyPending.json();
-  check(denyBody.error === "governance_approval_required", "second mutation requires approval");
+  check(denyBody.error === "governance_approval_required", "denied mutation requires approval");
   await page.goto(`${baseUrl}/dashboard/approvals`, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Deny" }).click();
   await page.getByRole("button", { name: /confirm denied/i }).click();
@@ -260,13 +284,13 @@ try {
     headers: { Authorization: `Bearer ${revealed}` },
   });
   const denyState = await afterDeny.json();
-  check(denyState.counter === 1 && denyState.downstream_call_count === 1, `after deny ${JSON.stringify(denyState)}`);
+  check(denyState.counter === 2 && denyState.downstream_call_count === 2, `after deny ${JSON.stringify(denyState)}`);
 
   await page.goto(`${baseUrl}/dashboard/evidence`, { waitUntil: "domcontentloaded" });
   await page.getByRole("heading", { name: "Evidence", exact: true }).waitFor();
-  const evidenceApi = await context.request.get(`${baseUrl}/api/v1/web/dashboard/evidence`);
+  const evidenceApi = await context.request.get(`${baseUrl}/api/v1/web/evidence?limit=50`);
   const evidenceJson = await evidenceApi.json();
-  check(Array.isArray(evidenceJson.items) && evidenceJson.items.length > 0, "evidence backend has records");
+  check(Array.isArray(evidenceJson.evidence) && evidenceJson.evidence.length > 0, "canonical evidence backend has records");
 
   await page.goto(`${baseUrl}/dashboard/members`, { waitUntil: "domcontentloaded" });
   await page.getByRole("heading", { name: /invite a member/i }).waitFor();
