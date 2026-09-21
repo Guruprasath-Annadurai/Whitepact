@@ -2793,6 +2793,7 @@ async def _whitepact_spa() -> HTMLResponse:
 
 _WHITEPACT_COMMERCE_PATHS = {
     "/pricing": "pricing.html",
+    "/sovereign": "sovereign.html",
     "/terms": "terms.html",
     "/privacy": "privacy.html",
     "/refund-policy": "refund-policy.html",
@@ -2831,6 +2832,7 @@ _WHITEPACT_SPA_PATHS = [
     "/accept-invitation",
     "/onboarding",
     "/dashboard",
+    "/sovereign/workbench",
 ]
 
 for _spa_path in _WHITEPACT_SPA_PATHS:

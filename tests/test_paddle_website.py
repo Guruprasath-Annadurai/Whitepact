@@ -51,3 +51,19 @@ async def test_commerce_sitemap_redirect_and_real_404():
         robots = (await client.get("/robots.txt")).text
         assert "Allow: /" in robots
         assert not any(f"Disallow: {path}" in robots for path in list(PAGES)[1:])
+
+
+async def test_sovereign_public_metadata_and_workbench_shell_are_hosted():
+    from responsibleai.dashboard.app import app
+
+    async with AsyncClient(transport=ASGITransport(app), base_url="http://test") as client:
+        public = await client.get("/sovereign")
+        assert public.status_code == 200
+        assert "<title>WhitePact Sovereign | Authority analysis workbench</title>" in public.text
+        assert 'rel="canonical" href="https://whitepact.com/sovereign"' in public.text
+        assert "See authority before it becomes action." in public.text
+
+        workbench = await client.get("/sovereign/workbench")
+        assert workbench.status_code == 200
+        assert '<div id="root"></div>' in workbench.text
+        assert (await client.head("/sovereign/workbench")).status_code == 200

@@ -82,4 +82,22 @@ describe("public website", () => {
     expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("This boundary");
     expect(screen.getByRole("link", { name: /Return home/i })).toHaveAttribute("href", "/");
   });
+
+  it("publishes a truthful Sovereign product page", async () => {
+    renderAt("/sovereign");
+    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("See authority before it becomes action");
+    expect(screen.getAllByText("Awaiting Sovereign Core contract").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Unavailable in production")).toHaveLength(2);
+    expect(screen.queryByText(/guaranteed|production proven|gauntlet pass/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps the Sovereign Workbench in explicit fixture mode", async () => {
+    const user = userEvent.setup();
+    renderAt("/sovereign/workbench");
+    expect(await screen.findByText("Development fixture — not production authority data")).toBeInTheDocument();
+    expect(screen.getByText("Canonical Sovereign contract: unavailable")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Blast Radius" }));
+    expect(screen.getByRole("heading", { name: "Blast Radius is unavailable in production" })).toBeInTheDocument();
+    expect(screen.getByText(/No result is calculated or fabricated in React/i)).toBeInTheDocument();
+  });
 });

@@ -17,6 +17,8 @@ const DashboardShell = lazy(() => import("./features/dashboard/DashboardShell").
 const OverviewPage = lazy(() => import("./features/dashboard/OverviewPage").then((module) => ({ default: module.OverviewPage })));
 const ApiKeysPage = lazy(() => import("./features/api-keys/ApiKeysPage").then((module) => ({ default: module.ApiKeysPage })));
 const DomainPage = lazy(() => import("./features/dashboard/DomainPage").then((module) => ({ default: module.DomainPage })));
+const SovereignPage = lazy(() => import("./features/sovereign/SovereignPage").then((module) => ({ default: module.SovereignPage })));
+const SovereignWorkbench = lazy(() => import("./features/sovereign/SovereignWorkbench").then((module) => ({ default: module.SovereignWorkbench })));
 
 export default function App() {
   return (
@@ -26,6 +28,8 @@ export default function App() {
       <Route path="/contact" element={<ContactPage />} />
       <Route path="/docs" element={<DocsPage />} />
       <Route path="/trust" element={<TrustCenterPage />} />
+      <Route path="/sovereign" element={<SovereignPage />} />
+      <Route path="/sovereign/workbench" element={<SovereignWorkbench />} />
       <Route path="/terms" element={<LegalPage kind="terms" />} />
       <Route path="/privacy" element={<LegalPage kind="privacy" />} />
       <Route path="/pricing" element={<LegalPage kind="pricing" />} />
