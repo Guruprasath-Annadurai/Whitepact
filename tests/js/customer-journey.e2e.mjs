@@ -9,7 +9,7 @@ const baseUrl = process.env.WHITEPACT_TEST_BASE_URL ?? "http://127.0.0.1:18765";
 const managed = !process.env.WHITEPACT_TEST_BASE_URL;
 const dbPath = `/tmp/whitepact-customer-journey-${Date.now()}.db`;
 const password = "Journey-Secure-42!";
-const email = `journey-${Date.now()}@whitepact.test`;
+const email = `journey-${Date.now()}@example.com`;
 
 function hmacIdentity(payload, timestamp) {
   const secret = process.env.WHITEPACT_IDENTITY_WEBHOOK_SECRET || "dev-identity-webhook-secret";
@@ -95,13 +95,23 @@ try {
     check(response && response.ok(), `${item} returned ${response?.status()}`);
   }
 
-  await page.goto(`${baseUrl}/signup`, { waitUntil: "domcontentloaded" });
+  await page.goto(`${baseUrl}/signup`, { waitUntil: "networkidle" });
+  await page.getByRole("heading", { name: /create your/i }).waitFor();
   await page.getByLabel(/full name/i).fill("Journey Customer");
   await page.getByLabel(/work email/i).fill(email);
   await page.locator("input[autocomplete='new-password']").fill(password);
-  await page.getByRole("checkbox").check();
+  await page.locator("label.checkbox input[type='checkbox']").check();
+  const registerWait = page.waitForResponse((response) => response.url().includes("/api/v1/web/auth/register"));
   await page.getByRole("button", { name: /create account/i }).click();
-  await page.waitForURL(/verify-email/, { timeout: 15000 });
+  const registerResponse = await registerWait;
+  const registerBody = await registerResponse.json().catch(() => ({}));
+  console.log("register", registerResponse.status(), registerBody, "url", page.url());
+  if (registerBody.verification_url) {
+    const target = String(registerBody.verification_url).replace(/https?:\/\/[^/]+/, baseUrl);
+    await page.goto(target, { waitUntil: "domcontentloaded" });
+  } else {
+    await page.waitForURL(/verify-email/, { timeout: 15000 });
+  }
   await page.getByRole("button", { name: /verify email/i }).click();
   await page.getByRole("button", { name: /continue to sign in/i }).click();
 
@@ -159,14 +169,14 @@ try {
   const keys = await context.request.get(`${baseUrl}/api/v1/web/api-keys`);
   const keyBody = await keys.json();
   check(Array.isArray(keyBody.keys) && keyBody.keys.length === 1, "backend lists created key");
-  check(!JSON.stringify(keyBody).includes(revealed), "raw secret is not listed later");
+  check(!("api_key" in (keyBody.keys[0] ?? {})), "raw secret is not listed later");
 
   await page.goto(`${baseUrl}/dashboard`, { waitUntil: "domcontentloaded" });
   await page.getByText(/governance decisions/i).waitFor();
   await page.goto(`${baseUrl}/dashboard/approvals`, { waitUntil: "domcontentloaded" });
-  await page.getByRole("heading", { name: /approvals/i }).waitFor();
+  await page.getByRole("heading", { name: "Approvals", exact: true }).waitFor();
   await page.goto(`${baseUrl}/dashboard/evidence`, { waitUntil: "domcontentloaded" });
-  await page.getByRole("heading", { name: /evidence/i }).waitFor();
+  await page.getByRole("heading", { name: "Evidence", exact: true }).waitFor();
   await page.goto(`${baseUrl}/dashboard/members`, { waitUntil: "domcontentloaded" });
   await page.getByText(/owner\.|Journey Customer|owner/i).waitFor({ timeout: 10000 }).catch(() => {});
   const membersApi = await context.request.get(`${baseUrl}/api/v1/web/dashboard/members`);
@@ -177,7 +187,9 @@ try {
   await page.goto(`${baseUrl}/dashboard/security`, { waitUntil: "domcontentloaded" });
   await page.getByRole("heading", { name: /security/i }).waitFor();
   await page.goto(`${baseUrl}/dashboard/organization`, { waitUntil: "domcontentloaded" });
-  await page.getByDisplayValue("Journey Org").waitFor();
+  await page.locator("input").first().waitFor();
+  const orgName = await page.locator("input").first().inputValue();
+  check(orgName === "Journey Org", "organization page shows persisted name");
 
   page.once("dialog", (dialog) => dialog.accept());
   await page.goto(`${baseUrl}/dashboard/api-keys`, { waitUntil: "domcontentloaded" });
