@@ -62,6 +62,10 @@ async def increment(
     """Apply one downstream mutation. Must only be called after admission."""
     import os
 
+    from responsibleai.sovereign.zero_effect import record_consequential_invocation
+
+    record_consequential_invocation()
+
     environment = os.environ.get("WHITEPACT_ENV") or os.environ.get("RAI_ENVIRONMENT") or ""
     if is_production_environment(environment):
         raise RuntimeError("Synthetic counter tool is forbidden in production")

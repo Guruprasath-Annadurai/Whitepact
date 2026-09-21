@@ -1,0 +1,9 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
+
+EXIT_OK = 0
+EXIT_INVALID = 2
+EXIT_GOVERNANCE = 3
+EXIT_UNKNOWN = 4
+EXIT_UNAVAILABLE = 5
+EXIT_INTERNAL = 1

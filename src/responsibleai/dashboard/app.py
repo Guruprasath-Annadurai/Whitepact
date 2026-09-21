@@ -166,6 +166,9 @@ from responsibleai.db.migrate import MigrationError, run_migrations_or_raise
 from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
 from responsibleai.db.root_authority_repository import RootAuthorityRepository
 from responsibleai.enterprise.router import router as enterprise_router
+from responsibleai.sovereign.api_deps import bind_sovereign_engine
+from responsibleai.sovereign.router import router as sovereign_router
+from responsibleai.sovereign.router import web_router as sovereign_web_router
 from responsibleai.enterprise.security.rate_limit import DurableIdentityRateLimiter
 from responsibleai.enterprise.security.router import router as enterprise_security_router
 from responsibleai.eval import (
@@ -449,6 +452,7 @@ async def lifespan(application: FastAPI):
     from responsibleai.governance.synthetic_counter import bind_counter_engine
 
     bind_counter_engine(_db_engine)
+    bind_sovereign_engine(_db_engine)
     _plan_rate_limiter = PlanRateLimiter(redis_url=settings.redis_url)
     _auth_failure_limiter.attach_durable(
         DurableIdentityRateLimiter(_db_engine),
@@ -627,6 +631,8 @@ app = FastAPI(
 
 app.include_router(enterprise_router)
 app.include_router(enterprise_security_router)
+app.include_router(sovereign_router)
+app.include_router(sovereign_web_router)
 
 
 # ── Audit log middleware ───────────────────────────────────────────────────────
