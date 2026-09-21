@@ -35,7 +35,7 @@ def test_single_head_0053() -> None:
     ini = _find_alembic_ini()
     assert ini is not None
     heads = ScriptDirectory.from_config(Config(str(ini))).get_heads()
-    assert heads == ["0057"]
+    assert heads == ["0058"]
 
 
 @pytest.mark.asyncio
@@ -48,7 +48,7 @@ async def test_upgrade_downgrade_0050_0053_when_empty(pg_url: str) -> None:
     try:
         async with engine.raw.connect() as conn:
             version = (await conn.execute(text("SELECT version_num FROM alembic_version"))).scalar()
-            assert version == "0057"
+            assert version == "0058"
             tables = set(await conn.run_sync(lambda c: inspect(c).get_table_names()))
             assert PHASE7A_TABLES <= tables
             statuses = (
@@ -81,7 +81,7 @@ async def test_upgrade_downgrade_0050_0053_when_empty(pg_url: str) -> None:
     try:
         async with engine.raw.connect() as conn:
             version = (await conn.execute(text("SELECT version_num FROM alembic_version"))).scalar()
-            assert version == "0057"
+            assert version == "0058"
     finally:
         await engine.close()
 

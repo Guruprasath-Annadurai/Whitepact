@@ -99,6 +99,9 @@ def validate_schema_lineage(connection: Connection) -> None:
             "identity_rate_counters",
             "identity_four_eyes_requests",
         },
+        58: {
+            "dashboard_saml_transactions",
+        },
     }
     for introduced, expected in requirements.items():
         if revision >= introduced and not expected <= tables:

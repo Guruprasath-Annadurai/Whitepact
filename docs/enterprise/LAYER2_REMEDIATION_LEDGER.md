@@ -129,7 +129,7 @@ FINAL STATUS: CLOSED (invariant held)
 
 ## OUT-OF-SCOPE FINDING
 
-- Dashboard `_saml_request_store` remains process-local (generic dashboard SSO, not Layer 2 hosted Google/MS).  
+- Dashboard SAML AuthnRequest correlation is durable (`dashboard_saml_transactions`); generic dashboard SSO is not Layer 2 hosted Google/MS.  
 - Dashboard slowapi may still warn-only on multi-replica in-memory Redis; Layer 2 identity counters no longer use that path.  
 - `uv.lock` refresh may have resolved other extras besides `cbor2`; review lock diff.  
 - Historical Alembic head tests updated from `0056` to `0057` (required for a new linear migration).

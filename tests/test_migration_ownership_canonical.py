@@ -12,9 +12,10 @@ from alembic.script import ScriptDirectory
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_alembic_single_head_is_0057_layer2_remediation() -> None:
+def test_alembic_single_head_is_0058_dashboard_saml() -> None:
     script = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
-    assert script.get_heads() == ["0057"]
+    assert script.get_heads() == ["0058"]
+    assert script.get_revision("0058").down_revision == "0057"
     assert script.get_revision("0057").down_revision == "0056"
     assert script.get_revision("0056").down_revision == "0055"
     assert script.get_revision("0055").down_revision == "0054"
@@ -33,6 +34,7 @@ def test_alembic_single_head_is_0057_layer2_remediation() -> None:
         "0055_verified_principal_gate.py",
         "0056_identity_security_fortress.py",
         "0057_layer2_identity_remediation.py",
+        "0058_dashboard_saml_transactions.py",
     ):
         assert (ROOT / "migrations" / "versions" / name).is_file()
 
@@ -65,6 +67,7 @@ def test_canonical_map_matches_implemented_history() -> None:
     assert "0055" in text and "Verified principal" in text
     assert "0056" in text and "identity security fortress" in text
     assert "0057" in text and "durable OAuth" in text
+    assert "0058" in text and "SAML AuthnRequest" in text
     assert "Current implemented Alembic head" in text
-    assert "`0057`" in text
+    assert "`0058`" in text
     assert "`0053`" in text

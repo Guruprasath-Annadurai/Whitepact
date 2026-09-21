@@ -8,6 +8,7 @@ import asyncio
 import time
 import uuid
 from collections.abc import Callable
+from typing import Any
 
 from fastapi import HTTPException, Request, Response
 from fastapi.responses import JSONResponse
@@ -19,14 +20,19 @@ logger = get_logger("middleware")
 
 
 class AuthFailureLimiter:
-    """Per-process sliding-window limiter on failed Bearer-auth attempts, keyed by IP.
+    """IP-keyed limiter on failed Bearer-auth attempts.
 
     Dashboard slowapi buckets by presented Bearer token when one is present, so
     credential guessing with distinct tokens never accumulates. This limiter is
     IP-keyed and independent of the token tried.
 
-    In-memory, so it is per-replica — documented later-V1 operational debt, not
-    a substitute for Layer 2 durable identity counters.
+    Production attaches DurableIdentityRateLimiter (identity_rate_counters).
+    That is the same atomic PostgreSQL counter used by Layer 2 identity
+    security; it is not a second authority. Process-local memory is only a
+    non-production fallback when no durable backend is attached.
+
+    Generic slowapi per-route ceilings remain convenience DoS padding and are
+    not the failed-auth security control.
     """
 
     def __init__(self, max_failures: int, window_seconds: float) -> None:
@@ -34,18 +40,69 @@ class AuthFailureLimiter:
         self._window_seconds = window_seconds
         self._failures: dict[str, list[float]] = {}
         self._lock = asyncio.Lock()
+        self._durable: Any = None
+        self._require_durable = False
+
+    def attach_durable(self, limiter: Any, *, require_durable: bool) -> None:
+        self._durable = limiter
+        self._require_durable = require_durable
+
+    def detach_durable(self) -> None:
+        self._durable = None
+        self._require_durable = False
+
+    def _protection_unavailable(self) -> HTTPException:
+        return HTTPException(
+            status_code=503,
+            detail="Abuse protection is unavailable. Try again later.",
+        )
 
     def _prune(self, key: str, now: float) -> list[float]:
         attempts = [t for t in self._failures.get(key, []) if now - t < self._window_seconds]
         self._failures[key] = attempts
         return attempts
 
+    def _durable_key(self, key: str) -> str:
+        return f"rest-auth-fail:{key}"
+
     async def is_blocked(self, key: str) -> bool:
+        if self._durable is not None:
+            from responsibleai.enterprise.errors import EnterpriseError
+
+            try:
+                count = await self._durable.current_count(
+                    self._durable_key(key), window_seconds=self._window_seconds
+                )
+            except EnterpriseError as exc:
+                if exc.code == "IDENTITY_PROTECTION_UNAVAILABLE":
+                    raise self._protection_unavailable() from exc
+                raise
+            return count >= self._max_failures
+        if self._require_durable:
+            raise self._protection_unavailable()
         async with self._lock:
             now = asyncio.get_running_loop().time()
             return len(self._prune(key, now)) >= self._max_failures
 
     async def record_failure(self, key: str) -> None:
+        if self._durable is not None:
+            from responsibleai.enterprise.errors import EnterpriseError
+
+            try:
+                await self._durable.check(
+                    self._durable_key(key),
+                    limit=self._max_failures,
+                    window_seconds=self._window_seconds,
+                )
+            except EnterpriseError as exc:
+                if exc.code == "RATE_LIMITED":
+                    return
+                if exc.code == "IDENTITY_PROTECTION_UNAVAILABLE":
+                    raise self._protection_unavailable() from exc
+                raise
+            return
+        if self._require_durable:
+            raise self._protection_unavailable()
         async with self._lock:
             now = asyncio.get_running_loop().time()
             self._prune(key, now).append(now)

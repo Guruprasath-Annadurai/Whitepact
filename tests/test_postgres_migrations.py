@@ -12,12 +12,8 @@ Verifies:
 
 from __future__ import annotations
 
-import uuid
 from collections.abc import AsyncGenerator
 
-from tests.pg_test_url import isolated_pg_url
-
-import asyncpg
 import pytest
 from alembic.config import Config
 from alembic.script import ScriptDirectory
@@ -31,6 +27,7 @@ from responsibleai.db.migrate import (
     _run_alembic,
     run_migrations_or_raise,
 )
+from tests.pg_test_url import isolated_pg_url
 
 TRUST_FABRIC_TABLES = {
     "trust_fabric_principals",
@@ -62,7 +59,7 @@ def test_one_canonical_alembic_head():
     scripts = ScriptDirectory.from_config(Config(str(ini)))
     heads = scripts.get_heads()
     assert len(heads) == 1, f"Expected exactly 1 alembic head, got {len(heads)}: {heads}"
-    assert heads == ["0057"]
+    assert heads == ["0058"]
     assert scripts.get_revision("0056").down_revision == "0055"
     assert scripts.get_revision("0055").down_revision == "0054"
     assert scripts.get_revision("0054").down_revision == "0053"

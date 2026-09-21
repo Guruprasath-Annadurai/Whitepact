@@ -79,6 +79,10 @@ from responsibleai.dashboard.prometheus import (
     observe_webhook_delivery,
     observe_websocket_connections,
 )
+from responsibleai.dashboard.saml_transactions import (
+    DurableSamlAuthnStore,
+    SamlTransactionUnavailableError,
+)
 from responsibleai.dashboard.signup_guard import (
     SignupRateWindow,
     dwell_time_ok,
@@ -154,6 +158,9 @@ from responsibleai.db.execution_nonce_repository import ExecutionNonceRepository
 from responsibleai.db.migrate import MigrationError, run_migrations_or_raise
 from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
 from responsibleai.db.root_authority_repository import RootAuthorityRepository
+from responsibleai.enterprise.router import router as enterprise_router
+from responsibleai.enterprise.security.rate_limit import DurableIdentityRateLimiter
+from responsibleai.enterprise.security.router import router as enterprise_security_router
 from responsibleai.eval import (
     BenchmarkRunner,
     BenchmarkSuite,
@@ -272,8 +279,9 @@ if settings.redis_url:
 limiter = Limiter(**_limiter_kwargs)
 
 # IP-keyed protection against credential guessing across changing Bearer tokens.
-# Process-local (later-V1 operational debt). Layer 2 identity counters remain
-# durable in PostgreSQL and are not replaced by this dashboard limiter.
+# Production attaches DurableIdentityRateLimiter (identity_rate_counters) —
+# the same atomic table as Layer 2 identity security, not a second authority.
+# Generic slowapi per-route limits remain convenience padding only.
 _auth_failure_limiter = AuthFailureLimiter(max_failures=20, window_seconds=60.0)
 
 # Site-wide cap on self-serve signups, independent of per-IP rate
@@ -340,7 +348,7 @@ _oidc_provider: OIDCProvider | None = None
 _oidc_state_store: dict[str, float] = {}  # state → issued_at; cleared on use
 _OIDC_STATE_TTL = 300.0  # seconds — matches callback expiry window
 _saml_config: SAMLConfig | None = None
-_saml_request_store: dict[str, float] = {}  # AuthnRequest ID → issued_at; cleared on use
+_saml_txn_store: DurableSamlAuthnStore | None = None
 _SAML_REQUEST_TTL = 300.0  # seconds — matches OIDC's state window
 _stripe_service: StripeService | None = None
 _billing_event_repo: BillingEventRepository | None = None
@@ -393,6 +401,7 @@ async def lifespan(application: FastAPI):
     global \
         _oidc_provider, \
         _saml_config, \
+        _saml_txn_store, \
         _stripe_service, \
         _plan_rate_limiter, \
         _billing_event_repo, \
@@ -434,6 +443,18 @@ async def lifespan(application: FastAPI):
     )
     await _db_engine.init(auto_create_tables=auto_create_tables)
     _plan_rate_limiter = PlanRateLimiter(redis_url=settings.redis_url)
+    _auth_failure_limiter.attach_durable(
+        DurableIdentityRateLimiter(_db_engine),
+        require_durable=settings.is_production,
+    )
+    _saml_txn_store = DurableSamlAuthnStore(_db_engine)
+    if settings.is_production and settings.saml_idp_entity_id:
+        db_url = str(settings.effective_db_url)
+        if ":memory:" in db_url:
+            raise RuntimeError(
+                "Production SAML requires a durable shared database; "
+                "in-memory SQLite is not multi-replica safe."
+            )
 
     policy = BudgetPolicy(monthly_limit_usd=settings.monthly_budget_usd)
     _cost_repo = CostRepository(_db_engine, policy=policy)
@@ -574,6 +595,8 @@ async def lifespan(application: FastAPI):
         await asyncio.gather(*_pending_audit_writes, return_exceptions=True)
     if _db_engine:
         await _db_engine.close()
+    _auth_failure_limiter.detach_durable()
+    _saml_txn_store = None
     logger.info("shutdown_complete")
 
 
@@ -596,9 +619,6 @@ app = FastAPI(
     contact={"name": "Guruprasath Annadurai", "email": "annaduraiguruprasath7@gmail.com"},
     license_info={"name": "MIT"},
 )
-
-from responsibleai.enterprise.router import router as enterprise_router
-from responsibleai.enterprise.security.router import router as enterprise_security_router
 
 app.include_router(enterprise_router)
 app.include_router(enterprise_security_router)
@@ -3139,9 +3159,9 @@ async def create_api_key(
         raise HTTPException(404, "Organization not found")
     if _auth.org_id != org_id and _auth.key_id != org.provisioner_key_id:
         raise HTTPException(404, "Organization not found")
-    from responsibleai.db.engine import org_api_keys, web_memberships, web_users
     from sqlalchemy import select
 
+    from responsibleai.db.engine import org_api_keys, web_memberships, web_users
     from responsibleai.enterprise.runtime import get_enterprise_engine
 
     engine = get_enterprise_engine()
@@ -6296,7 +6316,15 @@ async def auth_login(
         if not _saml_config:
             raise HTTPException(404, f"Unknown or unconfigured provider: {provider_id!r}")
         redirect_url, request_id = build_authn_request(_saml_config)
-        _saml_request_store[request_id] = time.monotonic()
+        try:
+            await _ready(_saml_txn_store).remember(
+                request_id,
+                idp_entity_id=_saml_config.idp_entity_id,
+                acs_url=_saml_config.acs_url,
+                ttl_seconds=_SAML_REQUEST_TTL,
+            )
+        except SamlTransactionUnavailableError as exc:
+            raise HTTPException(503, str(exc)) from exc
         return JSONResponse({"authorization_url": redirect_url, "request_id": request_id})
 
     raise HTTPException(404, f"Unknown or unconfigured provider: {provider_id!r}")
@@ -6339,11 +6367,16 @@ async def saml_acs(request: Request) -> Response:
     peeked_id = peek_in_response_to(saml_response_raw)
     expected_request_id: str | None = None
     if peeked_id is not None:
-        issued_at = _saml_request_store.pop(peeked_id, None)
-        if issued_at is None:
+        try:
+            consumed = await _ready(_saml_txn_store).consume(
+                peeked_id,
+                idp_entity_id=_saml_config.idp_entity_id,
+                acs_url=_saml_config.acs_url,
+            )
+        except SamlTransactionUnavailableError as exc:
+            raise HTTPException(503, str(exc)) from exc
+        if not consumed:
             raise HTTPException(400, "Unknown or already-used SAML request ID")
-        if time.monotonic() - issued_at > _SAML_REQUEST_TTL:
-            raise HTTPException(400, "SAML AuthnRequest has expired (>5 min)")
         expected_request_id = peeked_id
 
     try:

@@ -8,6 +8,7 @@ import asyncio
 import logging
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Boolean,
     CheckConstraint,
@@ -18,7 +19,6 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
-    JSON,
     MetaData,
     String,
     Table,
@@ -99,7 +99,9 @@ organizations = Table(
     Column("stripe_subscription_id", String(64), nullable=True),
     Column("plan_renews_at", String(32), nullable=True),
     Column("subscription_status", String(32), nullable=False, default="inactive"),
-    Column("governance_status", String(16), nullable=False, default="ACTIVE", server_default="ACTIVE"),
+    Column(
+        "governance_status", String(16), nullable=False, default="ACTIVE", server_default="ACTIVE"
+    ),
     Column("sso_required", Integer, nullable=False, default=0),
     Column("mfa_required", Integer, nullable=False, default=0),
     Column("provisioner_key_id", String(64), nullable=True),
@@ -259,11 +261,23 @@ web_invitations = Table(
     metadata,
     Column("id", String(36), primary_key=True),
     Column("token_hash", String(64), nullable=False, unique=True),
-    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    ),
     Column("email", String(254), nullable=False),
     Column("role", String(20), nullable=False),
-    Column("invited_by_user_id", String(36), ForeignKey("web_users.id", ondelete="RESTRICT"), nullable=False),
-    Column("accepted_by_user_id", String(36), ForeignKey("web_users.id", ondelete="SET NULL"), nullable=True),
+    Column(
+        "invited_by_user_id",
+        String(36),
+        ForeignKey("web_users.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column(
+        "accepted_by_user_id",
+        String(36),
+        ForeignKey("web_users.id", ondelete="SET NULL"),
+        nullable=True,
+    ),
     Column("status", String(24), nullable=False),
     Column("created_at", String(32), nullable=False),
     Column("expires_at", String(32), nullable=False),
@@ -1611,7 +1625,9 @@ iam_step_up_nonces = Table(
     "iam_step_up_nonces",
     metadata,
     Column("id", String(64), primary_key=True),
-    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
     Column("principal_id", String(64), nullable=False),
     Column("session_id", String(128), nullable=True),
     Column("nonce_hash", String(64), nullable=False, unique=True),
@@ -1628,7 +1644,9 @@ iam_sessions = Table(
     "iam_sessions",
     metadata,
     Column("id", String(64), primary_key=True),
-    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
     Column("principal_id", String(64), nullable=False),
     Column("token_hash", String(64), nullable=False, unique=True),
     Column("session_type", String(32), nullable=False, default="INTERACTIVE"),
@@ -1645,7 +1663,9 @@ iam_api_key_lineage = Table(
     "iam_api_key_lineage",
     metadata,
     Column("id", String(64), primary_key=True),
-    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
     Column("name", String(200), nullable=False),
     Column("fingerprint", String(64), nullable=False, unique=True),
     Column("parent_key_id", String(64), nullable=True),
@@ -1662,7 +1682,9 @@ iam_scim_users = Table(
     "iam_scim_users",
     metadata,
     Column("id", String(64), primary_key=True),
-    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
     Column("principal_id", String(64), nullable=False),
     Column("external_id", String(255), nullable=True),
     Column("user_name", String(255), nullable=False),
@@ -1680,7 +1702,9 @@ iam_scim_groups = Table(
     "iam_scim_groups",
     metadata,
     Column("id", String(64), primary_key=True),
-    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
     Column("display_name", String(255), nullable=False),
     Column("members_json", Text, nullable=False, default="[]"),
     Column("created_at", String(32), nullable=False),
@@ -1692,7 +1716,9 @@ iam_jit_grants = Table(
     "iam_jit_grants",
     metadata,
     Column("id", String(64), primary_key=True),
-    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
     Column("principal_id", String(64), nullable=False),
     Column("target_role", String(32), nullable=False),
     Column("allowed_actions_json", Text, nullable=False),
@@ -1710,7 +1736,9 @@ iam_four_eyes_requests = Table(
     "iam_four_eyes_requests",
     metadata,
     Column("id", String(64), primary_key=True),
-    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
     Column("requester_principal_id", String(64), nullable=False),
     Column("action", String(64), nullable=False),
     Column("target_resource_id", String(128), nullable=True),
@@ -1731,7 +1759,9 @@ iam_break_glass_sessions = Table(
     "iam_break_glass_sessions",
     metadata,
     Column("id", String(64), primary_key=True),
-    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
     Column("principal_id", String(64), nullable=False),
     Column("incident_id", String(64), nullable=False),
     Column("capabilities_json", Text, nullable=False),
@@ -1748,7 +1778,9 @@ iam_recovery_policies = Table(
     "iam_recovery_policies",
     metadata,
     Column("id", String(64), primary_key=True),
-    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
     Column("threshold", Integer, nullable=False),
     Column("guardians_json", Text, nullable=False),
     Column("created_at", String(32), nullable=False),
@@ -1760,7 +1792,9 @@ iam_recovery_challenges = Table(
     "iam_recovery_challenges",
     metadata,
     Column("id", String(64), primary_key=True),
-    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
     Column("new_root_principal_id", String(64), nullable=False),
     Column("new_root_public_key", String(255), nullable=False),
     Column("challenge_message", String(64), nullable=False, unique=True),
@@ -1777,7 +1811,9 @@ iam_privileged_audit_log = Table(
     "iam_privileged_audit_log",
     metadata,
     Column("id", String(64), primary_key=True),
-    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
     Column("principal_id", String(64), nullable=False),
     Column("action", String(64), nullable=False),
     Column("risk_tier", String(32), nullable=False),
@@ -1796,7 +1832,9 @@ governance_policy_revisions = Table(
     "governance_policy_revisions",
     metadata,
     Column("id", String(36), primary_key=True),
-    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
     Column("revision_num", Integer, nullable=False),
     Column("rules_json", Text, nullable=False),
     Column("content_digest", String(64), nullable=False),
@@ -1813,8 +1851,15 @@ governance_policy_activations = Table(
     "governance_policy_activations",
     metadata,
     Column("id", String(36), primary_key=True),
-    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
-    Column("revision_id", String(36), ForeignKey("governance_policy_revisions.id", ondelete="RESTRICT"), nullable=False),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
+    Column(
+        "revision_id",
+        String(36),
+        ForeignKey("governance_policy_revisions.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
     Column("content_digest", String(64), nullable=False),
     Column("activated_at", String(64), nullable=False),
     Column("activated_by", String(200), nullable=False),
@@ -1828,7 +1873,9 @@ data_retention_policies = Table(
     "data_retention_policies",
     metadata,
     Column("id", String(36), primary_key=True),
-    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
     Column("data_category", String(50), nullable=False),
     Column("retention_period_seconds", Integer, nullable=False),
     Column("created_at", String(64), nullable=False),
@@ -1841,7 +1888,9 @@ data_lifecycle_requests = Table(
     "data_lifecycle_requests",
     metadata,
     Column("id", String(36), primary_key=True),
-    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
     Column("request_type", String(32), nullable=False),
     Column("status", String(32), nullable=False),
     Column("requested_at", String(64), nullable=False),
@@ -1856,7 +1905,9 @@ data_holds = Table(
     "data_holds",
     metadata,
     Column("id", String(36), primary_key=True),
-    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
     Column("data_category", String(50), nullable=False),
     Column("hold_reason", Text, nullable=False),
     Column("active", Boolean, nullable=False, default=True),
@@ -2404,7 +2455,9 @@ organization_idp_bindings = Table(
     "organization_idp_bindings",
     metadata,
     Column("id", String(36), primary_key=True),
-    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    ),
     Column("provider", String(64), nullable=False),
     Column("tenant_id", String(255), nullable=True),
     Column("issuer", String(512), nullable=False),
@@ -2422,7 +2475,13 @@ organization_sso_configs = Table(
     "organization_sso_configs",
     metadata,
     Column("id", String(36), primary_key=True),
-    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, unique=True),
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    ),
     Column("protocol", String(16), nullable=False),
     Column("issuer", String(512), nullable=False),
     Column("client_id", String(255), nullable=False),
@@ -2471,9 +2530,13 @@ auth_replay_records = Table(
 org_security_policies = Table(
     "org_security_policies",
     metadata,
-    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True
+    ),
     Column("phishing_resistant_required", Integer, nullable=False, server_default="0"),
-    Column("privileged_roles_json", Text, nullable=False, server_default='["OWNER","SECURITY_ADMIN"]'),
+    Column(
+        "privileged_roles_json", Text, nullable=False, server_default='["OWNER","SECURITY_ADMIN"]'
+    ),
     Column("sso_enforcement", String(32), nullable=False, server_default="SSO_OPTIONAL"),
     Column("dual_control_json", Text, nullable=False, server_default="[]"),
     Column("break_glass_user_id", String(36), nullable=True),
@@ -2485,7 +2548,9 @@ company_domain_challenges = Table(
     "company_domain_challenges",
     metadata,
     Column("id", String(36), primary_key=True),
-    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    ),
     Column("domain", String(255), nullable=False),
     Column("method", String(32), nullable=False),
     Column("token_hash", String(64), nullable=False),
@@ -2542,9 +2607,21 @@ identity_four_eyes_requests = Table(
     "identity_four_eyes_requests",
     metadata,
     Column("id", String(36), primary_key=True),
-    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False),
-    Column("requester_user_id", String(36), ForeignKey("web_users.id", ondelete="RESTRICT"), nullable=False),
-    Column("approver_user_id", String(36), ForeignKey("web_users.id", ondelete="RESTRICT"), nullable=True),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
+    Column(
+        "requester_user_id",
+        String(36),
+        ForeignKey("web_users.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column(
+        "approver_user_id",
+        String(36),
+        ForeignKey("web_users.id", ondelete="RESTRICT"),
+        nullable=True,
+    ),
     Column("action", String(64), nullable=False),
     Column("parameters_json", Text, nullable=False),
     Column("action_digest", String(64), nullable=False),
@@ -2560,6 +2637,24 @@ identity_four_eyes_requests = Table(
     ),
     Index("idx_identity_four_eyes_org", "org_id"),
     Index("idx_identity_four_eyes_requester", "requester_user_id"),
+)
+
+# Dashboard SAML AuthnRequest correlation. Not execution authority.
+dashboard_saml_transactions = Table(
+    "dashboard_saml_transactions",
+    metadata,
+    Column("request_id_hash", String(64), primary_key=True),
+    Column("idp_entity_id", String(512), nullable=False),
+    Column("acs_url", String(512), nullable=False),
+    Column("status", String(32), nullable=False, server_default="PENDING"),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("consumed_at", String(32), nullable=True),
+    CheckConstraint(
+        "status IN ('PENDING','CONSUMED','EXPIRED')",
+        name="chk_dashboard_saml_status",
+    ),
+    Index("idx_dashboard_saml_expiry", "expires_at"),
 )
 
 
@@ -2721,7 +2816,11 @@ def create_engine(db_url: str) -> DatabaseEngine:
             echo=False,
         )
     elif db_url.startswith("sqlite"):
-        url = db_url if "aiosqlite" in db_url else db_url.replace("sqlite://", "sqlite+aiosqlite://", 1)
+        url = (
+            db_url
+            if "aiosqlite" in db_url
+            else db_url.replace("sqlite://", "sqlite+aiosqlite://", 1)
+        )
         engine = create_async_engine(
             url,
             connect_args={"check_same_thread": False},

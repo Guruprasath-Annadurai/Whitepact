@@ -20,12 +20,8 @@ Tested upgrade paths:
 from __future__ import annotations
 
 import json
-import uuid
 from collections.abc import AsyncGenerator
 
-from tests.pg_test_url import isolated_pg_url
-
-import asyncpg
 import pytest
 from alembic.config import Config
 from alembic.script import ScriptDirectory
@@ -38,6 +34,7 @@ from responsibleai.db.migrate import (
     _migration_env,
     _run_alembic,
 )
+from tests.pg_test_url import isolated_pg_url
 
 
 @pytest.fixture
@@ -56,7 +53,7 @@ def test_one_canonical_alembic_head():
     scripts = ScriptDirectory.from_config(Config(str(ini)))
     heads = scripts.get_heads()
     assert len(heads) == 1, f"Expected exactly 1 alembic head, got {len(heads)}: {heads}"
-    assert heads == ["0057"]
+    assert heads == ["0058"]
 
     rev_0049 = scripts.get_revision("0049")
     assert rev_0049.down_revision == "0048"
@@ -98,7 +95,7 @@ async def test_fresh_install_to_head_postgres(pg_disposable_db: str):
     try:
         async with engine.raw.connect() as conn:
             version = (await conn.execute(text("SELECT version_num FROM alembic_version"))).scalar()
-            assert version == "0057"
+            assert version == "0058"
 
         def _get_tables(sync_conn):
             return inspect(sync_conn).get_table_names()
@@ -287,7 +284,7 @@ async def test_upgrade_0042_to_head_preserves_data_and_invariants(pg_disposable_
             head_ver = (
                 await conn.execute(text("SELECT version_num FROM alembic_version"))
             ).scalar()
-            assert head_ver == "0057"
+            assert head_ver == "0058"
 
             # Invariant 1: Organizations preserved
             orgs = (
@@ -526,7 +523,7 @@ async def test_upgrade_0043_to_head_preserves_trust_fabric_and_invariants(pg_dis
             head_ver = (
                 await conn.execute(text("SELECT version_num FROM alembic_version"))
             ).scalar()
-            assert head_ver == "0057"
+            assert head_ver == "0058"
 
             # Invariant: Principals preserved and states NOT widened
             prins = (
@@ -718,7 +715,7 @@ async def test_upgrade_0044_to_head_preserves_iam_and_invariants(pg_disposable_d
             head_ver = (
                 await conn.execute(text("SELECT version_num FROM alembic_version"))
             ).scalar()
-            assert head_ver == "0057"
+            assert head_ver == "0058"
 
             # Invariant: Sessions preserved and revoked stays revoked
             sessions = (
@@ -834,7 +831,7 @@ async def test_downgrade_and_reupgrade_idempotence(pg_disposable_db: str):
             head_ver = (
                 await conn.execute(text("SELECT version_num FROM alembic_version"))
             ).scalar()
-            assert head_ver == "0057"
+            assert head_ver == "0058"
 
             # Verify 0044 data remains clean
             sess = (

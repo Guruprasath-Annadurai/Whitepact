@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -80,6 +80,37 @@ class DurableIdentityRateLimiter:
                 raise EnterpriseError("RATE_LIMITED", "Try again later.", 429)
         except EnterpriseError:
             raise
+        except SQLAlchemyError:
+            logger.warning("identity_rate_limit_storage_unavailable")
+            raise EnterpriseError(
+                "IDENTITY_PROTECTION_UNAVAILABLE",
+                "Abuse protection is unavailable. Try again later.",
+                503,
+            ) from None
+
+    async def current_count(self, key: str, *, window_seconds: float) -> int:
+        """Read the live window count without incrementing.
+
+        Used by dashboard REST failed-auth gating so valid credentials are
+        not charged. Storage failure fails closed.
+        """
+        cutoff = _iso(_now() - timedelta(seconds=window_seconds))
+        try:
+            async with self.engine.raw.begin() as conn:
+                row = (
+                    await conn.execute(
+                        select(
+                            identity_rate_counters.c.count,
+                            identity_rate_counters.c.window_start,
+                        ).where(identity_rate_counters.c.bucket_key == key)
+                    )
+                ).fetchone()
+                if row is None:
+                    return 0
+                stored_count, window_start = row[0], row[1]
+                if str(window_start) < cutoff:
+                    return 0
+                return int(stored_count)
         except SQLAlchemyError:
             logger.warning("identity_rate_limit_storage_unavailable")
             raise EnterpriseError(
