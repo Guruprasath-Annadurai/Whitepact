@@ -162,10 +162,12 @@ try {
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: /create api key/i }).first().click();
   await page.getByLabel(/^name$/i).fill("browser-agent");
+  await page.locator("label.checkbox", { hasText: "governance:write" }).locator("input").check();
+  await page.locator("label.checkbox", { hasText: "evidence:read" }).locator("input").check();
   await page.getByRole("button", { name: /^create key$/i }).click();
   await page.getByText(/this is the only time the full secret is displayed/i).waitFor({ timeout: 10000 });
-  const revealed = await page.locator("code").first().innerText();
-  check(revealed.startsWith("wp_"), "raw API key shown once");
+  const revealed = (await page.locator(".key-reveal code").innerText()).trim();
+  check(revealed.startsWith("wp_") && revealed.length > 20, "raw API key shown once");
   await page.getByRole("button", { name: /^done$/i }).click();
 
   const keys = await context.request.get(`${baseUrl}/api/v1/web/api-keys`);

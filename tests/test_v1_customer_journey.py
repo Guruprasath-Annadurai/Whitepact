@@ -32,6 +32,7 @@ os.environ.setdefault("WHITEPACT_ENV", "development")
 os.environ.setdefault("WHITEPACT_IDENTITY_WEBHOOK_SECRET", "dev-identity-webhook-secret")
 
 import responsibleai.dashboard.app as app_module
+from responsibleai.dashboard.signup_guard import SignupRateWindow
 from responsibleai.db.engine import web_users
 from responsibleai.db.migrate import _find_alembic_ini, _migration_env, _run_alembic
 from responsibleai.enterprise.preflight import DEV_IDENTITY_WEBHOOK_SECRET
@@ -82,6 +83,9 @@ async def journey_client(monkeypatch: pytest.MonkeyPatch, migrated_pg: str):
     monkeypatch.setattr(app_module.settings, "paddle_webhook_secret", "paddle-test-placeholder")
     monkeypatch.setattr(app_module.settings, "environment", "development")
     monkeypatch.setattr(app_module.limiter, "enabled", False)
+    monkeypatch.setattr(
+        app_module, "_signup_window", SignupRateWindow(max_per_window=1000, window_seconds=3600.0)
+    )
     async with LifespanManager(app_module.app) as manager:
         async with AsyncClient(
             transport=ASGITransport(app=manager.app), base_url="http://test"

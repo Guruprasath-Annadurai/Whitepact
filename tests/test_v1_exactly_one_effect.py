@@ -11,6 +11,7 @@ from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
 
 import responsibleai.dashboard.app as app_module
+from responsibleai.dashboard.signup_guard import SignupRateWindow
 from responsibleai.db import PolicyRepository, create_engine
 from responsibleai.governance.models import GovernanceDecision
 from responsibleai.governance.outcome import OutcomeStatus
@@ -51,6 +52,9 @@ async def journey_client(monkeypatch: pytest.MonkeyPatch, pg_url: str):
     monkeypatch.setattr(app_module.settings, "paddle_webhook_secret", "paddle-test-placeholder")
     monkeypatch.setattr(app_module.settings, "environment", "development")
     monkeypatch.setattr(app_module.limiter, "enabled", False)
+    monkeypatch.setattr(
+        app_module, "_signup_window", SignupRateWindow(max_per_window=1000, window_seconds=3600.0)
+    )
     async with LifespanManager(app_module.app) as manager:
         async with AsyncClient(
             transport=ASGITransport(app=manager.app), base_url="http://test"
