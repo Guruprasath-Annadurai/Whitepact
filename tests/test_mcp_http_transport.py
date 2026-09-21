@@ -143,14 +143,29 @@ class TestLegacySseTransportUnaffected:
 
 class TestHealthEndpoint:
     async def test_health_lists_both_transports(self, seeded_app) -> None:
+        from responsibleai import __version__
+        from responsibleai.mcp.metadata import (
+            MCP_PROTOCOL_VERSION,
+            PUBLIC_MCP_TOOL_COUNT,
+            REGISTERED_MCP_RESOURCE_COUNT,
+            REGISTERED_MCP_TOOL_COUNT,
+            SERVICE_NAME,
+        )
+
         app, _raw_key = seeded_app
         async with await _raw_client(app) as client:
             response = await client.get("/health")
         payload = response.json()
         assert payload["status"] == "ok"
+        assert payload["service"] == SERVICE_NAME
+        assert payload["protocol_version"] == MCP_PROTOCOL_VERSION
+        assert payload["server_version"] == __version__
         assert payload["transport"] == "http+sse"
         assert set(payload["transports"]) == {"streamable-http", "http+sse"}
-        assert payload["tools"] == 31
+        assert payload["tools"] == REGISTERED_MCP_TOOL_COUNT
+        assert payload["tools_registered"] == REGISTERED_MCP_TOOL_COUNT
+        assert payload["tools_public"] == PUBLIC_MCP_TOOL_COUNT
+        assert payload["resources"] == REGISTERED_MCP_RESOURCE_COUNT
 
 
 class TestMCPServerCard:

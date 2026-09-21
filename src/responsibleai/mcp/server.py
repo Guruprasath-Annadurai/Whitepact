@@ -934,14 +934,30 @@ def _build_http_app() -> Any:
     handle_streamable_http = _StreamableHttpEndpoint()
 
     async def health(request: Request) -> JSONResponse:
+        from responsibleai.mcp.metadata import (
+            MCP_PROTOCOL_VERSION,
+            PRODUCT_VERSION,
+            PUBLIC_MCP_TOOL_COUNT,
+            REGISTERED_MCP_RESOURCE_COUNT,
+            REGISTERED_MCP_TOOL_COUNT,
+            SERVICE_NAME,
+        )
+
         return JSONResponse(
             {
+                "service": SERVICE_NAME,
                 "status": "ok",
+                "protocol_version": MCP_PROTOCOL_VERSION,
+                "server_version": PRODUCT_VERSION,
                 # "transport" (singular) is kept for existing consumers of this
                 # diagnostics endpoint; "transports" is the new, complete list.
                 "transport": "http+sse",
                 "transports": ["streamable-http", "http+sse"],
-                "tools": len(TOOL_DEFS),
+                # Backward-compatible field: registered tool count (includes test-only tools).
+                "tools": REGISTERED_MCP_TOOL_COUNT,
+                "tools_public": PUBLIC_MCP_TOOL_COUNT,
+                "tools_registered": REGISTERED_MCP_TOOL_COUNT,
+                "resources": REGISTERED_MCP_RESOURCE_COUNT,
             }
         )
 
