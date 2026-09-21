@@ -56,7 +56,7 @@ describe("public website", () => {
     trigger.focus();
     await user.click(trigger);
     expect(screen.getByRole("dialog", { name: /Decision inspection/i })).toBeInTheDocument();
-    expect(screen.getByText("BLOCKED BEFORE EXECUTION")).toBeInTheDocument();
+    expect(screen.getByText("Blocked before execution")).toBeInTheDocument();
     expect(screen.getByText(/Demonstration record only/i)).toBeInTheDocument();
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
