@@ -25,6 +25,14 @@ export function Seo({ title, description, path = "/", noIndex = false }: { title
     upsert('meta[name="twitter:description"]', "content", description);
     upsert('link[rel="canonical"]', "href", `${origin}${path}`);
     upsert('meta[name="robots"]', "content", noIndex ? "noindex, nofollow" : "index, follow");
+    document.head.querySelector('script[data-whitepact-structured-data]')?.remove();
+    if (path === "/") {
+      const node = document.createElement("script");
+      node.type = "application/ld+json";
+      node.dataset.whitepactStructuredData = "true";
+      node.textContent = JSON.stringify({ "@context": "https://schema.org", "@type": "SoftwareApplication", name: "WhitePact", applicationCategory: "SecurityApplication", operatingSystem: "Web, Linux, macOS, Windows", url: origin, description });
+      document.head.appendChild(node);
+    }
   }, [description, noIndex, path, title]);
   return null;
 }

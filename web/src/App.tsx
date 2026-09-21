@@ -43,7 +43,8 @@ export default function App() {
       <Route path="/dashboard" element={<><Seo title="Workspace | WhitePact" description="Authenticated WhitePact AI governance workspace." path="/dashboard" noIndex /><DashboardShell /></>}>
         <Route index element={<OverviewPage />} />
         <Route path="api-keys" element={<ApiKeysPage />} />
-        <Route path=":domain" element={<DomainPage />} />
+        {(["approvals", "evidence", "security", "organization", "members", "billing"] as const).map((domain) => <Route key={domain} path={domain} element={<DomainPage domainKey={domain} />} />)}
+        <Route path="*" element={<NotFoundPage />} />
       </Route>
       <Route path="*" element={<NotFoundPage />} />
     </Routes></Suspense>

@@ -8,6 +8,7 @@ import { DashboardShell, type WebSession } from "../features/dashboard/Dashboard
 import { DomainPage } from "../features/dashboard/DomainPage";
 import { OnboardingPage } from "../features/onboarding/OnboardingPage";
 import { OverviewPage } from "../features/dashboard/OverviewPage";
+import App from "../App";
 
 const session: WebSession = {
   user: { full_name: "Ada Lovelace", email: "ada@example.com" },
@@ -16,6 +17,13 @@ const session: WebSession = {
 
 describe("dashboard and onboarding", () => {
   beforeEach(() => vi.restoreAllMocks());
+
+  it("renders not found for an unknown dashboard domain", async () => {
+    vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify(session), { status: 200 }));
+    render(<MemoryRouter initialEntries={["/dashboard/not-a-domain"]}><App /></MemoryRouter>);
+    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("This boundary");
+    expect(screen.queryByRole("heading", { name: /Security posture/i })).not.toBeInTheDocument();
+  });
 
   it("shows only launch-ready dashboard destinations", async () => {
     vi.spyOn(window, "fetch").mockResolvedValue(
@@ -80,6 +88,7 @@ describe("dashboard and onboarding", () => {
     render(<MemoryRouter initialEntries={["/dashboard/approvals"]}><Routes><Route element={<Parent />}><Route path="/dashboard/:domain" element={<DomainPage />} /></Route></Routes></MemoryRouter>);
     expect(await screen.findByRole("button", { name: "Approve" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Approve" }));
+    await user.click(screen.getByRole("button", { name: "Confirm approved" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/v1/web/approvals/appr-1/resolve", expect.objectContaining({ method: "POST" })));
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/web/approvals/appr-1/execute", expect.objectContaining({ method: "POST" }));
   });
@@ -97,8 +106,42 @@ describe("dashboard and onboarding", () => {
     render(<MemoryRouter initialEntries={["/dashboard/approvals"]}><Routes><Route element={<Parent />}><Route path="/dashboard/:domain" element={<DomainPage />} /></Route></Routes></MemoryRouter>);
     expect(await screen.findByRole("button", { name: "Deny" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Deny" }));
+    await user.click(screen.getByRole("button", { name: "Confirm denied" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/v1/web/approvals/appr-2/resolve", expect.objectContaining({ method: "POST" })));
     expect(fetchMock).not.toHaveBeenCalledWith("/api/v1/web/approvals/appr-2/execute", expect.anything());
+  });
+
+  it("never presents an UNKNOWN execution outcome as success or retries it", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.spyOn(window, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [{ approval_id: "appr-u", action_type: "external.send", target: "https://example.com", risk_tier: "HIGH", status: "PENDING", required_approvals: 1 }], source: "approval_repository" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "APPROVED" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ approval_id: "appr-u", error: "governance_unknown_outcome", message: "The mutation may have applied; acknowledgement was lost." }), { status: 200 }));
+    const Parent = () => <Outlet context={session} />;
+    render(<MemoryRouter initialEntries={["/dashboard/approvals"]}><Routes><Route element={<Parent />}><Route path="/dashboard/:domain" element={<DomainPage />} /></Route></Routes></MemoryRouter>);
+    await user.click(await screen.findByRole("button", { name: "Approve" }));
+    await user.click(screen.getByRole("button", { name: "Confirm approved" }));
+    expect(await screen.findByRole("heading", { name: "Execution outcome is uncertain" })).toBeInTheDocument();
+    expect(screen.queryByText(/execution acknowledged/i)).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([[409,"Approval is stale"],[403,"Not authorized"]])("surfaces approval HTTP %s without execution retry", async (status, detail) => {
+    const user=userEvent.setup();
+    const fetchMock=vi.spyOn(window,"fetch").mockResolvedValueOnce(new Response(JSON.stringify({items:[{approval_id:`appr-${status}`,action_type:"tool.call",target:"tool",status:"PENDING"}],source:"approval_repository"}),{status:200})).mockResolvedValueOnce(new Response(JSON.stringify({detail}),{status}));
+    const Parent=()=> <Outlet context={session}/>;
+    render(<MemoryRouter initialEntries={["/dashboard/approvals"]}><Routes><Route element={<Parent/>}><Route path="/dashboard/:domain" element={<DomainPage/>}/></Route></Routes></MemoryRouter>);
+    await user.click(await screen.findByRole("button",{name:"Approve"})); await user.click(screen.getByRole("button",{name:"Confirm approved"}));
+    expect(await screen.findByRole("heading", { name: "Request could not be completed" })).toBeInTheDocument();
+    expect(screen.getByText(detail)).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("surfaces an approval network failure without executing", async () => {
+    const user=userEvent.setup(); const fetchMock=vi.spyOn(window,"fetch").mockResolvedValueOnce(new Response(JSON.stringify({items:[{approval_id:"appr-net",action_type:"tool.call",target:"tool",status:"PENDING"}],source:"approval_repository"}),{status:200})).mockRejectedValueOnce(new TypeError("Network unavailable"));
+    const Parent=()=> <Outlet context={session}/>; render(<MemoryRouter initialEntries={["/dashboard/approvals"]}><Routes><Route element={<Parent/>}><Route path="/dashboard/:domain" element={<DomainPage/>}/></Route></Routes></MemoryRouter>);
+    await user.click(await screen.findByRole("button",{name:"Approve"})); await user.click(screen.getByRole("button",{name:"Confirm approved"}));
+    expect(await screen.findByRole("heading", { name: "Request could not be completed" })).toBeInTheDocument(); expect(screen.getByText("Network unavailable")).toBeInTheDocument(); expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("collects onboarding data through all three steps", async () => {
