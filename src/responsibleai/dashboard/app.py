@@ -159,6 +159,7 @@ from responsibleai.db.migrate import MigrationError, run_migrations_or_raise
 from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
 from responsibleai.db.root_authority_repository import RootAuthorityRepository
 from responsibleai.enterprise.router import router as enterprise_router
+from responsibleai.sovereign.router import router as sovereign_router
 from responsibleai.enterprise.security.rate_limit import DurableIdentityRateLimiter
 from responsibleai.enterprise.security.router import router as enterprise_security_router
 from responsibleai.eval import (
@@ -620,6 +621,7 @@ app = FastAPI(
 
 app.include_router(enterprise_router)
 app.include_router(enterprise_security_router)
+app.include_router(sovereign_router)
 
 
 # ── Audit log middleware ───────────────────────────────────────────────────────

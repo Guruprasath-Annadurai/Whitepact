@@ -14,13 +14,24 @@ def test_capability_negotiation_phase_a_features_available() -> None:
     assert by_name[SovereignFeature.STATUS] == CapabilityAvailability.AVAILABLE
     assert by_name[SovereignFeature.XRAY] == CapabilityAvailability.AVAILABLE
     assert by_name[SovereignFeature.SIMULATE_MISSION] == CapabilityAvailability.AVAILABLE
-    assert by_name[SovereignFeature.GAUNTLET] == CapabilityAvailability.EXPERIMENTAL
+    assert by_name[SovereignFeature.GAUNTLET] == CapabilityAvailability.AVAILABLE
+    assert by_name[SovereignFeature.AUTHORITY_BOM] == CapabilityAvailability.EXPERIMENTAL
 
 
 def test_require_unavailable_raises() -> None:
-    caps = SovereignCapabilities.negotiate()
+    from responsibleai.sovereign.errors import SovereignCapabilityError
+    from responsibleai.sovereign.protocol import FeatureDescriptor
+
+    caps = SovereignCapabilities(
+        features=[
+            FeatureDescriptor(
+                name=SovereignFeature.FLIGHT_RECORDER,
+                availability=CapabilityAvailability.UNAVAILABLE,
+            )
+        ]
+    )
     try:
         caps.require(SovereignFeature.FLIGHT_RECORDER)
         raise AssertionError("expected SovereignCapabilityError")
-    except Exception as exc:
+    except SovereignCapabilityError as exc:
         assert "UNAVAILABLE" in str(exc)

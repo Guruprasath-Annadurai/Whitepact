@@ -104,7 +104,15 @@ class SovereignCapabilities(BaseModel):
                 SovereignFeature.POLICY_LAB,
             ):
                 avail = CapabilityAvailability.AVAILABLE
-            elif feat in (SovereignFeature.GAUNTLET, SovereignFeature.AUTHORITY_BOM):
+            elif feat in (
+                SovereignFeature.GAUNTLET,
+                SovereignFeature.FLIGHT_RECORDER,
+                SovereignFeature.TIME_MACHINE,
+                SovereignFeature.EVIDENCE,
+                SovereignFeature.CAPSULE,
+            ):
+                avail = CapabilityAvailability.AVAILABLE
+            elif feat == SovereignFeature.AUTHORITY_BOM:
                 avail = CapabilityAvailability.EXPERIMENTAL
             else:
                 avail = CapabilityAvailability.UNAVAILABLE

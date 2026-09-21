@@ -13,6 +13,7 @@ from responsibleai.sovereign.context import SovereignContext
 from responsibleai.sovereign.policy_lab import PolicyTestCase
 from responsibleai.sovereign.service import SovereignService
 from responsibleai.sovereign.sources import SovereignCanonicalStore
+from responsibleai.sovereign.simulation import MissionDisposition
 from responsibleai.sovereign.zero_effect import consequential_invocation_count
 
 
@@ -49,7 +50,7 @@ class TestPhaseCSimulation:
         result = await svc.simulate_mission_async(
             ctx, agent_id="agent-1", steps=["crm.read", "unknown.action"]
         )
-        assert result.steps[1].disposition == "unreachable"
+        assert result.steps[1].disposition == MissionDisposition.UNREACHABLE
         assert consequential_invocation_count() == 0
 
     async def test_blast_radius_counterfactual(self, svc, store) -> None:

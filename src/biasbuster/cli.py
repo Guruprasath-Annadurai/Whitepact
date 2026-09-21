@@ -135,7 +135,12 @@ def _print_probe_result(result: ProbeResult) -> None:
 @click.group()
 @click.version_option()
 def main() -> None:
-    """BiasBuster — open-source bias testing for LLMs."""
+    """WhitePact CLI — bias testing and Sovereign governance diagnostics."""
+
+
+from responsibleai.sovereign.cli import sovereign  # noqa: E402
+
+main.add_command(sovereign)
 
 
 @main.command()

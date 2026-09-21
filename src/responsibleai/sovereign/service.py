@@ -8,16 +8,29 @@ from pathlib import Path
 from typing import Any
 
 from responsibleai.governance.models import GovernanceDecision
+from responsibleai.sovereign.authority_bom import AuthorityBOM, build_authority_bom
 from responsibleai.sovereign.authority_engine import (
     AuthorityCompareResult,
     compare_effective_snapshots,
     compare_manifest_to_effective,
     detect_structural_drift,
 )
+from responsibleai.sovereign.capsule import (
+    SovereignCapsule,
+    create_capsule,
+    reproduce_capsule,
+    validate_capsule,
+)
 from responsibleai.sovereign.context import SovereignContext
 from responsibleai.sovereign.debugger import explain_from_evidence, explain_from_identity
 from responsibleai.sovereign.effective import EffectiveAuthoritySnapshot, load_effective_authority
 from responsibleai.sovereign.errors import SovereignCapabilityError
+from responsibleai.sovereign.evidence_correlation import (
+    EvidenceCorrelationGraph,
+    correlate_evidence,
+)
+from responsibleai.sovereign.flight_recorder import FlightRecording, build_flight_recording
+from responsibleai.sovereign.gauntlet import GauntletReport, run_sovereign_gauntlet
 from responsibleai.sovereign.graph import (
     AuthorityGraph,
     EdgeDerivation,
@@ -41,7 +54,16 @@ from responsibleai.sovereign.models import (
     XRayResult,
 )
 from responsibleai.sovereign.observation import SovereignObservation, observe_authority
-from responsibleai.sovereign.policy_lab import PolicyLabReport, PolicyTestCase, run_policy_tests
+from responsibleai.sovereign.policy_lab import (
+    PolicyDiffReport,
+    PolicyLabReport,
+    PolicySimulateReport,
+    PolicyTestCase,
+    diff_policy_candidate,
+    run_policy_tests,
+    simulate_policy_candidate,
+    validate_policy_rules,
+)
 from responsibleai.sovereign.protocol import (
     PROTOCOL_VERSION,
     SOVEREIGN_VERSION,
@@ -51,6 +73,10 @@ from responsibleai.sovereign.protocol import (
 )
 from responsibleai.sovereign.redaction import redact_for_debugger
 from responsibleai.sovereign.shadow import ShadowObservation, evaluate_shadow
+from responsibleai.sovereign.shadow_persist import (
+    evaluate_shadow_persisted as persist_shadow_observation,
+)
+from responsibleai.sovereign.shadow_store import PersistedShadowRecord
 from responsibleai.sovereign.simulation import (
     BlastRadiusResult,
     MissionSimulationResult,
@@ -59,6 +85,7 @@ from responsibleai.sovereign.simulation import (
 )
 from responsibleai.sovereign.sources import SovereignCanonicalStore
 from responsibleai.sovereign.tenant import assert_same_organization
+from responsibleai.sovereign.time_machine import TimeMachineComparison, compare_then_now
 from responsibleai.sovereign.trace_builder import AuthorityTrace, build_trace_from_evidence
 from responsibleai.sovereign.xray_builder import build_repository_xray
 from responsibleai.sovereign.zero_effect import zero_effect_operation
@@ -361,3 +388,92 @@ class SovereignService:
     ) -> PolicyLabReport:
         self._require(SovereignFeature.POLICY_LAB)
         return await run_policy_tests(self._require_store(), ctx, cases)
+
+    @zero_effect_operation
+    async def diff_policy_async(
+        self, ctx: SovereignContext, candidate_rules: list
+    ) -> PolicyDiffReport:
+        self._require(SovereignFeature.POLICY_LAB)
+        return await diff_policy_candidate(self._require_store(), ctx, candidate_rules)
+
+    @zero_effect_operation
+    async def simulate_policy_async(
+        self,
+        ctx: SovereignContext,
+        *,
+        candidate_rules: list,
+        action_types: list[str],
+    ) -> PolicySimulateReport:
+        self._require(SovereignFeature.POLICY_LAB)
+        return await simulate_policy_candidate(
+            self._require_store(),
+            ctx,
+            candidate_rules=candidate_rules,
+            action_types=action_types,
+        )
+
+    def lint_policy_rules(self, rules: list) -> list[str]:
+        self._require(SovereignFeature.POLICY_LAB)
+        return validate_policy_rules(rules)
+
+    @zero_effect_operation
+    def evaluate_shadow_persisted(
+        self, ctx: SovereignContext, **kwargs: object
+    ) -> PersistedShadowRecord:
+        self._require(SovereignFeature.SHADOW)
+        return persist_shadow_observation(ctx, **kwargs)  # type: ignore[arg-type]
+
+    @zero_effect_operation
+    async def run_gauntlet_async(self, ctx: SovereignContext) -> GauntletReport:
+        self._require(SovereignFeature.GAUNTLET)
+        return await run_sovereign_gauntlet(self._require_store(), ctx)
+
+    @zero_effect_operation
+    async def flight_recorder_async(
+        self, ctx: SovereignContext, evidence_id: str
+    ) -> FlightRecording:
+        self._require(SovereignFeature.FLIGHT_RECORDER)
+        return await build_flight_recording(self._require_store(), ctx, evidence_id=evidence_id)
+
+    @zero_effect_operation
+    async def time_machine_async(
+        self,
+        ctx: SovereignContext,
+        *,
+        then_snapshot: EffectiveAuthoritySnapshot | None,
+    ) -> TimeMachineComparison:
+        self._require(SovereignFeature.TIME_MACHINE)
+        return await compare_then_now(self._require_store(), ctx, then_snapshot=then_snapshot)
+
+    @zero_effect_operation
+    async def correlate_evidence_async(
+        self, ctx: SovereignContext, evidence_id: str
+    ) -> EvidenceCorrelationGraph:
+        self._require(SovereignFeature.EVIDENCE)
+        return await correlate_evidence(self._require_store(), ctx, evidence_id)
+
+    @zero_effect_operation
+    def create_capsule(
+        self,
+        ctx: SovereignContext,
+        *,
+        authority_subset: dict[str, Any] | None = None,
+        timeline: list[dict[str, Any]] | None = None,
+    ) -> SovereignCapsule:
+        self._require(SovereignFeature.CAPSULE)
+        return create_capsule(ctx, authority_subset=authority_subset, timeline=timeline)
+
+    @zero_effect_operation
+    def validate_capsule(self, capsule: SovereignCapsule) -> bool:
+        self._require(SovereignFeature.CAPSULE)
+        return validate_capsule(capsule)
+
+    @zero_effect_operation
+    def reproduce_capsule(self, capsule: SovereignCapsule) -> dict[str, Any]:
+        self._require(SovereignFeature.CAPSULE)
+        return reproduce_capsule(capsule)
+
+    @zero_effect_operation
+    async def authority_bom_async(self, ctx: SovereignContext) -> AuthorityBOM:
+        self._require(SovereignFeature.AUTHORITY_BOM)
+        return await build_authority_bom(self._require_store(), ctx)

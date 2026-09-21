@@ -44,7 +44,9 @@ async def run_policy_tests(
 ) -> PolicyLabReport:
     policy = await store.policies.get_policy(ctx.organization_id)
     identity = IdentityContext(identity_id="policy-lab", kind="agent", org_id=ctx.organization_id)
-    agent = AgentContext(identity=identity, organization_id=ctx.organization_id, agent_id="policy-lab")
+    agent = AgentContext(
+        identity=identity, organization_id=ctx.organization_id, agent_id="policy-lab"
+    )
     results: list[PolicyTestResult] = []
     for case in cases:
         action = ActionRequest(
@@ -82,4 +84,122 @@ def validate_policy_rules(rules: list[PolicyRule]) -> list[str]:
         if rule.rule_id in seen:
             errors.append(f"duplicate rule_id {rule.rule_id}")
         seen.add(rule.rule_id)
+        if not rule.reason_code.strip():
+            errors.append(f"rule {rule.rule_id} missing reason_code")
     return errors
+
+
+class PolicyDiffEntry(BaseModel):
+    rule_id: str
+    change: str  # added | removed | unchanged
+    baseline_effect: str | None = None
+    candidate_effect: str | None = None
+
+
+class PolicyDiffReport(BaseModel):
+    organization_id: str
+    baseline_version: int
+    candidate_rule_count: int
+    entries: list[PolicyDiffEntry] = Field(default_factory=list)
+
+
+class PolicyScenarioResult(BaseModel):
+    action_type: str
+    baseline_effect: str | None
+    candidate_effect: str | None
+    decision_changed: bool
+
+
+class PolicySimulateReport(BaseModel):
+    organization_id: str
+    scenarios: list[PolicyScenarioResult] = Field(default_factory=list)
+
+
+@zero_effect_operation
+async def diff_policy_candidate(
+    store: SovereignCanonicalStore,
+    ctx: SovereignContext,
+    candidate_rules: list[PolicyRule],
+) -> PolicyDiffReport:
+    policy = await store.policies.get_policy(ctx.organization_id)
+    baseline = {r.rule_id: r for r in policy.rules}
+    candidate = {r.rule_id: r for r in candidate_rules}
+    entries: list[PolicyDiffEntry] = []
+    for rule_id, rule in baseline.items():
+        if rule_id not in candidate:
+            entries.append(
+                PolicyDiffEntry(
+                    rule_id=rule_id,
+                    change="removed",
+                    baseline_effect=rule.effect.value,
+                )
+            )
+        else:
+            cand = candidate[rule_id]
+            entries.append(
+                PolicyDiffEntry(
+                    rule_id=rule_id,
+                    change="unchanged" if cand.effect == rule.effect else "modified",
+                    baseline_effect=rule.effect.value,
+                    candidate_effect=cand.effect.value,
+                )
+            )
+    for rule_id, rule in candidate.items():
+        if rule_id not in baseline:
+            entries.append(
+                PolicyDiffEntry(
+                    rule_id=rule_id,
+                    change="added",
+                    candidate_effect=rule.effect.value,
+                )
+            )
+    return PolicyDiffReport(
+        organization_id=ctx.organization_id,
+        baseline_version=policy.version,
+        candidate_rule_count=len(candidate_rules),
+        entries=entries,
+    )
+
+
+@zero_effect_operation
+async def simulate_policy_candidate(
+    store: SovereignCanonicalStore,
+    ctx: SovereignContext,
+    *,
+    candidate_rules: list[PolicyRule],
+    action_types: list[str],
+) -> PolicySimulateReport:
+    from responsibleai.governance.policy import Policy
+
+    baseline = await store.policies.get_policy(ctx.organization_id)
+    candidate = Policy(
+        org_id=ctx.organization_id,
+        rules=list(candidate_rules),
+        version=baseline.version,
+    )
+    identity = IdentityContext(identity_id="policy-lab", kind="agent", org_id=ctx.organization_id)
+    agent = AgentContext(
+        identity=identity, organization_id=ctx.organization_id, agent_id="policy-lab"
+    )
+    scenarios: list[PolicyScenarioResult] = []
+    for action_type in action_types:
+        action = ActionRequest(
+            agent=agent,
+            action_type=action_type,
+            target="policy-lab:target",
+            arguments={},
+            purpose="policy-lab-simulate",
+        )
+        b = baseline.evaluate(action, RiskTier.LOW)
+        c = candidate.evaluate(action, RiskTier.LOW)
+        be = b.rule.effect.value if b else None
+        ce = c.rule.effect.value if c else None
+        scenarios.append(
+            PolicyScenarioResult(
+                action_type=action_type,
+                baseline_effect=be,
+                candidate_effect=ce,
+                decision_changed=be != ce,
+            )
+        )
+    return PolicySimulateReport(organization_id=ctx.organization_id, scenarios=scenarios)
