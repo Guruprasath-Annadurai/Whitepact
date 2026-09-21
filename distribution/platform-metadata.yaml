@@ -36,8 +36,9 @@ terms: https://raw.githubusercontent.com/Guruprasath-Annadurai/Whitepact/main/TE
 # do not redesign the logo for this task, per instructions.
 icon: null # TODO_FOUNDER_ACTION_REQUIRED: point at the canonical logo asset path
 
-version: "1.3.0" # align with pyproject.toml / responsibleai.__version__
-listing_version: "1.3.0" # MCP Registry listing version (bump with releases)
+version: "1.2.6" # PACKAGE_PUBLISHED_VERSION — last PyPI release
+listing_version: "1.2.6" # bump when registry listing matches a new release
+source_development_version: "1.3.0" # pyproject.toml / tree only until published
 
 transport:
   primary: streamable-http
@@ -51,8 +52,7 @@ auth:
 
 tools:
   count_source: src/responsibleai/mcp/metadata.py
-  registered_count: 30
-  public_count: 30
-  note: regenerate from metadata.py on each release; public_count excludes test.* tools when present
+  production_count_source: src/responsibleai/mcp/metadata.py
+  note: production tool count equals len(TOOL_DEFS) on each release branch
   all_read_only: false
   all_non_destructive: true

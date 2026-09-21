@@ -8,17 +8,13 @@ from responsibleai import __version__
 from responsibleai.mcp.resources import RESOURCE_DEFS
 from responsibleai.mcp.tools import TOOL_DEFS
 
-# MCP protocol revision served by the HTTP transports in server.py.
 MCP_PROTOCOL_VERSION = "2025-03-26"
-
 SERVICE_NAME = "whitepact-mcp"
 
+# Update when a new wheel is published to PyPI (do not conflate with source tree).
+PACKAGE_PUBLISHED_VERSION = "1.2.6"
+SOURCE_DEVELOPMENT_VERSION = __version__
+MCP_SERVER_RELEASE_VERSION = PACKAGE_PUBLISHED_VERSION
 
-def _is_test_only_tool(name: str) -> bool:
-    return name.startswith("test.") or name.startswith("test_")
-
-
-REGISTERED_MCP_TOOL_COUNT = len(TOOL_DEFS)
-PUBLIC_MCP_TOOL_COUNT = sum(1 for t in TOOL_DEFS if not _is_test_only_tool(t.name))
+PRODUCTION_MCP_TOOL_COUNT = len(TOOL_DEFS)
 REGISTERED_MCP_RESOURCE_COUNT = len(RESOURCE_DEFS)
-PRODUCT_VERSION = __version__

@@ -6,24 +6,17 @@ original `biasbuster`/`privacylabel`/`responsibleai` packages plus the new
 runtime-authority platform: trust scoring, guardrails, compliance mapping,
 bias evaluation, a governance decision engine (ALLOW / ALLOW_WITH_REDACTION /
 REQUIRE_APPROVAL / DENY / QUARANTINE), and an MCP server (see
-`src/responsibleai/mcp/metadata.py` for current tool counts). This repository
-is historically MIT-licensed; future hosted enforcement may evolve under a
-hybrid model **without** retroactively removing published code.
+`src/responsibleai/mcp/metadata.py` for current tool counts).
 
-## Contribution boundaries (hybrid direction)
+**Repository:** This repository contains the MIT-licensed WhitePact V1 codebase
+and public integration surfaces. Hosted or enterprise offerings may be
+distributed under different terms where clearly identified; that does not change
+the license of code already published here.
 
-**Publicly welcome:** documentation, SDKs, examples, schemas, adapters,
-compatibility fixes, black-box product feedback, and tests that do not require
-private hosted internals.
-
-**Not open for external source contribution:** proprietary future enforcement
-core, private hosted control-plane internals, unreleased enterprise modules, or
-credentials to production systems. Design-partner evaluation is black-box only
-(see issue #87).
-
-Contributions are welcome when they fit the public boundary — bug reports,
-documentation fixes, and integration adapters that make the platform more
-correct or more honest about what it does.
+**Welcome contributions:** documentation, SDK/client improvements, examples,
+public adapters, schemas, compatibility fixes, issues, and black-box product
+feedback. Design-partner evaluation is black-box only (see issue #87) — no
+source-code or private hosted access through that program.
 
 By participating, you're expected to follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 See [GOVERNANCE.md](GOVERNANCE.md) for how decisions get made — this is
