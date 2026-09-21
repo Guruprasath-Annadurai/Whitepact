@@ -12,9 +12,10 @@ from alembic.script import ScriptDirectory
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_alembic_single_head_is_0059_audit_key_id() -> None:
+def test_alembic_single_head_is_0060_test_counter() -> None:
     script = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
-    assert script.get_heads() == ["0059"]
+    assert script.get_heads() == ["0060"]
+    assert script.get_revision("0060").down_revision == "0059"
     assert script.get_revision("0059").down_revision == "0058"
     assert script.get_revision("0058").down_revision == "0057"
     assert script.get_revision("0057").down_revision == "0056"
@@ -37,6 +38,7 @@ def test_alembic_single_head_is_0059_audit_key_id() -> None:
         "0057_layer2_identity_remediation.py",
         "0058_dashboard_saml_transactions.py",
         "0059_widen_audit_log_key_id.py",
+        "0060_test_consequential_counters.py",
     ):
         assert (ROOT / "migrations" / "versions" / name).is_file()
 
@@ -71,6 +73,7 @@ def test_canonical_map_matches_implemented_history() -> None:
     assert "0057" in text and "durable OAuth" in text
     assert "0058" in text and "SAML AuthnRequest" in text
     assert "0059" in text and "audit_log.key_id" in text
+    assert "0060" in text and "test_consequential_counters" in text
     assert "Current implemented Alembic head" in text
-    assert "`0059`" in text
+    assert "`0060`" in text
     assert "`0053`" in text

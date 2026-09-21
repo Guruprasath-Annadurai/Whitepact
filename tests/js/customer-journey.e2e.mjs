@@ -1,6 +1,6 @@
 import { chromium } from "playwright";
 import crypto from "node:crypto";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -46,6 +46,8 @@ async function startServer() {
     WHITEPACT_WEB_SESSION_SECURE: "false",
     RAI_WEB_SESSION_SECURE: "false",
     WHITEPACT_ENV: "development",
+    WHITEPACT_AUTH_ENABLED: "true",
+    RAI_AUTH_ENABLED: "true",
     RAI_LOG_LEVEL: "WARNING",
     PHASE7A_DISPATCHER_ENABLED: "false",
   };
@@ -170,6 +172,71 @@ try {
   const keyBody = await keys.json();
   check(Array.isArray(keyBody.keys) && keyBody.keys.length === 1, "backend lists created key");
   check(!("api_key" in (keyBody.keys[0] ?? {})), "raw secret is not listed later");
+
+  const sqliteUrl = `sqlite:///${dbPath}`;
+  const seed = spawnSync(
+    path.join("/workspace", ".venv", "bin", "python"),
+    ["tests/js/seed_journey_authority.py", "--database-url", sqliteUrl, "--api-key", revealed],
+    { cwd: "/workspace", encoding: "utf8" },
+  );
+  check(seed.status === 0, `authority seed exit ${seed.status} ${seed.stderr || seed.stdout}`);
+
+  const callTool = async (failAfter = false) => context.request.post(`${baseUrl}/api/v1/governance/tools/call`, {
+    headers: { Authorization: `Bearer ${revealed}` },
+    data: { name: "test.counter.increment", arguments: { fail_after_effect: failAfter }, purpose: "automated-test" },
+  });
+  const pending = await callTool();
+  const pendingBody = await pending.json();
+  check(pendingBody.error === "governance_approval_required", `approval required ${JSON.stringify(pendingBody)}`);
+  const approvalId = pendingBody.approval_id;
+  const before = await context.request.get(`${baseUrl}/api/v1/governance/test-counter`, {
+    headers: { Authorization: `Bearer ${revealed}` },
+  });
+  const beforeBody = await before.json();
+  check(beforeBody.counter === 0 && beforeBody.downstream_call_count === 0, `before approval ${JSON.stringify(beforeBody)}`);
+
+  await page.goto(`${baseUrl}/dashboard/approvals`, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Approve" }).click();
+  let afterBody = { counter: -1, downstream_call_count: -1 };
+  for (let i = 0; i < 20; i += 1) {
+    const afterApprove = await context.request.get(`${baseUrl}/api/v1/governance/test-counter`, {
+      headers: { Authorization: `Bearer ${revealed}` },
+    });
+    afterBody = await afterApprove.json();
+    if (afterBody.counter === 1 && afterBody.downstream_call_count === 1) break;
+    await delay(250);
+  }
+  check(afterBody.counter === 1 && afterBody.downstream_call_count === 1, `after approve ${JSON.stringify(afterBody)}`);
+
+  const denyPending = await callTool();
+  const denyBody = await denyPending.json();
+  check(denyBody.error === "governance_approval_required", "second mutation requires approval");
+  await page.goto(`${baseUrl}/dashboard/approvals`, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Deny" }).click();
+  await page.getByText(/no requests are waiting/i).waitFor({ timeout: 10000 }).catch(() => {});
+  const afterDeny = await context.request.get(`${baseUrl}/api/v1/governance/test-counter`, {
+    headers: { Authorization: `Bearer ${revealed}` },
+  });
+  const denyState = await afterDeny.json();
+  check(denyState.counter === 1 && denyState.downstream_call_count === 1, `after deny ${JSON.stringify(denyState)}`);
+
+  await page.goto(`${baseUrl}/dashboard/evidence`, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "Evidence", exact: true }).waitFor();
+  const evidenceApi = await context.request.get(`${baseUrl}/api/v1/web/dashboard/evidence`);
+  const evidenceJson = await evidenceApi.json();
+  check(Array.isArray(evidenceJson.items) && evidenceJson.items.length > 0, "evidence backend has records");
+
+  await page.goto(`${baseUrl}/dashboard/members`, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: /invite a member/i }).waitFor();
+  await page.goto(`${baseUrl}/accept-invitation?token=invalid`, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: /accept invitation/i }).waitFor();
+
+  await page.goto(`${baseUrl}/dashboard/security`, { waitUntil: "domcontentloaded" });
+  const securityApi = await context.request.get(`${baseUrl}/api/v1/web/dashboard/security`);
+  const securityJson = await securityApi.json();
+  check(securityJson.source === "identity_security_stores", `security source ${securityJson.source}`);
+  check(securityJson.items?.some((item) => item.title === "Assurance level"), "assurance comes from backend");
+  await page.getByText(/PASSWORD|UNAVAILABLE|NOT CONFIGURED|IDENTITY_VERIFIED|BASIC_VERIFIED/i).first().waitFor();
 
   await page.goto(`${baseUrl}/dashboard`, { waitUntil: "domcontentloaded" });
   await page.getByText(/governance decisions/i).waitFor();

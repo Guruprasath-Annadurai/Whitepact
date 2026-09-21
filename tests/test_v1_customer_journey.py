@@ -187,7 +187,7 @@ async def test_fresh_postgres_health_ready_and_nonprod_preflight(journey_client)
     hosted_production_preflight(app_module.settings)
     async with app_module._db_engine.raw.connect() as conn:
         version = (await conn.execute(text("SELECT version_num FROM alembic_version"))).scalar()
-    assert version == "0059"
+    assert version == "0060"
     assert url.startswith("postgresql")
 
 
@@ -407,6 +407,56 @@ async def test_two_tenant_onboarding_keys_billing_and_isolation(
         json={"email": "member.a@example.com", "role": "ANALYST"},
     )
     assert invite.status_code == 202
+    invite_token = _token_from_url(invite.json()["invitation_url"])
+    await client.post("/api/v1/web/auth/logout", headers={"X-WP-CSRF": client.cookies["wp_csrf"]})
+    _, member_body = await _register(client, name="Member A", email="member.a@example.com")
+    member_csrf = await _verify_login(
+        client, "member.a@example.com", _token_from_url(member_body["verification_url"])
+    )
+    await client.post("/api/v1/web/auth/logout", headers={"X-WP-CSRF": member_csrf})
+    _, wrong_body = await _register(client, name="Wrong Recipient", email="wrong.a@example.com")
+    wrong_csrf = await _verify_login(
+        client, "wrong.a@example.com", _token_from_url(wrong_body["verification_url"])
+    )
+    wrong_accept = await client.post(
+        "/api/v1/web/invitations/accept",
+        headers={"X-WP-CSRF": wrong_csrf},
+        json={"token": invite_token},
+    )
+    assert wrong_accept.status_code in {400, 403, 404}
+    await client.post("/api/v1/web/auth/logout", headers={"X-WP-CSRF": client.cookies["wp_csrf"]})
+    member_login = await client.post(
+        "/api/v1/web/auth/login",
+        json={"email": "member.a@example.com", "password": STRONG},
+    )
+    assert member_login.status_code == 200
+    member_csrf = client.cookies["wp_csrf"]
+    accept = await client.post(
+        "/api/v1/web/invitations/accept",
+        headers={"X-WP-CSRF": member_csrf},
+        json={"token": invite_token},
+    )
+    assert accept.status_code == 200, accept.text
+    members_after = await client.get("/api/v1/web/dashboard/members")
+    assert any(
+        item.get("email") == "member.a@example.com" for item in members_after.json()["items"]
+    )
+    replay_invite = await client.post(
+        "/api/v1/web/invitations/accept",
+        headers={"X-WP-CSRF": client.cookies["wp_csrf"]},
+        json={"token": invite_token},
+    )
+    assert replay_invite.status_code in {400, 409}
+    security = await client.get("/api/v1/web/dashboard/security")
+    assert security.status_code == 200
+    assert security.json()["source"] == "identity_security_stores"
+    assert any(item.get("title") == "Assurance level" for item in security.json()["items"])
+    await client.post("/api/v1/web/auth/logout", headers={"X-WP-CSRF": client.cookies["wp_csrf"]})
+    owner_login = await client.post(
+        "/api/v1/web/auth/login",
+        json={"email": "owner.a@example.com", "password": STRONG},
+    )
+    assert owner_login.status_code == 200
 
     billing = await client.get("/api/v1/web/dashboard/billing")
     assert billing.status_code == 200
@@ -646,7 +696,7 @@ async def test_historical_0057_upgrade_then_signup(monkeypatch: pytest.MonkeyPat
                     version = (
                         await conn.execute(text("SELECT version_num FROM alembic_version"))
                     ).scalar()
-                assert version == "0059"
+                assert version == "0060"
                 status, body = await _register(
                     client, name="Upgrade User", email="upgrade.user@example.com"
                 )
