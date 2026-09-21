@@ -150,7 +150,7 @@ class TestHealthEndpoint:
         assert payload["status"] == "ok"
         assert payload["transport"] == "http+sse"
         assert set(payload["transports"]) == {"streamable-http", "http+sse"}
-        assert payload["tools"] == 31
+        assert payload["tools"] == 30
 
 
 
