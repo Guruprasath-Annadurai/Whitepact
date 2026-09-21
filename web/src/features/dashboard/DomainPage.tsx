@@ -91,6 +91,7 @@ function ApprovalsPanel({ records, onError, onChanged }: { records: DomainRecord
         <div><dt>Approval ID</dt><dd>{id}</dd></div>
         <div><dt>Target</dt><dd>{format(record.target)}</dd></div>
         <div><dt>Risk</dt><dd>{format(record.risk_tier)}</dd></div>
+        <div><dt>Required approvals</dt><dd>{format(record.required_approvals)}</dd></div>
         <div><dt>Requested</dt><dd>{format(record.requested_at)}</dd></div>
         <div><dt>Requested by</dt><dd>{format(record.requested_by)}</dd></div>
       </dl>

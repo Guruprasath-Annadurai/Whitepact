@@ -148,6 +148,66 @@ async def _onboard(client: AsyncClient, csrf: str, org_name: str) -> dict:
     return session.json()
 
 
+async def _login(client: AsyncClient, email: str, password: str = STRONG) -> str:
+    login = await client.post("/api/v1/web/auth/login", json={"email": email, "password": password})
+    assert login.status_code == 200, login.text
+    return client.cookies["wp_csrf"]
+
+
+async def _invite_and_accept_admin(
+    client: AsyncClient, *, owner_email: str, admin_email: str, admin_name: str
+) -> None:
+    csrf = client.cookies["wp_csrf"]
+    invite = await client.post(
+        "/api/v1/web/invitations",
+        headers={"X-WP-CSRF": csrf},
+        json={"email": admin_email, "role": "ADMIN"},
+    )
+    assert invite.status_code == 202, invite.text
+    token = _token_from_url(invite.json()["invitation_url"])
+    await client.post("/api/v1/web/auth/logout", headers={"X-WP-CSRF": csrf})
+    _, body = await _register(client, name=admin_name, email=admin_email)
+    admin_csrf = await _verify_login(client, admin_email, _token_from_url(body["verification_url"]))
+    accepted = await client.post(
+        "/api/v1/web/invitations/accept",
+        headers={"X-WP-CSRF": admin_csrf},
+        json={"token": token},
+    )
+    assert accepted.status_code == 200, accepted.text
+    await client.post("/api/v1/web/auth/logout", headers={"X-WP-CSRF": client.cookies["wp_csrf"]})
+    await _login(client, owner_email)
+
+
+async def _quorum_approve_and_execute(
+    client: AsyncClient, approval_id: str, *, owner_email: str, admin_email: str
+) -> dict:
+    first = await client.post(
+        f"/api/v1/web/approvals/{approval_id}/resolve",
+        headers={"X-WP-CSRF": client.cookies["wp_csrf"]},
+        json={"outcome": "APPROVED"},
+    )
+    assert first.status_code == 200, first.text
+    assert first.json()["status"] == "PENDING"
+    await client.post("/api/v1/web/auth/logout", headers={"X-WP-CSRF": client.cookies["wp_csrf"]})
+    admin_csrf = await _login(client, admin_email)
+    second = await client.post(
+        f"/api/v1/web/approvals/{approval_id}/resolve",
+        headers={"X-WP-CSRF": admin_csrf},
+        json={"outcome": "APPROVED"},
+    )
+    assert second.status_code == 200, second.text
+    assert second.json()["status"] == "APPROVED"
+    executed = await client.post(
+        f"/api/v1/web/approvals/{approval_id}/execute",
+        headers={"X-WP-CSRF": admin_csrf},
+        json={},
+    )
+    assert executed.status_code == 200, executed.text
+    await client.post("/api/v1/web/auth/logout", headers={"X-WP-CSRF": client.cookies["wp_csrf"]})
+    await _login(client, owner_email)
+    return executed.json()
+
+
 async def _apply_idv(client: AsyncClient, user_id: str, event_id: str) -> None:
     timestamp = datetime.now(UTC).isoformat()
     payload = json.dumps(

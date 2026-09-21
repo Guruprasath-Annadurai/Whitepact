@@ -322,42 +322,95 @@ async def test_two_http_replicas_share_durable_security_state(
                         ),
                     )
                     await engine.close()
-                    pending = a.post(
-                        "/api/v1/governance/tools/call",
-                        headers={"Authorization": f"Bearer {raw_key}"},
-                        json={
-                            "name": SYNTHETIC_COUNTER_TOOL,
-                            "arguments": {},
-                            "purpose": PURPOSE,
-                        },
-                    )
-                    assert pending.status_code == 200, pending.text
-                    approval_id = pending.json()["approval_id"]
-                    inspect_b = b.get("/api/v1/web/dashboard/approvals", cookies=a.cookies)
-                    assert inspect_b.status_code == 200
-                    assert any(
-                        item.get("approval_id") == approval_id for item in inspect_b.json()["items"]
-                    )
-                    resolved_b = b.post(
-                        f"/api/v1/web/approvals/{approval_id}/resolve",
+                    invite = a.post(
+                        "/api/v1/web/invitations",
                         headers={"X-WP-CSRF": csrf},
-                        cookies=a.cookies,
-                        json={"outcome": "APPROVED"},
+                        json={"email": "replica.admin@example.com", "role": "ADMIN"},
                     )
-                    assert resolved_b.status_code == 200, resolved_b.text
-                    executed_b = b.post(
-                        f"/api/v1/web/approvals/{approval_id}/execute",
-                        headers={"X-WP-CSRF": csrf},
-                        cookies=a.cookies,
-                        json={},
-                    )
-                    assert executed_b.status_code == 200, executed_b.text
-                    counter_a = a.get(
-                        "/api/v1/governance/test-counter",
-                        headers={"Authorization": f"Bearer {raw_key}"},
-                    )
-                    assert counter_a.json()["counter"] == 1
-                    assert counter_a.json()["downstream_call_count"] == 1
+                    assert invite.status_code == 202, invite.text
+                    admin_token = parse_qs(urlparse(invite.json()["invitation_url"]).query)[
+                        "token"
+                    ][0]
+                    with httpx.Client(
+                        base_url=URL_A, timeout=20.0, follow_redirects=False
+                    ) as admin:
+                        register_admin = admin.post(
+                            "/api/v1/web/auth/register",
+                            json={
+                                "full_name": "Replica Admin",
+                                "email": "replica.admin@example.com",
+                                "password": STRONG,
+                                "accepted_terms": True,
+                            },
+                        )
+                        assert register_admin.status_code == 202, register_admin.text
+                        admin_verify = parse_qs(
+                            urlparse(register_admin.json()["verification_url"]).query
+                        )["token"][0]
+                        assert (
+                            admin.post(
+                                "/api/v1/web/auth/verify", json={"token": admin_verify}
+                            ).status_code
+                            == 200
+                        )
+                        assert (
+                            admin.post(
+                                "/api/v1/web/auth/login",
+                                json={"email": "replica.admin@example.com", "password": STRONG},
+                            ).status_code
+                            == 200
+                        )
+                        accepted = admin.post(
+                            "/api/v1/web/invitations/accept",
+                            headers={"X-WP-CSRF": admin.cookies["wp_csrf"]},
+                            json={"token": admin_token},
+                        )
+                        assert accepted.status_code == 200, accepted.text
+                        pending = a.post(
+                            "/api/v1/governance/tools/call",
+                            headers={"Authorization": f"Bearer {raw_key}"},
+                            json={
+                                "name": SYNTHETIC_COUNTER_TOOL,
+                                "arguments": {},
+                                "purpose": PURPOSE,
+                            },
+                        )
+                        assert pending.status_code == 200, pending.text
+                        approval_id = pending.json()["approval_id"]
+                        inspect_b = b.get("/api/v1/web/dashboard/approvals", cookies=a.cookies)
+                        assert inspect_b.status_code == 200
+                        assert any(
+                            item.get("approval_id") == approval_id
+                            for item in inspect_b.json()["items"]
+                        )
+                        first_vote = a.post(
+                            f"/api/v1/web/approvals/{approval_id}/resolve",
+                            headers={"X-WP-CSRF": csrf},
+                            json={"outcome": "APPROVED"},
+                        )
+                        assert first_vote.status_code == 200, first_vote.text
+                        assert first_vote.json()["status"] == "PENDING"
+                        second_vote = b.post(
+                            f"/api/v1/web/approvals/{approval_id}/resolve",
+                            headers={"X-WP-CSRF": admin.cookies["wp_csrf"]},
+                            cookies=admin.cookies,
+                            json={"outcome": "APPROVED"},
+                        )
+                        assert second_vote.status_code == 200, second_vote.text
+                        assert second_vote.json()["status"] == "APPROVED"
+                        executed_b = b.post(
+                            f"/api/v1/web/approvals/{approval_id}/execute",
+                            headers={"X-WP-CSRF": admin.cookies["wp_csrf"]},
+                            cookies=admin.cookies,
+                            json={},
+                        )
+                        assert executed_b.status_code == 200, executed_b.text
+                        counter_a = a.get(
+                            "/api/v1/governance/test-counter",
+                            headers={"Authorization": f"Bearer {raw_key}"},
+                        )
+                        assert counter_a.json()["counter"] == 1
+                        assert counter_a.json()["downstream_call_count"] == 1
 
                     oidc = a.get("/api/auth/login/oidc")
                     assert oidc.status_code == 200, oidc.text

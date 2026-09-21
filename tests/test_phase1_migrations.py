@@ -25,7 +25,7 @@ from responsibleai.db.migrate import (
 
 def test_one_canonical_head():
     scripts = ScriptDirectory.from_config(Config("alembic.ini"))
-    assert scripts.get_heads() == ["0059"]
+    assert scripts.get_heads() == ["0060"]
     assert scripts.get_revision("0053").down_revision == "0052"
     assert scripts.get_revision("0049").down_revision == "0048"
     assert scripts.get_revision("0048").down_revision == "0047"

@@ -4,8 +4,13 @@
 
 from __future__ import annotations
 
-from httpx import AsyncClient
+from collections.abc import AsyncIterator
 
+import pytest
+from asgi_lifespan import LifespanManager
+from httpx import ASGITransport, AsyncClient
+
+import responsibleai.dashboard.app as app_module
 from responsibleai.db import PolicyRepository, create_engine
 from responsibleai.governance.models import GovernanceDecision
 from responsibleai.governance.outcome import OutcomeStatus
@@ -14,21 +19,49 @@ from responsibleai.governance.synthetic_counter import SYNTHETIC_COUNTER_TOOL
 from tests.test_v1_customer_journey import (
     PURPOSE,
     _apply_idv,
+    _invite_and_accept_admin,
     _onboard,
+    _pg_url,
+    _quorum_approve_and_execute,
     _register,
     _token_from_url,
+    _upgrade_head,
     _verify_login,
 )
 
+OWNER_EMAIL = "effect.owner@example.com"
+ADMIN_EMAIL = "effect.admin@example.com"
+
+
+@pytest.fixture()
+async def pg_url() -> AsyncIterator[str]:
+    async for url in _pg_url("wp_effect"):
+        yield url
+
+
+@pytest.fixture()
+async def journey_client(monkeypatch: pytest.MonkeyPatch, pg_url: str):
+    await _upgrade_head(pg_url)
+    monkeypatch.setattr(app_module.settings, "database_url", pg_url)
+    monkeypatch.setattr(app_module.settings, "db_path", ":memory:")
+    monkeypatch.setattr(app_module.settings, "auto_migrate", False)
+    monkeypatch.setattr(app_module.settings, "web_auth_dev_tokens", True)
+    monkeypatch.setattr(app_module.settings, "web_session_secure", False)
+    monkeypatch.setattr(app_module.settings, "web_verification_delivery_url", None)
+    monkeypatch.setattr(app_module.settings, "paddle_webhook_secret", "paddle-test-placeholder")
+    monkeypatch.setattr(app_module.settings, "environment", "development")
+    monkeypatch.setattr(app_module.limiter, "enabled", False)
+    async with LifespanManager(app_module.app) as manager:
+        async with AsyncClient(
+            transport=ASGITransport(app=manager.app), base_url="http://test"
+        ) as client:
+            yield client, pg_url
+
 
 async def _prepare_org(client: AsyncClient, monkeypatch, seed_runtime_authority, pg_url: str):
-    import responsibleai.dashboard.app as app_module
-
     monkeypatch.setattr(app_module.settings, "auth_enabled", True)
-    _, body = await _register(client, name="Effect Owner", email="effect.owner@example.com")
-    csrf = await _verify_login(
-        client, "effect.owner@example.com", _token_from_url(body["verification_url"])
-    )
+    _, body = await _register(client, name="Effect Owner", email=OWNER_EMAIL)
+    csrf = await _verify_login(client, OWNER_EMAIL, _token_from_url(body["verification_url"]))
     sess = await _onboard(client, csrf, "Effect Org")
     org_id = sess["organization"]["id"]
     user_id = sess["user"]["id"]
@@ -44,6 +77,9 @@ async def _prepare_org(client: AsyncClient, monkeypatch, seed_runtime_authority,
     )
     assert created.status_code == 201, created.text
     raw = created.json()["api_key"]
+    await _invite_and_accept_admin(
+        client, owner_email=OWNER_EMAIL, admin_email=ADMIN_EMAIL, admin_name="Effect Admin"
+    )
     engine = create_engine(pg_url)
     await engine.init(auto_create_tables=False)
     from responsibleai.db.org_repository import OrgRepository
@@ -68,7 +104,7 @@ async def _prepare_org(client: AsyncClient, monkeypatch, seed_runtime_authority,
         ),
     )
     await engine.close()
-    return org_id, raw, client.cookies["wp_csrf"]
+    return org_id, raw
 
 
 async def _call(client: AsyncClient, raw: str, fail_after: bool = False):
@@ -87,7 +123,7 @@ async def test_exactly_one_effect_approve_replay_deny_unknown(
     journey_client, monkeypatch, seed_runtime_authority
 ) -> None:
     client, pg_url = journey_client
-    org_id, raw, csrf = await _prepare_org(client, monkeypatch, seed_runtime_authority, pg_url)
+    org_id, raw = await _prepare_org(client, monkeypatch, seed_runtime_authority, pg_url)
 
     before = await client.get(
         "/api/v1/governance/test-counter", headers={"Authorization": f"Bearer {raw}"}
@@ -107,18 +143,10 @@ async def test_exactly_one_effect_approve_replay_deny_unknown(
     assert mid.json()["counter"] == 0
     assert mid.json()["downstream_call_count"] == 0
 
-    resolve = await client.post(
-        f"/api/v1/web/approvals/{approval_id}/resolve",
-        headers={"X-WP-CSRF": csrf},
-        json={"outcome": "APPROVED"},
+    await _quorum_approve_and_execute(
+        client, approval_id, owner_email=OWNER_EMAIL, admin_email=ADMIN_EMAIL
     )
-    assert resolve.status_code == 200, resolve.text
-    executed = await client.post(
-        f"/api/v1/web/approvals/{approval_id}/execute",
-        headers={"X-WP-CSRF": csrf},
-        json={},
-    )
-    assert executed.status_code == 200, executed.text
+    csrf = client.cookies["wp_csrf"]
     after = await client.get(
         "/api/v1/governance/test-counter", headers={"Authorization": f"Bearer {raw}"}
     )
@@ -197,18 +225,10 @@ async def test_exactly_one_effect_approve_replay_deny_unknown(
 
     lost = await _call(client, raw, fail_after=True)
     unknown_id = lost.json()["approval_id"]
-    await client.post(
-        f"/api/v1/web/approvals/{unknown_id}/resolve",
-        headers={"X-WP-CSRF": csrf},
-        json={"outcome": "APPROVED"},
+    payload = await _quorum_approve_and_execute(
+        client, unknown_id, owner_email=OWNER_EMAIL, admin_email=ADMIN_EMAIL
     )
-    unknown_exec = await client.post(
-        f"/api/v1/web/approvals/{unknown_id}/execute",
-        headers={"X-WP-CSRF": csrf},
-        json={},
-    )
-    payload = unknown_exec.json()
-    assert unknown_exec.status_code == 200
+    csrf = client.cookies["wp_csrf"]
     assert payload.get("error") == "governance_unknown_outcome"
     unknown_state = await client.get(
         "/api/v1/governance/test-counter", headers={"Authorization": f"Bearer {raw}"}

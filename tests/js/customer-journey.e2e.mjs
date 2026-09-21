@@ -181,6 +181,32 @@ try {
   );
   check(seed.status === 0, `authority seed exit ${seed.status} ${seed.stderr || seed.stdout}`);
 
+  const csrf = (await context.cookies()).find((cookie) => cookie.name === "wp_csrf")?.value;
+  const adminEmail = `admin-${Date.now()}@example.com`;
+  const invite = await context.request.post(`${baseUrl}/api/v1/web/invitations`, {
+    headers: { "X-WP-CSRF": csrf, "Content-Type": "application/json" },
+    data: JSON.stringify({ email: adminEmail, role: "ADMIN" }),
+  });
+  const inviteBody = await invite.json();
+  check(invite.ok(), `invite ${invite.status()}`);
+  const inviteToken = new URL(String(inviteBody.invitation_url).replace(/https?:\/\/[^/]+/, baseUrl)).searchParams.get("token");
+  const adminContext = await browser.newContext();
+  const adminRegister = await adminContext.request.post(`${baseUrl}/api/v1/web/auth/register`, {
+    data: { full_name: "Journey Admin", email: adminEmail, password, accepted_terms: true },
+  });
+  const adminRegisterBody = await adminRegister.json();
+  const adminVerifyUrl = String(adminRegisterBody.verification_url || "").replace(/https?:\/\/[^/]+/, baseUrl);
+  const adminVerifyToken = new URL(adminVerifyUrl).searchParams.get("token");
+  await adminContext.request.post(`${baseUrl}/api/v1/web/auth/verify`, { data: { token: adminVerifyToken } });
+  await adminContext.request.post(`${baseUrl}/api/v1/web/auth/login`, { data: { email: adminEmail, password } });
+  const adminCsrf = (await adminContext.cookies()).find((cookie) => cookie.name === "wp_csrf")?.value;
+  const accepted = await adminContext.request.post(`${baseUrl}/api/v1/web/invitations/accept`, {
+    headers: { "X-WP-CSRF": adminCsrf, "Content-Type": "application/json" },
+    data: JSON.stringify({ token: inviteToken }),
+  });
+  check(accepted.ok(), `accept invitation ${accepted.status()} ${await accepted.text()}`);
+  const adminPage = await adminContext.newPage();
+
   const callTool = async (failAfter = false) => context.request.post(`${baseUrl}/api/v1/governance/tools/call`, {
     headers: { Authorization: `Bearer ${revealed}` },
     data: { name: "test.counter.increment", arguments: { fail_after_effect: failAfter }, purpose: "automated-test" },
@@ -188,7 +214,6 @@ try {
   const pending = await callTool();
   const pendingBody = await pending.json();
   check(pendingBody.error === "governance_approval_required", `approval required ${JSON.stringify(pendingBody)}`);
-  const approvalId = pendingBody.approval_id;
   const before = await context.request.get(`${baseUrl}/api/v1/governance/test-counter`, {
     headers: { Authorization: `Bearer ${revealed}` },
   });
@@ -197,6 +222,9 @@ try {
 
   await page.goto(`${baseUrl}/dashboard/approvals`, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Approve" }).click();
+  await page.getByText("PENDING").first().waitFor({ timeout: 10000 }).catch(() => {});
+  await adminPage.goto(`${baseUrl}/dashboard/approvals`, { waitUntil: "domcontentloaded" });
+  await adminPage.getByRole("button", { name: "Approve" }).click();
   let afterBody = { counter: -1, downstream_call_count: -1 };
   for (let i = 0; i < 20; i += 1) {
     const afterApprove = await context.request.get(`${baseUrl}/api/v1/governance/test-counter`, {

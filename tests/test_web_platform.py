@@ -131,9 +131,15 @@ async def test_atomic_rotation_is_unique_and_tenant_scoped(repository_pair):
 
 @pytest.fixture()
 async def web_client(monkeypatch):
+    from responsibleai.dashboard.signup_guard import SignupRateWindow
+
     monkeypatch.setattr(app_module.settings, "web_auth_dev_tokens", True)
     monkeypatch.setattr(app_module.settings, "web_session_secure", False)
     monkeypatch.setattr(app_module.settings, "web_verification_delivery_url", None)
+    monkeypatch.setattr(
+        app_module, "_signup_window", SignupRateWindow(max_per_window=30, window_seconds=3600.0)
+    )
+    monkeypatch.setattr(app_module.limiter, "enabled", False)
     async with LifespanManager(app_module.app) as manager:
         async with AsyncClient(
             transport=ASGITransport(app=manager.app), base_url="http://test"
