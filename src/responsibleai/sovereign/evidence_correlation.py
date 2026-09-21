@@ -42,7 +42,7 @@ async def correlate_evidence(
     links.append(
         EvidenceLink(
             kind="evidence",
-            identifier=record.id,
+            identifier=record.evidence_id,
             verification=verification,
         )
     )
@@ -54,13 +54,13 @@ async def correlate_evidence(
                 verification="INCOMPLETE",
             )
         )
-    outcome = await store.outcomes.get_for_org(record.id, ctx.organization_id)
+    outcome = await store.outcomes.get_for_org(record.evidence_id, ctx.organization_id)
     if outcome:
-        status = outcome.status if hasattr(outcome, "status") else "UNKNOWN"
+        status = outcome.status.value
         links.append(
             EvidenceLink(
                 kind="outcome",
-                identifier=outcome.id if hasattr(outcome, "id") else str(outcome),
+                identifier=outcome.outcome_id,
                 verification="UNKNOWN" if status == "UNKNOWN" else "INCOMPLETE",
             )
         )

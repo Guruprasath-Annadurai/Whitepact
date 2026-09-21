@@ -26,7 +26,7 @@ def _emit(data: object, human: str | None, json_mode: bool) -> None:
 
 
 def _ctx_from_flags(org: str, env: str | None) -> SovereignContext:
-    return SovereignContext(organization_id=org, environment=env)
+    return SovereignContext(organization_id=org, environment=env or "development")
 
 
 @click.group()

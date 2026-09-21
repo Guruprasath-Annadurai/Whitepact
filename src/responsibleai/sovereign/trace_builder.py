@@ -245,7 +245,7 @@ async def build_trace_from_evidence(
                 status="PRESENT",
                 identifier=outcome.outcome_id,
                 provenance="DATABASE_FACT",
-                summary=f"Outcome disposition {outcome.disposition}",
+                summary=f"Outcome status {outcome.status.value}",
             )
         )
     else:

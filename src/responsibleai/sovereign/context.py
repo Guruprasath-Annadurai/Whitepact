@@ -21,14 +21,12 @@ class SovereignContext:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def with_correlation(self, **kwargs: Any) -> SovereignContext:
-        data = {
-            "organization_id": self.organization_id,
-            "environment": self.environment,
-            "principal_id": self.principal_id,
-            "request_id": self.request_id,
-            "trace_id": self.trace_id,
-            "sandbox": self.sandbox,
-            "metadata": dict(self.metadata),
-        }
-        data.update(kwargs)
-        return SovereignContext(**data)
+        return SovereignContext(
+            organization_id=str(kwargs.get("organization_id", self.organization_id)),
+            environment=str(kwargs.get("environment", self.environment)),
+            principal_id=kwargs.get("principal_id", self.principal_id),
+            request_id=kwargs.get("request_id", self.request_id),
+            trace_id=kwargs.get("trace_id", self.trace_id),
+            sandbox=bool(kwargs.get("sandbox", self.sandbox)),
+            metadata=dict(kwargs.get("metadata", self.metadata)),
+        )

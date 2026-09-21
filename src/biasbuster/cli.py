@@ -139,9 +139,11 @@ def main() -> None:
 
 
 from responsibleai.sovereign.cli import register_top_level, sovereign  # noqa: E402
+from responsibleai.sovereign.cli_aliases import register_top_level_aliases  # noqa: E402
 
 main.add_command(sovereign)
 register_top_level(main)
+register_top_level_aliases(main)
 
 
 @main.command()

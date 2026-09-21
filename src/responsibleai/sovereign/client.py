@@ -4,12 +4,11 @@
 
 from __future__ import annotations
 
-from enum import StrEnum
-
 from responsibleai.sovereign.context import SovereignContext
 from responsibleai.sovereign.protocol import SovereignCapabilities, SovereignStatus
 from responsibleai.sovereign.service import SovereignService
 from responsibleai.sovereign.sources import SovereignCanonicalStore
+from enum import StrEnum
 
 
 class RetryClass(StrEnum):
@@ -25,6 +24,8 @@ RETRY_MAP: dict[str, RetryClass] = {
     "explain": RetryClass.SAFE_TO_RETRY,
     "trace": RetryClass.SAFE_TO_RETRY,
     "effective": RetryClass.SAFE_TO_RETRY,
+    "drift": RetryClass.SAFE_TO_RETRY,
+    "compare": RetryClass.SAFE_TO_RETRY,
     "simulate_blast_radius": RetryClass.NEVER_BLINDLY_RETRY,
     "simulate_mission": RetryClass.NEVER_BLINDLY_RETRY,
     "shadow": RetryClass.NEVER_BLINDLY_RETRY,
@@ -59,6 +60,15 @@ class SovereignClient:
     async def xray(self, ctx: SovereignContext):
         return await self._service.build_xray_async(ctx)
 
+    async def explain_evidence(self, ctx: SovereignContext, evidence_id: str):
+        return await self._service.explain_evidence_async(ctx, evidence_id)
+
+    async def trace(self, ctx: SovereignContext, evidence_id: str):
+        return await self._service.trace_evidence_async(ctx, evidence_id)
+
+    async def effective(self, ctx: SovereignContext):
+        return await self._service.load_effective_async(ctx)
+
     async def blast_radius(
         self, ctx: SovereignContext, *, actor: str, extra: frozenset[str] = frozenset()
     ):
@@ -71,3 +81,6 @@ class SovereignClient:
 
     async def gauntlet(self, ctx: SovereignContext, *, probe_ids: list[str] | None = None):
         return await self._service.run_gauntlet_async(ctx, probe_ids=probe_ids)
+
+    async def correlate(self, ctx: SovereignContext, evidence_id: str):
+        return await self._service.correlate_evidence_async(ctx, evidence_id)
