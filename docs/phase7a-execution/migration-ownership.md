@@ -5,12 +5,12 @@
 **Phase 7A frozen runtime head:** `0053`
 **File:** `migrations/versions/0053_runtime_worker_leases.py`
 
-**Current implemented Alembic head:** `0059`
-**File:** `migrations/versions/0059_widen_audit_log_key_id.py`
-**Down-revision:** `0058` → `0057` → `0056` → `0055` → `0054` → `0053` → `0052` → `0051` → `0050` → `0049` → `0048`
+**Current implemented Alembic head:** `0060`
+**File:** `migrations/versions/0060_test_consequential_counters.py`
+**Down-revision:** `0059` → `0058` → `0057` → `0056` → `0055` → `0054` → `0053` → `0052` → `0051` → `0050` → `0049` → `0048`
 
 There is one linear chain. There is no branch split and no orphan
-revision. `alembic heads` must equal `0059`.
+revision. `alembic heads` must equal `0060`.
 
 Phase 7A runtime schema (`0050`–`0053`) is frozen. Enterprise SaaS Layer 1
 and Layer 2 extend administrative identity only. Production Gate B remains CLOSED.
@@ -30,6 +30,7 @@ dispatcher activation.
 | `0057` | Layer 2 remediation: durable OAuth transactions, distributed identity abuse counters, four-eyes requests | **Implemented** |
 | `0058` | Dashboard SAML AuthnRequest durable correlation (multi-replica ACS replay defense) | **Implemented** |
 | `0059` | Widen `audit_log.key_id` so web-session actors (`web:{user_id}`) persist on PostgreSQL | **Implemented** |
+| `0060` | `test_consequential_counters` — durable synthetic mutation state for exactly-once proofs | **Implemented** |
 
 Pass 4.4 numbering (obsolete):
 

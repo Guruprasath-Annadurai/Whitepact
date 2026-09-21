@@ -157,6 +157,7 @@ _WHITEPACT_PAGE_PATHS = {
     "/forgot-password",
     "/reset-password",
     "/onboarding",
+    "/accept-invitation",
     "/dashboard",
     "/about",
     "/contact",

@@ -946,6 +946,14 @@ TABLE_CLASSIFICATIONS: dict[str, TableClassification] = {
         False,
         True,
     ),
+    "test_consequential_counters": TableClassification(
+        "test_consequential_counters",
+        DataClassification.TENANT_OPERATIONAL,
+        SensitivityTier.LOW,
+        "90D_DEFAULT",
+        True,
+        True,
+    ),
     "webhook_configs": TableClassification(
         "webhook_configs",
         DataClassification.TENANT_OPERATIONAL,

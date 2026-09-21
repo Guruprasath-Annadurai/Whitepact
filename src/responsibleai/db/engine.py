@@ -2657,6 +2657,15 @@ dashboard_saml_transactions = Table(
     Index("idx_dashboard_saml_expiry", "expires_at"),
 )
 
+test_consequential_counters = Table(
+    "test_consequential_counters",
+    metadata,
+    Column("organization_id", String(36), primary_key=True),
+    Column("counter", Integer, nullable=False, server_default="0"),
+    Column("downstream_call_count", Integer, nullable=False, server_default="0"),
+    Column("updated_at", String(32), nullable=False),
+)
+
 
 class DatabaseEngine:
     """Async database engine wrapping SQLAlchemy — SQLite or PostgreSQL.

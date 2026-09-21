@@ -102,6 +102,9 @@ def validate_schema_lineage(connection: Connection) -> None:
         58: {
             "dashboard_saml_transactions",
         },
+        60: {
+            "test_consequential_counters",
+        },
     }
     for introduced, expected in requirements.items():
         if revision >= introduced and not expected <= tables:

@@ -527,6 +527,9 @@ def _build_http_app() -> Any:
     settings = get_settings()
     hosted_production_preflight(settings)
     _db_engine = create_engine(settings.effective_db_url)
+    from responsibleai.governance.synthetic_counter import bind_counter_engine
+
+    bind_counter_engine(_db_engine)
     _org_repo = OrgRepository(_db_engine)
     _usage_repo = McpUsageRepository(_db_engine)
     _mcp_oauth_server = (

@@ -76,6 +76,7 @@ TOOL_RISK_TIERS: dict[str, RiskTier] = {
     "rai_compare_models": RiskTier.HIGH,
     "rai_benchmark": RiskTier.HIGH,
     "rai_benchmark_prompts": RiskTier.HIGH,
+    "test.counter.increment": RiskTier.HIGH,
 }
 
 # The action_type governance/upstream_executor.py's UpstreamMCPExecutor

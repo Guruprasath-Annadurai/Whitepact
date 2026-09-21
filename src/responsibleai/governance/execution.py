@@ -303,7 +303,7 @@ async def admit_execution(
 
 
 class InternalToolExecutor:
-    """Executes one of this platform's own 27 MCP tools
+    """Executes one of this platform's own MCP tools
     (`mcp.tools.dispatch_tool`). In Phase 2, can route execution through
     the independent `IsolationBroker` to enforce OS/container-level
     containment.
@@ -349,6 +349,10 @@ class InternalToolExecutor:
                 "An IsolationBroker is mandatory."
             )
 
+        from responsibleai.governance.synthetic_counter import SYNTHETIC_COUNTER_TOOL
         from responsibleai.mcp.tools import dispatch_tool
 
-        return await dispatch_tool(action.action_type, action.arguments)
+        dispatch_args = dict(action.arguments)
+        if action.action_type == SYNTHETIC_COUNTER_TOOL:
+            dispatch_args["_whitepact_organization_id"] = action.agent.organization_id or ""
+        return await dispatch_tool(action.action_type, dispatch_args)

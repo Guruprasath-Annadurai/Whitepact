@@ -1105,6 +1105,28 @@ TOOL_DEFS: list[types.Tool] = [
             "required": ["provenance"],
         },
     ),
+    types.Tool(
+        name="test.counter.increment",
+        title="Synthetic governed counter (test only)",
+        annotations=types.ToolAnnotations(
+            readOnlyHint=False, idempotentHint=False, openWorldHint=False, destructiveHint=False
+        ),
+        description=(
+            "Deterministic synthetic mutation used to prove exactly-one "
+            "consequential effect on the governed execution path. Forbidden "
+            "in production. Not a customer product tool."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "fail_after_effect": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "If true, mutate then raise to simulate a lost acknowledgement.",
+                }
+            },
+        },
+    ),
 ]
 
 # WhitePact's hosted transport requires an explicit, human-readable purpose for
@@ -1128,6 +1150,14 @@ for _tool in TOOL_DEFS:
 # once every name it references actually exists.
 
 # ── original handlers ─────────────────────────────────────────────────────────
+
+
+async def _handle_test_counter_increment(args: dict[str, Any]) -> dict[str, Any]:
+    from responsibleai.governance.synthetic_counter import increment
+
+    org_id = str(args.get("_whitepact_organization_id") or "")
+    fail_after = bool(args.get("fail_after_effect", False))
+    return await increment(org_id, fail_after_effect=fail_after)
 
 
 async def _handle_scan(args: dict[str, Any]) -> dict[str, Any]:
@@ -2553,6 +2583,7 @@ _TOOL_HANDLERS: dict[str, Any] = {
     "rai_memory_write_check": _handle_memory_write_check,
     "rai_memory_read_check": _handle_memory_read_check,
     "rai_causal_influence_check": _handle_causal_influence_check,
+    "test.counter.increment": _handle_test_counter_increment,
 }
 
 
@@ -2562,6 +2593,10 @@ async def dispatch_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
         return {"error": f"Unknown tool: {name}"}
     try:
         return await handler(args)
-    except Exception:
+    except Exception as exc:
+        from responsibleai.governance.synthetic_counter import SyntheticAcknowledgementLostError
+
+        if isinstance(exc, SyntheticAcknowledgementLostError):
+            raise
         _logger.exception("mcp_tool_failed tool=%s", name)
         return {"error": "tool_execution_failed", "tool": name}

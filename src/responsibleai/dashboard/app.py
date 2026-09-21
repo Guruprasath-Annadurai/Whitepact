@@ -187,6 +187,12 @@ from responsibleai.governance.models import GovernanceDecision
 from responsibleai.governance.outcome import OutcomeStatus, build_outcome_record
 from responsibleai.governance.policy import PolicyRule
 from responsibleai.governance.risk import RiskTier
+from responsibleai.governance.synthetic_counter import (
+    SYNTHETIC_COUNTER_TOOL,
+)
+from responsibleai.governance.synthetic_counter import (
+    snapshot as counter_snapshot,
+)
 from responsibleai.governance.tool_trust import (
     ToolTrustTier,
     apply_admin_override,
@@ -210,11 +216,14 @@ from responsibleai.iam.errors import (
 from responsibleai.iam.models import StepUpProof
 from responsibleai.iam.step_up import StepUpVerifier
 from responsibleai.incidents.logic import build_incident_record
+from responsibleai.integrations.client import TrustClient
 from responsibleai.leaderboard.models import METHODOLOGY_VERSION
 from responsibleai.leaderboard.providers import ProviderNotConfiguredError, get_adapter
 from responsibleai.leaderboard.runner import LeaderboardRunner
 from responsibleai.mcp.governance_integration import (
     ApprovalAuthorizationDeniedError,
+    GovernanceServices,
+    apply_governance,
     resume_approval,
 )
 from responsibleai.mcp.licensing import monthly_quota, plan_catalog
@@ -430,6 +439,9 @@ async def lifespan(application: FastAPI):
         (not settings.auto_migrate) and str(settings.effective_db_url).startswith("postgresql")
     )
     await _db_engine.init(auto_create_tables=auto_create_tables)
+    from responsibleai.governance.synthetic_counter import bind_counter_engine
+
+    bind_counter_engine(_db_engine)
     _plan_rate_limiter = PlanRateLimiter(redis_url=settings.redis_url)
     _auth_failure_limiter.attach_durable(
         DurableIdentityRateLimiter(_db_engine),
@@ -1115,6 +1127,12 @@ class IncidentStatusUpdateRequest(BaseModel):
     status: str = Field(..., pattern="^(PUBLISHED|DISPUTED|RESOLVED)$")
 
 
+class GovernedToolCallRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    arguments: dict[str, Any] = Field(default_factory=dict)
+    purpose: str = Field(..., min_length=1, max_length=2000)
+
+
 class ApprovalResolveRequest(BaseModel):
     outcome: str = Field(..., pattern="^(APPROVED|DENIED)$")
     notes: str | None = Field(default=None, max_length=2000)
@@ -1609,6 +1627,36 @@ def _web_org_admin(principal: WebPrincipal) -> str:
     if principal.role not in {Role.OWNER, Role.ADMIN}:
         raise HTTPException(403, "Organization administrator access is required.")
     return principal.org_id
+
+
+def _web_resolver_id(principal: WebPrincipal) -> str:
+    return f"web:{principal.user_id}"
+
+
+def _dashboard_governance_services() -> GovernanceServices:
+    engine = _ready(_db_engine)
+    return GovernanceServices(
+        gateway=_upstream_gateway,
+        evidence_repo=_ready(_evidence_repo),
+        approval_repo=_ready(_approval_repo),
+        policy_repo=_ready(_policy_repo),
+        trust_client=TrustClient(),
+        webhook_manager=_webhook_manager,
+        ceiling_repo=_ready(_ceiling_repo),
+        workflow_rule_repo=_ready(_workflow_rule_repo),
+        delegation_repo=_ready(_delegation_repo),
+        autonomy_budget_repo=_ready(_autonomy_budget_repo),
+        outcome_repo=_ready(_outcome_repo),
+        intent_repo=_ready(_intent_repo),
+        nonce_repo=ExecutionNonceRepository(engine),
+        epoch_repo=RevocationEpochRepository(engine),
+        authority_resolver=AuthorityResolver(
+            RootAuthorityRepository(engine),
+            ConsentProofRepository(engine),
+            _ready(_delegation_repo),
+        ),
+        org_repo=_ready(_org_repo),
+    )
 
 
 def _safe_billing_return_url(value: str | None) -> str:
@@ -2269,7 +2317,9 @@ async def web_billing_portal(
 
 @app.get("/api/web/dashboard/{domain}", tags=["web-console"])
 async def web_dashboard_domain(
-    domain: str, principal: WebPrincipal = Depends(get_web_principal)
+    request: Request,
+    domain: str,
+    principal: WebPrincipal = Depends(get_web_principal),
 ) -> dict[str, Any]:
     if not principal.org_id:
         raise HTTPException(409, "Complete organization onboarding first.")
@@ -2284,8 +2334,11 @@ async def web_dashboard_domain(
         "members",
         "billing",
         "settings",
+        "security",
     }:
         raise HTTPException(404, "Dashboard section not found.")
+    if domain == "security":
+        return await _web_security_state(request, principal)
     if domain == "organization":
         org = await _ready(_org_repo).get_org(principal.org_id)
         return {
@@ -2324,8 +2377,272 @@ async def web_dashboard_domain(
             "source": "organization_repository",
             "domain": domain,
             "billing_configured": _stripe_service is not None,
+            "usage_meter": "not_available",
+        }
+    if domain == "usage":
+        return {
+            "items": [],
+            "source": "not_available",
+            "domain": domain,
+            "detail": "V1 has no customer dashboard usage meter. Billing MCP usage is a separate API-key endpoint.",
         }
     return {"items": [], "source": "not_available", "domain": domain}
+
+
+def _security_item(title: str, status: str, detail: str, source: str) -> dict[str, Any]:
+    return {"title": title, "status": status, "detail": detail, "source": source}
+
+
+async def _web_security_state(request: Request, principal: WebPrincipal) -> dict[str, Any]:
+    from sqlalchemy import func, select
+
+    from responsibleai.db.engine import (
+        human_totp_factors,
+        identity_verifications,
+        organizations,
+        passkey_credentials,
+        recovery_code_hashes,
+        web_sessions,
+    )
+
+    items: list[dict[str, Any]] = []
+    engine = _ready(_db_engine)
+    token = request.cookies.get("wp_session", "")
+    try:
+        async with engine.raw.connect() as conn:
+            session_row = None
+            if token:
+                session_row = (
+                    await conn.execute(
+                        select(web_sessions).where(
+                            web_sessions.c.token_hash == _web_token_hash(token)
+                        )
+                    )
+                ).fetchone()
+            if session_row is None:
+                items.append(
+                    _security_item(
+                        "Assurance level",
+                        "UNAVAILABLE",
+                        "Current session assurance could not be loaded.",
+                        "web_sessions",
+                    )
+                )
+            else:
+                items.append(
+                    _security_item(
+                        "Assurance level",
+                        str(session_row.assurance_level or "PASSWORD"),
+                        "Session assurance recorded at authentication.",
+                        "web_sessions.assurance_level",
+                    )
+                )
+            totp = (
+                await conn.execute(
+                    select(human_totp_factors.c.status).where(
+                        human_totp_factors.c.user_id == principal.user_id
+                    )
+                )
+            ).fetchone()
+            if totp is None:
+                items.append(
+                    _security_item(
+                        "MFA (TOTP)",
+                        "NOT CONFIGURED",
+                        "No TOTP factor is enrolled for this user.",
+                        "human_totp_factors",
+                    )
+                )
+            else:
+                items.append(
+                    _security_item(
+                        "MFA (TOTP)",
+                        str(totp.status),
+                        "TOTP factor row from identity security store.",
+                        "human_totp_factors.status",
+                    )
+                )
+            passkey_count = (
+                await conn.execute(
+                    select(func.count())
+                    .select_from(passkey_credentials)
+                    .where(
+                        passkey_credentials.c.user_id == principal.user_id,
+                        passkey_credentials.c.status == "ACTIVE",
+                    )
+                )
+            ).scalar()
+            items.append(
+                _security_item(
+                    "Passkeys",
+                    "CONFIGURED" if int(passkey_count or 0) else "NOT CONFIGURED",
+                    f"{int(passkey_count or 0)} active passkey credential(s).",
+                    "passkey_credentials",
+                )
+            )
+            recovery_count = (
+                await conn.execute(
+                    select(func.count())
+                    .select_from(recovery_code_hashes)
+                    .where(
+                        recovery_code_hashes.c.user_id == principal.user_id,
+                        recovery_code_hashes.c.consumed_at.is_(None),
+                    )
+                )
+            ).scalar()
+            items.append(
+                _security_item(
+                    "Recovery codes",
+                    "CONFIGURED" if int(recovery_count or 0) else "NOT CONFIGURED",
+                    f"{int(recovery_count or 0)} unused recovery code hash(es).",
+                    "recovery_code_hashes",
+                )
+            )
+            org_row = (
+                await conn.execute(
+                    select(organizations.c.sso_required).where(
+                        organizations.c.id == principal.org_id
+                    )
+                )
+            ).fetchone()
+            sso_required = bool(org_row.sso_required) if org_row is not None else False
+            sso_provider = "CONFIGURED" if (_oidc_provider or _saml_config) else "NOT CONFIGURED"
+            items.append(
+                _security_item(
+                    "SSO",
+                    "REQUIRED" if sso_required else sso_provider,
+                    (
+                        "Organization requires SSO."
+                        if sso_required
+                        else "SSO provider configuration on this deployment."
+                    ),
+                    "organizations.sso_required+runtime_oidc_saml",
+                )
+            )
+            identity = (
+                await conn.execute(
+                    select(identity_verifications.c.status)
+                    .where(identity_verifications.c.user_id == principal.user_id)
+                    .order_by(identity_verifications.c.updated_at.desc())
+                )
+            ).fetchone()
+            if identity is None:
+                items.append(
+                    _security_item(
+                        "Identity verification",
+                        "NOT CONFIGURED",
+                        "No identity verification record exists for this user.",
+                        "identity_verifications",
+                    )
+                )
+            else:
+                items.append(
+                    _security_item(
+                        "Identity verification",
+                        str(identity.status),
+                        "Latest identity verification status.",
+                        "identity_verifications.status",
+                    )
+                )
+    except Exception:
+        logger.exception("web_security_state_unavailable")
+        items = [
+            _security_item(
+                "Security state",
+                "UNAVAILABLE",
+                "Backend security state could not be read.",
+                "unavailable",
+            )
+        ]
+    return {"items": items, "source": "identity_security_stores", "domain": "security"}
+
+
+@app.post("/api/web/approvals/{approval_id}/resolve", tags=["web-console"])
+@limiter.limit("30/minute")
+async def web_resolve_approval(
+    request: Request,
+    approval_id: str,
+    req: ApprovalResolveRequest,
+    principal: WebPrincipal = Depends(require_web_csrf),
+) -> dict[str, Any]:
+    org_id = _web_org_admin(principal)
+    existing = await _ready(_approval_repo).get(approval_id)
+    if existing is None or existing.organization_id != org_id:
+        raise HTTPException(404, "No approval request found with this ID.")
+    try:
+        resolved = await _ready(_approval_repo).resolve(
+            approval_id,
+            resolved_by=_web_resolver_id(principal),
+            outcome=ApprovalStatus(req.outcome),
+            notes=req.notes,
+        )
+    except ApprovalNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from None
+    except ApprovalAlreadyResolvedError as exc:
+        raise HTTPException(409, str(exc)) from None
+    except ApprovalExpiredError as exc:
+        raise HTTPException(409, str(exc)) from None
+    except SelfApprovalError as exc:
+        raise HTTPException(403, str(exc)) from None
+    except AlreadyVotedError as exc:
+        raise HTTPException(409, str(exc)) from None
+    observe_governance_approval(req.outcome, org_id=org_id)
+    return resolved.to_dict()
+
+
+@app.post("/api/web/approvals/{approval_id}/execute", tags=["web-console"])
+@limiter.limit("30/minute")
+async def web_execute_approval(
+    request: Request,
+    approval_id: str,
+    principal: WebPrincipal = Depends(require_web_csrf),
+) -> dict[str, Any]:
+    org_id = _web_org_admin(principal)
+    existing = await _ready(_approval_repo).get(approval_id)
+    if existing is None or existing.organization_id != org_id:
+        raise HTTPException(404, "No approval request found with this ID.")
+    if existing.status != ApprovalStatus.APPROVED:
+        raise HTTPException(409, "Approval is not approved for execution.")
+    from responsibleai.governance.synthetic_counter import SyntheticAcknowledgementLostError
+
+    try:
+        result = await resume_approval(
+            approval_id,
+            nonce_repo=ExecutionNonceRepository(_ready(_db_engine)),
+            epoch_repo=RevocationEpochRepository(_ready(_db_engine)),
+            authority_resolver=AuthorityResolver(
+                RootAuthorityRepository(_ready(_db_engine)),
+                ConsentProofRepository(_ready(_db_engine)),
+                _ready(_delegation_repo),
+            ),
+            policy_repo=_ready(_policy_repo),
+            gateway=_upstream_gateway,
+            upstream_registry=_ready(_upstream_registry),
+            approval_repo=_ready(_approval_repo),
+            evidence_repo=_ready(_evidence_repo),
+            org_id=org_id,
+            outcome_repo=_ready(_outcome_repo),
+        )
+    except ApprovalNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from None
+    except ApprovalExpiredError as exc:
+        raise HTTPException(409, str(exc)) from None
+    except (ApprovalNotApprovedError, ApprovalActionMismatchError) as exc:
+        raise HTTPException(409, str(exc)) from None
+    except ApprovalAuthorizationDeniedError as exc:
+        raise HTTPException(409, str(exc)) from None
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+    except SyntheticAcknowledgementLostError:
+        return {
+            "approval_id": approval_id,
+            "error": "governance_unknown_outcome",
+            "message": (
+                "The mutation may have applied; acknowledgement was lost. "
+                "WhitePact will not retry automatically."
+            ),
+        }
+    return {"approval_id": approval_id, "result": result}
 
 
 @app.patch("/api/web/organization", tags=["web-console"])
@@ -4871,6 +5188,65 @@ async def governance_execute_approval(
         org_id=_auth.org_id,
     )
     return {"approval_id": approval_id, "result": result}
+
+
+@app.post("/api/governance/tools/call", tags=["governance"])
+@limiter.limit("30/minute")
+async def governance_call_tool(
+    request: Request,
+    req: GovernedToolCallRequest,
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
+) -> dict[str, Any]:
+    """Canonical governed tool invocation over HTTP.
+
+    Uses ``apply_governance`` then ``InternalToolExecutor``. Does not mint
+    ExecutionGrant state. UI and REST callers are not authority.
+    """
+    if not _auth.org_id:
+        raise HTTPException(
+            400, "Governed tool calls require an org-scoped API key, not a legacy flat key."
+        )
+    from responsibleai.governance.synthetic_counter import SyntheticAcknowledgementLostError
+    from responsibleai.mcp.tools import TOOL_DEFS
+
+    allowed = {definition.name for definition in TOOL_DEFS}
+    if req.name not in allowed:
+        raise HTTPException(404, "Unknown tool.")
+    try:
+        outcome = await apply_governance(
+            req.name,
+            dict(req.arguments),
+            _auth,
+            _dashboard_governance_services(),
+            purpose=req.purpose,
+        )
+    except SyntheticAcknowledgementLostError:
+        return {
+            "error": "governance_unknown_outcome",
+            "message": (
+                "The mutation may have applied; acknowledgement was lost. "
+                "WhitePact will not retry automatically."
+            ),
+            "tool": req.name,
+        }
+    if not outcome.proceed:
+        return outcome.blocked_response or {"error": "governance_blocked"}
+    status = outcome.outcome_status.value if outcome.outcome_status is not None else None
+    return {"tool": req.name, "result": outcome.result, "outcome_status": status}
+
+
+@app.get("/api/governance/test-counter", tags=["governance"])
+@limiter.limit("30/minute")
+async def governance_test_counter(
+    request: Request,
+    _auth: OrgContext = Depends(require_role(Role.ANALYST)),
+) -> dict[str, Any]:
+    if not _auth.org_id:
+        raise HTTPException(
+            400, "Counter inspection requires an org-scoped API key, not a legacy flat key."
+        )
+    state = await counter_snapshot(_auth.org_id)
+    return {"tool": SYNTHETIC_COUNTER_TOOL, **state}
 
 
 def _policy_rule_to_dict(rule: PolicyRule) -> dict[str, Any]:
