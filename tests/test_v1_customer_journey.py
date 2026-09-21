@@ -506,6 +506,7 @@ async def _run_mcp_governed_path(
     from mcp import ClientSession
     from mcp.client.streamable_http import streamable_http_client
 
+    import responsibleai.db as db_module
     from responsibleai.dashboard.config import get_settings
     from responsibleai.db import (
         ApprovalRepository,
@@ -525,7 +526,11 @@ async def _run_mcp_governed_path(
     assert ctx is not None, "customer API key must authenticate against the shared database"
     settings = get_settings()
     original_gov = settings.mcp_governance_enabled
+    original_db = settings.database_url
+    original_create = db_module.create_engine
     settings.mcp_governance_enabled = True
+    settings.database_url = pg_url
+    db_module.create_engine = lambda _url: engine
     try:
         tool_names = tuple(definition.name for definition in TOOL_DEFS)
         await seed_runtime_authority(
@@ -587,6 +592,8 @@ async def _run_mcp_governed_path(
             assert any(r.action_type == "rai_memory_write_check" for r in denials)
     finally:
         settings.mcp_governance_enabled = original_gov
+        settings.database_url = original_db
+        db_module.create_engine = original_create
         await engine.close()
 
 
