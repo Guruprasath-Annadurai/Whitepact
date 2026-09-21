@@ -2,14 +2,24 @@ import { chromium } from "playwright";
 import crypto from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 
 const baseUrl = process.env.WHITEPACT_TEST_BASE_URL ?? "http://127.0.0.1:18765";
 const managed = !process.env.WHITEPACT_TEST_BASE_URL;
-const dbPath = `/tmp/whitepact-customer-journey-${Date.now()}.db`;
+const dbPath = path.join(os.tmpdir(), `whitepact-customer-journey-${Date.now()}.db`);
+const databaseUrl = process.env.WHITEPACT_TEST_DATABASE_URL ?? `sqlite:///${dbPath}`;
 const password = "Journey-Secure-42!";
 const email = `journey-${Date.now()}@example.com`;
+const repositoryRoot = process.env.WHITEPACT_TEST_REPOSITORY_ROOT
+  ? path.resolve(process.env.WHITEPACT_TEST_REPOSITORY_ROOT)
+  : path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const testPython = process.env.WHITEPACT_TEST_PYTHON
+  ?? (fs.existsSync(path.join(repositoryRoot, ".venv", "bin", "python"))
+    ? path.join(repositoryRoot, ".venv", "bin", "python")
+    : "python3");
 
 function hmacIdentity(payload, timestamp) {
   const secret = process.env.WHITEPACT_IDENTITY_WEBHOOK_SECRET || "dev-identity-webhook-secret";
@@ -32,6 +42,7 @@ async function waitForReady(url, timeoutMs = 30000) {
 
 async function startServer() {
   if (!managed) return null;
+  if (!process.env.WHITEPACT_TEST_DATABASE_URL) fs.closeSync(fs.openSync(dbPath, "w"));
   const env = {
     ...process.env,
     RAI_AUTH_ENABLED: "false",
@@ -51,10 +62,11 @@ async function startServer() {
     RAI_LOG_LEVEL: "WARNING",
     PHASE7A_DISPATCHER_ENABLED: "false",
   };
+  if (process.env.WHITEPACT_TEST_DATABASE_URL) env.WHITEPACT_DATABASE_URL = databaseUrl;
   const child = spawn(
-    path.join("/workspace", ".venv", "bin", "python"),
+    testPython,
     ["-m", "uvicorn", "responsibleai.dashboard.app:app", "--host", "127.0.0.1", "--port", "18765"],
-    { cwd: "/workspace", env, stdio: "inherit" },
+    { cwd: repositoryRoot, env, stdio: "inherit" },
   );
   await waitForReady(baseUrl);
   return child;
@@ -64,10 +76,8 @@ async function stopServer(child) {
   if (!child) return;
   child.kill("SIGTERM");
   await delay(500);
-  try {
-    fs.unlinkSync(dbPath);
-  } catch {
-    // ignore
+  if (!process.env.WHITEPACT_TEST_DATABASE_URL) {
+    try { fs.unlinkSync(dbPath); } catch { /* ignore */ }
   }
 }
 
@@ -175,11 +185,10 @@ try {
   check(Array.isArray(keyBody.keys) && keyBody.keys.length === 1, "backend lists created key");
   check(!("api_key" in (keyBody.keys[0] ?? {})), "raw secret is not listed later");
 
-  const sqliteUrl = `sqlite:///${dbPath}`;
   const seed = spawnSync(
-    path.join("/workspace", ".venv", "bin", "python"),
-    ["tests/js/seed_journey_authority.py", "--database-url", sqliteUrl, "--api-key", revealed],
-    { cwd: "/workspace", encoding: "utf8" },
+    testPython,
+    ["tests/js/seed_journey_authority.py", "--database-url", databaseUrl, "--api-key", revealed],
+    { cwd: repositoryRoot, encoding: "utf8" },
   );
   check(seed.status === 0, `authority seed exit ${seed.status} ${seed.stderr || seed.stdout}`);
 
@@ -224,9 +233,11 @@ try {
 
   await page.goto(`${baseUrl}/dashboard/approvals`, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Approve" }).click();
+  await page.getByRole("button", { name: /confirm approve/i }).click();
   await page.getByText("PENDING").first().waitFor({ timeout: 10000 }).catch(() => {});
   await adminPage.goto(`${baseUrl}/dashboard/approvals`, { waitUntil: "domcontentloaded" });
   await adminPage.getByRole("button", { name: "Approve" }).click();
+  await adminPage.getByRole("button", { name: /confirm approve/i }).click();
   let afterBody = { counter: -1, downstream_call_count: -1 };
   for (let i = 0; i < 20; i += 1) {
     const afterApprove = await context.request.get(`${baseUrl}/api/v1/governance/test-counter`, {
@@ -243,6 +254,7 @@ try {
   check(denyBody.error === "governance_approval_required", "second mutation requires approval");
   await page.goto(`${baseUrl}/dashboard/approvals`, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Deny" }).click();
+  await page.getByRole("button", { name: /confirm denied/i }).click();
   await page.getByText(/no requests are waiting/i).waitFor({ timeout: 10000 }).catch(() => {});
   const afterDeny = await context.request.get(`${baseUrl}/api/v1/governance/test-counter`, {
     headers: { Authorization: `Bearer ${revealed}` },
@@ -288,9 +300,9 @@ try {
   const orgName = await page.locator("input").first().inputValue();
   check(orgName === "Journey Org", "organization page shows persisted name");
 
-  page.once("dialog", (dialog) => dialog.accept());
   await page.goto(`${baseUrl}/dashboard/api-keys`, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: /revoke/i }).click();
+  await page.getByRole("button", { name: /confirm revoke/i }).click();
   await page.getByText(/no api keys/i).waitFor({ timeout: 10000 });
   const keysAfter = await context.request.get(`${baseUrl}/api/v1/web/api-keys`);
   check((await keysAfter.json()).keys.length === 0, "revoked key absent from backend");
