@@ -21,7 +21,8 @@
       ["What WhitePact offers", "WhitePact is an open-source trust and runtime governance platform for AI agents, with paid cloud and enterprise software/services for production deployment. These are digital products and services; no physical goods are sold."],
       ["Annual billing", "2 months free with annual billing compared with twelve monthly payments. All prices are USD. Applicable taxes are calculated at checkout where required."],
       ["Availability before payment", "Cloud Starter and Cloud Team are Early Access digital software/SaaS offerings, not immediately purchasable subscriptions. Contacting us does not charge you or activate a paid entitlement. Confirm the service scope and availability before purchase. No uptime guarantee, response-time commitment or certification is implied."],
-      ["Before you purchase", "Request a written quote using the contact link below. Review the agreed features, total price, taxes, billing period, renewal and cancellation terms before accepting. Subscription cancellation and refund requests are explained in the Refund Policy. Buying a plan never grants permission to bypass governance."]
+      ["Before you purchase", "Request a written quote using the contact link below. Review the agreed features, total price, taxes, billing period, renewal and cancellation terms before accepting. Subscription cancellation and refund requests are explained in the Refund Policy. Buying a plan never grants permission to bypass governance."],
+      ["Usage metering", "WhitePact V1 does not currently expose a customer dashboard usage meter. Plan prices are not usage-based charges. Hosted MCP call volume, when configured, is a separate API-key billing endpoint and is not displayed as a dashboard usage chart."]
     ]
   },
   "terms": {

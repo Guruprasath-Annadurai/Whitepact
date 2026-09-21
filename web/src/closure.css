@@ -18,3 +18,4 @@
 .launch-pricing .plan-status{color:#e0e0e8;font-size:14px}
 .launch-pricing a{margin-top:auto;white-space:normal;text-align:center}
 @media(max-width:640px){.launch-pricing{grid-template-columns:minmax(0,1fr)}.launch-pricing article{padding:22px}}
+.approval-list{display:grid;gap:18px;padding:24px}.approval-card{border:1px solid var(--border);padding:24px}.approval-card header{display:flex;justify-content:space-between;align-items:center;gap:12px}.approval-card h2{margin:0;font:500 20px Sora}.approval-card dl{display:grid;grid-template-columns:1fr 1fr;gap:12px 24px}.approval-card dt{font-size:10px;color:var(--muted);text-transform:uppercase}.approval-card dd{margin:4px 0 0}.approval-actions{display:flex;gap:12px;margin:18px 0}

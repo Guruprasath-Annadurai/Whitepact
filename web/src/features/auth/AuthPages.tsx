@@ -22,13 +22,18 @@ function PasswordField({ value, onChange, autoComplete }: { value: string; onCha
 
 export function LoginPage() {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   async function submit(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError("");
-    try { const result = await api<{ next: string }>("/api/v1/web/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }); navigate(result.next || "/dashboard"); }
+    try {
+      const result = await api<{ next: string }>("/api/v1/web/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+      const requested = params.get("next");
+      navigate(requested && requested.startsWith("/") ? requested : (result.next || "/dashboard"));
+    }
     catch (err) { setError(err instanceof Error ? err.message : "Sign in failed"); }
     finally { setBusy(false); }
   }
@@ -92,4 +97,24 @@ export function ResetPasswordPage() {
     catch (err) { setError(err instanceof Error ? err.message : "Password reset failed"); setState("idle"); }
   }
   return <AuthLayout><Brand /><div className="auth-form"><h1>{state === "done" ? "Password updated." : "Set a new password."}</h1>{!token ? <><p>This reset link is incomplete.</p><Link className="wp-button wp-button--secondary" to="/forgot-password">Request a new link</Link></> : state === "done" ? <><p>All existing browser sessions were revoked. Sign in again with your new password.</p><Link className="wp-button" to="/login?reset=1">Continue to sign in →</Link></> : <form onSubmit={submit}><PasswordField value={password} onChange={setPassword} autoComplete="new-password" /><ul className="password-rules" aria-label="Password requirements">{["At least 12 characters", "Uppercase and lowercase letters", "At least one number", "At least one symbol"].map((rule, index) => <li className={requirements[index] ? "met" : ""} key={rule}>{rule}</li>)}</ul>{error && <div className="form-error" role="alert">{error}</div>}<Button disabled={state === "busy" || requirements.some((item) => !item)}>{state === "busy" ? "Updating…" : "Update password →"}</Button></form>}</div></AuthLayout>;
+}
+
+export function AcceptInvitationPage() {
+  const [params] = useSearchParams();
+  const token = params.get("token");
+  const [state, setState] = useState<"idle" | "busy" | "done" | "error">("idle");
+  const [message, setMessage] = useState("");
+  async function accept() {
+    if (!token) return;
+    setState("busy");
+    try {
+      const result = await api<{ next?: string }>("/api/v1/web/invitations/accept", { method: "POST", body: JSON.stringify({ token }) });
+      setState("done");
+      window.location.assign(result.next || "/dashboard");
+    } catch (error) {
+      setState("error");
+      setMessage(error instanceof Error ? error.message : "Invitation could not be accepted");
+    }
+  }
+  return <AuthLayout><Brand /><div className="auth-form"><h1>Accept invitation.</h1><p>{token ? "Sign in as the invited email, then accept this membership token. The browser does not grant membership by itself." : "This invitation link is missing a token."}</p>{state === "error" && <div className="form-error" role="alert">{message}</div>}{token ? <Button disabled={state === "busy" || state === "done"} onClick={() => void accept()}>{state === "busy" ? "Accepting…" : "Accept invitation →"}</Button> : <Link className="wp-button wp-button--secondary" to="/login">Sign in</Link>}<p className="auth-foot"><Link to={`/login?next=${encodeURIComponent(`/accept-invitation?token=${token ?? ""}`)}`}>Sign in first</Link></p></div></AuthLayout>;
 }

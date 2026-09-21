@@ -55,6 +55,52 @@ describe("dashboard and onboarding", () => {
     expect(screen.getByRole("button", { name: "Choose Pro" })).toBeDisabled();
   });
 
+  it("renders backend-backed security status instead of static copy", async () => {
+    vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      items: [{ title: "Assurance level", status: "PASSWORD", detail: "Session assurance recorded at authentication.", source: "web_sessions.assurance_level" }],
+      source: "identity_security_stores",
+    }), { status: 200 }));
+    const Parent = () => <Outlet context={session} />;
+    render(<MemoryRouter initialEntries={["/dashboard/security"]}><Routes><Route element={<Parent />}><Route path="/dashboard/:domain" element={<DomainPage />} /></Route></Routes></MemoryRouter>);
+    expect(await screen.findByText("PASSWORD")).toBeInTheDocument();
+    expect(screen.getByText(/web_sessions.assurance_level/i)).toBeInTheDocument();
+  });
+
+  it("approves and denies pending requests through backend endpoints", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.spyOn(window, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        items: [{ approval_id: "appr-1", action_type: "test.counter.increment", target: "test.counter.increment", risk_tier: "HIGH", status: "PENDING", requested_at: "2026-09-21T00:00:00Z", requested_by: "key-1" }],
+        source: "approval_repository",
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "APPROVED" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ approval_id: "appr-1", result: { ok: true } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [] , source: "approval_repository" }), { status: 200 }));
+    const Parent = () => <Outlet context={session} />;
+    render(<MemoryRouter initialEntries={["/dashboard/approvals"]}><Routes><Route element={<Parent />}><Route path="/dashboard/:domain" element={<DomainPage />} /></Route></Routes></MemoryRouter>);
+    expect(await screen.findByRole("button", { name: "Approve" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/v1/web/approvals/appr-1/resolve", expect.objectContaining({ method: "POST" })));
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/web/approvals/appr-1/execute", expect.objectContaining({ method: "POST" }));
+  });
+
+  it("denies pending requests through the resolve endpoint without executing", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.spyOn(window, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        items: [{ approval_id: "appr-2", action_type: "test.counter.increment", target: "test.counter.increment", risk_tier: "HIGH", status: "PENDING", requested_at: "2026-09-21T00:00:00Z", requested_by: "key-1" }],
+        source: "approval_repository",
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "DENIED" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [] , source: "approval_repository" }), { status: 200 }));
+    const Parent = () => <Outlet context={session} />;
+    render(<MemoryRouter initialEntries={["/dashboard/approvals"]}><Routes><Route element={<Parent />}><Route path="/dashboard/:domain" element={<DomainPage />} /></Route></Routes></MemoryRouter>);
+    expect(await screen.findByRole("button", { name: "Deny" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Deny" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/v1/web/approvals/appr-2/resolve", expect.objectContaining({ method: "POST" })));
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/v1/web/approvals/appr-2/execute", expect.anything());
+  });
+
   it("collects onboarding data through all three steps", async () => {
     const user = userEvent.setup();
     vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify({ next: "/dashboard" }), { status: 200 }));

@@ -11,6 +11,7 @@ const SignupPage = lazy(() => import("./features/auth/AuthPages").then((module) 
 const VerifyEmailPage = lazy(() => import("./features/auth/AuthPages").then((module) => ({ default: module.VerifyEmailPage })));
 const ForgotPasswordPage = lazy(() => import("./features/auth/AuthPages").then((module) => ({ default: module.ForgotPasswordPage })));
 const ResetPasswordPage = lazy(() => import("./features/auth/AuthPages").then((module) => ({ default: module.ResetPasswordPage })));
+const AcceptInvitationPage = lazy(() => import("./features/auth/AuthPages").then((module) => ({ default: module.AcceptInvitationPage })));
 const OnboardingPage = lazy(() => import("./features/onboarding/OnboardingPage").then((module) => ({ default: module.OnboardingPage })));
 const DashboardShell = lazy(() => import("./features/dashboard/DashboardShell").then((module) => ({ default: module.DashboardShell })));
 const OverviewPage = lazy(() => import("./features/dashboard/OverviewPage").then((module) => ({ default: module.OverviewPage })));
@@ -37,6 +38,7 @@ export default function App() {
       <Route path="/verify-email" element={<VerifyEmailPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route path="/accept-invitation" element={<AcceptInvitationPage />} />
       <Route path="/onboarding" element={<><Seo title="Create workspace | WhitePact" description="Create an organization-bound WhitePact workspace." path="/onboarding" noIndex /><OnboardingPage /></>} />
       <Route path="/dashboard" element={<><Seo title="Workspace | WhitePact" description="Authenticated WhitePact AI governance workspace." path="/dashboard" noIndex /><DashboardShell /></>}>
         <Route index element={<OverviewPage />} />
