@@ -56,7 +56,7 @@ def test_one_canonical_alembic_head():
     scripts = ScriptDirectory.from_config(Config(str(ini)))
     heads = scripts.get_heads()
     assert len(heads) == 1, f"Expected exactly 1 alembic head, got {len(heads)}: {heads}"
-    assert heads == ["0058"]
+    assert heads == ["0059"]
     assert scripts.get_revision("0049").down_revision == "0048"
     assert scripts.get_revision("0048").down_revision == "0047"
     assert scripts.get_revision("0047").down_revision == "0046"
