@@ -127,7 +127,8 @@ class ContinuousTrustMonitor:
                 update(trust_fabric_authority_edges)
                 .where(
                     and_(
-                        trust_fabric_authority_edges.c.grantee_principal_id == rel["subject_principal_id"],
+                        trust_fabric_authority_edges.c.grantee_principal_id
+                        == rel["subject_principal_id"],
                         trust_fabric_authority_edges.c.org_id == org_id,
                         trust_fabric_authority_edges.c.revoked_at.is_(None),
                     )

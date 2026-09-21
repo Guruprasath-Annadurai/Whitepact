@@ -17,8 +17,6 @@ import shutil
 
 import pytest
 
-from tests.docker_runtime import DOCKER_UNAVAILABLE_REASON
-
 from responsibleai.isolation.broker import IsolationBroker
 from responsibleai.isolation.container_backend import DockerContainerBackend
 from responsibleai.isolation.errors import (
@@ -31,6 +29,7 @@ from responsibleai.isolation.models import (
     IsolationProfile,
     ResourceLimits,
 )
+from tests.docker_runtime import DOCKER_UNAVAILABLE_REASON
 
 
 def _docker_available() -> bool:
@@ -112,9 +111,7 @@ for i in range(100):
         break
 sys.stdout.write(json.dumps({"status": "success", "result": {"created": created}}))
 """
-        profile = IsolationProfile(
-            resources=ResourceLimits(max_pids=16, wall_timeout_seconds=5.0)
-        )
+        profile = IsolationProfile(resources=ResourceLimits(max_pids=16, wall_timeout_seconds=5.0))
         req = IsolatedExecutionRequest(
             action_id="attack-fork",
             organization_id="org-stress",
@@ -157,16 +154,20 @@ class TestProductionFailClosedMatrix:
     async def test_fail_closed_docker_daemon_down(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setenv("WHITEPACT_ISOLATION_BACKEND", "docker")
         monkeypatch.setenv("ENVIRONMENT", "production")
-        
+
         class MockUnavailableDocker:
             def is_available(self):
                 return False
-                
-        monkeypatch.setattr("responsibleai.isolation.broker.DockerContainerBackend", MockUnavailableDocker)
+
+        monkeypatch.setattr(
+            "responsibleai.isolation.broker.DockerContainerBackend", MockUnavailableDocker
+        )
         with pytest.raises(IsolationBackendUnavailableError):
             IsolationBroker()
 
-    async def test_fail_closed_local_dev_requested_in_production(self, monkeypatch: pytest.MonkeyPatch):
+    async def test_fail_closed_local_dev_requested_in_production(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
         monkeypatch.setenv("ENVIRONMENT", "production")
         with pytest.raises(InvalidBackendModeError):
             IsolationBroker(mode=BackendMode.LOCAL_DEV)

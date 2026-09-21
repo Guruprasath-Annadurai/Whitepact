@@ -99,6 +99,7 @@ class PrivilegedSurfaceGuard:
         recovery.py/transfer.py, and must not be able to reach this method as a bypass.
         """
         from responsibleai.data_governance.backup_defense import assert_restore_readiness_admitted
+
         assert_restore_readiness_admitted()
 
         now = datetime.now(UTC).isoformat()
@@ -164,7 +165,9 @@ class PrivilegedSurfaceGuard:
                     raise PrivilegedAccessDeniedError("Invalid emergency break-glass session.")
                 bg = dict(bg_row._mapping)
                 if bg.get("principal_id") != caller.principal_id:
-                    raise PrivilegedAccessDeniedError("Break-glass session belongs to another principal.")
+                    raise PrivilegedAccessDeniedError(
+                        "Break-glass session belongs to another principal."
+                    )
                 if bg["status"] != "ACTIVE" or now >= bg["expires_at"]:
                     raise PrivilegedAccessDeniedError("Break-glass session expired or inactive.")
 
@@ -251,21 +254,32 @@ class PrivilegedSurfaceGuard:
 
                 # Cannot be already consumed
                 if fe.get("executed_at") is not None:
-                    raise PrivilegedAccessDeniedError("Four-Eyes approval has already been consumed.")
+                    raise PrivilegedAccessDeniedError(
+                        "Four-Eyes approval has already been consumed."
+                    )
 
                 # Cannot be expired
                 if now >= fe["expires_at"]:
                     raise PrivilegedAccessDeniedError("Four-Eyes approval has expired.")
 
                 # Requester cannot approve their own action!
-                if fe["approver_principal_id"] == caller.principal_id or fe["requester_principal_id"] == fe["approver_principal_id"]:
-                    raise SelfApprovalBlockedError("Requester cannot approve their own privileged request.")
+                if (
+                    fe["approver_principal_id"] == caller.principal_id
+                    or fe["requester_principal_id"] == fe["approver_principal_id"]
+                ):
+                    raise SelfApprovalBlockedError(
+                        "Requester cannot approve their own privileged request."
+                    )
 
                 if fe["action"] != action.value:
                     raise PrivilegedAccessDeniedError("Four-Eyes request action mismatch.")
 
                 # Target resource verification
-                if target_resource_id and fe.get("target_resource_id") and fe["target_resource_id"] != target_resource_id:
+                if (
+                    target_resource_id
+                    and fe.get("target_resource_id")
+                    and fe["target_resource_id"] != target_resource_id
+                ):
                     raise PrivilegedAccessDeniedError("Four-Eyes request target resource mismatch.")
 
                 # Digest and epoch verification if present in parameters
@@ -274,11 +288,21 @@ class PrivilegedSurfaceGuard:
                         params = json.loads(fe["parameters_json"])
                         if isinstance(params, dict):
                             if context_data and "policy_digest" in context_data:
-                                if "policy_digest" in params and params["policy_digest"] != context_data["policy_digest"]:
-                                    raise PrivilegedAccessDeniedError("Four-Eyes approval policy digest mismatch.")
+                                if (
+                                    "policy_digest" in params
+                                    and params["policy_digest"] != context_data["policy_digest"]
+                                ):
+                                    raise PrivilegedAccessDeniedError(
+                                        "Four-Eyes approval policy digest mismatch."
+                                    )
                             if context_data and "current_epoch" in context_data:
-                                if "governance_epoch" in params and params["governance_epoch"] != context_data["current_epoch"]:
-                                    raise PrivilegedAccessDeniedError("Four-Eyes approval security epoch mismatch.")
+                                if (
+                                    "governance_epoch" in params
+                                    and params["governance_epoch"] != context_data["current_epoch"]
+                                ):
+                                    raise PrivilegedAccessDeniedError(
+                                        "Four-Eyes approval security epoch mismatch."
+                                    )
                     except json.JSONDecodeError:
                         pass
 
@@ -286,6 +310,7 @@ class PrivilegedSurfaceGuard:
 
             # Mark Four-Eyes approval as EXECUTED to prevent replay
             from sqlalchemy import update
+
             async with self.db.raw.begin() as conn:
                 await conn.execute(
                     update(iam_four_eyes_requests)
@@ -329,12 +354,14 @@ class PrivilegedSurfaceGuard:
         )
 
         enriched_context = dict(context_data or {})
-        enriched_context.update({
-            "four_eyes_approval_id": four_eyes_approval_id,
-            "jit_grant_id": jit_grant_id,
-            "break_glass_session_id": break_glass_session_id,
-            "step_up_method": step_up_proof.method.value if step_up_proof else None,
-        })
+        enriched_context.update(
+            {
+                "four_eyes_approval_id": four_eyes_approval_id,
+                "jit_grant_id": jit_grant_id,
+                "break_glass_session_id": break_glass_session_id,
+                "step_up_method": step_up_proof.method.value if step_up_proof else None,
+            }
+        )
 
         # Record in tamper-evident audit log linked to Checkpoint-5 evidence
         await self.attribution.record_privileged_event(

@@ -95,7 +95,9 @@ def test_hosted_production_preflight_rejects_phase7a_dispatcher() -> None:
 
 
 @pytest.mark.asyncio
-async def test_dispatch_tool_does_not_return_exception_text(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_dispatch_tool_does_not_return_exception_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from responsibleai.mcp import tools as tools_mod
 
     original = tools_mod._TOOL_HANDLERS["rai_scan"]
@@ -197,8 +199,9 @@ def test_canonical_lock_order_starts_with_organization() -> None:
 
 @pytest.mark.asyncio
 async def test_post_connect_peer_unavailable_fails_closed() -> None:
-    import httpcore
     from unittest.mock import AsyncMock
+
+    import httpcore
 
     class _Resolver:
         async def resolve(self, host, port, policy):

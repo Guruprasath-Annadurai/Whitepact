@@ -369,11 +369,11 @@ class WhitePactRuntimeGateway:
         ):
             approval_reasons.append(
                 format_reason(
-                        ReasonCode.AUTONOMY_BUDGET_EXCEEDED,
-                        recent_autonomous_actions=recent_autonomous_action_count,
-                        limit=autonomy_budget.max_autonomous_actions,
-                        window_minutes=autonomy_budget.window_minutes,
-                    )
+                    ReasonCode.AUTONOMY_BUDGET_EXCEEDED,
+                    recent_autonomous_actions=recent_autonomous_action_count,
+                    limit=autonomy_budget.max_autonomous_actions,
+                    window_minutes=autonomy_budget.window_minutes,
+                )
             )
 
         pii_fields = [field for field, result in field_results.items() if result.has_pii]

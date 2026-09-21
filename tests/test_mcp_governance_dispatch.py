@@ -160,9 +160,13 @@ async def test_hosted_path_persists_admission(governed_app):
     response = await _call(app, raw_key, "rai_health", {})
     assert not response.isError
     async with engine.raw.connect() as conn:
-        rows = (await conn.execute(select(governance_execution_nonces).where(
-            governance_execution_nonces.c.organization_id == org
-        ))).fetchall()
+        rows = (
+            await conn.execute(
+                select(governance_execution_nonces).where(
+                    governance_execution_nonces.c.organization_id == org
+                )
+            )
+        ).fetchall()
     assert len(rows) == 1
 
 
@@ -600,9 +604,7 @@ class TestContinuousMcpTrust:
 
         async def _capturing(name, arguments, ctx, services, *, purpose):
             captured["services"] = services
-            return await real_apply_governance(
-                name, arguments, ctx, services, purpose=purpose
-            )
+            return await real_apply_governance(name, arguments, ctx, services, purpose=purpose)
 
         monkeypatch.setattr(gi_module, "apply_governance", _capturing)
 

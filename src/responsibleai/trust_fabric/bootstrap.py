@@ -75,7 +75,9 @@ class TrustBootstrapManager:
                 )
                 p_row = (await conn.execute(p_stmt)).first()
                 if not p_row:
-                    raise PrincipalNotFoundError(f"Caller principal {caller_principal_id!r} not found.")
+                    raise PrincipalNotFoundError(
+                        f"Caller principal {caller_principal_id!r} not found."
+                    )
 
                 caller = dict(p_row._mapping)
                 if caller["org_id"] != org_id:
@@ -89,17 +91,21 @@ class TrustBootstrapManager:
                     PrincipalState.REVOKED.value,
                     PrincipalState.DISABLED.value,
                 }:
-                    raise PrincipalInactiveError(f"Caller principal {caller_principal_id!r} is inactive.")
+                    raise PrincipalInactiveError(
+                        f"Caller principal {caller_principal_id!r} is inactive."
+                    )
 
                 # Check founder / organization creator authority
                 meta = {}
                 if caller.get("metadata_json"):
                     try:
                         import json
+
                         meta = json.loads(caller["metadata_json"])
                     except Exception:
                         try:
                             import ast
+
                             meta = ast.literal_eval(caller["metadata_json"])
                         except Exception:
                             pass
@@ -230,7 +236,10 @@ class TrustBootstrapManager:
                 )
 
             # 5b. Verify token principal binding if bound
-            if rec.get("claimed_by_principal_id") and rec["claimed_by_principal_id"] != root_principal_id:
+            if (
+                rec.get("claimed_by_principal_id")
+                and rec["claimed_by_principal_id"] != root_principal_id
+            ):
                 raise UnauthorizedBootstrapIssuanceError(
                     f"Bootstrap token is bound to principal {rec['claimed_by_principal_id']!r}, "
                     f"cannot be claimed by {root_principal_id!r}."
@@ -242,7 +251,9 @@ class TrustBootstrapManager:
             )
             prin_row = (await conn.execute(prin_stmt)).first()
             if not prin_row:
-                raise PrincipalNotFoundError(f"Root principal {root_principal_id!r} does not exist.")
+                raise PrincipalNotFoundError(
+                    f"Root principal {root_principal_id!r} does not exist."
+                )
 
             prin = dict(prin_row._mapping)
             if prin["org_id"] != org_id:

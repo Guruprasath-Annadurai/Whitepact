@@ -84,7 +84,10 @@ class DataErasureManager:
         """Register a new formal erasure request in REQUESTED state."""
         req_id = str(uuid.uuid4())
         now = _now()
-        details = {"reason": reason, "history": [{"status": ErasureStatus.REQUESTED.value, "timestamp": now}]}
+        details = {
+            "reason": reason,
+            "history": [{"status": ErasureStatus.REQUESTED.value, "timestamp": now}],
+        }
 
         async with self._engine.raw.begin() as conn:
             await conn.execute(
@@ -121,7 +124,9 @@ class DataErasureManager:
         async with self._engine.raw.connect() as conn:
             row = (
                 await conn.execute(
-                    select(data_lifecycle_requests).where(data_lifecycle_requests.c.id == request_id)
+                    select(data_lifecycle_requests).where(
+                        data_lifecycle_requests.c.id == request_id
+                    )
                 )
             ).fetchone()
 
@@ -180,7 +185,9 @@ class DataErasureManager:
             deleted_counts["incidents"] = r3.rowcount or 0
 
             # Purge tool trust scores
-            r4 = await conn.execute(delete(tool_trust_scores).where(tool_trust_scores.c.org_id == org_id))
+            r4 = await conn.execute(
+                delete(tool_trust_scores).where(tool_trust_scores.c.org_id == org_id)
+            )
             deleted_counts["tool_trust_scores"] = r4.rowcount or 0
 
             # Purge eval runs
@@ -207,11 +214,7 @@ class DataErasureManager:
                 (token_usage, "token_usage"),
                 (mcp_tool_calls, "mcp_tool_calls"),
             ]:
-                count = (
-                    await conn.execute(
-                        select(tbl).where(tbl.c.org_id == org_id)
-                    )
-                ).fetchall()
+                count = (await conn.execute(select(tbl).where(tbl.c.org_id == org_id))).fetchall()
                 if count:
                     residual_counts[name] = len(count)
 

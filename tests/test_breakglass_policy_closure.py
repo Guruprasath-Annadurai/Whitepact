@@ -139,8 +139,11 @@ async def _issue_step_up_proof(
 # 1. WP-BG-001: PRINCIPAL BINDING & TENANT BINDING
 # =========================================================================
 
+
 @pytest.mark.asyncio
-async def test_wp_bg_001_wrong_principal_break_glass_blocked(bg_db: DatabaseEngine, seed_trust_employment):
+async def test_wp_bg_001_wrong_principal_break_glass_blocked(
+    bg_db: DatabaseEngine, seed_trust_employment
+):
     """Prove that an emergency grant issued to Principal A cannot be consumed by Principal B."""
     await seed_trust_employment(bg_db, org_id="org_alpha", principal_id="admin_legit")
     await seed_trust_employment(bg_db, org_id="org_alpha", principal_id="admin_intruder")
@@ -168,7 +171,9 @@ async def test_wp_bg_001_wrong_principal_break_glass_blocked(bg_db: DatabaseEngi
         action=PrivilegedAction.UPDATE_SSO_IDP_CONFIG.value,
     )
 
-    with pytest.raises(PrivilegedAccessDeniedError, match="Break-glass session belongs to another principal"):
+    with pytest.raises(
+        PrivilegedAccessDeniedError, match="Break-glass session belongs to another principal"
+    ):
         await guard.authorize_privileged_operation(
             caller=intruder_caller,
             target_org_id="org_alpha",
@@ -229,6 +234,7 @@ async def test_cross_tenant_break_glass_blocked(bg_db: DatabaseEngine, seed_trus
 # 2. CALLER-CONTROLLED STATE ATTACKS
 # =========================================================================
 
+
 @pytest.mark.asyncio
 async def test_forged_break_glass_session_id_blocked(bg_db: DatabaseEngine, seed_trust_employment):
     """Prove that caller-fabricated session IDs are strictly rejected."""
@@ -257,7 +263,9 @@ async def test_forged_break_glass_session_id_blocked(bg_db: DatabaseEngine, seed
 
 
 @pytest.mark.asyncio
-async def test_caller_supplied_break_glass_flag_has_no_bypass_effect(bg_db: DatabaseEngine, seed_trust_employment):
+async def test_caller_supplied_break_glass_flag_has_no_bypass_effect(
+    bg_db: DatabaseEngine, seed_trust_employment
+):
     """Passing break_glass=True in context data does not bypass Four-Eyes or role checks."""
     await seed_trust_employment(bg_db, org_id="org_alpha", principal_id="admin_alpha")
     caller = PrivilegedCallerContext(
@@ -274,6 +282,7 @@ async def test_caller_supplied_break_glass_flag_has_no_bypass_effect(bg_db: Data
     )
 
     from responsibleai.iam.errors import FourEyesRequiredError
+
     with pytest.raises(FourEyesRequiredError):
         await guard.authorize_privileged_operation(
             caller=caller,
@@ -287,6 +296,7 @@ async def test_caller_supplied_break_glass_flag_has_no_bypass_effect(bg_db: Data
 # =========================================================================
 # 3. CORE SEAM PROOF: POLICY-DENY INVARIANT & LIFECYCLE
 # =========================================================================
+
 
 @pytest.mark.asyncio
 async def test_core_seam_valid_emergency_operational_policy_mutation_succeeds(
@@ -401,7 +411,9 @@ async def test_core_seam_critical_policy_mutation_blocked_under_break_glass(
     ]
 
     manager = PolicyLifecycleManager(bg_db)
-    with pytest.raises(PrivilegedAccessDeniedError, match="not permissible under emergency break-glass"):
+    with pytest.raises(
+        PrivilegedAccessDeniedError, match="not permissible under emergency break-glass"
+    ):
         await manager.create_revision(
             org_id="org_alpha",
             rules=critical_rules,
@@ -429,6 +441,7 @@ async def test_policy_deny_remains_deny_even_with_active_emergency_session():
 
     # An action matching the DENY rule
     from responsibleai.governance.models import ActionRequest, AgentContext, IdentityContext
+
     action = ActionRequest(
         action_type="sensitive_operation",
         target="secrets",
@@ -448,6 +461,7 @@ async def test_policy_deny_remains_deny_even_with_active_emergency_session():
 # =========================================================================
 # 4. SCOPE & CAPABILITY ENFORCEMENT
 # =========================================================================
+
 
 @pytest.mark.asyncio
 async def test_scope_and_capability_mismatch_blocked(bg_db: DatabaseEngine, seed_trust_employment):
@@ -492,6 +506,7 @@ async def test_scope_and_capability_mismatch_blocked(bg_db: DatabaseEngine, seed
 # 5. SOVEREIGN ROOT & RECOVERY SEPARATION
 # =========================================================================
 
+
 @pytest.mark.asyncio
 async def test_sovereign_root_actions_strictly_prohibited_under_break_glass(
     bg_db: DatabaseEngine, seed_trust_employment
@@ -521,7 +536,9 @@ async def test_sovereign_root_actions_strictly_prohibited_under_break_glass(
         PrivilegedAction.RECOVER_ROOT_AUTHORITY,
         PrivilegedAction.DESTROY_TENANT,
     ]:
-        with pytest.raises(PrivilegedAccessDeniedError, match="strictly prohibited under emergency break-glass"):
+        with pytest.raises(
+            PrivilegedAccessDeniedError, match="strictly prohibited under emergency break-glass"
+        ):
             await guard.authorize_privileged_operation(
                 caller=caller,
                 target_org_id="org_alpha",
@@ -533,6 +550,7 @@ async def test_sovereign_root_actions_strictly_prohibited_under_break_glass(
 # =========================================================================
 # 6. EXPIRY & TERMINATION ENFORCEMENT
 # =========================================================================
+
 
 @pytest.mark.asyncio
 async def test_expired_break_glass_session_blocked(bg_db: DatabaseEngine, seed_trust_employment):
@@ -552,6 +570,7 @@ async def test_expired_break_glass_session_blocked(bg_db: DatabaseEngine, seed_t
     # Fast-forward expiry in DB
     past = (datetime.now(UTC) - timedelta(minutes=5)).isoformat()
     from sqlalchemy import update
+
     async with bg_db.raw.begin() as conn:
         await conn.execute(
             update(iam_break_glass_sessions)
@@ -583,7 +602,9 @@ async def test_expired_break_glass_session_blocked(bg_db: DatabaseEngine, seed_t
 
 
 @pytest.mark.asyncio
-async def test_explicitly_terminated_break_glass_session_blocked(bg_db: DatabaseEngine, seed_trust_employment):
+async def test_explicitly_terminated_break_glass_session_blocked(
+    bg_db: DatabaseEngine, seed_trust_employment
+):
     """Prove explicitly terminated emergency sessions cannot be consumed."""
     await seed_trust_employment(bg_db, org_id="org_alpha", principal_id="admin_alpha")
 
@@ -627,8 +648,11 @@ async def test_explicitly_terminated_break_glass_session_blocked(bg_db: Database
 # 7. MANDATORY STEP-UP REAUTHENTICATION UNDER BREAK-GLASS
 # =========================================================================
 
+
 @pytest.mark.asyncio
-async def test_missing_step_up_under_break_glass_blocked(bg_db: DatabaseEngine, seed_trust_employment):
+async def test_missing_step_up_under_break_glass_blocked(
+    bg_db: DatabaseEngine, seed_trust_employment
+):
     """Prove step-up reauthentication is mandatory even during break-glass."""
     await seed_trust_employment(bg_db, org_id="org_alpha", principal_id="admin_alpha")
 
@@ -660,7 +684,9 @@ async def test_missing_step_up_under_break_glass_blocked(bg_db: DatabaseEngine, 
 
 
 @pytest.mark.asyncio
-async def test_replayed_step_up_nonce_under_break_glass_blocked(bg_db: DatabaseEngine, seed_trust_employment):
+async def test_replayed_step_up_nonce_under_break_glass_blocked(
+    bg_db: DatabaseEngine, seed_trust_employment
+):
     """Prove single-use step-up nonce replay is blocked."""
     await seed_trust_employment(bg_db, org_id="org_alpha", principal_id="admin_alpha")
 
@@ -711,6 +737,7 @@ async def test_replayed_step_up_nonce_under_break_glass_blocked(bg_db: DatabaseE
 # 8. NORMAL AUTHORITY INVARIANT & NO PERSISTENT PRIVILEGE ESCALATION
 # =========================================================================
 
+
 @pytest.mark.asyncio
 async def test_no_persistent_privilege_escalation(bg_db: DatabaseEngine, seed_trust_employment):
     """Prove break-glass does not permanently elevate the user role in the DB."""
@@ -754,8 +781,11 @@ async def test_no_persistent_privilege_escalation(bg_db: DatabaseEngine, seed_tr
 # 9. FAIL-CLOSED & ATTRIBUTION
 # =========================================================================
 
+
 @pytest.mark.asyncio
-async def test_fail_closed_on_evidence_prewrite_failure(bg_db: DatabaseEngine, seed_trust_employment):
+async def test_fail_closed_on_evidence_prewrite_failure(
+    bg_db: DatabaseEngine, seed_trust_employment
+):
     """Prove that if attribution evidence pre-recording fails, operation fails closed."""
     await seed_trust_employment(bg_db, org_id="org_alpha", principal_id="admin_alpha")
 
@@ -782,7 +812,9 @@ async def test_fail_closed_on_evidence_prewrite_failure(bg_db: DatabaseEngine, s
     )
 
     with patch.object(
-        guard.attribution, "record_privileged_event", AsyncMock(side_effect=RuntimeError("Storage unreachable"))
+        guard.attribution,
+        "record_privileged_event",
+        AsyncMock(side_effect=RuntimeError("Storage unreachable")),
     ):
         with pytest.raises(RuntimeError, match="Storage unreachable"):
             await guard.authorize_privileged_operation(
@@ -833,7 +865,9 @@ async def test_tamper_evident_attribution_recorded(bg_db: DatabaseEngine, seed_t
 
     # Verify attribution entry in DB
     async with bg_db.raw.connect() as conn:
-        stmt = select(iam_privileged_audit_log).where(iam_privileged_audit_log.c.org_id == "org_alpha")
+        stmt = select(iam_privileged_audit_log).where(
+            iam_privileged_audit_log.c.org_id == "org_alpha"
+        )
         entries = (await conn.execute(stmt)).fetchall()
         assert len(entries) > 0
         latest = dict(entries[-1]._mapping)

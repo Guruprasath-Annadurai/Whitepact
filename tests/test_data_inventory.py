@@ -31,7 +31,9 @@ def test_complete_table_classification_coverage(sqlite_engine: DatabaseEngine):
     assert summary["total_tables"] >= 51
 
     # Invariant: ZERO unclassified tables allowed in Phase 5
-    assert summary["unclassified_count"] == 0, f"Unclassified tables found: {summary['unclassified_tables']}"
+    assert summary["unclassified_count"] == 0, (
+        f"Unclassified tables found: {summary['unclassified_tables']}"
+    )
 
 
 def test_critical_secret_tables_cannot_be_exported():
@@ -43,7 +45,11 @@ def test_critical_secret_tables_cannot_be_exported():
 
 
 def test_canonical_evidence_tables_cannot_be_erased():
-    for ev_tbl in ["governance_evidence", "governance_evidence_chain_heads", "governance_root_authority_records"]:
+    for ev_tbl in [
+        "governance_evidence",
+        "governance_evidence_chain_heads",
+        "governance_root_authority_records",
+    ]:
         entry = TABLE_CLASSIFICATIONS.get(ev_tbl)
         assert entry is not None
         assert entry.classification == DataClassification.CANONICAL_SECURITY_EVIDENCE

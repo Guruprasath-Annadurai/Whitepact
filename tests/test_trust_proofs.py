@@ -26,6 +26,7 @@ async def proof_db(tmp_path):
     engine = create_engine(url)
     await engine.init()
     from responsibleai.db.engine import organizations
+
     async with engine.raw.begin() as conn:
         await conn.execute(
             organizations.insert(),
@@ -52,7 +53,9 @@ class TestTrustProofs:
             org_id="org_corp", principal_type=PrincipalType.HUMAN, display_name="Alice"
         )
         company = await dir_svc.create_principal(
-            org_id="org_corp", principal_type=PrincipalType.ORGANIZATION, display_name="Global Corp Org"
+            org_id="org_corp",
+            principal_type=PrincipalType.ORGANIZATION,
+            display_name="Global Corp Org",
         )
 
         # Before relationship: NOT_PROVEN

@@ -32,6 +32,7 @@ async def passport_db(tmp_path):
     engine = create_engine(url)
     await engine.init()
     from responsibleai.db.engine import organizations
+
     async with engine.raw.begin() as conn:
         await conn.execute(
             organizations.insert(),
@@ -104,7 +105,9 @@ class TestTrustPassport:
             pass_svc.verify_passport_integrity(tampered_passport)
 
         # 4. Tamper attack: modify assurance vector
-        tampered_assurance = replace(passport.assurance, identity_assurance=AssuranceLevel.CRYPTOGRAPHIC)
+        tampered_assurance = replace(
+            passport.assurance, identity_assurance=AssuranceLevel.CRYPTOGRAPHIC
+        )
         tampered_passport2 = replace(passport, assurance=tampered_assurance)
 
         with pytest.raises(TrustPassportTamperedError):
@@ -146,7 +149,9 @@ class TestTrustPassport:
         passport = await pass_svc.generate_passport(principal_id=alice.id, org_id="org_corp")
 
         # PUBLIC disclosure view
-        public_view = pass_svc.filter_selective_disclosure(passport, audience_view=DisclosureClass.PUBLIC)
+        public_view = pass_svc.filter_selective_disclosure(
+            passport, audience_view=DisclosureClass.PUBLIC
+        )
         assert "public_role" in public_view["disclosed_attributes"]
         assert "personal_phone" not in public_view["disclosed_attributes"]
 

@@ -58,7 +58,6 @@ ACTION_RISK_TIERS: dict[PrivilegedAction, PrivilegeRiskTier] = {
     PrivilegedAction.UPDATE_BUDGET: PrivilegeRiskTier.PRIVILEGED_STANDARD,
     PrivilegedAction.READ_AUDIT_LOG: PrivilegeRiskTier.PRIVILEGED_STANDARD,
     PrivilegedAction.READ_SCIM_RESOURCES: PrivilegeRiskTier.PRIVILEGED_STANDARD,
-
     PrivilegedAction.ROTATE_API_KEY: PrivilegeRiskTier.PRIVILEGED_HIGH,
     PrivilegedAction.REVOKE_API_KEY: PrivilegeRiskTier.PRIVILEGED_HIGH,
     PrivilegedAction.ENROLL_MFA: PrivilegeRiskTier.PRIVILEGED_HIGH,
@@ -75,7 +74,6 @@ ACTION_RISK_TIERS: dict[PrivilegedAction, PrivilegeRiskTier] = {
     PrivilegedAction.DELEGATE_AUTHORITY: PrivilegeRiskTier.PRIVILEGED_HIGH,
     PrivilegedAction.REVOKE_DELEGATION: PrivilegeRiskTier.PRIVILEGED_HIGH,
     PrivilegedAction.REVOKE_PASSPORT: PrivilegeRiskTier.PRIVILEGED_HIGH,
-
     PrivilegedAction.TRANSFER_ROOT_AUTHORITY: PrivilegeRiskTier.PRIVILEGED_CRITICAL,
     PrivilegedAction.RECOVER_ROOT_AUTHORITY: PrivilegeRiskTier.PRIVILEGED_CRITICAL,
     PrivilegedAction.DESTROY_TENANT: PrivilegeRiskTier.PRIVILEGED_CRITICAL,

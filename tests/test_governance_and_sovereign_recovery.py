@@ -233,7 +233,13 @@ async def test_sovereign_root_recovery_n_of_m_ceremony(test_db: DatabaseEngine):
 
     # 6. Verify trust root atomically updated and old root revoked
     async with test_db.raw.connect() as conn:
-        roots = (await conn.execute(select(trust_fabric_trust_roots).where(trust_fabric_trust_roots.c.org_id == "org_gov"))).fetchall()
+        roots = (
+            await conn.execute(
+                select(trust_fabric_trust_roots).where(
+                    trust_fabric_trust_roots.c.org_id == "org_gov"
+                )
+            )
+        ).fetchall()
         assert len(roots) == 1
         root = roots[0]
         assert root.status == "ACTIVE"
@@ -369,8 +375,12 @@ async def test_voluntary_root_transfer_lifecycle(test_db: DatabaseEngine):
 
     # 5. Old root authority is 0 (no longer root)
     async with test_db.raw.connect() as conn:
-        root_row = (await conn.execute(
-            select(trust_fabric_trust_roots).where(trust_fabric_trust_roots.c.org_id == "org_gov")
-        )).one()
+        root_row = (
+            await conn.execute(
+                select(trust_fabric_trust_roots).where(
+                    trust_fabric_trust_roots.c.org_id == "org_gov"
+                )
+            )
+        ).one()
         assert root_row.root_principal_id == "prin_root_successor"
         assert root_row.root_principal_id != "prin_root_old"

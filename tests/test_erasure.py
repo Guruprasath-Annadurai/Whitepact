@@ -46,7 +46,9 @@ async def sample_org(sqlite_engine: DatabaseEngine):
 
 
 @pytest.mark.asyncio
-async def test_erasure_state_machine_and_verification(sqlite_engine: DatabaseEngine, sample_org: str):
+async def test_erasure_state_machine_and_verification(
+    sqlite_engine: DatabaseEngine, sample_org: str
+):
     erasure_mgr = DataErasureManager(sqlite_engine)
 
     # Insert erasable operational data
@@ -66,7 +68,9 @@ async def test_erasure_state_machine_and_verification(sqlite_engine: DatabaseEng
         )
 
     # 1. Request erasure
-    req = await erasure_mgr.request_erasure(sample_org, "privacy-officer", "GDPR Article 17 Erasure")
+    req = await erasure_mgr.request_erasure(
+        sample_org, "privacy-officer", "GDPR Article 17 Erasure"
+    )
     assert req.status == ErasureStatus.REQUESTED
     assert req.org_id == sample_org
 
@@ -78,7 +82,9 @@ async def test_erasure_state_machine_and_verification(sqlite_engine: DatabaseEng
 
     # 3. Invariant: 0 residual rows in erased tables
     async with sqlite_engine.raw.connect() as conn:
-        rows = (await conn.execute(select(incidents).where(incidents.c.org_id == sample_org))).fetchall()
+        rows = (
+            await conn.execute(select(incidents).where(incidents.c.org_id == sample_org))
+        ).fetchall()
         assert len(rows) == 0
 
 
@@ -107,7 +113,9 @@ async def test_erasure_blocked_by_active_legal_hold(sqlite_engine: DatabaseEngin
         )
 
     # Request and execute erasure
-    req = await erasure_mgr.request_erasure(sample_org, "privacy-officer", "Customer requested delete")
+    req = await erasure_mgr.request_erasure(
+        sample_org, "privacy-officer", "Customer requested delete"
+    )
     result = await erasure_mgr.execute_erasure(req.id)
 
     # Invariant: Must transition to BLOCKED_BY_HOLD, NOT COMPLETED!
@@ -116,5 +124,7 @@ async def test_erasure_blocked_by_active_legal_hold(sqlite_engine: DatabaseEngin
 
     # Invariant: Held data MUST NOT be erased
     async with sqlite_engine.raw.connect() as conn:
-        rows = (await conn.execute(select(incidents).where(incidents.c.org_id == sample_org))).fetchall()
+        rows = (
+            await conn.execute(select(incidents).where(incidents.c.org_id == sample_org))
+        ).fetchall()
         assert len(rows) == 1

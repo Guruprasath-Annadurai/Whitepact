@@ -9,9 +9,6 @@ import asyncio
 import pytest
 from sqlalchemy import select
 
-from tests.pg_test_url import isolated_pg_url
-
-from responsibleai.db.migrate import run_migrations_or_raise
 from responsibleai.db.engine import (
     create_engine,
     organizations,
@@ -28,6 +25,7 @@ from responsibleai.db.engine import (
     trust_fabric_sources,
     trust_fabric_trust_roots,
 )
+from responsibleai.db.migrate import run_migrations_or_raise
 from responsibleai.trust_fabric.bootstrap import TrustBootstrapManager
 from responsibleai.trust_fabric.directory import PrincipalDirectory
 from responsibleai.trust_fabric.enums import (
@@ -41,6 +39,8 @@ from responsibleai.trust_fabric.errors import (
     IdentifierCollisionError,
     OrganizationAlreadyBootstrappedError,
 )
+from tests.pg_test_url import isolated_pg_url
+
 
 @pytest.fixture
 async def pg_engine():
@@ -65,8 +65,18 @@ async def pg_engine():
             await conn.execute(
                 organizations.insert(),
                 [
-                    {"id": "org_pg_race", "name": "PG Race Org", "slug": "pgrace", "created_at": "now"},
-                    {"id": "org_pg_ident", "name": "PG Ident Org", "slug": "pgident", "created_at": "now"},
+                    {
+                        "id": "org_pg_race",
+                        "name": "PG Race Org",
+                        "slug": "pgrace",
+                        "created_at": "now",
+                    },
+                    {
+                        "id": "org_pg_ident",
+                        "name": "PG Ident Org",
+                        "slug": "pgident",
+                        "created_at": "now",
+                    },
                 ],
             )
         try:
@@ -98,7 +108,11 @@ async def test_postgres_concurrent_bootstrap_50_way_race(pg_engine):
                 root_public_key=f"pk_postgres_race_{idx}",
             )
             return "WINNER"
-        except (OrganizationAlreadyBootstrappedError, BootstrapRaceError, BootstrapTokenReplayError):
+        except (
+            OrganizationAlreadyBootstrappedError,
+            BootstrapRaceError,
+            BootstrapTokenReplayError,
+        ):
             return "LOST_RACE"
 
     results = await asyncio.gather(*[_attempt_bootstrap(i) for i in range(50)])

@@ -61,7 +61,9 @@ async def tenant_pair(sqlite_engine: DatabaseEngine):
 
 
 @pytest.mark.asyncio
-async def test_policy_lifecycle_tenant_isolation(sqlite_engine: DatabaseEngine, tenant_pair: tuple[str, str]):
+async def test_policy_lifecycle_tenant_isolation(
+    sqlite_engine: DatabaseEngine, tenant_pair: tuple[str, str]
+):
     tenant_a, tenant_b = tenant_pair
     mgr = PolicyLifecycleManager(sqlite_engine)
 
@@ -96,7 +98,9 @@ async def test_policy_lifecycle_tenant_isolation(sqlite_engine: DatabaseEngine, 
 
 
 @pytest.mark.asyncio
-async def test_data_export_tenant_isolation(sqlite_engine: DatabaseEngine, tenant_pair: tuple[str, str]):
+async def test_data_export_tenant_isolation(
+    sqlite_engine: DatabaseEngine, tenant_pair: tuple[str, str]
+):
     tenant_a, tenant_b = tenant_pair
     export_svc = DataExportService(sqlite_engine)
 
@@ -148,7 +152,9 @@ async def test_data_export_tenant_isolation(sqlite_engine: DatabaseEngine, tenan
 
 
 @pytest.mark.asyncio
-async def test_legal_hold_and_retention_tenant_isolation(sqlite_engine: DatabaseEngine, tenant_pair: tuple[str, str]):
+async def test_legal_hold_and_retention_tenant_isolation(
+    sqlite_engine: DatabaseEngine, tenant_pair: tuple[str, str]
+):
     tenant_a, tenant_b = tenant_pair
     hold_mgr = LegalHoldManager(sqlite_engine)
     ret_mgr = RetentionManager(sqlite_engine)
@@ -206,7 +212,9 @@ async def test_legal_hold_and_retention_tenant_isolation(sqlite_engine: Database
 
 
 @pytest.mark.asyncio
-async def test_tenant_deletion_isolation(sqlite_engine: DatabaseEngine, tenant_pair: tuple[str, str]):
+async def test_tenant_deletion_isolation(
+    sqlite_engine: DatabaseEngine, tenant_pair: tuple[str, str]
+):
     tenant_a, tenant_b = tenant_pair
     orchestrator = TenantDeletionOrchestrator(sqlite_engine)
 

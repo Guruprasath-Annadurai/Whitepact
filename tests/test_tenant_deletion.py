@@ -106,28 +106,40 @@ async def test_end_to_end_tenant_deletion(sqlite_engine: DatabaseEngine, sample_
         )
 
     # Execute deletion
-    result = await orchestrator.delete_tenant(sample_org, "root-admin", "Customer requested departure")
+    result = await orchestrator.delete_tenant(
+        sample_org, "root-admin", "Customer requested departure"
+    )
 
     assert result.verification_passed is True
     assert result.generation_id.startswith("gen-")
 
     # Verify sessions and API keys are completely deleted
     async with sqlite_engine.raw.connect() as conn:
-        s_count = (await conn.execute(select(web_sessions).where(web_sessions.c.org_id == sample_org))).fetchall()
+        s_count = (
+            await conn.execute(select(web_sessions).where(web_sessions.c.org_id == sample_org))
+        ).fetchall()
         assert len(s_count) == 0
 
-        k_count = (await conn.execute(select(org_api_keys).where(org_api_keys.c.org_id == sample_org))).fetchall()
+        k_count = (
+            await conn.execute(select(org_api_keys).where(org_api_keys.c.org_id == sample_org))
+        ).fetchall()
         assert len(k_count) == 0
 
         # Verify durable tombstone exists
-        tombstone = (await conn.execute(select(tenant_tombstones).where(tenant_tombstones.c.org_id == sample_org))).fetchone()
+        tombstone = (
+            await conn.execute(
+                select(tenant_tombstones).where(tenant_tombstones.c.org_id == sample_org)
+            )
+        ).fetchone()
         assert tombstone is not None
         assert tombstone.generation_id == result.generation_id
         assert tombstone.tombstoned_by == "root-admin"
 
 
 @pytest.mark.asyncio
-async def test_tenant_deletion_blocked_by_legal_hold(sqlite_engine: DatabaseEngine, sample_org: str):
+async def test_tenant_deletion_blocked_by_legal_hold(
+    sqlite_engine: DatabaseEngine, sample_org: str
+):
     orchestrator = TenantDeletionOrchestrator(sqlite_engine)
     hold_mgr = LegalHoldManager(sqlite_engine)
 

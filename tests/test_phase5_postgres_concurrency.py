@@ -48,7 +48,11 @@ async def _run_concurrent_activations(engine: DatabaseEngine, org_id: str, count
     revisions = []
     for i in range(count):
         rules = [
-            PolicyRule(rule_id=f"rule-{i}", reason_code=f"RC_CONCURRENCY_{i}", effect=GovernanceDecision.ALLOW)
+            PolicyRule(
+                rule_id=f"rule-{i}",
+                reason_code=f"RC_CONCURRENCY_{i}",
+                effect=GovernanceDecision.ALLOW,
+            )
         ]
         rev = await mgr.create_revision(
             org_id=org_id,
@@ -125,7 +129,9 @@ async def test_concurrent_revision_allocation_zero_duplicates():
     mgr = PolicyLifecycleManager(engine)
 
     async def create_one(idx: int):
-        rules = [PolicyRule(rule_id=f"r-{idx}", reason_code="RC_TEST", effect=GovernanceDecision.DENY)]
+        rules = [
+            PolicyRule(rule_id=f"r-{idx}", reason_code="RC_TEST", effect=GovernanceDecision.DENY)
+        ]
         return await mgr.create_revision(org_id, rules, f"creator-{idx}", f"Rev reason {idx}")
 
     try:
@@ -223,7 +229,10 @@ async def test_concurrent_hold_vs_erasure():
 
     # Concurrently attempt 25 deletions
     results = await asyncio.gather(
-        *(orchestrator.delete_tenant(org_id, f"admin-{i}", "Customer requested delete") for i in range(25)),
+        *(
+            orchestrator.delete_tenant(org_id, f"admin-{i}", "Customer requested delete")
+            for i in range(25)
+        ),
         return_exceptions=True,
     )
 
@@ -233,7 +242,9 @@ async def test_concurrent_hold_vs_erasure():
 
     # Organization must remain intact
     async with engine.raw.connect() as conn:
-        org_row = (await conn.execute(select(organizations).where(organizations.c.id == org_id))).fetchone()
+        org_row = (
+            await conn.execute(select(organizations).where(organizations.c.id == org_id))
+        ).fetchone()
         assert org_row is not None
 
     await engine.close()
@@ -279,7 +290,9 @@ async def test_concurrent_restore_reconciliation_workers():
 @pytest.mark.asyncio
 async def test_concurrent_activations_postgres():
     """Verify concurrent activation invariants under PostgreSQL with 30 workers."""
-    url = os.environ.get("WHITEPACT_TEST_POSTGRES_PHASE5") or os.environ.get("WHITEPACT_TEST_POSTGRES_CONCURRENCY")
+    url = os.environ.get("WHITEPACT_TEST_POSTGRES_PHASE5") or os.environ.get(
+        "WHITEPACT_TEST_POSTGRES_CONCURRENCY"
+    )
     if not url:
         pytest.skip("WHITEPACT_TEST_POSTGRES_PHASE5 requires disposable PostgreSQL database")
 

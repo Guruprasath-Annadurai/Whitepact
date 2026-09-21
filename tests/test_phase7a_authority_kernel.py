@@ -31,7 +31,6 @@ from responsibleai.runtime.authority_kernel import (
 from responsibleai.runtime.capacity_reservation import AtomicCapacityReservation, InMemoryRedisEval
 from responsibleai.runtime.errors import (
     AuthorityKernelError,
-    AuthorizationIneligibleError,
     CrossTenantAccessError,
     DuplicateEffectClaimError,
     IdempotencyConflictError,
@@ -79,7 +78,9 @@ def _issue_kwargs(org_id: str, digest: str = "a" * 64, key: str | None = None, *
 
 async def _ready_claim(kernel, org_id, worker="worker-a"):
     issued = await kernel.issue(**_issue_kwargs(org_id))
-    await kernel.acquire_lease(request_id=issued.request_id, worker_id=worker, organization_id=org_id)
+    await kernel.acquire_lease(
+        request_id=issued.request_id, worker_id=worker, organization_id=org_id
+    )
     await kernel.admit(request_id=issued.request_id, worker_id=worker, organization_id=org_id)
     claim = await kernel.claim_backend_start(
         request_id=issued.request_id, worker_id=worker, organization_id=org_id
@@ -106,7 +107,9 @@ async def test_happy_local_cas(pg_url: str) -> None:
         kernel = Phase7AAuthorityKernel(engine)
         issued, claim = await _ready_claim(kernel, org.id)
         permit = await kernel.claim_local_effect_start(
-            claim, action_digest=issued.request_id and claim.action_digest, target_fingerprint="fp-1"
+            claim,
+            action_digest=issued.request_id and claim.action_digest,
+            target_fingerprint="fp-1",
         )
         assert permit.effect_id == issued.effect_id
         req = await kernel.load_request(issued.request_id, organization_id=org.id)
@@ -181,7 +184,9 @@ async def test_duplicate_queue_tickets_do_not_duplicate_effects(pg_url: str) -> 
             )
         t2 = await kernel.publish_outbox(publisher_id="pub-1", transport=transport)
         # Either no row (already publishing handled) or a duplicate ticket.
-        await kernel.acquire_lease(request_id=issued.request_id, worker_id="w1", organization_id=org.id)
+        await kernel.acquire_lease(
+            request_id=issued.request_id, worker_id="w1", organization_id=org.id
+        )
         await kernel.admit(request_id=issued.request_id, worker_id="w1", organization_id=org.id)
         claim = await kernel.claim_backend_start(
             request_id=issued.request_id, worker_id="w1", organization_id=org.id
@@ -205,7 +210,9 @@ async def test_stale_worker_and_fence(pg_url: str) -> None:
         org = await _org(engine)
         kernel = Phase7AAuthorityKernel(engine)
         issued, claim_w1 = await _ready_claim(kernel, org.id, worker="w1")
-        await kernel.acquire_lease(request_id=issued.request_id, worker_id="w2", organization_id=org.id)
+        await kernel.acquire_lease(
+            request_id=issued.request_id, worker_id="w2", organization_id=org.id
+        )
         with pytest.raises((PreEffectCasRejected, StaleWorkerError)):
             await kernel.claim_local_effect_start(
                 claim_w1, action_digest=claim_w1.action_digest, target_fingerprint="fp-1"
@@ -275,7 +282,9 @@ async def test_wrong_digest_and_fingerprint(pg_url: str) -> None:
         kernel = Phase7AAuthorityKernel(engine)
         _, claim = await _ready_claim(kernel, org.id)
         with pytest.raises(PreEffectCasRejected, match="digest"):
-            await kernel.claim_local_effect_start(claim, action_digest="0" * 64, target_fingerprint="fp-1")
+            await kernel.claim_local_effect_start(
+                claim, action_digest="0" * 64, target_fingerprint="fp-1"
+            )
         _, claim2 = await _ready_claim(kernel, org.id)
         with pytest.raises(PreEffectCasRejected, match="fingerprint"):
             await kernel.claim_external_effect_transmission(
@@ -293,7 +302,9 @@ async def test_duplicate_attempt_rejected(pg_url: str) -> None:
         kernel = Phase7AAuthorityKernel(engine)
         issued = await kernel.issue(**_issue_kwargs(org.id))
         async with engine.raw.begin() as conn:
-            with pytest.raises(Exception):
+            from sqlalchemy.exc import IntegrityError
+
+            with pytest.raises(IntegrityError):
                 await conn.execute(
                     attempts.insert().values(
                         attempt_id=uuid.uuid4().hex,
@@ -322,7 +333,9 @@ async def test_crash_before_and_after_redis(pg_url: str) -> None:
         await kernel.issue(**_issue_kwargs(org.id))
         row = await kernel.claim_outbox_row(publisher_id="pub")
         assert row is not None
-        await kernel.return_publishing_to_pending(outbox_id=row["outbox_id"], reason="crash before redis")
+        await kernel.return_publishing_to_pending(
+            outbox_id=row["outbox_id"], reason="crash before redis"
+        )
         transport = MemoryTransport()
         ticket = await kernel.publish_outbox(publisher_id="pub", transport=transport)
         assert ticket is not None
@@ -403,7 +416,9 @@ async def test_transaction_rollback_does_not_grant_authority(pg_url: str) -> Non
         org = await _org(engine)
         kernel = Phase7AAuthorityKernel(engine)
         issued = await kernel.issue(**_issue_kwargs(org.id))
-        await kernel.acquire_lease(request_id=issued.request_id, worker_id="w1", organization_id=org.id)
+        await kernel.acquire_lease(
+            request_id=issued.request_id, worker_id="w1", organization_id=org.id
+        )
         try:
             async with engine.raw.begin() as conn:
                 await conn.execute(text("SELECT 1"))
@@ -428,6 +443,7 @@ async def test_redis_capacity_is_not_authority(pg_url: str) -> None:
             publisher_id="pub", transport=transport, capacity_reserve=cap
         )
         assert ticket is not None
+
         # Losing Redis accounting must not create a second physical effect path.
         class DeadRedis:
             def eval(self, *a, **k):

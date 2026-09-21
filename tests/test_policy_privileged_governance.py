@@ -127,6 +127,7 @@ async def _create_valid_step_up(
     target_resource_id: str | None = None,
 ) -> StepUpProof:
     from responsibleai.iam.step_up import StepUpVerifier
+
     verifier = StepUpVerifier(engine)
     nonce = await verifier.issue_step_up_nonce(
         org_id=org_id,
@@ -158,7 +159,11 @@ async def _create_four_eyes_approval(
     fe_id = str(uuid.uuid4())
     now = datetime.now(UTC)
     created_at = (now - timedelta(minutes=10)).isoformat()
-    expires_at = (now - timedelta(minutes=1)).isoformat() if expired else (now + timedelta(minutes=30)).isoformat()
+    expires_at = (
+        (now - timedelta(minutes=1)).isoformat()
+        if expired
+        else (now + timedelta(minutes=30)).isoformat()
+    )
     executed_at = now.isoformat() if already_executed else None
 
     async with engine.raw.begin() as conn:
@@ -208,7 +213,9 @@ async def test_cross_tenant_critical_mutation_blocked(
         org_id="org_beta",
         role=Role.ADMIN,
     )
-    with pytest.raises(CrossTenantEscalationError, match="cannot execute privileged actions on tenant"):
+    with pytest.raises(
+        CrossTenantEscalationError, match="cannot execute privileged actions on tenant"
+    ):
         await mgr.create_revision(
             org_id="org_alpha",
             rules=critical_rules,
@@ -272,7 +279,9 @@ async def test_missing_four_eyes_critical_mutation_blocked(
         org_id="org_alpha",
         role=Role.ADMIN,
     )
-    proof = await _create_valid_step_up(sqlite_engine, "org_alpha", "admin_alpha", PrivilegedAction.MUTATE_CRITICAL_POLICY.value)
+    proof = await _create_valid_step_up(
+        sqlite_engine, "org_alpha", "admin_alpha", PrivilegedAction.MUTATE_CRITICAL_POLICY.value
+    )
 
     with pytest.raises(FourEyesRequiredError, match="requires dual-custody approval"):
         await mgr.create_revision(
@@ -297,7 +306,9 @@ async def test_fabricated_approval_id_blocked(
         org_id="org_alpha",
         role=Role.ADMIN,
     )
-    proof = await _create_valid_step_up(sqlite_engine, "org_alpha", "admin_alpha", PrivilegedAction.MUTATE_CRITICAL_POLICY.value)
+    proof = await _create_valid_step_up(
+        sqlite_engine, "org_alpha", "admin_alpha", PrivilegedAction.MUTATE_CRITICAL_POLICY.value
+    )
 
     with pytest.raises(PrivilegedAccessDeniedError, match="Four-Eyes approval record not found"):
         await mgr.create_revision(
@@ -322,7 +333,9 @@ async def test_expired_approval_blocked(
         org_id="org_alpha",
         role=Role.ADMIN,
     )
-    proof = await _create_valid_step_up(sqlite_engine, "org_alpha", "admin_alpha", PrivilegedAction.MUTATE_CRITICAL_POLICY.value)
+    proof = await _create_valid_step_up(
+        sqlite_engine, "org_alpha", "admin_alpha", PrivilegedAction.MUTATE_CRITICAL_POLICY.value
+    )
     fe_id = await _create_four_eyes_approval(
         sqlite_engine, "org_alpha", requester="admin_alpha", approver="admin_checker", expired=True
     )
@@ -350,12 +363,20 @@ async def test_already_consumed_approval_blocked(
         org_id="org_alpha",
         role=Role.ADMIN,
     )
-    proof = await _create_valid_step_up(sqlite_engine, "org_alpha", "admin_alpha", PrivilegedAction.MUTATE_CRITICAL_POLICY.value)
+    proof = await _create_valid_step_up(
+        sqlite_engine, "org_alpha", "admin_alpha", PrivilegedAction.MUTATE_CRITICAL_POLICY.value
+    )
     fe_id = await _create_four_eyes_approval(
-        sqlite_engine, "org_alpha", requester="admin_alpha", approver="admin_checker", already_executed=True
+        sqlite_engine,
+        "org_alpha",
+        requester="admin_alpha",
+        approver="admin_checker",
+        already_executed=True,
     )
 
-    with pytest.raises(PrivilegedAccessDeniedError, match="Four-Eyes approval has already been consumed"):
+    with pytest.raises(
+        PrivilegedAccessDeniedError, match="Four-Eyes approval has already been consumed"
+    ):
         await mgr.create_revision(
             org_id="org_alpha",
             rules=critical_rules,
@@ -378,7 +399,9 @@ async def test_cross_tenant_approval_blocked(
         org_id="org_alpha",
         role=Role.ADMIN,
     )
-    proof = await _create_valid_step_up(sqlite_engine, "org_alpha", "admin_alpha", PrivilegedAction.MUTATE_CRITICAL_POLICY.value)
+    proof = await _create_valid_step_up(
+        sqlite_engine, "org_alpha", "admin_alpha", PrivilegedAction.MUTATE_CRITICAL_POLICY.value
+    )
     # Created for org_beta, presented to org_alpha
     fe_id = await _create_four_eyes_approval(
         sqlite_engine, "org_beta", requester="admin_beta", approver="admin_checker"
@@ -410,7 +433,9 @@ async def test_self_approval_prevention_real_enforcement(
         org_id="org_alpha",
         role=Role.ADMIN,
     )
-    proof = await _create_valid_step_up(sqlite_engine, "org_alpha", admin_id, PrivilegedAction.MUTATE_CRITICAL_POLICY.value)
+    proof = await _create_valid_step_up(
+        sqlite_engine, "org_alpha", admin_id, PrivilegedAction.MUTATE_CRITICAL_POLICY.value
+    )
 
     # Self-approved record: requester == approver
     fe_id = await _create_four_eyes_approval(
@@ -421,7 +446,9 @@ async def test_self_approval_prevention_real_enforcement(
     )
 
     # Invariant: Self-approval must raise SelfApprovalBlockedError!
-    with pytest.raises(SelfApprovalBlockedError, match="Requester cannot approve their own privileged request"):
+    with pytest.raises(
+        SelfApprovalBlockedError, match="Requester cannot approve their own privileged request"
+    ):
         await mgr.create_revision(
             org_id="org_alpha",
             rules=critical_rules,
@@ -434,7 +461,13 @@ async def test_self_approval_prevention_real_enforcement(
 
     # Assert database state unchanged: 0 revisions created!
     async with sqlite_engine.raw.connect() as conn:
-        revs = (await conn.execute(select(governance_policy_revisions).where(governance_policy_revisions.c.org_id == "org_alpha"))).fetchall()
+        revs = (
+            await conn.execute(
+                select(governance_policy_revisions).where(
+                    governance_policy_revisions.c.org_id == "org_alpha"
+                )
+            )
+        ).fetchall()
         assert len(revs) == 0
 
 
@@ -449,7 +482,9 @@ async def test_approval_policy_digest_mismatch_blocked(
         org_id="org_alpha",
         role=Role.ADMIN,
     )
-    proof = await _create_valid_step_up(sqlite_engine, "org_alpha", "admin_alpha", PrivilegedAction.MUTATE_CRITICAL_POLICY.value)
+    proof = await _create_valid_step_up(
+        sqlite_engine, "org_alpha", "admin_alpha", PrivilegedAction.MUTATE_CRITICAL_POLICY.value
+    )
     # Approval bound to a different digest
     fe_id = await _create_four_eyes_approval(
         sqlite_engine,
@@ -459,7 +494,9 @@ async def test_approval_policy_digest_mismatch_blocked(
         parameters={"policy_digest": "different_digest_hash_000"},
     )
 
-    with pytest.raises(PrivilegedAccessDeniedError, match="Four-Eyes approval policy digest mismatch"):
+    with pytest.raises(
+        PrivilegedAccessDeniedError, match="Four-Eyes approval policy digest mismatch"
+    ):
         await mgr.create_revision(
             org_id="org_alpha",
             rules=critical_rules,
@@ -506,13 +543,17 @@ async def test_security_epoch_changed_after_approval_blocked(
     await epoch_repo.bump("org_alpha")
 
     # Create step up under new epoch
-    proof = await _create_valid_step_up(sqlite_engine, "org_alpha", "admin_maker", PrivilegedAction.MUTATE_CRITICAL_POLICY.value)
+    proof = await _create_valid_step_up(
+        sqlite_engine, "org_alpha", "admin_maker", PrivilegedAction.MUTATE_CRITICAL_POLICY.value
+    )
 
     # Create a critical revision to activate
     fe_create = await _create_four_eyes_approval(
         sqlite_engine, "org_alpha", requester="admin_maker", approver="admin_checker"
     )
-    proof_create = await _create_valid_step_up(sqlite_engine, "org_alpha", "admin_maker", PrivilegedAction.MUTATE_CRITICAL_POLICY.value)
+    proof_create = await _create_valid_step_up(
+        sqlite_engine, "org_alpha", "admin_maker", PrivilegedAction.MUTATE_CRITICAL_POLICY.value
+    )
     crit_rev = await mgr.create_revision(
         "org_alpha",
         critical_rules,
@@ -524,7 +565,9 @@ async def test_security_epoch_changed_after_approval_blocked(
     )
 
     # Activating critical revision with stale approval epoch must be rejected!
-    with pytest.raises(PrivilegedAccessDeniedError, match="Four-Eyes approval security epoch mismatch"):
+    with pytest.raises(
+        PrivilegedAccessDeniedError, match="Four-Eyes approval security epoch mismatch"
+    ):
         await mgr.activate_revision(
             org_id="org_alpha",
             revision_id=crit_rev.id,
@@ -578,7 +621,11 @@ async def test_fully_authorized_critical_policy_mutation_succeeds(
 
     # 4. Invariant verification: Approval record is marked EXECUTED!
     async with sqlite_engine.raw.connect() as conn:
-        fe_row = (await conn.execute(select(iam_four_eyes_requests).where(iam_four_eyes_requests.c.id == fe_id))).fetchone()
+        fe_row = (
+            await conn.execute(
+                select(iam_four_eyes_requests).where(iam_four_eyes_requests.c.id == fe_id)
+            )
+        ).fetchone()
         assert fe_row is not None
         assert fe_row.status == "EXECUTED"
         assert fe_row.executed_at is not None

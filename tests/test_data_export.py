@@ -43,7 +43,9 @@ async def sample_org(sqlite_engine: DatabaseEngine):
 
 
 @pytest.mark.asyncio
-async def test_structured_export_with_manifest_and_zero_secrets(sqlite_engine: DatabaseEngine, sample_org: str):
+async def test_structured_export_with_manifest_and_zero_secrets(
+    sqlite_engine: DatabaseEngine, sample_org: str
+):
     export_svc = DataExportService(sqlite_engine)
 
     # Insert operational data

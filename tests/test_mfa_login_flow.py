@@ -25,8 +25,8 @@ from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
 
 from responsibleai.dashboard.app import app, limiter, settings
-from tests.org_http_fixtures import seed_org_with_key
 from responsibleai.rbac.models import Role
+from tests.org_http_fixtures import seed_org_with_key
 
 BOOTSTRAP_AUTH = {"Authorization": "Bearer bootstrap-test-key"}
 
@@ -158,9 +158,7 @@ class TestOrgMFAEnforcement:
         secret = await self._enroll(client, org_id, key_id, auth)
         assert secret
 
-        await client.put(
-            f"/api/orgs/{org_id}/mfa", json={"mfa_required": True}, headers=owner_auth
-        )
+        await client.put(f"/api/orgs/{org_id}/mfa", json={"mfa_required": True}, headers=owner_auth)
 
         r = await client.post("/api/auth/login-key", json={"api_key": raw_key})
         assert r.status_code == 200
@@ -172,9 +170,7 @@ class TestOrgMFAEnforcement:
         org_id, key_id, raw_key = org_and_key
         auth = {"Authorization": f"Bearer {raw_key}"}
         secret = await self._enroll(client, org_id, key_id, auth)
-        await client.put(
-            f"/api/orgs/{org_id}/mfa", json={"mfa_required": True}, headers=owner_auth
-        )
+        await client.put(f"/api/orgs/{org_id}/mfa", json={"mfa_required": True}, headers=owner_auth)
 
         code = pyotp.TOTP(secret).now()
         r = await client.post("/api/auth/login-key", json={"api_key": raw_key, "mfa_code": code})
@@ -187,9 +183,7 @@ class TestOrgMFAEnforcement:
         org_id, key_id, raw_key = org_and_key
         auth = {"Authorization": f"Bearer {raw_key}"}
         await self._enroll(client, org_id, key_id, auth)
-        await client.put(
-            f"/api/orgs/{org_id}/mfa", json={"mfa_required": True}, headers=owner_auth
-        )
+        await client.put(f"/api/orgs/{org_id}/mfa", json={"mfa_required": True}, headers=owner_auth)
 
         r = await client.post(
             "/api/auth/login-key", json={"api_key": raw_key, "mfa_code": "000000"}
@@ -200,9 +194,7 @@ class TestOrgMFAEnforcement:
         self, client: AsyncClient, org_and_key, owner_auth: dict[str, str]
     ) -> None:
         org_id, key_id, raw_key = org_and_key
-        await client.put(
-            f"/api/orgs/{org_id}/mfa", json={"mfa_required": True}, headers=owner_auth
-        )
+        await client.put(f"/api/orgs/{org_id}/mfa", json={"mfa_required": True}, headers=owner_auth)
         r = await client.post("/api/auth/login-key", json={"api_key": raw_key})
         assert r.status_code == 403
 
@@ -218,9 +210,7 @@ class TestOrgMFAEnforcement:
             f"/api/orgs/{org_id}/keys/{key_id}/mfa/verify", json={"code": code}, headers=auth
         )
         backup_code = verify.json()["backup_codes"][0]
-        await client.put(
-            f"/api/orgs/{org_id}/mfa", json={"mfa_required": True}, headers=owner_auth
-        )
+        await client.put(f"/api/orgs/{org_id}/mfa", json={"mfa_required": True}, headers=owner_auth)
 
         r = await client.post(
             "/api/auth/login-key", json={"api_key": raw_key, "mfa_code": backup_code}

@@ -14,8 +14,6 @@ import uuid
 
 import pytest
 
-from tests.docker_runtime import DOCKER_UNAVAILABLE_REASON, docker_available
-
 from responsibleai.isolation.container_backend import DockerContainerBackend
 from responsibleai.isolation.models import (
     DEFAULT_STRICT_PROFILE,
@@ -23,6 +21,7 @@ from responsibleai.isolation.models import (
     IsolationProfile,
     ResourceLimits,
 )
+from tests.docker_runtime import DOCKER_UNAVAILABLE_REASON, docker_available
 
 pytestmark = pytest.mark.skipif(not docker_available(), reason=DOCKER_UNAVAILABLE_REASON)
 
@@ -43,6 +42,7 @@ time.sleep(0.2)
 sys.stderr.write("intentional failure in execution A\\n")
 sys.exit(42)
 """
+
 
 @pytest.mark.asyncio
 async def test_concurrent_same_action_id_no_collision() -> None:
@@ -75,8 +75,13 @@ async def test_concurrent_same_action_id_no_collision() -> None:
         backend.execute(req_b),
     )
 
-    assert outcome_a.is_success, f"Outcome A failed: exit={outcome_a.exit_code}, stderr={outcome_a.stderr}"
-    assert outcome_b.is_success, f"Outcome B failed: exit={outcome_b.exit_code}, stderr={outcome_b.stderr}"
+    assert outcome_a.is_success, (
+        f"Outcome A failed: exit={outcome_a.exit_code}, stderr={outcome_a.stderr}"
+    )
+    assert outcome_b.is_success, (
+        f"Outcome B failed: exit={outcome_b.exit_code}, stderr={outcome_b.stderr}"
+    )
+
 
 @pytest.mark.asyncio
 async def test_cross_execution_cleanup_isolation() -> None:

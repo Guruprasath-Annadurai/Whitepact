@@ -263,9 +263,7 @@ class DelegationRepository:
         async with self._engine.raw.begin() as conn:
             rows = (
                 await conn.execute(
-                    select(governance_delegations).where(
-                        governance_delegations.c.org_id == org_id
-                    )
+                    select(governance_delegations).where(governance_delegations.c.org_id == org_id)
                 )
             ).fetchall()
             records = [_row_to_record(row) for row in rows]

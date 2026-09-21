@@ -79,7 +79,9 @@ async def web_client(monkeypatch):
     monkeypatch.setattr(app_module.settings, "web_auth_dev_tokens", True)
     monkeypatch.setattr(app_module.settings, "web_session_secure", False)
     monkeypatch.setattr(app_module.settings, "web_verification_delivery_url", None)
-    monkeypatch.setattr(app_module.settings, "paddle_webhook_secret", "test_paddle_secret_key_123")  # gitleaks:allow
+    monkeypatch.setattr(
+        app_module.settings, "paddle_webhook_secret", "test_paddle_secret_key_123"
+    )  # gitleaks:allow
     monkeypatch.setattr(app_module.settings, "paddle_signature_tolerance_seconds", 300)
     monkeypatch.setattr(app_module.limiter, "enabled", False)
     async with LifespanManager(app_module.app) as manager:
@@ -550,7 +552,9 @@ class TestStepUpAndPrivilegedOperations:
         assert res_success.json()["status"] == "ownership_transferred"
 
     async def test_web_role_escalation_to_admin_requires_step_up(self, web_client):
-        owner_id, _, csrf = await _register_and_login(web_client, "Esc Owner", "esc_owner@example.com")
+        owner_id, _, csrf = await _register_and_login(
+            web_client, "Esc Owner", "esc_owner@example.com"
+        )
         await _onboard_org(web_client, csrf, "Esc Inc")
         member_id, _, _ = await _register_and_login(web_client, "Esc Member", "esc_mem@example.com")
 
@@ -709,9 +713,12 @@ class TestDurableOIDCAndAccountTakeover:
             ttl_seconds=300,
         )
 
-        assert await repo.consume_oauth_flow_state(
-            state_key, expected_provider="oidc", expected_tenant_id="org_beta"
-        ) is None
+        assert (
+            await repo.consume_oauth_flow_state(
+                state_key, expected_provider="oidc", expected_tenant_id="org_beta"
+            )
+            is None
+        )
 
     async def test_oidc_nonce_validation_in_token(self, monkeypatch):
         private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -727,13 +734,23 @@ class TestDurableOIDCAndAccountTakeover:
         monkeypatch.setattr(provider._jwks, "get_signing_key", _fake_get_signing_key)
 
         token_ok = pyjwt.encode(
-            {"sub": "user_42", "aud": "test_client", "iss": "https://issuer.example.com", "nonce": "nonce_123"},
+            {
+                "sub": "user_42",
+                "aud": "test_client",
+                "iss": "https://issuer.example.com",
+                "nonce": "nonce_123",
+            },
             private,
             algorithm="RS256",
             headers={"kid": "k1"},
         )
         token_bad_nonce = pyjwt.encode(
-            {"sub": "user_42", "aud": "test_client", "iss": "https://issuer.example.com", "nonce": "wrong_nonce"},
+            {
+                "sub": "user_42",
+                "aud": "test_client",
+                "iss": "https://issuer.example.com",
+                "nonce": "wrong_nonce",
+            },
             private,
             algorithm="RS256",
             headers={"kid": "k1"},
@@ -756,7 +773,9 @@ class TestDurableOIDCAndAccountTakeover:
 
     async def test_provider_identity_linking_and_resolution(self, db_engine):
         repo = WebIdentityRepository(db_engine)
-        user_id, _ = await repo.register("OIDC User", "oidc_user@example.com", "Secure-Password-42!")
+        user_id, _ = await repo.register(
+            "OIDC User", "oidc_user@example.com", "Secure-Password-42!"
+        )
 
         assert await repo.resolve_provider_identity("google", "goog_sub_999") is None
 
@@ -1155,7 +1174,9 @@ class TestAccountLifecycleAndSoleOwnerProtection:
 
     async def test_account_deletion_credential_and_session_revocation(self, db_engine):
         repo = WebIdentityRepository(db_engine)
-        user_id, token = await repo.register("Purge User", "purge@example.com", "Secure-Password-42!")
+        user_id, token = await repo.register(
+            "Purge User", "purge@example.com", "Secure-Password-42!"
+        )
         await repo.verify_email(token)
 
         sess_token, csrf_token = await repo.create_session(user_id)
@@ -1576,7 +1597,9 @@ class TestCommercialEntitlementGovernanceSeparation:
 
     async def test_billing_delinquency_never_bypasses_or_weakens_security(self, web_client):
         secret = "test_paddle_secret_key_123"  # gitleaks:allow
-        _, _, csrf = await _register_and_login(web_client, "Delinquent User", "delinquent@example.com")
+        _, _, csrf = await _register_and_login(
+            web_client, "Delinquent User", "delinquent@example.com"
+        )
         org_id = await _onboard_org(web_client, csrf, "Delinquent Corp")
 
         payload = {

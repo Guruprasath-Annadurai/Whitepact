@@ -101,7 +101,9 @@ class StepUpVerifier:
             if auth_dt.tzinfo is None:
                 auth_dt = auth_dt.replace(tzinfo=UTC)
         except Exception as exc:
-            raise StepUpVerificationFailedError("Invalid auth_time format in step-up proof.") from exc
+            raise StepUpVerificationFailedError(
+                "Invalid auth_time format in step-up proof."
+            ) from exc
 
         now = datetime.now(UTC)
         age = (now - auth_dt).total_seconds()
@@ -123,7 +125,9 @@ class StepUpVerifier:
             )
             row = (await conn.execute(stmt)).first()
             if not row:
-                raise StepUpVerificationFailedError("Step-up nonce not found or tenant/principal mismatch.")
+                raise StepUpVerificationFailedError(
+                    "Step-up nonce not found or tenant/principal mismatch."
+                )
 
             rec = dict(row._mapping)
 
@@ -153,27 +157,45 @@ class StepUpVerifier:
 
             # Check if session is revoked
             if session_id is not None:
-                iam_sess = (await conn.execute(
-                    select(iam_sessions.c.status, iam_sessions.c.revoked_at, iam_sessions.c.expires_at).where(
-                        and_(iam_sessions.c.id == session_id, iam_sessions.c.org_id == org_id)
+                iam_sess = (
+                    await conn.execute(
+                        select(
+                            iam_sessions.c.status,
+                            iam_sessions.c.revoked_at,
+                            iam_sessions.c.expires_at,
+                        ).where(
+                            and_(iam_sessions.c.id == session_id, iam_sessions.c.org_id == org_id)
+                        )
                     )
-                )).first()
+                ).first()
                 if iam_sess is not None:
-                    if iam_sess[0] != "ACTIVE" or iam_sess[1] is not None or now.isoformat() >= iam_sess[2]:
-                        raise StepUpVerificationFailedError("Step-up session has been revoked or expired.")
+                    if (
+                        iam_sess[0] != "ACTIVE"
+                        or iam_sess[1] is not None
+                        or now.isoformat() >= iam_sess[2]
+                    ):
+                        raise StepUpVerificationFailedError(
+                            "Step-up session has been revoked or expired."
+                        )
 
-                web_sess = (await conn.execute(
-                    select(web_sessions.c.revoked, web_sessions.c.expires_at).where(
-                        web_sessions.c.token_hash == session_id
+                web_sess = (
+                    await conn.execute(
+                        select(web_sessions.c.revoked, web_sessions.c.expires_at).where(
+                            web_sessions.c.token_hash == session_id
+                        )
                     )
-                )).first()
+                ).first()
                 if web_sess is not None:
                     if web_sess[0] != 0 or now.isoformat() >= web_sess[1]:
-                        raise StepUpVerificationFailedError("Step-up web session has been revoked or expired.")
+                        raise StepUpVerificationFailedError(
+                            "Step-up web session has been revoked or expired."
+                        )
 
             # 3. Verify underlying factor / proof token
             if str(proof.method) == "RECOVERY_CEREMONY" or proof.method not in StepUpMethod:
-                raise StepUpVerificationFailedError("Recovery ceremony cannot be used for routine admin step-up.")
+                raise StepUpVerificationFailedError(
+                    "Recovery ceremony cannot be used for routine admin step-up."
+                )
 
             if proof.method == StepUpMethod.MFA_TOTP:
                 # Lookup principal MFA secret
@@ -187,27 +209,31 @@ class StepUpVerifier:
                 if not key_row or not key_row[1] or not key_row[0]:
                     # Also permit fallback if token is a valid mock code in tests or dedicated TOTP
                     if proof.token_or_code not in {"123456", "valid_totp_mock"}:
-                        raise StepUpVerificationFailedError("Principal is not enrolled in MFA or invalid code.")
+                        raise StepUpVerificationFailedError(
+                            "Principal is not enrolled in MFA or invalid code."
+                        )
                 else:
                     if not mfa.verify_code(key_row[0], proof.token_or_code):
                         raise StepUpVerificationFailedError("Invalid TOTP verification code.")
 
             elif proof.method == StepUpMethod.OIDC_AUTH_TIME:
-                if (
-                    proof.token_or_code in {"jwks_unavailable", "jwks_timeout"}
-                    or proof.claims.get("jwks_error")
+                if proof.token_or_code in {"jwks_unavailable", "jwks_timeout"} or proof.claims.get(
+                    "jwks_error"
                 ):
-                    raise StepUpVerificationFailedError("OIDC JWKS endpoint unavailable / network timeout.")
+                    raise StepUpVerificationFailedError(
+                        "OIDC JWKS endpoint unavailable / network timeout."
+                    )
 
-                if (
-                    "missing_auth_time" in proof.token_or_code
-                    or (proof.claims and "auth_time" not in proof.claims and "auth_time" not in proof.token_or_code)
+                if "missing_auth_time" in proof.token_or_code or (
+                    proof.claims
+                    and "auth_time" not in proof.claims
+                    and "auth_time" not in proof.token_or_code
                 ):
                     raise StepUpVerificationFailedError("Missing OIDC auth_time claim in token.")
 
-                if (
-                    "wrong_aud" in proof.token_or_code
-                    or (proof.claims.get("aud") and proof.claims.get("aud") not in {f"whitepact:{org_id}", "whitepact-iam"})
+                if "wrong_aud" in proof.token_or_code or (
+                    proof.claims.get("aud")
+                    and proof.claims.get("aud") not in {f"whitepact:{org_id}", "whitepact-iam"}
                 ):
                     raise StepUpVerificationFailedError("OIDC token with wrong audience.")
 
@@ -220,7 +246,10 @@ class StepUpVerifier:
                     or "fail" in proof.token_or_code.lower()
                 ):
                     raise StepUpVerificationFailedError("WebAuthn signature failure.")
-                if not proof.token_or_code or proof.token_or_code in {"unsupported_stub", "unsupported"}:
+                if not proof.token_or_code or proof.token_or_code in {
+                    "unsupported_stub",
+                    "unsupported",
+                }:
                     raise StepUpVerificationFailedError("Unsupported WebAuthn provider stub.")
 
             # Atomically mark nonce consumed

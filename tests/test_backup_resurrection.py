@@ -45,7 +45,9 @@ async def sample_org(sqlite_engine: DatabaseEngine):
 
 
 @pytest.mark.asyncio
-async def test_backup_restore_quarantines_tombstoned_tenant(sqlite_engine: DatabaseEngine, sample_org: str):
+async def test_backup_restore_quarantines_tombstoned_tenant(
+    sqlite_engine: DatabaseEngine, sample_org: str
+):
     engine_rec = RestoreReconciliationEngine(sqlite_engine)
 
     # 1. Simulate prior durable tombstone registered in ledger before backup
@@ -111,13 +113,19 @@ async def test_backup_restore_quarantines_tombstoned_tenant(sqlite_engine: Datab
 
     # 4. Invariant Verification: Resurrected credentials and sessions MUST BE REVOKED!
     async with sqlite_engine.raw.connect() as conn:
-        s_rows = (await conn.execute(select(web_sessions).where(web_sessions.c.org_id == sample_org))).fetchall()
+        s_rows = (
+            await conn.execute(select(web_sessions).where(web_sessions.c.org_id == sample_org))
+        ).fetchall()
         assert len(s_rows) == 0
 
-        k_rows = (await conn.execute(select(org_api_keys).where(org_api_keys.c.org_id == sample_org))).fetchall()
+        k_rows = (
+            await conn.execute(select(org_api_keys).where(org_api_keys.c.org_id == sample_org))
+        ).fetchall()
         assert len(k_rows) == 0
 
         # Invariant: Organization row marked as RESTORE_QUARANTINED
-        org_row = (await conn.execute(select(organizations).where(organizations.c.id == sample_org))).fetchone()
+        org_row = (
+            await conn.execute(select(organizations).where(organizations.c.id == sample_org))
+        ).fetchone()
         assert org_row is not None
         assert "RESTORE_QUARANTINED" in org_row.name

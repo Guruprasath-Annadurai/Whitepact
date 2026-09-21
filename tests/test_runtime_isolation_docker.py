@@ -23,8 +23,6 @@ import shutil
 
 import pytest
 
-from tests.docker_runtime import DOCKER_UNAVAILABLE_REASON
-
 from responsibleai.governance.execution import (
     ExecutionAuthorization,
     authorize_execution,
@@ -44,6 +42,7 @@ from responsibleai.isolation.models import (
     IsolationProfile,
     ResourceLimits,
 )
+from tests.docker_runtime import DOCKER_UNAVAILABLE_REASON
 
 
 def _docker_available() -> bool:
@@ -131,7 +130,9 @@ sys.stdout.write(json.dumps({"status": "success", "result": res}))
 
     async def test_container_environment_secret_containment(self, monkeypatch: pytest.MonkeyPatch):
         """Host control plane secrets must never appear in container environment."""
-        monkeypatch.setenv("DATABASE_URL", "postgresql://secret_db_user:super_secret_pw@127.0.0.1:5432/db")
+        monkeypatch.setenv(
+            "DATABASE_URL", "postgresql://secret_db_user:super_secret_pw@127.0.0.1:5432/db"
+        )
         monkeypatch.setenv("REDIS_URL", "redis://:secret_redis_token@127.0.0.1:6379/0")
         monkeypatch.setenv("RAI_FIELD_ENCRYPTION_KEY", "secret_master_key_12345")
         monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "super_secret_aws_token")
@@ -263,9 +264,7 @@ sys.stdout.write(json.dumps({"status": "success", "result": {"connected": connec
 import sys, time
 time.sleep(10)
 """
-        short_profile = IsolationProfile(
-            resources=ResourceLimits(wall_timeout_seconds=0.5)
-        )
+        short_profile = IsolationProfile(resources=ResourceLimits(wall_timeout_seconds=0.5))
         req = IsolatedExecutionRequest(
             action_id="probe-timeout",
             organization_id="org-audit",

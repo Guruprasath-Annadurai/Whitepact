@@ -49,7 +49,11 @@ async def test_concurrent_revision_creation(sqlite_engine: DatabaseEngine, sampl
     mgr = PolicyLifecycleManager(sqlite_engine)
 
     async def create_single_rev(idx: int):
-        rules = [PolicyRule(rule_id=f"rule-{idx}", reason_code="RC_TEST", effect=GovernanceDecision.ALLOW)]
+        rules = [
+            PolicyRule(
+                rule_id=f"rule-{idx}", reason_code="RC_TEST", effect=GovernanceDecision.ALLOW
+            )
+        ]
         return await mgr.create_revision(sample_org, rules, f"admin-{idx}", f"Concurrent rev {idx}")
 
     # Launch 5 concurrent revision creations
@@ -69,12 +73,16 @@ async def test_concurrent_activations_single_winner(sqlite_engine: DatabaseEngin
     # Create 3 revisions
     revs = []
     for i in range(3):
-        rules = [PolicyRule(rule_id=f"rule-{i}", reason_code="RC_TEST", effect=GovernanceDecision.ALLOW)]
+        rules = [
+            PolicyRule(rule_id=f"rule-{i}", reason_code="RC_TEST", effect=GovernanceDecision.ALLOW)
+        ]
         rev = await mgr.create_revision(sample_org, rules, f"admin-{i}", f"Rev {i}")
         revs.append(rev)
 
     # Concurrently activate all 3
-    tasks = [mgr.activate_revision(sample_org, rev.id, f"activator-{i}") for i, rev in enumerate(revs)]
+    tasks = [
+        mgr.activate_revision(sample_org, rev.id, f"activator-{i}") for i, rev in enumerate(revs)
+    ]
     await asyncio.gather(*tasks)
 
     # Exactly ONE activation must have is_active = True

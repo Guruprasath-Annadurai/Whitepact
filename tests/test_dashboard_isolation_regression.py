@@ -45,7 +45,11 @@ class TestLeaderboardOrderIsolation:
     async def test_01_contaminating_register_and_run(self, dashboard_client: AsyncClient):
         register = await dashboard_client.post(
             "/api/leaderboard/models",
-            json={"model": "isolation-model", "provider": "mock", "display_name": "Isolation Model"},
+            json={
+                "model": "isolation-model",
+                "provider": "mock",
+                "display_name": "Isolation Model",
+            },
         )
         assert register.status_code == 201
 
@@ -141,7 +145,9 @@ class TestIncidentDBOrderIsolation:
         assert listing.status_code == 200
         assert listing.json()["incidents"] == []
 
-    async def test_03_victim_check_no_published_incident_matches(self, dashboard_client: AsyncClient):
+    async def test_03_victim_check_no_published_incident_matches(
+        self, dashboard_client: AsyncClient
+    ):
         check = await dashboard_client.get(
             "/api/incident-db/check",
             params={

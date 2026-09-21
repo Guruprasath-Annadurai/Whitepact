@@ -66,6 +66,7 @@ async def test_step_up_nonce_generation_and_consumption(test_db):
     )
 
     import pyotp
+
     code = pyotp.TOTP(secret).now()
     now_iso = datetime.now(UTC).isoformat()
 
@@ -109,6 +110,7 @@ async def test_step_up_action_binding_mismatch(test_db):
     )
 
     import pyotp
+
     code = pyotp.TOTP(secret).now()
     now_iso = datetime.now(UTC).isoformat()
     proof = StepUpProof(
@@ -143,6 +145,7 @@ async def test_step_up_stale_auth_time_rejected(test_db):
     # Auth time 20 minutes ago (exceeds 15m window for HIGH)
     stale_time = (datetime.now(UTC) - timedelta(minutes=20)).isoformat()
     import pyotp
+
     code = pyotp.TOTP(secret).now()
     proof = StepUpProof(
         nonce=nonce,

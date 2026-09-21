@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 
 # ── Destination Policies & Constants ──────────────────────────────────────────
 
+
 class DestinationPolicy(StrEnum):
     PUBLIC_ONLY = "public_only"
     TRUSTED_PRIVATE = "trusted_private"
@@ -48,15 +49,18 @@ METADATA_V4 = ipaddress.ip_address("169.254.169.254")
 METADATA_V6 = ipaddress.ip_address("fd00:ec2::254")
 
 ALLOWED_SCHEMES = frozenset({"http", "https"})
-FORBIDDEN_HOSTNAMES = frozenset({
-    "localhost",
-    "localhost.",
-    "metadata.google.internal",
-    "metadata.internal",
-})
+FORBIDDEN_HOSTNAMES = frozenset(
+    {
+        "localhost",
+        "localhost.",
+        "metadata.google.internal",
+        "metadata.internal",
+    }
+)
 
 
 # ── Exceptions ────────────────────────────────────────────────────────────────
+
 
 class EgressSecurityError(ValueError):
     """Base exception for all outbound egress security violations."""
@@ -79,6 +83,7 @@ class InvalidURLError(EgressSecurityError):
 
 
 # ── Address Validation ────────────────────────────────────────────────────────
+
 
 def is_address_allowed(
     ip_str_or_obj: str | ipaddress.IPv4Address | ipaddress.IPv6Address,
@@ -123,6 +128,7 @@ def is_address_allowed(
 
 
 # ── URL & Host Validation ─────────────────────────────────────────────────────
+
 
 def normalize_and_validate_url(
     url: str,
@@ -181,7 +187,9 @@ def normalize_and_validate_url(
     parts = host_clean.split(".")
     if len(parts) == 4:
         for part in parts:
-            if (part.startswith("0") and len(part) > 1 and not part.startswith("0x")) or part.lower().startswith("0x"):
+            if (
+                part.startswith("0") and len(part) > 1 and not part.startswith("0x")
+            ) or part.lower().startswith("0x"):
                 raise ForbiddenDestinationError(
                     f"Ambiguous or obfuscated IPv4 literal {host!r} is forbidden"
                 )
@@ -217,6 +225,7 @@ def validate_outbound_url(
 
 
 # ── DNS Resolver Abstraction ──────────────────────────────────────────────────
+
 
 class AsyncDNSResolver(Protocol):
     async def resolve(
@@ -273,6 +282,7 @@ class SystemDNSResolver:
 
 
 # ── Safe Network Backend ──────────────────────────────────────────────────────
+
 
 class SafeNetworkBackend(httpcore.AsyncNetworkBackend):
     """Pluggable httpcore network backend that enforces:
@@ -385,13 +395,16 @@ class SafeNetworkBackend(httpcore.AsyncNetworkBackend):
         timeout: float | None = None,
         socket_options: typing.Iterable[httpcore.SOCKET_OPTION] | None = None,
     ) -> httpcore.AsyncNetworkStream:
-        raise ForbiddenDestinationError("Outbound connections via Unix domain sockets are forbidden")
+        raise ForbiddenDestinationError(
+            "Outbound connections via Unix domain sockets are forbidden"
+        )
 
     async def sleep(self, seconds: float) -> None:
         await self._inner.sleep(seconds)
 
 
 # ── Safe HTTP Transport & Client Factory ──────────────────────────────────────
+
 
 class SafeAsyncHTTPTransport(httpx.AsyncBaseTransport):
     """Custom httpx transport backed by SafeNetworkBackend and an isolated connection pool.
@@ -414,7 +427,9 @@ class SafeAsyncHTTPTransport(httpx.AsyncBaseTransport):
         elif verify is True:
             ssl_context = httpcore.default_ssl_context()
         else:
-            raise ValueError("TLS certificate verification cannot be disabled in SafeAsyncHTTPTransport")
+            raise ValueError(
+                "TLS certificate verification cannot be disabled in SafeAsyncHTTPTransport"
+            )
 
         self.policy = policy
         self.backend = SafeNetworkBackend(resolver=resolver, policy=policy)

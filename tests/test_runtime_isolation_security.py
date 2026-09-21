@@ -119,9 +119,11 @@ class TestBrokerAndFailClosed:
 
     def test_docker_fail_closed_when_unavailable(self, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setenv("WHITEPACT_ISOLATION_BACKEND", "docker")
+
         class FakeDeadDocker:
             def is_available(self):
                 return False
+
         monkeypatch.setattr(
             "responsibleai.isolation.broker.DockerContainerBackend",
             FakeDeadDocker,
@@ -144,14 +146,16 @@ class TestSubprocessExecutionIsolation:
         outcome = await backend.execute(request)
         assert outcome.is_success
         assert outcome.result_payload is not None
-        assert "score" in outcome.result_payload or "trust_score" in outcome.result_payload or isinstance(outcome.result_payload, dict)
+        assert (
+            "score" in outcome.result_payload
+            or "trust_score" in outcome.result_payload
+            or isinstance(outcome.result_payload, dict)
+        )
 
     async def test_subprocess_timeout_enforced(self):
         backend = LocalSubprocessBackend()
         # Request with a tiny timeout of 0.1s against a tool or process that takes longer
-        short_profile = IsolationProfile(
-            resources=ResourceLimits(wall_timeout_seconds=0.1)
-        )
+        short_profile = IsolationProfile(resources=ResourceLimits(wall_timeout_seconds=0.1))
         request = IsolatedExecutionRequest(
             action_id="act-timeout",
             organization_id="org-timeout",

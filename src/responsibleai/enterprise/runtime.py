@@ -33,4 +33,6 @@ def get_enterprise_engine() -> DatabaseEngine:
 
 def get_repos() -> EnterpriseRepos:
     engine = get_enterprise_engine()
-    return EnterpriseRepos(engine=engine, orgs=OrgRepository(engine), web=WebIdentityRepository(engine))
+    return EnterpriseRepos(
+        engine=engine, orgs=OrgRepository(engine), web=WebIdentityRepository(engine)
+    )

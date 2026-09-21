@@ -48,11 +48,15 @@ class SovereignTransferService:
         """Atomically execute voluntary root handover to a new sovereign principal."""
         # 1. Anti-self-transfer invariant
         if current_root_principal_id == new_root_principal_id:
-            raise SelfApprovalBlockedError("Cannot transfer root authority to the existing root principal.")
+            raise SelfApprovalBlockedError(
+                "Cannot transfer root authority to the existing root principal."
+            )
 
         # 2. Anti-replay defense
         if not transfer_token or transfer_token in self._consumed_transfer_tokens:
-            raise PrivilegedAccessDeniedError("Transfer authorization token has already been consumed or is invalid.")
+            raise PrivilegedAccessDeniedError(
+                "Transfer authorization token has already been consumed or is invalid."
+            )
 
         now = datetime.now(UTC).isoformat()
 
@@ -66,7 +70,9 @@ class SovereignTransferService:
             )
             root_row = (await conn.execute(root_stmt)).first()
             if not root_row:
-                raise PrivilegedAccessDeniedError("No active sovereign root authority found for tenant.")
+                raise PrivilegedAccessDeniedError(
+                    "No active sovereign root authority found for tenant."
+                )
 
             if root_row.root_principal_id != current_root_principal_id:
                 raise PrivilegedAccessDeniedError(

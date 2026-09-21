@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import hmac
-import os
 from typing import Any
 
 from fastapi import APIRouter, Header, Request
@@ -306,7 +305,9 @@ async def list_keys(org_id: str, request: Request) -> Any:
 
 
 @router.get("/organizations/{org_id}/api-keys/eligibility")
-async def key_eligibility(org_id: str, request: Request, environment_id: str, scopes: str = "") -> Any:
+async def key_eligibility(
+    org_id: str, request: Request, environment_id: str, scopes: str = ""
+) -> Any:
     try:
         actor = await _require_org(request, org_id)
         requested = tuple(s for s in scopes.split(",") if s)
@@ -495,7 +496,6 @@ async def _require_org(request: Request, org_id: str) -> Actor:
         # Switching is explicit; deny rather than substituting another tenant.
         if not has_rbac_permission(actor.role, Permission.ORG_VIEW):
             raise EnterpriseError("FORBIDDEN", "Not permitted.", 403)
-        from responsibleai.db.web_identity_repository import WebIdentityRepository
         from sqlalchemy import select
 
         from responsibleai.db.engine import web_memberships

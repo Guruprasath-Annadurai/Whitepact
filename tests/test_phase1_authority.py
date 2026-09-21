@@ -173,9 +173,15 @@ async def test_admin_without_delegation_denied(governed):
 async def test_integrity_valid_but_unscoped_consent_denied(governed, actions, targets):
     _, roots, consents, delegations, context, root, _ = governed
     proof = build_consent_proof(
-        "owner", root.root_id, "worker", "no scope", "reconcile",
-        ConsentMethod.SIGNED_DOCUMENT, allowed_action_types=actions,
-        allowed_targets=targets, evidence_refs=("explicit-empty-grant",),
+        "owner",
+        root.root_id,
+        "worker",
+        "no scope",
+        "reconcile",
+        ConsentMethod.SIGNED_DOCUMENT,
+        allowed_action_types=actions,
+        allowed_targets=targets,
+        evidence_refs=("explicit-empty-grant",),
     )
     await consents.create(proof, organization_id="acme")
     with pytest.raises(AuthorityDenied):

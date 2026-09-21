@@ -181,7 +181,11 @@ async def test_privacy_disclosure_matrix_and_regulatory_overclaim_removal(tenant
         ("private_email", "eve.personal@gmail.com", DisclosureClass.TENANT_INTERNAL),
         ("private_address", "123 Secret Lane, City", DisclosureClass.TENANT_INTERNAL),
         # Security restricted
-        ("security_restricted_identifier", "TOKEN_RESTRICTED_XYZ", DisclosureClass.SECURITY_RESTRICTED),
+        (
+            "security_restricted_identifier",
+            "TOKEN_RESTRICTED_XYZ",
+            DisclosureClass.SECURITY_RESTRICTED,
+        ),
         # Internal credential metadata
         ("internal_credential_metadata", "CRED_HASH_ABC123", DisclosureClass.NEVER_PUBLIC),
     ]
@@ -214,7 +218,13 @@ async def test_privacy_disclosure_matrix_and_regulatory_overclaim_removal(tenant
     assert "job_title" in attrs_pub
     assert "work_email" not in attrs_pub  # Business public, not public
     assert "employee_id" not in attrs_pub
-    for sensitive in ("private_phone", "private_email", "private_address", "security_restricted_identifier", "internal_credential_metadata"):
+    for sensitive in (
+        "private_phone",
+        "private_email",
+        "private_address",
+        "security_restricted_identifier",
+        "internal_credential_metadata",
+    ):
         if sensitive in attrs_pub:
             unauthorized_disclosures += 1
     assert "disclaimer" not in view_public
@@ -228,7 +238,13 @@ async def test_privacy_disclosure_matrix_and_regulatory_overclaim_removal(tenant
     assert "job_title" in attrs_biz
     assert "work_email" in attrs_biz
     assert "employee_id" not in attrs_biz
-    for sensitive in ("private_phone", "private_email", "private_address", "security_restricted_identifier", "internal_credential_metadata"):
+    for sensitive in (
+        "private_phone",
+        "private_email",
+        "private_address",
+        "security_restricted_identifier",
+        "internal_credential_metadata",
+    ):
         if sensitive in attrs_biz:
             unauthorized_disclosures += 1
     assert view_biz["regulatory_compliance_claimed"] is False

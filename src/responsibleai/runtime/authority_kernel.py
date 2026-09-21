@@ -24,13 +24,27 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from responsibleai.db.engine import (
     DatabaseEngine,
-    governance_execution_authorizations as auths,
-    governance_execution_nonces as nonces,
     organizations,
+)
+from responsibleai.db.engine import (
+    governance_execution_authorizations as auths,
+)
+from responsibleai.db.engine import (
+    governance_execution_nonces as nonces,
+)
+from responsibleai.db.engine import (
     runtime_execution_attempts as attempts,
+)
+from responsibleai.db.engine import (
     runtime_execution_dispatch_outbox as outbox,
+)
+from responsibleai.db.engine import (
     runtime_execution_fences as fences,
+)
+from responsibleai.db.engine import (
     runtime_execution_requests as requests,
+)
+from responsibleai.db.engine import (
     runtime_worker_leases as leases,
 )
 from responsibleai.db.revocation_epoch_repository import lock_epoch
@@ -130,7 +144,11 @@ def _is_deadlock(exc: BaseException) -> bool:
     if sqlstate in DEADLOCK_CODES:
         return True
     text_exc = str(exc).lower()
-    return "deadlock" in text_exc or "serialization failure" in text_exc or "could not serialize" in text_exc
+    return (
+        "deadlock" in text_exc
+        or "serialization failure" in text_exc
+        or "could not serialize" in text_exc
+    )
 
 
 def _require_postgres(conn: AsyncConnection) -> None:
@@ -151,7 +169,7 @@ async def retry_pre_effect(operation, *, retries: int = DEADLOCK_RETRY_LIMIT):
             last = exc
             if not _is_deadlock(exc) or attempt == retries - 1:
                 raise
-            await asyncio.sleep(0.02 * (2 ** attempt))
+            await asyncio.sleep(0.02 * (2**attempt))
     assert last is not None
     raise last
 
@@ -291,7 +309,9 @@ class Phase7AAuthorityKernel:
                 cause=exc,
             )
 
-    async def acquire_lease(self, *, request_id: str, worker_id: str, organization_id: str) -> dict[str, Any]:
+    async def acquire_lease(
+        self, *, request_id: str, worker_id: str, organization_id: str
+    ) -> dict[str, Any]:
         async def _once() -> dict[str, Any]:
             async with self._engine.raw.begin() as conn:
                 _require_postgres(conn)
@@ -389,7 +409,9 @@ class Phase7AAuthorityKernel:
                 lease = await self._lock_active_lease(conn, request_id)
                 self._assert_lease_live(lease, worker_id, now)
                 if epoch != int(auth["issuer_epoch"]):
-                    await self._fail_pre(conn, att, now, "EPOCH_MISMATCH", "Governance epoch mismatch at admission")
+                    await self._fail_pre(
+                        conn, att, now, "EPOCH_MISMATCH", "Governance epoch mismatch at admission"
+                    )
                     raise AuthorizationIneligibleError("Authorization epoch mismatch")
                 if auth["status"] != AuthorizationStatus.ISSUED.value:
                     raise AuthorizationIneligibleError("Authorization is not ISSUED")
@@ -418,7 +440,9 @@ class Phase7AAuthorityKernel:
                         )
                     )
                 except IntegrityError as exc:
-                    raise AuthorizationIneligibleError("Oneshot authority already consumed") from exc
+                    raise AuthorizationIneligibleError(
+                        "Oneshot authority already consumed"
+                    ) from exc
                 result = await conn.execute(
                     update(attempts)
                     .where(
@@ -450,7 +474,9 @@ class Phase7AAuthorityKernel:
                 lease = await self._lock_active_lease(conn, request_id)
                 self._assert_lease_live(lease, worker_id, now)
                 if epoch != int(auth["issuer_epoch"]):
-                    await self._fail_pre(conn, att, now, "EPOCH_MISMATCH", "Epoch mismatch at backend start")
+                    await self._fail_pre(
+                        conn, att, now, "EPOCH_MISMATCH", "Epoch mismatch at backend start"
+                    )
                     raise AuthorizationIneligibleError("Authorization epoch mismatch")
                 if att["state"] != AttemptState.ADMITTED.value:
                     raise AuthorityKernelError("Attempt is not ADMITTED")
@@ -509,7 +535,9 @@ class Phase7AAuthorityKernel:
         target_fingerprint: str | None,
     ) -> LocalEffectPermit:
         if target_fingerprint != claim.target_fingerprint:
-            await self._terminalize_pre_effect(claim, "TARGET_FINGERPRINT_MISMATCH", "Target fingerprint mismatch")
+            await self._terminalize_pre_effect(
+                claim, "TARGET_FINGERPRINT_MISMATCH", "Target fingerprint mismatch"
+            )
             raise PreEffectCasRejected("Target fingerprint mismatch")
         return await self._final_cas(
             claim,
@@ -555,9 +583,15 @@ class Phase7AAuthorityKernel:
 
     async def replay_uncertain(self, attempt_id: str) -> None:
         async with self._engine.raw.connect() as conn:
-            att = (await conn.execute(select(attempts).where(attempts.c.attempt_id == attempt_id))).mappings().one()
+            att = (
+                (await conn.execute(select(attempts).where(attempts.c.attempt_id == attempt_id)))
+                .mappings()
+                .one()
+            )
         if att["state"] == AttemptState.UNCERTAIN.value:
-            raise UncertainExternalEffectError("UNCERTAIN attempts must not be automatically replayed")
+            raise UncertainExternalEffectError(
+                "UNCERTAIN attempts must not be automatically replayed"
+            )
         raise AuthorityKernelError("Attempt is not UNCERTAIN")
 
     async def claim_outbox_row(self, *, publisher_id: str) -> dict[str, Any] | None:
@@ -579,9 +613,10 @@ class Phase7AAuthorityKernel:
                 )
             )
             row = (
-                await conn.execute(
-                    text(
-                        """
+                (
+                    await conn.execute(
+                        text(
+                            """
                         SELECT outbox_id, request_id, attempt_id, organization_id
                         FROM runtime_execution_dispatch_outbox
                         WHERE status = 'PENDING'
@@ -589,9 +624,12 @@ class Phase7AAuthorityKernel:
                         FOR UPDATE SKIP LOCKED
                         LIMIT 1
                         """
+                        )
                     )
                 )
-            ).mappings().one_or_none()
+                .mappings()
+                .one_or_none()
+            )
             if row is None:
                 return None
             await conn.execute(
@@ -681,9 +719,12 @@ class Phase7AAuthorityKernel:
                 )
             except Exception as exc:
                 await self.return_publishing_to_pending(
-                    outbox_id=row["outbox_id"], reason=f"capacity reserve failed: {type(exc).__name__}"
+                    outbox_id=row["outbox_id"],
+                    reason=f"capacity reserve failed: {type(exc).__name__}",
                 )
-                raise AuthorityKernelError("Redis capacity reservation unavailable; fail closed") from exc
+                raise AuthorityKernelError(
+                    "Redis capacity reservation unavailable; fail closed"
+                ) from exc
             if not reserved.ok:
                 await self.return_publishing_to_pending(
                     outbox_id=row["outbox_id"], reason="tenant capacity exhausted"
@@ -697,7 +738,9 @@ class Phase7AAuthorityKernel:
             )
             raise AuthorityKernelError("Redis transport unavailable; fail closed") from exc
         try:
-            await self.mark_outbox_published(outbox_id=row["outbox_id"], queue_ticket_id=ticket.ticket_id)
+            await self.mark_outbox_published(
+                outbox_id=row["outbox_id"], queue_ticket_id=ticket.ticket_id
+            )
         except Exception:
             # Duplicate QueueTicket is possible. DB CAS remains uniqueness.
             logger.warning(
@@ -716,13 +759,17 @@ class Phase7AAuthorityKernel:
     ) -> IssuanceResult:
         async with self._engine.raw.connect() as conn:
             existing = (
-                await conn.execute(
-                    select(requests).where(
-                        requests.c.organization_id == organization_id,
-                        requests.c.idempotency_key == idempotency_key,
+                (
+                    await conn.execute(
+                        select(requests).where(
+                            requests.c.organization_id == organization_id,
+                            requests.c.idempotency_key == idempotency_key,
+                        )
                     )
                 )
-            ).mappings().one_or_none()
+                .mappings()
+                .one_or_none()
+            )
             if existing is None:
                 raise cause
             if existing["action_digest"] != action_digest:
@@ -730,13 +777,23 @@ class Phase7AAuthorityKernel:
                     "Idempotency key reused with a different action digest"
                 ) from cause
             auth_row = (
-                await conn.execute(select(auths).where(auths.c.request_id == existing["request_id"]))
-            ).mappings().one()
-            att = (
-                await conn.execute(
-                    select(attempts).where(attempts.c.request_id == existing["request_id"])
+                (
+                    await conn.execute(
+                        select(auths).where(auths.c.request_id == existing["request_id"])
+                    )
                 )
-            ).mappings().one()
+                .mappings()
+                .one()
+            )
+            att = (
+                (
+                    await conn.execute(
+                        select(attempts).where(attempts.c.request_id == existing["request_id"])
+                    )
+                )
+                .mappings()
+                .one()
+            )
         return IssuanceResult(
             request_id=existing["request_id"],
             authorization_id=auth_row["authorization_id"],
@@ -750,8 +807,10 @@ class Phase7AAuthorityKernel:
     async def load_request(self, request_id: str, *, organization_id: str) -> dict[str, Any]:
         async with self._engine.raw.connect() as conn:
             row = (
-                await conn.execute(select(requests).where(requests.c.request_id == request_id))
-            ).mappings().one_or_none()
+                (await conn.execute(select(requests).where(requests.c.request_id == request_id)))
+                .mappings()
+                .one_or_none()
+            )
         if row is None:
             raise AuthorityKernelError("Unknown request")
         if row["organization_id"] != organization_id:
@@ -777,10 +836,16 @@ class Phase7AAuthorityKernel:
                 att = await self._lock_attempt(conn, claim.attempt_id)
                 lease = await self._lock_active_lease(conn, claim.request_id)
                 fence_row = (
-                    await conn.execute(
-                        select(fences).where(fences.c.request_id == claim.request_id).with_for_update()
+                    (
+                        await conn.execute(
+                            select(fences)
+                            .where(fences.c.request_id == claim.request_id)
+                            .with_for_update()
+                        )
                     )
-                ).mappings().one()
+                    .mappings()
+                    .one()
+                )
 
                 def reject(code: str, reason: str) -> None:
                     raise _CasFail(code, reason)
@@ -887,7 +952,9 @@ class Phase7AAuthorityKernel:
                 )
             )
 
-    async def _fail_pre(self, conn: AsyncConnection, att, now: datetime, code: str, reason: str) -> None:
+    async def _fail_pre(
+        self, conn: AsyncConnection, att, now: datetime, code: str, reason: str
+    ) -> None:
         values = {
             "state": AttemptState.FAILED_PRE_EXECUTION.value,
             "backend_start_token_hash": None,
@@ -906,7 +973,9 @@ class Phase7AAuthorityKernel:
         )
 
     async def _lock_org(self, conn: AsyncConnection, organization_id: str) -> str:
-        stmt = select(organizations.c.governance_status).where(organizations.c.id == organization_id)
+        stmt = select(organizations.c.governance_status).where(
+            organizations.c.id == organization_id
+        )
         stmt = stmt.with_for_update()
         status = (await conn.execute(stmt)).scalar_one_or_none()
         if status is None:
@@ -915,47 +984,67 @@ class Phase7AAuthorityKernel:
 
     async def _lock_request(self, conn: AsyncConnection, request_id: str):
         row = (
-            await conn.execute(
-                select(requests).where(requests.c.request_id == request_id).with_for_update()
+            (
+                await conn.execute(
+                    select(requests).where(requests.c.request_id == request_id).with_for_update()
+                )
             )
-        ).mappings().one_or_none()
+            .mappings()
+            .one_or_none()
+        )
         if row is None:
             raise AuthorityKernelError("Unknown request")
         return row
 
     async def _lock_auth_by_request(self, conn: AsyncConnection, request_id: str):
         row = (
-            await conn.execute(
-                select(auths).where(auths.c.request_id == request_id).with_for_update()
+            (
+                await conn.execute(
+                    select(auths).where(auths.c.request_id == request_id).with_for_update()
+                )
             )
-        ).mappings().one()
+            .mappings()
+            .one()
+        )
         return row
 
     async def _lock_attempt(self, conn: AsyncConnection, attempt_id: str):
         return (
-            await conn.execute(
-                select(attempts).where(attempts.c.attempt_id == attempt_id).with_for_update()
+            (
+                await conn.execute(
+                    select(attempts).where(attempts.c.attempt_id == attempt_id).with_for_update()
+                )
             )
-        ).mappings().one()
+            .mappings()
+            .one()
+        )
 
     async def _lock_attempt_by_request(self, conn: AsyncConnection, request_id: str):
         return (
-            await conn.execute(
-                select(attempts).where(attempts.c.request_id == request_id).with_for_update()
+            (
+                await conn.execute(
+                    select(attempts).where(attempts.c.request_id == request_id).with_for_update()
+                )
             )
-        ).mappings().one()
+            .mappings()
+            .one()
+        )
 
     async def _lock_active_lease(self, conn: AsyncConnection, request_id: str):
         row = (
-            await conn.execute(
-                select(leases)
-                .where(
-                    leases.c.request_id == request_id,
-                    leases.c.status == LeaseStatus.ACTIVE.value,
+            (
+                await conn.execute(
+                    select(leases)
+                    .where(
+                        leases.c.request_id == request_id,
+                        leases.c.status == LeaseStatus.ACTIVE.value,
+                    )
+                    .with_for_update()
                 )
-                .with_for_update()
             )
-        ).mappings().one_or_none()
+            .mappings()
+            .one_or_none()
+        )
         if row is None:
             raise StaleWorkerError("No active worker lease")
         return row
@@ -976,7 +1065,7 @@ class Phase7AAuthorityKernel:
             raise CrossTenantAccessError("Cross-tenant execution access is forbidden")
 
 
-class _CasFail(Exception):
+class _CasFail(Exception):  # noqa: N818 — internal CAS control-flow, not a public error type
     def __init__(self, code: str, reason: str) -> None:
         super().__init__(reason)
         self.code = code

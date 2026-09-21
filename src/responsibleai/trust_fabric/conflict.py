@@ -165,7 +165,9 @@ class TrustConflictEngine:
             )
             conf_row = (await conn.execute(stmt)).first()
             if not conf_row:
-                raise CrossTenantAccessError(f"Conflict {conflict_id!r} not found for organization {org_id!r}.")
+                raise CrossTenantAccessError(
+                    f"Conflict {conflict_id!r} not found for organization {org_id!r}."
+                )
 
             conf = dict(conf_row._mapping)
             asst_a_stmt = select(trust_fabric_assertions).where(
@@ -207,7 +209,15 @@ class TrustConflictEngine:
         time_a = datetime.fromisoformat(a["verified_at"])
         time_b = datetime.fromisoformat(b["verified_at"])
 
-        revocation_values = {"TERMINATED", "REVOKED", "REMOVED", "INACTIVE", "FALSE", "DISSOLVED", "DELETED"}
+        revocation_values = {
+            "TERMINATED",
+            "REVOKED",
+            "REMOVED",
+            "INACTIVE",
+            "FALSE",
+            "DISSOLVED",
+            "DELETED",
+        }
         a_is_revocation = str(a.get("field_value", "")).upper() in revocation_values
         b_is_revocation = str(b.get("field_value", "")).upper() in revocation_values
 
@@ -230,7 +240,10 @@ class TrustConflictEngine:
 
         # If NEITHER is authoritative, do NOT escalate via generic tiers: fail closed
         if not a_is_auth and not b_is_auth:
-            return ConflictStatus.UNRESOLVED, f"Neither source ({a['source_tier']}, {b['source_tier']}) is authoritative for {claim_type.value}."
+            return (
+                ConflictStatus.UNRESOLVED,
+                f"Neither source ({a['source_tier']}, {b['source_tier']}) is authoritative for {claim_type.value}.",
+            )
 
         # BOTH are within authoritative source domain for this claim:
         # Rule 2: Fresh authoritative revocation strictly supersedes stale positive claim
@@ -273,7 +286,10 @@ class TrustConflictEngine:
             return ConflictStatus.RESOLVED_SUPERSEDED, reason
 
         # Rule 5: Equal tier, concurrent or direct contradiction -> Cannot auto-resolve
-        return ConflictStatus.UNRESOLVED, f"Direct contradiction between equal-tier authoritative sources for {claim_type.value} requires human review."
+        return (
+            ConflictStatus.UNRESOLVED,
+            f"Direct contradiction between equal-tier authoritative sources for {claim_type.value} requires human review.",
+        )
 
     async def _mark_resolved(self, conflict_id: str, reason: str, timestamp: str) -> None:
         async with self.db.raw.begin() as conn:

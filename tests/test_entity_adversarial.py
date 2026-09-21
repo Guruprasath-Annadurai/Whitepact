@@ -33,8 +33,18 @@ async def ent_db(tmp_path):
         await conn.execute(
             organizations.insert(),
             [
-                {"id": "org_primary", "name": "Primary Org", "slug": "primary", "created_at": "now"},
-                {"id": "org_secondary", "name": "Secondary Org", "slug": "secondary", "created_at": "now"},
+                {
+                    "id": "org_primary",
+                    "name": "Primary Org",
+                    "slug": "primary",
+                    "created_at": "now",
+                },
+                {
+                    "id": "org_secondary",
+                    "name": "Secondary Org",
+                    "slug": "secondary",
+                    "created_at": "now",
+                },
             ],
         )
     try:

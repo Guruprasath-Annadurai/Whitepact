@@ -11,7 +11,6 @@ Verifies:
 
 from __future__ import annotations
 
-import asyncio
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -21,18 +20,26 @@ src_dir = str(Path(__file__).resolve().parents[1] / "src")
 if src_dir not in sys.path:
     sys.path.insert(0, src_dir)
 
-import pytest
-from starlette.requests import Request
-from starlette.testclient import TestClient
+import pytest  # noqa: E402 — sys.path must be patched before package import
+from starlette.testclient import TestClient  # noqa: E402
 
-from responsibleai.mcp.server import _AuthFailureLimiter, _build_http_app
+from responsibleai.mcp.server import (  # noqa: E402
+    _AuthFailureLimiter,
+    _build_http_app,
+)
 
 
 # ---------------------------------------------------------------------------
 # 1. ADK toolset endpoint test
 # ---------------------------------------------------------------------------
 def test_adk_toolset_endpoint_not_pointing_to_dashboard() -> None:
-    adk_path = Path(__file__).resolve().parents[1] / "src" / "responsibleai" / "integrations" / "adk_toolset.py"
+    adk_path = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "responsibleai"
+        / "integrations"
+        / "adk_toolset.py"
+    )
     content = adk_path.read_text(encoding="utf-8")
     assert "https://responsibleai-dashboard.onrender.com/mcp" not in content
     assert "https://whitepact-mcp-http.onrender.com/mcp" in content

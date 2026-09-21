@@ -100,9 +100,7 @@ class TrustProvenanceEngine:
     ) -> FieldProvenance:
         """Record a verified field assertion with full provenance tracking."""
         async with self.db.raw.connect() as conn:
-            src_stmt = select(trust_fabric_sources).where(
-                trust_fabric_sources.c.id == source_id
-            )
+            src_stmt = select(trust_fabric_sources).where(trust_fabric_sources.c.id == source_id)
             src_row = (await conn.execute(src_stmt)).first()
             if not src_row:
                 raise TrustFabricError(f"Trust source {source_id!r} not registered.")
@@ -256,13 +254,16 @@ class TrustProvenanceEngine:
             ident_assurance = AssuranceLevel.CRYPTOGRAPHIC
         elif any(a.assurance_level == AssuranceLevel.HIGH for a in assertions) or len(idents) >= 2:
             ident_assurance = AssuranceLevel.HIGH
-        elif len(idents) >= 1 or any(a.assurance_level == AssuranceLevel.MEDIUM for a in assertions):
+        elif len(idents) >= 1 or any(
+            a.assurance_level == AssuranceLevel.MEDIUM for a in assertions
+        ):
             ident_assurance = AssuranceLevel.MEDIUM
         else:
             ident_assurance = AssuranceLevel.LOW
 
         # 2. Affiliation Assurance (Has verified relationship with org)
         from responsibleai.db.engine import trust_fabric_relationships
+
         async with self.db.raw.connect() as conn:
             rel_stmt = select(trust_fabric_relationships).where(
                 and_(
@@ -278,6 +279,7 @@ class TrustProvenanceEngine:
 
         # 3. Authority Assurance
         from responsibleai.db.engine import trust_fabric_authority_edges
+
         async with self.db.raw.connect() as conn:
             auth_stmt = select(trust_fabric_authority_edges).where(
                 and_(
@@ -305,6 +307,7 @@ class TrustProvenanceEngine:
 
         # 6. Conflict State
         from responsibleai.db.engine import trust_fabric_conflicts
+
         async with self.db.raw.connect() as conn:
             conf_stmt = select(trust_fabric_conflicts).where(
                 and_(

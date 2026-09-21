@@ -31,7 +31,6 @@ from responsibleai.governance import (
 )
 from responsibleai.governance.approval import ApprovalStatus, build_approval_request
 from responsibleai.rbac.models import GovernanceStatus, Plan
-
 from tests.pg_test_url import isolated_pg_url
 
 
@@ -54,7 +53,9 @@ async def test_postgres_governance_status_epoch_is_serialized(pg_url: str) -> No
     await engine_b.init()
     try:
         org_a = OrgRepository(engine_a)
-        org = await org_a.create_org("PG Gov", f"pg-gov-{uuid.uuid4().hex[:8]}", plan=Plan.ENTERPRISE)
+        org = await org_a.create_org(
+            "PG Gov", f"pg-gov-{uuid.uuid4().hex[:8]}", plan=Plan.ENTERPRISE
+        )
         org_b = OrgRepository(engine_b)
         epochs = RevocationEpochRepository(engine_a)
 

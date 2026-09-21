@@ -48,7 +48,9 @@ async def sample_org(sqlite_engine: DatabaseEngine):
 
 
 @pytest.mark.asyncio
-async def test_atomic_activation_and_single_active_winner(sqlite_engine: DatabaseEngine, sample_org: str):
+async def test_atomic_activation_and_single_active_winner(
+    sqlite_engine: DatabaseEngine, sample_org: str
+):
     mgr = PolicyLifecycleManager(sqlite_engine)
 
     # 1. Create Revision 1
@@ -86,7 +88,9 @@ async def test_atomic_activation_and_single_active_winner(sqlite_engine: Databas
 
 
 @pytest.mark.asyncio
-async def test_activation_epoch_and_compatibility_sync(sqlite_engine: DatabaseEngine, sample_org: str):
+async def test_activation_epoch_and_compatibility_sync(
+    sqlite_engine: DatabaseEngine, sample_org: str
+):
     mgr = PolicyLifecycleManager(sqlite_engine)
     rules = [
         PolicyRule(

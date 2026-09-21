@@ -141,9 +141,7 @@ class ApiKeyService:
             )
             # Revoke in org_api_keys
             await conn.execute(
-                update(org_api_keys)
-                .where(org_api_keys.c.id == old_key_id)
-                .values(revoked=1)
+                update(org_api_keys).where(org_api_keys.c.id == old_key_id).values(revoked=1)
             )
 
         return new_key_id, new_raw_key, new_fingerprint

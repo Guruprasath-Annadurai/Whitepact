@@ -34,7 +34,6 @@ from responsibleai.enterprise.errors import (
     FORBIDDEN,
     PROVIDER_REPLAY,
     PROVIDER_SIGNATURE_INVALID,
-    VERIFICATION_SUSPENDED,
     forbidden,
 )
 from responsibleai.rbac.models import Role
@@ -120,7 +119,9 @@ class VerificationService:
 
     async def get_human_status(self, user_id: str) -> dict[str, Any]:
         async with self._engine.raw.connect() as conn:
-            user = (await conn.execute(select(web_users).where(web_users.c.id == user_id))).fetchone()
+            user = (
+                await conn.execute(select(web_users).where(web_users.c.id == user_id))
+            ).fetchone()
             row = (
                 await conn.execute(
                     select(identity_verifications)
@@ -144,7 +145,9 @@ class VerificationService:
             "review_status": row.review_status if row else None,
         }
 
-    async def start_human_verification(self, user_id: str, *, request_id: str | None = None) -> dict[str, Any]:
+    async def start_human_verification(
+        self, user_id: str, *, request_id: str | None = None
+    ) -> dict[str, Any]:
         session = self._provider.start_session(subject_id=user_id, return_url=None)
         now = _iso()
         rec_id = str(uuid.uuid4())
@@ -182,7 +185,9 @@ class VerificationService:
         expected_org_id: str | None = None,
         request_id: str | None = None,
     ) -> dict[str, Any]:
-        event = self._provider.verify_webhook(payload=payload, signature=signature, timestamp=timestamp)
+        event = self._provider.verify_webhook(
+            payload=payload, signature=signature, timestamp=timestamp
+        )
         # Client-supplied verified=true is ignored unless the provider adapter accepted the signature.
         event_id = str(event["event_id"])
         payload_hash = hashlib.sha256(payload).hexdigest()
@@ -200,22 +205,36 @@ class VerificationService:
                     )
                 )
             except IntegrityError as exc:
-                raise forbidden(PROVIDER_REPLAY, "Provider event has already been processed.") from exc
+                raise forbidden(
+                    PROVIDER_REPLAY, "Provider event has already been processed."
+                ) from exc
             subject = event.get("subject_id")
             org_id = event.get("org_id")
             if expected_user_id and subject != expected_user_id:
                 raise forbidden(CROSS_TENANT, "Verification event is not bound to this account.")
             if expected_org_id and org_id and org_id != expected_org_id:
-                raise forbidden(CROSS_TENANT, "Verification event is not bound to this organization.")
+                raise forbidden(
+                    CROSS_TENANT, "Verification event is not bound to this organization."
+                )
             outcome = str(event.get("outcome") or "").upper()
             if org_id and event.get("kind") == "organization":
-                return await self._apply_org_outcome(conn, org_id=org_id, outcome=outcome, event=event, request_id=request_id)
+                return await self._apply_org_outcome(
+                    conn, org_id=org_id, outcome=outcome, event=event, request_id=request_id
+                )
             if not subject:
                 raise forbidden(FORBIDDEN, "Human verification event missing subject.")
-            return await self._apply_human_outcome(conn, user_id=subject, outcome=outcome, event=event, request_id=request_id)
+            return await self._apply_human_outcome(
+                conn, user_id=subject, outcome=outcome, event=event, request_id=request_id
+            )
 
     async def _apply_human_outcome(
-        self, conn: Any, *, user_id: str, outcome: str, event: dict[str, Any], request_id: str | None
+        self,
+        conn: Any,
+        *,
+        user_id: str,
+        outcome: str,
+        event: dict[str, Any],
+        request_id: str | None,
     ) -> dict[str, Any]:
         mapping = {
             "VERIFIED": "IDENTITY_VERIFIED",
@@ -272,7 +291,9 @@ class VerificationService:
                 )
             )
         await conn.execute(
-            update(web_users).where(web_users.c.id == user_id).values(verification_status=status, updated_at=now)
+            update(web_users)
+            .where(web_users.c.id == user_id)
+            .values(verification_status=status, updated_at=now)
         )
         action = {
             "IDENTITY_VERIFIED": "verification.completed",
@@ -297,7 +318,9 @@ class VerificationService:
 
             await conn.execute(
                 update(org_api_keys)
-                .where(org_api_keys.c.accountable_human_user_id == user_id, org_api_keys.c.revoked == 0)
+                .where(
+                    org_api_keys.c.accountable_human_user_id == user_id, org_api_keys.c.revoked == 0
+                )
                 .values(revoked=1, revoked_at=now)
             )
         return {"user_id": user_id, "status": status}
@@ -335,7 +358,9 @@ class VerificationService:
         now = _iso()
         existing = (
             await conn.execute(
-                select(organization_verifications).where(organization_verifications.c.org_id == org_id)
+                select(organization_verifications).where(
+                    organization_verifications.c.org_id == org_id
+                )
             )
         ).fetchone()
         values = {
@@ -360,7 +385,9 @@ class VerificationService:
             )
         else:
             await conn.execute(
-                update(organization_verifications).where(organization_verifications.c.org_id == org_id).values(**values)
+                update(organization_verifications)
+                .where(organization_verifications.c.org_id == org_id)
+                .values(**values)
             )
         await self.audit.record(
             org_id=org_id,
@@ -382,22 +409,32 @@ class VerificationService:
                 .where(org_api_keys.c.org_id == org_id, org_api_keys.c.revoked == 0)
                 .values(revoked=1, revoked_at=now)
             )
-            await conn.execute(update(web_sessions).where(web_sessions.c.org_id == org_id).values(revoked=1))
+            await conn.execute(
+                update(web_sessions).where(web_sessions.c.org_id == org_id).values(revoked=1)
+            )
         return {"org_id": org_id, "status": status}
 
     async def get_org_status(self, org_id: str) -> dict[str, Any]:
         async with self._engine.raw.connect() as conn:
-            org = (await conn.execute(select(organizations).where(organizations.c.id == org_id))).fetchone()
+            org = (
+                await conn.execute(select(organizations).where(organizations.c.id == org_id))
+            ).fetchone()
             row = (
                 await conn.execute(
-                    select(organization_verifications).where(organization_verifications.c.org_id == org_id)
+                    select(organization_verifications).where(
+                        organization_verifications.c.org_id == org_id
+                    )
                 )
             ).fetchone()
         if org is None:
             raise forbidden(FORBIDDEN, "Organization not found.")
         kind = getattr(org, "workspace_kind", None) or "ORGANIZATION"
         if kind == "INDIVIDUAL":
-            human = await self.get_human_status(org.owner_user_id) if org.owner_user_id else {"status": "UNVERIFIED"}
+            human = (
+                await self.get_human_status(org.owner_user_id)
+                if org.owner_user_id
+                else {"status": "UNVERIFIED"}
+            )
             mapped = {
                 "IDENTITY_VERIFIED": "ORGANIZATION_VERIFIED",
                 "BASIC_VERIFIED": "UNVERIFIED",
@@ -405,7 +442,9 @@ class VerificationService:
             return {
                 "org_id": org_id,
                 "workspace_kind": kind,
-                "status": mapped if mapped != "UNVERIFIED" else (row.status if row else "UNVERIFIED"),
+                "status": mapped
+                if mapped != "UNVERIFIED"
+                else (row.status if row else "UNVERIFIED"),
                 "individual_status": human.get("status"),
             }
         return {
@@ -414,17 +453,23 @@ class VerificationService:
             "status": row.status if row else "UNVERIFIED",
             "legal_name": row.legal_name if row else None,
             "domain": row.domain if row else None,
-            "accountable_owner_user_id": row.accountable_owner_user_id if row else org.owner_user_id,
+            "accountable_owner_user_id": row.accountable_owner_user_id
+            if row
+            else org.owner_user_id,
         }
 
-    async def start_org_verification(self, org_id: str, *, actor_user_id: str, request_id: str | None = None) -> dict[str, Any]:
+    async def start_org_verification(
+        self, org_id: str, *, actor_user_id: str, request_id: str | None = None
+    ) -> dict[str, Any]:
         session = self._provider.start_session(subject_id=org_id, return_url=None)
         now = _iso()
         rec_id = str(uuid.uuid4())
         async with self._engine.raw.begin() as conn:
             existing = (
                 await conn.execute(
-                    select(organization_verifications.c.id).where(organization_verifications.c.org_id == org_id)
+                    select(organization_verifications.c.id).where(
+                        organization_verifications.c.org_id == org_id
+                    )
                 )
             ).fetchone()
             if existing is None:
@@ -462,16 +507,22 @@ class VerificationService:
     async def suspend_human(self, user_id: str, *, request_id: str | None = None) -> None:
         async with self._engine.raw.begin() as conn:
             await conn.execute(
-                update(web_users).where(web_users.c.id == user_id).values(verification_status="SUSPENDED")
+                update(web_users)
+                .where(web_users.c.id == user_id)
+                .values(verification_status="SUSPENDED")
             )
             from responsibleai.db.engine import org_api_keys, web_sessions
 
             await conn.execute(
                 update(org_api_keys)
-                .where(org_api_keys.c.accountable_human_user_id == user_id, org_api_keys.c.revoked == 0)
+                .where(
+                    org_api_keys.c.accountable_human_user_id == user_id, org_api_keys.c.revoked == 0
+                )
                 .values(revoked=1, revoked_at=_iso())
             )
-            await conn.execute(update(web_sessions).where(web_sessions.c.user_id == user_id).values(revoked=1))
+            await conn.execute(
+                update(web_sessions).where(web_sessions.c.user_id == user_id).values(revoked=1)
+            )
         await self.audit.record(
             actor_type="system",
             actor_id="security",
@@ -486,7 +537,9 @@ class VerificationService:
         """Restoring verification never resurrects revoked credentials."""
         async with self._engine.raw.begin() as conn:
             await conn.execute(
-                update(web_users).where(web_users.c.id == user_id).values(verification_status="UNVERIFIED")
+                update(web_users)
+                .where(web_users.c.id == user_id)
+                .values(verification_status="UNVERIFIED")
             )
         await self.audit.record(
             actor_type="system",

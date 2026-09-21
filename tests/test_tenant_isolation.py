@@ -24,8 +24,8 @@ from httpx import ASGITransport, AsyncClient
 
 from responsibleai.dashboard import app as app_module
 from responsibleai.dashboard.app import app, limiter, settings
-from tests.org_http_fixtures import seed_org_with_key
 from responsibleai.rbac.models import Role
+from tests.org_http_fixtures import seed_org_with_key
 
 
 async def _drain_audit_writes() -> None:

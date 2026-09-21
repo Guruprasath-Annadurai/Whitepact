@@ -220,7 +220,10 @@ async def test_production_missing_durable_store_b_fails_closed(tmp_path: Path):
         gate = RestoreReadinessGate()
 
         # 1. require_durable=True with lifecycle_provider=None -> MissingLifecycleProviderError
-        with pytest.raises(MissingLifecycleProviderError, match="Durable Store-B CurrentLifecycleStateProvider is required"):
+        with pytest.raises(
+            MissingLifecycleProviderError,
+            match="Durable Store-B CurrentLifecycleStateProvider is required",
+        ):
             RestoreReconciliationEngine(
                 engine=engine,
                 lifecycle_provider=None,
@@ -232,7 +235,9 @@ async def test_production_missing_durable_store_b_fails_closed(tmp_path: Path):
 
         # 2. require_durable=True with InMemoryLifecycleStateProvider -> MissingLifecycleProviderError
         gate_2 = RestoreReadinessGate()
-        with pytest.raises(MissingLifecycleProviderError, match="InMemoryLifecycleStateProvider is forbidden"):
+        with pytest.raises(
+            MissingLifecycleProviderError, match="InMemoryLifecycleStateProvider is forbidden"
+        ):
             RestoreReconciliationEngine(
                 engine=engine,
                 lifecycle_provider=InMemoryLifecycleStateProvider(),
@@ -282,7 +287,9 @@ async def test_reconciliation_fails_closed_on_corrupt_or_unavailable_store_b(tmp
 
         # 1. Unavailable Store B -> reconciliation fails closed
         provider.set_available(False)
-        with pytest.raises(RestoreReconciliationError, match="(integrity check failed|is unavailable)"):
+        with pytest.raises(
+            RestoreReconciliationError, match="(integrity check failed|is unavailable)"
+        ):
             await reconciler.reconcile_post_restore(reconciled_by="security-auditor")
         assert gate.state == RestoreReadinessState.FAILED
         assert gate.is_admitted() is False
@@ -292,7 +299,9 @@ async def test_reconciliation_fails_closed_on_corrupt_or_unavailable_store_b(tmp
         # 2. Corrupted Store B -> reconciliation fails closed
         provider.set_available(True)
         provider.set_corrupted(True)
-        with pytest.raises(RestoreReconciliationError, match="(integrity check failed|is unavailable)"):
+        with pytest.raises(
+            RestoreReconciliationError, match="(integrity check failed|is unavailable)"
+        ):
             await reconciler.reconcile_post_restore(reconciled_by="security-auditor")
         assert gate.state == RestoreReadinessState.FAILED
         assert gate.is_admitted() is False
@@ -418,8 +427,12 @@ async def test_store_a_store_b_full_restart_23_step_restore_attack(tmp_path: Pat
 
     # Step 10: Verify tenant is unusable in Store A
     async with store_a_engine.raw.connect() as conn:
-        sessions_left = (await conn.execute(select(web_sessions).where(web_sessions.c.org_id == org_id))).fetchall()
-        keys_left = (await conn.execute(select(org_api_keys).where(org_api_keys.c.org_id == org_id))).fetchall()
+        sessions_left = (
+            await conn.execute(select(web_sessions).where(web_sessions.c.org_id == org_id))
+        ).fetchall()
+        keys_left = (
+            await conn.execute(select(org_api_keys).where(org_api_keys.c.org_id == org_id))
+        ).fetchall()
         assert len(sessions_left) == 0
         assert len(keys_left) == 0
 
@@ -439,18 +452,28 @@ async def test_store_a_store_b_full_restart_23_step_restore_attack(tmp_path: Pat
     await new_store_a_engine.init()
 
     async with new_store_a_engine.raw.connect() as conn:
-        resurrected_org = (await conn.execute(select(organizations).where(organizations.c.id == org_id))).fetchone()
+        resurrected_org = (
+            await conn.execute(select(organizations).where(organizations.c.id == org_id))
+        ).fetchone()
         assert resurrected_org is not None
         assert resurrected_org.name == org_name  # Pre-deletion name!
 
-        resurrected_sessions = (await conn.execute(select(web_sessions).where(web_sessions.c.org_id == org_id))).fetchall()
+        resurrected_sessions = (
+            await conn.execute(select(web_sessions).where(web_sessions.c.org_id == org_id))
+        ).fetchall()
         assert len(resurrected_sessions) == 1  # Resurrected!
 
-        resurrected_keys = (await conn.execute(select(org_api_keys).where(org_api_keys.c.org_id == org_id))).fetchall()
+        resurrected_keys = (
+            await conn.execute(select(org_api_keys).where(org_api_keys.c.org_id == org_id))
+        ).fetchall()
         assert len(resurrected_keys) == 1  # Resurrected!
 
         # Crucially: Store A does NOT have the tombstone because the snapshot predates it!
-        tombstones_in_a = (await conn.execute(select(tenant_tombstones).where(tenant_tombstones.c.org_id == org_id))).fetchall()
+        tombstones_in_a = (
+            await conn.execute(
+                select(tenant_tombstones).where(tenant_tombstones.c.org_id == org_id)
+            )
+        ).fetchall()
         assert len(tombstones_in_a) == 0
 
     # Step 14: Start brand new Store-B provider and brand new RestoreReadinessGate in RESTORE_PENDING state
@@ -484,25 +507,41 @@ async def test_store_a_store_b_full_restart_23_step_restore_attack(tmp_path: Pat
 
     async with new_store_a_engine.raw.connect() as conn:
         # Organization quarantined
-        org_row = (await conn.execute(select(organizations).where(organizations.c.id == org_id))).fetchone()
+        org_row = (
+            await conn.execute(select(organizations).where(organizations.c.id == org_id))
+        ).fetchone()
         assert "RESTORE_QUARANTINED" in org_row.name
 
         # Sessions revoked (0 old sessions usable)
-        clean_sessions = (await conn.execute(select(web_sessions).where(web_sessions.c.org_id == org_id))).fetchall()
+        clean_sessions = (
+            await conn.execute(select(web_sessions).where(web_sessions.c.org_id == org_id))
+        ).fetchall()
         assert len(clean_sessions) == 0
 
         # API keys revoked (0 old keys usable)
-        clean_keys = (await conn.execute(select(org_api_keys).where(org_api_keys.c.org_id == org_id))).fetchall()
+        clean_keys = (
+            await conn.execute(select(org_api_keys).where(org_api_keys.c.org_id == org_id))
+        ).fetchall()
         assert len(clean_keys) == 0
 
         # Erased eligible data not served (0 records served)
-        clean_evals = (await conn.execute(select(eval_runs).where(eval_runs.c.org_id == org_id))).fetchall()
-        clean_policies = (await conn.execute(select(governance_policies).where(governance_policies.c.org_id == org_id))).fetchall()
+        clean_evals = (
+            await conn.execute(select(eval_runs).where(eval_runs.c.org_id == org_id))
+        ).fetchall()
+        clean_policies = (
+            await conn.execute(
+                select(governance_policies).where(governance_policies.c.org_id == org_id)
+            )
+        ).fetchall()
         assert len(clean_evals) == 0
         assert len(clean_policies) == 0
 
         # Tombstone ledger synchronized in Store A
-        tombstones_synced = (await conn.execute(select(tenant_tombstones).where(tenant_tombstones.c.org_id == org_id))).fetchall()
+        tombstones_synced = (
+            await conn.execute(
+                select(tenant_tombstones).where(tenant_tombstones.c.org_id == org_id)
+            )
+        ).fetchall()
         assert len(tombstones_synced) == 1
 
     # Step 23: Only after successful reconciliation permit READY state

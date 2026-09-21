@@ -177,9 +177,7 @@ class TestWhitePactGauntlet:
 
         async def _capturing(name, arguments, ctx, services, *, purpose):
             captured["services"] = services
-            return await real_apply_governance(
-                name, arguments, ctx, services, purpose=purpose
-            )
+            return await real_apply_governance(name, arguments, ctx, services, purpose=purpose)
 
         monkeypatch_target = gi_module.apply_governance
         gi_module.apply_governance = _capturing

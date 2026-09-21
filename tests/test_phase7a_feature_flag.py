@@ -60,7 +60,10 @@ def test_settings_production_refuses_phase7a(monkeypatch: pytest.MonkeyPatch) ->
     from cryptography.fernet import Fernet
 
     monkeypatch.setenv("WHITEPACT_FIELD_ENCRYPTION_KEY", Fernet.generate_key().decode())
-    from responsibleai.dashboard.config import Settings
+    from pydantic import ValidationError
 
-    with pytest.raises(Exception):
+    from responsibleai.dashboard.config import Settings
+    from responsibleai.runtime.errors import Phase7AProductionGateClosedError
+
+    with pytest.raises((Phase7AProductionGateClosedError, ValidationError)):
         Settings()

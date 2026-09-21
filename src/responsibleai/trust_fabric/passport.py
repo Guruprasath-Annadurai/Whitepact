@@ -184,7 +184,9 @@ class TrustPassportEngine:
 
         if signing_key is not None:
             if signing_key.status == "REVOKED":
-                raise PassportKeyRevokedError(f"Cannot issue passport with revoked key {signing_key.key_id!r}.")
+                raise PassportKeyRevokedError(
+                    f"Cannot issue passport with revoked key {signing_key.key_id!r}."
+                )
             if signing_key.private_key:
                 sig_bytes = signing_key.private_key.sign(verification_hash.encode("utf-8"))
                 signature = f"ed25519:{sig_bytes.hex()}"
@@ -193,7 +195,9 @@ class TrustPassportEngine:
             key = self._signing_keys.get(signing_key_id)
             if key:
                 if key.status == "REVOKED":
-                    raise PassportKeyRevokedError(f"Cannot issue passport with revoked key {signing_key_id!r}.")
+                    raise PassportKeyRevokedError(
+                        f"Cannot issue passport with revoked key {signing_key_id!r}."
+                    )
                 if key.private_key:
                     sig_bytes = key.private_key.sign(verification_hash.encode("utf-8"))
                     signature = f"ed25519:{sig_bytes.hex()}"
@@ -263,7 +267,9 @@ class TrustPassportEngine:
 
         key = self._signing_keys.get(passport.signing_key_id)
         if not key:
-            raise TrustPassportTamperedError(f"Unknown passport signing key {passport.signing_key_id!r}.")
+            raise TrustPassportTamperedError(
+                f"Unknown passport signing key {passport.signing_key_id!r}."
+            )
 
         if passport.signature.startswith("ed25519:"):
             sig_hex = passport.signature.split(":", 1)[1]
@@ -272,7 +278,9 @@ class TrustPassportEngine:
                 pub = ed25519.Ed25519PublicKey.from_public_bytes(key.public_bytes)
                 pub.verify(sig_bytes, passport.verification_hash.encode("utf-8"))
             except (InvalidSignature, ValueError) as exc:
-                raise TrustPassportTamperedError("Cryptographic signature verification failed.") from exc
+                raise TrustPassportTamperedError(
+                    "Cryptographic signature verification failed."
+                ) from exc
         elif not passport.signature.startswith(f"sig_ed25519_{passport.verification_hash[:32]}"):
             raise TrustPassportTamperedError("Cryptographic signature mismatch.")
 
@@ -298,19 +306,25 @@ class TrustPassportEngine:
         if passport.signing_key_id:
             key = self._signing_keys.get(passport.signing_key_id)
             if key and key.status == "REVOKED":
-                raise PassportKeyRevokedError(f"Passport signing key {passport.signing_key_id!r} has been revoked.")
+                raise PassportKeyRevokedError(
+                    f"Passport signing key {passport.signing_key_id!r} has been revoked."
+                )
 
         # 4. Temporal validity check
         now_iso = datetime.now(UTC).isoformat()
         if now_iso >= passport.expires_at:
-            raise PassportExpiredError(f"Passport {passport.id!r} expired at {passport.expires_at}.")
+            raise PassportExpiredError(
+                f"Passport {passport.id!r} expired at {passport.expires_at}."
+            )
 
         # 5. Passport revocation check
         if passport.revoked_at is not None:
             raise PrincipalInactiveError(f"Passport {passport.id!r} has been revoked.")
 
         # 6. Live principal lifecycle check
-        principal = await self.directory.get_principal(passport.principal_id, org_id=passport.org_id)
+        principal = await self.directory.get_principal(
+            passport.principal_id, org_id=passport.org_id
+        )
         if principal.lifecycle_state in (
             PrincipalState.REVOKED,
             PrincipalState.DELETED,
@@ -376,7 +390,11 @@ class TrustPassportEngine:
             ):
                 if sensitive_key in filtered_attributes:
                     # Only retain if explicitly classified as TENANT_INTERNAL or lower
-                    f_disc = DisclosureClass(passport.claims.get("attributes", {}).get(sensitive_key, {}).get("disclosure", DisclosureClass.SECURITY_RESTRICTED.value))
+                    f_disc = DisclosureClass(
+                        passport.claims.get("attributes", {})
+                        .get(sensitive_key, {})
+                        .get("disclosure", DisclosureClass.SECURITY_RESTRICTED.value)
+                    )
                     if hierarchy[f_disc] > hierarchy[DisclosureClass.TENANT_INTERNAL]:
                         filtered_attributes.pop(sensitive_key, None)
 

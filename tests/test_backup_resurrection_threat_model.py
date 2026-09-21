@@ -242,11 +242,17 @@ async def test_23_step_empirical_backup_resurrection_closure(
 
     # Step 10: Verify tenant unusable in Store A
     async with store_a_engine.raw.connect() as conn:
-        active_keys = (await conn.execute(select(org_api_keys).where(org_api_keys.c.org_id == org_id))).fetchall()
+        active_keys = (
+            await conn.execute(select(org_api_keys).where(org_api_keys.c.org_id == org_id))
+        ).fetchall()
         assert len(active_keys) == 0
-        active_sess = (await conn.execute(select(web_sessions).where(web_sessions.c.org_id == org_id))).fetchall()
+        active_sess = (
+            await conn.execute(select(web_sessions).where(web_sessions.c.org_id == org_id))
+        ).fetchall()
         assert len(active_sess) == 0
-        active_evals = (await conn.execute(select(eval_runs).where(eval_runs.c.org_id == org_id))).fetchall()
+        active_evals = (
+            await conn.execute(select(eval_runs).where(eval_runs.c.org_id == org_id))
+        ).fetchall()
         assert len(active_evals) == 0
 
     # Step 11: Restore Store A from snapshot taken at step 7 (T1)
@@ -271,23 +277,34 @@ async def test_23_step_empirical_backup_resurrection_closure(
         assert len(ts_in_a) == 0  # Restored DB knows nothing of the deletion!
 
         # Old tenant and credentials reappear
-        reappeared_orgs = (await conn.execute(select(organizations).where(organizations.c.id == org_id))).fetchall()
+        reappeared_orgs = (
+            await conn.execute(select(organizations).where(organizations.c.id == org_id))
+        ).fetchall()
         assert len(reappeared_orgs) == 1
         assert reappeared_orgs[0].name == org_name  # original name restored!
 
-        reappeared_keys = (await conn.execute(select(org_api_keys).where(org_api_keys.c.org_id == org_id))).fetchall()
+        reappeared_keys = (
+            await conn.execute(select(org_api_keys).where(org_api_keys.c.org_id == org_id))
+        ).fetchall()
         assert len(reappeared_keys) == 1  # Resurrected key physically in DB!
 
-        reappeared_sessions = (await conn.execute(select(web_sessions).where(web_sessions.c.org_id == org_id))).fetchall()
+        reappeared_sessions = (
+            await conn.execute(select(web_sessions).where(web_sessions.c.org_id == org_id))
+        ).fetchall()
         assert len(reappeared_sessions) == 1  # Resurrected session physically in DB!
 
-        reappeared_evals = (await conn.execute(select(eval_runs).where(eval_runs.c.org_id == org_id))).fetchall()
+        reappeared_evals = (
+            await conn.execute(select(eval_runs).where(eval_runs.c.org_id == org_id))
+        ).fetchall()
         assert len(reappeared_evals) == 1  # Resurrected sensitive data physically in DB!
 
     # Step 14: Start WhitePact in RESTORE_PENDING state.
     gate = RestoreReadinessGate(initial_state=RestoreReadinessState.RESTORE_PENDING)
     assert gate.is_admitted() is False
-    with pytest.raises(RestoreQuarantineError, match="Operational traffic blocked: system is in RESTORE_PENDING state"):
+    with pytest.raises(
+        RestoreQuarantineError,
+        match="Operational traffic blocked: system is in RESTORE_PENDING state",
+    ):
         gate.assert_traffic_admitted()
 
     # Step 15: Reconcile Store A against CURRENT state from Store B
@@ -296,7 +313,9 @@ async def test_23_step_empirical_backup_resurrection_closure(
         lifecycle_provider=store_b_provider,
         gate=gate,
     )
-    report = await reconciliation_engine.reconcile_post_restore(reconciled_by="automated_sre_restore_agent")
+    report = await reconciliation_engine.reconcile_post_restore(
+        reconciled_by="automated_sre_restore_agent"
+    )
 
     assert report.status == "RECONCILED"
     assert report.tombstones_detected >= 1
@@ -305,38 +324,60 @@ async def test_23_step_empirical_backup_resurrection_closure(
 
     # Step 16: Prove restored tenant is quarantined in Store A
     async with store_a_engine.raw.connect() as conn:
-        org_row = (await conn.execute(select(organizations).where(organizations.c.id == org_id))).fetchone()
+        org_row = (
+            await conn.execute(select(organizations).where(organizations.c.id == org_id))
+        ).fetchone()
         assert org_row is not None
         assert "RESTORE_QUARANTINED" in org_row.name
 
     # Step 17: Prove old root authority unusable
     # Step 18: Prove old sessions unusable (purged)
     async with store_a_engine.raw.connect() as conn:
-        web_sess = (await conn.execute(select(web_sessions).where(web_sessions.c.org_id == org_id))).fetchall()
+        web_sess = (
+            await conn.execute(select(web_sessions).where(web_sessions.c.org_id == org_id))
+        ).fetchall()
         assert len(web_sess) == 0
-        iam_sess = (await conn.execute(select(iam_sessions).where(iam_sessions.c.org_id == org_id))).fetchall()
+        iam_sess = (
+            await conn.execute(select(iam_sessions).where(iam_sessions.c.org_id == org_id))
+        ).fetchall()
         assert len(iam_sess) == 0
 
     # Step 19: Prove old API key unusable (purged)
     async with store_a_engine.raw.connect() as conn:
-        keys = (await conn.execute(select(org_api_keys).where(org_api_keys.c.org_id == org_id))).fetchall()
+        keys = (
+            await conn.execute(select(org_api_keys).where(org_api_keys.c.org_id == org_id))
+        ).fetchall()
         assert len(keys) == 0
 
     # Step 20: Prove old agent/workload credential / lineage unusable (purged)
     async with store_a_engine.raw.connect() as conn:
-        lineage = (await conn.execute(select(iam_api_key_lineage).where(iam_api_key_lineage.c.org_id == org_id))).fetchall()
+        lineage = (
+            await conn.execute(
+                select(iam_api_key_lineage).where(iam_api_key_lineage.c.org_id == org_id)
+            )
+        ).fetchall()
         assert len(lineage) == 0
 
     # Step 21: Reapply erasure / tombstone requirements in Store A
     async with store_a_engine.raw.connect() as conn:
-        ts_a = (await conn.execute(select(tenant_tombstones).where(tenant_tombstones.c.org_id == org_id))).fetchall()
+        ts_a = (
+            await conn.execute(
+                select(tenant_tombstones).where(tenant_tombstones.c.org_id == org_id)
+            )
+        ).fetchall()
         assert len(ts_a) == 1  # Tombstone synchronized into Store A!
 
     # Step 22: Prove erased eligible data is not served (deleted)
     async with store_a_engine.raw.connect() as conn:
-        evals = (await conn.execute(select(eval_runs).where(eval_runs.c.org_id == org_id))).fetchall()
+        evals = (
+            await conn.execute(select(eval_runs).where(eval_runs.c.org_id == org_id))
+        ).fetchall()
         assert len(evals) == 0
-        pols = (await conn.execute(select(governance_policies).where(governance_policies.c.org_id == org_id))).fetchall()
+        pols = (
+            await conn.execute(
+                select(governance_policies).where(governance_policies.c.org_id == org_id)
+            )
+        ).fetchall()
         assert len(pols) == 0
 
     # Step 23: Only after successful reconciliation permit READY state
@@ -370,7 +411,9 @@ async def test_restore_reconciliation_fails_closed_when_provider_unavailable(
     assert gate.is_admitted() is False
 
     # Operational traffic permanently blocked
-    with pytest.raises(RestoreQuarantineError, match="Operational traffic blocked: system is in FAILED state"):
+    with pytest.raises(
+        RestoreQuarantineError, match="Operational traffic blocked: system is in FAILED state"
+    ):
         gate.assert_traffic_admitted()
 
 

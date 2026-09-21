@@ -46,9 +46,8 @@ from responsibleai.governance.upstream_executor import (
     UpstreamMCPExecutor,
     build_upstream_target,
 )
-
-from tests.org_http_fixtures import seed_org_with_key
 from responsibleai.rbac.models import Role
+from tests.org_http_fixtures import seed_org_with_key
 
 
 def _fake_public_dns(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -367,7 +366,7 @@ class TestJitCredentialRestRoundTrip:
         import responsibleai.db as db_module
         from responsibleai.db import OrgRepository
         from responsibleai.mcp.server import _build_http_app
-        from responsibleai.rbac.models import Plan, Role
+        from responsibleai.rbac.models import Plan
 
         _fake_public_dns(monkeypatch)
 

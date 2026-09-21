@@ -71,7 +71,9 @@ async def _verify_human(engine, user_id: str, event_id: str) -> None:
     )
 
 
-async def _signed_event(provider: HmacVerificationProvider, body: dict, ts: str | None = None) -> tuple[bytes, str, str]:
+async def _signed_event(
+    provider: HmacVerificationProvider, body: dict, ts: str | None = None
+) -> tuple[bytes, str, str]:
     timestamp = ts or datetime.now(UTC).isoformat()
     payload = json.dumps(body, separators=(",", ":")).encode()
     signature = hmac.new(
@@ -100,8 +102,12 @@ async def test_cross_tenant_enumeration_and_update_denied(engine) -> None:
     iam = EnterpriseIAM(engine)
     alice = await _user(web, "alice@example.com", "Alice")
     bob = await _user(web, "bob@example.com", "Bob")
-    org_a = await iam.create_workspace(actor_user_id=alice, name="A Co", slug=f"a-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION")
-    org_b = await iam.create_workspace(actor_user_id=bob, name="B Co", slug=f"b-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION")
+    org_a = await iam.create_workspace(
+        actor_user_id=alice, name="A Co", slug=f"a-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION"
+    )
+    org_b = await iam.create_workspace(
+        actor_user_id=bob, name="B Co", slug=f"b-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION"
+    )
     visible = await iam.list_visible_workspaces(alice)
     assert {row["id"] for row in visible} == {org_a["id"]}
     actor_a = _actor(alice, org_a["id"], Role.OWNER)
@@ -115,7 +121,9 @@ async def test_disabled_org_denies_mutations(engine) -> None:
     web = WebIdentityRepository(engine)
     iam = EnterpriseIAM(engine)
     owner = await _user(web, "owner@example.com")
-    org = await iam.create_workspace(actor_user_id=owner, name="Org", slug=f"o-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION")
+    org = await iam.create_workspace(
+        actor_user_id=owner, name="Org", slug=f"o-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION"
+    )
     actor = _actor(owner, org["id"], Role.OWNER)
     await iam.deactivate_organization(actor, org["id"])
     with pytest.raises(EnterpriseError) as exc:
@@ -128,7 +136,9 @@ async def test_last_owner_protection(engine) -> None:
     web = WebIdentityRepository(engine)
     iam = EnterpriseIAM(engine)
     owner = await _user(web, "last@example.com")
-    org = await iam.create_workspace(actor_user_id=owner, name="Solo", slug=f"s-{uuid.uuid4().hex[:8]}", kind="INDIVIDUAL")
+    org = await iam.create_workspace(
+        actor_user_id=owner, name="Solo", slug=f"s-{uuid.uuid4().hex[:8]}", kind="INDIVIDUAL"
+    )
     actor = _actor(owner, org["id"], Role.OWNER)
     with pytest.raises(EnterpriseError) as exc:
         await iam.revoke_member(actor, org["id"], user_id=owner)
@@ -142,9 +152,13 @@ async def test_invite_theft_replay_expiry_and_revoke(engine) -> None:
     owner = await _user(web, "own@example.com")
     thief = await _user(web, "thief@example.com")
     invitee = await _user(web, "invitee@example.com")
-    org = await iam.create_workspace(actor_user_id=owner, name="Org", slug=f"i-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION")
+    org = await iam.create_workspace(
+        actor_user_id=owner, name="Org", slug=f"i-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION"
+    )
     actor = _actor(owner, org["id"], Role.OWNER)
-    invitation_id, token = await iam.invite_member(actor, org["id"], email="invitee@example.com", role=Role.DEVELOPER)
+    invitation_id, token = await iam.invite_member(
+        actor, org["id"], email="invitee@example.com", role=Role.DEVELOPER
+    )
     with pytest.raises(EnterpriseError):
         await iam.accept_invitation(token=token, user_id=thief)
     org_id = await iam.accept_invitation(token=token, user_id=invitee)
@@ -153,7 +167,9 @@ async def test_invite_theft_replay_expiry_and_revoke(engine) -> None:
         await iam.accept_invitation(token=token, user_id=invitee)
     assert replay.value.code in {"INVITE_REPLAY", "FORBIDDEN"}
 
-    _, token2 = await iam.invite_member(actor, org["id"], email="late@example.com", role=Role.VIEWER)
+    _, token2 = await iam.invite_member(
+        actor, org["id"], email="late@example.com", role=Role.VIEWER
+    )
     async with engine.raw.begin() as conn:
         await conn.execute(
             update(web_invitations)
@@ -165,7 +181,9 @@ async def test_invite_theft_replay_expiry_and_revoke(engine) -> None:
         await iam.accept_invitation(token=token2, user_id=late)
     assert expired.value.code == "INVITE_EXPIRED"
 
-    _, token3 = await iam.invite_member(actor, org["id"], email="revoked@example.com", role=Role.VIEWER)
+    _, token3 = await iam.invite_member(
+        actor, org["id"], email="revoked@example.com", role=Role.VIEWER
+    )
     async with engine.raw.begin() as conn:
         await conn.execute(
             update(web_invitations)
@@ -185,9 +203,13 @@ async def test_role_escalation_denied(engine) -> None:
     iam = EnterpriseIAM(engine)
     owner = await _user(web, "esc-owner@example.com")
     dev = await _user(web, "esc-dev@example.com")
-    org = await iam.create_workspace(actor_user_id=owner, name="Org", slug=f"e-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION")
+    org = await iam.create_workspace(
+        actor_user_id=owner, name="Org", slug=f"e-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION"
+    )
     owner_actor = _actor(owner, org["id"], Role.OWNER)
-    _, token = await iam.invite_member(owner_actor, org["id"], email="esc-dev@example.com", role=Role.DEVELOPER)
+    _, token = await iam.invite_member(
+        owner_actor, org["id"], email="esc-dev@example.com", role=Role.DEVELOPER
+    )
     await iam.accept_invitation(token=token, user_id=dev)
     dev_actor = _actor(dev, org["id"], Role.DEVELOPER)
     with pytest.raises(EnterpriseError):
@@ -201,7 +223,9 @@ async def test_plaintext_api_key_never_persisted_and_env_isolation(engine) -> No
     web = WebIdentityRepository(engine)
     iam = EnterpriseIAM(engine)
     owner = await _user(web, "keys@example.com")
-    org = await iam.create_workspace(actor_user_id=owner, name="Org", slug=f"k-{uuid.uuid4().hex[:8]}", kind="INDIVIDUAL")
+    org = await iam.create_workspace(
+        actor_user_id=owner, name="Org", slug=f"k-{uuid.uuid4().hex[:8]}", kind="INDIVIDUAL"
+    )
     actor = _actor(owner, org["id"], Role.OWNER)
     envs = {e["type"]: e for e in await iam.list_environments(actor, org["id"])}
     provider = HmacVerificationProvider("test-webhook-secret")
@@ -215,7 +239,9 @@ async def test_plaintext_api_key_never_persisted_and_env_isolation(engine) -> No
             "assurance_level": "government_id",
         },
     )
-    await verification.apply_provider_event(payload=payload, signature=sig, timestamp=ts, expected_user_id=owner)
+    await verification.apply_provider_event(
+        payload=payload, signature=sig, timestamp=ts, expected_user_id=owner
+    )
     record, secret = await iam.create_api_key(
         actor,
         org["id"],
@@ -293,7 +319,9 @@ async def test_org_production_requires_verified_org_and_verified_issuer(engine) 
         actor_user_id=owner, name="Corp", slug=f"c-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION"
     )
     owner_actor = _actor(owner, org["id"], Role.OWNER)
-    _, token = await iam.invite_member(owner_actor, org["id"], email="corp-admin@example.com", role=Role.ADMIN)
+    _, token = await iam.invite_member(
+        owner_actor, org["id"], email="corp-admin@example.com", role=Role.ADMIN
+    )
     await iam.accept_invitation(token=token, user_id=admin)
     admin_actor = _actor(admin, org["id"], Role.ADMIN)
     envs = {e["type"]: e for e in await iam.list_environments(owner_actor, org["id"])}
@@ -327,7 +355,9 @@ async def test_org_production_requires_verified_org_and_verified_issuer(engine) 
             "legal_name": "Corp Inc",
         },
     )
-    await verification.apply_provider_event(payload=payload, signature=sig, timestamp=ts, expected_org_id=org["id"])
+    await verification.apply_provider_event(
+        payload=payload, signature=sig, timestamp=ts, expected_org_id=org["id"]
+    )
 
     with pytest.raises(EnterpriseError) as admin_unverified:
         await iam.create_api_key(
@@ -359,7 +389,6 @@ async def test_org_production_requires_verified_org_and_verified_issuer(engine) 
 @pytest.mark.asyncio
 async def test_forged_replay_and_cross_tenant_verification_callbacks(engine) -> None:
     web = WebIdentityRepository(engine)
-    iam = EnterpriseIAM(engine)
     user = await _user(web, "idv@example.com")
     other = await _user(web, "other@example.com")
     provider = HmacVerificationProvider("test-webhook-secret")
@@ -369,9 +398,13 @@ async def test_forged_replay_and_cross_tenant_verification_callbacks(engine) -> 
     with pytest.raises(EnterpriseError) as forged:
         await verification.apply_provider_event(payload=payload, signature="deadbeef", timestamp=ts)
     assert forged.value.code == "PROVIDER_SIGNATURE_INVALID"
-    await verification.apply_provider_event(payload=payload, signature=sig, timestamp=ts, expected_user_id=user)
+    await verification.apply_provider_event(
+        payload=payload, signature=sig, timestamp=ts, expected_user_id=user
+    )
     with pytest.raises(EnterpriseError) as replay:
-        await verification.apply_provider_event(payload=payload, signature=sig, timestamp=ts, expected_user_id=user)
+        await verification.apply_provider_event(
+            payload=payload, signature=sig, timestamp=ts, expected_user_id=user
+        )
     assert replay.value.code == "PROVIDER_REPLAY"
     body2 = {"event_id": "evt-cross", "subject_id": other, "outcome": "VERIFIED"}
     payload, sig, ts = await _signed_event(provider, body2)
@@ -411,7 +444,11 @@ async def test_service_account_cannot_be_owner_or_unattributable(engine) -> None
         )
     assert provenance.value.code == "SERVICE_ACCOUNT_FORBIDDEN"
     sa = await iam.create_service_account(
-        actor, org["id"], display_name="deploy", role=Role.DEVELOPER, environment_ids=(envs[0]["id"],)
+        actor,
+        org["id"],
+        display_name="deploy",
+        role=Role.DEVELOPER,
+        environment_ids=(envs[0]["id"],),
     )
     assert sa["created_by_user_id"] == owner
 
@@ -435,7 +472,9 @@ async def test_rotation_overlap_then_revoke(engine) -> None:
         scopes=("usage:read",),
         expires_at=None,
     )
-    new_rec, new_secret = await iam.rotate_api_key(actor, org["id"], rec["id"], overlap_seconds=3600)
+    new_rec, new_secret = await iam.rotate_api_key(
+        actor, org["id"], rec["id"], overlap_seconds=3600
+    )
     assert old_secret != new_secret
     await iam.authenticate_api_key(old_secret, expected_org_id=org["id"])
     await iam.authenticate_api_key(new_secret, expected_org_id=org["id"])
@@ -462,7 +501,9 @@ async def test_sessions_logout_all_and_revoked_membership(engine) -> None:
     await iam.logout_all(owner)
     assert await web.get_principal(token) is None
     owner_actor = _actor(owner, org["id"], Role.OWNER)
-    _, invite = await iam.invite_member(owner_actor, org["id"], email="sess-m@example.com", role=Role.VIEWER)
+    _, invite = await iam.invite_member(
+        owner_actor, org["id"], email="sess-m@example.com", role=Role.VIEWER
+    )
     await iam.accept_invitation(token=invite, user_id=member)
     member_token, _ = await web.create_session(member, org_id=org["id"])
     assert await web.get_principal(member_token) is not None
@@ -473,8 +514,9 @@ async def test_sessions_logout_all_and_revoked_membership(engine) -> None:
 @pytest.mark.asyncio
 async def test_verified_owner_still_cannot_open_gate_b() -> None:
     assert PRODUCTION_GATE_B_OPEN is False
-    from responsibleai.runtime.gate import phase7a_dispatcher_flag_from_env
     import os
+
+    from responsibleai.runtime.gate import phase7a_dispatcher_flag_from_env
 
     os.environ.pop("PHASE7A_DISPATCHER_ENABLED", None)
     os.environ.pop("WHITEPACT_PHASE7A_DISPATCHER_ENABLED", None)
@@ -520,4 +562,7 @@ async def test_eligibility_gate_owner_cannot_bypass_verification(engine) -> None
         role=Role.OWNER,
     )
     assert decision.allowed is False
-    assert decision.reason_code in {IDENTITY_VERIFICATION_REQUIRED, ORGANIZATION_VERIFICATION_REQUIRED}
+    assert decision.reason_code in {
+        IDENTITY_VERIFICATION_REQUIRED,
+        ORGANIZATION_VERIFICATION_REQUIRED,
+    }

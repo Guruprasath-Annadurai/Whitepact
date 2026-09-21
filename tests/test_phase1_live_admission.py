@@ -44,14 +44,19 @@ def _executor(kind, nonce_repo, org, monkeypatch, sink):
         monkeypatch.setattr("responsibleai.mcp.tools.dispatch_tool", sink)
         return InternalToolExecutor(nonce_repo=nonce_repo)
     server = SimpleNamespace(
-        server_id="server", org_id=org, enabled=True,
-        url="https://example.com/mcp", auth_token=None,
+        server_id="server",
+        org_id=org,
+        enabled=True,
+        url="https://example.com/mcp",
+        auth_token=None,
     )
     monkeypatch.setattr("responsibleai.governance.upstream_executor._call_upstream_tool", sink)
     monkeypatch.setattr(
         "responsibleai.governance.upstream_executor.validate_upstream_server_url", lambda _: None
     )
-    return UpstreamMCPExecutor(SimpleNamespace(get=AsyncMock(return_value=server)), nonce_repo=nonce_repo)
+    return UpstreamMCPExecutor(
+        SimpleNamespace(get=AsyncMock(return_value=server)), nonce_repo=nonce_repo
+    )
 
 
 def _action(kind, org):
@@ -59,7 +64,8 @@ def _action(kind, org):
         AgentContext(IdentityContext("worker", "api_key", org_id=org)),
         "rai_health" if kind == "internal" else ACTION_TYPE,
         "rai_health" if kind == "internal" else "server::read",
-        arguments={"record": "invoice"}, purpose="reconcile",
+        arguments={"record": "invoice"},
+        purpose="reconcile",
     )
 
 
@@ -70,8 +76,10 @@ def _permit(action, epoch=0):
             SimpleNamespace(url="https://example.com/mcp", enabled=True, auth_token=None)
         )
     return authorize_execution(
-        DecisionResult(GovernanceDecision.ALLOW, action.action_id), action,
-        revocation_epoch=epoch, target_fingerprint=fingerprint,
+        DecisionResult(GovernanceDecision.ALLOW, action.action_id),
+        action,
+        revocation_epoch=epoch,
+        target_fingerprint=fingerprint,
     )
 
 
@@ -82,18 +90,25 @@ async def test_live_copied_permits_independent_consumers_and_reopen(kind, tmp_pa
     await engine.init()
     org = str(uuid.uuid4())
     async with engine.raw.begin() as conn:
-        await conn.execute(organizations.insert().values(id=org, name=org, slug=org, created_at="now"))
+        await conn.execute(
+            organizations.insert().values(id=org, name=org, slug=org, created_at="now")
+        )
     other = create_engine(url)
     sink = AsyncMock(return_value={"ok": True})
     action = _action(kind, org)
     permit = _permit(action)
     try:
-        executors = [_executor(kind, ExecutionNonceRepository(e), org, monkeypatch, sink)
-                     for e in (engine, other)]
-        results = await asyncio.gather(*[
-            executors[i % 2].execute(copy.deepcopy(permit), copy.deepcopy(action))
-            for i in range(16)
-        ], return_exceptions=True)
+        executors = [
+            _executor(kind, ExecutionNonceRepository(e), org, monkeypatch, sink)
+            for e in (engine, other)
+        ]
+        results = await asyncio.gather(
+            *[
+                executors[i % 2].execute(copy.deepcopy(permit), copy.deepcopy(action))
+                for i in range(16)
+            ],
+            return_exceptions=True,
+        )
         assert sum(isinstance(result, dict) for result in results) == 1
         assert sum(isinstance(result, NonceAlreadyConsumedError) for result in results) == 15
         assert sink.await_count == 1
@@ -133,9 +148,13 @@ async def test_admission_fails_closed(kind, fault, monkeypatch):
             action.arguments["record"] = "different"
 
     repo = SimpleNamespace(consume=consume)
-    expected = {"database": RuntimeError, "expiry": AuthorizationExpiredError,
-                "mutation": AuthorizationActionMismatchError,
-                "missing_epoch": ExecutionNotAuthorizedError, "downgrade": ExecutionNotAuthorizedError}
+    expected = {
+        "database": RuntimeError,
+        "expiry": AuthorizationExpiredError,
+        "mutation": AuthorizationActionMismatchError,
+        "missing_epoch": ExecutionNotAuthorizedError,
+        "downgrade": ExecutionNotAuthorizedError,
+    }
     if fault == "missing_epoch":
         permit.revocation_epoch = None
     executor = _executor(kind, None if fault == "downgrade" else repo, "org", monkeypatch, sink)
@@ -154,7 +173,8 @@ async def test_upstream_dispatch_uses_admitted_arguments(monkeypatch):
         action.arguments["record"] = "changed-after-admission"
 
     executor._credential_issuance_repo = SimpleNamespace(
-        record_issued=AsyncMock(), record_consumed=record_consumed,
+        record_issued=AsyncMock(),
+        record_consumed=record_consumed,
     )
     await executor.execute(permit, action)
     assert sink.call_args.args[2] == {"record": "invoice"}

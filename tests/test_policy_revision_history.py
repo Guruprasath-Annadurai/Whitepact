@@ -45,9 +45,7 @@ async def sample_org(sqlite_engine: DatabaseEngine):
 @pytest.mark.asyncio
 async def test_monotonic_revision_numbering(sqlite_engine: DatabaseEngine, sample_org: str):
     mgr = PolicyLifecycleManager(sqlite_engine)
-    rules1 = [
-        PolicyRule(rule_id="r1", reason_code="RC_DENY", effect=GovernanceDecision.DENY)
-    ]
+    rules1 = [PolicyRule(rule_id="r1", reason_code="RC_DENY", effect=GovernanceDecision.DENY)]
     rules2 = [
         PolicyRule(rule_id="r1", reason_code="RC_DENY", effect=GovernanceDecision.DENY),
         PolicyRule(rule_id="r2", reason_code="RC_ALLOW", effect=GovernanceDecision.ALLOW),

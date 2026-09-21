@@ -34,7 +34,9 @@ class BreakGlassService:
     ) -> BreakGlassSession:
         """Initiate an emergency break-glass session."""
         if not incident_id or not incident_id.strip() or len(incident_id.strip()) < 3:
-            raise BreakGlassInvalidError("Break-glass requires a valid, documented incident identifier.")
+            raise BreakGlassInvalidError(
+                "Break-glass requires a valid, documented incident identifier."
+            )
 
         if ttl_minutes <= 0 or ttl_minutes > 60:
             raise BreakGlassInvalidError(

@@ -76,7 +76,9 @@ async def test_platform_operator_backdoor_blocked(test_db: DatabaseEngine):
         role=Role.OWNER,
         is_platform_operator=True,
     )
-    with pytest.raises(OperatorBackdoorAttemptError, match="cannot execute customer tenant privileged actions"):
+    with pytest.raises(
+        OperatorBackdoorAttemptError, match="cannot execute customer tenant privileged actions"
+    ):
         await guard.authorize_privileged_operation(
             caller=caller,
             target_org_id="org_alpha",
@@ -92,7 +94,9 @@ async def test_cross_tenant_escalation_blocked(test_db: DatabaseEngine):
         org_id="org_alpha",
         role=Role.ADMIN,
     )
-    with pytest.raises(CrossTenantEscalationError, match="cannot execute privileged actions on tenant 'org_beta'"):
+    with pytest.raises(
+        CrossTenantEscalationError, match="cannot execute privileged actions on tenant 'org_beta'"
+    ):
         await guard.authorize_privileged_operation(
             caller=caller,
             target_org_id="org_beta",
@@ -118,7 +122,9 @@ async def test_unprivileged_role_denied(test_db: DatabaseEngine, seed_trust_empl
 
 
 @pytest.mark.asyncio
-async def test_standard_privileged_action_allowed_for_admin(test_db: DatabaseEngine, seed_trust_employment):
+async def test_standard_privileged_action_allowed_for_admin(
+    test_db: DatabaseEngine, seed_trust_employment
+):
     await seed_trust_employment(test_db, org_id="org_alpha", principal_id="admin_alpha")
     guard = PrivilegedSurfaceGuard(test_db)
     caller = PrivilegedCallerContext(
@@ -156,7 +162,9 @@ async def test_high_risk_requires_step_up_nonce(test_db: DatabaseEngine, seed_tr
 
 
 @pytest.mark.asyncio
-async def test_critical_risk_requires_four_eyes_and_step_up(test_db: DatabaseEngine, seed_trust_employment):
+async def test_critical_risk_requires_four_eyes_and_step_up(
+    test_db: DatabaseEngine, seed_trust_employment
+):
     await seed_trust_employment(test_db, org_id="org_alpha", principal_id="admin_requester")
     guard = PrivilegedSurfaceGuard(test_db)
 
@@ -177,6 +185,7 @@ async def test_critical_risk_requires_four_eyes_and_step_up(test_db: DatabaseEng
 
     # Create step-up proof
     from datetime import UTC, datetime
+
     now_iso = datetime.now(UTC).isoformat()
     proof = StepUpProof(
         nonce=nonce,

@@ -11,9 +11,8 @@ from datetime import UTC, datetime
 from sqlalchemy import insert, select
 from sqlalchemy.exc import IntegrityError
 
-from responsibleai.db.engine import DatabaseEngine
+from responsibleai.db.engine import DatabaseEngine, organizations
 from responsibleai.db.engine import governance_execution_nonces as nonces
-from responsibleai.db.engine import organizations
 from responsibleai.db.revocation_epoch_repository import lock_epoch
 from responsibleai.rbac.models import GovernanceStatus
 

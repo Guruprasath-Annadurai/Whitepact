@@ -203,7 +203,9 @@ class PrincipalDirectory:
 
                 now_iso = datetime.now(UTC).isoformat()
                 ident_id = f"wp_ident_{uuid.uuid4().hex}"
-                verified_at = now_iso if verification_state == IdentifierVerificationState.VERIFIED else None
+                verified_at = (
+                    now_iso if verification_state == IdentifierVerificationState.VERIFIED else None
+                )
 
                 await conn.execute(
                     trust_fabric_identifiers.insert().values(

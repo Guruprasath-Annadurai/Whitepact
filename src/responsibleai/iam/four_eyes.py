@@ -111,7 +111,9 @@ class FourEyesService:
 
             # Invariant: Self-approval is strictly prohibited!
             if rec["requester_principal_id"] == approver_principal_id:
-                raise SelfApprovalBlockedError("Requester cannot approve their own Four-Eyes request.")
+                raise SelfApprovalBlockedError(
+                    "Requester cannot approve their own Four-Eyes request."
+                )
 
             if rec["status"] != FourEyesStatus.PENDING.value:
                 raise ValueError(f"Request is in status {rec['status']}, cannot approve.")

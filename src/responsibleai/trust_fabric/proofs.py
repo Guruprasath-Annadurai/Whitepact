@@ -157,7 +157,10 @@ class TrustProofEngine:
             p = dict(p_row._mapping)
             if p["principal_type"] != PrincipalType.AI_AGENT.value:
                 return ProofStatus.NOT_PROVEN
-            if p["lifecycle_state"] in (PrincipalState.DELETED.value, PrincipalState.DISABLED.value):
+            if p["lifecycle_state"] in (
+                PrincipalState.DELETED.value,
+                PrincipalState.DISABLED.value,
+            ):
                 return ProofStatus.NOT_PROVEN
             if p["lifecycle_state"] == PrincipalState.REVOKED.value:
                 return ProofStatus.REVOKED
@@ -167,7 +170,8 @@ class TrustProofEngine:
                 and_(
                     trust_fabric_relationships.c.subject_principal_id == agent_principal_id,
                     trust_fabric_relationships.c.org_id == org_id,
-                    trust_fabric_relationships.c.relationship_type == RelationshipType.OWNED_BY.value,
+                    trust_fabric_relationships.c.relationship_type
+                    == RelationshipType.OWNED_BY.value,
                 )
             )
             rel_row = (await conn.execute(rel_stmt)).first()
@@ -219,7 +223,9 @@ class TrustProofEngine:
             else:
                 return ProofStatus.NOT_PROVEN
 
-    async def evaluate_privileged_legitimacy(self, *, principal_id: str, org_id: str) -> ProofStatus:
+    async def evaluate_privileged_legitimacy(
+        self, *, principal_id: str, org_id: str
+    ) -> ProofStatus:
         """Canonical legitimacy admission claim consulted by the IAM privileged surface guard.
 
         Dispatches to the existing claim-specific proof appropriate to the principal's

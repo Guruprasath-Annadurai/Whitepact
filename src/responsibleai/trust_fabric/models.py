@@ -534,7 +534,8 @@ class TrustDecisionRequest:
     def compute_digest(self) -> str:
         payload = {
             "requesting_org_id": self.requesting_org_id,
-            "requesting_principal_id": self.requesting_principal_id or self.context.get("requesting_principal_id"),
+            "requesting_principal_id": self.requesting_principal_id
+            or self.context.get("requesting_principal_id"),
             "target_org_id": self.target_org_id,
             "subject_principal_id": self.subject_principal_id,
             "requested_action": self.requested_action,

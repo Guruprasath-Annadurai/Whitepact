@@ -98,10 +98,18 @@ async def test_api_key_rotation_lineage(test_db: DatabaseEngine):
 
     # Verify old key marked ROTATED and new key links back to parent
     async with test_db.raw.connect() as conn:
-        old_row = (await conn.execute(select(iam_api_key_lineage).where(iam_api_key_lineage.c.id == key_id))).one()
+        old_row = (
+            await conn.execute(
+                select(iam_api_key_lineage).where(iam_api_key_lineage.c.id == key_id)
+            )
+        ).one()
         assert old_row.status == "ROTATED"
 
-        new_row = (await conn.execute(select(iam_api_key_lineage).where(iam_api_key_lineage.c.id == new_key_id))).one()
+        new_row = (
+            await conn.execute(
+                select(iam_api_key_lineage).where(iam_api_key_lineage.c.id == new_key_id)
+            )
+        ).one()
         assert new_row.parent_key_id == key_id
         assert new_row.status == "ACTIVE"
 
@@ -127,7 +135,13 @@ async def test_scim_provisioning_and_cascading_deprovisioning(test_db: DatabaseE
 
     # Lookup principal ID
     async with test_db.raw.connect() as conn:
-        p_row = (await conn.execute(select(trust_fabric_principals).where(trust_fabric_principals.c.display_name == "bob@corp.com"))).one()
+        p_row = (
+            await conn.execute(
+                select(trust_fabric_principals).where(
+                    trust_fabric_principals.c.display_name == "bob@corp.com"
+                )
+            )
+        ).one()
         principal_id = p_row.id
         assert p_row.lifecycle_state == "ACTIVE"
 
@@ -136,7 +150,10 @@ async def test_scim_provisioning_and_cascading_deprovisioning(test_db: DatabaseE
         org_id="org_lifecycle",
         principal_id=principal_id,
     )
-    assert await session_svc.validate_session(org_id="org_lifecycle", session_id=sess_id, token=token) is True
+    assert (
+        await session_svc.validate_session(org_id="org_lifecycle", session_id=sess_id, token=token)
+        is True
+    )
 
     # 3. Deprovision Bob via SCIM
     deprovisioned = await scim_svc.deprovision_user(
@@ -147,7 +164,11 @@ async def test_scim_provisioning_and_cascading_deprovisioning(test_db: DatabaseE
 
     # 4. Verify principal suspended and session immediately revoked!
     async with test_db.raw.connect() as conn:
-        p_updated = (await conn.execute(select(trust_fabric_principals).where(trust_fabric_principals.c.id == principal_id))).one()
+        p_updated = (
+            await conn.execute(
+                select(trust_fabric_principals).where(trust_fabric_principals.c.id == principal_id)
+            )
+        ).one()
         assert p_updated.lifecycle_state == "SUSPENDED"
 
     session_valid = await session_svc.validate_session(

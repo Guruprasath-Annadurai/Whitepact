@@ -7,8 +7,8 @@ from __future__ import annotations
 import importlib.metadata
 
 import mcp.types as mcp_types
-from mcp.shared.version import SUPPORTED_PROTOCOL_VERSIONS
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+from mcp.shared.version import SUPPORTED_PROTOCOL_VERSIONS
 
 
 def test_installed_mcp_sdk_is_1x() -> None:

@@ -24,16 +24,16 @@ from responsibleai.governance import (
 )
 from responsibleai.governance.approval import build_approval_request
 from responsibleai.governance.evidence import build_evidence_record
-
-from tests.org_http_fixtures import seed_org_with_key
 from responsibleai.rbac.models import Role
-
+from tests.org_http_fixtures import seed_org_with_key
 
 BOOTSTRAP_AUTH = {"Authorization": "Bearer bootstrap-test-key"}
 
 
 async def _other_org(name: str, slug: str) -> str:
-    org_id, _kid, _raw = await seed_org_with_key(name=name, slug=slug, key_name="k", role=Role.ANALYST)
+    org_id, _kid, _raw = await seed_org_with_key(
+        name=name, slug=slug, key_name="k", role=Role.ANALYST
+    )
     return org_id
 
 
@@ -87,7 +87,9 @@ async def org_and_analyst_key(client: AsyncClient, org_and_admin_key):
     org_id, _admin_key = org_and_admin_key
     from responsibleai.dashboard.app import _org_repo
 
-    _rec, raw = await _org_repo.create_key(org_id, "analyst-key", Role.ANALYST, internal_unverified_fixture=True)
+    _rec, raw = await _org_repo.create_key(
+        org_id, "analyst-key", Role.ANALYST, internal_unverified_fixture=True
+    )
     return org_id, raw
 
 
@@ -258,7 +260,9 @@ class TestEvidenceBundleEndpoints:
         org_id, key = org_and_analyst_key
         await _seed_evidence(org_id)
 
-        other_org_id, other_key = await _other_org_with_key("Other Bundle Co", "other-bundle-co", Role.ANALYST)
+        other_org_id, other_key = await _other_org_with_key(
+            "Other Bundle Co", "other-bundle-co", Role.ANALYST
+        )
 
         r = await client.get(
             "/api/governance/evidence/bundle", headers={"Authorization": f"Bearer {other_key}"}
@@ -686,7 +690,9 @@ class TestPolicyEndpoints:
             headers={"Authorization": f"Bearer {admin_key}"},
         )
 
-        other_org_id, other_key = await _other_org_with_key("Other Policy Co", "other-policy-co", Role.ADMIN)
+        other_org_id, other_key = await _other_org_with_key(
+            "Other Policy Co", "other-policy-co", Role.ADMIN
+        )
 
         r = await client.get(
             "/api/governance/policy", headers={"Authorization": f"Bearer {other_key}"}
@@ -1022,7 +1028,9 @@ class TestWorkflowRuleEndpoints:
             headers={"Authorization": f"Bearer {admin_key}"},
         )
 
-        other_org_id, other_key = await _other_org_with_key("Other Workflow Co", "other-workflow-co", Role.ADMIN)
+        other_org_id, other_key = await _other_org_with_key(
+            "Other Workflow Co", "other-workflow-co", Role.ADMIN
+        )
 
         r = await client.get(
             "/api/governance/workflow-rules",
@@ -1195,7 +1203,9 @@ class TestDelegationEndpoints:
             headers={"Authorization": f"Bearer {admin_key}"},
         )
 
-        other_org_id, other_key = await _other_org_with_key("Other Delegation Co", "other-delegation-co", Role.ADMIN)
+        other_org_id, other_key = await _other_org_with_key(
+            "Other Delegation Co", "other-delegation-co", Role.ADMIN
+        )
 
         r = await client.get(
             "/api/governance/delegations/shared-name-agent/chain",
@@ -1309,7 +1319,9 @@ class TestDelegationEndpoints:
             headers={"Authorization": f"Bearer {admin_key}"},
         )
 
-        other_org_id, other_key = await _other_org_with_key("Other Graph Co", "other-graph-co", Role.ANALYST)
+        other_org_id, other_key = await _other_org_with_key(
+            "Other Graph Co", "other-graph-co", Role.ANALYST
+        )
 
         r = await client.get(
             "/api/governance/delegations/graph",
@@ -1406,7 +1418,9 @@ class TestIntentContractEndpoints:
             headers={"Authorization": f"Bearer {key}"},
         )
 
-        other_org_id, other_key = await _other_org_with_key("Other Intent Co", "other-intent-co", Role.ANALYST)
+        other_org_id, other_key = await _other_org_with_key(
+            "Other Intent Co", "other-intent-co", Role.ANALYST
+        )
 
         r = await client.get(
             "/api/governance/intent-contracts/shared-agent-name/active",
@@ -1598,7 +1612,9 @@ class TestAuthorityPassportEndpoints:
         )
         passport_id = r.json()["passport_id"]
 
-        other_org_id, other_key = await _other_org_with_key("Other Passport Co", "other-passport-co", Role.ANALYST)
+        other_org_id, other_key = await _other_org_with_key(
+            "Other Passport Co", "other-passport-co", Role.ANALYST
+        )
 
         r = await client.get(
             f"/api/governance/authority-passports/{passport_id}",

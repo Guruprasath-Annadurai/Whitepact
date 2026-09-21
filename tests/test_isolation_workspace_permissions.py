@@ -82,7 +82,13 @@ def test_prepare_for_container_preserves_owner_only() -> None:
 
 
 def test_world_sticky_modes_are_not_applied() -> None:
-    source = Path(__file__).resolve().parents[1] / "src" / "responsibleai" / "isolation" / "filesystem.py"
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "responsibleai"
+        / "isolation"
+        / "filesystem.py"
+    )
     text = source.read_text()
     assert "0o1777" not in text
     assert "make_world_readable" not in text
@@ -236,7 +242,9 @@ def test_prepare_fails_closed_when_acl_and_root_are_unavailable() -> None:
         assert stat.S_IMODE(os.stat(ws.path / "f.txt").st_mode) == 0o600
 
 
-def test_prepare_does_not_chmod_world_readable_even_if_acl_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_prepare_does_not_chmod_world_readable_even_if_acl_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from responsibleai.isolation import filesystem as fs
 
     monkeypatch.setattr(fs, "_try_setfacl", lambda *a, **k: False)

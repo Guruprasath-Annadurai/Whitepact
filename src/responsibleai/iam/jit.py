@@ -41,7 +41,12 @@ class JitAccessService:
             raise ValueError("JIT access cannot elevate to OWNER role.")
 
         if any(
-            a in {PrivilegedAction.TRANSFER_ROOT_AUTHORITY, PrivilegedAction.RECOVER_ROOT_AUTHORITY, PrivilegedAction.DESTROY_TENANT}
+            a
+            in {
+                PrivilegedAction.TRANSFER_ROOT_AUTHORITY,
+                PrivilegedAction.RECOVER_ROOT_AUTHORITY,
+                PrivilegedAction.DESTROY_TENANT,
+            }
             for a in allowed_actions
         ):
             raise ValueError("JIT access cannot grant sovereign root operations.")
@@ -110,7 +115,9 @@ class JitAccessService:
                 raise ValueError("Requester cannot approve their own JIT grant.")
 
             if rec["status"] != JitGrantStatus.REQUESTED.value:
-                raise JitGrantInvalidError(f"JIT grant is in state {rec['status']}, cannot approve.")
+                raise JitGrantInvalidError(
+                    f"JIT grant is in state {rec['status']}, cannot approve."
+                )
 
             await conn.execute(
                 update(iam_jit_grants)

@@ -244,7 +244,9 @@ class OrgRepository:
             ).fetchone()
         return self._row_to_org(row) if row else None
 
-    async def get_org_by_paddle_subscription(self, paddle_subscription_id: str) -> Organization | None:
+    async def get_org_by_paddle_subscription(
+        self, paddle_subscription_id: str
+    ) -> Organization | None:
         async with self._engine.raw.connect() as conn:
             row = (
                 await conn.execute(
@@ -290,9 +292,11 @@ class OrgRepository:
         try:
             async with self._engine.raw.begin() as conn:
                 # 1. Lock the organization row for update to ensure atomic chronology evaluation
-                org_row = (await conn.execute(
-                    select(organizations).where(organizations.c.id == org_id).with_for_update()
-                )).first()
+                org_row = (
+                    await conn.execute(
+                        select(organizations).where(organizations.c.id == org_id).with_for_update()
+                    )
+                ).first()
                 if org_row is None:
                     raise ValueError(f"Organization '{org_id}' not found")
 
@@ -301,7 +305,9 @@ class OrgRepository:
                     select(tenant_tombstones.c.id).where(tenant_tombstones.c.org_id == org_id)
                 )
                 if ts is not None:
-                    raise ValueError(f"Cannot apply entitlement: organization '{org_id}' is tombstoned")
+                    raise ValueError(
+                        f"Cannot apply entitlement: organization '{org_id}' is tombstoned"
+                    )
 
                 # 2. Prevent commercial identity reassignment across tenants
                 existing_customer_org = await conn.scalar(
@@ -325,7 +331,9 @@ class OrgRepository:
 
                 # 3. Chronological admission check using occurred_at
                 org_map = dict(org_row._mapping)
-                current_occurred_at = org_map.get("paddle_last_occurred_at") or org_map.get("entitlement_updated_at")
+                current_occurred_at = org_map.get("paddle_last_occurred_at") or org_map.get(
+                    "entitlement_updated_at"
+                )
                 current_status = org_map.get("subscription_status") or "inactive"
                 current_plan_str = str(org_map.get("plan") or "FREE").upper()
 
@@ -422,8 +430,10 @@ class OrgRepository:
 
         from responsibleai.dashboard.config import is_production_environment
 
-        env_name = os.environ.get("WHITEPACT_ENV") or os.environ.get("RAI_ENV") or os.environ.get(
-            "ENVIRONMENT", "development"
+        env_name = (
+            os.environ.get("WHITEPACT_ENV")
+            or os.environ.get("RAI_ENV")
+            or os.environ.get("ENVIRONMENT", "development")
         )
         if not accountable_human_user_id:
             internal_unverified_fixture = True
@@ -477,9 +487,7 @@ class OrgRepository:
         if org_id is not None:
             where = where & (org_api_keys.c.org_id == org_id)
         async with self._engine.raw.begin() as conn:
-            resolved_org = await conn.scalar(
-                select(org_api_keys.c.org_id).where(where)
-            )
+            resolved_org = await conn.scalar(select(org_api_keys.c.org_id).where(where))
             if resolved_org is not None:
                 await bump_epoch_on_connection(conn, resolved_org)
             result = await conn.execute(update(org_api_keys).where(where).values(revoked=1))

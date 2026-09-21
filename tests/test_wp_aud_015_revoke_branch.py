@@ -78,9 +78,7 @@ async def test_successful_branch_revocation_kills_descendant_authority_and_bumps
     epochs = RevocationEpochRepository(engine)
     await _tree(repo)
     before = await epochs.current("org-rev")
-    revoked = await repo.revoke_branch(
-        "org-rev", "manager", revoked_by="owner", reason="offboard"
-    )
+    revoked = await repo.revoke_branch("org-rev", "manager", revoked_by="owner", reason="offboard")
     assert len(revoked) == 3
     after = await epochs.current("org-rev")
     assert after.epoch == before.epoch + 1

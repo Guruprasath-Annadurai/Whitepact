@@ -43,7 +43,9 @@ async def sample_org(sqlite_engine: DatabaseEngine):
 
 
 @pytest.mark.asyncio
-async def test_retention_policy_creation_and_pruning(sqlite_engine: DatabaseEngine, sample_org: str):
+async def test_retention_policy_creation_and_pruning(
+    sqlite_engine: DatabaseEngine, sample_org: str
+):
     ret_mgr = RetentionManager(sqlite_engine)
 
     # 1. Set retention policy
@@ -60,7 +62,7 @@ async def test_retention_policy_creation_and_pruning(sqlite_engine: DatabaseEngi
                 run_type="benchmark",
                 model="gpt-4",
                 provider="openai",
-                payload="{}", 
+                payload="{}",
                 created_at="2026-08-01T00:00:00Z",
             )
         )
@@ -72,7 +74,9 @@ async def test_retention_policy_creation_and_pruning(sqlite_engine: DatabaseEngi
 
     # 4. Verify record is pruned
     async with sqlite_engine.raw.connect() as conn:
-        rows = (await conn.execute(select(eval_runs).where(eval_runs.c.org_id == sample_org))).fetchall()
+        rows = (
+            await conn.execute(select(eval_runs).where(eval_runs.c.org_id == sample_org))
+        ).fetchall()
         assert len(rows) == 0
 
     # 5. Idempotency test: re-running produces 0 errors and 0 new pruned records
@@ -89,7 +93,9 @@ async def test_retention_skips_held_category(sqlite_engine: DatabaseEngine, samp
     await ret_mgr.set_retention_policy(sample_org, "TENANT_OPERATIONAL", 30 * 86400)
 
     # Place legal hold on TENANT_OPERATIONAL
-    await hold_mgr.create_hold(sample_org, "TENANT_OPERATIONAL", "Audit preservation", "legal-admin")
+    await hold_mgr.create_hold(
+        sample_org, "TENANT_OPERATIONAL", "Audit preservation", "legal-admin"
+    )
 
     # Insert operational data
     async with sqlite_engine.raw.begin() as conn:
@@ -100,7 +106,7 @@ async def test_retention_skips_held_category(sqlite_engine: DatabaseEngine, samp
                 run_type="benchmark",
                 model="claude-3",
                 provider="anthropic",
-                payload="{}", 
+                payload="{}",
                 created_at="2026-08-01T00:00:00Z",
             )
         )
@@ -112,5 +118,7 @@ async def test_retention_skips_held_category(sqlite_engine: DatabaseEngine, samp
 
     # Verify record was NOT deleted
     async with sqlite_engine.raw.connect() as conn:
-        rows = (await conn.execute(select(eval_runs).where(eval_runs.c.org_id == sample_org))).fetchall()
+        rows = (
+            await conn.execute(select(eval_runs).where(eval_runs.c.org_id == sample_org))
+        ).fetchall()
         assert len(rows) == 1

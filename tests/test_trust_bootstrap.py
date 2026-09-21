@@ -29,6 +29,7 @@ async def bootstrap_db(tmp_path):
     engine = create_engine(url)
     await engine.init()
     from responsibleai.db.engine import organizations
+
     async with engine.raw.begin() as conn:
         await conn.execute(
             organizations.insert(),
@@ -174,7 +175,11 @@ class TestTrustBootstrapCeremony:
                     root_public_key=f"pk_race_{idx}",
                 )
                 return "WINNER"
-            except (OrganizationAlreadyBootstrappedError, BootstrapRaceError, BootstrapTokenReplayError):
+            except (
+                OrganizationAlreadyBootstrappedError,
+                BootstrapRaceError,
+                BootstrapTokenReplayError,
+            ):
                 return "LOST_RACE"
 
         results = await asyncio.gather(*[_attempt_bootstrap(i) for i in range(25)])

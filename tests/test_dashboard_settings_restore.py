@@ -19,7 +19,9 @@ pytest_plugins = ["tests.test_dashboard_api"]
 
 class TestSettingsRestorationRegression:
     @pytest.mark.asyncio
-    async def test_fixture_restores_global_settings_after_execution(self, client: AsyncClient) -> None:
+    async def test_fixture_restores_global_settings_after_execution(
+        self, client: AsyncClient
+    ) -> None:
         """Inside the test, settings are isolated to memory."""
         assert settings.db_path == ":memory:"
         assert settings.auto_migrate is False

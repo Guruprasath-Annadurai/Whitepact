@@ -129,7 +129,9 @@ class LegalHoldManager:
                 released_by=released_by,
             )
 
-    async def is_held(self, org_id: str, data_category: str | None = None, conn: Any = None) -> bool:
+    async def is_held(
+        self, org_id: str, data_category: str | None = None, conn: Any = None
+    ) -> bool:
         """Check if an org (or specific category) is under active legal hold."""
         query = (
             select(data_holds.c.id)
@@ -138,7 +140,8 @@ class LegalHoldManager:
         )
         if data_category:
             query = query.where(
-                (data_holds.c.data_category == data_category) | (data_holds.c.data_category == "ALL")
+                (data_holds.c.data_category == data_category)
+                | (data_holds.c.data_category == "ALL")
             )
         if conn is not None:
             result = await conn.execute(query)

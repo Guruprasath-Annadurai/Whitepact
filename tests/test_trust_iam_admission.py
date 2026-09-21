@@ -91,12 +91,16 @@ async def _seed_employed_principal(
     return person.id, rel.id
 
 
-def _caller(principal_id: str, org_id: str = "org_alpha", role: Role = Role.ADMIN) -> PrivilegedCallerContext:
+def _caller(
+    principal_id: str, org_id: str = "org_alpha", role: Role = Role.ADMIN
+) -> PrivilegedCallerContext:
     return PrivilegedCallerContext(principal_id=principal_id, org_id=org_id, role=role)
 
 
 @pytest.mark.asyncio
-async def test_ordinary_caller_cannot_bypass_trust_by_omitting_argument(trust_iam_db: DatabaseEngine):
+async def test_ordinary_caller_cannot_bypass_trust_by_omitting_argument(
+    trust_iam_db: DatabaseEngine,
+):
     """There is no parameter to omit: legitimacy admission cannot be skipped by a caller
     who simply does not pass anything trust-related. This is the prior design's exact
     footgun (an opt-in ``require_trust_admission`` flag) with the fix verified: a caller
@@ -139,7 +143,9 @@ async def test_not_proven_principal_blocked(trust_iam_db: DatabaseEngine):
     # (distinct from UNKNOWN, which is for a principal the trust fabric has never heard of).
     dir_svc = PrincipalDirectory(trust_iam_db)
     person = await dir_svc.create_principal(
-        org_id="org_alpha", principal_type=PrincipalType.HUMAN, display_name="No Relationship Person"
+        org_id="org_alpha",
+        principal_type=PrincipalType.HUMAN,
+        display_name="No Relationship Person",
     )
     guard = PrivilegedSurfaceGuard(trust_iam_db)
     with pytest.raises(PrivilegedAccessDeniedError, match="NOT_PROVEN"):
@@ -179,7 +185,9 @@ async def test_revoked_relationship_blocked(trust_iam_db: DatabaseEngine):
 
 @pytest.mark.asyncio
 async def test_expired_relationship_blocked(trust_iam_db: DatabaseEngine):
-    principal_id, _ = await _seed_employed_principal(trust_iam_db, expires_at="2000-01-01T00:00:00Z")
+    principal_id, _ = await _seed_employed_principal(
+        trust_iam_db, expires_at="2000-01-01T00:00:00Z"
+    )
     guard = PrivilegedSurfaceGuard(trust_iam_db)
     with pytest.raises(PrivilegedAccessDeniedError, match="EXPIRED"):
         await guard.authorize_privileged_operation(
@@ -323,7 +331,9 @@ async def test_proven_trust_does_not_bypass_role_check(trust_iam_db: DatabaseEng
 
 
 @pytest.mark.asyncio
-async def test_real_policy_lifecycle_callsite_enforces_trust_admission(trust_iam_db: DatabaseEngine):
+async def test_real_policy_lifecycle_callsite_enforces_trust_admission(
+    trust_iam_db: DatabaseEngine,
+):
     """Behavioral proof that the real production call site enforces admission.
 
     PolicyLifecycleManager.create_revision() is one of the four real ordinary privileged

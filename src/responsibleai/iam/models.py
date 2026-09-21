@@ -134,6 +134,8 @@ class SovereignRecoveryPolicy:
     id: str = field(default_factory=lambda: f"rec_pol_{uuid.uuid4().hex}")
     org_id: str = ""
     threshold: int = 2
-    guardians: list[dict[str, str]] = field(default_factory=list)  # list of {"name": str, "public_key": str}
+    guardians: list[dict[str, str]] = field(
+        default_factory=list
+    )  # list of {"name": str, "public_key": str}
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     active: bool = True

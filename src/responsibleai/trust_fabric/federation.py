@@ -218,11 +218,15 @@ class EnterpriseTrustMesh:
         # 2. Key lookup
         key = self.get_key(assertion.key_id)
         if key is None:
-            raise FederatedAssertionInvalidError(f"Unknown issuer federation key: {assertion.key_id!r}.")
+            raise FederatedAssertionInvalidError(
+                f"Unknown issuer federation key: {assertion.key_id!r}."
+            )
 
         # 3. Key status check (revocation)
         if key.status == "REVOKED":
-            raise FederatedAssertionInvalidError(f"Issuer federation key {assertion.key_id!r} has been revoked.")
+            raise FederatedAssertionInvalidError(
+                f"Issuer federation key {assertion.key_id!r} has been revoked."
+            )
 
         # 4. Key issuer check
         if key.issuer_org_id != assertion.issuer_org_id:
@@ -279,7 +283,7 @@ class EnterpriseTrustMesh:
         sig_valid = False
         prefix = f"sig_fed_{assertion.key_id}_"
         if assertion.signature.startswith(prefix):
-            sig_content = assertion.signature[len(prefix):]
+            sig_content = assertion.signature[len(prefix) :]
             try:
                 pub_key = ed25519.Ed25519PublicKey.from_public_bytes(key.public_bytes)
                 pub_key.verify(bytes.fromhex(sig_content), digest.encode("utf-8"))
@@ -297,7 +301,9 @@ class EnterpriseTrustMesh:
                 pass
 
         if not sig_valid:
-            raise FederatedAssertionInvalidError("Federated assertion cryptographic signature verification failed.")
+            raise FederatedAssertionInvalidError(
+                "Federated assertion cryptographic signature verification failed."
+            )
 
         # 11. Database replay, assertion revocation, principal status & authority revocation check
         async with self.db.raw.connect() as conn:
@@ -306,11 +312,15 @@ class EnterpriseTrustMesh:
             )
             row = (await conn.execute(stmt)).first()
             if not row:
-                raise FederatedAssertionInvalidError("Assertion record not found or nonce unregistered.")
+                raise FederatedAssertionInvalidError(
+                    "Assertion record not found or nonce unregistered."
+                )
 
             rec = dict(row._mapping)
             if rec["revoked_at"] is not None:
-                raise FederatedAssertionInvalidError("Federated assertion has been explicitly revoked.")
+                raise FederatedAssertionInvalidError(
+                    "Federated assertion has been explicitly revoked."
+                )
 
             # Check if principal is suspended/revoked
             p_stmt = select(trust_fabric_principals).where(
@@ -325,7 +335,9 @@ class EnterpriseTrustMesh:
                     )
 
             # Check if authority is revoked/expired
-            auth_id = assertion.claim_payload.get("authority_id") or assertion.claim_payload.get("edge_id")
+            auth_id = assertion.claim_payload.get("authority_id") or assertion.claim_payload.get(
+                "edge_id"
+            )
             if auth_id:
                 a_stmt = select(trust_fabric_authority_edges).where(
                     trust_fabric_authority_edges.c.id == auth_id
@@ -334,9 +346,13 @@ class EnterpriseTrustMesh:
                 if a_row:
                     a_map = dict(a_row._mapping)
                     if a_map.get("revoked_at") is not None:
-                        raise FederatedAssertionInvalidError(f"Federated authority {auth_id!r} has been revoked.")
+                        raise FederatedAssertionInvalidError(
+                            f"Federated authority {auth_id!r} has been revoked."
+                        )
                     if a_map.get("expires_at") and now_iso >= a_map["expires_at"]:
-                        raise FederatedAssertionInvalidError(f"Federated authority {auth_id!r} has expired.")
+                        raise FederatedAssertionInvalidError(
+                            f"Federated authority {auth_id!r} has expired."
+                        )
 
         # 12. Mark consumed
         self._consumed_nonces.add(assertion.nonce)

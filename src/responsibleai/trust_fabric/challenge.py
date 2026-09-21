@@ -118,7 +118,9 @@ class TrustChallengeProtocol:
             )
             row = (await conn.execute(stmt)).first()
             if not row:
-                raise CrossTenantAccessError(f"Challenge {challenge_id!r} not found for organization {org_id!r}.")
+                raise CrossTenantAccessError(
+                    f"Challenge {challenge_id!r} not found for organization {org_id!r}."
+                )
 
             data = dict(row._mapping)
 

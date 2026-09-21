@@ -17,8 +17,6 @@ import uuid
 
 import pytest
 
-from tests.docker_runtime import DOCKER_UNAVAILABLE_REASON, docker_available
-
 from responsibleai.isolation.container_backend import DockerContainerBackend
 from responsibleai.isolation.models import (
     DEFAULT_STRICT_PROFILE,
@@ -26,6 +24,7 @@ from responsibleai.isolation.models import (
     IsolationProfile,
     ResourceLimits,
 )
+from tests.docker_runtime import DOCKER_UNAVAILABLE_REASON, docker_available
 
 pytestmark = pytest.mark.skipif(not docker_available(), reason=DOCKER_UNAVAILABLE_REASON)
 
@@ -212,9 +211,7 @@ class TestCancellationPathCleanup:
         name = _container_name(org_id, action_id)
         _clear_container(name)
 
-        task = asyncio.create_task(
-            backend.execute(_make_req(action_id, org_id, LONG_SLEEP_SCRIPT))
-        )
+        task = asyncio.create_task(backend.execute(_make_req(action_id, org_id, LONG_SLEEP_SCRIPT)))
         await asyncio.sleep(0.5)  # Let container start
 
         task.cancel()
@@ -243,9 +240,7 @@ class TestCancellationPathCleanup:
         task_a = asyncio.create_task(
             backend.execute(_make_req(action_a, org_id, LONG_SLEEP_SCRIPT))
         )
-        task_b = asyncio.create_task(
-            backend.execute(_make_req(action_b, org_id, SUCCESS_SCRIPT))
-        )
+        task_b = asyncio.create_task(backend.execute(_make_req(action_b, org_id, SUCCESS_SCRIPT)))
 
         await asyncio.sleep(0.3)
         task_a.cancel()
@@ -273,11 +268,19 @@ class TestConcurrentBatchCleanup:
 
         spec = [
             ("s1", SUCCESS_SCRIPT, DEFAULT_STRICT_PROFILE),
-            ("t1", LONG_SLEEP_SCRIPT, IsolationProfile(resources=ResourceLimits(wall_timeout_seconds=0.5))),
+            (
+                "t1",
+                LONG_SLEEP_SCRIPT,
+                IsolationProfile(resources=ResourceLimits(wall_timeout_seconds=0.5)),
+            ),
             ("s2", SUCCESS_SCRIPT, DEFAULT_STRICT_PROFILE),
             ("e1", ERROR_SCRIPT, DEFAULT_STRICT_PROFILE),
             ("s3", SUCCESS_SCRIPT, DEFAULT_STRICT_PROFILE),
-            ("t2", LONG_SLEEP_SCRIPT, IsolationProfile(resources=ResourceLimits(wall_timeout_seconds=0.5))),
+            (
+                "t2",
+                LONG_SLEEP_SCRIPT,
+                IsolationProfile(resources=ResourceLimits(wall_timeout_seconds=0.5)),
+            ),
         ]
 
         container_names = []

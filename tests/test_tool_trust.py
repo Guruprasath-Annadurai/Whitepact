@@ -43,10 +43,9 @@ from responsibleai.governance.upstream_executor import (
     build_upstream_target,
     compute_upstream_target_fingerprint,
 )
-from responsibleai.supplychain.models import Finding, SupplyChainReport, Verdict
-
-from tests.org_http_fixtures import seed_org_with_key
 from responsibleai.rbac.models import Role
+from responsibleai.supplychain.models import Finding, SupplyChainReport, Verdict
+from tests.org_http_fixtures import seed_org_with_key
 
 
 def _fake_public_dns(monkeypatch: pytest.MonkeyPatch) -> None:

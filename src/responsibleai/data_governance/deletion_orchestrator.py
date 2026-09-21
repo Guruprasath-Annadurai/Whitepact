@@ -130,9 +130,8 @@ class TenantDeletionOrchestrator:
             raise LegalHoldActiveError(f"Cannot delete tenant {org_id}: active legal hold exists")
 
         if self._lifecycle_provider is None:
-            store_b_path = (
-                os.environ.get("WHITEPACT_STORE_B_PATH")
-                or os.environ.get("WHITEPACT_LIFECYCLE_STORE_PATH")
+            store_b_path = os.environ.get("WHITEPACT_STORE_B_PATH") or os.environ.get(
+                "WHITEPACT_LIFECYCLE_STORE_PATH"
             )
             if store_b_path:
                 try:
@@ -146,9 +145,7 @@ class TenantDeletionOrchestrator:
 
         async with self._engine.raw.connect() as conn:
             org_row = (
-                await conn.execute(
-                    select(organizations).where(organizations.c.id == org_id)
-                )
+                await conn.execute(select(organizations).where(organizations.c.id == org_id))
             ).fetchone()
             if not org_row:
                 raise TenantDeletionError(f"Organization {org_id} does not exist")
@@ -185,28 +182,42 @@ class TenantDeletionOrchestrator:
             r_sess = await conn.execute(delete(web_sessions).where(web_sessions.c.org_id == org_id))
             purged_counts["web_sessions"] = r_sess.rowcount or 0
 
-            r_iam_sess = await conn.execute(delete(iam_sessions).where(iam_sessions.c.org_id == org_id))
+            r_iam_sess = await conn.execute(
+                delete(iam_sessions).where(iam_sessions.c.org_id == org_id)
+            )
             purged_counts["iam_sessions"] = r_iam_sess.rowcount or 0
 
             r_keys = await conn.execute(delete(org_api_keys).where(org_api_keys.c.org_id == org_id))
             purged_counts["org_api_keys"] = r_keys.rowcount or 0
 
-            r_lineage = await conn.execute(delete(iam_api_key_lineage).where(iam_api_key_lineage.c.org_id == org_id))
+            r_lineage = await conn.execute(
+                delete(iam_api_key_lineage).where(iam_api_key_lineage.c.org_id == org_id)
+            )
             purged_counts["iam_api_key_lineage"] = r_lineage.rowcount or 0
 
-            r_jit = await conn.execute(delete(iam_jit_grants).where(iam_jit_grants.c.org_id == org_id))
+            r_jit = await conn.execute(
+                delete(iam_jit_grants).where(iam_jit_grants.c.org_id == org_id)
+            )
             purged_counts["iam_jit_grants"] = r_jit.rowcount or 0
 
-            r_bg = await conn.execute(delete(iam_break_glass_sessions).where(iam_break_glass_sessions.c.org_id == org_id))
+            r_bg = await conn.execute(
+                delete(iam_break_glass_sessions).where(iam_break_glass_sessions.c.org_id == org_id)
+            )
             purged_counts["iam_break_glass_sessions"] = r_bg.rowcount or 0
 
-            r_rec_p = await conn.execute(delete(iam_recovery_policies).where(iam_recovery_policies.c.org_id == org_id))
+            r_rec_p = await conn.execute(
+                delete(iam_recovery_policies).where(iam_recovery_policies.c.org_id == org_id)
+            )
             purged_counts["iam_recovery_policies"] = r_rec_p.rowcount or 0
 
-            r_rec_c = await conn.execute(delete(iam_recovery_challenges).where(iam_recovery_challenges.c.org_id == org_id))
+            r_rec_c = await conn.execute(
+                delete(iam_recovery_challenges).where(iam_recovery_challenges.c.org_id == org_id)
+            )
             purged_counts["iam_recovery_challenges"] = r_rec_c.rowcount or 0
 
-            r_nonces = await conn.execute(delete(iam_step_up_nonces).where(iam_step_up_nonces.c.org_id == org_id))
+            r_nonces = await conn.execute(
+                delete(iam_step_up_nonces).where(iam_step_up_nonces.c.org_id == org_id)
+            )
             purged_counts["iam_step_up_nonces"] = r_nonces.rowcount or 0
 
         # Cascading erasure of operational, personal, and secret tables with explicit column mappings

@@ -66,9 +66,7 @@ class AuthorityGraph:
         # Verify both principals exist and belong to org_id
         async with self.db.raw.connect() as conn:
             for pid in (subject_principal_id, target_principal_id):
-                stmt = select(trust_fabric_principals).where(
-                    trust_fabric_principals.c.id == pid
-                )
+                stmt = select(trust_fabric_principals).where(trust_fabric_principals.c.id == pid)
                 row = (await conn.execute(stmt)).first()
                 if not row:
                     raise PrincipalNotFoundError(f"Principal {pid!r} not found.")
@@ -158,9 +156,7 @@ class AuthorityGraph:
         """Grant bounded, explicit authority from a grantor to a grantee."""
         async with self.db.raw.connect() as conn:
             for pid in (grantor_principal_id, grantee_principal_id):
-                stmt = select(trust_fabric_principals).where(
-                    trust_fabric_principals.c.id == pid
-                )
+                stmt = select(trust_fabric_principals).where(trust_fabric_principals.c.id == pid)
                 row = (await conn.execute(stmt)).first()
                 if not row:
                     raise PrincipalNotFoundError(f"Principal {pid!r} not found.")

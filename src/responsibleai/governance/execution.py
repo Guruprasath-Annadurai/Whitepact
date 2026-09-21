@@ -320,15 +320,18 @@ class InternalToolExecutor:
         if broker is None:
             # In production or hosted execution, automatically initialize IsolationBroker
             import os
+
             is_prod = os.environ.get("ENVIRONMENT", "").lower() == "production"
             if is_prod or os.environ.get("WHITEPACT_ISOLATION_BACKEND"):
                 from responsibleai.isolation.broker import IsolationBroker
+
                 self._broker = IsolationBroker()
             else:
                 self._broker = None
 
     async def execute(self, authorization: ExecutionAuthorization, action: ActionRequest) -> Any:
         from responsibleai.data_governance.backup_defense import assert_restore_readiness_admitted
+
         assert_restore_readiness_admitted()
 
         await admit_execution(authorization, action, self._nonce_repo)
@@ -337,8 +340,10 @@ class InternalToolExecutor:
             return await self._broker.execute(authorization, action)
 
         import os
+
         if os.environ.get("ENVIRONMENT", "").lower() == "production":
             from responsibleai.isolation.errors import IsolationError
+
             raise IsolationError(
                 "Same-process tool execution is strictly forbidden in production. "
                 "An IsolationBroker is mandatory."

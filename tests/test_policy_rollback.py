@@ -47,7 +47,9 @@ async def sample_org(sqlite_engine: DatabaseEngine):
 
 
 @pytest.mark.asyncio
-async def test_safe_rollback_preserves_revision_history(sqlite_engine: DatabaseEngine, sample_org: str):
+async def test_safe_rollback_preserves_revision_history(
+    sqlite_engine: DatabaseEngine, sample_org: str
+):
     mgr = PolicyLifecycleManager(sqlite_engine)
 
     # 1. Create and activate Rev 1
@@ -64,7 +66,9 @@ async def test_safe_rollback_preserves_revision_history(sqlite_engine: DatabaseE
     await mgr.activate_revision(sample_org, rev2.id, "admin-2")
 
     # 3. Rollback to Rev 1
-    act_rollback = await mgr.rollback(sample_org, target_revision_num=1, rolled_back_by="admin-3", reason="Reverting to rev 1")
+    act_rollback = await mgr.rollback(
+        sample_org, target_revision_num=1, rolled_back_by="admin-3", reason="Reverting to rev 1"
+    )
     assert act_rollback.revision_id == rev1.id
     assert act_rollback.is_active is True
 
@@ -94,4 +98,6 @@ async def test_safe_rollback_preserves_revision_history(sqlite_engine: DatabaseE
 async def test_rollback_invalid_revision_fails(sqlite_engine: DatabaseEngine, sample_org: str):
     mgr = PolicyLifecycleManager(sqlite_engine)
     with pytest.raises(PolicyRevisionNotFoundError):
-        await mgr.rollback(sample_org, target_revision_num=999, rolled_back_by="admin", reason="Non-existent")
+        await mgr.rollback(
+            sample_org, target_revision_num=999, rolled_back_by="admin", reason="Non-existent"
+        )

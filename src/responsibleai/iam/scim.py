@@ -81,8 +81,20 @@ class ScimService:
         for grp in user_data.get("groups", []):
             grp_name = grp.get("value", "") if isinstance(grp, dict) else str(grp)
             clean_grp = grp_name.upper().replace(" ", "").replace("_", "").replace("-", "")
-            if any(res in clean_grp for res in ["OWNER", "ROOT", "SUPERADMIN", "GLOBALADMIN", "ADMINISTRAT", "WHITEPACTROOT"]):
-                raise ValueError("SCIM cannot assign reserved sovereign root or administrative groups.")
+            if any(
+                res in clean_grp
+                for res in [
+                    "OWNER",
+                    "ROOT",
+                    "SUPERADMIN",
+                    "GLOBALADMIN",
+                    "ADMINISTRAT",
+                    "WHITEPACTROOT",
+                ]
+            ):
+                raise ValueError(
+                    "SCIM cannot assign reserved sovereign root or administrative groups."
+                )
 
         scim_user_id = f"scim_usr_{uuid.uuid4().hex}"
         principal_id = f"prin_{uuid.uuid4().hex}"
@@ -162,7 +174,9 @@ class ScimService:
             )
 
         # 3. Cascading invalidation: revoke all active sessions
-        await self.session_service.revoke_all_principal_sessions(org_id=org_id, principal_id=principal_id)
+        await self.session_service.revoke_all_principal_sessions(
+            org_id=org_id, principal_id=principal_id
+        )
 
         # 4. Revoke all active JIT grants
         from responsibleai.db.engine import iam_jit_grants
@@ -191,7 +205,17 @@ class ScimService:
         """Create a SCIM group. Strictly blocks root/owner group escalation."""
         display_name = group_data.get("displayName") or ""
         clean_name = display_name.upper().replace(" ", "").replace("_", "").replace("-", "")
-        if any(res in clean_name for res in ["OWNER", "ROOT", "SUPERADMIN", "GLOBALADMIN", "ADMINISTRAT", "WHITEPACTROOT"]):
+        if any(
+            res in clean_name
+            for res in [
+                "OWNER",
+                "ROOT",
+                "SUPERADMIN",
+                "GLOBALADMIN",
+                "ADMINISTRAT",
+                "WHITEPACTROOT",
+            ]
+        ):
             raise ValueError("SCIM cannot create reserved sovereign root or administrative groups.")
 
         now = datetime.now(UTC).isoformat()

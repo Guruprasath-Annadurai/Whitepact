@@ -83,7 +83,9 @@ class CredentialIssuancePolicy:
                 await conn.execute(select(web_users).where(web_users.c.id == principal_user_id))
             ).fetchone()
             org = (
-                await conn.execute(select(organizations).where(organizations.c.id == organization_id))
+                await conn.execute(
+                    select(organizations).where(organizations.c.id == organization_id)
+                )
             ).fetchone()
             membership = (
                 await conn.execute(
@@ -95,7 +97,9 @@ class CredentialIssuancePolicy:
             ).fetchone()
             env = (
                 await conn.execute(
-                    select(enterprise_environments).where(enterprise_environments.c.id == environment_id)
+                    select(enterprise_environments).where(
+                        enterprise_environments.c.id == environment_id
+                    )
                 )
             ).fetchone()
 
@@ -110,7 +114,9 @@ class CredentialIssuancePolicy:
             )
 
         if not principal_user_id:
-            return denied(API_KEY_ISSUANCE_NOT_ALLOWED, "Authenticated human principal is required.")
+            return denied(
+                API_KEY_ISSUANCE_NOT_ALLOWED, "Authenticated human principal is required."
+            )
         if user is None or user.disabled:
             return denied(API_KEY_ISSUANCE_NOT_ALLOWED, "Principal is missing or disabled.")
         if getattr(user, "abuse_hold", 0):
@@ -127,7 +133,9 @@ class CredentialIssuancePolicy:
         if env is None:
             return denied(API_KEY_ISSUANCE_NOT_ALLOWED, "Environment not found.")
         if env.org_id != organization_id:
-            return denied(API_KEY_ISSUANCE_NOT_ALLOWED, "Environment does not belong to this organization.")
+            return denied(
+                API_KEY_ISSUANCE_NOT_ALLOWED, "Environment does not belong to this organization."
+            )
         if env.status != "ACTIVE":
             return denied(API_KEY_ISSUANCE_NOT_ALLOWED, "Environment is not active.")
 
@@ -140,7 +148,9 @@ class CredentialIssuancePolicy:
         if human_status == "SUSPENDED":
             return denied(VERIFICATION_SUSPENDED, "Identity verification is suspended.", env.type)
         if human_status == "REVIEW_REQUIRED":
-            return denied(VERIFICATION_REVIEW_REQUIRED, "Identity verification is under review.", env.type)
+            return denied(
+                VERIFICATION_REVIEW_REQUIRED, "Identity verification is under review.", env.type
+            )
         if human_status != "IDENTITY_VERIFIED":
             return denied(
                 IDENTITY_VERIFICATION_REQUIRED,
@@ -153,7 +163,9 @@ class CredentialIssuancePolicy:
         if workspace_kind == "ORGANIZATION" and env.type == "PRODUCTION":
             org_v = await self._verification.get_org_status(organization_id)
             if org_v["status"] == "SUSPENDED":
-                return denied(VERIFICATION_SUSPENDED, "Organization verification is suspended.", env.type)
+                return denied(
+                    VERIFICATION_SUSPENDED, "Organization verification is suspended.", env.type
+                )
             if org_v["status"] != "ORGANIZATION_VERIFIED":
                 return denied(
                     ORGANIZATION_VERIFICATION_REQUIRED,

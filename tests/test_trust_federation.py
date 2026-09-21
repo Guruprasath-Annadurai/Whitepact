@@ -32,8 +32,18 @@ async def mesh_db(tmp_path):
             organizations.insert(),
             [
                 {"id": "org_issuer", "name": "Issuer Org", "slug": "issuer", "created_at": "now"},
-                {"id": "org_partner", "name": "Partner Org", "slug": "partner", "created_at": "now"},
-                {"id": "org_attacker", "name": "Attacker Org", "slug": "attacker", "created_at": "now"},
+                {
+                    "id": "org_partner",
+                    "name": "Partner Org",
+                    "slug": "partner",
+                    "created_at": "now",
+                },
+                {
+                    "id": "org_attacker",
+                    "name": "Attacker Org",
+                    "slug": "attacker",
+                    "created_at": "now",
+                },
             ],
         )
         await conn.execute(
@@ -196,7 +206,9 @@ async def test_federation_tampering_prevented(mesh_db):
     # Tamper with payload (escalate amount to 500000)
     tampered_assertion = replace(assertion, claim_payload={"amount_limit": 500000})
 
-    with pytest.raises(FederatedAssertionInvalidError, match="cryptographic signature verification failed"):
+    with pytest.raises(
+        FederatedAssertionInvalidError, match="cryptographic signature verification failed"
+    ):
         await mesh.verify_and_consume_assertion(
             tampered_assertion,
             verifying_org_id="org_partner",
@@ -378,7 +390,9 @@ async def test_federation_revoked_principal_and_authority_rejected(mesh_db):
         key_id="fed_key_2026",
     )
     with pytest.raises(FederatedAssertionInvalidError, match="revoked"):
-        await mesh.verify_and_consume_assertion(assertion_revoked_auth, verifying_org_id="org_partner")
+        await mesh.verify_and_consume_assertion(
+            assertion_revoked_auth, verifying_org_id="org_partner"
+        )
 
 
 @pytest.mark.asyncio

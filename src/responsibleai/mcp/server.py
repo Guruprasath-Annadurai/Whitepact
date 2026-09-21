@@ -369,8 +369,7 @@ def hosted_production_preflight(
         )
     if getattr(settings, "phase7a_dispatcher_enabled", False):
         raise HostedProductionSecurityError(
-            "Production Gate B is CLOSED. PHASE7A_DISPATCHER_ENABLED is forbidden "
-            "in production."
+            "Production Gate B is CLOSED. PHASE7A_DISPATCHER_ENABLED is forbidden in production."
         )
     if not settings.mcp_governance_enabled:
         raise HostedProductionSecurityError(
@@ -473,7 +472,10 @@ class _AuthFailureLimiter:
             now = asyncio.get_running_loop().time()
             if len(self._prune(key, now)) >= self._max_failures:
                 return True
-            if peer_key and len(self._prune(f"peer_agg:{peer_key}", now)) >= self._peer_max_failures:
+            if (
+                peer_key
+                and len(self._prune(f"peer_agg:{peer_key}", now)) >= self._peer_max_failures
+            ):
                 return True
             return False
 
@@ -661,9 +663,9 @@ def _build_http_app() -> Any:
             if _governance_webhook_manager is not None:
                 _governance_webhook_manager.stop_retry_worker()
 
-    trust_forwarded = _env_bool("WHITEPACT_MCP_TRUST_FORWARDED_HEADERS", default=False) or _env_bool(
-        "RAI_MCP_HTTP_TRUST_FORWARDED_HEADERS", default=False
-    )
+    trust_forwarded = _env_bool(
+        "WHITEPACT_MCP_TRUST_FORWARDED_HEADERS", default=False
+    ) or _env_bool("RAI_MCP_HTTP_TRUST_FORWARDED_HEADERS", default=False)
 
     def _peer_ip(request: Request) -> str:
         if trust_forwarded:

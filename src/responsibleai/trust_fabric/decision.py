@@ -124,7 +124,10 @@ class TrustDecisionEngine:
             principal.id, org_id=request.target_org_id
         )
 
-        if assurance.conflict_state == "CONFLICTED" or principal.lifecycle_state == PrincipalState.CONFLICTED:
+        if (
+            assurance.conflict_state == "CONFLICTED"
+            or principal.lifecycle_state == PrincipalState.CONFLICTED
+        ):
             return TrustDecisionResponse(
                 decision=DecisionOutcome.REQUIRES_REVIEW,
                 reason_code="TRUST_CONFLICT_DETECTED",
@@ -152,7 +155,11 @@ class TrustDecisionEngine:
                 if "exceeded" in auth_reason.lower() or "no_matching" in auth_reason.lower()
                 else DecisionOutcome.REQUIRES_REVIEW
             )
-            code = "AUTHORITY_CEILING_EXCEEDED" if "exceeded" in auth_reason.lower() else "AUTHORITY_NOT_SATISFIED"
+            code = (
+                "AUTHORITY_CEILING_EXCEEDED"
+                if "exceeded" in auth_reason.lower()
+                else "AUTHORITY_NOT_SATISFIED"
+            )
             resp = TrustDecisionResponse(
                 decision=outcome,
                 reason_code=code,

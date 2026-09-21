@@ -340,7 +340,9 @@ async def test_transition_5_organization_active_to_dissolved(mon_db):
 
         p_row = (
             await conn.execute(
-                select(trust_fabric_principals).where(trust_fabric_principals.c.id == "wp_pr_corp_user")
+                select(trust_fabric_principals).where(
+                    trust_fabric_principals.c.id == "wp_pr_corp_user"
+                )
             )
         ).first()
         assert p_row._mapping["lifecycle_state"] == PrincipalState.DISABLED.value

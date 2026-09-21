@@ -51,6 +51,7 @@ from responsibleai.webhooks.models import WebhookConfig, WebhookEvent
 
 # ── Test Helpers ──────────────────────────────────────────────────────────────
 
+
 class _SyntheticLoopbackServer:
     """Minimal asyncio TCP server on loopback — detects unauthorized outbound connections."""
 
@@ -125,6 +126,7 @@ def _make_addrinfo(ip: str, port: int = 0) -> list[Any]:
 
 # ── 1. RED TEST — Canonical Vulnerability Reproduction ───────────────────────
 
+
 @pytest.mark.asyncio
 async def test_patched_webhook_manager_blocks_dns_rebinding(
     monkeypatch: pytest.MonkeyPatch,
@@ -177,41 +179,48 @@ async def test_patched_webhook_manager_blocks_dns_rebinding(
 
 # ── 2. is_address_allowed — Address Classifier Tests ─────────────────────────
 
-@pytest.mark.parametrize("ip_str", [
-    "127.0.0.1",        # IPv4 loopback
-    "127.255.255.255",  # IPv4 loopback range
-    "::1",              # IPv6 loopback
-    "10.0.0.1",         # RFC1918 private
-    "172.16.0.1",       # RFC1918 private
-    "192.168.1.1",      # RFC1918 private
-    "169.254.169.254",  # link-local / AWS metadata
-    "169.254.0.1",      # link-local
-    "fe80::1",          # IPv6 link-local
-    "0.0.0.0",          # unspecified
-    "::",               # IPv6 unspecified
-    "224.0.0.1",        # multicast
-    "ff02::1",          # IPv6 multicast
-    "100.64.0.1",       # CGNAT
-    "100.127.255.255",  # CGNAT end
-    "::ffff:127.0.0.1", # IPv4-mapped IPv6 loopback
-    "::ffff:10.0.0.1",  # IPv4-mapped IPv6 private
-    "::ffff:192.168.0.1", # IPv4-mapped IPv6 private
-    "fc00::1",          # IPv6 ULA
-    "fd00::1",          # IPv6 ULA
-    "fd12:3456:789a::1", # IPv6 ULA
-])
+
+@pytest.mark.parametrize(
+    "ip_str",
+    [
+        "127.0.0.1",  # IPv4 loopback
+        "127.255.255.255",  # IPv4 loopback range
+        "::1",  # IPv6 loopback
+        "10.0.0.1",  # RFC1918 private
+        "172.16.0.1",  # RFC1918 private
+        "192.168.1.1",  # RFC1918 private
+        "169.254.169.254",  # link-local / AWS metadata
+        "169.254.0.1",  # link-local
+        "fe80::1",  # IPv6 link-local
+        "0.0.0.0",  # unspecified
+        "::",  # IPv6 unspecified
+        "224.0.0.1",  # multicast
+        "ff02::1",  # IPv6 multicast
+        "100.64.0.1",  # CGNAT
+        "100.127.255.255",  # CGNAT end
+        "::ffff:127.0.0.1",  # IPv4-mapped IPv6 loopback
+        "::ffff:10.0.0.1",  # IPv4-mapped IPv6 private
+        "::ffff:192.168.0.1",  # IPv4-mapped IPv6 private
+        "fc00::1",  # IPv6 ULA
+        "fd00::1",  # IPv6 ULA
+        "fd12:3456:789a::1",  # IPv6 ULA
+    ],
+)
 def test_is_address_allowed_blocks_forbidden(ip_str: str) -> None:
     assert is_address_allowed(ip_str, DestinationPolicy.PUBLIC_ONLY) is False, (
         f"Expected {ip_str!r} to be BLOCKED under PUBLIC_ONLY policy"
     )
 
 
-@pytest.mark.parametrize("ip_str", [
-    "93.184.216.34",    # example.com
-    "8.8.8.8",          # Google DNS
-    "1.1.1.1",          # Cloudflare DNS
-    "2001:4860:4860::8888",  # Google DNS IPv6
-])
+@pytest.mark.parametrize(
+    "ip_str",
+    [
+        "93.184.216.34",  # example.com
+        "8.8.8.8",  # Google DNS
+        "1.1.1.1",  # Cloudflare DNS
+        "2001:4860:4860::8888",  # Google DNS IPv6
+    ],
+)
 def test_is_address_allowed_permits_public(ip_str: str) -> None:
     assert is_address_allowed(ip_str, DestinationPolicy.PUBLIC_ONLY) is True, (
         f"Expected {ip_str!r} to be ALLOWED under PUBLIC_ONLY policy"
@@ -233,42 +242,49 @@ def test_is_address_allowed_local_dev_permits_everything() -> None:
 
 # ── 3. Static URL Validation ──────────────────────────────────────────────────
 
-@pytest.mark.parametrize("url,exc_type", [
-    # Scheme violations
-    ("ftp://example.com/path", InvalidURLError),
-    ("file:///etc/passwd", InvalidURLError),
-    ("", InvalidURLError),
-    ("not-a-url", InvalidURLError),
-    # CRLF / control characters
-    ("http://example.com\r\n/path", InvalidURLError),
-    ("http://example.com\t/path", InvalidURLError),
-    # Direct forbidden IP literals
-    ("http://127.0.0.1/path", ForbiddenDestinationError),
-    ("http://10.0.0.1/path", ForbiddenDestinationError),
-    ("http://192.168.1.1:8080/hook", ForbiddenDestinationError),
-    ("http://169.254.169.254/latest/meta-data/", ForbiddenDestinationError),
-    ("http://[::1]/path", ForbiddenDestinationError),
-    ("http://[fc00::1]/path", ForbiddenDestinationError),
-    ("http://[::ffff:127.0.0.1]/path", ForbiddenDestinationError),
-    # Obfuscated IP literals
-    ("http://2130706433/path", ForbiddenDestinationError),   # integer IPv4 127.0.0.1
-    ("http://0177.0.0.1/path", ForbiddenDestinationError),   # leading-zero octal notation
-    ("http://0x7f.0.0.1/path", ForbiddenDestinationError),   # hex notation
-    # Forbidden hostnames
-    ("http://localhost/path", ForbiddenDestinationError),
-    ("http://localhost./path", ForbiddenDestinationError),
-    ("http://metadata.google.internal/", ForbiddenDestinationError),
-])
+
+@pytest.mark.parametrize(
+    "url,exc_type",
+    [
+        # Scheme violations
+        ("ftp://example.com/path", InvalidURLError),
+        ("file:///etc/passwd", InvalidURLError),
+        ("", InvalidURLError),
+        ("not-a-url", InvalidURLError),
+        # CRLF / control characters
+        ("http://example.com\r\n/path", InvalidURLError),
+        ("http://example.com\t/path", InvalidURLError),
+        # Direct forbidden IP literals
+        ("http://127.0.0.1/path", ForbiddenDestinationError),
+        ("http://10.0.0.1/path", ForbiddenDestinationError),
+        ("http://192.168.1.1:8080/hook", ForbiddenDestinationError),
+        ("http://169.254.169.254/latest/meta-data/", ForbiddenDestinationError),
+        ("http://[::1]/path", ForbiddenDestinationError),
+        ("http://[fc00::1]/path", ForbiddenDestinationError),
+        ("http://[::ffff:127.0.0.1]/path", ForbiddenDestinationError),
+        # Obfuscated IP literals
+        ("http://2130706433/path", ForbiddenDestinationError),  # integer IPv4 127.0.0.1
+        ("http://0177.0.0.1/path", ForbiddenDestinationError),  # leading-zero octal notation
+        ("http://0x7f.0.0.1/path", ForbiddenDestinationError),  # hex notation
+        # Forbidden hostnames
+        ("http://localhost/path", ForbiddenDestinationError),
+        ("http://localhost./path", ForbiddenDestinationError),
+        ("http://metadata.google.internal/", ForbiddenDestinationError),
+    ],
+)
 def test_normalize_and_validate_url_rejects_forbidden(url: str, exc_type: type) -> None:
     with pytest.raises(exc_type):
         normalize_and_validate_url(url)
 
 
-@pytest.mark.parametrize("url", [
-    "https://example.com/webhook",
-    "http://example.com:8080/hook",
-    "https://api.example.org/v1/events",
-])
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://example.com/webhook",
+        "http://example.com:8080/hook",
+        "https://api.example.org/v1/events",
+    ],
+)
 def test_normalize_and_validate_url_accepts_public(url: str) -> None:
     result_url, host, port = normalize_and_validate_url(url)
     assert host
@@ -276,6 +292,7 @@ def test_normalize_and_validate_url_accepts_public(url: str) -> None:
 
 
 # ── 4. validate_webhook_url — backward compat wrapper ────────────────────────
+
 
 def test_validate_webhook_url_rejects_private_ip() -> None:
     with pytest.raises(UnsafeWebhookURLError):
@@ -308,6 +325,7 @@ def test_validate_webhook_url_accepts_public_url() -> None:
 
 
 # ── 5. DNS Resolution Fail-Closed (SystemDNSResolver) ────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_systemdns_resolver_fails_closed_on_any_forbidden_address(
@@ -369,22 +387,26 @@ async def test_systemdns_resolver_fails_on_dns_error(
 
 # ── 6. Fail-Closed Matrix ─────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("url", [
-    "http://127.0.0.1/hook",
-    "http://10.0.0.1/hook",
-    "http://192.168.0.1/hook",
-    "http://172.16.0.1/hook",
-    "http://169.254.169.254/hook",
-    "http://100.64.0.1/hook",
-    "http://[::1]/hook",
-    "http://[fc00::1]/hook",
-    "http://[fd00::1]/hook",
-    "http://[::ffff:10.0.0.1]/hook",
-    "http://localhost/hook",
-    "http://metadata.google.internal/hook",
-    "ftp://example.com/hook",
-    "",
-])
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://127.0.0.1/hook",
+        "http://10.0.0.1/hook",
+        "http://192.168.0.1/hook",
+        "http://172.16.0.1/hook",
+        "http://169.254.169.254/hook",
+        "http://100.64.0.1/hook",
+        "http://[::1]/hook",
+        "http://[fc00::1]/hook",
+        "http://[fd00::1]/hook",
+        "http://[::ffff:10.0.0.1]/hook",
+        "http://localhost/hook",
+        "http://metadata.google.internal/hook",
+        "ftp://example.com/hook",
+        "",
+    ],
+)
 def test_validate_outbound_url_fail_closed_matrix(url: str) -> None:
     """Every forbidden URL variant MUST raise — fail-closed guarantee."""
     with pytest.raises((ForbiddenDestinationError, InvalidURLError, UnsafeWebhookURLError)):
@@ -392,6 +414,7 @@ def test_validate_outbound_url_fail_closed_matrix(url: str) -> None:
 
 
 # ── 7. Redirect Rebinding — redirects MUST not be followed ───────────────────
+
 
 @pytest.mark.asyncio
 async def test_safe_client_does_not_follow_redirects_to_private(
@@ -404,7 +427,9 @@ async def test_safe_client_does_not_follow_redirects_to_private(
         ) as redirector:
             original_getaddrinfo = socket.getaddrinfo
 
-            def redirector_getaddrinfo(host: Any, port: Any, *args: Any, **kwargs: Any) -> list[Any]:
+            def redirector_getaddrinfo(
+                host: Any, port: Any, *args: Any, **kwargs: Any
+            ) -> list[Any]:
                 hostname = host.decode("ascii") if isinstance(host, bytes) else str(host)
                 if hostname == "redirector.example":
                     return _make_addrinfo("93.184.216.34", port or 0)
@@ -416,7 +441,9 @@ async def test_safe_client_does_not_follow_redirects_to_private(
             async with create_safe_async_client(timeout=5.0) as client:
                 # The redirect server itself is on 127.0.0.1 — connection to it must
                 # be blocked at connect time (ForbiddenDestinationError or transport error)
-                with pytest.raises((ForbiddenDestinationError, DNSResolutionError, OSError, httpx.TransportError)):
+                with pytest.raises(
+                    (ForbiddenDestinationError, DNSResolutionError, OSError, httpx.TransportError)
+                ):
                     await client.post(
                         f"http://redirector.example:{redirector.port}/hook",
                         content=b"{}",
@@ -428,6 +455,7 @@ async def test_safe_client_does_not_follow_redirects_to_private(
 
 
 # ── 8. Proxy Environment Bypass — trust_env=False ────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_safe_client_ignores_proxy_environment(
@@ -462,6 +490,7 @@ async def test_safe_client_ignores_proxy_environment(
 
 # ── 9. IPv6 Bypass — ::ffff: mapped addresses ────────────────────────────────
 
+
 def test_ipv4_mapped_ipv6_loopback_is_blocked() -> None:
     assert is_address_allowed("::ffff:127.0.0.1", DestinationPolicy.PUBLIC_ONLY) is False
 
@@ -483,6 +512,7 @@ def test_ula_ipv6_is_blocked() -> None:
 
 # ── 10. CGNAT Blocking ────────────────────────────────────────────────────────
 
+
 def test_cgnat_addresses_blocked() -> None:
     for last_octet in (1, 127, 254):
         ip = f"100.64.0.{last_octet}"
@@ -495,6 +525,7 @@ def test_cgnat_addresses_blocked() -> None:
 
 
 # ── 11. Metadata Blocking ─────────────────────────────────────────────────────
+
 
 def test_metadata_v4_blocked() -> None:
     assert is_address_allowed("169.254.169.254", DestinationPolicy.PUBLIC_ONLY) is False
@@ -511,6 +542,7 @@ def test_metadata_v4_also_link_local() -> None:
 
 
 # ── 12. Static IP URL Blocking ────────────────────────────────────────────────
+
 
 def test_integer_ipv4_literal_blocked() -> None:
     # 2130706433 == 127.0.0.1
@@ -535,21 +567,26 @@ def test_direct_private_ipv4_blocked() -> None:
 
 # ── 13. Malformed URL Handling ────────────────────────────────────────────────
 
-@pytest.mark.parametrize("url", [
-    "",
-    "   ",
-    "http://",
-    "//example.com",
-    "http://example.com\r\nX-Injected: evil",
-    "javascript:alert(1)",
-    "data:text/html,<h1>Hello</h1>",
-])
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "",
+        "   ",
+        "http://",
+        "//example.com",
+        "http://example.com\r\nX-Injected: evil",
+        "javascript:alert(1)",
+        "data:text/html,<h1>Hello</h1>",
+    ],
+)
 def test_malformed_url_raises(url: str) -> None:
     with pytest.raises((InvalidURLError, ForbiddenDestinationError)):
         normalize_and_validate_url(url)
 
 
 # ── 14. Upstream MCP URL Validation ──────────────────────────────────────────
+
 
 def test_validate_upstream_server_url_rejects_private() -> None:
     with pytest.raises(UnsafeUpstreamServerURLError):
@@ -578,8 +615,9 @@ def test_validate_upstream_server_url_rejects_bad_scheme() -> None:
 
 def test_validate_upstream_server_url_accepts_public(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        socket, "getaddrinfo",
-        lambda host, *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))]
+        socket,
+        "getaddrinfo",
+        lambda host, *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))],
     )
     validate_upstream_server_url("https://mcp.example.com/v1/tools")
 
@@ -591,14 +629,16 @@ def test_build_upstream_server_rejects_private_url() -> None:
 
 def test_build_upstream_server_accepts_public_url(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        socket, "getaddrinfo",
-        lambda host, *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))]
+        socket,
+        "getaddrinfo",
+        lambda host, *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))],
     )
     server = build_upstream_server("org1", "Public MCP", "https://mcp.example.com/")
     assert server.url == "https://mcp.example.com/"
 
 
 # ── 15. Webhook Delivery Adversarial Tests ────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_webhook_delivery_blocked_cgnat(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -632,9 +672,7 @@ async def test_webhook_delivery_blocked_ipv6_ula(monkeypatch: pytest.MonkeyPatch
     def ula_getaddrinfo(host: Any, port: Any, *args: Any, **kwargs: Any) -> list[Any]:
         hostname = host.decode("ascii") if isinstance(host, bytes) else str(host)
         if hostname == "ula.example":
-            return [
-                (socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("fd00::1", port or 0, 0, 0))
-            ]
+            return [(socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("fd00::1", port or 0, 0, 0))]
         return original_getaddrinfo(host, port, *args, **kwargs)
 
     monkeypatch.setattr(socket, "getaddrinfo", ula_getaddrinfo)
@@ -682,6 +720,7 @@ async def test_webhook_delivery_mixed_safe_unsafe_dns_blocked(
 
 # ── 16. Retry Re-Resolution Safety ───────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_rebinding_on_second_delivery_attempt_blocked(
     monkeypatch: pytest.MonkeyPatch,
@@ -726,6 +765,7 @@ async def test_rebinding_on_second_delivery_attempt_blocked(
 
 # ── 17. CNAME Resolution Proofs ───────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_cname_chain_resolving_to_private_ip_is_blocked(
     monkeypatch: pytest.MonkeyPatch,
@@ -741,7 +781,13 @@ async def test_cname_chain_resolving_to_private_ip_is_blocked(
         hostname = host.decode("ascii") if isinstance(host, bytes) else str(host)
         if hostname in ("public.example", "intermediate.example"):
             return [
-                (socket.AF_INET, socket.SOCK_STREAM, 6, "intermediate.example", ("127.0.0.1", port or 0))
+                (
+                    socket.AF_INET,
+                    socket.SOCK_STREAM,
+                    6,
+                    "intermediate.example",
+                    ("127.0.0.1", port or 0),
+                )
             ]
         return original_getaddrinfo(host, port, *args, **kwargs)
 
@@ -771,7 +817,13 @@ async def test_multilevel_cname_chain_resolving_to_safe_public_ip_passes(
         hostname = host.decode("ascii") if isinstance(host, bytes) else str(host)
         if hostname in ("cname1.example", "cname2.example", "cname3.example"):
             return [
-                (socket.AF_INET, socket.SOCK_STREAM, 6, "cname3.example", ("93.184.216.34", port or 0))
+                (
+                    socket.AF_INET,
+                    socket.SOCK_STREAM,
+                    6,
+                    "cname3.example",
+                    ("93.184.216.34", port or 0),
+                )
             ]
         return original_getaddrinfo(host, port, *args, **kwargs)
 
@@ -787,6 +839,7 @@ async def test_multilevel_cname_chain_resolving_to_safe_public_ip_passes(
 
 
 # ── 18. TLS / SNI / Hostname & Certificate Validation Proofs ──────────────────
+
 
 def test_tls_verification_cannot_be_disabled() -> None:
     """verify=False is strictly forbidden in SafeAsyncHTTPTransport."""
@@ -817,14 +870,25 @@ async def test_tls_sni_and_host_header_preserves_original_hostname_with_pinned_i
         .serial_number(1000)
         .not_valid_before(datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=1))
         .not_valid_after(datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=1))
-        .add_extension(x509.SubjectAlternativeName([x509.DNSName("safe.example.test")]), critical=False)
+        .add_extension(
+            x509.SubjectAlternativeName([x509.DNSName("safe.example.test")]), critical=False
+        )
         .sign(key, hashes.SHA256())
     )
 
-    with tempfile.NamedTemporaryFile(suffix=".pem") as cert_file, tempfile.NamedTemporaryFile(suffix=".pem") as key_file:
+    with (
+        tempfile.NamedTemporaryFile(suffix=".pem") as cert_file,
+        tempfile.NamedTemporaryFile(suffix=".pem") as key_file,
+    ):
         cert_file.write(cert.public_bytes(serialization.Encoding.PEM))
         cert_file.flush()
-        key_file.write(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
+        key_file.write(
+            key.private_bytes(
+                serialization.Encoding.PEM,
+                serialization.PrivateFormat.PKCS8,
+                serialization.NoEncryption(),
+            )
+        )
         key_file.flush()
 
         received_sni: list[str | None] = []
@@ -840,7 +904,9 @@ async def test_tls_sni_and_host_header_preserves_original_hostname_with_pinned_i
         client_ssl = ssl.create_default_context(cafile=cert_file.name)
 
         class PinnedLoopbackResolver:
-            async def resolve(self, host: str, port: int, policy: DestinationPolicy) -> list[ipaddress.IPv4Address]:
+            async def resolve(
+                self, host: str, port: int, policy: DestinationPolicy
+            ) -> list[ipaddress.IPv4Address]:
                 return [ipaddress.IPv4Address("127.0.0.1")]
 
         async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
@@ -871,7 +937,9 @@ async def test_tls_sni_and_host_header_preserves_original_hostname_with_pinned_i
         # Assertions
         assert received_sni == ["safe.example.test"], f"TLS SNI mismatch: {received_sni}"
         assert len(received_host_headers) == 1
-        assert received_host_headers[0].startswith("Host: safe.example.test:"), f"Host header mismatch: {received_host_headers}"
+        assert received_host_headers[0].startswith("Host: safe.example.test:"), (
+            f"Host header mismatch: {received_host_headers}"
+        )
 
 
 @pytest.mark.asyncio
@@ -896,14 +964,25 @@ async def test_tls_certificate_hostname_mismatch_is_rejected() -> None:
         .serial_number(1000)
         .not_valid_before(datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=1))
         .not_valid_after(datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=1))
-        .add_extension(x509.SubjectAlternativeName([x509.DNSName("safe.example.test")]), critical=False)
+        .add_extension(
+            x509.SubjectAlternativeName([x509.DNSName("safe.example.test")]), critical=False
+        )
         .sign(key, hashes.SHA256())
     )
 
-    with tempfile.NamedTemporaryFile(suffix=".pem") as cert_file, tempfile.NamedTemporaryFile(suffix=".pem") as key_file:
+    with (
+        tempfile.NamedTemporaryFile(suffix=".pem") as cert_file,
+        tempfile.NamedTemporaryFile(suffix=".pem") as key_file,
+    ):
         cert_file.write(cert.public_bytes(serialization.Encoding.PEM))
         cert_file.flush()
-        key_file.write(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
+        key_file.write(
+            key.private_bytes(
+                serialization.Encoding.PEM,
+                serialization.PrivateFormat.PKCS8,
+                serialization.NoEncryption(),
+            )
+        )
         key_file.flush()
 
         server_ssl = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -911,7 +990,9 @@ async def test_tls_certificate_hostname_mismatch_is_rejected() -> None:
         client_ssl = ssl.create_default_context(cafile=cert_file.name)
 
         class PinnedLoopbackResolver:
-            async def resolve(self, host: str, port: int, policy: DestinationPolicy) -> list[ipaddress.IPv4Address]:
+            async def resolve(
+                self, host: str, port: int, policy: DestinationPolicy
+            ) -> list[ipaddress.IPv4Address]:
                 return [ipaddress.IPv4Address("127.0.0.1")]
 
         async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
@@ -941,6 +1022,7 @@ async def test_tls_certificate_hostname_mismatch_is_rejected() -> None:
 
 # ── 19. Destination Policy Mode Confusion Proofs ───────────────────────────────
 
+
 def test_untrusted_request_cannot_select_trusted_private_or_local_dev() -> None:
     """Prove that untrusted request data (WebhookConfig, URL params, etc.) cannot select
 
@@ -954,7 +1036,9 @@ def test_untrusted_request_cannot_select_trusted_private_or_local_dev() -> None:
     # WebhookManager always uses DestinationPolicy.PUBLIC_ONLY
     # In validate_webhook_url, policy is hardcoded to PUBLIC_ONLY
     with pytest.raises(UnsafeWebhookURLError):
-        validate_webhook_url("http://10.0.0.1/hook")  # Would pass under TRUSTED_PRIVATE, but rejected
+        validate_webhook_url(
+            "http://10.0.0.1/hook"
+        )  # Would pass under TRUSTED_PRIVATE, but rejected
 
 
 def test_production_default_is_strictly_public_only() -> None:

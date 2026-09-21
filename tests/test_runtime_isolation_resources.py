@@ -21,9 +21,7 @@ class TestResourceGovernance:
     async def test_output_clamping_limits_stdout(self):
         backend = LocalSubprocessBackend()
         # Request with 1024 bytes max output limit
-        strict_limits = IsolationProfile(
-            resources=ResourceLimits(max_output_bytes=256)
-        )
+        strict_limits = IsolationProfile(resources=ResourceLimits(max_output_bytes=256))
         request = IsolatedExecutionRequest(
             action_id="act-clamp",
             organization_id="org-clamp",

@@ -379,13 +379,17 @@ async def test_matrix_v10_direct_raw_socket_fails_closed() -> None:
     with patch.object(docker_backend, "is_available", return_value=True):
         with pytest.raises(IsolationPolicyViolationError) as exc_info:
             await docker_backend.execute(req)
-        assert "Direct network egress from isolated container execution is forbidden" in str(exc_info.value)
+        assert "Direct network egress from isolated container execution is forbidden" in str(
+            exc_info.value
+        )
 
     # 2. Local subprocess backend must also refuse execution immediately
     subprocess_backend = LocalSubprocessBackend()
     with pytest.raises(IsolationPolicyViolationError) as exc_info:
         await subprocess_backend.execute(req)
-    assert "Direct network egress from isolated subprocess execution is forbidden" in str(exc_info.value)
+    assert "Direct network egress from isolated subprocess execution is forbidden" in str(
+        exc_info.value
+    )
 
 
 @pytest.mark.asyncio
@@ -394,7 +398,9 @@ async def test_matrix_v11_subprocess_utility_network_bypass_prevented() -> None:
     with patch.dict(os.environ, {"ENVIRONMENT": "production"}):
         with pytest.raises(InvalidBackendModeError) as exc_info:
             IsolationBroker(mode=BackendMode.LOCAL_DEV)
-        assert "LOCAL_DEV isolation backend mode is strictly forbidden in production" in str(exc_info.value)
+        assert "LOCAL_DEV isolation backend mode is strictly forbidden in production" in str(
+            exc_info.value
+        )
 
 
 @pytest.mark.asyncio
@@ -567,14 +573,21 @@ async def test_execution_boundary_production_same_process_forbidden() -> None:
         executor._broker = None
         with pytest.raises(IsolationError) as exc_info:
             await executor.execute(auth, action)
-        assert "Same-process tool execution is strictly forbidden in production" in str(exc_info.value)
+        assert "Same-process tool execution is strictly forbidden in production" in str(
+            exc_info.value
+        )
 
 
 @pytest.mark.asyncio
 async def test_execution_boundary_unavailable_docker_fails_closed_in_production() -> None:
     """Missing or unreachable Docker daemon fails closed in production."""
-    with patch.dict(os.environ, {"ENVIRONMENT": "production", "WHITEPACT_ISOLATION_BACKEND": "docker"}):
+    with patch.dict(
+        os.environ, {"ENVIRONMENT": "production", "WHITEPACT_ISOLATION_BACKEND": "docker"}
+    ):
         with patch.object(DockerContainerBackend, "is_available", return_value=False):
             with pytest.raises(IsolationBackendUnavailableError) as exc_info:
                 IsolationBroker()
-            assert "Docker container isolation backend is required but unavailable. Failing closed." in str(exc_info.value)
+            assert (
+                "Docker container isolation backend is required but unavailable. Failing closed."
+                in str(exc_info.value)
+            )

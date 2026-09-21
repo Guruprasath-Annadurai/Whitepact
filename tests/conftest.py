@@ -33,6 +33,7 @@ def pytest_configure(config):
     except Exception:
         pass
 
+
 TEST_GOVERNANCE_PURPOSE = "automated-test"
 
 
@@ -51,6 +52,7 @@ def clean_audit_writes_and_hermetic_state():
 @pytest.fixture
 def seed_runtime_authority():
     """Seed explicit test-only root, consent, and delegation records."""
+
     async def seed(
         engine,
         *,
@@ -117,6 +119,7 @@ def seed_trust_employment():
     rather than going through PrincipalDirectory.create_principal(), which always
     mints its own generated id.
     """
+
     async def seed(engine, *, org_id: str, principal_id: str) -> None:
         from sqlalchemy import insert as sa_insert
 

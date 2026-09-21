@@ -54,9 +54,8 @@ from responsibleai.governance.upstream_executor import (
     build_upstream_target,
     parse_upstream_target,
 )
-
-from tests.org_http_fixtures import seed_org_with_key
 from responsibleai.rbac.models import Role
+from tests.org_http_fixtures import seed_org_with_key
 
 
 def _fake_public_dns(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -194,9 +193,7 @@ class TestUpstreamServerRepository:
         )
 
         _fake_public_dns(monkeypatch)
-        server = await repo.register(
-            "org-1", "racing-server", "https://partner.example.com/mcp"
-        )
+        server = await repo.register("org-1", "racing-server", "https://partner.example.com/mcp")
         epoch = (await RevocationEpochRepository(engine).current("org-1")).epoch
         action = _upstream_action(server_id=server.server_id, tool_name="remote_tool")
         authorization = authorize_execution(
@@ -217,9 +214,7 @@ class TestUpstreamServerRepository:
                 return None
 
         sink = AsyncMock()
-        monkeypatch.setattr(
-            "responsibleai.governance.upstream_executor._call_upstream_tool", sink
-        )
+        monkeypatch.setattr("responsibleai.governance.upstream_executor._call_upstream_tool", sink)
         executor = UpstreamMCPExecutor(
             repo,
             credential_issuance_repo=PausingCredentialAudit(),
@@ -558,9 +553,7 @@ class TestUpstreamCallEndToEnd:
         )
         server_id = registered.json()["server_id"]
         sink = AsyncMock()
-        monkeypatch.setattr(
-            "responsibleai.governance.upstream_executor._call_upstream_tool", sink
-        )
+        monkeypatch.setattr("responsibleai.governance.upstream_executor._call_upstream_tool", sink)
 
         response = await client.post(
             f"/api/governance/upstream/servers/{server_id}/call",
@@ -733,7 +726,10 @@ class TestUpstreamCallEndToEnd:
         _fake_public_dns(monkeypatch)
 
         other_org_id, _kid, other_admin_key = await seed_org_with_key(
-            name="Other Upstream Co", slug="other-upstream-co", key_name="other-admin", role=Role.ADMIN
+            name="Other Upstream Co",
+            slug="other-upstream-co",
+            key_name="other-admin",
+            role=Role.ADMIN,
         )
         r = await client.post(
             "/api/governance/upstream/servers",

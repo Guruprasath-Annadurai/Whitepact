@@ -108,7 +108,9 @@ class RetentionManager:
         async with self._engine.raw.connect() as conn:
             rows = (
                 await conn.execute(
-                    select(data_retention_policies).where(data_retention_policies.c.org_id == org_id)
+                    select(data_retention_policies).where(
+                        data_retention_policies.c.org_id == org_id
+                    )
                 )
             ).fetchall()
             return [
@@ -152,25 +154,33 @@ class RetentionManager:
                     res1 = await conn.execute(
                         delete(tool_trust_scores).where(tool_trust_scores.c.org_id == pol.org_id)
                     )
-                    pruned_counts["tool_trust_scores"] = pruned_counts.get("tool_trust_scores", 0) + (res1.rowcount or 0)
+                    pruned_counts["tool_trust_scores"] = pruned_counts.get(
+                        "tool_trust_scores", 0
+                    ) + (res1.rowcount or 0)
 
                     # Prune eval_runs
                     res2 = await conn.execute(
                         delete(eval_runs).where(eval_runs.c.org_id == pol.org_id)
                     )
-                    pruned_counts["eval_runs"] = pruned_counts.get("eval_runs", 0) + (res2.rowcount or 0)
+                    pruned_counts["eval_runs"] = pruned_counts.get("eval_runs", 0) + (
+                        res2.rowcount or 0
+                    )
 
                     # Prune token_usage
                     res3 = await conn.execute(
                         delete(token_usage).where(token_usage.c.org_id == pol.org_id)
                     )
-                    pruned_counts["token_usage"] = pruned_counts.get("token_usage", 0) + (res3.rowcount or 0)
+                    pruned_counts["token_usage"] = pruned_counts.get("token_usage", 0) + (
+                        res3.rowcount or 0
+                    )
 
                     # Prune mcp_tool_calls
                     res4 = await conn.execute(
                         delete(mcp_tool_calls).where(mcp_tool_calls.c.org_id == pol.org_id)
                     )
-                    pruned_counts["mcp_tool_calls"] = pruned_counts.get("mcp_tool_calls", 0) + (res4.rowcount or 0)
+                    pruned_counts["mcp_tool_calls"] = pruned_counts.get("mcp_tool_calls", 0) + (
+                        res4.rowcount or 0
+                    )
 
         return RetentionExecutionReport(
             org_id=org_id,

@@ -130,9 +130,12 @@ async def test_restore_reconciliation_fail_closed_on_error(sqlite_engine: Databa
                 def begin(self):
                     faulty.calls += 1
                     if faulty.calls == 1:
+
                         class BrokenBegin:
                             async def __aenter__(self):
-                                raise RuntimeError("Database connection failure during reconciliation")
+                                raise RuntimeError(
+                                    "Database connection failure during reconciliation"
+                                )
 
                             async def __aexit__(self, *args):
                                 pass

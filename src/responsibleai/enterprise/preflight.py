@@ -79,8 +79,11 @@ def resolve_identity_webhook_secret(
 
 
 def identity_webhook_secret_from_env(*, environment: str | None = None) -> str:
-    env = environment or os.environ.get("WHITEPACT_ENV") or os.environ.get("RAI_ENV") or os.environ.get(
-        "ENVIRONMENT", "development"
+    env = (
+        environment
+        or os.environ.get("WHITEPACT_ENV")
+        or os.environ.get("RAI_ENV")
+        or os.environ.get("ENVIRONMENT", "development")
     )
     configured = os.environ.get("WHITEPACT_IDENTITY_WEBHOOK_SECRET") or os.environ.get(
         "RAI_IDENTITY_WEBHOOK_SECRET"

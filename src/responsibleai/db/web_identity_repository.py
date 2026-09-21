@@ -601,7 +601,9 @@ class WebIdentityRepository:
                 )
             ).fetchone()
             if user is None or invitation is None or user.email != invitation.email:
-                raise InvitationError("This invitation is invalid, expired, or belongs to another account.")
+                raise InvitationError(
+                    "This invitation is invalid, expired, or belongs to another account."
+                )
             try:
                 await conn.execute(
                     insert(web_memberships).values(
@@ -764,16 +766,22 @@ class WebIdentityRepository:
     async def is_sole_owner_of_any_org(self, user_id: str) -> bool:
         async with self._engine.raw.connect() as conn:
             owned_org_ids = (
-                await conn.execute(
-                    select(web_memberships.c.org_id).where(
-                        web_memberships.c.user_id == user_id,
-                        web_memberships.c.role == Role.OWNER.value,
+                (
+                    await conn.execute(
+                        select(web_memberships.c.org_id).where(
+                            web_memberships.c.user_id == user_id,
+                            web_memberships.c.role == Role.OWNER.value,
+                        )
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             for org_id in owned_org_ids:
                 count = await conn.scalar(
-                    select(func.count()).select_from(web_memberships).where(
+                    select(func.count())
+                    .select_from(web_memberships)
+                    .where(
                         web_memberships.c.org_id == org_id,
                         web_memberships.c.role == Role.OWNER.value,
                     )
@@ -805,14 +813,20 @@ class WebIdentityRepository:
         now = _now()
         async with self._engine.raw.begin() as conn:
             # Find user's original email and session token hashes
-            user_row = (await conn.execute(
-                select(web_users.c.email).where(web_users.c.id == user_id)
-            )).first()
+            user_row = (
+                await conn.execute(select(web_users.c.email).where(web_users.c.id == user_id))
+            ).first()
             old_email = user_row[0] if user_row else ""
 
-            sess_rows = (await conn.execute(
-                select(web_sessions.c.token_hash).where(web_sessions.c.user_id == user_id)
-            )).scalars().all()
+            sess_rows = (
+                (
+                    await conn.execute(
+                        select(web_sessions.c.token_hash).where(web_sessions.c.user_id == user_id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
 
             result = await conn.execute(
                 update(web_users)
@@ -829,7 +843,9 @@ class WebIdentityRepository:
                 return False
 
             # 1. Revoke all web sessions
-            await conn.execute(update(web_sessions).where(web_sessions.c.user_id == user_id).values(revoked=1))
+            await conn.execute(
+                update(web_sessions).where(web_sessions.c.user_id == user_id).values(revoked=1)
+            )
 
             # 2. Invalidate OAuth flow states associated with user's sessions
             if sess_rows:
@@ -852,13 +868,20 @@ class WebIdentityRepository:
             )
 
             # 5. Invalidate verification and password reset tokens
-            await conn.execute(delete(web_verification_tokens).where(web_verification_tokens.c.user_id == user_id))
+            await conn.execute(
+                delete(web_verification_tokens).where(web_verification_tokens.c.user_id == user_id)
+            )
 
             # 6. Invalidate pending invitations (sent to user or created by user)
             if old_email:
                 await conn.execute(
                     update(web_invitations)
-                    .where(or_(web_invitations.c.invited_by_user_id == user_id, web_invitations.c.email == old_email))
+                    .where(
+                        or_(
+                            web_invitations.c.invited_by_user_id == user_id,
+                            web_invitations.c.email == old_email,
+                        )
+                    )
                     .values(status="REVOKED")
                 )
             else:
@@ -869,7 +892,9 @@ class WebIdentityRepository:
                 )
 
             # 7. Delete provider linkages and memberships
-            await conn.execute(delete(web_identity_providers).where(web_identity_providers.c.user_id == user_id))
+            await conn.execute(
+                delete(web_identity_providers).where(web_identity_providers.c.user_id == user_id)
+            )
             await conn.execute(delete(web_memberships).where(web_memberships.c.user_id == user_id))
         return True
 
@@ -890,19 +915,23 @@ class WebIdentityRepository:
 
         async with self._engine.raw.begin() as conn:
             # 1. Target user must exist and not be disabled
-            u_row = (await conn.execute(
-                select(web_users.c.id, web_users.c.disabled).where(web_users.c.id == user_id)
-            )).first()
+            u_row = (
+                await conn.execute(
+                    select(web_users.c.id, web_users.c.disabled).where(web_users.c.id == user_id)
+                )
+            ).first()
             if not u_row or u_row.disabled:
                 raise ValueError("Target user does not exist or is disabled")
 
             # 2. Check if (issuer, subject) is already linked
-            existing = (await conn.execute(
-                select(web_identity_providers.c.user_id).where(
-                    web_identity_providers.c.issuer == issuer,
-                    web_identity_providers.c.subject == subject,
+            existing = (
+                await conn.execute(
+                    select(web_identity_providers.c.user_id).where(
+                        web_identity_providers.c.issuer == issuer,
+                        web_identity_providers.c.subject == subject,
+                    )
                 )
-            )).first()
+            ).first()
             if existing is not None:
                 if existing.user_id != user_id:
                     raise ValueError("Provider identity is already linked to a different account")
@@ -910,12 +939,14 @@ class WebIdentityRepository:
 
             # 3. Cross-tenant check: if tenant_id given, verify membership
             if tenant_id:
-                m_row = (await conn.execute(
-                    select(web_memberships.c.id).where(
-                        web_memberships.c.user_id == user_id,
-                        web_memberships.c.org_id == tenant_id,
+                m_row = (
+                    await conn.execute(
+                        select(web_memberships.c.id).where(
+                            web_memberships.c.user_id == user_id,
+                            web_memberships.c.org_id == tenant_id,
+                        )
                     )
-                )).first()
+                ).first()
                 if not m_row:
                     raise ValueError(f"User is not a member of organization {tenant_id}")
 
@@ -1035,4 +1066,3 @@ class WebIdentityRepository:
                     oauth_flow_states.c.expires_at <= now,
                 )
             )
-

@@ -150,7 +150,9 @@ async def test_selective_disclosure_filters_sensitive_pii(privacy_db):
     assert "ssn" not in attrs_pub
 
     # 2. BUSINESS_PUBLIC view
-    biz_view = pass_svc.filter_selective_disclosure(passport, audience_view=DisclosureClass.BUSINESS_PUBLIC)
+    biz_view = pass_svc.filter_selective_disclosure(
+        passport, audience_view=DisclosureClass.BUSINESS_PUBLIC
+    )
     attrs_biz = biz_view["disclosed_attributes"]
     assert "job_title" in attrs_biz
     assert "work_email" in attrs_biz
@@ -158,13 +160,17 @@ async def test_selective_disclosure_filters_sensitive_pii(privacy_db):
     assert "ssn" not in attrs_biz
 
     # 3. TENANT_INTERNAL view
-    internal_view = pass_svc.filter_selective_disclosure(passport, audience_view=DisclosureClass.TENANT_INTERNAL)
+    internal_view = pass_svc.filter_selective_disclosure(
+        passport, audience_view=DisclosureClass.TENANT_INTERNAL
+    )
     attrs_int = internal_view["disclosed_attributes"]
     assert "residential_address" in attrs_int
     assert "ssn" not in attrs_int
 
     # 4. SECURITY_RESTRICTED view
-    sec_view = pass_svc.filter_selective_disclosure(passport, audience_view=DisclosureClass.SECURITY_RESTRICTED)
+    sec_view = pass_svc.filter_selective_disclosure(
+        passport, audience_view=DisclosureClass.SECURITY_RESTRICTED
+    )
     attrs_sec = sec_view["disclosed_attributes"]
     assert "ssn" in attrs_sec
 

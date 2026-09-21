@@ -331,7 +331,9 @@ class TestDatabaseUrlConfiguration:
 
         # In prod: raises loud configuration error
         monkeypatch.setenv("WHITEPACT_ENV", "production")
-        with pytest.raises(ValueError, match="Conflicting database URLs.*not allowed in production"):
+        with pytest.raises(
+            ValueError, match="Conflicting database URLs.*not allowed in production"
+        ):
             fresh_settings_module.Settings()
 
         # In dev: warns and follows canonical precedence (WHITEPACT wins)
@@ -365,7 +367,9 @@ class TestDatabaseUrlConfiguration:
 
         # In prod: raises loud configuration error
         monkeypatch.setenv("WHITEPACT_ENV", "production")
-        with pytest.raises(ValueError, match="Conflicting database URLs.*not allowed in production"):
+        with pytest.raises(
+            ValueError, match="Conflicting database URLs.*not allowed in production"
+        ):
             fresh_settings_module.Settings()
 
         # In dev: warns and follows canonical precedence (DATABASE_URL wins over legacy RAI)

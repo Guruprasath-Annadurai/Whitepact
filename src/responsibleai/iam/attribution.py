@@ -44,7 +44,11 @@ class PrivilegedAttributionEngine:
         # 1. Sanitize context data to guarantee zero raw secrets, tokens, or private keys
         raw_ctx = context_data or {}
         sanitized_context = {
-            k: ("[REDACTED]" if any(s in k.lower() for s in ["secret", "token", "key", "password", "signature"]) else v)
+            k: (
+                "[REDACTED]"
+                if any(s in k.lower() for s in ["secret", "token", "key", "password", "signature"])
+                else v
+            )
             for k, v in raw_ctx.items()
         }
 

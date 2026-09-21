@@ -44,7 +44,12 @@ async def chal_db(tmp_path):
             organizations.insert(),
             [
                 {"id": "org_legit", "name": "Legit Corp", "slug": "legit", "created_at": "now"},
-                {"id": "org_attacker", "name": "Attacker Inc", "slug": "attacker", "created_at": "now"},
+                {
+                    "id": "org_attacker",
+                    "name": "Attacker Inc",
+                    "slug": "attacker",
+                    "created_at": "now",
+                },
             ],
         )
     try:

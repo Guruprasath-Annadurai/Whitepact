@@ -163,13 +163,16 @@ async def test_vector_nonce_replay_attack(redteam_db: DatabaseEngine):
         token_or_code="123456",
     )
     # First consume
-    assert await step_up.verify_and_consume_step_up(
-        org_id="victim_tenant",
-        principal_id="admin_victim",
-        action="ROTATE_API_KEY",
-        risk_tier=PrivilegeRiskTier.PRIVILEGED_HIGH,
-        proof=proof,
-    ) is True
+    assert (
+        await step_up.verify_and_consume_step_up(
+            org_id="victim_tenant",
+            principal_id="admin_victim",
+            action="ROTATE_API_KEY",
+            risk_tier=PrivilegeRiskTier.PRIVILEGED_HIGH,
+            proof=proof,
+        )
+        is True
+    )
 
     # Replay attack
     with pytest.raises(StepUpVerificationFailedError, match="already been consumed"):
@@ -460,7 +463,9 @@ async def test_vector_break_glass_root_transfer_and_capability_mismatch(
     )
 
     # 1. Break-glass attempting root transfer must be rejected!
-    with pytest.raises(PrivilegedAccessDeniedError, match="strictly prohibited under emergency break-glass"):
+    with pytest.raises(
+        PrivilegedAccessDeniedError, match="strictly prohibited under emergency break-glass"
+    ):
         await guard.authorize_privileged_operation(
             caller=caller,
             target_org_id="victim_tenant",

@@ -26,8 +26,6 @@ from typing import Any
 
 import pytest
 
-from tests.docker_runtime import DOCKER_UNAVAILABLE_REASON
-
 from responsibleai.governance.execution import (
     AuthorizationActionMismatchError,
     AuthorizationAlreadyConsumedError,
@@ -58,6 +56,7 @@ from responsibleai.isolation.models import (
     IsolationProfile,
     ResourceLimits,
 )
+from tests.docker_runtime import DOCKER_UNAVAILABLE_REASON
 
 
 def _docker_available() -> bool:
@@ -66,12 +65,12 @@ def _docker_available() -> bool:
     return os.system("docker info >/dev/null 2>&1") == 0
 
 
-pytestmark = pytest.mark.skipif(
-    not _docker_available(), reason=DOCKER_UNAVAILABLE_REASON
-)
+pytestmark = pytest.mark.skipif(not _docker_available(), reason=DOCKER_UNAVAILABLE_REASON)
 
 
-def _make_action(tool_name: str, args: dict[str, Any], *, org_id: str = "tenant-hardgate") -> ActionRequest:
+def _make_action(
+    tool_name: str, args: dict[str, Any], *, org_id: str = "tenant-hardgate"
+) -> ActionRequest:
     return ActionRequest(
         agent=AgentContext(
             identity=IdentityContext(identity_id="agent-hg-1", kind="api_key", org_id=org_id),
@@ -111,7 +110,9 @@ class TestHostFilesystemCanaries:
         repo_canary_file = pathlib.Path.cwd() / f"repo_canary_{uuid.uuid4().hex}.txt"
         repo_canary_file.write_text("SECRET_HOST_REPO_CANARY")
 
-        external_canary_file = pathlib.Path(tempfile.gettempdir()) / f"external_canary_{uuid.uuid4().hex}.txt"
+        external_canary_file = (
+            pathlib.Path(tempfile.gettempdir()) / f"external_canary_{uuid.uuid4().hex}.txt"
+        )
         external_canary_file.write_text("SECRET_HOST_EXTERNAL_CANARY")
 
         # 2. Ephemeral previous and concurrent workspaces
@@ -461,7 +462,11 @@ sys.stdout.write(json.dumps({
         # Should hit open files limit and not be unbounded
         assert res["opened_count"] <= 128
         assert res["error"] is not None
-        assert "Too many open files" in res["error"] or "EMFILE" in res["error"] or "OSError" in res["error"]
+        assert (
+            "Too many open files" in res["error"]
+            or "EMFILE" in res["error"]
+            or "OSError" in res["error"]
+        )
 
 
 @pytest.mark.asyncio
@@ -524,7 +529,9 @@ class TestEvidenceBoundaryIntegration:
         action = _make_action("test_tool", {"key": "val"})
         permit = _make_permit(action)
 
-        with pytest.raises(IsolationError, match="Same-process tool execution is strictly forbidden in production"):
+        with pytest.raises(
+            IsolationError, match="Same-process tool execution is strictly forbidden in production"
+        ):
             await executor.execute(permit, action)
 
 

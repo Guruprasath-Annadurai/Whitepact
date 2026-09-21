@@ -28,6 +28,7 @@ async def fabric_db(tmp_path):
     await engine.init()
     # Insert test organizations
     from responsibleai.db.engine import organizations
+
     async with engine.raw.begin() as conn:
         await conn.execute(
             organizations.insert(),
@@ -46,12 +47,18 @@ async def fabric_db(tmp_path):
 class TestPrincipalDirectory:
     async def test_identifier_normalization(self):
         # Email normalization: lowercase and IDN domain
-        assert normalize_identifier(IdentifierType.EMAIL, "  Alice.Smith@Example.COM  ") == "alice.smith@example.com"
+        assert (
+            normalize_identifier(IdentifierType.EMAIL, "  Alice.Smith@Example.COM  ")
+            == "alice.smith@example.com"
+        )
         with pytest.raises(ValueError):
             normalize_identifier(IdentifierType.EMAIL, "invalid-email")
 
         # Domain normalization: strip trailing dot, punycode
-        assert normalize_identifier(IdentifierType.DOMAIN, "https://WWW.ACME.COM/path") == "www.acme.com"
+        assert (
+            normalize_identifier(IdentifierType.DOMAIN, "https://WWW.ACME.COM/path")
+            == "www.acme.com"
+        )
         assert normalize_identifier(IdentifierType.DOMAIN, "münchen.de.") == "xn--mnchen-3ya.de"
 
         # Phone normalization: E.164
@@ -59,7 +66,10 @@ class TestPrincipalDirectory:
         assert normalize_identifier(IdentifierType.PHONE, "15550192834") == "+15550192834"
 
         # Registration number: uppercase
-        assert normalize_identifier(IdentifierType.REGISTRATION_NUMBER, "us_de:abc-1234") == "US_DE:ABC-1234"
+        assert (
+            normalize_identifier(IdentifierType.REGISTRATION_NUMBER, "us_de:abc-1234")
+            == "US_DE:ABC-1234"
+        )
 
     async def test_create_and_read_principal_tenant_isolation(self, fabric_db):
         dir_svc = PrincipalDirectory(fabric_db)
@@ -147,9 +157,12 @@ class TestPrincipalDirectory:
         await dir_svc.delete_principal(alice.id, org_id="org_acme")
 
         # Resolving now returns None (Alice is tombstoned)
-        assert await dir_svc.resolve_by_identifier(
-            org_id="org_acme", identifier_type=IdentifierType.EMAIL, value="dev@acme.com"
-        ) is None
+        assert (
+            await dir_svc.resolve_by_identifier(
+                org_id="org_acme", identifier_type=IdentifierType.EMAIL, value="dev@acme.com"
+            )
+            is None
+        )
 
         # Cannot attach new identifiers to deleted principal
         with pytest.raises(PrincipalInactiveError):
@@ -187,8 +200,12 @@ class TestPrincipalDirectory:
 
     async def test_search_anti_enumeration(self, fabric_db):
         dir_svc = PrincipalDirectory(fabric_db)
-        await dir_svc.create_principal(org_id="org_acme", principal_type=PrincipalType.HUMAN, display_name="Executive Acme")
-        await dir_svc.create_principal(org_id="org_evil", principal_type=PrincipalType.HUMAN, display_name="Executive Evil")
+        await dir_svc.create_principal(
+            org_id="org_acme", principal_type=PrincipalType.HUMAN, display_name="Executive Acme"
+        )
+        await dir_svc.create_principal(
+            org_id="org_evil", principal_type=PrincipalType.HUMAN, display_name="Executive Evil"
+        )
 
         # Search in Acme only returns Acme principals
         results = await dir_svc.search_principals(org_id="org_acme", query="Executive")

@@ -46,7 +46,9 @@ class SovereignRecoveryService:
         if threshold < 2:
             raise ValueError("Threshold must be at least 2 guardians.")
         if len(guardians) < threshold:
-            raise ValueError(f"Guardian count ({len(guardians)}) cannot be less than threshold ({threshold}).")
+            raise ValueError(
+                f"Guardian count ({len(guardians)}) cannot be less than threshold ({threshold})."
+            )
 
         # Invariant: Guardian public keys must be strictly unique (anti-inflation attack)
         pub_keys = [g["public_key"] for g in guardians]
@@ -56,7 +58,9 @@ class SovereignRecoveryService:
         # Invariant: Platform operators cannot be registered as customer sovereign guardians
         for g in guardians:
             if g.get("is_platform_operator") or "operator" in g.get("name", "").lower():
-                raise SovereignRecoveryError("Platform operators cannot be registered as customer guardians.")
+                raise SovereignRecoveryError(
+                    "Platform operators cannot be registered as customer guardians."
+                )
 
         policy_id = f"rec_pol_{uuid.uuid4().hex}"
         now = datetime.now(UTC).isoformat()
@@ -113,7 +117,9 @@ class SovereignRecoveryService:
             )
             pol_row = (await conn.execute(pol_stmt)).first()
             if not pol_row:
-                raise SovereignRecoveryError(f"No active recovery policy registered for tenant {org_id!r}.")
+                raise SovereignRecoveryError(
+                    f"No active recovery policy registered for tenant {org_id!r}."
+                )
 
             payload = {
                 "challenge_id": challenge_id,
@@ -179,7 +185,9 @@ class SovereignRecoveryService:
             )
             pol = dict((await conn.execute(pol_stmt)).one()._mapping)
             if pol["created_at"] > chal["created_at"]:
-                raise SovereignRecoveryError("Active recovery policy was modified after challenge initiation.")
+                raise SovereignRecoveryError(
+                    "Active recovery policy was modified after challenge initiation."
+                )
             guardians = json.loads(pol["guardians_json"])
 
             # Find matching guardian public key
@@ -194,7 +202,9 @@ class SovereignRecoveryService:
             try:
                 verifier.verify(sig_bytes, challenge_message.encode("utf-8"))
             except InvalidSignature as exc:
-                raise SovereignRecoveryError(f"Invalid signature from guardian {guardian_name!r}.") from exc
+                raise SovereignRecoveryError(
+                    f"Invalid signature from guardian {guardian_name!r}."
+                ) from exc
 
             # 4. Record signature
             signatures = json.loads(chal["signatures_json"])
@@ -234,7 +244,9 @@ class SovereignRecoveryService:
             )
             pol = dict((await conn.execute(pol_stmt)).one()._mapping)
             if pol["created_at"] > chal["created_at"]:
-                raise SovereignRecoveryError("Active recovery policy was modified after challenge initiation.")
+                raise SovereignRecoveryError(
+                    "Active recovery policy was modified after challenge initiation."
+                )
 
             signatures = json.loads(chal["signatures_json"])
             threshold = pol["threshold"]

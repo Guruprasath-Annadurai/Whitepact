@@ -26,7 +26,7 @@ async def test_commerce_public_html_metadata_fallback_and_footer(path, title):
         assert f"<title>{title}</title>" in response.text
         assert f'rel="canonical" href="https://whitepact.com{path}"' in response.text
         assert '<meta name="robots" content="index, follow"' in response.text
-        assert '<noscript>' in response.text and '<h1>' in response.text
+        assert "<noscript>" in response.text and "<h1>" in response.text
         assert not re.search(r"\b(TODO|TBD|placeholder|lorem ipsum)\b", response.text, re.I)
         for destination in list(PAGES)[1:]:
             assert f'href="{destination}"' in response.text

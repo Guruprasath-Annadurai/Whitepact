@@ -4,19 +4,19 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 
 
-class RequestLifecycle(str, Enum):
+class RequestLifecycle(StrEnum):
     RECORDED = "RECORDED"
 
 
-class AuthorizationStatus(str, Enum):
+class AuthorizationStatus(StrEnum):
     ISSUED = "ISSUED"
     CONSUMED = "CONSUMED"
 
 
-class AttemptState(str, Enum):
+class AttemptState(StrEnum):
     PENDING = "PENDING"
     LEASED = "LEASED"
     ADMITTED = "ADMITTED"
@@ -28,7 +28,7 @@ class AttemptState(str, Enum):
     UNCERTAIN = "UNCERTAIN"
 
 
-class EffectState(str, Enum):
+class EffectState(StrEnum):
     NO_EFFECT = "NO_EFFECT"
     EFFECT_STARTING = "EFFECT_STARTING"
     EFFECT_TRANSMITTING = "EFFECT_TRANSMITTING"
@@ -37,7 +37,7 @@ class EffectState(str, Enum):
     EFFECT_UNCERTAIN = "EFFECT_UNCERTAIN"
 
 
-class LeaseStatus(str, Enum):
+class LeaseStatus(StrEnum):
     ACTIVE = "ACTIVE"
     COMPLETED = "COMPLETED"
     EXPIRED = "EXPIRED"
@@ -45,7 +45,7 @@ class LeaseStatus(str, Enum):
     FAILED = "FAILED"
 
 
-class OutboxStatus(str, Enum):
+class OutboxStatus(StrEnum):
     PENDING = "PENDING"
     PUBLISHING = "PUBLISHING"
     PUBLISHED = "PUBLISHED"
@@ -54,6 +54,6 @@ class OutboxStatus(str, Enum):
     EXPIRED = "EXPIRED"
 
 
-class PreEffectDecision(str, Enum):
+class PreEffectDecision(StrEnum):
     ALLOW_EFFECT = "ALLOW_EFFECT"
     DENY_FAILED_PRE_EXECUTION = "DENY_FAILED_PRE_EXECUTION"

@@ -117,14 +117,18 @@ async def test_mcp_consequential_boundary_blocked_at_restore_pending():
     gate = reset_restore_readiness_gate(state=RestoreReadinessState.RESTORE_PENDING)
 
     # Invoke real MCP tool boundary
-    blocks, payload = await _call_tool("calculate_cost", {"model": "gpt-4o", "input_tokens": 100, "output_tokens": 50})
+    blocks, payload = await _call_tool(
+        "calculate_cost", {"model": "gpt-4o", "input_tokens": 100, "output_tokens": 50}
+    )
     assert payload.get("error") == "restore_quarantine"
     assert payload.get("status") == "RESTORE_PENDING"
     assert "MCP tool execution blocked" in payload.get("message", "")
 
     # Transition to FAILED -> still blocked
     gate.set_state(RestoreReadinessState.FAILED)
-    blocks, payload = await _call_tool("calculate_cost", {"model": "gpt-4o", "input_tokens": 100, "output_tokens": 50})
+    blocks, payload = await _call_tool(
+        "calculate_cost", {"model": "gpt-4o", "input_tokens": 100, "output_tokens": 50}
+    )
     assert payload.get("error") == "restore_quarantine"
     assert payload.get("status") == "FAILED"
 
@@ -242,8 +246,12 @@ async def test_multi_worker_shared_restore_readiness(tmp_path: Path):
     provider_a = SqliteDurableLifecycleStateProvider(store_b_path)
     provider_b = SqliteDurableLifecycleStateProvider(store_b_path)
 
-    gate_worker_a = RestoreReadinessGate(initial_state=RestoreReadinessState.RESTORE_PENDING, provider=provider_a)
-    gate_worker_b = RestoreReadinessGate(initial_state=RestoreReadinessState.RESTORE_PENDING, provider=provider_b)
+    gate_worker_a = RestoreReadinessGate(
+        initial_state=RestoreReadinessState.RESTORE_PENDING, provider=provider_a
+    )
+    gate_worker_b = RestoreReadinessGate(
+        initial_state=RestoreReadinessState.RESTORE_PENDING, provider=provider_b
+    )
 
     # Initial: both observe RESTORE_PENDING
     assert gate_worker_a.is_admitted() is False

@@ -14,7 +14,6 @@ from responsibleai.db.engine import create_engine
 from responsibleai.db.web_identity_repository import WebIdentityRepository
 from responsibleai.enterprise.errors import EnterpriseError
 from responsibleai.enterprise.service import Actor, EnterpriseIAM
-from responsibleai.enterprise.verification import HmacVerificationProvider, VerificationService
 from responsibleai.rbac.models import Role
 from tests.pg_test_url import isolated_pg_url
 from tests.test_enterprise_saas_layer1 import _verify_human
@@ -58,10 +57,15 @@ async def test_postgres_concurrent_invitation_acceptance(pg_url: str) -> None:
         owner = await _user(web, "pg-own@example.com")
         invitee = await _user(web, "pg-inv@example.com")
         org = await iam.create_workspace(
-            actor_user_id=owner, name="PG Org", slug=f"pg-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION"
+            actor_user_id=owner,
+            name="PG Org",
+            slug=f"pg-{uuid.uuid4().hex[:8]}",
+            kind="ORGANIZATION",
         )
         actor = _actor(owner, org["id"], Role.OWNER)
-        _id, token = await iam.invite_member(actor, org["id"], email="pg-inv@example.com", role=Role.DEVELOPER)
+        _id, token = await iam.invite_member(
+            actor, org["id"], email="pg-inv@example.com", role=Role.DEVELOPER
+        )
 
         async def accept() -> str | Exception:
             try:
@@ -98,7 +102,9 @@ async def test_postgres_concurrent_ownership_transfer(pg_url: str) -> None:
             actor_user_id=owner, name="Xfer", slug=f"xf-{uuid.uuid4().hex[:8]}", kind="ORGANIZATION"
         )
         actor = _actor(owner, org["id"], Role.OWNER)
-        _id, token = await iam_a.invite_member(actor, org["id"], email="pg-tm@example.com", role=Role.ADMIN)
+        _id, token = await iam_a.invite_member(
+            actor, org["id"], email="pg-tm@example.com", role=Role.ADMIN
+        )
         await iam_a.accept_invitation(token=token, user_id=member)
 
         async def transfer() -> bool | Exception:
@@ -158,7 +164,9 @@ async def test_postgres_concurrent_api_key_rotation(pg_url: str) -> None:
 
         async def rotate(iam: EnterpriseIAM) -> tuple[str, str] | Exception:
             try:
-                new_rec, secret = await iam.rotate_api_key(actor, org["id"], rec["id"], overlap_seconds=60)
+                new_rec, secret = await iam.rotate_api_key(
+                    actor, org["id"], rec["id"], overlap_seconds=60
+                )
                 return new_rec["id"], secret
             except Exception as exc:  # noqa: BLE001
                 return exc

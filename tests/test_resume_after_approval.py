@@ -39,9 +39,8 @@ from responsibleai.governance.approval import (
     build_resume_action,
 )
 from responsibleai.mcp.governance_integration import resume_approval
-
-from tests.org_http_fixtures import seed_org_with_key
 from responsibleai.rbac.models import Role
+from tests.org_http_fixtures import seed_org_with_key
 
 
 @pytest.fixture(autouse=True)

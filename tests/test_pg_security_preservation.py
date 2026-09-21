@@ -20,11 +20,8 @@ import hashlib
 import json
 import uuid
 from collections.abc import AsyncGenerator
-
-from tests.pg_test_url import isolated_pg_url
 from datetime import UTC, datetime
 
-import asyncpg
 import pytest
 from sqlalchemy import text
 
@@ -47,12 +44,13 @@ from responsibleai.trust_fabric.authority_graph import (
     AuthorityGraph,
     CrossTenantAccessError,
 )
+from tests.pg_test_url import isolated_pg_url
 
 
 @pytest.fixture
 async def pg_test_db() -> AsyncGenerator[str, None]:
     """Create a temporary isolated PostgreSQL database and drop it on cleanup."""
-    async for url in isolated_pg_url('wp_sec_pg'):
+    async for url in isolated_pg_url("wp_sec_pg"):
         yield url
 
 
@@ -73,7 +71,9 @@ async def test_tombstone_and_erasure_preservation_across_upgrades(pg_test_db: st
 
     async with engine.raw.begin() as conn:
         await conn.execute(
-            text("INSERT INTO organizations (id, slug, name, created_at) VALUES (:a, :a, 'Dead Tenant', '2026-01-01T00:00:00Z')"),
+            text(
+                "INSERT INTO organizations (id, slug, name, created_at) VALUES (:a, :a, 'Dead Tenant', '2026-01-01T00:00:00Z')"
+            ),
             {"a": org_tombstoned},
         )
         # Record tenant tombstone in 0045
@@ -83,7 +83,12 @@ async def test_tombstone_and_erasure_preservation_across_upgrades(pg_test_db: st
                 "(id, org_id, original_name, generation_id, tombstoned_at, tombstoned_by, authority_hash, evidence_digest, details_json) "
                 "VALUES (:id, :org, 'Dead Tenant', 'gen-1', '2026-01-02T00:00:00Z', 'compliance-bot', :hash, :ev, '{}')"
             ),
-            {"id": tombstone_id, "org": org_tombstoned, "hash": tombstone_digest, "ev": "ev-digest-1"},
+            {
+                "id": tombstone_id,
+                "org": org_tombstoned,
+                "hash": tombstone_digest,
+                "ev": "ev-digest-1",
+            },
         )
     await engine.close()
 
@@ -202,7 +207,13 @@ async def test_production_repository_compatibility_post_upgrade(pg_test_db: str)
                     "(:pe, :org, 'AGENT', 'Grantee', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'), "
                     "(:pf, :other, 'HUMAN_OPERATOR', 'Foreign Principal', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')"
                 ),
-                {"pg": p_grantor, "pe": p_grantee, "org": org_id, "pf": p_foreign, "other": other_org_id},
+                {
+                    "pg": p_grantor,
+                    "pe": p_grantee,
+                    "org": org_id,
+                    "pf": p_foreign,
+                    "other": other_org_id,
+                },
             )
 
         # A) Same-tenant authority grant succeeds
@@ -315,7 +326,12 @@ async def test_unified_lifecycle_dataset_round_trip(pg_test_db: str) -> None:
                 "(:dead, :dead, :dead_name, '2026-01-01T00:00:00Z'), "
                 "(:oth, :oth, 'Other Corp', '2026-01-01T00:00:00Z')"
             ),
-            {"act": org_active_id, "dead": org_dead_id, "dead_name": dead_org_name, "oth": org_other_id},
+            {
+                "act": org_active_id,
+                "dead": org_dead_id,
+                "dead_name": dead_org_name,
+                "oth": org_other_id,
+            },
         )
 
         # K: Tombstone metadata for dead organization
@@ -325,7 +341,12 @@ async def test_unified_lifecycle_dataset_round_trip(pg_test_db: str) -> None:
                 "(id, org_id, original_name, generation_id, tombstoned_at, tombstoned_by, authority_hash, evidence_digest, details_json) "
                 "VALUES (:id, :org, :orig_name, 'gen-1', '2026-01-02T00:00:00Z', 'lifecycle-service', :hash, 'ev-dig-1', '{}')"
             ),
-            {"id": tombstone_id, "org": org_dead_id, "orig_name": dead_org_name, "hash": tombstone_hash},
+            {
+                "id": tombstone_id,
+                "org": org_dead_id,
+                "orig_name": dead_org_name,
+                "hash": tombstone_hash,
+            },
         )
 
         # Principals
@@ -385,8 +406,26 @@ async def test_unified_lifecycle_dataset_round_trip(pg_test_db: str) -> None:
         )
 
         # H: Policy revisions & activations (revision 1 permissive, revision 2 restricted active)
-        rules_v1 = json.dumps([{"rule_id": "r1", "reason_code": "PERMISSIVE_ALLOW", "effect": "ALLOW", "action_types": ["mcp_exec"]}])
-        rules_v2 = json.dumps([{"rule_id": "r2", "reason_code": "RESTRICTED_DENY", "effect": "DENY", "action_types": ["mcp_exec"]}])
+        rules_v1 = json.dumps(
+            [
+                {
+                    "rule_id": "r1",
+                    "reason_code": "PERMISSIVE_ALLOW",
+                    "effect": "ALLOW",
+                    "action_types": ["mcp_exec"],
+                }
+            ]
+        )
+        rules_v2 = json.dumps(
+            [
+                {
+                    "rule_id": "r2",
+                    "reason_code": "RESTRICTED_DENY",
+                    "effect": "DENY",
+                    "action_types": ["mcp_exec"],
+                }
+            ]
+        )
         await conn.execute(
             text(
                 "INSERT INTO governance_policy_revisions "
@@ -456,8 +495,15 @@ async def test_unified_lifecycle_dataset_round_trip(pg_test_db: str) -> None:
 
         # Verify tombstone record intact
         async with engine.raw.connect() as c:
-            t_row = (await c.execute(text("SELECT authority_hash FROM tenant_tombstones WHERE id = :id"), {"id": tombstone_id})).fetchone()
-            assert t_row is not None and t_row[0] == tombstone_hash, f"Tombstone lost in {step_name}"
+            t_row = (
+                await c.execute(
+                    text("SELECT authority_hash FROM tenant_tombstones WHERE id = :id"),
+                    {"id": tombstone_id},
+                )
+            ).fetchone()
+            assert t_row is not None and t_row[0] == tombstone_hash, (
+                f"Tombstone lost in {step_name}"
+            )
 
         # 2. Authority Graph via AuthorityGraph service
         auth_mgr = AuthorityGraph(engine)
@@ -489,33 +535,48 @@ async def test_unified_lifecycle_dataset_round_trip(pg_test_db: str) -> None:
 
         # 3. IAM Session via SessionService
         sess_svc = SessionService(engine)
-        val_act = await sess_svc.validate_session(org_id=org_active_id, session_id=sess_act_id, token=sess_act_tok)
+        val_act = await sess_svc.validate_session(
+            org_id=org_active_id, session_id=sess_act_id, token=sess_act_tok
+        )
         assert val_act is True, f"Active session invalidated in {step_name}"
 
-        val_rev = await sess_svc.validate_session(org_id=org_active_id, session_id=sess_rev_id, token=sess_rev_tok)
+        val_rev = await sess_svc.validate_session(
+            org_id=org_active_id, session_id=sess_rev_id, token=sess_rev_tok
+        )
         if val_rev is True:
             revoked_session_resurrection += 1
         assert val_rev is False, f"Revoked session authenticated in {step_name}"
 
-        val_cross = await sess_svc.validate_session(org_id=org_other_id, session_id=sess_act_id, token=sess_act_tok)
+        val_cross = await sess_svc.validate_session(
+            org_id=org_other_id, session_id=sess_act_id, token=sess_act_tok
+        )
         if val_cross is True:
             cross_tenant_access += 1
         assert val_cross is False, f"Cross-tenant session access succeeded in {step_name}"
 
         # 4. Policy Revisions & Activations
         async with engine.raw.connect() as c:
-            rev_cnt = (await c.execute(text("SELECT count(*) FROM governance_policy_revisions WHERE org_id = :org"), {"org": org_active_id})).scalar()
+            rev_cnt = (
+                await c.execute(
+                    text("SELECT count(*) FROM governance_policy_revisions WHERE org_id = :org"),
+                    {"org": org_active_id},
+                )
+            ).scalar()
             if rev_cnt != 2:
                 policy_history_loss += 1
             assert rev_cnt == 2, f"Policy history lost in {step_name}"
 
             # Check active revision remains hardened revision 2 (not rolled back to revision 1)
-            active_rev = (await c.execute(
-                text("SELECT r.revision_num, r.change_reason FROM governance_policy_activations a "
-                     "JOIN governance_policy_revisions r ON a.revision_id = r.id "
-                     "WHERE a.org_id = :org AND a.is_active = true"),
-                {"org": org_active_id}
-            )).fetchone()
+            active_rev = (
+                await c.execute(
+                    text(
+                        "SELECT r.revision_num, r.change_reason FROM governance_policy_activations a "
+                        "JOIN governance_policy_revisions r ON a.revision_id = r.id "
+                        "WHERE a.org_id = :org AND a.is_active = true"
+                    ),
+                    {"org": org_active_id},
+                )
+            ).fetchone()
             assert active_rev is not None, f"Active policy activation missing in {step_name}"
             assert active_rev[0] == 2, f"Policy rolled back to older revision in {step_name}"
 
@@ -540,8 +601,12 @@ async def test_unified_lifecycle_dataset_round_trip(pg_test_db: str) -> None:
 
         # Assert zero violations across all invariants
         assert tenant_resurrection == 0, f"Tenant resurrection observed in {step_name}"
-        assert revoked_authority_resurrection == 0, f"Revoked authority resurrection observed in {step_name}"
-        assert revoked_session_resurrection == 0, f"Revoked session resurrection observed in {step_name}"
+        assert revoked_authority_resurrection == 0, (
+            f"Revoked authority resurrection observed in {step_name}"
+        )
+        assert revoked_session_resurrection == 0, (
+            f"Revoked session resurrection observed in {step_name}"
+        )
         assert policy_history_loss == 0, f"Policy history loss observed in {step_name}"
         assert data_hold_loss == 0, f"Data hold loss observed in {step_name}"
         assert required_evidence_loss == 0, f"Evidence loss observed in {step_name}"

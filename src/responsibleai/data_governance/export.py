@@ -102,13 +102,21 @@ class DataExportService:
         for table_name in all_tables:
             classification = TABLE_CLASSIFICATIONS.get(table_name)
             if classification is None:
-                excluded_tables[table_name] = "EXCLUDED_UNCLASSIFIED: fail-closed policy prohibits export"
+                excluded_tables[table_name] = (
+                    "EXCLUDED_UNCLASSIFIED: fail-closed policy prohibits export"
+                )
             elif classification.classification == DataClassification.CREDENTIAL_SECRET:
-                excluded_tables[table_name] = "EXCLUDED_CREDENTIAL_SECRET: zero-secret export security policy"
+                excluded_tables[table_name] = (
+                    "EXCLUDED_CREDENTIAL_SECRET: zero-secret export security policy"
+                )
             elif classification.classification == DataClassification.SYSTEM_METADATA:
-                excluded_tables[table_name] = "EXCLUDED_SYSTEM_METADATA: internal infrastructure metadata"
+                excluded_tables[table_name] = (
+                    "EXCLUDED_SYSTEM_METADATA: internal infrastructure metadata"
+                )
             elif not classification.exportable:
-                excluded_tables[table_name] = "EXCLUDED_NON_EXPORTABLE: table policy prohibits export"
+                excluded_tables[table_name] = (
+                    "EXCLUDED_NON_EXPORTABLE: table policy prohibits export"
+                )
             else:
                 included_tables.append(table_name)
 
@@ -124,7 +132,9 @@ class DataExportService:
 
                 if org_col is None:
                     # Table is exportable in principle but shared/not tenant-partitioned
-                    excluded_tables[table_name] = "EXCLUDED_SHARED_TABLE: no tenant-specific partition column"
+                    excluded_tables[table_name] = (
+                        "EXCLUDED_SHARED_TABLE: no tenant-specific partition column"
+                    )
                     continue
 
                 col_attr = getattr(tbl.c, org_col)

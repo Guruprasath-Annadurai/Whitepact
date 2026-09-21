@@ -19,7 +19,6 @@ from sqlalchemy import select
 
 from responsibleai.dashboard.app import _canonical_hosted_api_key
 from responsibleai.db.engine import create_engine, org_api_keys
-from responsibleai.db.org_repository import OrgRepository
 from responsibleai.db.web_identity_repository import WebIdentityRepository
 from responsibleai.enterprise.eligibility import EligibilityGate
 from responsibleai.enterprise.errors import (
@@ -27,7 +26,6 @@ from responsibleai.enterprise.errors import (
     IDENTITY_VERIFICATION_REQUIRED,
     EnterpriseError,
 )
-from responsibleai.enterprise.issuance import CredentialIssuancePolicy
 from responsibleai.enterprise.preflight import (
     DEV_IDENTITY_WEBHOOK_SECRET,
     HostedEnterpriseSecurityError,
@@ -71,7 +69,9 @@ def _actor(user_id: str, org_id: str, role: Role) -> Actor:
     )
 
 
-async def _signed_event(body: dict, secret: bytes = b"test-webhook-secret", ts: str | None = None) -> tuple[bytes, str, str]:
+async def _signed_event(
+    body: dict, secret: bytes = b"test-webhook-secret", ts: str | None = None
+) -> tuple[bytes, str, str]:
     timestamp = ts or datetime.now(UTC).isoformat()
     payload = json.dumps(body, separators=(",", ":")).encode()
     signature = hmac.new(secret, payload + timestamp.encode(), hashlib.sha256).hexdigest()
@@ -81,23 +81,34 @@ async def _signed_event(body: dict, secret: bytes = b"test-webhook-secret", ts: 
 async def _verify(engine, user_id: str, event_id: str) -> None:
     provider = HmacVerificationProvider("test-webhook-secret")
     verification = VerificationService(engine, provider)
-    payload, sig, ts = await _signed_event({"event_id": event_id, "subject_id": user_id, "outcome": "VERIFIED"})
-    await verification.apply_provider_event(payload=payload, signature=sig, timestamp=ts, expected_user_id=user_id)
+    payload, sig, ts = await _signed_event(
+        {"event_id": event_id, "subject_id": user_id, "outcome": "VERIFIED"}
+    )
+    await verification.apply_provider_event(
+        payload=payload, signature=sig, timestamp=ts, expected_user_id=user_id
+    )
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("verify_email,env_type", [
-    (False, "DEVELOPMENT"),
-    (True, "DEVELOPMENT"),
-    (False, "STAGING"),
-    (True, "STAGING"),
-    (False, "PRODUCTION"),
-    (True, "PRODUCTION"),
-])
-async def test_owner_unverified_or_basic_denied_every_environment(engine, verify_email, env_type) -> None:
+@pytest.mark.parametrize(
+    "verify_email,env_type",
+    [
+        (False, "DEVELOPMENT"),
+        (True, "DEVELOPMENT"),
+        (False, "STAGING"),
+        (True, "STAGING"),
+        (False, "PRODUCTION"),
+        (True, "PRODUCTION"),
+    ],
+)
+async def test_owner_unverified_or_basic_denied_every_environment(
+    engine, verify_email, env_type
+) -> None:
     web = WebIdentityRepository(engine)
     iam = EnterpriseIAM(engine)
-    owner = await _register(web, f"own-{env_type}-{verify_email}@example.com", verify_email=verify_email)
+    owner = await _register(
+        web, f"own-{env_type}-{verify_email}@example.com", verify_email=verify_email
+    )
     org = await iam.create_workspace(
         actor_user_id=owner, name="Org", slug=f"e-{os.urandom(3).hex()}", kind="ORGANIZATION"
     )
@@ -125,7 +136,9 @@ async def test_admin_developer_security_admin_unverified_denied(engine) -> None:
     )
     owner_actor = _actor(owner, org["id"], Role.OWNER)
     envs = {e["type"]: e for e in await iam.list_environments(owner_actor, org["id"])}
-    gate = EligibilityGate(engine, VerificationService(engine, HmacVerificationProvider("test-webhook-secret")))
+    gate = EligibilityGate(
+        engine, VerificationService(engine, HmacVerificationProvider("test-webhook-secret"))
+    )
     for role, email in (
         (Role.ADMIN, "rbac-admin@example.com"),
         (Role.DEVELOPER, "rbac-dev@example.com"),
@@ -170,7 +183,13 @@ async def test_identity_verified_development_allowed_for_developer_rbac(engine) 
     assert secret.startswith("wp_test_")
     assert rec["accountable_human_user_id"] == owner
     async with engine.raw.connect() as conn:
-        row = (await conn.execute(select(org_api_keys.c.accountable_human_user_id).where(org_api_keys.c.id == rec["id"]))).fetchone()
+        row = (
+            await conn.execute(
+                select(org_api_keys.c.accountable_human_user_id).where(
+                    org_api_keys.c.id == rec["id"]
+                )
+            )
+        ).fetchone()
     assert row.accountable_human_user_id == owner
 
 
@@ -186,7 +205,12 @@ async def test_suspension_revokes_key_and_restore_does_not_resurrect(engine) -> 
     actor = _actor(owner, org["id"], Role.OWNER)
     envs = {e["type"]: e for e in await iam.list_environments(actor, org["id"])}
     rec, secret = await iam.create_api_key(
-        actor, org["id"], name="dev", environment_id=envs["DEVELOPMENT"]["id"], scopes=("usage:read",), expires_at=None
+        actor,
+        org["id"],
+        name="dev",
+        environment_id=envs["DEVELOPMENT"]["id"],
+        scopes=("usage:read",),
+        expires_at=None,
     )
     await iam.authenticate_api_key(secret, expected_org_id=org["id"])
     verification = VerificationService(engine, HmacVerificationProvider("test-webhook-secret"))
@@ -201,7 +225,12 @@ async def test_suspension_revokes_key_and_restore_does_not_resurrect(engine) -> 
     with pytest.raises(EnterpriseError):
         await iam.authenticate_api_key(secret, expected_org_id=org["id"])
     rec2, secret2 = await iam.create_api_key(
-        actor, org["id"], name="dev2", environment_id=envs["DEVELOPMENT"]["id"], scopes=("usage:read",), expires_at=None
+        actor,
+        org["id"],
+        name="dev2",
+        environment_id=envs["DEVELOPMENT"]["id"],
+        scopes=("usage:read",),
+        expires_at=None,
     )
     assert rec2["id"] != rec["id"]
     await iam.authenticate_api_key(secret2, expected_org_id=org["id"])
@@ -219,7 +248,9 @@ async def test_membership_revocation_disables_accountable_keys(engine) -> None:
     await _verify(engine, owner, "evt-own-rev")
     await _verify(engine, member, "evt-mem-rev")
     owner_actor = _actor(owner, org["id"], Role.OWNER)
-    _, invite = await iam.invite_member(owner_actor, org["id"], email="mem-rev@example.com", role=Role.DEVELOPER)
+    _, invite = await iam.invite_member(
+        owner_actor, org["id"], email="mem-rev@example.com", role=Role.DEVELOPER
+    )
     await iam.accept_invitation(token=invite, user_id=member)
     member_actor = _actor(member, org["id"], Role.DEVELOPER)
     envs = {e["type"]: e for e in await iam.list_environments(owner_actor, org["id"])}
@@ -249,7 +280,12 @@ async def test_org_deactivation_revokes_keys(engine) -> None:
     actor = _actor(owner, org["id"], Role.OWNER)
     envs = {e["type"]: e for e in await iam.list_environments(actor, org["id"])}
     _rec, secret = await iam.create_api_key(
-        actor, org["id"], name="dev", environment_id=envs["DEVELOPMENT"]["id"], scopes=("usage:read",), expires_at=None
+        actor,
+        org["id"],
+        name="dev",
+        environment_id=envs["DEVELOPMENT"]["id"],
+        scopes=("usage:read",),
+        expires_at=None,
     )
     await iam.deactivate_organization(actor, org["id"])
     with pytest.raises(EnterpriseError):
@@ -268,12 +304,20 @@ async def test_service_account_requires_verified_sponsor_and_cannot_self_root(en
     envs = {e["type"]: e for e in await iam.list_environments(actor, org["id"])}
     with pytest.raises(EnterpriseError) as unverified:
         await iam.create_service_account(
-            actor, org["id"], display_name="bot", role=Role.DEVELOPER, environment_ids=(envs["DEVELOPMENT"]["id"],)
+            actor,
+            org["id"],
+            display_name="bot",
+            role=Role.DEVELOPER,
+            environment_ids=(envs["DEVELOPMENT"]["id"],),
         )
     assert unverified.value.code == IDENTITY_VERIFICATION_REQUIRED
     await _verify(engine, owner, "evt-sa-spon")
     sa = await iam.create_service_account(
-        actor, org["id"], display_name="bot", role=Role.DEVELOPER, environment_ids=(envs["DEVELOPMENT"]["id"],)
+        actor,
+        org["id"],
+        display_name="bot",
+        role=Role.DEVELOPER,
+        environment_ids=(envs["DEVELOPMENT"]["id"],),
     )
     rec, secret = await iam.create_api_key(
         actor,
@@ -310,7 +354,9 @@ async def test_service_account_requires_verified_sponsor_and_cannot_self_root(en
 
 
 def test_production_rai_api_keys_fail_startup() -> None:
-    settings = SimpleNamespace(environment="production", is_production=True, api_keys=["legacy-prod-key"])
+    settings = SimpleNamespace(
+        environment="production", is_production=True, api_keys=["legacy-prod-key"]
+    )
     with pytest.raises(HostedEnterpriseSecurityError, match="RAI_API_KEYS"):
         assert_hosted_enterprise_boot_safe(settings)
 
@@ -332,17 +378,19 @@ def test_hosted_mcp_production_rai_api_keys_fail(monkeypatch: pytest.MonkeyPatch
 
 
 @pytest.mark.asyncio
-async def test_legacy_key_is_not_owner_and_empty_scope_is_not_unlimited(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_legacy_key_is_not_owner_and_empty_scope_is_not_unlimited(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from responsibleai.dashboard.app import _resolve_transport_identity
     from responsibleai.dashboard.app import settings as app_settings
-    from responsibleai.rbac.models import Role as R
+    from responsibleai.rbac.models import Role
 
     monkeypatch.setattr(app_settings, "api_keys", ["legacy-dev-key"])
     monkeypatch.setattr(app_settings, "auth_enabled", True)
     monkeypatch.setattr(app_settings, "environment", "development")
     ctx = await _resolve_transport_identity("legacy-dev-key")
     assert ctx is not None
-    assert ctx.role == R.VIEWER
+    assert ctx.role == Role.VIEWER
     assert ctx.is_legacy is True
     assert ctx.org_id is None
     assert ctx.scopes == frozenset({"legacy:compat"})
@@ -350,7 +398,9 @@ async def test_legacy_key_is_not_owner_and_empty_scope_is_not_unlimited(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_legacy_key_denied_on_enterprise_and_key_issuance(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_legacy_key_denied_on_enterprise_and_key_issuance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     from asgi_lifespan import LifespanManager
     from httpx import ASGITransport, AsyncClient
 
@@ -365,10 +415,14 @@ async def test_legacy_key_denied_on_enterprise_and_key_issuance(monkeypatch: pyt
     limiter.reset()
     headers = {"Authorization": "Bearer legacy-dev-key"}
     async with LifespanManager(app) as manager:
-        async with AsyncClient(transport=ASGITransport(app=manager.app), base_url="http://test") as client:
+        async with AsyncClient(
+            transport=ASGITransport(app=manager.app), base_url="http://test"
+        ) as client:
             r = await client.get("/api/enterprise/session", headers=headers)
             assert r.status_code in {401, 403}
-            r = await client.post("/api/orgs/any/keys", json={"name": "x", "role": "ADMIN"}, headers=headers)
+            r = await client.post(
+                "/api/orgs/any/keys", json={"name": "x", "role": "ADMIN"}, headers=headers
+            )
             assert r.status_code == 403
             r = await client.get("/api/governance/evidence", headers=headers)
             assert r.status_code == 403
@@ -387,11 +441,19 @@ def test_webhook_secret_production_preflight(monkeypatch: pytest.MonkeyPatch) ->
     with pytest.raises(HostedEnterpriseSecurityError):
         resolve_identity_webhook_secret(environment="production", configured="")
     with pytest.raises(HostedEnterpriseSecurityError):
-        resolve_identity_webhook_secret(environment="production", configured=DEV_IDENTITY_WEBHOOK_SECRET)
+        resolve_identity_webhook_secret(
+            environment="production", configured=DEV_IDENTITY_WEBHOOK_SECRET
+        )
     with pytest.raises(HostedEnterpriseSecurityError):
         resolve_identity_webhook_secret(environment="production", configured="short")
-    assert resolve_identity_webhook_secret(environment="production", configured=STRONG_SECRET) == STRONG_SECRET
-    assert resolve_identity_webhook_secret(environment="development", configured=None) == DEV_IDENTITY_WEBHOOK_SECRET
+    assert (
+        resolve_identity_webhook_secret(environment="production", configured=STRONG_SECRET)
+        == STRONG_SECRET
+    )
+    assert (
+        resolve_identity_webhook_secret(environment="development", configured=None)
+        == DEV_IDENTITY_WEBHOOK_SECRET
+    )
 
 
 @pytest.mark.asyncio
@@ -409,11 +471,17 @@ async def test_webhook_forged_modified_replay_stale_wrong_binding(engine) -> Non
     tampered = payload.replace(b"VERIFIED", b"REJECTED")
     with pytest.raises(EnterpriseError):
         await verification.apply_provider_event(payload=tampered, signature=sig, timestamp=ts)
-    await verification.apply_provider_event(payload=payload, signature=sig, timestamp=ts, expected_user_id=user)
+    await verification.apply_provider_event(
+        payload=payload, signature=sig, timestamp=ts, expected_user_id=user
+    )
     with pytest.raises(EnterpriseError) as replay:
-        await verification.apply_provider_event(payload=payload, signature=sig, timestamp=ts, expected_user_id=user)
+        await verification.apply_provider_event(
+            payload=payload, signature=sig, timestamp=ts, expected_user_id=user
+        )
     assert replay.value.code == "PROVIDER_REPLAY"
-    payload2, sig2, ts2 = await _signed_event({"event_id": "evt-wh-2", "subject_id": other, "outcome": "VERIFIED"})
+    payload2, sig2, ts2 = await _signed_event(
+        {"event_id": "evt-wh-2", "subject_id": other, "outcome": "VERIFIED"}
+    )
     with pytest.raises(EnterpriseError) as bind:
         await verification.apply_provider_event(
             payload=payload2, signature=sig2, timestamp=ts2, expected_user_id=user

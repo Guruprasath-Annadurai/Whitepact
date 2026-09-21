@@ -31,7 +31,7 @@ class AuthorizationIneligibleError(AuthorityKernelError):
     """Authorization is not eligible for consume or final CAS."""
 
 
-class PreEffectCasRejected(AuthorityKernelError):
+class PreEffectCasRejected(AuthorityKernelError):  # noqa: N818 — frozen Phase 7A public type
     """Final pre-effect CAS lost. Attempt is FAILED_PRE_EXECUTION."""
 
 

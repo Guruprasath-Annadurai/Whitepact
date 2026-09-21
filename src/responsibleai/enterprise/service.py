@@ -38,7 +38,6 @@ from responsibleai.db.engine import (
 from responsibleai.enterprise.audit import EnterpriseAuditLog
 from responsibleai.enterprise.errors import (
     API_KEY_ISSUANCE_NOT_ALLOWED,
-    CROSS_TENANT,
     ENVIRONMENT_DISABLED,
     FORBIDDEN,
     INSUFFICIENT_SCOPE,
@@ -158,11 +157,15 @@ class EnterpriseIAM:
             if environment_id:
                 env = await self.get_environment(org_id, environment_id)
                 if env is None:
-                    raise forbidden(WRONG_ENVIRONMENT, "Environment not found in this organization.")
+                    raise forbidden(
+                        WRONG_ENVIRONMENT, "Environment not found in this organization."
+                    )
                 if env["status"] != "ACTIVE":
                     raise forbidden(ENVIRONMENT_DISABLED, "Environment is not active.")
                 if actor.environment_id and actor.environment_id != environment_id:
-                    raise forbidden(WRONG_ENVIRONMENT, "Credential is bound to a different environment.")
+                    raise forbidden(
+                        WRONG_ENVIRONMENT, "Credential is bound to a different environment."
+                    )
             # Compiled-in reminder: this function never opens Gate B.
             if PRODUCTION_GATE_B_OPEN:
                 raise forbidden(FORBIDDEN, "Unexpected production gate state.")
@@ -171,7 +174,9 @@ class EnterpriseIAM:
 
     async def _load_org(self, org_id: str) -> dict[str, Any] | None:
         async with self._engine.raw.connect() as conn:
-            row = (await conn.execute(select(organizations).where(organizations.c.id == org_id))).fetchone()
+            row = (
+                await conn.execute(select(organizations).where(organizations.c.id == org_id))
+            ).fetchone()
         return dict(row._mapping) if row else None
 
     # ── Organizations / workspaces ───────────────────────────────────────────
@@ -193,7 +198,9 @@ class EnterpriseIAM:
         async with self._engine.raw.begin() as conn:
             user = (
                 await conn.execute(
-                    select(web_users).where(web_users.c.id == actor_user_id, web_users.c.disabled == 0)
+                    select(web_users).where(
+                        web_users.c.id == actor_user_id, web_users.c.disabled == 0
+                    )
                 )
             ).fetchone()
             if user is None:
@@ -283,7 +290,12 @@ class EnterpriseIAM:
         return [dict(r._mapping) for r in rows]
 
     async def update_settings(
-        self, actor: Actor, org_id: str, *, display_name: str | None, settings: dict[str, Any] | None
+        self,
+        actor: Actor,
+        org_id: str,
+        *,
+        display_name: str | None,
+        settings: dict[str, Any] | None,
     ) -> dict[str, Any]:
         await self.authorize(actor, Permission.ORG_UPDATE_SETTINGS, org_id=org_id)
         values: dict[str, Any] = {}
@@ -298,7 +310,9 @@ class EnterpriseIAM:
             assert org is not None
             return org
         async with self._engine.raw.begin() as conn:
-            await conn.execute(update(organizations).where(organizations.c.id == org_id).values(**values))
+            await conn.execute(
+                update(organizations).where(organizations.c.id == org_id).values(**values)
+            )
         await self.audit.record(
             org_id=org_id,
             actor_type=actor.actor_type,
@@ -330,7 +344,9 @@ class EnterpriseIAM:
                 .values(revoked=1, revoked_at=_iso())
             )
             await conn.execute(
-                update(web_sessions).where(web_sessions.c.org_id == org_id, web_sessions.c.revoked == 0).values(revoked=1)
+                update(web_sessions)
+                .where(web_sessions.c.org_id == org_id, web_sessions.c.revoked == 0)
+                .values(revoked=1)
             )
         await self.audit.record(
             org_id=org_id,
@@ -362,8 +378,12 @@ class EnterpriseIAM:
             if dialect != "sqlite":
                 lock = lock.with_for_update()
             rows = (await conn.execute(lock)).fetchall()
-            current_owners = [r for r in rows if r.role == Role.OWNER.value and r.status == "ACTIVE"]
-            target = next((r for r in rows if r.user_id == new_owner_user_id and r.status == "ACTIVE"), None)
+            current_owners = [
+                r for r in rows if r.role == Role.OWNER.value and r.status == "ACTIVE"
+            ]
+            target = next(
+                (r for r in rows if r.user_id == new_owner_user_id and r.status == "ACTIVE"), None
+            )
             if target is None:
                 raise forbidden(FORBIDDEN, "New owner must be an active member.")
             if not current_owners or actor.user_id not in {r.user_id for r in current_owners}:
@@ -388,7 +408,9 @@ class EnterpriseIAM:
                 .values(role=Role.OWNER.value, updated_at=_iso())
             )
             await conn.execute(
-                update(organizations).where(organizations.c.id == org_id).values(owner_user_id=new_owner_user_id)
+                update(organizations)
+                .where(organizations.c.id == org_id)
+                .values(owner_user_id=new_owner_user_id)
             )
             await conn.execute(
                 update(web_sessions)
@@ -461,7 +483,9 @@ class EnterpriseIAM:
         )
         return invitation_id, token
 
-    async def accept_invitation(self, *, token: str, user_id: str, request_id: str | None = None) -> str:
+    async def accept_invitation(
+        self, *, token: str, user_id: str, request_id: str | None = None
+    ) -> str:
         now = _now()
         token_hash = _hash_token(token)
         async with self._engine.raw.begin() as conn:
@@ -674,7 +698,9 @@ class EnterpriseIAM:
         async with self._engine.raw.begin() as conn:
             existing = (
                 await conn.execute(
-                    select(enterprise_environments.c.id).where(enterprise_environments.c.org_id == org_id)
+                    select(enterprise_environments.c.id).where(
+                        enterprise_environments.c.org_id == org_id
+                    )
                 )
             ).fetchall()
             if existing:
@@ -758,8 +784,12 @@ class EnterpriseIAM:
             ).fetchone()
         return dict(row._mapping) if row else None
 
-    async def set_environment_status(self, actor: Actor, org_id: str, environment_id: str, status: str) -> None:
-        await self.authorize(actor, Permission.ENV_WRITE, org_id=org_id, environment_id=environment_id)
+    async def set_environment_status(
+        self, actor: Actor, org_id: str, environment_id: str, status: str
+    ) -> None:
+        await self.authorize(
+            actor, Permission.ENV_WRITE, org_id=org_id, environment_id=environment_id
+        )
         if status not in {"ACTIVE", "DISABLED", "DELETED"}:
             raise forbidden(FORBIDDEN, "Invalid environment status.")
         async with self._engine.raw.begin() as conn:
@@ -809,10 +839,15 @@ class EnterpriseIAM:
         )
         from responsibleai.enterprise.eligibility import EligibilityGate
         from responsibleai.enterprise.preflight import identity_webhook_secret_from_env
-        from responsibleai.enterprise.verification import HmacVerificationProvider, VerificationService
+        from responsibleai.enterprise.verification import (
+            HmacVerificationProvider,
+            VerificationService,
+        )
 
         if not actor.user_id:
-            raise forbidden(API_KEY_ISSUANCE_NOT_ALLOWED, "Credential provenance cannot be established.")
+            raise forbidden(
+                API_KEY_ISSUANCE_NOT_ALLOWED, "Credential provenance cannot be established."
+            )
         if actor.actor_type != "human":
             raise forbidden(
                 API_KEY_ISSUANCE_NOT_ALLOWED,
@@ -850,7 +885,9 @@ class EnterpriseIAM:
         holder_kind = "service_account" if service_account_id else "human_key"
         accountable = decision.accountable_human_user_id or actor.user_id
         if not accountable:
-            raise forbidden(API_KEY_ISSUANCE_NOT_ALLOWED, "Credential provenance cannot be established.")
+            raise forbidden(
+                API_KEY_ISSUANCE_NOT_ALLOWED, "Credential provenance cannot be established."
+            )
         prefix, raw = self._generate_raw_key(str(env["type"]))
         key_id = str(uuid.uuid4())
         key_hash = _hash_secret(raw)
@@ -862,7 +899,9 @@ class EnterpriseIAM:
                     org_id=org_id,
                     key_hash=key_hash,
                     name=name,
-                    role=Role.DEVELOPER.value if holder_kind == "human_key" else Role.DEVELOPER.value,
+                    role=Role.DEVELOPER.value
+                    if holder_kind == "human_key"
+                    else Role.DEVELOPER.value,
                     created_at=now,
                     revoked=0,
                     created_by_user_id=actor.user_id,
@@ -918,12 +957,17 @@ class EnterpriseIAM:
     ) -> tuple[dict[str, Any], str]:
         await self.authorize(actor, Permission.API_KEYS_ROTATE, org_id=org_id)
         if actor.actor_type != "human" or not actor.user_id:
-            raise forbidden(API_KEY_ISSUANCE_NOT_ALLOWED, "Only an authenticated IDENTITY_VERIFIED human may rotate credentials.")
+            raise forbidden(
+                API_KEY_ISSUANCE_NOT_ALLOWED,
+                "Only an authenticated IDENTITY_VERIFIED human may rotate credentials.",
+            )
         async with self._engine.raw.connect() as conn:
             peek = (
                 await conn.execute(
                     select(org_api_keys, org_api_key_metadata)
-                    .outerjoin(org_api_key_metadata, org_api_key_metadata.c.key_id == org_api_keys.c.id)
+                    .outerjoin(
+                        org_api_key_metadata, org_api_key_metadata.c.key_id == org_api_keys.c.id
+                    )
                     .where(org_api_keys.c.id == key_id, org_api_keys.c.org_id == org_id)
                 )
             ).fetchone()
@@ -937,12 +981,17 @@ class EnterpriseIAM:
             )
         from responsibleai.enterprise.eligibility import EligibilityGate
         from responsibleai.enterprise.preflight import identity_webhook_secret_from_env
-        from responsibleai.enterprise.verification import HmacVerificationProvider, VerificationService
+        from responsibleai.enterprise.verification import (
+            HmacVerificationProvider,
+            VerificationService,
+        )
 
         scopes = tuple(json.loads(getattr(peek, "scopes", "[]") or "[]"))
         gate = EligibilityGate(
             self._engine,
-            VerificationService(self._engine, HmacVerificationProvider(identity_webhook_secret_from_env())),
+            VerificationService(
+                self._engine, HmacVerificationProvider(identity_webhook_secret_from_env())
+            ),
         )
         decision = await gate.may_issue_api_key(
             principal_user_id=actor.user_id,
@@ -994,7 +1043,8 @@ class EnterpriseIAM:
                     created_at=_iso(now),
                     revoked=0,
                     created_by_user_id=actor.user_id,
-                    accountable_human_user_id=getattr(old, "accountable_human_user_id", None) or actor.user_id,
+                    accountable_human_user_id=getattr(old, "accountable_human_user_id", None)
+                    or actor.user_id,
                     service_account_id=getattr(old, "service_account_id", None),
                     environment_id=env_id,
                     holder_kind=getattr(old, "holder_kind", None) or "human_key",
@@ -1013,7 +1063,11 @@ class EnterpriseIAM:
             if overlap_seconds > 0:
                 await conn.execute(
                     update(org_api_keys)
-                    .where(org_api_keys.c.id == old.id, org_api_keys.c.org_id == org_id, org_api_keys.c.revoked == 0)
+                    .where(
+                        org_api_keys.c.id == old.id,
+                        org_api_keys.c.org_id == org_id,
+                        org_api_keys.c.revoked == 0,
+                    )
                     .values(overlap_expires_at=_iso(now + timedelta(seconds=overlap_seconds)))
                 )
             else:
@@ -1032,7 +1086,11 @@ class EnterpriseIAM:
             target_id=new_id,
             result="ALLOWED",
             request_id=actor.request_id,
-            metadata={"rotated_from_id": key_id, "overlap_seconds": overlap_seconds, "prefix": prefix},
+            metadata={
+                "rotated_from_id": key_id,
+                "overlap_seconds": overlap_seconds,
+                "prefix": prefix,
+            },
         )
         return (
             {
@@ -1047,7 +1105,9 @@ class EnterpriseIAM:
             raw,
         )
 
-    async def revoke_api_key(self, actor: Actor, org_id: str, key_id: str, *, emergency: bool = False) -> None:
+    async def revoke_api_key(
+        self, actor: Actor, org_id: str, key_id: str, *, emergency: bool = False
+    ) -> None:
         perm = Permission.CREDENTIALS_EMERGENCY_REVOKE if emergency else Permission.API_KEYS_REVOKE
         await self.authorize(actor, perm, org_id=org_id)
         async with self._engine.raw.begin() as conn:
@@ -1119,9 +1179,13 @@ class EnterpriseIAM:
                 raise forbidden(ENVIRONMENT_DISABLED, "Environment is not active.")
             key_env_type = getattr(row, "environment", None)
             if key_env_type in {"DEVELOPMENT", "STAGING", "test"} and env["type"] == "PRODUCTION":
-                raise forbidden(WRONG_ENVIRONMENT, "Non-production credentials cannot operate on production.")
+                raise forbidden(
+                    WRONG_ENVIRONMENT, "Non-production credentials cannot operate on production."
+                )
             if key_env_type == "STAGING" and env["type"] == "PRODUCTION":
-                raise forbidden(WRONG_ENVIRONMENT, "Staging credentials cannot operate on production.")
+                raise forbidden(
+                    WRONG_ENVIRONMENT, "Staging credentials cannot operate on production."
+                )
         scopes = frozenset(json.loads(getattr(row, "scopes", "[]") or "[]"))
         if required_scope and required_scope not in scopes:
             raise forbidden(INSUFFICIENT_SCOPE, "API key lacks required scope.")
@@ -1154,7 +1218,9 @@ class EnterpriseIAM:
         try:
             async with self._engine.raw.begin() as conn:
                 await conn.execute(
-                    update(org_api_keys).where(org_api_keys.c.id == row.id).values(last_used_at=_iso())
+                    update(org_api_keys)
+                    .where(org_api_keys.c.id == row.id)
+                    .values(last_used_at=_iso())
                 )
         except SQLAlchemyError:
             pass
@@ -1175,7 +1241,9 @@ class EnterpriseIAM:
             rows = (
                 await conn.execute(
                     select(org_api_keys, org_api_key_metadata)
-                    .outerjoin(org_api_key_metadata, org_api_key_metadata.c.key_id == org_api_keys.c.id)
+                    .outerjoin(
+                        org_api_key_metadata, org_api_key_metadata.c.key_id == org_api_keys.c.id
+                    )
                     .where(org_api_keys.c.org_id == org_id)
                 )
             ).fetchall()
@@ -1237,26 +1305,42 @@ class EnterpriseIAM:
     ) -> dict[str, Any]:
         await self.authorize(actor, Permission.SA_CREATE, org_id=org_id)
         if actor.actor_type != "human":
-            raise forbidden(SERVICE_ACCOUNT_FORBIDDEN, "A service account cannot be its own accountability root.")
+            raise forbidden(
+                SERVICE_ACCOUNT_FORBIDDEN,
+                "A service account cannot be its own accountability root.",
+            )
         if role == Role.OWNER:
             raise forbidden(SERVICE_ACCOUNT_FORBIDDEN, "Service accounts cannot receive OWNER.")
         if actor.actor_type == "service_account":
             if role_privilege(role) >= role_privilege(actor.role):
                 raise forbidden(SERVICE_ACCOUNT_FORBIDDEN, "Service accounts cannot self-promote.")
             if not has_rbac_permission(actor.role, Permission.SA_CREATE):
-                raise forbidden(SERVICE_ACCOUNT_FORBIDDEN, "Service account cannot create a more privileged identity.")
+                raise forbidden(
+                    SERVICE_ACCOUNT_FORBIDDEN,
+                    "Service account cannot create a more privileged identity.",
+                )
         if role_privilege(role) >= role_privilege(actor.role) and actor.role != Role.OWNER:
-            raise forbidden(SERVICE_ACCOUNT_FORBIDDEN, "Cannot assign a service-account role at or above your own.")
+            raise forbidden(
+                SERVICE_ACCOUNT_FORBIDDEN,
+                "Cannot assign a service-account role at or above your own.",
+            )
         if not actor.user_id:
-            raise forbidden(SERVICE_ACCOUNT_FORBIDDEN, "Service account requires accountable human provenance.")
+            raise forbidden(
+                SERVICE_ACCOUNT_FORBIDDEN, "Service account requires accountable human provenance."
+            )
         from responsibleai.enterprise.eligibility import EligibilityGate
         from responsibleai.enterprise.issuance import CredentialIssuancePolicy
         from responsibleai.enterprise.preflight import identity_webhook_secret_from_env
-        from responsibleai.enterprise.verification import HmacVerificationProvider, VerificationService
+        from responsibleai.enterprise.verification import (
+            HmacVerificationProvider,
+            VerificationService,
+        )
 
         secret = identity_webhook_secret_from_env()
         verification = VerificationService(self._engine, HmacVerificationProvider(secret))
-        sponsor = await CredentialIssuancePolicy(self._engine, verification).assert_sponsor_eligible(
+        sponsor = await CredentialIssuancePolicy(
+            self._engine, verification
+        ).assert_sponsor_eligible(
             principal_user_id=actor.user_id,
             organization_id=org_id,
             role=actor.role,
@@ -1328,7 +1412,9 @@ class EnterpriseIAM:
             "environment_ids": list(environment_ids),
         }
 
-    async def revoke_service_account(self, actor: Actor, org_id: str, service_account_id: str) -> None:
+    async def revoke_service_account(
+        self, actor: Actor, org_id: str, service_account_id: str
+    ) -> None:
         await self.authorize(actor, Permission.SA_REVOKE, org_id=org_id)
         async with self._engine.raw.begin() as conn:
             result = await conn.execute(
@@ -1341,7 +1427,9 @@ class EnterpriseIAM:
                 .values(status="REVOKED", revoked_at=_iso())
             )
             if (result.rowcount or 0) != 1:
-                raise forbidden(SERVICE_ACCOUNT_FORBIDDEN, "Service account not found or already revoked.")
+                raise forbidden(
+                    SERVICE_ACCOUNT_FORBIDDEN, "Service account not found or already revoked."
+                )
             await conn.execute(
                 update(org_api_keys)
                 .where(
@@ -1367,7 +1455,9 @@ class EnterpriseIAM:
         async with self._engine.raw.connect() as conn:
             rows = (
                 await conn.execute(
-                    select(enterprise_service_accounts).where(enterprise_service_accounts.c.org_id == org_id)
+                    select(enterprise_service_accounts).where(
+                        enterprise_service_accounts.c.org_id == org_id
+                    )
                 )
             ).fetchall()
         return [dict(r._mapping) for r in rows]
@@ -1376,7 +1466,11 @@ class EnterpriseIAM:
 
     async def list_sessions(self, actor: Actor, org_id: str, user_id: str) -> list[dict[str, Any]]:
         await self.authorize(actor, Permission.SESSIONS_READ, org_id=org_id)
-        if actor.user_id != user_id and actor.role not in {Role.OWNER, Role.ADMIN, Role.SECURITY_ADMIN}:
+        if actor.user_id != user_id and actor.role not in {
+            Role.OWNER,
+            Role.ADMIN,
+            Role.SECURITY_ADMIN,
+        }:
             raise forbidden(FORBIDDEN, "Cannot list another user's sessions.")
         async with self._engine.raw.connect() as conn:
             rows = (
@@ -1415,7 +1509,9 @@ class EnterpriseIAM:
     async def logout_all(self, user_id: str, *, request_id: str | None = None) -> int:
         async with self._engine.raw.begin() as conn:
             result = await conn.execute(
-                update(web_sessions).where(web_sessions.c.user_id == user_id, web_sessions.c.revoked == 0).values(revoked=1)
+                update(web_sessions)
+                .where(web_sessions.c.user_id == user_id, web_sessions.c.revoked == 0)
+                .values(revoked=1)
             )
         await self.audit.record(
             actor_type="human",

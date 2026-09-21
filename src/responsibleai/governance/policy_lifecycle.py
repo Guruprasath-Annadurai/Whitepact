@@ -52,7 +52,9 @@ def serialize_rule_canonical(rule: PolicyRule) -> dict[str, Any]:
         "action_types": sorted(rule.action_types) if rule.action_types is not None else None,
         "effect": rule.effect.value,
         "reason_code": rule.reason_code,
-        "risk_tiers": sorted(t.value for t in rule.risk_tiers) if rule.risk_tiers is not None else None,
+        "risk_tiers": sorted(t.value for t in rule.risk_tiers)
+        if rule.risk_tiers is not None
+        else None,
         "rule_id": rule.rule_id,
         "targets": sorted(rule.targets) if rule.targets is not None else None,
     }
@@ -64,11 +66,12 @@ def deserialize_rule_canonical(d: dict[str, Any]) -> PolicyRule:
         rule_id=d["rule_id"],
         reason_code=d["reason_code"],
         effect=GovernanceDecision(d["effect"]),
-        risk_tiers=frozenset(RiskTier(t) for t in d["risk_tiers"]) if d.get("risk_tiers") is not None else None,
+        risk_tiers=frozenset(RiskTier(t) for t in d["risk_tiers"])
+        if d.get("risk_tiers") is not None
+        else None,
         action_types=frozenset(d["action_types"]) if d.get("action_types") is not None else None,
         targets=frozenset(d["targets"]) if d.get("targets") is not None else None,
     )
-
 
 
 def is_critical_policy(rules: list[PolicyRule]) -> bool:
@@ -90,6 +93,7 @@ def is_critical_policy(rules: list[PolicyRule]) -> bool:
             if r.risk_tiers and RiskTier.HIGH in r.risk_tiers:
                 return True
     return False
+
 
 def compute_policy_digest(rules: list[PolicyRule]) -> str:
     """Compute a deterministic canonical SHA-256 digest over ordered rules."""
@@ -166,7 +170,9 @@ class PolicyLifecycleManager:
 
         if is_crit:
             if caller is None:
-                raise PrivilegedAccessDeniedError("Privileged caller context required for critical policy revision creation.")
+                raise PrivilegedAccessDeniedError(
+                    "Privileged caller context required for critical policy revision creation."
+                )
             effective_approval = four_eyes_approval_id or approval_id
             await self._guard.authorize_privileged_operation(
                 caller=caller,
@@ -180,7 +186,9 @@ class PolicyLifecycleManager:
             )
         elif caller is not None or break_glass_session_id is not None:
             if caller is None:
-                raise PrivilegedAccessDeniedError("Privileged caller context required for policy revision creation.")
+                raise PrivilegedAccessDeniedError(
+                    "Privileged caller context required for policy revision creation."
+                )
             await self._guard.authorize_privileged_operation(
                 caller=caller,
                 target_org_id=org_id,
@@ -315,7 +323,9 @@ class PolicyLifecycleManager:
                 )
             ).fetchone()
             if not rev_row_check:
-                raise PolicyRevisionNotFoundError(f"Revision {revision_id} not found for org {org_id}")
+                raise PolicyRevisionNotFoundError(
+                    f"Revision {revision_id} not found for org {org_id}"
+                )
 
             rules_raw = json.loads(rev_row_check.rules_json)
             rules = [deserialize_rule_canonical(r) for r in rules_raw]
@@ -323,7 +333,9 @@ class PolicyLifecycleManager:
         is_crit = is_critical_policy(rules)
         if is_crit:
             if caller is None:
-                raise PrivilegedAccessDeniedError("Privileged caller context required for critical policy activation.")
+                raise PrivilegedAccessDeniedError(
+                    "Privileged caller context required for critical policy activation."
+                )
             current_epoch = (await RevocationEpochRepository(self._engine).current(org_id)).epoch
             await self._guard.authorize_privileged_operation(
                 caller=caller,
@@ -341,7 +353,9 @@ class PolicyLifecycleManager:
             )
         elif caller is not None or break_glass_session_id is not None:
             if caller is None:
-                raise PrivilegedAccessDeniedError("Privileged caller context required for policy activation.")
+                raise PrivilegedAccessDeniedError(
+                    "Privileged caller context required for policy activation."
+                )
             await self._guard.authorize_privileged_operation(
                 caller=caller,
                 target_org_id=org_id,
@@ -366,7 +380,9 @@ class PolicyLifecycleManager:
                 )
             ).fetchone()
             if not rev_row:
-                raise PolicyRevisionNotFoundError(f"Revision {revision_id} not found for org {org_id}")
+                raise PolicyRevisionNotFoundError(
+                    f"Revision {revision_id} not found for org {org_id}"
+                )
 
             # 3. Find currently active activation
             current_active = (
@@ -417,8 +433,12 @@ class PolicyLifecycleManager:
                         rule_id=r_data["rule_id"],
                         reason_code=r_data["reason_code"],
                         effect=r_data["effect"],
-                        risk_tiers=json.dumps(r_data["risk_tiers"]) if r_data["risk_tiers"] else None,
-                        action_types=json.dumps(r_data["action_types"]) if r_data["action_types"] else None,
+                        risk_tiers=json.dumps(r_data["risk_tiers"])
+                        if r_data["risk_tiers"]
+                        else None,
+                        action_types=json.dumps(r_data["action_types"])
+                        if r_data["action_types"]
+                        else None,
                         targets=json.dumps(r_data["targets"]) if r_data["targets"] else None,
                         position=idx,
                         created_at=now,
