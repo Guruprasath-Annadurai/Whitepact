@@ -79,9 +79,7 @@ async def web_client(monkeypatch):
     monkeypatch.setattr(app_module.settings, "web_auth_dev_tokens", True)
     monkeypatch.setattr(app_module.settings, "web_session_secure", False)
     monkeypatch.setattr(app_module.settings, "web_verification_delivery_url", None)
-    monkeypatch.setattr(
-        app_module.settings, "paddle_webhook_secret", "paddle-test-placeholder"
-    )
+    monkeypatch.setattr(app_module.settings, "paddle_webhook_secret", "paddle-test-placeholder")
     monkeypatch.setattr(app_module.settings, "paddle_signature_tolerance_seconds", 300)
     monkeypatch.setattr(app_module.limiter, "enabled", False)
     async with LifespanManager(app_module.app) as manager:
