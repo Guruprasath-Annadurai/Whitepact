@@ -9,11 +9,20 @@ import { DomainPage } from "../features/dashboard/DomainPage";
 import { OnboardingPage } from "../features/onboarding/OnboardingPage";
 import { OverviewPage } from "../features/dashboard/OverviewPage";
 import App from "../App";
+import { EvidenceContractPanel } from "../features/dashboard/CanonicalPanels";
 
 const session: WebSession = {
   user: { full_name: "Ada Lovelace", email: "ada@example.com" },
   organization: { id: "org-1", name: "Analytical Engines", plan: "FREE" },
 };
+
+const approvalDetail = (overrides: Record<string, unknown> = {}) => ({
+  approval_id: "appr-1", action_type: "test.counter.increment", target: "test.counter.increment",
+  risk_tier: "HIGH", requester: "key-1", status: "PENDING", required_approvals: 1,
+  current_vote_count: 0, votes: [], purpose: "automated-test",
+  argument_summary: { argument_keys: ["amount"], argument_count: 1 },
+  ...overrides,
+});
 
 describe("dashboard and onboarding", () => {
   beforeEach(() => vi.restoreAllMocks());
@@ -74,6 +83,44 @@ describe("dashboard and onboarding", () => {
     expect(screen.getByText(/web_sessions.assurance_level/i)).toBeInTheDocument();
   });
 
+  it("renders canonical approval quorum, vote history, purpose, and safe argument summary", async () => {
+    vi.spyOn(window, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [{ approval_id: "appr-detail", action_type: "payment.send", target: "vendor" }], source: "approval_repository" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(approvalDetail({ approval_id: "appr-detail", action_type: "payment.send", target: "vendor", required_approvals: 2, current_vote_count: 1, purpose: "pay approved invoice", votes: [{ vote_id: "vote-1", resolver_identity_id: "internal-reviewer-7", outcome: "APPROVED", resolved_at: "2026-09-21T00:01:00Z" }] })), { status: 200 }));
+    const Parent = () => <Outlet context={session} />;
+    render(<MemoryRouter initialEntries={["/dashboard/approvals"]}><Routes><Route element={<Parent />}><Route path="/dashboard/:domain" element={<DomainPage />} /></Route></Routes></MemoryRouter>);
+    expect(await screen.findByText("1 of 2 approvals")).toBeInTheDocument();
+    expect(screen.getByText("pay approved invoice")).toBeInTheDocument();
+    expect(screen.getByText(/1 arguments: amount/i)).toBeInTheDocument();
+    expect(screen.getByText(/Authorized reviewer internal-reviewer-7/i)).toBeInTheDocument();
+  });
+
+  it("uses canonical evidence detail, verification, and unsigned attestation contracts", async () => {
+    const record = { evidence_id: "ev-1", agent_id: "agent-1", action_type: "payment.send", target: "vendor", decision: "ALLOW", integrity_status: "CHAINED", recorded_at: "2026-09-21T00:00:00Z", hash: "hash-1" };
+    vi.spyOn(window, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/verify")) return new Response(JSON.stringify({ org_id: "org-1", status: "INCOMPLETE", chain_intact: true, cryptographically_signed: false, integrity_note: "Legacy pre-canonical entries remain." }), { status: 200 });
+      if (url.endsWith("/attestation")) return new Response(JSON.stringify({ evidence_id: "ev-1", action_id: "act-1", decision: "ALLOW", outcome_status: "UNKNOWN", reconciliation_status: "RECONCILED", evidence_hash: "hash-1", attested_at: "2026-09-21T00:02:00Z", cryptographically_signed: false, integrity_note: "Not cryptographically signed." }), { status: 200 });
+      return new Response(JSON.stringify(record), { status: 200 });
+    });
+    const user = userEvent.setup();
+    render(<MemoryRouter><EvidenceContractPanel records={[record]} /></MemoryRouter>);
+    expect(await screen.findByText("INCOMPLETE")).toBeInTheDocument();
+    expect(screen.getByText(/not presented as fully verified/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "View evidence" }));
+    expect(await screen.findByRole("heading", { name: "Evidence details" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Evidence attestation" })).toBeInTheDocument();
+    expect(screen.getByText("Reconciliation required")).toBeInTheDocument();
+    expect(screen.getByText(/Not cryptographically signed/i)).toBeInTheDocument();
+  });
+
+  it("surfaces missing evidence detail without inventing an attestation", async () => {
+    vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify({ detail: "Evidence record not found." }), { status: 404 }));
+    render(<MemoryRouter initialEntries={["/dashboard/evidence?evidence=missing"]}><EvidenceContractPanel records={[]} /></MemoryRouter>);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Request failed (404)");
+    expect(screen.queryByRole("heading", { name: "Evidence attestation" })).not.toBeInTheDocument();
+  });
+
   it("approves and denies pending requests through backend endpoints", async () => {
     const user = userEvent.setup();
     const fetchMock = vi.spyOn(window, "fetch")
@@ -81,8 +128,10 @@ describe("dashboard and onboarding", () => {
         items: [{ approval_id: "appr-1", action_type: "test.counter.increment", target: "test.counter.increment", risk_tier: "HIGH", status: "PENDING", requested_at: "2026-09-21T00:00:00Z", requested_by: "key-1" }],
         source: "approval_repository",
       }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(approvalDetail()), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ status: "APPROVED" }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ approval_id: "appr-1", result: { ok: true } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(approvalDetail({ status: "APPROVED", current_vote_count: 1, votes: [{ vote_id: "v1", resolver_identity_id: "reviewer-1", outcome: "APPROVED", resolved_at: "2026-09-21T00:01:00Z" }] })), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ approval_id: "appr-1", execution_status: "SUCCEEDED", reconciliation_required: false, evidence_id: "ev-1", outcome_id: "out-1", message: "Execution completed with a known outcome." }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ items: [] , source: "approval_repository" }), { status: 200 }));
     const Parent = () => <Outlet context={session} />;
     render(<MemoryRouter initialEntries={["/dashboard/approvals"]}><Routes><Route element={<Parent />}><Route path="/dashboard/:domain" element={<DomainPage />} /></Route></Routes></MemoryRouter>);
@@ -100,7 +149,9 @@ describe("dashboard and onboarding", () => {
         items: [{ approval_id: "appr-2", action_type: "test.counter.increment", target: "test.counter.increment", risk_tier: "HIGH", status: "PENDING", requested_at: "2026-09-21T00:00:00Z", requested_by: "key-1" }],
         source: "approval_repository",
       }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(approvalDetail({ approval_id: "appr-2" })), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ status: "DENIED" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(approvalDetail({ approval_id: "appr-2", status: "DENIED", denied_vote_count: 1, votes: [{ vote_id: "v2", resolver_identity_id: "reviewer-1", outcome: "DENIED", resolved_at: "2026-09-21T00:01:00Z" }] })), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ items: [] , source: "approval_repository" }), { status: 200 }));
     const Parent = () => <Outlet context={session} />;
     render(<MemoryRouter initialEntries={["/dashboard/approvals"]}><Routes><Route element={<Parent />}><Route path="/dashboard/:domain" element={<DomainPage />} /></Route></Routes></MemoryRouter>);
@@ -115,33 +166,37 @@ describe("dashboard and onboarding", () => {
     const user = userEvent.setup();
     const fetchMock = vi.spyOn(window, "fetch")
       .mockResolvedValueOnce(new Response(JSON.stringify({ items: [{ approval_id: "appr-u", action_type: "external.send", target: "https://example.com", risk_tier: "HIGH", status: "PENDING", required_approvals: 1 }], source: "approval_repository" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(approvalDetail({ approval_id: "appr-u", action_type: "external.send", target: "https://example.com" })), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ status: "APPROVED" }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ approval_id: "appr-u", error: "governance_unknown_outcome", message: "The mutation may have applied; acknowledgement was lost." }), { status: 200 }));
+      .mockResolvedValueOnce(new Response(JSON.stringify(approvalDetail({ approval_id: "appr-u", status: "APPROVED", current_vote_count: 1, votes: [{ vote_id: "v1", resolver_identity_id: "reviewer-1", outcome: "APPROVED", resolved_at: "2026-09-21T00:01:00Z" }] })), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ approval_id: "appr-u", execution_status: "UNKNOWN", reconciliation_required: true, evidence_id: "ev-u", outcome_id: "out-u", message: "The mutation may have applied; acknowledgement was lost. WhitePact will not retry automatically." }), { status: 200 }));
     const Parent = () => <Outlet context={session} />;
     render(<MemoryRouter initialEntries={["/dashboard/approvals"]}><Routes><Route element={<Parent />}><Route path="/dashboard/:domain" element={<DomainPage />} /></Route></Routes></MemoryRouter>);
     await user.click(await screen.findByRole("button", { name: "Approve" }));
     await user.click(screen.getByRole("button", { name: "Confirm approved" }));
     expect(await screen.findByRole("heading", { name: "Execution outcome is uncertain" })).toBeInTheDocument();
     expect(screen.queryByText(/execution acknowledged/i)).not.toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(screen.getByText("Reconciliation required")).toBeInTheDocument();
+    expect(screen.getByText(/ev-u/)).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(5);
   });
 
   it.each([[409,"Approval is stale"],[403,"Not authorized"]])("surfaces approval HTTP %s without execution retry", async (status, detail) => {
     const user=userEvent.setup();
-    const fetchMock=vi.spyOn(window,"fetch").mockResolvedValueOnce(new Response(JSON.stringify({items:[{approval_id:`appr-${status}`,action_type:"tool.call",target:"tool",status:"PENDING"}],source:"approval_repository"}),{status:200})).mockResolvedValueOnce(new Response(JSON.stringify({detail}),{status}));
+    const fetchMock=vi.spyOn(window,"fetch").mockResolvedValueOnce(new Response(JSON.stringify({items:[{approval_id:`appr-${status}`,action_type:"tool.call",target:"tool",status:"PENDING"}],source:"approval_repository"}),{status:200})).mockResolvedValueOnce(new Response(JSON.stringify(approvalDetail({approval_id:`appr-${status}`,action_type:"tool.call",target:"tool"})),{status:200})).mockResolvedValueOnce(new Response(JSON.stringify({detail}),{status}));
     const Parent=()=> <Outlet context={session}/>;
     render(<MemoryRouter initialEntries={["/dashboard/approvals"]}><Routes><Route element={<Parent/>}><Route path="/dashboard/:domain" element={<DomainPage/>}/></Route></Routes></MemoryRouter>);
     await user.click(await screen.findByRole("button",{name:"Approve"})); await user.click(screen.getByRole("button",{name:"Confirm approved"}));
     expect(await screen.findByRole("heading", { name: "Request could not be completed" })).toBeInTheDocument();
     expect(screen.getByText(detail)).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it("surfaces an approval network failure without executing", async () => {
-    const user=userEvent.setup(); const fetchMock=vi.spyOn(window,"fetch").mockResolvedValueOnce(new Response(JSON.stringify({items:[{approval_id:"appr-net",action_type:"tool.call",target:"tool",status:"PENDING"}],source:"approval_repository"}),{status:200})).mockRejectedValueOnce(new TypeError("Network unavailable"));
+    const user=userEvent.setup(); const fetchMock=vi.spyOn(window,"fetch").mockResolvedValueOnce(new Response(JSON.stringify({items:[{approval_id:"appr-net",action_type:"tool.call",target:"tool",status:"PENDING"}],source:"approval_repository"}),{status:200})).mockResolvedValueOnce(new Response(JSON.stringify(approvalDetail({approval_id:"appr-net",action_type:"tool.call",target:"tool"})),{status:200})).mockRejectedValueOnce(new TypeError("Network unavailable"));
     const Parent=()=> <Outlet context={session}/>; render(<MemoryRouter initialEntries={["/dashboard/approvals"]}><Routes><Route element={<Parent/>}><Route path="/dashboard/:domain" element={<DomainPage/>}/></Route></Routes></MemoryRouter>);
     await user.click(await screen.findByRole("button",{name:"Approve"})); await user.click(screen.getByRole("button",{name:"Confirm approved"}));
-    expect(await screen.findByRole("heading", { name: "Request could not be completed" })).toBeInTheDocument(); expect(screen.getByText("Network unavailable")).toBeInTheDocument(); expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(await screen.findByRole("heading", { name: "Request could not be completed" })).toBeInTheDocument(); expect(screen.getByText("Network unavailable")).toBeInTheDocument(); expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it("collects onboarding data through all three steps", async () => {

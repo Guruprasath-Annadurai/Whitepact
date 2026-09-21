@@ -6,8 +6,9 @@ import { Link, useOutletContext, useParams } from "react-router-dom";
 import { AccessibleDialog } from "../../components/AccessibleDialog";
 import { Button } from "../../components/Button";
 import { api, messageFrom } from "../../lib/api";
-import type { ApprovalExecutionResponse, ApprovalResolution, ConsequentialOutcome, DomainRecord, DomainResponse, InvitationRecord, LoadState, RecordValue } from "../../lib/contracts";
+import type { ApprovalExecutionResponse, ApprovalResolution, ConsequentialOutcome, DomainRecord, DomainResponse, EvidenceListResponse, InvitationRecord, LoadState, RecordValue } from "../../lib/contracts";
 import type { WebSession } from "./DashboardShell";
+import { ApprovalContractPanel, EvidenceContractPanel } from "./CanonicalPanels";
 
 const supported = {
   approvals: { title: "Approvals", copy: "Requests waiting for an authorized human decision.", icon: Users },
@@ -31,7 +32,9 @@ export function DomainPage({ domainKey }: { domainKey?: keyof typeof supported }
   const load = useCallback(async () => {
     if (!config) return;
     try {
-      const value = await api<DomainResponse>(`/api/v1/web/dashboard/${key}`);
+      const value = key === "evidence"
+        ? await api<EvidenceListResponse>("/api/v1/web/evidence?limit=50").then((payload) => ({ items: payload.evidence, source: `bounded evidence list (limit ${payload.limit})` }))
+        : await api<DomainResponse>(`/api/v1/web/dashboard/${key}`);
       setResult(value); setError("");
       if (key === "organization") setName(String(value.items[0]?.name ?? ""));
       setState(value.items.length ? "success" : "empty");
@@ -48,7 +51,7 @@ export function DomainPage({ domainKey }: { domainKey?: keyof typeof supported }
   }
 
   return <main className="dashboard-content"><div className="page-heading"><div><h1>{config.title}</h1><p>{config.copy}</p></div>{key === "billing" && <span>{session.organization?.plan ?? "FREE"} plan</span>}</div>{error && <div className="form-error" role="alert" aria-live="assertive">{error}</div>}
-    {state === "loading" ? <LoadingState /> : state === "error" ? <ErrorState onRetry={load} /> : key === "security" ? <SecurityCards items={result.items} source={result.source} /> : key === "billing" ? <BillingPanel item={result.items[0]} configured={Boolean(result.billing_configured)} onError={setError} /> : key === "organization" && result.items[0] ? <section className="data-panel settings-panel"><form onSubmit={saveOrg}><label className="field"><span>Organization name</span><input value={name} onChange={(event)=>setName(event.target.value)} required minLength={2} /></label><div className="metadata-grid"><p><span>Organization ID</span><code>{String(result.items[0].id)}</code></p><p><span>Slug</span><strong>{String(result.items[0].slug)}</strong></p><p><span>Owner</span><strong>{session.user.full_name}</strong></p><p><span>Plan</span><strong>{String(result.items[0].plan)}</strong></p></div><Button>Save organization</Button></form></section> : key === "members" ? <MembersPanel records={result.items} session={session} onError={setError} onChanged={load} /> : key === "approvals" ? <ApprovalsPanel records={result.items} onError={setError} onChanged={load} /> : key === "evidence" ? <EvidencePanel records={result.items} /> : <EmptyState icon={Icon} title={config.title} keyName={key} />}
+    {state === "loading" ? <LoadingState /> : state === "error" ? <ErrorState onRetry={load} /> : key === "security" ? <SecurityCards items={result.items} source={result.source} /> : key === "billing" ? <BillingPanel item={result.items[0]} configured={Boolean(result.billing_configured)} onError={setError} /> : key === "organization" && result.items[0] ? <section className="data-panel settings-panel"><form onSubmit={saveOrg}><label className="field"><span>Organization name</span><input value={name} onChange={(event)=>setName(event.target.value)} required minLength={2} /></label><div className="metadata-grid"><p><span>Organization ID</span><code>{String(result.items[0].id)}</code></p><p><span>Slug</span><strong>{String(result.items[0].slug)}</strong></p><p><span>Owner</span><strong>{session.user.full_name}</strong></p><p><span>Plan</span><strong>{String(result.items[0].plan)}</strong></p></div><Button>Save organization</Button></form></section> : key === "members" ? <MembersPanel records={result.items} session={session} onError={setError} onChanged={load} /> : key === "approvals" ? <ApprovalContractPanel records={result.items} onError={setError} onChanged={load} /> : key === "evidence" ? <EvidenceContractPanel records={result.items} /> : <EmptyState icon={Icon} title={config.title} keyName={key} />}
   </main>;
 }
 
@@ -62,7 +65,7 @@ function SecurityCards({ items, source }: { items: DomainRecord[]; source: strin
 }
 
 type PendingDecision = { record: DomainRecord; outcome: "APPROVED" | "DENIED" };
-function ApprovalsPanel({ records, onError, onChanged }: { records: DomainRecord[]; onError: (value: string) => void; onChanged: () => Promise<void> }) {
+export function ApprovalsPanel({ records, onError, onChanged }: { records: DomainRecord[]; onError: (value: string) => void; onChanged: () => Promise<void> }) {
   const [busy, setBusy] = useState(false); const [confirm, setConfirm] = useState<PendingDecision | null>(null); const [outcome, setOutcome] = useState<ConsequentialOutcome | null>(null); const closeConfirm = useCallback(() => setConfirm(null), []);
   async function decide() {
     if (!confirm) return;
@@ -72,8 +75,8 @@ function ApprovalsPanel({ records, onError, onChanged }: { records: DomainRecord
       if (requested === "DENIED") { setOutcome({state:"DENIED",approvalId:id}); setConfirm(null); await onChanged(); return; }
       if (resolved.status !== "APPROVED") { const required=Number(resolved.required_approvals ?? confirm.record.required_approvals ?? 2); setOutcome({state:"PENDING",approvalId:id,recorded:1,required}); setConfirm(null); await onChanged(); return; }
       const executed=await api<ApprovalExecutionResponse>(`/api/v1/web/approvals/${id}/execute`,{method:"POST",body:JSON.stringify({})});
-      if (executed.error === "governance_unknown_outcome") { setOutcome({state:"UNKNOWN",approvalId:id,message:executed.message || "WhitePact cannot currently confirm whether the downstream effect occurred.",evidenceId:executed.evidence_id}); setConfirm(null); return; }
-      setOutcome({state:"SUCCESS",approvalId:id}); setConfirm(null); await onChanged();
+      if (executed.execution_status === "UNKNOWN") { setOutcome({state:"UNKNOWN",approvalId:id,message:executed.message || "WhitePact cannot currently confirm whether the downstream effect occurred.",reconciliationRequired:executed.reconciliation_required,evidenceId:executed.evidence_id??undefined,outcomeId:executed.outcome_id??undefined}); setConfirm(null); return; }
+      setOutcome({state:"SUCCESS",approvalId:id,message:executed.message,evidenceId:executed.evidence_id??undefined,outcomeId:executed.outcome_id??undefined}); setConfirm(null); await onChanged();
     } catch (cause) { const message=messageFrom(cause,"Approval could not be submitted"); setOutcome({state:"FAILED",approvalId:id,message}); setConfirm(null); }
     finally { setBusy(false); }
   }
@@ -89,7 +92,7 @@ function OutcomeNotice({ outcome }: { outcome: ConsequentialOutcome }) {
   return <section className="outcome-notice outcome-notice--error" role="alert"><AlertTriangle aria-hidden="true" /><div><h2>Request could not be completed</h2><p>{outcome.message}</p></div></section>;
 }
 
-function EvidencePanel({ records }: { records: DomainRecord[] }) {
+export function EvidencePanel({ records }: { records: DomainRecord[] }) {
   const [query,setQuery]=useState(""); const [selected,setSelected]=useState<DomainRecord|null>(null); const close=useCallback(()=>setSelected(null),[]);
   const filtered=records.filter((record)=>[record.evidence_id,record.agent_id,record.identity_id,record.action_type,record.target,record.decision].some((value)=>String(value??"").toLowerCase().includes(query.toLowerCase())));
   if (!records.length) return <EmptyState icon={FileCheck2} title="evidence" keyName="evidence" />;
