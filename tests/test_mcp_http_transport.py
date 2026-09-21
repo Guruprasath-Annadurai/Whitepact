@@ -99,7 +99,7 @@ class TestStreamableHttpTransport:
 
         names = {t.name for t in result.tools}
         assert "rai_health" in names
-        assert len(result.tools) == 31
+        assert len(result.tools) == 30
 
     async def test_call_tool_over_streamable_http(self, seeded_app) -> None:
         app, raw_key = seeded_app
@@ -142,30 +142,19 @@ class TestLegacySseTransportUnaffected:
 
 
 class TestHealthEndpoint:
-    async def test_health_lists_both_transports(self, seeded_app) -> None:
-        from responsibleai import __version__
-        from responsibleai.mcp.metadata import (
-            MCP_PROTOCOL_VERSION,
-            PUBLIC_MCP_TOOL_COUNT,
-            REGISTERED_MCP_RESOURCE_COUNT,
-            REGISTERED_MCP_TOOL_COUNT,
-            SERVICE_NAME,
-        )
+    async def test_health_is_minimal_public_liveness(self, seeded_app) -> None:
+        from responsibleai.mcp.metadata import MCP_PROTOCOL_VERSION, SERVICE_NAME
 
         app, _raw_key = seeded_app
         async with await _raw_client(app) as client:
             response = await client.get("/health")
         payload = response.json()
-        assert payload["status"] == "ok"
-        assert payload["service"] == SERVICE_NAME
-        assert payload["protocol_version"] == MCP_PROTOCOL_VERSION
-        assert payload["server_version"] == __version__
-        assert payload["transport"] == "http+sse"
-        assert set(payload["transports"]) == {"streamable-http", "http+sse"}
-        assert payload["tools"] == REGISTERED_MCP_TOOL_COUNT
-        assert payload["tools_registered"] == REGISTERED_MCP_TOOL_COUNT
-        assert payload["tools_public"] == PUBLIC_MCP_TOOL_COUNT
-        assert payload["resources"] == REGISTERED_MCP_RESOURCE_COUNT
+        assert payload == {
+            "service": SERVICE_NAME,
+            "status": "ok",
+            "protocol_version": MCP_PROTOCOL_VERSION,
+            "transport": "streamable-http",
+        }
 
 
 class TestMCPServerCard:
@@ -191,7 +180,9 @@ class TestMCPServerCard:
             response = await client.get("/.well-known/mcp/server-card.json")
         payload = response.json()
         assert payload["serverInfo"] == {"name": "whitepact", "version": __version__}
-        assert len(payload["tools"]) == len(TOOL_DEFS)
-        assert {t["name"] for t in payload["tools"]} == {t.name for t in TOOL_DEFS}
+        from responsibleai.mcp.tools import PRODUCTION_TOOL_DEFS
+
+        assert len(payload["tools"]) == len(PRODUCTION_TOOL_DEFS)
+        assert {t["name"] for t in payload["tools"]} == {t.name for t in PRODUCTION_TOOL_DEFS}
         assert len(payload["resources"]) == len(RESOURCE_DEFS)
         assert payload["prompts"] == []

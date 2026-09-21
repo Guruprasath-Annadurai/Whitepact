@@ -1,12 +1,27 @@
 # MCP reliability metrics (development-owned)
 
-See `docs/MCP_UPTIME_INVESTIGATION.md` for the 2026-09-21 external probe record.
+## Probe tiers
 
-## Probes without credentials
+### Public liveness (no credentials)
 
-- GET `/health` → expect 200, fields `service`, `status`, `protocol_version`, `server_version`
-- POST `/mcp` without Bearer → expect **401** (not 5xx)
+- DNS resolution
+- TLS certificate validity
+- `GET /health` → expect HTTP 200 and `status: ok`
+- Latency percentiles on `/health`
 
-## Authenticated handshake (CI secret only)
+### Authenticated MCP functional check (scoped CI secret only)
 
-- Initialize + `tools/list` over Streamable HTTP with org API key
+- Bearer token with **minimal** org scope
+- Streamable HTTP: `initialize` → `tools/list`
+- Optional: call `rai_health` (read-only)
+- **Never** call `test.counter.increment` or other consequential tools from monitors
+
+Monitor credentials must not be published or reused as customer API keys.
+
+## Canonical endpoint
+
+`https://whitepact-mcp-http.onrender.com/mcp`
+
+## Root-cause confidence
+
+See `docs/MCP_UPTIME_INVESTIGATION.md`. Uptime narrative remains **LEADING_HYPOTHESIS** until MCPBeat/raw handshake logs are correlated.
