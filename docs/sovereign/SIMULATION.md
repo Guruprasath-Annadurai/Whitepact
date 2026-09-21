@@ -25,8 +25,9 @@ Uses `Policy.evaluate` and effective capability sets. No MCP/network calls.
 
 **Question:** What would WhitePact have decided?
 
-Shadow observations are labeled `non_authoritative` and `simulated`. Optional in-process
-`PersistedShadowRecord` storage is distinct from execution evidence and cannot satisfy approvals.
+Shadow observations are labeled `non_authoritative` and `simulated`. Durable rows live in
+`sovereign_shadow_observations` (migration `0061`) via `ShadowObservationRepository`.
+They are tenant-scoped, redacted, and cannot satisfy approvals or become execution evidence.
 
 ## Policy Lab
 

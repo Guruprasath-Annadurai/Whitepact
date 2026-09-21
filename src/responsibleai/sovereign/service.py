@@ -73,9 +73,7 @@ from responsibleai.sovereign.protocol import (
 )
 from responsibleai.sovereign.redaction import redact_for_debugger
 from responsibleai.sovereign.shadow import ShadowObservation, evaluate_shadow
-from responsibleai.sovereign.shadow_persist import (
-    evaluate_shadow_persisted as persist_shadow_observation,
-)
+from responsibleai.sovereign.shadow_persist import evaluate_shadow_persisted_async
 from responsibleai.sovereign.shadow_store import PersistedShadowRecord
 from responsibleai.sovereign.simulation import (
     BlastRadiusResult,
@@ -417,16 +415,18 @@ class SovereignService:
         return validate_policy_rules(rules)
 
     @zero_effect_operation
-    def evaluate_shadow_persisted(
+    async def evaluate_shadow_persisted_async(
         self, ctx: SovereignContext, **kwargs: object
     ) -> PersistedShadowRecord:
         self._require(SovereignFeature.SHADOW)
-        return persist_shadow_observation(ctx, **kwargs)  # type: ignore[arg-type]
+        return await evaluate_shadow_persisted_async(self._require_store(), ctx, **kwargs)  # type: ignore[arg-type]
 
     @zero_effect_operation
-    async def run_gauntlet_async(self, ctx: SovereignContext) -> GauntletReport:
+    async def run_gauntlet_async(
+        self, ctx: SovereignContext, *, probe_ids: list[str] | None = None
+    ) -> GauntletReport:
         self._require(SovereignFeature.GAUNTLET)
-        return await run_sovereign_gauntlet(self._require_store(), ctx)
+        return await run_sovereign_gauntlet(self._require_store(), ctx, probe_ids=probe_ids)
 
     @zero_effect_operation
     async def flight_recorder_async(

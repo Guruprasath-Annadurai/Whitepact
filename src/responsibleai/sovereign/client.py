@@ -1,19 +1,38 @@
 # Copyright (c) 2026 Guruprasath Annadurai
 # SPDX-License-Identifier: MIT
-"""Python SDK for Sovereign — in-process client (safe read/simulate)."""
+"""Python SDK for Sovereign."""
 
 from __future__ import annotations
+
+from enum import StrEnum
 
 from responsibleai.sovereign.context import SovereignContext
 from responsibleai.sovereign.protocol import SovereignCapabilities, SovereignStatus
 from responsibleai.sovereign.service import SovereignService
 from responsibleai.sovereign.sources import SovereignCanonicalStore
 
-# Retry classification for HTTP consumers (in-process client does not auto-retry).
-RETRY_SAFE_READS = frozenset({"status", "capabilities", "xray", "explain", "trace"})
-RETRY_NEVER_BLIND = frozenset(
-    {"shadow", "simulate", "gauntlet", "capsule_reproduce", "grant", "execute"}
-)
+
+class RetryClass(StrEnum):
+    SAFE_TO_RETRY = "SAFE_TO_RETRY"
+    CONDITIONALLY_RETRYABLE = "CONDITIONALLY_RETRYABLE"
+    NEVER_BLINDLY_RETRY = "NEVER_BLINDLY_RETRY"
+
+
+RETRY_MAP: dict[str, RetryClass] = {
+    "status": RetryClass.SAFE_TO_RETRY,
+    "capabilities": RetryClass.SAFE_TO_RETRY,
+    "xray": RetryClass.SAFE_TO_RETRY,
+    "explain": RetryClass.SAFE_TO_RETRY,
+    "trace": RetryClass.SAFE_TO_RETRY,
+    "effective": RetryClass.SAFE_TO_RETRY,
+    "simulate_blast_radius": RetryClass.NEVER_BLINDLY_RETRY,
+    "simulate_mission": RetryClass.NEVER_BLINDLY_RETRY,
+    "shadow": RetryClass.NEVER_BLINDLY_RETRY,
+    "gauntlet": RetryClass.NEVER_BLINDLY_RETRY,
+    "capsule_reproduce": RetryClass.NEVER_BLINDLY_RETRY,
+    "grant": RetryClass.NEVER_BLINDLY_RETRY,
+    "execute": RetryClass.NEVER_BLINDLY_RETRY,
+}
 
 
 class SovereignClient:
@@ -24,19 +43,31 @@ class SovereignClient:
     ) -> None:
         self._service = SovereignService(store=store, capabilities=capabilities)
 
+    @property
+    def service(self) -> SovereignService:
+        return self._service
+
     def status(self) -> SovereignStatus:
         return self._service.get_status()
 
     def capabilities(self) -> SovereignCapabilities:
         return self._service.get_capabilities()
 
+    def retry_class(self, operation: str) -> RetryClass:
+        return RETRY_MAP.get(operation, RetryClass.CONDITIONALLY_RETRYABLE)
+
+    async def xray(self, ctx: SovereignContext):
+        return await self._service.build_xray_async(ctx)
+
     async def blast_radius(
-        self,
-        ctx: SovereignContext,
-        *,
-        actor_identity_id: str,
-        extra: frozenset[str] = frozenset(),
+        self, ctx: SovereignContext, *, actor: str, extra: frozenset[str] = frozenset()
     ):
         return await self._service.simulate_blast_radius_async(
-            ctx, actor_identity_id=actor_identity_id, hypothetical_extra_capabilities=extra
+            ctx, actor_identity_id=actor, hypothetical_extra_capabilities=extra
         )
+
+    async def mission(self, ctx: SovereignContext, *, agent_id: str, steps: list[str]):
+        return await self._service.simulate_mission_async(ctx, agent_id=agent_id, steps=steps)
+
+    async def gauntlet(self, ctx: SovereignContext, *, probe_ids: list[str] | None = None):
+        return await self._service.run_gauntlet_async(ctx, probe_ids=probe_ids)

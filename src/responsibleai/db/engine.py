@@ -2666,6 +2666,24 @@ test_consequential_counters = Table(
     Column("updated_at", String(32), nullable=False),
 )
 
+sovereign_shadow_observations = Table(
+    "sovereign_shadow_observations",
+    metadata,
+    Column("shadow_observation_id", String(64), primary_key=True),
+    Column("org_id", String(36), nullable=False, index=True),
+    Column("environment", String(64)),
+    Column("agent_id", String(128)),
+    Column("action_type", String(128)),
+    Column("target_redacted", String(256)),
+    Column("policy_version", Integer),
+    Column("shadow_disposition", String(64), nullable=False),
+    Column("reason_codes_json", Text, nullable=False, server_default="[]"),
+    Column("protocol_version", String(32), nullable=False),
+    Column("schema_version", String(32), nullable=False),
+    Column("diagnostic_json", Text, nullable=False, server_default="{}"),
+    Column("created_at", String(32), nullable=False),
+)
+
 
 class DatabaseEngine:
     """Async database engine wrapping SQLAlchemy — SQLite or PostgreSQL.

@@ -64,7 +64,7 @@ class TestPhaseCSecurity:
     async def test_shadow_persisted_labels(self, svc, store) -> None:
         org = await OrgRepository(store.engine).create_org("S", "s")
         ctx = SovereignContext(organization_id=org.id)
-        row = svc.evaluate_shadow_persisted(
+        row = await svc.evaluate_shadow_persisted_async(
             ctx, agent_id="a", action_type="rai_scan", granted_action_types=frozenset({"rai_scan"})
         )
         assert row.simulated is True

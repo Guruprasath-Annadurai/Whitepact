@@ -47,6 +47,7 @@ from responsibleai.db import (
     PolicyRepository,
 )
 from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
+from responsibleai.db.shadow_observation_repository import ShadowObservationRepository
 
 
 @dataclass
@@ -62,6 +63,7 @@ class SovereignCanonicalStore:
     outcomes: OutcomeRepository
     ceilings: OrgAuthorityCeilingRepository
     revocation_epochs: RevocationEpochRepository
+    shadow_observations: ShadowObservationRepository
 
     @classmethod
     def from_engine(cls, engine: DatabaseEngine) -> SovereignCanonicalStore:
@@ -75,4 +77,5 @@ class SovereignCanonicalStore:
             outcomes=OutcomeRepository(engine),
             ceilings=OrgAuthorityCeilingRepository(engine),
             revocation_epochs=RevocationEpochRepository(engine),
+            shadow_observations=ShadowObservationRepository(engine),
         )

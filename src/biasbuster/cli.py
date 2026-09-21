@@ -138,9 +138,10 @@ def main() -> None:
     """WhitePact CLI — bias testing and Sovereign governance diagnostics."""
 
 
-from responsibleai.sovereign.cli import sovereign  # noqa: E402
+from responsibleai.sovereign.cli import register_top_level, sovereign  # noqa: E402
 
 main.add_command(sovereign)
+register_top_level(main)
 
 
 @main.command()

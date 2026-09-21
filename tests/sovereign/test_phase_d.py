@@ -8,7 +8,7 @@ import pytest
 from responsibleai.db import OrgRepository, create_engine
 from responsibleai.sovereign.capsule import create_capsule
 from responsibleai.sovereign.context import SovereignContext
-from responsibleai.sovereign.gauntlet import GauntletVerdict
+from responsibleai.sovereign.gauntlet_orchestrator import GauntletCaseStatus
 from responsibleai.sovereign.service import SovereignService
 from responsibleai.sovereign.sources import SovereignCanonicalStore
 from responsibleai.sovereign.zero_effect import consequential_invocation_count
@@ -36,9 +36,9 @@ class TestPhaseD:
     async def test_gauntlet_pass_from_observation(self, svc, store) -> None:
         org = await OrgRepository(store.engine).create_org("G", "g")
         ctx = SovereignContext(organization_id=org.id)
-        report = await svc.run_gauntlet_async(ctx)
+        report = await svc.run_gauntlet_async(ctx, probe_ids=["tenant_guard"])
         assert report.cases
-        assert any(c.verdict == GauntletVerdict.PASS for c in report.cases)
+        assert any(c.status == GauntletCaseStatus.PASS for c in report.cases)
 
     def test_capsule_tamper_detected(self) -> None:
         ctx = SovereignContext(organization_id="org")

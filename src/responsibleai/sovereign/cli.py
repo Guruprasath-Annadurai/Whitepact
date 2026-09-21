@@ -141,3 +141,108 @@ def ci(manifest: Path, org: str, json_mode: bool) -> None:
         sys.exit(0 if report["drift_facts"] == 0 else 3)
 
     asyncio.run(_run())
+
+
+async def _service() -> SovereignService:
+    engine = create_engine(":memory:")
+    await engine.init()
+    return SovereignService(store=SovereignCanonicalStore.from_engine(engine))
+
+
+@sovereign.command("gauntlet")
+@click.option("--org", required=True)
+@click.option("--probe", multiple=True)
+@click.option("--json", "json_mode", is_flag=True)
+def gauntlet_cmd(org: str, probe: tuple[str, ...], json_mode: bool) -> None:
+    async def _run() -> None:
+        svc = await _service()
+        ctx = _ctx_from_flags(org, None)
+        report = await svc.run_gauntlet_async(ctx, probe_ids=list(probe) or None)
+        _emit(report.model_dump(), None, json_mode)
+
+    asyncio.run(_run())
+
+
+@sovereign.command("shadow")
+@click.option("--org", required=True)
+@click.option("--agent", required=True)
+@click.option("--action", required=True)
+@click.option("--json", "json_mode", is_flag=True)
+def shadow_cmd(org: str, agent: str, action: str, json_mode: bool) -> None:
+    svc = SovereignService()
+    obs = svc.evaluate_shadow(
+        _ctx_from_flags(org, None),
+        agent_id=agent,
+        action_type=action,
+        granted_action_types=frozenset({action}),
+    )
+    _emit(obs.model_dump(), None, json_mode)
+
+
+@sovereign.command("xray")
+@click.option("--org", required=True)
+@click.option("--json", "json_mode", is_flag=True)
+def xray_cmd(org: str, json_mode: bool) -> None:
+    async def _run() -> None:
+        svc = await _service()
+        result = await svc.build_xray_async(_ctx_from_flags(org, None))
+        _emit(result.model_dump(), None, json_mode)
+
+    asyncio.run(_run())
+
+
+@sovereign.command("sandbox")
+@click.option("--json", "json_mode", is_flag=True)
+def sandbox_cmd(json_mode: bool) -> None:
+    _emit(
+        {"labels": ["SANDBOX", "SIMULATED", "NON_PRODUCTION"], "zero_effect": True},
+        "Sovereign sandbox — simulated only",
+        json_mode,
+    )
+
+
+def register_top_level(main: click.Group) -> None:
+    @main.command("init")
+    @click.option("--path", type=click.Path(path_type=Path), default=Path("."))
+    def init_cmd(path: Path) -> None:
+        from responsibleai.sovereign.devconfig import init_scaffolding
+
+        manifest = init_scaffolding(path)
+        click.echo(f"Created scaffold {manifest} (no production authority)")
+
+    @main.command("connect")
+    @click.option("--url", default="http://127.0.0.1:8000")
+    @click.option("--org")
+    def connect_cmd(url: str, org: str | None) -> None:
+        from responsibleai.sovereign.devconfig import SovereignConnection, save_connection
+
+        save_connection(SovereignConnection(base_url=url, organization_id=org))
+        click.echo("Connection saved (connection is not authorization)")
+
+    @main.group("context")
+    def context_group() -> None:
+        pass
+
+    @context_group.command("list")
+    def context_list() -> None:
+        from responsibleai.sovereign.devconfig import load_connection
+
+        click.echo(json.dumps(load_connection().__dict__))
+
+    @context_group.command("current")
+    def context_current() -> None:
+        from responsibleai.sovereign.devconfig import load_connection
+
+        click.echo(json.dumps(load_connection().__dict__))
+
+    @context_group.command("use")
+    @click.option("--org", required=True)
+    @click.option("--env", default="development")
+    def context_use(org: str, env: str) -> None:
+        from responsibleai.sovereign.devconfig import load_connection, save_connection
+
+        conn = load_connection()
+        conn.organization_id = org
+        conn.environment = env
+        save_connection(conn)
+        click.echo("Context updated (does not grant authority)")
