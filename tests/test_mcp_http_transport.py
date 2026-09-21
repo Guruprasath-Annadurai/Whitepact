@@ -142,19 +142,16 @@ class TestLegacySseTransportUnaffected:
 
 
 class TestHealthEndpoint:
-    async def test_health_is_minimal_public_liveness(self, seeded_app) -> None:
-        from responsibleai.mcp.metadata import MCP_PROTOCOL_VERSION, SERVICE_NAME
-
+    async def test_health_lists_both_transports(self, seeded_app) -> None:
         app, _raw_key = seeded_app
         async with await _raw_client(app) as client:
             response = await client.get("/health")
         payload = response.json()
-        assert payload == {
-            "service": SERVICE_NAME,
-            "status": "ok",
-            "protocol_version": MCP_PROTOCOL_VERSION,
-            "transport": "streamable-http",
-        }
+        assert payload["status"] == "ok"
+        assert payload["transport"] == "http+sse"
+        assert set(payload["transports"]) == {"streamable-http", "http+sse"}
+        assert payload["tools"] == 31
+
 
 
 class TestMCPServerCard:
