@@ -101,6 +101,13 @@ from responsibleai.dashboard.transactional_email import (
     password_reset_email,
     verification_email,
 )
+from responsibleai.dashboard.web_governance_contracts import (
+    CHAIN_INTEGRITY_NOTE,
+    KNOWN_SUCCESS_MESSAGE,
+    UNKNOWN_EXECUTION_MESSAGE,
+    approval_detail_payload,
+    web_execution_payload,
+)
 from responsibleai.dashboard.websocket_manager import ConnectionManager
 from responsibleai.data_governance.legal_hold import LegalHoldActiveError
 from responsibleai.db import (
@@ -1629,8 +1636,24 @@ def _web_org_admin(principal: WebPrincipal) -> str:
     return principal.org_id
 
 
+def _web_org_member(principal: WebPrincipal) -> str:
+    if not principal.org_id:
+        raise HTTPException(409, "Complete organization onboarding first.")
+    return principal.org_id
+
+
 def _web_resolver_id(principal: WebPrincipal) -> str:
     return f"web:{principal.user_id}"
+
+
+async def _web_execution_identifiers(
+    org_id: str, approval_id: str
+) -> tuple[str | None, str | None]:
+    evidence = await _ready(_evidence_repo).get_latest_for_approval(org_id, approval_id)
+    if evidence is None:
+        return None, None
+    outcome = await _ready(_outcome_repo).get_for_org(evidence.evidence_id, org_id)
+    return evidence.evidence_id, outcome.outcome_id if outcome else None
 
 
 def _dashboard_governance_services() -> GovernanceServices:
@@ -2557,6 +2580,82 @@ async def _web_security_state(request: Request, principal: WebPrincipal) -> dict
     return {"items": items, "source": "identity_security_stores", "domain": "security"}
 
 
+@app.get("/api/web/approvals/{approval_id}", tags=["web-console"])
+@limiter.limit("30/minute")
+async def web_get_approval(
+    request: Request,
+    approval_id: str,
+    principal: WebPrincipal = Depends(get_web_principal),
+) -> dict[str, Any]:
+    org_id = _web_org_member(principal)
+    approval = await _ready(_approval_repo).get(approval_id)
+    if approval is None or approval.organization_id != org_id:
+        raise HTTPException(404, "No approval request found with this ID.")
+    votes = await _ready(_approval_repo).list_votes(approval_id)
+    return approval_detail_payload(approval, votes)
+
+
+@app.get("/api/web/evidence/verify", tags=["web-console"])
+@limiter.limit("30/minute")
+async def web_verify_evidence_chain(
+    request: Request,
+    principal: WebPrincipal = Depends(get_web_principal),
+) -> dict[str, Any]:
+    org_id = _web_org_member(principal)
+    status = await _ready(_evidence_repo).verify_chain_status(org_id)
+    return {
+        "org_id": org_id,
+        "status": status.value,
+        "chain_intact": status.value in {"VALID", "INCOMPLETE"},
+        "cryptographically_signed": False,
+        "integrity_note": CHAIN_INTEGRITY_NOTE,
+    }
+
+
+@app.get("/api/web/evidence", tags=["web-console"])
+@limiter.limit("30/minute")
+async def web_list_evidence(
+    request: Request,
+    limit: int = Query(default=50, ge=1, le=100),
+    decision: str | None = Query(default=None),
+    principal: WebPrincipal = Depends(get_web_principal),
+) -> dict[str, Any]:
+    org_id = _web_org_member(principal)
+    records = await _ready(_evidence_repo).list_for_org(org_id, limit=limit, decision=decision)
+    return {"evidence": [record.to_dict() for record in records], "limit": limit}
+
+
+@app.get("/api/web/evidence/{evidence_id}/attestation", tags=["web-console"])
+@limiter.limit("30/minute")
+async def web_get_evidence_attestation(
+    request: Request,
+    evidence_id: str,
+    principal: WebPrincipal = Depends(get_web_principal),
+) -> dict[str, Any]:
+    org_id = _web_org_member(principal)
+    evidence = await _ready(_evidence_repo).get_for_org(evidence_id, org_id)
+    if evidence is None:
+        raise HTTPException(404, "Evidence record not found.")
+    outcome = await _ready(_outcome_repo).get_for_org(evidence_id, org_id)
+    payload = build_attestation_record(evidence, outcome).to_dict()
+    payload["cryptographically_signed"] = False
+    return payload
+
+
+@app.get("/api/web/evidence/{evidence_id}", tags=["web-console"])
+@limiter.limit("30/minute")
+async def web_get_evidence(
+    request: Request,
+    evidence_id: str,
+    principal: WebPrincipal = Depends(get_web_principal),
+) -> dict[str, Any]:
+    org_id = _web_org_member(principal)
+    evidence = await _ready(_evidence_repo).get_for_org(evidence_id, org_id)
+    if evidence is None:
+        raise HTTPException(404, "Evidence record not found.")
+    return evidence.to_dict()
+
+
 @app.post("/api/web/approvals/{approval_id}/resolve", tags=["web-console"])
 @limiter.limit("30/minute")
 async def web_resolve_approval(
@@ -2634,15 +2733,29 @@ async def web_execute_approval(
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from None
     except SyntheticAcknowledgementLostError:
-        return {
-            "approval_id": approval_id,
-            "error": "governance_unknown_outcome",
-            "message": (
-                "The mutation may have applied; acknowledgement was lost. "
-                "WhitePact will not retry automatically."
-            ),
-        }
-    return {"approval_id": approval_id, "result": result}
+        evidence_id, outcome_id = await _web_execution_identifiers(org_id, approval_id)
+        return web_execution_payload(
+            approval_id=approval_id,
+            execution_status=OutcomeStatus.UNKNOWN,
+            evidence_id=evidence_id,
+            outcome_id=outcome_id,
+            message=UNKNOWN_EXECUTION_MESSAGE,
+        )
+    from responsibleai.mcp.governance_integration import _classify_execution_outcome
+
+    status = _classify_execution_outcome(result)
+    evidence_id, outcome_id = await _web_execution_identifiers(org_id, approval_id)
+    return web_execution_payload(
+        approval_id=approval_id,
+        execution_status=status,
+        evidence_id=evidence_id,
+        outcome_id=outcome_id,
+        message=KNOWN_SUCCESS_MESSAGE
+        if status is OutcomeStatus.SUCCEEDED
+        else UNKNOWN_EXECUTION_MESSAGE
+        if status is OutcomeStatus.UNKNOWN
+        else f"Execution completed with outcome {status.value}.",
+    )
 
 
 @app.patch("/api/web/organization", tags=["web-console"])
