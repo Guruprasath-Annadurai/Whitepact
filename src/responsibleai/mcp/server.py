@@ -90,7 +90,11 @@ from responsibleai.mcp.licensing import (
     upgrade_message,
 )
 from responsibleai.mcp.resources import RESOURCE_DEFS, dispatch_resource
-from responsibleai.mcp.tools import TOOL_DEFS, WHITEPACT_PURPOSE_ARGUMENT, dispatch_tool
+from responsibleai.mcp.tools import (
+    PRODUCTION_TOOL_DEFS,
+    WHITEPACT_PURPOSE_ARGUMENT,
+    dispatch_tool,
+)
 from responsibleai.rbac.models import OrgContext
 
 if TYPE_CHECKING:
@@ -166,10 +170,13 @@ def _month_start_iso() -> str:
 
 @server.list_tools()
 async def _list_tools() -> list[types.Tool]:
+    from responsibleai.mcp.tools import advertised_tool_defs
+
+    tools = advertised_tool_defs(hosted=_current_hosted.get())
     ctx = _current_org.get()
     if ctx is not None and ctx.key_id.startswith("oauth:"):
-        return [_with_oauth_security(tool) for tool in TOOL_DEFS]
-    return TOOL_DEFS
+        return [_with_oauth_security(tool) for tool in tools]
+    return tools
 
 
 def _with_oauth_security(tool: types.Tool) -> types.Tool:
@@ -302,6 +309,9 @@ async def _call_tool(
             outcome.result["_whitepact_reconciliation_required"] = True
         return _text_and_structured(outcome.result)
 
+    from responsibleai.mcp.tools import set_mcp_dispatch_hosted
+
+    set_mcp_dispatch_hosted(_current_hosted.get())
     result = await dispatch_tool(name, call_arguments)
     return _text_and_structured(result)
 
@@ -934,14 +944,14 @@ def _build_http_app() -> Any:
     handle_streamable_http = _StreamableHttpEndpoint()
 
     async def health(request: Request) -> JSONResponse:
+        from responsibleai.mcp.metadata import MCP_PROTOCOL_VERSION, SERVICE_NAME
+
         return JSONResponse(
             {
+                "service": SERVICE_NAME,
                 "status": "ok",
-                # "transport" (singular) is kept for existing consumers of this
-                # diagnostics endpoint; "transports" is the new, complete list.
-                "transport": "http+sse",
-                "transports": ["streamable-http", "http+sse"],
-                "tools": len(TOOL_DEFS),
+                "protocol_version": MCP_PROTOCOL_VERSION,
+                "transport": "streamable-http",
             }
         )
 
@@ -1155,7 +1165,7 @@ def _build_http_app() -> Any:
                     (_with_oauth_security(t) if _mcp_oauth_server else t).model_dump(
                         mode="json", exclude_none=True, by_alias=True
                     )
-                    for t in TOOL_DEFS
+                    for t in PRODUCTION_TOOL_DEFS
                 ],
                 "resources": [
                     r.model_dump(mode="json", exclude_none=True, by_alias=True)
