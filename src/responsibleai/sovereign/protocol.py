@@ -45,7 +45,7 @@ class SovereignFeature(StrEnum):
 
 
 # Phase A: foundation features only; others reported honestly as UNAVAILABLE.
-_PHASE_A_AVAILABLE = frozenset(
+_PHASE_B_AVAILABLE = frozenset(
     {
         SovereignFeature.STATUS,
         SovereignFeature.XRAY,
@@ -58,7 +58,7 @@ _PHASE_A_AVAILABLE = frozenset(
     }
 )
 
-_READ_ONLY = frozenset(_PHASE_A_AVAILABLE)
+_READ_ONLY = frozenset(_PHASE_B_AVAILABLE)
 _SIMULATION = frozenset(
     {
         SovereignFeature.SIMULATE_BLAST_RADIUS,
@@ -95,7 +95,7 @@ class SovereignCapabilities(BaseModel):
     def negotiate(cls) -> SovereignCapabilities:
         features: list[FeatureDescriptor] = []
         for feat in SovereignFeature:
-            if feat in _PHASE_A_AVAILABLE:
+            if feat in _PHASE_B_AVAILABLE:
                 avail = CapabilityAvailability.AVAILABLE
             elif feat in (SovereignFeature.GAUNTLET, SovereignFeature.AUTHORITY_BOM):
                 avail = CapabilityAvailability.EXPERIMENTAL

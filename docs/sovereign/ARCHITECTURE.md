@@ -19,7 +19,18 @@ Sovereign Canonical Protocol (capabilities, versions)
    CLI · SDK · Web · IDE
 ```
 
-## Phase A foundation (this branch)
+## Phase B — Understand (repository-backed)
+
+- `SovereignCanonicalStore` wires canonical read repositories (`sources.py`)
+- `build_repository_xray()` — delegation/policy/ceiling/evidence topology (`xray_builder.py`)
+- `explain_from_evidence()` / `explain_from_identity()` (`debugger.py`)
+- `build_trace_from_evidence()` with explicit MISSING stages (`trace_builder.py`)
+- `load_effective_authority()`, manifest compare/drift (`effective.py`, `authority_engine.py`)
+- `observe_authority()` — non-authoritative fingerprint (`observation.py`)
+
+All Phase B service entrypoints are `@zero_effect_operation` and async when backed by the store.
+
+## Phase A foundation
 
 - Protocol versioning and capability negotiation (`protocol.py`)
 - Authority graph model with mandatory edge provenance (`graph.py`)
