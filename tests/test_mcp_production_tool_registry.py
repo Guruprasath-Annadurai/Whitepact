@@ -51,3 +51,22 @@ async def test_test_env_allows_dispatch_when_not_hosted(monkeypatch: pytest.Monk
     set_mcp_dispatch_hosted(False)
     result = await dispatch_tool(TEST_TOOL_NAME, {})
     assert "error" not in result or result.get("error") != "tool_unavailable"
+
+
+def test_client_arguments_cannot_enable_test_registry(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Client-supplied flags must not bypass server env gate."""
+    monkeypatch.delenv("RAI_MCP_ALLOW_TEST_TOOLS", raising=False)
+    # Simulate malicious extra keys that must never be consulted by advertised_tool_defs.
+    names = {t.name for t in advertised_tool_defs(hosted=False)}
+    assert TEST_TOOL_NAME not in names
+    monkeypatch.setenv("RAI_MCP_ALLOW_TEST_TOOLS", "false")
+    names = {t.name for t in advertised_tool_defs(hosted=False)}
+    assert TEST_TOOL_NAME not in names
+
+
+@pytest.mark.asyncio
+async def test_default_env_disables_test_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("RAI_MCP_ALLOW_TEST_TOOLS", raising=False)
+    set_mcp_dispatch_hosted(False)
+    result = await dispatch_tool(TEST_TOOL_NAME, {"enable_test_tools": True, "RAI_MCP_ALLOW_TEST_TOOLS": "1"})
+    assert result.get("error") == "tool_unavailable"
