@@ -41,6 +41,7 @@ from responsibleai.sovereign.models import (
     XRayResult,
 )
 from responsibleai.sovereign.observation import SovereignObservation, observe_authority
+from responsibleai.sovereign.policy_lab import PolicyLabReport, PolicyTestCase, run_policy_tests
 from responsibleai.sovereign.protocol import (
     PROTOCOL_VERSION,
     SOVEREIGN_VERSION,
@@ -49,6 +50,13 @@ from responsibleai.sovereign.protocol import (
     SovereignStatus,
 )
 from responsibleai.sovereign.redaction import redact_for_debugger
+from responsibleai.sovereign.shadow import ShadowObservation, evaluate_shadow
+from responsibleai.sovereign.simulation import (
+    BlastRadiusResult,
+    MissionSimulationResult,
+    simulate_blast_radius,
+    simulate_mission,
+)
 from responsibleai.sovereign.sources import SovereignCanonicalStore
 from responsibleai.sovereign.tenant import assert_same_organization
 from responsibleai.sovereign.trace_builder import AuthorityTrace, build_trace_from_evidence
@@ -314,3 +322,42 @@ class SovereignService:
     def load_expected_manifest(self, path: Path) -> WhitepactManifest:
         self._require(SovereignFeature.AUTHORITY_EXPECTED)
         return load_manifest(path)
+
+    @zero_effect_operation
+    async def simulate_blast_radius_async(
+        self,
+        ctx: SovereignContext,
+        *,
+        actor_identity_id: str,
+        hypothetical_extra_capabilities: frozenset[str] = frozenset(),
+    ) -> BlastRadiusResult:
+        self._require(SovereignFeature.SIMULATE_BLAST_RADIUS)
+        return await simulate_blast_radius(
+            self._require_store(),
+            ctx,
+            actor_identity_id=actor_identity_id,
+            hypothetical_extra_capabilities=frozenset(hypothetical_extra_capabilities),
+        )
+
+    @zero_effect_operation
+    async def simulate_mission_async(
+        self,
+        ctx: SovereignContext,
+        *,
+        agent_id: str,
+        steps: list[str],
+    ) -> MissionSimulationResult:
+        self._require(SovereignFeature.SIMULATE_MISSION)
+        return await simulate_mission(self._require_store(), ctx, agent_id=agent_id, steps=steps)
+
+    @zero_effect_operation
+    def evaluate_shadow(self, ctx: SovereignContext, **kwargs: object) -> ShadowObservation:
+        self._require(SovereignFeature.SHADOW)
+        return evaluate_shadow(ctx, **kwargs)  # type: ignore[arg-type]
+
+    @zero_effect_operation
+    async def run_policy_tests_async(
+        self, ctx: SovereignContext, cases: list[PolicyTestCase]
+    ) -> PolicyLabReport:
+        self._require(SovereignFeature.POLICY_LAB)
+        return await run_policy_tests(self._require_store(), ctx, cases)

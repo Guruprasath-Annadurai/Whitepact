@@ -97,6 +97,13 @@ class SovereignCapabilities(BaseModel):
         for feat in SovereignFeature:
             if feat in _PHASE_B_AVAILABLE:
                 avail = CapabilityAvailability.AVAILABLE
+            elif feat in (
+                SovereignFeature.SIMULATE_BLAST_RADIUS,
+                SovereignFeature.SIMULATE_MISSION,
+                SovereignFeature.SHADOW,
+                SovereignFeature.POLICY_LAB,
+            ):
+                avail = CapabilityAvailability.AVAILABLE
             elif feat in (SovereignFeature.GAUNTLET, SovereignFeature.AUTHORITY_BOM):
                 avail = CapabilityAvailability.EXPERIMENTAL
             else:
