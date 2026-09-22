@@ -76,18 +76,20 @@ try {
       for (const path of ["/dashboard", "/dashboard/api-keys", "/dashboard/billing", "/dashboard/organization", "/dashboard/approvals", "/dashboard/evidence", "/dashboard/security"]) {
         await scan(page, `${baseUrl}${path}`);
       }
-      const mobile = await context.newPage();
-      await mobile.setViewportSize({ width: 390, height: 844 });
-      for (const path of ["/", "/pricing", "/terms", "/privacy", "/refund-policy", "/signup", "/dashboard", "/dashboard/api-keys", "/dashboard/billing"]) {
-        const url = `${baseUrl}${path}`;
-        await mobile.goto(url, { waitUntil: "domcontentloaded", timeout: 15000 });
-        const overflow = await mobile.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-        if (overflow > 1) {
-          console.error(`RESPONSIVE OVERFLOW: ${url} exceeds viewport by ${overflow}px`);
-          failures += 1;
+      const responsive = await context.newPage();
+      for (const width of [375, 768, 1024, 1440]) {
+        await responsive.setViewportSize({ width, height: width < 768 ? 844 : 900 });
+        for (const path of ["/", "/pricing", "/signup", "/dashboard", "/dashboard/api-keys", "/dashboard/approvals", "/dashboard/evidence", "/dashboard/members", "/dashboard/billing", "/dashboard/security"]) {
+          const url = `${baseUrl}${path}`;
+          await responsive.goto(url, { waitUntil: "domcontentloaded", timeout: 15000 });
+          const overflow = await responsive.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+          if (overflow > 1) {
+            console.error(`RESPONSIVE OVERFLOW: ${url} at ${width}px exceeds viewport by ${overflow}px`);
+            failures += 1;
+          }
         }
       }
-      await mobile.close();
+      await responsive.close();
     }
   }
 

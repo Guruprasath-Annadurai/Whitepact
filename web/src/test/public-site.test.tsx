@@ -56,7 +56,7 @@ describe("public website", () => {
     trigger.focus();
     await user.click(trigger);
     expect(screen.getByRole("dialog", { name: /Decision inspection/i })).toBeInTheDocument();
-    expect(screen.getByText("BLOCKED BEFORE EXECUTION")).toBeInTheDocument();
+    expect(screen.getByText("Blocked before execution")).toBeInTheDocument();
     expect(screen.getByText(/Demonstration record only/i)).toBeInTheDocument();
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -81,5 +81,31 @@ describe("public website", () => {
     renderAt("/missing-page");
     expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("This boundary");
     expect(screen.getByRole("link", { name: /Return home/i })).toHaveAttribute("href", "/");
+  });
+
+  it("publishes a truthful Sovereign product page", async () => {
+    renderAt("/sovereign");
+    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("See authority before it becomes action");
+    expect(screen.getByText("Available after authentication")).toBeInTheDocument();
+    expect(screen.getAllByText("Authenticated live route")).toHaveLength(2);
+    expect(screen.queryByText(/guaranteed|production proven|gauntlet pass/i)).not.toBeInTheDocument();
+  });
+
+  it("defaults the Sovereign Workbench to live data and keeps fixtures explicit", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({ sovereign_version: "1.0.0", protocol_version: "1.0.0" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ sovereign_version: "1.0.0", protocol_version: "1.0.0", features: [{ name: "xray", availability: "AVAILABLE" }, { name: "simulate_blast_radius", availability: "AVAILABLE" }] }), { status: 200 }));
+    const user = userEvent.setup();
+    renderAt("/sovereign/workbench");
+    expect(await screen.findByRole("heading", { name: "Authority Lens" })).toBeInTheDocument();
+    expect(await screen.findByText("Tenant derived from session")).toBeInTheDocument();
+    expect(await screen.findByText("Sovereign Core: 1.0.0")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Blast Radius" }));
+    expect(screen.getByRole("button", { name: "Run projected simulation" })).toBeInTheDocument();
+    expect(screen.getByText(/No external action is executed/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Authority Lens" }));
+    await user.click(screen.getByRole("button", { name: "Development preview" }));
+    expect(screen.getByText("Development fixture — not production authority data")).toBeInTheDocument();
+    fetchMock.mockRestore();
   });
 });

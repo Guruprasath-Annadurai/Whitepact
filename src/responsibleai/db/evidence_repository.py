@@ -253,6 +253,26 @@ class EvidenceRepository:
             ).fetchone()
         return _row_to_record(row) if row else None
 
+    async def get_latest_for_approval(self, org_id: str, approval_id: str) -> EvidenceRecord | None:
+        """Latest persisted evidence row for one org-scoped approval, if any.
+
+        Does not invent a record: returns None when this org has no evidence
+        linked to *approval_id*.
+        """
+        async with self._engine.raw.connect() as conn:
+            row = (
+                await conn.execute(
+                    select(governance_evidence)
+                    .where(
+                        governance_evidence.c.org_id == org_id,
+                        governance_evidence.c.approval_id == approval_id,
+                    )
+                    .order_by(governance_evidence.c.recorded_at.desc())
+                    .limit(1)
+                )
+            ).fetchone()
+        return _row_to_record(row) if row else None
+
     async def list_for_org(
         self,
         org_id: str | None,

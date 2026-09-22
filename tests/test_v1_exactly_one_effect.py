@@ -233,7 +233,11 @@ async def test_exactly_one_effect_approve_replay_deny_unknown(
         client, unknown_id, owner_email=OWNER_EMAIL, admin_email=ADMIN_EMAIL
     )
     csrf = client.cookies["wp_csrf"]
-    assert payload.get("error") == "governance_unknown_outcome"
+    assert payload["execution_status"] == OutcomeStatus.UNKNOWN.value
+    assert payload["reconciliation_required"] is True
+    assert payload.get("evidence_id")
+    assert payload.get("outcome_id")
+    assert "will not retry automatically" in payload["message"]
     unknown_state = await client.get(
         "/api/v1/governance/test-counter", headers={"Authorization": f"Bearer {raw}"}
     )

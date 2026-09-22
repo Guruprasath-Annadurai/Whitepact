@@ -251,7 +251,7 @@ async def test_fresh_postgres_health_ready_and_nonprod_preflight(journey_client)
     hosted_production_preflight(app_module.settings)
     async with app_module._db_engine.raw.connect() as conn:
         version = (await conn.execute(text("SELECT version_num FROM alembic_version"))).scalar()
-    assert version == "0060"
+    assert version == "0061"
     assert url.startswith("postgresql")
 
 
@@ -760,7 +760,7 @@ async def test_historical_0057_upgrade_then_signup(monkeypatch: pytest.MonkeyPat
                     version = (
                         await conn.execute(text("SELECT version_num FROM alembic_version"))
                     ).scalar()
-                assert version == "0060"
+                assert version == "0061"
                 status, body = await _register(
                     client, name="Upgrade User", email="upgrade.user@example.com"
                 )

@@ -27,3 +27,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
   return payload as T;
 }
+
+export function messageFrom(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
