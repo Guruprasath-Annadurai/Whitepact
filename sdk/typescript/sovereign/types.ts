@@ -1,4 +1,4 @@
-export type CapabilityAvailability = "AVAILABLE" | "UNAVAILABLE" | "EXPERIMENTAL";
+export type CapabilityAvailability = "AVAILABLE" | "UNAVAILABLE" | "UNSUPPORTED" | "EXPERIMENTAL";
 
 export type MissionDisposition =
   | "ALLOW"
