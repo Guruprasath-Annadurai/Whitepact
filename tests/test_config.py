@@ -101,6 +101,59 @@ class TestVerificationDeliveryTransport:
         assert settings.web_verification_delivery_url is None
 
 
+class TestPaddleEnvironmentConfiguration:
+    def test_whitepact_environment_variable_selects_sandbox(
+        self, monkeypatch, fresh_settings_module
+    ) -> None:
+        monkeypatch.setenv("WHITEPACT_PADDLE_ENV", "sandbox")
+        monkeypatch.setenv("WHITEPACT_PADDLE_API_KEY", "pdl_sdbx_apikey_test")  # gitleaks:allow
+        settings = fresh_settings_module.Settings(_env_file=None)
+        assert settings.paddle_env == "sandbox"
+
+    def test_paddle_key_requires_explicit_environment(self, fresh_settings_module) -> None:
+        with pytest.raises(ValueError, match="PADDLE_ENV"):
+            fresh_settings_module.Settings(
+                _env_file=None,
+                paddle_api_key="pdl_sdbx_apikey_test",  # gitleaks:allow
+            )
+
+    def test_invalid_paddle_environment_is_rejected(self, fresh_settings_module) -> None:
+        with pytest.raises(ValueError, match="paddle_env"):
+            fresh_settings_module.Settings(
+                _env_file=None,
+                paddle_api_key="pdl_sdbx_apikey_test",  # gitleaks:allow
+                paddle_env="staging",
+            )
+
+    def test_sandbox_rejects_live_credential(self, fresh_settings_module) -> None:
+        with pytest.raises(ValueError, match="does not match"):
+            fresh_settings_module.Settings(
+                _env_file=None,
+                paddle_api_key="pdl_live_apikey_test",  # gitleaks:allow
+                paddle_env="sandbox",
+            )
+
+    def test_production_rejects_sandbox_credential(self, fresh_settings_module) -> None:
+        with pytest.raises(ValueError, match="does not match"):
+            fresh_settings_module.Settings(
+                _env_file=None,
+                paddle_api_key="pdl_sdbx_apikey_test",  # gitleaks:allow
+                paddle_env="production",
+            )
+
+    @pytest.mark.parametrize("environment", ["sandbox", "production"])
+    def test_explicit_supported_environment_is_accepted(
+        self, fresh_settings_module, environment: str
+    ) -> None:
+        prefix = "pdl_sdbx" if environment == "sandbox" else "pdl_live"
+        settings = fresh_settings_module.Settings(
+            _env_file=None,
+            paddle_api_key=f"{prefix}_apikey_test",  # gitleaks:allow
+            paddle_env=environment,
+        )
+        assert settings.paddle_env == environment
+
+
 class TestVcTrustedIssuerParsing:
     def test_comma_separated_string_is_normalized(self, fresh_settings_module) -> None:
         settings = fresh_settings_module.Settings(
