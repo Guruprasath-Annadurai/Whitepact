@@ -9,8 +9,9 @@ from pathlib import Path
 from fastapi.routing import APIRoute
 
 from responsibleai.sovereign.protocol import CapabilityAvailability, SovereignFeature
-from responsibleai.sovereign.router import router, web_router
+from responsibleai.sovereign.router import router
 from responsibleai.sovereign.service import SovereignService
+from responsibleai.sovereign.web_routes import web_router
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = ROOT / "contracts" / "sovereign-v1-web.json"
@@ -82,7 +83,9 @@ def test_contract_enums_defined() -> None:
 
 def test_contract_capability_negotiation_consistency() -> None:
     data = _load_contract()
-    negotiated = {f.name.value: f.availability for f in SovereignService().get_capabilities().features}
+    negotiated = {
+        f.name.value: f.availability for f in SovereignService().get_capabilities().features
+    }
     for cap in data.get("capabilities", []):
         if cap.get("availability") != "AVAILABLE":
             continue
@@ -98,6 +101,25 @@ def test_contract_capability_negotiation_consistency() -> None:
             CapabilityAvailability.AVAILABLE,
             CapabilityAvailability.EXPERIMENTAL,
         ), f"contract claims {cap['feature_id']} but negotiation reports {avail}"
+
+
+def test_browser_safe_post_routes_in_contract() -> None:
+    data = _load_contract()
+    routes = _router_paths(web_router)
+    missing: list[str] = []
+    for cap in data.get("capabilities", []):
+        if cap.get("availability") not in ("AVAILABLE", "EXPERIMENTAL"):
+            continue
+        for ep in cap.get("endpoints", []):
+            if ep["method"] != "POST":
+                continue
+            path = ep["path"]
+            if not path.startswith("/api/web/sovereign/"):
+                continue
+            key = (ep["method"], path)
+            if key not in routes:
+                missing.append(f"{cap.get('feature_id')}: {key}")
+    assert not missing, f"missing browser routes: {missing}"
 
 
 def test_backend_available_routes_in_contract() -> None:
@@ -120,4 +142,4 @@ def test_typescript_retry_map_aligns_with_never_retry_ops() -> None:
         "gauntlet",
         "capsule_reproduce",
     ):
-        assert f"{op}: \"NEVER_BLINDLY_RETRY\"" in text
+        assert f'{op}: "NEVER_BLINDLY_RETRY"' in text

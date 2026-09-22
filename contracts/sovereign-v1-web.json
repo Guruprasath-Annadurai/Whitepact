@@ -1,0 +1,1274 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "protocol_version": "1.0.0",
+  "sovereign_version": "1.0.0",
+  "error_model": {
+    "400": {
+      "description": "invalid request body or missing required fields"
+    },
+    "404": {
+      "description": "tenant isolation violation or resource not found for organization"
+    },
+    "501": {
+      "description": "capability UNAVAILABLE on this deployment"
+    },
+    "5xx": {
+      "description": "internal error \u2014 disposition ERROR in clients"
+    }
+  },
+  "tenant_behavior": {
+    "internal_api": "organization_id required on /api/sovereign/* request bodies; cross-tenant access returns HTTP 404",
+    "browser_api": "tenant derived from authenticated wp_session; browser-supplied organization_id rejected with HTTP 400",
+    "principal_id": "optional on internal API only; web API sets principal_id from session server-side"
+  },
+  "zero_effect_operations": [
+    "simulate_blast_radius",
+    "simulate_mission",
+    "shadow",
+    "policy_lint",
+    "policy_test",
+    "policy_diff",
+    "policy_simulate",
+    "gauntlet",
+    "flight_recorder",
+    "time_machine",
+    "evidence_correlation",
+    "capsule_create",
+    "capsule_validate",
+    "capsule_reproduce"
+  ],
+  "$defs": {
+    "OrgBody": {
+      "type": "object",
+      "required": [
+        "organization_id"
+      ],
+      "properties": {
+        "organization_id": {
+          "type": "string"
+        },
+        "environment": {
+          "type": "string",
+          "default": "development"
+        },
+        "principal_id": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "CapabilityAvailability": {
+      "type": "string",
+      "enum": [
+        "AVAILABLE",
+        "UNAVAILABLE",
+        "EXPERIMENTAL"
+      ]
+    },
+    "MissionDisposition": {
+      "type": "string",
+      "enum": [
+        "ALLOW",
+        "DENY",
+        "APPROVAL_REQUIRED",
+        "UNKNOWN",
+        "UNREACHABLE"
+      ]
+    },
+    "GauntletStatus": {
+      "type": "string",
+      "enum": [
+        "PASS",
+        "FAIL",
+        "ERROR",
+        "UNAVAILABLE"
+      ]
+    },
+    "TraceStageStatus": {
+      "type": "string",
+      "enum": [
+        "PRESENT",
+        "MISSING",
+        "UNKNOWN"
+      ]
+    },
+    "SovereignStatus": {
+      "type": "object",
+      "required": [
+        "sovereign_version",
+        "protocol_version"
+      ],
+      "properties": {
+        "sovereign_version": {
+          "type": "string"
+        },
+        "protocol_version": {
+          "type": "string"
+        }
+      }
+    },
+    "FeatureDescriptor": {
+      "type": "object",
+      "required": [
+        "name",
+        "availability"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "availability": {
+          "$ref": "#/$defs/CapabilityAvailability"
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "read_only": {
+          "type": "boolean"
+        },
+        "simulation": {
+          "type": "boolean"
+        },
+        "notes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "SovereignCapabilities": {
+      "type": "object",
+      "required": [
+        "sovereign_version",
+        "protocol_version",
+        "features"
+      ],
+      "properties": {
+        "sovereign_version": {
+          "type": "string"
+        },
+        "protocol_version": {
+          "type": "string"
+        },
+        "features": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FeatureDescriptor"
+          }
+        }
+      }
+    },
+    "PolicyRule": {
+      "type": "object",
+      "description": "Governance PolicyRule JSON shape",
+      "additionalProperties": true
+    },
+    "Capsule": {
+      "type": "object",
+      "required": [
+        "capsule_id",
+        "digest",
+        "organization_id"
+      ],
+      "properties": {
+        "capsule_id": {
+          "type": "string"
+        },
+        "digest": {
+          "type": "string"
+        },
+        "organization_id": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "WebTenantBody": {
+      "type": "object",
+      "properties": {
+        "environment": {
+          "type": "string",
+          "default": "development"
+        }
+      },
+      "additionalProperties": false,
+      "not": {
+        "required": [
+          "organization_id"
+        ]
+      }
+    }
+  },
+  "capabilities": [
+    {
+      "feature_id": "status",
+      "feature_version": "1.0.0",
+      "negotiation_name": "status",
+      "availability": "AVAILABLE",
+      "authentication": "none for GET /api/web/sovereign/status and /capabilities; web_session+csrf for other browser POST routes",
+      "zero_effect": true,
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/api/sovereign/status"
+        },
+        {
+          "method": "GET",
+          "path": "/api/web/sovereign/status"
+        }
+      ],
+      "request_schema": null,
+      "response_schema": {
+        "$ref": "#/$defs/SovereignStatus"
+      },
+      "unknown_behavior": "N/A",
+      "unavailable_behavior": "HTTP 501 if capability disabled"
+    },
+    {
+      "feature_id": "capabilities",
+      "feature_version": "1.0.0",
+      "negotiation_name": null,
+      "availability": "AVAILABLE",
+      "authentication": "none for GET /api/web/sovereign/status and /capabilities; web_session+csrf for other browser POST routes",
+      "zero_effect": true,
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/api/sovereign/capabilities"
+        },
+        {
+          "method": "GET",
+          "path": "/api/web/sovereign/status"
+        },
+        {
+          "method": "GET",
+          "path": "/api/web/sovereign/capabilities"
+        }
+      ],
+      "request_schema": null,
+      "response_schema": {
+        "$ref": "#/$defs/SovereignCapabilities"
+      },
+      "unknown_behavior": "N/A",
+      "unavailable_behavior": "HTTP 501"
+    },
+    {
+      "feature_id": "xray",
+      "feature_version": "1.0.0",
+      "negotiation_name": "xray",
+      "availability": "AVAILABLE",
+      "authentication": "org body",
+      "zero_effect": true,
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/api/sovereign/xray"
+        },
+        {
+          "method": "POST",
+          "path": "/api/web/sovereign/xray"
+        }
+      ],
+      "request_schema": {
+        "$ref": "#/$defs/OrgBody"
+      },
+      "response_schema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "unknown_behavior": "truncation flags remain explicit in graph",
+      "unavailable_behavior": "HTTP 501",
+      "browser_authentication": "wp_session cookie + X-WP-CSRF header on POST",
+      "browser_request_schema": {
+        "$ref": "#/$defs/WebTenantBody"
+      }
+    },
+    {
+      "feature_id": "explain",
+      "feature_version": "1.0.0",
+      "negotiation_name": "explain",
+      "availability": "AVAILABLE",
+      "authentication": "org body",
+      "zero_effect": true,
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/api/sovereign/explain"
+        },
+        {
+          "method": "POST",
+          "path": "/api/web/sovereign/explain"
+        }
+      ],
+      "request_schema": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/OrgBody"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "evidence_id": {
+                "type": "string"
+              },
+              "identity_id": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "response_schema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "unknown_behavior": "UNKNOWN disposition preserved in explanation items",
+      "unavailable_behavior": "HTTP 501",
+      "browser_authentication": "wp_session cookie + X-WP-CSRF header on POST",
+      "browser_request_schema": {
+        "$ref": "#/$defs/WebTenantBody"
+      }
+    },
+    {
+      "feature_id": "trace",
+      "feature_version": "1.0.0",
+      "negotiation_name": "trace",
+      "availability": "AVAILABLE",
+      "authentication": "org body",
+      "zero_effect": true,
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/api/sovereign/trace"
+        },
+        {
+          "method": "POST",
+          "path": "/api/web/sovereign/trace"
+        }
+      ],
+      "request_schema": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/OrgBody"
+          },
+          {
+            "type": "object",
+            "required": [
+              "evidence_id"
+            ],
+            "properties": {
+              "evidence_id": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "response_schema": {
+        "type": "object",
+        "properties": {
+          "stages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "$ref": "#/$defs/TraceStageStatus"
+                }
+              }
+            }
+          }
+        }
+      },
+      "unknown_behavior": "stage status MISSING or UNKNOWN never coerced to PRESENT",
+      "unavailable_behavior": "HTTP 404 cross-tenant evidence",
+      "browser_authentication": "wp_session cookie + X-WP-CSRF header on POST",
+      "browser_request_schema": {
+        "$ref": "#/$defs/WebTenantBody"
+      }
+    },
+    {
+      "feature_id": "authority_effective",
+      "feature_version": "1.0.0",
+      "negotiation_name": "authority_effective",
+      "availability": "AVAILABLE",
+      "authentication": "org body",
+      "zero_effect": true,
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/api/sovereign/authority/effective"
+        },
+        {
+          "method": "POST",
+          "path": "/api/web/sovereign/authority/effective"
+        }
+      ],
+      "request_schema": {
+        "$ref": "#/$defs/OrgBody"
+      },
+      "response_schema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "unknown_behavior": "UNKNOWN effective states preserved in snapshot",
+      "unavailable_behavior": "HTTP 501",
+      "browser_authentication": "wp_session cookie + X-WP-CSRF header on POST",
+      "browser_request_schema": {
+        "$ref": "#/$defs/WebTenantBody"
+      }
+    },
+    {
+      "feature_id": "authority_compare",
+      "feature_version": "1.0.0",
+      "negotiation_name": "authority_compare",
+      "availability": "AVAILABLE",
+      "authentication": "org body",
+      "zero_effect": true,
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/api/sovereign/authority/compare"
+        },
+        {
+          "method": "POST",
+          "path": "/api/web/sovereign/authority/compare"
+        }
+      ],
+      "request_schema": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/OrgBody"
+          },
+          {
+            "type": "object",
+            "required": [
+              "manifest"
+            ],
+            "properties": {
+              "manifest": {
+                "type": "object"
+              }
+            }
+          }
+        ]
+      },
+      "response_schema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "unknown_behavior": "UNKNOWN_EFFECTIVE_STATE category preserved",
+      "unavailable_behavior": "HTTP 501",
+      "browser_authentication": "wp_session cookie + X-WP-CSRF header on POST",
+      "browser_request_schema": {
+        "$ref": "#/$defs/WebTenantBody"
+      }
+    },
+    {
+      "feature_id": "authority_drift",
+      "feature_version": "1.0.0",
+      "negotiation_name": "authority_drift",
+      "availability": "AVAILABLE",
+      "authentication": "org body",
+      "zero_effect": true,
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/api/sovereign/authority/drift"
+        },
+        {
+          "method": "POST",
+          "path": "/api/web/sovereign/authority/drift"
+        }
+      ],
+      "request_schema": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/OrgBody"
+          },
+          {
+            "type": "object",
+            "required": [
+              "manifest"
+            ],
+            "properties": {
+              "manifest": {
+                "type": "object"
+              }
+            }
+          }
+        ]
+      },
+      "response_schema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "unknown_behavior": "drift facts may cite UNKNOWN effective state",
+      "unavailable_behavior": "HTTP 501",
+      "browser_authentication": "wp_session cookie + X-WP-CSRF header on POST",
+      "browser_request_schema": {
+        "$ref": "#/$defs/WebTenantBody"
+      }
+    },
+    {
+      "feature_id": "simulate_blast_radius",
+      "feature_version": "1.0.0",
+      "negotiation_name": "simulate_blast_radius",
+      "availability": "AVAILABLE",
+      "authentication": "org body",
+      "zero_effect": true,
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/api/sovereign/simulate/blast-radius"
+        },
+        {
+          "method": "POST",
+          "path": "/api/web/sovereign/simulate/blast-radius"
+        }
+      ],
+      "request_schema": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/OrgBody"
+          },
+          {
+            "type": "object",
+            "required": [
+              "actor_identity_id"
+            ],
+            "properties": {
+              "actor_identity_id": {
+                "type": "string"
+              },
+              "hypothetical_extra_capabilities": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "response_schema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "unknown_behavior": "unknown_paths when exploration budget exceeded",
+      "unavailable_behavior": "HTTP 501",
+      "browser_authentication": "wp_session cookie + X-WP-CSRF header on POST",
+      "browser_request_schema": {
+        "$ref": "#/$defs/WebTenantBody"
+      }
+    },
+    {
+      "feature_id": "simulate_mission",
+      "feature_version": "1.0.0",
+      "negotiation_name": "simulate_mission",
+      "availability": "AVAILABLE",
+      "authentication": "org body",
+      "zero_effect": true,
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/api/sovereign/simulate/mission"
+        },
+        {
+          "method": "POST",
+          "path": "/api/web/sovereign/simulate/mission"
+        }
+      ],
+      "request_schema": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/OrgBody"
+          },
+          {
+            "type": "object",
+            "required": [
+              "agent_id",
+              "steps"
+            ],
+            "properties": {
+              "agent_id": {
+                "type": "string"
+              },
+              "steps": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "response_schema": {
+        "type": "object",
+        "properties": {
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "disposition": {
+                  "$ref": "#/$defs/MissionDisposition"
+                }
+              }
+            }
+          }
+        }
+      },
+      "unknown_behavior": "UNKNOWN mission step when policy unmatched",
+      "unavailable_behavior": "HTTP 501",
+      "browser_authentication": "wp_session cookie + X-WP-CSRF header on POST",
+      "browser_request_schema": {
+        "$ref": "#/$defs/WebTenantBody"
+      }
+    },
+    {
+      "feature_id": "shadow",
+      "feature_version": "1.0.0",
+      "negotiation_name": "shadow",
+      "availability": "AVAILABLE",
+      "authentication": "org body",
+      "zero_effect": true,
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/api/sovereign/shadow"
+        },
+        {
+          "method": "POST",
+          "path": "/api/web/sovereign/shadow"
+        }
+      ],
+      "request_schema": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/OrgBody"
+          },
+          {
+            "type": "object",
+            "required": [
+              "agent_id",
+              "action_type"
+            ],
+            "properties": {
+              "agent_id": {
+                "type": "string"
+              },
+              "action_type": {
+                "type": "string"
+              },
+              "target": {
+                "type": "string"
+              },
+              "persist": {
+                "type": "boolean",
+                "default": false
+              }
+            }
+          }
+        ]
+      },
+      "response_schema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "unknown_behavior": "gateway may return UNKNOWN decision \u2014 not success",
+      "unavailable_behavior": "HTTP 501",
+      "notes": "persist=true writes sovereign_shadow_observations only",
+      "browser_authentication": "wp_session cookie + X-WP-CSRF header on POST",
+      "browser_request_schema": {
+        "$ref": "#/$defs/WebTenantBody"
+      }
+    },
+    {
+      "feature_id": "policy_lint",
+      "feature_version": "1.0.0",
+      "negotiation_name": "policy_lab",
+      "availability": "AVAILABLE",
+      "authentication": "org body",
+      "zero_effect": true,
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/api/sovereign/policy/lint"
+        },
+        {
+          "method": "POST",
+          "path": "/api/web/sovereign/policy/lint"
+        }
+      ],
+      "request_schema": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/OrgBody"
+          },
+          {
+            "type": "object",
+            "required": [
+              "rules"
+            ],
+            "properties": {
+              "rules": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/PolicyRule"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "response_schema": {
+        "type": "object",
+        "properties": {
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "unknown_behavior": "N/A",
+      "unavailable_behavior": "HTTP 501",
+      "browser_authentication": "wp_session cookie + X-WP-CSRF header on POST",
+      "browser_request_schema": {
+        "$ref": "#/$defs/WebTenantBody"
+      }
+    },
+    {
+      "feature_id": "policy_validate",
+      "feature_version": "1.0.0",
+      "negotiation_name": "policy_lab",
+      "availability": "AVAILABLE",
+      "authentication": "org body",
+      "zero_effect": true,
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/api/sovereign/policy/lint"
+        },
+        {
+          "method": "POST",
+          "path": "/api/web/sovereign/policy/lint"
+        }
+      ],
+      "request_schema": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/OrgBody"
+          },
+          {
+            "type": "object",
+            "required": [
+              "rules"
+            ],
+            "properties": {
+              "rules": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/PolicyRule"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "response_schema": {
+        "type": "object",
+        "properties": {
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "unknown_behavior": "N/A",
+      "unavailable_behavior": "HTTP 501",
+      "notes": "CLI/SDK alias \u2014 same HTTP surface as policy_lint",
+      "browser_authentication": "wp_session cookie + X-WP-CSRF header on POST",
+      "browser_request_schema": {
+        "$ref": "#/$defs/WebTenantBody"
+      }
+    },
+    {
+      "feature_id": "policy_test",
+      "feature_version": "1.0.0",
+      "negotiation_name": "policy_lab",
+      "availability": "AVAILABLE",
+      "authentication": "org body",
+      "zero_effect": true,
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/api/sovereign/policy/test"
+        },
+        {
+          "method": "POST",
+          "path": "/api/web/sovereign/policy/test"
+        }
+      ],
+      "request_schema": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/OrgBody"
+          },
+          {
+            "type": "object",
+            "required": [
+              "cases"
+            ],
+            "properties": {
+              "cases": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "response_schema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "unknown_behavior": "test cases may expect UNKNOWN outcomes",
+      "unavailable_behavior": "HTTP 501",
+      "browser_authentication": "wp_session cookie + X-WP-CSRF header on POST",
+      "browser_request_schema": {
+        "$ref": "#/$defs/WebTenantBody"
+      }
+    },
+    {
+      "feature_id": "policy_diff",
+      "feature_version": "1.0.0",
+      "negotiation_name": "policy_lab",
+      "availability": "AVAILABLE",
+      "authentication": "org body",
+      "zero_effect": true,
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/api/sovereign/policy/diff"
+        },
+        {
+          "method": "POST",
+          "path": "/api/web/sovereign/policy/diff"
+        }
+      ],
+      "request_schema": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/OrgBody"
+          },
+          {
+            "type": "object",
+            "required": [
+              "rules"
+            ],
+            "properties": {
+              "rules": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/PolicyRule"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "response_schema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "unknown_behavior": "N/A",
+      "unavailable_behavior": "HTTP 501",
+      "browser_authentication": "wp_session cookie + X-WP-CSRF header on POST",
+      "browser_request_schema": {
+        "$ref": "#/$defs/WebTenantBody"
+      }
+    },
+    {
+      "feature_id": "policy_simulate",
+      "feature_version": "1.0.0",
+      "negotiation_name": "policy_lab",
+      "availability": "AVAILABLE",
+      "authentication": "org body",
+      "zero_effect": true,
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/api/sovereign/policy/simulate"
+        },
+        {
+          "method": "POST",
+          "path": "/api/web/sovereign/policy/simulate"
+        }
+      ],
+      "request_schema": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/OrgBody"
+          },
+          {
+            "type": "object",
+            "required": [
+              "rules",
+              "action_types"
+            ],
+            "properties": {
+              "rules": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/PolicyRule"
+                }
+              },
+              "action_types": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "response_schema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "unknown_behavior": "N/A",
+      "unavailable_behavior": "HTTP 501",
+      "browser_authentication": "wp_session cookie + X-WP-CSRF header on POST",
+      "browser_request_schema": {
+        "$ref": "#/$defs/WebTenantBody"
+      }
+    },
+    {
+      "feature_id": "gauntlet",
+      "feature_version": "1.0.0",
+      "negotiation_name": "gauntlet",
+      "availability": "AVAILABLE",
+      "authentication": "org body",
+      "zero_effect": true,
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/api/sovereign/gauntlet"
+        },
+        {
+          "method": "POST",
+          "path": "/api/web/sovereign/gauntlet"
+        }
+      ],
+      "request_schema": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/OrgBody"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "probe_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "response_schema": {
+        "type": "object",
+        "properties": {
+          "cases": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "$ref": "#/$defs/GauntletStatus"
+                }
+              }
+            }
+          }
+        }
+      },
+      "unknown_behavior": "N/A \u2014 probe ERROR distinct from PASS",
+      "unavailable_behavior": "per-case status UNAVAILABLE when probe cannot run",
+      "browser_authentication": "wp_session cookie + X-WP-CSRF header on POST",
+      "browser_request_schema": {
+        "$ref": "#/$defs/WebTenantBody"
+      }
+    },
+    {
+      "feature_id": "flight_recorder",
+      "feature_version": "1.0.0",
+      "negotiation_name": "flight_recorder",
+      "availability": "AVAILABLE",
+      "authentication": "org body",
+      "zero_effect": true,
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/api/sovereign/flight-recorder"
+        },
+        {
+          "method": "POST",
+          "path": "/api/web/sovereign/flight-recorder"
+        }
+      ],
+      "request_schema": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/OrgBody"
+          },
+          {
+            "type": "object",
+            "required": [
+              "evidence_id"
+            ],
+            "properties": {
+              "evidence_id": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "response_schema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "unknown_behavior": "MISSING stages explicit",
+      "unavailable_behavior": "HTTP 404 missing evidence",
+      "browser_authentication": "wp_session cookie + X-WP-CSRF header on POST",
+      "browser_request_schema": {
+        "$ref": "#/$defs/WebTenantBody"
+      }
+    },
+    {
+      "feature_id": "time_machine",
+      "feature_version": "1.0.0",
+      "negotiation_name": "time_machine",
+      "availability": "AVAILABLE",
+      "authentication": "org body",
+      "zero_effect": true,
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/api/sovereign/time-machine"
+        },
+        {
+          "method": "POST",
+          "path": "/api/web/sovereign/time-machine"
+        }
+      ],
+      "request_schema": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/OrgBody"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "then_snapshot": {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "response_schema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "unknown_behavior": "missing historical snapshot reported honestly",
+      "unavailable_behavior": "HTTP 501",
+      "browser_authentication": "wp_session cookie + X-WP-CSRF header on POST",
+      "browser_request_schema": {
+        "$ref": "#/$defs/WebTenantBody"
+      }
+    },
+    {
+      "feature_id": "evidence_correlation",
+      "feature_version": "1.0.0",
+      "negotiation_name": "evidence",
+      "availability": "AVAILABLE",
+      "authentication": "org body",
+      "zero_effect": true,
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/api/sovereign/evidence/correlate"
+        },
+        {
+          "method": "POST",
+          "path": "/api/web/sovereign/evidence/correlate"
+        }
+      ],
+      "request_schema": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/OrgBody"
+          },
+          {
+            "type": "object",
+            "required": [
+              "evidence_id"
+            ],
+            "properties": {
+              "evidence_id": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "response_schema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "unknown_behavior": "INCOMPLETE verification preserved",
+      "unavailable_behavior": "HTTP 404",
+      "browser_authentication": "wp_session cookie + X-WP-CSRF header on POST",
+      "browser_request_schema": {
+        "$ref": "#/$defs/WebTenantBody"
+      }
+    },
+    {
+      "feature_id": "capsule",
+      "feature_version": "1.0.0",
+      "negotiation_name": "capsule",
+      "availability": "AVAILABLE",
+      "authentication": "org body",
+      "zero_effect": true,
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/api/sovereign/capsules",
+          "operation": "create"
+        },
+        {
+          "method": "POST",
+          "path": "/api/sovereign/capsules/validate",
+          "operation": "validate"
+        },
+        {
+          "method": "POST",
+          "path": "/api/sovereign/capsules/reproduce",
+          "operation": "reproduce"
+        },
+        {
+          "method": "POST",
+          "path": "/api/web/sovereign/capsules",
+          "operation": "create"
+        },
+        {
+          "method": "POST",
+          "path": "/api/web/sovereign/capsules/validate",
+          "operation": "validate"
+        },
+        {
+          "method": "POST",
+          "path": "/api/web/sovereign/capsules/reproduce",
+          "operation": "reproduce"
+        }
+      ],
+      "request_schema": {
+        "oneOf": [
+          {
+            "allOf": [
+              {
+                "$ref": "#/$defs/OrgBody"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "authority_subset": {
+                    "type": "object"
+                  },
+                  "timeline": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "capsule"
+            ],
+            "properties": {
+              "capsule": {
+                "$ref": "#/$defs/Capsule"
+              }
+            }
+          }
+        ]
+      },
+      "response_schema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "unknown_behavior": "N/A",
+      "unavailable_behavior": "HTTP 501",
+      "notes": "inspect via validate + client-side capsule JSON; no GET route in V1",
+      "browser_authentication": "wp_session cookie + X-WP-CSRF header on POST",
+      "browser_request_schema": {
+        "$ref": "#/$defs/WebTenantBody"
+      }
+    },
+    {
+      "feature_id": "authority_bom",
+      "feature_version": "1.0.0",
+      "negotiation_name": "authority_bom",
+      "availability": "EXPERIMENTAL",
+      "authentication": "org body",
+      "zero_effect": true,
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/api/sovereign/authority-bom"
+        },
+        {
+          "method": "POST",
+          "path": "/api/web/sovereign/authority-bom"
+        }
+      ],
+      "request_schema": {
+        "$ref": "#/$defs/OrgBody"
+      },
+      "response_schema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "unknown_behavior": "experimental fields may be incomplete",
+      "unavailable_behavior": "HTTP 501 when negotiation reports UNAVAILABLE",
+      "browser_authentication": "wp_session cookie + X-WP-CSRF header on POST",
+      "browser_request_schema": {
+        "$ref": "#/$defs/WebTenantBody"
+      }
+    }
+  ]
+}
