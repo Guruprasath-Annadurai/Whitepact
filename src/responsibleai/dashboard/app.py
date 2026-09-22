@@ -159,7 +159,7 @@ from responsibleai.db.migrate import MigrationError, run_migrations_or_raise
 from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
 from responsibleai.db.root_authority_repository import RootAuthorityRepository
 from responsibleai.enterprise.router import router as enterprise_router
-from responsibleai.sovereign.api_deps import bind_sovereign_engine
+from responsibleai.sovereign.api_deps import bind_sovereign_engine, bind_web_identity_repository
 from responsibleai.sovereign.router import router as sovereign_router
 from responsibleai.sovereign.router import web_router as sovereign_web_router
 from responsibleai.enterprise.security.rate_limit import DurableIdentityRateLimiter
@@ -467,6 +467,7 @@ async def lifespan(application: FastAPI):
     _billing_event_repo = BillingEventRepository(_db_engine)
     _paddle_event_repo = PaddleBillingEventRepository(_db_engine)
     _web_identity_repo = WebIdentityRepository(_db_engine)
+    bind_web_identity_repository(_web_identity_repo)
     from responsibleai.enterprise.runtime import configure_enterprise
 
     configure_enterprise(_db_engine)
