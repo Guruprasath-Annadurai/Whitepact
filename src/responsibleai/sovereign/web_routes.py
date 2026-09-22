@@ -137,7 +137,9 @@ async def web_post_compare(
 ) -> dict[str, Any]:
     from responsibleai.sovereign.manifest import WhitepactManifest
 
-    manifest = WhitepactManifest.model_validate(body.manifest)
+    manifest = WhitepactManifest.model_validate(
+        {**body.manifest, "organization_id": web_organization_id(principal)}
+    )
     try:
         result = await svc.compare_manifest_async(_web_ctx(principal, body), manifest)
     except SovereignTenantIsolationError as exc:
@@ -158,7 +160,9 @@ async def web_post_drift(
 ) -> dict[str, Any]:
     from responsibleai.sovereign.manifest import WhitepactManifest
 
-    manifest = WhitepactManifest.model_validate(body.manifest)
+    manifest = WhitepactManifest.model_validate(
+        {**body.manifest, "organization_id": web_organization_id(principal)}
+    )
     try:
         report = await svc.detect_drift_async(_web_ctx(principal, body), manifest)
     except SovereignTenantIsolationError as exc:

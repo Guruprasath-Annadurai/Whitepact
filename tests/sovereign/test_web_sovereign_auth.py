@@ -146,6 +146,19 @@ async def test_web_xray_uses_session_tenant(sovereign_web_app) -> None:
 
 
 @pytest.mark.asyncio
+async def test_manifest_organization_is_derived_from_session(sovereign_web_app) -> None:
+    client, _, identities = sovereign_web_app
+    org_id, _ = await _session(client, identities, "manifest-org")
+    res = await client.post(
+        "/api/web/sovereign/authority/compare",
+        json={"manifest": {"organization_id": "browser-forged", "capabilities": []}},
+        headers={"X-WP-CSRF": client.cookies["wp_csrf"]},
+    )
+    assert res.status_code == 200
+    assert res.json()["organization_id"] == org_id
+
+
+@pytest.mark.asyncio
 async def test_simulation_zero_effect_on_web_route(sovereign_web_app) -> None:
     client, _, identities = sovereign_web_app
     org_id, _ = await _session(client, identities, "sim-org")
