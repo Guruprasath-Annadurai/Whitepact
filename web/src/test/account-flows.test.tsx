@@ -58,15 +58,15 @@ describe("account and credential flows", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ keys: [replacement] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ revoked: "key-new" }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ keys: [] }), { status: 200 }));
-    vi.spyOn(window, "confirm").mockReturnValue(true);
-
     render(<MemoryRouter><ApiKeysPage /></MemoryRouter>);
     expect(await screen.findByText("wp_test_old")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /Rotate/i }));
+    await user.click(screen.getByRole("button", { name: "Confirm rotate" }));
     expect(await screen.findByText("wp_test_rotated-secret")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Done" }));
     expect(await screen.findByText("wp_test_new")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /Revoke/i }));
+    await user.click(screen.getByRole("button", { name: "Confirm revoke" }));
     expect(await screen.findByText("No API keys")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(5);
   });

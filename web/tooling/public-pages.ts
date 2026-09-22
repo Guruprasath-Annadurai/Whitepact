@@ -31,6 +31,19 @@ export function publicPages(): Plugin {
         html = html.replace('<div id="root"></div>', `<div id="root"></div>${fallback.replace("</main>", `${pricing}</main>`)}`);
         await writeFile(resolve(outDir, "pages", `${key}.html`), html);
       }
+      const sovereign = {
+        title: "WhitePact Sovereign | Authority analysis workbench",
+        description: "Inspect configured authority relationships and supporting evidence with WhitePact Sovereign.",
+        path: "/sovereign",
+      };
+      const sovereignUrl = `https://whitepact.com${sovereign.path}`;
+      let sovereignHtml = template.replace(/<title>[^<]*<\/title>/, `<title>${escape(sovereign.title)}</title>`);
+      for (const [selector, value] of [["name=\"description\"", sovereign.description], ["property=\"og:title\"", sovereign.title], ["property=\"og:description\"", sovereign.description], ["property=\"og:url\"", sovereignUrl], ["name=\"twitter:title\"", sovereign.title], ["name=\"twitter:description\"", sovereign.description]]) {
+        sovereignHtml = sovereignHtml.replace(new RegExp(`<meta ${selector} content="[^"]*"\\s*/?>`), `<meta ${selector} content="${escape(value)}" />`);
+      }
+      sovereignHtml = sovereignHtml.replace(/<link rel="canonical" href="[^"]*"\s*\/?>/, `<link rel="canonical" href="${sovereignUrl}" />`);
+      sovereignHtml = sovereignHtml.replace('<div id="root"></div>', '<div id="root"></div><noscript><main class="editorial-page"><h1>See authority before it becomes action.</h1><p class="page-lead">WhitePact Sovereign helps teams inspect configured authority relationships and supporting evidence.</p><p><a href="/sovereign/workbench">Explore Sovereign</a></p></main></noscript>');
+      await writeFile(resolve(outDir, "pages", "sovereign.html"), sovereignHtml);
     },
   };
 }

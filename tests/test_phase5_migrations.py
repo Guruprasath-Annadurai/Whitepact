@@ -53,7 +53,7 @@ def test_one_canonical_alembic_head():
     scripts = ScriptDirectory.from_config(Config(str(ini)))
     heads = scripts.get_heads()
     assert len(heads) == 1, f"Expected exactly 1 alembic head, got {len(heads)}: {heads}"
-    assert heads == ["0060"]
+    assert heads == ["0061"]
     assert scripts.get_revision("0049").down_revision == "0048"
     assert scripts.get_revision("0048").down_revision == "0047"
     assert scripts.get_revision("0047").down_revision == "0046"
@@ -72,7 +72,7 @@ async def test_fresh_schema_to_0045_postgres(pg_test_db: str):
     try:
         async with engine.raw.connect() as conn:
             version = (await conn.execute(text("SELECT version_num FROM alembic_version"))).scalar()
-            assert version == "0060"
+            assert version == "0061"
 
             tables = await conn.run_sync(lambda c: inspect(c).get_table_names())
             assert PHASE5_TABLES <= set(tables), (

@@ -1381,6 +1381,28 @@ class TestPaddleWebhookVerificationAndReplay:
         )
         assert res_conflict.status_code == 409
 
+    async def test_paddle_webhook_ignores_non_subscription_entity_events(self, web_client):
+        secret = "paddle-test-placeholder"  # gitleaks:allow
+        payload = {
+            "event_id": "evt_txn_ignored",
+            "event_type": "transaction.completed",
+            "occurred_at": "2026-09-16T12:00:00Z",
+            "data": {"id": "txn_not_a_subscription", "customer_id": "ctm_1"},
+        }
+        raw_body = json.dumps(payload).encode("utf-8")
+        sig_header, _ = _sign_paddle_payload(secret, raw_body)
+        res = await web_client.post(
+            "/api/billing/paddle/webhook",
+            headers={"Paddle-Signature": sig_header},
+            content=raw_body,
+        )
+        assert res.status_code == 200
+        assert res.json() == {
+            "received": True,
+            "processed": False,
+            "ignored_event_type": True,
+        }
+
     async def test_paddle_webhook_occurred_at_chronology_ordering(self, db_engine):
         orgs = OrgRepository(db_engine)
         org = await orgs.create_org("Chronology Test", "chrono-test")
