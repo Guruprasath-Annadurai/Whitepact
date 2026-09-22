@@ -5,7 +5,7 @@ import { AlertTriangle, ArrowRight, Building2, CheckCircle2, CreditCard, FileChe
 import { Link, useOutletContext, useParams } from "react-router-dom";
 import { AccessibleDialog } from "../../components/AccessibleDialog";
 import { Button } from "../../components/Button";
-import { api, messageFrom } from "../../lib/api";
+import { ApiError, api, messageFrom } from "../../lib/api";
 import type { ApprovalExecutionResponse, ApprovalResolution, ConsequentialOutcome, DomainRecord, DomainResponse, EvidenceListResponse, InvitationRecord, LoadState, RecordValue } from "../../lib/contracts";
 import type { WebSession } from "./DashboardShell";
 import { ApprovalContractPanel, EvidenceContractPanel } from "./CanonicalPanels";
@@ -110,5 +110,50 @@ function MembersPanel({ records, session, onError, onChanged }: { records: Domai
   return <>{canManage&&<section className="data-panel settings-panel"><form onSubmit={invite}><h2>Invite a member</h2><label className="field"><span>Email</span><input type="email" value={email} onChange={(e)=>setEmail(e.target.value)} required /></label><label className="field"><span>Role</span><select value={role} onChange={(e)=>setRole(e.target.value)}><option value="ADMIN">Admin</option><option value="ANALYST">Analyst</option><option value="VIEWER">Viewer</option></select></label><Button disabled={Boolean(busy)}>{busy==="invite"?"Sending…":"Send invitation"}</Button></form></section>}<section className="data-panel member-cards"><header><h2>Members</h2></header>{records.map((record,index)=>{const id=String(record.user_id??record.id??index),own=String(record.email)===session.user.email,memberRole=String(record.role??"VIEWER");return <article key={id}><div><strong>{format(record.full_name)}</strong><span>{format(record.email)}</span></div><select aria-label={`Role for ${format(record.email)}`} value={memberRole} disabled={!canManage||own||Boolean(busy)} onChange={(e)=>void updateMember(id,e.target.value)}><option value="OWNER">Owner</option><option value="ADMIN">Admin</option><option value="ANALYST">Analyst</option><option value="VIEWER">Viewer</option></select>{canManage&&!own&&<Button variant="danger" disabled={Boolean(busy)} onClick={()=>setConfirm({kind:"member",id,label:String(record.email)})}>Remove</Button>}</article>})}</section>{canManage&&<section className="data-panel member-cards"><header><h2>Pending invitations</h2></header>{invitations.length?invitations.map((item,index)=>{const id=String(item.id??item.invitation_id??index);return <article key={id}><div><strong>{format(item.email)}</strong><span>{format(item.role)} · {format(item.status)}</span></div><Button variant="danger" disabled={Boolean(busy)} onClick={()=>setConfirm({kind:"invitation",id,label:String(item.email)})}>Revoke invitation</Button></article>}):<p className="configuration-note">No pending invitations.</p>}</section>}{confirm&&<AccessibleDialog labelId="member-confirm-title" onClose={close}><header><div><h2 id="member-confirm-title">{confirm.kind==="invitation"?"Revoke invitation?":"Remove member?"}</h2><p>{confirm.label}</p></div><button onClick={close} aria-label="Close"><X/></button></header><p>This is a destructive organization change and may be rejected by backend role or ownership rules.</p><div className="modal-actions"><Button variant="danger" disabled={Boolean(busy)} onClick={()=>void removeConfirmed()}>{busy?"Submitting…":"Confirm"}</Button><Button variant="secondary" disabled={Boolean(busy)} onClick={close}>Cancel</Button></div></AccessibleDialog>}</>;
 }
 
-function BillingPanel({item,configured,onError}:{item?:DomainRecord;configured:boolean;onError:(v:string)=>void}){const[busy,setBusy]=useState("");const plan=String(item?.plan??"FREE"),status=String(item?.subscription_status??"inactive"),customer=Boolean(item?.stripe_customer_id);async function redirect(kind:"checkout"|"portal",target?:"PRO"|"ENTERPRISE"){setBusy(kind);onError("");try{const url=kind==="checkout"?"/api/v1/web/billing/checkout":"/api/v1/web/billing/portal";const body=kind==="checkout"?{plan:target}:{return_url:`${window.location.origin}/dashboard/billing`};const value=await api<{checkout_url?:string;portal_url?:string}>(url,{method:"POST",body:JSON.stringify(body)});window.location.assign(String(value.checkout_url??value.portal_url));}catch(cause){onError(messageFrom(cause,"Billing action could not be started"));}finally{setBusy("");}}return <section className="billing-panel"><article><span>Current plan</span><strong>{plan}</strong><p>Subscription status: {status}</p></article><article><span>Billing connection</span><strong>{configured?"Available":"Not configured"}</strong><p>Access changes only after a signed billing webhook is processed. WhitePact V1 does not expose a customer usage meter.</p></article><div className="billing-actions">{plan!=="PRO"&&<Button onClick={()=>void redirect("checkout","PRO")} disabled={!configured||Boolean(busy)}>Choose Pro</Button>}{plan!=="ENTERPRISE"&&<Button onClick={()=>void redirect("checkout","ENTERPRISE")} disabled={!configured||Boolean(busy)}>Choose Enterprise</Button>}{customer&&<Button variant="secondary" onClick={()=>void redirect("portal")} disabled={Boolean(busy)}>Manage, downgrade or cancel</Button>}</div>{!configured&&<p className="configuration-note">Billing is not configured on this deployment. No paid entitlement is being advertised as active.</p>}</section>;}
+function BillingPanel({ item, configured, onError }: { item?: DomainRecord; configured: boolean; onError: (value: string) => void }) {
+  const [busy, setBusy] = useState<"" | "checkout" | "portal">("");
+  const plan = String(item?.plan ?? "FREE");
+  const status = String(item?.subscription_status ?? "inactive");
+  const paddleCustomerId = item?.paddle_customer_id;
+  const hasPaddleCustomer = typeof paddleCustomerId === "string" && paddleCustomerId.trim().length > 0;
+
+  async function redirect(kind: "checkout" | "portal", target?: "PRO" | "ENTERPRISE") {
+    setBusy(kind);
+    onError("");
+    try {
+      const url = kind === "checkout" ? "/api/v1/web/billing/checkout" : "/api/v1/web/billing/portal";
+      const body = kind === "checkout"
+        ? { plan: target }
+        : { return_url: `${window.location.origin}/dashboard/billing` };
+      const value = await api<{ checkout_url?: string; portal_url?: string }>(url, { method: "POST", body: JSON.stringify(body) });
+      const destination = value.checkout_url ?? value.portal_url;
+      if (!destination) throw new Error("Billing provider did not return a destination.");
+      window.location.assign(destination);
+    } catch (cause) {
+      if (cause instanceof ApiError && cause.status === 401) {
+        onError("Your session has expired. Sign in again to manage billing.");
+      } else if (kind === "portal" && cause instanceof ApiError && cause.status === 404) {
+        onError("No Paddle customer subscription is available for this organization.");
+      } else if (cause instanceof ApiError && cause.status === 503) {
+        onError("Billing management is temporarily unavailable. Try again later.");
+      } else {
+        onError(messageFrom(cause, "Billing action could not be started"));
+      }
+    } finally {
+      setBusy("");
+    }
+  }
+
+  return <section className="billing-panel">
+    <article><span>Current plan</span><strong>{plan}</strong><p>Subscription status: {status}</p></article>
+    <article><span>Billing connection</span><strong>{configured ? "Available" : "Not configured"}</strong><p>Access changes only after a signed billing webhook is processed. WhitePact V1 does not expose a customer usage meter.</p></article>
+    <div className="billing-actions">
+      {plan !== "PRO" && <Button onClick={() => void redirect("checkout", "PRO")} disabled={!configured || Boolean(busy)}>{busy === "checkout" ? "Opening checkout…" : "Choose Pro"}</Button>}
+      {plan !== "ENTERPRISE" && <Button onClick={() => void redirect("checkout", "ENTERPRISE")} disabled={!configured || Boolean(busy)}>{busy === "checkout" ? "Opening checkout…" : "Choose Enterprise"}</Button>}
+      {hasPaddleCustomer && <Button variant="secondary" onClick={() => void redirect("portal")} disabled={Boolean(busy)}>{busy === "portal" ? "Opening portal…" : "Manage, downgrade or cancel"}</Button>}
+    </div>
+    {!configured && <p className="configuration-note">Billing is not configured on this deployment. No paid entitlement is being advertised as active.</p>}
+    {configured && !hasPaddleCustomer && <p className="configuration-note">Subscription management becomes available after a Paddle customer subscription is linked to this organization.</p>}
+  </section>;
+}
 function format(value:RecordValue|undefined){if(Array.isArray(value))return value.join(", ");if(value===null||value===undefined||value==="")return "—";return String(value);}
