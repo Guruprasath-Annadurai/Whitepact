@@ -51,7 +51,16 @@ from responsibleai.auth.saml import (
     peek_in_response_to,
     validate_session_token,
 )
-from responsibleai.billing import StripeBillingError, StripeNotConfiguredError, StripeService
+from responsibleai.billing import (
+    PADDLE_SUBSCRIPTION_ENTITLEMENT_EVENTS,
+    PaddleBillingError,
+    PaddleBillingService,
+    PaddleCheckoutRequest,
+    PaddleNotConfiguredError,
+    StripeBillingError,
+    StripeNotConfiguredError,
+    StripeService,
+)
 from responsibleai.compliance.engine import ComplianceEngine
 from responsibleai.cost.analyzer import CostAnalyzer
 from responsibleai.cost.models import BudgetPolicy, TokenUsage
@@ -166,9 +175,6 @@ from responsibleai.db.migrate import MigrationError, run_migrations_or_raise
 from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
 from responsibleai.db.root_authority_repository import RootAuthorityRepository
 from responsibleai.enterprise.router import router as enterprise_router
-from responsibleai.sovereign.api_deps import bind_sovereign_engine, bind_web_identity_repository
-from responsibleai.sovereign.router import router as sovereign_router
-from responsibleai.sovereign.router import web_router as sovereign_web_router
 from responsibleai.enterprise.security.rate_limit import DurableIdentityRateLimiter
 from responsibleai.enterprise.security.router import router as enterprise_security_router
 from responsibleai.eval import (
@@ -248,6 +254,9 @@ from responsibleai.rbac import (
     role_from_str,
 )
 from responsibleai.redteam.simulator import RedTeamSimulator
+from responsibleai.sovereign.api_deps import bind_sovereign_engine, bind_web_identity_repository
+from responsibleai.sovereign.router import router as sovereign_router
+from responsibleai.sovereign.router import web_router as sovereign_web_router
 from responsibleai.supplychain import McpServerManifest, McpToolDescriptor, SupplyChainScanner
 from responsibleai.trust.badge import render_badge_svg
 from responsibleai.trust.passport import PassportGenerator
@@ -368,6 +377,7 @@ _saml_config: SAMLConfig | None = None
 _saml_txn_store: DurableSamlAuthnStore | None = None
 _SAML_REQUEST_TTL = 300.0  # seconds — matches OIDC's state window
 _stripe_service: StripeService | None = None
+_paddle_billing_service: PaddleBillingService | None = None
 _billing_event_repo: BillingEventRepository | None = None
 _paddle_event_repo: PaddleBillingEventRepository | None = None
 _plan_rate_limiter: PlanRateLimiter | None = None
@@ -410,6 +420,7 @@ async def lifespan(application: FastAPI):
         _saml_config, \
         _saml_txn_store, \
         _stripe_service, \
+        _paddle_billing_service, \
         _plan_rate_limiter, \
         _billing_event_repo, \
         _paddle_event_repo
@@ -538,7 +549,19 @@ async def lifespan(application: FastAPI):
             session_secret=settings.saml_session_secret,
         )
 
-    if settings.stripe_secret_key:
+    if settings.paddle_api_key:
+        try:
+            _paddle_billing_service = PaddleBillingService(
+                api_key=settings.paddle_api_key,
+                price_ids={
+                    Plan.PRO: settings.paddle_price_id_pro or "",
+                    Plan.ENTERPRISE: settings.paddle_price_id_enterprise or "",
+                },
+            )
+        except PaddleNotConfiguredError as exc:
+            logger.warning("paddle_billing_init_skipped", reason=str(exc))
+
+    if settings.stripe_secret_key and not settings.is_production:
         try:
             _stripe_service = StripeService(
                 secret_key=settings.stripe_secret_key,
@@ -550,6 +573,11 @@ async def lifespan(application: FastAPI):
             )
         except StripeNotConfiguredError as exc:
             logger.warning("stripe_init_skipped", reason=str(exc))
+    elif settings.stripe_secret_key and settings.is_production:
+        logger.warning(
+            "stripe_checkout_disabled_in_production",
+            reason="Production checkout uses Paddle; Stripe keys are ignored.",
+        )
 
     # Attach DB-backed delivery log + start persistent retry worker
     _webhook_delivery_repo = WebhookDeliveryRepository(_db_engine)
@@ -2290,7 +2318,9 @@ async def web_dashboard_summary(
         "services": {
             "Policy engine": "configured",
             "MCP gateway": "configured" if settings.mcp_governance_enabled else "not enabled",
-            "Billing": "configured" if _stripe_service else "not configured",
+            "Billing": "configured"
+            if _paddle_billing_service or _stripe_service
+            else "not configured",
         },
     }
 
@@ -2303,11 +2333,27 @@ async def web_billing_checkout(
     principal: WebPrincipal = Depends(require_web_csrf),
 ) -> dict[str, str]:
     org_id = _web_org_admin(principal)
-    if _stripe_service is None:
-        raise HTTPException(503, "Billing is not configured on this deployment.")
     org = await _ready(_org_repo).get_org(org_id)
     if org is None:
         raise HTTPException(404, "Organization not found.")
+    if _paddle_billing_service is not None:
+        try:
+            url = await _paddle_billing_service.create_checkout_session(
+                PaddleCheckoutRequest(
+                    org_id=org_id,
+                    plan=Plan(req.plan),
+                    success_url=_safe_billing_return_url(settings.billing_success_url),
+                    customer_email=principal.email,
+                    existing_customer_id=org.paddle_customer_id,
+                )
+            )
+        except PaddleBillingError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return {"checkout_url": url}
+    if settings.is_production:
+        raise HTTPException(503, "Paddle billing is required in production.")
+    if _stripe_service is None:
+        raise HTTPException(503, "Billing is not configured on this deployment.")
     try:
         url = await _stripe_service.create_checkout_session(
             org_id=org_id,
@@ -2330,9 +2376,22 @@ async def web_billing_portal(
     principal: WebPrincipal = Depends(require_web_csrf),
 ) -> dict[str, str]:
     org_id = _web_org_admin(principal)
+    org = await _ready(_org_repo).get_org(org_id)
+    if _paddle_billing_service is not None:
+        if org is None or not org.paddle_customer_id:
+            raise HTTPException(404, "No active Paddle customer exists for this organization.")
+        try:
+            url = await _paddle_billing_service.create_portal_session(
+                customer_id=org.paddle_customer_id,
+                return_url=_safe_billing_return_url(req.return_url),
+            )
+        except PaddleBillingError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return {"portal_url": url}
+    if settings.is_production:
+        raise HTTPException(503, "Paddle billing is required in production.")
     if _stripe_service is None:
         raise HTTPException(503, "Billing is not configured on this deployment.")
-    org = await _ready(_org_repo).get_org(org_id)
     if org is None or not org.stripe_customer_id:
         raise HTTPException(404, "No active billing customer exists for this organization.")
     try:
@@ -2406,7 +2465,7 @@ async def web_dashboard_domain(
             "items": [org.to_dict()] if org else [],
             "source": "organization_repository",
             "domain": domain,
-            "billing_configured": _stripe_service is not None,
+            "billing_configured": (_paddle_billing_service or _stripe_service) is not None,
             "usage_meter": "not_available",
         }
     if domain == "usage":
@@ -3973,6 +4032,10 @@ async def paddle_webhook(request: Request) -> dict[str, Any]:
 
     if not is_new:
         return {"received": True, "processed": False, "duplicate": True}
+
+    if event_type not in PADDLE_SUBSCRIPTION_ENTITLEMENT_EVENTS:
+        await _ready(_paddle_event_repo).complete(event_id, org_id=None)
+        return {"received": True, "processed": False, "ignored_event_type": True}
 
     try:
         custom_org_id = (
