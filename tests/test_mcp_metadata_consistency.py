@@ -35,8 +35,12 @@ def test_platform_metadata_yaml_does_not_hardcode_stale_tool_count() -> None:
 
 def test_readme_public_tool_count_matches_production_registry() -> None:
     readme = Path("README.md").read_text(encoding="utf-8")
-    match = re.search(r"MCP server \((\d+) tools, (\d+) resources\)", readme)
-    assert match is not None
+    match = re.search(
+        r"MCP server.*?\b(\d+)\b.*production tools.*?(\d+)\b.*resources",
+        readme,
+        re.IGNORECASE | re.DOTALL,
+    )
+    assert match is not None, "README must state production MCP tool/resource counts"
     assert int(match.group(1)) == PRODUCTION_MCP_TOOL_COUNT
     assert int(match.group(2)) == REGISTERED_MCP_RESOURCE_COUNT
 
