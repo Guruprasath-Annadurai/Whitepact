@@ -48,6 +48,12 @@ describe("public website", () => {
     expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("Refund Policy");
     expect(screen.getByText(/duplicate charges, accidental duplicate purchases/i)).toBeInTheDocument();
   });
+  it("uses provider-neutral language on the Paddle checkout return path", async () => {
+    renderAt("/billing/success");
+    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("Payment received by the billing provider");
+    expect(document.body).not.toHaveTextContent(/Stripe/i);
+    expect(screen.getByText(/signed billing webhook/i)).toBeInTheDocument();
+  });
   it("labels the governance console as simulated and exposes inspectable evidence", async () => {
     const user = userEvent.setup();
     renderAt("/");

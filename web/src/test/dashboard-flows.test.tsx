@@ -72,6 +72,82 @@ describe("dashboard and onboarding", () => {
     expect(screen.getByRole("button", { name: "Choose Pro" })).toBeDisabled();
   });
 
+  it("uses the Paddle customer binding as the subscription-management signal", async () => {
+    vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      items: [{ plan: "PRO", subscription_status: "active", paddle_customer_id: "ctm_paddle", stripe_customer_id: null }],
+      source: "organization_repository", billing_configured: true,
+    }), { status: 200 }));
+    const Parent = () => <Outlet context={session} />;
+    render(<MemoryRouter initialEntries={["/dashboard/billing"]}><Routes><Route element={<Parent />}><Route path="/dashboard/:domain" element={<DomainPage />} /></Route></Routes></MemoryRouter>);
+    expect(await screen.findByRole("button", { name: "Manage, downgrade or cancel" })).toBeEnabled();
+  });
+
+  it("does not expose portal management without a Paddle customer", async () => {
+    vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      items: [{ plan: "PRO", subscription_status: "active", paddle_customer_id: null, stripe_customer_id: "cus_legacy" }],
+      source: "organization_repository", billing_configured: true,
+    }), { status: 200 }));
+    const Parent = () => <Outlet context={session} />;
+    render(<MemoryRouter initialEntries={["/dashboard/billing"]}><Routes><Route element={<Parent />}><Route path="/dashboard/:domain" element={<DomainPage />} /></Route></Routes></MemoryRouter>);
+    expect(await screen.findByText(/management becomes available after a Paddle customer/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Manage, downgrade or cancel" })).not.toBeInTheDocument();
+  });
+
+  it("opens the Paddle portal without sending browser tenant authority", async () => {
+    const pendingPortal = new Promise<Response>(() => undefined);
+    const fetchMock = vi.spyOn(window, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        items: [{ plan: "PRO", subscription_status: "active", paddle_customer_id: "ctm_paddle" }],
+        source: "organization_repository", billing_configured: true,
+      }), { status: 200 }))
+      .mockReturnValueOnce(pendingPortal);
+    const Parent = () => <Outlet context={session} />;
+    render(<MemoryRouter initialEntries={["/dashboard/billing"]}><Routes><Route element={<Parent />}><Route path="/dashboard/:domain" element={<DomainPage />} /></Route></Routes></MemoryRouter>);
+    await userEvent.click(await screen.findByRole("button", { name: "Manage, downgrade or cancel" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const [path, init] = fetchMock.mock.calls[1];
+    expect(path).toBe("/api/v1/web/billing/portal");
+    expect(init).toEqual(expect.objectContaining({ method: "POST" }));
+    const body = JSON.parse(String(init?.body));
+    expect(body).toEqual({ return_url: `${window.location.origin}/dashboard/billing` });
+    expect(body).not.toHaveProperty("organization_id");
+  });
+
+  it("sends only the supported plan enum to checkout", async () => {
+    const pendingCheckout = new Promise<Response>(() => undefined);
+    const fetchMock = vi.spyOn(window, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        items: [{ plan: "FREE", subscription_status: "inactive", paddle_customer_id: null }],
+        source: "organization_repository", billing_configured: true,
+      }), { status: 200 }))
+      .mockReturnValueOnce(pendingCheckout);
+    const Parent = () => <Outlet context={session} />;
+    render(<MemoryRouter initialEntries={["/dashboard/billing"]}><Routes><Route element={<Parent />}><Route path="/dashboard/:domain" element={<DomainPage />} /></Route></Routes></MemoryRouter>);
+    await userEvent.click(await screen.findByRole("button", { name: "Choose Pro" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const [path, init] = fetchMock.mock.calls[1];
+    expect(path).toBe("/api/v1/web/billing/checkout");
+    expect(JSON.parse(String(init?.body))).toEqual({ plan: "PRO" });
+  });
+
+  it.each([
+    [401, "Your session has expired"],
+    [404, "No Paddle customer subscription is available"],
+    [503, "Billing management is temporarily unavailable"],
+  ])("renders a safe portal error for HTTP %s", async (status, expected) => {
+    vi.spyOn(window, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        items: [{ plan: "PRO", subscription_status: "active", paddle_customer_id: "ctm_paddle" }],
+        source: "organization_repository", billing_configured: true,
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ detail: "provider internal detail" }), { status }));
+    const Parent = () => <Outlet context={session} />;
+    render(<MemoryRouter initialEntries={["/dashboard/billing"]}><Routes><Route element={<Parent />}><Route path="/dashboard/:domain" element={<DomainPage />} /></Route></Routes></MemoryRouter>);
+    await userEvent.click(await screen.findByRole("button", { name: "Manage, downgrade or cancel" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(expected);
+    expect(screen.getByRole("button", { name: "Manage, downgrade or cancel" })).toBeEnabled();
+  });
+
   it("renders backend-backed security status instead of static copy", async () => {
     vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify({
       items: [{ title: "Assurance level", status: "PASSWORD", detail: "Session assurance recorded at authentication.", source: "web_sessions.assurance_level" }],
