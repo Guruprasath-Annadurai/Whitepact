@@ -11,11 +11,36 @@
   <a href="https://www.bestpractices.dev/projects/14112"><img src="https://www.bestpractices.dev/projects/14112/baseline" alt="OpenSSF Baseline"/></a>
 </p>
 
-<p align="center"><strong>WhitePact — an independent runtime authority, governance, and assurance layer for autonomous systems: a five-way governance decision engine (ALLOW / ALLOW_WITH_REDACTION / REQUIRE_APPROVAL / DENY / QUARANTINE), trust scoring, bias detection, guardrails, hallucination detection, compliance mapping (NIST AI RMF / EU AI Act / ISO 42001), cost intelligence, drift monitoring, a public Trust Index / leaderboard / AI Incident Database, and an MCP server (30 tools, 20 resources) with LangChain, LangGraph, and Google ADK trust-gate integrations.</strong></p>
+<h1 align="center">WhitePact</h1>
+
+<p align="center"><strong>Runtime authority for AI agents and autonomous systems.</strong></p>
+
+<p align="center">AI may reason and plan freely.<br/>
+High-impact execution still requires independently enforced authority.</p>
+
+<p align="center">WhitePact evaluates identity, authority, policy, approvals, and runtime state
+before consequential actions are allowed to execute.</p>
+
+<p align="center"><em>Primary category: AI Authority Layer</em></p>
+
+<p align="center">
+  <a href="#quick-start">Quickstart</a> ·
+  Sovereign / X-Ray (<code>whitepact sovereign</code>) ·
+  <a href="docs/integrations/README.md">MCP integration</a> ·
+  <a href="https://github.com/Guruprasath-Annadurai/Whitepact/issues/87">Design-partner black-box evaluation</a>
+</p>
+
+<p align="center">This repository contains the MIT-licensed WhitePact V1 codebase and public
+integration surfaces. Hosted, enterprise, or future components may be distributed
+under different terms where clearly identified.</p>
+
+<p align="center">MCP server (<strong>30</strong> production tools, <strong>20</strong> resources) — counts from
+<code>src/responsibleai/mcp/metadata.py</code>. Published PyPI release: <strong>1.2.6</strong>;
+source development version may read ahead (see <code>pyproject.toml</code>).</p>
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│                        WhitePact  v1.2.6                                     │
+│                        WhitePact  v1.3.0                                     │
 │                                                                              │
 │  ┌──────────────┐  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐  │
 │  │ Governance   │  │ Trust Score │  │  Compliance  │  │  Guardrails      │  │
@@ -68,7 +93,7 @@ and a live dashboard — that covers the full governance lifecycle:
 | Can I cite and verify a trust score anywhere? | `Trust Index` | Free self-assessed or human-reviewed certified passport, verifiable at `/verify/{id}`, embeddable badge |
 | Has this AI system failed publicly before? | `AI Incident Database` | Crowd-reported, moderator-reviewed, hash-chained public registry |
 | Should my agent trust this third-party tool before calling it? | `rai_check_trust` + LangChain/LangGraph/ADK integrations | Free lookup, plus a real block/pause gate in-agent |
-| Can any MCP client govern every AI call? | `MCP Server` | 27 governance tools over stdio, Streamable HTTP, or legacy HTTP+SSE |
+| Can any MCP client govern every AI call? | `MCP Server` | Production MCP tools over stdio, Streamable HTTP, or legacy HTTP+SSE (see metadata module) |
 
 ---
 
@@ -762,10 +787,11 @@ cd Whitepact
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-# Full test suite (run it to see the current test count and coverage —
-# see CONTRIBUTING.md's Running Tests section for why no number is
-# hardcoded here)
-pytest
+# Full test suite
+PYTHONPATH=src pytest tests/ -ra
+
+# Enterprise SaaS Layer 1 (identity, RBAC, verified principal gate)
+PYTHONPATH=src pytest tests/test_enterprise_saas_layer1.py tests/test_enterprise_saas_layer1_pg.py -ra
 
 # Dashboard tests only
 RAI_DB_PATH=:memory: RAI_AUTH_ENABLED=false pytest tests/test_dashboard_api.py
