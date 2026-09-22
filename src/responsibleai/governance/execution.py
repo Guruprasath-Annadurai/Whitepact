@@ -355,4 +355,8 @@ class InternalToolExecutor:
         dispatch_args = dict(action.arguments)
         if action.action_type == SYNTHETIC_COUNTER_TOOL:
             dispatch_args["_whitepact_organization_id"] = action.agent.organization_id or ""
-        return await dispatch_tool(action.action_type, dispatch_args)
+        return await dispatch_tool(
+            action.action_type,
+            dispatch_args,
+            channel="governance_admitted",
+        )

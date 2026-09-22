@@ -2620,15 +2620,21 @@ _TOOL_HANDLERS: dict[str, Any] = {
 }
 
 
-async def dispatch_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
-    if name == TEST_TOOL_NAME and (_mcp_dispatch_hosted.get() or not test_tools_enabled()):
-        return {
-            "error": "tool_unavailable",
-            "message": (
-                f"{TEST_TOOL_NAME} is available only when RAI_MCP_ALLOW_TEST_TOOLS is set "
-                "and the request is not on a hosted MCP transport."
-            ),
-        }
+async def dispatch_tool(
+    name: str,
+    args: dict[str, Any],
+    *,
+    channel: str = "mcp_public",
+) -> dict[str, Any]:
+    if name == TEST_TOOL_NAME and channel != "governance_admitted":
+        if _mcp_dispatch_hosted.get() or not test_tools_enabled():
+            return {
+                "error": "tool_unavailable",
+                "message": (
+                    f"{TEST_TOOL_NAME} is available only when RAI_MCP_ALLOW_TEST_TOOLS is set "
+                    "and the request is not on a hosted MCP transport."
+                ),
+            }
     handler = _TOOL_HANDLERS.get(name)
     if not handler:
         return {"error": f"Unknown tool: {name}"}
