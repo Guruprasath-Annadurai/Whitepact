@@ -26,8 +26,8 @@ before consequential actions are allowed to execute.</p>
 <p align="center">
   <a href="#quick-start">Quickstart</a> ·
   Sovereign / X-Ray (<code>whitepact sovereign</code>) ·
-  <a href="docs/integrations/README.md">MCP integration</a> ·
-  <a href="https://github.com/Guruprasath-Annadurai/Whitepact/issues/87">Design-partner black-box evaluation</a>
+  <a href="docs/integrations/README.md">MCP Integration</a> ·
+  <a href="https://github.com/Guruprasath-Annadurai/Whitepact/issues/87">Black-box Design Partner Evaluation</a>
 </p>
 
 <p align="center">This repository contains the MIT-licensed WhitePact V1 codebase and public
