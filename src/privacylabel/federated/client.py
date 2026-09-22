@@ -190,8 +190,8 @@ class FederatedClient:
                 Label(
                     label_id=str(uuid.uuid4()),
                     data_id=record.get("id", str(uuid.uuid4())),
-                    label=result["label"],
-                    confidence=float(result.get("confidence", 0.9)),
+                    label=str(result["label"]),
+                    confidence=float(str(result.get("confidence", 0.9))),
                     source="federated",
                     metadata={"model": result.get("model", "unknown")},
                 )

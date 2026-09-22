@@ -97,13 +97,18 @@ class OIDCProvider:
             self._discovery_doc = resp.json()
         return self._discovery_doc
 
-    async def validate_token(self, token: str) -> JWTClaims:
+    async def validate_token(self, token: str, *, expected_nonce: str | None = None) -> JWTClaims:
         """Validate a JWT and return its claims.
 
         Raises ``ValueError`` if the token is invalid or expired.
         """
         if self.skip_verification:
-            return self._decode_unverified(token)
+            claims = self._decode_unverified(token)
+            if not claims.sub:
+                raise ValueError("OIDC token is missing a subject")
+            if expected_nonce is not None and claims.raw.get("nonce") != expected_nonce:
+                raise ValueError("OIDC nonce validation failed")
+            return claims
 
         try:
             import jwt as pyjwt
@@ -144,6 +149,10 @@ class OIDCProvider:
         except pyjwt.InvalidTokenError as e:
             raise ValueError(f"Invalid token: {e}") from e
 
+        if not payload.get("sub"):
+            raise ValueError("OIDC token is missing a subject")
+        if expected_nonce is not None and payload.get("nonce") != expected_nonce:
+            raise ValueError("OIDC nonce validation failed")
         return JWTClaims.from_payload(payload)
 
     @staticmethod
@@ -162,7 +171,15 @@ class OIDCProvider:
             raise ValueError(f"Failed to decode JWT payload: {e}") from e
         return JWTClaims.from_payload(payload)
 
-    def authorization_url(self, redirect_uri: str, state: str, scopes: list[str]) -> str:
+    def authorization_url(
+        self,
+        redirect_uri: str,
+        state: str,
+        scopes: list[str],
+        *,
+        nonce: str | None = None,
+        code_challenge: str | None = None,
+    ) -> str:
         """Build the OAuth2 authorization redirect URL."""
         disc = self._discovery_doc
         if not disc:
@@ -179,6 +196,11 @@ class OIDCProvider:
             "scope": " ".join(scopes),
             "state": state,
         }
+        if nonce:
+            params["nonce"] = nonce
+        if code_challenge:
+            params["code_challenge"] = code_challenge
+            params["code_challenge_method"] = "S256"
         return f"{base}?{urlencode(params)}"
 
     async def exchange_code(
@@ -186,22 +208,27 @@ class OIDCProvider:
         code: str,
         redirect_uri: str,
         client_secret: str,
+        *,
+        code_verifier: str | None = None,
     ) -> dict[str, Any]:
         """Exchange an authorization code for tokens."""
         disc = await self.discover()
         token_endpoint = disc.get("token_endpoint", f"{self.issuer.rstrip('/')}/token")
 
         async with httpx.AsyncClient(timeout=15.0) as client:
+            form = {
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": redirect_uri,
+                "client_id": self.client_id,
+                "client_secret": client_secret,
+            }
+            if code_verifier:
+                form["code_verifier"] = code_verifier
             resp = await client.post(
                 token_endpoint,
-                data={
-                    "grant_type": "authorization_code",
-                    "code": code,
-                    "redirect_uri": redirect_uri,
-                    "client_id": self.client_id,
-                    "client_secret": client_secret,
-                },
+                data=form,
             )
             if resp.status_code != 200:
-                raise ValueError(f"Token exchange failed: {resp.text}")
+                raise ValueError(f"Token exchange failed with provider status {resp.status_code}")
             return resp.json()

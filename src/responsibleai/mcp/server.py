@@ -90,7 +90,11 @@ from responsibleai.mcp.licensing import (
     upgrade_message,
 )
 from responsibleai.mcp.resources import RESOURCE_DEFS, dispatch_resource
-from responsibleai.mcp.tools import TOOL_DEFS, dispatch_tool
+from responsibleai.mcp.tools import (
+    PRODUCTION_TOOL_DEFS,
+    WHITEPACT_PURPOSE_ARGUMENT,
+    dispatch_tool,
+)
 from responsibleai.rbac.models import OrgContext
 
 if TYPE_CHECKING:
@@ -142,15 +146,18 @@ def _log_invocation_name(process_kind: str) -> None:
 
 
 # Set by the HTTP transport's auth middleware per-connection. None on stdio
-# (self-hosted) — absence of a context means unrestricted access, matching
-# the open-core design: self-hosted stdio is always free and full-featured.
+# (self-hosted). Only local stdio may use unrestricted community dispatch;
+# absent identity on a hosted request must instead fail closed.
 _current_org: ContextVar[OrgContext | None] = ContextVar("_current_org", default=None)
+# Transport identity is independent of authentication: losing an org context
+# on an HTTP request must never turn it into unrestricted community stdio.
+_current_hosted: ContextVar[bool] = ContextVar("_current_hosted", default=False)
 _current_usage_repo: ContextVar[McpUsageRepository | None] = ContextVar(
     "_current_usage_repo", default=None
 )
 # None unless Settings.mcp_governance_enabled is True — see that field's
-# docstring and governance_integration.py's module docstring for why
-# this is opt-in rather than always wired up.
+# docstring and governance_integration.py. Disabled service initialization
+# no longer permits direct hosted dispatch.
 _current_governance: ContextVar[GovernanceServices | None] = ContextVar(
     "_current_governance", default=None
 )
@@ -163,10 +170,13 @@ def _month_start_iso() -> str:
 
 @server.list_tools()
 async def _list_tools() -> list[types.Tool]:
+    from responsibleai.mcp.tools import advertised_tool_defs
+
+    tools = advertised_tool_defs(hosted=_current_hosted.get())
     ctx = _current_org.get()
     if ctx is not None and ctx.key_id.startswith("oauth:"):
-        return [_with_oauth_security(tool) for tool in TOOL_DEFS]
-    return TOOL_DEFS
+        return [_with_oauth_security(tool) for tool in tools]
+    return tools
 
 
 def _with_oauth_security(tool: types.Tool) -> types.Tool:
@@ -197,7 +207,25 @@ async def _call_tool(
     name: str,
     arguments: dict[str, Any] | None,
 ) -> tuple[list[types.TextContent], dict[str, Any]]:
-    _logger.debug("tool_call name=%s args=%s", name, arguments)
+    _logger.debug(
+        "tool_call name=%s arg_keys=%s",
+        name,
+        sorted((arguments or {}).keys()),
+    )
+
+    from responsibleai.data_governance.backup_defense import (
+        RestoreReadinessState,
+        get_restore_readiness_gate,
+    )
+
+    gate = get_restore_readiness_gate()
+    if gate.state != RestoreReadinessState.READY:
+        error = {
+            "error": "restore_quarantine",
+            "message": f"MCP tool execution blocked: system is in {gate.state.value} state pending restore reconciliation.",
+            "status": gate.state.value,
+        }
+        return _text_and_structured(error)
 
     ctx = _current_org.get()
     usage_repo = _current_usage_repo.get()
@@ -233,11 +261,21 @@ async def _call_tool(
                 }
                 return _text_and_structured(error)
 
-        if usage_repo is not None and ctx.org_id:
-            await usage_repo.record_call(ctx.org_id, name, ctx.plan.value, allowed=True)
-
     call_arguments = arguments or {}
     governance = _current_governance.get()
+    if (_current_hosted.get() or ctx is not None) and (
+        governance is None or ctx is None or not ctx.org_id or ctx.is_legacy
+    ):
+        if usage_repo is not None and ctx is not None and ctx.org_id:
+            await usage_repo.record_call(ctx.org_id, name, ctx.plan.value, allowed=False)
+        return _text_and_structured(
+            {
+                "error": "governance_unavailable",
+                "message": "Hosted tool execution requires tenant-scoped governance. No action was taken.",
+            }
+        )
+    if usage_repo is not None and ctx is not None and ctx.org_id:
+        await usage_repo.record_call(ctx.org_id, name, ctx.plan.value, allowed=True)
     if governance is not None and ctx is not None and ctx.org_id:
         # Local import: keeps the stdio transport's import graph free of
         # the DB/governance layer unless a hosted-HTTP connection with
@@ -245,7 +283,19 @@ async def _call_tool(
         # — see governance_integration.py's module docstring.
         from responsibleai.mcp.governance_integration import apply_governance
 
-        outcome = await apply_governance(name, call_arguments, ctx, governance)
+        purpose = call_arguments.get(WHITEPACT_PURPOSE_ARGUMENT)
+        if not isinstance(purpose, str) or not purpose.strip():
+            return _text_and_structured(
+                {
+                    "error": "governance_purpose_required",
+                    "message": "Hosted tool execution requires an explicit _whitepact_purpose.",
+                }
+            )
+        governed_arguments = dict(call_arguments)
+        del governed_arguments[WHITEPACT_PURPOSE_ARGUMENT]
+        outcome = await apply_governance(
+            name, governed_arguments, ctx, governance, purpose=purpose.strip()
+        )
         if not outcome.proceed:
             return _text_and_structured(outcome.blocked_response or {"error": "governance_blocked"})
         # apply_governance() already ran the tool via InternalToolExecutor
@@ -254,8 +304,14 @@ async def _call_tool(
         # double-execute the tool and reintroduce the exact bypass this
         # wiring exists to close.
         assert outcome.result is not None, "governed ALLOW outcome must carry an execution result"
+        if outcome.outcome_status is not None and outcome.outcome_status.value == "UNKNOWN":
+            outcome.result["_whitepact_evidence_outcome"] = "UNKNOWN"
+            outcome.result["_whitepact_reconciliation_required"] = True
         return _text_and_structured(outcome.result)
 
+    from responsibleai.mcp.tools import set_mcp_dispatch_hosted
+
+    set_mcp_dispatch_hosted(_current_hosted.get())
     result = await dispatch_tool(name, call_arguments)
     return _text_and_structured(result)
 
@@ -301,6 +357,71 @@ def _env_bool(name: str, *, default: bool) -> bool:
     return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
+class HostedProductionSecurityError(RuntimeError):
+    """Raised when a production hosted-MCP process would boot unsafely."""
+
+
+def hosted_production_preflight(
+    settings: Any,
+    *,
+    allowed_hosts: list[str] | None = None,
+) -> None:
+    """Fail closed before serving if production hosted MCP is misconfigured.
+
+    Non-production environments are unchanged: developers may run without an
+    allowlist, and hosted calls still refuse ungated dispatch_tool().
+    """
+    if not getattr(settings, "is_production", False):
+        return
+    if settings.mcp_http_allow_unauthenticated_demo:
+        raise HostedProductionSecurityError(
+            "mcp_http_allow_unauthenticated_demo is forbidden in production."
+        )
+    if getattr(settings, "phase7a_dispatcher_enabled", False):
+        raise HostedProductionSecurityError(
+            "Production Gate B is CLOSED. PHASE7A_DISPATCHER_ENABLED is forbidden in production."
+        )
+    if not settings.mcp_governance_enabled:
+        raise HostedProductionSecurityError(
+            "Production hosted MCP requires mcp_governance_enabled=true. "
+            "Hosted execution must not start without tenant-scoped governance."
+        )
+    hosts = (
+        allowed_hosts
+        if allowed_hosts is not None
+        else _split_csv(os.environ.get("RAI_MCP_HTTP_ALLOWED_HOSTS", ""))
+    )
+    if not hosts:
+        raise HostedProductionSecurityError(
+            "Production hosted MCP requires RAI_MCP_HTTP_ALLOWED_HOSTS so "
+            "DNS-rebinding protection is active. Refusing to start with an "
+            "empty Host allowlist."
+        )
+    if getattr(settings, "multi_replica", False):
+        raise HostedProductionSecurityError(
+            "V1 production hosted MCP is constrained to one authenticated "
+            "application replica. _AuthFailureLimiter is per-process; extra "
+            "replicas multiply the failure budget. Keep RAI_MULTI_REPLICA/"
+            "WHITEPACT_MULTI_REPLICA unset until a shared limiter exists."
+        )
+    from types import SimpleNamespace
+
+    from responsibleai.enterprise.preflight import (
+        HostedEnterpriseSecurityError,
+        assert_hosted_enterprise_boot_safe,
+    )
+
+    boot = SimpleNamespace(
+        environment=getattr(settings, "environment", None) or "production",
+        api_keys=list(getattr(settings, "api_keys", []) or []),
+        is_production=True,
+    )
+    try:
+        assert_hosted_enterprise_boot_safe(boot)
+    except HostedEnterpriseSecurityError as exc:
+        raise HostedProductionSecurityError(str(exc)) from exc
+
+
 def _build_transport_security() -> Any:
     """DNS rebinding protection for both hosted transports (spec: MCP servers
     must validate Host/Origin headers to prevent a malicious webpage from
@@ -327,25 +448,27 @@ def _build_transport_security() -> Any:
 
 
 class _AuthFailureLimiter:
-    """Per-process sliding-window limiter on failed Bearer-auth attempts,
-    keyed by client IP — blocks credential-stuffing/brute-force probing of
-    `/mcp` and `/sse` before it reaches `OrgRepository.authenticate`'s
-    database round trip. Deliberately separate from `PlanRateLimiter`
-    (dashboard/plan_rate_limiter.py): that one meters *successful*,
-    authenticated tool calls against a billing plan; this one guards the
-    auth boundary itself and has no concept of an org or plan yet.
+    """Per-process sliding-window limiter on failed Bearer-auth attempts.
 
-    In-memory, so this is per-replica, not cluster-wide — same documented
-    limitation as everything else in this codebase that isn't backed by
-    Postgres/Redis (see `DatabaseEngine`'s docstring). A determined
-    attacker distributing requests across replicas isn't stopped by this
-    alone; it's a real speed bump against the common single-source case,
-    not a claim of distributed rate limiting.
+    V1 production constraint: one authenticated MCP application replica.
+    This limiter is not cluster-wide. Extra replicas multiply the budget.
+
+    Dual-budget partitioning:
+    - Credential-specific budget: Keyed by non-secret SHA-256 fingerprint of the supplied credential (`cred:<token_fp>`).
+      Prevents an attacker using a bad token from exhausting the failure budget of other clients on the same proxy/IP.
+    - Anonymous / IP budget: Keyed by peer host (`anon:<ip>`) for requests with no Authorization header.
+    - Peer aggregate budget: An IP-level safety ceiling across multiple distinct failing credentials to prevent distributed brute-force.
     """
 
-    def __init__(self, max_failures: int, window_seconds: float) -> None:
+    def __init__(
+        self,
+        max_failures: int,
+        window_seconds: float,
+        peer_max_failures: int = 50,
+    ) -> None:
         self._max_failures = max_failures
         self._window_seconds = window_seconds
+        self._peer_max_failures = peer_max_failures
         self._failures: dict[str, list[float]] = {}
         self._lock = asyncio.Lock()
 
@@ -354,21 +477,31 @@ class _AuthFailureLimiter:
         self._failures[key] = attempts
         return attempts
 
-    async def is_blocked(self, key: str) -> bool:
+    async def is_blocked(self, key: str, peer_key: str | None = None) -> bool:
         async with self._lock:
             now = asyncio.get_running_loop().time()
-            return len(self._prune(key, now)) >= self._max_failures
+            if len(self._prune(key, now)) >= self._max_failures:
+                return True
+            if (
+                peer_key
+                and len(self._prune(f"peer_agg:{peer_key}", now)) >= self._peer_max_failures
+            ):
+                return True
+            return False
 
-    async def record_failure(self, key: str) -> None:
+    async def record_failure(self, key: str, peer_key: str | None = None) -> None:
         async with self._lock:
             now = asyncio.get_running_loop().time()
             self._prune(key, now).append(now)
+            if peer_key:
+                self._prune(f"peer_agg:{peer_key}", now).append(now)
 
 
 def _build_http_app() -> Any:
     """Construct the ASGI app for hosted MCP. Imports are local — this path
     pulls in Starlette + the DB layer, which self-hosted stdio users never need.
 
+    Production startups fail closed via hosted_production_preflight().
     Serves both hosted transports on one app — see the module docstring:
     `/mcp` (Streamable HTTP, preferred) and `/sse` + `/messages/` (legacy
     HTTP+SSE, unmodified). Both share the same auth (`_authenticate`) and
@@ -402,7 +535,11 @@ def _build_http_app() -> Any:
     from responsibleai.rbac.permissions import role_from_str
 
     settings = get_settings()
+    hosted_production_preflight(settings)
     _db_engine = create_engine(settings.effective_db_url)
+    from responsibleai.governance.synthetic_counter import bind_counter_engine
+
+    bind_counter_engine(_db_engine)
     _org_repo = OrgRepository(_db_engine)
     _usage_repo = McpUsageRepository(_db_engine)
     _mcp_oauth_server = (
@@ -435,7 +572,12 @@ def _build_http_app() -> Any:
             WebhookDeliveryRepository,
             WorkflowRuleRepository,
         )
+        from responsibleai.db.consent_proof_repository import ConsentProofRepository
+        from responsibleai.db.execution_nonce_repository import ExecutionNonceRepository
+        from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
+        from responsibleai.db.root_authority_repository import RootAuthorityRepository
         from responsibleai.governance import WhitePactRuntimeGateway
+        from responsibleai.governance.authority_resolver import AuthorityResolver
         from responsibleai.integrations.client import DEFAULT_CACHE_TTL_MINUTES, TrustClient
         from responsibleai.mcp.governance_integration import (
             GovernanceServices as RuntimeGovernanceServices,
@@ -447,6 +589,14 @@ def _build_http_app() -> Any:
         _governance_webhook_manager.set_config_repository(WebhookConfigRepository(_db_engine))
 
         _governance_services = RuntimeGovernanceServices(
+            nonce_repo=ExecutionNonceRepository(_db_engine),
+            epoch_repo=RevocationEpochRepository(_db_engine),
+            org_repo=_org_repo,
+            authority_resolver=AuthorityResolver(
+                RootAuthorityRepository(_db_engine),
+                ConsentProofRepository(_db_engine),
+                DelegationRepository(_db_engine),
+            ),
             gateway=WhitePactRuntimeGateway(),
             evidence_repo=EvidenceRepository(_db_engine),
             approval_repo=ApprovalRepository(_db_engine),
@@ -515,7 +665,7 @@ def _build_http_app() -> Any:
 
     @asynccontextmanager
     async def _lifespan(_app: Starlette) -> Any:
-        await _db_engine.init()
+        await _db_engine.init(auto_create_tables=not settings.is_production)
         if _governance_webhook_manager is not None:
             await _governance_webhook_manager.load_configs()
             _governance_webhook_manager.start_retry_worker()
@@ -526,8 +676,32 @@ def _build_http_app() -> Any:
             if _governance_webhook_manager is not None:
                 _governance_webhook_manager.stop_retry_worker()
 
-    def _client_key(request: Request) -> str:
+    trust_forwarded = _env_bool(
+        "WHITEPACT_MCP_TRUST_FORWARDED_HEADERS", default=False
+    ) or _env_bool("RAI_MCP_HTTP_TRUST_FORWARDED_HEADERS", default=False)
+
+    def _peer_ip(request: Request) -> str:
+        if trust_forwarded:
+            xff = request.headers.get("x-forwarded-for")
+            if xff:
+                client = xff.split(",")[0].strip()
+                if client:
+                    return client
         return request.client.host if request.client else "unknown"
+
+    def _client_key(request: Request) -> tuple[str, str]:
+        """Returns (rate_limit_key, peer_ip) using non-secret credential fingerprinting.
+        Never exposes or logs raw bearer tokens."""
+        import hashlib
+
+        peer = _peer_ip(request)
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.lower().startswith("bearer "):
+            token = auth_header[7:].strip()
+            if token:
+                token_fp = hashlib.sha256(token.encode("utf-8")).hexdigest()[:16]
+                return f"cred:{token_fp}", peer
+        return f"anon:{peer}", peer
 
     async def _resolve_oidc_context(token: str) -> OrgContext | None:
         """Validate an OIDC-issued Bearer JWT and map its claims to an
@@ -563,6 +737,7 @@ def _build_http_app() -> Any:
             org_name=org.name,
             is_legacy=False,
             plan=org.plan,
+            authentication_method="oidc",
         )
 
     async def _resolve_vc_context(token: str) -> OrgContext | None:
@@ -615,6 +790,7 @@ def _build_http_app() -> Any:
             org_name=org.name if org else None,
             is_legacy=False,
             plan=org.plan if org else Plan.FREE,
+            authentication_method="vc",
         )
 
     async def _authenticate(request: Request) -> OrgContext | None:
@@ -664,8 +840,8 @@ def _build_http_app() -> Any:
         records a fresh failure on rejection. Shared by both hosted
         transports so a probe against one doesn't get a bigger budget by
         switching to the other."""
-        client_key = _client_key(request)
-        if await auth_limiter.is_blocked(client_key):
+        client_key, peer_ip = _client_key(request)
+        if await auth_limiter.is_blocked(client_key, peer_key=peer_ip):
             return None, JSONResponse(
                 {
                     "error": "too_many_attempts",
@@ -691,7 +867,7 @@ def _build_http_app() -> Any:
                 )
             ctx = None
         if ctx is None:
-            await auth_limiter.record_failure(client_key)
+            await auth_limiter.record_failure(client_key, peer_key=peer_ip)
             headers = {}
             if _oidc_provider is not None or _mcp_oauth_server is not None:
                 # RFC 9728 / MCP Authorization spec: point an OAuth-aware
@@ -719,6 +895,7 @@ def _build_http_app() -> Any:
         org_token = _current_org.set(ctx)
         usage_token = _current_usage_repo.set(_usage_repo)
         governance_token = _current_governance.set(_governance_services)
+        hosted_token = _current_hosted.set(True)
         try:
             async with sse.connect_sse(request.scope, request.receive, request._send) as (
                 read_stream,
@@ -730,6 +907,7 @@ def _build_http_app() -> Any:
             _current_org.reset(org_token)
             _current_usage_repo.reset(usage_token)
             _current_governance.reset(governance_token)
+            _current_hosted.reset(hosted_token)
         return JSONResponse({}, status_code=200)
 
     class _StreamableHttpEndpoint:
@@ -754,16 +932,20 @@ def _build_http_app() -> Any:
             org_token = _current_org.set(ctx)
             usage_token = _current_usage_repo.set(_usage_repo)
             governance_token = _current_governance.set(_governance_services)
+            hosted_token = _current_hosted.set(True)
             try:
                 await streamable_http.handle_request(scope, receive, send)
             finally:
                 _current_org.reset(org_token)
                 _current_usage_repo.reset(usage_token)
                 _current_governance.reset(governance_token)
+                _current_hosted.reset(hosted_token)
 
     handle_streamable_http = _StreamableHttpEndpoint()
 
     async def health(request: Request) -> JSONResponse:
+        from responsibleai.mcp.tools import production_tool_count
+
         return JSONResponse(
             {
                 "status": "ok",
@@ -771,8 +953,25 @@ def _build_http_app() -> Any:
                 # diagnostics endpoint; "transports" is the new, complete list.
                 "transport": "http+sse",
                 "transports": ["streamable-http", "http+sse"],
-                "tools": len(TOOL_DEFS),
+                "tools": production_tool_count(),
             }
+        )
+
+    async def ready(request: Request) -> JSONResponse:
+        db_ok = await _db_engine.ping(timeout_seconds=2.0)
+        if db_ok:
+            return JSONResponse(
+                {
+                    "status": "ready",
+                    "database": "connected",
+                }
+            )
+        return JSONResponse(
+            {
+                "status": "unavailable",
+                "database": "disconnected",
+            },
+            status_code=503,
         )
 
     async def protected_resource_metadata(request: Request) -> JSONResponse:
@@ -882,7 +1081,8 @@ def _build_http_app() -> Any:
     async def oauth_authorize_post(request: Request) -> RedirectResponse | JSONResponse:
         if _mcp_oauth_server is None:
             return JSONResponse({"error": "not_found"}, status_code=404)
-        if await auth_limiter.is_blocked(_client_key(request)):
+        client_key, peer_ip = _client_key(request)
+        if await auth_limiter.is_blocked(client_key, peer_key=peer_ip):
             return _oauth_error(
                 OAuthProtocolError(
                     "temporarily_unavailable", "Too many failed login attempts", status_code=429
@@ -902,14 +1102,15 @@ def _build_http_app() -> Any:
                 else OAuthProtocolError("invalid_request", "Invalid form body")
             )
             if protocol_error.status_code in {401, 403}:
-                await auth_limiter.record_failure(_client_key(request))
+                await auth_limiter.record_failure(client_key, peer_key=peer_ip)
             return _oauth_error(protocol_error)
         return RedirectResponse(location, status_code=303, headers={"Cache-Control": "no-store"})
 
     async def oauth_token(request: Request) -> JSONResponse:
         if _mcp_oauth_server is None:
             return JSONResponse({"error": "not_found"}, status_code=404)
-        if await auth_limiter.is_blocked(_client_key(request)):
+        client_key, peer_ip = _client_key(request)
+        if await auth_limiter.is_blocked(client_key, peer_key=peer_ip):
             return _oauth_error(
                 OAuthProtocolError(
                     "temporarily_unavailable", "Too many failed token attempts", status_code=429
@@ -930,7 +1131,7 @@ def _build_http_app() -> Any:
                 if isinstance(exc, OAuthProtocolError)
                 else OAuthProtocolError("invalid_request", "Invalid form body")
             )
-            await auth_limiter.record_failure(_client_key(request))
+            await auth_limiter.record_failure(client_key, peer_key=peer_ip)
             return _oauth_error(protocol_error)
         return JSONResponse(payload, headers={"Cache-Control": "no-store", "Pragma": "no-cache"})
 
@@ -966,7 +1167,7 @@ def _build_http_app() -> Any:
                     (_with_oauth_security(t) if _mcp_oauth_server else t).model_dump(
                         mode="json", exclude_none=True, by_alias=True
                     )
-                    for t in TOOL_DEFS
+                    for t in PRODUCTION_TOOL_DEFS
                 ],
                 "resources": [
                     r.model_dump(mode="json", exclude_none=True, by_alias=True)
@@ -989,6 +1190,7 @@ def _build_http_app() -> Any:
     app = Starlette(
         routes=[
             Route("/health", endpoint=health),
+            Route("/ready", endpoint=ready),
             Route("/mcp", endpoint=handle_streamable_http),
             Route("/sse", endpoint=handle_sse),
             Mount("/messages/", app=sse.handle_post_message),

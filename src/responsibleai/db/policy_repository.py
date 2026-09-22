@@ -23,6 +23,7 @@ from typing import Any
 from sqlalchemy import delete, insert, select, update
 
 from responsibleai.db.engine import DatabaseEngine, governance_policies, governance_policy_versions
+from responsibleai.db.revocation_epoch_repository import bump_epoch_on_connection
 from responsibleai.governance.models import GovernanceDecision
 from responsibleai.governance.policy import Policy, PolicyRule
 from responsibleai.governance.risk import RiskTier
@@ -56,6 +57,7 @@ async def _bump_version(conn: Any, org_id: str) -> int:
     caller's already-open transaction — every mutation below calls this
     inside its own `begin()` block, so the rule-set change and the
     version bump are atomic together, never one without the other."""
+    await bump_epoch_on_connection(conn, org_id)
     current = (
         await conn.execute(
             select(governance_policy_versions.c.version).where(

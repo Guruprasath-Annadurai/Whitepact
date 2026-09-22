@@ -45,7 +45,7 @@ class AnthropicProvider(BaseProvider):
 
     async def complete(self, request: CompletionRequest) -> CompletionResponse:
 
-        response = await self._client.messages.create(
+        response = await self._client.messages.create(  # type: ignore[call-overload]
             model=self._model,
             max_tokens=request.max_tokens,
             system=request.system_prompt,

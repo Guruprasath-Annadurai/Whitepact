@@ -69,15 +69,14 @@ uvicorn responsibleai.dashboard.app:app \
 The API uses Bearer token authentication. Set `RAI_API_KEYS` to one or more keys:
 
 ```bash
-# Generate a key
+# Generate a key (print it, then store it in the environment — never commit it)
 python3 -c "import secrets; print(secrets.token_urlsafe(32))"
-# → abc123def456...
 
-# Set in .env
-RAI_API_KEYS=abc123def456...
+# Set in .env using the value you just generated
+RAI_API_KEYS=${WHITEPACT_API_KEY}
 
-# Use in requests
-curl -H "Authorization: Bearer abc123def456..." \
+# Use in requests (the key lives in the environment, not in this file)
+curl -H "Authorization: Bearer ${WHITEPACT_API_KEY}" \
      http://localhost:8765/api/health
 ```
 

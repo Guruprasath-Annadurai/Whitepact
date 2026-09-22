@@ -25,11 +25,14 @@ from mcp.client.streamable_http import streamable_http_client
 
 from responsibleai.db import EvidenceRepository, OrgRepository, create_engine
 from responsibleai.governance import QUARANTINE_VIOLATION_THRESHOLD, WhitePactRuntimeGateway
+from responsibleai.mcp.tools import TOOL_DEFS, WHITEPACT_PURPOSE_ARGUMENT
 from responsibleai.rbac.models import Plan, Role
+
+TEST_GOVERNANCE_PURPOSE = "automated-test"
 
 
 @pytest.fixture()
-async def governed_app(monkeypatch: pytest.MonkeyPatch):
+async def governed_app(monkeypatch: pytest.MonkeyPatch, seed_runtime_authority):
     """Same DB-engine-substitution trick as test_mcp_http_transport.py's
     `seeded_app`, plus forcing `mcp_governance_enabled=True` on the
     shared Settings singleton before building the app — the feature is
@@ -48,7 +51,15 @@ async def governed_app(monkeypatch: pytest.MonkeyPatch):
 
     org_repo = OrgRepository(engine)
     org = await org_repo.create_org("Governed Co", "governed-co", plan=Plan.ENTERPRISE)
-    _key_rec, raw_key = await org_repo.create_key(org.id, "test-key", role=Role.ANALYST)
+    key_rec, raw_key = await org_repo.create_key(org.id, "test-key", role=Role.ANALYST)
+    tool_names = tuple(definition.name for definition in TOOL_DEFS)
+    await seed_runtime_authority(
+        engine,
+        organization_id=org.id,
+        principal_id=key_rec.id,
+        action_types=tool_names,
+        targets=tool_names,
+    )
 
     app = _build_http_app()
     async with LifespanManager(app) as manager:
@@ -58,7 +69,7 @@ async def governed_app(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.fixture()
-async def governed_app_with_key(monkeypatch: pytest.MonkeyPatch):
+async def governed_app_with_key(monkeypatch: pytest.MonkeyPatch, seed_runtime_authority):
     """Same as `governed_app`, but also yields the API key's own
     `key_id` -- `apply_governance()` builds `AgentContext.agent_id` from
     `ctx.key_id`, which the Delegation Graph tests need in order to
@@ -78,6 +89,14 @@ async def governed_app_with_key(monkeypatch: pytest.MonkeyPatch):
     org_repo = OrgRepository(engine)
     org = await org_repo.create_org("Governed Co", "governed-co", plan=Plan.ENTERPRISE)
     key_rec, raw_key = await org_repo.create_key(org.id, "test-key", role=Role.ANALYST)
+    tool_names = tuple(definition.name for definition in TOOL_DEFS)
+    await seed_runtime_authority(
+        engine,
+        organization_id=org.id,
+        principal_id=key_rec.id,
+        action_types=tool_names,
+        targets=tool_names,
+    )
 
     app = _build_http_app()
     async with LifespanManager(app) as manager:
@@ -88,11 +107,12 @@ async def governed_app_with_key(monkeypatch: pytest.MonkeyPatch):
 
 @pytest.fixture()
 async def ungoverned_app(monkeypatch: pytest.MonkeyPatch):
-    """Same setup, but mcp_governance_enabled left at its False default
-    — proves the feature genuinely changes nothing when off."""
+    """Disabled governance keeps discovery usable but refuses execution."""
     import responsibleai.db as db_module
+    from responsibleai.dashboard.config import get_settings
     from responsibleai.mcp.server import _build_http_app
 
+    monkeypatch.setattr(get_settings(), "mcp_governance_enabled", False)
     engine = create_engine(":memory:")
     await engine.init()
     monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
@@ -117,6 +137,7 @@ def _client(app, raw_key: str) -> httpx.AsyncClient:
 
 
 async def _call(app, raw_key: str, tool_name: str, arguments: dict):
+    arguments = {**arguments, WHITEPACT_PURPOSE_ARGUMENT: TEST_GOVERNANCE_PURPOSE}
     async with (
         _client(app, raw_key) as http_client,
         streamable_http_client("/mcp", http_client=http_client) as (
@@ -130,18 +151,40 @@ async def _call(app, raw_key: str, tool_name: str, arguments: dict):
             return await session.call_tool(tool_name, arguments)
 
 
+async def test_hosted_path_persists_admission(governed_app):
+    from sqlalchemy import select
+
+    from responsibleai.db.engine import governance_execution_nonces
+
+    app, raw_key, org, engine = governed_app
+    response = await _call(app, raw_key, "rai_health", {})
+    assert not response.isError
+    async with engine.raw.connect() as conn:
+        rows = (
+            await conn.execute(
+                select(governance_execution_nonces).where(
+                    governance_execution_nonces.c.organization_id == org
+                )
+            )
+        ).fetchall()
+    assert len(rows) == 1
+
+
 class TestGovernanceDisabledByDefault:
-    async def test_toxic_content_still_executes_when_disabled(self, ungoverned_app) -> None:
-        """The exact same call that Section TestDenyBlocksExecution below
-        proves gets blocked when governance is ON must still succeed
-        normally when it's OFF (the default) — this is the concrete
-        backward-compatibility proof, not just a docstring claim."""
+    async def test_disabled_governance_refuses_hosted_execution(
+        self, ungoverned_app, monkeypatch
+    ) -> None:
+        """Disabling governance must not open an HTTP dispatch bypass."""
+        from unittest.mock import AsyncMock
+
+        dispatch = AsyncMock()
+        monkeypatch.setattr("responsibleai.mcp.server.dispatch_tool", dispatch)
         app, raw_key = ungoverned_app
         result = await _call(app, raw_key, "rai_scan", {"text": "This is a bomb threat."})
         assert result.isError is not True
         payload = json.loads(result.content[0].text)
-        assert payload["is_blocked"] is True  # rai_scan's own opinion, not a governance block
-        assert "error" not in payload or payload.get("error") is None
+        assert payload["error"] == "governance_unavailable"
+        dispatch.assert_not_awaited()
 
 
 class TestAllowPassesThrough:
@@ -559,9 +602,9 @@ class TestContinuousMcpTrust:
         captured: dict[str, object] = {}
         real_apply_governance = gi_module.apply_governance
 
-        async def _capturing(name, arguments, ctx, services):
+        async def _capturing(name, arguments, ctx, services, *, purpose):
             captured["services"] = services
-            return await real_apply_governance(name, arguments, ctx, services)
+            return await real_apply_governance(name, arguments, ctx, services, purpose=purpose)
 
         monkeypatch.setattr(gi_module, "apply_governance", _capturing)
 
@@ -628,6 +671,7 @@ class TestRequireApprovalFiresWebhook:
     async def test_queued_approval_fires_a_registered_webhook(
         self,
         monkeypatch: pytest.MonkeyPatch,
+        seed_runtime_authority,
     ) -> None:
         """webhooks/manager.py's validate_webhook_url() (the SSRF guard)
         does a real socket.getaddrinfo() lookup before every delivery, not
@@ -675,7 +719,15 @@ class TestRequireApprovalFiresWebhook:
 
         org_repo = OrgRepository(engine)
         org = await org_repo.create_org("Webhook Co", "webhook-co", plan=Plan.ENTERPRISE)
-        _key_rec, raw_key = await org_repo.create_key(org.id, "test-key", role=Role.ANALYST)
+        key_rec, raw_key = await org_repo.create_key(org.id, "test-key", role=Role.ANALYST)
+        tool_names = tuple(definition.name for definition in TOOL_DEFS)
+        await seed_runtime_authority(
+            engine,
+            organization_id=org.id,
+            principal_id=key_rec.id,
+            action_types=tool_names,
+            targets=tool_names,
+        )
 
         app = _build_http_app()
         assert len(created_managers) == 1
@@ -802,24 +854,41 @@ class TestDelegationGraphContinuousReauthorization:
     a revoked one is denied before the gateway's normal pipeline even
     runs."""
 
-    async def test_identity_never_delegated_unaffected(self, governed_app_with_key) -> None:
+    async def test_explicit_fixture_authority_allows(self, governed_app_with_key) -> None:
         app, raw_key, _org_id, _engine, _key_id = governed_app_with_key
         result = await _call(app, raw_key, "rai_health", {})
         assert result.isError is not True
         payload = json.loads(result.content[0].text)
         assert "error" not in payload
 
-    async def test_active_delegation_allows_the_call(self, governed_app_with_key) -> None:
-        from responsibleai.db import DelegationRepository
+    async def test_revoked_consent_dispatches_zero_times(
+        self,
+        governed_app_with_key,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from unittest.mock import AsyncMock
+
+        from responsibleai.db.consent_proof_repository import ConsentProofRepository
 
         app, raw_key, org_id, engine, key_id = governed_app_with_key
-        await DelegationRepository(engine).grant(
-            org_id,
-            key_id,
-            granted_action_types=frozenset({"rai_health"}),
-            purpose="test grant",
-            granted_by="owner-1",
+        consents = ConsentProofRepository(engine)
+        consent = await consents.get_latest_for_grantee(key_id, organization_id=org_id)
+        assert consent is not None
+        await consents.revoke(
+            consent.consent_id,
+            organization_id=org_id,
+            revoked_by=f"test-owner:{org_id}",
         )
+        dispatch = AsyncMock()
+        monkeypatch.setattr("responsibleai.mcp.tools.dispatch_tool", dispatch)
+
+        result = await _call(app, raw_key, "rai_health", {})
+        payload = json.loads(result.content[0].text)
+        assert payload["error"] == "governance_denied"
+        dispatch.assert_not_awaited()
+
+    async def test_active_delegation_allows_the_call(self, governed_app_with_key) -> None:
+        app, raw_key, _org_id, _engine, _key_id = governed_app_with_key
         result = await _call(app, raw_key, "rai_health", {})
         assert result.isError is not True
         payload = json.loads(result.content[0].text)
@@ -830,20 +899,18 @@ class TestDelegationGraphContinuousReauthorization:
 
         app, raw_key, org_id, engine, key_id = governed_app_with_key
         repo = DelegationRepository(engine)
-        await repo.grant(
+        await repo.revoke_branch(
             org_id,
             key_id,
-            granted_action_types=frozenset({"rai_health"}),
-            purpose="test grant",
-            granted_by="owner-1",
+            revoked_by=f"test-owner:{org_id}",
+            reason="offboarded",
         )
-        await repo.revoke_branch(org_id, key_id, revoked_by="owner-1", reason="offboarded")
 
         result = await _call(app, raw_key, "rai_health", {})
         assert result.isError is not True
         payload = json.loads(result.content[0].text)
         assert payload["error"] == "governance_denied"
-        assert any(r.startswith("AUTHORITY_REVOKED") for r in payload["reason_codes"])
+        assert any(r.startswith("AUTHORITY_NOT_DELEGATED") for r in payload["reason_codes"])
 
         records = await EvidenceRepository(engine).list_for_org(org_id, decision="DENY")
         assert any(r.action_type == "rai_health" for r in records)
@@ -859,8 +926,9 @@ class TestDelegationGraphContinuousReauthorization:
             org_id,
             key_id,
             granted_action_types=frozenset({"rai_health"}),
-            purpose="test grant",
-            granted_by="owner-1",
+            constraints={"allowed_targets": ["rai_health"]},
+            purpose=TEST_GOVERNANCE_PURPOSE,
+            granted_by=f"test-owner:{org_id}",
             expires_at=past,
         )
 
@@ -868,4 +936,4 @@ class TestDelegationGraphContinuousReauthorization:
         assert result.isError is not True
         payload = json.loads(result.content[0].text)
         assert payload["error"] == "governance_denied"
-        assert any(r.startswith("AUTHORITY_EXPIRED") for r in payload["reason_codes"])
+        assert any(r.startswith("AUTHORITY_NOT_DELEGATED") for r in payload["reason_codes"])

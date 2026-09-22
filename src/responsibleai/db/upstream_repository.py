@@ -15,6 +15,7 @@ from typing import Any
 from sqlalchemy import delete, insert, select, update
 
 from responsibleai.db.engine import DatabaseEngine, upstream_mcp_servers
+from responsibleai.db.revocation_epoch_repository import bump_epoch_on_connection
 from responsibleai.governance.upstream import UpstreamServer, validate_upstream_server_url
 
 
@@ -69,6 +70,7 @@ class UpstreamServerRepository:
             auth_token=auth_token,
         )
         async with self._engine.raw.begin() as conn:
+            await bump_epoch_on_connection(conn, org_id)
             await conn.execute(
                 insert(upstream_mcp_servers).values(
                     id=server.server_id,
@@ -110,6 +112,8 @@ class UpstreamServerRepository:
                 .where(upstream_mcp_servers.c.org_id == org_id)
                 .where(upstream_mcp_servers.c.id == server_id)
             )
+            if result.rowcount:
+                await bump_epoch_on_connection(conn, org_id)
         if result.rowcount == 0:
             raise UpstreamServerNotFoundError(server_id)
 
@@ -121,6 +125,8 @@ class UpstreamServerRepository:
                 .where(upstream_mcp_servers.c.id == server_id)
                 .values(enabled=1 if enabled else 0)
             )
+            if result.rowcount:
+                await bump_epoch_on_connection(conn, org_id)
         if result.rowcount == 0:
             raise UpstreamServerNotFoundError(server_id)
         server = await self.get(server_id)

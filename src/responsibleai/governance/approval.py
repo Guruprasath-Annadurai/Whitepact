@@ -25,12 +25,17 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any
 
-from responsibleai.governance.models import ActionRequest, AgentContext, DecisionResult
+from responsibleai.governance.models import (
+    ActionRequest,
+    AgentContext,
+    DecisionResult,
+    GovernanceDecision,
+)
 from responsibleai.governance.risk import RiskTier
 
 # A single, hardcoded default rather than per-org configuration -- same
@@ -73,7 +78,7 @@ class ApprovalStatus(StrEnum):
 
 def compute_action_digest(action: ActionRequest) -> str:
     """A stable SHA-256 digest over exactly the fields that define
-    "what a human approved" — action_type, target, and the argument
+    "what a human approved" — action_type, target, explicit purpose and argument
     values (not just their names, unlike `EvidenceRecord.argument_keys`
     — the mutation invariant needs to detect a *changed value*, e.g.
     the payment amount, not just a changed argument *name*).
@@ -85,12 +90,19 @@ def compute_action_digest(action: ActionRequest) -> str:
     only the *digest* is ever persisted (`ApprovalRequest.action_digest`),
     never the canonical JSON itself.
     """
+    fields = {
+        "organization_id": action.agent.organization_id,
+        "principal_id": action.agent.identity.identity_id,
+        "action_type": action.action_type,
+        "target": action.target,
+        "arguments": action.arguments,
+    }
+    # Keep historical purpose-less approval digests comparable; canonical
+    # enterprise actions require an explicit purpose at authority resolution.
+    if action.purpose is not None:
+        fields["purpose"] = action.purpose
     canonical = json.dumps(
-        {
-            "action_type": action.action_type,
-            "target": action.target,
-            "arguments": action.arguments,
-        },
+        fields,
         sort_keys=True,
         default=str,
     )
@@ -158,6 +170,12 @@ class ApprovalRequest:
     # and encrypting the column doesn't change that exposure risk once
     # the API itself hands the plaintext back over HTTP.
     arguments: dict[str, Any] | None = None
+    purpose: str | None = None
+    authentication_method: str | None = None
+    revocation_epoch: int | None = None
+    authority_version: str | None = None
+    policy_version: int | None = None
+    target_fingerprint: str | None = None
 
     @property
     def is_resolved(self) -> bool:
@@ -202,7 +220,15 @@ class ApprovalRequest:
         }
 
 
-def build_approval_request(action: ActionRequest, decision: DecisionResult) -> ApprovalRequest:
+def build_approval_request(
+    action: ActionRequest,
+    decision: DecisionResult,
+    *,
+    authentication_method: str | None = None,
+    revocation_epoch: int | None = None,
+    authority_version: str | None = None,
+    target_fingerprint: str | None = None,
+) -> ApprovalRequest:
     """Assemble a pending `ApprovalRequest` from a `REQUIRE_APPROVAL`
     decision. Pure -- persist via `ApprovalRepository.create_from_decision()`.
     Callers are expected to only call this when
@@ -222,7 +248,13 @@ def build_approval_request(action: ActionRequest, decision: DecisionResult) -> A
         risk_tier=decision.risk_tier.value if isinstance(decision.risk_tier, RiskTier) else None,
         requested_by=action.agent.identity.identity_id,
         arguments=dict(action.arguments),
+        purpose=action.purpose,
         required_approvals=default_required_approvals(decision.risk_tier),
+        authentication_method=authentication_method,
+        revocation_epoch=revocation_epoch,
+        authority_version=authority_version,
+        policy_version=decision.policy_version,
+        target_fingerprint=target_fingerprint,
     )
 
 
@@ -257,4 +289,39 @@ def build_resume_action(approval: ApprovalRequest, *, agent: AgentContext) -> Ac
         target=approval.target,
         arguments=approval.arguments,
         action_id=approval.action_id,
+        purpose=approval.purpose,
+    )
+
+
+def complete_verified_approval(
+    approval: ApprovalRequest,
+    action: ActionRequest,
+    current_decision: DecisionResult,
+) -> tuple[ActionRequest, DecisionResult]:
+    """Satisfy a current supervision verdict with an exact approved record.
+
+    The runtime gateway must already have evaluated all deny/constraint/content
+    checks; it defers REQUIRE_APPROVAL until those checks complete. This helper
+    cannot turn DENY or QUARANTINE into permission.
+    """
+    if approval.status != ApprovalStatus.APPROVED or approval.is_expired:
+        raise ValueError("A current APPROVED record is required")
+    if not approval.matches_action(action):
+        raise ValueError("Approval does not match the current action")
+    if current_decision.decision in (GovernanceDecision.DENY, GovernanceDecision.QUARANTINE):
+        raise ValueError("Human approval cannot override a deny verdict")
+    if current_decision.decision != GovernanceDecision.REQUIRE_APPROVAL:
+        return action, current_decision
+    executable = action
+    granted = GovernanceDecision.ALLOW
+    if current_decision.redacted_arguments is not None:
+        executable = replace(action, arguments=current_decision.redacted_arguments)
+        granted = GovernanceDecision.ALLOW_WITH_REDACTION
+    return executable, DecisionResult(
+        decision=granted,
+        action_id=action.action_id,
+        reason_codes=list(current_decision.reason_codes),
+        redacted_arguments=current_decision.redacted_arguments,
+        risk_tier=current_decision.risk_tier,
+        policy_version=current_decision.policy_version,
     )

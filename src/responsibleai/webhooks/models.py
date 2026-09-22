@@ -58,6 +58,7 @@ class WebhookDelivery:
     event: WebhookEvent
     payload: dict[str, Any]
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    org_id: str | None = None
     status_code: int | None = None
     success: bool = False
     attempts: int = 0
@@ -68,6 +69,7 @@ class WebhookDelivery:
         return {
             "id": self.id,
             "webhook_id": self.webhook_id,
+            "org_id": self.org_id,
             "event": self.event.value,
             "status_code": self.status_code,
             "success": self.success,

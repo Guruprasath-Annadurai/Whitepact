@@ -35,7 +35,6 @@ from responsibleai.dashboard.signup_guard import (
     dwell_time_ok,
     is_disposable_email_domain,
 )
-from responsibleai.rbac.models import Role
 
 
 @pytest.fixture()
@@ -124,28 +123,16 @@ class TestSignupEndpoint:
     """Exactly 4 real HTTP calls total across this class — see module
     docstring for why that budget matters."""
 
-    async def test_successful_signup_issues_a_working_owner_key_and_slug_collides(self, client):
+    async def test_successful_signup_does_not_issue_unverified_owner_key(self, client):
         r = await client.post("/api/signup", json=_signup_payload(page_loaded_at_ms=0))
         assert r.status_code == 201
         body = r.json()
         assert body["org"]["slug"] == "acme-signup-test"
         assert body["org"]["name"] == "Acme Corp"
-        assert body["api_key"]
-        assert body["key_id"]
+        assert body["api_key"] is None
+        assert body["key_id"] is None
+        assert body["reason_code"] == "API_KEY_ISSUANCE_NOT_ALLOWED"
 
-        # Confirm the issued key is real and OWNER-scoped -- verified
-        # directly against the repository (not a second HTTP round trip,
-        # to stay within the endpoint's own rate-limit budget).
-        from responsibleai.dashboard import app as app_module
-
-        ctx = await app_module._org_repo.authenticate(body["api_key"])
-        assert ctx is not None
-        assert ctx.role == Role.OWNER
-        assert ctx.org_id == body["org"]["id"]
-
-        # A second signup against the same slug, in the same lifespan
-        # (each `client` fixture spins its own fresh :memory: DB, so
-        # the collision check only means something within one test).
         r2 = await client.post(
             "/api/signup", json=_signup_payload(page_loaded_at_ms=0, name="Different Name")
         )
