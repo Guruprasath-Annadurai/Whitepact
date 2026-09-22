@@ -882,6 +882,14 @@ TABLE_CLASSIFICATIONS: dict[str, TableClassification] = {
         False,
         True,
     ),
+    "sovereign_shadow_observations": TableClassification(
+        "sovereign_shadow_observations",
+        DataClassification.SENSITIVE_SECURITY,
+        SensitivityTier.HIGH,
+        "90D_DEFAULT",
+        True,
+        True,
+    ),
     "auth_replay_records": TableClassification(
         "auth_replay_records",
         DataClassification.CANONICAL_SECURITY_EVIDENCE,
