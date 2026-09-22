@@ -69,6 +69,7 @@ from responsibleai.runtime.models import (
     PreEffectDecision,
     RequestLifecycle,
 )
+from responsibleai.sovereign.zero_effect import record_consequential_invocation
 
 logger = logging.getLogger(__name__)
 
@@ -906,6 +907,7 @@ class Phase7AAuthorityKernel:
                 )
                 if result.rowcount != 1:
                     raise DuplicateEffectClaimError("Effect claim CAS lost")
+                record_consequential_invocation()
                 return LocalEffectPermit(
                     attempt_id=claim.attempt_id,
                     effect_id=claim.effect_id,

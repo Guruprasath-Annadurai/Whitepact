@@ -104,6 +104,7 @@ def validate_schema_lineage(connection: Connection) -> None:
         },
         60: {
             "test_consequential_counters",
+            "sovereign_shadow_observations",
         },
     }
     for introduced, expected in requirements.items():

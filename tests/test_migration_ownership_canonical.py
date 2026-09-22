@@ -12,9 +12,10 @@ from alembic.script import ScriptDirectory
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_alembic_single_head_is_0060_test_counter() -> None:
+def test_alembic_single_head_is_0061_sovereign_shadow() -> None:
     script = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
-    assert script.get_heads() == ["0060"]
+    assert script.get_heads() == ["0061"]
+    assert script.get_revision("0061").down_revision == "0060"
     assert script.get_revision("0060").down_revision == "0059"
     assert script.get_revision("0059").down_revision == "0058"
     assert script.get_revision("0058").down_revision == "0057"
@@ -39,6 +40,7 @@ def test_alembic_single_head_is_0060_test_counter() -> None:
         "0058_dashboard_saml_transactions.py",
         "0059_widen_audit_log_key_id.py",
         "0060_test_consequential_counters.py",
+        "0061_sovereign_shadow_observations.py",
     ):
         assert (ROOT / "migrations" / "versions" / name).is_file()
 

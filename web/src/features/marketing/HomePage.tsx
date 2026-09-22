@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Guruprasath Annadurai
 // SPDX-License-Identifier: MIT
-import { lazy, Suspense, useCallback, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { ArrowRight, Check, Code2, FileCheck2, Menu, Power, ShieldCheck, UserRoundCheck, X } from "lucide-react";
 import { AccessibleDialog } from "../../components/AccessibleDialog";
 import { Brand } from "../../components/Brand";
@@ -31,7 +31,7 @@ function PublicNav() {
         {nav.map(([item, href]) => <a key={item} href={href} onClick={() => setOpen(false)}>{item}</a>)}
         <a href="https://github.com/Guruprasath-Annadurai/Whitepact" rel="noreferrer"><Code2 size={16} /> GitHub</a>
       </nav>
-      <div className="public-nav__actions"><a href="/login">Sign in</a><ButtonLink to="/signup">Get API Key <ArrowRight size={17} /></ButtonLink></div>
+      <div className="public-nav__actions"><a href="/login">Sign in</a><ButtonLink to="/signup">Create account <ArrowRight size={17} /></ButtonLink></div>
       <button className="nav-toggle" aria-expanded={open} aria-label={open ? "Close menu" : "Open menu"} onClick={() => setOpen(!open)}>{open ? <X /> : <Menu />}</button>
     </header>
   );
@@ -58,7 +58,7 @@ function GovernanceDemo() {
         </ol>
         <div className="decision-result"><span>Decision</span><strong>REQUIRE APPROVAL</strong><button onClick={() => setInspect(true)}>Inspect decision <ArrowRight size={17} /></button></div>
       </div>
-      {inspect && <AccessibleDialog labelId="decision-record-title" onClose={closeInspect} className="decision-modal"><header><div><span>DEMO RECORD</span><h2 id="decision-record-title">Decision inspection</h2></div><button onClick={closeInspect} aria-label="Close decision inspection"><X /></button></header><dl>{[["Agent", scenario[1].replace("agent://", "")], ["Action", scenario[2]], ["Identity", "VERIFIED"], ["Authority", scenario[3] === "EXCEEDED" ? "₹100,000 LIMIT" : scenario[3]], ["Purpose", active === 0 ? "Vendor payment" : "Declared operational task"], ["Policy", "MATCHED"], ["Risk", scenario[4]], ["Approval", "REQUIRED"], ["Decision", "REQUIRE APPROVAL"], ["Action boundary", "BLOCKED BEFORE EXECUTION"], ["Evidence ID", `demo_evd_${String(active + 1).padStart(4, "0")}`]].map(([term,value])=><div key={term}><dt>{term}</dt><dd>{value}</dd></div>)}</dl><p className="demo-disclosure">Demonstration record only. No production customer or payment data is represented.</p></AccessibleDialog>}
+      {inspect && <AccessibleDialog labelId="decision-record-title" onClose={closeInspect} className="decision-modal"><header><div><span>DEMO RECORD</span><h2 id="decision-record-title">Decision inspection</h2></div><button onClick={closeInspect} aria-label="Close decision inspection"><X /></button></header><dl>{[["Agent", scenario[1].replace("agent://", "")], ["Action", scenario[2]], ["Identity", "VERIFIED"], ["Authority", scenario[3] === "EXCEEDED" ? "₹100,000 LIMIT" : scenario[3]], ["Purpose", active === 0 ? "Vendor payment" : "Declared operational task"], ["Policy", "MATCHED"], ["Risk", scenario[4]], ["Approval", "REQUIRED"], ["Decision", "REQUIRE APPROVAL"], ["Simulated result", "Blocked before execution"], ["Evidence ID", `demo_evd_${String(active + 1).padStart(4, "0")}`]].map(([term,value])=><div key={term}><dt>{term}</dt><dd>{value}</dd></div>)}</dl><p className="demo-disclosure">Demonstration record only. No production customer or payment data is represented.</p></AccessibleDialog>}
     </section>
   );
 }
@@ -68,14 +68,14 @@ const layers = [
   ["Authority", "Apply explicit scope and authority ceilings."],
   ["Policy", "Evaluate contextual rules at runtime."],
   ["Approvals", "Pause actions that require human control."],
-  ["Evidence", "Record a verifiable decision trail."],
+  ["Evidence", "Record a tenant-scoped, hash-chained decision trail."],
 ];
 
 function PlatformSection() {
   return (
     <section className="section control-plane">
       <div className="layer-stack">{layers.map(([title, copy], index) => <div className="layer" key={title}><span>{String(index + 1).padStart(2, "0")}</span><div><h3>{title}</h3><p>{copy}</p></div></div>)}</div>
-      <div className="control-copy"><h2>One control plane<br />for every agent<span>.</span></h2><p>WhitePact unifies identity, authority, policy, approvals, revocation and evidence without hiding enforcement behind a chatbot.</p><a href="#mcp-gateway">See the control path <ArrowRight size={17} /></a></div>
+      <div className="control-copy"><h2>One control plane<br />for connected agents<span>.</span></h2><p>WhitePact unifies identity, authority, policy, approvals, revocation and evidence for actions routed through configured enforcement paths.</p><a href="#mcp-gateway">See the control path <ArrowRight size={17} /></a></div>
     </section>
   );
 }
@@ -83,7 +83,7 @@ function PlatformSection() {
 function McpSection() {
   return (
     <section className="section mcp-section" id="mcp-gateway">
-      <div><h2>Govern every tool call<br />at the boundary<span>.</span></h2><p>WhitePact sits between agents and the systems they can change. Requests are scoped, evaluated, enforced and recorded before execution.</p><a href="/docs">Explore MCP Gateway <ArrowRight size={17} /></a></div>
+      <div><h2>Govern supported tool calls<br />at the boundary<span>.</span></h2><p>For integrations routed through WhitePact, requests are scoped, evaluated and recorded before configured execution paths proceed.</p><a href="/docs">Explore MCP Gateway <ArrowRight size={17} /></a></div>
       <div className="gateway-flow"><div>AI Agent</div><ArrowRight /><div className="gateway-core"><img src={publicAsset("whitepact-mark.png")} alt="" />WhitePact</div><ArrowRight /><div>MCP / API / Tools</div><footer><ShieldCheck size={16} /> Identity · scope · policy · evidence</footer></div>
     </section>
   );
@@ -92,7 +92,7 @@ function McpSection() {
 function EvidenceSection() {
   return (
     <section className="section evidence-section" id="security">
-      <div><h2>Evidence that<br />survives scrutiny<span>.</span></h2><p>Every governed decision can be traced to identity, authority, policy, risk, approval and execution outcome.</p><small>Hash-chained tamper evidence detects record changes. It is not immutable against a fully compromised database.</small></div>
+      <div><h2>Evidence with<br />documented boundaries<span>.</span></h2><p>Decisions processed through configured WhitePact enforcement paths produce tenant-scoped records of the context returned by the governance service.</p><small>Hash-chained tamper evidence detects record changes. It is not immutable against a fully compromised database.</small></div>
       <div className="evidence-table" role="table" aria-label="Evidence record example">
         {["Identity verified", "Authority evaluated", "Policy matched", "Risk assessed", "Approval required", "Decision recorded", "Chain verified"].map((item, i) => <div role="row" key={item}><span role="cell">{String(i + 1).padStart(2, "0")}</span><strong role="cell">{item}</strong><em role="cell"><Check size={15} /> recorded</em></div>)}
       </div>
@@ -121,13 +121,26 @@ export function HomePage() {
       <PublicNav />
       <main>
         <section className="hero">
-          <div className="hero-copy"><h1>AI agents can act.<br /><span>WhitePact decides<br />whether they should.</span></h1><p>Runtime trust infrastructure for autonomous AI.<br />Identity, authority, policy, approvals, revocation and verifiable evidence across MCP, APIs and agent workflows.</p><div className="hero-actions"><ButtonLink to="/signup">Get API Key <ArrowRight size={18} /></ButtonLink><a className="wp-button wp-button--secondary" href="https://github.com/Guruprasath-Annadurai/Whitepact#quick-start">Run WhitePact locally</a></div><a className="text-link" href="https://github.com/Guruprasath-Annadurai/Whitepact">View on GitHub <ArrowRight size={15} /></a></div>
-          <TrustCoreBoundary><Suspense fallback={<div className="trust-core trust-core--loading" role="status" aria-label="Loading Trust Core" />}><TrustCore /></Suspense></TrustCoreBoundary>
+          <div className="hero-copy"><h1>AI agents can act.<br /><span>WhitePact evaluates<br />configured actions.</span></h1><p>Runtime governance for connected AI systems.<br />Identity, authority, policy, approvals, revocation and hash-chained evidence across supported MCP, API and agent workflows.</p><div className="hero-actions"><ButtonLink to="/signup">Create an account <ArrowRight size={18} /></ButtonLink><a className="wp-button wp-button--secondary" href="https://github.com/Guruprasath-Annadurai/Whitepact#quick-start">Run WhitePact locally</a></div><a className="text-link" href="https://github.com/Guruprasath-Annadurai/Whitepact">View on GitHub <ArrowRight size={15} /></a></div>
+          <DeferredTrustCore />
         </section>
         <GovernanceDemo /><PlatformSection /><McpSection /><EvidenceSection /><ProductClosureSections /><PricingSection />
-        <section className="final-cta"><h2>Put WhitePact between your agents<br />and the real world<span>.</span></h2><ButtonLink to="/signup">Get API Key <ArrowRight size={18} /></ButtonLink></section>
+        <section className="final-cta"><h2>Route supported agent actions through<br />WhitePact controls<span>.</span></h2><ButtonLink to="/signup">Create account <ArrowRight size={18} /></ButtonLink></section>
       </main>
       <PublicFooter />
     </div>
   );
+}
+
+function DeferredTrustCore() {
+  const host = useRef<HTMLDivElement>(null);
+  const [enabled, setEnabled] = useState(false);
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches || window.matchMedia("(max-width: 820px)").matches) return;
+    if (!("IntersectionObserver" in window)) { queueMicrotask(() => setEnabled(true)); return; }
+    const observer = new IntersectionObserver(([entry]) => { if (entry.isIntersecting) { setEnabled(true); observer.disconnect(); } }, { rootMargin: "120px" });
+    if (host.current) observer.observe(host.current);
+    return () => observer.disconnect();
+  }, []);
+  return <div ref={host} className="trust-core-deferred">{enabled ? <TrustCoreBoundary><Suspense fallback={<div className="trust-core trust-core--loading" role="status" aria-label="Loading Trust Core" />}><TrustCore /></Suspense></TrustCoreBoundary> : <div className="trust-core-static" role="img" aria-label="WhitePact Trust Core"><img src={publicAsset("trust-core-head.webp")} alt="" /></div>}</div>;
 }
