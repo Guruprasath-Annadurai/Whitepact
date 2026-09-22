@@ -83,7 +83,9 @@ class ShadowObservationRepository:
             environment=ctx.environment,
             agent_id=agent_id,
             action_type=action_type,
-            target_redacted=row["target_redacted"],
+            target_redacted=(
+                str(row["target_redacted"]) if row["target_redacted"] is not None else None
+            ),
             policy_version=policy_version,
             shadow_disposition=observation.decision,
             reason_codes=observation.reason_codes,
