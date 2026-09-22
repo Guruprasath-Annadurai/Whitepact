@@ -7,7 +7,7 @@ from __future__ import annotations
 import os
 import warnings
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import (
@@ -419,6 +419,10 @@ class Settings(BaseSettings):
         default=None,
         description="Paddle API key for server-to-server operations.",
     )
+    paddle_env: Literal["sandbox", "production"] | None = Field(
+        default=None,
+        description="Explicit Paddle API environment. Required when Paddle API access is configured.",
+    )
     paddle_webhook_secret: str | None = Field(
         default=None,
         description="Paddle webhook signing secret for verifying incoming events.",
@@ -578,6 +582,23 @@ class Settings(BaseSettings):
         if normalized.startswith(("http://localhost", "http://127.0.0.1", "http://[::1]")):
             return normalized
         raise ValueError("web_verification_delivery_url must use HTTPS outside local development")
+
+    @model_validator(mode="after")
+    def _enforce_paddle_environment(self) -> Settings:
+        """Keep Paddle credentials and API traffic in one explicit environment."""
+        if not self.paddle_api_key:
+            return self
+        if self.paddle_env is None:
+            raise ValueError(
+                "WHITEPACT_PADDLE_ENV must be explicitly set to sandbox or production "
+                "when WHITEPACT_PADDLE_API_KEY is configured."
+            )
+        api_key = self.paddle_api_key.strip()
+        if self.paddle_env == "sandbox" and api_key.startswith("pdl_live_"):
+            raise ValueError("Paddle API credential does not match sandbox environment.")
+        if self.paddle_env == "production" and api_key.startswith("pdl_sdbx_"):
+            raise ValueError("Paddle API credential does not match production environment.")
+        return self
 
     @model_validator(mode="after")
     def _enforce_production_database(self) -> Settings:

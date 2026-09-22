@@ -557,6 +557,7 @@ async def lifespan(application: FastAPI):
                     Plan.PRO: settings.paddle_price_id_pro or "",
                     Plan.ENTERPRISE: settings.paddle_price_id_enterprise or "",
                 },
+                environment=settings.paddle_env,
             )
         except PaddleNotConfiguredError as exc:
             logger.warning("paddle_billing_init_skipped", reason=str(exc))

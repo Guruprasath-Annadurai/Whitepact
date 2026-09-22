@@ -5,13 +5,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 
 from responsibleai.rbac.models import Plan
 
-PADDLE_API_BASE = "https://api.paddle.com"
+PaddleEnvironment = Literal["sandbox", "production"]
+PADDLE_API_BASES: dict[PaddleEnvironment, str] = {
+    "sandbox": "https://sandbox-api.paddle.com",
+    "production": "https://api.paddle.com",
+}
 
 # Subscription lifecycle events that may change org commercial entitlement.
 PADDLE_SUBSCRIPTION_ENTITLEMENT_EVENTS: frozenset[str] = frozenset(
@@ -48,10 +52,25 @@ class PaddleCheckoutRequest:
 class PaddleBillingService:
     """Thin async client for Paddle Billing v2 transactions and portal sessions."""
 
-    def __init__(self, api_key: str, price_ids: dict[Plan, str]) -> None:
+    def __init__(
+        self,
+        api_key: str,
+        price_ids: dict[Plan, str],
+        *,
+        environment: str | None,
+    ) -> None:
         if not api_key.strip():
             raise PaddleNotConfiguredError("Paddle API key is required.")
+        if environment not in PADDLE_API_BASES:
+            raise PaddleNotConfiguredError(
+                "Paddle environment must be explicitly set to sandbox or production."
+            )
         self._api_key = api_key.strip()
+        if environment == "sandbox" and self._api_key.startswith("pdl_live_"):
+            raise PaddleBillingError("Paddle API credential does not match sandbox environment.")
+        if environment == "production" and self._api_key.startswith("pdl_sdbx_"):
+            raise PaddleBillingError("Paddle API credential does not match production environment.")
+        self._api_base = PADDLE_API_BASES[environment]
         self._price_ids = {plan: pid.strip() for plan, pid in price_ids.items() if pid}
 
     def resolve_price_id(self, plan: Plan) -> str:
@@ -96,7 +115,7 @@ class PaddleBillingService:
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
         }
-        async with httpx.AsyncClient(base_url=PADDLE_API_BASE, timeout=30.0) as client:
+        async with httpx.AsyncClient(base_url=self._api_base, timeout=30.0) as client:
             response = await client.post(path, json=body, headers=headers)
         if response.status_code >= 400:
             raise PaddleBillingError(
