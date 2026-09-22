@@ -16,9 +16,9 @@ from responsibleai.sovereign.effective import EffectiveAuthoritySnapshot
 from responsibleai.sovereign.errors import SovereignCapabilityError, SovereignTenantIsolationError
 from responsibleai.sovereign.policy_lab import PolicyTestCase
 from responsibleai.sovereign.service import SovereignService
+from responsibleai.sovereign.web_routes import web_router
 
 router = APIRouter(prefix="/api/sovereign", tags=["sovereign"])
-web_router = APIRouter(prefix="/api/web/sovereign", tags=["web-sovereign"])
 
 
 async def _svc() -> SovereignService:
