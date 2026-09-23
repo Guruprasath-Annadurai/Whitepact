@@ -23,7 +23,8 @@ _SENSITIVE_KEYS = frozenset(
     }
 )
 _BEARER = re.compile(r"Bearer\s+[A-Za-z0-9._~+/=-]+", re.IGNORECASE)
-_JWT = re.compile(r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+")
+# Bounded segments avoid polynomial backtracking on attacker-controlled log payloads.
+_JWT = re.compile(r"eyJ[A-Za-z0-9_-]{10,512}\.[A-Za-z0-9_-]{10,512}\.[A-Za-z0-9_-]{10,512}")
 
 
 def _key_is_sensitive(key: str) -> bool:

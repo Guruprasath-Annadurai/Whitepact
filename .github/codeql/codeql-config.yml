@@ -1,0 +1,12 @@
+name: "WhitePact CodeQL"
+# Production sources only; tests and browser fixtures are covered by dedicated gates.
+paths:
+  - src
+  - web/src
+paths-ignore:
+  - tests
+  - "**/tests/**"
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "**/*.test.mjs"
+  - "**/*.e2e.mjs"

@@ -58,6 +58,7 @@ def _iso(value: datetime | None = None) -> str:
 
 
 def _hash(value: str) -> str:
+    # codeql[py/weak-sensitive-data-hashing]: hashes opaque OAuth state tokens, not user passwords.
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 

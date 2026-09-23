@@ -188,6 +188,11 @@ jobs:
       RAI_DB_PATH: ":memory:"
       RAI_AUTO_MIGRATE: "true"
       WHITEPACT_AUTO_MIGRATE: "true"
+      # Local HTTP dashboard for pa11y; Secure session cookies are not stored over http://.
+      WHITEPACT_WEB_SESSION_SECURE: "false"
+      RAI_WEB_SESSION_SECURE: "false"
+      WHITEPACT_WEB_PUBLIC_URL: "http://127.0.0.1:8765"
+      RAI_WEB_PUBLIC_URL: "http://127.0.0.1:8765"
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

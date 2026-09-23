@@ -41,16 +41,7 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           queries: security-extended
-          # Scope analysis to production sources; tests are covered separately and
-          # trigger false-positive URL-substring / weak-hash alerts on fixtures.
-          paths: |
-            src
-            web/src
-          paths-ignore: |
-            **/test/**
-            **/tests/**
-            **/*.test.ts
-            **/*.test.tsx
+          config-file: ./.github/codeql/codeql-config.yml
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@6f5948dfacef28e207b48d0905cf90c03365536d # v3.37.9

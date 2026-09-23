@@ -9,7 +9,10 @@ import { setTimeout as delay } from "node:timers/promises";
 
 const baseUrl = process.env.WHITEPACT_TEST_BASE_URL ?? "http://127.0.0.1:18765";
 const managed = !process.env.WHITEPACT_TEST_BASE_URL;
-const dbPath = path.join(os.tmpdir(), `whitepact-customer-journey-${Date.now()}.db`);
+const dbPath = path.join(
+  fs.mkdtempSync(path.join(os.tmpdir(), "whitepact-customer-journey-")),
+  "journey.db",
+);
 const databaseUrl = process.env.WHITEPACT_TEST_DATABASE_URL ?? `sqlite:///${dbPath}`;
 const password = "Journey-Secure-42!";
 const email = `journey-${Date.now()}@example.com`;
@@ -42,7 +45,6 @@ async function waitForReady(url, timeoutMs = 30000) {
 
 async function startServer() {
   if (!managed) return null;
-  if (!process.env.WHITEPACT_TEST_DATABASE_URL) fs.closeSync(fs.openSync(dbPath, "w"));
   const env = {
     ...process.env,
     RAI_AUTH_ENABLED: "false",

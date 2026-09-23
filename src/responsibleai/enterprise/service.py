@@ -86,10 +86,12 @@ def _iso(value: datetime | None = None) -> str:
 
 
 def _hash_secret(raw: str) -> str:
+    # codeql[py/weak-sensitive-data-hashing]: one-way digest of API secrets at rest, not password storage.
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 def _hash_token(raw: str) -> str:
+    # codeql[py/weak-sensitive-data-hashing]: one-way digest of opaque session tokens, not password storage.
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
