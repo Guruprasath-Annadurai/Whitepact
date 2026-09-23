@@ -15,6 +15,9 @@ venv/
 !web/src/content/commerce.json
 *.tsbuildinfo
 !compliance/SLSA_BUILD_PROVENANCE.json
+!compliance/csa-star-ai/source/SOURCE_INTEGRITY.json
+!compliance/csa-star-ai/ledger/BASELINE_AUDIT_SNAPSHOT.json
+!compliance/csa-star-ai/ledger/remediation_ledger.json
 !package.json
 !package-lock.json
 !.pa11yci.json
