@@ -6,6 +6,7 @@ import { Link, useOutletContext, useParams } from "react-router-dom";
 import { AccessibleDialog } from "../../components/AccessibleDialog";
 import { Button } from "../../components/Button";
 import { ApiError, api, messageFrom } from "../../lib/api";
+import { openPaddleTransactionCheckout } from "../../lib/paddleCheckout";
 import type { ApprovalExecutionResponse, ApprovalResolution, ConsequentialOutcome, DomainRecord, DomainResponse, EvidenceListResponse, InvitationRecord, LoadState, RecordValue } from "../../lib/contracts";
 import type { WebSession } from "./DashboardShell";
 import { ApprovalContractPanel, EvidenceContractPanel } from "./CanonicalPanels";
@@ -126,7 +127,12 @@ function BillingPanel({ item, configured, onError }: { item?: DomainRecord; conf
         ? { plan: target }
         : { return_url: `${window.location.origin}/dashboard/billing` };
       const value = await api<{ checkout_url?: string; portal_url?: string }>(url, { method: "POST", body: JSON.stringify(body) });
-      const destination = value.checkout_url ?? value.portal_url;
+      if (kind === "checkout") {
+        if (!value.checkout_url) throw new Error("Billing provider did not return a checkout destination.");
+        await openPaddleTransactionCheckout(value.checkout_url);
+        return;
+      }
+      const destination = value.portal_url;
       if (!destination) throw new Error("Billing provider did not return a destination.");
       window.location.assign(destination);
     } catch (cause) {

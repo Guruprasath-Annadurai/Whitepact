@@ -11,6 +11,15 @@ import { OverviewPage } from "../features/dashboard/OverviewPage";
 import App from "../App";
 import { EvidenceContractPanel } from "../features/dashboard/CanonicalPanels";
 
+const { openPaddleTransactionCheckout } = vi.hoisted(() => ({
+  openPaddleTransactionCheckout: vi.fn(async () => undefined),
+}));
+
+vi.mock("../lib/paddleCheckout", () => ({
+  openPaddleTransactionCheckout,
+  extractPaddleTransactionId: (url: string) => new URL(url).searchParams.get("_ptxn") ?? "",
+}));
+
 const session: WebSession = {
   user: { full_name: "Ada Lovelace", email: "ada@example.com" },
   organization: { id: "org-1", name: "Analytical Engines", plan: "FREE" },
@@ -114,20 +123,70 @@ describe("dashboard and onboarding", () => {
   });
 
   it("sends only the supported plan enum to checkout", async () => {
-    const pendingCheckout = new Promise<Response>(() => undefined);
+    const assign = vi.fn();
+    vi.stubGlobal("location", { ...window.location, assign });
+    openPaddleTransactionCheckout.mockClear();
     const fetchMock = vi.spyOn(window, "fetch")
       .mockResolvedValueOnce(new Response(JSON.stringify({
         items: [{ plan: "FREE", subscription_status: "inactive", paddle_customer_id: null }],
         source: "organization_repository", billing_configured: true,
       }), { status: 200 }))
-      .mockReturnValueOnce(pendingCheckout);
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        checkout_url: "https://sandbox-buy.paddle.com/paddle/paddlejs/v2?_ptxn=txn_backend_created",
+      }), { status: 200 }));
     const Parent = () => <Outlet context={session} />;
     render(<MemoryRouter initialEntries={["/dashboard/billing"]}><Routes><Route element={<Parent />}><Route path="/dashboard/:domain" element={<DomainPage />} /></Route></Routes></MemoryRouter>);
     await userEvent.click(await screen.findByRole("button", { name: "Choose Pro" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     const [path, init] = fetchMock.mock.calls[1];
     expect(path).toBe("/api/v1/web/billing/checkout");
-    expect(JSON.parse(String(init?.body))).toEqual({ plan: "PRO" });
+    const body = JSON.parse(String(init?.body));
+    expect(body).toEqual({ plan: "PRO" });
+    expect(body).not.toHaveProperty("price_id");
+    expect(body).not.toHaveProperty("organization_id");
+    await waitFor(() => expect(openPaddleTransactionCheckout).toHaveBeenCalledWith(
+      "https://sandbox-buy.paddle.com/paddle/paddlejs/v2?_ptxn=txn_backend_created",
+    ));
+    expect(assign).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it("does not grant entitlement locally when Paddle checkout opens", async () => {
+    openPaddleTransactionCheckout.mockClear();
+    vi.spyOn(window, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        items: [{ plan: "FREE", subscription_status: "inactive", paddle_customer_id: null }],
+        source: "organization_repository", billing_configured: true,
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        checkout_url: "https://sandbox-buy.paddle.com/?_ptxn=txn_open_only",
+      }), { status: 200 }));
+    const Parent = () => <Outlet context={session} />;
+    render(<MemoryRouter initialEntries={["/dashboard/billing"]}><Routes><Route element={<Parent />}><Route path="/dashboard/:domain" element={<DomainPage />} /></Route></Routes></MemoryRouter>);
+    await userEvent.click(await screen.findByRole("button", { name: "Choose Pro" }));
+    await waitFor(() => expect(openPaddleTransactionCheckout).toHaveBeenCalled());
+    expect(screen.getByText("FREE")).toBeInTheDocument();
+    expect(screen.getByText(/Access changes only after a signed billing webhook/i)).toBeInTheDocument();
+  });
+
+  it("surfaces Paddle.js initialization failures without navigation", async () => {
+    const assign = vi.fn();
+    vi.stubGlobal("location", { ...window.location, assign });
+    openPaddleTransactionCheckout.mockRejectedValueOnce(new Error("Paddle client token is not configured."));
+    vi.spyOn(window, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        items: [{ plan: "FREE", subscription_status: "inactive", paddle_customer_id: null }],
+        source: "organization_repository", billing_configured: true,
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        checkout_url: "https://sandbox-buy.paddle.com/?_ptxn=txn_fail",
+      }), { status: 200 }));
+    const Parent = () => <Outlet context={session} />;
+    render(<MemoryRouter initialEntries={["/dashboard/billing"]}><Routes><Route element={<Parent />}><Route path="/dashboard/:domain" element={<DomainPage />} /></Route></Routes></MemoryRouter>);
+    await userEvent.click(await screen.findByRole("button", { name: "Choose Pro" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/Paddle client token is not configured/i);
+    expect(assign).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 
   it.each([
