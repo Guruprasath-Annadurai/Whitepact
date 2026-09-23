@@ -17,6 +17,7 @@ const DashboardShell = lazy(() => import("./features/dashboard/DashboardShell").
 const OverviewPage = lazy(() => import("./features/dashboard/OverviewPage").then((module) => ({ default: module.OverviewPage })));
 const ApiKeysPage = lazy(() => import("./features/api-keys/ApiKeysPage").then((module) => ({ default: module.ApiKeysPage })));
 const DomainPage = lazy(() => import("./features/dashboard/DomainPage").then((module) => ({ default: module.DomainPage })));
+const GlobalDirectoryPage = lazy(() => import("./features/global-directory/GlobalDirectoryPage").then((module) => ({ default: module.GlobalDirectoryPage })));
 const SovereignPage = lazy(() => import("./features/sovereign/SovereignPage").then((module) => ({ default: module.SovereignPage })));
 const SovereignWorkbench = lazy(() => import("./features/sovereign/SovereignWorkbench").then((module) => ({ default: module.SovereignWorkbench })));
 
@@ -47,6 +48,7 @@ export default function App() {
       <Route path="/dashboard" element={<><Seo title="Workspace | WhitePact" description="Authenticated WhitePact AI governance workspace." path="/dashboard" noIndex /><DashboardShell /></>}>
         <Route index element={<OverviewPage />} />
         <Route path="api-keys" element={<ApiKeysPage />} />
+        <Route path="global-directory" element={<GlobalDirectoryPage />} />
         {(["approvals", "evidence", "security", "organization", "members", "billing"] as const).map((domain) => <Route key={domain} path={domain} element={<DomainPage domainKey={domain} />} />)}
         <Route path="*" element={<NotFoundPage />} />
       </Route>

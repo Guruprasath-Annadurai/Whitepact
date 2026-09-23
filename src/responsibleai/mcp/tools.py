@@ -1107,6 +1107,16 @@ TOOL_DEFS: list[types.Tool] = [
             "required": ["provenance"],
         },
     ),
+]
+
+from responsibleai.global_directory.mcp_handlers import (  # noqa: E402
+    GLOBAL_DIRECTORY_HANDLERS,
+    GLOBAL_DIRECTORY_TOOL_DEFS,
+)
+
+TOOL_DEFS.extend(GLOBAL_DIRECTORY_TOOL_DEFS)
+
+TOOL_DEFS.append(
     types.Tool(
         name="test.counter.increment",
         title="Synthetic governed counter (test only)",
@@ -1129,7 +1139,7 @@ TOOL_DEFS: list[types.Tool] = [
             },
         },
     ),
-]
+)
 
 TEST_TOOL_NAME = "test.counter.increment"
 PRODUCTION_TOOL_DEFS: list[types.Tool] = [t for t in TOOL_DEFS if t.name != TEST_TOOL_NAME]
@@ -2618,6 +2628,7 @@ _TOOL_HANDLERS: dict[str, Any] = {
     "rai_causal_influence_check": _handle_causal_influence_check,
     "test.counter.increment": _handle_test_counter_increment,
 }
+_TOOL_HANDLERS.update(GLOBAL_DIRECTORY_HANDLERS)
 
 
 async def dispatch_tool(

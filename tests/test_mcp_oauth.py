@@ -106,7 +106,7 @@ class TestOidcJwtAuth:
         app = await build(oidc_issuer="https://idp.example.com")
         token = _make_jwt({"sub": "user-1", "org_id": org_id, "roles": ["ANALYST"]})
         tools = await _list_tools_over_mcp(app, token)
-        assert len(tools) == 30
+        assert len(tools) == 38
 
     async def test_valid_jwt_authenticates_sse(self, mcp_app) -> None:
         """A rejected request (401) returns immediately; a successfully
@@ -144,7 +144,7 @@ class TestOidcJwtAuth:
         build, _org_id, raw_key = mcp_app
         app = await build(oidc_issuer="https://idp.example.com")
         tools = await _list_tools_over_mcp(app, raw_key)
-        assert len(tools) == 30
+        assert len(tools) == 38
 
     async def test_malformed_bearer_token_rejected(self, mcp_app) -> None:
         build, _org_id, _raw_key = mcp_app

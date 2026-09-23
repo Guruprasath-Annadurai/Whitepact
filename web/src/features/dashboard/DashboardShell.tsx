@@ -1,14 +1,14 @@
 // Copyright (c) 2026 Guruprasath Annadurai
 // SPDX-License-Identifier: MIT
 import { useEffect, useRef, useState } from "react";
-import { Building2, CreditCard, FileCheck2, Gauge, HelpCircle, KeyRound, Menu, ShieldCheck, Users, X } from "lucide-react";
+import { Building2, CreditCard, FileCheck2, Gauge, Globe2, HelpCircle, KeyRound, Menu, ShieldCheck, Users, X } from "lucide-react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Brand } from "../../components/Brand";
 import { api } from "../../lib/api";
 import { publicAsset } from "../../lib/assets";
 
 export type WebSession = { user: { full_name: string; email: string }; organization: { id: string; name: string; plan: string; role?: string } | null; organizations?: Array<{ id: string; name: string; role: string }> };
-const primary = [[Gauge, "Overview", "/dashboard"], [KeyRound, "API Keys", "/dashboard/api-keys"], [Users, "Approvals", "/dashboard/approvals"], [FileCheck2, "Evidence", "/dashboard/evidence"], [ShieldCheck, "Security", "/dashboard/security"]] as const;
+const primary = [[Gauge, "Overview", "/dashboard"], [KeyRound, "API Keys", "/dashboard/api-keys"], [Globe2, "Global Directory", "/dashboard/global-directory"], [Users, "Approvals", "/dashboard/approvals"], [FileCheck2, "Evidence", "/dashboard/evidence"], [ShieldCheck, "Security", "/dashboard/security"]] as const;
 const account = [[Building2, "Organization", "/dashboard/organization"], [Users, "Members", "/dashboard/members"], [CreditCard, "Billing", "/dashboard/billing"]] as const;
 
 export function DashboardShell() {

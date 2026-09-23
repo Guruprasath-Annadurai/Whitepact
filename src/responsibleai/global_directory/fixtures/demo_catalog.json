@@ -1,0 +1,63 @@
+{
+  "entities": [
+    {
+      "entity_key": "person_guruprasath_annadurai",
+      "canonical_name": "Guruprasath Annadurai",
+      "entity_type": "PERSON",
+      "aliases": ["guruprasath annadurai"],
+      "identifiers": [
+        {"type": "github_user", "value": "github.com/guruprasath-annadurai"}
+      ],
+      "canonical_urls": ["https://github.com/Guruprasath-Annadurai"],
+      "description": "Public professional identity fixture (synthetic catalog entry for integration tests).",
+      "confidence": 0.92,
+      "evidence_state": "INFERRED_SIGNAL",
+      "claims": [
+        {
+          "predicate": "ASSOCIATED_WITH",
+          "object_name": "WhitePact",
+          "object_type": "PROJECT",
+          "normalized_value": "WhitePact",
+          "evidence_state": "INFERRED_SIGNAL",
+          "confidence": 0.85,
+          "source_url": "https://github.com/Guruprasath-Annadurai/Whitepact"
+        }
+      ],
+      "sources": [
+        {
+          "canonical_url": "https://github.com/Guruprasath-Annadurai",
+          "source_type": "github_profile",
+          "quality_tier": "AUTHORITATIVE_REGISTRY"
+        }
+      ]
+    },
+    {
+      "entity_key": "project_whitepact",
+      "canonical_name": "WhitePact",
+      "entity_type": "PROJECT",
+      "identifiers": [
+        {"type": "github_repository", "value": "github.com/guruprasath-annadurai/whitepact"}
+      ],
+      "canonical_urls": ["https://github.com/Guruprasath-Annadurai/Whitepact"],
+      "confidence": 0.95,
+      "evidence_state": "VERIFIED_FACT",
+      "claims": []
+    },
+    {
+      "entity_key": "person_ambiguous_smith",
+      "canonical_name": "Alex Smith",
+      "entity_type": "PERSON",
+      "aliases": ["alex smith"],
+      "confidence": 0.4,
+      "evidence_state": "UNKNOWN"
+    },
+    {
+      "entity_key": "person_ambiguous_smith_2",
+      "canonical_name": "Alex Smith",
+      "entity_type": "PERSON",
+      "aliases": ["alex smith"],
+      "confidence": 0.41,
+      "evidence_state": "UNKNOWN"
+    }
+  ]
+}

@@ -663,6 +663,9 @@ app.include_router(enterprise_router)
 app.include_router(enterprise_security_router)
 app.include_router(sovereign_router)
 app.include_router(sovereign_web_router)
+from responsibleai.global_directory.router import router as global_directory_router
+
+app.include_router(global_directory_router)
 
 
 # ── Audit log middleware ───────────────────────────────────────────────────────

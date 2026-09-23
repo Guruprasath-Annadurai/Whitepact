@@ -485,7 +485,7 @@ class TestAuthenticatedMcpReview:
                         name: await session.call_tool(name, arguments)
                         for name, arguments in calls.items()
                     }
-        assert len(tools) == 30
+        assert len(tools) == 38
         assert len(resources) == 20
         assert all(result.isError is not True for result in results.values())
         assert all(

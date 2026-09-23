@@ -2666,6 +2666,128 @@ test_consequential_counters = Table(
     Column("updated_at", String(32), nullable=False),
 )
 
+global_directory_entities = Table(
+    "global_directory_entities",
+    metadata,
+    Column("entity_id", String(64), primary_key=True),
+    Column("entity_type", String(32), nullable=False),
+    Column("canonical_name", String(256), nullable=False),
+    Column("description", Text),
+    Column("canonical_urls_json", Text, nullable=False, server_default="[]"),
+    Column("confidence", Float, nullable=False, server_default="0"),
+    Column("evidence_state", String(32), nullable=False),
+    Column("freshness_state", String(32), nullable=False),
+    Column("data_scope", String(32), nullable=False, server_default="GLOBAL_PUBLIC_EVIDENCE"),
+    Column("metadata_json", Text, nullable=False, server_default="{}"),
+    Column("created_at", String(32), nullable=False),
+    Column("first_observed_at", String(32)),
+    Column("last_observed_at", String(32)),
+    Column("last_verified_at", String(32)),
+    Index("idx_gd_entities_type_name", "entity_type", "canonical_name"),
+)
+
+global_directory_aliases = Table(
+    "global_directory_aliases",
+    metadata,
+    Column("alias_id", String(64), primary_key=True),
+    Column("entity_id", String(64), ForeignKey("global_directory_entities.entity_id"), nullable=False),
+    Column("alias_normalized", String(256), nullable=False, unique=True),
+    Index("idx_gd_aliases_entity", "entity_id"),
+)
+
+global_directory_identifiers = Table(
+    "global_directory_identifiers",
+    metadata,
+    Column("identifier_id", String(64), primary_key=True),
+    Column("entity_id", String(64), ForeignKey("global_directory_entities.entity_id"), nullable=False),
+    Column("identifier_type", String(64), nullable=False),
+    Column("normalized_value", String(512), nullable=False),
+    UniqueConstraint("identifier_type", "normalized_value", name="uq_gd_identifier"),
+)
+
+global_directory_sources = Table(
+    "global_directory_sources",
+    metadata,
+    Column("source_id", String(64), primary_key=True),
+    Column("canonical_url", String(2048), nullable=False),
+    Column("source_type", String(64), nullable=False),
+    Column("publisher", String(256)),
+    Column("retrieved_at", String(32), nullable=False),
+    Column("published_at", String(32)),
+    Column("content_hash", String(64), nullable=False),
+    Column("quality_tier", String(64), nullable=False),
+    Column("parser_version", String(32), nullable=False),
+    Column("retrieval_status", String(32), nullable=False),
+    UniqueConstraint("canonical_url", "content_hash", name="uq_gd_source_url_hash"),
+)
+
+global_directory_claims = Table(
+    "global_directory_claims",
+    metadata,
+    Column("claim_id", String(64), primary_key=True),
+    Column("subject_entity_id", String(64), ForeignKey("global_directory_entities.entity_id"), nullable=False),
+    Column("predicate", String(64), nullable=False),
+    Column("object_entity_id", String(64), ForeignKey("global_directory_entities.entity_id")),
+    Column("normalized_value", Text),
+    Column("evidence_state", String(32), nullable=False),
+    Column("confidence", Float, nullable=False),
+    Column("first_seen_at", String(32), nullable=False),
+    Column("last_seen_at", String(32), nullable=False),
+    Column("last_verified_at", String(32)),
+    Column("valid_from", String(32)),
+    Column("valid_until", String(32)),
+    Column("source_refs_json", Text, nullable=False, server_default="[]"),
+    Index("idx_gd_claims_subject", "subject_entity_id"),
+)
+
+global_directory_claim_evidence = Table(
+    "global_directory_claim_evidence",
+    metadata,
+    Column("evidence_id", String(64), primary_key=True),
+    Column("claim_id", String(64), ForeignKey("global_directory_claims.claim_id"), nullable=False),
+    Column("source_id", String(64), ForeignKey("global_directory_sources.source_id"), nullable=False),
+    Column("excerpt_redacted", Text, nullable=False),
+    Column("support_type", String(16), nullable=False),
+)
+
+global_directory_relationships = Table(
+    "global_directory_relationships",
+    metadata,
+    Column("relationship_id", String(64), primary_key=True),
+    Column("subject_entity_id", String(64), ForeignKey("global_directory_entities.entity_id"), nullable=False),
+    Column("predicate", String(64), nullable=False),
+    Column("object_entity_id", String(64), ForeignKey("global_directory_entities.entity_id"), nullable=False),
+    Column("evidence_state", String(32), nullable=False),
+    Column("confidence", Float, nullable=False),
+    Column("first_seen_at", String(32), nullable=False),
+    Column("last_seen_at", String(32), nullable=False),
+    Column("valid_from", String(32)),
+    Column("valid_until", String(32)),
+)
+
+global_directory_discovery_runs = Table(
+    "global_directory_discovery_runs",
+    metadata,
+    Column("run_id", String(64), primary_key=True),
+    Column("query_text", String(512), nullable=False),
+    Column("status", String(32), nullable=False),
+    Column("budgets_json", Text, nullable=False),
+    Column("started_at", String(32), nullable=False),
+    Column("completed_at", String(32)),
+    Column("org_id", String(36)),
+)
+
+global_directory_suppressions = Table(
+    "global_directory_suppressions",
+    metadata,
+    Column("suppression_id", String(64), primary_key=True),
+    Column("entity_id", String(64)),
+    Column("field_name", String(128)),
+    Column("suppression_kind", String(32), nullable=False),
+    Column("reason", Text),
+    Column("created_at", String(32), nullable=False),
+)
+
 sovereign_shadow_observations = Table(
     "sovereign_shadow_observations",
     metadata,
