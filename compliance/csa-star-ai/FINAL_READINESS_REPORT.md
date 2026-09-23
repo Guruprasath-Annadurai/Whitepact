@@ -1,7 +1,7 @@
 # Final readiness report — CSA STAR for AI Level 1
 
 **Campaign branch:** `cursor/csa-star-ai-level1-remediation`  
-**Feature SHA assessed:** `9e924f111acefa79bcb29b6255d0100bb35198e1`  
+**Feature SHA assessed:** `4fbebb5f0512abcf84b631957f5ba795c424052e`  
 **Upstream workbook SHA-256:** `062d4666b8d6ee11ee728d0bc424fa218fd055af167e9265385b4438aaa4ed9b`  
 **Designation:** Preparing self-assessment — not CSA-certified.
 

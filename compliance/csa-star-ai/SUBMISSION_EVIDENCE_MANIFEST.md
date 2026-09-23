@@ -1,6 +1,6 @@
 # Submission evidence manifest — AI-CAIQ v1.1
 
-Feature SHA: `9e924f111acefa79bcb29b6255d0100bb35198e1`
+Feature SHA: `4fbebb5f0512abcf84b631957f5ba795c424052e`
 
 Every YES below must be backed by repository or labeled exercise evidence.
 
