@@ -4,7 +4,7 @@
 - Branch: `cursor/csa-star-ai-level1-remediation`
 - Paddle base: `acddae1e96050c1dbe3981327f47dc102beb9262`
 - Phase 1 SHA: `fb3238c9c79664b560c629d299c21e8accfae773`
-- Phase 2 SHA: `fb3238c9c79664b560c629d299c21e8accfae773`
+- Phase 2 SHA: `e7ef9c65589dfeb8f4a5d10a447cdd2088c4a0a5`
 
 ## 2. WHITEPACT CSA ROLE
 Primary **OSP**, secondary **AP**, excluded **MP** and **CSP** (see `WHITEPACT_SERVICE_SCOPE.md`).
