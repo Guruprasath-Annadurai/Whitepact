@@ -15,6 +15,10 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from responsibleai.dashboard.logging_config import get_logger, set_request_id
+from responsibleai.dashboard.paddle_csp import (
+    _WHITEPACT_CONTENT_SECURITY_POLICY_BASE,
+    whitepact_csp_with_paddle,
+)
 
 logger = get_logger("middleware")
 
@@ -134,20 +138,8 @@ _CONTENT_SECURITY_POLICY = "; ".join(
 # styles and loads no CDN resources.  Give it a substantially tighter policy
 # than the legacy operator pages, which still require the compatibility policy
 # above until their inline handlers are removed.
-_WHITEPACT_CONTENT_SECURITY_POLICY = "; ".join(
-    [
-        "default-src 'self'",
-        "script-src 'self'",
-        "style-src 'self'",
-        "img-src 'self' data:",
-        "font-src 'self' data:",
-        "connect-src 'self'",
-        "object-src 'none'",
-        "frame-ancestors 'none'",
-        "base-uri 'self'",
-        "form-action 'self'",
-    ]
-)
+# Compiled WhitePact SPA policy including minimum Paddle Billing v2 overlay origins.
+_WHITEPACT_CONTENT_SECURITY_POLICY = whitepact_csp_with_paddle(_WHITEPACT_CONTENT_SECURITY_POLICY_BASE)
 
 _WHITEPACT_PAGE_PATHS = {
     "/",

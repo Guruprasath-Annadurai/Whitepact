@@ -64,6 +64,7 @@ class TestSecurityHeadersMiddleware:
         client = TestClient(app)
         csp = client.get("/dashboard/api-keys").headers["Content-Security-Policy"]
         assert "script-src 'self'" in csp
+        assert "https://cdn.paddle.com" in csp
         assert "'unsafe-inline'" not in csp
         assert "cdn.jsdelivr.net" not in csp
 
