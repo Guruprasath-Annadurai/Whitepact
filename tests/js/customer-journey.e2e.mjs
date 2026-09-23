@@ -9,11 +9,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 const baseUrl = process.env.WHITEPACT_TEST_BASE_URL ?? "http://127.0.0.1:18765";
 const managed = !process.env.WHITEPACT_TEST_BASE_URL;
-const dbPath = path.join(
-  fs.mkdtempSync(path.join(os.tmpdir(), "whitepact-customer-journey-")),
-  "journey.db",
-);
-const databaseUrl = process.env.WHITEPACT_TEST_DATABASE_URL ?? `sqlite:///${dbPath}`;
+const databaseUrl = process.env.WHITEPACT_TEST_DATABASE_URL ?? "sqlite:///:memory:";
 const password = "Journey-Secure-42!";
 const email = `journey-${Date.now()}@example.com`;
 const repositoryRoot = process.env.WHITEPACT_TEST_REPOSITORY_ROOT
@@ -49,8 +45,8 @@ async function startServer() {
     ...process.env,
     RAI_AUTH_ENABLED: "false",
     WHITEPACT_AUTH_ENABLED: "false",
-    RAI_DB_PATH: dbPath,
-    WHITEPACT_DB_PATH: dbPath,
+    RAI_DB_PATH: ":memory:",
+    WHITEPACT_DB_PATH: ":memory:",
     RAI_AUTO_MIGRATE: "true",
     WHITEPACT_WEB_AUTH_DEV_TOKENS: "true",
     RAI_WEB_AUTH_DEV_TOKENS: "true",
@@ -78,9 +74,6 @@ async function stopServer(child) {
   if (!child) return;
   child.kill("SIGTERM");
   await delay(500);
-  if (!process.env.WHITEPACT_TEST_DATABASE_URL) {
-    try { fs.unlinkSync(dbPath); } catch { /* ignore */ }
-  }
 }
 
 const failures = [];

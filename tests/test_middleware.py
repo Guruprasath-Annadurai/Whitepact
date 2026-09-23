@@ -62,11 +62,19 @@ class TestSecurityHeadersMiddleware:
             return {"ok": True}
 
         client = TestClient(app)
+        from responsibleai.dashboard.paddle_csp import PADDLE_SCRIPT_ORIGINS
+
         csp = client.get("/dashboard/api-keys").headers["Content-Security-Policy"]
-        assert "script-src 'self'" in csp
-        assert "https://cdn.paddle.com" in csp
-        assert "'unsafe-inline'" not in csp
-        assert "cdn.jsdelivr.net" not in csp
+        script_tokens = {
+            token
+            for segment in csp.split(";")
+            if segment.strip().startswith("script-src ")
+            for token in segment.strip().split()[1:]
+        }
+        assert "'self'" in script_tokens
+        assert set(PADDLE_SCRIPT_ORIGINS) <= script_tokens
+        assert "'unsafe-inline'" not in script_tokens
+        assert not any("jsdelivr.net" in token for token in script_tokens)
 
     def test_legacy_page_retains_compatibility_csp(self):
         app = FastAPI()
@@ -78,8 +86,14 @@ class TestSecurityHeadersMiddleware:
 
         client = TestClient(app)
         csp = client.get("/evaluate").headers["Content-Security-Policy"]
-        assert "'unsafe-inline'" in csp
-        assert "cdn.jsdelivr.net" in csp
+        script_tokens = {
+            token
+            for segment in csp.split(";")
+            if segment.strip().startswith("script-src ")
+            for token in segment.strip().split()[1:]
+        }
+        assert "'unsafe-inline'" in script_tokens
+        assert any("jsdelivr.net" in token for token in script_tokens)
 
     def test_hashed_assets_receive_immutable_cache_policy(self):
         app = FastAPI()

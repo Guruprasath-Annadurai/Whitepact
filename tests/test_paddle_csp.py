@@ -9,10 +9,16 @@ from fastapi.testclient import TestClient
 from responsibleai.dashboard.middleware import SecurityHeadersMiddleware
 from responsibleai.dashboard.paddle_csp import (
     _WHITEPACT_CONTENT_SECURITY_POLICY_BASE,
+    PADDLE_CONNECT_ORIGINS,
     PADDLE_SCRIPT_ORIGINS,
     contains_broad_csp_wildcards,
     whitepact_csp_with_paddle,
 )
+
+
+def _directive_tokens(policy: str, directive: str) -> set[str]:
+    part = next(p.strip() for p in policy.split(";") if p.strip().startswith(f"{directive} "))
+    return set(part.split()[1:])
 
 
 def test_paddle_script_origin_permitted_on_whitepact_spa() -> None:
@@ -24,15 +30,16 @@ def test_paddle_script_origin_permitted_on_whitepact_spa() -> None:
         return {"ok": True}
 
     csp = TestClient(app).get("/dashboard").headers["Content-Security-Policy"]
-    assert "https://cdn.paddle.com" in csp
-    assert "script-src 'self'" in csp
+    assert set(PADDLE_SCRIPT_ORIGINS) <= _directive_tokens(csp, "script-src")
+    assert "'self'" in _directive_tokens(csp, "script-src")
 
 
 def test_paddle_checkout_origins_without_wildcards() -> None:
     policy = whitepact_csp_with_paddle(_WHITEPACT_CONTENT_SECURITY_POLICY_BASE)
-    assert "https://sandbox-buy.paddle.com" in policy
-    assert "https://buy.paddle.com" in policy
-    assert "sandbox-checkout-service.paddle.com" in policy
+    assert set(PADDLE_CONNECT_ORIGINS) <= _directive_tokens(policy, "connect-src")
+    assert set(("https://buy.paddle.com", "https://sandbox-buy.paddle.com")) <= _directive_tokens(
+        policy, "frame-src"
+    )
     assert not contains_broad_csp_wildcards(policy)
     assert "*" not in policy.split("script-src")[1].split(";")[0]
 

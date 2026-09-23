@@ -35,6 +35,9 @@ def _key_is_sensitive(key: str) -> bool:
 
 
 def redact_string(value: str) -> str:
+    # Bound input size so JWT token scanning cannot be used for ReDoS.
+    if len(value) > 65536:
+        value = value[:65536]
     out = _BEARER.sub(f"Bearer {_REDACTED}", value)
     out = _JWT.sub(_REDACTED, out)
     return out
