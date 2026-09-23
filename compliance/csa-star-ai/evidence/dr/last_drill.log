@@ -1,0 +1,5 @@
+backup_file=/workspace/worktrees/whitepact-csa-star-ai-remediation/compliance/csa-star-ai/evidence/dr/drill-20260923T085750Z.sql
+restore_start=2026-09-23T08:57:50Z
+restore_end=2026-09-23T08:57:51Z
+integrity_note=pre-backup
+result=PASS

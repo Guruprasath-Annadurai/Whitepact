@@ -13,6 +13,12 @@ cited; where it isn't, that's stated rather than implied.
 
 Last reviewed: 2026-07-23 · Platform version: 1.2.0
 
+> **2026-09-23 CSA campaign note:** Production billing on release candidate
+> `acddae1` uses **Paddle** (`src/responsibleai/billing/paddle_service.py`).
+> The Stripe section below is **legacy / optional** unless Stripe is explicitly
+> enabled in deployment. Canonical subprocessor list:
+> `compliance/csa-star-ai/SUBPROCESSOR_REGISTER.md`.
+
 ---
 
 ## Assessment methodology

@@ -1,0 +1,20 @@
+{
+  "framework": "CSA AI-CAIQ v1.1 / STAR for AI Level 1",
+  "snapshot_date": "2026-09-23",
+  "source_workbook_expected": "source/WhitePact_AI_CAIQ_v1.1_STAR_Level1_COMPLETED_DRAFT.xlsx",
+  "source_pdf_expected": "source/WhitePact_AI_CAIQ_v1.1_Readiness_Audit_and_Remediation.pdf",
+  "workbook_ingested": false,
+  "totals": {
+    "questions": 320,
+    "yes": 98,
+    "no": 152,
+    "na": 70
+  },
+  "applicable_readiness_percent": 39.2,
+  "applicable_formula": "yes / (yes + no)",
+  "priority_remediations": {
+    "high": 72,
+    "medium": 80
+  },
+  "notes": "Counts supplied by external audit; row-level ledger pending workbook ingest (OA-001)."
+}
