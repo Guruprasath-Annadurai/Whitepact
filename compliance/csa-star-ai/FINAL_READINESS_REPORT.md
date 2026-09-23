@@ -1,54 +1,45 @@
 # Final readiness report — CSA STAR for AI Level 1
 
-**Campaign:** `cursor/csa-star-ai-level1-remediation`  
+**Campaign branch:** `cursor/csa-star-ai-level1-remediation`  
 **BASE SHA:** `acddae1e96050c1dbe3981327f47dc102beb9262`  
-**FEATURE SHA:** `a16c13db71d6978f7cc8ad3683f750f13761a7a9` (see latest commit on branch for follow-ups)  
-**Report date:** 2026-09-23
+**Preparing designation only:** WhitePact is preparing a CSA STAR for AI Level 1 self-assessment. Not certified/approved by CSA.
 
-## Before (external audit snapshot)
+## 1. SOURCE INTEGRITY
+
+| Field | Value |
+|-------|-------|
+| Official artifact | AI-CAIQ v1.1 |
+| Acquisition | **MANUAL_REQUIRED** (automated download blocked by CSA gated access) |
+| Pristine filename | `CSA_AI-CAIQ_v1.1_Official_upstream.xlsx` |
+| SHA-256 | *pending OA-001* |
+| Rows detected | *pending ingest* |
+
+See `compliance/csa-star-ai/source/SOURCE_INTEGRITY.json`.
+
+## 2. PRELIMINARY_EXTERNAL_AUDIT_SNAPSHOT (non-authoritative)
+
+YES 98 / NO 152 / NA 70 — **not used** for ledger answers.
+
+## 3. AUTHORITATIVE RESULTS
 
 | Metric | Value |
-|--------|------:|
-| TOTAL QUESTIONS | 320 |
-| YES | 98 |
-| NO | 152 |
-| NA | 70 |
-| APPLICABLE READINESS | 39.2% (98 / 250) |
+|--------|------|
+| YES | *pending official ingest + assessment* |
+| NO | *pending* |
+| NA | *pending* |
+| UNASSESSED | 320 (until OA-001) |
 
-## After (this campaign — honest)
+## 4. EVIDENCE QUALITY
 
-| Metric | Value |
-|--------|------:|
-| Workbook ingested | **No** (OA-001) |
-| Row-level re-audit | **Blocked** |
-| YES / NO / NA | **Unchanged at control level** until ingest + evidence pass |
-| Unsupported YES claims introduced | **0** |
+Strong / moderate YES counts: *pending assessment pass*.
 
-### What this campaign delivered
+## 5. VALIDATION (this branch)
 
-- Evidence pack scaffolding under `compliance/csa-star-ai/`
-- Ingest/export tooling for official workbook
-- Subprocessor register aligned to **Paddle** billing path
-- Incident tabletop (documented exercise)
-- SQLite restore drill script + report template
-- Production config baseline documentation (fail-closed rules already in `dashboard/config.py`, `enterprise/security/preflight.py`)
-- Owner action queue for human/provider evidence
+| Command | Result |
+|---------|--------|
+| `pytest tests/test_csa_star_ai_tooling.py tests/test_csa_star_ai_ingest_integrity.py` | Run at commit |
+| Full pytest / Docker | Not run on this iteration |
 
-### What remains before submission-ready
+## 6. VERDICT
 
-1. OA-001 workbook ingest → full 320-row ledger  
-2. Re-verify all 98 YES against code/tests (automated checklist in `TECHNICAL_EVIDENCE_INDEX.md`)  
-3. Classify and close 152 NOs (many are owner/provider/organizational)  
-4. Defend 70 NA with per-control rationale in ledger  
-5. Generate `WhitePact_AI_CAIQ_v1.1_STAR_Level1_FINAL.xlsx` only after re-audit  
-6. Full validation suite on feature branch (pytest, security scans, Docker) — run in CI follow-up
-
-## Verdict
-
-**WHITEPACT CSA STAR FOR AI LEVEL 1 REMEDIATION BLOCKED** — AI-CAIQ v1.1 draft workbook and PDF not present in repository (OA-001); applicable technical/process controls not re-audited at row level.
-
-When workbook is ingested and owner evidence collected, expect verdict:
-
-**WHITEPACT CSA STAR FOR AI LEVEL 1 TECHNICAL REMEDIATION PASSED — OWNER EVIDENCE REQUIRED: &lt;n&gt;**
-
-—not "100% READY" until evidence exists for every applicable YES.
+**NOT READY FOR CSA SUBMISSION** — official CSA upstream workbook not acquired; authoritative 320-row ledger not built.

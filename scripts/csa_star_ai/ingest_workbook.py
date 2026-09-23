@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Guruprasath Annadurai
 # SPDX-License-Identifier: MIT
 
-"""Ingest AI-CAIQ v1.1 draft workbook into remediation_ledger.json."""
+"""Ingest pristine CSA AI-CAIQ v1.1 upstream workbook into remediation_ledger.json."""
 
 from __future__ import annotations
 
@@ -15,113 +15,139 @@ if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
 from scripts.csa_star_ai.ledger import ControlAnswer, RemediationLedger, RemediationLedgerRow
+
 _SOURCE = _REPO / "compliance" / "csa-star-ai" / "source"
-_DRAFT_NAME = "WhitePact_AI_CAIQ_v1.1_STAR_Level1_COMPLETED_DRAFT.xlsx"
+_UPSTREAM = _SOURCE / "CSA_AI-CAIQ_v1.1_Official_upstream.xlsx"
+_INTEGRITY = _SOURCE / "SOURCE_INTEGRITY.json"
 _LEDGER_PATH = _REPO / "compliance" / "csa-star-ai" / "ledger" / "remediation_ledger.json"
 _MATRIX_PATH = _REPO / "compliance" / "csa-star-ai" / "CONTROL_MATRIX.md"
+_EXPECTED_ROWS = 320
 
-_CONTROL_ID_RE = re.compile(r"^[A-Z][A-Za-z0-9&-]+\-\d+\.\d+$")
-
-
-def _normalize_answer(raw: str | None) -> ControlAnswer:
-    if raw is None:
-        return ControlAnswer.NO
-    folded = str(raw).strip().upper()
-    if folded in {"YES", "Y"}:
-        return ControlAnswer.YES
-    if folded in {"NA", "N/A", "NOT APPLICABLE"}:
-        return ControlAnswer.NA
-    return ControlAnswer.NO
+_QUESTION_ID_RE = re.compile(r"^[A-Z][A-Za-z0-9&]+-\d+\.\d+$")
 
 
-def _find_questionnaire_sheet(workbook) -> object:
-    for name in workbook.sheetnames:
-        if "caiq" in name.lower() or "questionnaire" in name.lower() or "ai" in name.lower():
-            return workbook[name]
-    return workbook[workbook.sheetnames[-1]]
+def _find_header_row(rows: list[tuple]) -> tuple[int, dict[str, int]]:
+    for idx, row in enumerate(rows):
+        if not row:
+            continue
+        headers = [str(c or "").strip().lower() for c in row]
+        if "question id" in headers or "question_id" in headers:
+            mapping = {h: i for i, h in enumerate(headers)}
+            return idx, mapping
+    raise ValueError("Could not locate header row with 'Question ID'")
+
+
+def _col(mapping: dict[str, int], *names: str) -> int | None:
+    for name in names:
+        if name in mapping:
+            return mapping[name]
+        for key, idx in mapping.items():
+            if name in key:
+                return idx
+    return None
+
+
+def _sheet_rows(ws) -> list[tuple]:
+    return [tuple(c for c in row) for row in ws.iter_rows(values_only=True)]
+
+
+def _pick_sheet(wb):
+    for name in wb.sheetnames:
+        lower = name.lower()
+        if "caiq" in lower or "questionnaire" in lower or "ai-caiq" in lower:
+            return wb[name]
+    return wb[wb.sheetnames[-1]]
 
 
 def ingest(path: Path) -> RemediationLedger:
-    try:
-        import openpyxl
-    except ImportError:
-        raise SystemExit("openpyxl required: pip install openpyxl") from None
+    import openpyxl
 
     wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
-    ws = _find_questionnaire_sheet(wb)
-    rows: list[RemediationLedgerRow] = []
-    for cells in ws.iter_rows(values_only=True):
-        if not cells or len(cells) < 3:
+    ws = _pick_sheet(wb)
+    all_rows = _sheet_rows(ws)
+    header_idx, mapping = _find_header_row(all_rows)
+    qid_col = _col(mapping, "question id", "question_id")
+    q_col = _col(mapping, "question")
+    domain_col = _col(mapping, "control domain", "domain")
+    title_col = _col(mapping, "control title", "title")
+    spec_col = _col(mapping, "control specification", "specification")
+    if qid_col is None or q_col is None:
+        raise ValueError(f"Missing required columns in mapping: {mapping}")
+
+    ledger_rows: list[RemediationLedgerRow] = []
+    for row in all_rows[header_idx + 1 :]:
+        if not row or qid_col >= len(row):
             continue
-        control_id = str(cells[0] or "").strip()
-        if not _CONTROL_ID_RE.match(control_id):
+        qid = str(row[qid_col] or "").strip()
+        if not _QUESTION_ID_RE.match(qid):
             continue
-        question = str(cells[1] or "").strip()
-        answer = _normalize_answer(str(cells[2] if len(cells) > 2 else ""))
-        ssrm = str(cells[3] or "").strip() if len(cells) > 3 else ""
-        evidence = str(cells[4] or "").strip() if len(cells) > 4 else ""
-        customer = str(cells[5] or "").strip() if len(cells) > 5 else ""
-        domain = control_id.split("-", 1)[0] if "-" in control_id else ""
-        rows.append(
+        question = str(row[q_col] or "").strip()
+        domain = ""
+        if domain_col is not None and domain_col < len(row):
+            domain = str(row[domain_col] or "").strip()
+        if not domain and "-" in qid:
+            domain = qid.split("-", 1)[0]
+        title = str(row[title_col] or "").strip() if title_col is not None and title_col < len(row) else ""
+        spec = str(row[spec_col] or "").strip() if spec_col is not None and spec_col < len(row) else ""
+        ledger_rows.append(
             RemediationLedgerRow(
-                control_id=control_id,
+                control_id=qid,
+                question_id=qid,
                 domain=domain,
+                control_title=title,
+                control_specification=spec,
                 question=question,
-                current_answer=answer,
-                ssrm_owner=ssrm,
-                current_evidence=evidence,
-                customer_responsibility=customer,
-                final_answer=answer,
-                status="baseline",
+                response=ControlAnswer.UNASSESSED,
+                status="unassessed",
             )
         )
-    if len(rows) < 300:
-        print(
-            f"WARNING: only {len(rows)} control rows parsed; expected ~320. "
-            "Check workbook column layout (A=ID, B=question, C=answer).",
-            file=sys.stderr,
-        )
-    return RemediationLedger(rows=rows)
+
+    return RemediationLedger(rows=ledger_rows)
 
 
 def write_matrix(ledger: RemediationLedger) -> None:
     lines = [
-        "# AI-CAIQ Control Matrix (generated)",
+        "# AI-CAIQ Control Matrix (authoritative ingest)",
         "",
         f"Rows: {len(ledger.rows)}",
+        f"Summary: {json.dumps(ledger.summary())}",
         "",
-        "| Control ID | Answer | SSRM | Evidence (truncated) |",
-        "|------------|--------|------|----------------------|",
+        "| Question ID | Domain | Response | Evidence strength | Question (truncated) |",
+        "|-------------|--------|----------|-------------------|----------------------|",
     ]
-    for row in ledger.rows[:50]:
-        ev = (row.current_evidence or "")[:80].replace("|", "/")
+    for row in ledger.rows:
+        q = row.question.replace("|", "/").replace("\n", " ")[:100]
         lines.append(
-            f"| {row.control_id} | {row.current_answer.value} | {row.ssrm_owner} | {ev} |"
+            f"| {row.question_id} | {row.domain} | {row.response.value} | "
+            f"{row.evidence_strength.value} | {q} |"
         )
-    if len(ledger.rows) > 50:
-        lines.append(f"| … | ({len(ledger.rows) - 50} more rows) | | See remediation_ledger.json |")
     _MATRIX_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def main() -> None:
-    draft = _SOURCE / _DRAFT_NAME
-    if not draft.is_file():
-        print(f"Missing draft workbook: {draft}", file=sys.stderr)
-        print("Copy audit file per compliance/csa-star-ai/source/README.md (OA-001).", file=sys.stderr)
+    path = _UPSTREAM
+    if not path.is_file():
+        print(f"Missing pristine upstream workbook: {path}", file=sys.stderr)
+        integrity = json.loads(_INTEGRITY.read_text(encoding="utf-8"))
+        for step in integrity.get("manual_steps", []):
+            print(f"  - {step}", file=sys.stderr)
         raise SystemExit(2)
-    ledger = ingest(draft)
+
+    ledger = ingest(path)
+    if len(ledger.rows) != _EXPECTED_ROWS:
+        print(
+            f"Parser integrity failure: expected {_EXPECTED_ROWS} rows, got {len(ledger.rows)}",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+    if _INTEGRITY.is_file():
+        meta = json.loads(_INTEGRITY.read_text(encoding="utf-8"))
+        ledger.upstream_workbook_sha256 = meta.get("workbook_sha256")
+
     _LEDGER_PATH.parent.mkdir(parents=True, exist_ok=True)
     _LEDGER_PATH.write_text(ledger.model_dump_json(indent=2), encoding="utf-8")
     write_matrix(ledger)
-    snap = json.loads(
-        (_REPO / "compliance/csa-star-ai/ledger/BASELINE_AUDIT_SNAPSHOT.json").read_text()
-    )
-    snap["workbook_ingested"] = True
-    snap["ingested_row_count"] = len(ledger.rows)
-    snap["ingested_totals"] = ledger.summary()
-    (_REPO / "compliance/csa-star-ai/ledger/BASELINE_AUDIT_SNAPSHOT.json").write_text(
-        json.dumps(snap, indent=2) + "\n", encoding="utf-8"
-    )
     print(f"Ingested {len(ledger.rows)} controls → {_LEDGER_PATH}")
 
 
