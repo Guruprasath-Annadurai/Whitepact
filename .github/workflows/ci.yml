@@ -30,8 +30,10 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4

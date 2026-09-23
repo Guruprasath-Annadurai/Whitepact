@@ -8,6 +8,8 @@ booting the full dashboard app."""
 
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.testclient import TestClient
 from starlette.requests import Request
@@ -20,6 +22,16 @@ from responsibleai.dashboard.middleware import (
     global_exception_handler,
     http_exception_handler,
 )
+
+
+def _csp_tokens_include_host(tokens: set[str], host: str) -> bool:
+    for token in tokens:
+        if token.startswith(("'", '"')):
+            continue
+        parsed = urlparse(token if "://" in token else f"https://{token}")
+        if parsed.hostname and parsed.hostname.endswith(host):
+            return True
+    return False
 
 
 class TestRequestIDMiddleware:
@@ -74,7 +86,7 @@ class TestSecurityHeadersMiddleware:
         assert "'self'" in script_tokens
         assert set(PADDLE_SCRIPT_ORIGINS) <= script_tokens
         assert "'unsafe-inline'" not in script_tokens
-        assert not any("jsdelivr.net" in token for token in script_tokens)
+        assert not _csp_tokens_include_host(script_tokens, "cdn.jsdelivr.net")
 
     def test_legacy_page_retains_compatibility_csp(self):
         app = FastAPI()
@@ -93,7 +105,7 @@ class TestSecurityHeadersMiddleware:
             for token in segment.strip().split()[1:]
         }
         assert "'unsafe-inline'" in script_tokens
-        assert any("jsdelivr.net" in token for token in script_tokens)
+        assert _csp_tokens_include_host(script_tokens, "cdn.jsdelivr.net")
 
     def test_hashed_assets_receive_immutable_cache_policy(self):
         app = FastAPI()
