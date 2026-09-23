@@ -15,6 +15,20 @@ jobs:
   test:
     name: Lint · Type-check · Test
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: wp
+          POSTGRES_PASSWORD: wp
+          POSTGRES_DB: whitepact_e2e
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U wp -d whitepact_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     strategy:
       matrix:
         python-version: ["3.11", "3.12"]
@@ -31,7 +45,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip setuptools
-          pip install -e ".[dev,openai,anthropic,sso,sentiment]"
+          pip install -e ".[dev,openai,anthropic,sso,sentiment,postgres]"
 
       - name: Lint with ruff
         run: ruff check src/ tests/
