@@ -4,13 +4,43 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 
 from responsibleai.global_directory.deps import get_global_directory_service
-from responsibleai.global_directory.models import MachineDirectoryResponse, ResolutionResult
-from responsibleai.global_directory.repository import GlobalDirectoryRepository
+from responsibleai.global_directory.models import (
+    MachineDirectoryResponse,
+    PersonResolutionPayload,
+    ResolutionResult,
+)
 from responsibleai.global_directory.service import GlobalDirectoryService
 
 router = APIRouter(prefix="/api/v1/global-directory", tags=["global-directory"])
+
+
+class RefineResolutionBody(BaseModel):
+    refinement_token: str
+    organization_hint: str | None = None
+    profession_hint: str | None = None
+
+
+@router.post("/person/resolve", response_model=PersonResolutionPayload)
+async def resolve_person(
+    q: str = Query(..., min_length=1, max_length=512),
+    service: GlobalDirectoryService = Depends(get_global_directory_service),
+) -> PersonResolutionPayload:
+    return await service.resolve_person(q)
+
+
+@router.post("/person/refine", response_model=PersonResolutionPayload)
+async def refine_resolution(
+    body: RefineResolutionBody,
+    service: GlobalDirectoryService = Depends(get_global_directory_service),
+) -> PersonResolutionPayload:
+    return await service.refine_resolution(
+        body.refinement_token,
+        organization_hint=body.organization_hint,
+        profession_hint=body.profession_hint,
+    )
 
 
 @router.get("/resolve", response_model=ResolutionResult)

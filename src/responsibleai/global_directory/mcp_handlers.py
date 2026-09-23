@@ -76,6 +76,28 @@ GLOBAL_DIRECTORY_TOOL_DEFS: list[types.Tool] = [
         description="Detect ambiguous or conflicting identity resolution for a query.",
         inputSchema={"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
     ),
+    types.Tool(
+        name="global_directory.resolve_person",
+        title="Resolve person (evidence-driven)",
+        annotations=_READ_ONLY,
+        description="Universal person resolution returning RESOLVED, AMBIGUOUS, or UNKNOWN with grounded evidence.",
+        inputSchema={"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
+    ),
+    types.Tool(
+        name="global_directory.refine_resolution",
+        title="Refine ambiguous person resolution",
+        annotations=_READ_ONLY,
+        description="Refine a prior ambiguous person lookup using organization/profession hints.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "refinement_token": {"type": "string"},
+                "organization_hint": {"type": "string"},
+                "profession_hint": {"type": "string"},
+            },
+            "required": ["refinement_token"],
+        },
+    ),
 ]
 
 
@@ -137,6 +159,22 @@ async def _handle_check_identity_conflict(args: dict[str, Any]) -> dict[str, Any
     return await svc.check_identity_conflict(str(args["query"]))
 
 
+async def _handle_resolve_person(args: dict[str, Any]) -> dict[str, Any]:
+    svc = await _svc()
+    payload = await svc.resolve_person(str(args["query"]))
+    return payload.model_dump()
+
+
+async def _handle_refine_resolution(args: dict[str, Any]) -> dict[str, Any]:
+    svc = await _svc()
+    payload = await svc.refine_resolution(
+        str(args["refinement_token"]),
+        organization_hint=args.get("organization_hint"),
+        profession_hint=args.get("profession_hint"),
+    )
+    return payload.model_dump()
+
+
 GLOBAL_DIRECTORY_HANDLERS: dict[str, Any] = {
     "global_directory.resolve_entity": _handle_resolve_entity,
     "global_directory.search_entities": _handle_search_entities,
@@ -146,4 +184,6 @@ GLOBAL_DIRECTORY_HANDLERS: dict[str, Any] = {
     "global_directory.verify_claim": _handle_verify_claim,
     "global_directory.get_trust_context": _handle_get_trust_context,
     "global_directory.check_identity_conflict": _handle_check_identity_conflict,
+    "global_directory.resolve_person": _handle_resolve_person,
+    "global_directory.refine_resolution": _handle_refine_resolution,
 }

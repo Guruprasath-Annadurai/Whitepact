@@ -13,14 +13,18 @@ from sqlalchemy import select
 from responsibleai.db.engine import (
     DatabaseEngine,
     global_directory_aliases,
-    global_directory_claim_evidence,
     global_directory_claims,
     global_directory_entities,
     global_directory_identifiers,
     global_directory_relationships,
     global_directory_sources,
 )
-from responsibleai.global_directory.enums import DataScope, EntityType, EvidenceState, FreshnessState
+from responsibleai.global_directory.enums import (
+    DataScope,
+    EntityType,
+    EvidenceState,
+    FreshnessState,
+)
 from responsibleai.global_directory.models import (
     DirectoryClaim,
     DirectoryEntity,

@@ -6,9 +6,11 @@ from __future__ import annotations
 import hashlib
 import logging
 
-import httpx
-
-from responsibleai.net.egress import DestinationPolicy, create_safe_async_client, validate_outbound_url
+from responsibleai.net.egress import (
+    DestinationPolicy,
+    create_safe_async_client,
+    validate_outbound_url,
+)
 
 logger = logging.getLogger(__name__)
 

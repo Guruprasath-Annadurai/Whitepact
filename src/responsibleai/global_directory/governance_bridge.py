@@ -6,7 +6,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from responsibleai.global_directory.enums import EvidenceState, FreshnessState
-from responsibleai.global_directory.models import DirectoryClaim, DirectoryEntity, TrustContext, TrustContextSignal
+from responsibleai.global_directory.models import (
+    DirectoryClaim,
+    DirectoryEntity,
+    TrustContext,
+    TrustContextSignal,
+)
 
 
 @dataclass(frozen=True)

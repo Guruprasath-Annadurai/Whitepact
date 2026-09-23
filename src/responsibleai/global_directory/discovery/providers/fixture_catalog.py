@@ -4,10 +4,11 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from responsibleai.global_directory.discovery.fetch import content_hash
 from responsibleai.global_directory.enums import (
@@ -25,34 +26,59 @@ from responsibleai.global_directory.models import (
     DirectorySource,
 )
 
+if TYPE_CHECKING:
+    from responsibleai.global_directory.person.hints import PersonQueryHints
+
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _catalog_path() -> Path:
+    override = os.environ.get("WHITEPACT_GLOBAL_DIRECTORY_FIXTURE_CATALOG_PATH", "").strip()
+    if override:
+        return Path(override)
+    return Path(__file__).resolve().parents[2] / "fixtures" / "demo_catalog.json"
+
+
 def _load_catalog() -> dict[str, Any]:
-    catalog_path = Path(__file__).resolve().parents[2] / "fixtures" / "demo_catalog.json"
+    catalog_path = _catalog_path()
+    if not catalog_path.is_file():
+        return {"entities": []}
     raw = catalog_path.read_text(encoding="utf-8")
     return json.loads(raw)
 
 
 class FixtureCatalogProvider:
-    """Deterministic public discovery for integration tests and offline demos."""
+    """Deterministic catalog for tests only (WHITEPACT_GLOBAL_DIRECTORY_FIXTURE_DISCOVERY=1)."""
 
     name = "fixture_catalog"
 
-    def match_entities(self, query: str) -> list[dict[str, Any]]:
+    def discover(self, query: str, hints: PersonQueryHints | None) -> list[dict[str, Any]]:
+        return self.match_entities(query, hints)
+
+    def match_entities(self, query: str, hints: PersonQueryHints | None = None) -> list[dict[str, Any]]:
         normalized = normalize_free_text(query)
+        if hints and hints.name_tokens:
+            normalized = normalize_free_text(" ".join(hints.name_tokens))
         catalog = _load_catalog()
         matches: list[dict[str, Any]] = []
+        seen: set[str] = set()
         for entry in catalog.get("entities", []):
+            key = str(entry.get("entity_key", ""))
             names = {normalize_free_text(entry.get("canonical_name", ""))}
             names.update(normalize_free_text(a) for a in entry.get("aliases", []))
-            if normalized in names or normalized in entry.get("canonical_name", "").casefold():
+            matched = normalized in names
+            if not matched and hints and hints.name_tokens:
+                first = hints.name_tokens[0]
+                matched = first in normalize_free_text(entry.get("canonical_name", ""))
+            if matched and key not in seen:
                 matches.append(entry)
+                seen.add(key)
             for ident in entry.get("identifiers", []):
-                if ident.get("value", "").casefold() in query.casefold():
+                if ident.get("value", "").casefold() in query.casefold() and key not in seen:
                     matches.append(entry)
+                    seen.add(key)
         return matches
 
     def materialize(self, entry: dict[str, Any]) -> tuple[
@@ -110,27 +136,32 @@ class FixtureCatalogProvider:
                     claim_id=cid,
                     subject_entity_id=entity_id,
                     predicate=raw_claim["predicate"],
-                    object_entity_id=None,
+                    object_entity_id=raw_claim.get("object_entity_id"),
                     normalized_value=raw_claim.get("normalized_value"),
                     evidence_state=EvidenceState(raw_claim.get("evidence_state", "INFERRED_SIGNAL")),
                     confidence=float(raw_claim.get("confidence", 0.5)),
                     first_seen_at=now,
                     last_seen_at=now,
                     last_verified_at=now,
+                    valid_from=raw_claim.get("valid_from"),
+                    valid_until=raw_claim.get("valid_until"),
                     source_refs=[sid],
                 )
             )
-            if raw_claim.get("object_name"):
+            object_key = raw_claim.get("object_entity_key")
+            if object_key:
                 relationships.append(
                     DirectoryRelationship(
                         relationship_id=f"rel_{uuid.uuid4().hex[:12]}",
                         subject_entity_id=entity_id,
                         predicate=RelationshipPredicate(raw_claim["predicate"]),
-                        object_entity_id="gd_project_whitepact",
+                        object_entity_id=f"gd_{object_key}",
                         evidence_state=EvidenceState(raw_claim.get("evidence_state", "INFERRED_SIGNAL")),
                         confidence=float(raw_claim.get("confidence", 0.5)),
                         first_seen_at=now,
                         last_seen_at=now,
+                        valid_from=raw_claim.get("valid_from"),
+                        valid_until=raw_claim.get("valid_until"),
                     )
                 )
         return entity, identifiers, aliases, sources, claims, relationships

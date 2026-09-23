@@ -6,7 +6,6 @@ from __future__ import annotations
 import re
 import unicodedata
 from dataclasses import dataclass
-from urllib.parse import urlparse
 
 from responsibleai.global_directory.enums import EntityType
 

@@ -56,6 +56,12 @@ class SuppressionKind(StrEnum):
     SUPPRESS_ENTITY = "SUPPRESS_ENTITY"
 
 
+class PersonResolutionStatus(StrEnum):
+    RESOLVED = "RESOLVED"
+    AMBIGUOUS = "AMBIGUOUS"
+    UNKNOWN = "UNKNOWN"
+
+
 class RelationshipPredicate(StrEnum):
     ASSOCIATED_WITH = "ASSOCIATED_WITH"
     CREATED = "CREATED"

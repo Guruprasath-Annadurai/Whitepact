@@ -528,7 +528,7 @@ class TestRaiAuditSummary:
 
         r = await dispatch_tool("rai_audit_summary", {"days": 7})
         assert "governance_engine" in r
-        assert r["governance_engine"]["tools_available"] == 38
+        assert r["governance_engine"]["tools_available"] == 40
 
     @pytest.mark.asyncio
     async def test_frameworks_listed(self) -> None:

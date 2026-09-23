@@ -73,7 +73,7 @@ export function GlobalDirectoryPage() {
           <Button disabled={busy}><Search aria-hidden="true" /> {busy ? "Resolving…" : "Search"}</Button>
         </form>
       </section>
-      {resolution?.status === "ambiguous" && (
+      {resolution?.status === "AMBIGUOUS" && (
         <section className="data-panel">
           <h2>Ambiguous identity</h2>
           <p>{resolution.message}</p>

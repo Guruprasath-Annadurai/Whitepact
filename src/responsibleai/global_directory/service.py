@@ -4,20 +4,29 @@
 from __future__ import annotations
 
 import logging
-import os
 import uuid
-from datetime import UTC, datetime
 
-from responsibleai.global_directory.discovery.providers.fixture_catalog import FixtureCatalogProvider
-from responsibleai.global_directory.enums import EvidenceState
+from responsibleai.global_directory.discovery.providers.fixture_catalog import (
+    FixtureCatalogProvider,
+)
+from responsibleai.global_directory.discovery.registry import (
+    _fixture_enabled,
+    build_discovery_providers,
+)
+from responsibleai.global_directory.enums import EntityType, EvidenceState, PersonResolutionStatus
 from responsibleai.global_directory.governance_bridge import build_governance_context
 from responsibleai.global_directory.identifiers import extract_identifiers, normalize_free_text
 from responsibleai.global_directory.models import (
     MachineDirectoryResponse,
+    PersonResolutionPayload,
     ResolutionCandidate,
     ResolutionResult,
-    TrustContext,
 )
+from responsibleai.global_directory.person.hints import (
+    extract_person_hints,
+    is_person_primary_query,
+)
+from responsibleai.global_directory.person.pipeline import PersonResolutionPipeline
 from responsibleai.global_directory.repository import GlobalDirectoryRepository
 from responsibleai.global_directory.synthesis import grounded_summary
 
@@ -28,34 +37,84 @@ class GlobalDirectoryService:
     def __init__(self, repo: GlobalDirectoryRepository) -> None:
         self._repo = repo
         self._fixture = FixtureCatalogProvider()
+        self._person = PersonResolutionPipeline(repo)
 
-    def _fixture_discovery_enabled(self) -> bool:
-        return os.environ.get("WHITEPACT_GLOBAL_DIRECTORY_FIXTURE_DISCOVERY", "1").strip().lower() in (
-            "1",
-            "true",
-            "yes",
+    async def resolve_person(
+        self,
+        query: str,
+        *,
+        allow_discovery: bool = True,
+    ) -> PersonResolutionPayload:
+        result, payload = await self._person.resolve(query, allow_discovery=allow_discovery)
+        return payload
+
+    async def refine_resolution(
+        self,
+        refinement_token: str,
+        *,
+        organization_hint: str | None = None,
+        profession_hint: str | None = None,
+    ) -> PersonResolutionPayload:
+        _, payload = await self._person.refine(
+            refinement_token,
+            organization_hint=organization_hint,
+            profession_hint=profession_hint,
         )
+        return payload
 
     async def resolve_entity(self, query: str, *, allow_discovery: bool = True) -> ResolutionResult:
-        normalized = normalize_free_text(query)
         parsed_identifiers = extract_identifiers(query)
         for ident in parsed_identifiers:
-            entity = await self._repo.find_by_identifier(ident.identifier_type, ident.normalized_value)
-            if entity:
-                return ResolutionResult(
-                    query=query,
-                    status="resolved",
-                    confidence=entity.confidence,
-                    entity=entity,
-                )
+            if ident.implied_entity_type and ident.implied_entity_type != EntityType.PERSON:
+                entity = await self._repo.find_by_identifier(ident.identifier_type, ident.normalized_value)
+                if entity:
+                    return ResolutionResult(
+                        query=query,
+                        status=PersonResolutionStatus.RESOLVED.value,
+                        confidence=entity.confidence,
+                        entity=entity,
+                    )
+
+        if is_person_primary_query(query):
+            result, _ = await self._person.resolve(query, allow_discovery=allow_discovery)
+            if result.status == PersonResolutionStatus.AMBIGUOUS.value and result.person:
+                from datetime import UTC, datetime
+
+                from responsibleai.global_directory.models import DirectoryEntity
+
+                now = datetime.now(UTC).isoformat()
+                result.candidates = [
+                    ResolutionCandidate(
+                        entity=DirectoryEntity(
+                            entity_id=str(c.get("entity_id", "")),
+                            canonical_name=str(c.get("name", "")),
+                            entity_type=EntityType.PERSON,
+                            description=str(c.get("professional_context", "")),
+                            confidence=float(c.get("confidence", 0)),
+                            created_at=now,
+                            last_observed_at=now,
+                        ),
+                        match_reason="person_disambiguation",
+                        confidence=float(c.get("confidence", 0)),
+                    )
+                    for c in result.person.candidates
+                ]
+            return result
+
+        normalized = normalize_free_text(query)
         candidates_entities = await self._repo.search_by_name(normalized)
         if len(candidates_entities) == 1:
             ent = candidates_entities[0]
-            return ResolutionResult(query=query, status="resolved", confidence=ent.confidence, entity=ent)
+            return ResolutionResult(
+                query=query,
+                status=PersonResolutionStatus.RESOLVED.value,
+                confidence=ent.confidence,
+                entity=ent,
+            )
         if len(candidates_entities) > 1:
             return ResolutionResult(
                 query=query,
-                status="ambiguous",
+                status=PersonResolutionStatus.AMBIGUOUS.value,
                 confidence=max(e.confidence for e in candidates_entities),
                 candidates=[
                     ResolutionCandidate(entity=e, match_reason="name_or_alias", confidence=e.confidence)
@@ -63,79 +122,48 @@ class GlobalDirectoryService:
                 ],
                 message="Multiple entities match; disambiguation required.",
             )
-        if allow_discovery and self._fixture_discovery_enabled():
-            matches = self._fixture.match_entities(query)
-            preferred_types = {i.identifier_type for i in parsed_identifiers}
-            exact_identifier_matches = []
-            for entry in matches:
-                for ident in entry.get("identifiers", []):
-                    id_type = str(ident.get("type", ""))
-                    value = str(ident.get("value", "")).casefold()
-                    if not value or value not in query.casefold():
-                        continue
-                    if preferred_types and id_type not in preferred_types:
-                        continue
-                    exact_identifier_matches.append(entry)
-                    break
-            if len(exact_identifier_matches) == 1:
-                matches = exact_identifier_matches
-            if len(matches) > 1 and all(m.get("canonical_name") == matches[0].get("canonical_name") for m in matches):
-                candidates = []
-                for entry in matches:
-                    bundle = self._fixture.materialize(entry)
-                    candidates.append(
-                        ResolutionCandidate(
-                            entity=bundle[0],
-                            match_reason="fixture_same_name",
-                            confidence=bundle[0].confidence,
-                        )
+
+        if allow_discovery:
+            hints = extract_person_hints(query)
+            for provider in build_discovery_providers():
+                matches = provider.discover(query, hints) if hasattr(provider, "discover") else []
+                if not matches and hasattr(provider, "match_entities"):
+                    matches = provider.match_entities(query, hints)
+                non_person = [m for m in matches if m.get("entity_type") != EntityType.PERSON.value]
+                if len(non_person) == 1:
+                    bundle = self._fixture.materialize(non_person[0])
+                    await self._repo.save_entity_bundle(
+                        bundle[0],
+                        identifiers=bundle[1],
+                        aliases=bundle[2],
+                        sources=bundle[3],
+                        claims=bundle[4],
+                        relationships=bundle[5],
                     )
-                return ResolutionResult(
-                    query=query,
-                    status="ambiguous",
-                    confidence=max(c.confidence for c in candidates),
-                    candidates=candidates,
-                    message="Fixture catalog contains ambiguous same-name entities.",
-                )
-            if len(matches) > 1:
-                candidates = []
-                for entry in matches:
-                    bundle = self._fixture.materialize(entry)
-                    candidates.append(
-                        ResolutionCandidate(
-                            entity=bundle[0],
-                            match_reason="fixture_multi_match",
-                            confidence=bundle[0].confidence,
-                        )
+                    return ResolutionResult(
+                        query=query,
+                        status=PersonResolutionStatus.RESOLVED.value,
+                        confidence=bundle[0].confidence,
+                        entity=bundle[0],
                     )
-                return ResolutionResult(
-                    query=query,
-                    status="ambiguous",
-                    confidence=max(c.confidence for c in candidates),
-                    candidates=candidates,
-                    message="Multiple fixture catalog entities match; disambiguation required.",
-                )
-            if len(matches) == 1:
-                bundle = self._fixture.materialize(matches[0])
-                await self._repo.save_entity_bundle(bundle[0], identifiers=bundle[1], aliases=bundle[2], sources=bundle[3], claims=bundle[4], relationships=bundle[5])
-                logger.info("global_directory_fixture_discovery entity_id=%s", bundle[0].entity_id)
-                return ResolutionResult(
-                    query=query,
-                    status="resolved",
-                    confidence=bundle[0].confidence,
-                    entity=bundle[0],
-                )
+
         return ResolutionResult(
             query=query,
-            status="not_found",
+            status=PersonResolutionStatus.UNKNOWN.value,
             confidence=0.0,
-            message="No entity matched. LIVE DISCOVERY EXTERNAL DEPENDENCY for non-fixture public sources.",
+            message="No entity matched.",
         )
 
     async def search_entities(self, query: str, limit: int = 10) -> list[ResolutionCandidate]:
         resolution = await self.resolve_entity(query, allow_discovery=True)
         if resolution.entity:
-            return [ResolutionCandidate(entity=resolution.entity, match_reason="resolve", confidence=resolution.confidence)]
+            return [
+                ResolutionCandidate(
+                    entity=resolution.entity,
+                    match_reason="resolve",
+                    confidence=resolution.confidence,
+                )
+            ]
         return resolution.candidates[:limit]
 
     async def get_machine_response(self, entity_id: str) -> MachineDirectoryResponse:
@@ -173,7 +201,7 @@ class GlobalDirectoryService:
         result = await self.resolve_entity(query, allow_discovery=True)
         return {
             "status": result.status,
-            "ambiguous": result.status == "ambiguous",
+            "ambiguous": result.status == PersonResolutionStatus.AMBIGUOUS.value,
             "candidate_count": len(result.candidates),
             "message": result.message,
         }
@@ -181,10 +209,11 @@ class GlobalDirectoryService:
     async def record_discovery_run(self, query: str, status: str, org_id: str | None = None) -> str:
         run_id = f"run_{uuid.uuid4().hex[:16]}"
         logger.info(
-            "global_directory_discovery_run run_id=%s status=%s org_id=%s query=%s",
+            "global_directory_discovery_run run_id=%s status=%s org_id=%s query=%s fixture=%s",
             run_id,
             status,
             org_id,
             query[:120],
+            _fixture_enabled(),
         )
         return run_id

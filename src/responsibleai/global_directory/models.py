@@ -84,6 +84,26 @@ class ResolutionCandidate(BaseModel):
     confidence: float
 
 
+class PersonResolutionPayload(BaseModel):
+    resolution: str
+    query: str
+    entity: dict[str, Any] | None = None
+    professional_summary: str | None = None
+    roles: list[dict[str, Any]] = Field(default_factory=list)
+    organizations: list[dict[str, Any]] = Field(default_factory=list)
+    projects: list[dict[str, Any]] = Field(default_factory=list)
+    repositories: list[dict[str, Any]] = Field(default_factory=list)
+    publications: list[dict[str, Any]] = Field(default_factory=list)
+    relationships: list[dict[str, Any]] = Field(default_factory=list)
+    claims: list[dict[str, Any]] = Field(default_factory=list)
+    sources: list[dict[str, Any]] = Field(default_factory=list)
+    conflicts: list[dict[str, Any]] = Field(default_factory=list)
+    candidates: list[dict[str, Any]] = Field(default_factory=list)
+    recommended_disambiguation_fields: list[str] = Field(default_factory=list)
+    refinement_token: str | None = None
+    reason: str | None = None
+
+
 class ResolutionResult(BaseModel):
     query: str
     status: str
@@ -91,6 +111,7 @@ class ResolutionResult(BaseModel):
     entity: DirectoryEntity | None = None
     candidates: list[ResolutionCandidate] = Field(default_factory=list)
     message: str | None = None
+    person: PersonResolutionPayload | None = None
 
 
 class TrustContextSignal(BaseModel):

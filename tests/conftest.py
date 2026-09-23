@@ -37,6 +37,15 @@ def pytest_configure(config):
 TEST_GOVERNANCE_PURPOSE = "automated-test"
 
 
+_GD_TEST_CATALOG = Path(__file__).resolve().parent / "fixtures" / "global_directory" / "demo_catalog.json"
+
+
+@pytest.fixture(autouse=True)
+def _global_directory_test_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WHITEPACT_GLOBAL_DIRECTORY_FIXTURE_DISCOVERY", "1")
+    monkeypatch.setenv("WHITEPACT_GLOBAL_DIRECTORY_FIXTURE_CATALOG_PATH", str(_GD_TEST_CATALOG))
+
+
 @pytest.fixture(autouse=True)
 def clean_audit_writes_and_hermetic_state():
     """Clear any residual background audit tasks from closed event loops."""

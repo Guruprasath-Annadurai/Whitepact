@@ -17,14 +17,14 @@ from responsibleai.mcp.tools import (
 
 def test_production_registry_excludes_test_tool() -> None:
     assert TEST_TOOL_NAME not in {t.name for t in PRODUCTION_TOOL_DEFS}
-    assert len(PRODUCTION_TOOL_DEFS) == 38
-    assert len(TOOL_DEFS) == 39
+    assert len(PRODUCTION_TOOL_DEFS) == 40
+    assert len(TOOL_DEFS) == 41
 
 
 def test_hosted_listing_never_includes_test_tool() -> None:
     names = {t.name for t in advertised_tool_defs(hosted=True)}
     assert TEST_TOOL_NAME not in names
-    assert len(names) == 38
+    assert len(names) == 40
 
 
 def test_test_registry_requires_env_gate(monkeypatch: pytest.MonkeyPatch) -> None:
