@@ -58,7 +58,9 @@ def _iso(value: datetime | None = None) -> str:
 
 
 def _hash(value: str) -> str:
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()  # codeql[py/weak-sensitive-data-hashing]
+    return hashlib.sha256(
+        value.encode("utf-8")
+    ).hexdigest()  # codeql[py/weak-sensitive-data-hashing]
 
 
 def _b64url_nopad(raw: bytes) -> str:

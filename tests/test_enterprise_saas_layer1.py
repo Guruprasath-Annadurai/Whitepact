@@ -255,7 +255,9 @@ async def test_plaintext_api_key_never_persisted_and_env_isolation(engine) -> No
         dumped = str((await conn.execute(select(org_api_keys))).fetchall())
         hashes = (await conn.execute(select(org_api_keys.c.key_hash))).scalars().all()
     assert secret not in dumped
-    expected_key_digest = hashlib.sha256(secret.encode()).hexdigest()  # codeql[py/weak-sensitive-data-hashing]
+    expected_key_digest = hashlib.sha256(
+        secret.encode()
+    ).hexdigest()  # codeql[py/weak-sensitive-data-hashing]
     assert expected_key_digest in hashes
     with pytest.raises(EnterpriseError) as wrong_env:
         await iam.authenticate_api_key(

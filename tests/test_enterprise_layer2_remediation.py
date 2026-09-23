@@ -240,7 +240,9 @@ async def test_hosted_oauth_expired_and_jwks_fail_closed(engine, caplog) -> None
     )
     import hashlib
 
-    digest = hashlib.sha256(started["state"].encode()).hexdigest()  # codeql[py/weak-sensitive-data-hashing]
+    digest = hashlib.sha256(
+        started["state"].encode()
+    ).hexdigest()  # codeql[py/weak-sensitive-data-hashing]
     async with engine.raw.begin() as conn:
         await conn.execute(
             update(identity_oauth_transactions)
