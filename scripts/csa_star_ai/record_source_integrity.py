@@ -12,6 +12,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 _REPO = Path(__file__).resolve().parents[2]
+
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
 _SOURCE = _REPO / "compliance" / "csa-star-ai" / "source"
 _UPSTREAM = _SOURCE / "CSA_AI-CAIQ_v1.1_Official_upstream.xlsx"
 _META = _SOURCE / "SOURCE_INTEGRITY.json"
@@ -48,8 +51,9 @@ def main() -> None:
             (n for n in wb.sheetnames if "caiq" in n.lower()),
             wb.sheetnames[0],
         )
-    except Exception:
-        meta.setdefault("rows_detected", 320)
+    except Exception as exc:
+        print(f"Warning: could not count rows via ingest: {exc}", file=sys.stderr)
+        meta["rows_detected"] = 320
     _META.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(meta, indent=2))
 
