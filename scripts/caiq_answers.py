@@ -243,7 +243,13 @@ _set("HRS-12.2", "NA", "CSP-owned", "Not applicable.")
 _set("HRS-13.1", "Yes", "CSP-owned", "GOVERNANCE.md and CONTRIBUTING.md are the current, real documentation of roles/policies -- read directly, not delivered via a formal training program.")
 
 # ── Identity & Access Management ──────────────────────────────────────
-_set("IAM-01.1", "Yes", "CSP-owned", "RBAC model (rbac/models.py, rbac/permissions.py) with VIEWER/ANALYST/ADMIN/OWNER roles; documented in ENTERPRISE_SECURITY.md.")
+_set(
+    "IAM-01.1",
+    "Yes",
+    "CSP-owned",
+    "RBAC: src/responsibleai/rbac/models.py, src/responsibleai/rbac/permissions.py; "
+    "tests/test_rbac.py; ENTERPRISE_SECURITY.md.",
+)
 _set("IAM-01.2", "No", "CSP-owned", NO_FORMAL_ANNUAL_REVIEW)
 _set("IAM-02.1", "Yes", "Shared CSP and CSC", "API keys are generated with cryptographically strong random values (not user-chosen passwords) and hashed (SHA-256) before storage.")
 _set("IAM-02.2", "No", "CSP-owned", NO_FORMAL_ANNUAL_REVIEW)
@@ -308,7 +314,13 @@ _set("LOG-04.1", "Yes", "CSP-owned", "Audit-log/evidence read endpoints are role
 _set("LOG-05.1", "Yes", "CSP-owned", "QUARANTINE detection (governance/quarantine.py) monitors cross-request DENY-decision patterns per identity and escalates automatically.")
 _set("LOG-05.2", "Yes", "CSP-owned", "A QUARANTINE decision blocks further action automatically and is itself a hash-chained evidence entry; human review happens via the dashboard's Incidents page.")
 _set("LOG-06.1", "Yes", "3rd-party outsourced", "System clock/NTP synchronization is inherited from the hosting providers' own infrastructure -- not self-managed.")
-_set("LOG-07.1", "Yes", "CSP-owned", "governance/evidence.py's EvidenceRecord and db/audit_repository.py define exactly what's logged per event; documented in their own module docstrings.")
+_set(
+    "LOG-07.1",
+    "Yes",
+    "CSP-owned",
+    "Audit schema: src/responsibleai/governance/evidence.py, src/responsibleai/db/audit_repository.py; "
+    "tests/test_audit_log.py.",
+)
 _set("LOG-07.2", "No", "CSP-owned", NO_FORMAL_ANNUAL_REVIEW)
 _set("LOG-08.1", "Yes", "CSP-owned", "EvidenceRecord captures action_id, agent_id, identity_id, decision, reason_codes, risk_tier, policy_version, delegation_chain, timestamps -- real security-relevant fields, not a generic log line.")
 _set("LOG-09.1", "Yes", "CSP-owned", "Write-once by design (no update/delete method on EvidenceRepository/AuditRepository); hash-chain makes any tampering detectable via verify_chain()/GET /api/audit/verify.")

@@ -12,11 +12,19 @@ venv/
 !.env.example
 !.env.prod.example
 *.json
+!web/src/content/commerce.json
+*.tsbuildinfo
 !compliance/SLSA_BUILD_PROVENANCE.json
+!compliance/csa-star-ai/source/SOURCE_INTEGRITY.json
+!compliance/csa-star-ai/ledger/BASELINE_AUDIT_SNAPSHOT.json
+!compliance/csa-star-ai/ledger/remediation_ledger.json
+!compliance/csa-star-ai/ledger/PHASE_1_AUTHORITATIVE_BASELINE.json
 !package.json
 !package-lock.json
 !.pa11yci.json
 !tsconfig.json
+!web/tsconfig.app.json
+!web/tsconfig.node.json
 !grafana/dashboards/*.json
 !src/responsibleai/dashboard/static/locales/*.json
 !server.json
@@ -24,6 +32,7 @@ venv/
 !distribution/**/*.json
 !security/*.openvex.json
 !examples/amazon-q/*.json
+!contracts/sovereign-v1-web.json
 !examples/kiro-cli/*.json
 !examples/aws-agentcore/*.json
 !.cursor-example/*.json

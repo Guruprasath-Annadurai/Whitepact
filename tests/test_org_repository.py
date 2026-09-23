@@ -56,6 +56,13 @@ class TestCreateAndGetOrg:
         orgs = await repo.list_orgs()
         assert len(orgs) == 2
 
+    async def test_provisioner_binding_is_persisted_but_never_serialized(self, repo):
+        org = await repo.create_org("Acme", "acme", provisioner_key_id="legacy:abc")
+        fetched = await repo.get_org(org.id)
+        assert fetched is not None
+        assert fetched.provisioner_key_id == "legacy:abc"
+        assert "provisioner_key_id" not in fetched.to_dict()
+
     async def test_delete_org_returns_true_when_found(self, repo):
         org = await repo.create_org("Acme", "acme")
         assert await repo.delete_org(org.id) is True

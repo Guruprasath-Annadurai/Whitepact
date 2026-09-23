@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from responsibleai.db.engine import metadata as target_metadata  # noqa: E402
+from responsibleai.db.schema_preflight import validate_schema_lineage  # noqa: E402
 
 config = context.config
 
@@ -62,6 +63,10 @@ def run_migrations_offline() -> None:
 
 
 def _run_migrations_sync(connection) -> None:
+    validate_schema_lineage(connection)
+    # The read-only preflight starts an implicit transaction. End that read
+    # transaction so Alembic owns and commits the subsequent DDL transaction.
+    connection.commit()
     context.configure(
         connection=connection,
         target_metadata=target_metadata,

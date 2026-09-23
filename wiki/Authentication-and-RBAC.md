@@ -23,7 +23,7 @@ When `RAI_AUTH_ENABLED=true` and no keys are configured, every request returns `
 ## Making authenticated requests
 
 ```bash
-curl -H "Authorization: Bearer your-key-here" \
+curl -H "Authorization: Bearer ${WHITEPACT_API_KEY}" \
      http://localhost:8765/api/metrics
 ```
 
@@ -33,7 +33,7 @@ import httpx
 async with httpx.AsyncClient() as client:
     resp = await client.get(
         "http://localhost:8765/api/metrics",
-        headers={"Authorization": "Bearer your-key-here"},
+        headers={"Authorization": "Bearer ${WHITEPACT_API_KEY}"},
     )
 ```
 
@@ -64,7 +64,7 @@ async def metrics(_auth: OrgContext = Depends(require_role(Role.ANALYST))):
 
 ```bash
 curl -X POST http://localhost:8765/api/orgs \
-  -H "Authorization: Bearer owner-key" \
+  -H "Authorization: Bearer ${WHITEPACT_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{"name": "Acme Corp", "slug": "acme", "monthly_budget_usd": 5000}'
 ```
@@ -73,7 +73,7 @@ curl -X POST http://localhost:8765/api/orgs \
 
 ```bash
 curl -X POST http://localhost:8765/api/orgs/{org_id}/keys \
-  -H "Authorization: Bearer owner-key" \
+  -H "Authorization: Bearer ${WHITEPACT_API_KEY}" \
   -H "Content-Type: application/json" \
   -d '{"name": "prod-service-key", "role": "ANALYST"}'
 ```
@@ -84,7 +84,7 @@ Response includes the plaintext key **once** — store it securely. It cannot be
 
 ```bash
 curl -X DELETE http://localhost:8765/api/orgs/{org_id}/keys/{key_id} \
-  -H "Authorization: Bearer owner-key"
+  -H "Authorization: Bearer ${WHITEPACT_API_KEY}"
 ```
 
 ---

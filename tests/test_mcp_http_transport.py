@@ -153,6 +153,7 @@ class TestHealthEndpoint:
         assert payload["tools"] == 30
 
 
+
 class TestMCPServerCard:
     """/.well-known/mcp/server-card.json — the static capability card
     directories (e.g. Smithery) fall back to when they can't complete a
@@ -176,7 +177,9 @@ class TestMCPServerCard:
             response = await client.get("/.well-known/mcp/server-card.json")
         payload = response.json()
         assert payload["serverInfo"] == {"name": "whitepact", "version": __version__}
-        assert len(payload["tools"]) == len(TOOL_DEFS)
-        assert {t["name"] for t in payload["tools"]} == {t.name for t in TOOL_DEFS}
+        from responsibleai.mcp.tools import PRODUCTION_TOOL_DEFS
+
+        assert len(payload["tools"]) == len(PRODUCTION_TOOL_DEFS)
+        assert {t["name"] for t in payload["tools"]} == {t.name for t in PRODUCTION_TOOL_DEFS}
         assert len(payload["resources"]) == len(RESOURCE_DEFS)
         assert payload["prompts"] == []

@@ -16,6 +16,7 @@ from typing import Any
 from sqlalchemy import delete, insert, select, update
 
 from responsibleai.db.engine import DatabaseEngine, org_authority_ceilings
+from responsibleai.db.revocation_epoch_repository import bump_epoch_on_connection
 from responsibleai.governance.ceiling import OrgAuthorityCeiling
 
 
@@ -82,6 +83,7 @@ class OrgAuthorityCeilingRepository:
             "updated_at": now,
         }
         async with self._engine.raw.begin() as conn:
+            await bump_epoch_on_connection(conn, ceiling.org_id)
             existing = (
                 await conn.execute(
                     select(org_authority_ceilings.c.org_id).where(
@@ -105,6 +107,7 @@ class OrgAuthorityCeilingRepository:
         all-``None`` fields, though both leave the org unrestricted;
         this also drops the row so ``get()`` returns ``None`` again."""
         async with self._engine.raw.begin() as conn:
+            await bump_epoch_on_connection(conn, org_id)
             await conn.execute(
                 delete(org_authority_ceilings).where(org_authority_ceilings.c.org_id == org_id)
             )

@@ -14,6 +14,9 @@
       "products": [
         {
           "@id": "pkg:pypi/rai-governance-platform@1.2.6?extra=sentiment"
+        },
+        {
+          "@id": "pkg:pypi/rai-governance-platform@1.3.0?extra=sentiment"
         }
       ],
       "status": "not_affected",
@@ -29,6 +32,9 @@
       "products": [
         {
           "@id": "pkg:pypi/rai-governance-platform@1.2.6?extra=sentiment"
+        },
+        {
+          "@id": "pkg:pypi/rai-governance-platform@1.3.0?extra=sentiment"
         }
       ],
       "status": "not_affected",

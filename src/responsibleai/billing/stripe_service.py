@@ -46,6 +46,7 @@ class PlanUpdate:
     stripe_customer_id: str
     stripe_subscription_id: str | None
     plan_renews_at: str | None
+    subscription_status: str
 
 
 class StripeService:
@@ -156,6 +157,7 @@ class StripeService:
                 stripe_customer_id=str(customer_id),
                 stripe_subscription_id=str(subscription_id) if subscription_id else None,
                 plan_renews_at=None,
+                subscription_status="active",
             )
 
         if etype == "customer.subscription.updated":
@@ -181,6 +183,7 @@ class StripeService:
                 stripe_customer_id=str(customer_id),
                 stripe_subscription_id=str(subscription_id) if subscription_id else None,
                 plan_renews_at=renews_at,
+                subscription_status=str(status or "unknown"),
             )
 
         if etype == "customer.subscription.deleted":
@@ -195,6 +198,26 @@ class StripeService:
                 stripe_customer_id=str(customer_id),
                 stripe_subscription_id=None,
                 plan_renews_at=None,
+                subscription_status="canceled",
+            )
+
+        if etype in {"invoice.payment_failed", "invoice.payment_action_required"}:
+            metadata = getattr(data_object, "metadata", {}) or {}
+            parent = getattr(data_object, "parent", None)
+            parent_details = getattr(parent, "subscription_details", None) if parent else None
+            parent_metadata = getattr(parent_details, "metadata", {}) or {}
+            org_id = metadata.get("org_id") or parent_metadata.get("org_id")
+            customer_id = getattr(data_object, "customer", None)
+            subscription_id = getattr(data_object, "subscription", None)
+            if not org_id or not customer_id:
+                return None
+            return PlanUpdate(
+                org_id=str(org_id),
+                plan=Plan.FREE,
+                stripe_customer_id=str(customer_id),
+                stripe_subscription_id=str(subscription_id) if subscription_id else None,
+                plan_renews_at=None,
+                subscription_status="past_due",
             )
 
         return None

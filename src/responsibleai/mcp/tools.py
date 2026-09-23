@@ -4,7 +4,10 @@
 
 from __future__ import annotations
 
+import logging
+import os
 import re
+from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import Any
 
@@ -19,17 +22,16 @@ from responsibleai.eval.models import BenchmarkSuite
 from responsibleai.governance.causal_influence import analyze_causal_influence, parse_provenance
 from responsibleai.governance.memory_firewall import scan_memory_write
 from responsibleai.guardrails.engine import GuardrailsEngine
-from responsibleai.hallucination.detector import HallucinationDetector
 from responsibleai.incidents.logic import build_incident_record
 from responsibleai.integrations.client import TrustClient
 from responsibleai.redteam.simulator import RedTeamSimulator
 from responsibleai.trust.passport import PassportGenerator
 from responsibleai.trust.score import TrustScoreEngine
 
-# ── module singletons ─────────────────────────────────────────────────────────
+_logger = logging.getLogger("responsibleai.mcp.tools")
 
 _guardrails = GuardrailsEngine()
-_hallucination = HallucinationDetector()
+_hallucination = None
 _trust_engine = TrustScoreEngine()
 _redteam = RedTeamSimulator()
 _compliance = ComplianceEngine()
@@ -1105,7 +1107,74 @@ TOOL_DEFS: list[types.Tool] = [
             "required": ["provenance"],
         },
     ),
+    types.Tool(
+        name="test.counter.increment",
+        title="Synthetic governed counter (test only)",
+        annotations=types.ToolAnnotations(
+            readOnlyHint=False, idempotentHint=False, openWorldHint=False, destructiveHint=False
+        ),
+        description=(
+            "Deterministic synthetic mutation used to prove exactly-one "
+            "consequential effect on the governed execution path. Forbidden "
+            "in production. Not a customer product tool."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "fail_after_effect": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "If true, mutate then raise to simulate a lost acknowledgement.",
+                }
+            },
+        },
+    ),
 ]
+
+TEST_TOOL_NAME = "test.counter.increment"
+PRODUCTION_TOOL_DEFS: list[types.Tool] = [t for t in TOOL_DEFS if t.name != TEST_TOOL_NAME]
+
+_mcp_dispatch_hosted: ContextVar[bool] = ContextVar("_mcp_dispatch_hosted", default=False)
+
+
+def set_mcp_dispatch_hosted(hosted: bool) -> None:
+    _mcp_dispatch_hosted.set(hosted)
+
+
+def test_tools_enabled() -> bool:
+    """Server-controlled gate — never honor client-supplied flags."""
+    return os.environ.get("RAI_MCP_ALLOW_TEST_TOOLS", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
+def advertised_tool_defs(*, hosted: bool) -> list[types.Tool]:
+    if hosted:
+        return list(PRODUCTION_TOOL_DEFS)
+    if test_tools_enabled():
+        return list(TOOL_DEFS)
+    return list(PRODUCTION_TOOL_DEFS)
+
+
+def production_tool_count() -> int:
+    return len(PRODUCTION_TOOL_DEFS)
+
+
+# WhitePact's hosted transport requires an explicit, human-readable purpose for
+# canonical authority resolution. It is an optional schema extension because
+# local community stdio remains intentionally ungovened; the hosted dispatcher
+# removes it before invoking tool handlers and binds it separately in the action.
+WHITEPACT_PURPOSE_ARGUMENT = "_whitepact_purpose"
+for _tool in TOOL_DEFS:
+    _properties = _tool.inputSchema.setdefault("properties", {})
+    _properties[WHITEPACT_PURPOSE_ARGUMENT] = {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2000,
+        "description": "Explicit purpose required for hosted WhitePact authority resolution.",
+    }
 
 # dispatch_tool() and its handler table are defined at the very end of this
 # file, after every _handle_* function below -- see "tool dispatch" section.
@@ -1114,6 +1183,14 @@ TOOL_DEFS: list[types.Tool] = [
 # once every name it references actually exists.
 
 # ── original handlers ─────────────────────────────────────────────────────────
+
+
+async def _handle_test_counter_increment(args: dict[str, Any]) -> dict[str, Any]:
+    from responsibleai.governance.synthetic_counter import increment
+
+    org_id = str(args.get("_whitepact_organization_id") or "")
+    fail_after = bool(args.get("fail_after_effect", False))
+    return await increment(org_id, fail_after_effect=fail_after)
 
 
 async def _handle_scan(args: dict[str, Any]) -> dict[str, Any]:
@@ -1225,11 +1302,21 @@ def _source_contradicts_response(source: str, text: str) -> bool:
     return False
 
 
+def _get_hallucination():
+    """Load sklearn-backed detector only when rai_hallucination is invoked."""
+    global _hallucination
+    if _hallucination is None:
+        from responsibleai.hallucination.detector import HallucinationDetector
+
+        _hallucination = HallucinationDetector()
+    return _hallucination
+
+
 async def _handle_hallucination(args: dict[str, Any]) -> dict[str, Any]:
     text = str(args.get("text", ""))
     candidates = args.get("candidates", [])
     source = args.get("source")
-    result = _hallucination.analyze(text, candidates=candidates if candidates else None)
+    result = _get_hallucination().analyze(text, candidates=candidates if candidates else None)
     payload = result.to_dict()
 
     contradicts_source = bool(source) and _source_contradicts_response(str(source), text)
@@ -1336,7 +1423,7 @@ async def _handle_audit_summary(args: dict[str, Any]) -> dict[str, Any]:
         "days_requested": days,
         "governance_engine": {
             "version": __version__,
-            "tools_available": len(TOOL_DEFS),
+            "tools_available": production_tool_count(),
             "frameworks": ["NIST_AI_RMF", "EU_AI_ACT", "ISO_42001"],
             "attack_vectors": len(payloads),
             "attack_categories": list({p["category"] for p in payloads}),
@@ -1352,7 +1439,7 @@ async def _handle_health(args: dict[str, Any]) -> dict[str, Any]:
     modules = {
         "guardrails": "ok" if _guardrails is not None else "unavailable",
         "trust_score": "ok" if _trust_engine is not None else "unavailable",
-        "hallucination": "ok" if _hallucination is not None else "unavailable",
+        "hallucination": "ok",
         "compliance": "ok" if _compliance is not None else "unavailable",
         "redteam": "ok" if _redteam is not None else "unavailable",
         "passport": "ok" if _passport_gen is not None else "unavailable",
@@ -2394,7 +2481,7 @@ async def _handle_org_status(args: dict[str, Any]) -> dict[str, Any]:
             else "EXCEEDED",
         },
         "mcp_capabilities": {
-            "tools_available": len(TOOL_DEFS),
+            "tools_available": production_tool_count(),
             "version": __version__,
         },
         **await _real_org_status_fields(org_name),
@@ -2529,14 +2616,34 @@ _TOOL_HANDLERS: dict[str, Any] = {
     "rai_memory_write_check": _handle_memory_write_check,
     "rai_memory_read_check": _handle_memory_read_check,
     "rai_causal_influence_check": _handle_causal_influence_check,
+    "test.counter.increment": _handle_test_counter_increment,
 }
 
 
-async def dispatch_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
+async def dispatch_tool(
+    name: str,
+    args: dict[str, Any],
+    *,
+    channel: str = "mcp_public",
+) -> dict[str, Any]:
+    if name == TEST_TOOL_NAME and channel != "governance_admitted":
+        if _mcp_dispatch_hosted.get() or not test_tools_enabled():
+            return {
+                "error": "tool_unavailable",
+                "message": (
+                    f"{TEST_TOOL_NAME} is available only when RAI_MCP_ALLOW_TEST_TOOLS is set "
+                    "and the request is not on a hosted MCP transport."
+                ),
+            }
     handler = _TOOL_HANDLERS.get(name)
     if not handler:
         return {"error": f"Unknown tool: {name}"}
     try:
         return await handler(args)
     except Exception as exc:
-        return {"error": str(exc), "tool": name}
+        from responsibleai.governance.synthetic_counter import SyntheticAcknowledgementLostError
+
+        if isinstance(exc, SyntheticAcknowledgementLostError):
+            raise
+        _logger.exception("mcp_tool_failed tool=%s", name)
+        return {"error": "tool_execution_failed", "tool": name}

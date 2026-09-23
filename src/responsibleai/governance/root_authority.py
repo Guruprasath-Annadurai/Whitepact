@@ -77,6 +77,10 @@ def compute_root_digest(
     verification_method: str,
     authority_source: str | None,
     issued_at: datetime,
+    not_before: datetime | None = None,
+    expires_at: datetime | None = None,
+    evidence_refs: tuple[str, ...] = (),
+    jurisdiction: str | None = None,
 ) -> str:
     """SHA-256 over the canonical JSON of every field that defines
     what this root record actually asserts. Complete over these
@@ -92,6 +96,10 @@ def compute_root_digest(
         "verification_method": verification_method,
         "authority_source": authority_source,
         "issued_at": issued_at.isoformat(),
+        "not_before": not_before.isoformat() if not_before else None,
+        "expires_at": expires_at.isoformat() if expires_at else None,
+        "evidence_refs": sorted(evidence_refs),
+        "jurisdiction": jurisdiction,
     }
     return hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
 
@@ -187,6 +195,10 @@ def build_root_authority_record(
         verification_method,
         authority_source,
         issued_at,
+        not_before,
+        expires_at,
+        evidence_refs,
+        jurisdiction,
     )
     return RootAuthorityRecord(
         root_id=root_id,

@@ -17,6 +17,7 @@ from responsibleai.db.authority_passport_repository import (
     AuthorityPassportNotFoundError,
     AuthorityPassportRepository,
 )
+from responsibleai.db.billing_repository import BillingEventRepository
 from responsibleai.db.credential_issuance_repository import CredentialIssuanceRepository
 from responsibleai.db.delegation_repository import (
     DelegationEscalationError,
@@ -34,6 +35,7 @@ from responsibleai.db.org_authority_ceiling_repository import OrgAuthorityCeilin
 from responsibleai.db.org_autonomy_budget_repository import OrgAutonomyBudgetRepository
 from responsibleai.db.org_repository import OrgRepository, SSORequiredError
 from responsibleai.db.outcome_repository import OutcomeRepository
+from responsibleai.db.paddle_billing_repository import PaddleBillingEventRepository
 from responsibleai.db.passport_repository import PassportRepository
 from responsibleai.db.policy_repository import PolicyRepository, PolicyRuleNotFoundError
 from responsibleai.db.principal_repository import PrincipalRepository
@@ -43,6 +45,15 @@ from responsibleai.db.tool_trust_repository import ToolTrustRepository
 from responsibleai.db.upstream_repository import (
     UpstreamServerNotFoundError,
     UpstreamServerRepository,
+)
+from responsibleai.db.web_identity_repository import (
+    DuplicateWebUserError,
+    InvitationError,
+    SoleOwnerError,
+    WebIdentityRepository,
+    WebPrincipal,
+    hash_password,
+    verify_password,
 )
 from responsibleai.db.webhook_repository import (
     WebhookConfigRepository,
@@ -70,6 +81,8 @@ __all__ = [
     "OutcomeRepository",
     "PrincipalRepository",
     "AuditRepository",
+    "BillingEventRepository",
+    "PaddleBillingEventRepository",
     "CredentialIssuanceRepository",
     "EvalRepository",
     "EvidenceRepository",
@@ -98,4 +111,11 @@ __all__ = [
     "DelegationNotFoundError",
     "DelegationRepository",
     "OrgAutonomyBudgetRepository",
+    "DuplicateWebUserError",
+    "InvitationError",
+    "SoleOwnerError",
+    "WebIdentityRepository",
+    "WebPrincipal",
+    "hash_password",
+    "verify_password",
 ]

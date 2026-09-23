@@ -462,6 +462,7 @@ class McpOAuthAuthorizationServer:
             mfa_enrolled=key.mfa_enrolled,
             is_legacy=False,
             plan=org.plan,
+            authentication_method="oauth",
         )
 
     async def record_access_failure(self, error: str = "invalid_token") -> None:

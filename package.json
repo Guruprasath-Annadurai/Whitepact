@@ -4,7 +4,8 @@
   "description": "Dev-only manifest for frontend tooling (pa11y-ci accessibility scans, i18n unit tests). Not published; the project itself is Python, distributed via PyPI as rai-governance-platform.",
   "scripts": {
     "a11y": "node tests/js/accessibility.test.mjs",
-    "test:i18n": "node --test tests/js/i18n.test.js"
+    "test:i18n": "node --test tests/js/i18n.test.js",
+    "test:customer-journey": "node tests/js/customer-journey.e2e.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",

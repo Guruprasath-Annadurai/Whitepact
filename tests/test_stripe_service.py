@@ -219,6 +219,7 @@ class TestExtractPlanUpdate:
         result = service.extract_plan_update(_event("customer.subscription.updated", obj))
         assert result.plan == Plan.ENTERPRISE
         assert result.plan_renews_at is not None
+        assert result.subscription_status == "active"
 
     def test_subscription_updated_trialing_keeps_plan(self, service):
         obj = SimpleNamespace(
@@ -292,6 +293,7 @@ class TestExtractPlanUpdate:
         result = service.extract_plan_update(_event("customer.subscription.deleted", obj))
         assert result.plan == Plan.FREE
         assert result.stripe_subscription_id is None
+        assert result.subscription_status == "canceled"
 
     def test_subscription_deleted_none_when_missing_org_id(self, service):
         obj = SimpleNamespace(metadata={}, customer="cus_1")
@@ -300,3 +302,27 @@ class TestExtractPlanUpdate:
     def test_subscription_deleted_none_when_missing_customer(self, service):
         obj = SimpleNamespace(metadata={"org_id": "org-1"}, customer=None)
         assert service.extract_plan_update(_event("customer.subscription.deleted", obj)) is None
+
+    def test_failed_invoice_suspends_paid_entitlement(self, service):
+        obj = SimpleNamespace(
+            metadata={"org_id": "org-1"},
+            customer="cus_1",
+            subscription="sub_1",
+            parent=None,
+        )
+        result = service.extract_plan_update(_event("invoice.payment_failed", obj))
+        assert result.plan == Plan.FREE
+        assert result.subscription_status == "past_due"
+
+    def test_payment_action_required_reads_subscription_metadata(self, service):
+        details = SimpleNamespace(metadata={"org_id": "org-parent"})
+        obj = SimpleNamespace(
+            metadata={},
+            customer="cus_2",
+            subscription=None,
+            parent=SimpleNamespace(subscription_details=details),
+        )
+        result = service.extract_plan_update(_event("invoice.payment_action_required", obj))
+        assert result.org_id == "org-parent"
+        assert result.plan == Plan.FREE
+        assert result.subscription_status == "past_due"

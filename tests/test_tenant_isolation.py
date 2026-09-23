@@ -24,6 +24,8 @@ from httpx import ASGITransport, AsyncClient
 
 from responsibleai.dashboard import app as app_module
 from responsibleai.dashboard.app import app, limiter, settings
+from responsibleai.rbac.models import Role
+from tests.org_http_fixtures import seed_org_with_key
 
 
 async def _drain_audit_writes() -> None:
@@ -65,16 +67,10 @@ async def client():
 
 
 async def _new_org_with_analyst_key(client: AsyncClient, slug: str) -> tuple[str, str]:
-    r = await client.post("/api/orgs", json={"name": slug, "slug": slug}, headers=BOOTSTRAP_AUTH)
-    assert r.status_code == 201, r.text
-    org_id = r.json()["id"]
-    r = await client.post(
-        f"/api/orgs/{org_id}/keys",
-        json={"name": "analyst-key", "role": "ANALYST"},
-        headers=BOOTSTRAP_AUTH,
+    org_id, _kid, raw = await seed_org_with_key(
+        name=slug, slug=slug, key_name="analyst-key", role=Role.ANALYST
     )
-    assert r.status_code == 201, r.text
-    return org_id, r.json()["key"]
+    return org_id, raw
 
 
 class TestModelsIsolation:
