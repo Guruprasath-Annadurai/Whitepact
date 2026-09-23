@@ -15,6 +15,7 @@ from typing import Any
 from sqlalchemy import insert, select, update
 
 from responsibleai.db.engine import DatabaseEngine, tool_trust_scores
+from responsibleai.db.revocation_epoch_repository import bump_epoch_on_connection
 from responsibleai.governance.tool_trust import ToolTrustScore, ToolTrustTier
 
 
@@ -95,6 +96,7 @@ class ToolTrustRepository:
         extra round trip costs nothing that matters here."""
         values = _score_to_values(score)
         async with self._engine.raw.begin() as conn:
+            await bump_epoch_on_connection(conn, score.org_id)
             existing = (
                 await conn.execute(
                     select(tool_trust_scores.c.server_id).where(

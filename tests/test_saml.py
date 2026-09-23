@@ -242,7 +242,7 @@ class TestParseAndValidateResponseRejections:
         with pytest.raises(SAMLError, match="signature"):
             parse_and_validate_response(tampered, config, expected_request_id="_wpREQ123")
 
-    def test_wrong_signing_cert_is_rejected(self, config: SAMLConfig, idp_keypair):
+    def test_wrong_signing_cert_is_rejected(self, config: SAMLConfig):
         other_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
         other_key_pem = other_key.private_bytes(
             serialization.Encoding.PEM,
@@ -250,9 +250,7 @@ class TestParseAndValidateResponseRejections:
             serialization.NoEncryption(),
         ).decode()
         other_cert_pem = _make_cert(other_key)
-        resp = _signed_response(
-            idp_keypair, sign_with_key=other_key_pem, sign_with_cert=other_cert_pem
-        )
+        resp = _signed_response((other_key_pem, other_cert_pem))
         with pytest.raises(SAMLError, match="signature"):
             parse_and_validate_response(resp, config, expected_request_id="_wpREQ123")
 

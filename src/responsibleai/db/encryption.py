@@ -17,14 +17,22 @@ Columns currently using `EncryptedString` (audit via
 - `public_incident_reports.reporter_name`, `.reporter_contact`
 - `org_api_keys.mfa_secret` (TOTP seed — see `auth/mfa.py`)
 - `webhook_configs.secret` (HMAC signing secret)
+- `governance_approvals.arguments` (approved action payloads)
+- `governance_upstream_servers.auth_token` (upstream credentials)
+
+Production (`WHITEPACT_ENV`/`RAI_ENV` = production|prod) refuses to
+start unless `WHITEPACT_FIELD_ENCRYPTION_KEY` or
+`RAI_FIELD_ENCRYPTION_KEY` is configured. Local development may leave
+the key unset; `EncryptedString` remains a transparent passthrough.
 
 Design choices, stated plainly:
-- Opt-in via `RAI_FIELD_ENCRYPTION_KEY`. Unset by default so existing
-  self-hosted installs aren't broken by a new required env var — this
-  mirrors how `RAI_OIDC_CLIENT_SECRET` etc. are optional until a
-  deployer configures SSO. When unset, `EncryptedString` is a
-  transparent passthrough (plaintext in, plaintext out) and a decrypt
-  failure is impossible because nothing was ever encrypted.
+- Development remains opt-in via `RAI_FIELD_ENCRYPTION_KEY`. Unset by
+  default so existing self-hosted installs aren't broken by a new
+  required env var — this mirrors how `RAI_OIDC_CLIENT_SECRET` etc.
+  are optional until a deployer configures SSO. When unset,
+  `EncryptedString` is a transparent passthrough (plaintext in,
+  plaintext out) and a decrypt failure is impossible because nothing
+  was ever encrypted.
 - **Key rotation**: `RAI_FIELD_ENCRYPTION_KEY` accepts either one Fernet
   key or a comma-separated list of them. New writes always encrypt with
   the *first* key in the list; reads try every key in the list in order
@@ -57,22 +65,33 @@ from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 from sqlalchemy import Text
 from sqlalchemy.types import TypeDecorator
 
-_ENV_VAR = "RAI_FIELD_ENCRYPTION_KEY"
+_WHITEPACT_ENV_VAR = "WHITEPACT_FIELD_ENCRYPTION_KEY"
+_LEGACY_ENV_VAR = "RAI_FIELD_ENCRYPTION_KEY"
+_ENV_VAR = _WHITEPACT_ENV_VAR
 
 
 def _load_fernet() -> Fernet | MultiFernet | None:
     """Read the encryption key(s) from the environment, once per column type.
 
-    Returns None (passthrough mode) if the env var is unset. Accepts either
-    one Fernet key or a comma-separated list for rotation (see this module's
-    docstring and `compliance/KEY_MANAGEMENT.md`) — a single key returns a
-    plain `Fernet` (unchanged behavior for the common case); multiple keys
-    return a `MultiFernet`, which encrypts with the first key and tries all
-    of them on decrypt. Raises at import/table-definition time if any key is
-    malformed — better to fail loudly at startup than silently store
-    unencrypted data because of a typo'd key.
+    Returns None (passthrough mode) if neither env var is set. Checks
+    WHITEPACT_FIELD_ENCRYPTION_KEY first, with fallback to legacy
+    RAI_FIELD_ENCRYPTION_KEY. If both are set and differ, raises ValueError
+    to fail closed against key mismatch. Accepts either one Fernet key or a
+    comma-separated list for rotation.
     """
-    raw = os.environ.get(_ENV_VAR)
+    raw_whitepact = os.environ.get(_WHITEPACT_ENV_VAR)
+    raw_legacy = os.environ.get(_LEGACY_ENV_VAR)
+
+    if raw_whitepact and raw_legacy and raw_whitepact.strip() != raw_legacy.strip():
+        raise ValueError(
+            f"Conflicting canonical and legacy field encryption keys configured: "
+            f"{_WHITEPACT_ENV_VAR} and {_LEGACY_ENV_VAR} are both set with different values. "
+            "Refusing to start."
+        )
+
+    raw = raw_whitepact if raw_whitepact is not None else raw_legacy
+    source_var = _WHITEPACT_ENV_VAR if raw_whitepact is not None else _LEGACY_ENV_VAR
+
     if not raw:
         return None
     key_strs = [k.strip() for k in raw.split(",") if k.strip()]
@@ -82,18 +101,83 @@ def _load_fernet() -> Fernet | MultiFernet | None:
         fernets = [Fernet(k.encode()) for k in key_strs]
     except (ValueError, TypeError) as exc:
         raise ValueError(
-            f"{_ENV_VAR} is set but contains an invalid Fernet key. Generate one with: "
+            f"{source_var} is set but contains an invalid Fernet key. Generate one with: "
             'python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
         ) from exc
     return fernets[0] if len(fernets) == 1 else MultiFernet(fernets)
 
 
+SENSITIVE_ENCRYPTED_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("org_api_keys", "mfa_secret"),
+    ("webhook_configs", "secret"),
+    ("governance_approvals", "arguments"),
+    ("upstream_mcp_servers", "auth_token"),
+    ("audit_log", "ip_address"),
+    ("public_incident_reports", "reporter_name"),
+    ("public_incident_reports", "reporter_contact"),
+    ("human_totp_factors", "secret_encrypted"),
+    ("human_totp_factors", "pending_secret_encrypted"),
+    ("organization_sso_configs", "client_secret_encrypted"),
+    ("identity_verifications", "legal_name_encrypted"),
+)
+
+
+def field_encryption_is_configured() -> bool:
+    """True when a usable Fernet key is present in the environment."""
+    return _load_fernet() is not None
+
+
+_ENVELOPE_V1 = "wpenc:v1:"
+_LEGACY_PLAINTEXT = "wplegacy:v0:"
+_FERNET_PREFIX = "gAAAA"
+
+
+class FieldEncryptionError(ValueError):
+    """Encrypted field could not be authenticated. Never includes secrets."""
+
+
+def _environment_name() -> str:
+    return (
+        (os.environ.get("WHITEPACT_ENV") or os.environ.get("RAI_ENV") or "development")
+        .strip()
+        .lower()
+    )
+
+
+def _is_production() -> bool:
+    return _environment_name() in {"production", "prod"}
+
+
+def _legacy_plaintext_allowed() -> bool:
+    if _is_production():
+        return False
+    flag = (
+        (
+            os.environ.get("WHITEPACT_ALLOW_LEGACY_PLAINTEXT")
+            or os.environ.get("RAI_ALLOW_LEGACY_PLAINTEXT")
+            or ""
+        )
+        .strip()
+        .lower()
+    )
+    return flag in {"1", "true", "yes"}
+
+
+def _looks_like_fernet_token(value: str) -> bool:
+    return value.startswith(_FERNET_PREFIX)
+
+
 class EncryptedString(TypeDecorator):
     """A Text column that transparently encrypts/decrypts its value.
 
-    No-op passthrough when `RAI_FIELD_ENCRYPTION_KEY` is unset, so this
-    is safe to apply to a column in an existing deployment without
-    forcing encryption on immediately.
+    Envelope:
+    - ``wpenc:v1:<fernet>`` current ciphertext
+    - ``gAAAA...`` historical Fernet tokens written before the envelope
+    - ``wplegacy:v0:<text>`` explicit legacy plaintext (non-production only)
+
+    Production and any environment without WHITEPACT_ALLOW_LEGACY_PLAINTEXT
+    fail closed on unknown formats and authentication failure. Ciphertext is
+    never returned as plaintext. Secrets are never logged.
     """
 
     impl = Text
@@ -105,20 +189,31 @@ class EncryptedString(TypeDecorator):
         fernet = _load_fernet()
         if fernet is None:
             return value
-        # Fernet tokens are already URL-safe base64 text.
-        return fernet.encrypt(value.encode()).decode()
+        token = fernet.encrypt(value.encode()).decode()
+        return f"{_ENVELOPE_V1}{token}"
 
     def process_result_value(self, value: str | None, dialect) -> str | None:  # noqa: ANN001
         if value is None:
             return None
         fernet = _load_fernet()
+        if value.startswith(_ENVELOPE_V1) or _looks_like_fernet_token(value):
+            if fernet is None:
+                raise FieldEncryptionError(
+                    "Encrypted identity data is present but field encryption is not configured."
+                )
+            token = value[len(_ENVELOPE_V1) :] if value.startswith(_ENVELOPE_V1) else value
+            try:
+                return fernet.decrypt(token.encode()).decode()
+            except (InvalidToken, ValueError) as exc:
+                raise FieldEncryptionError("Ciphertext authentication failed.") from exc
+        if value.startswith(_LEGACY_PLAINTEXT):
+            if not _legacy_plaintext_allowed():
+                raise FieldEncryptionError(
+                    "Explicit legacy plaintext is not permitted in this environment."
+                )
+            return value[len(_LEGACY_PLAINTEXT) :]
         if fernet is None:
             return value
-        try:
-            return fernet.decrypt(value.encode()).decode()
-        except (InvalidToken, ValueError):
-            # Value was written before encryption was enabled (or the key
-            # rotated) — return it as-is rather than crashing the request;
-            # this is stored plaintext from before the feature was turned
-            # on, not corrupted data.
+        if _legacy_plaintext_allowed():
             return value
+        raise FieldEncryptionError("Unrecognized encrypted field format.")

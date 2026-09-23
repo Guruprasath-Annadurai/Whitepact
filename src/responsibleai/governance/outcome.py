@@ -42,6 +42,9 @@ class OutcomeStatus(StrEnum):
     SUCCEEDED = "SUCCEEDED"
     FAILED = "FAILED"  # the executor ran, but the underlying call reported an error
     ERRORED = "ERRORED"  # the executor call itself raised
+    DENIED = "DENIED"
+    BLOCKED = "BLOCKED"
+    UNKNOWN = "UNKNOWN"  # dispatch may have occurred; final external state is unproven
 
 
 @dataclass

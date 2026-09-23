@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: ["main", "develop"]
+    branches: ["main", "develop", "release/whitepact-v1-rc"]
   pull_request:
-    branches: ["main"]
+    branches: ["main", "release/whitepact-v1-rc"]
 
 # CI only needs to read repository contents. Individual jobs do not receive
 # broader token capabilities unless explicitly added later.
@@ -180,6 +180,14 @@ jobs:
   accessibility:
     name: Accessibility (WCAG2AA)
     runs-on: ubuntu-latest
+    env:
+      RAI_AUTH_ENABLED: "false"
+      WHITEPACT_AUTH_ENABLED: "true"
+      WHITEPACT_WEB_AUTH_DEV_TOKENS: "true"
+      RAI_WEB_AUTH_DEV_TOKENS: "true"
+      RAI_DB_PATH: ":memory:"
+      RAI_AUTO_MIGRATE: "true"
+      WHITEPACT_AUTO_MIGRATE: "true"
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -202,10 +210,9 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
 
-      - name: Start dashboard (auth disabled, in-memory DB)
+      - name: Start dashboard (in-memory DB, dev verification tokens for a11y auth pages)
         run: |
-          RAI_AUTH_ENABLED=false RAI_DB_PATH=:memory: \
-            nohup uvicorn responsibleai.dashboard.app:app --host 127.0.0.1 --port 8765 \
+          nohup uvicorn responsibleai.dashboard.app:app --host 127.0.0.1 --port 8765 \
             > dashboard.log 2>&1 &
           for i in $(seq 1 20); do
             echo "dashboard readiness attempt ${i}/20"
@@ -216,6 +223,48 @@ jobs:
 
       - name: Run accessibility gate against public/dashboard pages
         run: npm run a11y
+
+  frontend-closure:
+    name: Frontend closure (lint · test · build · browser journey)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: wp
+          POSTGRES_PASSWORD: wp
+          POSTGRES_DB: whitepact_e2e
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U wp -d whitepact_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+      - name: Install application and frontend tooling
+        run: |
+          pip install -e ".[dashboard,postgres]"
+          npm ci
+          npm --prefix web ci
+          npx playwright install --with-deps chromium
+      - name: Frontend static checks and unit tests
+        run: |
+          npm --prefix web run lint
+          npm --prefix web test -- --run
+          npm --prefix web run build
+      - name: Customer journey on disposable PostgreSQL
+        env:
+          WHITEPACT_TEST_DATABASE_URL: postgresql+asyncpg://wp:wp@127.0.0.1:55432/whitepact_e2e
+          WHITEPACT_TEST_PYTHON: python
+        run: npm run test:customer-journey
 
   i18n-tests:
     name: i18n unit tests

@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /onboarding
+Disallow: /reset-password
+Sitemap: https://whitepact.com/sitemap.xml

@@ -41,7 +41,8 @@ def validate_upstream_server_url(url: str) -> None:
     outbound MCP client connection instead of a webhook delivery.
     Called at both registration time and immediately before every
     dispatch (DNS can resolve differently between the two — same
-    reasoning ``validate_webhook_url``'s own docstring gives)."""
+    reasoning ``validate_webhook_url``'s own docstring gives).
+    """
     try:
         validate_webhook_url(url)
     except UnsafeWebhookURLError as exc:

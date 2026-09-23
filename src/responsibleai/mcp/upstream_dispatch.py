@@ -16,8 +16,11 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass
-from typing import Any
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
 
 from responsibleai.dashboard.prometheus import observe_governance_decision
 from responsibleai.db import (
@@ -42,6 +45,8 @@ from responsibleai.governance import (
     recent_violation_count,
 )
 from responsibleai.governance.approval import build_approval_request
+from responsibleai.governance.authority_resolver import AuthorityDenied, AuthorityResolver
+from responsibleai.governance.context import GovernanceContext
 from responsibleai.governance.evidence import EvidenceRecord, build_evidence_record
 from responsibleai.governance.outcome import OutcomeStatus, build_outcome_record
 from responsibleai.governance.risk import classify_action_risk
@@ -62,6 +67,7 @@ class UpstreamGovernanceOutcome:
     proceed: bool
     blocked_response: dict[str, Any] | None = None
     result: dict[str, Any] | None = None
+    outcome_status: OutcomeStatus | None = None
 
 
 async def _record_evidence(
@@ -70,6 +76,14 @@ async def _record_evidence(
     agent: AgentContext,
     authority: AuthorityContext,
     decision: DecisionResult,
+    *,
+    authentication_method: str | None = None,
+    authority_version: str | None = None,
+    consent_id: str | None = None,
+    consent_version: str | None = None,
+    governance_epoch: int | None = None,
+    execution_authorization_id: str | None = None,
+    execution_nonce_reference: str | None = None,
 ) -> EvidenceRecord | None:
     """Same fail-closed contract as apply_governance()'s inline
     version: the persisted `EvidenceRecord` if recorded, `None` (and
@@ -80,7 +94,19 @@ async def _record_evidence(
     just a bool) so a caller past this point can link an
     OutcomeRecord to it via `evidence.evidence_id` (Phase 12).
     """
-    evidence = build_evidence_record(action, agent, authority, decision)
+    evidence = build_evidence_record(
+        action,
+        agent,
+        authority,
+        decision,
+        authentication_method=authentication_method,
+        authority_version=authority_version,
+        consent_id=consent_id,
+        consent_version=consent_version,
+        governance_epoch=governance_epoch,
+        execution_authorization_id=execution_authorization_id,
+        execution_nonce_reference=execution_nonce_reference,
+    )
     try:
         await evidence_repo.record(evidence)
     except Exception:
@@ -100,6 +126,8 @@ async def apply_upstream_governance(
     arguments: dict[str, Any],
     ctx: OrgContext,
     *,
+    purpose: str,
+    authority_resolver: AuthorityResolver,
     gateway: WhitePactRuntimeGateway,
     evidence_repo: EvidenceRepository,
     policy_repo: PolicyRepository,
@@ -108,6 +136,7 @@ async def apply_upstream_governance(
     executor: UpstreamMCPExecutor,
     tool_trust_repo: ToolTrustRepository,
     outcome_repo: OutcomeRepository | None = None,
+    epoch_repo: RevocationEpochRepository | None = None,
 ) -> UpstreamGovernanceOutcome:
     """Evaluate and, if governance allows it, execute one proxied call
     to an org-registered upstream MCP server. Requires an org-scoped
@@ -115,6 +144,7 @@ async def apply_upstream_governance(
     ``apply_governance()`` documents and its own callers assert.
     """
     assert ctx.org_id is not None, "apply_upstream_governance() requires an org-scoped OrgContext"
+    epoch = (await epoch_repo.current(ctx.org_id)).epoch if epoch_repo is not None else None
 
     identity = IdentityContext(
         identity_id=ctx.key_id,
@@ -129,23 +159,34 @@ async def apply_upstream_governance(
         framework="upstream-gateway",
     )
     target = build_upstream_target(server_id, tool_name)
-    action = ActionRequest(agent=agent, action_type=ACTION_TYPE, target=target, arguments=arguments)
-    authority = AuthorityContext(
-        delegated_by=ctx.org_id, granted_action_types=frozenset({ACTION_TYPE})
+    action = ActionRequest(
+        agent=agent,
+        action_type=ACTION_TYPE,
+        target=target,
+        arguments=arguments,
+        purpose=purpose,
     )
-
     # Registration IS the approval gate -- checked before the gateway
     # is even consulted, and denied with the reason code SPEC.md always
     # had reserved for exactly this case.
     server = await upstream_registry.get(server_id)
     if server is None or server.org_id != ctx.org_id or not server.enabled:
+        authority = AuthorityContext(delegated_by="unresolved", granted_action_types=frozenset())
         decision = DecisionResult(
             decision=GovernanceDecision.DENY,
             action_id=action.action_id,
             reason_codes=[format_reason(ReasonCode.UNAPPROVED_MCP_SERVER, server_id=server_id)],
             risk_tier=classify_action_risk(action.action_type, action.target),
         )
-        await _record_evidence(evidence_repo, action, agent, authority, decision)
+        await _record_evidence(
+            evidence_repo,
+            action,
+            agent,
+            authority,
+            decision,
+            authentication_method=ctx.authentication_method,
+            governance_epoch=epoch,
+        )
         return UpstreamGovernanceOutcome(
             proceed=False,
             blocked_response={
@@ -155,6 +196,47 @@ async def apply_upstream_governance(
                     "or belongs to a different organization."
                 ),
                 "action_id": decision.action_id,
+                "reason_codes": decision.reason_codes,
+            },
+        )
+
+    context = GovernanceContext.from_authenticated(
+        ctx, action, authentication_method=ctx.authentication_method
+    )
+    try:
+        resolved = await authority_resolver.resolve(context)
+        authority = replace(
+            resolved.authority,
+            granted_action_types=frozenset({ACTION_TYPE}),
+            require_approval_for=(
+                resolved.authority.require_approval_for & frozenset({ACTION_TYPE})
+            ),
+        )
+    except AuthorityDenied:
+        authority = AuthorityContext(delegated_by="unresolved", granted_action_types=frozenset())
+        decision = DecisionResult(
+            decision=GovernanceDecision.DENY,
+            action_id=action.action_id,
+            reason_codes=[
+                format_reason(ReasonCode.AUTHORITY_NOT_DELEGATED, action_type=ACTION_TYPE)
+            ],
+            risk_tier=classify_action_risk(action.action_type, action.target),
+        )
+        await _record_evidence(
+            evidence_repo,
+            action,
+            agent,
+            authority,
+            decision,
+            authentication_method=ctx.authentication_method,
+            governance_epoch=epoch,
+        )
+        return UpstreamGovernanceOutcome(
+            proceed=False,
+            blocked_response={
+                "error": "governance_denied",
+                "message": "Explicit current authority and consent are required.",
+                "action_id": action.action_id,
                 "reason_codes": decision.reason_codes,
             },
         )
@@ -184,7 +266,18 @@ async def apply_upstream_governance(
             ],
             risk_tier=classify_action_risk(action.action_type, action.target),
         )
-        await _record_evidence(evidence_repo, action, agent, authority, decision)
+        await _record_evidence(
+            evidence_repo,
+            action,
+            agent,
+            authority,
+            decision,
+            authentication_method=ctx.authentication_method,
+            authority_version=resolved.authority_version,
+            consent_id=resolved.consent_id,
+            consent_version=resolved.consent_version,
+            governance_epoch=epoch,
+        )
         return UpstreamGovernanceOutcome(
             proceed=False,
             blocked_response={
@@ -212,7 +305,43 @@ async def apply_upstream_governance(
         org_id=ctx.org_id,
     )
 
-    evidence = await _record_evidence(evidence_repo, action, agent, authority, decision)
+    final_arguments = (
+        decision.redacted_arguments
+        if decision.decision == GovernanceDecision.ALLOW_WITH_REDACTION
+        else arguments
+    ) or arguments
+    final_action = ActionRequest(
+        agent=agent,
+        action_type=ACTION_TYPE,
+        target=target,
+        arguments=final_arguments,
+        purpose=action.purpose,
+        action_id=action.action_id,
+    )
+    authorization = (
+        authorize_execution(
+            decision,
+            final_action,
+            target_fingerprint=compute_upstream_target_fingerprint(server),
+            revocation_epoch=epoch,
+        )
+        if decision.decision in (GovernanceDecision.ALLOW, GovernanceDecision.ALLOW_WITH_REDACTION)
+        else None
+    )
+    evidence = await _record_evidence(
+        evidence_repo,
+        action,
+        agent,
+        authority,
+        decision,
+        authentication_method=ctx.authentication_method,
+        authority_version=resolved.authority_version,
+        consent_id=resolved.consent_id,
+        consent_version=resolved.consent_version,
+        governance_epoch=epoch,
+        execution_authorization_id=authorization.authorization_id if authorization else None,
+        execution_nonce_reference=authorization.nonce if authorization else None,
+    )
     if evidence is None:
         return UpstreamGovernanceOutcome(
             proceed=False,
@@ -253,7 +382,16 @@ async def apply_upstream_governance(
         )
 
     if decision.decision == GovernanceDecision.REQUIRE_APPROVAL:
-        approval = await approval_repo.create(build_approval_request(action, decision))
+        approval = await approval_repo.create(
+            build_approval_request(
+                action,
+                decision,
+                authentication_method=ctx.authentication_method,
+                revocation_epoch=epoch,
+                authority_version=resolved.authority_version,
+                target_fingerprint=compute_upstream_target_fingerprint(server),
+            )
+        )
         return UpstreamGovernanceOutcome(
             proceed=False,
             blocked_response={
@@ -265,30 +403,15 @@ async def apply_upstream_governance(
             },
         )
 
-    final_arguments = (
-        decision.redacted_arguments
-        if decision.decision == GovernanceDecision.ALLOW_WITH_REDACTION
-        else arguments
-    )
-    final_arguments = final_arguments or arguments
-    final_action = ActionRequest(
-        agent=agent,
-        action_type=ACTION_TYPE,
-        target=target,
-        arguments=final_arguments,
-        action_id=action.action_id,
-    )
     # Execution Permit v2 -- fingerprint the server config this
     # decision was actually made against, so UpstreamMCPExecutor.execute()
     # can detect if that config drifts before the permit is consumed.
-    authorization = authorize_execution(
-        decision, final_action, target_fingerprint=compute_upstream_target_fingerprint(server)
-    )
+    assert authorization is not None
     try:
         result = await executor.execute(authorization, final_action)
     except Exception:
         await _record_outcome(
-            outcome_repo, evidence.evidence_id, action.action_id, OutcomeStatus.ERRORED, ctx.org_id
+            outcome_repo, evidence.evidence_id, action.action_id, OutcomeStatus.UNKNOWN, ctx.org_id
         )
         raise
     status = (
@@ -296,8 +419,14 @@ async def apply_upstream_governance(
         if isinstance(result, dict) and result.get("is_error")
         else OutcomeStatus.SUCCEEDED
     )
-    await _record_outcome(outcome_repo, evidence.evidence_id, action.action_id, status, ctx.org_id)
-    return UpstreamGovernanceOutcome(proceed=True, result=result)
+    outcome_persisted = await _record_outcome(
+        outcome_repo, evidence.evidence_id, action.action_id, status, ctx.org_id
+    )
+    return UpstreamGovernanceOutcome(
+        proceed=True,
+        result=result,
+        outcome_status=status if outcome_persisted else OutcomeStatus.UNKNOWN,
+    )
 
 
 async def _record_outcome(
@@ -306,7 +435,7 @@ async def _record_outcome(
     action_id: str,
     status: OutcomeStatus,
     org_id: str | None,
-) -> None:
+) -> bool:
     """Outcome Observation (Phase 12) -- fail-open, same reasoning as
     `governance_integration.py`'s own helper of the same name: the
     proxied call has already executed by the time this runs, so a
@@ -316,11 +445,12 @@ async def _record_outcome(
     tool path which has no single standardized error field across all
     27 tools."""
     if outcome_repo is None:
-        return
+        return False
     try:
         await outcome_repo.record(
             build_outcome_record(evidence_id, action_id, status, organization_id=org_id)
         )
+        return True
     except Exception:
         _logger.exception(
             "upstream_governance_outcome_write_failed evidence_id=%s action_id=%s status=%s",
@@ -328,3 +458,21 @@ async def _record_outcome(
             action_id,
             status.value,
         )
+        if status is not OutcomeStatus.UNKNOWN:
+            try:
+                await outcome_repo.record(
+                    build_outcome_record(
+                        evidence_id,
+                        action_id,
+                        OutcomeStatus.UNKNOWN,
+                        organization_id=org_id,
+                        result_summary="final outcome persistence failed; reconciliation required",
+                    )
+                )
+            except Exception:
+                _logger.exception(
+                    "upstream_governance_unknown_outcome_write_failed evidence_id=%s action_id=%s",
+                    evidence_id,
+                    action_id,
+                )
+        return False

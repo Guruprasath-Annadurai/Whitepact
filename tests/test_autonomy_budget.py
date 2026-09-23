@@ -106,7 +106,7 @@ class TestGatewayAutonomyBudget:
         )
         assert result.decision == GovernanceDecision.REQUIRE_APPROVAL
         assert any(code.startswith("AUTONOMY_BUDGET_EXCEEDED:") for code in result.reason_codes)
-        assert result.redacted_arguments is None
+        assert result.redacted_arguments == {"note": "contact me at [REDACTED]"}
 
     def test_quarantine_still_wins_over_budget(self) -> None:
         gw, authority = self._gateway_authority()

@@ -1,0 +1,58 @@
+name: CodeQL
+
+# Semantic, dataflow-aware SAST analysis (taint tracking across function
+# boundaries) covering Python and JavaScript/TypeScript. Results land directly
+# in the Security tab / code scanning alerts.
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  schedule:
+    - cron: "38 5 * * 3" # weekly
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: CodeQL analysis (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ["python", "javascript-typescript"]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@6f5948dfacef28e207b48d0905cf90c03365536d # v3.37.9
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-extended
+          # Scope analysis to production sources; tests are covered separately and
+          # trigger false-positive URL-substring / weak-hash alerts on fixtures.
+          paths: |
+            src
+            web/src
+          paths-ignore: |
+            **/test/**
+            **/tests/**
+            **/*.test.ts
+            **/*.test.tsx
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@6f5948dfacef28e207b48d0905cf90c03365536d # v3.37.9
+        with:
+          category: "/language:${{ matrix.language }}"

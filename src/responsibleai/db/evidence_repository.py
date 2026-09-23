@@ -19,15 +19,28 @@ import asyncio
 import hashlib
 import json
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any
 
 from sqlalchemy import func, insert, select
+from sqlalchemy.exc import IntegrityError, OperationalError
 
-from responsibleai.db.engine import DatabaseEngine, governance_evidence
-from responsibleai.governance.evidence import EvidenceRecord
+from responsibleai.db.engine import (
+    DatabaseEngine,
+    governance_evidence,
+    governance_evidence_chain_heads,
+)
+from responsibleai.governance.evidence import EvidenceRecord, compute_canonical_evidence_hash
 from responsibleai.governance.workflow import TimestampedAction
 
 _GENESIS_HASH = "0" * 64
+
+
+class ChainVerificationStatus(StrEnum):
+    VALID = "VALID"
+    INVALID = "INVALID"
+    INCOMPLETE = "INCOMPLETE"
+    UNKNOWN = "UNKNOWN"
 
 
 def _now() -> str:
@@ -35,6 +48,8 @@ def _now() -> str:
 
 
 def _compute_entry_hash(prev_hash: str | None, record: dict[str, Any]) -> str:
+    if int(record.get("integrity_version") or 1) >= 2:
+        return compute_canonical_evidence_hash(prev_hash, record)
     material = "|".join(
         [
             prev_hash or _GENESIS_HASH,
@@ -65,6 +80,22 @@ def _row_to_record(row: Any) -> EvidenceRecord:
         else [],
         risk_tier=row.risk_tier,
         policy_version=getattr(row, "policy_version", None),
+        authentication_method=getattr(row, "authentication_method", None),
+        request_fingerprint=getattr(row, "request_fingerprint", None),
+        arguments_fingerprint=getattr(row, "arguments_fingerprint", None),
+        purpose=getattr(row, "purpose", None),
+        authority_version=getattr(row, "authority_version", None),
+        consent_id=getattr(row, "consent_id", None),
+        consent_version=getattr(row, "consent_version", None),
+        consent_state=getattr(row, "consent_state", None),
+        governance_epoch=getattr(row, "governance_epoch", None),
+        approval_id=getattr(row, "approval_id", None),
+        execution_authorization_id=getattr(row, "execution_authorization_id", None),
+        execution_nonce_reference=getattr(row, "execution_nonce_reference", None),
+        execution_target=getattr(row, "execution_target", None),
+        integrity_version=getattr(row, "integrity_version", 1) or 1,
+        integrity_status=getattr(row, "integrity_status", "LEGACY_CHAINED_V1"),
+        chain_sequence=getattr(row, "chain_sequence", None),
         decision=row.decision,
         reason_codes=json.loads(row.reason_codes),
         framework=row.framework,
@@ -82,89 +113,162 @@ class EvidenceRepository:
 
     def __init__(self, engine: DatabaseEngine) -> None:
         self._engine = engine
-        self._chain_lock = asyncio.Lock()
-        self._last_hash_by_org: dict[str | None, str | None] = {}
-        self._hydrated_orgs: set[str | None] = set()
-
-    async def _hydrate_chain(self, org_id: str | None) -> None:
-        if org_id in self._hydrated_orgs:
-            return
-        org_filter = (
-            governance_evidence.c.org_id.is_(None)
-            if org_id is None
-            else governance_evidence.c.org_id == org_id
-        )
-        async with self._engine.raw.connect() as conn:
-            row = (
-                await conn.execute(
-                    select(governance_evidence.c.entry_hash, governance_evidence.c.recorded_at)
-                    .where(org_filter)
-                    .order_by(governance_evidence.c.recorded_at.desc())
-                    .limit(1)
-                )
-            ).fetchone()
-        self._last_hash_by_org[org_id] = row.entry_hash if row else None
-        self._hydrated_orgs.add(org_id)
+        self._chain_lock = asyncio.Lock()  # local contention reduction; DB is authoritative
 
     async def record(self, evidence: EvidenceRecord) -> EvidenceRecord:
         """Persist *evidence*, chaining it onto its organization's last
         entry. Mutates and returns *evidence* with `prev_hash`/`hash`
         filled in — the same object, for caller convenience, not a copy.
         """
-        async with self._chain_lock:
-            await self._hydrate_chain(evidence.organization_id)
-            prev_hash = self._last_hash_by_org.get(evidence.organization_id)
-            recorded_at = _now()
-            hashable = {
-                "id": evidence.evidence_id,
-                "org_id": evidence.organization_id,
-                "action_id": evidence.action_id,
-                "decision": evidence.decision,
-                "evaluated_at": evidence.evaluated_at.isoformat(),
-                "recorded_at": recorded_at,
-            }
-            entry_hash = _compute_entry_hash(prev_hash, hashable)
-
-            async with self._engine.raw.begin() as conn:
-                await conn.execute(
-                    insert(governance_evidence).values(
-                        id=evidence.evidence_id,
-                        org_id=evidence.organization_id,
-                        action_id=evidence.action_id,
-                        agent_id=evidence.agent_id,
-                        identity_id=evidence.identity_id,
-                        action_type=evidence.action_type,
-                        target=evidence.target,
-                        argument_keys=json.dumps(evidence.argument_keys),
-                        authority_delegated_by=evidence.authority_delegated_by,
-                        delegation_chain=json.dumps(evidence.delegation_chain)
+        if evidence.organization_id is None:
+            raise ValueError("Canonical evidence requires tenant ownership")
+        for attempt in range(8):
+            try:
+                async with self._chain_lock, self._engine.raw.begin() as conn:
+                    head = (
+                        await conn.execute(
+                            select(governance_evidence_chain_heads)
+                            .where(
+                                governance_evidence_chain_heads.c.org_id == evidence.organization_id
+                            )
+                            .with_for_update()
+                        )
+                    ).fetchone()
+                    if head is None:
+                        latest = (
+                            await conn.execute(
+                                select(governance_evidence.c.entry_hash)
+                                .where(governance_evidence.c.org_id == evidence.organization_id)
+                                .order_by(
+                                    governance_evidence.c.recorded_at.desc(),
+                                    governance_evidence.c.id.desc(),
+                                )
+                                .limit(1)
+                            )
+                        ).fetchone()
+                        count = int(
+                            (
+                                await conn.execute(
+                                    select(func.count())
+                                    .select_from(governance_evidence)
+                                    .where(governance_evidence.c.org_id == evidence.organization_id)
+                                )
+                            ).scalar()
+                            or 0
+                        )
+                        await conn.execute(
+                            insert(governance_evidence_chain_heads).values(
+                                org_id=evidence.organization_id,
+                                head_hash=latest.entry_hash if latest else None,
+                                sequence=count,
+                                updated_at=_now(),
+                            )
+                        )
+                        prev_hash = latest.entry_hash if latest else None
+                        sequence = count + 1
+                    else:
+                        prev_hash = head.head_hash
+                        sequence = head.sequence + 1
+                    recorded_at = _now()
+                    values = {
+                        "id": evidence.evidence_id,
+                        "org_id": evidence.organization_id,
+                        "action_id": evidence.action_id,
+                        "agent_id": evidence.agent_id,
+                        "identity_id": evidence.identity_id,
+                        "action_type": evidence.action_type,
+                        "target": evidence.target,
+                        "argument_keys": json.dumps(evidence.argument_keys),
+                        "authority_delegated_by": evidence.authority_delegated_by,
+                        "delegation_chain": json.dumps(evidence.delegation_chain)
                         if evidence.delegation_chain
                         else None,
-                        risk_tier=evidence.risk_tier,
-                        policy_version=evidence.policy_version,
-                        decision=evidence.decision,
-                        reason_codes=json.dumps(evidence.reason_codes),
-                        framework=evidence.framework,
-                        provider=evidence.provider,
-                        model=evidence.model,
-                        evaluated_at=evidence.evaluated_at.isoformat(),
-                        recorded_at=recorded_at,
-                        entry_hash=entry_hash,
-                        prev_hash=prev_hash,
+                        "risk_tier": evidence.risk_tier,
+                        "policy_version": evidence.policy_version,
+                        "authentication_method": evidence.authentication_method,
+                        "request_fingerprint": evidence.request_fingerprint,
+                        "arguments_fingerprint": evidence.arguments_fingerprint,
+                        "purpose": evidence.purpose,
+                        "authority_version": evidence.authority_version,
+                        "consent_id": evidence.consent_id,
+                        "consent_version": evidence.consent_version,
+                        "consent_state": evidence.consent_state,
+                        "governance_epoch": evidence.governance_epoch,
+                        "approval_id": evidence.approval_id,
+                        "execution_authorization_id": evidence.execution_authorization_id,
+                        "execution_nonce_reference": evidence.execution_nonce_reference,
+                        "execution_target": evidence.execution_target,
+                        "integrity_version": 2,
+                        "integrity_status": "CANONICAL_CHAINED",
+                        "chain_sequence": sequence,
+                        "decision": evidence.decision,
+                        "reason_codes": json.dumps(evidence.reason_codes),
+                        "framework": evidence.framework,
+                        "provider": evidence.provider,
+                        "model": evidence.model,
+                        "evaluated_at": evidence.evaluated_at.isoformat(),
+                        "recorded_at": recorded_at,
+                        "prev_hash": prev_hash,
+                    }
+                    entry_hash = _compute_entry_hash(prev_hash, values)
+                    values["entry_hash"] = entry_hash
+                    await conn.execute(insert(governance_evidence).values(**values))
+                    await conn.execute(
+                        governance_evidence_chain_heads.update()
+                        .where(governance_evidence_chain_heads.c.org_id == evidence.organization_id)
+                        .values(head_hash=entry_hash, sequence=sequence, updated_at=recorded_at)
                     )
-                )
-            self._last_hash_by_org[evidence.organization_id] = entry_hash
-
-        evidence.prev_hash = prev_hash
-        evidence.hash = entry_hash
-        evidence.recorded_at = recorded_at
-        return evidence
+                evidence.prev_hash = prev_hash
+                evidence.hash = entry_hash
+                evidence.recorded_at = recorded_at
+                evidence.chain_sequence = sequence
+                evidence.integrity_version = 2
+                evidence.integrity_status = "CANONICAL_CHAINED"
+                return evidence
+            except (IntegrityError, OperationalError):
+                if attempt == 7:
+                    raise
+                await asyncio.sleep(0.01 * (attempt + 1))
+        raise RuntimeError("Evidence append retry budget exhausted")
 
     async def get(self, evidence_id: str) -> EvidenceRecord | None:
         async with self._engine.raw.connect() as conn:
             row = (
                 await conn.execute(
                     select(governance_evidence).where(governance_evidence.c.id == evidence_id)
+                )
+            ).fetchone()
+        return _row_to_record(row) if row else None
+
+    async def get_for_org(self, evidence_id: str, org_id: str) -> EvidenceRecord | None:
+        """Tenant-scoped lookup for every externally reachable evidence API."""
+        async with self._engine.raw.connect() as conn:
+            row = (
+                await conn.execute(
+                    select(governance_evidence).where(
+                        governance_evidence.c.id == evidence_id,
+                        governance_evidence.c.org_id == org_id,
+                    )
+                )
+            ).fetchone()
+        return _row_to_record(row) if row else None
+
+    async def get_latest_for_approval(self, org_id: str, approval_id: str) -> EvidenceRecord | None:
+        """Latest persisted evidence row for one org-scoped approval, if any.
+
+        Does not invent a record: returns None when this org has no evidence
+        linked to *approval_id*.
+        """
+        async with self._engine.raw.connect() as conn:
+            row = (
+                await conn.execute(
+                    select(governance_evidence)
+                    .where(
+                        governance_evidence.c.org_id == org_id,
+                        governance_evidence.c.approval_id == approval_id,
+                    )
+                    .order_by(governance_evidence.c.recorded_at.desc())
+                    .limit(1)
                 )
             ).fetchone()
         return _row_to_record(row) if row else None
@@ -214,7 +318,11 @@ class EvidenceRepository:
             query = query.where(governance_evidence.c.recorded_at >= since)
         if until is not None:
             query = query.where(governance_evidence.c.recorded_at <= until)
-        query = query.order_by(governance_evidence.c.recorded_at.asc()).limit(limit)
+        query = query.order_by(
+            func.coalesce(governance_evidence.c.chain_sequence, 0).asc(),
+            governance_evidence.c.recorded_at.asc(),
+            governance_evidence.c.id.asc(),
+        ).limit(limit)
         async with self._engine.raw.connect() as conn:
             rows = (await conn.execute(query)).fetchall()
         return [_row_to_record(r) for r in rows]
@@ -305,24 +413,77 @@ class EvidenceRepository:
                 await conn.execute(
                     select(governance_evidence)
                     .where(org_filter)
-                    .order_by(governance_evidence.c.recorded_at.asc())
+                    .order_by(
+                        func.coalesce(governance_evidence.c.chain_sequence, 0).asc(),
+                        governance_evidence.c.recorded_at.asc(),
+                        governance_evidence.c.id.asc(),
+                    )
                 )
             ).fetchall()
 
         expected_prev: str | None = None
-        for row in rows:
+        for expected_sequence, row in enumerate(rows, start=1):
             if row.prev_hash != expected_prev:
                 return False
-            hashable = {
-                "id": row.id,
-                "org_id": row.org_id,
-                "action_id": row.action_id,
-                "decision": row.decision,
-                "evaluated_at": row.evaluated_at,
-                "recorded_at": row.recorded_at,
-            }
+            hashable = dict(row._mapping)
+            if (row.integrity_version or 1) >= 2:
+                if row.chain_sequence != expected_sequence:
+                    return False
             recomputed = _compute_entry_hash(row.prev_hash, hashable)
             if recomputed != row.entry_hash:
                 return False
             expected_prev = row.entry_hash
+        async with self._engine.raw.connect() as conn:
+            head = (
+                await conn.execute(
+                    select(governance_evidence_chain_heads).where(
+                        governance_evidence_chain_heads.c.org_id == org_id
+                    )
+                )
+            ).fetchone()
+        canonical_rows = [r for r in rows if (r.integrity_version or 1) >= 2]
+        if head is not None:
+            expected_head = rows[-1].entry_hash if rows else None
+            if head.head_hash != expected_head or head.sequence != len(rows):
+                return False
+        elif canonical_rows:
+            return False
         return True
+
+    async def verify_chain_status(self, org_id: str) -> ChainVerificationStatus:
+        """Return an honest tenant-chain verdict without conflating legacy proof."""
+        try:
+            if not await self.verify_chain(org_id):
+                return ChainVerificationStatus.INVALID
+            async with self._engine.raw.connect() as conn:
+                legacy_count = int(
+                    (
+                        await conn.execute(
+                            select(func.count())
+                            .select_from(governance_evidence)
+                            .where(
+                                governance_evidence.c.org_id == org_id,
+                                governance_evidence.c.integrity_version < 2,
+                            )
+                        )
+                    ).scalar()
+                    or 0
+                )
+            return (
+                ChainVerificationStatus.INCOMPLETE
+                if legacy_count
+                else ChainVerificationStatus.VALID
+            )
+        except Exception:
+            return ChainVerificationStatus.UNKNOWN
+
+    async def get_chain_head(self, org_id: str) -> tuple[str | None, int] | None:
+        async with self._engine.raw.connect() as conn:
+            row = (
+                await conn.execute(
+                    select(governance_evidence_chain_heads).where(
+                        governance_evidence_chain_heads.c.org_id == org_id
+                    )
+                )
+            ).fetchone()
+        return (row.head_hash, row.sequence) if row else None

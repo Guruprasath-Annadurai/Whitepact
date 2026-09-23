@@ -421,31 +421,16 @@ class TestDelegationRevokeBranchConcurrency:
         # The database ends up in the correct terminal state regardless
         # of the race -- this is what actually matters operationally.
         assert await delegation_repo.get_active_delegation("org-1", "shared-root") is None
-        # But the naive expectation that only one caller "did the
-        # revoking" is false under this exact interleaving -- documented
-        # here so a future fix that closes this window has a test that
-        # will start failing (correctly) rather than this gap staying
-        # silently undocumented.
+        # The bulk transaction serializes the read/update and reports
+        # the revocation exactly once across concurrent callers.
         total_revoked = sum(len(r) for r in successes)
-        assert total_revoked == 5
+        assert total_revoked == 1
 
-    async def test_grant_racing_revoke_branch_is_correctly_rejected(self, delegation_repo) -> None:
-        """The interleaving this test forces (a grant() for a NEW child
-        of a node, timed to land after revoke_branch() has already read
-        that node's children but before revoke_branch() finishes) was
-        hypothesized as a possible TOCTOU gap -- a child slipping in
-        after the parent's children were already read, orphaned with a
-        revoked parent. Empirically, it is not: revoke_branch() revokes
-        a node (commits the UPDATE) strictly *before* reading that
-        node's children, so by the time this test's forced interleaving
-        reaches the concurrent grant()'s own parent-liveness check
-        (`get_active_delegation(from_identity_id)`), the parent is
-        already revoked in the database and grant() correctly raises
-        `DelegationEscalationError` rather than creating an orphaned
-        active child. This is a genuine, confirmed protection, not an
-        assumed one -- worth keeping as a regression test in case a
-        future refactor reorders revoke_branch()'s own
-        revoke-then-read-children sequence."""
+    async def test_grant_racing_revoke_branch_never_leaves_an_active_child(
+        self, delegation_repo
+    ) -> None:
+        """The serialized mutation may reject the grant or revoke it in
+        the same branch transaction; either ordering must leave no active child."""
         await delegation_repo.grant(
             "org-1",
             "parent",
@@ -454,52 +439,30 @@ class TestDelegationRevokeBranchConcurrency:
             granted_by="owner-1",
         )
 
-        original_direct_children = delegation_repo._direct_children
-        release_grant = asyncio.Event()
-        child_granted = asyncio.Event()
+        async def _grant_child():
+            await delegation_repo.grant(
+                "org-1",
+                "child",
+                granted_action_types=frozenset({"rai_scan"}),
+                purpose="child",
+                granted_by="parent",
+                from_identity_id="parent",
+            )
 
-        async def _direct_children_then_wait(org_id: str, identity_id: str):
-            result = await original_direct_children(org_id, identity_id)
-            if identity_id == "parent":
-                # Simulate: revoke_branch() has just read "parent"'s
-                # children (none yet) -- now let the concurrent grant()
-                # proceed before revoke_branch() moves on.
-                release_grant.set()
-                await child_granted.wait()
-            return result
-
-        delegation_repo._direct_children = _direct_children_then_wait
-
-        async def _grant_child_after_signal():
-            await release_grant.wait()
-            try:
-                await delegation_repo.grant(
-                    "org-1",
-                    "child",
-                    granted_action_types=frozenset({"rai_scan"}),
-                    purpose="child",
-                    granted_by="parent",
-                    from_identity_id="parent",
-                )
-            finally:
-                # Unblock revoke_branch()'s wait regardless of outcome --
-                # a deadlock here would hang the test, not fail it cleanly.
-                child_granted.set()
-
-        try:
-            results = await asyncio.gather(
+        results = await asyncio.wait_for(
+            asyncio.gather(
                 delegation_repo.revoke_branch(
                     "org-1", "parent", revoked_by="owner-1", reason="cleanup"
                 ),
-                _grant_child_after_signal(),
+                _grant_child(),
                 return_exceptions=True,
-            )
-        finally:
-            delegation_repo._direct_children = original_direct_children
+            ),
+            timeout=5,
+        )
 
         revoke_result, grant_result = results
         assert not isinstance(revoke_result, BaseException)
-        assert isinstance(grant_result, DelegationEscalationError)
+        assert grant_result is None or isinstance(grant_result, DelegationEscalationError)
 
         parent_active = await delegation_repo.get_active_delegation("org-1", "parent")
         child_active = await delegation_repo.get_active_delegation("org-1", "child")

@@ -72,6 +72,12 @@ def configure_logging(level: str = "INFO", json_logs: bool = True) -> None:
     for lib in ("uvicorn.access", "uvicorn.error"):
         logging.getLogger(lib).setLevel(logging.WARNING)
 
+    # Database drivers can emit SQL including bound values at DEBUG.
+    for lib in ("aiosqlite", "asyncpg"):
+        logging.getLogger(lib).setLevel(
+            max(logging.INFO, getattr(logging, level.upper(), logging.INFO))
+        )
+
 
 def get_logger(name: str = "responsibleai") -> structlog.stdlib.BoundLogger:
     return structlog.get_logger(name)

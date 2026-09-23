@@ -9,7 +9,7 @@ Before broad launch posts such as Show HN or Product Hunt, reconcile the MCP too
 ## Safe claims
 
 - WhitePact is an open-source AI governance and runtime-authority platform.
-- v1.2.6 is the current released version.
+- v1.3.0 is the current repository package version. Production publication remains independently gated. Published PyPI `v1.2.6` is unchanged.
 - The repository provides deterministic five-way governance decisions: ALLOW, ALLOW_WITH_REDACTION, REQUIRE_APPROVAL, DENY, and QUARANTINE.
 - The project publishes release artifacts including wheel, source distribution, SBOM, and checksums.
 - OpenSSF Best Practices status must be described only at the officially awarded level shown by the OpenSSF project page.

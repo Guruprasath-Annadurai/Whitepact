@@ -39,6 +39,8 @@ Honest scoping against SPEC.md's full `EvidenceRecord` shape:
 
 from __future__ import annotations
 
+import hashlib
+import json
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -51,6 +53,74 @@ from responsibleai.governance.models import (
     DecisionResult,
 )
 from responsibleai.governance.risk import RiskTier
+
+_GENESIS_HASH = "0" * 64
+_PROTECTED_EVIDENCE_FIELDS = (
+    "evidence_id",
+    "organization_id",
+    "action_id",
+    "agent_id",
+    "identity_id",
+    "authentication_method",
+    "action_type",
+    "target",
+    "argument_keys",
+    "request_fingerprint",
+    "arguments_fingerprint",
+    "purpose",
+    "authority_delegated_by",
+    "delegation_chain",
+    "authority_version",
+    "consent_id",
+    "consent_version",
+    "consent_state",
+    "risk_tier",
+    "policy_version",
+    "governance_epoch",
+    "approval_id",
+    "execution_authorization_id",
+    "execution_nonce_reference",
+    "execution_target",
+    "decision",
+    "reason_codes",
+    "framework",
+    "provider",
+    "model",
+    "evaluated_at",
+    "recorded_at",
+    "integrity_version",
+    "integrity_status",
+    "chain_sequence",
+)
+
+
+def compute_canonical_evidence_hash(
+    prev_hash: str | None, record: EvidenceRecord | dict[str, Any]
+) -> str:
+    """SHA-256 over deterministic JSON for every protected evidence field."""
+    source = record.to_dict() if isinstance(record, EvidenceRecord) else dict(record)
+    aliases = {"id": "evidence_id", "org_id": "organization_id"}
+    for source_key, canonical_key in aliases.items():
+        if canonical_key not in source and source_key in source:
+            source[canonical_key] = source[source_key]
+    protected = {key: source.get(key) for key in _PROTECTED_EVIDENCE_FIELDS}
+    for key in ("argument_keys", "delegation_chain", "reason_codes"):
+        value = protected[key]
+        if isinstance(value, str):
+            protected[key] = json.loads(value)
+        elif protected[key] is None:
+            protected[key] = []
+    if isinstance(protected["evaluated_at"], datetime):
+        protected["evaluated_at"] = protected["evaluated_at"].isoformat()
+    protected["prev_hash"] = prev_hash or _GENESIS_HASH
+    serialized = json.dumps(
+        protected,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    )
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
 @dataclass
@@ -79,6 +149,22 @@ class EvidenceRecord:
     # exactly which persisted policy version this decision was
     # evaluated against (Policy.version's docstring).
     policy_version: int | None = None
+    authentication_method: str | None = None
+    request_fingerprint: str | None = None
+    arguments_fingerprint: str | None = None
+    purpose: str | None = None
+    authority_version: str | None = None
+    consent_id: str | None = None
+    consent_version: str | None = None
+    consent_state: str | None = None
+    governance_epoch: int | None = None
+    approval_id: str | None = None
+    execution_authorization_id: str | None = None
+    execution_nonce_reference: str | None = None
+    execution_target: str | None = None
+    integrity_version: int = 2
+    integrity_status: str = "CANONICAL_CHAINED"
+    chain_sequence: int | None = None
     # AuthorityContext.delegation_chain, carried through for the audit
     # trail -- who delegated to whom, through however many hops, not
     # just the immediate grantor authority_delegated_by already
@@ -115,6 +201,22 @@ class EvidenceRecord:
             "delegation_chain": self.delegation_chain,
             "risk_tier": self.risk_tier,
             "policy_version": self.policy_version,
+            "authentication_method": self.authentication_method,
+            "request_fingerprint": self.request_fingerprint,
+            "arguments_fingerprint": self.arguments_fingerprint,
+            "purpose": self.purpose,
+            "authority_version": self.authority_version,
+            "consent_id": self.consent_id,
+            "consent_version": self.consent_version,
+            "consent_state": self.consent_state,
+            "governance_epoch": self.governance_epoch,
+            "approval_id": self.approval_id,
+            "execution_authorization_id": self.execution_authorization_id,
+            "execution_nonce_reference": self.execution_nonce_reference,
+            "execution_target": self.execution_target,
+            "integrity_version": self.integrity_version,
+            "integrity_status": self.integrity_status,
+            "chain_sequence": self.chain_sequence,
             "decision": self.decision,
             "reason_codes": self.reason_codes,
             "framework": self.framework,
@@ -132,12 +234,38 @@ def build_evidence_record(
     agent: AgentContext,
     authority: AuthorityContext,
     decision: DecisionResult,
+    *,
+    authentication_method: str | None = None,
+    authority_version: str | None = None,
+    consent_id: str | None = None,
+    consent_version: str | None = None,
+    governance_epoch: int | None = None,
+    approval_id: str | None = None,
+    execution_authorization_id: str | None = None,
+    execution_nonce_reference: str | None = None,
 ) -> EvidenceRecord:
     """Assemble an `EvidenceRecord` from a completed decision. Pure —
     no I/O, no hashing, callable from a sync context (matching
     `WhitePactRuntimeGateway.evaluate()`, which is itself sync). Persist
     the result via `EvidenceRepository.record()` to get a chained hash.
     """
+    argument_material = json.dumps(
+        action.arguments, sort_keys=True, separators=(",", ":"), allow_nan=False, default=str
+    ).encode("utf-8")
+    request_material = json.dumps(
+        {
+            "organization_id": agent.organization_id,
+            "principal_id": agent.identity.identity_id,
+            "agent_id": agent.agent_id,
+            "action_type": action.action_type,
+            "target": action.target,
+            "purpose": action.purpose,
+            "arguments_sha256": hashlib.sha256(argument_material).hexdigest(),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
     return EvidenceRecord(
         action_id=action.action_id,
         agent_id=agent.agent_id,
@@ -153,6 +281,23 @@ def build_evidence_record(
         organization_id=agent.organization_id,
         risk_tier=decision.risk_tier.value if isinstance(decision.risk_tier, RiskTier) else None,
         policy_version=decision.policy_version,
+        authentication_method=authentication_method,
+        request_fingerprint=hashlib.sha256(request_material).hexdigest(),
+        arguments_fingerprint=hashlib.sha256(argument_material).hexdigest(),
+        purpose=action.purpose,
+        authority_version=authority_version,
+        consent_id=consent_id,
+        consent_version=consent_version,
+        consent_state="VALID" if consent_id else None,
+        governance_epoch=governance_epoch,
+        approval_id=approval_id,
+        execution_authorization_id=execution_authorization_id,
+        execution_nonce_reference=(
+            hashlib.sha256(execution_nonce_reference.encode("utf-8")).hexdigest()
+            if execution_nonce_reference
+            else None
+        ),
+        execution_target=action.target,
         framework=agent.framework,
         provider=agent.provider,
         model=agent.model,

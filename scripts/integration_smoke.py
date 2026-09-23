@@ -97,6 +97,20 @@ def check_health(report: SmokeReport, client: httpx.Client) -> None:
         report.add("health", "LOCAL_PROTOCOL_TEST", False, f"request failed: {exc}")
 
 
+def check_readiness(report: SmokeReport, client: httpx.Client) -> None:
+    try:
+        resp = client.get("/ready", timeout=15.0)
+        ok = resp.status_code == 200 and resp.json().get("status") == "ready"
+        report.add(
+            "readiness",
+            "LOCAL_PROTOCOL_TEST",
+            ok,
+            f"GET /ready -> {resp.status_code} {resp.text[:200]}",
+        )
+    except httpx.HTTPError as exc:
+        report.add("readiness", "LOCAL_PROTOCOL_TEST", False, f"request failed: {exc}")
+
+
 def check_initialize_requires_auth(report: SmokeReport, client: httpx.Client) -> None:
     resp = _rpc(
         client,
@@ -231,6 +245,7 @@ def run_checks(report: SmokeReport, client: httpx.Client, api_key: str | None) -
     tests/integrations/ -- so the test suite exercises the exact same
     check functions the CLI reports on, not a re-implementation."""
     check_health(report, client)
+    check_readiness(report, client)
     check_initialize_requires_auth(report, client)
     check_invalid_token(report, client)
     check_malformed_request(report, client)
