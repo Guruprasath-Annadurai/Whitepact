@@ -7,9 +7,9 @@ from __future__ import annotations
 import os
 import warnings
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
-from pydantic import Field, field_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import (
     BaseSettings,
     NoDecode,
@@ -24,6 +24,12 @@ from pydantic_settings.sources import EnvSettingsSource
 # these two constants so the precedence rule stays in one place.
 WHITEPACT_ENV_PREFIX = "WHITEPACT_"
 LEGACY_ENV_PREFIX = "RAI_"
+PRODUCTION_ENVIRONMENTS = frozenset({"production", "prod"})
+
+
+def is_production_environment(environment: str) -> bool:
+    """True only for explicit production identifiers — never inferred from infra."""
+    return environment.strip().lower() in PRODUCTION_ENVIRONMENTS
 
 
 class Settings(BaseSettings):
@@ -139,9 +145,28 @@ class Settings(BaseSettings):
         description="Emit structured JSON logs (recommended for production).",
     )
 
+    # Deployment Environment
+    environment: str = Field(
+        default="development",
+        validation_alias=AliasChoices(
+            "WHITEPACT_ENV",
+            "RAI_ENV",
+            "ENVIRONMENT",
+            "ENV",
+            "environment",
+        ),
+        description="Deployment environment (development, staging, production).",
+    )
+
     # PostgreSQL (optional — defaults to SQLite via db_path)
     database_url: str | None = Field(
         default=None,
+        validation_alias=AliasChoices(
+            "WHITEPACT_DATABASE_URL",
+            "DATABASE_URL",
+            "RAI_DATABASE_URL",
+            "database_url",
+        ),
         description=(
             "Full database URL for async engine. "
             "postgresql://user:pass@host/db or leave unset to use SQLite."
@@ -164,24 +189,21 @@ class Settings(BaseSettings):
         ),
     )
 
-    # Governance dispatch-path gating (opt-in — see MIGRATION_WHITEPACT_V2.md)
+    # Governance service initialization. Hosted execution fails closed when disabled.
+    # Production hosted MCP *startup* requires this to be true (see
+    # mcp.server.hosted_production_preflight). Non-production may leave it
+    # false; hosted tool calls then return governance_unavailable rather than
+    # raw dispatch_tool().
     mcp_governance_enabled: bool = Field(
         default=False,
         description=(
-            "Route every hosted-MCP-transport tool call through "
-            "WhitePactRuntimeGateway.evaluate() before it executes, instead "
-            "of the gateway existing only as a separate, opt-in API "
-            "(GET/POST /api/governance/*). Off by default: turning this on "
-            "for an existing hosted deployment is a real behavior change — "
-            "a call that used to always execute can now come back DENY, "
-            "QUARANTINE, or REQUIRE_APPROVAL (queued, not executed), and "
-            "PII-bearing arguments can get silently redacted before the "
-            "underlying tool sees them. Only applies to org-scoped calls "
-            "over Streamable HTTP/SSE; the self-hosted stdio transport has "
-            "no organizational identity to evaluate authority/policy "
-            "against and is unaffected either way. See THREAT_MODEL.md's "
-            "governance-pipeline section for what this does and doesn't "
-            "cover once enabled."
+            "Initialize WhitePactRuntimeGateway on the hosted-MCP process and "
+            "route org-scoped Streamable HTTP/SSE tool calls through it. "
+            "Hosted calls never fall through to ungated dispatch_tool() even "
+            "when this is false — they fail closed with governance_unavailable. "
+            "Production hosted startup refuses to boot if this is false. "
+            "The self-hosted stdio transport has no organizational identity "
+            "and remains a distinct, documented trust domain."
         ),
     )
 
@@ -319,13 +341,23 @@ class Settings(BaseSettings):
     mcp_http_allow_unauthenticated_demo: bool = Field(
         default=False,
         description=(
-            "DANGER — demo/recording use only. When true, whitepact-mcp-http "
-            "grants every request read-only VIEWER access with no Bearer key "
-            "required, so a reviewer/demo-recording session can exercise the "
-            "live tools without provisioning a key. There is no expiry or "
-            "time limit enforced in code — this must be manually unset and "
-            "the service redeployed immediately after the recording is done. "
-            "Never leave this true in a long-running deployment."
+            "DANGER — local demo/recording only. When true, whitepact-mcp-http "
+            "accepts requests with no Bearer key as a VIEWER. Production and "
+            "prod environments refuse to start if this is true. Hosted tool "
+            "execution still requires tenant-scoped governance (demo identity "
+            "is not an organization)."
+        ),
+    )
+    phase7a_dispatcher_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "PHASE7A_DISPATCHER_ENABLED",
+            "WHITEPACT_PHASE7A_DISPATCHER_ENABLED",
+            "RAI_PHASE7A_DISPATCHER_ENABLED",
+        ),
+        description=(
+            "Development/staging Phase 7A dispatcher. Default false. "
+            "Production Gate B is CLOSED; production must refuse activation."
         ),
     )
     mcp_oauth_issuer: str = Field(
@@ -380,6 +412,56 @@ class Settings(BaseSettings):
     billing_cancel_url: str = Field(
         default="http://localhost:8765/billing/cancel",
         description="Redirect URL after cancelled Stripe checkout.",
+    )
+
+    # Paddle billing (optional — leave unset to disable Paddle webhook handling)
+    paddle_api_key: str | None = Field(
+        default=None,
+        description="Paddle API key for server-to-server operations.",
+    )
+    paddle_env: Literal["sandbox", "production"] | None = Field(
+        default=None,
+        description="Explicit Paddle API environment. Required when Paddle API access is configured.",
+    )
+    paddle_webhook_secret: str | None = Field(
+        default=None,
+        description="Paddle webhook signing secret for verifying incoming events.",
+    )
+    paddle_price_id_pro: str | None = Field(
+        default=None,
+        description="Paddle Price ID for the PRO plan subscription.",
+    )
+    paddle_price_id_enterprise: str | None = Field(
+        default=None,
+        description="Paddle Price ID for the ENTERPRISE plan subscription.",
+    )
+    paddle_signature_tolerance_seconds: int = Field(
+        default=300,
+        description="Paddle webhook signature timestamp drift tolerance in seconds.",
+    )
+
+    # Browser identity. Human sessions are deliberately independent from
+    # workload API keys and use hashed opaque tokens in Secure cookies.
+    web_public_url: str = Field(
+        default="http://localhost:8765",
+        description="Canonical public origin used in email verification links.",
+    )
+    web_session_ttl_hours: int = Field(default=12, ge=1, le=168)
+    web_session_secure: bool = Field(
+        default=True,
+        description="Set false only for local HTTP development; production must keep Secure cookies.",
+    )
+    web_verification_delivery_url: str | None = Field(
+        default=None,
+        description="HTTPS webhook that accepts transactional verification-email payloads.",
+    )
+    web_verification_delivery_token: str | None = Field(
+        default=None,
+        description="Bearer credential for the verification delivery webhook.",
+    )
+    web_auth_dev_tokens: bool = Field(
+        default=False,
+        description="Local-only escape hatch that returns verification URLs in API responses.",
     )
 
     # Alertmanager → incident bridge (optional — leave unset to disable)
@@ -446,6 +528,10 @@ class Settings(BaseSettings):
     )
 
     @property
+    def is_production(self) -> bool:
+        return is_production_environment(self.environment)
+
+    @property
     def leaderboard_api_keys(self) -> dict[str, str | None]:
         return {
             "openai": self.leaderboard_openai_api_key,
@@ -481,6 +567,90 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return [o.strip() for o in v.split(",") if o.strip()]
         return list(v) if v else []
+
+    @field_validator("web_verification_delivery_url")
+    @classmethod
+    def _verification_delivery_requires_https(cls, value: str | None) -> str | None:
+        """Keep email-verification tokens off plaintext production transports."""
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            return None
+        if normalized.startswith("https://"):
+            return normalized
+        if normalized.startswith(("http://localhost", "http://127.0.0.1", "http://[::1]")):
+            return normalized
+        raise ValueError("web_verification_delivery_url must use HTTPS outside local development")
+
+    @model_validator(mode="after")
+    def _enforce_paddle_environment(self) -> Settings:
+        """Keep Paddle credentials and API traffic in one explicit environment."""
+        if not self.paddle_api_key:
+            return self
+        if self.paddle_env is None:
+            raise ValueError(
+                "WHITEPACT_PADDLE_ENV must be explicitly set to sandbox or production "
+                "when WHITEPACT_PADDLE_API_KEY is configured."
+            )
+        api_key = self.paddle_api_key.strip()
+        if self.paddle_env == "sandbox" and api_key.startswith("pdl_live_"):
+            raise ValueError("Paddle API credential does not match sandbox environment.")
+        if self.paddle_env == "production" and api_key.startswith("pdl_sdbx_"):
+            raise ValueError("Paddle API credential does not match production environment.")
+        return self
+
+    @model_validator(mode="after")
+    def _enforce_production_database(self) -> Settings:
+        """Fail closed if production environment is configured without a valid database URL,
+        and validate conflicts across database URL environment variables."""
+        # Detect multiple different database URLs configured simultaneously
+        db_vars: dict[str, str] = {}
+        for key in ("WHITEPACT_DATABASE_URL", "DATABASE_URL", "RAI_DATABASE_URL"):
+            for env_k, env_v in os.environ.items():
+                if env_k.upper() == key and env_v:
+                    db_vars[key] = env_v
+                    break
+
+        unique_urls = set(db_vars.values())
+        if len(unique_urls) > 1:
+            configured_names = ", ".join(db_vars)
+            conflict_msg = (
+                f"Conflicting database URLs configured simultaneously in: {configured_names}. "
+                "Canonical precedence selected the highest-priority variable."
+            )
+            if self.environment.lower() in {"production", "prod"}:
+                raise ValueError(
+                    f"{conflict_msg} Multiple conflicting database URLs are not allowed in production."
+                )
+            warnings.warn(conflict_msg, UserWarning, stacklevel=2)
+
+        if self.environment.lower() in {"production", "prod"}:
+            if not self.database_url:
+                raise ValueError(
+                    "Production environment requires DATABASE_URL (or WHITEPACT_DATABASE_URL / RAI_DATABASE_URL). "
+                    "Refusing to fall back to SQLite in production."
+                )
+            if not self.database_url.startswith(("postgresql://", "postgresql+asyncpg://")):
+                raise ValueError(
+                    f"Production environment requires a PostgreSQL database URL, got: {self.database_url.split('://')[0]}://"
+                )
+            from responsibleai.db.encryption import field_encryption_is_configured
+
+            if not field_encryption_is_configured():
+                raise ValueError(
+                    "Production environment requires WHITEPACT_FIELD_ENCRYPTION_KEY "
+                    "or RAI_FIELD_ENCRYPTION_KEY. MFA seeds, webhook HMAC secrets, "
+                    "upstream auth tokens, and approval arguments use EncryptedString "
+                    "and must not start in plaintext."
+                )
+            from responsibleai.runtime.gate import refuse_production_phase7a
+
+            refuse_production_phase7a(
+                environment=self.environment,
+                enabled=self.phase7a_dispatcher_enabled,
+            )
+        return self
 
     @property
     def otel_headers_dict(self) -> dict[str, str]:

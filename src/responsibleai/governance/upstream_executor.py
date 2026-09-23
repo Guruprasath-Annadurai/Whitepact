@@ -19,6 +19,7 @@ for no benefit outside this one executor.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -27,17 +28,20 @@ import httpx
 from responsibleai.governance.execution import (
     ExecutionAuthorization,
     _validate_authorization,
+    admit_execution,
     check_target_fingerprint,
 )
 from responsibleai.governance.jit_credential import consume_jit_credential, issue_jit_credential
 from responsibleai.governance.models import ActionRequest
 from responsibleai.governance.risk import UPSTREAM_ACTION_TYPE
 from responsibleai.governance.upstream import validate_upstream_server_url
+from responsibleai.net.egress import create_safe_async_client
 
 ACTION_TYPE = UPSTREAM_ACTION_TYPE
 
 if TYPE_CHECKING:
     from responsibleai.db.credential_issuance_repository import CredentialIssuanceRepository
+    from responsibleai.db.execution_nonce_repository import ExecutionNonceRepository
     from responsibleai.db.upstream_repository import UpstreamServerRepository
     from responsibleai.governance.upstream import UpstreamServer
 
@@ -109,7 +113,10 @@ class _HTTPClientFactory(Protocol):
 
 
 def _default_http_client_factory() -> httpx.AsyncClient:
-    return httpx.AsyncClient(timeout=UPSTREAM_CALL_TIMEOUT_SECONDS, follow_redirects=False)
+    # create_safe_async_client uses SafeAsyncHTTPTransport which enforces
+    # DNS-rebinding protection and destination policy at actual TCP-connect time
+    # (TOCTOU defence). follow_redirects is disabled inside the transport.
+    return create_safe_async_client(timeout=UPSTREAM_CALL_TIMEOUT_SECONDS)
 
 
 async def _call_upstream_tool(
@@ -155,8 +162,10 @@ class UpstreamMCPExecutor:
         *,
         http_client_factory: _HTTPClientFactory | None = None,
         credential_issuance_repo: CredentialIssuanceRepository | None = None,
+        nonce_repo: ExecutionNonceRepository | None = None,
     ) -> None:
         self._registry = registry
+        self._nonce_repo = nonce_repo
         # Resolved at call time (execute()), not bound here as a default
         # parameter value -- a default value captures a reference to
         # whatever _default_http_client_factory *was* at class-
@@ -174,6 +183,10 @@ class UpstreamMCPExecutor:
         self._credential_issuance_repo = credential_issuance_repo
 
     async def execute(self, authorization: ExecutionAuthorization, action: ActionRequest) -> Any:
+        from responsibleai.data_governance.backup_defense import assert_restore_readiness_admitted
+
+        assert_restore_readiness_admitted()
+
         # Same precedence InternalToolExecutor uses: the authorization's
         # own shape (consumed/expired/org/action-match) is checked
         # before anything about the target is even looked up, so a
@@ -209,7 +222,13 @@ class UpstreamMCPExecutor:
                 credential, action_id=action.action_id, agent_id=action.agent.agent_id
             )
 
-        authorization.consumed = True  # single-use, same as InternalToolExecutor
+        # Revalidate after registry/audit awaits, then durably admit in hosted
+        # configurations. No database failure falls back to process-local state.
+        await admit_execution(authorization, action, self._nonce_repo)
+        # Audit persistence below yields. Dispatch the admitted bytes, not a
+        # caller-owned dictionary or registry object that can change during it.
+        admitted_arguments = copy.deepcopy(action.arguments)
+        admitted_url = server.url
 
         auth_token = consume_jit_credential(credential)
         if self._credential_issuance_repo is not None:
@@ -218,13 +237,13 @@ class UpstreamMCPExecutor:
         # Re-checked immediately before dispatch, not just at
         # registration -- DNS can resolve differently between the two
         # (validate_upstream_server_url's own docstring).
-        validate_upstream_server_url(server.url)
+        validate_upstream_server_url(admitted_url)
 
         factory = self._http_client_factory or _default_http_client_factory
         return await _call_upstream_tool(
-            server.url,
+            admitted_url,
             tool_name,
-            action.arguments,
+            admitted_arguments,
             http_client_factory=factory,
             auth_token=auth_token,
         )

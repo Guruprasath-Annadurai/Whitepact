@@ -11,9 +11,21 @@ from typing import Any
 
 
 class Role(StrEnum):
+    """Administrative RBAC roles.
+
+    These roles never confer WhitePact execution authority. OWNER is the
+    strongest *administrative* role and still cannot manufacture a
+    short-lived execution grant.
+    """
+
     OWNER = "OWNER"
     ADMIN = "ADMIN"
+    SECURITY_ADMIN = "SECURITY_ADMIN"
+    APPROVER = "APPROVER"
+    DEVELOPER = "DEVELOPER"
     ANALYST = "ANALYST"
+    AUDITOR = "AUDITOR"
+    BILLING_ADMIN = "BILLING_ADMIN"
     VIEWER = "VIEWER"
 
 
@@ -23,6 +35,71 @@ class Plan(StrEnum):
     FREE = "FREE"
     PRO = "PRO"
     ENTERPRISE = "ENTERPRISE"
+
+
+class GovernanceStatus(StrEnum):
+    """Human/admin organization lifecycle — independent of billing plan."""
+
+    ACTIVE = "ACTIVE"
+    SUSPENDED = "SUSPENDED"
+    DISABLED = "DISABLED"
+
+
+PLAN_RANK: dict[Plan, int] = {
+    Plan.FREE: 0,
+    Plan.PRO: 1,
+    Plan.ENTERPRISE: 2,
+}
+
+ACTIVE_LIKE_STATUSES: frozenset[str] = frozenset({"active", "trialing"})
+RESTRICTIVE_STATUSES: frozenset[str] = frozenset(
+    {"canceled", "paused", "past_due", "inactive", "dissolved"}
+)
+
+
+def get_plan_rank(plan: Plan | str) -> int:
+    """Return the integer rank for a Plan (FREE < PRO < ENTERPRISE)."""
+    if isinstance(plan, Plan):
+        return PLAN_RANK.get(plan, 0)
+    try:
+        return PLAN_RANK.get(Plan(str(plan).upper()), 0)
+    except (ValueError, KeyError):
+        return 0
+
+
+def is_equal_timestamp_transition_allowed(
+    current_plan: Plan | str,
+    current_status: str,
+    incoming_plan: Plan | str,
+    incoming_status: str,
+) -> bool:
+    """Evaluate whether an entitlement update with equal occurred_at is permissible.
+
+    Equal occurred_at timestamps represent ambiguous provider chronology. Under WhitePact's
+    zero-trust commercial invariant, equal timestamp events must NEVER widen commercial entitlement:
+    1. Upward plan elevation (e.g. FREE -> PRO, PRO -> ENTERPRISE) is strictly rejected.
+    2. Restrictive -> active-like status transitions (e.g. canceled -> active) are strictly rejected.
+    3. Idempotent same-state events (same plan and status) and downward narrowing transitions are permitted.
+    """
+    c_rank = get_plan_rank(current_plan)
+    i_rank = get_plan_rank(incoming_plan)
+
+    # 1. Reject upward plan elevation (widening)
+    if i_rank > c_rank:
+        return False
+
+    c_norm_status = (current_status or "inactive").casefold()
+    i_norm_status = (incoming_status or "inactive").casefold()
+
+    c_active = c_norm_status in ACTIVE_LIKE_STATUSES
+    i_active = i_norm_status in ACTIVE_LIKE_STATUSES
+
+    # 2. Reject restrictive -> active-like reactivation
+    if not c_active and i_active:
+        return False
+
+    # 3. Non-widening transition (downward plan, same plan, narrowing status, or idempotent)
+    return True
 
 
 @dataclass
@@ -35,9 +112,22 @@ class Organization:
     plan: Plan = Plan.FREE
     stripe_customer_id: str | None = None
     stripe_subscription_id: str | None = None
+    paddle_customer_id: str | None = None
+    paddle_subscription_id: str | None = None
+    entitlement_version: int = 0
+    entitlement_updated_at: str | None = None
+    paddle_last_occurred_at: str | None = None
     plan_renews_at: str | None = None
+    subscription_status: str = "inactive"
+    governance_status: str = GovernanceStatus.ACTIVE.value
     sso_required: bool = False
     mfa_required: bool = False
+    # ORGANIZATION (multi-member) or INDIVIDUAL (verified personal workspace).
+    workspace_kind: str = "ORGANIZATION"
+    owner_user_id: str | None = None
+    deactivated_at: str | None = None
+    # Internal bootstrap-ownership binding. Never serialized to clients.
+    provisioner_key_id: str | None = field(default=None, repr=False)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -48,9 +138,17 @@ class Organization:
             "created_at": self.created_at,
             "plan": self.plan.value if isinstance(self.plan, Plan) else self.plan,
             "stripe_customer_id": self.stripe_customer_id,
+            "paddle_customer_id": self.paddle_customer_id,
             "plan_renews_at": self.plan_renews_at,
+            "subscription_status": self.subscription_status,
+            "governance_status": self.governance_status,
+            "entitlement_version": self.entitlement_version,
+            "entitlement_updated_at": self.entitlement_updated_at,
             "sso_required": self.sso_required,
             "mfa_required": self.mfa_required,
+            "workspace_kind": self.workspace_kind,
+            "owner_user_id": self.owner_user_id,
+            "deactivated_at": self.deactivated_at,
         }
 
 
@@ -69,6 +167,11 @@ class OrgApiKey:
     # response body, same discipline as the raw API key itself.
     mfa_secret: str | None = field(default=None, repr=False)
     mfa_backup_codes: list[str] | None = field(default=None, repr=False)
+    prefix: str = "rai_"
+    environment: str = "legacy"
+    scopes: tuple[str, ...] = ()
+    expires_at: str | None = None
+    rotated_from_id: str | None = None
 
     def to_dict(self, include_key: str | None = None) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -80,6 +183,10 @@ class OrgApiKey:
             "last_used_at": self.last_used_at,
             "revoked": self.revoked,
             "mfa_enrolled": self.mfa_enrolled,
+            "prefix": self.prefix,
+            "environment": self.environment,
+            "scopes": list(self.scopes),
+            "expires_at": self.expires_at,
         }
         if include_key is not None:
             d["key"] = include_key  # Only set on key creation; never stored
@@ -98,6 +205,11 @@ class OrgContext:
     mfa_enrolled: bool = False
     is_legacy: bool = False  # True for flat RAI_API_KEYS entries
     plan: Plan = Plan.ENTERPRISE  # legacy/anon keys default to unrestricted for backward compat
+    scopes: frozenset[str] = frozenset()
+    # Set only by the credential verifier that constructed this context.
+    # Downstream governance records it as authentication evidence; it never
+    # becomes an authority grant.
+    authentication_method: str = "api_key"
 
 
 @dataclass

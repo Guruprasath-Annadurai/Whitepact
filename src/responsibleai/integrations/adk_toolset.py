@@ -32,7 +32,7 @@ as a subprocess):
 Usage (a hosted instance running `responsibleai-mcp-http`):
 
     from responsibleai.integrations.adk_toolset import build_http_toolset
-    toolset = build_http_toolset("https://responsibleai-dashboard.onrender.com/mcp")
+    toolset = build_http_toolset("https://whitepact-mcp-http.onrender.com/mcp")
 """
 
 from __future__ import annotations

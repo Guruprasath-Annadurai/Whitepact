@@ -1,51 +1,10 @@
 # Copyright (c) 2026 Guruprasath Annadurai
 # SPDX-License-Identifier: MIT
-"""Consent Proof (Heart Phase H4) — a structured, digest-bound record
-that a specific human (or otherwise-legitimate root) actually
-consented to a specific grant of authority, for a specific purpose,
-distinguishable from mere *authentication*.
+"""Scoped consent records with integrity and temporal validation.
 
-**Why this is not the same thing as authentication or a delegation
-grant**: `IdentityContext`/`JWTClaims`/`SAMLAssertionClaims` (see
-`docs/heart/HEART_CURRENT_STATE.md` §1) prove *who someone is*.
-`DelegationRecord` (`governance/delegation.py`) records *that* an
-authority grant happened, with a free-text `purpose: str` field. Prior
-to this phase, nothing in the codebase records the *consent act*
-itself as a first-class, evidenced, verifiable event — "was this
-grant actually agreed to by the party whose authority backs it, or
-was it merely constructed by code that had the technical ability to
-construct it." `docs/heart/HEART_CURRENT_STATE.md` §4 confirms this is
-genuinely new (`ConsentProof (Phase H4) | *(none)* | NEW`).
-
-**The rule this module enforces**: a `ConsentProof` is only legitimate
-evidence of consent if (a) it is temporally valid (not revoked,
-expired, or not yet in effect), and (b) the party who gave consent
-(`consenting_root_id`) itself traces to a legitimate root via
-`validate_root_chain()` (Heart Phase H3, `root_authority.py`) — a
-"consent" whose own root is illegitimate proves nothing. This module
-does not re-verify the root chain itself; `validate_consent_proof()`
-takes an already-computed `RootValidationResult` for the consenting
-root as a parameter, so this module stays free of any dependency on
-how root resolution actually happens (continuing the Heart's
-TCB-minimization discipline — see `authority_lattice.py` and
-`root_authority.py` for the same pattern: an abstract input, not a
-live call to another module's resolver).
-
-**Deliberately minimal PII**: `subject_id` is the same opaque
-identifier convention `root_authority.py` already establishes — not a
-name, email, or other personal attribute. The `consent_method` and
-`evidence_refs` fields record *how* consent was captured and an
-opaque pointer to *where* the evidence lives (a signed-form ID, a
-recorded-call ID, a UI click-event ID) — never the consent artifact
-itself, which stays out of this module by design, exactly like
-`RootAuthorityRecord.evidence_refs` already does for root verification
-evidence.
-
-**Not built here**: real wiring from an actual consent-capture UI/flow
-into a persisted `ConsentProof`, and any DB persistence layer for this
-type. This phase ships the record type and its validation semantics
-only — the same scope discipline every prior Heart phase (H1-H3) has
-held to.
+Empty action or target scopes authorize nothing in the canonical resolver.
+A digest detects corruption; it is not an authenticated signature against a
+malicious database administrator. Customer evidence stays outside this record.
 """
 
 from __future__ import annotations
@@ -94,12 +53,22 @@ def compute_consent_digest(
     purpose: str,
     consent_method: ConsentMethod,
     consented_at: datetime,
+    allowed_action_types: tuple[str, ...] = (),
+    allowed_targets: tuple[str, ...] = (),
+    not_before: datetime | None = None,
+    expires_at: datetime | None = None,
+    evidence_refs: tuple[str, ...] = (),
 ) -> str:
     """SHA-256 over the canonical JSON of every field that defines what
     this consent act actually asserts. Complete over these fields --
     see `root_authority.py`'s own digest function for why this
     codebase calls that out explicitly rather than leaving readers to
-    guess."""
+    guess. `allowed_action_types`/`allowed_targets` (Heart Production
+    Closure Gap A) are included for the same reason every other field
+    here is: a proof whose scope was silently widened after issuance
+    (a tampered row, not a new consent act) must fail digest
+    verification, not be silently accepted with a wider scope than was
+    actually consented to."""
     payload = {
         "consent_id": consent_id,
         "subject_id": subject_id,
@@ -109,6 +78,11 @@ def compute_consent_digest(
         "purpose": purpose,
         "consent_method": consent_method.value,
         "consented_at": consented_at.isoformat(),
+        "allowed_action_types": sorted(allowed_action_types),
+        "allowed_targets": sorted(allowed_targets),
+        "not_before": not_before.isoformat() if not_before else None,
+        "expires_at": expires_at.isoformat() if expires_at else None,
+        "evidence_refs": sorted(evidence_refs),
     }
     return hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
 
@@ -129,6 +103,9 @@ class ConsentProof:
     scope_description: str
     purpose: str
     consent_method: ConsentMethod
+    # Empty scopes match no actions or targets, including on migrated history.
+    allowed_action_types: tuple[str, ...] = ()
+    allowed_targets: tuple[str, ...] = ()
     evidence_refs: tuple[str, ...] = ()
     consent_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     consented_at: datetime = field(default_factory=lambda: datetime.now(UTC))
@@ -158,6 +135,8 @@ class ConsentProof:
             "scope_description": self.scope_description,
             "purpose": self.purpose,
             "consent_method": self.consent_method.value,
+            "allowed_action_types": list(self.allowed_action_types),
+            "allowed_targets": list(self.allowed_targets),
             "evidence_refs": list(self.evidence_refs),
             "consented_at": self.consented_at.isoformat(),
             "not_before": self.not_before.isoformat() if self.not_before else None,
@@ -177,6 +156,8 @@ def build_consent_proof(
     purpose: str,
     consent_method: ConsentMethod,
     *,
+    allowed_action_types: tuple[str, ...] = (),
+    allowed_targets: tuple[str, ...] = (),
     evidence_refs: tuple[str, ...] = (),
     not_before: datetime | None = None,
     expires_at: datetime | None = None,
@@ -184,7 +165,20 @@ def build_consent_proof(
     """The only intended constructor -- computes `canonical_digest`
     from the other fields, mirroring `build_root_authority_record()`'s
     own pattern (Phase H3) so two proofs are the same proof if and
-    only if their digests match."""
+    only if their digests match.
+
+    `allowed_action_types` defaults to `()` -- kept optional here,
+    not required, so every pre-existing caller across this codebase's
+    own Heart test suites (built before Gap A existed) keeps working
+    unchanged; this constructor does not itself enforce a non-empty
+    scope. The real enforcement lives at the two places that actually
+    matter for production legitimacy: the consent-capture REST
+    endpoint requires a non-empty list (`dashboard/app.py`'s
+    `ConsentProofCaptureRequest`), and
+    `governance/authority_resolver.py`'s wiring treats an empty
+    `allowed_action_types` as matching *no* action -- fail-closed, an
+    unscoped proof authorizes nothing on the live path, never
+    everything."""
     consent_id = str(uuid.uuid4())
     consented_at = datetime.now(UTC)
     digest = compute_consent_digest(
@@ -196,6 +190,11 @@ def build_consent_proof(
         purpose,
         consent_method,
         consented_at,
+        allowed_action_types,
+        allowed_targets,
+        not_before,
+        expires_at,
+        evidence_refs,
     )
     return ConsentProof(
         consent_id=consent_id,
@@ -205,6 +204,8 @@ def build_consent_proof(
         scope_description=scope_description,
         purpose=purpose,
         consent_method=consent_method,
+        allowed_action_types=allowed_action_types,
+        allowed_targets=allowed_targets,
         evidence_refs=evidence_refs,
         consented_at=consented_at,
         not_before=not_before,
@@ -220,6 +221,13 @@ class ConsentValidationStatus(StrEnum):
     NOT_YET_VALID = "NOT_YET_VALID"
     ROOT_NOT_LEGITIMATE = "ROOT_NOT_LEGITIMATE"
     ROOT_MISMATCH = "ROOT_MISMATCH"
+    # Heart Production Closure Gap A -- distinct from every status
+    # above, which all describe a *genuine* proof that fails validation
+    # for a real reason. TAMPERED means the fetched row's fields don't
+    # recompute to its own stored canonical_digest -- the record isn't
+    # trustworthy as data at all, checked before any of the other
+    # statuses are even meaningful to evaluate.
+    TAMPERED = "TAMPERED"
 
 
 @dataclass(frozen=True)
@@ -268,3 +276,30 @@ def validate_consent_proof(
             return ConsentValidationResult(ConsentValidationStatus.NOT_YET_VALID, proof.consent_id)
         return ConsentValidationResult(ConsentValidationStatus.EXPIRED, proof.consent_id)
     return ConsentValidationResult(ConsentValidationStatus.VALID, proof.consent_id)
+
+
+def verify_consent_proof_integrity(proof: ConsentProof) -> bool:
+    """Heart Production Closure Gap A -- recomputes `canonical_digest`
+    from *proof*'s own current field values and compares it to what's
+    stored on the record. `build_consent_proof()` computes this digest
+    once at issuance; nothing before this function ever re-checked it
+    on read. A caller should treat a proof failing this check as not
+    trustworthy data at all -- not merely "not legitimate" the way a
+    revoked or expired proof is -- and never pass it into
+    `validate_consent_proof()`/`sovereignty_kernel.evaluate()`."""
+    recomputed = compute_consent_digest(
+        proof.consent_id,
+        proof.subject_id,
+        proof.consenting_root_id,
+        proof.grantee_id,
+        proof.scope_description,
+        proof.purpose,
+        proof.consent_method,
+        proof.consented_at,
+        proof.allowed_action_types,
+        proof.allowed_targets,
+        proof.not_before,
+        proof.expires_at,
+        proof.evidence_refs,
+    )
+    return recomputed == proof.canonical_digest

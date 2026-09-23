@@ -137,7 +137,7 @@ class TestRunMigrationsOrRaise:
         try:
             async with engine.raw.connect() as conn:
                 rows = await conn.execute(text("SELECT version_num FROM alembic_version"))
-                assert rows.scalar() == "0030"
+                assert rows.scalar() == "0061"
 
                 cols = await conn.execute(text("PRAGMA table_info(organizations)"))
                 col_names = {r[1] for r in cols.fetchall()}
@@ -146,19 +146,22 @@ class TestRunMigrationsOrRaise:
         finally:
             await engine.raw.dispose()
 
-    async def test_preexisting_unstamped_database_reaches_head(self, tmp_sqlite_path):
+    async def test_preexisting_unstamped_database_requires_explicit_review(self, tmp_sqlite_path):
         """The real-world case: an existing self-hosted install's DB, built
         by an older version of the app before this migration system
         existed, with no alembic_version tracking at all."""
         await _build_baseline_only_schema(tmp_sqlite_path)
 
-        await run_migrations_or_raise(tmp_sqlite_path)
+        with pytest.raises(MigrationError, match="unversioned"):
+            await run_migrations_or_raise(tmp_sqlite_path)
 
         engine2 = create_engine(tmp_sqlite_path)
         try:
             async with engine2.raw.connect() as conn:
-                rows = await conn.execute(text("SELECT version_num FROM alembic_version"))
-                assert rows.scalar() == "0030"
+                from sqlalchemy import inspect
+
+                tables = await conn.run_sync(lambda c: inspect(c).get_table_names())
+                assert "alembic_version" not in tables
         finally:
             await engine2.raw.dispose()
 
@@ -170,7 +173,7 @@ class TestRunMigrationsOrRaise:
         try:
             async with engine.raw.connect() as conn:
                 rows = await conn.execute(text("SELECT version_num FROM alembic_version"))
-                assert rows.scalar() == "0030"
+                assert rows.scalar() == "0061"
         finally:
             await engine.raw.dispose()
 

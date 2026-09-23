@@ -27,12 +27,12 @@ Last verified: 2026-08-13. WhitePact `1.2.2` (PyPI package) / `1.2.3`
 | Transports | `streamable-http` (primary), `sse` (legacy, still served), `stdio` (self-hosted, free) |
 | Public endpoint | `https://whitepact-mcp-http.onrender.com/mcp` (streamable-http), `.../sse` (SSE) |
 | Auth | Static Bearer API key only. No OAuth Authorization Server is deployed (`/.well-known/oauth-protected-resource` 404s — confirmed live, no OIDC issuer configured on the hosted instance) |
-| Tools | 27, all `readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False` |
+| Tools | 30, all `readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False` |
 | Resources | Supported — 10 canonical resources, 20 advertised (dual `whitepact://` / `rai://` URI scheme) |
 | Prompts | **Not supported** — no `prompts/list` handler in `src/responsibleai/mcp/server.py` |
 | Structured output | Tool results are JSON text content; no `structuredContent`/`outputSchema` wired into tool responses yet (gap, not platform-specific) |
 | Origin validation | Enforced via `RAI_MCP_HTTP_ALLOWED_ORIGINS` / `TrustedHostMiddleware` |
-| Health | `GET /health` → `{"status":"ok","tools":27,...}` (live-verified 2026-08-13) |
+| Health | `GET /health` → `{"status":"ok","tools":30,...}` (live-verified 2026-08-13) |
 | Directory fallback card | `GET /.well-known/mcp/server-card.json` — static capability card for crawlers that can't complete an authenticated scan (e.g. Smithery) |
 | Demo/unauthenticated bypass | `RAI_MCP_HTTP_ALLOW_UNAUTHENTICATED_DEMO` env var exists for recording demos only — **confirmed closed** (live 401 on unauthenticated `/mcp` initialize, 2026-08-13) |
 

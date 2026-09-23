@@ -204,7 +204,7 @@ def _reset_rate_limits():
 
 
 @pytest.fixture()
-async def governed_mcp(monkeypatch: pytest.MonkeyPatch):
+async def governed_mcp(monkeypatch: pytest.MonkeyPatch, seed_runtime_authority):
     """Real MCP protocol round trip against the hosted server's governed
     dispatch path (`apply_governance()`), same pattern
     test_mcp_governance_dispatch.py already established: a substituted
@@ -249,7 +249,17 @@ async def governed_mcp(monkeypatch: pytest.MonkeyPatch):
 
     org_repo = OrgRepository(engine)
     org = await org_repo.create_org("Outcome Test Co", "outcome-test-co", plan=Plan.ENTERPRISE)
-    _key_rec, raw_key = await org_repo.create_key(org.id, "analyst-key", role=Role.ANALYST)
+    key_rec, raw_key = await org_repo.create_key(org.id, "analyst-key", role=Role.ANALYST)
+    from responsibleai.mcp.tools import TOOL_DEFS
+
+    tool_names = tuple(definition.name for definition in TOOL_DEFS)
+    await seed_runtime_authority(
+        engine,
+        organization_id=org.id,
+        principal_id=key_rec.id,
+        action_types=tool_names,
+        targets=tool_names,
+    )
 
     mcp_app = _build_http_app()
     async with LifespanManager(mcp_app) as manager:
@@ -259,6 +269,7 @@ async def governed_mcp(monkeypatch: pytest.MonkeyPatch):
 
 
 async def _call_tool(mcp_app, raw_key: str, tool_name: str, arguments: dict):
+    arguments = {**arguments, "_whitepact_purpose": "automated-test"}
     http_client = AsyncClient(
         transport=ASGITransport(app=mcp_app),
         base_url="http://testserver",

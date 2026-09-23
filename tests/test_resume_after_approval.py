@@ -12,6 +12,8 @@ is blocked (replay), and a mutated/missing-arguments case is refused.
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import pytest
 from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
@@ -37,8 +39,8 @@ from responsibleai.governance.approval import (
     build_resume_action,
 )
 from responsibleai.mcp.governance_integration import resume_approval
-
-BOOTSTRAP_AUTH = {"Authorization": "Bearer bootstrap-test-key"}
+from responsibleai.rbac.models import Role
+from tests.org_http_fixtures import seed_org_with_key
 
 
 @pytest.fixture(autouse=True)
@@ -68,20 +70,10 @@ async def client():
 
 @pytest.fixture()
 async def org_and_admin_key(client: AsyncClient):
-    r = await client.post(
-        "/api/orgs",
-        json={"name": "Resume Test Co", "slug": "resume-test-co"},
-        headers=BOOTSTRAP_AUTH,
+    org_id, _kid, raw = await seed_org_with_key(
+        name="Resume Test Co", slug="resume-test-co", key_name="admin-key", role=Role.ADMIN
     )
-    assert r.status_code == 201, r.text
-    org_id = r.json()["id"]
-    r = await client.post(
-        f"/api/orgs/{org_id}/keys",
-        json={"name": "admin-key", "role": "ADMIN"},
-        headers=BOOTSTRAP_AUTH,
-    )
-    assert r.status_code == 201, r.text
-    return org_id, r.json()["key"]
+    return org_id, raw
 
 
 async def _seed_dispatchable_approval(org_id: str, *, arguments: dict | None = None) -> str:
@@ -89,25 +81,88 @@ async def _seed_dispatchable_approval(org_id: str, *, arguments: dict | None = N
     "deployment" -- not a real MCP tool, fine for resolve-only tests),
     this seeds an approval against a REAL dispatchable tool
     ("rai_health") so resume_approval() can actually execute it."""
+    from datetime import UTC, datetime, timedelta
+
     from responsibleai.dashboard.app import _db_engine
+    from responsibleai.db import OrgRepository
+    from responsibleai.db.consent_proof_repository import ConsentProofRepository
+    from responsibleai.db.delegation_repository import DelegationRepository
+    from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
+    from responsibleai.db.root_authority_repository import RootAuthorityRepository
+    from responsibleai.governance.authority_resolver import AuthorityResolver
+    from responsibleai.governance.consent_proof import ConsentMethod, build_consent_proof
+    from responsibleai.governance.context import GovernanceContext
+    from responsibleai.governance.root_authority import RootType, build_root_authority_record
+    from responsibleai.rbac.models import Role
 
     gw = WhitePactRuntimeGateway()
-    identity = IdentityContext(identity_id="k1", kind="api_key", org_id=org_id)
-    agent = AgentContext(identity=identity, framework="mcp-client")
-    authority = AuthorityContext(
-        delegated_by=org_id,
-        granted_action_types=frozenset({"rai_health"}),
-        require_approval_for=frozenset({"rai_health"}),
+    requester, _raw_requester_key = await OrgRepository(_db_engine).create_key(
+        org_id, "approval-requester", role=Role.ANALYST
     )
+    principal_id = requester.id
+    owner = f"test-owner:{org_id}"
+    expires = datetime.now(UTC) + timedelta(hours=1)
+    roots = RootAuthorityRepository(_db_engine)
+    consents = ConsentProofRepository(_db_engine)
+    delegations = DelegationRepository(_db_engine)
+    root = build_root_authority_record(
+        owner,
+        RootType.HUMAN,
+        "whitepact-test-suite",
+        "explicit-test-fixture",
+        organization_id=org_id,
+        evidence_refs=("test-root-evidence",),
+        expires_at=expires,
+    )
+    await roots.create(root)
+    consent = build_consent_proof(
+        owner,
+        root.root_id,
+        principal_id,
+        "approval test",
+        "automated-test",
+        ConsentMethod.EXPLICIT_UI_ACTION,
+        allowed_action_types=("rai_health",),
+        allowed_targets=("rai_health",),
+        evidence_refs=("test-consent-evidence",),
+        expires_at=expires,
+    )
+    await consents.create(consent, organization_id=org_id)
+    await delegations.grant(
+        org_id,
+        principal_id,
+        granted_action_types=frozenset({"rai_health"}),
+        constraints={"allowed_targets": ["rai_health"]},
+        purpose="automated-test",
+        require_approval_for=frozenset({"rai_health"}),
+        granted_by=owner,
+        expires_at=expires,
+    )
+    identity = IdentityContext(identity_id=principal_id, kind="api_key", org_id=org_id)
+    agent = AgentContext(identity=identity, framework="mcp-client")
     action = ActionRequest(
         agent=agent,
         action_type="rai_health",
         target="rai_health",
         arguments=arguments or {},
+        purpose="automated-test",
     )
-    decision = gw.evaluate(action, authority)
+    context = GovernanceContext.for_persisted_action(
+        org_id, principal_id, action, authentication_method="api_key"
+    )
+    resolved = await AuthorityResolver(roots, consents, delegations).resolve(context)
+    decision = gw.evaluate(action, resolved.authority)
     assert decision.decision == GovernanceDecision.REQUIRE_APPROVAL
-    saved = await ApprovalRepository(_db_engine).create(build_approval_request(action, decision))
+    epoch = (await RevocationEpochRepository(_db_engine).current(org_id)).epoch
+    saved = await ApprovalRepository(_db_engine).create(
+        build_approval_request(
+            action,
+            decision,
+            authentication_method="api_key",
+            revocation_epoch=epoch,
+            authority_version=resolved.authority_version,
+        )
+    )
     return saved.approval_id
 
 
@@ -154,6 +209,63 @@ class TestBuildResumeAction:
 
 
 class TestResumeApprovalEndToEnd:
+    async def test_executor_exception_records_unknown_outcome(
+        self,
+        client: AsyncClient,
+        org_and_admin_key,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from responsibleai.dashboard.app import _db_engine
+        from responsibleai.db import OutcomeRepository
+        from responsibleai.governance.outcome import OutcomeStatus
+
+        org_id, admin_key = org_and_admin_key
+        headers = {"Authorization": f"Bearer {admin_key}"}
+        approval_id = await _seed_dispatchable_approval(org_id)
+        await client.post(
+            f"/api/governance/approvals/{approval_id}/resolve",
+            json={"outcome": "APPROVED"},
+            headers=headers,
+        )
+        dispatch = AsyncMock(side_effect=RuntimeError("uncertain after admission"))
+        monkeypatch.setattr("responsibleai.mcp.tools.dispatch_tool", dispatch)
+        with pytest.raises(RuntimeError, match="uncertain after admission"):
+            await client.post(f"/api/governance/approvals/{approval_id}/execute", headers=headers)
+        evidence = await EvidenceRepository(_db_engine).list_for_org(org_id, decision="ALLOW")
+        resumed = next(item for item in evidence if item.approval_id == approval_id)
+        outcome = await OutcomeRepository(_db_engine).get_for_org(resumed.evidence_id, org_id)
+        assert outcome is not None
+        assert outcome.status is OutcomeStatus.UNKNOWN
+
+    async def test_epoch_change_after_separate_approval_dispatches_zero_times(
+        self,
+        client: AsyncClient,
+        org_and_admin_key,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from responsibleai.dashboard.app import _db_engine
+        from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
+
+        org_id, approver_key = org_and_admin_key
+        headers = {"Authorization": f"Bearer {approver_key}"}
+        approval_id = await _seed_dispatchable_approval(org_id)
+        resolved = await client.post(
+            f"/api/governance/approvals/{approval_id}/resolve",
+            json={"outcome": "APPROVED"},
+            headers=headers,
+        )
+        assert resolved.status_code == 200
+
+        await RevocationEpochRepository(_db_engine).bump(org_id)
+        dispatch = AsyncMock()
+        monkeypatch.setattr("responsibleai.mcp.tools.dispatch_tool", dispatch)
+
+        resumed = await client.post(
+            f"/api/governance/approvals/{approval_id}/execute", headers=headers
+        )
+        assert resumed.status_code == 409
+        dispatch.assert_not_awaited()
+
     async def test_full_round_trip_actually_executes_the_tool(
         self,
         client: AsyncClient,
@@ -240,12 +352,12 @@ class TestResumeApprovalEndToEnd:
             headers=admin_headers,
         )
 
-        r = await client.post(
-            f"/api/orgs/{org_id}/keys",
-            json={"name": "analyst-key", "role": "ANALYST"},
-            headers=BOOTSTRAP_AUTH,
+        from responsibleai.dashboard.app import _org_repo
+        from responsibleai.rbac.models import Role
+
+        _rec, analyst_key = await _org_repo.create_key(
+            org_id, "analyst-key", Role.ANALYST, internal_unverified_fixture=True
         )
-        analyst_key = r.json()["key"]
 
         r = await client.post(
             f"/api/governance/approvals/{approval_id}/execute",
@@ -267,12 +379,9 @@ class TestResumeApprovalEndToEnd:
         self, client: AsyncClient, org_and_admin_key
     ) -> None:
         _org_id, admin_key = org_and_admin_key
-        r = await client.post(
-            "/api/orgs",
-            json={"name": "Other Resume Co", "slug": "other-resume-co"},
-            headers=BOOTSTRAP_AUTH,
+        other_org_id, _kid, _raw = await seed_org_with_key(
+            name="Other Resume Co", slug="other-resume-co", key_name="k", role=Role.ANALYST
         )
-        other_org_id = r.json()["id"]
         other_approval_id = await _seed_dispatchable_approval(other_org_id)
 
         r = await client.post(

@@ -23,6 +23,7 @@ from typing import Any
 from sqlalchemy import insert, select
 
 from responsibleai.db.engine import DatabaseEngine, governance_intent_contracts
+from responsibleai.db.revocation_epoch_repository import bump_epoch_on_connection
 from responsibleai.governance.intent import IntentContract
 
 
@@ -54,6 +55,7 @@ class IntentContractRepository:
 
     async def declare(self, contract: IntentContract) -> IntentContract:
         async with self._engine.raw.begin() as conn:
+            await bump_epoch_on_connection(conn, contract.organization_id)
             await conn.execute(
                 insert(governance_intent_contracts).values(
                     id=contract.contract_id,

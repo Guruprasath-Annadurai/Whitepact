@@ -49,6 +49,40 @@ class TestHealthCheck:
         assert not report.results[0].passed
 
 
+class TestReadinessCheck:
+    def test_passes_on_ready_status(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert request.url.path == "/ready"
+            return httpx.Response(200, json={"status": "ready", "database": "connected"})
+
+        report = smoke.SmokeReport(base_url="http://testserver")
+        with _client(handler) as client:
+            smoke.check_readiness(report, client)
+        assert report.results[0].passed
+        assert report.results[0].name == "readiness"
+
+    def test_fails_on_503_status(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert request.url.path == "/ready"
+            return httpx.Response(503, json={"status": "unavailable", "database": "disconnected"})
+
+        report = smoke.SmokeReport(base_url="http://testserver")
+        with _client(handler) as client:
+            smoke.check_readiness(report, client)
+        assert not report.results[0].passed
+        assert "503" in report.results[0].detail
+
+    def test_fails_on_network_error(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("Connection refused")
+
+        report = smoke.SmokeReport(base_url="http://testserver")
+        with _client(handler) as client:
+            smoke.check_readiness(report, client)
+        assert not report.results[0].passed
+        assert "request failed" in report.results[0].detail
+
+
 class TestAuthChecks:
     def test_unauthenticated_init_expects_401(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
