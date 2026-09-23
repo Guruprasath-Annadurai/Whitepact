@@ -63,6 +63,26 @@ class RemediationLedgerRow(BaseModel):
     changed_in_campaign: bool = False
     partial_implementation: bool = False
 
+    # Phase 2 — role / scope / reasoning (internal; workbook still YES/NO/NA)
+    primary_role: str = ""
+    secondary_roles: list[str] = Field(default_factory=list)
+    role_applicability: str = "APPLICABLE"
+    whitepact_responsibility: str = ""
+    provider_responsibility: str = ""
+    shared_responsibility: str = ""
+    na_candidate: bool = False
+    na_rationale: str = ""
+    scope_basis: str = ""
+    scope_evidence: list[str] = Field(default_factory=list)
+    scope_reviewer_notes: str = ""
+    implementation_state: str = ""
+    phase2_remediation_class: str = ""
+    phase1_response: str = ""
+    before_response: str = ""
+    change_reason: str = ""
+    new_evidence: str = ""
+    role_reasoning: str = ""
+
     # Legacy export columns
     ssrm_owner: str = ""
     implementation_description: str = ""
@@ -73,6 +93,8 @@ class RemediationLedger(BaseModel):
     base_sha: str = "acddae1e96050c1dbe3981327f47dc102beb9262"
     feature_sha: str = ""
     upstream_workbook_sha256: str | None = None
+    phase: str = "phase2"
+    phase1_baseline_sha: str = "fb3238c9c79664b560c629d299c21e8accfae773"
     rows: list[RemediationLedgerRow] = Field(default_factory=list)
 
     def summary(self) -> dict[str, int]:

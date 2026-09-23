@@ -1,7 +1,7 @@
 # AI-CAIQ Control Matrix (authoritative ingest)
 
 Rows: 320
-Summary: {"YES": 22, "NO": 290, "NA": 8, "UNASSESSED": 0}
+Summary: {"YES": 25, "NO": 270, "NA": 25, "UNASSESSED": 0}
 
 | Question ID | Domain | Response | Evidence strength | Question (truncated) |
 |-------------|--------|----------|-------------------|----------------------|
@@ -178,7 +178,7 @@ Summary: {"YES": 22, "NO": 290, "NA": 8, "UNASSESSED": 0}
 | HRS-14.1 | HRS | NO | WEAK | Are the policies and procedures defining the AI training program for all relevant personnel of the o |
 | HRS-14.2 | HRS | NO | WEAK | Are regular training updates given to personnel based on their roles? |
 | HRS-15.1 | HRS | NO | WEAK | Are the policies and procedures on the acceptable use of AI technologies within the organization est |
-| IAM-01.1 | IAM | NO | WEAK | Are Identity and Access Management policies and procedures established, documented, approved, commun |
+| IAM-01.1 | IAM | YES | STRONG | Are Identity and Access Management policies and procedures established, documented, approved, commun |
 | IAM-01.2 | IAM | NO | WEAK | Are Identity and Access Management Policies and Procedures reviewed and updated at least annually, o |
 | IAM-02.1 | IAM | NO | WEAK | Are policies and procedures for the management of authentication credentials including passwords, es |
 | IAM-02.2 | IAM | NO | WEAK | Are policies and procedures for the management of authentication credentials, including passwords, r |
@@ -227,7 +227,7 @@ Summary: {"YES": 22, "NO": 290, "NA": 8, "UNASSESSED": 0}
 | LOG-05.1 | LOG | NO | WEAK | Are capabilities to correlate and monitor security audit logs for  the detection of suspicious or an |
 | LOG-05.2 | LOG | NO | WEAK | Is a process, on reviewing and taking appropriate and timely  actions on detected anomalies, defined |
 | LOG-06.1 | LOG | NO | WEAK | Is a reliable time source being used across all relevant information processing systems? |
-| LOG-07.1 | LOG | NO | WEAK | Are information metadata system events that should be logged,  established, documented, and implemen |
+| LOG-07.1 | LOG | YES | STRONG | Are information metadata system events that should be logged,  established, documented, and implemen |
 | LOG-07.2 | LOG | NO | WEAK | Is the scope reviewed and updated at least annually, or whenever  there is a change in the threat en |
 | LOG-08.1 | LOG | NO | WEAK | Are technical measures for service customers to detect and  scrub or tokenize sensitive data from lo |
 | LOG-09.1 | LOG | NO | WEAK | Are audit records generated, and do they contain relevant security information? |
@@ -235,29 +235,29 @@ Summary: {"YES": 22, "NO": 290, "NA": 8, "UNASSESSED": 0}
 | LOG-11.1 | LOG | NO | WEAK | Are monitoring and internal reporting capabilities established to report on  cryptographic operation |
 | LOG-12.1 | LOG | NO | NONE | Are key lifecycle management events logged and monitored to enable auditing and reporting on cryptog |
 | LOG-13.1 | LOG | NO | WEAK | Is physical access logged and monitored using an auditable access control system? |
-| LOG-14.1 | LOG | NO | WEAK | Are processes and technical measures for reporting monitoring system anomalies and failures defined, |
+| LOG-14.1 | LOG | YES | STRONG | Are processes and technical measures for reporting monitoring system anomalies and failures defined, |
 | LOG-14.2 | LOG | NO | WEAK | Are accountable parties immediately notified about anomalies and failures? |
 | LOG-15.1 | LOG | NO | WEAK | Are all input events (content and metadata) logged and monitored to enable auditing and reporting on |
 | LOG-16.1 | LOG | NO | WEAK | Are all output events (content and metadata) logged and monitored to enable auditing and reporting o |
-| MDS-01.1 | MDS | NO | WEAK | Are processes, procedures, and technical measures defined, implemented, and evaluated to ensure the  |
-| MDS-01.2 | MDS | NO | WEAK | Are policies, procedures and technical measures to address new security threats and best practices r |
-| MDS-02.1 | MDS | NO | WEAK | Are processes, procedures, and technical measures defined, implemented, and evaluated for the period |
-| MDS-02.2 | MDS | NO | WEAK | Are policies, procedures and technical measures to address model artifact scanning regularly reviewe |
-| MDS-03.1 | MDS | NO | WEAK | Are processes and procedures defined, implemented, enforced, and evaluated for documenting, approvin |
-| MDS-03.2 | MDS | NO | WEAK | Is the model documentation regularly reviewed and updated? |
-| MDS-04.1 | MDS | NO | WEAK | Are baseline requirements for Model documentation established and implemented? |
-| MDS-05.1 | MDS | NO | WEAK | Are processes, procedures, and technical measures defined, implemented, and evaluated for the valida |
-| MDS-06.1 | MDS | NO | WEAK | Are processes and technical measures defined, implemented, and evaluated to regularly assess adversa |
-| MDS-07.1 | MDS | NO | WEAK | Are processes, procedures, and technical measures defined, implemented, and evaluated for Model Hard |
-| MDS-08.1 | MDS | NO | WEAK | Are checksums regularly calculated and compared using cryptographic hashes of model checkpoints to d |
-| MDS-08.2 | MDS | NO | WEAK | Are these measures applied at least annually based on the level of risk, or after any change of hand |
-| MDS-09.1 | MDS | NO | WEAK | Are models signed cryptographically and are signatures verified to ensure model provenance and owner |
-| MDS-10.1 | MDS | NO | WEAK | Are processes, procedures, and technical measures defined, implemented, and evaluated for continuous |
+| MDS-01.1 | MDS | NA | NONE | Are processes, procedures, and technical measures defined, implemented, and evaluated to ensure the  |
+| MDS-01.2 | MDS | NA | NONE | Are policies, procedures and technical measures to address new security threats and best practices r |
+| MDS-02.1 | MDS | NA | NONE | Are processes, procedures, and technical measures defined, implemented, and evaluated for the period |
+| MDS-02.2 | MDS | NA | NONE | Are policies, procedures and technical measures to address model artifact scanning regularly reviewe |
+| MDS-03.1 | MDS | NA | NONE | Are processes and procedures defined, implemented, enforced, and evaluated for documenting, approvin |
+| MDS-03.2 | MDS | NA | NONE | Is the model documentation regularly reviewed and updated? |
+| MDS-04.1 | MDS | NA | NONE | Are baseline requirements for Model documentation established and implemented? |
+| MDS-05.1 | MDS | NA | NONE | Are processes, procedures, and technical measures defined, implemented, and evaluated for the valida |
+| MDS-06.1 | MDS | NA | NONE | Are processes and technical measures defined, implemented, and evaluated to regularly assess adversa |
+| MDS-07.1 | MDS | NA | NONE | Are processes, procedures, and technical measures defined, implemented, and evaluated for Model Hard |
+| MDS-08.1 | MDS | NA | NONE | Are checksums regularly calculated and compared using cryptographic hashes of model checkpoints to d |
+| MDS-08.2 | MDS | NA | NONE | Are these measures applied at least annually based on the level of risk, or after any change of hand |
+| MDS-09.1 | MDS | NA | NONE | Are models signed cryptographically and are signatures verified to ensure model provenance and owner |
+| MDS-10.1 | MDS | NA | NONE | Are processes, procedures, and technical measures defined, implemented, and evaluated for continuous |
 | MDS-11.1 | MDS | NO | WEAK | Is a risk-based evaluation of the model and model serving infrastructure for model failure performed |
-| MDS-11.2 | MDS | NO | WEAK | Are measures defined and implemented to mitigate model and model serving infrastructure failures, an |
+| MDS-11.2 | MDS | NA | NONE | Are measures defined and implemented to mitigate model and model serving infrastructure failures, an |
 | MDS-12.1 | MDS | NO | WEAK | Are processes established to evaluate the risk associated with open models? |
-| MDS-12.2 | MDS | NO | WEAK | Are risk factors periodically reviewed, and is a process implemented to monitor and mitigate any det |
-| MDS-13.1 | MDS | NO | WEAK | Are secure model formats and processes for AI model serialization adopted where applicable? |
+| MDS-12.2 | MDS | NA | NONE | Are risk factors periodically reviewed, and is a process implemented to monitor and mitigate any det |
+| MDS-13.1 | MDS | NA | NONE | Are secure model formats and processes for AI model serialization adopted where applicable? |
 | SEF-01.1 | SEF | NO | WEAK | Are policies and procedures established, documented, approved, communicated, applied, evaluated, and |
 | SEF-01.2 | SEF | NO | WEAK | Are policies and procedures for Security Incident Management, E-Discovery, and Forensics reviewed an |
 | SEF-02.1 | SEF | NO | WEAK | Are Service Management Policies and Procedures established, documented, approved, communicated, appl |

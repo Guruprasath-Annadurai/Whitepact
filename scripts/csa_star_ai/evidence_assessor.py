@@ -384,6 +384,8 @@ def second_pass_challenge(row: RemediationLedgerRow) -> RemediationLedgerRow:
             row.reviewer_notes = "Second pass: annual cadence not evidenced."
 
     if row.response == ControlAnswer.NA:
+        if row.na_rationale or str(row.role_applicability).startswith("NOT_APPLICABLE"):
+            return row
         if not any(p in q_lower for p in _NA_PHYSICAL_PHRASES) and "ssrm" not in j_lower:
             row.response = ControlAnswer.NO
             row.evidence_strength = EvidenceStrength.NONE
