@@ -2,7 +2,7 @@
 
 **Campaign:** `cursor/csa-star-ai-level1-remediation`  
 **BASE SHA:** `acddae1e96050c1dbe3981327f47dc102beb9262`  
-**FEATURE SHA:** *(set at commit)*  
+**FEATURE SHA:** `a16c13db71d6978f7cc8ad3683f750f13761a7a9` (see latest commit on branch for follow-ups)  
 **Report date:** 2026-09-23
 
 ## Before (external audit snapshot)
