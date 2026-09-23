@@ -17,6 +17,24 @@ _UPSTREAM = _SOURCE / "CSA_AI-CAIQ_v1.1_Official_upstream.xlsx"
 _LEDGER = _REPO / "compliance" / "csa-star-ai" / "ledger" / "remediation_ledger.json"
 
 
+def _pick_sheet(wb):
+    for name in wb.sheetnames:
+        lower = name.lower()
+        if "caiq" in lower or "questionnaire" in lower or "ai-caiq" in lower:
+            return wb[name]
+    return wb[wb.sheetnames[0]]
+
+
+def _workbook_answer(resp: str) -> str:
+    if resp == "YES":
+        return "Yes"
+    if resp == "NO":
+        return "No"
+    if resp == "NA":
+        return "NA"
+    return "No"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
@@ -38,8 +56,9 @@ def main() -> None:
 
     shutil.copy2(_UPSTREAM, args.output)
     wb = openpyxl.load_workbook(args.output)
-    ws = wb[wb.sheetnames[-1]]
+    ws = _pick_sheet(wb)
     header_row = None
+    col_map: dict[str, int] = {}
     for idx, row in enumerate(ws.iter_rows(min_row=1, max_row=20), start=1):
         vals = [str(c.value or "").strip().lower() for c in row]
         if "question id" in vals:
@@ -49,25 +68,49 @@ def main() -> None:
     if header_row is None:
         raise SystemExit("Could not find header row")
 
-    ans_idx = col_map.get("csp caiq answer") or col_map.get("caiq answer") or 2
-    ssrm_idx = col_map.get("ssrm control ownership") or 3
-    impl_idx = col_map.get("csp implementation description (optional/recommended)") or 4
-    cust_idx = col_map.get("csc responsibilities  (optional/recommended)") or col_map.get(
-        "csc responsibilities (optional/recommended)"
+    def _idx(*names: str) -> int | None:
+        for name in names:
+            if name in col_map:
+                return col_map[name]
+            for key, i in col_map.items():
+                if name in key:
+                    return i
+        return None
+
+    qid_idx = _idx("question id") or 0
+    ans_idx = _idx(
+        "service provider ai-caiq answer",
+        "csp caiq answer",
+        "caiq answer",
+    )
+    ssrm_idx = _idx("ssrm control ownership")
+    impl_idx = _idx(
+        "csp implementation description (optional/recommended)",
+        "implementation description",
+    )
+    cust_idx = _idx(
+        "csc responsibilities  (optional/recommended)",
+        "csc responsibilities (optional/recommended)",
     )
 
     for row in ws.iter_rows(min_row=header_row + 1):
-        qid = str(row[0].value or "").strip()
+        if qid_idx >= len(row):
+            continue
+        qid = str(row[qid_idx].value or "").strip()
         if qid not in by_id:
             continue
         entry = by_id[qid]
         resp = entry.get("response", "NO")
-        if ans_idx < len(row):
-            row[ans_idx].value = resp if resp != "UNASSESSED" else "No"
+        if ans_idx is not None and ans_idx < len(row):
+            row[ans_idx].value = _workbook_answer(str(resp))
         if ssrm_idx is not None and ssrm_idx < len(row):
-            row[ssrm_idx].value = entry.get("ssrm_owner") or entry.get("implementation_owner") or row[ssrm_idx].value
+            row[ssrm_idx].value = (
+                entry.get("ssrm_owner") or entry.get("implementation_owner") or row[ssrm_idx].value
+            )
         if impl_idx is not None and impl_idx < len(row):
-            row[impl_idx].value = entry.get("implementation_description") or entry.get("justification") or ""
+            row[impl_idx].value = (
+                entry.get("implementation_description") or entry.get("justification") or ""
+            )
         if cust_idx is not None and cust_idx < len(row):
             row[cust_idx].value = entry.get("customer_responsibility") or row[cust_idx].value
     wb.save(args.output)

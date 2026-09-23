@@ -49,6 +49,6 @@ def test_source_integrity_documents_manual_acquisition() -> None:
     meta = json.loads(
         (REPO / "compliance/csa-star-ai/source/SOURCE_INTEGRITY.json").read_text(encoding="utf-8")
     )
-    assert meta["acquisition_status"] == "MANUAL_REQUIRED"
+    assert meta["acquisition_status"] in {"MANUAL_REQUIRED", "ACQUIRED"}
     assert meta["expected_question_count"] == 320
     assert meta["preliminary_external_audit_snapshot"]["authoritative"] is False

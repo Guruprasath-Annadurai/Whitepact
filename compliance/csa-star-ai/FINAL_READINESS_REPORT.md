@@ -1,45 +1,41 @@
 # Final readiness report — CSA STAR for AI Level 1
 
 **Campaign branch:** `cursor/csa-star-ai-level1-remediation`  
-**BASE SHA:** `acddae1e96050c1dbe3981327f47dc102beb9262`  
-**Preparing designation only:** WhitePact is preparing a CSA STAR for AI Level 1 self-assessment. Not certified/approved by CSA.
+**Feature SHA assessed:** `9e924f111acefa79bcb29b6255d0100bb35198e1`  
+**Upstream workbook SHA-256:** `062d4666b8d6ee11ee728d0bc424fa218fd055af167e9265385b4438aaa4ed9b`  
+**Designation:** Preparing self-assessment — not CSA-certified.
 
-## 1. SOURCE INTEGRITY
+## Authoritative totals
 
-| Field | Value |
-|-------|-------|
-| Official artifact | AI-CAIQ v1.1 |
-| Acquisition | **MANUAL_REQUIRED** (automated download blocked by CSA gated access) |
-| Pristine filename | `CSA_AI-CAIQ_v1.1_Official_upstream.xlsx` |
-| SHA-256 | *pending OA-001* |
-| Rows detected | *pending ingest* |
+| YES | NO | NA | UNASSESSED |
+|-----|----|----|------------|
+| 22 | 290 | 8 | 0 |
 
-See `compliance/csa-star-ai/source/SOURCE_INTEGRITY.json`.
+**Applicable readiness (YES / (YES+NO)):** 7.1% (22/312)
 
-## 2. PRELIMINARY_EXTERNAL_AUDIT_SNAPSHOT (non-authoritative)
+## Evidence quality (YES rows only)
 
-YES 98 / NO 152 / NA 70 — **not used** for ledger answers.
+- STRONG: 6
+- MODERATE: 16
+- WEAK: 0
 
-## 3. AUTHORITATIVE RESULTS
+**Weak/none evidence rows (all responses):** 290
 
-| Metric | Value |
-|--------|------|
-| YES | *pending official ingest + assessment* |
-| NO | *pending* |
-| NA | *pending* |
-| UNASSESSED | 320 (until OA-001) |
+## NO by remediation category
 
-## 4. EVIDENCE QUALITY
+- **UNCLASSIFIED** (177): A&A-01.1, A&A-03.1, A&A-04.1, A&A-05.1, A&A-06.1, AIS-01.1, AIS-04.1, AIS-05.1, AIS-05.2, AIS-06.1, AIS-08.2, AIS-13.1, AIS-14.1, AIS-15.1, BCR-01.1…
+- **G_CLOUD_SUBPROCESSOR** (56): A&A-02.1, BCR-08.1, BCR-11.1, CCC-05.1, CEK-15.1, CEK-17.1, CEK-19.1, CEK-21.1, DCS-01.1, DCS-01.2, DCS-02.1, DCS-02.2, DCS-02.3, DCS-03.2, DCS-04.1…
+- **F_ORGANIZATIONAL** (37): A&A-01.2, AIS-01.2, BCR-01.2, BCR-04.1, BCR-09.2, CCC-01.2, CCC-08.1, CEK-01.2, CEK-02.1, DSP-01.2, DSP-05.2, DSP-06.1, DSP-06.2, DSP-18.1, GRC-01.1…
+- **E_CI_SUPPLY_CHAIN** (9): DSP-13.1, SEF-08.2, STA-01.1, STA-03.1, STA-08.1, STA-09.1, STA-12.1, STA-14.1, STA-16.1
+- **H_CUSTOMER_SHARED** (7): CEK-08.1, IAM-11.1, IPY-02.1, IPY-04.1, LOG-08.1, SEF-03.1, STA-04.1
+- **A_SOURCE_CODE** (4): IAM-01.1, I&S-05.1, LOG-07.1, LOG-14.1
 
-Strong / moderate YES counts: *pending assessment pass*.
+## Production / provider gaps
 
-## 5. VALIDATION (this branch)
+- Production PostgreSQL restore/recovery evidence: **not claimed** (SQLite drill labeled NON-PRODUCTION SQLITE DR EXERCISE only).
+- Incident response: **TABLETOP / SIMULATION** only — not production operational proof.
+- MFA, counsel-dependent privacy, endpoint attestations: remain open without fabricated attestations.
 
-| Command | Result |
-|---------|--------|
-| `pytest tests/test_csa_star_ai_tooling.py tests/test_csa_star_ai_ingest_integrity.py` | Run at commit |
-| Full pytest / Docker | Not run on this iteration |
+## Verdict
 
-## 6. VERDICT
-
-**NOT READY FOR CSA SUBMISSION** — official CSA upstream workbook not acquired; authoritative 320-row ledger not built.
+**NOT READY FOR CSA SUBMISSION**

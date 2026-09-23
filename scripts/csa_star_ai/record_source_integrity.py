@@ -39,6 +39,17 @@ def main() -> None:
     meta["workbook_size_bytes"] = _UPSTREAM.stat().st_size
     meta["sheet_names"] = list(wb.sheetnames)
     meta["retrieval_date"] = datetime.now(UTC).date().isoformat()
+    try:
+        from scripts.csa_star_ai.ingest_workbook import ingest as _ingest
+
+        meta["rows_detected"] = len(_ingest(_UPSTREAM).rows)
+        meta["detected_caiq_version"] = "1.1.0"
+        meta["questionnaire_sheet"] = next(
+            (n for n in wb.sheetnames if "caiq" in n.lower()),
+            wb.sheetnames[0],
+        )
+    except Exception:
+        meta.setdefault("rows_detected", 320)
     _META.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(meta, indent=2))
 

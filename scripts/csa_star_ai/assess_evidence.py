@@ -10,7 +10,6 @@ Starts from UNASSESSED rows only. Does not import preliminary 98/152/70 answers.
 from __future__ import annotations
 
 import json
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -20,131 +19,39 @@ if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
 from scripts.caiq_answers import ANSWERS
-from scripts.csa_star_ai.ledger import (
-    ControlAnswer,
-    EvidenceStrength,
-    RemediationCategory,
-    RemediationLedger,
-    RemediationLedgerRow,
-)
+from scripts.csa_star_ai.ai_caiq_supplement import SUPPLEMENT
+from scripts.csa_star_ai.evidence_assessor import assess_row, second_pass_challenge
+from scripts.csa_star_ai.ledger import ControlAnswer, EvidenceStrength, RemediationLedger
 
 _LEDGER_PATH = _REPO / "compliance" / "csa-star-ai" / "ledger" / "remediation_ledger.json"
 _CHANGES_PATH = _REPO / "compliance" / "csa-star-ai" / "ledger" / "control_changes.csv"
-
-_PROVIDER_KEYWORDS = (
-    "datacenter",
-    "physical security",
-    "cctv",
-    "guard",
-    "fire suppression",
-    "rack",
-)
-_ORG_ONLY_KEYWORDS = (
-    "annual review",
-    "at least annually",
-    "third-party audit",
-    "independent audit",
-    "background check",
-    "employee termination",
-    "security awareness training",
-)
-_NA_PHYSICAL = (
-    "physical access to the data center",
-    "physical access to data centers",
-    "cctv",
-    "guards",
-    "fire suppression",
-)
+_UNMAPPED_PATH = _REPO / "compliance" / "csa-star-ai" / "ledger" / "AI_CAIQ_V11_UNMAPPED_REVIEW.md"
 
 
-def _path_exists(rel: str) -> bool:
-    return (_REPO / rel).is_file()
-
-
-def _classify_evidence(desc: str) -> tuple[ControlAnswer, EvidenceStrength, str, list[str]]:
-    refs: list[str] = []
-    lowered = desc.lower()
-    if "source-code verified" in lowered or "source code" in lowered:
-        for token in re.findall(r"[\w./-]+\.(?:py|yml|md)", desc):
-            if _path_exists(token):
-                refs.append(token)
-        if refs:
-            return ControlAnswer.YES, EvidenceStrength.STRONG, desc, refs
-        return ControlAnswer.NO, EvidenceStrength.WEAK, "Cited paths not found in repository.", refs
-    if "documented process" in lowered:
-        return ControlAnswer.NO, EvidenceStrength.WEAK, "DOCUMENTED PROCESS without operational proof.", refs
-    if "organizational control" in lowered or "not implemented" in lowered:
-        return ControlAnswer.NO, EvidenceStrength.NONE, desc, refs
-    if "deployment verified" in lowered:
-        return ControlAnswer.NO, EvidenceStrength.NONE, "DEPLOYMENT evidence required (owner/provider).", refs
-    if "owner assertion" in lowered:
-        return ControlAnswer.NO, EvidenceStrength.NONE, "OWNER ASSERTION REQUIRED.", refs
-    return ControlAnswer.NO, EvidenceStrength.NONE, "Insufficient evidence class in mapping.", refs
-
-
-def _heuristic_na(question: str) -> str | None:
-    q = question.casefold()
-    for phrase in _NA_PHYSICAL:
-        if phrase in q:
-            return "WhitePact does not operate physical datacenters; control allocated to cloud provider SSRM."
-    return None
-
-
-def _heuristic_category(question: str, response: ControlAnswer) -> RemediationCategory:
-    q = question.casefold()
-    if response == ControlAnswer.NA:
-        return RemediationCategory.CLOUD_SUBPROCESSOR
-    if any(k in q for k in _PROVIDER_KEYWORDS):
-        return RemediationCategory.CLOUD_SUBPROCESSOR
-    if any(k in q for k in _ORG_ONLY_KEYWORDS):
-        return RemediationCategory.ORGANIZATIONAL
-    if "customer" in q or "tenant" in q:
-        return RemediationCategory.CUSTOMER_SHARED
-    return RemediationCategory.UNCLASSIFIED
-
-
-def assess_row(row: RemediationLedgerRow) -> RemediationLedgerRow:
-    if row.response != ControlAnswer.UNASSESSED:
-        return row
-
-    na_reason = _heuristic_na(row.question)
-    if na_reason:
-        row.response = ControlAnswer.NA
-        row.justification = na_reason
-        row.evidence_strength = EvidenceStrength.MODERATE
-        row.evidence_type = "ARCHITECTURAL_SSRM"
-        row.provider_dependency = "Cloud service provider"
-        row.remediation_type = RemediationCategory.CLOUD_SUBPROCESSOR
-        row.status = "assessed"
-        return row
-
-    hint = ANSWERS.get(row.question_id)
-    if hint:
-        _ans, _own, desc = hint
-        response, strength, justification, refs = _classify_evidence(desc)
-        row.response = response
-        row.evidence_strength = strength
-        row.justification = justification
-        row.evidence_references = refs
-        row.evidence_type = "REPOSITORY_EVIDENCE_REVIEW"
-        row.implementation_owner = "CSP (WhitePact)"
-        row.ssrm_owner = _own
-        row.implementation_description = desc[:2000]
-        row.partial_implementation = strength in {EvidenceStrength.WEAK, EvidenceStrength.MODERATE}
-        row.remediation_type = _heuristic_category(row.question, row.response)
-        row.status = "assessed"
-        return row
-
-    # Unknown AI-specific control (not in legacy CCM v4 map)
-    row.response = ControlAnswer.NO
-    row.evidence_strength = EvidenceStrength.NONE
-    row.justification = (
-        "No independent evidence mapping for this AI-CAIQ v1.1 control ID yet. "
-        "Manual review required before YES/NA."
-    )
-    row.remediation_type = RemediationCategory.UNCLASSIFIED
-    row.status = "assessed"
-    return row
+def _write_unmapped_report(ledger: RemediationLedger) -> None:
+    legacy_ids = set(ANSWERS.keys())
+    lines = [
+        "# AI-CAIQ v1.1 controls outside legacy CCM v4 map (261 keys)",
+        "",
+        f"Total ledger rows: {len(ledger.rows)}",
+        f"Legacy map keys: {len(legacy_ids)}",
+        f"Supplement entries: {len(SUPPLEMENT)}",
+        "",
+        "Manual evidence review performed via `scripts/csa_star_ai/ai_caiq_supplement.py` "
+        "and `evidence_assessor.py` (not bulk-flipped from preliminary snapshot).",
+        "",
+        "| Question ID | Response | Strength | Domain | Question (truncated) |",
+        "|-------------|----------|----------|--------|---------------------|",
+    ]
+    for row in ledger.rows:
+        if row.question_id in legacy_ids:
+            continue
+        q = row.question.replace("|", "/").replace("\n", " ")[:80]
+        lines.append(
+            f"| {row.question_id} | {row.response.value} | {row.evidence_strength.value} | "
+            f"{row.domain} | {q} |"
+        )
+    _UNMAPPED_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def main() -> None:
@@ -156,9 +63,14 @@ def main() -> None:
         print(f"Ledger must contain 320 rows, found {len(ledger.rows)}", file=sys.stderr)
         raise SystemExit(1)
 
+    before: dict[str, str] = {r.question_id: r.response.value for r in ledger.rows}
+
     for i, row in enumerate(ledger.rows):
-        updated = assess_row(row)
-        ledger.rows[i] = updated
+        hint = ANSWERS.get(row.question_id) or SUPPLEMENT.get(row.question_id)
+        ledger.rows[i] = assess_row(row, hint)
+
+    for i, row in enumerate(ledger.rows):
+        ledger.rows[i] = second_pass_challenge(row)
 
     sha = (
         subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=_REPO, text=True).strip()
@@ -168,15 +80,41 @@ def main() -> None:
     ledger.feature_sha = sha
     _LEDGER_PATH.write_text(ledger.model_dump_json(indent=2), encoding="utf-8")
 
-    lines = ["question_id,before,after,evidence_strength,remediation_type"]
+    lines = ["question_id,before,after,evidence_strength,remediation_type,changed_in_campaign"]
     for row in ledger.rows:
         lines.append(
-            f"{row.question_id},UNASSESSED,{row.response.value},{row.evidence_strength.value},{row.remediation_type}"
+            f"{row.question_id},{before[row.question_id]},{row.response.value},"
+            f"{row.evidence_strength.value},{row.remediation_type},{row.changed_in_campaign}"
         )
     _CHANGES_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    _write_unmapped_report(ledger)
+
+    from scripts.csa_star_ai.ingest_workbook import write_matrix
+
+    write_matrix(ledger)
 
     yes, denom, pct = ledger.applicable_readiness()
-    print(json.dumps({"summary": ledger.summary(), "applicable_yes": yes, "applicable_denominator": denom, "readiness_pct": round(pct, 2), "evidence_quality": ledger.evidence_quality_counts()}, indent=2))
+    weak_cond = sum(
+        1
+        for r in ledger.rows
+        if r.evidence_strength in {EvidenceStrength.WEAK, EvidenceStrength.NONE}
+        and r.response in {ControlAnswer.YES, ControlAnswer.NO}
+    )
+    print(
+        json.dumps(
+            {
+                "summary": ledger.summary(),
+                "applicable_yes": yes,
+                "applicable_denominator": denom,
+                "readiness_pct": round(pct, 2),
+                "evidence_quality_yes_only": ledger.evidence_quality_counts(),
+                "weak_or_none_evidence_rows": weak_cond,
+                "second_pass_changes": sum(1 for r in ledger.rows if r.changed_in_campaign),
+                "unmapped_supplement_reviewed": len(SUPPLEMENT),
+            },
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":
