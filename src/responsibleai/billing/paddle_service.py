@@ -99,16 +99,31 @@ class PaddleBillingService:
             raise PaddleBillingError("Paddle did not return a checkout URL.")
         return str(url)
 
-    async def create_portal_session(self, customer_id: str, return_url: str) -> str:
+    async def create_portal_session(
+        self,
+        customer_id: str,
+        *,
+        subscription_id: str | None = None,
+    ) -> str:
+        payload: dict[str, Any] = {}
+        if subscription_id:
+            payload["subscription_ids"] = [subscription_id]
         data = await self._post(
             f"/customers/{customer_id}/portal-sessions",
-            {"return_url": return_url},
+            payload,
         )
         urls = (data.get("data") or {}).get("urls") or {}
-        portal_url = urls.get("general") or urls.get("overview")
+        general = urls.get("general")
+        portal_url: str | None = None
+        if isinstance(general, dict):
+            overview = general.get("overview")
+            if overview:
+                portal_url = str(overview)
+        elif isinstance(general, str):
+            portal_url = general
         if not portal_url:
             raise PaddleBillingError("Paddle did not return a customer portal URL.")
-        return str(portal_url)
+        return portal_url
 
     async def _post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
         headers = {

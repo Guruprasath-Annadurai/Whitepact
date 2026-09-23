@@ -138,3 +138,66 @@ def test_paddle_service_requires_explicit_valid_environment(
 ) -> None:
     with pytest.raises(PaddleBillingError, match="environment"):
         PaddleBillingService("key", {Plan.PRO: "pri_test"}, environment=environment)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_paddle_portal_session_omits_return_url_and_parses_overview() -> None:
+    service = PaddleBillingService(
+        "pdl_sdbx_apikey_test",  # gitleaks:allow
+        {Plan.PRO: "pri_test"},
+        environment="sandbox",
+    )
+    route = respx.post(
+        "https://sandbox-api.paddle.com/customers/ctm_portal/portal-sessions"
+    ).mock(
+        return_value=Response(
+            200,
+            json={
+                "data": {
+                    "urls": {
+                        "general": {
+                            "overview": "https://sandbox-login.paddle.com/portal/overview",
+                        }
+                    }
+                }
+            },
+        )
+    )
+    url = await service.create_portal_session(
+        "ctm_portal",
+        subscription_id="sub_tenant_owned",
+    )
+    assert url == "https://sandbox-login.paddle.com/portal/overview"
+    assert route.called
+    body = route.calls.last.request.content.decode()
+    assert "return_url" not in body
+    assert "sub_tenant_owned" in body
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_paddle_portal_session_without_subscription_sends_empty_body() -> None:
+    service = PaddleBillingService(
+        "pdl_sdbx_apikey_test",  # gitleaks:allow
+        {Plan.PRO: "pri_test"},
+        environment="sandbox",
+    )
+    route = respx.post(
+        "https://sandbox-api.paddle.com/customers/ctm_only/portal-sessions"
+    ).mock(
+        return_value=Response(
+            200,
+            json={
+                "data": {
+                    "urls": {
+                        "general": {
+                            "overview": "https://sandbox-login.paddle.com/portal/overview",
+                        }
+                    }
+                }
+            },
+        )
+    )
+    await service.create_portal_session("ctm_only")
+    assert route.calls.last.request.content.decode() == "{}"

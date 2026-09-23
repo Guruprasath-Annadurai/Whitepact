@@ -147,7 +147,15 @@ async def test_web_portal_uses_server_bound_paddle_customer(
     ).mock(
         return_value=httpx.Response(
             200,
-            json={"data": {"urls": {"general": "https://sandbox-login.paddle.com/portal"}}},
+            json={
+                "data": {
+                    "urls": {
+                        "general": {
+                            "overview": "https://sandbox-login.paddle.com/portal/overview",
+                        }
+                    }
+                }
+            },
         )
     )
 
@@ -163,7 +171,10 @@ async def test_web_portal_uses_server_bound_paddle_customer(
 
     assert res.status_code == 200, res.text
     assert route.called
-    assert res.json()["portal_url"] == "https://sandbox-login.paddle.com/portal"
+    sent = json.loads(route.calls[0].request.content.decode())
+    assert "return_url" not in sent
+    assert sent == {"subscription_ids": ["sub_server_bound"]}
+    assert res.json()["portal_url"] == "https://sandbox-login.paddle.com/portal/overview"
 
 
 @pytest.mark.asyncio

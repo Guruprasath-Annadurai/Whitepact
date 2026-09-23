@@ -2384,7 +2384,7 @@ async def web_billing_portal(
         try:
             url = await _paddle_billing_service.create_portal_session(
                 customer_id=org.paddle_customer_id,
-                return_url=_safe_billing_return_url(req.return_url),
+                subscription_id=org.paddle_subscription_id,
             )
         except PaddleBillingError as exc:
             raise HTTPException(400, str(exc)) from exc

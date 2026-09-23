@@ -118,7 +118,7 @@ describe("dashboard and onboarding", () => {
     expect(path).toBe("/api/v1/web/billing/portal");
     expect(init).toEqual(expect.objectContaining({ method: "POST" }));
     const body = JSON.parse(String(init?.body));
-    expect(body).toEqual({ return_url: `${window.location.origin}/dashboard/billing` });
+    expect(body).toEqual({});
     expect(body).not.toHaveProperty("organization_id");
   });
 

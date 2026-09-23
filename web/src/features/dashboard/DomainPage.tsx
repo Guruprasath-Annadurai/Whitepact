@@ -123,9 +123,7 @@ function BillingPanel({ item, configured, onError }: { item?: DomainRecord; conf
     onError("");
     try {
       const url = kind === "checkout" ? "/api/v1/web/billing/checkout" : "/api/v1/web/billing/portal";
-      const body = kind === "checkout"
-        ? { plan: target }
-        : { return_url: `${window.location.origin}/dashboard/billing` };
+      const body = kind === "checkout" ? { plan: target } : {};
       const value = await api<{ checkout_url?: string; portal_url?: string }>(url, { method: "POST", body: JSON.stringify(body) });
       if (kind === "checkout") {
         if (!value.checkout_url) throw new Error("Billing provider did not return a checkout destination.");
