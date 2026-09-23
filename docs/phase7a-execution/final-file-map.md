@@ -1,0 +1,102 @@
+# WhitePact Phase 7A: Final Implementation File Map
+
+**Document Status:** CANONICAL SPECIFICATION PASS 4.4 (SECURITY BOUNDARY CLOSURE)
+**Source Design SHA:** `dfbeb2e6d9fad575fc45b64789c63b1c1c0b5b01` (Worktree: `/Users/ag/whitepact-phase7a-runtime-preparation`)
+**Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
+**Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
+**Current Migration Head:** `0049` (`migrations/versions/0049_add_organization_governance_status.py`). Unactivated Phase 7A chain: `0050` requests → `0051` authorizations → `0052` attempts → `0053` leases/fences/outbox. Canonical map: `docs/phase7a-execution/migration-ownership.md`.
+
+---
+
+## 1. Overview and Core Invariants
+
+This document maps every file to be **CREATED**, **MODIFIED**, or **TESTED** during Phase 7A (Runtime Foundations). Every path and symbol has been verified against the approved canonical baseline (`13e8de034f8b31bd7cae4f47398f71b24c923c3c`).
+
+Phase 7A adheres to the core architecture rule:
+> **Governance Authorization (ExecutionAuthorization) ≠ Admission (Capacity Slot) ≠ Queue Token ≠ Worker Lease ≠ Backend Execution Claim ≠ Redis State**
+
+---
+
+## 2. Existing Production Files Explicitly Modified
+
+| Existing Production File | Function / Symbol Modified | Why Modification Is Required |
+| :--- | :--- | :--- |
+| `src/responsibleai/mcp/governance_integration.py` | `execute_governed_action()`, `resolve_approval_and_execute()` | **Durable Issuance & Approval Atomicity:** Routes through `DurableExecutionAuthorizationIssuer.issue()` and `ApprovalExecutionService.consume_and_issue()` to persist `runtime_execution_requests`, authorizations, initial attempts, and fence rows in PostgreSQL before enqueueing. |
+| `src/responsibleai/mcp/upstream_dispatch.py` | `dispatch_upstream_action()` | **Upstream Issuance Integration:** Routes through `DurableExecutionAuthorizationIssuer.issue()` before queueing/dispatch. Eliminates upstream issuance bypass, guaranteeing that external MCP actions are durably persisted before execution. |
+| `src/responsibleai/governance/execution.py` | `admit_execution()`, `InternalToolExecutor.execute()` | **Canonical Admission & Downstream Adaptation:** Canonical admission atomically executes `ISSUED -> CONSUMED` and attempt `LEASED -> ADMITTED` (`rowcount == 1`). Adapts `InternalToolExecutor.execute()` to accept `BackendExecutionClaim`, verify in-memory bindings, and call `claim_local_effect_start(claim)` against PostgreSQL. |
+| `src/responsibleai/governance/upstream_executor.py` | `UpstreamMCPExecutor.execute()` | **Upstream Execution Adaptation:** Adapts `UpstreamMCPExecutor.execute()` to accept `BackendExecutionClaim`, verify in-memory bindings, assert durable target fingerprint match, pin resolved IP, and call `claim_external_effect_transmission(claim)` immediately pre-socket. |
+| `src/responsibleai/db/execution_nonce_repository.py` | `ExecutionNonceRepository.consume()` | **Atomic Transaction Owner (F4.2-01):** Adapts the existing `self._engine.raw.begin()` transaction to combine: (1) epoch lock; (2) epoch comparison; (3) nonce insert; (4) authorization update `ISSUED -> CONSUMED` (`rowcount == 1`); (5) attempt update `LEASED -> ADMITTED` (`rowcount == 1`). |
+| `src/responsibleai/iam/session.py` | `revoke_session()` | **Epoch Invalidation Coverage:** Updates session revocation to call `bump_epoch_on_connection(conn, org_id, scope="governance")` in addition to `scope="iam_session"`. |
+| `src/responsibleai/iam/break_glass.py` | `terminate_break_glass()` | **Epoch Invalidation Coverage:** Updates break-glass termination to call `bump_epoch_on_connection(conn, org_id, scope="governance")` in the same transaction. |
+| `src/responsibleai/isolation/models.py` | `ResourceLimits`, `IsolationProfile` | Extends `ResourceLimits` with WP-ISO-01 frozen design requirements (`max_workspace_bytes: 10MB`, `max_workspace_files: 100`, `max_artifacts: 20`). |
+| `src/responsibleai/isolation/filesystem.py` | `EphemeralWorkspace.populate()` | Enforces workspace bounds during directory population (10MB byte ceiling, 100 file count ceiling). |
+| `src/responsibleai/isolation/container_backend.py` | `ContainerIsolationBackend.execute()`, `is_available()` | Enforces Docker flags (`--cpus=0.5`, `--memory=256m`, `--pids-limit=32`, `--network=none`) and registers containers for clean shutdown. |
+| `src/responsibleai/dashboard/app.py` | `lifespan()`, `k8s_health()`, `health()` | Integrates two-phase graceful shutdown supervisor and decouples `/livez` and `/readyz` endpoints. |
+| `src/responsibleai/dashboard/prometheus.py` | Metrics registry | Registers the 15 Phase 7A Prometheus runtime metrics under the `whitepact_*` namespace. |
+| `src/responsibleai/dashboard/config.py` | `Settings` | Adds bounds validators for provisional runtime configuration settings and `HOSTED_GOVERNANCE_STRICT`. |
+
+---
+
+## 3. Detailed File Map Grouped by Responsibility
+
+### 1. ADMISSION & COORDINATION
+| Exact Path | Action | Responsibility / Symbols | Dependent Tasks | Tests |
+| :--- | :--- | :--- | :--- | :--- |
+| `src/responsibleai/runtime/admission/models.py` | CREATE | `AdmissionState`, `AdmissionDecision`, `AdmissionRejectionReason`, `CapacityReservation`, `WorkloadClass`. | Task 1 | `tests/runtime/test_admission_models.py` |
+| `src/responsibleai/runtime/admission/controller.py` | CREATE | In-process and distributed capacity gatekeeper: `reserve_execution()`, `release_execution()`. Fail-closed. | Tasks 2, 5, 6 | `tests/runtime/test_admission_controller.py`, `tests/runtime/test_redis_fail_closed.py`, `tests/runtime/test_integrated_concurrency.py` |
+| `src/responsibleai/runtime/coordination/base.py` | CREATE | Abstract `DistributedCoordinator` defining semaphore and lease lock primitives. | Task 3 | `tests/runtime/test_coordination_contract.py` |
+| `src/responsibleai/runtime/coordination/redis_coordinator.py` | CREATE | Lua-script backed distributed semaphores in Redis with fail-closed semantics. | Task 4 | `tests/runtime/test_redis_coordinator.py` |
+
+---
+
+## 2. QUEUE & FAIRNESS
+| Exact Path | Action | Responsibility / Symbols | Dependent Tasks | Tests |
+| :--- | :--- | :--- | :--- | :--- |
+| `src/responsibleai/runtime/queue/models.py` | CREATE | `QueueTicket`. Non-privileged pointers only (`execution_id`, `authorization_id`, `org_id`, `attempt_id`, `enqueued_at`). Zero authority credentials. | Task 7 | `tests/runtime/test_bounded_queue.py` |
+| `src/responsibleai/runtime/queue/bounded_queue.py` | CREATE | Bounded multi-tenant execution queue with strict capacity ceilings. | Task 7 | `tests/runtime/test_bounded_queue.py` |
+| `src/responsibleai/runtime/queue/fair_scheduler.py` | CREATE | Round-robin plan-neutral fair tenant queue dispatcher. | Task 7 | `tests/runtime/test_fair_scheduler.py` |
+
+---
+
+## 3. DURABLE AUTHORITY, ATTEMPTS & CANONICAL ADMISSION
+| Exact Path | Action | Responsibility / Symbols | Dependent Tasks | Tests |
+| :--- | :--- | :--- | :--- | :--- |
+| `migrations/versions/0050_runtime_execution_requests.py` | CREATE | Creates `runtime_execution_requests` table. Down-revision: `0048`. RFC 8785 canonical JSON payload, `action_digest`, universal idempotency key, trigger rejects all UPDATE/DELETE. | Task 8A1 | `tests/test_postgres_migrations.py` |
+| `src/responsibleai/db/execution_request_repository.py` | CREATE | Async PostgreSQL repository for execution requests (`create()`, `get()`). | Task 8A1 | `tests/db/test_execution_request_repository.py` |
+| `migrations/versions/0051_runtime_execution_authorizations.py` | CREATE | Creates `governance_execution_authorizations` table. Down-revision: `0049`. Losslessly persists all 11 fields; `UNIQUE(approval_id)`; status machine (`ISSUED`, `CONSUMED`). | Task 8A2 | `tests/test_postgres_migrations.py` |
+| `src/responsibleai/db/execution_authorization_repository.py` | CREATE | Async PostgreSQL repository for authorizations (`create()`, `get()`). | Task 8A2 | `tests/db/test_execution_authorization_repository.py` |
+| `migrations/versions/0052_runtime_execution_attempts.py` | CREATE | Creates `runtime_execution_attempts` table. Down-revision: `0050`. Nullable lease fields in PENDING, `evidence_status` column (`PENDING`, `COMMITTED`, `INCOMPLETE`), `backend_start_token_hash` column (F4.3-02), CHECK constraints, active partial unique index. | Task 8A3 | `tests/test_postgres_migrations.py` |
+| `src/responsibleai/db/execution_attempt_repository.py` | CREATE | PostgreSQL repository for execution attempts: `create_initial_attempt()`, `claim_backend_start()` (stores token hash), `claim_local_effect_start()` (revalidates lease `FOR UPDATE`, checks request `action_digest`, verifies/consumes token hash), `claim_external_effect_transmission()` (revalidates lease `FOR UPDATE`, checks request `action_digest` and `target_fingerprint`, verifies/consumes token hash). | Task 8A3, 9A, 9B | `tests/db/test_execution_attempt_repository.py` |
+| `migrations/versions/0053_runtime_worker_leases.py` | CREATE | Creates `runtime_worker_leases` and `runtime_execution_fences` tables. Down-revision: `0051`. Monotonic generation allocation, partial unique index `WHERE status = 'ACTIVE'`. | Task 8A4 | `tests/test_postgres_migrations.py` |
+| `src/responsibleai/db/execution_fence_repository.py` | CREATE | PostgreSQL repository for atomic fence generation increment: `create_fence()`, `increment_generation()`. | Task 8A4 | `tests/db/test_execution_fence_repository.py` |
+| `src/responsibleai/runtime/worker/lease.py` | CREATE | `WorkerLease` data contract keyed on `execution_id`, `lease_generation`, and `attempt_id`. | Task 8A4 | `tests/runtime/test_worker_lease.py` |
+| `src/responsibleai/db/admission_lease_repository.py` | CREATE | PostgreSQL repository for worker leases with row-level `FOR UPDATE` locking, synchronous expiry checking, and heartbeat updates. | Task 8A4, 9A | `tests/db/test_admission_lease_repository.py` |
+| `src/responsibleai/governance/execution_issuer.py` | CREATE | Centralized `DurableExecutionAuthorizationIssuer` service: single transaction across requests (0049), auths (0050), initial attempts (0051), and fences (0052). | Task 8A5 | `tests/runtime/test_durable_issuance_all_paths.py` |
+| `src/responsibleai/governance/approval_service.py` | CREATE | `ApprovalExecutionService.consume_and_issue(...)` combining approval consumption, request, auth, attempt, and fence in single atomic transaction. | Task 8A5 | `tests/governance/test_approval_issuance_atomicity.py` |
+| `src/responsibleai/db/execution_nonce_repository.py` | MODIFY | **Atomic Admission Transaction (F4.2-01):** Adapts `consume()` to lock epoch, insert nonce, conditionally update authorization `ISSUED -> CONSUMED`, and conditionally update attempt `LEASED -> ADMITTED` (`rowcount == 1`) in single transaction. | Task 8B | `tests/runtime/test_atomic_admission.py` |
+| `src/responsibleai/governance/execution.py` | MODIFY | **Canonical Admission API & Downstream Executor:** Returns `AdmissionReceipt`. Adapts `InternalToolExecutor.execute()` to accept `BackendExecutionClaim` and call atomic CAS `claim_local_effect_start(claim)` before container launch. | Task 8B, 9B | `tests/runtime/test_atomic_admission.py`, `tests/runtime/test_single_admission_internal_tool.py` |
+| `src/responsibleai/governance/upstream_executor.py` | MODIFY | **Upstream Execution Adaptation:** Adapts `UpstreamMCPExecutor.execute()` to accept `BackendExecutionClaim`, assert durable target fingerprint match, pin resolved IP, and call atomic CAS `claim_external_effect_transmission(claim)` immediately pre-socket. | Task 8B, 9B | `tests/runtime/test_single_admission_upstream.py` |
+| `src/responsibleai/runtime/revalidation.py` | CREATE | Two-stage revalidation: Stage 1 `early_queue_invalidation()`; Stage 2 `pre_flight_revalidation()`. | Task 8B | `tests/runtime/test_revalidation.py` |
+
+---
+
+## 4. DISPATCHER, WORKER & RECOVERY
+| Exact Path | Action | Responsibility / Symbols | Dependent Tasks | Tests |
+| :--- | :--- | :--- | :--- | :--- |
+| `src/responsibleai/runtime/dispatcher.py` | CREATE | Bridges queue to worker pools. Runs early invalidation, releases capacity on drop, acquires lease with generation N, and dispatches. Gated on Task 10 Gate. | Task 10 (Gate) | `tests/runtime/test_dispatcher.py` |
+| `src/responsibleai/runtime/worker/worker.py` | CREATE | Execution worker process loop: pre-flight revalidation, canonical `admit_execution()`, `claim_backend_start()`, executor dispatch, heartbeat stream. | Task 10 (Gate) | `tests/runtime/test_execution_worker.py` |
+| `src/responsibleai/runtime/worker/supervisor.py` | CREATE | Background reaper for stale leases, dead worker cleanup, Crash Point O reconciliation, and capacity reservation reconciliation. | Task 11 | `tests/runtime/test_crash_recovery.py`, `tests/runtime/test_evidence_crash_point_o.py` |
+| `src/responsibleai/runtime/worker/worker.py` | MODIFY | Enforces `UNCERTAIN` state on disrupted external side-effects (zero blind replay). | Task 12 | `tests/runtime/test_external_effect_idempotency.py` |
+
+---
+
+## 5. ISOLATION, OPS & TEST INFRASTRUCTURE
+| Exact Path | Action | Responsibility / Symbols | Dependent Tasks | Tests |
+| :--- | :--- | :--- | :--- | :--- |
+| `src/responsibleai/isolation/models.py` | MODIFY | Frozen ResourceLimits (10MB workspace, 100 files, 20 artifacts). | Task 13 | `tests/isolation/test_resource_limits.py` |
+| `src/responsibleai/isolation/filesystem.py` | MODIFY | `EphemeralWorkspace.populate()` enforcing workspace ceilings. | Task 13 | `tests/isolation/test_workspace_enforcement.py` |
+| `src/responsibleai/isolation/container_backend.py` | MODIFY | Strict container flags (`--network=none`, `--cpus=0.5`, `--memory=256m`, `--pids-limit=32`) & container registry. | Task 14 | `tests/isolation/test_container_flags.py` |
+| `src/responsibleai/isolation/safe_network.py` | CREATE | Network egress firewall: SSRF checks, private IP blocking, target fingerprint comparison, IP pinning. | Task 15 | `tests/isolation/test_safe_network_backend.py` |
+| `src/responsibleai/dashboard/app.py` | MODIFY | Two-phase graceful shutdown supervisor; independent `/livez` and `/readyz` probes. | Task 16 | `tests/ops/test_graceful_shutdown.py`, `tests/ops/test_k8s_probes.py` |
+| `src/responsibleai/dashboard/prometheus.py` | MODIFY | 15 runtime metrics under `whitepact_*` namespace. | Task 17 | `tests/ops/test_prometheus_metrics.py` |
+| `src/responsibleai/dashboard/config.py` | MODIFY | Bounds-validated settings (`bounded_int`, `bounded_float`) and `HOSTED_GOVERNANCE_STRICT`. | Task 18 | `tests/ops/test_config_bounds.py` |

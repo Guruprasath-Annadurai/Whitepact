@@ -1,0 +1,192 @@
+{
+  "entities": [
+    {
+      "entity_key": "person_arun_dev",
+      "canonical_name": "Arun Dev",
+      "entity_type": "PERSON",
+      "aliases": ["arun dev"],
+      "description": "Software engineer — public integration fixture.",
+      "confidence": 0.91,
+      "evidence_state": "INFERRED_SIGNAL",
+      "claims": [
+        {
+          "predicate": "ASSOCIATED_WITH",
+          "normalized_value": "Nimbus Labs",
+          "object_entity_key": "org_nimbus_labs",
+          "evidence_state": "INFERRED_SIGNAL",
+          "confidence": 0.88
+        }
+      ],
+      "sources": [
+        {
+          "canonical_url": "https://example.com/team/arun-dev",
+          "source_type": "official_team_page",
+          "quality_tier": "AUTHORITATIVE_PRIMARY"
+        }
+      ]
+    },
+    {
+      "entity_key": "person_ramesh_kumar_a",
+      "canonical_name": "Ramesh Kumar",
+      "entity_type": "PERSON",
+      "aliases": ["ramesh"],
+      "description": "Software engineer at Company A",
+      "confidence": 0.7,
+      "claims": [
+        {
+          "predicate": "ASSOCIATED_WITH",
+          "normalized_value": "Company A",
+          "object_entity_key": "org_company_a",
+          "evidence_state": "INFERRED_SIGNAL",
+          "confidence": 0.82
+        },
+        {
+          "predicate": "TITLE",
+          "normalized_value": "Software engineer",
+          "evidence_state": "INFERRED_SIGNAL",
+          "confidence": 0.75
+        }
+      ],
+      "sources": [
+        {
+          "canonical_url": "https://company-a.example/team",
+          "source_type": "official_team_page",
+          "quality_tier": "AUTHORITATIVE_PRIMARY"
+        }
+      ]
+    },
+    {
+      "entity_key": "person_ramesh_s_b",
+      "canonical_name": "Ramesh S",
+      "entity_type": "PERSON",
+      "aliases": ["ramesh"],
+      "description": "Founder at Company B",
+      "confidence": 0.68,
+      "claims": [
+        {
+          "predicate": "ASSOCIATED_WITH",
+          "normalized_value": "Company B",
+          "object_entity_key": "org_company_b",
+          "evidence_state": "INFERRED_SIGNAL",
+          "confidence": 0.8
+        }
+      ],
+      "sources": [
+        {
+          "canonical_url": "https://company-b.example/about",
+          "quality_tier": "AUTHORITATIVE_PRIMARY"
+        }
+      ]
+    },
+    {
+      "entity_key": "person_ramesh_k_c",
+      "canonical_name": "Ramesh K",
+      "entity_type": "PERSON",
+      "aliases": ["ramesh"],
+      "description": "Researcher at University C",
+      "confidence": 0.66,
+      "claims": [
+        {
+          "predicate": "ASSOCIATED_WITH",
+          "normalized_value": "University C",
+          "object_entity_key": "org_university_c",
+          "evidence_state": "INFERRED_SIGNAL",
+          "confidence": 0.78
+        }
+      ],
+      "sources": [
+        {
+          "canonical_url": "https://university-c.example/faculty/ramesh-k",
+          "quality_tier": "FIRST_PARTY_PUBLICATION"
+        }
+      ]
+    },
+    {
+      "entity_key": "person_role_conflict",
+      "canonical_name": "Elena Voss",
+      "entity_type": "PERSON",
+      "description": "Professional with conflicting role signals",
+      "confidence": 0.55,
+      "claims": [
+        {
+          "predicate": "TITLE",
+          "normalized_value": "CEO at Delta Corp",
+          "evidence_state": "CONFLICTING_EVIDENCE",
+          "confidence": 0.5
+        },
+        {
+          "predicate": "TITLE",
+          "normalized_value": "Advisor at Delta Corp",
+          "evidence_state": "VERIFIED_FACT",
+          "confidence": 0.9,
+          "valid_until": "2025-06-01T00:00:00+00:00"
+        }
+      ],
+      "sources": [
+        {
+          "canonical_url": "https://delta.example/leadership",
+          "quality_tier": "AUTHORITATIVE_PRIMARY"
+        }
+      ]
+    },
+    {
+      "entity_key": "person_guruprasath_annadurai",
+      "canonical_name": "Guruprasath Annadurai",
+      "entity_type": "PERSON",
+      "aliases": ["guruprasath annadurai"],
+      "identifiers": [
+        {"type": "github_user", "value": "github.com/guruprasath-annadurai"}
+      ],
+      "canonical_urls": ["https://github.com/Guruprasath-Annadurai"],
+      "description": "Public professional identity fixture (integration tests only).",
+      "confidence": 0.92,
+      "evidence_state": "INFERRED_SIGNAL",
+      "claims": [
+        {
+          "predicate": "ASSOCIATED_WITH",
+          "object_entity_key": "project_whitepact",
+          "normalized_value": "WhitePact",
+          "evidence_state": "INFERRED_SIGNAL",
+          "confidence": 0.85
+        }
+      ],
+      "sources": [
+        {
+          "canonical_url": "https://github.com/Guruprasath-Annadurai",
+          "source_type": "github_profile",
+          "quality_tier": "AUTHORITATIVE_REGISTRY"
+        }
+      ]
+    },
+    {
+      "entity_key": "project_whitepact",
+      "canonical_name": "WhitePact",
+      "entity_type": "PROJECT",
+      "identifiers": [
+        {"type": "github_repository", "value": "github.com/guruprasath-annadurai/whitepact"}
+      ],
+      "canonical_urls": ["https://github.com/Guruprasath-Annadurai/Whitepact"],
+      "confidence": 0.95,
+      "evidence_state": "VERIFIED_FACT",
+      "claims": []
+    },
+    {
+      "entity_key": "person_ambiguous_smith",
+      "canonical_name": "Alex Smith",
+      "entity_type": "PERSON",
+      "aliases": ["alex smith"],
+      "description": "Analyst — Region 1",
+      "confidence": 0.4,
+      "evidence_state": "UNKNOWN"
+    },
+    {
+      "entity_key": "person_ambiguous_smith_2",
+      "canonical_name": "Alex Smith",
+      "entity_type": "PERSON",
+      "aliases": ["alex smith"],
+      "description": "Designer — Region 2",
+      "confidence": 0.41,
+      "evidence_state": "UNKNOWN"
+    }
+  ]
+}

@@ -2,9 +2,193 @@
 # SPDX-License-Identifier: MIT
 from __future__ import annotations
 
+import os
+import tempfile
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
 import pytest
 
-from biasbuster.providers.base import BaseProvider, CompletionRequest, CompletionResponse
+_HERMETIC_TEMP_HOME = tempfile.TemporaryDirectory(prefix="whitepact-pytest-home-")
+os.environ.setdefault("WHITEPACT_HERMETIC_TEST_HOME", _HERMETIC_TEMP_HOME.name)
+os.environ["HOME"] = _HERMETIC_TEMP_HOME.name
+os.environ.setdefault("XDG_DATA_HOME", str(Path(_HERMETIC_TEMP_HOME.name) / ".local" / "share"))
+os.environ.setdefault("XDG_CONFIG_HOME", str(Path(_HERMETIC_TEMP_HOME.name) / ".config"))
+os.environ.setdefault("RAI_AUTH_ENABLED", "false")
+os.environ.setdefault("WHITEPACT_AUTH_ENABLED", "false")
+
+from biasbuster.providers.base import (  # noqa: E402
+    BaseProvider,
+    CompletionRequest,
+    CompletionResponse,
+)
+
+
+def pytest_configure(config):
+    """Point env-gated PostgreSQL tests at the isolated instance when reachable."""
+    try:
+        from tests.pg_test_url import configure_session_pg_env
+
+        configure_session_pg_env()
+    except Exception:
+        pass
+
+
+TEST_GOVERNANCE_PURPOSE = "automated-test"
+
+
+_GD_TEST_CATALOG = Path(__file__).resolve().parent / "fixtures" / "global_directory" / "demo_catalog.json"
+
+
+@pytest.fixture(autouse=True)
+def _global_directory_test_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WHITEPACT_GLOBAL_DIRECTORY_FIXTURE_DISCOVERY", "1")
+    monkeypatch.setenv("WHITEPACT_GLOBAL_DIRECTORY_FIXTURE_CATALOG_PATH", str(_GD_TEST_CATALOG))
+
+
+@pytest.fixture(autouse=True)
+def clean_audit_writes_and_hermetic_state():
+    """Clear any residual background audit tasks from closed event loops."""
+    yield
+    try:
+        from responsibleai.dashboard.app import _pending_audit_writes
+
+        _pending_audit_writes.clear()
+    except (ImportError, AttributeError):
+        pass
+
+
+@pytest.fixture
+def seed_runtime_authority():
+    """Seed explicit test-only root, consent, and delegation records."""
+
+    async def seed(
+        engine,
+        *,
+        organization_id: str,
+        principal_id: str,
+        action_types: tuple[str, ...],
+        targets: tuple[str, ...],
+        purpose: str = TEST_GOVERNANCE_PURPOSE,
+    ):
+        from responsibleai.db.consent_proof_repository import ConsentProofRepository
+        from responsibleai.db.delegation_repository import DelegationRepository
+        from responsibleai.db.root_authority_repository import RootAuthorityRepository
+        from responsibleai.governance.consent_proof import ConsentMethod, build_consent_proof
+        from responsibleai.governance.root_authority import RootType, build_root_authority_record
+
+        owner = f"test-owner:{organization_id}"
+        expires = datetime.now(UTC) + timedelta(hours=1)
+        root = build_root_authority_record(
+            owner,
+            RootType.HUMAN,
+            "whitepact-test-suite",
+            "explicit-test-fixture",
+            organization_id=organization_id,
+            evidence_refs=("test-root-evidence",),
+            expires_at=expires,
+        )
+        await RootAuthorityRepository(engine).create(root)
+        consent = build_consent_proof(
+            owner,
+            root.root_id,
+            principal_id,
+            "explicit test execution scope",
+            purpose,
+            ConsentMethod.EXPLICIT_UI_ACTION,
+            allowed_action_types=action_types,
+            allowed_targets=targets,
+            evidence_refs=("test-consent-evidence",),
+            expires_at=expires,
+        )
+        await ConsentProofRepository(engine).create(consent, organization_id=organization_id)
+        await DelegationRepository(engine).grant(
+            organization_id,
+            principal_id,
+            granted_action_types=frozenset(action_types),
+            constraints={"allowed_targets": list(targets)},
+            purpose=purpose,
+            granted_by=owner,
+            expires_at=expires,
+        )
+        return root, consent
+
+    return seed
+
+
+@pytest.fixture
+def seed_trust_employment():
+    """Seed a VERIFIED EMPLOYED_BY relationship under an exact, caller-chosen principal_id.
+
+    PrivilegedSurfaceGuard.authorize_privileged_operation() unconditionally consults
+    TrustProofEngine.evaluate_privileged_legitimacy(principal_id, org_id) before any
+    role/step-up/four-eyes check runs. Existing IAM tests use fixed literal
+    principal_id strings (e.g. "admin_alpha") that must match PrivilegedCallerContext
+    exactly, so this seeds the trust fabric tables directly with that literal id
+    rather than going through PrincipalDirectory.create_principal(), which always
+    mints its own generated id.
+    """
+
+    async def seed(engine, *, org_id: str, principal_id: str) -> None:
+        from sqlalchemy import insert as sa_insert
+
+        from responsibleai.db.engine import (
+            trust_fabric_principals,
+            trust_fabric_relationships,
+            trust_fabric_sources,
+        )
+
+        now = datetime.now(UTC).isoformat()
+        company_id = f"{principal_id}__employer"
+        source_id = f"src_{principal_id}"
+        async with engine.raw.begin() as conn:
+            await conn.execute(
+                sa_insert(trust_fabric_sources).values(
+                    id=source_id,
+                    org_id=org_id,
+                    name="Test HR Source",
+                    source_tier="TIER_C",
+                    provider_type="IDP",
+                    is_active=1,
+                    created_at=now,
+                )
+            )
+            await conn.execute(
+                sa_insert(trust_fabric_principals).values(
+                    id=principal_id,
+                    org_id=org_id,
+                    principal_type="HUMAN",
+                    display_name=principal_id,
+                    lifecycle_state="ACTIVE",
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            await conn.execute(
+                sa_insert(trust_fabric_principals).values(
+                    id=company_id,
+                    org_id=org_id,
+                    principal_type="ORGANIZATION",
+                    display_name=f"{org_id} entity",
+                    lifecycle_state="ACTIVE",
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            await conn.execute(
+                sa_insert(trust_fabric_relationships).values(
+                    id=f"rel_{principal_id}",
+                    subject_principal_id=principal_id,
+                    target_principal_id=company_id,
+                    org_id=org_id,
+                    relationship_type="EMPLOYED_BY",
+                    verification_state="VERIFIED",
+                    valid_from=now,
+                    source_id=source_id,
+                )
+            )
+
+    return seed
 
 
 class MockProvider(BaseProvider):

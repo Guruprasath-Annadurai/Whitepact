@@ -8,12 +8,37 @@ what the HTTP/SSE transport's `handle_sse` does per-request.
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
 import pytest
 
 from responsibleai.db.engine import create_engine
 from responsibleai.db.mcp_usage_repository import McpUsageRepository
+from responsibleai.governance.outcome import OutcomeStatus
 from responsibleai.mcp import server as mcp_server
 from responsibleai.rbac.models import OrgContext, Plan, Role
+
+
+@pytest.fixture(autouse=True)
+def _governance_allows_for_billing_unit_tests(monkeypatch):
+    """Isolate billing checks from governance, whose real path has its own suite."""
+    from responsibleai.mcp.governance_integration import GovernanceOutcome
+
+    token = mcp_server._current_governance.set(object())
+    monkeypatch.setattr(
+        "responsibleai.mcp.governance_integration.apply_governance",
+        AsyncMock(return_value=GovernanceOutcome(proceed=True, arguments={}, result={"ok": True})),
+    )
+    real_call_tool = mcp_server._call_tool
+
+    async def call_tool_with_explicit_test_purpose(name, arguments):
+        if mcp_server._current_org.get() is not None:
+            arguments = {**arguments, "_whitepact_purpose": "automated-test"}
+        return await real_call_tool(name, arguments)
+
+    monkeypatch.setattr(mcp_server, "_call_tool", call_tool_with_explicit_test_purpose)
+    yield
+    mcp_server._current_governance.reset(token)
 
 
 @pytest.fixture()
@@ -39,6 +64,32 @@ def _reset_context(tokens):
     org_token, usage_token = tokens
     mcp_server._current_org.reset(org_token)
     mcp_server._current_usage_repo.reset(usage_token)
+
+
+async def test_unknown_evidence_outcome_is_exposed_to_hosted_client(
+    usage_repo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from responsibleai.mcp.governance_integration import GovernanceOutcome
+
+    monkeypatch.setattr(
+        "responsibleai.mcp.governance_integration.apply_governance",
+        AsyncMock(
+            return_value=GovernanceOutcome(
+                proceed=True,
+                arguments={},
+                result={"status": "success"},
+                outcome_status=OutcomeStatus.UNKNOWN,
+            )
+        ),
+    )
+    ctx = OrgContext(key_id="k1", role=Role.ANALYST, org_id="org-1", plan=Plan.PRO)
+    tokens = _set_context(ctx, usage_repo)
+    try:
+        result = await mcp_server._call_tool("rai_health", {})
+    finally:
+        _reset_context(tokens)
+    assert result[1]["_whitepact_evidence_outcome"] == "UNKNOWN"
+    assert result[1]["_whitepact_reconciliation_required"] is True
 
 
 class TestStdioUnrestricted:
@@ -195,7 +246,7 @@ class TestQuotaEnforcement:
         assert "error" not in payload
 
     async def test_context_without_org_id_skips_metering(self, usage_repo):
-        """Legacy/anon contexts (org_id=None) aren't metered — nothing to bill."""
+        """Legacy keys have no tenant authority and cannot execute hosted tools."""
         ctx = OrgContext(key_id="legacy", role=Role.OWNER, org_id=None, is_legacy=True)
         tokens = _set_context(ctx, usage_repo)
         try:
@@ -203,4 +254,4 @@ class TestQuotaEnforcement:
         finally:
             _reset_context(tokens)
         payload = result[1]
-        assert "error" not in payload
+        assert payload["error"] == "governance_unavailable"

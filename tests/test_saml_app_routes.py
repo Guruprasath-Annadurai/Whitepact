@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import base64
 import datetime
-import time
 
 import pytest
 from asgi_lifespan import LifespanManager
@@ -137,12 +136,9 @@ def configured_saml(saml_config: SAMLConfig):
     from responsibleai.dashboard import app as app_module
 
     original_config = app_module._saml_config
-    original_store = dict(app_module._saml_request_store)
     app_module._saml_config = saml_config
     yield saml_config
     app_module._saml_config = original_config
-    app_module._saml_request_store.clear()
-    app_module._saml_request_store.update(original_store)
 
 
 class TestProvidersList:
@@ -222,8 +218,11 @@ class TestSamlAcs:
     ) -> None:
         from responsibleai.dashboard import app as app_module
 
-        app_module._saml_request_store["_req1"] = (
-            time.monotonic() - app_module._SAML_REQUEST_TTL - 1
+        await app_module._saml_txn_store.remember(
+            "_req1",
+            idp_entity_id=configured_saml.idp_entity_id,
+            acs_url=configured_saml.acs_url,
+            ttl_seconds=-1,
         )
         resp = _signed_response(idp_keypair, in_response_to="_req1")
         r = await client.post("/api/auth/acs", data={"SAMLResponse": resp}, follow_redirects=False)
@@ -255,11 +254,36 @@ class TestSamlAcs:
     ) -> None:
         from responsibleai.dashboard import app as app_module
 
-        app_module._saml_request_store["_req2"] = time.monotonic()
+        await app_module._saml_txn_store.remember(
+            "_req2",
+            idp_entity_id=configured_saml.idp_entity_id,
+            acs_url=configured_saml.acs_url,
+        )
         resp = _signed_response(idp_keypair, in_response_to="_req2")
         r = await client.post("/api/auth/acs", data={"SAMLResponse": resp}, follow_redirects=False)
         assert r.status_code == 302
-        assert "_req2" not in app_module._saml_request_store
+        assert await app_module._saml_txn_store.peek_status("_req2") == "CONSUMED"
+
+    @pytest.mark.asyncio
+    async def test_acs_sp_initiated_replay_rejected(
+        self, client: AsyncClient, configured_saml: SAMLConfig, idp_keypair: tuple[str, str]
+    ) -> None:
+        from responsibleai.dashboard import app as app_module
+
+        await app_module._saml_txn_store.remember(
+            "_req-replay",
+            idp_entity_id=configured_saml.idp_entity_id,
+            acs_url=configured_saml.acs_url,
+        )
+        resp = _signed_response(idp_keypair, in_response_to="_req-replay")
+        first = await client.post(
+            "/api/auth/acs", data={"SAMLResponse": resp}, follow_redirects=False
+        )
+        assert first.status_code == 302
+        second = await client.post(
+            "/api/auth/acs", data={"SAMLResponse": resp}, follow_redirects=False
+        )
+        assert second.status_code == 400
 
 
 class TestResolveSamlContext:

@@ -6,10 +6,20 @@ from __future__ import annotations
 
 from responsibleai.rbac.models import Plan, Role
 
+# Legacy rank used only by historical require_role() floors.
+# New enterprise APIs MUST use the permission matrix in
+# responsibleai.enterprise.roles — rank is not authorization.
+# BILLING_ADMIN / AUDITOR / APPROVER sit at VIEWER rank so they cannot
+# inherit ANALYST/ADMIN privileges through the old comparator.
 _HIERARCHY: dict[Role, int] = {
     Role.OWNER: 4,
     Role.ADMIN: 3,
+    Role.SECURITY_ADMIN: 3,
     Role.ANALYST: 2,
+    Role.DEVELOPER: 2,
+    Role.APPROVER: 1,
+    Role.AUDITOR: 1,
+    Role.BILLING_ADMIN: 1,
     Role.VIEWER: 1,
 }
 

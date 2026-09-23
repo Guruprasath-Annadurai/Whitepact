@@ -115,7 +115,7 @@ class TestVerifiedPrincipalAuth:
         app = await build(vc_trusted_issuers=["https://issuer.example.com"])
         token = _make_vc_jwt(_vc_payload(org_id=org_id))
         tools = await _list_tools_over_mcp(app, token)
-        assert len(tools) == 30
+        assert len(tools) == 40
 
     async def test_verification_is_recorded_in_audit_trail(self, mcp_app) -> None:
         build, org_id, _raw_key, engine = mcp_app
@@ -163,7 +163,7 @@ class TestVerifiedPrincipalAuth:
         build, _org_id, raw_key, _engine = mcp_app
         app = await build(vc_trusted_issuers=["https://issuer.example.com"])
         tools = await _list_tools_over_mcp(app, raw_key)
-        assert len(tools) == 30
+        assert len(tools) == 40
 
     async def test_oidc_jwt_not_misrouted_to_vc_path(self, mcp_app) -> None:
         """A plain OIDC-style JWT (no `vc` claim) never reaches the VC

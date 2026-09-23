@@ -41,13 +41,17 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Literal
 
 try:
-    from langgraph.types import interrupt
+    from langgraph.types import interrupt as _langgraph_interrupt
 
     _LANGGRAPH_AVAILABLE = True
+
+    def interrupt(value: Any) -> Any:
+        return _langgraph_interrupt(value)
+
 except ImportError:  # pragma: no cover - exercised only when extra isn't installed
     _LANGGRAPH_AVAILABLE = False
 
-    def interrupt(value: Any) -> Any:  # type: ignore[misc]
+    def interrupt(value: Any) -> Any:
         raise ImportError(
             "make_trust_gate_node requires the 'langgraph' extra: "
             'pip install "rai-governance-platform[langgraph]" (needs langgraph>=1.0).'

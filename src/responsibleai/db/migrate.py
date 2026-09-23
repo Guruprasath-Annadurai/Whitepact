@@ -16,15 +16,10 @@ nested inside the already-running FastAPI event loop) before the app
 starts serving traffic. It is idempotent: a database already at head is a
 fast no-op.
 
-Bootstrapping onto a pre-existing, pre-Alembic database: every real
-ResponsibleAI install that predates this migration system has tables from
-`create_all()` but no `alembic_version` table — blind `alembic upgrade head`
-on such a database fails immediately trying to CREATE TABLEs that already
-exist. Migration 0001 ("Initial schema — all tables") is exactly what
-`create_all()` would have produced before any of the later ALTER-adding
-migrations existed, so a database with tables but no `alembic_version` is
-stamped at 0001 first — marking it as already having the original schema —
-before `upgrade head` runs the newer ALTERs on top.
+Unversioned nonempty databases require an explicit schema inventory and
+reviewed transition. Startup never guesses a baseline revision or stamps one.
+The canonical website lineage and incompatible legacy enterprise revision IDs
+are checked before any migration runs; customer data is never auto-repaired.
 
 Multi-replica deployments should set `RAI_AUTO_MIGRATE=false` and run this
 once as an explicit deploy step instead (see DEPLOY_RUNBOOK.md) — nothing
@@ -36,16 +31,17 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import site
 import sys
 from pathlib import Path
 
 from sqlalchemy import text
 
 from responsibleai.db.engine import create_engine as _create_db_engine
+from responsibleai.db.schema_preflight import SchemaLineageError, validate_schema_lineage
 
 logger = logging.getLogger(__name__)
 
-_BASELINE_REVISION = "0001"
 _PROBE_TABLES = ("alembic_version", "organizations")
 
 
@@ -124,6 +120,11 @@ def _migration_env(effective_db_url: str) -> dict[str, str]:
 
 
 async def _run_alembic(ini_path: Path, env: dict[str, str], *args: str) -> None:
+    pythonpath = env.get("PYTHONPATH", "")
+    user_site = site.getusersitepackages()
+    extras = [p for p in (user_site, pythonpath) if p]
+    if extras:
+        env = {**env, "PYTHONPATH": os.pathsep.join(extras)}
     proc = await asyncio.create_subprocess_exec(
         sys.executable,
         "-m",
@@ -169,12 +170,14 @@ async def run_migrations_or_raise(effective_db_url: str) -> None:
 
     env = _migration_env(effective_db_url)
 
-    if await _needs_baseline_stamp(effective_db_url):
-        logger.info(
-            "db_migration_baseline_stamp",
-            extra={"revision": _BASELINE_REVISION},
-        )
-        await _run_alembic(ini_path, env, "stamp", _BASELINE_REVISION)
+    engine = _create_db_engine(effective_db_url)
+    try:
+        async with engine.raw.connect() as conn:
+            await conn.run_sync(validate_schema_lineage)
+    except SchemaLineageError as exc:
+        raise MigrationError(str(exc)) from exc
+    finally:
+        await engine.close()
 
     await _run_alembic(ini_path, env, "upgrade", "head")
     logger.info("db_migrations_applied", extra={"alembic_ini": str(ini_path)})

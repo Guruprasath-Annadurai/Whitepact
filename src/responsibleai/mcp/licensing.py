@@ -118,12 +118,14 @@ def plan_catalog() -> dict[str, object]:
             "description": "Self-hosted, unlimited local use. Core trust scoring, guardrails, compliance, red team.",
         },
         "PRO": {
-            "price_usd_monthly": 199,
+            "price_usd_monthly": None,
+            "pricing_state": "configured_in_stripe",
             "tools": sorted(FREE_TOOLS | PRO_TOOLS),
             "description": "Hosted MCP endpoint. Adds bias evaluation, drift monitoring, model routing, PII auditing, streaming guardrails.",
         },
         "ENTERPRISE": {
-            "price_usd_monthly": 999,
+            "price_usd_monthly": None,
+            "pricing_state": "contact_sales",
             "tools": sorted(FREE_TOOLS | PRO_TOOLS | ENTERPRISE_TOOLS),
             "description": "Adds AI Passport, EU AI Act / ISO 42001 compliance automation, executive reporting, incident/SIEM logging, SSO, audit export.",
             "contact_for_custom_pricing": True,

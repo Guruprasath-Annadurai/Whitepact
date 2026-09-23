@@ -33,14 +33,14 @@ podAnnotations:
   prometheus.io/port: "8765"
 
 podSecurityContext:
-  fsGroup: 1000
+  fsGroup: 1001
   runAsNonRoot: true
 
 securityContext:
   allowPrivilegeEscalation: false
   readOnlyRootFilesystem: true
   runAsNonRoot: true
-  runAsUser: 1000
+  runAsUser: 1001
   capabilities:
     drop:
       - ALL
@@ -89,7 +89,7 @@ pdb:
 ## Liveness / readiness probes
 livenessProbe:
   httpGet:
-    path: /api/health
+    path: /livez
     port: 8765
   initialDelaySeconds: 15
   periodSeconds: 20
@@ -97,7 +97,7 @@ livenessProbe:
 
 readinessProbe:
   httpGet:
-    path: /api/health
+    path: /ready
     port: 8765
   initialDelaySeconds: 5
   periodSeconds: 10
@@ -138,6 +138,8 @@ config:
   redisUrl: ""
   ## OpenTelemetry OTLP endpoint
   otelEndpoint: ""
+  ## Automatically run migrations on app startup. Set false for multi-replica when using migration Job.
+  autoMigrate: false
 
 ## OIDC / SSO configuration (optional)
 oidc:
@@ -217,9 +219,19 @@ mcp:
     failureThreshold: 3
   readinessProbe:
     httpGet:
-      path: /health
+      path: /ready
       port: 8766
     initialDelaySeconds: 5
     periodSeconds: 10
     failureThreshold: 3
   extraEnv: []
+
+## Pre-install / pre-upgrade database migration Job
+migration:
+  enabled: true
+
+## Pod network isolation policy
+networkPolicy:
+  enabled: false
+  ingress: []
+  egress: []

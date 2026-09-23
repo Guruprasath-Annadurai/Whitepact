@@ -8,8 +8,15 @@ import asyncio
 import logging
 
 from sqlalchemy import (
+    JSON,
+    BigInteger,
+    Boolean,
+    CheckConstraint,
     Column,
+    DateTime,
     Float,
+    ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     MetaData,
@@ -91,10 +98,26 @@ organizations = Table(
     Column("stripe_customer_id", String(64), nullable=True),
     Column("stripe_subscription_id", String(64), nullable=True),
     Column("plan_renews_at", String(32), nullable=True),
+    Column("subscription_status", String(32), nullable=False, default="inactive"),
+    Column(
+        "governance_status", String(16), nullable=False, default="ACTIVE", server_default="ACTIVE"
+    ),
     Column("sso_required", Integer, nullable=False, default=0),
     Column("mfa_required", Integer, nullable=False, default=0),
+    Column("provisioner_key_id", String(64), nullable=True),
+    Column("paddle_customer_id", String(64), nullable=True),
+    Column("paddle_subscription_id", String(64), nullable=True),
+    Column("entitlement_version", Integer, nullable=False, default=0),
+    Column("entitlement_updated_at", String(32), nullable=True),
+    Column("paddle_last_occurred_at", String(36), nullable=True),
+    Column("workspace_kind", String(20), nullable=False, server_default="ORGANIZATION"),
+    Column("owner_user_id", String(36), nullable=True),
+    Column("settings_json", Text, nullable=False, server_default="{}"),
+    Column("deactivated_at", String(32), nullable=True),
     Index("idx_org_slug", "slug"),
     Index("idx_org_stripe_customer", "stripe_customer_id"),
+    Index("idx_org_paddle_customer", "paddle_customer_id", unique=True),
+    Index("idx_org_paddle_subscription", "paddle_subscription_id", unique=True),
 )
 
 mcp_tool_calls = Table(
@@ -129,9 +152,202 @@ org_api_keys = Table(
     Column("mfa_secret", EncryptedString(), nullable=True),
     Column("mfa_enrolled", Integer, nullable=False, default=0),
     Column("mfa_backup_codes", Text, nullable=True),
+    Column("created_by_user_id", String(36), nullable=True),
+    Column("accountable_human_user_id", String(36), nullable=True),
+    Column("service_account_id", String(36), nullable=True),
+    Column("environment_id", String(36), nullable=True),
+    Column("holder_kind", String(32), nullable=False, server_default="human_key"),
+    Column("overlap_expires_at", String(32), nullable=True),
+    Column("revoked_at", String(32), nullable=True),
     Index("idx_oak_org", "org_id"),
     Index("idx_oak_hash", "key_hash"),
+    Index("idx_oak_environment", "environment_id"),
+    Index("idx_oak_service_account", "service_account_id"),
 )
+
+# Human identities and browser sessions are intentionally separate from
+# machine API keys. API keys authenticate workloads; these tables authenticate
+# people and bind them to organizations through explicit memberships.
+web_users = Table(
+    "web_users",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("email", String(254), nullable=False, unique=True),
+    Column("full_name", String(200), nullable=False),
+    Column("password_hash", Text, nullable=False),
+    Column("email_verified_at", String(32), nullable=True),
+    Column("disabled", Integer, nullable=False, default=0),
+    Column("verification_status", String(32), nullable=False, server_default="UNVERIFIED"),
+    Column("phone_verified_at", String(32), nullable=True),
+    Column("abuse_hold", Integer, nullable=False, server_default="0"),
+    Column("created_at", String(32), nullable=False),
+    Column("updated_at", String(32), nullable=False),
+    Index("idx_web_users_email", "email"),
+)
+
+web_memberships = Table(
+    "web_memberships",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("user_id", String(36), ForeignKey("web_users.id", ondelete="CASCADE"), nullable=False),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    ),
+    Column("role", String(20), nullable=False),
+    Column("status", String(20), nullable=False, server_default="ACTIVE"),
+    Column("invited_by_user_id", String(36), nullable=True),
+    Column("accepted_at", String(32), nullable=True),
+    Column("revoked_at", String(32), nullable=True),
+    Column("updated_at", String(32), nullable=True),
+    Column("created_at", String(32), nullable=False),
+    UniqueConstraint("user_id", "org_id", name="uq_web_membership_user_org"),
+    Index("idx_web_memberships_user", "user_id"),
+    Index("idx_web_memberships_org", "org_id"),
+)
+
+web_sessions = Table(
+    "web_sessions",
+    metadata,
+    Column("token_hash", String(64), primary_key=True),
+    Column("session_id", String(36), nullable=True, unique=True),
+    Column("user_id", String(36), ForeignKey("web_users.id", ondelete="CASCADE"), nullable=False),
+    Column("org_id", String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True),
+    Column("csrf_hash", String(64), nullable=False),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("last_seen_at", String(32), nullable=False),
+    Column("revoked", Integer, nullable=False, default=0),
+    Column("assurance_level", String(32), nullable=False, server_default="PASSWORD"),
+    Column("auth_methods_json", Text, nullable=False, server_default="[]"),
+    Column("auth_time", String(32), nullable=True),
+    Column("phishing_resistant", Integer, nullable=False, server_default="0"),
+    Column("ip_label", String(64), nullable=True),
+    Column("user_agent", String(512), nullable=True),
+    Column("last_step_up_at", String(32), nullable=True),
+    Column("inactivity_expires_at", String(32), nullable=True),
+    Column("rotated_from", String(64), nullable=True),
+    Index("idx_web_sessions_user", "user_id"),
+    Index("idx_web_sessions_expires", "expires_at"),
+)
+
+web_verification_tokens = Table(
+    "web_verification_tokens",
+    metadata,
+    Column("token_hash", String(64), primary_key=True),
+    Column("user_id", String(36), ForeignKey("web_users.id", ondelete="CASCADE"), nullable=False),
+    Column("purpose", String(32), nullable=False),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("consumed_at", String(32), nullable=True),
+    Index("idx_web_verification_user", "user_id"),
+    Index("idx_web_verification_expiry", "expires_at"),
+)
+
+web_identity_providers = Table(
+    "web_identity_providers",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("user_id", String(36), ForeignKey("web_users.id", ondelete="CASCADE"), nullable=False),
+    Column("issuer", String(512), nullable=False),
+    Column("subject", String(255), nullable=False),
+    Column("email_at_link", String(254), nullable=True),
+    Column("created_at", String(32), nullable=False),
+    UniqueConstraint("issuer", "subject", name="uq_web_identity_provider_subject"),
+    Index("idx_web_identity_provider_user", "user_id"),
+)
+
+web_invitations = Table(
+    "web_invitations",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("token_hash", String(64), nullable=False, unique=True),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    ),
+    Column("email", String(254), nullable=False),
+    Column("role", String(20), nullable=False),
+    Column(
+        "invited_by_user_id",
+        String(36),
+        ForeignKey("web_users.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column(
+        "accepted_by_user_id",
+        String(36),
+        ForeignKey("web_users.id", ondelete="SET NULL"),
+        nullable=True,
+    ),
+    Column("status", String(24), nullable=False),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("consumed_at", String(32), nullable=True),
+    Index("idx_web_invitations_org", "org_id"),
+    Index("idx_web_invitations_email", "email"),
+)
+
+oauth_flow_states = Table(
+    "oauth_flow_states",
+    metadata,
+    Column("state_hash", String(64), primary_key=True),
+    Column("provider", String(64), nullable=False),
+    Column("tenant_id", String(36), nullable=True),
+    Column("session_id", String(64), nullable=True),
+    Column("nonce", String(64), nullable=False),
+    Column("pkce_verifier", String(128), nullable=True),
+    Column("redirect_uri", String(512), nullable=False),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("consumed_at", String(32), nullable=True),
+    Index("idx_oauth_flow_states_expiry", "expires_at"),
+)
+
+org_api_key_metadata = Table(
+    "org_api_key_metadata",
+    metadata,
+    Column(
+        "key_id", String(36), ForeignKey("org_api_keys.id", ondelete="CASCADE"), primary_key=True
+    ),
+    Column("prefix", String(20), nullable=False),
+    Column("environment", String(16), nullable=False),
+    Column("scopes", Text, nullable=False),
+    Column("expires_at", String(32), nullable=True),
+    Column("rotated_from_id", String(36), nullable=True),
+    Index("idx_api_key_metadata_prefix", "prefix"),
+)
+
+stripe_webhook_events = Table(
+    "stripe_webhook_events",
+    metadata,
+    Column("event_id", String(255), primary_key=True),
+    Column("event_type", String(100), nullable=False),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True
+    ),
+    Column("status", String(24), nullable=False),
+    Column("received_at", String(32), nullable=False),
+    Column("processed_at", String(32), nullable=True),
+    Column("last_error", Text, nullable=True),
+    Index("idx_stripe_events_org", "org_id"),
+    Index("idx_stripe_events_status", "status"),
+)
+
+paddle_webhook_events = Table(
+    "paddle_webhook_events",
+    metadata,
+    Column("event_id", String(100), primary_key=True),
+    Column("event_type", String(100), nullable=False),
+    Column("occurred_at", String(36), nullable=True),
+    Column("entity_id", String(100), nullable=True),
+    Column("org_id", String(36), nullable=True),
+    Column("payload_hash", String(64), nullable=False),
+    Column("status", String(32), nullable=False, default="processing"),
+    Column("received_at", String(32), nullable=False),
+    Column("processed_at", String(32), nullable=True),
+    Column("last_error", Text, nullable=True),
+    Index("idx_paddle_events_org", "org_id"),
+)
+
 
 audit_log = Table(
     "audit_log",
@@ -139,7 +355,7 @@ audit_log = Table(
     Column("id", String(36), primary_key=True),
     Column("timestamp", String(32), nullable=False),
     Column("org_id", String(36), nullable=True),
-    Column("key_id", String(36), nullable=True),
+    Column("key_id", String(64), nullable=True),
     Column("endpoint", String(256), nullable=False),
     Column("method", String(10), nullable=False),
     Column("status_code", Integer, nullable=True),
@@ -380,7 +596,12 @@ governance_evidence = Table(
     "governance_evidence",
     metadata,
     Column("id", String(36), primary_key=True),  # evidence_id
-    Column("org_id", String(36), nullable=True),
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", name="fk_evidence_org", ondelete="RESTRICT"),
+        nullable=False,
+    ),
     Column("action_id", String(36), nullable=False),
     Column("agent_id", String(36), nullable=False),
     Column("identity_id", String(200), nullable=False),
@@ -395,6 +616,23 @@ governance_evidence = Table(
     # NULL when no Policy reached evaluation for this action at all --
     # see governance/policy.py's Policy.version docstring.
     Column("policy_version", Integer, nullable=True),
+    Column("policy_digest", String(64), nullable=True),
+    Column("authentication_method", String(20), nullable=True),
+    Column("request_fingerprint", String(64), nullable=True),
+    Column("arguments_fingerprint", String(64), nullable=True),
+    Column("purpose", Text, nullable=True),
+    Column("authority_version", String(64), nullable=True),
+    Column("consent_id", String(36), nullable=True),
+    Column("consent_version", String(64), nullable=True),
+    Column("consent_state", String(20), nullable=True),
+    Column("governance_epoch", Integer, nullable=True),
+    Column("approval_id", String(36), nullable=True),
+    Column("execution_authorization_id", String(36), nullable=True),
+    Column("execution_nonce_reference", String(64), nullable=True),
+    Column("execution_target", String(200), nullable=True),
+    Column("integrity_version", Integer, nullable=False, default=2),
+    Column("integrity_status", String(32), nullable=False, default="CANONICAL_CHAINED"),
+    Column("chain_sequence", Integer, nullable=True),
     Column("decision", String(30), nullable=False),
     Column("reason_codes", Text, nullable=False),  # JSON list
     Column("framework", String(50), nullable=True),
@@ -408,6 +646,36 @@ governance_evidence = Table(
     Index("idx_gev_action", "action_id"),
     Index("idx_gev_decision", "decision"),
     Index("idx_gev_recorded", "recorded_at"),
+    UniqueConstraint("org_id", "chain_sequence", name="uq_gev_org_sequence"),
+    Index(
+        "idx_gev_chain_link",
+        "org_id",
+        "prev_hash",
+        unique=True,
+        sqlite_where=text("prev_hash IS NOT NULL"),
+        postgresql_where=text("prev_hash IS NOT NULL"),
+    ),
+    Index(
+        "idx_gev_chain_genesis",
+        "org_id",
+        unique=True,
+        sqlite_where=text("prev_hash IS NULL"),
+        postgresql_where=text("prev_hash IS NULL"),
+    ),
+)
+
+governance_evidence_chain_heads = Table(
+    "governance_evidence_chain_heads",
+    metadata,
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", name="fk_evidence_head_org", ondelete="RESTRICT"),
+        primary_key=True,
+    ),
+    Column("head_hash", String(64), nullable=True),
+    Column("sequence", Integer, nullable=False, default=0),
+    Column("updated_at", String(32), nullable=False),
 )
 
 # Phase 11 — persisted GovernanceDecision.REQUIRE_APPROVAL requests,
@@ -456,6 +724,12 @@ governance_approvals = Table(
     Column("resolved_by", String(200), nullable=True),
     Column("resolved_at", String(32), nullable=True),
     Column("resolution_notes", Text, nullable=True),
+    Column("purpose", Text, nullable=True),
+    Column("authentication_method", String(20), nullable=True),
+    Column("revocation_epoch", Integer, nullable=True),
+    Column("authority_version", String(64), nullable=True),
+    Column("policy_version", Integer, nullable=True),
+    Column("target_fingerprint", String(64), nullable=True),
     Index("idx_gap_org", "org_id"),
     Index("idx_gap_status", "status"),
     Index("idx_gap_requested", "requested_at"),
@@ -834,6 +1108,1705 @@ oauth_auth_events = Table(
 )
 
 
+governance_root_authority_records = Table(
+    "governance_root_authority_records",
+    metadata,
+    Column("root_id", String(36), primary_key=True),
+    Column("subject_id", String(255), nullable=False),
+    Column("root_type", String(32), nullable=False),
+    Column(
+        "organization_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("issuer", String(255), nullable=False),
+    Column("verification_method", String(128), nullable=False),
+    Column("authority_source", String(36), nullable=True),  # another root_id, or null
+    Column("jurisdiction", String(64), nullable=True),
+    Column("evidence_refs", Text, nullable=False),  # JSON list
+    Column("issued_at", String(32), nullable=False),
+    Column("not_before", String(32), nullable=True),
+    Column("expires_at", String(32), nullable=True),
+    Column("revoked_at", String(32), nullable=True),
+    Column("revoked_by", String(200), nullable=True),
+    Column("revoke_reason", Text, nullable=True),
+    Column("canonical_digest", String(64), nullable=False),
+    Index("idx_rar_subject", "subject_id"),
+    Index("idx_rar_org", "organization_id"),
+    Index("idx_rar_source", "authority_source"),
+    UniqueConstraint("root_id", "organization_id", name="uq_root_tenant"),
+    ForeignKeyConstraint(
+        ["authority_source", "organization_id"],
+        [
+            "governance_root_authority_records.root_id",
+            "governance_root_authority_records.organization_id",
+        ],
+        name="fk_root_parent_tenant",
+        ondelete="RESTRICT",
+    ),
+)
+
+governance_consent_proofs = Table(
+    "governance_consent_proofs",
+    metadata,
+    Column("consent_id", String(36), primary_key=True),
+    Column(
+        "organization_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("subject_id", String(255), nullable=False),
+    Column("consenting_root_id", String(36), nullable=False),
+    Column("grantee_id", String(200), nullable=False),
+    Column("scope_description", Text, nullable=False),
+    Column("purpose", Text, nullable=False),
+    Column("consent_method", String(32), nullable=False),
+    Column("allowed_action_types", Text, nullable=False, server_default="[]"),
+    Column("allowed_targets", Text, nullable=False, server_default="[]"),
+    Column("evidence_refs", Text, nullable=False),  # JSON list
+    Column("consented_at", String(32), nullable=False),
+    Column("not_before", String(32), nullable=True),
+    Column("expires_at", String(32), nullable=True),
+    Column("revoked_at", String(32), nullable=True),
+    Column("revoked_by", String(200), nullable=True),
+    Column("revoke_reason", Text, nullable=True),
+    Column("canonical_digest", String(64), nullable=False),
+    Index("idx_cp_grantee", "grantee_id"),
+    Index("idx_cp_consenting_root", "consenting_root_id"),
+    ForeignKeyConstraint(
+        ["consenting_root_id", "organization_id"],
+        [
+            "governance_root_authority_records.root_id",
+            "governance_root_authority_records.organization_id",
+        ],
+        name="fk_consent_root_tenant",
+        ondelete="RESTRICT",
+    ),
+)
+
+governance_revocation_epochs = Table(
+    "governance_revocation_epochs",
+    metadata,
+    Column(
+        "organization_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        primary_key=True,
+    ),
+    Column("scope", String(64), primary_key=True),
+    Column("epoch", Integer, nullable=False, server_default="0"),
+    Column("updated_at", String(32), nullable=False),
+)
+
+governance_execution_nonces = Table(
+    "governance_execution_nonces",
+    metadata,
+    Column("nonce", String(64), primary_key=True),
+    Column("authorization_id", String(36), nullable=False),
+    Column(
+        "organization_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("consumed_at", String(32), nullable=False),
+    Index("idx_execution_nonces_consumed_at", "consumed_at"),
+)
+
+governance_crypto_keys = Table(
+    "governance_crypto_keys",
+    metadata,
+    Column("key_id", String(300), primary_key=True),
+    Column("purpose", String(32), nullable=False),
+    Column(
+        "tenant_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
+    Column("environment", String(32), nullable=False),
+    Column("version", Integer, nullable=False),
+    Column("wrapped_dek", Text, nullable=False),  # base64, never plaintext DEK material
+    Column("status", String(16), nullable=False),  # active | retired | revoked
+    Column("created_at", String(32), nullable=False),
+    Index(
+        "idx_crypto_keys_lookup",
+        "purpose",
+        "tenant_id",
+        "environment",
+        "status",
+        "version",
+    ),
+)
+
+governance_neural_consent = Table(
+    "governance_neural_consent",
+    metadata,
+    Column("consent_id", String(64), primary_key=True),
+    Column("subject_id", String(200), nullable=False),
+    Column(
+        "organization_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("category", String(32), nullable=False),
+    Column("status", String(16), nullable=False),
+    Column("version", Integer, nullable=False),
+    Column("granted_at", String(32), nullable=False),
+    Column("revoked_at", String(32), nullable=True),
+    Index("idx_neural_consent_subject_category", "subject_id", "category"),
+)
+
+governance_neural_vault_index = Table(
+    "governance_neural_vault_index",
+    metadata,
+    Column("entry_id", String(64), primary_key=True),
+    Column(
+        "organization_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("subject_id", String(200), nullable=False),
+    Column("session_id", String(200), nullable=False),
+    Column("data_class", String(32), nullable=False),
+    Column("device_reference", String(200), nullable=True),
+    Column("captured_at", String(32), nullable=False),
+    Column("retention_expires_at", String(32), nullable=True),
+    Column("deleted_at", String(32), nullable=True),
+    Column("encrypted_sync_copy", Text, nullable=True),
+    Index("idx_neural_vault_subject", "subject_id"),
+    Index("idx_neural_vault_subject_session", "subject_id", "session_id"),
+)
+
+# --- Phase 3 Global Trust Fabric & Principal Intelligence ---
+
+trust_fabric_principals = Table(
+    "trust_fabric_principals",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("principal_type", String(32), nullable=False),
+    Column("display_name", String(255), nullable=False),
+    Column("lifecycle_state", String(32), nullable=False, default="PENDING_VERIFICATION"),
+    Column("created_at", String(32), nullable=False),
+    Column("updated_at", String(32), nullable=False),
+    Column("metadata_json", Text, nullable=True),
+    Index("idx_tf_prin_org", "org_id"),
+    Index("idx_tf_prin_state", "lifecycle_state"),
+    Index("idx_tf_prin_type", "principal_type"),
+    UniqueConstraint("id", "org_id", name="uq_tf_principals_id_org"),
+)
+
+trust_fabric_identifiers = Table(
+    "trust_fabric_identifiers",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column(
+        "principal_id",
+        String(64),
+        ForeignKey("trust_fabric_principals.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("identifier_type", String(32), nullable=False),
+    Column("raw_value", String(512), nullable=False),
+    Column("normalized_value", String(512), nullable=False),
+    Column("is_primary", Integer, nullable=False, default=0),
+    Column("verification_state", String(32), nullable=False, default="UNVERIFIED"),
+    Column("verified_at", String(32), nullable=True),
+    Column("expires_at", String(32), nullable=True),
+    Column("revoked_at", String(32), nullable=True),
+    Column("source_id", String(64), nullable=True),
+    Column("created_at", String(32), nullable=False),
+    Index("idx_tf_ident_norm", "normalized_value", "identifier_type"),
+    Index("idx_tf_ident_prin", "principal_id"),
+    Index("idx_tf_ident_org", "org_id"),
+    Index(
+        "idx_tf_ident_active_uniq",
+        "org_id",
+        "identifier_type",
+        "normalized_value",
+        unique=True,
+        postgresql_where=text("revoked_at IS NULL"),
+        sqlite_where=text("revoked_at IS NULL"),
+    ),
+)
+
+trust_fabric_sources = Table(
+    "trust_fabric_sources",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column("org_id", String(36), nullable=True),
+    Column("name", String(200), nullable=False),
+    Column("source_tier", String(10), nullable=False),
+    Column("provider_type", String(64), nullable=False),
+    Column("endpoint_or_uri", String(512), nullable=True),
+    Column("is_active", Integer, nullable=False, default=1),
+    Column("created_at", String(32), nullable=False),
+    Index("idx_tf_src_tier", "source_tier"),
+    Index("idx_tf_src_org", "org_id"),
+)
+
+trust_fabric_assertions = Table(
+    "trust_fabric_assertions",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column(
+        "principal_id",
+        String(64),
+        ForeignKey("trust_fabric_principals.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("field_name", String(100), nullable=False),
+    Column("field_value", Text, nullable=False),
+    Column("source_id", String(64), nullable=False),
+    Column("source_tier", String(10), nullable=False),
+    Column("verification_method", String(64), nullable=False),
+    Column("assurance_level", String(20), nullable=False),
+    Column("disclosure_class", String(32), nullable=False),
+    Column("verified_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=True),
+    Column("last_checked_at", String(32), nullable=False),
+    Column("revoked_at", String(32), nullable=True),
+    Column("evidence_digest", String(64), nullable=False),
+    Index("idx_tf_asst_prin_field", "principal_id", "field_name"),
+    Index("idx_tf_asst_org", "org_id"),
+)
+
+trust_fabric_relationships = Table(
+    "trust_fabric_relationships",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column(
+        "subject_principal_id",
+        String(64),
+        ForeignKey("trust_fabric_principals.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "target_principal_id",
+        String(64),
+        ForeignKey("trust_fabric_principals.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("relationship_type", String(32), nullable=False),
+    Column("role_title", String(100), nullable=True),
+    Column("verification_state", String(32), nullable=False, default="UNVERIFIED"),
+    Column("valid_from", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=True),
+    Column("revoked_at", String(32), nullable=True),
+    Column("source_id", String(64), nullable=False),
+    Index("idx_tf_rel_subject", "subject_principal_id"),
+    Index("idx_tf_rel_target", "target_principal_id"),
+    Index("idx_tf_rel_org", "org_id"),
+)
+
+trust_fabric_authority_edges = Table(
+    "trust_fabric_authority_edges",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column(
+        "grantor_principal_id",
+        String(64),
+        ForeignKey("trust_fabric_principals.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column(
+        "grantee_principal_id",
+        String(64),
+        ForeignKey("trust_fabric_principals.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("action_type", String(100), nullable=False),
+    Column("resource_pattern", String(255), nullable=False, default="*"),
+    Column("ceiling_limit_usd", Float, nullable=True),
+    Column("currency", String(3), nullable=False, default="USD"),
+    Column("delegation_depth", Integer, nullable=False, default=0),
+    Column("valid_from", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=True),
+    Column("revoked_at", String(32), nullable=True),
+    Column("revoked_by", String(64), nullable=True),
+    Column("canonical_digest", String(64), nullable=False),
+    Index("idx_tf_auth_grantee", "grantee_principal_id"),
+    Index("idx_tf_auth_action", "action_type"),
+    Index("idx_tf_auth_org", "org_id"),
+    ForeignKeyConstraint(
+        ["grantor_principal_id", "org_id"],
+        ["trust_fabric_principals.id", "trust_fabric_principals.org_id"],
+        name="fk_tf_auth_grantor_tenant",
+        ondelete="RESTRICT",
+    ),
+    ForeignKeyConstraint(
+        ["grantee_principal_id", "org_id"],
+        ["trust_fabric_principals.id", "trust_fabric_principals.org_id"],
+        name="fk_tf_auth_grantee_tenant",
+        ondelete="CASCADE",
+    ),
+)
+
+trust_fabric_trust_roots = Table(
+    "trust_fabric_trust_roots",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+        unique=True,
+    ),
+    Column(
+        "root_principal_id",
+        String(64),
+        ForeignKey("trust_fabric_principals.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("root_public_key", String(512), nullable=False),
+    Column("key_algorithm", String(32), nullable=False, default="Ed25519"),
+    Column("established_at", String(32), nullable=False),
+    Column("status", String(32), nullable=False, default="ACTIVE"),
+    Column("canonical_digest", String(64), nullable=False),
+    Index("idx_tf_root_org", "org_id"),
+)
+
+trust_fabric_bootstrap_records = Table(
+    "trust_fabric_bootstrap_records",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+        unique=True,
+    ),
+    Column("token_hash", String(64), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("consumed_at", String(32), nullable=True),
+    Column("claimed_by_principal_id", String(64), nullable=True),
+    Column("nonce", String(64), nullable=False, unique=True),
+    Column("created_at", String(32), nullable=False),
+    Index("idx_tf_boot_org", "org_id"),
+    Index("idx_tf_boot_nonce", "nonce"),
+)
+
+trust_fabric_passports = Table(
+    "trust_fabric_passports",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column(
+        "principal_id",
+        String(64),
+        ForeignKey("trust_fabric_principals.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("version", String(20), nullable=False, default="3.0"),
+    Column("passport_type", String(32), nullable=False),
+    Column("claims_json", Text, nullable=False),
+    Column("assurance_vector_json", Text, nullable=False),
+    Column("generated_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("verification_hash", String(64), nullable=False),
+    Column("signature", Text, nullable=True),
+    Column("signing_key_id", String(64), nullable=True),
+    Column("revoked_at", String(32), nullable=True),
+    Index("idx_tf_pass_prin", "principal_id"),
+    Index("idx_tf_pass_org", "org_id"),
+)
+
+trust_fabric_conflicts = Table(
+    "trust_fabric_conflicts",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column(
+        "principal_id",
+        String(64),
+        ForeignKey("trust_fabric_principals.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("field_or_claim", String(100), nullable=False),
+    Column("assertion_id_a", String(64), nullable=False),
+    Column("assertion_id_b", String(64), nullable=False),
+    Column("conflict_type", String(32), nullable=False),
+    Column("detected_at", String(32), nullable=False),
+    Column("status", String(32), nullable=False, default="UNRESOLVED"),
+    Column("resolution_reason", Text, nullable=True),
+    Column("resolved_at", String(32), nullable=True),
+    Index("idx_tf_conf_prin", "principal_id"),
+    Index("idx_tf_conf_org", "org_id"),
+)
+
+trust_fabric_challenges = Table(
+    "trust_fabric_challenges",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column("principal_id", String(64), nullable=True),
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("challenge_type", String(32), nullable=False),
+    Column("target_identifier", String(512), nullable=False),
+    Column("nonce", String(64), nullable=False, unique=True),
+    Column("expected_response_hash", String(64), nullable=False),
+    Column("status", String(32), nullable=False, default="PENDING"),
+    Column("issued_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("completed_at", String(32), nullable=True),
+    Index("idx_tf_chal_nonce", "nonce"),
+    Index("idx_tf_chal_org", "org_id"),
+)
+
+trust_fabric_federated_assertions = Table(
+    "trust_fabric_federated_assertions",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column("issuer_org_id", String(36), nullable=False),
+    Column("audience_org_id", String(36), nullable=False),
+    Column("subject_principal_id", String(64), nullable=False),
+    Column("claim_type", String(64), nullable=False),
+    Column("claim_payload_json", Text, nullable=False),
+    Column("nonce", String(64), nullable=False, unique=True),
+    Column("signature", Text, nullable=False),
+    Column("key_id", String(64), nullable=False),
+    Column("issued_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("revoked_at", String(32), nullable=True),
+    Index("idx_tf_fed_nonce", "nonce"),
+    Index("idx_tf_fed_audience", "audience_org_id"),
+)
+
+# ── Phase 4: Enterprise IAM & Privileged Control Plane ────────────────────────
+
+iam_step_up_nonces = Table(
+    "iam_step_up_nonces",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
+    Column("principal_id", String(64), nullable=False),
+    Column("session_id", String(128), nullable=True),
+    Column("nonce_hash", String(64), nullable=False, unique=True),
+    Column("action", String(64), nullable=False),
+    Column("target_resource_id", String(128), nullable=True),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("consumed_at", String(32), nullable=True),
+    Index("idx_iam_nonce_hash", "nonce_hash"),
+    Index("idx_iam_nonce_org_prin", "org_id", "principal_id"),
+)
+
+iam_sessions = Table(
+    "iam_sessions",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
+    Column("principal_id", String(64), nullable=False),
+    Column("token_hash", String(64), nullable=False, unique=True),
+    Column("session_type", String(32), nullable=False, default="INTERACTIVE"),
+    Column("status", String(32), nullable=False, default="ACTIVE"),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("last_seen_at", String(32), nullable=False),
+    Column("revoked_at", String(32), nullable=True),
+    Index("idx_iam_sess_token", "token_hash"),
+    Index("idx_iam_sess_org_prin", "org_id", "principal_id"),
+)
+
+iam_api_key_lineage = Table(
+    "iam_api_key_lineage",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
+    Column("name", String(200), nullable=False),
+    Column("fingerprint", String(64), nullable=False, unique=True),
+    Column("parent_key_id", String(64), nullable=True),
+    Column("status", String(32), nullable=False, default="ACTIVE"),
+    Column("scopes_json", Text, nullable=False, default="[]"),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("revoked_at", String(32), nullable=True),
+    Index("idx_iam_key_fprint", "fingerprint"),
+    Index("idx_iam_key_org", "org_id"),
+)
+
+iam_scim_users = Table(
+    "iam_scim_users",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
+    Column("principal_id", String(64), nullable=False),
+    Column("external_id", String(255), nullable=True),
+    Column("user_name", String(255), nullable=False),
+    Column("email", String(255), nullable=False),
+    Column("active", Integer, nullable=False, default=1),
+    Column("attributes_json", Text, nullable=False, default="{}"),
+    Column("created_at", String(32), nullable=False),
+    Column("updated_at", String(32), nullable=False),
+    Index("idx_iam_scim_usr_org", "org_id"),
+    Index("idx_iam_scim_usr_ext", "org_id", "external_id"),
+    Index("idx_iam_scim_usr_name", "org_id", "user_name"),
+)
+
+iam_scim_groups = Table(
+    "iam_scim_groups",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
+    Column("display_name", String(255), nullable=False),
+    Column("members_json", Text, nullable=False, default="[]"),
+    Column("created_at", String(32), nullable=False),
+    Column("updated_at", String(32), nullable=False),
+    Index("idx_iam_scim_grp_org", "org_id"),
+)
+
+iam_jit_grants = Table(
+    "iam_jit_grants",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
+    Column("principal_id", String(64), nullable=False),
+    Column("target_role", String(32), nullable=False),
+    Column("allowed_actions_json", Text, nullable=False),
+    Column("justification", Text, nullable=False),
+    Column("status", String(32), nullable=False, default="REQUESTED"),
+    Column("requested_at", String(32), nullable=False),
+    Column("approved_at", String(32), nullable=True),
+    Column("approver_principal_id", String(64), nullable=True),
+    Column("expires_at", String(32), nullable=False),
+    Column("revoked_at", String(32), nullable=True),
+    Index("idx_iam_jit_org_prin", "org_id", "principal_id"),
+)
+
+iam_four_eyes_requests = Table(
+    "iam_four_eyes_requests",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
+    Column("requester_principal_id", String(64), nullable=False),
+    Column("action", String(64), nullable=False),
+    Column("target_resource_id", String(128), nullable=True),
+    Column("parameters_json", Text, nullable=False),
+    Column("request_digest", String(64), nullable=False),
+    Column("status", String(32), nullable=False, default="PENDING"),
+    Column("approver_principal_id", String(64), nullable=True),
+    Column("approval_time", String(32), nullable=True),
+    Column("rejection_reason", Text, nullable=True),
+    Column("executed_at", String(32), nullable=True),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Index("idx_iam_fe_org", "org_id"),
+    Index("idx_iam_fe_req", "requester_principal_id"),
+)
+
+iam_break_glass_sessions = Table(
+    "iam_break_glass_sessions",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
+    Column("principal_id", String(64), nullable=False),
+    Column("incident_id", String(64), nullable=False),
+    Column("capabilities_json", Text, nullable=False),
+    Column("justification", Text, nullable=False),
+    Column("status", String(32), nullable=False, default="ACTIVE"),
+    Column("started_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("terminated_at", String(32), nullable=True),
+    Index("idx_iam_bg_org", "org_id"),
+    Index("idx_iam_bg_inc", "incident_id"),
+)
+
+iam_recovery_policies = Table(
+    "iam_recovery_policies",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
+    Column("threshold", Integer, nullable=False),
+    Column("guardians_json", Text, nullable=False),
+    Column("created_at", String(32), nullable=False),
+    Column("active", Integer, nullable=False, default=1),
+    Index("idx_iam_rec_pol_org", "org_id"),
+)
+
+iam_recovery_challenges = Table(
+    "iam_recovery_challenges",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
+    Column("new_root_principal_id", String(64), nullable=False),
+    Column("new_root_public_key", String(255), nullable=False),
+    Column("challenge_message", String(64), nullable=False, unique=True),
+    Column("status", String(32), nullable=False, default="PENDING"),
+    Column("signatures_json", Text, nullable=False, default="{}"),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("completed_at", String(32), nullable=True),
+    Index("idx_iam_chal_msg", "challenge_message"),
+    Index("idx_iam_chal_org", "org_id"),
+)
+
+iam_privileged_audit_log = Table(
+    "iam_privileged_audit_log",
+    metadata,
+    Column("id", String(64), primary_key=True),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
+    Column("principal_id", String(64), nullable=False),
+    Column("action", String(64), nullable=False),
+    Column("risk_tier", String(32), nullable=False),
+    Column("allowed", Integer, nullable=False),
+    Column("target_resource_id", String(128), nullable=True),
+    Column("recorded_at", String(32), nullable=False),
+    Column("prev_hash", String(64), nullable=False),
+    Column("entry_hash", String(64), nullable=False),
+    Column("details_json", Text, nullable=False, default="{}"),
+    Index("idx_iam_audit_org", "org_id"),
+    Index("idx_iam_audit_ts", "recorded_at"),
+)
+
+# Phase 5: Policy Lifecycle, Data Governance & Tenant Erasure
+governance_policy_revisions = Table(
+    "governance_policy_revisions",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
+    Column("revision_num", Integer, nullable=False),
+    Column("rules_json", Text, nullable=False),
+    Column("content_digest", String(64), nullable=False),
+    Column("created_at", String(64), nullable=False),
+    Column("created_by", String(200), nullable=False),
+    Column("change_reason", Text, nullable=False),
+    Column("approval_id", String(36), nullable=True),
+    UniqueConstraint("org_id", "revision_num", name="uq_pol_rev_org_num"),
+    Index("idx_pol_rev_org_num", "org_id", "revision_num"),
+    Index("idx_pol_rev_digest", "org_id", "content_digest"),
+)
+
+governance_policy_activations = Table(
+    "governance_policy_activations",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
+    Column(
+        "revision_id",
+        String(36),
+        ForeignKey("governance_policy_revisions.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("content_digest", String(64), nullable=False),
+    Column("activated_at", String(64), nullable=False),
+    Column("activated_by", String(200), nullable=False),
+    Column("governance_epoch", Integer, nullable=False),
+    Column("previous_activation_id", String(36), nullable=True),
+    Column("is_active", Boolean, nullable=False, default=True),
+    Index("idx_pol_act_org_active", "org_id", "is_active"),
+)
+
+data_retention_policies = Table(
+    "data_retention_policies",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
+    Column("data_category", String(50), nullable=False),
+    Column("retention_period_seconds", Integer, nullable=False),
+    Column("created_at", String(64), nullable=False),
+    Column("updated_at", String(64), nullable=False),
+    UniqueConstraint("org_id", "data_category", name="uq_retention_org_cat"),
+    Index("idx_retention_org", "org_id"),
+)
+
+data_lifecycle_requests = Table(
+    "data_lifecycle_requests",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
+    Column("request_type", String(32), nullable=False),
+    Column("status", String(32), nullable=False),
+    Column("requested_at", String(64), nullable=False),
+    Column("completed_at", String(64), nullable=True),
+    Column("requested_by", String(200), nullable=False),
+    Column("details_json", Text, nullable=False, default="{}"),
+    Column("verification_status", String(32), nullable=True),
+    Index("idx_lifecycle_org_status", "org_id", "status"),
+)
+
+data_holds = Table(
+    "data_holds",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
+    Column("data_category", String(50), nullable=False),
+    Column("hold_reason", Text, nullable=False),
+    Column("active", Boolean, nullable=False, default=True),
+    Column("created_at", String(64), nullable=False),
+    Column("created_by", String(200), nullable=False),
+    Column("released_at", String(64), nullable=True),
+    Column("released_by", String(200), nullable=True),
+    Index("idx_holds_org_cat_active", "org_id", "data_category", "active"),
+)
+
+tenant_tombstones = Table(
+    "tenant_tombstones",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("org_id", String(36), nullable=False, unique=True),
+    Column("original_name", String(255), nullable=False),
+    Column("generation_id", String(64), nullable=False),
+    Column("tombstoned_at", String(64), nullable=False),
+    Column("tombstoned_by", String(200), nullable=False),
+    Column("authority_hash", String(64), nullable=False),
+    Column("evidence_digest", String(64), nullable=False),
+    Column("details_json", Text, nullable=False, default="{}"),
+    Index("idx_tombstone_org", "org_id"),
+    Index("idx_tombstone_gen", "generation_id"),
+)
+
+restore_reconciliation_records = Table(
+    "restore_reconciliation_records",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("restored_at", String(64), nullable=False),
+    Column("status", String(32), nullable=False),
+    Column("tombstones_detected", Integer, nullable=False, default=0),
+    Column("tenants_quarantined", Integer, nullable=False, default=0),
+    Column("details_json", Text, nullable=False, default="{}"),
+    Column("reconciled_by", String(200), nullable=False),
+    Index("idx_restore_rec_status", "status"),
+)
+
+runtime_execution_requests = Table(
+    "runtime_execution_requests",
+    metadata,
+    Column("request_id", String(64), primary_key=True),
+    Column(
+        "organization_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("workspace_id", String(64), nullable=True),
+    Column("principal_id", String(64), nullable=False),
+    Column("agent_id", String(64), nullable=False),
+    Column("identity_id", String(64), nullable=False),
+    Column("intent", Text, nullable=False),
+    Column("action_type", String(128), nullable=False),
+    Column("target", String(256), nullable=False),
+    Column("action_digest", String(64), nullable=False),
+    Column("target_fingerprint", String(64), nullable=True),
+    Column("canonical_action_payload", Text, nullable=False),
+    Column("approved_arguments", JSON, nullable=False),
+    Column("observed_governance_epoch", Integer, nullable=False),
+    Column("idempotency_key", String(128), nullable=False),
+    Column(
+        "approval_id",
+        String(36),
+        ForeignKey("governance_approvals.id", ondelete="RESTRICT"),
+        nullable=True,
+    ),
+    Column("server_id", String(128), nullable=True),
+    Column("lifecycle", String(16), nullable=False, server_default="RECORDED"),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Index(
+        "idx_exec_req_org_idempotency",
+        "organization_id",
+        "idempotency_key",
+        unique=True,
+    ),
+    Index("idx_exec_req_action_digest", "organization_id", "action_digest"),
+    Index("idx_exec_req_org_created", "organization_id", "created_at"),
+)
+
+governance_execution_authorizations = Table(
+    "governance_execution_authorizations",
+    metadata,
+    Column("authorization_id", String(64), primary_key=True),
+    Column(
+        "organization_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("principal_id", String(64), nullable=False),
+    Column("agent_id", String(64), nullable=False),
+    Column(
+        "request_id",
+        String(64),
+        ForeignKey("runtime_execution_requests.request_id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("action_digest", String(64), nullable=False),
+    Column("target_fingerprint", String(64), nullable=True),
+    Column("issuer_epoch", Integer, nullable=False),
+    Column("expires_at", DateTime(timezone=True), nullable=False),
+    Column("oneshot_authority_id", String(64), nullable=False, unique=True),
+    Column(
+        "approval_id",
+        String(36),
+        ForeignKey("governance_approvals.id", ondelete="RESTRICT"),
+        nullable=True,
+    ),
+    Column("status", String(16), nullable=False, server_default="ISSUED"),
+    Column("issued_at", DateTime(timezone=True), nullable=False),
+    Column("consumed_at", DateTime(timezone=True), nullable=True),
+    Index("idx_exec_auth_request", "request_id", unique=True),
+    Index("idx_exec_auth_org_status", "organization_id", "status"),
+)
+
+runtime_execution_attempts = Table(
+    "runtime_execution_attempts",
+    metadata,
+    Column("attempt_id", String(64), primary_key=True),
+    Column(
+        "request_id",
+        String(64),
+        ForeignKey("runtime_execution_requests.request_id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column(
+        "authorization_id",
+        String(64),
+        ForeignKey("governance_execution_authorizations.authorization_id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column(
+        "organization_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("attempt_number", Integer, nullable=False, default=1),
+    Column("worker_id", String(64), nullable=True),
+    Column("lease_id", String(64), nullable=True),
+    Column("lease_generation", BigInteger, nullable=True),
+    Column("state", String(32), nullable=False, server_default="PENDING"),
+    Column("effect_id", String(64), nullable=False, unique=True),
+    Column("effect_state", String(32), nullable=False, server_default="NO_EFFECT"),
+    Column("evidence_status", String(32), nullable=False, server_default="PENDING"),
+    Column("backend_start_token_hash", String(64), nullable=True),
+    Column("pre_effect_decision", String(32), nullable=True),
+    Column("reconciliation_state", String(32), nullable=True),
+    Column("admitted_at", DateTime(timezone=True), nullable=True),
+    Column("backend_started_at", DateTime(timezone=True), nullable=True),
+    Column("effect_claimed_at", DateTime(timezone=True), nullable=True),
+    Column("completed_at", DateTime(timezone=True), nullable=True),
+    Column("failure_code", String(64), nullable=True),
+    Column("failure_reason", Text, nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    Index("idx_attempt_exec_number", "request_id", "attempt_number", unique=True),
+    Index("idx_attempt_auth_id", "authorization_id"),
+)
+
+runtime_execution_fences = Table(
+    "runtime_execution_fences",
+    metadata,
+    Column(
+        "request_id",
+        String(64),
+        ForeignKey("runtime_execution_requests.request_id", ondelete="RESTRICT"),
+        primary_key=True,
+    ),
+    Column("current_generation", BigInteger, nullable=False, server_default="0"),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)
+
+runtime_worker_leases = Table(
+    "runtime_worker_leases",
+    metadata,
+    Column("lease_id", String(64), primary_key=True),
+    Column(
+        "request_id",
+        String(64),
+        ForeignKey("runtime_execution_requests.request_id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column(
+        "attempt_id",
+        String(64),
+        ForeignKey("runtime_execution_attempts.attempt_id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column(
+        "organization_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("worker_id", String(64), nullable=False),
+    Column("lease_generation", BigInteger, nullable=False),
+    Column("status", String(32), nullable=False, server_default="ACTIVE"),
+    Column("acquired_at", DateTime(timezone=True), nullable=False),
+    Column("heartbeat_at", DateTime(timezone=True), nullable=False),
+    Column("expires_at", DateTime(timezone=True), nullable=False),
+    Column("released_at", DateTime(timezone=True), nullable=True),
+    Index(
+        "idx_runtime_worker_leases_generation",
+        "request_id",
+        "lease_generation",
+        unique=True,
+    ),
+)
+
+runtime_execution_dispatch_outbox = Table(
+    "runtime_execution_dispatch_outbox",
+    metadata,
+    Column("outbox_id", String(64), primary_key=True),
+    Column(
+        "request_id",
+        String(64),
+        ForeignKey("runtime_execution_requests.request_id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column(
+        "attempt_id",
+        String(64),
+        ForeignKey("runtime_execution_attempts.attempt_id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column(
+        "organization_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("status", String(32), nullable=False, server_default="PENDING"),
+    Column("publisher_id", String(64), nullable=True),
+    Column("claimed_at", DateTime(timezone=True), nullable=True),
+    Column("published_at", DateTime(timezone=True), nullable=True),
+    Column("acknowledged_at", DateTime(timezone=True), nullable=True),
+    Column("queue_ticket_id", String(64), nullable=True),
+    Column("attempt_count", Integer, nullable=False, default=0),
+    Column("last_error", Text, nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    Index("idx_outbox_status_created", "status", "created_at"),
+)
+
+# ── Enterprise SaaS Layer 1 (administrative identity; not execution authority)
+
+enterprise_environments = Table(
+    "enterprise_environments",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("type", String(16), nullable=False),
+    Column("name", String(100), nullable=False),
+    Column("status", String(20), nullable=False, default="ACTIVE", server_default="ACTIVE"),
+    Column("created_at", String(32), nullable=False),
+    Column("metadata_json", Text, nullable=False, default="{}", server_default="{}"),
+    CheckConstraint(
+        "type IN ('DEVELOPMENT','STAGING','PRODUCTION')",
+        name="chk_enterprise_environment_type",
+    ),
+    CheckConstraint(
+        "status IN ('ACTIVE','DISABLED','DELETED')",
+        name="chk_enterprise_environment_status",
+    ),
+    UniqueConstraint("org_id", "name", name="uq_enterprise_environment_org_name"),
+    Index("idx_enterprise_env_org", "org_id"),
+)
+
+enterprise_service_accounts = Table(
+    "enterprise_service_accounts",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("display_name", String(200), nullable=False),
+    Column("status", String(20), nullable=False, default="ACTIVE", server_default="ACTIVE"),
+    Column("role", String(20), nullable=False),
+    Column(
+        "created_by_user_id",
+        String(36),
+        ForeignKey("web_users.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column("created_at", String(32), nullable=False),
+    Column("revoked_at", String(32), nullable=True),
+    CheckConstraint(
+        "status IN ('ACTIVE','DISABLED','REVOKED')",
+        name="chk_enterprise_sa_status",
+    ),
+    CheckConstraint(
+        "role <> 'OWNER'",
+        name="chk_enterprise_sa_not_owner",
+    ),
+    Index("idx_enterprise_sa_org", "org_id"),
+)
+
+enterprise_service_account_environments = Table(
+    "enterprise_service_account_environments",
+    metadata,
+    Column(
+        "service_account_id",
+        String(36),
+        ForeignKey("enterprise_service_accounts.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "environment_id",
+        String(36),
+        ForeignKey("enterprise_environments.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+)
+
+enterprise_security_audit = Table(
+    "enterprise_security_audit",
+    metadata,
+    Column("event_id", String(36), primary_key=True),
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=True,
+    ),
+    Column("environment_id", String(36), nullable=True),
+    Column("actor_type", String(32), nullable=False),
+    Column("actor_id", String(64), nullable=False),
+    Column("action", String(64), nullable=False),
+    Column("target_type", String(64), nullable=False),
+    Column("target_id", String(64), nullable=True),
+    Column("result", String(24), nullable=False),
+    Column("timestamp", String(32), nullable=False),
+    Column("request_id", String(64), nullable=True),
+    Column("metadata_json", Text, nullable=False, default="{}", server_default="{}"),
+    Index("idx_enterprise_audit_org_ts", "org_id", "timestamp"),
+    Index("idx_enterprise_audit_action", "action"),
+)
+
+identity_verifications = Table(
+    "identity_verifications",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column(
+        "user_id",
+        String(36),
+        ForeignKey("web_users.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("status", String(32), nullable=False, default="UNVERIFIED", server_default="UNVERIFIED"),
+    Column("provider", String(64), nullable=False),
+    Column("provider_reference_id", String(128), nullable=True),
+    Column("legal_name_encrypted", EncryptedString(), nullable=True),
+    Column("country", String(2), nullable=True),
+    Column("assurance_level", String(32), nullable=True),
+    Column("review_status", String(32), nullable=True),
+    Column("verified_at", String(32), nullable=True),
+    Column("expires_at", String(32), nullable=True),
+    Column("created_at", String(32), nullable=False),
+    Column("updated_at", String(32), nullable=False),
+    CheckConstraint(
+        "status IN ('UNVERIFIED','BASIC_VERIFIED','IDENTITY_VERIFIED','REVIEW_REQUIRED','REJECTED','SUSPENDED')",
+        name="chk_identity_verification_status",
+    ),
+    Index("idx_identity_verifications_user", "user_id"),
+    Index("idx_identity_verifications_provider_ref", "provider", "provider_reference_id"),
+)
+
+organization_verifications = Table(
+    "organization_verifications",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    ),
+    Column("status", String(32), nullable=False, default="UNVERIFIED", server_default="UNVERIFIED"),
+    Column("legal_name", String(300), nullable=True),
+    Column("domain", String(255), nullable=True),
+    Column("registration_reference", String(128), nullable=True),
+    Column(
+        "accountable_owner_user_id",
+        String(36),
+        ForeignKey("web_users.id", ondelete="RESTRICT"),
+        nullable=True,
+    ),
+    Column("provider", String(64), nullable=True),
+    Column("provider_reference_id", String(128), nullable=True),
+    Column("verified_at", String(32), nullable=True),
+    Column("created_at", String(32), nullable=False),
+    Column("updated_at", String(32), nullable=False),
+    CheckConstraint(
+        "status IN ('UNVERIFIED','DOMAIN_VERIFIED','ORGANIZATION_VERIFIED','REVIEW_REQUIRED','REJECTED','SUSPENDED')",
+        name="chk_org_verification_status",
+    ),
+)
+
+identity_provider_events = Table(
+    "identity_provider_events",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("provider", String(64), nullable=False),
+    Column("event_id", String(128), nullable=False),
+    Column("user_id", String(36), nullable=True),
+    Column("org_id", String(36), nullable=True),
+    Column("payload_hash", String(64), nullable=False),
+    Column("received_at", String(32), nullable=False),
+    UniqueConstraint("provider", "event_id", name="uq_identity_provider_event"),
+)
+
+api_key_issuance_decisions = Table(
+    "api_key_issuance_decisions",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("org_id", String(36), nullable=True),
+    Column("principal_user_id", String(36), nullable=True),
+    Column("environment_id", String(36), nullable=True),
+    Column("allowed", Integer, nullable=False),
+    Column("reason_code", String(64), nullable=False),
+    Column("requested_scopes", Text, nullable=False, default="[]", server_default="[]"),
+    Column("created_at", String(32), nullable=False),
+    Index("idx_api_key_issuance_org", "org_id"),
+)
+
+# Layer 2 identity security fortress. Authentication is not identity
+# verification and never grants execution authority.
+webauthn_challenges = Table(
+    "webauthn_challenges",
+    metadata,
+    Column("challenge_hash", String(64), primary_key=True),
+    Column("user_id", String(36), nullable=True),
+    Column("session_id", String(64), nullable=True),
+    Column("org_id", String(36), nullable=True),
+    Column("ceremony", String(32), nullable=False),
+    Column("rp_id", String(255), nullable=False),
+    Column("origin", String(512), nullable=False),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("consumed_at", String(32), nullable=True),
+    CheckConstraint("ceremony IN ('register','authenticate')", name="chk_webauthn_ceremony"),
+    Index("idx_webauthn_challenges_user", "user_id"),
+    Index("idx_webauthn_challenges_expiry", "expires_at"),
+)
+
+passkey_credentials = Table(
+    "passkey_credentials",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("user_id", String(36), ForeignKey("web_users.id", ondelete="CASCADE"), nullable=False),
+    Column("credential_id", String(512), nullable=False),
+    Column("public_key", Text, nullable=False),
+    Column("sign_count", Integer, nullable=False, server_default="0"),
+    Column("rp_id", String(255), nullable=False),
+    Column("transports_json", Text, nullable=False, server_default="[]"),
+    Column("aaguid", String(64), nullable=True),
+    Column("backup_eligible", Integer, nullable=True),
+    Column("backup_state", Integer, nullable=True),
+    Column("display_name", String(200), nullable=False, server_default="Passkey"),
+    Column("status", String(32), nullable=False, server_default="ACTIVE"),
+    Column("created_at", String(32), nullable=False),
+    Column("last_used_at", String(32), nullable=True),
+    UniqueConstraint("rp_id", "credential_id", name="uq_passkey_rp_credential"),
+    Index("idx_passkey_user", "user_id"),
+    Index("idx_passkey_credential", "credential_id"),
+)
+
+human_totp_factors = Table(
+    "human_totp_factors",
+    metadata,
+    Column("user_id", String(36), ForeignKey("web_users.id", ondelete="CASCADE"), primary_key=True),
+    Column("secret_encrypted", EncryptedString(), nullable=False),
+    Column("pending_secret_encrypted", EncryptedString(), nullable=True),
+    Column("status", String(32), nullable=False, server_default="PENDING"),
+    Column("last_timestep", Integer, nullable=True),
+    Column("failed_attempts", Integer, nullable=False, server_default="0"),
+    Column("created_at", String(32), nullable=False),
+    Column("confirmed_at", String(32), nullable=True),
+)
+
+recovery_code_hashes = Table(
+    "recovery_code_hashes",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("user_id", String(36), ForeignKey("web_users.id", ondelete="CASCADE"), nullable=False),
+    Column("code_hash", String(64), nullable=False),
+    Column("generation", Integer, nullable=False),
+    Column("consumed_at", String(32), nullable=True),
+    Column("created_at", String(32), nullable=False),
+    UniqueConstraint("user_id", "code_hash", name="uq_recovery_code_user_hash"),
+    Index("idx_recovery_codes_user", "user_id"),
+)
+
+account_recovery_requests = Table(
+    "account_recovery_requests",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("user_id", String(36), ForeignKey("web_users.id", ondelete="CASCADE"), nullable=False),
+    Column("token_hash", String(64), nullable=False, unique=True),
+    Column("status", String(32), nullable=False, server_default="RECOVERY_REQUESTED"),
+    Column("privileged", Integer, nullable=False, server_default="0"),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("consumed_at", String(32), nullable=True),
+    Column("evidence_json", Text, nullable=False, server_default="{}"),
+    Index("idx_account_recovery_user", "user_id"),
+)
+
+provider_identities = Table(
+    "provider_identities",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("user_id", String(36), ForeignKey("web_users.id", ondelete="CASCADE"), nullable=False),
+    Column("provider", String(64), nullable=False),
+    Column("subject", String(255), nullable=False),
+    Column("tenant_id", String(255), nullable=True),
+    Column("hosted_domain", String(255), nullable=True),
+    Column("account_kind", String(32), nullable=False, server_default="PERSONAL"),
+    Column("email_at_link", String(254), nullable=True),
+    Column("status", String(32), nullable=False, server_default="ACTIVE"),
+    Column("created_at", String(32), nullable=False),
+    UniqueConstraint("provider", "subject", "tenant_id", name="uq_provider_identity_subject"),
+    Index("idx_provider_identities_user", "user_id"),
+)
+
+organization_idp_bindings = Table(
+    "organization_idp_bindings",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    ),
+    Column("provider", String(64), nullable=False),
+    Column("tenant_id", String(255), nullable=True),
+    Column("issuer", String(512), nullable=False),
+    Column("verified_domain", String(255), nullable=True),
+    Column("status", String(32), nullable=False, server_default="ACTIVE"),
+    Column("configured_by", String(36), nullable=False),
+    Column("verified_at", String(32), nullable=True),
+    Column("policy_json", Text, nullable=False, server_default="{}"),
+    Column("created_at", String(32), nullable=False),
+    UniqueConstraint("org_id", "provider", name="uq_org_idp_provider"),
+    Index("idx_org_idp_tenant", "provider", "tenant_id"),
+)
+
+organization_sso_configs = Table(
+    "organization_sso_configs",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column(
+        "org_id",
+        String(36),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    ),
+    Column("protocol", String(16), nullable=False),
+    Column("issuer", String(512), nullable=False),
+    Column("client_id", String(255), nullable=False),
+    Column("client_secret_encrypted", EncryptedString(), nullable=True),
+    Column("discovery_url", String(512), nullable=True),
+    Column("jwks_url", String(512), nullable=True),
+    Column("redirect_uri", String(512), nullable=False),
+    Column("enforcement", String(32), nullable=False, server_default="SSO_OPTIONAL"),
+    Column("provisioning", String(32), nullable=False, server_default="INVITE_ONLY"),
+    Column("idp_entity_id", String(512), nullable=True),
+    Column("idp_sso_url", String(512), nullable=True),
+    Column("idp_x509_cert", Text, nullable=True),
+    Column("created_by", String(36), nullable=False),
+    Column("created_at", String(32), nullable=False),
+    Column("updated_at", String(32), nullable=False),
+    CheckConstraint("enforcement IN ('SSO_OPTIONAL','SSO_REQUIRED')", name="chk_sso_enforcement"),
+    CheckConstraint("provisioning IN ('INVITE_ONLY','JIT_OPT_IN')", name="chk_sso_provisioning"),
+)
+
+step_up_grants = Table(
+    "step_up_grants",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("grant_hash", String(64), nullable=False, unique=True),
+    Column("user_id", String(36), ForeignKey("web_users.id", ondelete="CASCADE"), nullable=False),
+    Column("session_id", String(64), nullable=False),
+    Column("action", String(64), nullable=False),
+    Column("org_id", String(36), nullable=True),
+    Column("assurance_required", String(32), nullable=False),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("consumed_at", String(32), nullable=True),
+    Index("idx_step_up_grants_session", "session_id"),
+)
+
+auth_replay_records = Table(
+    "auth_replay_records",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("kind", String(32), nullable=False),
+    Column("replay_key", String(128), nullable=False),
+    Column("created_at", String(32), nullable=False),
+    UniqueConstraint("kind", "replay_key", name="uq_auth_replay_kind_key"),
+)
+
+org_security_policies = Table(
+    "org_security_policies",
+    metadata,
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True
+    ),
+    Column("phishing_resistant_required", Integer, nullable=False, server_default="0"),
+    Column(
+        "privileged_roles_json", Text, nullable=False, server_default='["OWNER","SECURITY_ADMIN"]'
+    ),
+    Column("sso_enforcement", String(32), nullable=False, server_default="SSO_OPTIONAL"),
+    Column("dual_control_json", Text, nullable=False, server_default="[]"),
+    Column("break_glass_user_id", String(36), nullable=True),
+    Column("updated_at", String(32), nullable=False),
+    Column("updated_by", String(36), nullable=True),
+)
+
+company_domain_challenges = Table(
+    "company_domain_challenges",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    ),
+    Column("domain", String(255), nullable=False),
+    Column("method", String(32), nullable=False),
+    Column("token_hash", String(64), nullable=False),
+    Column("status", String(32), nullable=False, server_default="PENDING"),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("verified_at", String(32), nullable=True),
+    UniqueConstraint("org_id", "domain", "method", name="uq_company_domain_challenge"),
+)
+
+identity_security_notifications = Table(
+    "identity_security_notifications",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("user_id", String(36), nullable=True),
+    Column("org_id", String(36), nullable=True),
+    Column("event_type", String(64), nullable=False),
+    Column("created_at", String(32), nullable=False),
+    Column("payload_json", Text, nullable=False, server_default="{}"),
+    Index("idx_identity_security_notifications_user", "user_id"),
+)
+
+# Layer 2 remediation: durable OAuth transactions, abuse counters, four-eyes.
+# These tables are identity-security state. They are not execution authority.
+identity_oauth_transactions = Table(
+    "identity_oauth_transactions",
+    metadata,
+    Column("state_hash", String(64), primary_key=True),
+    Column("provider", String(32), nullable=False),
+    Column("nonce", String(64), nullable=False),
+    Column("pkce_verifier", String(128), nullable=False),
+    Column("redirect_uri", String(512), nullable=False),
+    Column("intended_org_id", String(36), nullable=True),
+    Column("session_id", String(64), nullable=True),
+    Column("status", String(32), nullable=False, server_default="PENDING"),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("consumed_at", String(32), nullable=True),
+    Column("code_hash", String(64), nullable=True),
+    CheckConstraint("status IN ('PENDING','CONSUMED','EXPIRED')", name="chk_identity_oauth_status"),
+    Index("idx_identity_oauth_expiry", "expires_at"),
+)
+
+identity_rate_counters = Table(
+    "identity_rate_counters",
+    metadata,
+    Column("bucket_key", String(256), primary_key=True),
+    Column("window_start", String(32), nullable=False),
+    Column("count", Integer, nullable=False, server_default="0"),
+    Column("updated_at", String(32), nullable=False),
+)
+
+identity_four_eyes_requests = Table(
+    "identity_four_eyes_requests",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column(
+        "org_id", String(36), ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    ),
+    Column(
+        "requester_user_id",
+        String(36),
+        ForeignKey("web_users.id", ondelete="RESTRICT"),
+        nullable=False,
+    ),
+    Column(
+        "approver_user_id",
+        String(36),
+        ForeignKey("web_users.id", ondelete="RESTRICT"),
+        nullable=True,
+    ),
+    Column("action", String(64), nullable=False),
+    Column("parameters_json", Text, nullable=False),
+    Column("action_digest", String(64), nullable=False),
+    Column("security_version", String(64), nullable=True),
+    Column("status", String(32), nullable=False, server_default="PENDING"),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("approved_at", String(32), nullable=True),
+    Column("consumed_at", String(32), nullable=True),
+    CheckConstraint(
+        "status IN ('PENDING','APPROVED','DENIED','EXPIRED','CONSUMED','REVOKED')",
+        name="chk_identity_four_eyes_status",
+    ),
+    Index("idx_identity_four_eyes_org", "org_id"),
+    Index("idx_identity_four_eyes_requester", "requester_user_id"),
+)
+
+# Dashboard SAML AuthnRequest correlation. Not execution authority.
+dashboard_saml_transactions = Table(
+    "dashboard_saml_transactions",
+    metadata,
+    Column("request_id_hash", String(64), primary_key=True),
+    Column("idp_entity_id", String(512), nullable=False),
+    Column("acs_url", String(512), nullable=False),
+    Column("status", String(32), nullable=False, server_default="PENDING"),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("consumed_at", String(32), nullable=True),
+    CheckConstraint(
+        "status IN ('PENDING','CONSUMED','EXPIRED')",
+        name="chk_dashboard_saml_status",
+    ),
+    Index("idx_dashboard_saml_expiry", "expires_at"),
+)
+
+test_consequential_counters = Table(
+    "test_consequential_counters",
+    metadata,
+    Column("organization_id", String(36), primary_key=True),
+    Column("counter", Integer, nullable=False, server_default="0"),
+    Column("downstream_call_count", Integer, nullable=False, server_default="0"),
+    Column("updated_at", String(32), nullable=False),
+)
+
+global_directory_entities = Table(
+    "global_directory_entities",
+    metadata,
+    Column("entity_id", String(64), primary_key=True),
+    Column("entity_type", String(32), nullable=False),
+    Column("canonical_name", String(256), nullable=False),
+    Column("description", Text),
+    Column("canonical_urls_json", Text, nullable=False, server_default="[]"),
+    Column("confidence", Float, nullable=False, server_default="0"),
+    Column("evidence_state", String(32), nullable=False),
+    Column("freshness_state", String(32), nullable=False),
+    Column("data_scope", String(32), nullable=False, server_default="GLOBAL_PUBLIC_EVIDENCE"),
+    Column("metadata_json", Text, nullable=False, server_default="{}"),
+    Column("created_at", String(32), nullable=False),
+    Column("first_observed_at", String(32)),
+    Column("last_observed_at", String(32)),
+    Column("last_verified_at", String(32)),
+    Index("idx_gd_entities_type_name", "entity_type", "canonical_name"),
+)
+
+global_directory_aliases = Table(
+    "global_directory_aliases",
+    metadata,
+    Column("alias_id", String(64), primary_key=True),
+    Column("entity_id", String(64), ForeignKey("global_directory_entities.entity_id"), nullable=False),
+    Column("alias_normalized", String(256), nullable=False, unique=True),
+    Index("idx_gd_aliases_entity", "entity_id"),
+)
+
+global_directory_identifiers = Table(
+    "global_directory_identifiers",
+    metadata,
+    Column("identifier_id", String(64), primary_key=True),
+    Column("entity_id", String(64), ForeignKey("global_directory_entities.entity_id"), nullable=False),
+    Column("identifier_type", String(64), nullable=False),
+    Column("normalized_value", String(512), nullable=False),
+    UniqueConstraint("identifier_type", "normalized_value", name="uq_gd_identifier"),
+)
+
+global_directory_sources = Table(
+    "global_directory_sources",
+    metadata,
+    Column("source_id", String(64), primary_key=True),
+    Column("canonical_url", String(2048), nullable=False),
+    Column("source_type", String(64), nullable=False),
+    Column("publisher", String(256)),
+    Column("retrieved_at", String(32), nullable=False),
+    Column("published_at", String(32)),
+    Column("content_hash", String(64), nullable=False),
+    Column("quality_tier", String(64), nullable=False),
+    Column("parser_version", String(32), nullable=False),
+    Column("retrieval_status", String(32), nullable=False),
+    UniqueConstraint("canonical_url", "content_hash", name="uq_gd_source_url_hash"),
+)
+
+global_directory_claims = Table(
+    "global_directory_claims",
+    metadata,
+    Column("claim_id", String(64), primary_key=True),
+    Column("subject_entity_id", String(64), ForeignKey("global_directory_entities.entity_id"), nullable=False),
+    Column("predicate", String(64), nullable=False),
+    Column("object_entity_id", String(64), ForeignKey("global_directory_entities.entity_id")),
+    Column("normalized_value", Text),
+    Column("evidence_state", String(32), nullable=False),
+    Column("confidence", Float, nullable=False),
+    Column("first_seen_at", String(32), nullable=False),
+    Column("last_seen_at", String(32), nullable=False),
+    Column("last_verified_at", String(32)),
+    Column("valid_from", String(32)),
+    Column("valid_until", String(32)),
+    Column("source_refs_json", Text, nullable=False, server_default="[]"),
+    Index("idx_gd_claims_subject", "subject_entity_id"),
+)
+
+global_directory_claim_evidence = Table(
+    "global_directory_claim_evidence",
+    metadata,
+    Column("evidence_id", String(64), primary_key=True),
+    Column("claim_id", String(64), ForeignKey("global_directory_claims.claim_id"), nullable=False),
+    Column("source_id", String(64), ForeignKey("global_directory_sources.source_id"), nullable=False),
+    Column("excerpt_redacted", Text, nullable=False),
+    Column("support_type", String(16), nullable=False),
+)
+
+global_directory_relationships = Table(
+    "global_directory_relationships",
+    metadata,
+    Column("relationship_id", String(64), primary_key=True),
+    Column("subject_entity_id", String(64), ForeignKey("global_directory_entities.entity_id"), nullable=False),
+    Column("predicate", String(64), nullable=False),
+    Column("object_entity_id", String(64), ForeignKey("global_directory_entities.entity_id"), nullable=False),
+    Column("evidence_state", String(32), nullable=False),
+    Column("confidence", Float, nullable=False),
+    Column("first_seen_at", String(32), nullable=False),
+    Column("last_seen_at", String(32), nullable=False),
+    Column("valid_from", String(32)),
+    Column("valid_until", String(32)),
+)
+
+global_directory_discovery_runs = Table(
+    "global_directory_discovery_runs",
+    metadata,
+    Column("run_id", String(64), primary_key=True),
+    Column("query_text", String(512), nullable=False),
+    Column("status", String(32), nullable=False),
+    Column("budgets_json", Text, nullable=False),
+    Column("started_at", String(32), nullable=False),
+    Column("completed_at", String(32)),
+    Column("org_id", String(36)),
+)
+
+global_directory_suppressions = Table(
+    "global_directory_suppressions",
+    metadata,
+    Column("suppression_id", String(64), primary_key=True),
+    Column("entity_id", String(64)),
+    Column("field_name", String(128)),
+    Column("suppression_kind", String(32), nullable=False),
+    Column("reason", Text),
+    Column("created_at", String(32), nullable=False),
+)
+
+sovereign_shadow_observations = Table(
+    "sovereign_shadow_observations",
+    metadata,
+    Column("shadow_observation_id", String(64), primary_key=True),
+    Column("org_id", String(36), nullable=False, index=True),
+    Column("environment", String(64)),
+    Column("agent_id", String(128)),
+    Column("action_type", String(128)),
+    Column("target_redacted", String(256)),
+    Column("policy_version", Integer),
+    Column("shadow_disposition", String(64), nullable=False),
+    Column("reason_codes_json", Text, nullable=False, server_default="[]"),
+    Column("protocol_version", String(32), nullable=False),
+    Column("schema_version", String(32), nullable=False),
+    Column("diagnostic_json", Text, nullable=False, server_default="{}"),
+    Column("created_at", String(32), nullable=False),
+)
+
+
 class DatabaseEngine:
     """Async database engine wrapping SQLAlchemy — SQLite or PostgreSQL.
 
@@ -856,8 +2829,18 @@ class DatabaseEngine:
     def raw(self) -> AsyncEngine:
         return self._engine
 
-    async def init(self, *, max_attempts: int = 5, base_delay_seconds: float = 1.0) -> None:
-        """Create all tables if they don't exist.
+    async def init(
+        self,
+        *,
+        max_attempts: int = 5,
+        base_delay_seconds: float = 1.0,
+        auto_create_tables: bool = True,
+    ) -> None:
+        """Initialize database connection, optionally verifying schema.
+
+        If auto_create_tables is True (development/testing), creates all tables if they don't exist.
+        If auto_create_tables is False (production), executes a lightweight connectivity check (`SELECT 1`)
+        without running metadata.create_all, respecting Alembic migration ownership.
 
         Retries transient connection failures (OperationalError/DBAPIError —
         covers "connection refused", "server closed the connection
@@ -870,10 +2853,13 @@ class DatabaseEngine:
         while True:
             try:
                 async with self._engine.begin() as conn:
-                    if "sqlite" in str(self._engine.url):
-                        await conn.execute(text("PRAGMA journal_mode=WAL"))
-                        await conn.execute(text("PRAGMA synchronous=NORMAL"))
-                    await conn.run_sync(metadata.create_all)
+                    if auto_create_tables:
+                        if "sqlite" in str(self._engine.url):
+                            await conn.execute(text("PRAGMA journal_mode=WAL"))
+                            await conn.execute(text("PRAGMA synchronous=NORMAL"))
+                        await conn.run_sync(metadata.create_all)
+                    else:
+                        await conn.execute(text("SELECT 1"))
                 return
             except (OperationalError, DBAPIError):
                 attempt += 1
@@ -892,6 +2878,18 @@ class DatabaseEngine:
 
     async def connect(self) -> AsyncConnection:
         return await self._engine.connect()
+
+    async def ping(self, timeout_seconds: float = 2.0) -> bool:
+        """Execute a bounded connectivity probe. Never raises; never leaks errors."""
+        from sqlalchemy import text
+
+        try:
+            async with asyncio.timeout(timeout_seconds):
+                async with self._engine.connect() as conn:
+                    await conn.execute(text("SELECT 1"))
+            return True
+        except Exception:
+            return False
 
     async def close(self) -> None:
         await self._engine.dispose()
@@ -964,6 +2962,17 @@ def create_engine(db_url: str) -> DatabaseEngine:
             poolclass=AsyncAdaptedQueuePool,
             pool_size=1,
             max_overflow=0,
+            echo=False,
+        )
+    elif db_url.startswith("sqlite"):
+        url = (
+            db_url
+            if "aiosqlite" in db_url
+            else db_url.replace("sqlite://", "sqlite+aiosqlite://", 1)
+        )
+        engine = create_async_engine(
+            url,
+            connect_args={"check_same_thread": False},
             echo=False,
         )
     else:
