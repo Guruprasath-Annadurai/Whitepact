@@ -65,7 +65,7 @@ def _cwd_fallback_ini() -> Path | None:
 
 def resolve_alembic_ini() -> Path:
     """Resolve alembic.ini using the canonical search order."""
-    for resolver, label in (
+    for resolver, _label in (
         (_env_override, "environment override"),
         (_package_known_ini, "installed package path"),
         (_repository_known_ini, "repository path"),
