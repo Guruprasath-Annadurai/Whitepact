@@ -33,9 +33,9 @@ not the current repository history.
 |---|---|---|---|---|
 | 1-4, 5-8 | `wiki/Authentication-and-RBAC.md` (2 commits, same content) | `curl-auth-header` | `Bearer your-key-here`, `Bearer owner-key` (×3) | **PLACEHOLDER** |
 | 9, 12 | `DEPLOYMENT.md` (2 commits, same content) | `curl-auth-header` | `Bearer abc123def456...` | **PLACEHOLDER** |
-| 10, 11 | `DEPLOYMENT.md` (2 commits, same content) | `generic-api-key` | `RAI_API_KEYS=abc123def456...` | **PLACEHOLDER** |
+| 10, 11 | `DEPLOYMENT.md` (2 commits, same content) | `generic-api-key` | `RAI_API_KEYS=your-key-here...` | **PLACEHOLDER** |
 
-Every match is a documentation example illustrating the *shape* of a curl command or env var, using an obviously-fake value (`your-key-here`, `owner-key`, `abc123def456...`) — none decode to, resemble, or could function as a real API key, database credential, or signing secret. No `REAL_ACTIVE_CREDENTIAL`, `REAL_REVOKED_CREDENTIAL`, or `TEST_FIXTURE` findings.
+Every match is a documentation example illustrating the *shape* of a curl command or env var, using an obviously-fake value (`your-key-here`, `owner-key`, `your-key-here...`) — none decode to, resemble, or could function as a real API key, database credential, or signing secret. No `REAL_ACTIVE_CREDENTIAL`, `REAL_REVOKED_CREDENTIAL`, or `TEST_FIXTURE` findings.
 
 ## A separate, real finding — outside git, not caught by this scan
 

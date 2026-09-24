@@ -169,14 +169,15 @@ class TestMCPServerCard:
     async def test_server_card_matches_live_tool_and_resource_defs(self, seeded_app) -> None:
         from responsibleai import __version__
         from responsibleai.mcp.resources import RESOURCE_DEFS
-        from responsibleai.mcp.tools import TOOL_DEFS
 
         app, _raw_key = seeded_app
         async with await _raw_client(app) as client:
             response = await client.get("/.well-known/mcp/server-card.json")
         payload = response.json()
         assert payload["serverInfo"] == {"name": "whitepact", "version": __version__}
-        assert len(payload["tools"]) == len(TOOL_DEFS)
-        assert {t["name"] for t in payload["tools"]} == {t.name for t in TOOL_DEFS}
+        from responsibleai.mcp.tools import PRODUCTION_TOOL_DEFS
+
+        assert len(payload["tools"]) == len(PRODUCTION_TOOL_DEFS)
+        assert {t["name"] for t in payload["tools"]} == {t.name for t in PRODUCTION_TOOL_DEFS}
         assert len(payload["resources"]) == len(RESOURCE_DEFS)
         assert payload["prompts"] == []

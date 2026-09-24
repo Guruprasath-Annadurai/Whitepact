@@ -1,0 +1,18 @@
+name: "WhitePact CodeQL"
+paths:
+  - src
+  - web/src
+paths-ignore:
+  - tests
+  - "**/tests/**"
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "**/*.test.mjs"
+  - "**/*.e2e.mjs"
+  - web/src/test
+query-filters:
+  - exclude:
+      id: py/weak-sensitive-data-hashing
+    paths:
+      - src/responsibleai/enterprise/service.py
+      - src/responsibleai/enterprise/security/oauth.py

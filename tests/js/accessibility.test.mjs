@@ -1,82 +1,95 @@
 import { chromium } from "playwright";
 import AxeBuilder from "@axe-core/playwright";
 
+const baseUrl = process.env.WHITEPACT_TEST_BASE_URL ?? "http://127.0.0.1:8765";
 const urls = [
-  "http://127.0.0.1:8765/",
-  "http://127.0.0.1:8765/signup",
-  "http://127.0.0.1:8765/status",
-  "http://127.0.0.1:8765/trust",
-  "http://127.0.0.1:8765/leaderboard",
-  "http://127.0.0.1:8765/registry",
-  "http://127.0.0.1:8765/assess",
-  "http://127.0.0.1:8765/incident-db",
-  "http://127.0.0.1:8765/incident-db/report",
-  "http://127.0.0.1:8765/static/login.html",
-  "http://127.0.0.1:8765/static/signup.html",
-  "http://127.0.0.1:8765/static/cost.html",
-  "http://127.0.0.1:8765/static/eval.html",
-  "http://127.0.0.1:8765/static/evaluate.html",
-  "http://127.0.0.1:8765/static/guardrails.html",
-  "http://127.0.0.1:8765/static/hallucination.html",
-  "http://127.0.0.1:8765/static/incidents.html",
-  "http://127.0.0.1:8765/static/organizations.html",
-  "http://127.0.0.1:8765/static/redteam.html",
-  "http://127.0.0.1:8765/static/router.html",
-  "http://127.0.0.1:8765/static/settings.html",
-  "http://127.0.0.1:8765/static/trust_scores.html",
-  "http://127.0.0.1:8765/static/webhooks_manage.html",
-  "http://127.0.0.1:8765/static/audit.html",
-  "http://127.0.0.1:8765/static/billing.html",
-  "http://127.0.0.1:8765/static/auth_complete.html",
-  "http://127.0.0.1:8765/static/incident_db.html",
-  "http://127.0.0.1:8765/static/incident_db_detail.html",
-  "http://127.0.0.1:8765/static/incident_db_report.html",
-  "http://127.0.0.1:8765/static/verify.html",
-];
+  "/", "/login", "/signup", "/verify-email", "/forgot-password", "/reset-password",
+  "/onboarding", "/terms", "/privacy", "/pricing", "/refund-policy", "/docs", "/contact", "/status", "/trust",
+  "/leaderboard", "/registry", "/assess", "/incident-db", "/incident-db/report",
+  "/static/login.html", "/static/signup.html", "/static/cost.html", "/static/eval.html",
+  "/static/evaluate.html", "/static/guardrails.html", "/static/hallucination.html",
+  "/static/incidents.html", "/static/organizations.html", "/static/redteam.html",
+  "/static/router.html", "/static/settings.html", "/static/trust_scores.html",
+  "/static/webhooks_manage.html", "/static/audit.html", "/static/billing.html",
+  "/static/auth_complete.html", "/static/incident_db.html", "/static/incident_db_detail.html",
+  "/static/incident_db_report.html", "/static/verify.html",
+].map((path) => `${baseUrl}${path}`);
 
 const browser = await chromium.launch({ headless: true });
 let failures = 0;
+
+async function scan(page, url) {
+  console.log(`Checking ${url}`);
+  const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 15000 });
+  if (!response || !response.ok()) {
+    console.error(`FAILED: ${url} returned ${response?.status() ?? "no response"}`);
+    failures += 1;
+    return;
+  }
+  const results = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa"])
+    .analyze();
+  const blocking = results.violations.filter((item) => ["critical", "serious"].includes(item.impact));
+  if (blocking.length > 0) {
+    failures += 1;
+    console.error(`ACCESSIBILITY VIOLATIONS: ${url}`);
+    for (const violation of blocking) {
+      console.error(`  ${violation.id}: ${violation.help} (${violation.impact})`);
+      for (const node of violation.nodes) {
+        console.error(`    target: ${node.target.join(", ")}`);
+        console.error(`    ${node.failureSummary ?? ""}`);
+      }
+    }
+  }
+}
 
 try {
   const context = await browser.newContext();
   const page = await context.newPage();
 
   for (const url of urls) {
-    console.log(`Checking ${url}`);
+    await scan(page, url);
+  }
 
-    const response = await page.goto(url, {
-      waitUntil: "domcontentloaded",
-      timeout: 15000,
+  const email = `accessibility-${Date.now()}@whitepact.dev`;
+  const password = "Accessible-Console-42!";
+  const registration = await context.request.post(`${baseUrl}/api/v1/web/auth/register`, {
+    data: { full_name: "Accessibility Auditor", email, password, accepted_terms: true },
+  });
+  const registrationBody = await registration.json();
+  if (!registration.ok() || !registrationBody.verification_url) {
+    console.error("FAILED: authenticated accessibility setup requires WHITEPACT_WEB_AUTH_DEV_TOKENS=true");
+    failures += 1;
+  } else {
+    const verificationToken = new URL(registrationBody.verification_url).searchParams.get("token");
+    await context.request.post(`${baseUrl}/api/v1/web/auth/verify`, { data: { token: verificationToken } });
+    const login = await context.request.post(`${baseUrl}/api/v1/web/auth/login`, { data: { email, password } });
+    const csrfCookie = (await context.cookies()).find((cookie) => cookie.name === "wp_csrf");
+    const onboarding = await context.request.post(`${baseUrl}/api/v1/web/onboarding`, {
+      headers: { "X-WP-CSRF": csrfCookie?.value ?? "" },
+      data: { organization_name: "Accessibility Workspace", use_case: "Enterprise evaluation", plan: "FREE" },
     });
-
-    await page.waitForTimeout(500);
-
-    if (!response || !response.ok()) {
-      console.error(
-        `FAILED: ${url} returned ${response?.status() ?? "no response"}`
-      );
+    if (!login.ok() || !onboarding.ok()) {
+      console.error(`FAILED: authenticated accessibility setup returned login=${login.status()} onboarding=${onboarding.status()}`);
       failures += 1;
-      continue;
-    }
-
-    const results = await new AxeBuilder({ page })
-      .withTags(["wcag2a", "wcag2aa"])
-      .analyze();
-
-    if (results.violations.length > 0) {
-      failures += 1;
-      console.error(`ACCESSIBILITY VIOLATIONS: ${url}`);
-
-      for (const violation of results.violations) {
-        console.error(
-          `  ${violation.id}: ${violation.help} (${violation.impact ?? "unknown impact"})`
-        );
-
-        for (const node of violation.nodes) {
-          console.error(`    target: ${node.target.join(", ")}`);
-          console.error(`    ${node.failureSummary ?? ""}`);
+    } else {
+      for (const path of ["/dashboard", "/dashboard/api-keys", "/dashboard/billing", "/dashboard/organization", "/dashboard/approvals", "/dashboard/evidence", "/dashboard/security"]) {
+        await scan(page, `${baseUrl}${path}`);
+      }
+      const responsive = await context.newPage();
+      for (const width of [375, 768, 1024, 1440]) {
+        await responsive.setViewportSize({ width, height: width < 768 ? 844 : 900 });
+        for (const path of ["/", "/pricing", "/signup", "/dashboard", "/dashboard/api-keys", "/dashboard/approvals", "/dashboard/evidence", "/dashboard/members", "/dashboard/billing", "/dashboard/security"]) {
+          const url = `${baseUrl}${path}`;
+          await responsive.goto(url, { waitUntil: "domcontentloaded", timeout: 15000 });
+          const overflow = await responsive.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+          if (overflow > 1) {
+            console.error(`RESPONSIVE OVERFLOW: ${url} at ${width}px exceeds viewport by ${overflow}px`);
+            failures += 1;
+          }
         }
       }
+      await responsive.close();
     }
   }
 

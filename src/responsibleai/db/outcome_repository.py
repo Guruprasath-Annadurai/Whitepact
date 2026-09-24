@@ -15,7 +15,7 @@ from typing import Any
 
 from sqlalchemy import insert, select
 
-from responsibleai.db.engine import DatabaseEngine, governance_outcomes
+from responsibleai.db.engine import DatabaseEngine, governance_evidence, governance_outcomes
 from responsibleai.governance.outcome import OutcomeRecord, OutcomeStatus
 
 
@@ -41,6 +41,17 @@ class OutcomeRepository:
 
     async def record(self, outcome: OutcomeRecord) -> OutcomeRecord:
         async with self._engine.raw.begin() as conn:
+            if outcome.organization_id is not None:
+                evidence_exists = (
+                    await conn.execute(
+                        select(governance_evidence.c.id).where(
+                            governance_evidence.c.id == outcome.evidence_id,
+                            governance_evidence.c.org_id == outcome.organization_id,
+                        )
+                    )
+                ).scalar_one_or_none()
+                if evidence_exists is None:
+                    raise ValueError("Outcome evidence does not belong to the organization")
             await conn.execute(
                 insert(governance_outcomes).values(
                     id=outcome.outcome_id,
@@ -65,6 +76,21 @@ class OutcomeRepository:
                 await conn.execute(
                     select(governance_outcomes)
                     .where(governance_outcomes.c.evidence_id == evidence_id)
+                    .order_by(governance_outcomes.c.observed_at.desc())
+                    .limit(1)
+                )
+            ).fetchone()
+        return _row_to_record(row) if row else None
+
+    async def get_for_org(self, evidence_id: str, org_id: str) -> OutcomeRecord | None:
+        async with self._engine.raw.connect() as conn:
+            row = (
+                await conn.execute(
+                    select(governance_outcomes)
+                    .where(
+                        governance_outcomes.c.evidence_id == evidence_id,
+                        governance_outcomes.c.org_id == org_id,
+                    )
                     .order_by(governance_outcomes.c.observed_at.desc())
                     .limit(1)
                 )

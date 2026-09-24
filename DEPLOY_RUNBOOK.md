@@ -412,6 +412,16 @@ Stated plainly, not aspirationally:
   don't move together. Set `mcp.enabled: false` in `values.yaml` to skip
   deploying it entirely (e.g. self-hosted-stdio-only deployments that
   never run the hosted transport).
+- **Separating schema migrations from replicas (`auto_migrate=False`):**
+  In multi-replica Kubernetes setups, running in-process migrations on
+  every pod startup (`auto_migrate=True`) risks concurrent, uncoordinated
+  Alembic runs. The Helm chart provides a dedicated pre-install/pre-upgrade
+  `Job` (`templates/job-migration.yaml`) executing `alembic upgrade head`
+  serially before replica deployments rollout, with `autoMigrate: false`
+  configured on the workload pods. (Note: While in-process migration delays
+  were suspected during review, the root cause of historical intermittent
+  5s ASGI lifespan startup timeouts remains **UNCONFIRMED** pending isolated
+  profiling).
 
 ---
 

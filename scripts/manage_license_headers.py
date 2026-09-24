@@ -3,7 +3,7 @@
 
 OpenSSF Best Practices Gold requires each source file to identify its
 copyright holder and license. This tool intentionally targets tracked,
-first-party source under src/, tests/, scripts/, and examples/ and does
+first-party source under src/, web/, tests/, scripts/, and examples/ and does
 not rewrite generated/vendor/dependency content.
 """
 
@@ -15,8 +15,9 @@ from pathlib import Path
 
 COPYRIGHT = "Copyright (c) 2026 Guruprasath Annadurai"
 SPDX = "SPDX-License-Identifier: MIT"
-ROOTS = ("src/", "tests/", "scripts/", "examples/")
-SUPPORTED = {".py", ".js", ".sh", ".css", ".html"}
+ROOTS = ("src/", "web/", "tests/", "scripts/", "examples/")
+GENERATED_ROOTS = ("src/responsibleai/dashboard/static/whitepact/",)
+SUPPORTED = {".py", ".js", ".sh", ".css", ".html", ".ts", ".tsx"}
 
 
 def tracked_files() -> list[Path]:
@@ -32,6 +33,7 @@ def tracked_files() -> list[Path]:
         for path in paths
         if path
         and path.startswith(ROOTS)
+        and not path.startswith(GENERATED_ROOTS)
         and Path(path).suffix.lower() in SUPPORTED
     ]
 
@@ -40,7 +42,7 @@ def header_for(path: Path) -> str:
     suffix = path.suffix.lower()
     if suffix in {".py", ".sh"}:
         return f"# {COPYRIGHT}\n# {SPDX}\n"
-    if suffix == ".js":
+    if suffix in {".js", ".ts", ".tsx"}:
         return f"// {COPYRIGHT}\n// {SPDX}\n"
     if suffix == ".css":
         return f"/* {COPYRIGHT}\n * {SPDX}\n */\n"

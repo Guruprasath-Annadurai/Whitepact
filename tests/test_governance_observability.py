@@ -20,6 +20,7 @@ from responsibleai.dashboard.prometheus import (
     observe_governance_decision,
 )
 from responsibleai.db import OrgRepository, create_engine
+from responsibleai.mcp.tools import TOOL_DEFS
 from responsibleai.rbac.models import Plan, Role
 
 
@@ -60,7 +61,7 @@ class TestObserveGovernanceApproval:
 
 
 @pytest.fixture()
-async def governed_app(monkeypatch: pytest.MonkeyPatch):
+async def governed_app(monkeypatch: pytest.MonkeyPatch, seed_runtime_authority):
     import responsibleai.db as db_module
     from responsibleai.dashboard.config import get_settings
     from responsibleai.mcp.server import _build_http_app
@@ -74,7 +75,15 @@ async def governed_app(monkeypatch: pytest.MonkeyPatch):
 
     org_repo = OrgRepository(engine)
     org = await org_repo.create_org("Metrics Co", "metrics-co", plan=Plan.ENTERPRISE)
-    _key_rec, raw_key = await org_repo.create_key(org.id, "test-key", role=Role.ANALYST)
+    key_rec, raw_key = await org_repo.create_key(org.id, "test-key", role=Role.ANALYST)
+    tool_names = tuple(definition.name for definition in TOOL_DEFS)
+    await seed_runtime_authority(
+        engine,
+        organization_id=org.id,
+        principal_id=key_rec.id,
+        action_types=tool_names,
+        targets=tool_names,
+    )
 
     app = _build_http_app()
     async with LifespanManager(app) as manager:
@@ -112,7 +121,9 @@ class TestEndToEndDispatchEmitsMetrics:
         ):
             async with ClientSession(read_stream, write_stream) as session:
                 await session.initialize()
-                result = await session.call_tool("rai_health", {})
+                result = await session.call_tool(
+                    "rai_health", {"_whitepact_purpose": "automated-test"}
+                )
                 assert result.isError is not True
                 json.loads(result.content[0].text)
 

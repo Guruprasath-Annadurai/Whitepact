@@ -48,11 +48,12 @@ from responsibleai.governance import (
     verify_evidence_bundle,
 )
 from responsibleai.integrations.client import TrustCheckResult
+from responsibleai.mcp.tools import TOOL_DEFS
 from responsibleai.rbac.models import Plan, Role
 
 
 @pytest.fixture()
-async def gauntlet_app(monkeypatch: pytest.MonkeyPatch):
+async def gauntlet_app(monkeypatch: pytest.MonkeyPatch, seed_runtime_authority):
     """A fully governed hosted-MCP app -- same construction as
     test_mcp_governance_dispatch.py's `governed_app`, spelled out here
     so the Gauntlet doesn't depend on importing fixtures from another
@@ -71,6 +72,14 @@ async def gauntlet_app(monkeypatch: pytest.MonkeyPatch):
     org_repo = OrgRepository(engine)
     org = await org_repo.create_org("Gauntlet Co", "gauntlet-co", plan=Plan.ENTERPRISE)
     key_rec, raw_key = await org_repo.create_key(org.id, "gauntlet-key", role=Role.ANALYST)
+    tool_names = tuple(definition.name for definition in TOOL_DEFS)
+    await seed_runtime_authority(
+        engine,
+        organization_id=org.id,
+        principal_id=key_rec.id,
+        action_types=tool_names,
+        targets=tool_names,
+    )
 
     app = _build_http_app()
     async with LifespanManager(app) as manager:
@@ -88,6 +97,7 @@ def _client(app, raw_key: str) -> httpx.AsyncClient:
 
 
 async def _call(app, raw_key: str, tool_name: str, arguments: dict):
+    arguments = {**arguments, "_whitepact_purpose": "automated-test"}
     async with (
         _client(app, raw_key) as http_client,
         streamable_http_client("/mcp", http_client=http_client) as (
@@ -165,9 +175,9 @@ class TestWhitePactGauntlet:
         captured: dict[str, object] = {}
         real_apply_governance = gi_module.apply_governance
 
-        async def _capturing(name, arguments, ctx, services):
+        async def _capturing(name, arguments, ctx, services, *, purpose):
             captured["services"] = services
-            return await real_apply_governance(name, arguments, ctx, services)
+            return await real_apply_governance(name, arguments, ctx, services, purpose=purpose)
 
         monkeypatch_target = gi_module.apply_governance
         gi_module.apply_governance = _capturing

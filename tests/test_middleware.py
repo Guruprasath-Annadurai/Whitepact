@@ -8,7 +8,9 @@ booting the full dashboard app."""
 
 from __future__ import annotations
 
-from fastapi import FastAPI, HTTPException
+from urllib.parse import urlparse
+
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.testclient import TestClient
 from starlette.requests import Request
 
@@ -20,6 +22,16 @@ from responsibleai.dashboard.middleware import (
     global_exception_handler,
     http_exception_handler,
 )
+
+
+def _csp_tokens_include_host(tokens: set[str], host: str) -> bool:
+    for token in tokens:
+        if token.startswith(("'", '"')):
+            continue
+        parsed = urlparse(token if "://" in token else f"https://{token}")
+        if parsed.hostname and parsed.hostname.endswith(host):
+            return True
+    return False
 
 
 class TestRequestIDMiddleware:
@@ -52,6 +64,70 @@ class TestSecurityHeadersMiddleware:
         assert resp.headers["X-Frame-Options"] == "DENY"
         assert "Content-Security-Policy" in resp.headers
         assert "Strict-Transport-Security" in resp.headers
+
+    def test_whitepact_spa_uses_strict_csp(self):
+        app = FastAPI()
+        app.add_middleware(SecurityHeadersMiddleware)
+
+        @app.get("/dashboard/api-keys")
+        def _handler():
+            return {"ok": True}
+
+        client = TestClient(app)
+        from responsibleai.dashboard.paddle_csp import PADDLE_SCRIPT_ORIGINS
+
+        csp = client.get("/dashboard/api-keys").headers["Content-Security-Policy"]
+        script_tokens = {
+            token
+            for segment in csp.split(";")
+            if segment.strip().startswith("script-src ")
+            for token in segment.strip().split()[1:]
+        }
+        assert "'self'" in script_tokens
+        assert set(PADDLE_SCRIPT_ORIGINS) <= script_tokens
+        assert "'unsafe-inline'" not in script_tokens
+        assert not _csp_tokens_include_host(script_tokens, "cdn.jsdelivr.net")
+
+    def test_legacy_page_retains_compatibility_csp(self):
+        app = FastAPI()
+        app.add_middleware(SecurityHeadersMiddleware)
+
+        @app.get("/evaluate")
+        def _handler():
+            return {"ok": True}
+
+        client = TestClient(app)
+        csp = client.get("/evaluate").headers["Content-Security-Policy"]
+        script_tokens = {
+            token
+            for segment in csp.split(";")
+            if segment.strip().startswith("script-src ")
+            for token in segment.strip().split()[1:]
+        }
+        assert "'unsafe-inline'" in script_tokens
+        assert _csp_tokens_include_host(script_tokens, "cdn.jsdelivr.net")
+
+    def test_hashed_assets_receive_immutable_cache_policy(self):
+        app = FastAPI()
+        app.add_middleware(SecurityHeadersMiddleware)
+
+        @app.get("/static/whitepact/assets/app-123.js")
+        def _handler():
+            return Response(content="", media_type="application/javascript")
+
+        response = TestClient(app).get("/static/whitepact/assets/app-123.js")
+        assert response.headers["Cache-Control"] == "public, max-age=31536000, immutable"
+
+    def test_crawl_metadata_receives_bounded_cache_policy(self):
+        app = FastAPI()
+        app.add_middleware(SecurityHeadersMiddleware)
+
+        @app.get("/robots.txt")
+        def _handler():
+            return Response(content="User-agent: *", media_type="text/plain")
+
+        response = TestClient(app).get("/robots.txt")
+        assert response.headers["Cache-Control"] == "public, max-age=3600"
 
 
 class TestRequestLoggingMiddleware:

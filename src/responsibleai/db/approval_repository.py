@@ -144,6 +144,12 @@ def _row_to_request(row: Any) -> ApprovalRequest:
         if getattr(row, "expires_at", None)
         else None,
         arguments=json.loads(row.arguments) if getattr(row, "arguments", None) else None,
+        purpose=row.purpose,
+        authentication_method=getattr(row, "authentication_method", None),
+        revocation_epoch=getattr(row, "revocation_epoch", None),
+        authority_version=getattr(row, "authority_version", None),
+        policy_version=getattr(row, "policy_version", None),
+        target_fingerprint=getattr(row, "target_fingerprint", None),
         required_approvals=getattr(row, "required_approvals", None) or 1,
         resolved_by=row.resolved_by,
         resolved_at=datetime.fromisoformat(row.resolved_at) if row.resolved_at else None,
@@ -181,6 +187,12 @@ class ApprovalRepository:
                     action_type=approval.action_type,
                     target=approval.target,
                     action_digest=approval.action_digest,
+                    purpose=approval.purpose,
+                    authentication_method=approval.authentication_method,
+                    revocation_epoch=approval.revocation_epoch,
+                    authority_version=approval.authority_version,
+                    policy_version=approval.policy_version,
+                    target_fingerprint=approval.target_fingerprint,
                     reason_codes=json.dumps(approval.reason_codes),
                     risk_tier=approval.risk_tier,
                     status=approval.status.value,
@@ -197,7 +209,11 @@ class ApprovalRepository:
         if webhook_manager is not None:
             from responsibleai.webhooks.models import WebhookEvent
 
-            await webhook_manager.fire(WebhookEvent.APPROVAL_REQUESTED, approval.to_dict())
+            await webhook_manager.fire(
+                WebhookEvent.APPROVAL_REQUESTED,
+                approval.to_dict(),
+                org_id=approval.organization_id,
+            )
 
         return approval
 

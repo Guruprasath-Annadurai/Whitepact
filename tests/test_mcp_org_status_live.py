@@ -23,13 +23,17 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
 from responsibleai.db import OrgRepository, create_engine
+from responsibleai.mcp.tools import TOOL_DEFS
 from responsibleai.rbac.models import Plan, Role
 
 
 @pytest.fixture()
-async def hosted_app(monkeypatch: pytest.MonkeyPatch):
+async def hosted_app(monkeypatch: pytest.MonkeyPatch, seed_runtime_authority):
     import responsibleai.db as db_module
+    from responsibleai.dashboard.config import get_settings
     from responsibleai.mcp.server import _build_http_app
+
+    monkeypatch.setattr(get_settings(), "mcp_governance_enabled", True)
 
     engine = create_engine(":memory:")
     await engine.init()
@@ -43,7 +47,15 @@ async def hosted_app(monkeypatch: pytest.MonkeyPatch):
     org = await org_repo.create_org(
         "Org Status Test Co", "org-status-test-co", plan=Plan.ENTERPRISE
     )
-    _key_rec, raw_key = await org_repo.create_key(org.id, "test-key", role=Role.ANALYST)
+    key_rec, raw_key = await org_repo.create_key(org.id, "test-key", role=Role.ANALYST)
+    tool_names = tuple(definition.name for definition in TOOL_DEFS)
+    await seed_runtime_authority(
+        engine,
+        organization_id=org.id,
+        principal_id=key_rec.id,
+        action_types=tool_names,
+        targets=tool_names,
+    )
 
     app = _build_http_app()
     async with LifespanManager(app) as manager:
@@ -61,6 +73,7 @@ def _client(app, raw_key: str) -> httpx.AsyncClient:
 
 
 async def _call(app, raw_key: str, tool_name: str, arguments: dict):
+    arguments = {**arguments, "_whitepact_purpose": "automated-test"}
     async with (
         _client(app, raw_key) as http_client,
         streamable_http_client("/mcp", http_client=http_client) as (

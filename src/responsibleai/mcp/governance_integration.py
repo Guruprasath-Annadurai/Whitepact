@@ -7,9 +7,9 @@ governance-core work; no live MCP tool call routed through the gateway,
 which only existed as a separate, opt-in REST API
 (`/api/governance/*`).
 
-Opt-in via `Settings.mcp_governance_enabled` (default `False` — see its
-own docstring for why: this is a real behavior change for anyone who
-enables it, not a transparent addition). Kept in its own module, not
+Initialized via `Settings.mcp_governance_enabled` (default `False`).
+Hosted tool dispatch fails closed when disabled or tenant context is missing;
+local community stdio remains a distinct, ungoverned mode. Kept in its own module, not
 `mcp/server.py` directly, so the self-hosted stdio transport's import
 graph stays free of the DB/governance layer it never touches — `import
 responsibleai.mcp.server` for `main()` (stdio) never pulls this file
@@ -41,7 +41,7 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -53,6 +53,7 @@ from responsibleai.db import (
     IntentContractRepository,
     OrgAuthorityCeilingRepository,
     OrgAutonomyBudgetRepository,
+    OrgRepository,
     OutcomeRepository,
     PolicyRepository,
     WorkflowRuleRepository,
@@ -66,7 +67,6 @@ from responsibleai.governance import (
     IdentityContext,
     InternalToolExecutor,
     ReasonCode,
-    RiskTier,
     WhitePactRuntimeGateway,
     authorize_execution,
     enrich_agent_trust_state,
@@ -76,20 +76,36 @@ from responsibleai.governance import (
 )
 from responsibleai.governance.approval import (
     ApprovalRequest,
+    ApprovalStatus,
     build_approval_request,
     build_resume_action,
+    complete_verified_approval,
 )
+from responsibleai.governance.authority_resolver import AuthorityDenied, AuthorityResolver
+from responsibleai.governance.context import GovernanceContext
 from responsibleai.governance.evidence import build_evidence_record
 from responsibleai.governance.outcome import OutcomeStatus, build_outcome_record
 from responsibleai.integrations.client import TrustClient
-from responsibleai.rbac.models import OrgContext
+from responsibleai.rbac.models import GovernanceStatus, OrgContext
 
 _executor = InternalToolExecutor()
 
 if TYPE_CHECKING:
+    from responsibleai.db.execution_nonce_repository import ExecutionNonceRepository
+    from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
     from responsibleai.webhooks.manager import WebhookManager
 
 _logger = logging.getLogger("responsibleai.mcp.governance")
+
+
+def _classify_execution_outcome(result: Any) -> OutcomeStatus:
+    if isinstance(result, dict) and (result.get("error") or result.get("is_error")):
+        return OutcomeStatus.FAILED
+    return OutcomeStatus.SUCCEEDED
+
+
+class ApprovalAuthorizationDeniedError(Exception):
+    """Fresh security state no longer permits an approved action."""
 
 
 @dataclass
@@ -135,6 +151,10 @@ class GovernanceServices:
     # to `WhitePactRuntimeGateway.evaluate()`, identical to behavior
     # before Intent Contracts existed.
     intent_repo: IntentContractRepository | None = None
+    nonce_repo: ExecutionNonceRepository | None = None
+    epoch_repo: RevocationEpochRepository | None = None
+    authority_resolver: AuthorityResolver | None = None
+    org_repo: OrgRepository | None = None
 
 
 @dataclass
@@ -149,6 +169,7 @@ class GovernanceOutcome:
     # no code path left where a governed call reaches dispatch_tool()
     # without first passing through authorize_execution().
     result: dict[str, Any] | None = None
+    outcome_status: OutcomeStatus | None = None
 
 
 async def apply_governance(
@@ -156,6 +177,8 @@ async def apply_governance(
     arguments: dict[str, Any],
     ctx: OrgContext,
     services: GovernanceServices,
+    *,
+    purpose: str,
 ) -> GovernanceOutcome:
     """Evaluate one MCP tool call before it dispatches. Callers must
     only invoke this for an org-scoped `ctx` (``ctx.org_id is not
@@ -171,6 +194,30 @@ async def apply_governance(
     see more than zero.
     """
     assert ctx.org_id is not None, "apply_governance() requires an org-scoped OrgContext"
+    if services.org_repo is not None:
+        org = await services.org_repo.get_org(ctx.org_id)
+        status = (
+            getattr(org, "governance_status", GovernanceStatus.ACTIVE.value)
+            if org is not None
+            else None
+        )
+        if org is None or status != GovernanceStatus.ACTIVE.value:
+            return GovernanceOutcome(
+                proceed=False,
+                arguments=arguments,
+                blocked_response={
+                    "error": "organization_not_governable",
+                    "message": "Organization is not ACTIVE for governed execution.",
+                    "governance_status": status or "UNKNOWN",
+                },
+            )
+    if (services.nonce_repo is None) != (services.epoch_repo is None):
+        raise ValueError("Durable admission requires both nonce and epoch repositories")
+    epoch = (
+        (await services.epoch_repo.current(ctx.org_id)).epoch
+        if services.epoch_repo is not None
+        else None
+    )
 
     identity = IdentityContext(
         identity_id=ctx.key_id,
@@ -184,6 +231,66 @@ async def apply_governance(
         agent_id=ctx.key_id,
         framework="mcp-client",
     )
+    action = ActionRequest(
+        agent=agent,
+        action_type=name,
+        target=name,
+        arguments=arguments,
+        purpose=purpose,
+    )
+    if services.authority_resolver is None:
+        return GovernanceOutcome(
+            proceed=False,
+            arguments=arguments,
+            blocked_response={
+                "error": "governance_authority_unavailable",
+                "message": "Canonical authority resolution is unavailable. No action was taken.",
+                "action_id": action.action_id,
+            },
+        )
+    context = GovernanceContext.from_authenticated(
+        ctx, action, authentication_method=ctx.authentication_method
+    )
+    try:
+        resolved = await services.authority_resolver.resolve(context)
+    except AuthorityDenied:
+        denied = DecisionResult(
+            decision=GovernanceDecision.DENY,
+            action_id=action.action_id,
+            reason_codes=[
+                format_reason(ReasonCode.AUTHORITY_NOT_DELEGATED, action_type=action.action_type)
+            ],
+        )
+        # Empty authority is denial evidence, never an executable grant.
+        evidence = build_evidence_record(
+            action,
+            agent,
+            AuthorityContext(delegated_by="unresolved", granted_action_types=frozenset()),
+            denied,
+            authentication_method=ctx.authentication_method,
+            governance_epoch=epoch,
+        )
+        try:
+            await services.evidence_repo.record(evidence)
+        except Exception:
+            return GovernanceOutcome(
+                proceed=False,
+                arguments=arguments,
+                blocked_response={
+                    "error": "governance_evidence_unavailable",
+                    "action_id": action.action_id,
+                },
+            )
+        return GovernanceOutcome(
+            proceed=False,
+            arguments=arguments,
+            blocked_response={
+                "error": "governance_denied",
+                "message": "Explicit current authority and consent are required.",
+                "action_id": action.action_id,
+                "reason_codes": denied.reason_codes,
+            },
+        )
 
     # Several rai_* tools accept `provider`/`model` arguments naming the
     # third-party model the call is *about* — when present, that's a
@@ -246,13 +353,13 @@ async def apply_governance(
         if ceiling.max_delegation_depth is not None:
             inherited_constraints["max_delegation_depth"] = ceiling.max_delegation_depth
 
-    authority = AuthorityContext(
-        delegated_by=ctx.org_id,
+    authority = replace(
+        resolved.authority,
         granted_action_types=frozenset({name}),
-        constraints=inherited_constraints,
-        require_approval_for=inherited_approval,
+        constraints={**resolved.authority.constraints, **inherited_constraints},
+        require_approval_for=(resolved.authority.require_approval_for & frozenset({name}))
+        | inherited_approval,
     )
-    action = ActionRequest(agent=agent, action_type=name, target=name, arguments=arguments)
 
     violation_count = await recent_violation_count(
         services.evidence_repo, ctx.org_id, agent.agent_id
@@ -363,7 +470,37 @@ async def apply_governance(
         time.monotonic() - evaluate_started,
         org_id=ctx.org_id,
     )
-    evidence = build_evidence_record(action, agent, authority, decision)
+    final_arguments = (
+        decision.redacted_arguments
+        if decision.decision == GovernanceDecision.ALLOW_WITH_REDACTION
+        else arguments
+    ) or arguments
+    final_action = ActionRequest(
+        agent=agent,
+        action_type=name,
+        target=name,
+        arguments=final_arguments,
+        purpose=action.purpose,
+        action_id=action.action_id,
+    )
+    authorization = (
+        authorize_execution(decision, final_action, revocation_epoch=epoch)
+        if decision.decision in (GovernanceDecision.ALLOW, GovernanceDecision.ALLOW_WITH_REDACTION)
+        else None
+    )
+    evidence = build_evidence_record(
+        action,
+        agent,
+        authority,
+        decision,
+        authentication_method=ctx.authentication_method,
+        authority_version=resolved.authority_version,
+        consent_id=resolved.consent_id,
+        consent_version=resolved.consent_version,
+        governance_epoch=epoch,
+        execution_authorization_id=authorization.authorization_id if authorization else None,
+        execution_nonce_reference=authorization.nonce if authorization else None,
+    )
     try:
         await services.evidence_repo.record(evidence)
     except Exception:
@@ -425,7 +562,13 @@ async def apply_governance(
 
     if decision.decision == GovernanceDecision.REQUIRE_APPROVAL:
         approval = await services.approval_repo.create(
-            build_approval_request(action, decision),
+            build_approval_request(
+                action,
+                decision,
+                authentication_method=ctx.authentication_method,
+                revocation_epoch=epoch,
+                authority_version=resolved.authority_version,
+            ),
             evidence_id=evidence.evidence_id,
             webhook_manager=services.webhook_manager,
         )
@@ -441,49 +584,37 @@ async def apply_governance(
             },
         )
 
-    final_arguments = (
-        decision.redacted_arguments
-        if decision.decision == GovernanceDecision.ALLOW_WITH_REDACTION
-        else arguments
+    assert authorization is not None
+    executor = (
+        InternalToolExecutor(nonce_repo=services.nonce_repo)
+        if services.nonce_repo is not None
+        else _executor
     )
-    final_arguments = final_arguments or arguments
-    # The action authorized and executed must be built from
-    # final_arguments, not the original `action` — for
-    # ALLOW_WITH_REDACTION those differ, and the whole point of
-    # binding an ExecutionAuthorization to a digest is that it binds to
-    # what actually runs, not to what was originally proposed.
-    final_action = ActionRequest(
-        agent=agent,
-        action_type=name,
-        target=name,
-        arguments=final_arguments,
-        action_id=action.action_id,
-    )
-    authorization = authorize_execution(decision, final_action)
     try:
-        result = await _executor.execute(authorization, final_action)
+        result = await executor.execute(authorization, final_action)
     except Exception:
         await _record_outcome(
             services,
             evidence.evidence_id,
             action.action_id,
-            OutcomeStatus.ERRORED,
+            OutcomeStatus.UNKNOWN,
             organization_id=agent.organization_id,
         )
         raise
-    status = (
-        OutcomeStatus.FAILED
-        if isinstance(result, dict) and result.get("error")
-        else OutcomeStatus.SUCCEEDED
-    )
-    await _record_outcome(
+    status = _classify_execution_outcome(result)
+    outcome_persisted = await _record_outcome(
         services,
         evidence.evidence_id,
         action.action_id,
         status,
         organization_id=agent.organization_id,
     )
-    return GovernanceOutcome(proceed=True, arguments=final_arguments, result=result)
+    return GovernanceOutcome(
+        proceed=True,
+        arguments=final_arguments,
+        result=result,
+        outcome_status=status if outcome_persisted else OutcomeStatus.UNKNOWN,
+    )
 
 
 async def _record_outcome(
@@ -493,7 +624,7 @@ async def _record_outcome(
     status: OutcomeStatus,
     *,
     organization_id: str | None,
-) -> None:
+) -> bool:
     """Outcome Observation (Phase 12) -- fail-open, unlike evidence
     recording above: the action has already executed by the time this
     runs, so there is nothing left to "close" on a write failure, only
@@ -501,11 +632,12 @@ async def _record_outcome(
     never raised, and a no-op entirely when no `outcome_repo` is wired
     (every caller before this phase existed)."""
     if services.outcome_repo is None:
-        return
+        return False
     try:
         await services.outcome_repo.record(
             build_outcome_record(evidence_id, action_id, status, organization_id=organization_id)
         )
+        return True
     except Exception:
         _logger.exception(
             "governance_outcome_write_failed evidence_id=%s action_id=%s status=%s",
@@ -513,6 +645,24 @@ async def _record_outcome(
             action_id,
             status.value,
         )
+        if status is not OutcomeStatus.UNKNOWN:
+            try:
+                await services.outcome_repo.record(
+                    build_outcome_record(
+                        evidence_id,
+                        action_id,
+                        OutcomeStatus.UNKNOWN,
+                        organization_id=organization_id,
+                        result_summary="final outcome persistence failed; reconciliation required",
+                    )
+                )
+            except Exception:
+                _logger.exception(
+                    "governance_unknown_outcome_write_failed evidence_id=%s action_id=%s",
+                    evidence_id,
+                    action_id,
+                )
+        return False
 
 
 def _agent_from_approval(approval: ApprovalRequest) -> AgentContext:
@@ -542,6 +692,11 @@ async def resume_approval(
     org_id: str,
     upstream_registry: Any = None,
     outcome_repo: OutcomeRepository | None = None,
+    nonce_repo: ExecutionNonceRepository | None = None,
+    epoch_repo: RevocationEpochRepository | None = None,
+    authority_resolver: AuthorityResolver | None = None,
+    policy_repo: PolicyRepository | None = None,
+    gateway: WhitePactRuntimeGateway | None = None,
 ) -> dict[str, Any]:
     """The REQUIRE_APPROVAL -> resume-execution pipeline: given an
     approval a human has already resolved APPROVED, reconstruct the
@@ -565,7 +720,12 @@ async def resume_approval(
     REST endpoint) map these the same way the resolve endpoint already
     maps the first three.
     """
-    from responsibleai.db import ApprovalNotFoundError
+    from responsibleai.db import (
+        ApprovalActionMismatchError,
+        ApprovalExpiredError,
+        ApprovalNotApprovedError,
+        ApprovalNotFoundError,
+    )
     from responsibleai.governance.upstream_executor import ACTION_TYPE as _UPSTREAM_ACTION_TYPE
     from responsibleai.governance.upstream_executor import UpstreamMCPExecutor
 
@@ -579,77 +739,189 @@ async def resume_approval(
     agent = _agent_from_approval(approval)
     action = build_resume_action(approval, agent=agent)
 
+    if approval.is_expired:
+        expires = approval.expires_at.isoformat() if approval.expires_at else None
+        raise ApprovalExpiredError(approval.approval_id, expires)
+    if approval.status != ApprovalStatus.APPROVED:
+        raise ApprovalNotApprovedError(approval.approval_id, approval.status.value)
+    if not approval.matches_action(action):
+        raise ApprovalActionMismatchError(approval.approval_id)
+    if (
+        nonce_repo is None
+        or epoch_repo is None
+        or authority_resolver is None
+        or policy_repo is None
+        or gateway is None
+        or approval.authentication_method is None
+        or approval.revocation_epoch is None
+        or approval.authority_version is None
+    ):
+        raise ValueError("Approval lacks canonical security state and cannot be resumed")
+
+    context = GovernanceContext.for_persisted_action(
+        org_id,
+        approval.requested_by or "",
+        action,
+        authentication_method=approval.authentication_method,
+    )
+    try:
+        resolved = await authority_resolver.resolve(context)
+    except AuthorityDenied as exc:
+        raise ApprovalAuthorizationDeniedError(
+            "Current authority or consent denied resume"
+        ) from exc
+    current_epoch = (await epoch_repo.current(org_id)).epoch
+    current_policy = await policy_repo.get_policy(org_id)
+    current_decision = gateway.evaluate(action, resolved.authority, policy=current_policy)
+    security_changed = (
+        current_epoch != approval.revocation_epoch
+        or resolved.authority_version != approval.authority_version
+    )
+    if security_changed or current_decision.decision in (
+        GovernanceDecision.DENY,
+        GovernanceDecision.QUARANTINE,
+    ):
+        denied = current_decision
+        if denied.decision not in (GovernanceDecision.DENY, GovernanceDecision.QUARANTINE):
+            denied = DecisionResult(
+                decision=GovernanceDecision.DENY,
+                action_id=action.action_id,
+                reason_codes=["security_state_changed_since_approval_request"],
+                risk_tier=current_decision.risk_tier,
+                policy_version=current_policy.version,
+            )
+        try:
+            await evidence_repo.record(
+                build_evidence_record(
+                    action,
+                    agent,
+                    resolved.authority,
+                    denied,
+                    authentication_method=approval.authentication_method,
+                    authority_version=resolved.authority_version,
+                    consent_id=resolved.consent_id,
+                    consent_version=resolved.consent_version,
+                    governance_epoch=current_epoch,
+                    approval_id=approval.approval_id,
+                )
+            )
+        except Exception as exc:
+            raise ApprovalAuthorizationDeniedError(
+                "Resume denied; evidence persistence failed"
+            ) from exc
+        raise ApprovalAuthorizationDeniedError("Current security state denied resume")
+
+    executable_action, decision = complete_verified_approval(approval, action, current_decision)
+    decision.reason_codes.append(
+        format_reason(ReasonCode.RESUMED_AFTER_APPROVAL, approval_id=approval.approval_id)
+    )
+
     if approval.action_type == _UPSTREAM_ACTION_TYPE:
         if upstream_registry is None:
             raise ValueError(
                 f"Approval {approval.approval_id!r} is an upstream MCP tool call and "
                 "requires upstream_registry to resume."
             )
-        executor: Any = UpstreamMCPExecutor(upstream_registry)
+        executor: Any = UpstreamMCPExecutor(upstream_registry, nonce_repo=nonce_repo)
     else:
-        executor = _executor
+        executor = (
+            InternalToolExecutor(nonce_repo=nonce_repo) if nonce_repo is not None else _executor
+        )
 
     # consume() is called BEFORE execution, not after -- it's the
     # single-use guard (mutation + replay protection); a resume must
     # never execute against an approval it hasn't already, atomically,
     # marked CONSUMED. If this raises, nothing below runs.
-    await approval_repo.consume(approval.approval_id, action=action)
-
-    decision = DecisionResult(
-        decision=GovernanceDecision.ALLOW,
-        action_id=action.action_id,
-        reason_codes=[
-            format_reason(ReasonCode.RESUMED_AFTER_APPROVAL, approval_id=approval.approval_id)
-        ],
-        risk_tier=RiskTier(approval.risk_tier) if approval.risk_tier else None,
+    authorization = authorize_execution(
+        decision,
+        executable_action,
+        revocation_epoch=current_epoch,
+        target_fingerprint=approval.target_fingerprint,
     )
-    authorization = authorize_execution(decision, action)
-    result = await executor.execute(authorization, action)
-
-    authority = AuthorityContext(
-        delegated_by=org_id, granted_action_types=frozenset({action.action_type})
+    evidence = build_evidence_record(
+        executable_action,
+        agent,
+        resolved.authority,
+        decision,
+        authentication_method=approval.authentication_method,
+        authority_version=resolved.authority_version,
+        consent_id=resolved.consent_id,
+        consent_version=resolved.consent_version,
+        governance_epoch=current_epoch,
+        approval_id=approval.approval_id,
+        execution_authorization_id=authorization.authorization_id,
+        execution_nonce_reference=authorization.nonce,
     )
-    evidence = build_evidence_record(action, agent, authority, decision)
-    evidence_recorded = True
     try:
         await evidence_repo.record(evidence)
+    except Exception as exc:
+        raise ApprovalAuthorizationDeniedError("Pre-execution evidence persistence failed") from exc
+    await approval_repo.consume(approval.approval_id, action=action)
+    try:
+        result = await executor.execute(authorization, executable_action)
     except Exception:
-        evidence_recorded = False
-        # Unlike apply_governance()'s pre-execution fail-closed
-        # handling, the action has ALREADY executed by this point --
-        # there's nothing left to block. Log loudly (a missing evidence
-        # record for an executed action is a real audit-trail gap) but
-        # still return the result; the alternative (raising here) would
-        # hide a successful execution behind an unrelated DB error.
-        _logger.exception(
-            "resume_approval_evidence_write_failed approval_id=%s action_id=%s org_id=%s",
-            approval.approval_id,
-            action.action_id,
-            org_id,
-        )
+        if outcome_repo is not None:
+            try:
+                await outcome_repo.record(
+                    build_outcome_record(
+                        evidence.evidence_id,
+                        executable_action.action_id,
+                        OutcomeStatus.UNKNOWN,
+                        organization_id=org_id,
+                        result_summary="execution raised after admission; reconciliation required",
+                    )
+                )
+            except Exception:
+                _logger.exception(
+                    "resume_approval_unknown_outcome_write_failed approval_id=%s action_id=%s",
+                    approval.approval_id,
+                    action.action_id,
+                )
+        raise
 
     # Outcome Observation (Phase 12) -- only attempted when the evidence
     # write actually succeeded, so an OutcomeRecord never references a
     # non-existent evidence_id. Same fail-open reasoning as the evidence
     # write just above: the action already executed, there's nothing to
     # block on a secondary telemetry write failing.
-    if evidence_recorded and outcome_repo is not None:
-        status = (
-            OutcomeStatus.FAILED
-            if isinstance(result, dict) and result.get("error")
-            else OutcomeStatus.SUCCEEDED
-        )
+    outcome_unknown = outcome_repo is None
+    if outcome_repo is not None:
+        status = _classify_execution_outcome(result)
         try:
             await outcome_repo.record(
                 build_outcome_record(
-                    evidence.evidence_id, action.action_id, status, organization_id=org_id
+                    evidence.evidence_id,
+                    executable_action.action_id,
+                    status,
+                    organization_id=org_id,
                 )
             )
         except Exception:
+            outcome_unknown = True
             _logger.exception(
                 "resume_approval_outcome_write_failed approval_id=%s action_id=%s",
                 approval.approval_id,
                 action.action_id,
             )
+            try:
+                await outcome_repo.record(
+                    build_outcome_record(
+                        evidence.evidence_id,
+                        executable_action.action_id,
+                        OutcomeStatus.UNKNOWN,
+                        organization_id=org_id,
+                        result_summary="final outcome persistence failed; reconciliation required",
+                    )
+                )
+            except Exception:
+                _logger.exception(
+                    "resume_approval_unknown_outcome_write_failed approval_id=%s action_id=%s",
+                    approval.approval_id,
+                    action.action_id,
+                )
 
+    if outcome_unknown and isinstance(result, dict):
+        result = dict(result)
+        result["_whitepact_evidence_outcome"] = "UNKNOWN"
+        result["_whitepact_reconciliation_required"] = True
     return result

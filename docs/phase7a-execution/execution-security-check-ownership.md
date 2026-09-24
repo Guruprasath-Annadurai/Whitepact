@@ -1,0 +1,48 @@
+# WhitePact Phase 7A: Execution Security Check Ownership Matrix
+
+**Document Status:** CANONICAL SPECIFICATION PASS 4.4 (SECURITY BOUNDARY CLOSURE)
+**Target Runtime Base SHA:** `13e8de034f8b31bd7cae4f47398f71b24c923c3c` (`ENTERPRISE_AUTH_CANONICAL_SHA` — APPROVED)
+**Reconciled Core Ancestor SHA:** `12810825c407960ca2aa9ada94fbae056db37290`
+**Proposed Migrations:** `0050_runtime_execution_requests.py` through `0053_runtime_worker_leases.py`
+
+**Canonical migration ownership:** `docs/phase7a-execution/migration-ownership.md` (implemented `0049` = org governance lifecycle).
+
+---
+
+## 1. Architectural Principles
+
+This document defines the strict, single-owner security verification model across the execution lifecycle, eliminating dual-source ambiguity, establishing one-shot backend execution, and binding the canonical admission transaction.
+
+### Core Invariants:
+1. **Single Canonical Owner:** Every security check and state transition has exactly one authoritative owner.
+2. **Infrastructure Is Not Authority:** Neither a `QueueTicket`, an active worker lease, a Redis semaphore, nor an in-process `AdmissionReceipt` constitutes execution authority.
+3. **Atomic Admission & Attempt Transition (F4.2-01):** Canonical admission burns the single-use nonce, marks authorization `CONSUMED`, and transitions the attempt from `LEASED` to `ADMITTED` in ONE PostgreSQL transaction (`rowcount == 1`).
+4. **Synchronous Lease Revalidation at Final CAS (F4.3-01):** Fencing is synchronously verified under row lock (`FOR UPDATE`) in `runtime_worker_leases` immediately prior to attempt transition. Fencing correctness does NOT depend on background reaper timing; zombie workers fail closed.
+5. **Non-Reconstructible Backend Claim & Action Binding (F4.3-02):** Raw secret token generated during `claim_backend_start()` is held only in memory in `BackendExecutionClaim`; database stores only its SHA-256 hash. Final CAS validates token hash, immutable request `action_digest`, and consumes token (`NULL`).
+6. **Target Fingerprint Contract (F4.3-03):** `BackendExecutionClaim` carries `target_fingerprint: str | None` bound to durable authorization. Upstream execution enforces that caller cannot override durable target fingerprint, validates resolved target via `SafeNetworkBackend`, and pins IP before final CAS.
+7. **Durable Evidence Status Ownership & Crash Consistency (F4.2-04, F4.3-04):** EvidenceStore commits record first while attempt remains `RUNNING` (`evidence_status = 'PENDING'`). Terminal attempt CAS sets `evidence_status = 'COMMITTED'`. Crash Point O is deterministically resolved by supervisor inspecting EvidenceStore.
+
+---
+
+## 2. Security Check Ownership Matrix
+
+| Security Check / State | Canonical Owner | Queue-Time Check? | Pre-Dispatch Check? | Canonical Durable Check? | Duplication Allowed? | Rationale & Failure Mode |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Durable Execution Request** | `ExecutionRequestRepository` (`runtime_execution_requests`, Mig 0050) | YES (Persisted before enqueue) | YES (Worker loads from DB) | YES (Append-only table, trigger rejects all UPDATE/DELETE) | NO (Sole owner of serialized input) | Immutable record of action arguments, purpose, and identity. Zero mutable operational status. |
+| **Tenant Idempotency Binding** | `runtime_execution_requests` (`UNIQUE(organization_id, idempotency_key)`) | YES (At API submission) | NO (Already bound) | YES (Database unique constraint) | NO (Sole owner of request deduplication) | Every hosted request assigned key. Atomic insert catches duplicates; same key + different digest fails closed (HTTP 409). |
+| **Human Approval Consumption** | `ApprovalExecutionService` (`governance_approvals`) | YES (Status == APPROVED) | YES (Pre-flight check) | YES (Atomic UPDATE with rowcount == 1 in same TX as auth issuance) | NO (Sole owner of approval spending) | Atomic transition `APPROVED -> CONSUMED`. `UNIQUE(approval_id)` in `governance_execution_authorizations` prevents duplicate issuance. |
+| **Authorization Issuance** | `DurableExecutionAuthorizationIssuer` (`governance_execution_authorizations`, Mig 0051) | YES (Committed before enqueue) | NO (Already durable) | YES (Foreign key & primary key constraints) | NO (Sole owner of issuance persistence) | If DB write fails, request fails closed immediately. Queue entry = 0, dispatch = 0. |
+| **Revocation / Governance Epoch** | `governance_revocation_epochs` + `lock_epoch()` | NO (Avoids DB lock) | NO (Avoids unneeded lock) | YES (Sole owner: `admit_execution` via `lock_epoch`) | NO (Must execute under row lock) | Singular authoritative revocation mechanism. All 26 audited authority mutations across 13 domain subsystems advance `scope="governance"` epoch. |
+| **Authorization Expiry** | `ExecutionAuthorization.is_expired` | YES (Fast drop) | YES (Pre-flight) | YES (Enforced via `WHERE expires_at > :now` in atomic UPDATE) | YES (Read-only timestamp comparison) | Expiration is derived, never persisted. Early drops prevent queue congestion; final atomic query guard guarantees zero clock-drift execution. |
+| **Canonical Admission & Attempt Transition** | `ExecutionNonceRepository.consume()` | NO | NO | YES (Atomic PG transaction: epoch lock + nonce insert + auth `CONSUMED` + attempt `ADMITTED`) | NO (Exactly one admission per execution attempt) | Burns nonce, transitions auth (`rowcount == 1`), and transitions attempt `LEASED -> ADMITTED` (`rowcount == 1`). Emits `AdmissionReceipt`. |
+| **Worker Lease & Active Exclusivity** | `runtime_worker_leases` (`AdmissionLeaseRepository`, Mig 0053) | NO | YES (Acquire lease before pre-flight) | YES (Partial unique index on `ACTIVE`) | NO (Sole owner of lease exclusivity) | Enforces that at most one worker holds active execution rights for an `execution_id` at any time. |
+| **Monotonic Generation Allocation** | `runtime_execution_fences` (Mig 0053) | NO | YES (Allocated at lease acquisition) | YES (Atomic UPDATE RETURNING current_generation) | NO (Sole owner of generation numbers) | Monotonically strictly increasing. Eliminates concurrent MAX+1 race conditions. |
+| **Durable Attempt State** | `runtime_execution_attempts` (`state`, Mig 0052) | NO | YES (Attempt initialized PENDING) | YES (Durable state machine: PENDING, LEASED, ADMITTED, BACKEND_STARTING, etc.) | NO (Sole owner of attempt lifecycle) | Tracks progress. Enforces `chk_attempt_lease_fields` (NULL in PENDING, NOT NULL in LEASED+). |
+| **One-Shot Backend-Start Claim** | `ExecutionAttemptRepository.claim_backend_start()` | NO | NO | YES (Atomic UPDATE: `ADMITTED -> BACKEND_STARTING` with `rowcount == 1`) | NO (Sole owner of backend-start ownership) | Verifies unexpired lease & generation under lock; generates raw `backend_start_token`, stores `backend_start_token_hash` on attempt, emits `BackendExecutionClaim`. |
+| **Final Pre-Effect Local CAS** | `ExecutionAttemptRepository.claim_local_effect_start()` | NO | NO | YES (Atomic PG TX: verifies active lease `FOR UPDATE` + checks durable `action_digest` + checks/consumes `backend_start_token_hash` + transitions attempt `BACKEND_STARTING -> RUNNING` with `rowcount == 1`) | NO (Pre-container linearization gate) | Only caller receiving `rowcount == 1` may invoke container. Zombie workers, expired leases, or replayed claims fail closed. |
+| **Final Pre-Effect External CAS** | `ExecutionAttemptRepository.claim_external_effect_transmission()` | NO | NO | YES (Atomic PG TX: verifies active lease `FOR UPDATE` + checks durable `action_digest` and `target_fingerprint` + checks/consumes `backend_start_token_hash` + transitions attempt `BACKEND_STARTING -> RUNNING/EFFECT_TRANSMITTING` with `rowcount == 1`) | NO (Pre-socket linearization gate) | Only caller receiving `rowcount == 1` may transmit bytes to socket. Zombie workers, expired leases, or replayed claims fail closed. |
+| **Target Fingerprint Contract** | `check_target_fingerprint()` | NO (Target not resolved) | YES (After target lookup) | YES (In `UpstreamMCPExecutor` prior to transport and in final CAS against durable request) | NO (Requires freshly resolved target) | Verifies target resolution hasn't drifted between policy evaluation and execution. Caller cannot override durable fingerprint. |
+| **SafeNetwork Validation & IP Pinning** | `SafeNetworkBackend` | NO | NO | YES (Immediate pre-socket bind) | NO (Sole owner of network egress) | Enforces SSRF protection, IP pinning, redirect validation, and connects only to pinned IP. |
+| **Container Isolation** | `ContainerIsolationBackend` | NO | NO | YES (Docker flags `--network=none`, limits) | NO (Sole owner of compute containment) | Enforces CPU 0.5, RAM 256MB, PID 32, workspace 10MB/100 files bounds. |
+| **Durable Evidence & Audit** | `EvidenceStore` + `runtime_execution_attempts.evidence_status` | NO | NO | YES (Committed in EvidenceStore while attempt `RUNNING`; terminal attempt CAS sets `evidence_status='COMMITTED'`) | NO (Sole owner of compliance evidence) | Normal success requires evidence before `COMPLETED`. If evidence fails after effect, records `INCOMPLETE`. Crash Point O reconciled by supervisor. |
+| **Capacity Reservation & Release** | `AdmissionController` (Redis + DB Reconciler) | YES (Reserve at enqueue) | NO | YES (Explicit release on all terminal paths; audit reconciler) | NO (Sole owner of cluster concurrency) | Every reservation has explicit terminal release. Redis failure fails closed. Worker crash cannot leak capacity. |

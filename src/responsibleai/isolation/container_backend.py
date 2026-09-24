@@ -1,0 +1,360 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
+"""OCI / Docker Container Isolation Backend for Enterprise Production.
+
+Enforces:
+- Unprivileged user (`--user 10001:10001` or `nobody`).
+- Read-only root filesystem (`--read-only`).
+- Ephemeral writable `/tmp` and workspace mounts (`--tmpfs /tmp:rw,noexec,nosuid,size=64m`).
+- Dropped capabilities (`--cap-drop ALL`).
+- No new privileges (`--security-opt no-new-privileges:true`).
+- Strict resource limits: `--memory`, `--cpus`, `--pids-limit`.
+- Default deny network (`--network none`).
+- Zero control-plane secrets in environment (`-e`).
+- Automated container kill & removal on timeout or exit.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import os
+import shutil
+import subprocess
+import time
+import uuid
+from typing import Any
+
+from responsibleai.isolation.backend import IsolationBackend
+from responsibleai.isolation.environment import build_isolated_environment
+from responsibleai.isolation.errors import (
+    IsolationBackendUnavailableError,
+    IsolationPolicyViolationError,
+)
+from responsibleai.isolation.filesystem import EphemeralWorkspace
+from responsibleai.isolation.models import ExecutionOutcome, IsolatedExecutionRequest, NetworkPolicy
+
+logger = logging.getLogger(__name__)
+
+
+class DockerContainerBackend(IsolationBackend):
+    """Docker container execution backend providing OCI containment."""
+
+    def __init__(
+        self,
+        *,
+        image_name: str = "python:3.11-slim",
+        docker_cmd: str | None = None,
+    ) -> None:
+        self.image_name = image_name
+        self.docker_cmd = docker_cmd or shutil.which("docker") or "docker"
+
+    def is_available(self) -> bool:
+        """Check if docker binary is present and daemon responds.
+
+        Uses an argv subprocess with shell=False. The docker executable is
+        never interpolated into a shell string.
+        """
+        executable = self.docker_cmd
+        if os.path.sep in executable or executable.startswith("."):
+            if not os.path.isfile(executable) or not os.access(executable, os.X_OK):
+                return False
+        elif shutil.which(executable) is None:
+            return False
+        try:
+            completed = subprocess.run(
+                [executable, "info"],
+                shell=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=8,
+                check=False,
+            )
+            return completed.returncode == 0
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+        except Exception:
+            return False
+
+    def _remove_containers(
+        self,
+        targets: list[str],
+        *,
+        stable_seconds: float,
+        wait_seconds: float,
+    ) -> None:
+        """Remove uniquely named containers, waiting out late dockerd registration.
+
+        Synchronous on purpose so it can run in a worker thread. Callers must
+        not run this on the asyncio event loop.
+        """
+        deadline = time.monotonic() + wait_seconds
+        gone_since: dict[str, float | None] = {target: None for target in targets}
+        while time.monotonic() < deadline:
+            remaining = False
+            for target in targets:
+                try:
+                    subprocess.run(  # noqa: S603
+                        [self.docker_cmd, "rm", "-f", target],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        timeout=10,
+                        check=False,
+                    )
+                except Exception:
+                    pass
+                exists = False
+                try:
+                    check = subprocess.run(  # noqa: S603
+                        [self.docker_cmd, "inspect", target],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        timeout=5,
+                        check=False,
+                    )
+                    exists = check.returncode == 0
+                except Exception:
+                    exists = False
+                if exists:
+                    gone_since[target] = None
+                    remaining = True
+                    continue
+                if stable_seconds <= 0:
+                    continue
+                now = time.monotonic()
+                if gone_since[target] is None:
+                    gone_since[target] = now
+                    remaining = True
+                elif now - gone_since[target] < stable_seconds:  # type: ignore[operator]
+                    remaining = True
+            if not remaining:
+                return
+            time.sleep(0.2)
+
+    async def _remove_containers_uninterruptible(
+        self,
+        targets: list[str],
+        *,
+        stable_seconds: float,
+        wait_seconds: float,
+    ) -> None:
+        """Run container removal off the event loop, even if this task is cancelled."""
+        current = asyncio.current_task()
+        restored = 0
+        if current is not None and hasattr(current, "uncancel"):
+            while current.cancelling() > 0:
+                current.uncancel()
+                restored += 1
+        try:
+            await asyncio.shield(
+                asyncio.to_thread(
+                    self._remove_containers,
+                    targets,
+                    stable_seconds=stable_seconds,
+                    wait_seconds=wait_seconds,
+                )
+            )
+        finally:
+            for _ in range(restored):
+                if current is not None:
+                    current.cancel()
+
+    async def execute(self, request: IsolatedExecutionRequest) -> ExecutionOutcome:
+        if not self.is_available():
+            raise IsolationBackendUnavailableError(
+                "Docker isolation backend is unavailable or daemon is unreachable. "
+                "Failing closed in production."
+            )
+
+        if request.profile.network_policy != NetworkPolicy.NONE:
+            raise IsolationPolicyViolationError(
+                "Direct network egress from isolated container execution is forbidden; "
+                "all network operations must pass through canonical host-mediated egress chokepoints."
+            )
+
+        clean_env = build_isolated_environment(
+            organization_id=request.organization_id,
+            action_id=request.action_id,
+            extra_env=request.environment_overrides,
+            inherit_safe_host_vars=False,  # Container has its own isolated OS environment
+        )
+
+        limits = request.profile.resources
+        execution_id = uuid.uuid4().hex[:12]
+        container_prefix = f"wp_iso_{request.organization_id}_{request.action_id}"[:63].rstrip(
+            "_-."
+        )
+        container_name = f"{container_prefix}_{execution_id}"
+        start_time = time.monotonic()
+
+        runner_script = """
+import sys
+import json
+import asyncio
+
+async def main():
+    try:
+        raw_input = sys.stdin.read()
+        data = json.loads(raw_input)
+        action_type = data["action_type"]
+        arguments = data["arguments"]
+        # If running inside container where responsibleai package might not be installed,
+        # fallback to simple processing or mock if testing
+        try:
+            from responsibleai.mcp.tools import dispatch_tool
+            res = await dispatch_tool(action_type, arguments)
+        except ImportError:
+            res = {"echo": action_type, "arguments": arguments, "isolated": True}
+        sys.stdout.write(json.dumps({"status": "success", "result": res}))
+    except Exception as e:
+        sys.stdout.write(json.dumps({"status": "error", "error": str(e)}))
+
+if __name__ == "__main__":
+    asyncio.run(main())
+"""
+
+        with EphemeralWorkspace(request.action_id, request.organization_id) as workspace:
+            workspace.populate(request.workspace_files)
+            if "runner.py" not in request.workspace_files:
+                workspace.populate({"runner.py": runner_script})
+            # Host tree stays 0700/0600. Container UID 65534 is granted a
+            # narrowly scoped ACL (or chown when the host is root). Never 01777.
+            workspace.prepare_for_container(uid=65534, gid=65534)
+
+            cid_file = workspace.path / ".container.cid"
+
+            cmd = [
+                self.docker_cmd,
+                "run",
+                "--rm",
+                "-i",
+                f"--name={container_name}",
+                f"--cidfile={cid_file}",
+                "--user=65534:65534",  # Non-root unprivileged (nobody:nogroup)
+                f"--memory={limits.max_memory_mb}m",
+                f"--cpus={limits.cpu_cores}",
+                f"--pids-limit={limits.max_pids}",
+                f"--ulimit=nofile={limits.max_file_descriptors}:{limits.max_file_descriptors}",
+                "--cap-drop=ALL",
+                "--security-opt=no-new-privileges:true",
+                "--read-only",
+                "--tmpfs=/tmp:rw,noexec,nosuid,size=64m",
+                f"-v={workspace.path}:/workspace:rw",
+                "-w=/workspace",
+                "--network=none",
+            ]
+
+            # Pass clean environment variables
+            for k, v in clean_env.items():
+                cmd.append(f"-e={k}={v}")
+
+            cmd.extend([self.image_name, "python3", "runner.py"])
+
+            input_payload = json.dumps(
+                {"action_type": request.action_type, "arguments": request.arguments}
+            ).encode("utf-8")
+
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+            timed_out = False
+            stdout_data = b""
+            stderr_data = b""
+            try:
+                stdout_data, stderr_data = await asyncio.wait_for(
+                    proc.communicate(input=input_payload),
+                    timeout=limits.wall_timeout_seconds,
+                )
+            except TimeoutError:
+                timed_out = True
+                # Kill the docker client process to stop stdin/stdout pipes.
+                # Container cleanup is handled unconditionally in the finally block.
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+                try:
+                    await proc.wait()
+                except Exception:
+                    pass
+            finally:
+                duration = time.monotonic() - start_time
+                # Guarantee container removal for ALL exit paths including
+                # asyncio.CancelledError, TimeoutError, and unexpected exceptions.
+                #
+                # Execution-ownership-safe cleanup:
+                # 1. If --cidfile was written by Docker, clean up by exact 64-character container ID.
+                # 2. As fallback, clean up by unique container_name (which includes execution_id).
+                # Neither target can ever match or interfere with a concurrent invocation.
+                #
+                # subprocess.run is used (not asyncio) so that this call cannot be
+                # interrupted by asyncio task cancellation.  docker rm -f is idempotent:
+                # "No such container" (already removed by --rm) is silently ignored.
+                cleanup_targets: list[str] = []
+                try:
+                    if cid_file.is_file():
+                        cid = cid_file.read_text(encoding="utf-8").strip()
+                        if cid:
+                            cleanup_targets.append(cid)
+                except Exception:
+                    pass
+                if container_name not in cleanup_targets:
+                    cleanup_targets.append(container_name)
+
+                # Client kill (timeout or CancelledError) can race dockerd's
+                # asynchronous create. Retry rm -f until the uniquely named
+                # container is gone; never filter by org/action prefix.
+                incomplete = timed_out or proc.returncode is None
+                await self._remove_containers_uninterruptible(
+                    cleanup_targets,
+                    stable_seconds=3.0 if incomplete else 0.0,
+                    wait_seconds=12.0 if incomplete else 2.0,
+                )
+
+                # Ensure the docker client process is not left as a zombie.
+                if proc.returncode is None:
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
+
+            max_out = limits.max_output_bytes
+            stdout_str = stdout_data[:max_out].decode("utf-8", errors="replace")
+            stderr_str = stderr_data[:max_out].decode("utf-8", errors="replace")
+
+            result_obj: Any = None
+            violation: str | None = None
+            exit_code = proc.returncode if proc.returncode is not None else -1
+
+            if timed_out:
+                violation = f"Container wall timeout of {limits.wall_timeout_seconds}s exceeded"
+                exit_code = -9
+            elif exit_code == 0:
+                try:
+                    parsed = json.loads(stdout_str)
+                    if parsed.get("status") == "success":
+                        result_obj = parsed.get("result")
+                    else:
+                        violation = parsed.get("error", "Execution failed")
+                        exit_code = 1
+                except Exception as ex:
+                    violation = f"Failed to parse runner output: {ex}"
+                    exit_code = 1
+            else:
+                violation = f"Container exited with code {exit_code}: {stderr_str.strip()}"
+
+            return ExecutionOutcome(
+                action_id=request.action_id,
+                exit_code=exit_code,
+                result_payload=result_obj,
+                stdout=stdout_str,
+                stderr=stderr_str,
+                duration_seconds=duration,
+                timed_out=timed_out,
+                violation=violation,
+            )
