@@ -2645,9 +2645,7 @@ async def dispatch_tool(
         return {"error": f"Unknown tool: {name}"}
     tool_def = next((t for t in TOOL_DEFS if t.name == name), None)
     if tool_def is not None and tool_def.inputSchema:
-        validated, validation_error = validate_tool_arguments(
-            name, args, tool_def.inputSchema
-        )
+        validated, validation_error = validate_tool_arguments(name, args, tool_def.inputSchema)
         if validation_error is not None:
             return validation_error
         args = validated or args

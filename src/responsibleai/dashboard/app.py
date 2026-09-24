@@ -1195,10 +1195,7 @@ class PolicyRuleCreateRequest(BaseModel):
     reason_code: str = Field(..., min_length=1, max_length=100)
     effect: str = Field(
         ...,
-        description=(
-            "Canonical policy effect. Accepted values: "
-            + ", ".join(_POLICY_EFFECTS)
-        ),
+        description=("Canonical policy effect. Accepted values: " + ", ".join(_POLICY_EFFECTS)),
     )
 
     @field_validator("effect")
@@ -1206,10 +1203,9 @@ class PolicyRuleCreateRequest(BaseModel):
     def _normalize_policy_effect(cls, value: str) -> str:
         normalized = value.strip().upper()
         if normalized not in _POLICY_EFFECTS:
-            raise ValueError(
-                "effect must be one of: " + ", ".join(_POLICY_EFFECTS)
-            )
+            raise ValueError("effect must be one of: " + ", ".join(_POLICY_EFFECTS))
         return normalized
+
     risk_tiers: list[str] | None = Field(default=None)
     action_types: list[str] | None = Field(default=None)
     targets: list[str] | None = Field(default=None)

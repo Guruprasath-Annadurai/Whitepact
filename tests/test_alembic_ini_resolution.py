@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -46,12 +45,8 @@ def test_resolve_from_tmp_without_override_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.delenv("WHITEPACT_ALEMBIC_INI", raising=False)
-    monkeypatch.setattr(
-        "responsibleai.db.alembic_paths._package_known_ini", lambda: None
-    )
-    monkeypatch.setattr(
-        "responsibleai.db.alembic_paths._repository_known_ini", lambda: None
-    )
+    monkeypatch.setattr("responsibleai.db.alembic_paths._package_known_ini", lambda: None)
+    monkeypatch.setattr("responsibleai.db.alembic_paths._repository_known_ini", lambda: None)
     monkeypatch.chdir(tmp_path)
     with pytest.raises(AlembicConfigError):
         resolve_alembic_ini()

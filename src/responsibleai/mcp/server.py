@@ -292,7 +292,7 @@ async def _call_tool(
                         "Hosted WhitePact tool execution requires a human-readable "
                         "purpose string in the tool arguments under "
                         "'_whitepact_purpose' (for example: "
-                        "\"Approve vendor invoice batch for Q1 close\"). "
+                        '"Approve vendor invoice batch for Q1 close"). '
                         "Session IDs, MCP connection metadata, or generic "
                         "placeholders are not valid purposes — the value is "
                         "recorded in the governance evidence chain as declared intent."

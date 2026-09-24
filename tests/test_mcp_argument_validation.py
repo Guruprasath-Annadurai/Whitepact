@@ -103,9 +103,7 @@ class TestTrustCheckFailClosed:
             respx.get("https://trust-validation.invalid/api/trust-index/check").mock(
                 return_value=httpx.Response(503, json={"detail": "down"})
             )
-            result = await dispatch_tool(
-                "rai_check_trust", {"model_name": "m", "provider": "p"}
-            )
+            result = await dispatch_tool("rai_check_trust", {"model_name": "m", "provider": "p"})
             assert result["passes"] is False
             assert result["trust_status"] == "UNKNOWN"
             assert result["error"] is not None

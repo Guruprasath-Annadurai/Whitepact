@@ -15,7 +15,7 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│                        WhitePact  v1.3.0                                     │
+│                        WhitePact  v1.3.1                                     │
 │                                                                              │
 │  ┌──────────────┐  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐  │
 │  │ Governance   │  │ Trust Score │  │  Compliance  │  │  Guardrails      │  │
@@ -93,8 +93,9 @@ pip install "rai-governance-platform[all]"
 
 The published PyPI package name (`rai-governance-platform`) and the import
 name (`responsibleai`) predate the WhitePact rename and are kept as-is —
-see `MIGRATION_WHITEPACT_V2.md` Section 3 for why an alias package
-(`whitepact`) was added instead of renaming the published package outright.
+see `MIGRATION_WHITEPACT_V2.md` Section 3 and `docs/PACKAGE_IDENTITY.md`
+for install vs import vs product naming (do not use `pip install whitepact`
+unless PyPI documents that distribution).
 
 ---
 

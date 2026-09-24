@@ -96,10 +96,14 @@ class TrustCheckResult:
         if require_known:
             return False
         mode = (
-            os.environ.get(WHITEPACT_TRUST_FAILURE_MODE_ENV)
-            or os.environ.get(RAI_TRUST_FAILURE_MODE_ENV)
-            or "closed"
-        ).strip().lower()
+            (
+                os.environ.get(WHITEPACT_TRUST_FAILURE_MODE_ENV)
+                or os.environ.get(RAI_TRUST_FAILURE_MODE_ENV)
+                or "closed"
+            )
+            .strip()
+            .lower()
+        )
         if mode == "advisory":
             # Advisory-only: still not treated as TRUSTED; callers must not
             # equate this with authorization to execute.

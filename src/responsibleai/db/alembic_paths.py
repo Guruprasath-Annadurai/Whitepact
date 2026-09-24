@@ -21,9 +21,7 @@ def _env_override() -> Path | None:
         return None
     path = Path(raw).expanduser().resolve()
     if not path.is_file():
-        raise AlembicConfigError(
-            f"{WHITEPACT_ALEMBIC_INI_ENV} points to a missing file: {path}"
-        )
+        raise AlembicConfigError(f"{WHITEPACT_ALEMBIC_INI_ENV} points to a missing file: {path}")
     return path
 
 
