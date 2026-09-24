@@ -10,7 +10,9 @@ os.environ.setdefault("RAI_DB_PATH", ":memory:")
 os.environ.setdefault("RAI_AUTH_ENABLED", "false")
 os.environ.setdefault("RAI_LOG_JSON", "false")
 os.environ.setdefault("RAI_LOG_LEVEL", "WARNING")
-os.environ.setdefault("RAI_AUTO_MIGRATE", "false")
+# In-memory SQLite requires migrations during lifespan startup (same as CI service jobs).
+os.environ.setdefault("RAI_AUTO_MIGRATE", "true")
+os.environ.setdefault("WHITEPACT_AUTO_MIGRATE", "true")
 
 import pytest
 from asgi_lifespan import LifespanManager
@@ -22,9 +24,11 @@ from responsibleai.dashboard.app import app
 
 @pytest.fixture()
 async def client():
-    async with LifespanManager(app) as manager:
+    async with LifespanManager(app, startup_timeout=30) as manager:
         async with AsyncClient(
-            transport=ASGITransport(app=manager.app), base_url="http://test"
+            transport=ASGITransport(app=manager.app),
+            base_url="http://test",
+            timeout=30.0,
         ) as c:
             yield c
 
