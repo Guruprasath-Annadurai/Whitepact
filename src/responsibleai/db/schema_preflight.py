@@ -9,8 +9,12 @@ from sqlalchemy.engine import Connection
 
 
 def _alembic_version_rows(connection: Connection) -> list[str]:
-    raw = connection.execute(text("SELECT version_num FROM alembic_version")).scalars().all()
-    return [str(version) for version in raw]
+    return [
+        str(version)
+        for version in connection.execute(text("SELECT version_num FROM alembic_version"))
+        .scalars()
+        .all()
+    ]
 
 
 class SchemaLineageError(RuntimeError):
