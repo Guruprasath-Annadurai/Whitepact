@@ -5,8 +5,8 @@
 | Field | Value |
 | --- | --- |
 | Baseline SHA (audited) | `fe3c5f0ed4bcc2d4bfd5f01eda39124ee1f898b8` |
-| Final SHA | `4208fc7b8e0483da8474a3f625b83310c4538a17` |
-| Final tree | `265274ba8bd107ceb991e3af6cdc30c40b9ddb76` |
+| Final SHA | `3e2939115e33b59cbba799072d4df381b0e779b3` |
+| Final tree | *(same as `3e29391` commit tree)* |
 | Branch | `cursor/v1.3.1-final-enterprise-hardening` |
 | PR | [#114](https://github.com/Guruprasath-Annadurai/Whitepact/pull/114) |
 | Version | **1.3.1** |
@@ -87,38 +87,31 @@ Helm lint **PASS** on CI. **WP-V131-FIND-004** Helm chart `icon` — **OPEN** (P
 | Run | Result |
 | --- | --- |
 | CI `36064454430` (pre-test fix) | 16 failed, 4986 passed, 1 skipped (mypy fixed; tests stale vs validation/trust) |
-| CI `36069130314` (post `4208fc7`) | **IN PROGRESS** — authoritative for closure |
+| CI run `36069217493` @ `3e29391` | **5002 passed**, 1 skipped, 0 failed (3.11 job log) |
 
-Local full-suite not claimed complete in this session.
+## 25 GitHub Actions status (authoritative @ `3e29391`, run `36069217493`)
 
-## 25 GitHub Actions status (latest completed full matrix before test fix)
+All required PR checks **PASS** (see `gh pr checks 114`): Python 3.11/3.12, Ruff, format, mypy, coverage, frontend closure, a11y, i18n, Helm, CodeQL, Gitleaks, Bandit, Dependency Review, OpenSSF, DCO, Reproducible Build, **Build distribution**.
 
-| Job / workflow | Run `36064454430` |
+## 26 Distribution build
+
+**SUCCESS** — `rai_governance_platform-1.3.1-py3-none-any.whl` and `rai_governance_platform-1.3.1.tar.gz`; `twine check` passed; CycloneDX SBOM generated in CI.
+
+## 27 Release artifact smoke test (local, CI wheel)
+
+| Check | Result |
 | --- | --- |
-| DCO | SUCCESS |
-| Gitleaks | SUCCESS |
-| Dependency Review | SUCCESS |
-| OpenSSF | SUCCESS |
-| Bandit / pip-audit | SUCCESS (parallel workflows) |
-| CodeQL | SUCCESS |
-| Reproducible Build | SUCCESS |
-| Helm | SUCCESS |
-| i18n | SUCCESS |
-| Accessibility | SUCCESS |
-| Frontend closure | SUCCESS |
-| Lint · Test 3.11 / 3.12 | **FAILURE** (16 tests — fixed in `4208fc7`) |
-| Build distribution | **SKIPPED** (CI gate) |
-
-## 26–27 Distribution build & smoke
-
-**PENDING** — requires green Lint · Test (3.11/3.12) on run `36069130314` or later, then **Build distribution** job. Wheel smoke-install not executed until artifacts exist.
+| `import responsibleai` → **1.3.1** | **PASS** |
+| `alembic.ini` + `migrations/` in **sdist** | **PASS** (tar.gz listing) |
+| `alembic.ini` in **wheel** alone | **Not present** — use sdist or set `WHITEPACT_ALEMBIC_INI` |
+| `whitepact --version` on wheel-only venv | **DEGRADED** — needs transitive deps (`greenlet`, `PyYAML`, …); full `[dashboard]` extra not in minimal wheel install |
 
 ## 28–31 Remaining findings
 
 | Priority | Item |
 | --- | --- |
 | P0 | None identified in code fixes; **CI + distribution** gate release |
-| P1 | **Build distribution** must run and pass |
+| P1 | *(none — Build distribution passed on `36069217493`)* |
 | P2 | SDK live-server behavioral acceptance **DEGRADED** |
 | P3 | Helm icon metadata (**OPEN**) |
 
@@ -137,14 +130,14 @@ Local full-suite not claimed complete in this session.
 
 ## 35 Recommended next action
 
-1. Confirm CI run `36069130314` (or successor) fully green including **Build distribution**.
-2. Download wheel/sdist from Actions; smoke-install; verify version **1.3.1**, `alembic.ini`, migrations, entrypoints.
-3. Product-manager review; **do not merge/deploy/publish** until explicit approval.
+1. Product-manager review on PR #114 @ `3e29391`.
+2. Optional: document wheel vs sdist migration layout for operators (`WHITEPACT_ALEMBIC_INI`).
+3. **Do not merge, deploy, or publish marketplace** until explicit human approval (per release policy).
 
 ---
 
 ## Final verdict
 
-**WHITEPACT V1.3.1 RELEASE CLOSURE CONDITIONAL — REMAINING WORK REQUIRED**
+**WHITEPACT V1.3.1 RELEASE CLOSURE PASS — READY FOR FINAL PRODUCT-MANAGER REVIEW**
 
-Pending: authoritative CI green on commit `4208fc7` (or later), **Build distribution** success, and distribution artifact smoke test.
+Evidence: green CI matrix on `3e29391`, **5002** tests passed, distribution build succeeded; residual P2/P3 items (SDK live-server depth, Helm icon, minimal-wheel CLI smoke) documented above.
