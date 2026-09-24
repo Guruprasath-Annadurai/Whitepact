@@ -24,6 +24,11 @@ from responsibleai.mcp.tools import (
 )
 from responsibleai.rbac.models import OrgContext, Plan, Role
 
+_MCP_MODEL = {"model_name": "branch-test-model", "provider": "branch-test-provider"}
+_EU_AI_BASE = {
+    "system_description": "Synthetic EU AI Act classification scenario for branch tests.",
+}
+
 
 @pytest.fixture()
 async def engine():
@@ -140,7 +145,11 @@ class TestBiasEvaluateBranches:
     async def test_probe_needs_at_least_two_responses(self) -> None:
         result = await dispatch_tool(
             "rai_bias_evaluate",
-            {"probe_responses": {"gender": ["only one"]}, "threshold": 0.2},
+            {
+                **_MCP_MODEL,
+                "probe_responses": {"gender": ["only one"]},
+                "threshold": 0.2,
+            },
         )
         assert result["probe_results"]["gender"]["error"] == "Need at least 2 responses"
 
@@ -149,10 +158,11 @@ class TestBiasEvaluateBranches:
         result = await dispatch_tool(
             "rai_bias_evaluate",
             {
+                **_MCP_MODEL,
                 "threshold": 0.01,
                 "probe_responses": {
-                    "probe_a": toxic_pair,
-                    "probe_b": toxic_pair,
+                    "gender": toxic_pair,
+                    "racial": toxic_pair,
                 },
             },
         )
@@ -165,11 +175,12 @@ class TestBiasEvaluateBranches:
         result = await dispatch_tool(
             "rai_bias_evaluate",
             {
+                **_MCP_MODEL,
                 "threshold": 0.5,
-                "probe_responses": {"parity": ["same answer", "same answer"]},
+                "probe_responses": {"gender": ["same answer", "same answer"]},
             },
         )
-        assert result["probe_results"]["parity"]["passed"] is True
+        assert result["probe_results"]["gender"]["passed"] is True
         assert result["overall_passed"] is True
 
 
@@ -178,6 +189,7 @@ class TestDriftAndBudgetBranches:
         result = await dispatch_tool(
             "rai_drift_check",
             {
+                **_MCP_MODEL,
                 "baseline_score": {"overall": 90, "fairness": 0.9},
                 "current_score": {"overall": 70, "fairness": 0.5},
                 "alert_threshold": 5.0,
@@ -359,7 +371,9 @@ class TestMemoryCausalValidation:
             "rai_causal_influence_check",
             {"provenance": [{"kind": "not_a_real_kind", "trust": "TRUSTED", "content": "x"}]},
         )
-        assert result["error"] == "provenance must be a non-empty list of valid entries"
+        assert result["error"] == "invalid_argument"
+        assert result["field"] == "provenance[0].kind"
+        assert result["tool"] == "rai_causal_influence_check"
 
 
 class TestCheckTrustUpstream:
@@ -402,7 +416,11 @@ class TestEuAiActClassifyBranches:
     async def test_unacceptable_real_time_biometric(self) -> None:
         result = await dispatch_tool(
             "rai_eu_ai_act_classify",
-            {"real_time_remote_biometric": True, "deployment_sector": "general_purpose"},
+            {
+                **_EU_AI_BASE,
+                "real_time_remote_biometric": True,
+                "deployment_sector": "general_purpose",
+            },
         )
         assert result["risk_tier"] == "UNACCEPTABLE"
         assert "PROHIBITED" in result["conformity_assessment"]
@@ -411,6 +429,8 @@ class TestEuAiActClassifyBranches:
         result = await dispatch_tool(
             "rai_eu_ai_act_classify",
             {
+                **_EU_AI_BASE,
+                "deployment_sector": "other",
                 "processes_biometric_data": True,
                 "is_fully_automated": True,
                 "affects_natural_persons": True,
@@ -421,7 +441,7 @@ class TestEuAiActClassifyBranches:
     async def test_high_risk_sector_annex_iii(self) -> None:
         result = await dispatch_tool(
             "rai_eu_ai_act_classify",
-            {"deployment_sector": "employment"},
+            {**_EU_AI_BASE, "deployment_sector": "employment"},
         )
         assert result["risk_tier"] == "HIGH"
         assert any("Annex III" in a for a in result["applicable_articles"])
@@ -429,14 +449,18 @@ class TestEuAiActClassifyBranches:
     async def test_limited_transparency_for_emotion_recognition(self) -> None:
         result = await dispatch_tool(
             "rai_eu_ai_act_classify",
-            {"used_for_emotion_recognition": True},
+            {
+                **_EU_AI_BASE,
+                "deployment_sector": "general_purpose",
+                "used_for_emotion_recognition": True,
+            },
         )
         assert result["risk_tier"] == "LIMITED"
 
     async def test_trust_warning_appended_for_high_risk_low_score(self) -> None:
         result = await dispatch_tool(
             "rai_eu_ai_act_classify",
-            {"deployment_sector": "employment", "trust_score_overall": 40},
+            {**_EU_AI_BASE, "deployment_sector": "employment", "trust_score_overall": 40},
         )
         assert "WARNING" in result["conformity_assessment"]
 
@@ -444,6 +468,7 @@ class TestEuAiActClassifyBranches:
         result = await dispatch_tool(
             "rai_eu_ai_act_classify",
             {
+                **_EU_AI_BASE,
                 "deployment_sector": "general_purpose",
                 "trust_score_overall": 85,
             },

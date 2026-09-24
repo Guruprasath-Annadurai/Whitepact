@@ -178,7 +178,12 @@ class TestRunMigrationsOrRaise:
             await engine.raw.dispose()
 
     async def test_missing_alembic_ini_raises(self, tmp_sqlite_path, monkeypatch):
-        monkeypatch.setattr("responsibleai.db.migrate._find_alembic_ini", lambda: None)
+        from responsibleai.db.alembic_paths import AlembicConfigError
+
+        def _missing_ini() -> None:
+            raise AlembicConfigError("Could not locate alembic.ini")
+
+        monkeypatch.setattr("responsibleai.db.migrate.resolve_alembic_ini", _missing_ini)
         with pytest.raises(MigrationError, match="Could not locate alembic.ini"):
             await run_migrations_or_raise(tmp_sqlite_path)
 
