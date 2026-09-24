@@ -31,9 +31,11 @@ RUN python -m build --wheel --outdir /dist
 
 FROM python:3.12-slim@sha256:7a8b475003c4fe15a2cd4e55e5cfc2f3560bdc9333d624f24cdd6d4340fd7a17 AS runtime
 
+ARG WHITEPACT_VERSION=1.3.1
+
 LABEL org.opencontainers.image.title="WhitePact Governance Platform"
 LABEL org.opencontainers.image.description="Runtime governance between AI agents and action"
-LABEL org.opencontainers.image.version="1.2.6"
+LABEL org.opencontainers.image.version=$WHITEPACT_VERSION
 LABEL org.opencontainers.image.licenses="MIT"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

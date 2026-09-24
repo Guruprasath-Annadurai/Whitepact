@@ -89,7 +89,7 @@ class TestDispatchCheckTrust:
         assert r["has_reported_incidents"] is True
 
     @respx.mock
-    async def test_unknown_model_defaults_to_passing_fail_open(self) -> None:
+    async def test_unknown_model_is_unknown_and_does_not_pass(self) -> None:
         respx.get("https://test.invalid/api/trust-index/check").mock(
             return_value=httpx.Response(
                 200,
@@ -107,13 +107,15 @@ class TestDispatchCheckTrust:
             "rai_check_trust", {"model_name": "never-assessed", "provider": "nobody"}
         )
         assert r["known"] is False
-        assert r["passes"] is True
+        assert r["trust_status"] == "UNKNOWN"
+        assert r["passes"] is False
 
     @respx.mock
-    async def test_network_error_fails_open_and_reports_error(self) -> None:
+    async def test_network_error_fails_closed_and_reports_error(self) -> None:
         respx.get("https://test.invalid/api/trust-index/check").mock(
             side_effect=httpx.ConnectError("connection refused")
         )
         r = await dispatch_tool("rai_check_trust", {"model_name": "x", "provider": "y"})
-        assert r["passes"] is True
+        assert r["passes"] is False
+        assert r["trust_status"] == "UNKNOWN"
         assert r["error"] is not None

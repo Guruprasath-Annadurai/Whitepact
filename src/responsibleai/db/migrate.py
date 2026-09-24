@@ -37,6 +37,7 @@ from pathlib import Path
 
 from sqlalchemy import text
 
+from responsibleai.db.alembic_paths import AlembicConfigError, resolve_alembic_ini
 from responsibleai.db.engine import create_engine as _create_db_engine
 from responsibleai.db.schema_preflight import SchemaLineageError, validate_schema_lineage
 
@@ -50,18 +51,11 @@ class MigrationError(Exception):
 
 
 def _find_alembic_ini() -> Path | None:
-    """Look for alembic.ini in cwd, then walk up a few parents.
-
-    Covers both the Docker image (WORKDIR /app, alembic.ini copied there)
-    and local development (repo root, wherever the process happens to be
-    invoked from).
-    """
-    candidates = [Path.cwd()] + list(Path.cwd().parents)[:4]
-    for base in candidates:
-        candidate = base / "alembic.ini"
-        if candidate.is_file():
-            return candidate
-    return None
+    """Backward-compatible wrapper around :func:`resolve_alembic_ini`."""
+    try:
+        return resolve_alembic_ini()
+    except AlembicConfigError:
+        return None
 
 
 async def _needs_baseline_stamp(effective_db_url: str) -> bool:
@@ -160,13 +154,10 @@ async def run_migrations_or_raise(effective_db_url: str) -> None:
     migration subprocess falls back to `migrations/env.py`'s *own*,
     different default and silently migrates the wrong database file.
     """
-    ini_path = _find_alembic_ini()
-    if ini_path is None:
-        raise MigrationError(
-            "Could not locate alembic.ini (looked in cwd and parent "
-            "directories). Set RAI_AUTO_MIGRATE=false and run migrations "
-            "manually, or run the app from a directory containing alembic.ini."
-        )
+    try:
+        ini_path = resolve_alembic_ini()
+    except AlembicConfigError as exc:
+        raise MigrationError(str(exc)) from exc
 
     env = _migration_env(effective_db_url)
 

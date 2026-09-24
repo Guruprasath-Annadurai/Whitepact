@@ -144,8 +144,15 @@ try {
   await page.getByRole("button", { name: /create api key/i }).first().click();
   await page.getByLabel(/^name$/i).fill("browser-agent");
   await page.getByRole("button", { name: /^create key$/i }).click();
-  await page.waitForTimeout(500);
-  const deniedVisible = await page.locator(".form-error, [role='alert']").count();
+  const deniedBanner = page.locator(".form-error, [role='alert']").filter({
+    hasText: /identity|verified|credential|cannot create/i,
+  });
+  try {
+    await deniedBanner.first().waitFor({ state: "visible", timeout: 8000 });
+  } catch {
+    // fall through to assertion below
+  }
+  const deniedVisible = await deniedBanner.count();
   check(deniedVisible > 0, "API key create denied before IDENTITY_VERIFIED");
 
   const timestamp = new Date().toISOString();

@@ -388,12 +388,13 @@ class TestCheckTrustUpstream:
         assert result["tool"] == "rai_check_trust"
 
     @respx.mock
-    async def test_http_error_fail_open(self) -> None:
+    async def test_http_error_fail_closed(self) -> None:
         respx.get("https://trust-branch.invalid/api/trust-index/check").mock(
             return_value=httpx.Response(503, json={"detail": "upstream down"})
         )
         result = await dispatch_tool("rai_check_trust", {"model_name": "m", "provider": "p"})
-        assert result["passes"] is True
+        assert result["passes"] is False
+        assert result["trust_status"] == "UNKNOWN"
         assert result["error"] is not None
 
 

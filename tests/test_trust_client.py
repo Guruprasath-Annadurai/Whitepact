@@ -105,7 +105,7 @@ class TestCheckAsync:
 
 
 class TestPasses:
-    def test_error_always_fails_open(self) -> None:
+    def test_error_never_passes(self) -> None:
         r = TrustCheckResult(
             "x",
             "y",
@@ -115,13 +115,15 @@ class TestPasses:
             has_reported_incidents=False,
             error="boom",
         )
-        assert r.passes(min_score=99, require_known=True) is True
+        assert r.trust_status() == "UNKNOWN"
+        assert r.passes(min_score=99, require_known=True) is False
 
-    def test_unknown_fails_open_by_default(self) -> None:
+    def test_unknown_does_not_pass_by_default(self) -> None:
         r = TrustCheckResult(
             "x", "y", known=False, trust_score=None, certified=False, has_reported_incidents=False
         )
-        assert r.passes(min_score=99) is True
+        assert r.trust_status() == "UNKNOWN"
+        assert r.passes(min_score=99) is False
 
     def test_unknown_fails_closed_when_required(self) -> None:
         r = TrustCheckResult(

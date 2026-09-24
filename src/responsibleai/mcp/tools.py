@@ -2003,17 +2003,20 @@ async def _handle_check_trust(args: dict[str, Any]) -> dict[str, Any]:
         return {"error": "model_name and provider are both required"}
     min_score = float(args.get("min_score", 0))
     result = await _trust_client.check_async(model_name, provider)
+    trust_status = result.trust_status(min_score=min_score)
     return {
         "model": result.model,
         "provider": result.provider,
         "known": result.known,
         "certified": result.certified,
         "trust_score": result.trust_score,
+        "trust_status": trust_status,
         "has_reported_incidents": result.has_reported_incidents,
         "recent_incidents": result.recent_incidents,
         "passport_id": result.passport_id,
         "verify_url": result.verify_url,
         "passes": result.passes(min_score=min_score),
+        "stale": result.stale,
         "error": result.error,
     }
 
@@ -2626,6 +2629,8 @@ async def dispatch_tool(
     *,
     channel: str = "mcp_public",
 ) -> dict[str, Any]:
+    from responsibleai.mcp.argument_validation import validate_tool_arguments
+
     if name == TEST_TOOL_NAME and channel != "governance_admitted":
         if _mcp_dispatch_hosted.get() or not test_tools_enabled():
             return {
@@ -2638,6 +2643,14 @@ async def dispatch_tool(
     handler = _TOOL_HANDLERS.get(name)
     if not handler:
         return {"error": f"Unknown tool: {name}"}
+    tool_def = next((t for t in TOOL_DEFS if t.name == name), None)
+    if tool_def is not None and tool_def.inputSchema:
+        validated, validation_error = validate_tool_arguments(
+            name, args, tool_def.inputSchema
+        )
+        if validation_error is not None:
+            return validation_error
+        args = validated or args
     try:
         return await handler(args)
     except Exception as exc:
