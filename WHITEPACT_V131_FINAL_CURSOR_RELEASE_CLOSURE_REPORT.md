@@ -4,94 +4,142 @@
 
 | Field | Value |
 | --- | --- |
-| Baseline SHA (v1.3.0 merge) | `b3e9d6072105a25c63b2915658bb74f31296c9a8` |
+| Baseline SHA (audited) | `fe3c5f0ed4bcc2d4bfd5f01eda39124ee1f898b8` |
+| Final SHA | `4208fc7b8e0483da8474a3f625b83310c4538a17` |
+| Final tree | `265274ba8bd107ceb991e3af6cdc30c40b9ddb76` |
 | Branch | `cursor/v1.3.1-final-enterprise-hardening` |
 | PR | [#114](https://github.com/Guruprasath-Annadurai/Whitepact/pull/114) |
 | Version | **1.3.1** |
-| Pre-closure SHA | `fe3c5f0…` |
-| Post-closure SHA | *(see git log after push)* |
 
-## 7 Files changed (this closure pass)
+## 7 Files changed (closure + CI follow-up)
 
-- `tests/test_alembic_ini_resolution.py` — remove unused `import os` (F401)
-- `sdk/typescript/package.json`, `sdk/python/pyproject.toml` — **1.3.1**
-- `docs/PACKAGE_IDENTITY.md`, `README.md` — naming clarity
+**Release cleanup (earlier commits):**
+
+- `tests/test_alembic_ini_resolution.py` — F401 fix
+- `sdk/typescript/package.json`, `sdk/python/pyproject.toml` — 1.3.1
+- `docs/PACKAGE_IDENTITY.md`, `README.md`
 - `scripts/run_v131_production_tool_benchmarks.py`, `scripts/v131_sdk_cli_acceptance.py`
 - `WHITEPACT_V131_*` evidence documents
-- Ruff format on branch-touched Python files (no lint config changes)
+
+**Post-push CI closure (this session):**
+
+- `src/responsibleai/db/schema_preflight.py` — mypy-safe alembic version row helper
+- `src/responsibleai/db/web_identity_repository.py` — scalar row type annotations
+- `tests/test_a2a_adapter.py`, `tests/test_langchain_middleware.py` — trust fail-closed expectations
+- `tests/test_db_migrate.py` — patch `resolve_alembic_ini` (not legacy `_find_alembic_ini`)
+- `tests/test_mcp_server.py`, `tests/test_mcp_tools_branch_campaign.py` — MCP `invalid_argument` + required schema fields
 
 ## 8 CI blocker fix
 
-**WP-V131-FIND-001 FIXED** — removed unused `os` import; `ruff check src/ tests/` passes locally.
+| Finding | Status | Evidence |
+| --- | --- | --- |
+| WP-V131-FIND-001 Ruff F401 | **FIXED** | Unused `import os` removed; Ruff green on CI |
+| Mypy `var-annotated` (follow-on) | **FIXED** | `schema_preflight` helper + `web_identity_repository` annotations; mypy step green on run `36064454430` before test phase |
 
 ## 9 TypeScript SDK version
 
-**WP-V131-FIND-002 FIXED** — `@responsibleai/client` set to **1.3.1** (was 1.0.0 in tree; Antigravity cited 1.3.0).
+**WP-V131-FIND-002 FIXED** — `@responsibleai/client` **1.3.1** (`sdk/typescript/package.json`).
 
 ## 10 Python package naming
 
-**WP-V131-FIND-003 FIXED (docs)** — `docs/PACKAGE_IDENTITY.md` + README; no PyPI rename.
+**WP-V131-FIND-003 FIXED (documentation)** — `docs/PACKAGE_IDENTITY.md`: product **WhitePact**, PyPI **`responsibleai`**, import **`responsibleai`**, compatibility **`whitepact`** where applicable. No `pip install whitepact` claim.
 
 ## 11–13 SDK acceptance
 
-See `WHITEPACT_V131_FINAL_SDK_ACCEPTANCE.md` — Python/TS/Go **PASS** packaging; live-server **DEGRADED**.
+See `WHITEPACT_V131_FINAL_SDK_ACCEPTANCE.md`.
+
+| SDK | Classification |
+| --- | --- |
+| Python | **PASS** (wheel/venv/import); live behavioral matrix **DEGRADED** |
+| TypeScript | **PASS** (install/build); live server **DEGRADED** |
+| Go | **PASS** (`go test`, `go vet`, build) |
 
 ## 14 CLI behavioral acceptance
 
-See `WHITEPACT_V131_FINAL_CLI_BEHAVIOR_MATRIX.md` — representative **PASS**; full verb sweep **PARTIAL**.
+See `WHITEPACT_V131_FINAL_CLI_BEHAVIOR_MATRIX.md` — registration/cwd **PASS**; full verb matrix **PARTIAL**; `whitepact --version` console entry **DEGRADED** (`python -m biasbuster.cli` works).
 
-## 15–17 Regressions
+## 15–17 Regressions (local targeted)
 
-Targeted pytest (24 tests): MCP validation, trust fail-closed, alembic, version — **PASS** locally.
+MCP validation, trust fail-closed, alembic resolution, version — **PASS** (targeted pytest). Full security regression set delegated to CI full suite.
 
-## 18–19 Frontend / a11y
+## 18–19 Frontend / browser
 
-- eslint + vitest (57): **PASS**
-- `npm run build`: **PASS** after `npm ci` (Paddle types)
-- Customer journey: **CI authoritative** on PR
+PR #114 **Frontend closure** job: **SUCCESS** on run `36064454430` (eslint, vitest, build, customer journey on disposable Postgres).
 
 ## 20 Performance
 
-`WHITEPACT_V131_AUTHORITATIVE_PERFORMANCE_REPORT.md` — **29/30** LOCAL in-process p95 &lt; 0.5 ms; `rai_check_trust` network ~100 ms p95.
+`WHITEPACT_V131_AUTHORITATIVE_PERFORMANCE_REPORT.md` — LOCAL in-process; **29/30** tools p95 &lt; 0.5 ms; **`rai_check_trust`** ~100 ms p95 (external HTTP). **STAGING PERFORMANCE NOT YET PROVEN.**
 
 ## 21 Reconciliation
 
 `WHITEPACT_V131_RELEASE_TRUTH_RECONCILIATION.md`
 
-## 22 Migrations
+## 22 Migration truth
 
-61 files, head **0061** — unchanged.
+61 Alembic revisions, head **0061** — unchanged.
 
 ## 23 Docker / Compose / Helm
 
-Helm **lint PASS**; icon **OPEN P3** (no stable public logo URL committed).
+Helm lint **PASS** on CI. **WP-V131-FIND-004** Helm chart `icon` — **OPEN** (P3): no stable public WhitePact logo URL in repo.
 
 ## 24 Full test suite
 
-- **Collected:** 5002 (post-format)
-- **Local full run:** long-running; **GitHub Actions authoritative** for this closure
-- Do **not** claim local full-suite PASS until log completes
-
-## 25–27 CI / distribution / smoke
-
-Poll PR #114 after push. **Build distribution** required for release-clean verdict.
-
-## 28–31 Findings
-
-| ID | Disposition |
+| Run | Result |
 | --- | --- |
-| WP-V131-FIND-001 Ruff F401 | **FIXED** |
-| WP-V131-FIND-002 TS SDK drift | **FIXED** |
-| WP-V131-FIND-003 naming ambiguity | **FIXED** (documentation) |
-| WP-V131-FIND-004 Helm icon | **OPEN** (P3 informational) |
+| CI `36064454430` (pre-test fix) | 16 failed, 4986 passed, 1 skipped (mypy fixed; tests stale vs validation/trust) |
+| CI `36069130314` (post `4208fc7`) | **IN PROGRESS** — authoritative for closure |
 
-## 32–35 Readiness
+Local full-suite not claimed complete in this session.
+
+## 25 GitHub Actions status (latest completed full matrix before test fix)
+
+| Job / workflow | Run `36064454430` |
+| --- | --- |
+| DCO | SUCCESS |
+| Gitleaks | SUCCESS |
+| Dependency Review | SUCCESS |
+| OpenSSF | SUCCESS |
+| Bandit / pip-audit | SUCCESS (parallel workflows) |
+| CodeQL | SUCCESS |
+| Reproducible Build | SUCCESS |
+| Helm | SUCCESS |
+| i18n | SUCCESS |
+| Accessibility | SUCCESS |
+| Frontend closure | SUCCESS |
+| Lint · Test 3.11 / 3.12 | **FAILURE** (16 tests — fixed in `4208fc7`) |
+| Build distribution | **SKIPPED** (CI gate) |
+
+## 26–27 Distribution build & smoke
+
+**PENDING** — requires green Lint · Test (3.11/3.12) on run `36069130314` or later, then **Build distribution** job. Wheel smoke-install not executed until artifacts exist.
+
+## 28–31 Remaining findings
+
+| Priority | Item |
+| --- | --- |
+| P0 | None identified in code fixes; **CI + distribution** gate release |
+| P1 | **Build distribution** must run and pass |
+| P2 | SDK live-server behavioral acceptance **DEGRADED** |
+| P3 | Helm icon metadata (**OPEN**) |
+
+## 32 Known limitations
+
+- Trust checks **fail-closed** by default (UNKNOWN / outage → not passing).
+- MCP dispatch validates arguments before handlers (`invalid_argument`).
+- CLI `whitepact` entrypoint version string **DEGRADED** vs module invocation.
+
+## 33–34 Readiness
 
 | Area | Status |
 | --- | --- |
-| Marketplace technical | **Conditional** on CI + distribution |
-| Enterprise pilot | **Conditional** |
-| Next action | Merge only after all required CI green + distribution smoke |
+| Marketplace technical | **Conditional** — green CI + distribution smoke |
+| Enterprise pilot | **Conditional** — same |
+
+## 35 Recommended next action
+
+1. Confirm CI run `36069130314` (or successor) fully green including **Build distribution**.
+2. Download wheel/sdist from Actions; smoke-install; verify version **1.3.1**, `alembic.ini`, migrations, entrypoints.
+3. Product-manager review; **do not merge/deploy/publish** until explicit approval.
 
 ---
 
@@ -99,4 +147,4 @@ Poll PR #114 after push. **Build distribution** required for release-clean verdi
 
 **WHITEPACT V1.3.1 RELEASE CLOSURE CONDITIONAL — REMAINING WORK REQUIRED**
 
-Pending: PR #114 **Build distribution** and full required CI matrix green.
+Pending: authoritative CI green on commit `4208fc7` (or later), **Build distribution** success, and distribution artifact smoke test.
