@@ -18,7 +18,9 @@ def validate_schema_lineage(connection: Connection) -> None:
     if not tables or tables == {"alembic_version"}:
         if "alembic_version" not in tables:
             return
-        rows = connection.execute(text("SELECT version_num FROM alembic_version")).scalars().all()
+        rows: list[str] = list(
+            connection.execute(text("SELECT version_num FROM alembic_version")).scalars().all()
+        )
         if not rows:
             return
         raise SchemaLineageError(
