@@ -4,17 +4,20 @@
 
 from __future__ import annotations
 
+import operator
+from collections.abc import Sequence
+from typing import cast
+
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import Connection
 
 
 def _alembic_version_rows(connection: Connection) -> list[str]:
-    return [
-        str(version)
-        for version in connection.execute(text("SELECT version_num FROM alembic_version"))
-        .scalars()
-        .all()
-    ]
+    rows = cast(
+        Sequence[tuple[str, ...]],
+        connection.execute(text("SELECT version_num FROM alembic_version")).fetchall(),
+    )
+    return list(map(str, map(operator.itemgetter(0), rows)))
 
 
 class SchemaLineageError(RuntimeError):
