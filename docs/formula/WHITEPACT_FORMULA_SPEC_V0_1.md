@@ -128,7 +128,9 @@ Assumptions: (A1) tenant boundary is enforced outside Formula; (A2) clock source
 
 ## Transition kernel τ
 
-**Signature:**
+Gate 1 described τ abstractly; **Gate 2** implements **typed** transition protocols in `responsibleai.formula.transitions` (no single shared codomain).
+
+Legacy summary signature (documentation only):
 
 ```text
 τ : 𝒲 × 𝒜ct → 𝒫(𝒲)
