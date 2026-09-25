@@ -13,7 +13,7 @@ Independent review Gate 2A corrections are documented in
 `WHITEPACT_FORMULA_OMEGA_V01_GATE2A_CORRECTION_REPORT.md`.
 
 Pre–2A head: `1fd2f513f8e5e13b74d28344f94bc5f0e8068d72`  
-Post–2A head: see `git rev-parse HEAD` on branch after push.
+Post–2A head: `63260f07ffb118d05550b856d72ce8e89f687c6d` (tree `879347e79f0ecfe4b327f3907adb657319b0cb08`).
 
 ## Baseline (Gate 2 branch parent)
 
