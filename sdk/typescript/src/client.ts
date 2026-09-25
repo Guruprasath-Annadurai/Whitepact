@@ -110,7 +110,7 @@ export class RAIClient {
     let fullUrl = this.url(path);
     if (params && Object.keys(params).length > 0) {
       const qs = new URLSearchParams(
-        Object.entries(params).map(([k, v]) => [k, String(v)]),
+        Object.entries(params).map(([k, v]) => [k, String(v)] as [string, string]),
       );
       fullUrl += `?${qs.toString()}`;
     }

@@ -179,6 +179,10 @@ Changelog  = "https://github.com/Guruprasath-Annadurai/Whitepact/blob/main/CHANG
 [tool.hatch.build.targets.wheel]
 packages = ["src/biasbuster", "src/privacylabel", "src/responsibleai", "src/whitepact"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"alembic.ini" = "alembic.ini"
+"migrations" = "migrations"
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths    = ["tests"]
