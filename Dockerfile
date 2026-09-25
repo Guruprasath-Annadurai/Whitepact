@@ -46,8 +46,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     WHITEPACT_LOG_JSON=true \
     WHITEPACT_DB_PATH=/data/responsibleai.db
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
+# Apply Debian security updates for runtime OS packages (gzip, openssl, perl-base, etc.)
+# before installing curl. Keeps the pinned python:3.12-slim digest; only refreshes
+# the apt layer against current security advisories.
+RUN apt-get update && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd --gid 1001 appgroup && \
