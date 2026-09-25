@@ -2,8 +2,10 @@
 
 | Field | Value |
 |-------|-------|
-| **Release tag** | `v1.3.1` (annotated) |
+| **Release tag** | `v1.3.1` (annotated, pushed to `origin`) |
 | **Tag message** | WhitePact v1.3.1 — Enterprise Hardened Release |
+| **Tag verification** | `git rev-parse v1.3.1^{}` → `894efe30514553f7e0d047a1569a80d36c53a236` (must match merge commit) |
+| **Tag signing** | GitHub-hosted annotated tag; org GPG/sigstore policy is orthogonal to this SHA baseline |
 | **Main merge commit** | `894efe30514553f7e0d047a1569a80d36c53a236` |
 | **Main tree SHA** | `06ac20f6f0f88585770437e23d2d329ead104fab` |
 | **PR** | [#114](https://github.com/Guruprasath-Annadurai/Whitepact/pull/114) — **MERGED** |
