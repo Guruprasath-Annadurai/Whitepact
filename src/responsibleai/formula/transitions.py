@@ -1,5 +1,6 @@
 # Copyright (c) 2026 Guruprasath Annadurai
 # SPDX-License-Identifier: MIT
+# mypy: disable-error-code=misc
 """Typed transition semantics (Gate 2 — no unified fake codomain)."""
 
 from __future__ import annotations
@@ -8,12 +9,12 @@ from dataclasses import dataclass
 from typing import Generic, Protocol, TypeVar
 
 W = TypeVar("W")
-Act = TypeVar("Act")
+Act = TypeVar("Act", contravariant=True)
 C = TypeVar("C")
 Auth = TypeVar("Auth")
 AbsW = TypeVar("AbsW")
-Event = TypeVar("Event")
-AuthorityEvent = TypeVar("AuthorityEvent")
+Event = TypeVar("Event", contravariant=True)
+AuthorityEvent = TypeVar("AuthorityEvent", contravariant=True)
 
 
 class DeterministicTransition(Protocol[W, Act]):
