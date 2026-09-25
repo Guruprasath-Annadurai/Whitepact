@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Starting SHA | `d076778d611b9d820cc5752e23c6f34b829a8847` |
-| Final SHA | *(see PR #114 head after push)* |
+| Final SHA | `ff3f127` |
 | PR | **#114** (open, unmerged) |
 | Version | **1.3.1** |
 | Gate B | `PRODUCTION_GATE_B_OPEN = False` (unchanged) |
