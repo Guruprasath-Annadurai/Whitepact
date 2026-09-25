@@ -7,7 +7,7 @@ HEAD: `c9e0892c4e536bf1a631e833dba46e29e80785bc`
 | A | In-place upgrade | **PARTIAL** | Historical PG migrations + 0061 backup restore |
 | B | Rollback | **PARTIAL** | Supported alembic downgrade paths only |
 | C | Backup/restore | **PASS** | Destroy+restore manifest match |
-| D | Soak | **PARTIAL** | 30m `phase0b-soak` tmux job running (`instrumented_soak.py`) |
+| D | Soak | **PARTIAL** | 30m client soak: 8763 samples, 0 errors, p95 6.9ms (no server RSS) |
 | E | Distributed race | **PARTIAL** | Pytest only |
 | F | Rolling restart | **BLOCKED** | No live multi-worker harness |
 | G | Paddle sandbox | **BLOCKED** | No credentials |

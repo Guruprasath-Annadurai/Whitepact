@@ -1,7 +1,11 @@
 # LOCAL INSTRUMENTED SOAK
 
-**Status:** **IN PROGRESS** — 1800s (30m) client loop started in tmux session `phase0b-soak` against `http://127.0.0.1:18765/api/health`.
+Duration: **1800s**
 
-This file will be overwritten when `scripts/phase0b/instrumented_soak.py` completes with samples/errors/p95.
+Target: `http://127.0.0.1:18765/api/health`
 
-**Verdict until complete:** **PARTIAL**
+| samples | errors | p95 ms |
+|---:|---:|---:|
+| 8763 | 0 | 6.90 |
+
+Server RSS/threads: **not captured** (set WHITEPACT_0B_SERVER_PID).
