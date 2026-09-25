@@ -1,71 +1,67 @@
-# WhitePact v1.3.1 — 9.5 engineering closure report
+# WhitePact v1.3.1 — engineering closure report (Phase 0B update)
 
 | Field | Value |
 |-------|-------|
-| Baseline SHA | `a471e497dba752812af7346efa341e5360ab5319` |
-| Final SHA | `ac0ef1ef8093c516693f3b78426f7bd460f8590d` |
-| Tree | `aacb6622feb865ebae42f8d32ef3a2814f4c4ab2` |
-| Version | **1.3.1** (unchanged) |
+| Starting SHA (Phase 0B) | `c9e0892c4e536bf1a631e833dba46e29e80785bc` |
+| Final SHA | *(see PR #114 HEAD after push)* |
 | PR | **#114** (not merged) |
+| Version | **1.3.1** |
 
-## Closure statement
+## Pre-release operational closure verdict
 
-**WHITEPACT 9.5 TECHNICAL CLOSURE CONDITIONAL — EVIDENCE GAPS REMAIN**
+**WHITEPACT PRE-RELEASE OPERATIONAL CLOSURE CONDITIONAL — EXTERNAL/INFRASTRUCTURE PROOF REMAINS**
 
-## CI / tests (pre-push on agent)
+## CI (exact starting HEAD `c9e0892`)
 
-| Check | Status |
-|-------|--------|
-| Full CI on new HEAD | **PENDING** — must be green on final SHA after push |
-| Security regression subset | **PASS** — 284 tests (`WHITEPACT_V131_95_SECURITY_REGRESSION.md`) |
-| Prior RC CI (`a471e49`) | 16/16 green, 5002 passed (superseded once HEAD moves) |
+At Phase 0B start: **13/15 checks green**; Python **3.11** and **3.12** test jobs **pending**. Re-validate on **final SHA** after Phase 0B evidence push.
 
-## Area verdicts
+## Phase 0B evidence summary
 
-| Area | Verdict | Notes |
-|------|---------|-------|
-| Python SDK live | **PASS** | Health + governed POST denial (legacy static key → 403 ANALYST) against Postgres-backed server |
-| TypeScript SDK live | **PASS** | `npm install`, `tsc`, Node live health + connection refused |
-| Go SDK live | **PASS** | `go test`, `go vet`, `cmd/livecheck` health |
-| CLI matrix | **41/41 accounted** | Mix of REAL_ATTEMPT + HELP_ONLY; not all verbs exercised from installed wheel venv |
-| Wheel install | **PASS** | `python -m build` wheel, fresh venv, `whitepact` console script, `alembic.ini` in site-packages |
-| Browser matrix | **PASS** (shallow) | Chromium/Firefox/WebKit × desktop/tablet/mobile; route load only — **not** full login/approval journey |
-| Docker Compose | **PARTIAL** | Build PASS; runtime DB TCP blocked VM-side (`WHITEPACT_V131_95_COMPOSE_ACCEPTANCE.md`) |
-| Helm cluster | **BLOCKED** | No kubectl/kind/minikube; `helm lint` + `helm template` run |
-| Performance | **LOCAL-CONTAINER** | Concurrency sweep 1–100 documented; not production-scale |
-| MCP benchmark | **AUTHORITATIVE SCRIPT** | `PRODUCTION_TOOL_DEFS` via `run_v131_production_tool_benchmarks.py` |
-| Security | **PASS** (subset) | No regression in curated list; full suite awaits CI |
-| Billing | **PASS** (subset) | `test_paddle_billing_service.py` in regression set |
-| Tenant isolation | **PASS** (subset) | `test_tenant_isolation.py` |
-| Evidence / replay | **NOT RE-RUN LIVE** | Covered by pytest subset only in this campaign |
-| Observability drill | **PARTIAL** | Bad API key + health paths only |
-| Stranger test | **PARTIAL** | Documentation path; wheel migrate path improved |
-| Helm icon P3 | **OPEN** | No stable public logo URL added to `Chart.yaml` |
+| Workstream | Verdict |
+|------------|---------|
+| Full backup → destroy → restore | **PASS** (manifest match; population depth PARTIAL) |
+| Literal v1.3.0 → v1.3.1 upgrade | **PASS** (schema-neutral at 0061) |
+| Instrumented soak | **PARTIAL** (30m job on `wp-hardening-smoke`; see soak report) |
+| Live distributed race | **PARTIAL** (pytest; no 4-worker live cluster) |
+| Rolling restart | **BLOCKED** |
+| Real MCP interop | **PARTIAL** (Streamable HTTP pytest **PASS**; stdio **BLOCKED**) |
+| OpenAPI compatibility | **PASS** (0 route delta vs `v1.3.0-rc-final`) |
+| Container CVE scan | **BLOCKED** (Trivy unavailable in VM) |
+| Proxy boundary | **BLOCKED/PARTIAL** |
+| Hostile input | **PARTIAL** |
+| Time boundaries | **PARTIAL** |
+| Lost ACK reconciliation | **PASS** (`test_v1_exactly_one_effect.py`) |
+| Secret leak audit | **PARTIAL** |
+| Email flows | **BLOCKED** |
+| Quota boundaries | **PARTIAL** |
+| Paddle sandbox | **BLOCKED** |
+| K8s multi-replica | **BLOCKED** |
 
-## Remaining gaps (honest)
+## §21 prior campaign
 
-| Priority | Count | Items |
-|----------|------:|-------|
-| P0 | 0 | — |
-| P1 | 1 | Full CI green on **new** final SHA |
-| P2 | 4 | Compose runtime proof on operator host; Helm live cluster; CLI from wheel-only venv; deep browser auth journeys |
-| P3 | 1 | Helm chart icon |
+See earlier `WHITEPACT_V131_95_*` artifacts (SDK, CLI, wheel, browser, compose PARTIAL, Helm BLOCKED).
 
-## Code / packaging changes (this campaign)
+## WHAT, IF ANYTHING, REMAINS UNTESTED?
 
-- `pyproject.toml` — ship `alembic.ini` + `migrations/` in wheel (`force-include`).
-- `Dockerfile` — copy migration assets into builder stage (fixes image wheel build).
-- `sdk/typescript/src/client.ts` — TypeScript 5 `URLSearchParams` tuple typing (build unblock).
-- `scripts/run_v131_95_quality_closure.py` — live evidence orchestrator.
-- `scripts/v131_95_browser_matrix.mjs` — Playwright matrix.
-- `sdk/go/cmd/livecheck/` — Go live health probe.
+### TECHNICALLY UNTESTED
 
-**Semantic version:** Still **1.3.1** — packaging and closure harness only; no Gate B / Phase7A / MCP tool count changes.
+- Live 4-worker rolling restart under continuous traffic
+- Full populated backup manifest (evidence/approvals/billing) with post-restore app E2E
+- Exhaustive hostile max-body and proxy/TLS matrix
+
+### EXTERNALLY BLOCKED
+
+- Paddle sandbox on final SHA (no credentials)
+- Kubernetes ≥2 replicas
+- Cursor Desktop MCP stdio
+- Mail capture for email workflows
+- Container CVE scan tooling in closure VM
+
+### REAL-WORLD VALIDATION REQUIRED
+
+- Customer pilots
+- Production regional DR certification
 
 ## External customer validation
 
-**NOT YET AVAILABLE — REQUIRES REAL PILOTS** (not a software defect)
-
-## Artifacts
-
-`WHITEPACT_V131_95_*.md` at repo root; copies under `release-evidence/v131_95/` and `/opt/cursor/artifacts/v131_95/`.
+**NOT YET AVAILABLE — REQUIRES REAL PILOTS**

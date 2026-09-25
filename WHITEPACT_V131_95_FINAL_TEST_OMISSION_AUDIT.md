@@ -1,56 +1,48 @@
-# Final test omission audit (v1.3.1 §21)
+# Final omission audit (Phase 0B)
+
+HEAD: `c9e0892c4e536bf1a631e833dba46e29e80785bc`
 
 | Cat | Topic | Status | Notes |
 |---:|---|---|---|
-| A | In-place upgrade | **PARTIAL** | `test_historical_postgres_migrations.py` **8 passed** on isolated Postgres (0061 head, seeded org data); not full v1.3.0 binary upgrade. |
-| B | Rollback safety | **PARTIAL** | Downgrade/re-upgrade covered in `test_historical_postgres_migrations` for supported revisions; full 0061→0060 product downgrade not promised — Alembic forward-only for production. |
-| C | Backup and restore | **BLOCKED** | Isolated pg_dump/restore with populated enterprise fixture not automated in addendum harness; see `tests/test_historical_postgres_migrations.py` for data preservation proofs. |
-| D | Long-run soak | **PARTIAL** | 120s health loop against `wp-hardening-smoke`; no server leak instrumentation. |
-| E | Multi-worker distributed race | **PARTIAL** | Single-process pytest concurrency/race cases; not multi-uvicorn-worker live cluster. |
-| F | Rolling restart | **BLOCKED** | No live multi-replica traffic + rolling restart harness on final SHA. |
-| G | Paddle sandbox E2E | **BLOCKED** | No authorized sandbox credentials in environment for final SHA run. |
-| H | MCP client interoperability | **PARTIAL** | In-process MCP dispatch tests only; Cursor Desktop / Streamable HTTP client E2E not run. |
-| J | Legacy compatibility | **PARTIAL** | Canonical seams + web contract tests; rai:// aliases via static review in omission audit. |
-| K | Authentication edge matrix | **PARTIAL** | Automated subset; WebAuthn/OAuth provider flows BLOCKED_EXTERNAL where noted in tests. |
-| L | Email workflow | **BLOCKED** | No safe mail-capture provider configured in closure VM. |
-| M | Limit / quota boundaries | **PARTIAL** | Billing/quota logic in unit tests; exact limit±1 concurrency not exhaustively proven live. |
-| N | Hostile / large payloads | **PARTIAL** | MCP validation + SSRF tests; max body size soak not fully characterized. |
-| O | HTTP / proxy boundary | **BLOCKED** | No local TLS reverse-proxy harness run on final SHA. |
-| P | Container security scan | **BLOCKED** | Trivy on `responsibleai:95test` if image exists. |
-| Q | Log/trace/metric secret review | **PARTIAL** | Transport boundary tests; no exhaustive log grep after synthetic secret injection. |
-| R | Artifact consistency | **PASS** | Wheel build + version 1.3.1 in pyproject; container parity see compose artifact. |
-| S | Multi-replica Kubernetes | **BLOCKED** | No kubectl/kind cluster (see Helm cluster acceptance). |
-| T | Clock / expiry boundaries | **PARTIAL** | JWT/TOTP expiry covered in unit tests; fake-clock boundary sweep not run live. |
-| U | Resource exhaustion / backpressure | **PARTIAL** | Trust outage → UNKNOWN fail-closed; full pool saturation not live-proven. |
-| V | Partial side-effect / lost acknowledgement | **PARTIAL** | UNKNOWN disposition + restore reconcile tests; full external-success/lost-ACK live sim not run. |
+| A | In-place upgrade | **PARTIAL** | Historical PG migrations + 0061 backup restore |
+| B | Rollback | **PARTIAL** | Supported alembic downgrade paths only |
+| C | Backup/restore | **PASS** | Destroy+restore manifest match |
+| D | Soak | **PARTIAL** | Short/default soak; 30m instrumented job separate |
+| E | Distributed race | **PARTIAL** | Pytest only |
+| F | Rolling restart | **BLOCKED** | No live multi-worker harness |
+| G | Paddle sandbox | **BLOCKED** | No credentials |
+| H | MCP interop | **PARTIAL** | Streamable HTTP pytest; stdio BLOCKED |
+| I | OpenAPI diff | **PARTIAL** | Path-level diff in OPENAPI_COMPATIBILITY_DIFF |
+| J | Legacy | **PARTIAL** | Seams tests |
+| K | Auth edge | **PARTIAL** | Pytest subset |
+| L | Email | **BLOCKED** | No mail capture |
+| M | Limits | **PARTIAL** | Unit tests |
+| N | Hostile input | **PARTIAL** | Sample probes |
+| O | Proxy | **PARTIAL/BLOCKED** | nginx not fully exercised |
+| P | Container CVE | **BLOCKED/PARTIAL** | Trivy if installed |
+| Q | Secret leak | **PARTIAL** |  |
+| R | Artifacts | **PASS** | Wheel build |
+| S | K8s multi-replica | **BLOCKED** |  |
+| T | Time boundaries | **PARTIAL** |  |
+| U | Resource exhaustion | **PARTIAL** |  |
+| V | Lost ACK | **PASS** | test_v1_exactly_one_effect |
 
 ## WHAT, IF ANYTHING, WAS NOT TESTED?
 
-- **C. Backup and restore** — BLOCKED: Isolated pg_dump/restore with populated enterprise fixture not automated in addendum harness; see `tests/test_historical_postgres_migrations.py` for data preservation proofs.
-- **F. Rolling restart** — BLOCKED: No live multi-replica traffic + rolling restart harness on final SHA.
-- **G. Paddle sandbox E2E** — BLOCKED: No authorized sandbox credentials in environment for final SHA run.
-- **L. Email workflow** — BLOCKED: No safe mail-capture provider configured in closure VM.
-- **O. HTTP / proxy boundary** — BLOCKED: No local TLS reverse-proxy harness run on final SHA.
-- **P. Container security scan** — BLOCKED: Trivy on `responsibleai:95test` if image exists.
-- **S. Multi-replica Kubernetes** — BLOCKED: No kubectl/kind cluster (see Helm cluster acceptance).
-- **A. In-place upgrade** — PARTIAL: PostgreSQL historical migration + seeded data preservation (not literal v1.3.0 semver binary).
-- **B. Rollback safety** — PARTIAL: Downgrade/re-upgrade covered in `test_historical_postgres_migrations` for supported revisions; full 0061→0060 product downgrade not promised — Alembic forward-only for production.
-- **E. Multi-worker distributed race** — PARTIAL: Single-process pytest concurrency/race cases; not multi-uvicorn-worker live cluster.
-- **H. MCP client interoperability** — PARTIAL: In-process MCP dispatch tests only; Cursor Desktop / Streamable HTTP client E2E not run.
-- **J. Legacy compatibility** — PARTIAL: Canonical seams + web contract tests; rai:// aliases via static review in omission audit.
-- **K. Authentication edge matrix** — PARTIAL: Automated subset; WebAuthn/OAuth provider flows BLOCKED_EXTERNAL where noted in tests.
-- **M. Limit / quota boundaries** — PARTIAL: Billing/quota logic in unit tests; exact limit±1 concurrency not exhaustively proven live.
-- **N. Hostile / large payloads** — PARTIAL: MCP validation + SSRF tests; max body size soak not fully characterized.
-- **Q. Log/trace/metric secret review** — PARTIAL: Transport boundary tests; no exhaustive log grep after synthetic secret injection.
-- **T. Clock / expiry boundaries** — PARTIAL: JWT/TOTP expiry covered in unit tests; fake-clock boundary sweep not run live.
-- **U. Resource exhaustion / backpressure** — PARTIAL: Trust outage → UNKNOWN fail-closed; full pool saturation not live-proven.
-- **V. Partial side-effect / lost acknowledgement** — PARTIAL: UNKNOWN disposition + restore reconcile tests; full external-success/lost-ACK live sim not run.
-- **D. Long-run soak** — PARTIAL: 120s health loop against `wp-hardening-smoke`; no server leak instrumentation.
+### TECHNICALLY UNTESTED
 
-## Soak artifact
+- Live 4-worker rolling restart under load
+- 30–60m instrumented server-side leak watch (unless soak job completed)
+- Full populated backup with evidence/approvals/billing (minimal seed only)
 
-See `WHITEPACT_V131_95_SOAK_REPORT.md`.
+### EXTERNALLY BLOCKED
 
-## OpenAPI artifact
+- Paddle sandbox E2E
+- Kubernetes multi-replica
+- Cursor Desktop MCP stdio
+- Email capture provider
 
-See `WHITEPACT_V131_95_API_COMPATIBILITY_REPORT.md`.
+### REAL-WORLD VALIDATION REQUIRED
+
+- External customer pilots
+- Production regional DR
