@@ -7,12 +7,12 @@ HEAD: `c9e0892c4e536bf1a631e833dba46e29e80785bc`
 | A | In-place upgrade | **PARTIAL** | Historical PG migrations + 0061 backup restore |
 | B | Rollback | **PARTIAL** | Supported alembic downgrade paths only |
 | C | Backup/restore | **PASS** | Destroy+restore manifest match |
-| D | Soak | **PARTIAL** | Short/default soak; 30m instrumented job separate |
+| D | Soak | **PARTIAL** | 30m `phase0b-soak` tmux job running (`instrumented_soak.py`) |
 | E | Distributed race | **PARTIAL** | Pytest only |
 | F | Rolling restart | **BLOCKED** | No live multi-worker harness |
 | G | Paddle sandbox | **BLOCKED** | No credentials |
 | H | MCP interop | **PARTIAL** | Streamable HTTP pytest; stdio BLOCKED |
-| I | OpenAPI diff | **PARTIAL** | Path-level diff in OPENAPI_COMPATIBILITY_DIFF |
+| I | OpenAPI diff | **PASS** | 245 paths; 0 removed/added vs v1.3.0-rc-final |
 | J | Legacy | **PARTIAL** | Seams tests |
 | K | Auth edge | **PARTIAL** | Pytest subset |
 | L | Email | **BLOCKED** | No mail capture |

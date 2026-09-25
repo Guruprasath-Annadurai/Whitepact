@@ -1,7 +1,7 @@
 # LOCAL INSTRUMENTED SOAK
 
-Configured duration: **300s** (set `WHITEPACT_0B_SOAK_SECONDS=1800` for 30m).
+**Status:** **IN PROGRESS** — 1800s (30m) client loop started in tmux session `phase0b-soak` against `http://127.0.0.1:18765/api/health`.
 
-Run separately: `scripts/phase0b/instrumented_soak.py` (see release-evidence).
+This file will be overwritten when `scripts/phase0b/instrumented_soak.py` completes with samples/errors/p95.
 
-**Verdict:** **PENDING/RUN** — execute long soak job before PM sign-off if 30m required.
+**Verdict until complete:** **PARTIAL**

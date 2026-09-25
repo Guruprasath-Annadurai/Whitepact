@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Starting SHA (Phase 0B) | `c9e0892c4e536bf1a631e833dba46e29e80785bc` |
-| Final SHA | *(see PR #114 HEAD after push)* |
+| Final SHA | `0e894e8007332026a34c2b4e070606f40aab1760` |
 | PR | **#114** (not merged) |
 | Version | **1.3.1** |
 
