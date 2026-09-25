@@ -48,12 +48,11 @@ class CanonicalAISystemGraph:
             tenant_id=self.tenant_id,
             version_number=self._version_counter,
         )
-        ordered_nodes = tuple(self.nodes[k] for k in sorted(self.nodes))
-        ordered_edges = tuple(self.edges[k] for k in sorted(self.edges))
+        ordered_nodes = tuple(_immutable_node(self.nodes[k]) for k in sorted(self.nodes))
+        ordered_edges = tuple(_immutable_edge(self.edges[k]) for k in sorted(self.edges))
         digest = canonical_sha256(
             {
                 "tenant_id": self.tenant_id,
-                "version": version.version_number,
                 "nodes": [_node_payload(n) for n in ordered_nodes],
                 "edges": [_edge_payload(e) for e in ordered_edges],
             }
@@ -67,12 +66,42 @@ class CanonicalAISystemGraph:
         )
 
 
+def _immutable_node(n: GraphNode) -> GraphNode:
+    return GraphNode.build(
+        n.node_id,
+        n.tenant_id,
+        n.kind,
+        n.attributes,
+        source=n.source,
+        epistemic_status=n.epistemic_status,
+        created_at=n.created_at,
+        updated_at=n.updated_at,
+        schema_version=n.schema_version,
+    )
+
+
+def _immutable_edge(e: GraphEdge) -> GraphEdge:
+    return GraphEdge.build(
+        e.edge_id,
+        e.tenant_id,
+        e.kind,
+        e.source_id,
+        e.target_id,
+        e.attributes,
+        source=e.source,
+        epistemic_status=e.epistemic_status,
+        created_at=e.created_at,
+        updated_at=e.updated_at,
+        schema_version=e.schema_version,
+    )
+
+
 def _node_payload(n: GraphNode) -> dict[str, object]:
     return {
         "node_id": n.node_id,
         "tenant_id": n.tenant_id,
         "kind": n.kind.value,
-        "attributes": n.attributes,
+        "attributes": list(n._attribute_pairs),
         "source": n.source,
         "epistemic_status": n.epistemic_status.value,
         "schema_version": n.schema_version,
@@ -86,7 +115,7 @@ def _edge_payload(e: GraphEdge) -> dict[str, object]:
         "kind": e.kind.value,
         "source_id": e.source_id,
         "target_id": e.target_id,
-        "attributes": e.attributes,
+        "attributes": list(e._attribute_pairs),
         "source": e.source,
         "epistemic_status": e.epistemic_status.value,
         "schema_version": e.schema_version,

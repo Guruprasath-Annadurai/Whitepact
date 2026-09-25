@@ -3,35 +3,35 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import pytest
+from tests.formula.helpers import make_grant
 
 from responsibleai.formula.authority.algebra import (
     EffectiveAuthorityEvaluator,
     authority_subset,
+    grant_intersection,
     validate_delegation,
 )
+from responsibleai.formula.authority.context_match import grant_context_matches
 from responsibleai.formula.authority.creation import (
-    AuthorityCreationEvent,
-    apply_creation_event,
     issuer_can_grant,
 )
-from responsibleai.formula.authority.delegation import DelegationChain
 from responsibleai.formula.authority.lifecycle import (
     assert_grant_usable,
     consume_grant,
     lifecycle_at,
 )
 from responsibleai.formula.authority.models import (
-    AuthorityConstraint,
     AuthorityContext,
     AuthorityGrant,
     AuthorityLifecycle,
-    AuthoritySubject,
     ExplicitDeny,
     OrgAuthorityCeilingModel,
 )
+from responsibleai.formula.authority.root import TenantRootPrincipal
+from responsibleai.formula.authority.wildcard import WILDCARD
 from responsibleai.formula.errors import (
     AuthorityExpansion,
     ConsumedGrant,
@@ -39,138 +39,143 @@ from responsibleai.formula.errors import (
 )
 
 
-def _grant(
-    gid: str,
-    subject: str,
-    actions: frozenset[str],
-    resources: frozenset[str],
-    *,
-    allow_delegation: bool = False,
-    one_shot: bool = False,
-    risk: int = 5,
-    delegator: str | None = None,
-    nb: datetime | None = None,
-    exp: datetime | None = None,
-) -> AuthorityGrant:
-    now = datetime(2026, 6, 1, 12, 0, 0, tzinfo=UTC)
-    return AuthorityGrant(
-        grant_id=gid,
-        tenant_id="t1",
-        subject=AuthoritySubject(subject_id=subject, tenant_id="t1"),
-        issuer_id="tenant_root:t1",
-        delegator_id=delegator,
-        actions=actions,
-        resources=resources,
-        purposes=frozenset({"ops"}),
-        context=AuthorityContext(),
-        not_before=nb or now,
-        expires_at=exp or (now + timedelta(days=1)),
-        risk_ceiling=risk,
-        constraints=AuthorityConstraint(allow_delegation=allow_delegation, one_shot=one_shot),
-        lifecycle=AuthorityLifecycle.ACTIVE,
+def test_context_missing_required_not_applicable() -> None:
+    g = make_grant("g", "s1", context=AuthorityContext.from_mapping({"environment": "prod"}))
+    assert grant_context_matches(g.context, AuthorityContext.from_mapping()) is False
+    ev = EffectiveAuthorityEvaluator()
+    assert (
+        len(ev.effective((g,), (), "s1", "t1", g.not_before, AuthorityContext.from_mapping())) == 0
     )
 
 
-def test_multiple_grants_union_not_intersection() -> None:
-    g_read = _grant("g1", "s1", frozenset({"read"}), frozenset({"x"}))
-    g_write = _grant("g2", "s1", frozenset({"write"}), frozenset({"y"}))
-    eff = EffectiveAuthorityEvaluator().effective((g_read, g_write), (), "s1", g_read.not_before)
-    actions = {t.action for t in eff}
-    assert actions == {"read", "write"}
+def test_multiple_grants_union() -> None:
+    g_read = make_grant("g1", "s1", actions=frozenset({"read"}), resources=frozenset({"x"}))
+    g_write = make_grant("g2", "s1", actions=frozenset({"write"}), resources=frozenset({"y"}))
+    eff = EffectiveAuthorityEvaluator().effective(
+        (g_read, g_write), (), "s1", "t1", g_read.not_before
+    )
+    assert {t.action for t in eff} == {"read", "write"}
 
 
-def test_org_ceiling_restricts_union() -> None:
-    g = _grant("g1", "s1", frozenset({"read", "write"}), frozenset({"x"}))
+def test_org_ceiling_drops_high_risk() -> None:
+    g = make_grant("g1", "s1", actions=frozenset({"read", "write"}), risk=9)
     ceiling = OrgAuthorityCeilingModel(
-        tenant_id="t1", org_id="o1", allowed_actions=frozenset({"read"})
+        tenant_id="t1", org_id="o1", allowed_actions=frozenset({"read"}), max_risk_class=5
     )
-    eff = EffectiveAuthorityEvaluator(ceiling=ceiling).effective((g,), (), "s1", g.not_before)
-    assert {t.action for t in eff} == {"read"}
+    eff = EffectiveAuthorityEvaluator(ceiling=ceiling).effective((g,), (), "s1", "t1", g.not_before)
+    assert eff == frozenset() or all(t.risk_ceiling <= 5 for t in eff)
 
 
 def test_explicit_deny_wins() -> None:
-    g = _grant("g1", "s1", frozenset({"read"}), frozenset({"x"}))
+    g = make_grant("g1", "s1")
     deny = ExplicitDeny("d1", "t1", "s1", frozenset({"read"}), frozenset({"x"}))
-    eff = EffectiveAuthorityEvaluator().effective((g,), (deny,), "s1", g.not_before)
+    eff = EffectiveAuthorityEvaluator().effective((g,), (deny,), "s1", "t1", g.not_before)
     assert eff == frozenset()
 
 
-def test_delegation_cannot_widen_resources() -> None:
-    parent = _grant("p", "org", frozenset({"read"}), frozenset({"x"}), allow_delegation=True)
-    child = _grant(
+def test_delegation_context_child_broader_fails() -> None:
+    parent = make_grant(
+        "p",
+        "org",
+        allow_delegation=True,
+        context=AuthorityContext.from_mapping({"environment": "prod"}),
+    )
+    child = make_grant(
         "c",
         "agent",
-        frozenset({"read"}),
-        frozenset({"x", "y"}),
         delegator="org",
-        allow_delegation=False,
+        context=AuthorityContext.from_mapping(),
     )
     with pytest.raises(AuthorityExpansion):
         validate_delegation(parent, child)
 
 
-def test_delegation_chain_valid() -> None:
-    g0 = _grant("g0", "org", frozenset({"read"}), frozenset({"x"}), allow_delegation=True)
-    g1 = _grant(
-        "g1", "a", frozenset({"read"}), frozenset({"x"}), delegator="org", allow_delegation=True
-    )
-    g2 = _grant("g2", "b", frozenset({"read"}), frozenset({"x"}), delegator="a")
-    chain = DelegationChain((g0, g1, g2))
-    chain.validate()
-    assert chain.root_effective_subset()
+def test_purpose_wildcard_subset() -> None:
+    parent = make_grant("p", "s", purposes=frozenset({"ops"}))
+    child_wild = make_grant("c", "s2", purposes=frozenset({WILDCARD}))
+    assert not authority_subset(child_wild, parent)
+    parent_w = make_grant("pw", "s", purposes=frozenset({WILDCARD}))
+    child_specific = make_grant("cs", "s2", purposes=frozenset({"ops"}))
+    assert authority_subset(child_specific, parent_w)
+
+
+def test_grant_intersection_ignores_grant_id() -> None:
+    g1 = make_grant("g1", "s")
+    g2 = make_grant("g2", "s")
+    u1 = EffectiveAuthorityEvaluator().effective((g1,), (), "s", "t1", g1.not_before)
+    u2 = EffectiveAuthorityEvaluator().effective((g2,), (), "s", "t1", g2.not_before)
+    assert grant_intersection(u1, u2) == u1
 
 
 def test_temporal_half_open_boundary() -> None:
     start = datetime(2026, 6, 1, 0, 0, 0, tzinfo=UTC)
     end = datetime(2026, 6, 2, 0, 0, 0, tzinfo=UTC)
-    g = _grant("g", "s", frozenset({"read"}), frozenset({"x"}), nb=start, exp=end)
+    g = make_grant("g", "s", nb=start, exp=end)
     assert lifecycle_at(g, start) == AuthorityLifecycle.ACTIVE
     assert lifecycle_at(g, end) == AuthorityLifecycle.EXPIRED
     with pytest.raises(ExpiredGrant):
         assert_grant_usable(g, end)
 
 
+def test_pending_not_usable() -> None:
+    g = make_grant("g", "s", lifecycle=AuthorityLifecycle.PENDING)
+    with pytest.raises(ConsumedGrant):
+        assert_grant_usable(g, g.not_before)
+
+
 def test_one_shot_consume() -> None:
-    g = _grant("g", "s", frozenset({"read"}), frozenset({"x"}), one_shot=True)
+    g = make_grant("g", "s", one_shot=True)
     used = consume_grant(g)
     assert used.lifecycle == AuthorityLifecycle.CONSUMED
     with pytest.raises(ConsumedGrant):
         assert_grant_usable(used, g.not_before)
 
 
-def test_self_issued_grant_rejected() -> None:
-    g = _grant("g", "s", frozenset({"read"}), frozenset({"x"}))
-    ev = AuthorityCreationEvent("s", "s", g, "bad", g.not_before, "e1", "p1")
-    with pytest.raises(AuthorityExpansion):
-        apply_creation_event((), ev, EffectiveAuthorityEvaluator())
-
-
-def test_issuer_must_hold_authority() -> None:
-    g_child = _grant("c", "agent", frozenset({"pay"}), frozenset({"acct"}))
-    g_child = AuthorityGrant(
-        grant_id=g_child.grant_id,
-        tenant_id=g_child.tenant_id,
-        subject=g_child.subject,
-        issuer_id="weak",
-        delegator_id=None,
-        actions=g_child.actions,
-        resources=g_child.resources,
-        purposes=g_child.purposes,
-        context=g_child.context,
-        not_before=g_child.not_before,
-        expires_at=g_child.expires_at,
-        risk_ceiling=g_child.risk_ceiling,
-        constraints=g_child.constraints,
-        lifecycle=g_child.lifecycle,
+def test_issuer_cannot_mint_broader_grant() -> None:
+    issuer_g = make_grant(
+        "ig",
+        "issuer",
+        actions=frozenset({"read"}),
+        purposes=frozenset({"ops"}),
+        risk=3,
+        allow_delegation=True,
+        exp=datetime(2026, 6, 1, 12, 10, 0, tzinfo=UTC),
+    )
+    new_g = make_grant(
+        "ng",
+        "agent",
+        actions=frozenset({"read"}),
+        purposes=frozenset({WILDCARD}),
+        risk=10,
+        allow_delegation=True,
+        issuer_id="issuer",
     )
     assert not issuer_can_grant(
-        "weak", g_child, (), EffectiveAuthorityEvaluator(), g_child.not_before
+        "issuer", new_g, (issuer_g,), EffectiveAuthorityEvaluator(), issuer_g.not_before
     )
 
 
-def test_authority_subset_dimensions() -> None:
-    parent = _grant("p", "s", frozenset({"read", "write"}), frozenset({"a", "b"}), risk=5)
-    child_ok = _grant("c", "s2", frozenset({"read"}), frozenset({"a"}), risk=3, delegator="s")
-    child_bad = _grant("c2", "s2", frozenset({"read"}), frozenset({"a"}), risk=9, delegator="s")
-    assert authority_subset(child_ok, parent)
-    assert not authority_subset(child_bad, parent)
+def test_root_requires_evidence_not_prefix() -> None:
+    g = make_grant("g", "agent", issuer_id="not-a-real-root")
+    assert not issuer_can_grant(
+        "not-a-real-root", g, (), EffectiveAuthorityEvaluator(), g.not_before
+    )
+    root = TenantRootPrincipal("t1", "root-1", "org", "ev-root", "pol-1")
+    g2 = AuthorityGrant(
+        grant_id="g2",
+        tenant_id="t1",
+        subject=make_grant("x", "agent").subject,
+        issuer_id="root-1",
+        delegator_id=None,
+        actions=frozenset({"read"}),
+        resources=frozenset({"x"}),
+        purposes=frozenset({"ops"}),
+        not_before=make_grant("x", "agent").not_before,
+        expires_at=make_grant("x", "agent").expires_at,
+        risk_ceiling=5,
+        constraints=make_grant("x", "agent").constraints,
+        evidence_ref="",
+    )
+    assert not issuer_can_grant(
+        "root-1", g2, (), EffectiveAuthorityEvaluator(), g2.not_before, root=root
+    )

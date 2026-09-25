@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Generic, Protocol, TypeVar
 
@@ -32,7 +33,13 @@ class ProbabilityMass(Generic[W]):
     masses: tuple[tuple[W, float], ...]
 
     def __post_init__(self) -> None:
-        total = sum(p for _, p in self.masses)
+        total = 0.0
+        for _, p in self.masses:
+            if not math.isfinite(p):
+                raise ValueError("probability must be finite")
+            if p < 0.0 or p > 1.0:
+                raise ValueError("probability out of range [0,1]")
+            total += p
         if self.masses and abs(total - 1.0) > 1e-9:
             raise ValueError("probabilities must sum to 1")
 

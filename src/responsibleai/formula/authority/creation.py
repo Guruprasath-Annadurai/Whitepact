@@ -6,8 +6,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from responsibleai.formula.authority.algebra import EffectiveAuthorityEvaluator
+from responsibleai.formula.authority.algebra import (
+    EffectiveAuthorityEvaluator,
+    grant_contained_in_issuer_authority,
+)
 from responsibleai.formula.authority.models import AuthorityGrant, AuthorityLifecycle
+from responsibleai.formula.authority.root import TenantRootPrincipal
+from responsibleai.formula.authority.tenant import validate_creation_event_tenant
 from responsibleai.formula.errors import AuthorityExpansion, InvalidGrant
 
 
@@ -22,38 +27,60 @@ class AuthorityCreationEvent:
     policy_version: str
 
 
+def validate_creation_event(event: AuthorityCreationEvent) -> None:
+    validate_creation_event_tenant(event)
+    if not event.evidence_ref:
+        raise InvalidGrant("creation event requires evidence_ref")
+    if not event.policy_version:
+        raise InvalidGrant("creation event requires policy_version")
+    g = event.new_grant
+    if g.issuer_id != event.issuer_id:
+        raise InvalidGrant("grant issuer must match event issuer")
+    if g.subject.subject_id != event.subject_id:
+        raise InvalidGrant("grant subject must match event subject")
+    if event.at < g.not_before:
+        raise InvalidGrant("creation before grant not_before")
+    if event.at >= g.expires_at:
+        raise InvalidGrant("creation at or after grant expiry")
+
+
 def issuer_can_grant(
     issuer_id: str,
     grant: AuthorityGrant,
     issuer_grants: tuple[AuthorityGrant, ...],
     evaluator: EffectiveAuthorityEvaluator,
     at: datetime,
+    root: TenantRootPrincipal | None = None,
 ) -> bool:
-    """Issuer must already hold superset authority (or be tenant root)."""
     if grant.issuer_id != issuer_id:
         return False
     if grant.subject.subject_id == issuer_id:
         return False
-    if issuer_id.startswith("tenant_root:"):
+    if root is not None and root.is_issuer(issuer_id, grant.tenant_id):
+        if not grant.evidence_ref:
+            return False
+        if root.ceiling is not None and evaluator.ceiling is None:
+            pass
         return True
-    effective = evaluator.effective(issuer_grants, (), issuer_id, at)
-    for action in grant.actions:
-        for resource in grant.resources:
-            if not any(t.action == action and t.resource == resource for t in effective):
-                return False
-    return True
+    return grant_contained_in_issuer_authority(grant, issuer_grants, at, issuer_id)
 
 
 def apply_creation_event(
     state: tuple[AuthorityGrant, ...],
     event: AuthorityCreationEvent,
     evaluator: EffectiveAuthorityEvaluator,
+    root: TenantRootPrincipal | None = None,
 ) -> tuple[AuthorityGrant, ...]:
-    if not issuer_can_grant(event.issuer_id, event.new_grant, state, evaluator, event.at):
+    validate_creation_event(event)
+    if not issuer_can_grant(event.issuer_id, event.new_grant, state, evaluator, event.at, root):
         raise AuthorityExpansion("issuer cannot mint this grant")
     grant = event.new_grant
     if grant.lifecycle == AuthorityLifecycle.PENDING:
+        if event.at < grant.not_before:
+            raise InvalidGrant("cannot activate grant before not_before")
         grant = _with_lifecycle(grant, AuthorityLifecycle.ACTIVE)
+    elif grant.lifecycle != AuthorityLifecycle.ACTIVE:
+        raise InvalidGrant(f"grant lifecycle {grant.lifecycle} not active at creation")
     return state + (grant,)
 
 

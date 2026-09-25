@@ -16,21 +16,27 @@ def lifecycle_at(grant: AuthorityGrant, at: datetime) -> AuthorityLifecycle:
         return AuthorityLifecycle.CONSUMED
     if grant.lifecycle == AuthorityLifecycle.SUPERSEDED:
         return AuthorityLifecycle.SUPERSEDED
-    if at < grant.not_before:
-        return AuthorityLifecycle.PENDING
     if at >= grant.expires_at:
         return AuthorityLifecycle.EXPIRED
-    return AuthorityLifecycle.ACTIVE
+    if at < grant.not_before:
+        return AuthorityLifecycle.PENDING
+    if grant.lifecycle == AuthorityLifecycle.PENDING:
+        return AuthorityLifecycle.PENDING
+    if grant.lifecycle == AuthorityLifecycle.ACTIVE:
+        return AuthorityLifecycle.ACTIVE
+    return grant.lifecycle
 
 
 def assert_grant_usable(grant: AuthorityGrant, at: datetime) -> None:
     state = lifecycle_at(grant, at)
-    if state == AuthorityLifecycle.EXPIRED:
-        raise ExpiredGrant(grant.grant_id)
-    if state == AuthorityLifecycle.REVOKED:
-        raise RevokedGrant(grant.grant_id)
-    if state == AuthorityLifecycle.CONSUMED:
-        raise ConsumedGrant(grant.grant_id)
+    if state != AuthorityLifecycle.ACTIVE:
+        if state == AuthorityLifecycle.EXPIRED:
+            raise ExpiredGrant(grant.grant_id)
+        if state == AuthorityLifecycle.REVOKED:
+            raise RevokedGrant(grant.grant_id)
+        if state == AuthorityLifecycle.CONSUMED:
+            raise ConsumedGrant(grant.grant_id)
+        raise ConsumedGrant(f"grant {grant.grant_id} not active: {state}")
 
 
 def consume_grant(grant: AuthorityGrant) -> AuthorityGrant:

@@ -3,12 +3,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
 from responsibleai.formula.epistemic import EpistemicStatus
+from responsibleai.formula.immutability import freeze_mapping
 
 
 class AuthorityLifecycle(StrEnum):
@@ -46,9 +48,19 @@ class AuthorityPurpose:
 
 @dataclass(frozen=True, slots=True)
 class AuthorityContext:
-    """Context constraints that must match for grant applicability."""
+    """Immutable context constraints (equality keys required at evaluation)."""
 
-    attributes: dict[str, Any] = field(default_factory=dict)
+    _pairs: tuple[tuple[str, Any], ...] = ()
+
+    @classmethod
+    def from_mapping(cls, mapping: Mapping[str, Any] | None = None) -> AuthorityContext:
+        if not mapping:
+            return cls(())
+        return cls(freeze_mapping(mapping))
+
+    @property
+    def attributes(self) -> dict[str, Any]:
+        return dict(self._pairs)
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,11 +89,11 @@ class AuthorityGrant:
     actions: frozenset[str]
     resources: frozenset[str]
     purposes: frozenset[str]
-    context: AuthorityContext
     not_before: datetime
     expires_at: datetime
     risk_ceiling: int
     constraints: AuthorityConstraint
+    context: AuthorityContext = field(default_factory=AuthorityContext.from_mapping)
     lifecycle: AuthorityLifecycle = AuthorityLifecycle.PENDING
     evidence_ref: str = ""
     epistemic_status: EpistemicStatus = EpistemicStatus.DECLARED
@@ -89,11 +101,9 @@ class AuthorityGrant:
     version: int = 1
 
     def valid_at(self, at: datetime) -> bool:
-        if self.lifecycle not in (AuthorityLifecycle.ACTIVE, AuthorityLifecycle.PENDING):
-            return False
-        if self.lifecycle == AuthorityLifecycle.PENDING and at < self.not_before:
-            return False
-        return self.not_before <= at < self.expires_at
+        from responsibleai.formula.authority.lifecycle import lifecycle_at
+
+        return lifecycle_at(self, at) == AuthorityLifecycle.ACTIVE
 
 
 @dataclass(frozen=True, slots=True)
