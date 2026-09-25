@@ -19,7 +19,7 @@
 
 **Branch:** `feature/whitepact-formula-omega-v0.1` (from `v1.3.1`)
 
-**Gate 1 commit:** *(set at push — see `git rev-parse HEAD` on branch)*
+**Gate 1 commit:** `a3128babd14da71a5454a6b5b5262019cb66bbbd`
 
 ---
 
