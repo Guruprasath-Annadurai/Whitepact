@@ -2,5 +2,5 @@
 # Regenerate with:
 #   uv pip compile requirements-security.in --generate-hashes \
 #     --python-version 3.12 --output-file requirements-security.lock
-bandit==1.8.6
+bandit==1.9.4
 pip-audit==2.10.0
