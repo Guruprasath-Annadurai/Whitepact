@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Baseline SHA | `a471e497dba752812af7346efa341e5360ab5319` |
-| Final SHA | `2b923187657903977907c60db84d439a329b0e83` |
+| Final SHA | `ac0ef1ef8093c516693f3b78426f7bd460f8590d` |
 | Tree | `aacb6622feb865ebae42f8d32ef3a2814f4c4ab2` |
 | Version | **1.3.1** (unchanged) |
 | PR | **#114** (not merged) |
