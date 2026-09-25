@@ -15,7 +15,7 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│                        WhitePact  v1.3.0                                     │
+│                        WhitePact  v1.3.1                                     │
 │                                                                              │
 │  ┌──────────────┐  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐  │
 │  │ Governance   │  │ Trust Score │  │  Compliance  │  │  Guardrails      │  │
@@ -68,7 +68,7 @@ and a live dashboard — that covers the full governance lifecycle:
 | Can I cite and verify a trust score anywhere? | `Trust Index` | Free self-assessed or human-reviewed certified passport, verifiable at `/verify/{id}`, embeddable badge |
 | Has this AI system failed publicly before? | `AI Incident Database` | Crowd-reported, moderator-reviewed, hash-chained public registry |
 | Should my agent trust this third-party tool before calling it? | `rai_check_trust` + LangChain/LangGraph/ADK integrations | Free lookup, plus a real block/pause gate in-agent |
-| Can any MCP client govern every AI call? | `MCP Server` | 27 governance tools over stdio, Streamable HTTP, or legacy HTTP+SSE |
+| Can any MCP client govern every AI call? | `MCP Server` | 30 production governance tools over stdio, Streamable HTTP, or legacy HTTP+SSE |
 
 ---
 
@@ -93,8 +93,9 @@ pip install "rai-governance-platform[all]"
 
 The published PyPI package name (`rai-governance-platform`) and the import
 name (`responsibleai`) predate the WhitePact rename and are kept as-is —
-see `MIGRATION_WHITEPACT_V2.md` Section 3 for why an alias package
-(`whitepact`) was added instead of renaming the published package outright.
+see `MIGRATION_WHITEPACT_V2.md` Section 3 and `docs/PACKAGE_IDENTITY.md`
+for install vs import vs product naming (do not use `pip install whitepact`
+unless PyPI documents that distribution).
 
 ---
 

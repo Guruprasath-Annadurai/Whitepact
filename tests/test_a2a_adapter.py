@@ -72,10 +72,11 @@ class TestTrustDimension:
         assert result.allowed is False
         assert any("trust score" in r for r in result.reasons)
 
-    def test_unknown_agent_fails_open_by_default(self) -> None:
+    def test_unknown_agent_fails_closed_by_default(self) -> None:
         gate = A2ATrustGate(min_score=70, client=_client_returning(_unknown_result()))
         result = gate.check("partner-agent", "acme-corp", BENIGN_MESSAGE)
-        assert result.allowed is True
+        assert result.allowed is False
+        assert any("no Trust Index record" in r for r in result.reasons)
 
     def test_unknown_agent_blocked_when_require_known(self) -> None:
         gate = A2ATrustGate(

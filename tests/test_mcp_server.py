@@ -340,11 +340,13 @@ class TestRaiCompliance:
         assert "compliance_score" in r
 
     @pytest.mark.asyncio
-    async def test_invalid_framework_falls_back(self) -> None:
+    async def test_invalid_framework_returns_invalid_argument(self) -> None:
         from responsibleai.mcp.tools import dispatch_tool
 
         r = await dispatch_tool("rai_compliance", {"framework": "UNKNOWN_XYZ"})
-        assert "compliance_score" in r
+        assert r["error"] == "invalid_argument"
+        assert r["field"] == "framework"
+        assert r["tool"] == "rai_compliance"
 
 
 class TestRaiHallucination:
@@ -609,7 +611,14 @@ class TestRaiIncidentLog:
         tool says so instead of pointing at a 404."""
         from responsibleai.mcp.tools import dispatch_tool
 
-        r = await dispatch_tool("rai_incident_log", {"description": "test"})
+        r = await dispatch_tool(
+            "rai_incident_log",
+            {
+                "incident_type": "other",
+                "severity": "low",
+                "description": "test",
+            },
+        )
         assert "POST /api/incidents" in r["persist_instructions"]
         assert "/api/v1/incidents" not in r["persist_instructions"]
 

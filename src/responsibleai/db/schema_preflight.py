@@ -4,8 +4,20 @@
 
 from __future__ import annotations
 
+import operator
+from collections.abc import Sequence
+from typing import cast
+
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import Connection
+
+
+def _alembic_version_rows(connection: Connection) -> list[str]:
+    rows = cast(
+        Sequence[tuple[str, ...]],
+        connection.execute(text("SELECT version_num FROM alembic_version")).fetchall(),
+    )
+    return list(map(str, map(operator.itemgetter(0), rows)))
 
 
 class SchemaLineageError(RuntimeError):
@@ -18,7 +30,7 @@ def validate_schema_lineage(connection: Connection) -> None:
     if not tables or tables == {"alembic_version"}:
         if "alembic_version" not in tables:
             return
-        rows = connection.execute(text("SELECT version_num FROM alembic_version")).scalars().all()
+        rows = _alembic_version_rows(connection)
         if not rows:
             return
         raise SchemaLineageError(
@@ -28,8 +40,8 @@ def validate_schema_lineage(connection: Connection) -> None:
         raise SchemaLineageError(
             "Refusing unversioned nonempty database; inventory schema before migration"
         )
-    rows = connection.execute(text("SELECT version_num FROM alembic_version")).scalars().all()
-    if len(rows) != 1 or not isinstance(rows[0], str) or not rows[0].isdigit():
+    rows = _alembic_version_rows(connection)
+    if len(rows) != 1 or not rows[0].isdigit():
         raise SchemaLineageError("Refusing unversioned or ambiguous canonical migration lineage")
     revision = int(rows[0])
     requirements = {

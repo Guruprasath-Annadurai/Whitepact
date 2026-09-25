@@ -18,7 +18,16 @@ export function DashboardShell() {
   const location = useLocation();
   const sidebar = useRef<HTMLElement>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
-  useEffect(() => { api<WebSession>("/api/v1/web/session").then(setSession).catch(() => navigate(`/login?next=${encodeURIComponent(location.pathname)}`)); }, [location.pathname, navigate]);
+  useEffect(() => {
+    api<WebSession>("/api/v1/web/session")
+      .then((value) => {
+        setSession(value);
+        if (!value.organization && !location.pathname.startsWith("/onboarding")) {
+          navigate("/onboarding", { replace: true });
+        }
+      })
+      .catch(() => navigate(`/login?next=${encodeURIComponent(location.pathname)}`));
+  }, [location.pathname, navigate]);
   useEffect(() => {
     if (!open) return;
     const node = sidebar.current;

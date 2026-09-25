@@ -79,7 +79,7 @@ class TestSyncWrapToolCall:
         result = mw.wrap_tool_call(_FakeRequest("good-tool"), lambda req: "HANDLER_RAN")
         assert result == "HANDLER_RAN"
 
-    def test_unknown_tool_passes_by_default(self) -> None:
+    def test_unknown_tool_blocked_by_default_fail_closed(self) -> None:
         unknown = TrustCheckResult(
             model="never-assessed",
             provider="unknown",
@@ -91,8 +91,12 @@ class TestSyncWrapToolCall:
         client = _client_returning(unknown)
         mw = TrustGateMiddleware(min_score=50, client=client)
 
-        result = mw.wrap_tool_call(_FakeRequest("never-assessed"), lambda req: "OK")
-        assert result == "OK"
+        def handler(_request):
+            raise AssertionError("handler must not run for unknown trust")
+
+        result = mw.wrap_tool_call(_FakeRequest("never-assessed"), handler)
+        assert result.status == "error"
+        assert "never-assessed" in result.content
 
     def test_unknown_tool_blocked_when_require_known(self) -> None:
         unknown = TrustCheckResult(

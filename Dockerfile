@@ -23,7 +23,8 @@ FROM python:3.12-slim@sha256:7a8b475003c4fe15a2cd4e55e5cfc2f3560bdc9333d624f24cd
 
 WORKDIR /build
 RUN pip install --upgrade pip build
-COPY pyproject.toml README.md LICENSE ./
+COPY pyproject.toml README.md LICENSE alembic.ini ./
+COPY migrations/ ./migrations/
 COPY src/ ./src/
 COPY --from=web-builder /web-dist/ ./src/responsibleai/dashboard/static/whitepact/
 RUN python -m build --wheel --outdir /dist
@@ -31,9 +32,11 @@ RUN python -m build --wheel --outdir /dist
 
 FROM python:3.12-slim@sha256:7a8b475003c4fe15a2cd4e55e5cfc2f3560bdc9333d624f24cdd6d4340fd7a17 AS runtime
 
+ARG WHITEPACT_VERSION=1.3.1
+
 LABEL org.opencontainers.image.title="WhitePact Governance Platform"
 LABEL org.opencontainers.image.description="Runtime governance between AI agents and action"
-LABEL org.opencontainers.image.version="1.2.6"
+LABEL org.opencontainers.image.version=$WHITEPACT_VERSION
 LABEL org.opencontainers.image.licenses="MIT"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -43,8 +46,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     WHITEPACT_LOG_JSON=true \
     WHITEPACT_DB_PATH=/data/responsibleai.db
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
+# Apply Debian security updates for runtime OS packages (gzip, openssl, perl-base, etc.)
+# before installing curl. Keeps the pinned python:3.12-slim digest; only refreshes
+# the apt layer against current security advisories.
+RUN apt-get update && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd --gid 1001 appgroup && \

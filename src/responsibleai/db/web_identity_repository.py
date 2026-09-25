@@ -765,7 +765,7 @@ class WebIdentityRepository:
 
     async def is_sole_owner_of_any_org(self, user_id: str) -> bool:
         async with self._engine.raw.connect() as conn:
-            owned_org_ids = (
+            owned_org_ids: list[str] = list(
                 (
                     await conn.execute(
                         select(web_memberships.c.org_id).where(
@@ -818,7 +818,7 @@ class WebIdentityRepository:
             ).first()
             old_email = user_row[0] if user_row else ""
 
-            sess_rows = (
+            sess_rows: list[str] = list(
                 (
                     await conn.execute(
                         select(web_sessions.c.token_hash).where(web_sessions.c.user_id == user_id)

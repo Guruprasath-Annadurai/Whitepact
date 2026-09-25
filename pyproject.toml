@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rai-governance-platform"
-version = "1.3.0"
+version = "1.3.1"
 description = "ResponsibleAI — Enterprise AI Governance Platform: trust scoring, bias detection, hallucination detection, guardrails, compliance (NIST AI RMF / EU AI Act / ISO 42001), cost intelligence, drift monitoring"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -178,6 +178,10 @@ Changelog  = "https://github.com/Guruprasath-Annadurai/Whitepact/blob/main/CHANG
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/biasbuster", "src/privacylabel", "src/responsibleai", "src/whitepact"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"alembic.ini" = "alembic.ini"
+"migrations" = "migrations"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

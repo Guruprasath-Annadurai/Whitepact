@@ -27,3 +27,11 @@ def test_v1_application_version_surfaces_agree() -> None:
     web_version = json.loads(WEB_PACKAGE.read_text(encoding="utf-8"))["version"]
     assert responsibleai.__version__ == pyproject_version
     assert web_version == pyproject_version
+
+
+def test_dockerfile_oci_version_matches_package() -> None:
+    dockerfile = (REPO_ROOT / "Dockerfile").read_text(encoding="utf-8")
+    version = _pyproject_version()
+    assert f"WHITEPACT_VERSION={version}" in dockerfile
+    chart = (REPO_ROOT / "helm" / "rai-governance" / "Chart.yaml").read_text(encoding="utf-8")
+    assert f'appVersion: "{version}"' in chart

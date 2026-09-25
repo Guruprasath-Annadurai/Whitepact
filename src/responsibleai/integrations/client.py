@@ -20,6 +20,9 @@ import httpx
 DEFAULT_BASE_URL = "https://responsibleai-dashboard.onrender.com"
 DEFAULT_TIMEOUT_SECONDS = 5.0
 BASE_URL_ENV_VAR = "RAI_TRUST_API_BASE"
+WHITEPACT_TRUST_API_BASE_ENV = "WHITEPACT_TRUST_API_BASE"
+WHITEPACT_TRUST_FAILURE_MODE_ENV = "WHITEPACT_TRUST_FAILURE_MODE"
+RAI_TRUST_FAILURE_MODE_ENV = "RAI_TRUST_FAILURE_MODE"
 # Continuous MCP Trust (v3 authority-layer work): a governed call with a
 # provider/model pair does a live Trust Index lookup, but every one of
 # those was a real network round-trip in the hot dispatch path -- this
@@ -61,29 +64,61 @@ class TrustCheckResult:
     def is_stale(self, ttl_minutes: float) -> bool:
         return datetime.now(UTC) - self.checked_at > timedelta(minutes=ttl_minutes)
 
-    def passes(self, *, min_score: float = 0.0, require_known: bool = False) -> bool:
-        """Should this model/tool be allowed to run?
+    def trust_status(self, *, min_score: float = 0.0) -> str:
+        """Explicit trust disposition for authorization and MCP responses.
 
-        Fails open (returns True) on a network/API error or an unknown
-        model, unless `require_known=True` — this project can't vouch for
-        a model it has never scored, and defaulting to fail-closed would
-        block every unassessed tool call out of the box, which is a worse
-        default for adoption than being explicit about the tradeoff here.
-        Reported incidents alone don't fail the check (a resolved,
-        low-severity incident shouldn't silently block a tool) — callers
-        that care should inspect `has_reported_incidents`/`recent_incidents`
-        directly and decide their own policy.
+        TRUSTED — known model with score meeting ``min_score``.
+        UNTRUSTED — known model below threshold.
+        UNKNOWN — provider outage, stale/unverifiable data, or unknown model.
         """
-        if self.error is not None:
-            return True
+        if self.error is not None and not self.stale:
+            return "UNKNOWN"
+        if self.stale:
+            return "UNKNOWN"
         if not self.known:
-            return not require_known
+            return "UNKNOWN"
         score = self.overall_score if self.overall_score is not None else 0.0
-        return score >= min_score
+        return "TRUSTED" if score >= min_score else "UNTRUSTED"
+
+    def passes(self, *, min_score: float = 0.0, require_known: bool = False) -> bool:
+        """Whether this result satisfies a trust threshold for admission.
+
+        Defaults to fail-closed: UNKNOWN (including provider errors and
+        unknown models) never passes. Set ``WHITEPACT_TRUST_FAILURE_MODE=advisory``
+        only for non-authorizing advisory surfaces that must not block on
+        outages while still reporting ``trust_status=UNKNOWN``.
+        """
+        status = self.trust_status(min_score=min_score)
+        if status == "TRUSTED":
+            return True
+        if status == "UNTRUSTED":
+            return False
+        if require_known:
+            return False
+        mode = (
+            (
+                os.environ.get(WHITEPACT_TRUST_FAILURE_MODE_ENV)
+                or os.environ.get(RAI_TRUST_FAILURE_MODE_ENV)
+                or "closed"
+            )
+            .strip()
+            .lower()
+        )
+        if mode == "advisory":
+            # Advisory-only: still not treated as TRUSTED; callers must not
+            # equate this with authorization to execute.
+            return False
+        return False
 
 
 def _resolve_base_url(base_url: str | None) -> str:
-    return (base_url or os.environ.get(BASE_URL_ENV_VAR, DEFAULT_BASE_URL)).rstrip("/")
+    resolved = (
+        base_url
+        or os.environ.get(WHITEPACT_TRUST_API_BASE_ENV)
+        or os.environ.get(BASE_URL_ENV_VAR)
+        or DEFAULT_BASE_URL
+    )
+    return resolved.rstrip("/")
 
 
 def _result_from_response(model: str, provider: str, data: dict[str, Any]) -> TrustCheckResult:

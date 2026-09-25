@@ -288,7 +288,17 @@ async def _call_tool(
             return _text_and_structured(
                 {
                     "error": "governance_purpose_required",
-                    "message": "Hosted tool execution requires an explicit _whitepact_purpose.",
+                    "message": (
+                        "Hosted WhitePact tool execution requires a human-readable "
+                        "purpose string in the tool arguments under "
+                        "'_whitepact_purpose' (for example: "
+                        '"Approve vendor invoice batch for Q1 close"). '
+                        "Session IDs, MCP connection metadata, or generic "
+                        "placeholders are not valid purposes — the value is "
+                        "recorded in the governance evidence chain as declared intent."
+                    ),
+                    "field": "_whitepact_purpose",
+                    "documentation": "https://github.com/Guruprasath-Annadurai/Whitepact/blob/main/docs/MCP_HOSTED_PURPOSE.md",
                 }
             )
         governed_arguments = dict(call_arguments)
