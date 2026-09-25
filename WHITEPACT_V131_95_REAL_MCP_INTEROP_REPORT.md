@@ -28,6 +28,6 @@ src/responsibleai/webhooks/models.py                             45      2      
 TOTAL                                                         25855  16483   6004     68    30%
 Coverage HTML written to dir htmlcov
 Coverage JSON written to file coverage.json
-9 passed, 1 warning in 16.17s
+9 passed, 1 warning in 16.04s
 
 ```

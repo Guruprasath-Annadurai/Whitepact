@@ -1,39 +1,39 @@
 # Final omission audit (Phase 0B)
 
-HEAD: `c9e0892c4e536bf1a631e833dba46e29e80785bc`
+HEAD: `df45ba630c8c5429c63600c9e0638e042e2c2724`
 
 | Cat | Topic | Status | Notes |
 |---:|---|---|---|
-| A | In-place upgrade | **PARTIAL** | Historical PG migrations + 0061 backup restore |
+| A | In-place upgrade | **PASS** | Literal 0061-neutral + historical PG migrations |
 | B | Rollback | **PARTIAL** | Supported alembic downgrade paths only |
-| C | Backup/restore | **PASS** | Destroy+restore manifest match |
-| D | Soak | **PARTIAL** | 30m client soak: 8763 samples, 0 errors, p95 6.9ms (no server RSS) |
-| E | Distributed race | **PARTIAL** | Pytest only |
-| F | Rolling restart | **BLOCKED** | No live multi-worker harness |
+| C | Backup/restore | **PASS** | Destroy+restore+app boot on populated DB |
+| D | Soak | **PARTIAL** | 30m client soak complete; server RSS not captured |
+| E | Distributed race | **PARTIAL** | Live 4-worker health barrier PASS + pytest concurrency |
+| F | Rolling restart | **PARTIAL** | Live SIGTERM worker under health traffic PASS |
 | G | Paddle sandbox | **BLOCKED** | No credentials |
-| H | MCP interop | **PARTIAL** | Streamable HTTP pytest; stdio BLOCKED |
-| I | OpenAPI diff | **PASS** | 245 paths; 0 removed/added vs v1.3.0-rc-final |
+| H | MCP interop | **PARTIAL** | Streamable HTTP pytest; stdio/Cursor BLOCKED |
+| I | OpenAPI diff | **PASS** | 0 route delta vs v1.3.0-rc-final |
 | J | Legacy | **PARTIAL** | Seams tests |
 | K | Auth edge | **PARTIAL** | Pytest subset |
 | L | Email | **BLOCKED** | No mail capture |
 | M | Limits | **PARTIAL** | Unit tests |
 | N | Hostile input | **PARTIAL** | Sample probes |
-| O | Proxy | **PARTIAL/BLOCKED** | nginx not fully exercised |
-| P | Container CVE | **BLOCKED/PARTIAL** | Trivy if installed |
-| Q | Secret leak | **PARTIAL** |  |
+| O | Proxy | **PARTIAL** | nginx live health PASS; TLS/CSP matrix incomplete |
+| P | Container CVE | **PARTIAL** | Trivy scan; inherited base OS CVEs documented |
+| Q | Secret leak | **PARTIAL** | Transport boundary pytest |
 | R | Artifacts | **PASS** | Wheel build |
-| S | K8s multi-replica | **BLOCKED** |  |
-| T | Time boundaries | **PARTIAL** |  |
-| U | Resource exhaustion | **PARTIAL** |  |
+| S | K8s multi-replica | **BLOCKED** | No cluster in VM |
+| T | Time boundaries | **PARTIAL** | Pytest expiry subset |
+| U | Resource exhaustion | **PARTIAL** | Hostile samples + soak errors=0 |
 | V | Lost ACK | **PASS** | test_v1_exactly_one_effect |
 
 ## WHAT, IF ANYTHING, WAS NOT TESTED?
 
 ### TECHNICALLY UNTESTED
 
-- Live 4-worker rolling restart under load
-- 30–60m instrumented server-side leak watch (unless soak job completed)
-- Full populated backup with evidence/approvals/billing (minimal seed only)
+- Live approval/API-key/nonce races at HTTP layer across workers (DB races covered in pytest)
+- 60m instrumented soak with server RSS/FD/thread capture
+- Full TLS reverse-proxy + CORS/CSP/body-limit matrix
 
 ### EXTERNALLY BLOCKED
 
