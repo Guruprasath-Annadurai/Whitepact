@@ -45,6 +45,7 @@
 - **T. Clock / expiry boundaries** — PARTIAL: JWT/TOTP expiry covered in unit tests; fake-clock boundary sweep not run live.
 - **U. Resource exhaustion / backpressure** — PARTIAL: Trust outage → UNKNOWN fail-closed; full pool saturation not live-proven.
 - **V. Partial side-effect / lost acknowledgement** — PARTIAL: UNKNOWN disposition + restore reconcile tests; full external-success/lost-ACK live sim not run.
+- **D. Long-run soak** — PARTIAL: 120s health loop against `wp-hardening-smoke`; no server leak instrumentation.
 
 ## Soak artifact
 

@@ -47,3 +47,4 @@ coverage.json
 *.fls
 *.fdb_latexmk
 compliance/trust_index_paper.pdf
+release-evidence/**/wheels/
