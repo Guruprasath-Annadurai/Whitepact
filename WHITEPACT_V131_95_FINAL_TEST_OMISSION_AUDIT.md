@@ -1,6 +1,6 @@
 # Final omission audit (Phase 0B)
 
-HEAD: `df45ba630c8c5429c63600c9e0638e042e2c2724`
+HEAD: `a60adae`
 
 | Cat | Topic | Status | Notes |
 |---:|---|---|---|
