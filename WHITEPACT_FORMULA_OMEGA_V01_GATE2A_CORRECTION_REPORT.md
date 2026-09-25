@@ -3,8 +3,8 @@
 **PR:** #117  
 **Branch:** `feature/whitepact-formula-omega-v0.1-gate2`  
 **Gate 2A base (pre-correction head):** `1fd2f513f8e5e13b74d28344f94bc5f0e8068d72`  
-**Gate 2A final head:** `e42a27f33784d720dbd99830d16db723fd0a841f` (tree `e42a27f33784d720dbd99830d16db723fd0a841f`)  
-**Formula unit tests:** 37 (`tests/formula/`)  
+**Gate 2A final head (CI green):** `2cc7180c31220d4f1f2e689f2afb34110c7eb240` (tree `63b64a866e96eaaf40d5daaba0df870b0a3b83b9`)  
+**Formula unit tests:** 51 (`tests/formula/`)  
 **Property matrix:** P1–P12 in `tests/formula/test_gate2_properties_p1_p12.py`
 
 ## Summary
@@ -33,7 +33,7 @@ Gate 2A closes independent-review P1 authority-model defects: fail-closed contex
 | 16 | Declared invariants without checks | `INV_UNKNOWN`, `INV_ORG_CEILING` missing | Implemented on `FormulaInvariantChecker` | invariant + P1/P8 | Executable |
 | 17 | Incomplete P1–P12 | Placeholders | Full matrix `test_gate2_properties_p1_p12.py` | 12 properties | Covered |
 | 18 | Conservation after fixes | Prior partial verdict | Re-run; no known pure-algebra widening after fixes | property + adversarial suite | See §Conservation |
-| 19 | CI | Red on authority defects | `ruff`, `mypy`, `pytest tests/formula` green locally | CI on PR head | Pending exact-head green |
+| 19 | CI | Red on authority defects | Branch coverage tests + full suite | 16/16 checks on `2cc7180` | Green |
 | 20 | Reports | Gate 2 report stale | This file + updated `WHITEPACT_FORMULA_OMEGA_V01_GATE2_REPORT.md` | — | Updated |
 | 21 | Verdict | — | — | — | See §Verdict |
 | 22 | Hard stop | — | No Gate 3 / no merge | — | Observed |

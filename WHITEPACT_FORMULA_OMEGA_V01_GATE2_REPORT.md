@@ -13,7 +13,7 @@ Independent review Gate 2A corrections are documented in
 `WHITEPACT_FORMULA_OMEGA_V01_GATE2A_CORRECTION_REPORT.md`.
 
 Pre–2A head: `1fd2f513f8e5e13b74d28344f94bc5f0e8068d72`  
-Post–2A head: `e42a27f33784d720dbd99830d16db723fd0a841f` (tree `e42a27f33784d720dbd99830d16db723fd0a841f`).
+Post–2A head (CI green): `2cc7180c31220d4f1f2e689f2afb34110c7eb240` (tree `63b64a866e96eaaf40d5daaba0df870b0a3b83b9`).
 
 ## Baseline (Gate 2 branch parent)
 
@@ -24,7 +24,7 @@ Post–2A head: `e42a27f33784d720dbd99830d16db723fd0a841f` (tree `e42a27f33784d7
 ## Deliverables
 
 - `src/responsibleai/formula/` — graph, authority algebra, traces, invariants, serialization  
-- `tests/formula/` — 37 unit/property/adversarial tests (P1–P12 matrix)  
+- `tests/formula/` — 51 unit/property/adversarial tests (P1–P12 matrix + branch coverage)  
 - Gate 2 docs under `docs/formula/WHITEPACT_FORMULA_GATE2_*` and algebra/trace supplements  
 
 ## Transition typing
