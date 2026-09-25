@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|-------|
 | Starting SHA (Phase 0B) | `c9e0892c4e536bf1a631e833dba46e29e80785bc` |
-| Final SHA | `0c9a34d` |
+| Final SHA | `17c6dfb` |
 | Tree | evidence + `scripts/phase0b/*` only (no Gate B / Phase7A / MCP tool count changes) |
 | PR | **#114** (not merged) |
 | Version | **1.3.1** |
