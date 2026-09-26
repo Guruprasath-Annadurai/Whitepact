@@ -221,7 +221,6 @@ def test_property_p3_monotone() -> None:
         edges=(edge("e1", EdgeKind.CAN_CALL, "a", "t"),),
     )
     empty = compute_capability_closure(snap, seeds=())
-    with_seed = compute_capability_closure(snap, seeds=empty.facts)
     checker = FormulaInvariantChecker()
     assert not checker.check_capability_closure_monotone(snap, (), empty.facts)
 
