@@ -1,27 +1,39 @@
 # Copyright (c) 2026 Guruprasath Annadurai
 # SPDX-License-Identifier: MIT
-"""Minimal stranger quickstart: authority allow/deny, evidence, revocation.
+"""Canonical stranger quickstart — production authority + execution path.
 
-Run from repository root (no API keys, no Docker):
+Exercises the same components the hosted MCP / dashboard governed-tool path uses:
+
+  OrgContext → GovernanceContext → AuthorityResolver (root + consent + delegation)
+  → WhitePactRuntimeGateway → authorize_execution → InternalToolExecutor
+
+Run from repository root:
 
     python examples/quickstart_stranger_authority.py
 
-Uses in-process SQLite (:memory:), ``WhitePactRuntimeGateway``, and
-``DelegationRepository`` — the same building blocks exercised in
-``tests/test_workflow_authority.py`` and ``examples/08_whitepact_enterprise_scenario.py``.
-
-For the full enterprise narrative (approvals, workflow sequences, bundles),
-run ``python examples/08_whitepact_enterprise_scenario.py`` next.
+No API keys, Docker, or network required.
 """
 
 from __future__ import annotations
 
 import asyncio
 import sys
+from datetime import UTC, datetime, timedelta
 
 sys.path.insert(0, "src")
 
-from responsibleai.db import DelegationRepository, EvidenceRepository, create_engine
+from responsibleai.db import (
+    ApprovalRepository,
+    DelegationRepository,
+    EvidenceRepository,
+    OrgRepository,
+    PolicyRepository,
+    create_engine,
+)
+from responsibleai.db.consent_proof_repository import ConsentProofRepository
+from responsibleai.db.execution_nonce_repository import ExecutionNonceRepository
+from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
+from responsibleai.db.root_authority_repository import RootAuthorityRepository
 from responsibleai.governance import (
     ActionRequest,
     AgentContext,
@@ -30,96 +42,171 @@ from responsibleai.governance import (
     IdentityContext,
     WhitePactRuntimeGateway,
 )
-from responsibleai.governance.evidence import build_evidence_record
+from responsibleai.governance.authority_resolver import AuthorityResolver
+from responsibleai.governance.consent_proof import ConsentMethod, build_consent_proof
+from responsibleai.governance.root_authority import RootType, build_root_authority_record
+from responsibleai.integrations.client import TrustClient
+from responsibleai.mcp.governance_integration import GovernanceServices, apply_governance
+from responsibleai.rbac.models import OrgContext, Plan, Role
 
-ORG_ID = "quickstart-org"
-AGENT_ID = "quickstart-agent"
-ACTION_TOOL = "payment.execute"  # stand-in for a governed tool/action type
+TOOL = "rai_health"
+PURPOSE = "stranger-quickstart"
+ORG_SLUG = "stranger-quickstart-co"
 
 
-def _agent() -> AgentContext:
-    identity = IdentityContext(identity_id=AGENT_ID, kind="agent", org_id=ORG_ID)
-    return AgentContext(identity=identity, agent_id=AGENT_ID, framework="quickstart")
+async def _seed_runtime_authority(
+    engine,
+    *,
+    organization_id: str,
+    principal_id: str,
+) -> None:
+    """Mirror tests/conftest.py seed_runtime_authority (explicit root + consent + delegation)."""
+    owner = f"test-owner:{organization_id}"
+    expires = datetime.now(UTC) + timedelta(hours=1)
+    root = build_root_authority_record(
+        owner,
+        RootType.HUMAN,
+        "whitepact-quickstart",
+        "stranger-quickstart-fixture",
+        organization_id=organization_id,
+        evidence_refs=("quickstart-root-evidence",),
+        expires_at=expires,
+    )
+    await RootAuthorityRepository(engine).create(root)
+    consent = build_consent_proof(
+        owner,
+        root.root_id,
+        principal_id,
+        "quickstart governed tool scope",
+        PURPOSE,
+        ConsentMethod.EXPLICIT_UI_ACTION,
+        allowed_action_types=(TOOL,),
+        allowed_targets=(TOOL,),
+        evidence_refs=("quickstart-consent-evidence",),
+        expires_at=expires,
+    )
+    await ConsentProofRepository(engine).create(consent, organization_id=organization_id)
+    await DelegationRepository(engine).grant(
+        organization_id,
+        principal_id,
+        granted_action_types=frozenset({TOOL}),
+        constraints={"allowed_targets": [TOOL]},
+        purpose=PURPOSE,
+        granted_by=owner,
+        expires_at=expires,
+    )
+
+
+def _services(engine) -> GovernanceServices:
+    delegations = DelegationRepository(engine)
+    return GovernanceServices(
+        gateway=WhitePactRuntimeGateway(),
+        evidence_repo=EvidenceRepository(engine),
+        approval_repo=ApprovalRepository(engine),
+        policy_repo=PolicyRepository(engine),
+        trust_client=TrustClient(),
+        webhook_manager=None,
+        ceiling_repo=None,
+        workflow_rule_repo=None,
+        delegation_repo=delegations,
+        autonomy_budget_repo=None,
+        outcome_repo=None,
+        intent_repo=None,
+        nonce_repo=ExecutionNonceRepository(engine),
+        epoch_repo=RevocationEpochRepository(engine),
+        authority_resolver=AuthorityResolver(
+            RootAuthorityRepository(engine),
+            ConsentProofRepository(engine),
+            delegations,
+        ),
+        org_repo=OrgRepository(engine),
+    )
+
+
+async def _governed_call(services: GovernanceServices, ctx: OrgContext) -> dict:
+    outcome = await apply_governance(TOOL, {}, ctx, services, purpose=PURPOSE)
+    if outcome.proceed:
+        assert outcome.result is not None
+        return {"status": "executed", "result": outcome.result}
+    assert outcome.blocked_response is not None
+    return outcome.blocked_response
 
 
 async def main() -> None:
-    print("WhitePact stranger quickstart (local, in-memory)\n")
+    print("WhitePact canonical stranger quickstart\n")
 
     engine = create_engine(":memory:")
     await engine.init()
-    delegations = DelegationRepository(engine)
+
+    org_repo = OrgRepository(engine)
+    org = await org_repo.create_org("Stranger Quickstart Co", ORG_SLUG, plan=Plan.ENTERPRISE)
+    _key_rec, _raw_key = await org_repo.create_key(org.id, "quickstart-key", role=Role.ANALYST)
+    principal_id = _key_rec.id
+
+    await _seed_runtime_authority(
+        engine,
+        organization_id=org.id,
+        principal_id=principal_id,
+    )
+
+    ctx = OrgContext(
+        key_id=principal_id,
+        role=Role.ANALYST,
+        org_id=org.id,
+        org_name=org.name,
+        plan=Plan.ENTERPRISE,
+        authentication_method="api_key",
+    )
+    services = _services(engine)
     evidence_repo = EvidenceRepository(engine)
-    gateway = WhitePactRuntimeGateway()
+    delegations = DelegationRepository(engine)
 
-    # 2–4. Authority context + agent + one governed action type
-    print("[1] Grant delegated authority to the agent")
-    record = await delegations.grant(
-        ORG_ID,
-        AGENT_ID,
-        granted_action_types=frozenset({ACTION_TOOL}),
-        constraints={"max_value_usd": 5_000.0},
-        purpose="quickstart evaluation",
-        granted_by="org-admin",
+    print("[1] Fresh AuthorityResolver + apply_governance → tool executes")
+    before = await _governed_call(services, ctx)
+    assert before["status"] == "executed"
+    allow_rows = await evidence_repo.list_for_org(org.id, decision="ALLOW")
+    assert any(r.action_type == TOOL for r in allow_rows)
+    print(f"    executed rai_health; ALLOW evidence rows={len(allow_rows)}")
+
+    print("\n[2] Revoke persisted delegation for the API key principal")
+    revoked = await delegations.revoke_branch(
+        org.id, principal_id, revoked_by=f"test-owner:{org.id}", reason="quickstart revoke"
     )
-    authority: AuthorityContext = record.to_authority_context()
-    agent = _agent()
-    print(f"    granted_action_types={sorted(authority.granted_action_types)}")
+    print(f"    revoked_delegation_ids={revoked}")
 
-    # 5–6. Allowed governed action
-    print("\n[2] Submit an in-authority action → expect ALLOW")
-    allowed = ActionRequest(
-        agent=agent,
-        action_type=ACTION_TOOL,
-        target="vendor-001",
-        arguments={"amount_usd": 100.0},
-    )
-    allow_result = gateway.evaluate(allowed, authority)
-    assert allow_result.decision == GovernanceDecision.ALLOW
-    print(f"    decision={allow_result.decision.value}")
+    print("\n[3] Fresh resolution after revoke → DENY, tool NOT executed again")
+    after = await _governed_call(services, ctx)
+    assert after.get("error") == "governance_denied"
+    deny_rows = await evidence_repo.list_for_org(org.id, decision="DENY")
+    assert any(r.action_type == TOOL for r in deny_rows)
+    print(f"    blocked: {after.get('reason_codes', [])[:2]}")
 
-    # 7. Denied action (not granted)
-    print("\n[3] Submit an action outside the grant → expect DENY")
-    denied = ActionRequest(
-        agent=agent,
-        action_type="wire.international",
-        target="acct-offshore",
-        arguments={"amount_usd": 50.0},
-    )
-    deny_result = gateway.evaluate(denied, authority)
-    assert deny_result.decision == GovernanceDecision.DENY
-    print(f"    decision={deny_result.decision.value}  reasons={deny_result.reason_codes[:2]}")
-
-    # 8. Evidence / audit
-    print("\n[4] Persist tamper-evident evidence for the allow decision")
-    evidence = build_evidence_record(allowed, agent, authority, allow_result)
-    stored = await evidence_repo.record(evidence)
-    chain_valid = await evidence_repo.verify_chain(ORG_ID)
-    print(f"    evidence_id={stored.evidence_id[:12]}...  chain_valid={chain_valid}")
-
-    # 9–10. Revoke delegation → no effective authority remains
-    print("\n[5] Revoke the agent's delegation (cascading)")
-    revoked_ids = await delegations.revoke_branch(
-        ORG_ID, AGENT_ID, revoked_by="org-admin", reason="quickstart cleanup"
-    )
-    print(f"    revoked_delegation_ids={revoked_ids}")
-
-    fresh = await delegations.get_effective_authority(ORG_ID, AGENT_ID)
-    assert fresh is None
-    print("    get_effective_authority() → None (no active grant)")
-
+    print("\n--- Why callers must never cache authority ---")
     print(
-        "\n[6] Subsequent integration must reload authority (stale in-memory context does not self-heal)"
+        "WhitePactRuntimeGateway.evaluate() alone trusts the AuthorityContext you pass in.\n"
+        "Production paths call AuthorityResolver + delegation freshness checks on every request.\n"
+        "Demonstration (educational only — NOT production behavior):"
     )
-    stale_allow = gateway.evaluate(allowed, authority)
+    stale = AuthorityContext(
+        delegated_by=f"test-owner:{org.id}",
+        granted_action_types=frozenset({TOOL}),
+        constraints={"allowed_targets": [TOOL]},
+    )
+    agent = AgentContext(
+        identity=IdentityContext(principal_id, "api_key", org_id=org.id),
+        agent_id=principal_id,
+        framework="quickstart",
+    )
+    action = ActionRequest(agent=agent, action_type=TOOL, target=TOOL, purpose=PURPOSE)
+    stale_decision = WhitePactRuntimeGateway().evaluate(action, stale)
     print(
-        f"    evaluate() with *stale* AuthorityContext still returns {stale_allow.decision.value} — "
-        "callers must resolve authority from storage (dashboard/MCP do this on each request)."
+        f"    gateway.evaluate() with stale in-memory context → {stale_decision.decision.value}\n"
+        "    (apply_governance above correctly denied after revoke.)"
     )
+    assert stale_decision.decision == GovernanceDecision.ALLOW
 
     await engine.close()
-    print(
-        "\nQuickstart complete. Next: docs/quickstart.md (HTTP/Docker) and examples/08_whitepact_enterprise_scenario.py"
-    )
+    print("\nQuickstart complete. See docs/quickstart.md and docs/examples/http_governance.md")
 
 
 if __name__ == "__main__":

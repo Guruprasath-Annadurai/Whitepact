@@ -1,30 +1,31 @@
 #!/usr/bin/env bash
 # Copyright (c) 2026 Guruprasath Annadurai
 # SPDX-License-Identifier: MIT
-# Clean-room smoke: clone-agnostic when run from a fresh checkout.
-# Does not start Docker or require API keys.
+# Clean-room smoke: isolated tree from git archive, fresh venv, no editable reuse.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-cd "$ROOT"
+HEAD_SHA="$(git -C "$ROOT" rev-parse HEAD)"
+WORK="$(mktemp -d -t whitepact-clean-room-XXXXXX)"
+trap 'rm -rf "$WORK"' EXIT
 
 echo "== WhitePact clean-room smoke =="
-echo "Root: $ROOT"
+echo "Source HEAD: $HEAD_SHA"
+echo "Extract: $WORK"
 
 if ! command -v python3 >/dev/null 2>&1; then
   echo "FAIL: python3 not found"
   exit 1
 fi
 
-PYVER="$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:2])))')"
-echo "Python: $PYVER"
 python3 -c 'import sys; assert sys.version_info >= (3, 11), "Python 3.11+ required"'
 
-if [[ ! -d .venv-smoke ]]; then
-  python3 -m venv .venv-smoke
-fi
+git -C "$ROOT" archive "$HEAD_SHA" | tar -x -C "$WORK"
+cd "$WORK"
+
+python3 -m venv .venv-clean
 # shellcheck disable=SC1091
-source .venv-smoke/bin/activate
+source .venv-clean/bin/activate
 pip install -U pip -q
 pip install -e ".[dashboard]" -q
 
@@ -35,4 +36,4 @@ echo "-- pytest workflow authority (subset) --"
 pip install pytest pytest-cov pytest-asyncio -q
 PYTEST_ADDOPTS= pytest tests/test_workflow_authority.py -q --tb=no -o addopts=
 
-echo "PASS: clean-room smoke completed"
+echo "PASS: clean-room smoke completed from archive $HEAD_SHA"

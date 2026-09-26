@@ -74,6 +74,11 @@ docker compose down        # keep data volume
 docker compose down -v     # delete rai-data volume
 ```
 
+**Verification status:** `docker compose config` was run in Cell A remediation. Full
+`build` / `up` / health probe requires a local Docker daemon with permission to
+access `docker.sock`. If that is unavailable in your environment, treat the Docker
+path as **documented but not independently verified** in the Cell A report.
+
 ## Helm
 
 Chart: `helm/rai-governance/` (app version **1.3.1**).

@@ -24,7 +24,7 @@ pip install -U pip
 pip install -e ".[dashboard]"
 ```
 
-### 2. Run the minimal authority demo
+### 2. Run the canonical enforcement demo
 
 ```bash
 python examples/quickstart_stranger_authority.py
@@ -32,15 +32,15 @@ python examples/quickstart_stranger_authority.py
 
 You should see:
 
-1. A delegated **authority context** for agent `quickstart-agent`
-2. **ALLOW** for `payment.execute` within limits
-3. **DENY** for an ungranted action type
-4. An **evidence** record with `chain_valid=True`
-5. **Revocation** clearing effective authority (`get_effective_authority() → None`)
+1. **Root + consent + delegation** seeded for the org API key principal (same pattern as production tests).
+2. **`apply_governance()`** for `rai_health` → tool **executes** with ALLOW evidence.
+3. **Delegation revoked** in persistent storage.
+4. A second **`apply_governance()`** call → **`governance_denied`**, tool **not** executed again.
+5. An educational note on why **`WhitePactRuntimeGateway.evaluate()`** with a **cached**
+   `AuthorityContext` is not a substitute for fresh resolution (production never stops at the cache).
 
-**Limitation (documented honestly):** `WhitePactRuntimeGateway.evaluate()` trusts the
-`AuthorityContext` you pass in. Production HTTP/MCP paths **reload** delegations each
-request; the script shows both revocation and why stale contexts must not be reused.
+HTTP curl quickstart requires operator-provisioned root/consent; see
+[`docs/examples/http_governance.md`](examples/http_governance.md).
 
 ### 3. Deep dive (optional, ~5 more minutes)
 
