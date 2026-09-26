@@ -70,7 +70,8 @@ No counterexample found in reviewed pure algebra for: delegation depth bypass (w
 |-------|-------|
 | Gate 2D code commit | `06f347cecb28a44b57bfe293c9b659d828cf0854` |
 | Gate 2D code tree | `9d7abdd9956f5c1fdb8d5de730c5b036446e51b9` |
-| Report commit | *(see git log after docs commit)* |
+| Final commit (exact PR head) | `6b401b3` *(update if superseded)* |
+| Final tree | *(see `git rev-parse HEAD^{tree}` on PR head)* |
 | Workflow run | *(pending)* |
 | Branch coverage | *(pending full CI)* |
 
