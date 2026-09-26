@@ -205,22 +205,20 @@ def test_joint_capability_explicit_rule() -> None:
         for f in base_no_a.facts
         if f.actor.member_ids == ("b",) and f.action == "write"
     )
-    r_missing_a = compute_capability_closure(
-        snap_no_a,
-        joint_rules=(
-            JointCapabilityRule(
-                rule_id="j2",
-                tenant_id="t1",
-                required_semantic_keys=(pa, pb_only),
-                coalition_member_ids=("a", "b"),
-                action="write",
-                target_node_id="db",
+    with pytest.raises(InvalidCapability):
+        compute_capability_closure(
+            snap_no_a,
+            joint_rules=(
+                JointCapabilityRule(
+                    rule_id="j2",
+                    tenant_id="t1",
+                    required_semantic_keys=(pa, pb_only),
+                    coalition_member_ids=("a", "b"),
+                    action="write",
+                    target_node_id="db",
+                ),
             ),
-        ),
-    )
-    assert not [
-        f for f in r_missing_a.facts if len(f.actor.member_ids) == 2 and f.action == "write"
-    ]
+        )
 
 
 def test_provenance_dag_valid() -> None:

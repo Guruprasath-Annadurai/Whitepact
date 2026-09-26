@@ -15,6 +15,9 @@ def validate_and_ingest_seeds(
     snapshot: GraphSnapshot,
     seeds: tuple[CapabilityFact, ...],
     state: CapabilityClosureState,
+    *,
+    max_facts: int,
+    max_derivations: int,
 ) -> None:
     node_ids = {n.node_id for n in snapshot.nodes}
     for seed in sorted(seeds, key=lambda s: (s.semantic_key(), s.epistemic_status.value)):
@@ -30,11 +33,18 @@ def validate_and_ingest_seeds(
             rule_id=RuleId.SEED,
             output_semantic_key=seed.semantic_key(),
             prerequisite_keys=(),
+            prerequisite_witness_fingerprints=(),
             graph_node_ids=(seed.actor.member_ids[0], seed.target_node_id),
             graph_edge_ids=(),
             epistemic_status=seed.epistemic_status,
             derivation_depth=1,
             route_node_ids=(seed.actor.member_ids[0], seed.target_node_id),
+            support_kind=seed.kind,
+            support_is_direct=seed.is_direct,
         )
-        state.add_witness(seed, witness, is_direct=seed.is_direct)
-        # duplicate semantic seeds merge epistemic via state.add_witness
+        state.add_witness(
+            seed,
+            witness,
+            max_facts=max_facts,
+            max_derivations=max_derivations,
+        )

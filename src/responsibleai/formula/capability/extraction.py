@@ -51,6 +51,8 @@ def extract_direct_into_state(
     state: CapabilityClosureState,
     *,
     max_path_depth: int,
+    max_facts: int,
+    max_derivations: int,
 ) -> int:
     """Emit DIRECT_EXTRACTION witnesses; return count of new semantic facts."""
     nodes = {n.node_id: n for n in snapshot.nodes}
@@ -94,13 +96,21 @@ def extract_direct_into_state(
             rule_id=RuleId.DIRECT_EXTRACTION,
             output_semantic_key=fact.semantic_key(),
             prerequisite_keys=(),
+            prerequisite_witness_fingerprints=(),
             graph_node_ids=route,
             graph_edge_ids=(edge.edge_id,),
             epistemic_status=epistemic,
             derivation_depth=depth,
             route_node_ids=route,
+            support_kind=kind,
+            support_is_direct=True,
         )
-        _witness_added, fact_added = state.add_witness(fact, witness, is_direct=True)
+        _witness_added, fact_added = state.add_witness(
+            fact,
+            witness,
+            max_facts=max_facts,
+            max_derivations=max_derivations,
+        )
         if fact_added:
             new_facts += 1
     return new_facts

@@ -41,6 +41,8 @@ def apply_composition_rules(
     *,
     max_path_depth: int,
     rule_budget: int,
+    max_facts: int,
+    max_derivations: int,
 ) -> int:
     """Apply typed composition rules once; return successful witness productions."""
     nodes = {n.node_id: n for n in snapshot.nodes}
@@ -59,57 +61,73 @@ def apply_composition_rules(
         if im is None or im.kind not in _INTERMEDIARY_KINDS:
             continue
         actor = fact.actor
-        outer_route = state.best_route(key)
-        for inner_key in keys_sorted:
+        for outer_w in state.sorted_witnesses(key):
             if produced >= rule_budget:
                 state.budget_truncated = True
                 break
-            inner = state.facts_by_key[inner_key]
-            if inner.actor.member_ids != (intermediary_id,):
-                continue
-            if inner.action == "call":
-                continue
-            inner_route = state.best_route(inner_key)
-            route = merge_capability_routes(outer_route, inner_route)
-            depth = route_derivation_depth(route)
-            if depth > max_path_depth:
-                state.frontier_blocked = True
-                if not any("max_path_depth exhausted" in n for n in state.truncation_notes):
-                    state.truncation_notes.append(
-                        "max_path_depth exhausted while a valid capability frontier remained"
+            for inner_key in keys_sorted:
+                if produced >= rule_budget:
+                    state.budget_truncated = True
+                    break
+                inner = state.facts_by_key[inner_key]
+                if inner.actor.member_ids != (intermediary_id,):
+                    continue
+                if inner.action == "call":
+                    continue
+                for inner_w in state.sorted_witnesses(inner_key):
+                    route = merge_capability_routes(outer_w.route_node_ids, inner_w.route_node_ids)
+                    depth = route_derivation_depth(route)
+                    if depth > max_path_depth:
+                        state.frontier_blocked = True
+                        if not any("max_path_depth exhausted" in n for n in state.truncation_notes):
+                            state.truncation_notes.append(
+                                "max_path_depth exhausted while a valid capability frontier remained"
+                            )
+                        continue
+                    epistemic = compose_epistemic(
+                        outer_w.epistemic_status,
+                        inner_w.epistemic_status,
+                        im.epistemic_status,
                     )
-                continue
-            epistemic = compose_epistemic(
-                fact.epistemic_status,
-                inner.epistemic_status,
-                im.epistemic_status,
-            )
-            composed = CapabilityFact(
-                tenant_id=snapshot.tenant_id,
-                actor=actor,
-                action=inner.action,
-                target_node_id=inner.target_node_id,
-                kind=CapabilityKind.COMPOSED,
-                epistemic_status=epistemic,
-                is_direct=False,
-            )
-            ck = composed.semantic_key()
-            rule = (
-                RuleId.MULTI_AGENT_RELAY if im.kind == NodeKind.AGENT else RuleId.COMPOSE_VIA_CALL
-            )
-            witness = CapabilityDerivation(
-                rule_id=rule,
-                output_semantic_key=ck,
-                prerequisite_keys=(fact.semantic_key(), inner.semantic_key()),
-                graph_node_ids=route,
-                graph_edge_ids=(),
-                epistemic_status=epistemic,
-                derivation_depth=depth,
-                route_node_ids=route,
-            )
-            witness_added, _ = state.add_witness(composed, witness, is_direct=False)
-            if witness_added:
-                produced += 1
+                    composed = CapabilityFact(
+                        tenant_id=snapshot.tenant_id,
+                        actor=actor,
+                        action=inner.action,
+                        target_node_id=inner.target_node_id,
+                        kind=CapabilityKind.COMPOSED,
+                        epistemic_status=epistemic,
+                        is_direct=False,
+                    )
+                    ck = composed.semantic_key()
+                    rule = (
+                        RuleId.MULTI_AGENT_RELAY
+                        if im.kind == NodeKind.AGENT
+                        else RuleId.COMPOSE_VIA_CALL
+                    )
+                    witness = CapabilityDerivation(
+                        rule_id=rule,
+                        output_semantic_key=ck,
+                        prerequisite_keys=(fact.semantic_key(), inner.semantic_key()),
+                        prerequisite_witness_fingerprints=(
+                            outer_w.witness_fingerprint(),
+                            inner_w.witness_fingerprint(),
+                        ),
+                        graph_node_ids=route,
+                        graph_edge_ids=(),
+                        epistemic_status=epistemic,
+                        derivation_depth=depth,
+                        route_node_ids=route,
+                        support_kind=CapabilityKind.COMPOSED,
+                        support_is_direct=False,
+                    )
+                    witness_added, _ = state.add_witness(
+                        composed,
+                        witness,
+                        max_facts=max_facts,
+                        max_derivations=max_derivations,
+                    )
+                    if witness_added:
+                        produced += 1
 
     for edge in sorted(snapshot.edges, key=lambda e: e.edge_id):
         if produced >= rule_budget:
@@ -117,13 +135,29 @@ def apply_composition_rules(
             break
         if edge.kind == EdgeKind.REVEALS:
             produced += _information_reveals(
-                snapshot, edge, state, nodes, max_path_depth, rule_budget - produced
+                snapshot,
+                edge,
+                state,
+                nodes,
+                max_path_depth,
+                rule_budget - produced,
+                max_facts,
+                max_derivations,
             )
         if edge.kind == EdgeKind.REQUIRES:
             if produced >= rule_budget:
                 state.budget_truncated = True
                 break
-            produced += _credential_unlock(snapshot, edge, state, nodes, max_path_depth)
+            produced += _credential_unlock(
+                snapshot,
+                edge,
+                state,
+                nodes,
+                max_path_depth,
+                rule_budget - produced,
+                max_facts,
+                max_derivations,
+            )
 
     return produced
 
@@ -135,6 +169,8 @@ def _information_reveals(
     nodes: dict,
     max_path_depth: int,
     remaining_budget: int,
+    max_facts: int,
+    max_derivations: int,
 ) -> int:
     produced = 0
     tgt = nodes.get(edge.target_id)
@@ -150,43 +186,51 @@ def _information_reveals(
         src_info = nodes.get(edge.source_id)
         if src_info is None:
             continue
-        outer_route = state.best_route(key)
-        route = merge_capability_routes(outer_route, (edge.source_id, edge.target_id))
-        depth = route_derivation_depth(route)
-        if depth > max_path_depth:
-            state.frontier_blocked = True
-            state.truncation_notes.append(
-                "max_path_depth exhausted while a valid capability frontier remained"
+        for read_w in state.sorted_witnesses(key):
+            route = merge_capability_routes(read_w.route_node_ids, (edge.source_id, edge.target_id))
+            depth = route_derivation_depth(route)
+            if depth > max_path_depth:
+                state.frontier_blocked = True
+                state.truncation_notes.append(
+                    "max_path_depth exhausted while a valid capability frontier remained"
+                )
+                continue
+            epistemic = compose_epistemic(
+                read_w.epistemic_status,
+                edge.epistemic_status,
+                src_info.epistemic_status,
+                tgt.epistemic_status,
             )
-            continue
-        epistemic = compose_epistemic(
-            fact.epistemic_status,
-            edge.epistemic_status,
-            src_info.epistemic_status,
-            tgt.epistemic_status,
-        )
-        derived = CapabilityFact(
-            tenant_id=snapshot.tenant_id,
-            actor=fact.actor,
-            action="read",
-            target_node_id=edge.target_id,
-            kind=CapabilityKind.INFORMATION_DERIVED,
-            epistemic_status=epistemic,
-            is_direct=False,
-        )
-        witness = CapabilityDerivation(
-            rule_id=RuleId.INFORMATION_REVEALS,
-            output_semantic_key=derived.semantic_key(),
-            prerequisite_keys=(fact.semantic_key(),),
-            graph_node_ids=route,
-            graph_edge_ids=(edge.edge_id,),
-            epistemic_status=epistemic,
-            derivation_depth=depth,
-            route_node_ids=route,
-        )
-        witness_added, _ = state.add_witness(derived, witness, is_direct=False)
-        if witness_added:
-            produced += 1
+            derived = CapabilityFact(
+                tenant_id=snapshot.tenant_id,
+                actor=fact.actor,
+                action="read",
+                target_node_id=edge.target_id,
+                kind=CapabilityKind.INFORMATION_DERIVED,
+                epistemic_status=epistemic,
+                is_direct=False,
+            )
+            witness = CapabilityDerivation(
+                rule_id=RuleId.INFORMATION_REVEALS,
+                output_semantic_key=derived.semantic_key(),
+                prerequisite_keys=(fact.semantic_key(),),
+                prerequisite_witness_fingerprints=(read_w.witness_fingerprint(),),
+                graph_node_ids=route,
+                graph_edge_ids=(edge.edge_id,),
+                epistemic_status=epistemic,
+                derivation_depth=depth,
+                route_node_ids=route,
+                support_kind=CapabilityKind.INFORMATION_DERIVED,
+                support_is_direct=False,
+            )
+            witness_added, _ = state.add_witness(
+                derived,
+                witness,
+                max_facts=max_facts,
+                max_derivations=max_derivations,
+            )
+            if witness_added:
+                produced += 1
     return produced
 
 
@@ -196,6 +240,9 @@ def _credential_unlock(
     state: CapabilityClosureState,
     nodes: dict,
     max_path_depth: int,
+    remaining_budget: int,
+    max_facts: int,
+    max_derivations: int,
 ) -> int:
     grants = edge.attributes.get("grants")
     if grants != "call":
@@ -208,45 +255,55 @@ def _credential_unlock(
         return 0
     produced = 0
     for key in sorted(state.facts_by_key.keys()):
+        if produced >= remaining_budget:
+            state.budget_truncated = True
+            break
         fact = state.facts_by_key[key]
         if fact.action != "read" or fact.target_node_id != edge.source_id:
             continue
-        outer_route = state.best_route(key)
-        route = merge_capability_routes(outer_route, (edge.source_id, edge.target_id))
-        depth = route_derivation_depth(route)
-        if depth > max_path_depth:
-            state.frontier_blocked = True
-            state.truncation_notes.append(
-                "max_path_depth exhausted while a valid capability frontier remained"
+        for read_w in state.sorted_witnesses(key):
+            route = merge_capability_routes(read_w.route_node_ids, (edge.source_id, edge.target_id))
+            depth = route_derivation_depth(route)
+            if depth > max_path_depth:
+                state.frontier_blocked = True
+                state.truncation_notes.append(
+                    "max_path_depth exhausted while a valid capability frontier remained"
+                )
+                continue
+            epistemic = compose_epistemic(
+                read_w.epistemic_status,
+                cred.epistemic_status,
+                edge.epistemic_status,
+                tgt.epistemic_status,
             )
-            return produced
-        epistemic = compose_epistemic(
-            fact.epistemic_status,
-            cred.epistemic_status,
-            edge.epistemic_status,
-            tgt.epistemic_status,
-        )
-        derived = CapabilityFact(
-            tenant_id=snapshot.tenant_id,
-            actor=fact.actor,
-            action="call",
-            target_node_id=edge.target_id,
-            kind=CapabilityKind.CREDENTIAL_DERIVED,
-            epistemic_status=epistemic,
-            is_direct=False,
-        )
-        witness = CapabilityDerivation(
-            rule_id=RuleId.CREDENTIAL_UNLOCK,
-            output_semantic_key=derived.semantic_key(),
-            prerequisite_keys=(fact.semantic_key(),),
-            graph_node_ids=route,
-            graph_edge_ids=(edge.edge_id,),
-            epistemic_status=epistemic,
-            derivation_depth=depth,
-            route_node_ids=route,
-        )
-        witness_added, _ = state.add_witness(derived, witness, is_direct=False)
-        if witness_added:
-            produced += 1
-        return produced
-    return 0
+            derived = CapabilityFact(
+                tenant_id=snapshot.tenant_id,
+                actor=fact.actor,
+                action="call",
+                target_node_id=edge.target_id,
+                kind=CapabilityKind.CREDENTIAL_DERIVED,
+                epistemic_status=epistemic,
+                is_direct=False,
+            )
+            witness = CapabilityDerivation(
+                rule_id=RuleId.CREDENTIAL_UNLOCK,
+                output_semantic_key=derived.semantic_key(),
+                prerequisite_keys=(fact.semantic_key(),),
+                prerequisite_witness_fingerprints=(read_w.witness_fingerprint(),),
+                graph_node_ids=route,
+                graph_edge_ids=(edge.edge_id,),
+                epistemic_status=epistemic,
+                derivation_depth=depth,
+                route_node_ids=route,
+                support_kind=CapabilityKind.CREDENTIAL_DERIVED,
+                support_is_direct=False,
+            )
+            witness_added, _ = state.add_witness(
+                derived,
+                witness,
+                max_facts=max_facts,
+                max_derivations=max_derivations,
+            )
+            if witness_added:
+                produced += 1
+    return produced

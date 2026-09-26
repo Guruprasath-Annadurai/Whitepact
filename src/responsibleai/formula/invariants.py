@@ -21,17 +21,20 @@ from responsibleai.formula.authority.models import (
     AuthorityLifecycle,
     OrgAuthorityCeilingModel,
 )
-from responsibleai.formula.capability.budget import ClosureStatus
+from responsibleai.formula.capability.budget import CapabilityClosureBudget, ClosureStatus
 from responsibleai.formula.capability.closure import (
     CapabilityClosureResult,
     compute_capability_closure,
 )
 from responsibleai.formula.capability.derivation import CapabilityDerivation
 from responsibleai.formula.capability.epistemic_compose import compose_epistemic
+from responsibleai.formula.capability.joint import JointCapabilityRule
 from responsibleai.formula.capability.rules import RuleId
+from responsibleai.formula.capability.serialize import serialize_closure_result
 from responsibleai.formula.epistemic import EpistemicStatus, is_authoritative_for_hard_proof
 from responsibleai.formula.fence import CommitFence, EvaluationPin
 from responsibleai.formula.graph.snapshot import GraphSnapshot
+from responsibleai.formula.serialization import canonical_sha256
 from responsibleai.formula.trace.semantics import TraceAuthorized
 from responsibleai.formula.trace.trace import FormulaTrace
 
@@ -273,16 +276,74 @@ class FormulaInvariantChecker:
         return []
 
     def check_capability_closure_idempotent(
-        self, snapshot: GraphSnapshot, result: CapabilityClosureResult
+        self,
+        snapshot: GraphSnapshot,
+        result: CapabilityClosureResult,
+        *,
+        joint_rules: tuple[JointCapabilityRule, ...] = (),
     ) -> list[InvariantViolation]:
-        again = compute_capability_closure(snapshot, seeds=result.facts, budget=result.budget)
-        a = {f.semantic_key() for f in result.facts}
-        b = {f.semantic_key() for f in again.facts}
-        if a != b:
+        again = compute_capability_closure(
+            snapshot, budget=result.budget, joint_rules=joint_rules
+        )
+        h1 = canonical_sha256(serialize_closure_result(result))
+        h2 = canonical_sha256(serialize_closure_result(again))
+        if h1 != h2:
             return [
                 InvariantViolation(
                     InvariantId.INV_CAPABILITY_CLOSURE_IDEMPOTENT,
-                    "closure not idempotent on semantic facts",
+                    "closure not idempotent on canonical serialization",
+                )
+            ]
+        return []
+
+    def check_capability_closure_monotone(
+        self,
+        snapshot: GraphSnapshot,
+        smaller_seeds: tuple,
+        larger_seeds: tuple,
+        *,
+        budget: CapabilityClosureBudget | None = None,
+    ) -> list[InvariantViolation]:
+        from responsibleai.formula.capability.budget import CapabilityClosureBudget
+
+        b = budget or CapabilityClosureBudget()
+        small = compute_capability_closure(snapshot, seeds=smaller_seeds, budget=b)
+        large = compute_capability_closure(snapshot, seeds=larger_seeds, budget=b)
+        small_keys = {f.semantic_key() for f in small.facts}
+        large_keys = {f.semantic_key() for f in large.facts}
+        if not small_keys.issubset(large_keys):
+            return [
+                InvariantViolation(
+                    InvariantId.INV_CAPABILITY_CLOSURE_MONOTONE,
+                    "closure not monotone under seed expansion",
+                )
+            ]
+        return []
+
+    def check_capability_order_independence(
+        self, snapshot_a: GraphSnapshot, snapshot_b: GraphSnapshot
+    ) -> list[InvariantViolation]:
+        ra = compute_capability_closure(snapshot_a)
+        rb = compute_capability_closure(snapshot_b)
+        if canonical_sha256(serialize_closure_result(ra)) != canonical_sha256(
+            serialize_closure_result(rb)
+        ):
+            return [
+                InvariantViolation(
+                    InvariantId.INV_CAPABILITY_ORDER_INDEPENDENCE,
+                    "graph insertion order changed canonical closure",
+                )
+            ]
+        return []
+
+    def check_capability_cycle_terminates(
+        self, result: CapabilityClosureResult
+    ) -> list[InvariantViolation]:
+        if result.iterations > result.budget.max_iterations:
+            return [
+                InvariantViolation(
+                    InvariantId.INV_CAPABILITY_CYCLE_TERMINATES,
+                    "closure exceeded iteration budget without terminating",
                 )
             ]
         return []

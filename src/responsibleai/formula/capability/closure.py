@@ -9,7 +9,11 @@ from responsibleai.formula.capability.budget import CapabilityClosureBudget, Clo
 from responsibleai.formula.capability.derivation import CapabilityDerivation
 from responsibleai.formula.capability.extraction import extract_direct_into_state
 from responsibleai.formula.capability.facts import CapabilityFact
-from responsibleai.formula.capability.joint import JointCapabilityRule, apply_joint_rules
+from responsibleai.formula.capability.joint import (
+    JointCapabilityRule,
+    apply_joint_rules,
+    validate_joint_rules,
+)
 from responsibleai.formula.capability.rules import apply_composition_rules
 from responsibleai.formula.capability.seeds import validate_and_ingest_seeds
 from responsibleai.formula.capability.state import CapabilityClosureState
@@ -42,10 +46,19 @@ def compute_capability_closure(
     """Least fixed-point capability closure over explicit rules and seeds."""
     b = budget or CapabilityClosureBudget()
     b.validate()
+    validate_joint_rules(snapshot, joint_rules)
     state = CapabilityClosureState()
 
-    validate_and_ingest_seeds(snapshot, seeds, state)
-    extract_direct_into_state(snapshot, state, max_path_depth=b.max_path_depth)
+    validate_and_ingest_seeds(
+        snapshot, seeds, state, max_facts=b.max_facts, max_derivations=b.max_derivations
+    )
+    extract_direct_into_state(
+        snapshot,
+        state,
+        max_path_depth=b.max_path_depth,
+        max_facts=b.max_facts,
+        max_derivations=b.max_derivations,
+    )
 
     iterations = 0
     rule_apps = 0
@@ -53,18 +66,10 @@ def compute_capability_closure(
 
     while changed and iterations < b.max_iterations:
         iterations += 1
-        if len(state.facts_by_key) >= b.max_facts:
-            state.budget_truncated = True
-            state.truncation_notes.append("max_facts limit reached")
-            break
         remaining = b.max_rule_applications - rule_apps
         if remaining <= 0:
             state.budget_truncated = True
             state.truncation_notes.append("max_rule_applications limit reached")
-            break
-        if len(state.all_witnesses()) >= b.max_derivations:
-            state.budget_truncated = True
-            state.truncation_notes.append("max_derivations limit reached")
             break
 
         produced = apply_composition_rules(
@@ -72,12 +77,17 @@ def compute_capability_closure(
             state,
             max_path_depth=b.max_path_depth,
             rule_budget=remaining,
+            max_facts=b.max_facts,
+            max_derivations=b.max_derivations,
         )
         produced += apply_joint_rules(
+            snapshot,
             state,
             joint_rules,
             max_path_depth=b.max_path_depth,
             rule_budget=remaining - produced,
+            max_facts=b.max_facts,
+            max_derivations=b.max_derivations,
         )
         rule_apps += produced
         changed = produced > 0

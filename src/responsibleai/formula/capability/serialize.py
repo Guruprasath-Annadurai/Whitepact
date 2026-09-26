@@ -28,11 +28,16 @@ def serialize_derivation(d: CapabilityDerivation) -> dict[str, Any]:
         "rule_id": d.rule_id,
         "output_semantic_key": list(d.output_semantic_key),
         "prerequisite_keys": [list(k) for k in d.prerequisite_keys],
+        "prerequisite_witness_fingerprints": [
+            list(fp) for fp in d.prerequisite_witness_fingerprints
+        ],
         "graph_node_ids": list(d.graph_node_ids),
         "graph_edge_ids": list(d.graph_edge_ids),
         "epistemic_status": d.epistemic_status.value,
         "derivation_depth": d.derivation_depth,
         "route_node_ids": list(d.route_node_ids),
+        "support_kind": d.support_kind.value,
+        "support_is_direct": d.support_is_direct,
     }
 
 

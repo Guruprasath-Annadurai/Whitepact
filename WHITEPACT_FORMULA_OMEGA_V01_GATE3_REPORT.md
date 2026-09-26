@@ -2,93 +2,72 @@
 
 **Branch:** `cursor/whitepact-formula-gate3-capability-closure-f7a9`  
 **PR:** #120 (draft — not merged)  
-**Gate 2 main baseline:** `a29d9be650b1ca0937df766774fc220412588d0a`  
-**Gate 2 merge:** `9b81282e8cf4066638b36b268b4a0c5bc48df6f1`  
-**Gate 2 qualified:** `cadd3a4d3b1a15d4da15c90284220b4a50318099`  
+**Gate 2 base:** `a29d9be650b1ca0937df766774fc220412588d0a`  
 **v1.3.1:** unchanged (`894efe30514553f7e0d047a1569a80d36c53a236`)  
-**PR #98:** untouched  
-**Gate 4:** not started  
+**PR #98 / Gate 4:** untouched / not started  
 
-## Correction pass
+## Gate 3B correction (witness-aware)
 
 | Field | Value |
 |-------|-------|
-| Pre-correction PR head | `e749cea9ab4f734b06d74c5407a5b357d4461db0` |
-| Pre-correction tree | `ba99811ac176d37b55958cbc6e8d4a455a4311df` |
-| Final candidate head | `19b4549d221d585a63cf36b9522947ed47cf5e68` (code: `3a8d59d`) |
-| Final candidate tree | *(see `git rev-parse HEAD^{tree}` on branch head)* |
+| Pre-3B head (historical) | `283afd2150d59a2733b7c0ebdea130e81cd88da2` |
+| Final head | *(recorded at push — `git rev-parse HEAD`)* |
 
-## Architecture (correction)
+### Architecture changes (3B)
 
-- `capability/state.py` — semantic facts + witness aggregation, cumulative depth per key
-- `capability/routes.py` — route merge and depth
-- `capability/extraction.py` — `DIRECT_EXTRACTION` witnesses, full epistemic premises
-- `capability/rules.py` — composition with frontier tracking, alternate witnesses
-- `capability/seeds.py` — validated seed ingestion
-- `capability/joint.py` — explicit `JointCapabilityRule`
-- `capability/provenance.py` — DAG integrity validation
-- `capability/closure.py` — fail-honest budgets and status
+- Witness-aware composition (Cartesian product of prerequisite supports, canonical sort)
+- Per-witness depth/routes; no `best_route()` longest-path collapse
+- `prerequisite_witness_fingerprints` on derivations; epistemic in fingerprint
+- Commutative `support_aggregate` for fact `kind` / `is_direct` / epistemic
+- Provenance cycle prevention at `add_witness` via `witness_dag`
+- `validate_joint_rules(snapshot, …)` fail-closed; empty prerequisites rejected
+- Credential unlock processes all actors; no first-match return
+- Rule-specific provenance epistemic validation against graph elements
 
-## Property matrix P1–P16
+### Property matrix → tests
 
-| ID | Property | Coverage |
-|----|----------|----------|
-| P1 | Seed inclusion | `test_gate3_properties`, correction seeds |
-| P2 | Idempotence | `test_closure_idempotent`, invariant checker |
-| P3 | Monotonicity | seeds superset tests (properties) |
-| P4 | Determinism | canonical hash tests |
-| P5 | Rule-order independence | sorted rule application |
-| P6 | Seed-order independence | `test_duplicate_seed_order_independent` |
-| P7 | Tenant isolation | cross-tenant + validation |
-| P8 | No spontaneous capability | allowed `RuleId` set in invariants |
-| P9–P10 | Capability ≠ authority | adversarial graph tests |
-| P11 | Epistemic non-upgrade | compose + direct unknown target |
-| P12 | Budget fail-honest | `INCOMPLETE` + notes |
-| P13 | Cycles terminate | cycle test |
-| P14 | No duplicate semantic facts | state dedupe |
-| P15 | Coalition explicit | joint rule tests |
-| P16 | Direct vs composed witnesses | `DIRECT_EXTRACTION` + composed |
+| ID | Test(s) |
+|----|---------|
+| P1 | `test_gate3b_semantic::test_property_p1_seed_inclusion` |
+| P2 | `test_gate3b_semantic::test_property_p2_idempotence` |
+| P3 | `test_gate3b_semantic::test_property_p3_monotone` |
+| P4 | `test_gate3b_semantic::test_property_p4_determinism` |
+| P5–P6 | `test_gate3_properties`, `test_gate3_correction` (order/seed) |
+| P7 | `test_gate3b_semantic::test_property_p7_tenant_isolation` |
+| P8 | `test_gate3_capability_closure` + invariant `check_capability_no_spontaneous` |
+| P9–P10 | `test_gate3b_semantic::test_property_p9_p10_capability_not_authority` |
+| P11 | `test_gate3_correction::test_epistemic_unknown_target_on_direct` |
+| P12 | `test_gate3b_semantic::test_property_p12_budget_incomplete` |
+| P13 | `test_gate3b_semantic::test_property_p13_cycle_terminates` |
+| P14 | `test_gate3_correction::test_alternate_witnesses_two_tools` |
+| P15 | `test_gate3_correction::test_joint_capability_explicit_rule`, joint rejection tests |
+| P16 | `test_gate3b_semantic::test_property_p16_distinct_support_kinds` |
 
-## Invariant matrix
+### Invariant matrix → checkers
 
-Executable checks in `FormulaInvariantChecker` for tenant isolation, provenance, budget/status, idempotence, no-spontaneous rules; `validate_closure_provenance` for DAG acyclicity.
+| ID | Checker |
+|----|---------|
+| INV_CAPABILITY_TENANT_ISOLATION | `check_capability_tenant_isolation` |
+| INV_CAPABILITY_PROVENANCE | `check_capability_provenance` |
+| INV_CAPABILITY_BUDGET_FAILS_INCOMPLETE | `check_capability_budget_status` |
+| INV_CAPABILITY_CLOSURE_IDEMPOTENT | `check_capability_closure_idempotent` (canonical hash, no re-seed) |
+| INV_CAPABILITY_CLOSURE_MONOTONE | `check_capability_closure_monotone` |
+| INV_CAPABILITY_ORDER_INDEPENDENCE | `check_capability_order_independence` |
+| INV_CAPABILITY_CYCLE_TERMINATES | `check_capability_cycle_terminates` |
 
-## Test summary (local qualification)
+### Local qualification
 
-| Suite | Count |
-|-------|-------|
-| Formula total | **123** passed |
-| Gate 3 (incl. correction) | 32 |
+- `pytest tests/formula` — **138** passed (at commit time)
+- `ruff check`, `ruff format --check`, `mypy src/responsibleai/formula/capability` — pass
 
-Commands: `pytest tests/formula -v`, `ruff check`, `ruff format --check`, `mypy src/responsibleai/formula` — pass at commit time.
+### CI / DCO
 
-## Gate 2 regression
+Exact-head run and DCO status recorded after push. Prior SHAs (`19b4549`, `283afd2`) are historical only.
 
-All Gate 2 tests remain green within the 123-formula suite.
+### Verdict
 
-## CI
-
-Exact-head workflow run: *(pending after push)* — do not use pre-correction run `36249961141` as final evidence.
-
-## Findings
-
-| Severity | Status |
-|----------|--------|
-| P0 | 0 open |
-| P1 | 0 open at engineering handoff (pending Antigravity) |
-| P2 | Provenance validator does not replace full independent audit |
-| P3 | Performance / distributed concurrency out of scope |
-
-## Self-adversarial notes
-
-Depth collapse, false COMPLETE on depth/budget, seed order, witness drop, epistemic upgrade, coalition without rule, authority→capability — addressed in correction tests; full adversarial matrix in `test_gate3_correction.py`.
-
-## Verdict
-
-*(Pending exact-head CI green on final candidate head.)*
-
-Engineering handoff target:
+Pending fresh exact-head CI green → engineering target:
 
 **WHITEPACT FORMULA Ω∞ GATE 3 PASS — BOUNDED CAPABILITY CLOSURE ENGINE READY FOR INDEPENDENT REVIEW**
 
-once exact-head CI confirms; until then treat as qualification in progress.
+Else **CONDITIONAL**.
