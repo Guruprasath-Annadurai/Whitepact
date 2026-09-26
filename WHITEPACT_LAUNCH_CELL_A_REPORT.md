@@ -11,7 +11,7 @@
 | | SHA / tree |
 |---|------------|
 | **Starting** `origin/main` | `a29d9be650b1ca0937df766774fc220412588d0a` / `ec239934fdebe6d5f4ec201231ecde8b428ca945` |
-| **Final** (after Cell A commits) | Recorded at push — see `git rev-parse HEAD` on branch `feature/whitepact-launch-cell-a-onboarding-distribution` |
+| **Final** Cell A commit | `9227e8537b0387e6b87f4bdab4de710d8bbe32f2` / `46338ab262bf1de4e14d661b28078c65bcef5a6c` |
 
 Formula isolation: **no** changes under `src/responsibleai/formula/`.
 
