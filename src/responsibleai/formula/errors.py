@@ -70,3 +70,28 @@ class InvalidTrace(FormulaDomainError):
 class UnknownNodeKind(FormulaDomainError):
     def __init__(self, message: str) -> None:
         super().__init__(message=message, code="UNKNOWN_NODE_KIND")
+
+
+class InvalidCapability(FormulaDomainError):
+    def __init__(self, message: str) -> None:
+        super().__init__(message=message, code="INVALID_CAPABILITY")
+
+
+class InvalidCapabilityRule(FormulaDomainError):
+    def __init__(self, message: str) -> None:
+        super().__init__(message=message, code="INVALID_CAPABILITY_RULE")
+
+
+class CapabilityBudgetExceeded(FormulaDomainError):
+    def __init__(self, message: str) -> None:
+        super().__init__(message=message, code="CAPABILITY_BUDGET_EXCEEDED")
+
+
+class CapabilityTenantMismatch(FormulaDomainError):
+    def __init__(self, message: str) -> None:
+        super().__init__(message=message, code="CAPABILITY_TENANT_MISMATCH")
+
+
+class InvalidCapabilityDerivation(FormulaDomainError):
+    def __init__(self, message: str) -> None:
+        super().__init__(message=message, code="INVALID_CAPABILITY_DERIVATION")
