@@ -1,88 +1,87 @@
-# WhitePact Launch Acceleration — Cell A Report
+# WhitePact Launch Acceleration — Cell A Report (post-remediation)
 
 ## Self-verdict
 
-**WHITEPACT LAUNCH ACCELERATION CELL A PASS — STRANGER ONBOARDING & DISTRIBUTION READY FOR INDEPENDENT REVIEW**
-
-(Remaining P2/P3 items documented below; no open P0/P1 for the canonical local quickstart path.)
+**WHITEPACT LAUNCH ACCELERATION CELL A REMEDIATION COMPLETE — READY FOR CHATGPT RE-REVIEW**
 
 ## Git provenance
 
-| | SHA / tree |
-|---|------------|
-| **Starting** `origin/main` | `a29d9be650b1ca0937df766774fc220412588d0a` / `ec239934fdebe6d5f4ec201231ecde8b428ca945` |
-| **Final** Cell A commit | `9227e8537b0387e6b87f4bdab4de710d8bbe32f2` / `46338ab262bf1de4e14d661b28078c65bcef5a6c` |
+| | SHA | Tree |
+|---|-----|------|
+| **Starting** `origin/main` (Cell A program) | `a29d9be650b1ca0937df766774fc220412588d0a` | `ec239934fdebe6d5f4ec201231ecde8b428ca945` |
+| **Pre-remediation head** (ChatGPT review) | `344335051c8b0dea4b4b3dd703cf3613c47eef93` | — |
+| **Exact head** (this report documents) | `33ea2a13c734b62aa9224cabb856de47007f1c6e` | `c30ee927855f99eb25ecdaa4eeeb82bbf7e85a70` |
 
 Formula isolation: **no** changes under `src/responsibleai/formula/`.
 
-## Files changed
+## Remediation mapping (ChatGPT findings)
 
-- `README.md` — link to stranger onboarding docs
+| ID | Fix |
+|----|-----|
+| **P1-01** | `examples/quickstart_stranger_authority.py` now runs `apply_governance()` with `AuthorityResolver`, root + consent + delegation, `authorize_execution` / `InternalToolExecutor`; post-revoke call is `governance_denied`. Stale `AuthorityContext` demo moved to educational footer only. |
+| **P1-02** | `docs/examples/http_governance.md` — Option B: honest separation; canonical path is local quickstart; no false HTTP end-to-end bootstrap. |
+| **P2-01** | `scripts/launch-readiness/clean_room_smoke.sh` uses `git archive` + temp dir + fresh venv. |
+| **P2-02** | Docker: `docker compose config` OK; `docker compose build` OK; image health via `docker run` on alt host port (default `8765` busy on agent host); `compose up` on 8765 blocked by port conflict — image health still verified. |
+| **P2-03** | This report updated at exact head below (follow-up report commit may supersede SHA). |
+
+## Files changed (Cell A + remediation)
+
+- `README.md`
 - `docs/START_HERE.md`, `docs/concepts.md`, `docs/quickstart.md`, `docs/installation.md`, `docs/mcp-quickstart.md`, `docs/troubleshooting.md`
 - `docs/examples/http_governance.md`
 - `docs/launch-readiness/WHITEPACT_STRANGER_ONBOARDING_AUDIT.md`
 - `examples/quickstart_stranger_authority.py`
 - `scripts/launch-readiness/clean_room_smoke.sh`
+- `WHITEPACT_LAUNCH_CELL_A_REPORT.md`
 
 ## Architectural changes
 
-**None** — documentation and one runnable example script only.
+**None** — documentation and stranger quickstart example only.
 
-## Test commands and results
+## Test commands and results (exact head `33ea2a1`)
 
 | Command | Result |
 |---------|--------|
-| `python examples/quickstart_stranger_authority.py` | PASS (allow, deny, evidence chain, revoke, stale-context note) |
-| `bash scripts/launch-readiness/clean_room_smoke.sh` | PASS (venv install + quickstart + 23 pytest) |
-| `PYTEST_ADDOPTS= pytest tests/test_workflow_authority.py -q -o addopts=` | PASS (23 passed) |
-| `helm lint helm/rai-governance` | PASS |
+| `python examples/quickstart_stranger_authority.py` | PASS — execute → revoke → deny |
+| `bash scripts/launch-readiness/clean_room_smoke.sh` | PASS (archive + fresh venv + 23 pytest) |
 | `ruff check examples/quickstart_stranger_authority.py` | PASS |
-| `ruff format --check examples/quickstart_stranger_authority.py` | PASS (after format) |
+| `ruff format --check examples/quickstart_stranger_authority.py` | PASS |
+| `helm lint helm/rai-governance` | PASS |
+| `helm template smoke helm/rai-governance` | PASS (local) |
+| `sudo docker compose config` | PASS |
+| `sudo docker compose build` | PASS |
+| `sudo docker run … curl /api/health` | PASS (`version` 1.3.1) |
 
-**CI run IDs:** Pending push to `feature/whitepact-launch-cell-a-onboarding-distribution` (not merged).
+## Exact-head CI (PR #121 branch `feature/whitepact-launch-cell-a-onboarding-distribution`)
 
-**Docker build:** Not executed in this cell (time/cost); Compose file and healthcheck unchanged and documented.
+| Check | Run ID | Result |
+|-------|--------|--------|
+| CI (matrix) | **36266749300** | success |
+| DCO | 36266749351 | success |
+| OpenSSF Policy Guard | 36266749257 | success |
+| Gitleaks | 36266749250 | success |
+| Dependency Review | 36266749212 | success |
+| Reproducible Build | 36266749243 | success |
+| Self-Conducted Security Scan | 36266749321 | success |
+| CodeQL | 36266749213 | success |
+
+Python 3.11 / 3.12 jobs: included in CI run **36266749300** — success.
 
 ## Security implications
 
-- No secrets added; examples use placeholders.
-- Quickstart documents fail-closed auth defaults and org-scoped governance keys.
-- Stale `AuthorityContext` behavior called out to avoid false confidence after revocation.
+- No secrets committed.
+- Quickstart uses test fixtures mirroring `tests/conftest.py::seed_runtime_authority`.
+- HTTP docs no longer imply delegation-only bootstrap.
 
-## Assumptions
+## Assumptions / limitations
 
-- Strangers clone from GitHub and use Python 3.11+.
-- HTTP governance examples require operator-created org-scoped API keys (dashboard).
-- Hosted MCP smoke (`scripts/integration_smoke.py`) depends on external endpoint availability.
+- HTTP stranger bootstrap still needs operator root/consent provisioning (documented).
+- `docker compose up` on default port not run when host port 8765 is occupied; image health verified on alternate publish port.
 
-## Unsupported / unverified
+## Claims permitted / prohibited
 
-- Full browser org-bootstrap flow without manual key creation.
-- Exhaustive internal markdown link crawl.
-- Production Docker image build in this pass.
-- Measured install-time or latency metrics.
-
-## Remaining issues
-
-| ID | Sev | Item |
-|----|-----|------|
-| — | P2 | Add CI job for `clean_room_smoke.sh` or link check |
-| — | P2 | Scripted dashboard org + key bootstrap for HTTP quickstart |
-| — | P3 | Consolidate duplicate onboarding narratives in legacy docs |
-
-## Claims permitted (Cell A)
-
-- Repository provides a documented stranger path to local allow/deny/evidence/revoke via `examples/quickstart_stranger_authority.py`.
-- MCP production tool count remains **30** (unchanged code).
-- Helm chart lints clean with `helm lint`.
-- Docker Compose path documented with `/api/health` verification.
-
-## Claims prohibited
-
-- Production launch readiness, SOC 2/ISO certification, or customer deployment at scale.
-- Formula Ω∞ production qualification.
-- Guaranteed one-command HTTP revocation demo without org-scoped credentials.
+Same as prior Cell A report: permitted = documented local enforcement path and 30 MCP tools; prohibited = production launch, certifications, Formula production claims.
 
 ## Merge status
 
-**DO NOT MERGE** — awaiting ChatGPT product review and Antigravity adversarial review per program charter.
+**DO NOT MERGE** — ChatGPT re-review, then Antigravity.
