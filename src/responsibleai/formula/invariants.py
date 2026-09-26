@@ -165,7 +165,9 @@ class FormulaInvariantChecker:
             return [InvariantViolation(InvariantId.INV_DELEGATION_SUBSET, str(exc))]
         return []
 
-    def check_capability_tenant_isolation(self, result: CapabilityClosureResult) -> list[InvariantViolation]:
+    def check_capability_tenant_isolation(
+        self, result: CapabilityClosureResult
+    ) -> list[InvariantViolation]:
         for fact in result.facts:
             if fact.tenant_id != result.tenant_id:
                 return [
@@ -211,7 +213,9 @@ class FormulaInvariantChecker:
                         ]
         return []
 
-    def check_capability_budget_status(self, result: CapabilityClosureResult) -> list[InvariantViolation]:
+    def check_capability_budget_status(
+        self, result: CapabilityClosureResult
+    ) -> list[InvariantViolation]:
         exhausted = (
             result.iterations >= result.budget.max_iterations
             or len(result.facts) >= result.budget.max_facts
