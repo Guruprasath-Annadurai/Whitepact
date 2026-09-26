@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from responsibleai.formula.authority.models import (
     AuthorityConstraint,
@@ -32,6 +34,8 @@ def make_grant(
     lifecycle: AuthorityLifecycle = AuthorityLifecycle.ACTIVE,
     issuer_id: str = "issuer-root",
     delegation_depth: int | None = None,
+    max_risk_class: int = 10,
+    conditions: Mapping[str, Any] | None = None,
 ) -> AuthorityGrant:
     now = datetime(2026, 6, 1, 12, 0, 0, tzinfo=UTC)
     return AuthorityGrant(
@@ -47,7 +51,12 @@ def make_grant(
         not_before=nb or now,
         expires_at=exp or (now + timedelta(days=1)),
         risk_ceiling=risk,
-        constraints=AuthorityConstraint.build(allow_delegation=allow_delegation, one_shot=one_shot),
+        constraints=AuthorityConstraint.build(
+            allow_delegation=allow_delegation,
+            one_shot=one_shot,
+            max_risk_class=max_risk_class,
+            conditions=conditions,
+        ),
         lifecycle=lifecycle,
         evidence_ref="ev-1",
         delegation_depth=delegation_depth

@@ -5,12 +5,14 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+import pytest
 from tests.formula.helpers import make_grant
 
 from responsibleai.formula.authority.algebra import EffectiveAuthorityEvaluator
 from responsibleai.formula.authority.containment import grant_within_org_ceiling
-from responsibleai.formula.authority.creation import issuer_can_grant
+from responsibleai.formula.authority.creation import apply_delegation, issuer_can_grant
 from responsibleai.formula.authority.models import (
+    AuthorityConstraint,
     AuthorityContext,
     ExplicitDeny,
     OrgAuthorityCeilingModel,
@@ -18,6 +20,7 @@ from responsibleai.formula.authority.models import (
 from responsibleai.formula.authority.root import TenantRootPrincipal
 from responsibleai.formula.authority.wildcard import WILDCARD
 from responsibleai.formula.epistemic import EpistemicStatus
+from responsibleai.formula.errors import InvalidDelegation
 from responsibleai.formula.graph.elements import GraphNode
 from responsibleai.formula.graph.graph import CanonicalAISystemGraph
 from responsibleai.formula.graph.kinds import NodeKind
@@ -97,9 +100,6 @@ def test_max_delegation_depth_zero_blocks_delegable_mint() -> None:
 
 
 def test_max_delegation_depth_one_blocks_second_hop_delegation() -> None:
-    from responsibleai.formula.authority.algebra import validate_delegation
-    from responsibleai.formula.authority.models import AuthorityConstraint
-
     ceiling = OrgAuthorityCeilingModel(tenant_id="t1", org_id="o", max_delegation_depth=1)
     parent = replace(
         make_grant("p", "org", allow_delegation=True, delegation_depth=0),
@@ -114,8 +114,9 @@ def test_max_delegation_depth_one_blocks_second_hop_delegation() -> None:
         child_leaf,
         constraints=AuthorityConstraint.build(allow_delegation=True),
     )
-    validate_delegation(parent, child_leaf)
-    assert not grant_within_org_ceiling(child_delegable, ceiling)
+    apply_delegation(parent, child_leaf, ceiling=ceiling)
+    with pytest.raises(InvalidDelegation):
+        apply_delegation(parent, child_delegable, ceiling=ceiling)
 
 
 def test_nested_set_freezing_canonical() -> None:

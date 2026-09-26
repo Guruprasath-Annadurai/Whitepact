@@ -3,6 +3,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any
+
 from responsibleai.formula.authority.models import (
     AuthorityConstraint,
     AuthorityGrant,
@@ -13,6 +16,21 @@ from responsibleai.formula.authority.wildcard import WILDCARD, expand_dimension
 
 def effective_risk_ceiling(grant: AuthorityGrant) -> int:
     return min(grant.risk_ceiling, grant.constraints.max_risk_class)
+
+
+def grant_conditions_match(
+    required_conditions: Mapping[str, Any],
+    actual_condition_state: Mapping[str, Any],
+) -> bool:
+    """Fail-closed equality semantics for grant constraint conditions at evaluation time."""
+    if not required_conditions:
+        return True
+    for key, value in required_conditions.items():
+        if key not in actual_condition_state:
+            return False
+        if actual_condition_state[key] != value:
+            return False
+    return True
 
 
 def constraint_subset(child: AuthorityConstraint, parent: AuthorityConstraint) -> bool:
@@ -48,6 +66,8 @@ def grant_within_org_ceiling(grant: AuthorityGrant, ceiling: OrgAuthorityCeiling
     if not dimension_within_ceiling(grant.resources, ceiling.allowed_resources):
         return False
     if ceiling.max_delegation_depth is not None:
+        if grant.delegation_depth > ceiling.max_delegation_depth:
+            return False
         if (
             grant.constraints.allow_delegation
             and grant.delegation_depth >= ceiling.max_delegation_depth

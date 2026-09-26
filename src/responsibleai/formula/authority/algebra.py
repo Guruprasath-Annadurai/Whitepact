@@ -4,14 +4,17 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 from responsibleai.formula.authority.atoms import AuthorityTuple, PermissionAtom
 from responsibleai.formula.authority.containment import (
     constraint_subset,
     effective_risk_ceiling,
+    grant_conditions_match,
+    grant_within_org_ceiling,
 )
 from responsibleai.formula.authority.context_match import grant_context_matches
 from responsibleai.formula.authority.models import (
@@ -56,7 +59,7 @@ def grant_union(grants: Iterable[AuthorityGrant]) -> frozenset[AuthorityTuple]:
                             action=action,
                             resource=resource,
                             purpose=purpose,
-                            risk_ceiling=g.risk_ceiling,
+                            risk_ceiling=effective_risk_ceiling(g),
                             grant_id=g.grant_id,
                         )
                     )
@@ -160,15 +163,26 @@ def authority_subset(child: AuthorityGrant, parent: AuthorityGrant) -> bool:
     return True
 
 
-def validate_delegation(parent: AuthorityGrant, child: AuthorityGrant) -> None:
+def validate_delegation(
+    parent: AuthorityGrant,
+    child: AuthorityGrant,
+    *,
+    ceiling: OrgAuthorityCeilingModel | None = None,
+) -> None:
     if parent.tenant_id != child.tenant_id:
         raise CrossTenantReference("delegation across tenants")
+    if ceiling is not None:
+        if ceiling.tenant_id != parent.tenant_id or ceiling.tenant_id != child.tenant_id:
+            raise CrossTenantReference("delegation ceiling tenant mismatch")
     if not parent.constraints.allow_delegation:
         raise InvalidDelegation("parent grant disallows delegation")
     if child.delegation_depth != parent.delegation_depth + 1:
         raise InvalidDelegation("delegation depth must increment by one")
     if not authority_subset(child, parent):
         raise AuthorityExpansion("delegation widens authority beyond parent")
+    if ceiling is not None:
+        if not grant_within_org_ceiling(child, ceiling):
+            raise InvalidDelegation("child grant exceeds organization ceiling")
 
 
 def grant_contained_in_issuer_authority(
@@ -204,8 +218,15 @@ class EffectiveAuthorityEvaluator:
         at: datetime,
         context: AuthorityContext | None = None,
         hard_proof: bool = False,
+        conditions: Mapping[str, Any] | None = None,
     ) -> frozenset[AuthorityTuple]:
+        """Evaluate effective authority.
+
+        ``context`` (AuthorityContext) restricts where a grant applies (environment keys).
+        ``conditions`` maps runtime state for AuthorityConstraint.conditions (fail-closed).
+        """
         actual_ctx = context or AuthorityContext.from_mapping()
+        actual_conditions = conditions or {}
         active = [
             g
             for g in grants
@@ -214,6 +235,7 @@ class EffectiveAuthorityEvaluator:
             and g.subject.tenant_id == tenant_id
             and g.valid_at(at)
             and grant_context_matches(g.context, actual_ctx)
+            and grant_conditions_match(g.constraints.conditions, actual_conditions)
             and (not hard_proof or is_authoritative_for_hard_proof(g.epistemic_status))
         ]
         tuples = grant_union(active)

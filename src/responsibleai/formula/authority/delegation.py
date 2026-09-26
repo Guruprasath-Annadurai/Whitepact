@@ -6,7 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from responsibleai.formula.authority.algebra import authority_subset, validate_delegation
-from responsibleai.formula.authority.models import AuthorityGrant
+from responsibleai.formula.authority.models import AuthorityGrant, OrgAuthorityCeilingModel
 from responsibleai.formula.errors import InvalidDelegation
 
 
@@ -14,12 +14,12 @@ from responsibleai.formula.errors import InvalidDelegation
 class DelegationChain:
     grants: tuple[AuthorityGrant, ...]
 
-    def validate(self) -> None:
+    def validate(self, *, ceiling: OrgAuthorityCeilingModel | None = None) -> None:
         for i in range(1, len(self.grants)):
             parent, child = self.grants[i - 1], self.grants[i]
             if child.delegator_id != parent.subject.subject_id:
                 raise InvalidDelegation(f"hop {i}: delegator mismatch")
-            validate_delegation(parent, child)
+            validate_delegation(parent, child, ceiling=ceiling)
 
     def root_effective_subset(self) -> bool:
         """Every child ⊆ parent along chain."""

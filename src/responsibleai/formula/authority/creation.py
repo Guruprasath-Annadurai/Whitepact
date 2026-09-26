@@ -11,7 +11,11 @@ from responsibleai.formula.authority.algebra import (
     grant_contained_in_issuer_authority,
 )
 from responsibleai.formula.authority.containment import grant_within_org_ceiling
-from responsibleai.formula.authority.models import AuthorityGrant, AuthorityLifecycle
+from responsibleai.formula.authority.models import (
+    AuthorityGrant,
+    AuthorityLifecycle,
+    OrgAuthorityCeilingModel,
+)
 from responsibleai.formula.authority.root import TenantRootPrincipal
 from responsibleai.formula.authority.tenant import validate_creation_event_tenant
 from responsibleai.formula.epistemic import is_authoritative_for_hard_proof
@@ -118,10 +122,12 @@ def _with_lifecycle(grant: AuthorityGrant, lifecycle: AuthorityLifecycle) -> Aut
 def apply_delegation(
     parent: AuthorityGrant,
     child: AuthorityGrant,
+    *,
+    ceiling: OrgAuthorityCeilingModel | None = None,
 ) -> AuthorityGrant:
     from responsibleai.formula.authority.algebra import validate_delegation
 
-    validate_delegation(parent, child)
+    validate_delegation(parent, child, ceiling=ceiling)
     if child.delegator_id != parent.subject.subject_id:
         raise InvalidGrant("delegator_id must match parent subject")
     return child
