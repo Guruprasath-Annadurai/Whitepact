@@ -3,7 +3,7 @@
 **PR:** #117  
 **Branch:** `feature/whitepact-formula-omega-v0.1-gate2`  
 **Gate 2 code baseline (pre–2B):** `2cc7180c31220d4f1f2e689f2afb34110c7eb240`  
-**Gate 2B head:** *(recorded at push — see `git rev-parse HEAD`)*  
+**Gate 2B head:** `3007005102a5e83aca6ccd178af3b11879bc319a` (tree `232feb9b6f625161a00cd7ceb273edcef26fce6e`)  
 **Formula tests:** 61 (`tests/formula/`)
 
 ## Scope
