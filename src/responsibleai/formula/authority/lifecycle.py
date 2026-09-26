@@ -39,7 +39,8 @@ def assert_grant_usable(grant: AuthorityGrant, at: datetime) -> None:
         raise ConsumedGrant(f"grant {grant.grant_id} not active: {state}")
 
 
-def consume_grant(grant: AuthorityGrant) -> AuthorityGrant:
+def consume_grant(grant: AuthorityGrant, at: datetime) -> AuthorityGrant:
+    assert_grant_usable(grant, at)
     if not grant.constraints.one_shot:
         raise ConsumedGrant("grant is not consumable")
     return AuthorityGrant(

@@ -59,7 +59,8 @@ def test_p5_revoked_not_increase() -> None:
 
 
 def test_p6_consumed_not_increase() -> None:
-    g = consume_grant(make_grant("g", "s", one_shot=True))
+    base = make_grant("g", "s", one_shot=True)
+    g = consume_grant(base, base.not_before)
     assert g.lifecycle == AuthorityLifecycle.CONSUMED
 
 

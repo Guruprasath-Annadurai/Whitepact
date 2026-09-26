@@ -33,6 +33,8 @@ class ProbabilityMass(Generic[W]):
     masses: tuple[tuple[W, float], ...]
 
     def __post_init__(self) -> None:
+        if not self.masses:
+            raise ValueError("empty probability mass is invalid; use a degenerate point mass")
         total = 0.0
         for _, p in self.masses:
             if not math.isfinite(p):

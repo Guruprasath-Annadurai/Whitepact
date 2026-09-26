@@ -76,7 +76,27 @@ class AuthorityConstraint:
     max_risk_class: int = 10
     allow_delegation: bool = False
     one_shot: bool = False
-    conditions: dict[str, Any] = field(default_factory=dict)
+    _condition_pairs: tuple[tuple[str, Any], ...] = ()
+
+    @classmethod
+    def build(
+        cls,
+        *,
+        max_risk_class: int = 10,
+        allow_delegation: bool = False,
+        one_shot: bool = False,
+        conditions: Mapping[str, Any] | None = None,
+    ) -> AuthorityConstraint:
+        return cls(
+            max_risk_class=max_risk_class,
+            allow_delegation=allow_delegation,
+            one_shot=one_shot,
+            _condition_pairs=freeze_mapping(conditions or {}),
+        )
+
+    @property
+    def conditions(self) -> dict[str, Any]:
+        return dict(self._condition_pairs)
 
 
 @dataclass(frozen=True, slots=True)

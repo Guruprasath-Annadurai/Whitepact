@@ -8,6 +8,11 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 
+from responsibleai.formula.authority.atoms import AuthorityTuple, PermissionAtom
+from responsibleai.formula.authority.containment import (
+    constraint_subset,
+    effective_risk_ceiling,
+)
 from responsibleai.formula.authority.context_match import grant_context_matches
 from responsibleai.formula.authority.models import (
     AuthorityContext,
@@ -16,37 +21,19 @@ from responsibleai.formula.authority.models import (
     OrgAuthorityCeilingModel,
 )
 from responsibleai.formula.authority.wildcard import WILDCARD, dimension_subset, expand_dimension
+from responsibleai.formula.authority.wildcard_algebra import (
+    atom_covered_by_deny,
+    tuple_difference,
+    tuple_intersection,
+)
+from responsibleai.formula.epistemic import is_authoritative_for_hard_proof
 from responsibleai.formula.errors import AuthorityExpansion, CrossTenantReference, InvalidDelegation
-
-
-@dataclass(frozen=True, slots=True)
-class PermissionAtom:
-    """Semantic authority atom (no grant provenance)."""
-
-    action: str
-    resource: str
-    purpose: str
-    risk_ceiling: int
 
 
 @dataclass(frozen=True, slots=True)
 class PermissionProvenance:
     atom: PermissionAtom
     grant_id: str
-
-
-@dataclass(frozen=True, slots=True)
-class AuthorityTuple:
-    """Backward-compatible alias carrying provenance."""
-
-    action: str
-    resource: str
-    purpose: str
-    risk_ceiling: int
-    grant_id: str
-
-    def atom(self) -> PermissionAtom:
-        return PermissionAtom(self.action, self.resource, self.purpose, self.risk_ceiling)
 
 
 def _purposes_for_union(g: AuthorityGrant) -> frozenset[str]:
@@ -82,17 +69,13 @@ def atoms_from_tuples(tuples: frozenset[AuthorityTuple]) -> frozenset[Permission
 def grant_intersection(
     a: frozenset[AuthorityTuple], b: frozenset[AuthorityTuple]
 ) -> frozenset[AuthorityTuple]:
-    a_atoms = atoms_from_tuples(a)
-    b_atoms = atoms_from_tuples(b)
-    common = a_atoms & b_atoms
-    return frozenset(t for t in a if t.atom() in common)
+    return tuple_intersection(a, b)
 
 
 def grant_difference(
     a: frozenset[AuthorityTuple], b: frozenset[AuthorityTuple]
 ) -> frozenset[AuthorityTuple]:
-    b_atoms = atoms_from_tuples(b)
-    return frozenset(t for t in a if t.atom() not in b_atoms)
+    return tuple_difference(a, b)
 
 
 def grant_restriction(
@@ -101,10 +84,18 @@ def grant_restriction(
     """Org ceiling: DROP tuples exceeding allowed dimensions (not clip)."""
     out: set[AuthorityTuple] = set()
     for t in tuples:
-        if ceiling.allowed_actions is not None and t.action not in ceiling.allowed_actions:
-            continue
-        if ceiling.allowed_resources is not None and t.resource not in ceiling.allowed_resources:
-            continue
+        if ceiling.allowed_actions is not None:
+            if t.action == WILDCARD:
+                if WILDCARD not in ceiling.allowed_actions:
+                    continue
+            elif t.action not in ceiling.allowed_actions:
+                continue
+        if ceiling.allowed_resources is not None:
+            if t.resource == WILDCARD:
+                if WILDCARD not in ceiling.allowed_resources:
+                    continue
+            elif t.resource not in ceiling.allowed_resources:
+                continue
         if ceiling.max_risk_class is not None and t.risk_ceiling > ceiling.max_risk_class:
             continue
         out.add(t)
@@ -119,17 +110,15 @@ def apply_explicit_denies(
     at: datetime,
 ) -> frozenset[AuthorityTuple]:
     result = set(tuples)
-    for deny in denies:
-        if deny.tenant_id != tenant_id:
-            continue
-        if deny.subject_id != subject_id:
-            continue
+    ordered = sorted(
+        [d for d in denies if d.tenant_id == tenant_id and d.subject_id == subject_id],
+        key=lambda d: (-d.specificity, d.deny_id),
+    )
+    for deny in ordered:
         if deny.expires_at is not None and at >= deny.expires_at:
             continue
         for t in list(result):
-            action_match = t.action in deny.actions or WILDCARD in deny.actions
-            resource_match = t.resource in deny.resources or WILDCARD in deny.resources
-            if action_match and resource_match:
+            if atom_covered_by_deny(t.atom(), deny):
                 result.remove(t)
     return frozenset(result)
 
@@ -153,9 +142,11 @@ def authority_subset(child: AuthorityGrant, parent: AuthorityGrant) -> bool:
         return False
     if not dimension_subset(child.purposes, parent.purposes):
         return False
-    if child.risk_ceiling > parent.risk_ceiling:
+    if effective_risk_ceiling(child) > effective_risk_ceiling(parent):
         return False
     if child.constraints.allow_delegation and not parent.constraints.allow_delegation:
+        return False
+    if not constraint_subset(child.constraints, parent.constraints):
         return False
     if child.not_before < parent.not_before:
         return False
@@ -207,6 +198,7 @@ class EffectiveAuthorityEvaluator:
         tenant_id: str,
         at: datetime,
         context: AuthorityContext | None = None,
+        hard_proof: bool = False,
     ) -> frozenset[AuthorityTuple]:
         actual_ctx = context or AuthorityContext.from_mapping()
         active = [
@@ -217,6 +209,7 @@ class EffectiveAuthorityEvaluator:
             and g.subject.tenant_id == tenant_id
             and g.valid_at(at)
             and grant_context_matches(g.context, actual_ctx)
+            and (not hard_proof or is_authoritative_for_hard_proof(g.epistemic_status))
         ]
         tuples = grant_union(active)
         if self.ceiling is not None:

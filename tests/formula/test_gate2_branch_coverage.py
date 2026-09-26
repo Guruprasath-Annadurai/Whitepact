@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -81,6 +82,7 @@ def _creation_event(
     subject_id: str | None = None,
 ) -> AuthorityCreationEvent:
     return AuthorityCreationEvent(
+        tenant_id=grant.tenant_id,
         issuer_id=issuer_id or grant.issuer_id,
         subject_id=subject_id or grant.subject.subject_id,
         new_grant=grant,
@@ -108,13 +110,19 @@ def test_validate_creation_event_rejects_missing_fields() -> None:
 
 
 def test_apply_creation_event_pending_promotion_and_failures() -> None:
-    g = make_grant("g", "s", lifecycle=AuthorityLifecycle.PENDING)
+    g = replace(
+        make_grant("g", "s", lifecycle=AuthorityLifecycle.PENDING),
+        epistemic_status=EpistemicStatus.OBSERVED,
+    )
     ev = _creation_event(g)
     root = TenantRootPrincipal("t1", "issuer-root", "org", "ev-root", "pol-1")
     state = apply_creation_event((), ev, EffectiveAuthorityEvaluator(), root=root)
     assert state[0].lifecycle == AuthorityLifecycle.ACTIVE
 
-    revoked = make_grant("r", "s2", lifecycle=AuthorityLifecycle.REVOKED)
+    revoked = replace(
+        make_grant("r", "s2", lifecycle=AuthorityLifecycle.REVOKED),
+        epistemic_status=EpistemicStatus.OBSERVED,
+    )
     with pytest.raises(InvalidGrant):
         apply_creation_event(
             (),
@@ -137,7 +145,10 @@ def test_issuer_can_grant_edge_paths() -> None:
     )
 
     root = TenantRootPrincipal("t1", "root-1", "org", "ev", "pol", ceiling=None)
-    ok = make_grant("ok", "agent", issuer_id="root-1")
+    ok = replace(
+        make_grant("ok", "agent", issuer_id="root-1"),
+        epistemic_status=EpistemicStatus.OBSERVED,
+    )
     assert issuer_can_grant(
         "root-1", ok, (), EffectiveAuthorityEvaluator(), ok.not_before, root=root
     )
@@ -146,7 +157,10 @@ def test_issuer_can_grant_edge_paths() -> None:
         tenant_id="t1", org_id="o1", allowed_actions=frozenset({"read"}), max_risk_class=5
     )
     root_with_ceiling = TenantRootPrincipal("t1", "root-2", "org", "ev", "pol", ceiling=ceiling)
-    ok2 = make_grant("ok2", "agent2", issuer_id="root-2")
+    ok2 = replace(
+        make_grant("ok2", "agent2", issuer_id="root-2"),
+        epistemic_status=EpistemicStatus.OBSERVED,
+    )
     assert issuer_can_grant(
         "root-2",
         ok2,
@@ -218,7 +232,7 @@ def test_lifecycle_superseded_and_consume_errors() -> None:
     with pytest.raises(ConsumedGrant):
         assert_grant_usable(g, g.not_before)
     with pytest.raises(ConsumedGrant, match="not consumable"):
-        consume_grant(make_grant("nc", "s", one_shot=False))
+        consume_grant(make_grant("nc", "s", one_shot=False), make_grant("nc", "s").not_before)
 
 
 def test_grant_restriction_and_denies_branches() -> None:

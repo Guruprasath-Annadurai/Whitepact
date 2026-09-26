@@ -104,7 +104,8 @@ def test_grant_intersection_ignores_grant_id() -> None:
     g2 = make_grant("g2", "s")
     u1 = EffectiveAuthorityEvaluator().effective((g1,), (), "s", "t1", g1.not_before)
     u2 = EffectiveAuthorityEvaluator().effective((g2,), (), "s", "t1", g2.not_before)
-    assert grant_intersection(u1, u2) == u1
+    inter = grant_intersection(u1, u2)
+    assert {t.atom() for t in inter} == {t.atom() for t in u1}
 
 
 def test_temporal_half_open_boundary() -> None:
@@ -125,7 +126,7 @@ def test_pending_not_usable() -> None:
 
 def test_one_shot_consume() -> None:
     g = make_grant("g", "s", one_shot=True)
-    used = consume_grant(g)
+    used = consume_grant(g, g.not_before)
     assert used.lifecycle == AuthorityLifecycle.CONSUMED
     with pytest.raises(ConsumedGrant):
         assert_grant_usable(used, g.not_before)

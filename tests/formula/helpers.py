@@ -46,7 +46,7 @@ def make_grant(
         not_before=nb or now,
         expires_at=exp or (now + timedelta(days=1)),
         risk_ceiling=risk,
-        constraints=AuthorityConstraint(allow_delegation=allow_delegation, one_shot=one_shot),
+        constraints=AuthorityConstraint.build(allow_delegation=allow_delegation, one_shot=one_shot),
         lifecycle=lifecycle,
         evidence_ref="ev-1",
     )

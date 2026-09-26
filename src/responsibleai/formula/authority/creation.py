@@ -10,14 +10,17 @@ from responsibleai.formula.authority.algebra import (
     EffectiveAuthorityEvaluator,
     grant_contained_in_issuer_authority,
 )
+from responsibleai.formula.authority.containment import grant_within_org_ceiling
 from responsibleai.formula.authority.models import AuthorityGrant, AuthorityLifecycle
 from responsibleai.formula.authority.root import TenantRootPrincipal
 from responsibleai.formula.authority.tenant import validate_creation_event_tenant
+from responsibleai.formula.epistemic import is_authoritative_for_hard_proof
 from responsibleai.formula.errors import AuthorityExpansion, InvalidGrant
 
 
 @dataclass(frozen=True, slots=True)
 class AuthorityCreationEvent:
+    tenant_id: str
     issuer_id: str
     subject_id: str
     new_grant: AuthorityGrant
@@ -57,10 +60,14 @@ def issuer_can_grant(
     if grant.subject.subject_id == issuer_id:
         return False
     if root is not None and root.is_issuer(issuer_id, grant.tenant_id):
-        if not grant.evidence_ref:
+        if not grant.evidence_ref or not root.evidence_ref:
             return False
-        if root.ceiling is not None and evaluator.ceiling is None:
-            pass
+        if not is_authoritative_for_hard_proof(grant.epistemic_status):
+            return False
+        ceilings = [c for c in (root.ceiling, evaluator.ceiling) if c is not None]
+        for ceiling in ceilings:
+            if not grant_within_org_ceiling(grant, ceiling):
+                return False
         return True
     return grant_contained_in_issuer_authority(grant, issuer_grants, at, issuer_id)
 

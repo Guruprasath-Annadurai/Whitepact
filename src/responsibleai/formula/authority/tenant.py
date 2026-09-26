@@ -37,9 +37,16 @@ def validate_creation_event_tenant(event: object) -> None:
 
     if not isinstance(event, AuthorityCreationEvent):
         raise TypeError("expected AuthorityCreationEvent")
-    t = event.new_grant.tenant_id
-    assert_same_tenant(t, ("event grant", t))
-    if event.new_grant.issuer_id != event.issuer_id:
+    g = event.new_grant
+    t = g.tenant_id
+    assert_same_tenant(
+        t,
+        ("event.tenant_id", event.tenant_id),
+        ("subject", g.subject.tenant_id),
+    )
+    if g.issuer_id != event.issuer_id:
         raise CrossTenantReference("issuer mismatch on creation event")
-    if event.new_grant.subject.subject_id != event.subject_id:
+    if g.subject.subject_id != event.subject_id:
         raise CrossTenantReference("subject mismatch on creation event")
+    if event.tenant_id != t:
+        raise CrossTenantReference("creation event tenant mismatch")
