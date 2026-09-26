@@ -11,7 +11,7 @@
 | Field | Value |
 |-------|-------|
 | Pre-3B head (historical) | `283afd2150d59a2733b7c0ebdea130e81cd88da2` |
-| Final head | *(recorded at push — `git rev-parse HEAD`)* |
+| Final head | `022d98a7879cd0ef070555c3bf9b23208a7875e1` |
 
 ### Architecture changes (3B)
 
@@ -57,7 +57,7 @@
 
 ### Local qualification
 
-- `pytest tests/formula` — **138** passed (at commit time)
+- `pytest tests/formula` — **138** passed (at `022d98a`)
 - `ruff check`, `ruff format --check`, `mypy src/responsibleai/formula/capability` — pass
 
 ### CI / DCO
