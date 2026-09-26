@@ -3,7 +3,8 @@
 **PR:** #117  
 **Branch:** `feature/whitepact-formula-omega-v0.1-gate2`  
 **Prior Gate 2B commit:** `3007005102a5e83aca6ccd178af3b11879bc319a`  
-**Gate 2C head:** `17e91d9ab2c64ea80854018087e355e6afa2ab64` (tree `fa2598b8fd5381833f50c4f3c9d21a73742fef9f`)  
+**Gate 2C code:** `17e91d9ab2c64ea80854018087e355e6afa2ab64`  
+**Branch tip (CI green):** `0f9bb3eebcde1615f7354edb6427236be8d5d23c` (`909ae6d` ruff format; `0f9bb3e` CI retrigger)  
 **Formula tests:** 70 (`tests/formula/`)
 
 ## Blocker closure
@@ -46,7 +47,7 @@
 
 ## CI
 
-Exact-head full CI required on Gate 2C tip (Python 3.11/3.12, branch coverage ≥ 80%, security checks).
+**PASS** — exact-head full CI on `0f9bb3e` ([workflow run 36226328627](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36226328627)): 16/16 checks (Python 3.11/3.12 lint · type-check · test, branch coverage ≥ 80%, security scans).
 
 ## Remaining issues
 
@@ -59,4 +60,4 @@ Exact-head full CI required on Gate 2C tip (Python 3.11/3.12, branch coverage �
 
 **WHITEPACT FORMULA Ω∞ GATE 2 PASS — AUTHORITY FOUNDATION APPROVED FOR CAPABILITY ENGINE**
 
-*(Subject to exact-head CI green; PR #117 not merged; Gate 3 not started.)*
+*(PR #117 not merged; Gate 3 not started.)*
