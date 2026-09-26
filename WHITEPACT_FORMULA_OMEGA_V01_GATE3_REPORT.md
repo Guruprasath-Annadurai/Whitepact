@@ -11,7 +11,9 @@
 | Field | Value |
 |-------|-------|
 | Pre-3B head (historical) | `283afd2150d59a2733b7c0ebdea130e81cd88da2` |
-| Final head | `022d98a7879cd0ef070555c3bf9b23208a7875e1` |
+| Qualified exact head | `c05ee3fa809529a2703307b23786430dbcc35207` |
+| Qualified tree | `c2b400a257aa14697146ed2794d8ae2dff8fecd9` |
+| Exact-head CI (all 16 checks) | GitHub Actions run `36258529944` |
 
 ### Architecture changes (3B)
 
@@ -57,17 +59,17 @@
 
 ### Local qualification
 
-- `pytest tests/formula` — **138** passed (at `022d98a`)
-- `ruff check`, `ruff format --check`, `mypy src/responsibleai/formula/capability` — pass
+- `pytest tests/formula` — **146** passed (at `c05ee3f`)
+- `ruff check`, `ruff format --check`, `mypy` — pass on exact-head CI (3.11 + 3.12)
 
 ### CI / DCO
 
-Exact-head run and DCO status recorded after push. Prior SHAs (`19b4549`, `283afd2`) are historical only.
+- **DCO:** green on `c05ee3f`
+- **Full PR workflow:** 16/16 green on run `36258529944` (includes branch coverage ≥80%, mypy, frontend, CodeQL, reproducible build, etc.)
+- Prior candidate SHAs are historical evidence only.
 
-### Verdict
-
-Pending fresh exact-head CI green → engineering target:
+### Engineering verdict (exact-head qualified)
 
 **WHITEPACT FORMULA Ω∞ GATE 3 PASS — BOUNDED CAPABILITY CLOSURE ENGINE READY FOR INDEPENDENT REVIEW**
 
-Else **CONDITIONAL**.
+PR #120 remains **draft / not merged**. Next: ChatGPT code review → Antigravity adversarial examination → explicit merge approval.
