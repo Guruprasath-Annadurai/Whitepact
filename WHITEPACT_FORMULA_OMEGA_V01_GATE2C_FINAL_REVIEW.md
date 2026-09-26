@@ -3,7 +3,7 @@
 **PR:** #117  
 **Branch:** `feature/whitepact-formula-omega-v0.1-gate2`  
 **Prior Gate 2B commit:** `3007005102a5e83aca6ccd178af3b11879bc319a`  
-**Gate 2C head:** *(see branch tip after push)*  
+**Gate 2C head:** `17e91d9ab2c64ea80854018087e355e6afa2ab64` (tree `fa2598b8fd5381833f50c4f3c9d21a73742fef9f`)  
 **Formula tests:** 70 (`tests/formula/`)
 
 ## Blocker closure
