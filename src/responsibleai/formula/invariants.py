@@ -21,6 +21,10 @@ from responsibleai.formula.authority.models import (
     AuthorityLifecycle,
     OrgAuthorityCeilingModel,
 )
+from responsibleai.formula.capability.budget import ClosureStatus
+from responsibleai.formula.capability.closure import CapabilityClosureResult
+from responsibleai.formula.capability.derivation import CapabilityDerivation
+from responsibleai.formula.capability.epistemic_compose import compose_epistemic
 from responsibleai.formula.epistemic import EpistemicStatus, is_authoritative_for_hard_proof
 from responsibleai.formula.fence import CommitFence, EvaluationPin
 from responsibleai.formula.trace.semantics import TraceAuthorized
@@ -29,6 +33,12 @@ from responsibleai.formula.trace.trace import FormulaTrace
 
 class InvariantId(StrEnum):
     INV_CAPABILITY_NOT_AUTHORITY = "INV_CAPABILITY_NOT_AUTHORITY"
+    INV_CAPABILITY_TENANT_ISOLATION = "INV_CAPABILITY_TENANT_ISOLATION"
+    INV_CAPABILITY_PROVENANCE = "INV_CAPABILITY_PROVENANCE"
+    INV_CAPABILITY_NO_SPONTANEOUS_EXPANSION = "INV_CAPABILITY_NO_SPONTANEOUS_EXPANSION"
+    INV_CAPABILITY_EPISTEMIC_NON_UPGRADE = "INV_CAPABILITY_EPISTEMIC_NON_UPGRADE"
+    INV_CAPABILITY_CLOSURE_IDEMPOTENT = "INV_CAPABILITY_CLOSURE_IDEMPOTENT"
+    INV_CAPABILITY_BUDGET_FAILS_INCOMPLETE = "INV_CAPABILITY_BUDGET_FAILS_INCOMPLETE"
     INV_UNKNOWN_NOT_AUTHORITY = "INV_UNKNOWN_NOT_AUTHORITY"
     INV_DELEGATION_SUBSET = "INV_DELEGATION_SUBSET"
     INV_ORG_CEILING = "INV_ORG_CEILING"
@@ -154,3 +164,88 @@ class FormulaInvariantChecker:
         except Exception as exc:  # noqa: BLE001
             return [InvariantViolation(InvariantId.INV_DELEGATION_SUBSET, str(exc))]
         return []
+
+    def check_capability_tenant_isolation(self, result: CapabilityClosureResult) -> list[InvariantViolation]:
+        for fact in result.facts:
+            if fact.tenant_id != result.tenant_id:
+                return [
+                    InvariantViolation(
+                        InvariantId.INV_CAPABILITY_TENANT_ISOLATION,
+                        "capability fact tenant mismatch",
+                    )
+                ]
+            if fact.actor.tenant_id != result.tenant_id:
+                return [
+                    InvariantViolation(
+                        InvariantId.INV_CAPABILITY_TENANT_ISOLATION,
+                        "capability actor tenant mismatch",
+                    )
+                ]
+        return []
+
+    def check_capability_provenance(
+        self, result: CapabilityClosureResult
+    ) -> list[InvariantViolation]:
+        direct_keys = {f.semantic_key() for f in result.facts if f.is_direct}
+        derived_keys = {d.output_semantic_key for d in result.derivations}
+        for fact in result.facts:
+            if fact.is_direct:
+                continue
+            if fact.semantic_key() not in derived_keys:
+                return [
+                    InvariantViolation(
+                        InvariantId.INV_CAPABILITY_PROVENANCE,
+                        "non-direct capability missing derivation witness",
+                    )
+                ]
+        for d in result.derivations:
+            for prereq in d.prerequisite_keys:
+                if prereq not in direct_keys and prereq not in derived_keys:
+                    # prerequisite may be another derived fact from earlier iteration
+                    if not any(f.semantic_key() == prereq for f in result.facts):
+                        return [
+                            InvariantViolation(
+                                InvariantId.INV_CAPABILITY_PROVENANCE,
+                                "derivation references missing prerequisite",
+                            )
+                        ]
+        return []
+
+    def check_capability_budget_status(self, result: CapabilityClosureResult) -> list[InvariantViolation]:
+        exhausted = (
+            result.iterations >= result.budget.max_iterations
+            or len(result.facts) >= result.budget.max_facts
+            or result.rule_applications >= result.budget.max_rule_applications
+        )
+        if exhausted and result.status == ClosureStatus.COMPLETE:
+            return [
+                InvariantViolation(
+                    InvariantId.INV_CAPABILITY_BUDGET_FAILS_INCOMPLETE,
+                    "budget exhausted but closure reported COMPLETE",
+                )
+            ]
+        return []
+
+    def check_derivation_epistemic_non_upgrade(
+        self, derivation: CapabilityDerivation, premises: tuple
+    ) -> list[InvariantViolation]:
+
+        statuses = [p.epistemic_status for p in premises if hasattr(p, "epistemic_status")]
+        if not statuses:
+            return []
+        weakest = compose_epistemic(*statuses)
+        if _epistemic_rank(derivation.epistemic_status) > _epistemic_rank(weakest):
+            return [
+                InvariantViolation(
+                    InvariantId.INV_CAPABILITY_EPISTEMIC_NON_UPGRADE,
+                    "derivation epistemic status exceeds weakest premise",
+                )
+            ]
+        return []
+
+
+def _epistemic_rank(status) -> int:
+    from responsibleai.formula.epistemic import EpistemicStatus
+
+    order = list(EpistemicStatus)
+    return order.index(status)
