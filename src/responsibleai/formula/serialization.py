@@ -100,6 +100,7 @@ def serialize_grant(grant: AuthorityGrant) -> dict[str, Any]:
             "epistemic_status": grant.epistemic_status,
             "schema_version": grant.schema_version,
             "version": grant.version,
+            "delegation_depth": grant.delegation_depth,
         }
     )
 

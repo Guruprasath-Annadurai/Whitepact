@@ -3,14 +3,23 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from typing import Any
+
+
+def _freeze_sort_key(value: Any) -> str:
+    """Deterministic sort key for unordered collections."""
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
 
 
 def freeze_value(value: Any) -> Any:
     if isinstance(value, Mapping):
         return freeze_mapping(value)
-    if isinstance(value, (list, set)):
+    if isinstance(value, (set, frozenset)):
+        frozen_items = [freeze_value(v) for v in value]
+        return tuple(sorted(frozen_items, key=_freeze_sort_key))
+    if isinstance(value, list):
         return tuple(freeze_value(v) for v in value)
     if isinstance(value, tuple):
         return tuple(freeze_value(v) for v in value)

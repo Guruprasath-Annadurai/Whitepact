@@ -62,4 +62,5 @@ def consume_grant(grant: AuthorityGrant, at: datetime) -> AuthorityGrant:
         epistemic_status=grant.epistemic_status,
         schema_version=grant.schema_version,
         version=grant.version + 1,
+        delegation_depth=grant.delegation_depth,
     )

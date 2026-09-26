@@ -111,6 +111,7 @@ def _with_lifecycle(grant: AuthorityGrant, lifecycle: AuthorityLifecycle) -> Aut
         epistemic_status=grant.epistemic_status,
         schema_version=grant.schema_version,
         version=grant.version,
+        delegation_depth=grant.delegation_depth,
     )
 
 

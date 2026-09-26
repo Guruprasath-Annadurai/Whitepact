@@ -31,6 +31,7 @@ def make_grant(
     context: AuthorityContext | None = None,
     lifecycle: AuthorityLifecycle = AuthorityLifecycle.ACTIVE,
     issuer_id: str = "issuer-root",
+    delegation_depth: int | None = None,
 ) -> AuthorityGrant:
     now = datetime(2026, 6, 1, 12, 0, 0, tzinfo=UTC)
     return AuthorityGrant(
@@ -49,4 +50,5 @@ def make_grant(
         constraints=AuthorityConstraint.build(allow_delegation=allow_delegation, one_shot=one_shot),
         lifecycle=lifecycle,
         evidence_ref="ev-1",
+        delegation_depth=delegation_depth if delegation_depth is not None else (1 if delegator else 0),
     )

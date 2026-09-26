@@ -23,6 +23,7 @@ from responsibleai.formula.authority.models import (
 from responsibleai.formula.authority.wildcard import WILDCARD, dimension_subset, expand_dimension
 from responsibleai.formula.authority.wildcard_algebra import (
     atom_covered_by_deny,
+    materialize_wildcard_tuples,
     tuple_difference,
     tuple_intersection,
 )
@@ -109,14 +110,16 @@ def apply_explicit_denies(
     tenant_id: str,
     at: datetime,
 ) -> frozenset[AuthorityTuple]:
-    result = set(tuples)
-    ordered = sorted(
-        [d for d in denies if d.tenant_id == tenant_id and d.subject_id == subject_id],
-        key=lambda d: (-d.specificity, d.deny_id),
-    )
-    for deny in ordered:
-        if deny.expires_at is not None and at >= deny.expires_at:
-            continue
+    applicable = [
+        d
+        for d in denies
+        if d.tenant_id == tenant_id
+        and d.subject_id == subject_id
+        and (d.expires_at is None or at < d.expires_at)
+    ]
+    concrete = materialize_wildcard_tuples(tuples, applicable)
+    result = set(concrete)
+    for deny in applicable:
         for t in list(result):
             if atom_covered_by_deny(t.atom(), deny):
                 result.remove(t)
@@ -162,6 +165,8 @@ def validate_delegation(parent: AuthorityGrant, child: AuthorityGrant) -> None:
         raise CrossTenantReference("delegation across tenants")
     if not parent.constraints.allow_delegation:
         raise InvalidDelegation("parent grant disallows delegation")
+    if child.delegation_depth != parent.delegation_depth + 1:
+        raise InvalidDelegation("delegation depth must increment by one")
     if not authority_subset(child, parent):
         raise AuthorityExpansion("delegation widens authority beyond parent")
 

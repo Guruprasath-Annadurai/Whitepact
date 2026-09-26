@@ -119,6 +119,7 @@ class AuthorityGrant:
     epistemic_status: EpistemicStatus = EpistemicStatus.DECLARED
     schema_version: str = "0.1.0"
     version: int = 1
+    delegation_depth: int = 0
 
     def valid_at(self, at: datetime) -> bool:
         from responsibleai.formula.authority.lifecycle import lifecycle_at
@@ -146,4 +147,5 @@ class OrgAuthorityCeilingModel:
     allowed_actions: frozenset[str] | None = None
     allowed_resources: frozenset[str] | None = None
     max_risk_class: int | None = None
+    # Depth is enforced in grant_within_org_ceiling (mint) and validate_delegation (chain).
     max_delegation_depth: int | None = None
