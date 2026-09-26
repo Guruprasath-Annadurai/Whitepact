@@ -97,6 +97,10 @@ see `MIGRATION_WHITEPACT_V2.md` Section 3 and `docs/PACKAGE_IDENTITY.md`
 for install vs import vs product naming (do not use `pip install whitepact`
 unless PyPI documents that distribution).
 
+**Stranger onboarding (authority allow/deny, evidence, revocation):** see
+[`docs/START_HERE.md`](docs/START_HERE.md) and the five-minute
+[`docs/quickstart.md`](docs/quickstart.md).
+
 ---
 
 ## 30-second quickstart
