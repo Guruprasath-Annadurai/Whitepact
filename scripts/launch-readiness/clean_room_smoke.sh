@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 # Clean-room smoke: clone-agnostic when run from a fresh checkout.
 # Does not start Docker or require API keys.
 set -euo pipefail
