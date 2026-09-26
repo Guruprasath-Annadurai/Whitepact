@@ -5,8 +5,13 @@
 from __future__ import annotations
 
 from responsibleai.formula.capability.actors import CapabilityActor
+from responsibleai.formula.capability.derivation import CapabilityDerivation
+from responsibleai.formula.capability.epistemic_compose import compose_epistemic
 from responsibleai.formula.capability.facts import CapabilityFact
 from responsibleai.formula.capability.models import CapabilityKind
+from responsibleai.formula.capability.routes import route_derivation_depth
+from responsibleai.formula.capability.rules import RuleId
+from responsibleai.formula.capability.state import CapabilityClosureState
 from responsibleai.formula.graph.elements import GraphEdge, GraphNode
 from responsibleai.formula.graph.kinds import EdgeKind, NodeKind
 from responsibleai.formula.graph.snapshot import GraphSnapshot
@@ -37,10 +42,19 @@ _CAPABILITY_KIND_FOR_DIRECT: dict[str, CapabilityKind] = {
 }
 
 
-def extract_direct_capabilities(snapshot: GraphSnapshot) -> tuple[CapabilityFact, ...]:
-    """Derive direct capabilities only from CAN_CALL/READ/WRITE/EXECUTE edges."""
+def compose_direct_epistemic(src: GraphNode, edge: GraphEdge, tgt: GraphNode):
+    return compose_epistemic(src.epistemic_status, edge.epistemic_status, tgt.epistemic_status)
+
+
+def extract_direct_into_state(
+    snapshot: GraphSnapshot,
+    state: CapabilityClosureState,
+    *,
+    max_path_depth: int,
+) -> int:
+    """Emit DIRECT_EXTRACTION witnesses; return count of new semantic facts."""
     nodes = {n.node_id: n for n in snapshot.nodes}
-    facts: list[CapabilityFact] = []
+    new_facts = 0
     for edge in sorted(snapshot.edges, key=lambda e: e.edge_id):
         action = _EDGE_TO_ACTION.get(edge.kind)
         if action is None:
@@ -53,33 +67,40 @@ def extract_direct_capabilities(snapshot: GraphSnapshot) -> tuple[CapabilityFact
             continue
         if edge.tenant_id != snapshot.tenant_id:
             continue
+        route = (src.node_id, tgt.node_id)
+        depth = route_derivation_depth(route)
+        if depth > max_path_depth:
+            state.frontier_blocked = True
+            state.truncation_notes.append(
+                "max_path_depth exhausted while a valid capability frontier remained"
+            )
+            continue
         actor = CapabilityActor.single(snapshot.tenant_id, src.node_id)
         kind = _CAPABILITY_KIND_FOR_DIRECT[action]
         if tgt.kind in (NodeKind.TOOL, NodeKind.MCP_SERVER, NodeKind.API, NodeKind.SERVICE):
             if action == "call":
                 kind = CapabilityKind.DIRECT_TOOL
-        facts.append(
-            CapabilityFact(
-                tenant_id=snapshot.tenant_id,
-                actor=actor,
-                action=action,
-                target_node_id=tgt.node_id,
-                kind=kind,
-                epistemic_status=compose_edge_epistemic(src, edge),
-                is_direct=True,
-            )
+        epistemic = compose_direct_epistemic(src, edge, tgt)
+        fact = CapabilityFact(
+            tenant_id=snapshot.tenant_id,
+            actor=actor,
+            action=action,
+            target_node_id=tgt.node_id,
+            kind=kind,
+            epistemic_status=epistemic,
+            is_direct=True,
         )
-    return tuple(_dedupe_semantic(facts))
-
-
-def compose_edge_epistemic(src: GraphNode, edge: GraphEdge):
-    from responsibleai.formula.capability.epistemic_compose import compose_epistemic
-
-    return compose_epistemic(src.epistemic_status, edge.epistemic_status)
-
-
-def _dedupe_semantic(facts: list[CapabilityFact]) -> list[CapabilityFact]:
-    seen: dict[tuple, CapabilityFact] = {}
-    for f in facts:
-        seen.setdefault(f.semantic_key(), f)
-    return [seen[k] for k in sorted(seen)]
+        witness = CapabilityDerivation(
+            rule_id=RuleId.DIRECT_EXTRACTION,
+            output_semantic_key=fact.semantic_key(),
+            prerequisite_keys=(),
+            graph_node_ids=route,
+            graph_edge_ids=(edge.edge_id,),
+            epistemic_status=epistemic,
+            derivation_depth=depth,
+            route_node_ids=route,
+        )
+        _witness_added, fact_added = state.add_witness(fact, witness, is_direct=True)
+        if fact_added:
+            new_facts += 1
+    return new_facts

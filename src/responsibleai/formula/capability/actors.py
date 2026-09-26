@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from responsibleai.formula.errors import CapabilityTenantMismatch
+from responsibleai.formula.errors import CapabilityTenantMismatch, InvalidCapability
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,8 +23,17 @@ class CapabilityActor:
     def coalition(cls, tenant_id: str, member_ids: tuple[str, ...] | list[str]) -> CapabilityActor:
         members = tuple(sorted(set(member_ids)))
         if not members:
-            raise ValueError("coalition requires at least one member")
+            raise InvalidCapability("coalition requires at least one member")
         return cls(tenant_id, members)
+
+    def __post_init__(self) -> None:
+        if not self.member_ids:
+            raise InvalidCapability("actor requires at least one member")
+        if len(self.member_ids) != len(set(self.member_ids)):
+            raise InvalidCapability("duplicate coalition members")
+        canonical = tuple(sorted(self.member_ids))
+        if canonical != self.member_ids:
+            object.__setattr__(self, "member_ids", canonical)
 
     def assert_tenant(self, tenant_id: str) -> None:
         if self.tenant_id != tenant_id:

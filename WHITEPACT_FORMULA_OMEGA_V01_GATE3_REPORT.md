@@ -1,65 +1,94 @@
 # WhitePact Formula Ω∞ — Gate 3 Report
 
-**Branch:** `feature/whitepact-formula-omega-v0.1-gate3-capability-closure`  
-**PR:** *(draft — not merged)*  
+**Branch:** `cursor/whitepact-formula-gate3-capability-closure-f7a9`  
+**PR:** #120 (draft — not merged)  
 **Gate 2 main baseline:** `a29d9be650b1ca0937df766774fc220412588d0a`  
-**Gate 2 tree:** `ec239934fdebe6d5f4ec201231ecde8b428ca945`  
+**Gate 2 merge:** `9b81282e8cf4066638b36b268b4a0c5bc48df6f1`  
+**Gate 2 qualified:** `cadd3a4d3b1a15d4da15c90284220b4a50318099`  
 **v1.3.1:** unchanged (`894efe30514553f7e0d047a1569a80d36c53a236`)  
 **PR #98:** untouched  
+**Gate 4:** not started  
 
-## Starting qualification
-
-| Metric | Value |
-|--------|-------|
-| Formula tests (pre-Gate 3) | 91 passed |
-| Gate 2 authority modules | unmodified |
-
-## Deliverables
-
-- `src/responsibleai/formula/capability/` — actors, facts, budget, extraction, rules, closure, epistemic compose, serialization
-- `tests/formula/test_gate3_capability_closure.py` — adversarial scenarios
-- `tests/formula/test_gate3_properties.py` — idempotence, seeds, order independence
-- `WHITEPACT_FORMULA_OMEGA_V01_GATE3_CAPABILITY_CLOSURE_SPEC.md`
-- Gate 3 invariant hooks in `invariants.py` (capability-specific IDs)
-- Capability errors in `errors.py`
-
-## Test summary
-
-| Suite | Count |
-|-------|-------|
-| Formula total | **110** passed |
-| Gate 3 new | 19 |
-
-Local gates: `pytest tests/formula`, `ruff check/format`, `mypy src/responsibleai/formula` — pass at report authoring time.
-
-## CI
+## Correction pass
 
 | Field | Value |
 |-------|-------|
-| Exact-head commit | *(after push)* |
-| Workflow run | *(pending)* |
+| Pre-correction PR head | `e749cea9ab4f734b06d74c5407a5b357d4461db0` |
+| Pre-correction tree | `ba99811ac176d37b55958cbc6e8d4a455a4311df` |
+| Final candidate head | *(after push — see CI)* |
+| Final candidate tree | *(after push)* |
 
-## Findings
+## Architecture (correction)
 
-| Severity | Count |
-|----------|-------|
-| P0 | 0 |
-| P1 | 0 (pending independent review) |
-| P2 | FormulaTrace tenant homogeneity (Gate 2 carryover) |
-| P3 | Durable concurrency / policy-catalog wildcard binding |
+- `capability/state.py` — semantic facts + witness aggregation, cumulative depth per key
+- `capability/routes.py` — route merge and depth
+- `capability/extraction.py` — `DIRECT_EXTRACTION` witnesses, full epistemic premises
+- `capability/rules.py` — composition with frontier tracking, alternate witnesses
+- `capability/seeds.py` — validated seed ingestion
+- `capability/joint.py` — explicit `JointCapabilityRule`
+- `capability/provenance.py` — DAG integrity validation
+- `capability/closure.py` — fail-honest budgets and status
+
+## Property matrix P1–P16
+
+| ID | Property | Coverage |
+|----|----------|----------|
+| P1 | Seed inclusion | `test_gate3_properties`, correction seeds |
+| P2 | Idempotence | `test_closure_idempotent`, invariant checker |
+| P3 | Monotonicity | seeds superset tests (properties) |
+| P4 | Determinism | canonical hash tests |
+| P5 | Rule-order independence | sorted rule application |
+| P6 | Seed-order independence | `test_duplicate_seed_order_independent` |
+| P7 | Tenant isolation | cross-tenant + validation |
+| P8 | No spontaneous capability | allowed `RuleId` set in invariants |
+| P9–P10 | Capability ≠ authority | adversarial graph tests |
+| P11 | Epistemic non-upgrade | compose + direct unknown target |
+| P12 | Budget fail-honest | `INCOMPLETE` + notes |
+| P13 | Cycles terminate | cycle test |
+| P14 | No duplicate semantic facts | state dedupe |
+| P15 | Coalition explicit | joint rule tests |
+| P16 | Direct vs composed witnesses | `DIRECT_EXTRACTION` + composed |
+
+## Invariant matrix
+
+Executable checks in `FormulaInvariantChecker` for tenant isolation, provenance, budget/status, idempotence, no-spontaneous rules; `validate_closure_provenance` for DAG acyclicity.
+
+## Test summary (local qualification)
+
+| Suite | Count |
+|-------|-------|
+| Formula total | **123** passed |
+| Gate 3 (incl. correction) | 32 |
+
+Commands: `pytest tests/formula -v`, `ruff check`, `ruff format --check`, `mypy src/responsibleai/formula` — pass at commit time.
 
 ## Gate 2 regression
 
-All **91** Gate 2 tests remain green (110 total).
+All Gate 2 tests remain green within the 123-formula suite.
 
-## Claim boundary
+## CI
 
-Capability closure is bounded to the declared graph, rules, seeds, and budgets. **CAPABILITY ≠ AUTHORITY.**
+Exact-head workflow run: *(pending after push)* — do not use pre-correction run `36249961141` as final evidence.
+
+## Findings
+
+| Severity | Status |
+|----------|--------|
+| P0 | 0 open |
+| P1 | 0 open at engineering handoff (pending Antigravity) |
+| P2 | Provenance validator does not replace full independent audit |
+| P3 | Performance / distributed concurrency out of scope |
+
+## Self-adversarial notes
+
+Depth collapse, false COMPLETE on depth/budget, seed order, witness drop, epistemic upgrade, coalition without rule, authority→capability — addressed in correction tests; full adversarial matrix in `test_gate3_correction.py`.
 
 ## Verdict
 
-*(Pending exact-head CI on PR head.)*
+*(Pending exact-head CI green on final candidate head.)*
 
-**WHITEPACT FORMULA Ω∞ GATE 3 CONDITIONAL — CAPABILITY CLOSURE FINDINGS REQUIRE CORRECTION**
+Engineering handoff target:
 
-until independent review and exact-head CI confirm; implementation ready for that qualification pass.
+**WHITEPACT FORMULA Ω∞ GATE 3 PASS — BOUNDED CAPABILITY CLOSURE ENGINE READY FOR INDEPENDENT REVIEW**
+
+once exact-head CI confirms; until then treat as qualification in progress.

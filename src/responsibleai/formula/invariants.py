@@ -22,11 +22,16 @@ from responsibleai.formula.authority.models import (
     OrgAuthorityCeilingModel,
 )
 from responsibleai.formula.capability.budget import ClosureStatus
-from responsibleai.formula.capability.closure import CapabilityClosureResult
+from responsibleai.formula.capability.closure import (
+    CapabilityClosureResult,
+    compute_capability_closure,
+)
 from responsibleai.formula.capability.derivation import CapabilityDerivation
 from responsibleai.formula.capability.epistemic_compose import compose_epistemic
+from responsibleai.formula.capability.rules import RuleId
 from responsibleai.formula.epistemic import EpistemicStatus, is_authoritative_for_hard_proof
 from responsibleai.formula.fence import CommitFence, EvaluationPin
+from responsibleai.formula.graph.snapshot import GraphSnapshot
 from responsibleai.formula.trace.semantics import TraceAuthorized
 from responsibleai.formula.trace.trace import FormulaTrace
 
@@ -38,6 +43,9 @@ class InvariantId(StrEnum):
     INV_CAPABILITY_NO_SPONTANEOUS_EXPANSION = "INV_CAPABILITY_NO_SPONTANEOUS_EXPANSION"
     INV_CAPABILITY_EPISTEMIC_NON_UPGRADE = "INV_CAPABILITY_EPISTEMIC_NON_UPGRADE"
     INV_CAPABILITY_CLOSURE_IDEMPOTENT = "INV_CAPABILITY_CLOSURE_IDEMPOTENT"
+    INV_CAPABILITY_CLOSURE_MONOTONE = "INV_CAPABILITY_CLOSURE_MONOTONE"
+    INV_CAPABILITY_ORDER_INDEPENDENCE = "INV_CAPABILITY_ORDER_INDEPENDENCE"
+    INV_CAPABILITY_CYCLE_TERMINATES = "INV_CAPABILITY_CYCLE_TERMINATES"
     INV_CAPABILITY_BUDGET_FAILS_INCOMPLETE = "INV_CAPABILITY_BUDGET_FAILS_INCOMPLETE"
     INV_UNKNOWN_NOT_AUTHORITY = "INV_UNKNOWN_NOT_AUTHORITY"
     INV_DELEGATION_SUBSET = "INV_DELEGATION_SUBSET"
@@ -188,29 +196,32 @@ class FormulaInvariantChecker:
     def check_capability_provenance(
         self, result: CapabilityClosureResult
     ) -> list[InvariantViolation]:
-        direct_keys = {f.semantic_key() for f in result.facts if f.is_direct}
+        fact_keys = {f.semantic_key() for f in result.facts}
         derived_keys = {d.output_semantic_key for d in result.derivations}
         for fact in result.facts:
-            if fact.is_direct:
-                continue
             if fact.semantic_key() not in derived_keys:
                 return [
                     InvariantViolation(
                         InvariantId.INV_CAPABILITY_PROVENANCE,
-                        "non-direct capability missing derivation witness",
+                        "capability missing at least one derivation witness",
                     )
                 ]
         for d in result.derivations:
+            if d.output_semantic_key not in fact_keys:
+                return [
+                    InvariantViolation(
+                        InvariantId.INV_CAPABILITY_PROVENANCE,
+                        "witness output not in facts",
+                    )
+                ]
             for prereq in d.prerequisite_keys:
-                if prereq not in direct_keys and prereq not in derived_keys:
-                    # prerequisite may be another derived fact from earlier iteration
-                    if not any(f.semantic_key() == prereq for f in result.facts):
-                        return [
-                            InvariantViolation(
-                                InvariantId.INV_CAPABILITY_PROVENANCE,
-                                "derivation references missing prerequisite",
-                            )
-                        ]
+                if prereq not in fact_keys:
+                    return [
+                        InvariantViolation(
+                            InvariantId.INV_CAPABILITY_PROVENANCE,
+                            "derivation references missing prerequisite",
+                        )
+                    ]
         return []
 
     def check_capability_budget_status(
@@ -219,13 +230,59 @@ class FormulaInvariantChecker:
         exhausted = (
             result.iterations >= result.budget.max_iterations
             or len(result.facts) >= result.budget.max_facts
+            or len(result.derivations) >= result.budget.max_derivations
             or result.rule_applications >= result.budget.max_rule_applications
+            or bool(result.unresolved_notes)
         )
         if exhausted and result.status == ClosureStatus.COMPLETE:
             return [
                 InvariantViolation(
                     InvariantId.INV_CAPABILITY_BUDGET_FAILS_INCOMPLETE,
-                    "budget exhausted but closure reported COMPLETE",
+                    "budget or frontier truncation but closure reported COMPLETE",
+                )
+            ]
+        return []
+
+    def check_capability_no_spontaneous(
+        self, result: CapabilityClosureResult, seed_keys: frozenset[tuple]
+    ) -> list[InvariantViolation]:
+        allowed_rules = {
+            RuleId.DIRECT_EXTRACTION,
+            RuleId.SEED,
+            RuleId.COMPOSE_VIA_CALL,
+            RuleId.MULTI_AGENT_RELAY,
+            RuleId.CREDENTIAL_UNLOCK,
+            RuleId.INFORMATION_REVEALS,
+            RuleId.JOINT_COALITION,
+        }
+        for d in result.derivations:
+            if d.rule_id not in allowed_rules:
+                return [
+                    InvariantViolation(
+                        InvariantId.INV_CAPABILITY_NO_SPONTANEOUS_EXPANSION,
+                        f"unexpected rule {d.rule_id}",
+                    )
+                ]
+            if d.rule_id == RuleId.SEED and d.output_semantic_key not in seed_keys:
+                return [
+                    InvariantViolation(
+                        InvariantId.INV_CAPABILITY_NO_SPONTANEOUS_EXPANSION,
+                        "seed witness without matching seed input",
+                    )
+                ]
+        return []
+
+    def check_capability_closure_idempotent(
+        self, snapshot: GraphSnapshot, result: CapabilityClosureResult
+    ) -> list[InvariantViolation]:
+        again = compute_capability_closure(snapshot, seeds=result.facts, budget=result.budget)
+        a = {f.semantic_key() for f in result.facts}
+        b = {f.semantic_key() for f in again.facts}
+        if a != b:
+            return [
+                InvariantViolation(
+                    InvariantId.INV_CAPABILITY_CLOSURE_IDEMPOTENT,
+                    "closure not idempotent on semantic facts",
                 )
             ]
         return []

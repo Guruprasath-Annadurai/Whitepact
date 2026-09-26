@@ -5,66 +5,70 @@
 
 ## 1. Mathematical closure
 
-Given immutable `GraphSnapshot` \(G\), seed facts \(C_0\), typed rules \(R\), and budget \(B\):
+Given immutable `GraphSnapshot` \(G\), seed facts \(C_0\), typed rules \(R\), optional joint rules \(J\), and budget \(B\):
 
 \[
-F(C) = C \cup \text{DirectExtract}(G) \cup \bigcup_{r \in R} r(G, C)
+F(C) = C \cup \text{DirectExtract}(G) \cup \bigcup_{r \in R} r(G, C) \cup \bigcup_{j \in J} j(C)
 \]
 
 \[
 C^\* = \mu C.\, F(C) \text{ truncated by } B
 \]
 
-Closure status:
+## 2. Semantic identity vs support
 
-- **COMPLETE** — fixed point reached within modeled universe and budget.
-- **INCOMPLETE** — iteration/fact/rule budget exhausted before fixed point.
-- **UNKNOWN** — unresolved epistemic/model notes remain.
+- **CapabilityFact** — semantic reachability only: `(tenant_id, actor.member_ids, action, target_node_id)`. Epistemic status on the fact is the **deterministic aggregate** across all witnesses (weakest-link merge of witness epistemics; order-independent).
+- **CapabilityDerivation** — witness/support: rule id, prerequisites, graph node/edge ids, route, cumulative `derivation_depth`, per-witness epistemic status. Multiple distinct witnesses may support one semantic fact; duplicate fingerprints are deduplicated.
 
-## 2. Capability facts
+## 3. Cumulative derivation depth
 
-`CapabilityFact` is immutable reachability: tenant, canonical `CapabilityActor` (sorted coalition), action (`call|read|write|execute`), target node, `CapabilityKind`, epistemic status, `is_direct`.
+Depth is derived from merged `route_node_ids` across prerequisite witnesses: `derivation_depth = len(route) - 1` (minimum 0). Composition merges routes at the junction node; depth never collapses to a shallow local tuple when the prerequisite chain is deep.
 
-Semantic identity: `(tenant_id, actor.member_ids, action, target_node_id)` — independent of derivation path.
+## 4. Direct extraction
 
-## 3. Direct vs composed
+Graph `CAN_*` edges emit `DIRECT_EXTRACTION` witnesses with edge id, source/target nodes, route, and epistemic weakest-link over **source node, edge, target node**. Seeds use rule `SEED` (distinct provenance).
 
-- **Direct:** extracted from `CAN_CALL|CAN_READ|CAN_WRITE|CAN_EXECUTE` from actor/component sources.
-- **Composed:** derived only via explicit rules (e.g. `COMPOSE_VIA_CALL`, `MULTI_AGENT_RELAY`) with `route_node_ids` provenance.
+## 5. Composition rules
 
-## 4. Rule system
-
-Typed rules in `capability/rules.py` — no arbitrary callbacks.
-
-| Rule | Meaning |
-|------|---------|
-| `COMPOSE_VIA_CALL` | Actor calls intermediary; intermediary capability forwards to actor (composed). |
-| `MULTI_AGENT_RELAY` | Same with `AGENT` intermediary. |
-| `CREDENTIAL_UNLOCK` | `CAN_READ` credential + `REQUIRES` with `grants=call`. |
-| `INFORMATION_REVEALS` | `CAN_READ` + `REVEALS`. |
+| Rule | Premises (epistemic) |
+|------|----------------------|
+| `COMPOSE_VIA_CALL` | Outer call capability, inner capability, intermediary node |
+| `MULTI_AGENT_RELAY` | Same with `AGENT` intermediary |
+| `CREDENTIAL_UNLOCK` | Read capability, credential node, `REQUIRES` edge, target |
+| `INFORMATION_REVEALS` | Read capability, source node, `REVEALS` edge, target |
+| `JOINT_COALITION` | Explicit `JointCapabilityRule` prerequisites (no inference from coexistence) |
 
 **Not** derived: `HAS_AUTHORITY`, `APPROVED_BY`, `DEPENDS_ON`, `TRUSTS`, generic transitivity.
 
-## 5–8. Credential, information, multi-agent
+## 6. Relay vs coalition
 
-See rule table; all require explicit edges — no name-based inference.
+- **Relay:** single actor causes an intermediary’s capability (composition rules).
+- **Coalition:** `JointCapabilityRule` requires all listed semantic prerequisites for listed members; canonical sorted `CapabilityActor` coalition.
 
-## 9. Epistemic propagation
+## 7. Budgets and fail-honest status
 
-`compose_epistemic()` — weakest-link over `_ORDER`; derivations cannot exceed weakest premise.
+`CapabilityClosureBudget.validate()` rejects non-positive limits. If any budget dimension or `max_path_depth` blocks a remaining valid frontier, status is **INCOMPLETE** with deterministic `unresolved_notes` — never **COMPLETE**.
 
-## 10. Budgets
+- **COMPLETE** — fixed point inside modeled universe; no truncated frontier; no budget exhaustion.
+- **INCOMPLETE** — computation bound stopped exploration.
+- **UNKNOWN** — reserved for unresolved modeled conclusion (not used merely because facts have low epistemic confidence).
 
-`CapabilityClosureBudget`: `max_iterations`, `max_facts`, `max_derivations`, `max_rule_applications`, `max_path_depth`.
+## 8. Seeds
 
-## 11–13. Tenant isolation, snapshot pinning, determinism
+Seeds must match snapshot tenant; actor and target node ids must exist in the snapshot (fail-closed). Duplicate semantic seeds merge support deterministically (not last-write-wins).
 
-Evaluation uses frozen `GraphSnapshot` (`content_hash`, `GraphVersion`). Cross-tenant seeds rejected. Canonical sorting for facts/derivations/serialization.
+## 9. Tenant isolation
 
-## 14. Non-goals
+Cross-tenant seeds, actors, targets, rules, or witnesses raise typed Formula errors.
 
-No Gate 4–10 surfaces (future envelope, judgment, persistence, runtime enforcement, production qualification).
+## 10. Determinism
 
-## 15. Claim boundaries
+Canonical sorting for facts, witnesses, routes, and serialization. Equivalent semantic input yields identical canonical hash.
+
+## 11. Non-goals
+
+No Gate 4–10 surfaces. **CAPABILITY ≠ AUTHORITY.**
+
+## 12. Claim boundaries
 
 Closure describes **modeled** reachability under declared rules — not universal AI capability, not safety, not permission.

@@ -8,6 +8,7 @@ from responsibleai.formula.capability.closure import (
 )
 from responsibleai.formula.capability.facts import CapabilityFact
 from responsibleai.formula.capability.models import CapabilityKind, CapabilityRef
+from responsibleai.formula.capability.joint import JointCapabilityRule
 from responsibleai.formula.capability.serialize import serialize_closure_result
 
 __all__ = [
@@ -17,6 +18,7 @@ __all__ = [
     "CapabilityKind",
     "CapabilityRef",
     "ClosureStatus",
+    "JointCapabilityRule",
     "compute_capability_closure",
     "serialize_closure_result",
 ]
