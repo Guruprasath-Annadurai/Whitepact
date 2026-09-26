@@ -10,7 +10,8 @@
 |---|-----|------|
 | **Starting** `origin/main` (Cell A program) | `a29d9be650b1ca0937df766774fc220412588d0a` | `ec239934fdebe6d5f4ec201231ecde8b428ca945` |
 | **Pre-remediation head** (ChatGPT review) | `344335051c8b0dea4b4b3dd703cf3613c47eef93` | — |
-| **Exact head** (this report documents) | `33ea2a13c734b62aa9224cabb856de47007f1c6e` | `c30ee927855f99eb25ecdaa4eeeb82bbf7e85a70` |
+| **Remediation code head** | `33ea2a13c734b62aa9224cabb856de47007f1c6e` | `c30ee927855f99eb25ecdaa4eeeb82bbf7e85a70` |
+| **Exact head** (includes this report) | `de64f192cf7f320cd39dd3f9b8a831bed4a2e44a` | (see `git rev-parse HEAD^{tree}` on branch) |
 
 Formula isolation: **no** changes under `src/responsibleai/formula/`.
 
@@ -38,7 +39,7 @@ Formula isolation: **no** changes under `src/responsibleai/formula/`.
 
 **None** — documentation and stranger quickstart example only.
 
-## Test commands and results (exact head `33ea2a1`)
+## Test commands and results (remediation code `33ea2a1`)
 
 | Command | Result |
 |---------|--------|
@@ -54,7 +55,11 @@ Formula isolation: **no** changes under `src/responsibleai/formula/`.
 
 ## Exact-head CI (PR #121 branch `feature/whitepact-launch-cell-a-onboarding-distribution`)
 
-| Check | Run ID | Result |
+Remediation commit `33ea2a1` — workflow **36266749300** (all jobs success).
+
+Report commit `de64f19` — pending workflow (see latest run on branch after push).
+
+| Check | Run ID (`33ea2a1`) | Result |
 |-------|--------|--------|
 | CI (matrix) | **36266749300** | success |
 | DCO | 36266749351 | success |
