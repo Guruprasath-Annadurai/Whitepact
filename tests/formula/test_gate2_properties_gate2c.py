@@ -87,7 +87,12 @@ def test_max_delegation_depth_zero_blocks_delegable_mint() -> None:
     root = TenantRootPrincipal("t1", "root-1", "org", "ev", "pol", ceiling=ceiling)
     assert not grant_within_org_ceiling(grant, ceiling)
     assert not issuer_can_grant(
-        "root-1", grant, (), EffectiveAuthorityEvaluator(ceiling=ceiling), grant.not_before, root=root
+        "root-1",
+        grant,
+        (),
+        EffectiveAuthorityEvaluator(ceiling=ceiling),
+        grant.not_before,
+        root=root,
     )
 
 
@@ -125,4 +130,6 @@ def test_nested_set_freezing_canonical() -> None:
     g1.add_node(GraphNode.build("n1", "t1", NodeKind.AGENT, {"labels": {"x", "y", "z"}}))
     g2.add_node(GraphNode.build("n1", "t1", NodeKind.AGENT, {"labels": {"z", "x", "y"}}))
     assert g1.freeze().content_hash == g2.freeze().content_hash
-    assert canonical_sha256({"tags": {"x", "y", "z"}}) == canonical_sha256({"tags": {"z", "x", "y"}})
+    assert canonical_sha256({"tags": {"x", "y", "z"}}) == canonical_sha256(
+        {"tags": {"z", "x", "y"}}
+    )

@@ -9,9 +9,7 @@ WILDCARD = "*"
 FORMULA_V01_ACTIONS: frozenset[str] = frozenset(
     {"read", "write", "execute", "delete", "invoke", "admin"}
 )
-FORMULA_V01_RESOURCES: frozenset[str] = frozenset(
-    {"x", "y", "account-1", "account-2", "z"}
-)
+FORMULA_V01_RESOURCES: frozenset[str] = frozenset({"x", "y", "account-1", "account-2", "z"})
 FORMULA_V01_PURPOSES: frozenset[str] = frozenset({"ops", "audit", "billing"})
 
 

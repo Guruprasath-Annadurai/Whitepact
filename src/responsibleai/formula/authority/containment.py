@@ -48,6 +48,9 @@ def grant_within_org_ceiling(grant: AuthorityGrant, ceiling: OrgAuthorityCeiling
     if not dimension_within_ceiling(grant.resources, ceiling.allowed_resources):
         return False
     if ceiling.max_delegation_depth is not None:
-        if grant.constraints.allow_delegation and grant.delegation_depth >= ceiling.max_delegation_depth:
+        if (
+            grant.constraints.allow_delegation
+            and grant.delegation_depth >= ceiling.max_delegation_depth
+        ):
             return False
     return True
