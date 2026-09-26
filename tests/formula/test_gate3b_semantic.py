@@ -20,7 +20,7 @@ from responsibleai.formula.capability.joint import JointCapabilityRule, validate
 from responsibleai.formula.capability.models import CapabilityKind
 from responsibleai.formula.capability.provenance import validate_closure_provenance
 from responsibleai.formula.epistemic import EpistemicStatus
-from responsibleai.formula.errors import InvalidCapability
+from responsibleai.formula.errors import CapabilityTenantMismatch, InvalidCapability
 from responsibleai.formula.graph.kinds import EdgeKind, NodeKind
 from responsibleai.formula.invariants import FormulaInvariantChecker
 from responsibleai.formula.serialization import canonical_sha256
