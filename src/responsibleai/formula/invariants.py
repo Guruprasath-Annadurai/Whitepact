@@ -282,9 +282,7 @@ class FormulaInvariantChecker:
         *,
         joint_rules: tuple[JointCapabilityRule, ...] = (),
     ) -> list[InvariantViolation]:
-        again = compute_capability_closure(
-            snapshot, budget=result.budget, joint_rules=joint_rules
-        )
+        again = compute_capability_closure(snapshot, budget=result.budget, joint_rules=joint_rules)
         h1 = canonical_sha256(serialize_closure_result(result))
         h2 = canonical_sha256(serialize_closure_result(again))
         if h1 != h2:
