@@ -7,6 +7,10 @@
 **PR:** #117  
 **v1.3.1 tag:** unchanged (`894efe30514553f7e0d047a1569a80d36c53a236`)
 
+## Gate 2D control-path closure
+
+See `WHITEPACT_FORMULA_OMEGA_V01_GATE2D_FINAL_CONTROL_PATH_REVIEW.md` — delegation ceiling on `apply_delegation`, normative `conditions` at `effective()`, `grant_union` effective risk normalization.
+
 ## Gate 2A correction (authority model)
 
 Independent review Gate 2A corrections are documented in  
