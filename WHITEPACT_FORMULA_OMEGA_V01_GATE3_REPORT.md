@@ -15,8 +15,8 @@
 |-------|-------|
 | Pre-correction PR head | `e749cea9ab4f734b06d74c5407a5b357d4461db0` |
 | Pre-correction tree | `ba99811ac176d37b55958cbc6e8d4a455a4311df` |
-| Final candidate head | `3a8d59d7eb4b1a0cf1521078f7ed023193746c62` |
-| Final candidate tree | `c925fb1a3e65aac9f5a038a18230c8076b7e1223` |
+| Final candidate head | `19b4549d221d585a63cf36b9522947ed47cf5e68` (code: `3a8d59d`) |
+| Final candidate tree | *(see `git rev-parse HEAD^{tree}` on branch head)* |
 
 ## Architecture (correction)
 

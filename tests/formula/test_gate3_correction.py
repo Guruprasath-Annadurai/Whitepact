@@ -6,9 +6,9 @@
 from __future__ import annotations
 
 import itertools
+from dataclasses import replace
 
 import pytest
-from dataclasses import replace
 from tests.formula.helpers_gate3 import build_snapshot, edge, node
 
 from responsibleai.formula.capability import (
@@ -172,9 +172,7 @@ def test_joint_capability_explicit_rule() -> None:
     base = compute_capability_closure(snap)
     pa = next(f.semantic_key() for f in base.facts if f.actor.member_ids == ("a",))
     pb = next(
-        f.semantic_key()
-        for f in base.facts
-        if f.actor.member_ids == ("b",) and f.action == "write"
+        f.semantic_key() for f in base.facts if f.actor.member_ids == ("b",) and f.action == "write"
     )
     joint = (
         JointCapabilityRule(
@@ -192,11 +190,7 @@ def test_joint_capability_explicit_rule() -> None:
     ]
     assert coalition_facts
     r_no_joint = compute_capability_closure(snap)
-    assert not [
-        f
-        for f in r_no_joint.facts
-        if len(f.actor.member_ids) == 2 and f.action == "write"
-    ]
+    assert not [f for f in r_no_joint.facts if len(f.actor.member_ids) == 2 and f.action == "write"]
     snap_no_a = build_snapshot(
         nodes=(
             node("b", NodeKind.AGENT),
