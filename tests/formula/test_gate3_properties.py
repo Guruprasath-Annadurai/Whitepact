@@ -3,11 +3,12 @@
 
 from __future__ import annotations
 
+from tests.formula.helpers_gate3 import build_snapshot, edge, node
+
 from responsibleai.formula.capability import compute_capability_closure
+from responsibleai.formula.capability.serialize import serialize_closure_result
 from responsibleai.formula.graph.kinds import EdgeKind, NodeKind
 from responsibleai.formula.serialization import canonical_sha256
-from responsibleai.formula.capability.serialize import serialize_closure_result
-from tests.formula.helpers_gate3 import build_snapshot, edge, node
 
 
 def test_closure_idempotent() -> None:
