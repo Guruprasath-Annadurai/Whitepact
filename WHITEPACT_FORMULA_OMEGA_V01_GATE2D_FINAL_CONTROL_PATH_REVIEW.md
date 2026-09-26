@@ -70,10 +70,11 @@ No counterexample found in reviewed pure algebra for: delegation depth bypass (w
 |-------|-------|
 | Gate 2D code commit | `06f347cecb28a44b57bfe293c9b659d828cf0854` |
 | Gate 2D code tree | `9d7abdd9956f5c1fdb8d5de730c5b036446e51b9` |
-| Final commit (exact PR head) | `6b401b37016a296c4a312e37d8c32a9815a991bc` |
-| Final tree | `36955b7e20e393d07ebc62fdf5fa66ce362dda60` |
-| Workflow run (initial) | `36230224828` |
-| Branch coverage | *(pending full CI)* |
+| Gate 2D implementation commit | `06f347cecb28a44b57bfe293c9b659d828cf0854` |
+| Exact-head CI commit | `493727fdb64d2b61958f006ea074211023d18afa` |
+| Exact-head tree | `c233736be102f9c977cf74bd20c95509fe4e065b` |
+| Workflow run | [36230254313](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36230254313) — **16/16 PASS** |
+| Branch coverage | **80.22%** pure branch (5099/6356 branches, Python 3.11 job) |
 
 ## Gate 3
 
@@ -81,6 +82,6 @@ No counterexample found in reviewed pure algebra for: delegation depth bypass (w
 
 ## Verdict
 
-**WHITEPACT FORMULA Ω∞ GATE 2 CONDITIONAL — CONTROL-PATH GAP REMAINS**
+**WHITEPACT FORMULA Ω∞ GATE 2 PASS — AUTHORITY FOUNDATION READY FOR MERGE**
 
-*(Conditional only until exact-head full CI green on final report commit; no unresolved P1 control-path defects in code review.)*
+*(PR #117 not merged; Gate 3 not started; independent review awaited.)*
