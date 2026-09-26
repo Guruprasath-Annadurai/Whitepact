@@ -237,12 +237,12 @@ def test_property_p4_determinism() -> None:
 
 
 def test_property_p7_tenant_isolation() -> None:
-    snap = build_snapshot(nodes=(node("a", NodeKind.AGENT),))
+    snap = build_snapshot(nodes=(node("a", NodeKind.AGENT), node("t", NodeKind.TOOL)))
     bad = CapabilityFact(
         tenant_id="t2",
         actor=CapabilityActor.single("t2", "a"),
         action="call",
-        target_node_id="a",
+        target_node_id="t",
         kind=CapabilityKind.DIRECT_TOOL,
         epistemic_status=EpistemicStatus.DECLARED,
         is_direct=True,
