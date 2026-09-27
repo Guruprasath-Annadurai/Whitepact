@@ -13,8 +13,8 @@
 | **Starting SHA** (branch head before this audit commit) | `0bdb53afeaee2a77aab733b92eca387d1299dd5e` |
 | **Starting tree SHA** | `e96d58a70eb884924487e27bf8b7fb02b872a695` |
 | **Antigravity IOT/Device Bridge source SHA** | **NOT LOCATED** |
-| **Final SHA** | `538d51cb7699337ad0eda00021d138e1f8600b12` |
-| **Final tree SHA** | `1e651f34851e05b9cd40dfa25800f5044a3971ab` |
+| **Final SHA** | `5f72b5e61a989399aa54b9e675d7341cb36af0ff` |
+| **Final tree SHA** | `c1c918d700e606c76c67cb4ad2f23c891f654f90` |
 | **PR** | [#100](https://github.com/Guruprasath-Annadurai/Whitepact/pull/100) (draft; base `main`) |
 | **Parallel workspace audit** | `cursor/whitepact-dev-environment-f7a9` @ `2b28febbbb450cec1531a972354ede1d669aed75` — same finding |
 
