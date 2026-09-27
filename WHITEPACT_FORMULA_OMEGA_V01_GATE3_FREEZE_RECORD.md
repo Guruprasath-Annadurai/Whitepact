@@ -13,6 +13,8 @@
 | Gate 3 source branch | `cursor/whitepact-formula-gate3-capability-closure-f7a9` |
 | **Qualified PR head (exact-head CI)** | `07bbd47d2fa087bfb7bb6b1bfef0ab5c4e19a813` |
 | Qualified source tree | `378a9abfcb07483aee1096ba395608154217eeca` |
+| Engineering qualification commit (ancestor; see `WHITEPACT_FORMULA_OMEGA_V01_GATE3_REPORT.md`) | `c05ee3fa809529a2703307b23786430dbcc35207` |
+| Note on lineage | `07bbd47` is the **only** head qualified by run **36261598257**; it is a docs-only descendant of `c05ee3f` on the same branch (no semantic delta). |
 | **Merge commit on `main`** | `1e798940716e35b194cf16f3de24499edaa8545a` |
 | Merge tree on `main` | `378a9abfcb07483aee1096ba395608154217eeca` |
 | Merge timestamp | `2026-09-27T09:33:43Z` |
