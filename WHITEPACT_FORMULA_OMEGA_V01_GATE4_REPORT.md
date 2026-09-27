@@ -4,8 +4,10 @@
 **PR:** [#123](https://github.com/Guruprasath-Annadurai/Whitepact/pull/123) (draft — not merged)  
 **Gate 3 frozen `main`:** `81beb3ac50e17068c7d6f26d9a07f2cb0442dbec`  
 **Gate 3 frozen tree:** `bc0b92120500d1ffc1a1875ae64be45adb67929c`  
-**Gate 4 candidate head:** `7d70e64fc6f40da8e3edea82fd6e18df082ddfcf`  
-**Gate 4 candidate tree:** `9d216a92df2b7426eb24f459b8dedab087994a72`  
+**Prior candidate head (green CI, failed semantic review):** `f604a13135ea762486b667ded0c9174c93b88e18`  
+**Prior CI run:** [36325275949](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36325275949)  
+**Remediation head:** `1c680066391d0482708836f337ad8c93498961c0`  
+**Remediation tree:** `97c5107a28706dead073475773acabcf27dad855`  
 **Isolated from:** PR #121 Launch Cell A, PR #98 dev environment, Gate 5+, production enforcement  
 
 ## Semantics boundary (explicit)
@@ -117,8 +119,26 @@ CI matrix (Python 3.11 + 3.12, branch coverage ≥80%, security) — **pending e
 
 - Predicting all real-world futures, guaranteeing safety, eliminating uncertainty, or making execution authorization decisions.
 
-## Engineering verdict (pre-CI)
+## Semantic remediation (ChatGPT P1 blockers)
 
-**WHITEPACT FORMULA Ω∞ GATE 4 ENGINEERING INCOMPLETE — REMEDIATION REQUIRED**
+| ID | Fix |
+|----|-----|
+| P1-01 | Incomplete Gate 3 closure forces `EnvelopeStatus.INCOMPLETE` + `capability_closure_incomplete` frontier evidence |
+| P1-02 | Enforce `max_path_depth`, `max_trajectories`, exact `max_states` pre-append; skip budget on duplicate witness fingerprints |
+| P1-03 | Conservative `compose_reversibility()` — `UNKNOWN` never becomes `REVERSIBLE` |
+| P1-04 | Multi-witness `CausalWitnessDag` keyed by witness fingerprint; aggregate fact view preserved |
+| P1-05 | Deterministic prerequisite combinations + witness products (sorted, no `next()` on sets) |
+| P1-06 | Derived `information_sensitive` OR-closure across prerequisite chain |
+| P1-07 | Graph-edge rules require prerequisite target == edge `source_id` |
+| P1-08 | Coalition subject `a\|b` via `consequence_subject_from_actor()` |
+| P1-09 | Novel-frontier completeness (not mere rule applicability) |
+| P1-10 | `query_consequence_reachability()` — `NOT_DERIVED` vs `UNKNOWN` |
+| P1-11 | Rule fingerprint includes `persistence` and `information_sensitive` |
 
-Pending: exact-head GitHub Actions qualification on Python 3.11 and 3.12, full repo coverage gates, and independent Antigravity examination. Do **not** merge or freeze Gate 4 from this document alone.
+Tests: `tests/formula/test_gate4_semantic_remediation.py` (+ existing Gate 4 matrix). Local: **208** formula tests pass.
+
+## Engineering verdict
+
+**WHITEPACT FORMULA Ω∞ GATE 4 SEMANTIC REMEDIATION COMPLETE — READY FOR CHATGPT RE-REVIEW**
+
+Exact-head CI on remediation commit pending. Antigravity only after ChatGPT re-review. Do **not** merge PR #123 from this document alone.
