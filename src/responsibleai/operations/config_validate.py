@@ -14,12 +14,9 @@ from __future__ import annotations
 import argparse
 import sys
 
-from responsibleai.dashboard.config import (
-    Settings,
-    is_production_environment,
-    multi_replica_problems,
-)
+from responsibleai.dashboard.config import Settings, is_production_environment
 from responsibleai.operations.auth_contract import validate_dashboard_auth
+from responsibleai.operations.production_config import collect_production_configuration_errors
 
 
 def _load_settings() -> Settings:
@@ -36,25 +33,9 @@ def validate(expect_production: bool = False) -> list[str]:
     if expect_production and not settings.is_production:
         errors.append("expected_production_environment_but_got_other")
 
-    if settings.is_production:
-        if not settings.database_url:
-            errors.append("production_missing_database_url")
-        elif not settings.database_url.startswith(("postgresql://", "postgresql+asyncpg://")):
-            errors.append("production_database_not_postgresql")
-        if settings.allow_all_origins:
-            errors.append("production_allow_all_origins_forbidden")
-        if settings.mcp_http_allow_unauthenticated_demo:
-            errors.append("production_mcp_unauthenticated_demo_forbidden")
-
-    errors.extend(validate_dashboard_auth(settings))
-
-    db_backend = (
-        "postgresql" if (settings.database_url or "").startswith("postgresql") else "sqlite"
-    )
-    rl_backend = "redis" if settings.redis_url else "memory"
-    if settings.workers > 1:
-        for problem in multi_replica_problems(db_backend, rl_backend):
-            errors.append(f"multi_replica_unsafe: {problem}")
+    errors.extend(collect_production_configuration_errors(settings))
+    if not settings.is_production:
+        errors.extend(validate_dashboard_auth(settings))
 
     return errors
 

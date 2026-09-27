@@ -12,12 +12,13 @@ from responsibleai.dashboard.config import Settings
 from responsibleai.operations.auth_contract import (
     ConfigurationCompleteness,
     DashboardAuthMethod,
+    OidcTokenExchangeMode,
     configured_dashboard_auth_methods,
+    mcp_vc_configuration_state,
     oidc_configuration_state,
+    oidc_token_exchange_mode,
     production_viable_dashboard_auth_methods,
-    saml_configuration_state,
     validate_dashboard_auth,
-    vc_configuration_state,
 )
 from responsibleai.operations.config_validate import validate
 
@@ -42,14 +43,27 @@ def test_auth_enabled_api_key_dev_valid(monkeypatch: pytest.MonkeyPatch) -> None
     assert validate_dashboard_auth(settings) == []
 
 
-def test_auth_enabled_oidc_complete_production_valid(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_auth_enabled_oidc_confidential_production_valid(monkeypatch: pytest.MonkeyPatch) -> None:
     _prod_base(monkeypatch)
     monkeypatch.setenv("WHITEPACT_OIDC_ISSUER", "https://accounts.example.com")
     monkeypatch.setenv("WHITEPACT_OIDC_CLIENT_ID", "client-id")
+    monkeypatch.setenv("WHITEPACT_OIDC_CLIENT_SECRET", "x" * 16)
     settings = Settings()
+    assert oidc_token_exchange_mode(settings) == OidcTokenExchangeMode.CONFIDENTIAL
     assert oidc_configuration_state(settings) == ConfigurationCompleteness.COMPLETE
     assert DashboardAuthMethod.OIDC in production_viable_dashboard_auth_methods(settings)
-    assert "production_auth_enabled_without_viable_method" not in validate_dashboard_auth(settings)
+    assert validate_dashboard_auth(settings) == []
+
+
+def test_auth_enabled_oidc_public_pkce_production_valid(monkeypatch: pytest.MonkeyPatch) -> None:
+    _prod_base(monkeypatch)
+    monkeypatch.setenv("WHITEPACT_OIDC_ISSUER", "https://accounts.example.com")
+    monkeypatch.setenv("WHITEPACT_OIDC_CLIENT_ID", "client-id")
+    monkeypatch.delenv("WHITEPACT_OIDC_CLIENT_SECRET", raising=False)
+    settings = Settings()
+    assert oidc_token_exchange_mode(settings) == OidcTokenExchangeMode.PUBLIC_PKCE
+    assert oidc_configuration_state(settings) == ConfigurationCompleteness.COMPLETE
+    assert validate_dashboard_auth(settings) == []
 
 
 def test_auth_enabled_saml_complete_production_valid(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -62,20 +76,22 @@ def test_auth_enabled_saml_complete_production_valid(monkeypatch: pytest.MonkeyP
     )
     monkeypatch.setenv("WHITEPACT_SAML_SESSION_SECRET", "x" * 32)
     settings = Settings()
-    assert saml_configuration_state(settings) == ConfigurationCompleteness.COMPLETE
-    assert DashboardAuthMethod.SAML in production_viable_dashboard_auth_methods(settings)
     assert validate_dashboard_auth(settings) == []
 
 
-def test_auth_enabled_vc_complete_production_valid(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_vc_only_production_does_not_satisfy_dashboard_auth(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     _prod_base(monkeypatch)
     monkeypatch.setenv("WHITEPACT_VC_TRUSTED_ISSUERS", "https://issuer.example")
     settings = Settings()
-    assert vc_configuration_state(settings) == ConfigurationCompleteness.COMPLETE
-    assert DashboardAuthMethod.VERIFIED_PRINCIPAL_VC in production_viable_dashboard_auth_methods(
+    assert mcp_vc_configuration_state(settings) == ConfigurationCompleteness.COMPLETE
+    assert DashboardAuthMethod.VERIFIED_PRINCIPAL_VC_MCP in configured_dashboard_auth_methods(
         settings
     )
-    assert validate_dashboard_auth(settings) == []
+    assert production_viable_dashboard_auth_methods(settings) == frozenset()
+    errors = validate()
+    assert "production_auth_enabled_without_viable_method" in errors
 
 
 def test_production_auth_enabled_no_method_fails(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -110,16 +126,23 @@ def test_partial_oidc_production_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     assert oidc_configuration_state(settings) == ConfigurationCompleteness.PARTIAL
     errors = validate_dashboard_auth(settings)
     assert "production_oidc_configuration_partial" in errors
-    assert "production_auth_enabled_without_viable_method" in errors
+
+
+def test_partial_confidential_oidc_short_secret_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    _prod_base(monkeypatch)
+    monkeypatch.setenv("WHITEPACT_OIDC_ISSUER", "https://accounts.example.com")
+    monkeypatch.setenv("WHITEPACT_OIDC_CLIENT_ID", "client-id")
+    monkeypatch.setenv("WHITEPACT_OIDC_CLIENT_SECRET", "short")
+    settings = Settings()
+    assert oidc_configuration_state(settings) == ConfigurationCompleteness.PARTIAL
+    assert "production_oidc_configuration_partial" in validate_dashboard_auth(settings)
 
 
 def test_partial_saml_production_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     _prod_base(monkeypatch)
     monkeypatch.setenv("WHITEPACT_SAML_IDP_ENTITY_ID", "https://idp.example/entity")
     settings = Settings()
-    assert saml_configuration_state(settings) == ConfigurationCompleteness.PARTIAL
-    errors = validate_dashboard_auth(settings)
-    assert "production_saml_configuration_partial" in errors
+    assert "production_saml_configuration_partial" in validate_dashboard_auth(settings)
 
 
 def test_dev_auth_enabled_without_methods_fails(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -3,7 +3,11 @@
 """Dashboard authentication configuration contract (Launch Cell B).
 
 Grounded in runtime behavior in ``dashboard/app.py`` and enterprise preflight.
-Does not grant authority.
+
+**Verified Principal (VC) scope:** ``vc_trusted_issuers`` enables MCP hosted
+transport VC-JWT authentication (``mcp/server.py``). The dashboard HTTP API
+``_resolve_transport_identity()`` does **not** accept VC bearer tokens — VC is
+not a dashboard production auth method.
 """
 
 from __future__ import annotations
@@ -24,7 +28,13 @@ class DashboardAuthMethod(StrEnum):
     LEGACY_STATIC_API_KEYS = "legacy_static_api_keys"
     OIDC = "oidc"
     SAML = "saml"
-    VERIFIED_PRINCIPAL_VC = "verified_principal_vc"
+    # Configured for MCP transport only — not dashboard-viable.
+    VERIFIED_PRINCIPAL_VC_MCP = "verified_principal_vc_mcp"
+
+
+class OidcTokenExchangeMode(StrEnum):
+    CONFIDENTIAL = "confidential"
+    PUBLIC_PKCE = "public_pkce"
 
 
 class ConfigurationCompleteness(StrEnum):
@@ -37,12 +47,24 @@ def _strip(value: str | None) -> str:
     return (value or "").strip()
 
 
+def oidc_token_exchange_mode(settings: Settings) -> OidcTokenExchangeMode | None:
+    issuer = _strip(settings.oidc_issuer)
+    if not issuer or not _strip(settings.oidc_client_id):
+        return None
+    if _strip(settings.oidc_client_secret):
+        return OidcTokenExchangeMode.CONFIDENTIAL
+    return OidcTokenExchangeMode.PUBLIC_PKCE
+
+
 def oidc_configuration_state(settings: Settings) -> ConfigurationCompleteness:
     issuer = _strip(settings.oidc_issuer)
     if not issuer:
         return ConfigurationCompleteness.ABSENT
     client_id = _strip(settings.oidc_client_id)
     if not client_id:
+        return ConfigurationCompleteness.PARTIAL
+    mode = oidc_token_exchange_mode(settings)
+    if mode == OidcTokenExchangeMode.CONFIDENTIAL and len(_strip(settings.oidc_client_secret)) < 16:
         return ConfigurationCompleteness.PARTIAL
     return ConfigurationCompleteness.COMPLETE
 
@@ -60,7 +82,7 @@ def saml_configuration_state(settings: Settings) -> ConfigurationCompleteness:
     return ConfigurationCompleteness.COMPLETE
 
 
-def vc_configuration_state(settings: Settings) -> ConfigurationCompleteness:
+def mcp_vc_configuration_state(settings: Settings) -> ConfigurationCompleteness:
     if not settings.vc_trusted_issuers:
         return ConfigurationCompleteness.ABSENT
     if not all(_strip(i) for i in settings.vc_trusted_issuers):
@@ -76,26 +98,19 @@ def configured_dashboard_auth_methods(settings: Settings) -> frozenset[Dashboard
         methods.add(DashboardAuthMethod.OIDC)
     if saml_configuration_state(settings) != ConfigurationCompleteness.ABSENT:
         methods.add(DashboardAuthMethod.SAML)
-    if vc_configuration_state(settings) != ConfigurationCompleteness.ABSENT:
-        methods.add(DashboardAuthMethod.VERIFIED_PRINCIPAL_VC)
+    if mcp_vc_configuration_state(settings) != ConfigurationCompleteness.ABSENT:
+        methods.add(DashboardAuthMethod.VERIFIED_PRINCIPAL_VC_MCP)
     return frozenset(methods)
 
 
 def production_viable_dashboard_auth_methods(settings: Settings) -> frozenset[DashboardAuthMethod]:
-    """Methods that can satisfy production dashboard authentication when auth is enabled.
-
-    Legacy static API keys are never viable in production (boot + request path fail closed).
-    Partial OIDC/SAML/VC configurations are not viable.
-    """
+    """Dashboard HTTP transport methods viable in production when auth is enabled."""
     viable: set[DashboardAuthMethod] = set()
     if oidc_configuration_state(settings) == ConfigurationCompleteness.COMPLETE:
         if not settings.oidc_skip_verification:
             viable.add(DashboardAuthMethod.OIDC)
     if saml_configuration_state(settings) == ConfigurationCompleteness.COMPLETE:
         viable.add(DashboardAuthMethod.SAML)
-    if vc_configuration_state(settings) == ConfigurationCompleteness.COMPLETE:
-        if not settings.vc_skip_verification:
-            viable.add(DashboardAuthMethod.VERIFIED_PRINCIPAL_VC)
     return frozenset(viable)
 
 
@@ -122,13 +137,18 @@ def validate_dashboard_auth(settings: Settings) -> list[str]:
             for state, label in (
                 (oidc_configuration_state(settings), "oidc"),
                 (saml_configuration_state(settings), "saml"),
-                (vc_configuration_state(settings), "vc"),
+                (mcp_vc_configuration_state(settings), "vc_mcp"),
             ):
                 if state == ConfigurationCompleteness.PARTIAL:
                     errors.append(f"production_{label}_configuration_partial")
 
     elif settings.auth_enabled:
-        if not configured_dashboard_auth_methods(settings):
+        dashboard_methods = {
+            m
+            for m in configured_dashboard_auth_methods(settings)
+            if m != DashboardAuthMethod.VERIFIED_PRINCIPAL_VC_MCP
+        }
+        if not dashboard_methods:
             errors.append("auth_enabled_without_any_configured_method")
 
     return errors
