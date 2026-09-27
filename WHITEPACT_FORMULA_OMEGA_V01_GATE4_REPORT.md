@@ -148,7 +148,9 @@ Tests: `tests/formula/test_gate4_semantic_remediation.py` (+ existing Gate 4 mat
 
 Tests: `tests/formula/test_gate4_second_remediation.py`. Local: **221** formula tests pass (pre-push).
 
-**Prior exact-head CI (green):** `05dbb0f` run [36336015292](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36336015292) — superseded by this remediation push.
+**Second remediation head:** `fd9be80ea35e88352e68fe989e780648093c7fe6`  
+**Second remediation tree:** `e361dbcb6ab759ad2f3950935495d36eb940e574`  
+**Prior exact-head CI (green):** `05dbb0f` run [36336015292](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36336015292) — superseded; await CI on `fd9be80`.
 
 ## Engineering verdict
 
