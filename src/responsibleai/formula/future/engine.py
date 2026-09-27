@@ -11,7 +11,10 @@ from responsibleai.formula.capability.closure import CapabilityClosureResult
 from responsibleai.formula.capability.epistemic_compose import compose_epistemic
 from responsibleai.formula.epistemic import EpistemicStatus
 from responsibleai.formula.errors import CausalCycleError, CausalTenantMismatch
-from responsibleai.formula.future.actors import consequence_subject_from_actor
+from responsibleai.formula.future.actors import (
+    consequence_subject_from_actor,
+    prereq_subjects_compatible_with_rule,
+)
 from responsibleai.formula.future.blast import BlastRadius
 from responsibleai.formula.future.bridge import (
     aggregate_consequence_fact,
@@ -26,6 +29,7 @@ from responsibleai.formula.future.models import (
     EnvelopeStatus,
     Reversibility,
 )
+from responsibleai.formula.future.persistence import compose_persistence
 from responsibleai.formula.future.provenance import CausalDerivation, CausalWitnessDag
 from responsibleai.formula.future.reversibility import compose_reversibility
 from responsibleai.formula.future.rules import CausalRule, validate_causal_rules
@@ -136,6 +140,7 @@ def _rebuild_aggregate(
     for w in witnesses[1:]:
         rev = compose_reversibility(rev, w.reversibility)
     info = any(w.information_sensitive for w in witnesses)
+    persist = compose_persistence(*(w.persistence for w in witnesses))
     facts[key] = ConsequenceFact(
         tenant_id=base.tenant_id,
         subject_id=base.subject_id,
@@ -143,7 +148,7 @@ def _rebuild_aggregate(
         consequence_kind=base.consequence_kind,
         scope=base.scope,
         reversibility=rev,
-        persistence=base.persistence,
+        persistence=persist,
         information_sensitive=info,
         epistemic_status=ep,
         reachability=base.reachability,
@@ -184,6 +189,15 @@ def _build_derived_fact(
     )
 
 
+def _prereq_subjects_compatible(
+    rule: CausalRule,
+    prereqs: tuple[ConsequenceSemanticKey, ...],
+    facts: dict[ConsequenceSemanticKey, ConsequenceFact],
+) -> bool:
+    subs = tuple(facts[p].subject_id for p in prereqs)
+    return prereq_subjects_compatible_with_rule(rule.output_subject_id, subs)
+
+
 def _iter_rule_applications(
     effect_rules: tuple[CausalRule, ...],
     active: frozenset[ConsequenceSemanticKey],
@@ -195,6 +209,8 @@ def _iter_rule_applications(
     apps: list[tuple[CausalRule, tuple[ConsequenceSemanticKey, ...], tuple[tuple, ...]]] = []
     for rule in sorted(effect_rules, key=lambda r: r.rule_id):
         for prereqs in _prereq_combinations(rule, active):
+            if not _prereq_subjects_compatible(rule, prereqs, facts):
+                continue
             if not _edge_allows(rule, snapshot, prereqs):
                 continue
             witness_lists = [dag.get_witnesses(p) for p in prereqs]
@@ -247,6 +263,7 @@ def _novel_application_exists(
             reversibility=rev,
             information_sensitive=info,
             subject_id=rule.output_subject_id,
+            persistence=rule.persistence,
         )
         if dag.has_fingerprint(witness.witness_fingerprint()):
             continue
@@ -422,6 +439,7 @@ def compute_safe_future_envelope(
                 reversibility=rev,
                 information_sensitive=info,
                 subject_id=rule.output_subject_id,
+                persistence=rule.persistence,
             )
             if dag.has_fingerprint(witness.witness_fingerprint()):
                 continue

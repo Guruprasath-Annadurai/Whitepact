@@ -26,21 +26,23 @@ class CausalDerivation:
     reversibility: Reversibility
     information_sensitive: bool
     subject_id: str
+    persistence: bool = False
     capability_semantic_key: tuple | None = None
 
     def witness_fingerprint(self) -> WitnessFingerprint:
+        """Identity of logical causal support (scheduler iteration excluded)."""
         return (
             self.rule_id,
             self.output_key,
             self.prerequisite_keys,
             self.prerequisite_witness_fingerprints,
             self.graph_edge_ids,
-            self.trajectory_depth,
             self.causal_depth,
             self.epistemic_status.value,
             self.reversibility.value,
             self.information_sensitive,
             self.subject_id,
+            self.persistence,
             self.capability_semantic_key,
         )
 

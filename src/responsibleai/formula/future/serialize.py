@@ -79,6 +79,7 @@ def serialize_derivation(d: CausalDerivation) -> dict[str, Any]:
         "reversibility": d.reversibility.value,
         "information_sensitive": d.information_sensitive,
         "subject_id": d.subject_id,
+        "persistence": d.persistence,
         "capability_semantic_key": list(d.capability_semantic_key)
         if d.capability_semantic_key
         else None,

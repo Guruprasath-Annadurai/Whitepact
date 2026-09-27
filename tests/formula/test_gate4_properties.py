@@ -116,7 +116,8 @@ def test_p6_horizon_truncation_incomplete() -> None:
     snap, closure = _base_closure()
     rules = (
         _bridge("read", "secret", ConsequenceKind.STATE_CHANGE),
-        _chain("next", ("STATE_CHANGE", "secret"), ConsequenceKind.DATA_MUTATION, "svc"),
+        _chain("hop1", ("STATE_CHANGE", "secret"), ConsequenceKind.RESOURCE_CHANGE, "secret"),
+        _chain("hop2", ("RESOURCE_CHANGE", "secret"), ConsequenceKind.DATA_MUTATION, "svc"),
     )
     env = compute_safe_future_envelope(
         snap,
@@ -126,6 +127,7 @@ def test_p6_horizon_truncation_incomplete() -> None:
         horizon=1,
     )
     assert env.status == EnvelopeStatus.INCOMPLETE
+    assert "horizon_exhausted" in env.blocked_frontier
 
 
 def test_p10_epistemic_weakest_link() -> None:
@@ -209,6 +211,7 @@ def _witness(
         reversibility=Reversibility.UNKNOWN,
         information_sensitive=False,
         subject_id=output_key[1],
+        persistence=False,
     )
 
 

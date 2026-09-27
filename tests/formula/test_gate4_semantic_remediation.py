@@ -191,12 +191,23 @@ def test_r12_two_witnesses_same_semantic_fact() -> None:
             rule_id="b1",
             epistemic=EpistemicStatus.DECLARED,
         ),
-        _chain("alt", ("STATE_CHANGE", "secret"), ConsequenceKind.STATE_CHANGE, "secret"),
+        _bridge(
+            "read",
+            "secret",
+            ConsequenceKind.STATE_CHANGE,
+            rule_id="b2",
+            epistemic=EpistemicStatus.INFERRED,
+        ),
     )
     env = compute_safe_future_envelope(snap, closure, causal_rules=rules, horizon=1)
-    key = env.consequence_facts[0].semantic_key()
+    key = next(
+        f.semantic_key()
+        for f in env.consequence_facts
+        if f.consequence_kind == ConsequenceKind.STATE_CHANGE and f.target_id == "secret"
+    )
     witnesses = [w for w in env.causal_derivations if w.output_key == key]
-    assert len(witnesses) >= 1
+    assert len(witnesses) == 2
+    assert len({w.witness_fingerprint() for w in witnesses}) == 2
 
 
 def test_r16_shuffled_rules_identical_hash() -> None:
@@ -343,7 +354,8 @@ def test_r25_genuine_successor_incomplete() -> None:
     closure = compute_capability_closure(snap)
     rules = (
         _bridge("read", "secret", ConsequenceKind.STATE_CHANGE, rule_id="s"),
-        _chain("next", ("STATE_CHANGE", "secret"), ConsequenceKind.DATA_MUTATION, "svc"),
+        _chain("hop1", ("STATE_CHANGE", "secret"), ConsequenceKind.RESOURCE_CHANGE, "secret"),
+        _chain("hop2", ("RESOURCE_CHANGE", "secret"), ConsequenceKind.DATA_MUTATION, "svc"),
     )
     env = compute_safe_future_envelope(
         snap,
@@ -353,6 +365,7 @@ def test_r25_genuine_successor_incomplete() -> None:
         horizon=1,
     )
     assert env.status == EnvelopeStatus.INCOMPLETE
+    assert "horizon_exhausted" in env.blocked_frontier
 
 
 def test_r26_absent_complete_not_derived() -> None:

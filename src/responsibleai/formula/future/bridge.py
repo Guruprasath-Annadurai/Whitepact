@@ -9,6 +9,7 @@ from responsibleai.formula.errors import CausalTenantMismatch
 from responsibleai.formula.future.actors import consequence_subject_from_actor
 from responsibleai.formula.future.facts import ConsequenceFact
 from responsibleai.formula.future.models import ConsequenceReachability, Reversibility
+from responsibleai.formula.future.persistence import compose_persistence
 from responsibleai.formula.future.provenance import CausalDerivation
 from responsibleai.formula.future.reversibility import compose_reversibility
 from responsibleai.formula.future.rules import CausalRule, CausalRuleFamily
@@ -81,6 +82,7 @@ def bridge_witness_for(
         reversibility=fact.reversibility,
         information_sensitive=fact.information_sensitive,
         subject_id=fact.subject_id,
+        persistence=fact.persistence,
         capability_semantic_key=cap_semantic_key,
     )
 
@@ -100,9 +102,9 @@ def aggregate_consequence_fact(
         reversibility=compose_reversibility(
             fact.reversibility, witness.reversibility, recovery_rule=recovery_rule
         ),
-        persistence=fact.persistence,
         information_sensitive=fact.information_sensitive or witness.information_sensitive,
         epistemic_status=compose_epistemic(fact.epistemic_status, witness.epistemic_status),
+        persistence=compose_persistence(fact.persistence, witness.persistence),
         reachability=fact.reachability,
         magnitude_class=fact.magnitude_class,
     )

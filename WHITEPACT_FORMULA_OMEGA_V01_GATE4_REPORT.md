@@ -137,8 +137,21 @@ CI matrix (Python 3.11 + 3.12, branch coverage ≥80%, security) — **pending e
 
 Tests: `tests/formula/test_gate4_semantic_remediation.py` (+ existing Gate 4 matrix). Local: **208** formula tests pass.
 
+## Second semantic remediation (G4-P1-A/B/C, G4-P2)
+
+| ID | Fix |
+|----|-----|
+| G4-P1-A | `witness_fingerprint()` excludes `trajectory_depth` — logical support identity only |
+| G4-P1-B | `prereq_subjects_compatible_with_rule()` — block cross-actor prerequisite stitching; typed coalition via `\|` subject |
+| G4-P1-C | Real dual-bridge multi-witness regression (`test_r12`) |
+| G4-P2 | `compose_persistence()` conservative OR-merge; `persistence` on `CausalDerivation` + aggregation |
+
+Tests: `tests/formula/test_gate4_second_remediation.py`. Local: **221** formula tests pass (pre-push).
+
+**Prior exact-head CI (green):** `05dbb0f` run [36336015292](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36336015292) — superseded by this remediation push.
+
 ## Engineering verdict
 
-**WHITEPACT FORMULA Ω∞ GATE 4 SEMANTIC REMEDIATION COMPLETE — READY FOR CHATGPT RE-REVIEW**
+**WHITEPACT FORMULA Ω∞ GATE 4 SECOND REMEDIATION PUSHED — EXACT-HEAD CI REQUIRED BEFORE CHATGPT RE-REVIEW**
 
-Exact-head CI on remediation commit pending. Antigravity only after ChatGPT re-review. Do **not** merge PR #123 from this document alone.
+Antigravity only after ChatGPT re-review. Do **not** merge PR #123 from this document alone. Gates 5–10 not started.
