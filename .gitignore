@@ -29,6 +29,7 @@ venv/
 !security/*.openvex.json
 !examples/amazon-q/*.json
 !contracts/sovereign-v1-web.json
+!docs/production/launch-manifest.template.json
 !examples/kiro-cli/*.json
 !examples/aws-agentcore/*.json
 !.cursor-example/*.json
