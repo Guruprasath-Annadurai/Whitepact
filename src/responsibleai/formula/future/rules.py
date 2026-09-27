@@ -35,6 +35,14 @@ class CausalRule:
     def __post_init__(self) -> None:
         if not self.rule_id.strip():
             raise InvalidCausalRule("rule_id required")
+        if not self.tenant_id.strip():
+            raise InvalidCausalRule("tenant_id required")
+        if not self.output_subject_id.strip():
+            raise InvalidCausalRule("output_subject_id required")
+        if not self.output_target_id.strip():
+            raise InvalidCausalRule("output_target_id required")
+        if not self.output_scope.strip():
+            raise InvalidCausalRule("output_scope required")
         if self.family == CausalRuleFamily.CAPABILITY_BRIDGE:
             if not self.capability_action or not self.capability_target_node_id:
                 raise InvalidCausalRule("CAPABILITY_BRIDGE requires capability_action and target")

@@ -116,7 +116,7 @@ def test_p6_horizon_truncation_incomplete() -> None:
     snap, closure = _base_closure()
     rules = (
         _bridge("read", "secret", ConsequenceKind.STATE_CHANGE),
-        _chain("loop", ("STATE_CHANGE", "secret"), ConsequenceKind.STATE_CHANGE, "secret"),
+        _chain("next", ("STATE_CHANGE", "secret"), ConsequenceKind.DATA_MUTATION, "svc"),
     )
     env = compute_safe_future_envelope(
         snap,
@@ -190,34 +190,40 @@ def test_p15_no_authority_fields() -> None:
     assert "grant" not in blob.lower()
 
 
+def _witness(
+    rule_id: str,
+    output_key: tuple[str, str, str, str, str],
+    prereqs: tuple = (),
+    prereq_fps: tuple = (),
+    depth: int = 1,
+) -> CausalDerivation:
+    return CausalDerivation(
+        rule_id=rule_id,
+        output_key=output_key,
+        prerequisite_keys=prereqs,
+        prerequisite_witness_fingerprints=prereq_fps,
+        graph_edge_ids=(),
+        trajectory_depth=depth,
+        causal_depth=depth,
+        epistemic_status=EpistemicStatus.UNKNOWN,
+        reversibility=Reversibility.UNKNOWN,
+        information_sensitive=False,
+        subject_id=output_key[1],
+    )
+
+
 def test_p16_provenance_cycle_rejected() -> None:
     dag = CausalWitnessDag()
     k_a = ("t1", "a", "x", "STATE_CHANGE", "s")
     k_b = ("t1", "a", "y", "STATE_CHANGE", "s")
-    dag.add_witness(CausalDerivation("r1", k_a, (), (), (), 1, EpistemicStatus.UNKNOWN))
-    dag.add_witness(
-        CausalDerivation(
-            "r2",
-            k_b,
-            (k_a,),
-            (dag.get_witness(k_a).witness_fingerprint(),),
-            (),
-            2,
-            EpistemicStatus.UNKNOWN,
-        )
-    )
+    dag.add_witness(_witness("r1", k_a))
+    w_a = dag.get_witness(k_a)
+    assert w_a is not None
+    dag.add_witness(_witness("r2", k_b, (k_a,), (w_a.witness_fingerprint(),), 2))
     with pytest.raises(CausalCycleError):
-        dag.add_witness(
-            CausalDerivation(
-                "r3",
-                k_a,
-                (k_b,),
-                (dag.get_witness(k_b).witness_fingerprint(),),
-                (),
-                3,
-                EpistemicStatus.UNKNOWN,
-            )
-        )
+        w_b = dag.get_witness(k_b)
+        assert w_b is not None
+        dag.add_witness(_witness("r3", k_a, (k_b,), (w_b.witness_fingerprint(),), 3))
 
 
 def test_p20_information_hazard_irreversible() -> None:

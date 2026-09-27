@@ -39,6 +39,8 @@ def causal_rules_fingerprint(rules: tuple[CausalRule, ...]) -> str:
             "capability_action": r.capability_action,
             "capability_target_node_id": r.capability_target_node_id,
             "recovery_rule": r.recovery_rule,
+            "persistence": r.persistence,
+            "information_sensitive": r.information_sensitive,
         }
         for r in sorted(rules, key=lambda x: x.rule_id)
     ]
@@ -72,7 +74,11 @@ def serialize_derivation(d: CausalDerivation) -> dict[str, Any]:
         ],
         "graph_edge_ids": list(d.graph_edge_ids),
         "trajectory_depth": d.trajectory_depth,
+        "causal_depth": d.causal_depth,
         "epistemic_status": d.epistemic_status.value,
+        "reversibility": d.reversibility.value,
+        "information_sensitive": d.information_sensitive,
+        "subject_id": d.subject_id,
         "capability_semantic_key": list(d.capability_semantic_key)
         if d.capability_semantic_key
         else None,
@@ -86,7 +92,27 @@ def serialize_envelope(envelope: SafeFutureEnvelope) -> dict[str, Any]:
             "snapshot_id": envelope.snapshot_id,
             "graph_content_hash": envelope.graph_content_hash,
             "capability_closure_fingerprint": envelope.capability_closure_fingerprint,
+            "capability_closure_status": envelope.capability_closure_status,
+            "capability_unresolved_notes": list(envelope.capability_unresolved_notes),
             "causal_rules_fingerprint": envelope.causal_rules_fingerprint,
+            "budget": {
+                "max_horizon_steps": envelope.budget.max_horizon_steps,
+                "max_states": envelope.budget.max_states,
+                "max_consequences": envelope.budget.max_consequences,
+                "max_derivations": envelope.budget.max_derivations,
+                "max_rule_applications": envelope.budget.max_rule_applications,
+                "max_trajectories": envelope.budget.max_trajectories,
+                "max_frontier": envelope.budget.max_frontier,
+                "max_path_depth": envelope.budget.max_path_depth,
+            },
+            "blast_radius": {
+                "affected_actors": sorted(envelope.blast_radius.affected_actors),
+                "affected_resources": sorted(envelope.blast_radius.affected_resources),
+                "affected_systems": sorted(envelope.blast_radius.affected_systems),
+                "affected_data_objects": sorted(envelope.blast_radius.affected_data_objects),
+                "external_targets": sorted(envelope.blast_radius.external_targets),
+                "propagation_depth": envelope.blast_radius.propagation_depth,
+            },
             "horizon": envelope.horizon,
             "status": envelope.status.value,
             "consequence_facts": [

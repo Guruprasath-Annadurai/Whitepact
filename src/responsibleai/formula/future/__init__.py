@@ -4,6 +4,12 @@
 
 from responsibleai.formula.future.engine import compute_safe_future_envelope
 from responsibleai.formula.future.envelope import SafeFutureEnvelope
+from responsibleai.formula.future.query import query_consequence_reachability
 from responsibleai.formula.future.rules import CausalRule
 
-__all__ = ["CausalRule", "SafeFutureEnvelope", "compute_safe_future_envelope"]
+__all__ = [
+    "CausalRule",
+    "SafeFutureEnvelope",
+    "compute_safe_future_envelope",
+    "query_consequence_reachability",
+]

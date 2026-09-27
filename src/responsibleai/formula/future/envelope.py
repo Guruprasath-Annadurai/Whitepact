@@ -30,6 +30,8 @@ class SafeFutureEnvelope:
     snapshot_id: str
     graph_content_hash: str
     capability_closure_fingerprint: str
+    capability_closure_status: str
+    capability_unresolved_notes: tuple[str, ...]
     causal_rules_fingerprint: str
     horizon: int
     status: EnvelopeStatus

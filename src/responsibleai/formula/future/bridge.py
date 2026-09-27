@@ -6,10 +6,23 @@ from __future__ import annotations
 from responsibleai.formula.capability.closure import CapabilityClosureResult
 from responsibleai.formula.capability.epistemic_compose import compose_epistemic
 from responsibleai.formula.errors import CausalTenantMismatch
+from responsibleai.formula.future.actors import consequence_subject_from_actor
 from responsibleai.formula.future.facts import ConsequenceFact
-from responsibleai.formula.future.models import ConsequenceReachability
+from responsibleai.formula.future.models import ConsequenceReachability, Reversibility
 from responsibleai.formula.future.provenance import CausalDerivation
+from responsibleai.formula.future.reversibility import compose_reversibility
 from responsibleai.formula.future.rules import CausalRule, CausalRuleFamily
+
+
+def _effective_reversibility(
+    rule: Reversibility,
+    *,
+    information_sensitive: bool,
+    recovery_rule: bool,
+) -> Reversibility:
+    if information_sensitive and not recovery_rule:
+        return Reversibility.IRREVERSIBLE
+    return rule
 
 
 def capability_bridge_derivations(
@@ -19,7 +32,6 @@ def capability_bridge_derivations(
     """Seed consequences from pinned capability closure via explicit CAPABILITY_BRIDGE rules."""
     facts: list[ConsequenceFact] = []
     bridge = [r for r in bridge_rules if r.family == CausalRuleFamily.CAPABILITY_BRIDGE]
-    cap_by_key = {f.semantic_key(): f for f in closure.facts}
     for rule in bridge:
         if rule.tenant_id != closure.tenant_id:
             raise CausalTenantMismatch("bridge rule tenant mismatch")
@@ -29,21 +41,25 @@ def capability_bridge_derivations(
             if cap.target_node_id != rule.capability_target_node_id:
                 continue
             ep = compose_epistemic(cap.epistemic_status, rule.epistemic_status)
-            subject = cap.actor.member_ids[0] if cap.actor.member_ids else "unknown"
+            subject = consequence_subject_from_actor(cap.actor)
+            rev = _effective_reversibility(
+                rule.reversibility,
+                information_sensitive=rule.information_sensitive,
+                recovery_rule=rule.recovery_rule,
+            )
             fact = ConsequenceFact(
                 tenant_id=closure.tenant_id,
                 subject_id=subject,
                 target_id=rule.output_target_id,
                 consequence_kind=rule.output_kind,
                 scope=rule.output_scope,
-                reversibility=rule.reversibility,
+                reversibility=rev,
                 persistence=rule.persistence,
                 information_sensitive=rule.information_sensitive,
                 epistemic_status=ep,
                 reachability=ConsequenceReachability.SUPPORTED,
             )
             facts.append(fact)
-            _ = cap_by_key  # pinned closure reference — immutability is caller responsibility
     return tuple(facts)
 
 
@@ -60,6 +76,33 @@ def bridge_witness_for(
         prerequisite_witness_fingerprints=(),
         graph_edge_ids=(),
         trajectory_depth=depth,
+        causal_depth=0,
         epistemic_status=fact.epistemic_status,
+        reversibility=fact.reversibility,
+        information_sensitive=fact.information_sensitive,
+        subject_id=fact.subject_id,
         capability_semantic_key=cap_semantic_key,
+    )
+
+
+def aggregate_consequence_fact(
+    fact: ConsequenceFact,
+    witness: CausalDerivation,
+    *,
+    recovery_rule: bool = False,
+) -> ConsequenceFact:
+    return ConsequenceFact(
+        tenant_id=fact.tenant_id,
+        subject_id=fact.subject_id,
+        target_id=fact.target_id,
+        consequence_kind=fact.consequence_kind,
+        scope=fact.scope,
+        reversibility=compose_reversibility(
+            fact.reversibility, witness.reversibility, recovery_rule=recovery_rule
+        ),
+        persistence=fact.persistence,
+        information_sensitive=fact.information_sensitive or witness.information_sensitive,
+        epistemic_status=compose_epistemic(fact.epistemic_status, witness.epistemic_status),
+        reachability=fact.reachability,
+        magnitude_class=fact.magnitude_class,
     )
