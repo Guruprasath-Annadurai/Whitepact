@@ -77,4 +77,4 @@ This document details the three insurmountable human governance criteria that cu
 
 1. **Enterprise & Academic Outreach:** Engage open-source AI safety working groups and enterprise early-adopters to invite co-maintainers.
 2. **Community Governance Charter:** Enact formal Open Governance (`docs/GOVERNANCE.md`) establishing clear merit-based pathways to maintainership.
-3. **Strict Policy Preservation:** Maintain 100% technical readiness so that the moment community members join, the Gold badge can be applied for immediately and honestly.
+3. **Strict Policy Preservation:** Preserve verified controls and close the remaining owner/account criteria so that Gold can be pursued honestly after the human criteria are met.

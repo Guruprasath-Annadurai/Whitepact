@@ -62,9 +62,14 @@ Completing these actions will finalize the external verification requirements fo
   - **Steps:**
     1. Log in or create a free Cloud Security Alliance account.
     2. Register WhitePact as an Open Source / Cloud Service provider.
-    3. Upload the completed spreadsheet: `compliance/CAIQv4.0.3_WhitePact_completed.xlsx`.
-    4. Provide the project repository URL: `https://github.com/Guruprasath-Annadurai/Whitepact`.
-    5. Submit for publication on the official public CSA STAR Registry.
+    3. Review all 261 answers (72 Yes, 157 No, 32 N/A), confirm each implementation description and stable public evidence URL, and obtain any required legal/organizational approval.
+    4. Upload the reviewed spreadsheet: `compliance/CAIQv4.0.3_WhitePact_completed.xlsx`.
+    5. Provide the project repository URL: `https://github.com/Guruprasath-Annadurai/Whitepact`.
+    6. Submit for publication on the official public CSA STAR Registry.
+- [ ] **Action 3.1a: Complete STAR for AI Level 1 input**
+  - Download CSA's current AI-CAIQ v1.1 artifact.
+  - Migrate and validate the preliminary evidence map in `CSA_AI_CAIQ_SELF_ASSESSMENT.md` question by question.
+  - Do not submit the narrative document as though it were the official questionnaire and do not claim a STAR for AI designation before registry acceptance.
 - [ ] **Action 3.2: Update OpenSSF Best Practices BadgeApp (Project ID: 14112)**
   - **Portal:** `https://bestpractices.coreinfrastructure.org/en/projects/14112`
   - **Steps:**

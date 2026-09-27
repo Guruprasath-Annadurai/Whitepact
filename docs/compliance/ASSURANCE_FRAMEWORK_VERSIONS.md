@@ -13,10 +13,10 @@
 |---|---|---|---|---|
 | **OpenSSF Best Practices Badge** | Open Source Security Foundation (Linux Foundation) | Current Criteria Schema (2026) | 2026-08-31 (Silver Awarded) | Project ID: `14112` |
 | **OpenSSF OSPS Baseline** | Open Source Security Foundation | **v2026.08.28** | 2026-08-30 (L1 Awarded, L2/L3 Audited) | Official Checklist v2026.08.28 |
-| **OpenSSF Scorecard** | OpenSSF / OpenSSF Supply Chain Working Group | **v5.0.0** | 2026-08-31 (Score: 6.0/10) | GitHub Actions Run ID `33359584927` |
+| **OpenSSF Scorecard** | OpenSSF / OpenSSF Supply Chain Working Group | **v5.5.0** | 2026-09-27 (Score: 8.1/10) | Public Scorecard API, commit `81beb3ac50e17068c7d6f26d9a07f2cb0442dbec` |
 | **SLSA (Supply-chain Levels for Software Artifacts)** | OpenSSF SLSA Specification Committee | **v1.2 (Build Track)** | 2026-08-31 (Release `v1.2.6` verified) | Build L3 Reusable Workflow (`.github/workflows/reusable-build.yml`) |
 | **CSA STAR Level 1 (CAIQ)** | Cloud Security Alliance | **CAIQ v4.0.3** | 2026-08-31 / 2026-09-28 | `compliance/CAIQv4.0.3_WhitePact_completed.xlsx` |
-| **CSA AI-CAIQ (STAR for AI)** | Cloud Security Alliance / AI Safety Initiative | **AI-CAIQ v1.0** (Draft/Guidance) | 2026-09-28 | `docs/compliance/CSA_AI_CAIQ_SELF_ASSESSMENT.md` |
+| **CSA AI-CAIQ (STAR for AI)** | Cloud Security Alliance / AI Safety Initiative | **AI-CAIQ v1.1** | 2026-09-28 | Official questionnaire migration required; the repository narrative is not a submission workbook |
 | **CycloneDX SBOM** | OWASP CycloneDX Working Group | **v1.5 / JSON Schema** | 2026-08-31 (`v1.2.6`) | Attested release artifact `sbom.cyclonedx.json` |
 | **OpenVEX** | OpenVEX Project (Linux Foundation) | **v0.2.0** | 2026-08-31 | `security/whitepact.openvex.json` |
 
@@ -40,19 +40,17 @@
 - **Level 2 Evaluation:** `ELIGIBLE / TECHNICALLY SATISFIED` (19/19 controls pass).
 - **Level 3 Evaluation:** `NOT_YET_ELIGIBLE` due to control `OSPS-QA-07.01` (requires at least one non-author human approval prior to merge; cannot be satisfied by solo maintainer without manufacturing synthetic identities).
 
-### 2.3 OpenSSF Scorecard (v5.0.0)
-- **Scorecard Run ID:** `33359584927` on commit `79f604bcd5162aca92419f2801cfad3903ad9874`.
-- **Score:** 6.0 / 10.
-- **10/10 Perfect Scores:** `Binary-Artifacts`, `CI-Tests`, `Dangerous-Workflow`, `Dependency-Update-Tool`, `License`, `Packaging`, `Security-Policy`, `Token-Permissions`, `Vulnerabilities`.
+### 2.3 OpenSSF Scorecard (v5.5.0)
+- **Public API result:** dated 2026-09-27 on commit `81beb3ac50e17068c7d6f26d9a07f2cb0442dbec`.
+- **Score:** 8.1 / 10.
+- **10/10 Scores:** `Security-Policy`, `Maintained`, `Binary-Artifacts`, `Code-Review`, `Dangerous-Workflow`, `Dependency-Update-Tool`, `Token-Permissions`, `License`, `SAST`, `Packaging`, `CI-Tests`.
 - **Deductions Analyzed:**
   - `Branch-Protection`: Scanner API token limit (`Resource not accessible by integration`), verified locally as protected.
-  - `Code-Review`: `0/10` due to solo maintainer merge history (`HUMAN_BLOCKED`).
   - `Contributors`: `0/10` due to single primary contributor (`HUMAN_BLOCKED`).
-  - `Maintained`: `0/10` (repository age/cadence heuristics).
-  - `Pinned-Dependencies`: `4/10` (Actions and containers 100% pinned; dev ranges flexible).
-  - `SAST`: `0/10` (Scorecard heuristic recognition timing; Bandit + CodeQL present).
+  - `Pinned-Dependencies`: `5/10` (some dependencies are not hash-pinned).
   - `Signed-Releases`: `0/10` (Scorecard heuristic does not parse custom SSH signature + Rekor attestation pattern; cryptographically verified independently).
   - `Fuzzing`: `0/10` (Hypothesis property-based tests exist; external continuous fuzzing engine not yet integrated).
+  - `Vulnerabilities`: `9/10` (one existing vulnerability reported; triage required).
 
 ### 2.4 SLSA v1.2 Build Track
 - **Specification:** [SLSA v1.2 Specification](https://slsa.dev/spec/v1.2/)
@@ -62,10 +60,10 @@
 - **Attestation Predicate:** `https://slsa.dev/provenance/v1`.
 - **Level Achieved:** SLSA v1.2 Build Level 3 (Build L3) verified via `gh attestation verify`.
 
-### 2.5 CSA STAR Level 1 (CAIQ v4.0.3 & AI-CAIQ v1.0)
+### 2.5 CSA STAR Level 1 (CAIQ v4.0.3 & AI-CAIQ v1.1)
 - **CAIQ Standard:** Consensus Assessment Initiative Questionnaire v4.0.3 (17 domains, 261 questions).
 - **Status:** Self-Assessment Completed. Authoritative spreadsheet: `compliance/CAIQv4.0.3_WhitePact_completed.xlsx`.
-- **AI Governance Profile:** AI-CAIQ self-assessment documented in `docs/compliance/CSA_AI_CAIQ_SELF_ASSESSMENT.md`.
+- **AI Governance Profile:** The repository narrative in `docs/compliance/CSA_AI_CAIQ_SELF_ASSESSMENT.md` is a preliminary evidence map only. It must be migrated into the official AI-CAIQ v1.1 questionnaire before STAR for AI submission.
 - **Registry Submission:** `OWNER_ACTION_REQUIRED` (free registry submission at Cloud Security Alliance STAR Registry).
 
 ---

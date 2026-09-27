@@ -7,7 +7,7 @@
 **Assessment Date:** 2026-09-28  
 **Master Spreadsheet:** `compliance/CAIQv4.0.3_WhitePact_completed.xlsx`  
 **Companion Evidence Boundary:** `compliance/CAIQ_EVIDENCE_BOUNDARY.md`  
-**Status:** Self-Assessment Complete; Ready for Free Registry Submission  
+**Status:** Self-Assessment Complete; owner/legal review and stable public evidence required before registry submission
 
 ---
 
@@ -64,7 +64,7 @@ CSA STAR Level 1 is the globally recognized, zero-cost cloud security self-asses
 
 ## 4. Next Step: CSA STAR Registry Submission
 
-The completed evaluation file (`compliance/CAIQv4.0.3_WhitePact_completed.xlsx`) is fully filled and ready for public submission.
+The evaluation file (`compliance/CAIQv4.0.3_WhitePact_completed.xlsx`) contains answers for all 261 questions (72 Yes, 157 No, 32 N/A). Completion is not the same as control conformance or registry acceptance. Before submission, the owner must review every response, ensure cited evidence is available at stable public URLs, and make the required organizational attestation.
 
 **Owner Action Required:**
 1. Navigate to the Cloud Security Alliance STAR Registry portal: `https://cloudsecurityalliance.org/star/registry/submission/`.

@@ -1,10 +1,15 @@
 # Cloud Security Alliance (CSA) AI-CAIQ — AI Safety & Governance Self-Assessment
 
-**Standard:** CSA STAR for Artificial Intelligence / AI-CAIQ Guidance  
+**Standard:** CSA STAR for Artificial Intelligence / AI-CAIQ v1.1
 **Project:** WhitePact (`Guruprasath-Annadurai/Whitepact`)  
 **Domain:** Autonomous AI Runtime Authority, Agentic Guardrails & Model Safety  
 **Date:** 2026-09-28  
-**Assessment Type:** Technical Self-Assessment  
+**Assessment Type:** Preliminary technical evidence map; not an official AI-CAIQ submission
+
+> **Submission boundary:** CSA currently publishes AI-CAIQ v1.1 and accepts STAR for AI
+> Level 1 submissions. This narrative is not the official questionnaire and does not earn
+> a STAR for AI designation. Every applicable v1.1 question must be answered in CSA's
+> current submission artifact and validated before submission.
 
 ---
 
