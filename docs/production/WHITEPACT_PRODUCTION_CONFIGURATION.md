@@ -1,7 +1,8 @@
 # WhitePact Production Configuration Contract
 
 **Source of truth:** `src/responsibleai/dashboard/config.py` (`Settings`)  
-**Validator CLI:** `python -m responsibleai.operations.config_validate [--expect-production]`
+**Validator CLI:** `python -m responsibleai.operations.config_validate [--expect-production]`  
+**Auth contract:** `responsibleai.operations.auth_contract` (`validate_dashboard_auth`, OIDC/SAML/VC completeness)
 
 ## Environment model
 
