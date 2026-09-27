@@ -19,6 +19,7 @@ from responsibleai.dashboard.config import (
     is_production_environment,
     multi_replica_problems,
 )
+from responsibleai.operations.auth_contract import validate_dashboard_auth
 
 
 def _load_settings() -> Settings:
@@ -40,10 +41,12 @@ def validate(expect_production: bool = False) -> list[str]:
             errors.append("production_missing_database_url")
         elif not settings.database_url.startswith(("postgresql://", "postgresql+asyncpg://")):
             errors.append("production_database_not_postgresql")
-        if settings.auth_enabled and not settings.api_keys and not settings.oidc_enabled:
-            errors.append("production_auth_enabled_without_credentials")
         if settings.allow_all_origins:
             errors.append("production_allow_all_origins_forbidden")
+        if settings.mcp_http_allow_unauthenticated_demo:
+            errors.append("production_mcp_unauthenticated_demo_forbidden")
+
+    errors.extend(validate_dashboard_auth(settings))
 
     db_backend = (
         "postgresql" if (settings.database_url or "").startswith("postgresql") else "sqlite"
