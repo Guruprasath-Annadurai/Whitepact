@@ -102,6 +102,4 @@ class CausalWitnessDag:
         return self._by_fingerprint.get(fp)
 
     def all_witnesses(self) -> tuple[CausalDerivation, ...]:
-        return tuple(
-            sorted(self._by_fingerprint.values(), key=lambda w: w.witness_fingerprint())
-        )
+        return tuple(sorted(self._by_fingerprint.values(), key=lambda w: w.witness_fingerprint()))

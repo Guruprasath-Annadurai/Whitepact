@@ -167,9 +167,7 @@ def _build_derived_fact(
     info = rule.information_sensitive or any(facts[p].information_sensitive for p in prereqs)
     rev = rule.reversibility
     for p in prereqs:
-        rev = compose_reversibility(
-            facts[p].reversibility, rev, recovery_rule=rule.recovery_rule
-        )
+        rev = compose_reversibility(facts[p].reversibility, rev, recovery_rule=rule.recovery_rule)
     if info and not rule.recovery_rule:
         rev = Reversibility.IRREVERSIBLE
     return ConsequenceFact(
@@ -219,9 +217,7 @@ def _novel_application_exists(
         causal_depth = _witness_depth(dag, prereq_fps)
         if causal_depth > b.max_path_depth:
             return True
-        ep = compose_epistemic(
-            *[facts[p].epistemic_status for p in prereqs], rule.epistemic_status
-        )
+        ep = compose_epistemic(*[facts[p].epistemic_status for p in prereqs], rule.epistemic_status)
         prereq_target = prereqs[0][2]
         out_target = _resolve_output_target(rule, snapshot, prereq_target)
         info = rule.information_sensitive or any(facts[p].information_sensitive for p in prereqs)
@@ -453,9 +449,7 @@ def compute_safe_future_envelope(
         blocked.append("horizon_exhausted")
 
     status = (
-        EnvelopeStatus.INCOMPLETE
-        if truncated or upstream_incomplete
-        else EnvelopeStatus.COMPLETE
+        EnvelopeStatus.INCOMPLETE if truncated or upstream_incomplete else EnvelopeStatus.COMPLETE
     )
     ordered_facts = tuple(sorted(facts.values(), key=lambda f: f.semantic_key()))
     ep_summary = (

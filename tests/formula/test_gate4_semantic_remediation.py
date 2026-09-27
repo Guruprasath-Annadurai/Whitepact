@@ -45,7 +45,9 @@ def _bridge(action: str, target: str, kind: ConsequenceKind, **kw) -> CausalRule
     )
 
 
-def _chain(rule_id: str, prereq: tuple[str, str], kind: ConsequenceKind, target: str, **kw) -> CausalRule:
+def _chain(
+    rule_id: str, prereq: tuple[str, str], kind: ConsequenceKind, target: str, **kw
+) -> CausalRule:
     return CausalRule(
         rule_id=rule_id,
         tenant_id="t1",
@@ -171,7 +173,9 @@ def test_r11_sensitive_multi_hop() -> None:
         ),
     )
     env = compute_safe_future_envelope(snap, closure, causal_rules=rules, horizon=2)
-    pii = next(f for f in env.consequence_facts if f.consequence_kind == ConsequenceKind.PII_DISCLOSURE)
+    pii = next(
+        f for f in env.consequence_facts if f.consequence_kind == ConsequenceKind.PII_DISCLOSURE
+    )
     assert pii.information_sensitive
     assert pii.reversibility == Reversibility.IRREVERSIBLE
 
@@ -180,7 +184,13 @@ def test_r12_two_witnesses_same_semantic_fact() -> None:
     snap = _snap()
     closure = compute_capability_closure(snap)
     rules = (
-        _bridge("read", "secret", ConsequenceKind.STATE_CHANGE, rule_id="b1", epistemic=EpistemicStatus.DECLARED),
+        _bridge(
+            "read",
+            "secret",
+            ConsequenceKind.STATE_CHANGE,
+            rule_id="b1",
+            epistemic=EpistemicStatus.DECLARED,
+        ),
         _chain("alt", ("STATE_CHANGE", "secret"), ConsequenceKind.STATE_CHANGE, "secret"),
     )
     env = compute_safe_future_envelope(snap, closure, causal_rules=rules, horizon=1)
@@ -214,7 +224,9 @@ def test_r19_unrelated_edge_not_borrowed() -> None:
         ),
     )
     env = compute_safe_future_envelope(snap, closure, causal_rules=rules, horizon=2)
-    assert not any(f.consequence_kind == ConsequenceKind.EXTERNAL_SIDE_EFFECT for f in env.consequence_facts)
+    assert not any(
+        f.consequence_kind == ConsequenceKind.EXTERNAL_SIDE_EFFECT for f in env.consequence_facts
+    )
 
 
 def test_r20_edge_propagation_when_anchored() -> None:
@@ -232,7 +244,9 @@ def test_r20_edge_propagation_when_anchored() -> None:
         ),
     )
     env = compute_safe_future_envelope(snap, closure, causal_rules=rules, horizon=2)
-    assert any(f.consequence_kind == ConsequenceKind.EXTERNAL_SIDE_EFFECT for f in env.consequence_facts)
+    assert any(
+        f.consequence_kind == ConsequenceKind.EXTERNAL_SIDE_EFFECT for f in env.consequence_facts
+    )
 
 
 def test_r21_joint_actor_survives_bridge() -> None:
@@ -332,7 +346,11 @@ def test_r25_genuine_successor_incomplete() -> None:
         _chain("next", ("STATE_CHANGE", "secret"), ConsequenceKind.DATA_MUTATION, "svc"),
     )
     env = compute_safe_future_envelope(
-        snap, closure, causal_rules=rules, budget=FutureEnvelopeBudget(max_horizon_steps=1), horizon=1
+        snap,
+        closure,
+        causal_rules=rules,
+        budget=FutureEnvelopeBudget(max_horizon_steps=1),
+        horizon=1,
     )
     assert env.status == EnvelopeStatus.INCOMPLETE
 
