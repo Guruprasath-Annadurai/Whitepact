@@ -1,9 +1,11 @@
 # WhitePact Formula Ω∞ — Gate 4 Report
 
 **Branch:** `feature/whitepact-formula-gate4-safe-future-envelope`  
-**PR:** (draft — to be opened after push)  
+**PR:** [#123](https://github.com/Guruprasath-Annadurai/Whitepact/pull/123) (draft — not merged)  
 **Gate 3 frozen `main`:** `81beb3ac50e17068c7d6f26d9a07f2cb0442dbec`  
 **Gate 3 frozen tree:** `bc0b92120500d1ffc1a1875ae64be45adb67929c`  
+**Gate 4 candidate head:** `7d70e64fc6f40da8e3edea82fd6e18df082ddfcf`  
+**Gate 4 candidate tree:** `9d216a92df2b7426eb24f459b8dedab087994a72`  
 **Isolated from:** PR #121 Launch Cell A, PR #98 dev environment, Gate 5+, production enforcement  
 
 ## Semantics boundary (explicit)
