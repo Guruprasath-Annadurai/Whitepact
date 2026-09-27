@@ -30,6 +30,8 @@ def _prod_base(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("WHITEPACT_DATABASE_URL", raising=False)
     monkeypatch.setenv("WHITEPACT_FIELD_ENCRYPTION_KEY", Fernet.generate_key().decode())
     monkeypatch.setenv("WHITEPACT_AUTH_ENABLED", "true")
+    monkeypatch.setenv("WHITEPACT_ALLOW_ALL_ORIGINS", "false")
+    monkeypatch.delenv("RAI_ALLOW_ALL_ORIGINS", raising=False)
     monkeypatch.delenv("RAI_API_KEYS", raising=False)
     monkeypatch.delenv("WHITEPACT_API_KEYS", raising=False)
 
