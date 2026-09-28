@@ -96,6 +96,8 @@ jobs:
           pytest tests/ \
             -o addopts= \
             --cov=src/responsibleai \
+            --cov=src/biasbuster \
+            --cov=src/privacylabel \
             --cov-branch \
             --cov-report=xml:coverage.xml \
             --cov-report=json:coverage.json \

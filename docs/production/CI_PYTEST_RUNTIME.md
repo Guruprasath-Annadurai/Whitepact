@@ -11,6 +11,6 @@ GitHub Actions job `Lint · Type-check · Test` (`timeout-minutes: 45`) reached 
 
 ## Fix
 
-CI pytest now runs with `-o addopts=` and only the reports required for gates (`coverage.xml`, `coverage.json`). Local developers keep full `pyproject.toml` addopts.
+CI pytest now runs with `-o addopts=` (no HTML / `term-missing`) but keeps the same three-package `--cov` scope as `pyproject.toml` (`responsibleai`, `biasbuster`, `privacylabel`) so OpenSSF branch/statement gates are unchanged. Local developers keep full `pyproject.toml` addopts including HTML for offline review.
 
 B9 HTTP load uses shorter burst/soak durations when `GITHUB_ACTIONS` is set; evidence remains `LOAD_TESTED` / `SOAK_TESTED`.
