@@ -1,29 +1,29 @@
-# WhitePact Production Launch Evidence (Cell B)
+# WhitePact Production Launch Evidence (Cell B — final pass)
 
-**B1 baseline SHA:** `d7d7ca3e68486004a742fbdd5aa13806efe1209a`  
-**Machine-readable index:** `artifacts/production/launch-evidence.json`
+## Measured results (disposable PostgreSQL / local HTTP)
 
-This document indexes qualification evidence. It does **not** claim external certification or live production deployment.
+| Artifact | Measurement |
+|----------|-------------|
+| `b4-restore-rehearsal.json` | backup ~0.066s, restore ~0.4s, 118 public tables |
+| `b4-restore-seed-rehearsal.json` | seeded org row restored after logical backup |
+| `b9-http-pg-load.json` | burst ~283 RPS, soak ~305 RPS, 20s soak, p95 ~8–14 ms (single uvicorn + PG) |
+| `b9-load-smoke.json` | TestClient only — not production capacity evidence |
 
-## Phase summary
+## B9 operating limits (conservative, from local qualification)
 
-| Phase | Status | Primary evidence |
-|-------|--------|------------------|
-| B1 Auth / startup gate | PASS | `tests/production/test_production_*` @ B1 SHA |
-| B2 Container / Helm | PASS | `test_helm_production_contract.py`, `B2_DEPLOYMENT_TOPOLOGY.md` |
-| B3 Migrations | PASS | `test_b3_migration_safety.py` (REAL_POSTGRES_TESTED) |
-| B4 Backup / restore | PASS | `test_b4_backup_restore_rehearsal.py`, `b4-restore-rehearsal.json` |
-| B5 Observability | PARTIAL | `test_b5_health_observability.py`; OTEL optional |
-| B6 SLI/SLO/alerts | PARTIAL | `WHITEPACT_SLO_POLICY.md`, `alerts.catalog.json` |
-| B7 Incidents | PARTIAL | `b7-tabletop-evidence.json` (SELF_REHEARSED) |
-| B8 Resilience | PARTIAL | `test_b8_resilience_fail_closed.py`; limited injection |
-| B9 Load/soak | PARTIAL | `b9-load-smoke.json`; no 24h soak |
-| B10 Release/rollback | PARTIAL | Reproducible Build CI; rollback app-only documented |
-| B11 Operator | PASS | `operator_status.py`, `test_b11_operator_diagnostics.py` |
-| B12 Launch rehearsal | PARTIAL | Automated PG + Helm validation; not full zero-to-prod sim |
+- Single uvicorn worker on isolated PG: ~300 RPS health endpoint before errors (0 errors observed in qualification run).
+- Soak 20s at ~300 RPS showed no error growth in qualification environment — **not** a 24h leak test.
 
-## Honesty constraints
+## B10
 
-- No fabricated RTO/RPO guarantees.
-- Load numbers are environment-specific (see B9 artifact).
-- Independent stranger-operator validation: **NOT_TESTED** (future pilot).
+- Bad production Helm values (auth disabled) blocked by `helm_validate`.
+- Live `helm rollback` on a cluster: **OWNER_ACTION_REQUIRED** — see `B10_ROLLBACK_PROCEDURE.md`.
+
+## B12
+
+Run: `bash scripts/cell_b/b12_zero_to_launch_rehearsal.sh`  
+Output: `artifacts/production/b12-zero-to-launch-summary.json` (SELF_REHEARSED).
+
+## Independent validation
+
+Stranger-operator and representative staging multi-replica qualification: **NOT_TESTED** in Cell B zero-cost VM.

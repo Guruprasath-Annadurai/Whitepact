@@ -6,11 +6,11 @@
   ],
   "environment": "pytest_testclient_in_memory_sqlite",
   "duration_seconds": 5.0,
-  "requests": 1653,
+  "requests": 1694,
   "errors": 0,
-  "measured_rps": 330.6,
-  "measured_p95_ms": 3.51,
-  "measured_p99_ms": 3.827,
+  "measured_rps": 338.8,
+  "measured_p95_ms": 3.455,
+  "measured_p99_ms": 3.808,
   "soak_duration_seconds": 0,
   "limitations": "In-process TestClient only; not multi-replica or Postgres."
 }
