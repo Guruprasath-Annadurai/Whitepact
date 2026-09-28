@@ -16,7 +16,7 @@ Statuses: **PASS** | **PARTIAL** | **FAIL** | **NOT_TESTED** | **ENVIRONMENT_BLO
 | B10 Release/rollback | PARTIAL | `b10-release-rollback-rehearsal.json`; cluster `helm rollback` OWNER_ACTION_REQUIRED |
 | B11 Operator | PASS | `operator_status.py`, `test_b11_*`, runbooks |
 | B12 Launch rehearsal | PARTIAL | `b12-zero-to-launch-summary.json` (SELF_REHEARSED); no independent operator |
-| Exact-head CI (Python matrix) | PASS | Run `36418553498` @ `81c1e73` — pytest ~42m; see `CI_PYTEST_RUNTIME.md` |
+| Exact-head CI (Python matrix) | PASS | Run `36430111135` @ `3203df0` — pytest ~42–44m; see `CI_PYTEST_RUNTIME.md` |
 | Multi-replica staging load | NOT_TESTED | No zero-cost multi-replica cluster |
 | Independent IR audit | NOT_APPLICABLE | Out of Cell B scope |
 | External certification | NOT_APPLICABLE | |
