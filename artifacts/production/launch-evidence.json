@@ -1,0 +1,59 @@
+{
+  "program": "WhitePact Launch Cell B",
+  "b1_baseline_sha": "d7d7ca3e68486004a742fbdd5aa13806efe1209a",
+  "b1_baseline_tree": "34dd54498ae5c3f9c6874d4b69fac97fe6d432ea",
+  "phases": {
+    "B2": {
+      "status": "PASS",
+      "evidence_categories": ["CI_VERIFIED", "UNIT_TESTED"],
+      "tests": ["tests/production/test_helm_production_contract.py"],
+      "docs": ["docs/production/B2_DEPLOYMENT_TOPOLOGY.md"]
+    },
+    "B3": {
+      "status": "PASS",
+      "evidence_categories": ["REAL_POSTGRES_TESTED", "INTEGRATION_TESTED"],
+      "tests": ["tests/production/test_b3_migration_safety.py"]
+    },
+    "B4": {
+      "status": "PASS",
+      "evidence_categories": ["RESTORE_TESTED", "REAL_POSTGRES_TESTED"],
+      "tests": ["tests/production/test_b4_backup_restore_rehearsal.py"],
+      "artifact": "artifacts/production/b4-restore-rehearsal.json"
+    },
+    "B5": {
+      "status": "PARTIAL",
+      "tests": ["tests/production/test_b5_health_observability.py"]
+    },
+    "B6": {
+      "status": "PARTIAL",
+      "artifacts": ["artifacts/production/alerts.catalog.json"],
+      "docs": ["docs/production/WHITEPACT_SLO_POLICY.md"]
+    },
+    "B7": {
+      "status": "PARTIAL",
+      "artifacts": ["artifacts/production/b7-tabletop-evidence.json"]
+    },
+    "B8": {
+      "status": "PARTIAL",
+      "tests": ["tests/production/test_b8_resilience_fail_closed.py"]
+    },
+    "B9": {
+      "status": "PARTIAL",
+      "artifacts": ["artifacts/production/b9-load-smoke.json"],
+      "tests": ["tests/production/test_b9_load_smoke.py"]
+    },
+    "B10": {
+      "status": "PARTIAL",
+      "notes": "Reproducible Build CI; DB rollback forward-fix policy in BACKUP_RESTORE_RUNBOOK.md"
+    },
+    "B11": {
+      "status": "PASS",
+      "cli": "python -m responsibleai.operations.operator_status",
+      "tests": ["tests/production/test_b11_operator_diagnostics.py"]
+    },
+    "B12": {
+      "status": "PARTIAL",
+      "notes": "SELF_REHEARSED composite; not independent operator validation"
+    }
+  }
+}

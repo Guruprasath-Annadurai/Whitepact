@@ -193,6 +193,15 @@ jobs:
             --debug \
             > /dev/null
 
+      - name: Validate production Helm values contract
+        run: |
+          python -m responsibleai.operations.helm_validate helm/rai-governance/values-production.yaml
+          helm lint helm/rai-governance/ -f helm/rai-governance/values-production.yaml
+          helm template rai-governance helm/rai-governance/ \
+            -f helm/rai-governance/values-production.yaml \
+            --set image.tag=ci-test \
+            > /dev/null
+
   accessibility:
     name: Accessibility (WCAG2AA)
     runs-on: ubuntu-latest
