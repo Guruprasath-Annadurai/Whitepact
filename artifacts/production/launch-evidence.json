@@ -1,9 +1,10 @@
 {
   "program": "WhitePact Launch Cell B",
   "b1_baseline_sha": "d7d7ca3e68486004a742fbdd5aa13806efe1209a",
-  "final_sha": "81c1e73aa988562316dbbba3f5b1d4a19e8c837f",
+  "final_sha": "pending_after_timeout_bump_push",
   "ci_qualified_run": "36418553498",
-  "ci_note": "Python 3.11/3.12 test jobs green; workflow SBOM step may need rerun on transient PyPI timeouts",
+  "ci_qualified_sha": "81c1e73aa988562316dbbba3f5b1d4a19e8c837f",
+  "ci_note": "Python 3.11/3.12 passed on 81c1e73 (run 36418553498); workflow failed only on flaky SBOM PyPI fetch",
   "phases": {
     "B1": {"status": "PASS", "evidence_categories": ["CI_VERIFIED", "UNIT_TESTED"]},
     "B2": {

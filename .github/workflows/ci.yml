@@ -33,7 +33,10 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
-    timeout-minutes: 45
+    # Measured pytest wall time spans ~26–43 min on ubuntu-latest (5198 tests);
+    # with lint/mypy/pip-audit and OpenSSF coverage gates the job needs >45m
+    # on slow runners (see docs/production/CI_PYTEST_RUNTIME.md).
+    timeout-minutes: 55
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
