@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
+# Example: encrypt PostgreSQL logical backup before R2 upload.
+# Copy to backup-encrypt-r2.sh and configure from a secrets manager — do not commit credentials.
+#
+# Required env (OWNER_APPROVAL_REQUIRED):
+#   PGDUMP_URL, AGE_RECIPIENT, R2_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET
+#
+# Dry-run: DRY_RUN=1 ./backup-encrypt-r2.sh
+
+set -euo pipefail
+DRY_RUN="${DRY_RUN:-1}"
+STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+OUT="/tmp/wp-backup-${STAMP}.sql.gz.age"
+
+if [[ -z "${PGDUMP_URL:-}" ]]; then
+  echo "OWNER_APPROVAL_REQUIRED: set PGDUMP_URL"
+  exit 2
+fi
+
+pg_dump "$PGDUMP_URL" | gzip -c | age -r "${AGE_RECIPIENT:?}" -o "$OUT"
+sha256sum "$OUT" > "${OUT}.sha256"
+
+if [[ "$DRY_RUN" == "1" ]]; then
+  echo "DRY_RUN: would upload $OUT to R2 bucket (not executed)"
+  exit 0
+fi
+
+# aws s3 cp compatible with R2:
+# AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... aws s3 cp "$OUT" "s3://${R2_BUCKET}/backups/" --endpoint-url "$R2_ENDPOINT"
+echo "Implement upload with least-privilege R2 token scoped to backups/ prefix only"
