@@ -30,6 +30,7 @@ venv/
 !examples/amazon-q/*.json
 !contracts/sovereign-v1-web.json
 !docs/production/launch-manifest.template.json
+!artifacts/production/*.json
 !examples/kiro-cli/*.json
 !examples/aws-agentcore/*.json
 !.cursor-example/*.json
