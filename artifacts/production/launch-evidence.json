@@ -1,7 +1,7 @@
 {
   "program": "WhitePact Launch Cell B",
   "b1_baseline_sha": "d7d7ca3e68486004a742fbdd5aa13806efe1209a",
-  "qualification_head_note": "Update final_sha after each push; see git at qualification time",
+  "final_sha": "e10adef469d65437f3ecf74b3dcc6977aae13b3e",
   "phases": {
     "B1": {"status": "PASS", "evidence_categories": ["CI_VERIFIED", "UNIT_TESTED"]},
     "B2": {
