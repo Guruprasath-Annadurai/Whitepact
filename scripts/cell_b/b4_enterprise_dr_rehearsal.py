@@ -33,6 +33,11 @@ from responsibleai.db.evidence_repository import EvidenceRepository
 from responsibleai.db.migrate import run_migrations_or_raise
 from responsibleai.rbac.models import AuditEntry
 
+_CELL_B_DIR = Path(__file__).resolve().parent
+if str(_CELL_B_DIR) not in sys.path:
+    sys.path.insert(0, str(_CELL_B_DIR))
+from b4_security_state import install_security_fixtures, verify_security_state
+
 _GENESIS = "0" * 64
 NOW = datetime.now(UTC).isoformat()
 
@@ -262,7 +267,7 @@ async def _verify_post_restore(engine, restore_url: str, source_counts: dict[str
             k: source_counts[k] for k in restored_counts if k in source_counts
         },
         "denied_approvals_preserved": int(denied) == source_counts.get("denied_approvals", 0),
-        "tenant_isolation_probe": cross_tenant == 0,
+        "tenant_slug_referential_probe": cross_tenant == 0,
         "governance_evidence_readable": evidence_ok,
         "nonce_rows_preserved": restored_counts["governance_execution_nonces"]
         == source_counts["governance_execution_nonces"],
@@ -292,6 +297,31 @@ async def run_rehearsal(output: Path, min_rows: int) -> int:
             seed_seconds = time.monotonic() - t0
             source_counts["denied_approvals"] = await conn.fetchval(
                 "SELECT COUNT(*) FROM governance_approvals WHERE status = 'DENIED'"
+            )
+        finally:
+            await conn.close()
+
+        security_snapshot = await install_security_fixtures(source_url)
+        conn = await asyncpg.connect(source_url)
+        try:
+            source_counts["organizations"] = await conn.fetchval(
+                "SELECT COUNT(*) FROM organizations"
+            )
+            source_counts["governance_execution_nonces"] = await conn.fetchval(
+                "SELECT COUNT(*) FROM governance_execution_nonces"
+            )
+            source_counts["governance_approvals"] = await conn.fetchval(
+                "SELECT COUNT(*) FROM governance_approvals"
+            )
+            source_counts["denied_approvals"] = await conn.fetchval(
+                "SELECT COUNT(*) FROM governance_approvals WHERE status = 'DENIED'"
+            )
+            source_counts["total_rows"] = (
+                source_counts["organizations"]
+                + source_counts["audit_log"]
+                + source_counts["governance_execution_nonces"]
+                + source_counts["governance_approvals"]
+                + source_counts["governance_evidence"]
             )
         finally:
             await conn.close()
@@ -375,7 +405,26 @@ async def run_rehearsal(output: Path, min_rows: int) -> int:
         engine = create_engine(restore_url)
         t_verify = time.monotonic()
         verification = await _verify_post_restore(engine, restore_url, source_counts)
+        security_results = await verify_security_state(restore_url, security_snapshot)
         verify_seconds = time.monotonic() - t_verify
+
+        security_out = output.parent / "b4-enterprise-dr-security-state.json"
+        security_evidence = {
+            "phase": "B4",
+            "test": "enterprise_dr_security_state_restoration",
+            "evidence_categories": ["RESTORE_TESTED", "REAL_POSTGRES_TESTED", "AUTHZ_VERIFIED"],
+            "source_sha": sha,
+            "timestamp": datetime.now(UTC).isoformat(),
+            "security_snapshot": security_snapshot.to_dict(redact_secrets=True),
+            "post_restore_verification": security_results,
+            "limitations": (
+                "Expired execution grant checked via executor validation path "
+                "(_validate_authorization); durable Phase 7A kernel admission "
+                "requires full runtime_execution_* graph — see "
+                "tests/test_phase7a_authority_kernel.py."
+            ),
+        }
+        security_out.write_text(json.dumps(security_evidence, indent=2) + "\n", encoding="utf-8")
 
         evidence = {
             "phase": "B4",
@@ -394,6 +443,10 @@ async def run_rehearsal(output: Path, min_rows: int) -> int:
             "measured_restore_seconds": round(restore_seconds, 3),
             "measured_verification_seconds": round(verify_seconds, 3),
             "verification": verification,
+            "security_state_artifact": str(
+                security_out.resolve().relative_to(REPO.resolve())
+            ),
+            "security_state_passed": security_results.get("passed"),
             "limitations": (
                 "Synthetic enterprise dataset on disposable PostgreSQL; "
                 "not a guaranteed enterprise RPO/RTO commitment."
@@ -424,7 +477,8 @@ async def run_rehearsal(output: Path, min_rows: int) -> int:
             verification["counts_match_source"]
             and verification["audit_chain"]["intact"]
             and verification["nonce_rows_preserved"]
-            and verification["tenant_isolation_probe"]
+            and verification["tenant_slug_referential_probe"]
+            and security_results.get("passed")
         )
         return 0 if ok else 1
 

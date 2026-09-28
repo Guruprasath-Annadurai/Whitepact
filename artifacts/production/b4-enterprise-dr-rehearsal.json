@@ -5,8 +5,8 @@
     "RESTORE_TESTED",
     "REAL_POSTGRES_TESTED"
   ],
-  "source_sha": "ab6b5bbc35f3637f9caad18b66f5923aa6cd59d1",
-  "timestamp": "2026-09-28T17:29:01.719416+00:00",
+  "source_sha": "83e8c46eb0d57196c4dd81e89da4d7c1789a0d7f",
+  "timestamp": "2026-09-28T18:38:22.267354+00:00",
   "environment": "disposable_postgresql_logical_backup",
   "dataset_targets": {
     "organizations": 100,
@@ -16,21 +16,21 @@
     "governance_evidence": 10000
   },
   "dataset_counts_after_seed": {
-    "organizations": 100,
+    "organizations": 102,
     "audit_log": 50000,
-    "governance_execution_nonces": 25000,
-    "governance_approvals": 15000,
+    "governance_execution_nonces": 25001,
+    "governance_approvals": 15001,
     "governance_evidence": 10000,
-    "total_rows": 100100,
-    "denied_approvals": 883
+    "total_rows": 100104,
+    "denied_approvals": 884
   },
-  "measured_seed_seconds": 2.048,
-  "backup_bytes_gzip": 6665057,
-  "backup_bytes_plain": 24655803,
-  "backup_sha256_gzip": "ca48f8e77983304a8f7f4b80610452edf424e3b4a765ac58f0e6f44efd16f020",
-  "measured_backup_seconds": 0.753,
-  "measured_restore_seconds": 1.171,
-  "measured_verification_seconds": 0.472,
+  "measured_seed_seconds": 1.822,
+  "backup_bytes_gzip": 6666408,
+  "backup_bytes_plain": 24657507,
+  "backup_sha256_gzip": "ac655c02e801abd90edf4f6d26e07760356d721c94dcde11c6d45d69bcecd0b3",
+  "measured_backup_seconds": 0.717,
+  "measured_restore_seconds": 0.917,
+  "measured_verification_seconds": 1.037,
   "verification": {
     "audit_chain": {
       "intact": true,
@@ -40,17 +40,19 @@
       "days": 3650
     },
     "restored_counts": {
-      "organizations": 100,
+      "organizations": 102,
       "audit_log": 50000,
-      "governance_execution_nonces": 25000,
-      "governance_approvals": 15000,
+      "governance_execution_nonces": 25001,
+      "governance_approvals": 15001,
       "governance_evidence": 10000
     },
     "counts_match_source": true,
     "denied_approvals_preserved": true,
-    "tenant_isolation_probe": true,
+    "tenant_slug_referential_probe": true,
     "governance_evidence_readable": true,
     "nonce_rows_preserved": true
   },
+  "security_state_artifact": "artifacts/production/b4-enterprise-dr-security-state.json",
+  "security_state_passed": true,
   "limitations": "Synthetic enterprise dataset on disposable PostgreSQL; not a guaranteed enterprise RPO/RTO commitment."
 }

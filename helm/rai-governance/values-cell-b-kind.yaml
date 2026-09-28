@@ -23,3 +23,9 @@ mcp:
 
 networkPolicy:
   enabled: false
+
+extraEnv:
+  - name: WHITEPACT_INSTANCE_ID
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.name

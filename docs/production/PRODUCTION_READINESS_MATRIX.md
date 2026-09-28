@@ -5,13 +5,14 @@
 | B1 Auth / startup | PASS | B1 baseline + CI |
 | B2 Container / Helm | PASS | `test_helm_production_contract.py` |
 | B3 Migrations | PASS | Real PostgreSQL tests |
-| B4 Backup / restore | **PASS** | `b4-enterprise-dr-rehearsal.json` (**100,100 rows**, audit chain verified) |
+| B4 Backup / restore | **PASS** | `b4-enterprise-dr-rehearsal.json` (**100,102+ rows** with security fixtures, audit chain) |
+| B4 Security-state | **PASS** (engineering) | `b4-enterprise-dr-security-state.json` — post-restore authz + cross-tenant HTTP |
 | B5 Observability | PARTIAL | `b5-b6-observability-drill.json` — no full Prometheus/Alertmanager stack |
 | B6 SLI/SLO / alerts | PARTIAL | Catalog + metric linkage tests |
 | B7 Incidents | PARTIAL | Tabletop `SELF_REHEARSED` |
 | B8 Resilience | PARTIAL | Config + synthetic readyz drill; limited live PG loss under load |
-| B9 Load / soak (staging) | **ENVIRONMENT_BLOCKED** | kind bootstrap failed; `b9-http-pg-load.json` is single-node HTTP+PG only |
-| B10 K8s rollback | **ENVIRONMENT_BLOCKED** | kind unavailable; values-block rehearsal only |
+| B9 Load / soak (staging) | **ENVIRONMENT_BLOCKED** | `kind-bootstrap-diagnostics.json` — `wait-control-plane`; in-cluster job scripted |
+| B10 K8s rollback | **ENVIRONMENT_BLOCKED** | Same kind blocker; live rollback script ready for staging cluster |
 | B11 Operator | PASS | `operator_status` + tests |
 | B12 Launch rehearsal | PARTIAL | `SELF_REHEARSED` @ `9b6a7f2`; re-run after merge recommended |
 | Exact-head CI | PASS | Run `36430111135` @ `3203df0` |
