@@ -161,10 +161,16 @@ jobs:
       # a change would ship before it's tagged. The release workflow
       # (publish.yml) regenerates and attaches its own copy at tag time.
       - name: Generate SBOM (CycloneDX)
+        env:
+          PIP_DEFAULT_TIMEOUT: 120
         run: |
           python -m venv /tmp/sbom-venv
           /tmp/sbom-venv/bin/pip install --upgrade pip
-          /tmp/sbom-venv/bin/pip install dist/*.whl
+          for attempt in 1 2 3 4; do
+            /tmp/sbom-venv/bin/pip install dist/*.whl && break
+            echo "pip install wheel failed (attempt $attempt); retrying in ${attempt}0s"
+            sleep "${attempt}0"
+          done
           /tmp/sbom-venv/bin/pip install cyclonedx-bom
           /tmp/sbom-venv/bin/cyclonedx-py environment \
             --pyproject pyproject.toml \
