@@ -19,7 +19,7 @@ RUN npm run build -- --outDir /web-dist
 # the actual build input immutable for supply-chain reproducibility / OpenSSF
 # Pinned-Dependencies. Update both together after reviewing a new upstream
 # Python image.
-FROM python:3.12-slim@sha256:7a8b475003c4fe15a2cd4e55e5cfc2f3560bdc9333d624f24cdd6d4340fd7a17 AS builder
+FROM python:3.14-slim@sha256:caaf356f40667c496d405780745b9ac25771c189a51dfcc42430d531ea09f8a2 AS builder
 
 WORKDIR /build
 RUN pip install --upgrade pip build
@@ -30,7 +30,7 @@ COPY --from=web-builder /web-dist/ ./src/responsibleai/dashboard/static/whitepac
 RUN python -m build --wheel --outdir /dist
 
 
-FROM python:3.12-slim@sha256:7a8b475003c4fe15a2cd4e55e5cfc2f3560bdc9333d624f24cdd6d4340fd7a17 AS runtime
+FROM python:3.14-slim@sha256:caaf356f40667c496d405780745b9ac25771c189a51dfcc42430d531ea09f8a2 AS runtime
 
 ARG WHITEPACT_VERSION=1.3.1
 
