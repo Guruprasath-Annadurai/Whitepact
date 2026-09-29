@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|--------|
 | Starting HEAD | `e64c6c75d9e795e50fd054761cfe24d3bb0939bf` |
-| Final HEAD | `4fdbff7` (branch tip; includes DCO sign-off rebase + data-inventory fix `3409777`) |
+| Final HEAD | `6635d1c` |
 | PR | [#128](https://github.com/Guruprasath-Annadurai/Whitepact/pull/128) |
 
 ## 1. CI / Ruff
@@ -14,7 +14,8 @@
 - Local regression slice: `pytest tests/whitepact_cloud tests/infrastructure/test_terraform_policy.py tests/test_migration_ownership_canonical.py` — **24 passed** (agent VM, `62db30d`)
 - CI run [`36537011004`](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36537011004) on `62db30d`: Py3.11/Py3.12 lint+mypy+**5175 tests** passed except `test_data_inventory` (six unclassified `cloud_*` tables) — fixed by registering tables in `TABLE_CLASSIFICATIONS`
 
-GitHub Actions Py3.11 / Py3.12 full suites on **exact final commit**: see latest run on branch `cursor/whitepact-enterprise-cloud-v1-f7a9` after data-inventory push.
+- CI run [`36541947082`](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36541947082) on `4331251`: Py3.11 full suite **5176 passed**; branch-coverage gate **79.60%** (below 80%) — addressed in `6635d1c` with enrollment + Access JWT tests
+- GitHub Actions Py3.11 / Py3.12 on **`6635d1c`**: monitor run on branch `cursor/whitepact-enterprise-cloud-v1-f7a9`
 
 ## 2. Administrative grant authorization
 
