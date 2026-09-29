@@ -64,10 +64,14 @@ class CloudflareAccessValidator:
             return AccessValidationResult(ok=False, reason="signing_key_unavailable")
 
         try:
-            public_key = jwt.algorithms.RSAAlgorithm.from_jwk(jwk)
+            from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
+
+            resolved_key = jwt.algorithms.RSAAlgorithm.from_jwk(jwk)
+            if not isinstance(resolved_key, RSAPublicKey):
+                return AccessValidationResult(ok=False, reason="signing_key_invalid")
             claims = jwt.decode(
                 token,
-                public_key,
+                resolved_key,
                 algorithms=list(self._config.allowed_algorithms),
                 audience=self._config.audience,
                 issuer=self._config.trusted_issuer,
