@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|--------|
 | Starting HEAD | `cab05ad7b9f4fc45eadd790f4f4a6dc6104f6c91` |
-| Final HEAD | *(branch `cursor/whitepact-enterprise-cloud-v1-f7a9` after security closure commit)* |
+| Final HEAD | `50c57a6` |
 | PR | [#128](https://github.com/Guruprasath-Annadurai/Whitepact/pull/128) |
 
 ## CI restoration
