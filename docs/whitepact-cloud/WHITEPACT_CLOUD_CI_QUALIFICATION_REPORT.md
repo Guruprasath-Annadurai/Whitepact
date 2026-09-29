@@ -6,6 +6,7 @@
 | Branch | `cursor/whitepact-enterprise-cloud-v1-f7a9` |
 | Baseline HEAD | `9edbde2` |
 | Qualification commit | `848e5d8` |
+| Latest HEAD | `0de8ca5` |
 | PR | [#128](https://github.com/Guruprasath-Annadurai/Whitepact/pull/128) |
 
 ## 1. Cancelled run `36565522947` (commit `9edbde2`)
@@ -53,11 +54,11 @@ Update this table when GitHub Actions completes on the qualification commit:
 
 | Check | Py3.11 | Py3.12 |
 |-------|--------|--------|
-| Lint · Type-check | _pending_ | _pending_ |
-| Test · Coverage (full suite + branch/statement gates) | _pending_ | _pending_ |
-| DCO / Terraform validate / Dependency Review | _pending_ | — |
+| Lint · Type-check | **success** ([`36613649909`](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36613649909)) | **success** |
+| Test · Coverage (5194 tests, branch/statement gates) | **failure** — pure branch **79.91%** (−0.09 pts) | **success** — branch **80.39%** |
+| DCO / Terraform validate / Dependency Review | **success** on `0de8ca5` push | — |
 
-**Release gate:** Closed until both matrix **Test · Coverage** jobs are green on the exact qualification commit.
+**Release gate:** Closed until Py3.11 **Test · Coverage** passes branch gate on exact HEAD (additional branch-coverage tests in flight after `0de8ca5`).
 
 ## 6. Prior evidence (superseded SHAs)
 

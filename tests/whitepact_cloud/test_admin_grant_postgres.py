@@ -94,6 +94,72 @@ async def test_issue_rejects_terminated_employee(pg_url: str) -> None:
 
 
 @pytest.mark.asyncio
+async def test_issue_rejects_role_mismatch(pg_url: str) -> None:
+    await run_migrations_or_raise(pg_url)
+    engine = create_engine(pg_url)
+    await engine.init()
+    repo = AdminGrantRepository(engine)
+    await enroll_active_employee(
+        repo, "emp-role", CloudRole.DEVELOPER, ["cloud.infra.read"], "pol-role"
+    )
+    service = AdminGrantService(repo, SIGNING_KEY)
+    try:
+        await service.issue_and_persist(
+            employee_id="emp-role",
+            role=CloudRole.PLATFORM_ENGINEER,
+            operation="infra.read",
+            provider="hetzner",
+            resource_target="project/dev",
+            permissions=["cloud.infra.read"],
+            policy_id="pol-role",
+            approval=GrantDecision.APPROVED,
+            approved_by="owner",
+            ttl_seconds=300,
+            founder_only_exception=True,
+        )
+    except GrantExecutionError as exc:
+        assert exc.reason == "role_mismatch"
+    else:
+        raise AssertionError("expected GrantExecutionError")
+    await engine.close()
+
+
+@pytest.mark.asyncio
+async def test_verify_rejects_operation_mismatch(pg_url: str) -> None:
+    await run_migrations_or_raise(pg_url)
+    engine = create_engine(pg_url)
+    await engine.init()
+    repo = AdminGrantRepository(engine)
+    await enroll_active_employee(
+        repo, "emp-op", CloudRole.DEVELOPER, ["cloud.infra.read"], "pol-op"
+    )
+    service = AdminGrantService(repo, SIGNING_KEY)
+    claim, sig = await service.issue_and_persist(
+        employee_id="emp-op",
+        role=CloudRole.DEVELOPER,
+        operation="infra.read",
+        provider="hetzner",
+        resource_target="project/dev",
+        permissions=["cloud.infra.read"],
+        policy_id="pol-op",
+        approval=GrantDecision.APPROVED,
+        approved_by="owner",
+        ttl_seconds=300,
+        founder_only_exception=True,
+    )
+    result = await service.verify_for_execution(
+        claim.grant_id,
+        sig,
+        expected_operation="infra.write",
+        expected_provider="hetzner",
+        expected_resource="project/dev",
+        required_permission="cloud.infra.read",
+    )
+    assert result["reason"] == "operation_mismatch"
+    await engine.close()
+
+
+@pytest.mark.asyncio
 async def test_issue_rejects_unknown_employee(pg_url: str) -> None:
     await run_migrations_or_raise(pg_url)
     engine = create_engine(pg_url)
