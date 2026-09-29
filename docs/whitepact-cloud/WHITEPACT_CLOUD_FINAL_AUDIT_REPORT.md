@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|--------|
 | Starting HEAD | `e64c6c75d9e795e50fd054761cfe24d3bb0939bf` |
-| Final HEAD | `467577d` |
+| Final HEAD | `4fdbff7` (branch tip; includes DCO sign-off rebase + data-inventory fix `3409777`) |
 | PR | [#128](https://github.com/Guruprasath-Annadurai/Whitepact/pull/128) |
 
 ## 1. CI / Ruff
