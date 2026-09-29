@@ -12,9 +12,10 @@ from alembic.script import ScriptDirectory
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_alembic_single_head_is_0062_whitepact_cloud() -> None:
+def test_alembic_single_head_is_0063_whitepact_cloud_enrollment() -> None:
     script = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
-    assert script.get_heads() == ["0062"]
+    assert script.get_heads() == ["0063"]
+    assert script.get_revision("0063").down_revision == "0062"
     assert script.get_revision("0062").down_revision == "0061"
     assert script.get_revision("0061").down_revision == "0060"
     assert script.get_revision("0060").down_revision == "0059"
@@ -43,6 +44,7 @@ def test_alembic_single_head_is_0062_whitepact_cloud() -> None:
         "0060_test_consequential_counters.py",
         "0061_sovereign_shadow_observations.py",
         "0062_whitepact_cloud_admin_grants.py",
+        "0063_whitepact_cloud_enrollment_policies.py",
     ):
         assert (ROOT / "migrations" / "versions" / name).is_file()
 

@@ -1,43 +1,60 @@
-# WhitePact Cloud — Security Closure Audit Report
+# WhitePact Cloud — Pre-Staging Security Closure Report
 
 | Field | Value |
 |-------|--------|
-| Starting HEAD | `cab05ad7b9f4fc45eadd790f4f4a6dc6104f6c91` |
-| Final HEAD | `50c57a6` |
+| Starting HEAD | `e64c6c75d9e795e50fd054761cfe24d3bb0939bf` |
+| Final HEAD | *(see branch after push)* |
 | PR | [#128](https://github.com/Guruprasath-Annadurai/Whitepact/pull/128) |
 
-## CI restoration
+## 1. CI / Ruff
 
-| Check | Status | Evidence |
-|-------|--------|----------|
-| Ruff F401 (whitepact_cloud) | **VERIFIED** | `ruff check src/responsibleai/whitepact_cloud` |
-| MCP README vs registry | **VERIFIED** | README aligned to **31** tools (`server.json` / `TOOL_DEFS`) |
-| Alembic head `0062` | **VERIFIED** | `test_migration_ownership_canonical.py` |
-| PostgreSQL grant/offboarding tests | **VERIFIED** | `tests/whitepact_cloud/test_*_postgres.py` (disposable PG) |
+- `ruff format` applied to `access_gateway.py`, `grant_repository.py`, `offboarding.py`
+- `ruff check src/responsibleai/whitepact_cloud` — **pass**
+- Local regression slice (32 tests): `pytest tests/whitepact_cloud tests/infrastructure tests/test_migration_ownership_canonical.py tests/test_mcp_metadata_consistency.py` — **32 passed**
 
-## Control status matrix
+GitHub Actions Py3.11 / Py3.12 full suites: **monitor exact-head on final commit** (not re-run inside this agent VM for entire repo).
+
+## 2. Administrative grant authorization
+
+| Control | Status | Evidence |
+|---------|--------|----------|
+| Permission in signed grant **and** employee `authorized_permissions_json` | **VERIFIED** | `verify_and_consume_transactional` |
+| Policy active registry | **VERIFIED** | `cloud_admin_policies` + migration `0063` |
+| Approval re-check for sensitive permissions | **VERIFIED** | transactional verify |
+| Mutable state + consume in one DB transaction (`FOR UPDATE`) | **VERIFIED** | `test_postgres_atomic_consume_single_winner` |
+
+## 3. Enrollment vs issuance
 
 | Control | Status |
 |---------|--------|
-| Exact Cloudflare Access issuer + JWKS validation | **VERIFIED** (unit tests) |
-| Forwarded identity headers rejected | **VERIFIED** |
-| Employee passkey enrollment (first-party) | **BLOCKED** (see `integrations.py`) |
-| Durable admin grants (claims + lifecycle tables) | **VERIFIED** (PostgreSQL) |
-| Atomic single-use grant consumption | **VERIFIED** (multi-worker simulation) |
-| Offboarding step truthfulness | **VERIFIED** (partial failure tests) |
-| Live IdP / Cloudflare session revoke API | **OWNER_APPROVAL_REQUIRED** |
-| nftables fail-closed cloud-init | **TESTED_IN_SIMULATION** (template tests) |
-| Live tier firewall proof | **BLOCKED** (no Hetzner apply) |
-| Terraform apply / DNS | **OWNER_APPROVAL_REQUIRED** |
+| `EmployeeEnrollmentService.enroll` separate from `issue_and_persist` | **VERIFIED** |
+| Unknown employee cannot receive grant | **VERIFIED** | `test_issue_rejects_unknown_employee` |
+| Grant issuance does not upsert/reactivate employees | **VERIFIED** | code path removed |
+| Concurrent issue vs `terminate_local_access` | **VERIFIED** | `test_concurrent_issue_vs_termination` |
 
-## Outstanding for live staging
+## 4. Offboarding fail-closed
 
-1. Provision disposable Hetzner dev stack (owner approval).
-2. Validate nftables on boot + LB→SaaS→authority paths.
-3. Connect Cloudflare Access app + real JWKS endpoint.
-4. Wire `IdentityRevocationPort` to Cloudflare Access + Hetzner token APIs.
-5. End-to-end adversarial scenarios 6–25 in `11_SECURITY_TEST_RESULTS.md`.
+| Step | Behavior |
+|------|----------|
+| `local_fail_closed` first | Terminate employee + revoke all grants atomically |
+| External revocations | Independent steps with retries; `UNRESOLVED` if still failing |
+| `offboarding_complete()` | Requires local success **and** all external steps succeeded |
 
-## Production readiness
+## 5. Privileged executor boundary
 
-**Not production-ready.** Safe implementation and automated regression evidence are complete; live security proof requires staging per above.
+| Item | Status |
+|------|--------|
+| `PrivilegedOperationExecutor` calls `AdminGrantService.verify_for_execution` before operation | **VERIFIED** |
+| Default `PRIVILEGED_EXECUTOR_ENABLED = False` | **IMPLEMENTED_NOT_DEPLOYED** |
+| Disabled executor raises `privileged_executor_disabled` | **VERIFIED** |
+
+## 6. Staging prerequisites (unchanged)
+
+- Hetzner apply + nftables on-boot proof — **OWNER_APPROVAL_REQUIRED**
+- Live Cloudflare Access JWKS — **OWNER_APPROVAL_REQUIRED**
+- Wire `IdentityRevocationPort` to real APIs — **OWNER_APPROVAL_REQUIRED**
+- Cost: see `12_COST_AND_OPERATIONS.md` (~€80–120/mo indicative compute+LB; Access seats/R2 usage extra)
+
+## 7. Production readiness
+
+**Not production-ready.** Safe pre-staging engineering complete; live proof remains blocked on owner-approved staging.

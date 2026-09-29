@@ -35,7 +35,9 @@ class AccessValidationResult:
 class CloudflareAccessValidator:
     """Validates Access JWTs using cached JWKS (rotation via periodic refresh)."""
 
-    def __init__(self, config: AccessGatewayConfig, jwks_client: AsyncJWKSClient | None = None) -> None:
+    def __init__(
+        self, config: AccessGatewayConfig, jwks_client: AsyncJWKSClient | None = None
+    ) -> None:
         self._config = config
         self._jwks = jwks_client or AsyncJWKSClient(config.jwks_uri)
 

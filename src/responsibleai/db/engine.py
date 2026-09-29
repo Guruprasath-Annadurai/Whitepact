@@ -2690,7 +2690,16 @@ cloud_employees = Table(
     Column("employee_id", String(128), primary_key=True),
     Column("role", String(64), nullable=False),
     Column("status", String(32), nullable=False, server_default="active"),
+    Column("authorized_permissions_json", Text, nullable=False, server_default="[]"),
     Column("updated_at", DateTime(timezone=True), nullable=False),
+)
+
+cloud_admin_policies = Table(
+    "cloud_admin_policies",
+    metadata,
+    Column("policy_id", String(128), primary_key=True),
+    Column("active", Boolean, nullable=False, server_default="true"),
+    Column("requires_approver", Boolean, nullable=False, server_default="false"),
 )
 
 cloud_admin_grant_claims = Table(

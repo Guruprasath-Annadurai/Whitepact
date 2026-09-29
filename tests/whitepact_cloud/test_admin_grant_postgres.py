@@ -9,12 +9,13 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from tests.pg_test_url import isolated_pg_url
+from tests.whitepact_cloud.conftest import enroll_active_employee
 
 from responsibleai.db.engine import create_engine
 from responsibleai.db.migrate import run_migrations_or_raise
 from responsibleai.whitepact_cloud.admin_grant import GrantDecision
 from responsibleai.whitepact_cloud.grant_repository import AdminGrantRepository
-from responsibleai.whitepact_cloud.grant_service import AdminGrantService
+from responsibleai.whitepact_cloud.grant_service import AdminGrantService, GrantExecutionError
 from responsibleai.whitepact_cloud.roles import CloudRole
 
 SIGNING_KEY = b"test-signing-key-32-bytes-min!!!"
@@ -27,11 +28,39 @@ async def pg_url() -> AsyncGenerator[str, None]:
 
 
 @pytest.mark.asyncio
+async def test_issue_rejects_unknown_employee(pg_url: str) -> None:
+    await run_migrations_or_raise(pg_url)
+    engine = create_engine(pg_url)
+    await engine.init()
+    service = AdminGrantService(AdminGrantRepository(engine), SIGNING_KEY)
+    try:
+        await service.issue_and_persist(
+            employee_id="emp-unknown",
+            role=CloudRole.DEVELOPER,
+            operation="infra.read",
+            provider="hetzner",
+            resource_target="project/dev",
+            permissions=["cloud.infra.read"],
+            policy_id="pol-x",
+            approval=GrantDecision.APPROVED,
+            approved_by="owner",
+            ttl_seconds=300,
+            founder_only_exception=True,
+        )
+    except GrantExecutionError as exc:
+        assert exc.reason == "employee_not_enrolled"
+    else:
+        raise AssertionError("expected GrantExecutionError")
+    await engine.close()
+
+
+@pytest.mark.asyncio
 async def test_postgres_atomic_consume_single_winner(pg_url: str) -> None:
     await run_migrations_or_raise(pg_url)
     engine = create_engine(pg_url)
     await engine.init()
     repo = AdminGrantRepository(engine)
+    await enroll_active_employee(repo, "emp-pg-1", CloudRole.PLATFORM_ENGINEER, ["cloud.infra.read"], "pol-pg")
     service = AdminGrantService(repo, SIGNING_KEY)
     claim, sig = await service.issue_and_persist(
         employee_id="emp-pg-1",
@@ -68,11 +97,45 @@ async def test_postgres_atomic_consume_single_winner(pg_url: str) -> None:
 
 
 @pytest.mark.asyncio
+async def test_execution_requires_permission_in_grant_and_employee(pg_url: str) -> None:
+    await run_migrations_or_raise(pg_url)
+    engine = create_engine(pg_url)
+    await engine.init()
+    repo = AdminGrantRepository(engine)
+    await enroll_active_employee(repo, "emp-pg-4", CloudRole.DEVELOPER, ["cloud.infra.read"], "pol-pg-4")
+    service = AdminGrantService(repo, SIGNING_KEY)
+    claim, sig = await service.issue_and_persist(
+        employee_id="emp-pg-4",
+        role=CloudRole.DEVELOPER,
+        operation="infra.read",
+        provider="hetzner",
+        resource_target="project/dev",
+        permissions=["cloud.infra.read"],
+        policy_id="pol-pg-4",
+        approval=GrantDecision.APPROVED,
+        approved_by="owner",
+        ttl_seconds=300,
+        founder_only_exception=True,
+    )
+    result = await service.verify_for_execution(
+        claim.grant_id,
+        sig,
+        expected_operation="infra.read",
+        expected_provider="hetzner",
+        expected_resource="project/dev",
+        required_permission="cloud.staging.write",
+    )
+    assert result["reason"] == "permission_not_in_grant"
+    await engine.close()
+
+
+@pytest.mark.asyncio
 async def test_postgres_revoked_grant_cannot_execute(pg_url: str) -> None:
     await run_migrations_or_raise(pg_url)
     engine = create_engine(pg_url)
     await engine.init()
     repo = AdminGrantRepository(engine)
+    await enroll_active_employee(repo, "emp-pg-2", CloudRole.DEVELOPER, ["cloud.infra.read"], "pol-pg-2")
     service = AdminGrantService(repo, SIGNING_KEY)
     claim, sig = await service.issue_and_persist(
         employee_id="emp-pg-2",
@@ -107,6 +170,7 @@ async def test_postgres_expired_grant_rejected(pg_url: str) -> None:
     engine = create_engine(pg_url)
     await engine.init()
     repo = AdminGrantRepository(engine)
+    await enroll_active_employee(repo, "emp-pg-3", CloudRole.DEVELOPER, ["cloud.infra.read"], "pol-pg-3")
     service = AdminGrantService(repo, SIGNING_KEY)
     claim, sig = await service.issue_and_persist(
         employee_id="emp-pg-3",
@@ -132,4 +196,44 @@ async def test_postgres_expired_grant_rejected(pg_url: str) -> None:
         now=future,
     )
     assert result["reason"] == "expired"
+    await engine.close()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_issue_vs_termination(pg_url: str) -> None:
+    await run_migrations_or_raise(pg_url)
+    engine = create_engine(pg_url)
+    await engine.init()
+    repo = AdminGrantRepository(engine)
+    await enroll_active_employee(
+        repo, "emp-race", CloudRole.PLATFORM_ENGINEER, ["cloud.infra.read"], "pol-race"
+    )
+    service = AdminGrantService(repo, SIGNING_KEY)
+
+    async def issue_grant() -> str | None:
+        try:
+            claim, _ = await service.issue_and_persist(
+                employee_id="emp-race",
+                role=CloudRole.PLATFORM_ENGINEER,
+                operation="infra.plan",
+                provider="hetzner",
+                resource_target="server/x",
+                permissions=["cloud.infra.read"],
+                policy_id="pol-race",
+                approval=GrantDecision.APPROVED,
+                approved_by="owner",
+                ttl_seconds=300,
+                founder_only_exception=True,
+            )
+            return claim.grant_id
+        except GrantExecutionError:
+            return None
+
+    async def terminate() -> None:
+        await repo.terminate_local_access("emp-race")
+
+    results = await asyncio.gather(issue_grant(), issue_grant(), terminate())
+    assert results[2] is None
+    status = await repo.get_employee_status("emp-race")
+    assert status == "terminated"
     await engine.close()
