@@ -4,14 +4,16 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from sqlalchemy import update
 from tests.pg_test_url import isolated_pg_url
 from tests.whitepact_cloud.conftest import enroll_active_employee
 
-from responsibleai.db.engine import create_engine
+from responsibleai.db.engine import cloud_employees, create_engine
 from responsibleai.db.migrate import run_migrations_or_raise
 from responsibleai.whitepact_cloud.admin_grant import GrantDecision
 from responsibleai.whitepact_cloud.grant_repository import AdminGrantRepository
@@ -204,6 +206,47 @@ async def test_postgres_expired_grant_rejected(pg_url: str) -> None:
         now=future,
     )
     assert result["reason"] == "expired"
+    await engine.close()
+
+
+@pytest.mark.asyncio
+async def test_execution_requires_permission_in_employee_allowlist(pg_url: str) -> None:
+    await run_migrations_or_raise(pg_url)
+    engine = create_engine(pg_url)
+    await engine.init()
+    repo = AdminGrantRepository(engine)
+    await enroll_active_employee(
+        repo, "emp-pg-5", CloudRole.DEVELOPER, ["cloud.infra.read"], "pol-pg-5"
+    )
+    service = AdminGrantService(repo, SIGNING_KEY)
+    claim, sig = await service.issue_and_persist(
+        employee_id="emp-pg-5",
+        role=CloudRole.DEVELOPER,
+        operation="infra.read",
+        provider="hetzner",
+        resource_target="project/dev",
+        permissions=["cloud.infra.read"],
+        policy_id="pol-pg-5",
+        approval=GrantDecision.APPROVED,
+        approved_by="owner",
+        ttl_seconds=300,
+        founder_only_exception=True,
+    )
+    async with engine.raw.begin() as conn:
+        await conn.execute(
+            update(cloud_employees)
+            .where(cloud_employees.c.employee_id == "emp-pg-5")
+            .values(authorized_permissions_json=json.dumps([]))
+        )
+    result = await service.verify_for_execution(
+        claim.grant_id,
+        sig,
+        expected_operation="infra.read",
+        expected_provider="hetzner",
+        expected_resource="project/dev",
+        required_permission="cloud.infra.read",
+    )
+    assert result["reason"] == "permission_not_authorized_for_employee"
     await engine.close()
 
 
