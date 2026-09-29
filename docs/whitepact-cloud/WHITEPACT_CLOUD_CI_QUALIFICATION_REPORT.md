@@ -5,6 +5,7 @@
 | Repository | Guruprasath-Annadurai/Whitepact |
 | Branch | `cursor/whitepact-enterprise-cloud-v1-f7a9` |
 | Baseline HEAD | `9edbde2` |
+| Qualification commit | `848e5d8` |
 | PR | [#128](https://github.com/Guruprasath-Annadurai/Whitepact/pull/128) |
 
 ## 1. Cancelled run `36565522947` (commit `9edbde2`)
