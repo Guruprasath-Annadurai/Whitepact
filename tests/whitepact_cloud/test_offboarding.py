@@ -61,7 +61,9 @@ async def test_offboarding_complete_success(pg_url: str) -> None:
     engine = create_engine(pg_url)
     await engine.init()
     repo = AdminGrantRepository(engine)
-    await enroll_active_employee(repo, "emp-off-1", CloudRole.DEVELOPER, ["cloud.infra.read"], "pol-off")
+    await enroll_active_employee(
+        repo, "emp-off-1", CloudRole.DEVELOPER, ["cloud.infra.read"], "pol-off"
+    )
     svc = OffboardingService(engine, repo, _OkIntegrations())
     state = await svc.run("emp-off-1", max_attempts=1)
     assert state.local_revoked
@@ -76,7 +78,9 @@ async def test_offboarding_not_complete_when_external_unresolved(pg_url: str) ->
     engine = create_engine(pg_url)
     await engine.init()
     repo = AdminGrantRepository(engine)
-    await enroll_active_employee(repo, "emp-off-2", CloudRole.DEVELOPER, ["cloud.infra.read"], "pol-off-2")
+    await enroll_active_employee(
+        repo, "emp-off-2", CloudRole.DEVELOPER, ["cloud.infra.read"], "pol-off-2"
+    )
     svc = OffboardingService(engine, repo, _FailSessions())
     state = await svc.run("emp-off-2", max_attempts=1)
     assert state.local_revoked

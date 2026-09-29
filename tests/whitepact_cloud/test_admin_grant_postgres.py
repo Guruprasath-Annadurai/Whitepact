@@ -60,7 +60,9 @@ async def test_postgres_atomic_consume_single_winner(pg_url: str) -> None:
     engine = create_engine(pg_url)
     await engine.init()
     repo = AdminGrantRepository(engine)
-    await enroll_active_employee(repo, "emp-pg-1", CloudRole.PLATFORM_ENGINEER, ["cloud.infra.read"], "pol-pg")
+    await enroll_active_employee(
+        repo, "emp-pg-1", CloudRole.PLATFORM_ENGINEER, ["cloud.infra.read"], "pol-pg"
+    )
     service = AdminGrantService(repo, SIGNING_KEY)
     claim, sig = await service.issue_and_persist(
         employee_id="emp-pg-1",
@@ -102,7 +104,9 @@ async def test_execution_requires_permission_in_grant_and_employee(pg_url: str) 
     engine = create_engine(pg_url)
     await engine.init()
     repo = AdminGrantRepository(engine)
-    await enroll_active_employee(repo, "emp-pg-4", CloudRole.DEVELOPER, ["cloud.infra.read"], "pol-pg-4")
+    await enroll_active_employee(
+        repo, "emp-pg-4", CloudRole.DEVELOPER, ["cloud.infra.read"], "pol-pg-4"
+    )
     service = AdminGrantService(repo, SIGNING_KEY)
     claim, sig = await service.issue_and_persist(
         employee_id="emp-pg-4",
@@ -135,7 +139,9 @@ async def test_postgres_revoked_grant_cannot_execute(pg_url: str) -> None:
     engine = create_engine(pg_url)
     await engine.init()
     repo = AdminGrantRepository(engine)
-    await enroll_active_employee(repo, "emp-pg-2", CloudRole.DEVELOPER, ["cloud.infra.read"], "pol-pg-2")
+    await enroll_active_employee(
+        repo, "emp-pg-2", CloudRole.DEVELOPER, ["cloud.infra.read"], "pol-pg-2"
+    )
     service = AdminGrantService(repo, SIGNING_KEY)
     claim, sig = await service.issue_and_persist(
         employee_id="emp-pg-2",
@@ -170,7 +176,9 @@ async def test_postgres_expired_grant_rejected(pg_url: str) -> None:
     engine = create_engine(pg_url)
     await engine.init()
     repo = AdminGrantRepository(engine)
-    await enroll_active_employee(repo, "emp-pg-3", CloudRole.DEVELOPER, ["cloud.infra.read"], "pol-pg-3")
+    await enroll_active_employee(
+        repo, "emp-pg-3", CloudRole.DEVELOPER, ["cloud.infra.read"], "pol-pg-3"
+    )
     service = AdminGrantService(repo, SIGNING_KEY)
     claim, sig = await service.issue_and_persist(
         employee_id="emp-pg-3",

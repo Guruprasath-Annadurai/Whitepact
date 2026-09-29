@@ -53,7 +53,9 @@ async def test_executor_verifies_before_operation(pg_url: str) -> None:
     engine = create_engine(pg_url)
     await engine.init()
     repo = AdminGrantRepository(engine)
-    await enroll_active_employee(repo, "emp-ex", CloudRole.DEVELOPER, ["cloud.infra.read"], "pol-ex")
+    await enroll_active_employee(
+        repo, "emp-ex", CloudRole.DEVELOPER, ["cloud.infra.read"], "pol-ex"
+    )
     grants = AdminGrantService(repo, SIGNING_KEY)
     claim, sig = await grants.issue_and_persist(
         employee_id="emp-ex",
