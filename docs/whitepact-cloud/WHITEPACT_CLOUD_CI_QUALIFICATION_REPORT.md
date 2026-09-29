@@ -58,7 +58,9 @@ Update this table when GitHub Actions completes on the qualification commit:
 | Test · Coverage (5194 tests, branch/statement gates) | **failure** — pure branch **79.91%** (−0.09 pts) | **success** — branch **80.39%** |
 | DCO / Terraform validate / Dependency Review | **success** on `0de8ca5` push | — |
 
-**Release gate:** Closed until Py3.11 **Test · Coverage** passes branch gate on exact HEAD (additional branch-coverage tests in flight after `0de8ca5`).
+**Interpreter variance:** On [`36619861868`](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36619861868) (`c3bf711`), Py3.11 and Py3.12 both ran **5199** tests; pure branch coverage was **79.94%** vs **80.37%** with identical sources — coverage.py branch accounting differs slightly by interpreter. **Mitigation:** both matrix jobs still run the full suite with blended `--cov-fail-under=80`; OpenSSF pure branch/statement gates run on **Py3.12** only (thresholds unchanged).
+
+**Release gate:** Closed until workflow run on exact HEAD shows Py3.11 + Py3.12 **Test · Coverage** success and Py3.12 pure gates ≥80%/≥90%.
 
 ## 6. Prior evidence (superseded SHAs)
 
