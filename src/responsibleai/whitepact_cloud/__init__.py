@@ -3,17 +3,23 @@
 """WhitePact Cloud — internal privileged-access control plane (not customer-facing)."""
 
 from responsibleai.whitepact_cloud.admin_grant import (
+    MAX_ADMIN_GRANT_TTL_SECONDS,
     AdminExecutionGrant,
+    AdminGrantClaim,
     GrantDecision,
     issue_admin_grant,
     verify_admin_grant,
 )
+from responsibleai.whitepact_cloud.grant_service import AdminGrantService
 from responsibleai.whitepact_cloud.roles import CloudRole, role_allows
 
 __all__ = [
     "AdminExecutionGrant",
+    "AdminGrantClaim",
+    "AdminGrantService",
     "CloudRole",
     "GrantDecision",
+    "MAX_ADMIN_GRANT_TTL_SECONDS",
     "issue_admin_grant",
     "role_allows",
     "verify_admin_grant",

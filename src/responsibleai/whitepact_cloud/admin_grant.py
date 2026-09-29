@@ -1,6 +1,6 @@
 # Copyright (c) 2026 Guruprasath Annadurai
 # SPDX-License-Identifier: MIT
-"""Short-lived administrative execution grants (JIT), bound to employee identity."""
+"""Immutable admin grant claims (mutable lifecycle lives in PostgreSQL)."""
 
 from __future__ import annotations
 
@@ -16,6 +16,8 @@ from typing import Any
 
 from responsibleai.whitepact_cloud.roles import CloudRole, is_sensitive_permission, role_allows
 
+MAX_ADMIN_GRANT_TTL_SECONDS = 14_400  # 4 hours — hard ceiling for JIT admin grants
+
 
 class GrantDecision(StrEnum):
     APPROVED = "APPROVED"
@@ -24,7 +26,7 @@ class GrantDecision(StrEnum):
 
 
 @dataclass(frozen=True)
-class AdminExecutionGrant:
+class AdminGrantClaim:
     grant_id: str
     employee_id: str
     role: CloudRole
@@ -39,8 +41,6 @@ class AdminExecutionGrant:
     execution_id: str
     audit_correlation_id: str
     issued_at: datetime = field(default_factory=lambda: datetime.now(UTC))
-    revoked: bool = False
-    consumed: bool = False
 
     def to_canonical_bytes(self) -> bytes:
         payload = asdict(self)
@@ -51,9 +51,66 @@ class AdminExecutionGrant:
         return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
-def _sign(grant: AdminExecutionGrant, signing_key: bytes) -> str:
-    digest = hmac.new(signing_key, grant.to_canonical_bytes(), hashlib.sha256).hexdigest()
-    return digest
+# Backward-compatible alias for in-memory tests
+AdminExecutionGrant = AdminGrantClaim
+
+
+def _sign(claim: AdminGrantClaim, signing_key: bytes) -> str:
+    return hmac.new(signing_key, claim.to_canonical_bytes(), hashlib.sha256).hexdigest()
+
+
+def verify_claim_signature(claim: AdminGrantClaim, signature: str, signing_key: bytes) -> bool:
+    expected = _sign(claim, signing_key)
+    return hmac.compare_digest(expected, signature)
+
+
+def issue_admin_grant_claim(
+    *,
+    employee_id: str,
+    role: CloudRole,
+    operation: str,
+    provider: str,
+    resource_target: str,
+    permissions: list[str],
+    policy_id: str,
+    approval: GrantDecision,
+    approved_by: str | None,
+    ttl_seconds: int,
+    signing_key: bytes,
+    audit_correlation_id: str | None = None,
+    founder_only_exception: bool = False,
+) -> tuple[AdminGrantClaim, str]:
+    if ttl_seconds <= 0 or ttl_seconds > MAX_ADMIN_GRANT_TTL_SECONDS:
+        raise ValueError(f"ttl_seconds must be 1..{MAX_ADMIN_GRANT_TTL_SECONDS}")
+
+    for perm in permissions:
+        if not role_allows(role, perm):
+            raise PermissionError(f"role {role} cannot receive permission {perm}")
+
+    if approval != GrantDecision.APPROVED:
+        raise ValueError("only APPROVED grants may be issued")
+
+    sensitive = any(is_sensitive_permission(p) for p in permissions)
+    if sensitive and approved_by is None and not founder_only_exception:
+        raise ValueError("sensitive operations require approved_by or documented founder exception")
+
+    now = datetime.now(UTC)
+    claim = AdminGrantClaim(
+        grant_id=str(uuid.uuid4()),
+        employee_id=employee_id,
+        role=role,
+        operation=operation,
+        provider=provider,
+        resource_target=resource_target,
+        permissions=tuple(permissions),
+        policy_id=policy_id,
+        approval_decision=approval,
+        approved_by=approved_by,
+        expires_at=now + timedelta(seconds=ttl_seconds),
+        execution_id=secrets.token_hex(16),
+        audit_correlation_id=audit_correlation_id or str(uuid.uuid4()),
+    )
+    return claim, _sign(claim, signing_key)
 
 
 def issue_admin_grant(
@@ -71,67 +128,44 @@ def issue_admin_grant(
     signing_key: bytes,
     audit_correlation_id: str | None = None,
     founder_only_exception: bool = False,
-) -> tuple[AdminExecutionGrant, str]:
-    """Mint a constrained grant. Founder-only stage may self-approve with explicit flag."""
-    for perm in permissions:
-        if not role_allows(role, perm):
-            raise PermissionError(f"role {role} cannot receive permission {perm}")
-
-    if approval != GrantDecision.APPROVED:
-        raise ValueError("only APPROVED grants may be issued")
-
-    if is_sensitive_permission(permissions[0]) if len(permissions) == 1 else any(
-        is_sensitive_permission(p) for p in permissions
-    ):
-        if approved_by is None and not founder_only_exception:
-            raise ValueError("sensitive operations require approved_by or documented founder exception")
-
-    now = datetime.now(UTC)
-    grant = AdminExecutionGrant(
-        grant_id=str(uuid.uuid4()),
+) -> tuple[AdminGrantClaim, str]:
+    return issue_admin_grant_claim(
         employee_id=employee_id,
         role=role,
         operation=operation,
         provider=provider,
         resource_target=resource_target,
-        permissions=tuple(permissions),
+        permissions=permissions,
         policy_id=policy_id,
-        approval_decision=approval,
+        approval=approval,
         approved_by=approved_by,
-        expires_at=now + timedelta(seconds=ttl_seconds),
-        execution_id=secrets.token_hex(16),
-        audit_correlation_id=audit_correlation_id or str(uuid.uuid4()),
+        ttl_seconds=ttl_seconds,
+        signing_key=signing_key,
+        audit_correlation_id=audit_correlation_id,
+        founder_only_exception=founder_only_exception,
     )
-    return grant, _sign(grant, signing_key)
 
 
 def verify_admin_grant(
-    grant: AdminExecutionGrant,
+    grant: AdminGrantClaim,
     signature: str,
     signing_key: bytes,
     *,
     expected_operation: str | None = None,
     now: datetime | None = None,
+    revoked: bool = False,
+    consumed: bool = False,
 ) -> dict[str, Any]:
-    """Verify grant integrity, expiry, and revocation before provider automation runs."""
+    """In-memory verification only — production must use AdminGrantService + PostgreSQL."""
     now = now or datetime.now(UTC)
-    if grant.revoked:
+    if revoked:
         return {"ok": False, "reason": "revoked"}
-    if grant.consumed:
+    if consumed:
         return {"ok": False, "reason": "replay"}
     if now >= grant.expires_at:
         return {"ok": False, "reason": "expired"}
-    expected_sig = _sign(grant, signing_key)
-    if not hmac.compare_digest(expected_sig, signature):
+    if not verify_claim_signature(grant, signature, signing_key):
         return {"ok": False, "reason": "bad_signature"}
     if expected_operation is not None and grant.operation != expected_operation:
         return {"ok": False, "reason": "operation_mismatch"}
     return {"ok": True, "grant_id": grant.grant_id, "execution_id": grant.execution_id}
-
-
-def revoke_grant(grant: AdminExecutionGrant) -> AdminExecutionGrant:
-    return AdminExecutionGrant(**{**asdict(grant), "revoked": True})
-
-
-def consume_grant(grant: AdminExecutionGrant) -> AdminExecutionGrant:
-    return AdminExecutionGrant(**{**asdict(grant), "consumed": True})

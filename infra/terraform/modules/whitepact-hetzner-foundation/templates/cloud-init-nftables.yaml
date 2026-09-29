@@ -10,7 +10,7 @@ write_files:
           type filter hook input priority 0; policy drop;
           ct state established,related accept
           iif "lo" accept
-          tcp dport 22 ip saddr { ${admin_cidrs} } accept
+          tcp dport 22 ip saddr { ${admin_cidrs} } accept comment "admin SSH maintenance path"
           ${tier_input_rules}
         }
         chain forward {
@@ -23,5 +23,14 @@ write_files:
           ${tier_output_rules}
         }
       }
+  - path: /etc/nftables.conf
+    permissions: "0644"
+    content: |
+      # WhitePact tier rules — loaded on boot via nftables.service
+      include "/etc/nftables.d/whitepact-tier.nft"
 runcmd:
-  - [bash, -lc, "mkdir -p /etc/nftables.d && nft -f /etc/nftables.d/whitepact-tier.nft && systemctl enable --now nftables || true"]
+  - [bash, -lc, "mkdir -p /etc/nftables.d"]
+  - [bash, -lc, "nft -f /etc/nftables.d/whitepact-tier.nft"]
+  - [bash, -lc, "nft list table inet whitepact >/dev/null"]
+  - [systemctl, enable, nftables]
+  - [systemctl, restart, nftables]

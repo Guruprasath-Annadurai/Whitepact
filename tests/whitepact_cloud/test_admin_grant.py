@@ -7,9 +7,7 @@ from datetime import UTC, datetime, timedelta
 
 from responsibleai.whitepact_cloud.admin_grant import (
     GrantDecision,
-    consume_grant,
     issue_admin_grant,
-    revoke_grant,
     verify_admin_grant,
 )
 from responsibleai.whitepact_cloud.roles import CloudRole
@@ -62,8 +60,5 @@ def test_grant_expiry_and_revocation() -> None:
     )
     assert verify_admin_grant(expired, sig, key)["ok"] is False
 
-    revoked = revoke_grant(grant)
-    assert verify_admin_grant(revoked, sig, key)["reason"] == "revoked"
-
-    consumed = consume_grant(grant)
-    assert verify_admin_grant(consumed, sig, key)["reason"] == "replay"
+    assert verify_admin_grant(grant, sig, key, revoked=True)["reason"] == "revoked"
+    assert verify_admin_grant(grant, sig, key, consumed=True)["reason"] == "replay"

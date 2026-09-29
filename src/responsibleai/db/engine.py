@@ -2684,6 +2684,75 @@ sovereign_shadow_observations = Table(
     Column("created_at", String(32), nullable=False),
 )
 
+cloud_employees = Table(
+    "cloud_employees",
+    metadata,
+    Column("employee_id", String(128), primary_key=True),
+    Column("role", String(64), nullable=False),
+    Column("status", String(32), nullable=False, server_default="active"),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+)
+
+cloud_admin_grant_claims = Table(
+    "cloud_admin_grant_claims",
+    metadata,
+    Column("grant_id", String(64), primary_key=True),
+    Column("employee_id", String(128), nullable=False, index=True),
+    Column("role", String(64), nullable=False),
+    Column("operation", String(128), nullable=False),
+    Column("provider", String(64), nullable=False),
+    Column("resource_target", String(256), nullable=False),
+    Column("permissions_json", Text, nullable=False),
+    Column("policy_id", String(128), nullable=False),
+    Column("approved_by", String(128)),
+    Column("execution_id", String(64), nullable=False, unique=True),
+    Column("audit_correlation_id", String(64), nullable=False),
+    Column("signature_hmac", String(128), nullable=False),
+    Column("issued_at", DateTime(timezone=True), nullable=False),
+    Column("expires_at", DateTime(timezone=True), nullable=False),
+)
+
+cloud_admin_grant_state = Table(
+    "cloud_admin_grant_state",
+    metadata,
+    Column(
+        "grant_id",
+        String(64),
+        ForeignKey("cloud_admin_grant_claims.grant_id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column("revoked_at", DateTime(timezone=True)),
+    Column("consumed_at", DateTime(timezone=True)),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+)
+
+cloud_offboarding_runs = Table(
+    "cloud_offboarding_runs",
+    metadata,
+    Column("run_id", String(64), primary_key=True),
+    Column("employee_id", String(128), nullable=False, index=True),
+    Column("status", String(32), nullable=False, server_default="in_progress"),
+    Column("started_at", DateTime(timezone=True), nullable=False),
+    Column("completed_at", DateTime(timezone=True)),
+)
+
+cloud_offboarding_steps = Table(
+    "cloud_offboarding_steps",
+    metadata,
+    Column("step_id", String(64), primary_key=True),
+    Column(
+        "run_id",
+        String(64),
+        ForeignKey("cloud_offboarding_runs.run_id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("step_name", String(64), nullable=False),
+    Column("status", String(32), nullable=False, server_default="pending"),
+    Column("attempts", Integer, nullable=False, server_default="0"),
+    Column("last_error", Text),
+    Column("completed_at", DateTime(timezone=True)),
+)
+
 
 class DatabaseEngine:
     """Async database engine wrapping SQLAlchemy — SQLite or PostgreSQL.

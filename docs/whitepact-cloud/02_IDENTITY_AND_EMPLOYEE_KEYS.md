@@ -25,10 +25,19 @@ Every authorized employee has an **individual** internal identity and **individu
 
 `run_offboarding()` orchestrates: disable identity → revoke sessions → revoke grants → remove provider permissions → revoke API credentials. **Must not** rely on TTL alone.
 
+## Implemented vs documented
+
+| Capability | Status |
+|------------|--------|
+| Cloudflare Access JWT validation (exact issuer + JWKS) | **VERIFIED** (`access_gateway.py`, unit tests) |
+| Employee passkey / WebAuthn enrollment UI | **NOT IMPLEMENTED** — requires IdP (Access) + future enrollment API |
+| Hardware security key enforcement | **OWNER_APPROVAL_REQUIRED** (Access device posture + live IdP) |
+| Per-employee DB identity row (`cloud_employees`) | **VERIFIED** (migration `0062`, PostgreSQL tests) |
+
 ## Status
 
 | Control | Status |
 |---------|--------|
 | Role/permission model | VERIFIED (code) |
-| WebAuthn enrollment service | IMPLEMENTED_NOT_DEPLOYED |
-| Device trust policies | TESTED_IN_SIMULATION (documented) |
+| WebAuthn enrollment service | BLOCKED (no live IdP connection in repo) |
+| Device trust policies | OWNER_APPROVAL_REQUIRED |
