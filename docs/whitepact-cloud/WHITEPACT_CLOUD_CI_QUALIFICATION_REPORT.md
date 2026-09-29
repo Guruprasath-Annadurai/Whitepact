@@ -6,7 +6,7 @@
 | Branch | `cursor/whitepact-enterprise-cloud-v1-f7a9` |
 | Baseline HEAD | `9edbde2` |
 | Qualification commit | `848e5d8` |
-| Latest HEAD | `0de8ca5` |
+| Latest HEAD | `7743dd5` |
 | PR | [#128](https://github.com/Guruprasath-Annadurai/Whitepact/pull/128) |
 
 ## 1. Cancelled run `36565522947` (commit `9edbde2`)
@@ -60,7 +60,9 @@ Update this table when GitHub Actions completes on the qualification commit:
 
 **Interpreter variance:** On [`36619861868`](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36619861868) (`c3bf711`), Py3.11 and Py3.12 both ran **5199** tests; pure branch coverage was **79.94%** vs **80.37%** with identical sources — coverage.py branch accounting differs slightly by interpreter. **Mitigation:** both matrix jobs still run the full suite with blended `--cov-fail-under=80`; OpenSSF pure branch/statement gates run on **Py3.12** only (thresholds unchanged).
 
-**Release gate:** Closed until workflow run on exact HEAD shows Py3.11 + Py3.12 **Test · Coverage** success and Py3.12 pure gates ≥80%/≥90%.
+**Qualified run:** [`36624924439`](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36624924439) on **`7743dd5`** — CI workflow **success**; Lint · Type-check (3.11/3.12) + Test · Coverage (3.11/3.12) + Build distribution green; DCO/Terraform/Dependency Review green on same push.
+
+**Release gate:** Pre-staging **engineering CI gate open** on `7743dd5`. **Staging apply gate remains closed** (`OWNER_APPROVAL_REQUIRED`, no cloud provisioned).
 
 ## 6. Prior evidence (superseded SHAs)
 
