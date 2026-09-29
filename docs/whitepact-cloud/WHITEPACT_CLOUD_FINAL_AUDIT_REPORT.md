@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|--------|
 | Starting HEAD | `e64c6c75d9e795e50fd054761cfe24d3bb0939bf` |
-| Final HEAD | `62db30d` (+ data-inventory fix on push) |
+| Final HEAD | `7d7f404` |
 | PR | [#128](https://github.com/Guruprasath-Annadurai/Whitepact/pull/128) |
 
 ## 1. CI / Ruff
