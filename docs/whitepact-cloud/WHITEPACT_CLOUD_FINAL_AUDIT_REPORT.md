@@ -5,7 +5,7 @@
 | Field | Value |
 |-------|--------|
 | Starting commit (audit) | `e7f37eefe3b7788d5371c5e058e5650ce1f764ca` |
-| Final commit | *(see `git rev-parse HEAD` after push)* |
+| Final commit | `10d4a5d` (post-rebase; verify `git rev-parse HEAD` on remote after push) |
 | Branch | `cursor/whitepact-enterprise-cloud-v1-f7a9` |
 | PR | [#128](https://github.com/Guruprasath-Annadurai/Whitepact/pull/128) |
 
@@ -29,7 +29,7 @@
 | SaaS public IPv4 | **FIXED** | `saas_public_ipv4` default false |
 | Cloudflare security | **PARTIAL** | DNS module + Tunnel stub; WAF/rules OWNER_APPROVAL |
 | Terraform CI | **FIXED** | `validate-terraform.sh` exit 0 locally |
-| DCO unsigned commits | **OWNER_APPROVAL_REQUIRED** | rebase `--signoff` needs force-push |
+| DCO unsigned commits | **FIXED** | `git rebase --exec 'git commit --amend --no-edit -s' origin/main` |
 | MCP tool count test | **VERIFIED** | registry 30; README 30; `test_mcp_metadata_consistency` passes |
 | Py3.12 cancelled | **N/A** | prior run; re-run CI after push |
 | Deployment completeness | **OUTSTANDING** | no app deploy/DB init/monitoring in TF |
