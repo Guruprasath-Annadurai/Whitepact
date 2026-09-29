@@ -3,16 +3,18 @@
 | Field | Value |
 |-------|--------|
 | Starting HEAD | `e64c6c75d9e795e50fd054761cfe24d3bb0939bf` |
-| Final HEAD | `6846154` |
+| Final HEAD | `62db30d` (+ data-inventory fix on push) |
 | PR | [#128](https://github.com/Guruprasath-Annadurai/Whitepact/pull/128) |
 
 ## 1. CI / Ruff
 
-- `ruff format` applied to `access_gateway.py`, `grant_repository.py`, `offboarding.py`
-- `ruff check src/responsibleai/whitepact_cloud` — **pass**
-- Local regression slice (32 tests): `pytest tests/whitepact_cloud tests/infrastructure tests/test_migration_ownership_canonical.py tests/test_mcp_metadata_consistency.py` — **32 passed**
+- `ruff format` applied to `access_gateway.py`, `grant_repository.py`, `offboarding.py` (unchanged at `62db30d`)
+- `mypy src/responsibleai` — **pass** (`62db30d`: RSAPublicKey guard in Access JWT path)
+- `ruff check` + `ruff format --check` — **pass** on push head before data-inventory commit
+- Local regression slice: `pytest tests/whitepact_cloud tests/infrastructure/test_terraform_policy.py tests/test_migration_ownership_canonical.py` — **24 passed** (agent VM, `62db30d`)
+- CI run [`36537011004`](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36537011004) on `62db30d`: Py3.11/Py3.12 lint+mypy+**5175 tests** passed except `test_data_inventory` (six unclassified `cloud_*` tables) — fixed by registering tables in `TABLE_CLASSIFICATIONS`
 
-GitHub Actions Py3.11 / Py3.12 full suites: **monitor exact-head on final commit** (not re-run inside this agent VM for entire repo).
+GitHub Actions Py3.11 / Py3.12 full suites on **exact final commit**: see latest run on branch `cursor/whitepact-enterprise-cloud-v1-f7a9` after data-inventory push.
 
 ## 2. Administrative grant authorization
 
