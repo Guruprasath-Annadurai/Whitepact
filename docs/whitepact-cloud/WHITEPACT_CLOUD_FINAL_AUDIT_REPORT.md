@@ -3,7 +3,7 @@
 | Field | Value |
 |-------|--------|
 | Starting HEAD | `e64c6c75d9e795e50fd054761cfe24d3bb0939bf` |
-| Final HEAD | `6635d1c` |
+| Final HEAD | `f9a84b2` |
 | PR | [#128](https://github.com/Guruprasath-Annadurai/Whitepact/pull/128) |
 
 ## 1. CI / Ruff
@@ -11,11 +11,12 @@
 - `ruff format` applied to `access_gateway.py`, `grant_repository.py`, `offboarding.py` (unchanged at `62db30d`)
 - `mypy src/responsibleai` — **pass** (`62db30d`: RSAPublicKey guard in Access JWT path)
 - `ruff check` + `ruff format --check` — **pass** on push head before data-inventory commit
-- Local regression slice: `pytest tests/whitepact_cloud tests/infrastructure/test_terraform_policy.py tests/test_migration_ownership_canonical.py` — **24 passed** (agent VM, `62db30d`)
+- Local regression slice: `pytest tests/whitepact_cloud` — **35 passed** (agent VM, `3d690c1`)
+- Local full suite branch gate: `pytest tests/` + `check_branch_coverage.py --threshold 80 --fail` — **80.03%** pure branch coverage (`0774406` agent VM)
 - CI run [`36537011004`](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36537011004) on `62db30d`: Py3.11/Py3.12 lint+mypy+**5175 tests** passed except `test_data_inventory` (six unclassified `cloud_*` tables) — fixed by registering tables in `TABLE_CLASSIFICATIONS`
 
-- CI run [`36541947082`](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36541947082) on `4331251`: Py3.11 full suite **5176 passed**; branch-coverage gate **79.60%** (below 80%) — addressed in `6635d1c` with enrollment + Access JWT tests
-- GitHub Actions Py3.11 / Py3.12 on **`6635d1c`**: monitor run on branch `cursor/whitepact-enterprise-cloud-v1-f7a9`
+- CI run [`36560747701`](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36560747701) on `3d690c1`: **Lint · Test (3.12) success** (full suite + branch/statement gates); Py3.11 hit flaky `test_docker_container_lifecycle` — mitigated in `f9a84b2`
+- Exact-head CI on **`f9a84b2`**: [Actions branch runs](https://github.com/Guruprasath-Annadurai/Whitepact/actions?query=branch%3Acursor%2Fwhitepact-enterprise-cloud-v1-f7a9)
 
 ## 2. Administrative grant authorization
 
