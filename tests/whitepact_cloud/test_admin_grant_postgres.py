@@ -30,6 +30,70 @@ async def pg_url() -> AsyncGenerator[str, None]:
 
 
 @pytest.mark.asyncio
+async def test_issue_rejects_inactive_policy(pg_url: str) -> None:
+    await run_migrations_or_raise(pg_url)
+    engine = create_engine(pg_url)
+    await engine.init()
+    repo = AdminGrantRepository(engine)
+    await enroll_active_employee(
+        repo, "emp-pol", CloudRole.DEVELOPER, ["cloud.infra.read"], "pol-inactive"
+    )
+    await repo.upsert_policy("pol-inactive", active=False, requires_approver=False)
+    service = AdminGrantService(repo, SIGNING_KEY)
+    try:
+        await service.issue_and_persist(
+            employee_id="emp-pol",
+            role=CloudRole.DEVELOPER,
+            operation="infra.read",
+            provider="hetzner",
+            resource_target="project/dev",
+            permissions=["cloud.infra.read"],
+            policy_id="pol-inactive",
+            approval=GrantDecision.APPROVED,
+            approved_by="owner",
+            ttl_seconds=300,
+            founder_only_exception=True,
+        )
+    except GrantExecutionError as exc:
+        assert exc.reason == "policy_inactive"
+    else:
+        raise AssertionError("expected GrantExecutionError")
+    await engine.close()
+
+
+@pytest.mark.asyncio
+async def test_issue_rejects_terminated_employee(pg_url: str) -> None:
+    await run_migrations_or_raise(pg_url)
+    engine = create_engine(pg_url)
+    await engine.init()
+    repo = AdminGrantRepository(engine)
+    await enroll_active_employee(
+        repo, "emp-dead", CloudRole.DEVELOPER, ["cloud.infra.read"], "pol-dead"
+    )
+    await repo.terminate_local_access("emp-dead")
+    service = AdminGrantService(repo, SIGNING_KEY)
+    try:
+        await service.issue_and_persist(
+            employee_id="emp-dead",
+            role=CloudRole.DEVELOPER,
+            operation="infra.read",
+            provider="hetzner",
+            resource_target="project/dev",
+            permissions=["cloud.infra.read"],
+            policy_id="pol-dead",
+            approval=GrantDecision.APPROVED,
+            approved_by="owner",
+            ttl_seconds=300,
+            founder_only_exception=True,
+        )
+    except GrantExecutionError as exc:
+        assert exc.reason == "employee_not_active"
+    else:
+        raise AssertionError("expected GrantExecutionError")
+    await engine.close()
+
+
+@pytest.mark.asyncio
 async def test_issue_rejects_unknown_employee(pg_url: str) -> None:
     await run_migrations_or_raise(pg_url)
     engine = create_engine(pg_url)
