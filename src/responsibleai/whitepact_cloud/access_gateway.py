@@ -121,6 +121,8 @@ def validate_access_jwt_with_key(
         )
     except jwt.ExpiredSignatureError:
         return AccessValidationResult(ok=False, reason="expired")
+    except jwt.ImmatureSignatureError:
+        return AccessValidationResult(ok=False, reason="not_yet_valid")
     except jwt.PyJWTError as exc:
         return AccessValidationResult(ok=False, reason="jwt_invalid", detail=str(exc))
 

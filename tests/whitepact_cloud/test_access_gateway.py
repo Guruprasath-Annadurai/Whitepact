@@ -82,6 +82,42 @@ def test_rejects_expired_token() -> None:
     assert validate_access_jwt_with_key(token, config=cfg, signing_key=pem).reason == "expired"
 
 
+def test_rejects_not_yet_valid_nbf() -> None:
+    private, public = _rsa_keypair()
+    pem = public.public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    cfg = AccessGatewayConfig(trusted_issuer=ISSUER, audience=AUD, jwks_uri="https://example/certs")
+    future = int((datetime.now(UTC) + timedelta(hours=1)).timestamp())
+    token = _token(private, nbf=future)
+    assert (
+        validate_access_jwt_with_key(token, config=cfg, signing_key=pem).reason == "not_yet_valid"
+    )
+
+
+def test_rejects_missing_sub() -> None:
+    private, public = _rsa_keypair()
+    pem = public.public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    cfg = AccessGatewayConfig(trusted_issuer=ISSUER, audience=AUD, jwks_uri="https://example/certs")
+    now = datetime.now(UTC)
+    payload = {
+        "iss": ISSUER,
+        "aud": AUD,
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(hours=1)).timestamp()),
+    }
+    token = jwt.encode(payload, private, algorithm="RS256", headers={"kid": "test"})
+    assert validate_access_jwt_with_key(token, config=cfg, signing_key=pem).reason == "jwt_invalid"
+
+
+def test_reject_unverified_header_missing_credentials() -> None:
+    assert reject_unverified_identity_header(None).reason == "missing_credentials"
+
+
 def test_rejects_bad_signature() -> None:
     private, _ = _rsa_keypair()
     other_private, other_public = _rsa_keypair()
