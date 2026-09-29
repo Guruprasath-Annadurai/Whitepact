@@ -40,6 +40,38 @@ resource "cloudflare_record" "app" {
 
 # Rate limiting / WAF rules depend on plan — configure in dashboard or Rulesets API after plan verification.
 
+variable "enable_origin_protection" {
+  description = "When true, documents orange-cloud + authenticated origin pull (requires paid plan features)."
+  type        = bool
+  default     = false
+}
+
+variable "admin_hostname" {
+  description = "Hostname for WhitePact Cloud admin ingress (Cloudflare Access + Tunnel)."
+  type        = string
+  default     = ""
+}
+
+# Stub: Cloudflare Tunnel for admin plane — apply only with owner approval and account credentials.
+resource "cloudflare_tunnel" "admin" {
+  count      = var.admin_hostname != "" ? 1 : 0
+  account_id = var.cloudflare_account_id
+  name       = "whitepact-cloud-admin"
+  secret     = var.tunnel_secret_placeholder
+}
+
+variable "cloudflare_account_id" {
+  type    = string
+  default = ""
+}
+
+variable "tunnel_secret_placeholder" {
+  description = "Replace at apply time via TF_VAR or secrets manager — never commit a real secret."
+  type        = string
+  default     = "REPLACE_BEFORE_APPLY"
+  sensitive   = true
+}
+
 output "record_id" {
   value = cloudflare_record.app.id
 }

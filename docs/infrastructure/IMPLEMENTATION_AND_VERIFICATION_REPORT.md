@@ -40,7 +40,7 @@ pytest tests/infrastructure/test_terraform_validate.py -q
 bash scripts/infrastructure/gcp-account-readonly-check.sh
 ```
 
-**Agent VM result:** `terraform_skip` — CLI not installed locally; CI workflow validates on PR.
+**Agent VM result:** `terraform validate` passed for development and production roots (terraform 1.9.8).
 
 ## Deployment status
 
@@ -52,9 +52,10 @@ bash scripts/infrastructure/gcp-account-readonly-check.sh
 
 ## Security findings (design)
 
-- Positive: three-tier network separation; authority DB without public IP; execution egress allowlist pattern.
-- Residual: authority tier outbound 443 still broad — tighten to update mirrors + backup endpoints.
+- Positive: three-tier network separation; authority DB without public IP; execution/authority egress allowlists; host nftables for east-west enforcement; SaaS nodes private by default behind LB + Cloudflare.
+- Residual: nftables rules require validation on first boot in a real environment.
 - Residual: self-hosted Postgres on VM — document migration path to Hetzner Managed Database when qualified.
+- WhitePact Cloud control plane: see `docs/whitepact-cloud/WHITEPACT_CLOUD_FINAL_AUDIT_REPORT.md`.
 
 ## Owner approval still required
 
@@ -67,4 +68,4 @@ bash scripts/infrastructure/gcp-account-readonly-check.sh
 
 ## Final commit
 
-Recorded at push time in git log on `cursor/whitepact-enterprise-cloud-v1-f7a9`.
+See branch HEAD on `cursor/whitepact-enterprise-cloud-v1-f7a9` (PR #128). Prior anchor: `e7f37ee` before WhitePact Cloud remediation.

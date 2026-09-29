@@ -14,6 +14,17 @@ variable "location" {
   description = "Hetzner location (verify availability: https://docs.hetzner.com/cloud/general/locations/)"
   type        = string
   default     = "fsn1"
+
+  validation {
+    condition     = contains(["fsn1", "nbg1", "hel1", "ash", "hil", "sin"], var.location)
+    error_message = "location must be a documented Hetzner Cloud region with a known network zone mapping."
+  }
+}
+
+variable "network_zone_override" {
+  description = "Optional override when Hetzner adds a new location before the module map is updated."
+  type        = string
+  default     = null
 }
 
 variable "network_cidr" {
@@ -67,6 +78,34 @@ variable "execution_egress_cidrs" {
   description = "Permitted outbound CIDRs for agent execution workloads (e.g. MCP upstreams)"
   type        = list(string)
   default     = []
+
+  validation {
+    condition = (
+      !var.enable_execution_egress_allowlist
+      || length(var.execution_egress_cidrs) > 0
+    )
+    error_message = "execution_egress_cidrs must be non-empty when enable_execution_egress_allowlist is true (fail closed)."
+  }
+}
+
+variable "authority_egress_cidrs" {
+  description = "Permitted outbound HTTPS destinations for authority tier (updates, telemetry, R2 backup API endpoints)."
+  type        = list(string)
+  default     = ["10.255.0.1/32"]
+
+  validation {
+    condition = (
+      length(var.authority_egress_cidrs) > 0
+      && !contains(var.authority_egress_cidrs, "0.0.0.0/0")
+    )
+    error_message = "authority_egress_cidrs must be a non-empty explicit allowlist (no 0.0.0.0/0)."
+  }
+}
+
+variable "saas_public_ipv4" {
+  description = "When false, SaaS nodes are reachable only via private LB + Cloudflare (recommended for production)."
+  type        = bool
+  default     = false
 }
 
 variable "labels" {

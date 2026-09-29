@@ -21,50 +21,50 @@ resource "hcloud_network" "private" {
 resource "hcloud_network_subnet" "saas" {
   network_id   = hcloud_network.private.id
   type         = "cloud"
-  network_zone = "${var.location}-network"
+  network_zone = local.network_zone
   ip_range     = var.saas_subnet_cidr
 }
 
 resource "hcloud_network_subnet" "authority" {
   network_id   = hcloud_network.private.id
   type         = "cloud"
-  network_zone = "${var.location}-network"
+  network_zone = local.network_zone
   ip_range     = var.authority_subnet_cidr
 }
 
 resource "hcloud_network_subnet" "execution" {
   network_id   = hcloud_network.private.id
   type         = "cloud"
-  network_zone = "${var.location}-network"
+  network_zone = local.network_zone
   ip_range     = var.execution_subnet_cidr
 }
 
 # --- SaaS / dashboard / MCP ingress (private NIC; public via LB + Cloudflare only) ---
 resource "hcloud_firewall" "saas" {
-  name = "${local.name_prefix}-fw-saas"
+  name   = "${local.name_prefix}-fw-saas"
   labels = merge(local.common_labels, { tier = "saas" })
 
   rule {
-    direction  = "in"
-    protocol   = "tcp"
-    port       = "22"
-    source_ips = length(var.admin_cidr_allowlist) > 0 ? var.admin_cidr_allowlist : ["127.0.0.1/32"]
+    direction   = "in"
+    protocol    = "tcp"
+    port        = "22"
+    source_ips  = length(var.admin_cidr_allowlist) > 0 ? var.admin_cidr_allowlist : ["127.0.0.1/32"]
     description = "SSH admin allowlist only"
   }
 
   rule {
-    direction  = "in"
-    protocol   = "tcp"
-    port       = "8765"
-    source_ips = ["10.42.0.0/16"]
+    direction   = "in"
+    protocol    = "tcp"
+    port        = "8765"
+    source_ips  = ["10.42.0.0/16"]
     description = "Dashboard/API from private network (LB origin)"
   }
 
   rule {
-    direction  = "in"
-    protocol   = "tcp"
-    port       = "8766"
-    source_ips = ["10.42.0.0/16"]
+    direction   = "in"
+    protocol    = "tcp"
+    port        = "8766"
+    source_ips  = ["10.42.0.0/16"]
     description = "MCP HTTP from private network"
   }
 
@@ -90,10 +90,10 @@ resource "hcloud_firewall" "authority" {
   labels = merge(local.common_labels, { tier = "authority" })
 
   rule {
-    direction  = "in"
-    protocol   = "tcp"
-    port       = "5432"
-    source_ips = [var.saas_subnet_cidr, var.execution_subnet_cidr]
+    direction   = "in"
+    protocol    = "tcp"
+    port        = "5432"
+    source_ips  = [var.saas_subnet_cidr, var.execution_subnet_cidr]
     description = "PostgreSQL only from app/execution tiers"
   }
 
@@ -104,13 +104,15 @@ resource "hcloud_firewall" "authority" {
     source_ips = length(var.admin_cidr_allowlist) > 0 ? var.admin_cidr_allowlist : ["127.0.0.1/32"]
   }
 
-  # Authority tier: no broad outbound — signing/policy material must not egress to execution
-  rule {
-    direction       = "out"
-    protocol        = "tcp"
-    port            = "443"
-    destination_ips = ["0.0.0.0/0"]
-    description     = "Package updates and backup upload endpoints only (tighten with allowlist)"
+  dynamic "rule" {
+    for_each = var.authority_egress_cidrs
+    content {
+      direction       = "out"
+      protocol        = "tcp"
+      port            = "443"
+      destination_ips = [rule.value]
+      description     = "Documented authority-tier HTTPS egress"
+    }
   }
 }
 
@@ -126,13 +128,13 @@ resource "hcloud_firewall" "execution" {
   }
 
   dynamic "rule" {
-    for_each = var.enable_execution_egress_allowlist ? [1] : []
+    for_each = var.enable_execution_egress_allowlist ? var.execution_egress_cidrs : []
     content {
       direction       = "out"
       protocol        = "tcp"
       port            = "443"
-      destination_ips = length(var.execution_egress_cidrs) > 0 ? var.execution_egress_cidrs : ["0.0.0.0/0"]
-      description     = "Documented MCP/upstream egress"
+      destination_ips = [rule.value]
+      description     = "Documented MCP/upstream egress (fail closed when list empty)"
     }
   }
 
@@ -153,8 +155,14 @@ resource "hcloud_server" "saas" {
   image       = "ubuntu-24.04"
   labels      = merge(local.common_labels, { tier = "saas", role = "dashboard-mcp" })
 
+  user_data = templatefile("${path.module}/templates/cloud-init-nftables.yaml", {
+    admin_cidrs       = local.admin_cidr_nft
+    tier_input_rules  = local.saas_nft_input
+    tier_output_rules = local.saas_nft_output
+  })
+
   public_net {
-    ipv4_enabled = true
+    ipv4_enabled = var.saas_public_ipv4
     ipv6_enabled = false
   }
 
@@ -172,6 +180,12 @@ resource "hcloud_server" "authority" {
   location    = var.location
   image       = "ubuntu-24.04"
   labels      = merge(local.common_labels, { tier = "authority", role = "postgres-governance" })
+
+  user_data = templatefile("${path.module}/templates/cloud-init-nftables.yaml", {
+    admin_cidrs       = local.admin_cidr_nft
+    tier_input_rules  = local.authority_nft_input
+    tier_output_rules = local.authority_nft_output
+  })
 
   public_net {
     ipv4_enabled = false
@@ -193,6 +207,12 @@ resource "hcloud_server" "execution" {
   location    = var.location
   image       = "ubuntu-24.04"
   labels      = merge(local.common_labels, { tier = "execution", role = "isolated-executor" })
+
+  user_data = templatefile("${path.module}/templates/cloud-init-nftables.yaml", {
+    admin_cidrs       = local.admin_cidr_nft
+    tier_input_rules  = "# execution tier: no application ingress"
+    tier_output_rules = join("\n          ", local.execution_nft_output)
+  })
 
   public_net {
     ipv4_enabled = false

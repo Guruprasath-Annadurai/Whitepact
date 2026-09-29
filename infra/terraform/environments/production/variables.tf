@@ -25,3 +25,7 @@ variable "admin_cidr_allowlist" {
 variable "execution_egress_cidrs" {
   type = list(string)
 }
+
+variable "authority_egress_cidrs" {
+  type = list(string)
+}

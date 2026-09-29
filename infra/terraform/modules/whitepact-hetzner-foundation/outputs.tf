@@ -15,7 +15,7 @@ output "saas_private_ips" {
 }
 
 output "authority_private_ip" {
-  value = hcloud_server.authority.network[0].ip
+  value = one([for n in hcloud_server.authority.network : n.ip])
 }
 
 output "execution_private_ips" {
