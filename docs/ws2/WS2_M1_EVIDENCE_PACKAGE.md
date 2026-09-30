@@ -1,38 +1,47 @@
 # WS-2 — M1 evidence package (engineering)
 
-**Status:** Engineering in progress — **not** M1 qualified. **Do not** request Antigravity M1 until integration gate (§12) is satisfied.
+**Status:** Integration gate **incomplete** — **not** Antigravity M1 qualified. **Do not** request Antigravity M1 until gates in `WS2_INTEGRATION_GATE_STATUS.md` are green.
 
 ## SHA ladder (no drift)
 
 | Milestone | SHA | Status |
 |-----------|-----|--------|
-| **Current development head** | `20509e038383aaf672916d86b8847a23916d41de` | Authoritative for local bundle runs on stacked branch |
-| **Final implementation head** | *pending* | Set when Lane A engineering complete (not yet declared) |
-| **Final rebased head** (onto merged WS-1 `main`) | *pending* | Requires PR #129 merge + rebase of #130 |
-| **Exact-head CI-qualified SHA** | *pending* | Requires green GitHub Actions on rebased PR #130 |
+| **Current development head** | `ae181d7c0cf156e0104ac22d291fd79b74271e36` | PR #130 tip (verified) |
+| **Merged `main` base SHA** | *pending* | Blocked: PR [#129](https://github.com/Guruprasath-Annadurai/Whitepact/pull/129) not merged; `origin/main` = `81beb3ac50e17068c7d6f26d9a07f2cb0442dbec` |
+| **Final implementation SHA** | *pending rebase* | Engineering complete on stacked branch; **not** final until rebased on merged `main` |
+| **Final tree SHA** | *pending rebase* | Same as final implementation SHA after rebase push |
+| **Exact-head CI-qualified SHA** | *pending* | Requires green GitHub Actions on rebased PR #130 targeting `main` |
 
-> During active development, only **current development head** is authoritative for local runs. Older SHAs and pass counts are historical, not exact-head evidence.
+> Stacked-branch SHAs and local pass counts are **historical context only** after rebase. Never treat them as exact-head CI evidence for a newer tree.
 
-## Integration gate (WS-1 / WS-2)
+## Integration gates (1–10)
 
-| Step | Status |
+See `docs/ws2/WS2_INTEGRATION_GATE_STATUS.md`.
+
+| Gate | Status |
 |------|--------|
-| Antigravity WS-1 M0 confirmation | Pending founder/Antigravity |
-| Founder approves merge PR #129 | Not done |
-| Merged `main` SHA recorded | *pending* (`origin/main` was `81beb3ac50e17068c7d6f26d9a07f2cb0442dbec` at last check) |
-| PR #130 rebased on merged `main` | *pending* |
-| Full repo CI on rebased head | *pending* |
+| 1 Antigravity WS-1 M0 | **PENDING** — packet at `docs/ws1/WS1_ANTIGRAVITY_CONFIRMATION_PACKET.md` |
+| 2 Merge PR #129 | **PENDING** founder approval |
+| 3–5 Rebase + ancestry | **BLOCKED** on #2 |
+| 6 WS-2 bundle (rebased) | **PARTIAL** — see below (stacked head) |
+| 7 Full repo tests (rebased) | **PARTIAL** — see below (stacked head) |
+| 8 Exact-head GitHub CI | **BLOCKED** — PR #130 base ≠ `main`; empty check rollup |
+| 9 This package | **IN PROGRESS** |
+| 10 BLK-P0-02 / BLK-P0-03 | **OPEN** |
 
-## Findings disposition
+## Test results (stacked branch `ae181d7` — not rebased CI)
 
-| ID | Status |
-|----|--------|
-| BLK-P0-02 | **OPEN** |
-| BLK-P0-03 | **OPEN** |
+| Suite | Command / scope | Result | Log |
+|-------|-----------------|--------|-----|
+| WS-2 pre-M1 bundle | 15 modules (see below) | **183 passed** | `/opt/cursor/artifacts/ws2_m1_full_bundle_ae181d7.log` (via agent run) |
+| PostgreSQL nonce race | `test_postgres_distinct_connections_consume_once` | **1 passed** | `/opt/cursor/artifacts/ws2_postgres_nonce.log` |
+| Full repository | `pytest tests/ -q` | **5168 passed**, **11 failed**, 41 skipped | `/opt/cursor/artifacts/ws2_full_repo_pytest_stacked.log` |
 
-## Test bundle (local)
+### Full-repo failures on stacked branch (local env)
 
-Run the full WS-2 pre-M1 bundle:
+All 11 failures are configuration / production-preflight tests (`tests/test_config.py`, `tests/test_cursor_v1_hardening.py`, `tests/test_enterprise_layer1_remediation.py`) — typical when production `Settings` expectations (Postgres URL, field encryption key) are not set for the whole-suite run. **Re-validate on rebased tree under CI-equivalent env** (gate #8).
+
+### WS-2 bundle command
 
 ```bash
 pytest \
@@ -54,36 +63,37 @@ pytest \
   -q
 ```
 
-**Latest local bundle result (stacked branch, pre-rebase):** **181 passed** — log: `/opt/cursor/artifacts/ws2_m1_full_bundle.log` (2026-09-30 UTC). This is **not** exact-head CI evidence.
+## PostgreSQL concurrency evidence
 
-## PostgreSQL concurrency qualification
-
-| Environment | Command | Result |
-|-------------|---------|--------|
-| `WHITEPACT_TEST_POSTGRES_EXECUTION` (auto-configured when isolated PG reachable) | `pytest tests/test_phase1_execution.py::test_postgres_distinct_connections_consume_once -q` | **PASS** (local cloud agent run) |
-| Unavailable PG | Same test | **skipped** — must not be treated as equivalent to SQLite |
+| Test | Result (cloud agent, isolated PG) |
+|------|-----------------------------------|
+| `tests/test_phase1_execution.py::test_postgres_distinct_connections_consume_once` | **PASS** |
+| `tests/test_phase1_execution.py::test_sqlite_distinct_connections_consume_once` | **PASS** (in bundle) |
 
 ## CI URLs
 
 | Run | URL |
 |-----|-----|
-| WS-1 qualified (reference only) | [36725514596](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36725514596) |
-| PR #130 exact-head | *pending rebase onto merged `main`* |
+| WS-1 qualified (M0 reference) | https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36725514596 |
+| PR #130 exact-head (rebased on merged `main`) | **pending** |
+
+## Phase 7A scope
+
+**Excluded from production launch candidate.** See `docs/ws2/WS2_PHASE7A_PRODUCTION_SCOPE.md`.
+
+## Findings
+
+| ID | Status |
+|----|--------|
+| BLK-P0-02 | **OPEN** |
+| BLK-P0-03 | **OPEN** |
 
 ## Artifacts
 
-- Execution paths: `docs/ws2/WS2_EXECUTION_PATH_MAP.md`
-- Allowlist review: `docs/ws2/WS2_EXECUTION_BOUNDARY_ALLOWLIST.md`
-- Antigravity packet (draft): `docs/ws2/WS2_ANTIGRAVITY_M1_PACKET.md`
-
-## Known limitations
-
-- Community stdio remains ungoverned by design; enterprise forbids stdio.
-- Isolation child runner (LOCAL_DEV) executes `dispatch_tool` on stdin JSON without cryptographic admission — production blocks same-process execution without broker (`test_ws2_isolation_child_admission.py`).
-- Phase 7A worker queue qualified only in non-production; production gate refuses dispatcher start.
-- Stacked-branch local tests ≠ post-rebase integration qualification.
+- `docs/ws2/WS2_EXECUTION_PATH_MAP.md`
+- `docs/ws2/WS2_EXECUTION_BOUNDARY_ALLOWLIST.md`
+- `docs/ws2/WS2_ANTIGRAVITY_M1_PACKET.md` (draft — do not send until gate #8)
 
 ## Non-goals
 
-- Antigravity M1 self-certification
-- Merge PR #130 / publish PyPI / cloud provision
+- Merge PR #130, PyPI, Cloud provision, production deploy, Antigravity M1 self-certification
