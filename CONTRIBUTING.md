@@ -5,10 +5,18 @@ original `biasbuster`/`privacylabel`/`responsibleai` packages plus the new
 `whitepact` alias — see `MIGRATION_WHITEPACT_V2.md`) is an AI governance and
 runtime-authority platform: trust scoring, guardrails, compliance mapping,
 bias evaluation, a governance decision engine (ALLOW / ALLOW_WITH_REDACTION /
-REQUIRE_APPROVAL / DENY / QUARANTINE), and an MCP server exposing all of it as
-27 tools. Contributions are welcome — bug reports, new probes/checks, provider
-integrations, documentation fixes, governance-policy improvements, anything
-that makes the platform more correct or more honest about what it does.
+REQUIRE_APPROVAL / DENY / QUARANTINE), and an MCP server (see
+`src/responsibleai/mcp/metadata.py` for current tool counts).
+
+**Repository:** This repository contains the MIT-licensed WhitePact V1 codebase
+and public integration surfaces. Hosted or enterprise offerings may be
+distributed under different terms where clearly identified; that does not change
+the license of code already published here.
+
+**Welcome contributions:** documentation, SDK/client improvements, examples,
+public adapters, schemas, compatibility fixes, issues, and black-box product
+feedback. Design-partner evaluation is black-box only (see issue #87) — no
+source-code or private hosted access through that program.
 
 By participating, you're expected to follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 See [GOVERNANCE.md](GOVERNANCE.md) for how decisions get made — this is
