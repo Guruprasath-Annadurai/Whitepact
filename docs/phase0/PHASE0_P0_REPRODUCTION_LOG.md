@@ -1,0 +1,3 @@
+# Deprecated
+
+Superseded by [PHASE0_REPRODUCTION_MATRIX.md](./PHASE0_REPRODUCTION_MATRIX.md).
