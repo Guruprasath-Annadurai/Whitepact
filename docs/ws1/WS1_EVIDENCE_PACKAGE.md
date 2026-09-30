@@ -170,7 +170,7 @@ No `pip-audit --ignore-vuln` entries were added for these CVEs. No application b
 | Field | Value |
 |-------|--------|
 | **Dependency remediation SHA** | `a7552bd6c7f38bbbc696f14d5eb7fa820e53cb10` (DCO-signed; `urllib3` lock bump only) |
-| **Merge-candidate SHA (incl. evidence + CI stability)** | `4436553352080c2b7d2713dbf9bcd904cea813fa` |
-| **Final CI** | Pending on `4436553` — https://github.com/Guruprasath-Annadurai/Whitepact/actions (PR #129 rollup) |
+| **Merge-candidate SHA (incl. evidence + CI stability)** | `7d12fb3352080c2b7d2713dbf9bcd904cea813fa` |
+| **Final CI** | Pending on `7d12fb3` — https://github.com/Guruprasath-Annadurai/Whitepact/actions (PR #129 rollup) |
 
 Local requalification on dependency commit: default + `[dashboard]` wheel smokes **PASS**; WS-1 CLI regression bundle **24 passed**; `pip-audit` (CI flags) **clean**; Self-Conducted Security Scan path (`pip install -e .` + lock) **clean**.
