@@ -124,3 +124,53 @@ pytest tests/test_whitepact_cli_entrypoint.py tests/sovereign/test_cli_sovereign
 
 - **No PyPI publish** in WS-1.
 - PyPI name remains `rai-governance-platform`.
+
+## Post-qualification dependency security update
+
+Previously qualified WS-1 closure code tree **`b5641b740df63a8a408a900186f1d3cd00803174`** is unchanged in history; PR #129 later picked up documentation-only tips (`fd11815`) that exposed a **new M0 dependency security gate** when advisory data caught up with pinned tooling.
+
+### Advisory (reproduced locally, CI-identical install)
+
+Install mode (matches `.github/workflows/ci.yml`):
+
+```bash
+pip install -e ".[dev,openai,anthropic,sso,sentiment,postgres]"
+pip install --require-hashes -r requirements-security.lock
+pip-audit --skip-editable \
+  --ignore-vuln PYSEC-2026-597 \
+  --ignore-vuln PYSEC-2026-3740
+```
+
+| Field | Value |
+|-------|--------|
+| **Package** | `urllib3` |
+| **Installed (vulnerable) version** | `2.7.0` (from `requirements-security.lock`, not from default `pyproject` pins) |
+| **Identifiers** | **CVE-2026-97687** (GHSA-8988-9cw3-xx77), **CVE-2026-97688** (GHSA-gh4c-6fx4-qh6g), **CVE-2026-97689** (GHSA-vxq7-64xx-v4gw) |
+| **Severity** | High — proxy TLS mis-binding / certificate verification confusion (97687); High — CPU DoS via Deflate streaming decoder loop (97688); Medium — memory pressure via oversized chunked chunk-size fields when streaming (97689) |
+| **Fixed version** | **`2.8.0`** |
+| **Direct vs transitive** | **Transitive** — lock comment `# via requests` (pulled by `pip-audit` → `requests` / `cachecontrol` in `requirements-security.in` compile tree) |
+| **Top-level introducer** | `pip-audit` / `bandit` security tooling lock (`requirements-security.in`), not a `pyproject.toml` direct dependency |
+| **Install profiles** | Present after CI installs **dev + optional extras matrix** and then applies **`requirements-security.lock`** (hashed tooling install **downgraded** resolver-chosen `urllib3` 2.8.0 → 2.7.0). Default wheel-only install resolves `urllib3` via HTTP client stacks when optional integrations are present; **`[dashboard]`** and CI extras increase `requests`/HTTP usage. |
+
+### Exposure (separate from remediation)
+
+`urllib3` sits on the HTTP transport path for **`requests`**-based clients (e.g. LangChain/LangSmith, Google ADK/GenAI, OpenTelemetry OTLP HTTP exporter, and CI `pip-audit` itself). WhitePact core default dependencies use **`httpx`**, but CI and common optional extras still load **`urllib3`** at runtime. The advisories affect HTTPS proxy TLS configuration, streamed compressed responses, and streamed chunked bodies from **untrusted HTTP servers** — not a single WhitePact API call site, but the library is **reachable** whenever those HTTP stacks handle external responses. Remediation does not depend on proving a specific in-repo call pattern.
+
+### Remediation
+
+| Item | Before | After |
+|------|--------|-------|
+| `requirements-security.lock` | `urllib3==2.7.0` | `urllib3==2.8.0` (regenerated via `uv pip compile` per `requirements-security.in`) |
+| `uv.lock` | `urllib3` 2.7.0 | `urllib3` 2.8.0 (`uv lock --upgrade-package urllib3`) |
+
+No `pip-audit --ignore-vuln` entries were added for these CVEs. No application behavior or package identity changes.
+
+### Requalified merge candidate
+
+| Field | Value |
+|-------|--------|
+| **Dependency remediation SHA** | `a7552bd6c7f38bbbc696f14d5eb7fa820e53cb10` (DCO-signed; `urllib3` lock bump only) |
+| **Merge-candidate SHA (incl. evidence + CI stability)** | `4436553352080c2b7d2713dbf9bcd904cea813fa` |
+| **Final CI** | Pending on `4436553` — https://github.com/Guruprasath-Annadurai/Whitepact/actions (PR #129 rollup) |
+
+Local requalification on dependency commit: default + `[dashboard]` wheel smokes **PASS**; WS-1 CLI regression bundle **24 passed**; `pip-audit` (CI flags) **clean**; Self-Conducted Security Scan path (`pip install -e .` + lock) **clean**.
