@@ -18,4 +18,15 @@ Internal zero-trust privileged-access and multicloud security control plane. **N
 | [12_COST_AND_OPERATIONS.md](12_COST_AND_OPERATIONS.md) | Monthly estimate |
 | [13_PRODUCTION_READINESS.md](13_PRODUCTION_READINESS.md) | Gate checklist |
 
+### Private staging qualification (PR #128)
+
+| Doc | Topic |
+|-----|--------|
+| [staging/OWNER_APPROVAL_GATE.md](staging/OWNER_APPROVAL_GATE.md) | **Stop here** — founder approval before apply |
+| [staging/STAGING_ARCHITECTURE.md](staging/STAGING_ARCHITECTURE.md) | BOM and trust boundaries |
+| [staging/RESOURCE_AND_COST_APPROVAL.md](staging/RESOURCE_AND_COST_APPROVAL.md) | Itemized budget |
+| [staging/ANTIGRAVITY_INDEPENDENT_REVIEW_HANDOFF.md](staging/ANTIGRAVITY_INDEPENDENT_REVIEW_HANDOFF.md) | Independent review package |
+
+Full index: all twelve files under `staging/`.
+
 Implementation code: `src/responsibleai/whitepact_cloud/`. Infrastructure: `infra/terraform/`.
