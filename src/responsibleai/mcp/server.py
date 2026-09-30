@@ -12,7 +12,10 @@ this rename carries no compatibility break.
 
 Three transports:
 
-1. **stdio** (default, free, self-hosted) — full unrestricted tool access.
+1. **stdio** (default, free, self-hosted) — community trust domain only:
+   full unrestricted tool access when ``mcp_trust_domain=community``.
+   Enterprise deployments must set ``mcp_trust_domain=enterprise`` and use
+   governed hosted MCP instead (stdio refuses to start).
    Configure Claude Code:
        {
          "mcpServers": {
@@ -346,8 +349,21 @@ async def _run_stdio() -> None:
         await server.run(read_stream, write_stream, init_options)
 
 
+_ENTERPRISE_STDIO_REFUSAL = (
+    "Enterprise MCP trust domain forbids ungoverned stdio execution. "
+    "Set WHITEPACT_MCP_TRUST_DOMAIN=community only for documented local "
+    "self-hosted use, or run governed hosted MCP (mcp_governance_enabled=true) "
+    "with tenant-scoped credentials."
+)
+
+
 def main() -> None:
     """CLI entry point: whitepact-mcp / responsibleai-mcp (stdio, self-hosted)."""
+    from responsibleai.dashboard.config import get_settings
+
+    if get_settings().mcp_trust_domain == "enterprise":
+        _logger.error(_ENTERPRISE_STDIO_REFUSAL)
+        raise SystemExit(2)
     _logger.info("starting %s v1.2.0 (stdio)", server.name)
     _log_invocation_name("stdio server")
     asyncio.run(_run_stdio())
