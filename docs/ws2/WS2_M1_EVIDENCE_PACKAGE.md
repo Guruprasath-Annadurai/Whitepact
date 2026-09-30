@@ -8,7 +8,7 @@
 | WS-1 PR | [#129](https://github.com/Guruprasath-Annadurai/Whitepact/pull/129) — **not merged** at time of this revision |
 | WS-2 branch | `cursor/whitepact-ws2-runtime-authority-f7a9` |
 | WS-2 PR | [#130](https://github.com/Guruprasath-Annadurai/Whitepact/pull/130) (stacked on WS-1) |
-| WS-2 tip (pre-push) | `b8337317a208dce8ada1f1fb6c33bd8d447fbfdf` → superseded by commits after this package |
+| WS-2 tip | `a5c96e7` (see `git rev-parse HEAD` on branch) |
 | Findings | **BLK-P0-02 OPEN**, **BLK-P0-03 OPEN** until Antigravity M1 |
 
 ## Changed-file inventory (WS-2 lane, cumulative)
