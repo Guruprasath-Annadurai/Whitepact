@@ -15,3 +15,5 @@ Environment: **authorized simulation and unit tests only** unless noted.
 | 9–25 | Lateral movement, egress, DR, etc. | Per threat model | NOT_TESTED or BLOCKED | no live staging |
 
 Retest after owner-approved staging provisioning.
+
+**Live staging test plans:** `docs/whitepact-cloud/staging/ADVERSARIAL_QUALIFICATION_MATRIX.md` and linked plans under `docs/whitepact-cloud/staging/`.

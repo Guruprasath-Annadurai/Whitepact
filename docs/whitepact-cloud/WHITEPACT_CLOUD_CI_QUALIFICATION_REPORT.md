@@ -6,7 +6,9 @@
 | Branch | `cursor/whitepact-enterprise-cloud-v1-f7a9` |
 | Baseline HEAD | `9edbde2` |
 | Qualification commit | `848e5d8` |
-| Latest HEAD | `7743dd5` |
+| Latest HEAD | `caf539b` |
+| Exact-head CI | [`36632878907`](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36632878907) — **success** |
+| Code qualification SHA | `7743dd5` (CI workflow + coverage gates) |
 | PR | [#128](https://github.com/Guruprasath-Annadurai/Whitepact/pull/128) |
 
 ## 1. Cancelled run `36565522947` (commit `9edbde2`)
