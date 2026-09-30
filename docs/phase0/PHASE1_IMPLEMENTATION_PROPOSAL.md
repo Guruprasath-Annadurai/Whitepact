@@ -1,171 +1,74 @@
-# Phase 1 — Implementation proposal (founder approval required)
+# Phase 1 — Implementation proposal (revised, founder approval required)
 
-**Status:** PROPOSED — **do not execute** until founder approves this document and Antigravity validates reconciled findings (META-001 + register).
+**Status:** PROPOSED — **no Phase 1 code** until founder approves.  
+**Billing:** Implement against **Paddle** architecture on `main` / PR #107 — **do not** adopt Stripe because the audit text might mention card processors generically.
 
-**Objective:** One **fully integrated**, **verifiably secure** enterprise product at a **single qualified SHA**—not parallel modules that pass isolated tests.
+## 1. Scope boundaries (unchanged constraints)
 
-**Out of scope for Phase 1 (explicit):** mass rewrite, legacy deletion without dependency graph, PyPI **2.0.0** or new public version announcement, unqualified branch merges, paid infra provisioning, enabling unrestricted stdio execution, declaring findings closed without reproduction.
+- No mass rewrite; no legacy deletion without dependency analysis.
+- No PyPI **2.0.0** or mass package rename campaign.
+- No cloud **provisioning** during Phase 1 without passing Cloud re-audit.
+- **Community stdio** may remain non-governed; **enterprise** must not advertise it as protected.
+- **No live authorization bypass** accepted via founder risk sign-off — remove or gate unsupported capabilities from enterprise release scope.
 
----
+## 2. Integrated release strategy (qualification-first)
 
-## 1. Integration strategy (single RC)
+**Do not** automatically merge PR #108 → #107 → #128.
 
-### 1.1 Target integration branch
+### 2.1 Pre-merge qualification checklist (required per branch)
 
-Create **`cursor/whitepact-v1-enterprise-integrated-rc-f7a9`** from **`origin/main` @ `81beb3a`**, then merge **in order** (each step must pass full CI before the next):
+| Step | Action |
+|------|--------|
+| 1 | Record exact HEAD SHA and green CI run URL for candidate branch |
+| 2 | `git merge-base` and `git merge-tree` vs integration target — list **changed in both** paths |
+| 3 | Detect duplicate commits on `web/`, `pyproject.toml`, `dashboard/app.py`, migrations |
+| 4 | Run full `ci.yml` equivalent locally or on CI for that SHA |
+| 5 | Map each merge to **BLK-*** rows it claims to close — no closure without reproduction |
 
-| Step | Source | Rationale |
-|------|--------|-----------|
-| 1 | `cursor/whitepact-v1-rc-blocker-fixes-01` (#108) | PG/migration/mypy blockers for RC |
-| 2 | `cursor/whitepact-v1-combined-rc-f7a9` (#107) | Paddle + combined RC closure |
-| 3 | `cursor/whitepact-enterprise-cloud-v1-f7a9` (#128) | Cloud control plane + infra modules |
-| 4 | Cherry-pick only **qualified** fixes from assurance branches (#109, #110) as needed | Avoid wholesale merge of draft PRs |
+**Observed (Phase 0):**
 
-**Founder decision point:** confirm this ordering or substitute a different qualified stack before Step 1.
+- `origin/main` vs `cursor/whitepact-v1-combined-rc-f7a9`: merge-base `67380a8`; **many** “changed in both” paths (high conflict risk).
+- `cursor/whitepact-v1-combined-rc-f7a9` vs `cursor/whitepact-enterprise-cloud-v1-f7a9`: large diffs (`web/`, infra additions).
+- Cloud branch is **descended from** `main` (`81beb3a` merge-base); combined-rc diverged earlier from `67380a8`.
 
-### 1.2 Published vs repo truth
+### 2.2 Recommended integration path (proposal — not approved)
 
-- Keep **1.3.1** (or patch bump only if required for integration fixes)—**no 2.0.0**.
-- Record final SHA in `release-evidence/<sha>/` using existing campaign layout.
+1. **Qualify B-main** as baseline with official register reproductions frozen in `release-evidence/<sha>/`.
+2. **Qualify B-combined-rc** independently (Paddle, web console) — merge to integration branch only if merge-tree is clean or conflicts are resolved with tests.
+3. **Qualify B-cloud** independently — merge only after **BLK-P0-03** / **BLK-P0-02** enterprise closure plan is explicit (cloud must not bypass global authority).
+4. Declare **B-integrated-rc** only when one SHA passes CI + Antigravity spot-check of P0 rows.
 
-### 1.3 Codex boundary
+Alternative: rebuild integration branch from `main` with cherry-picks instead of stacking PR merges if merge-tree risk is unacceptable.
 
-- **Codex:** corporate website, public marketing, Paddle portal UI closure branches as agreed—**no** changes to `src/responsibleai/governance/*` or cloud control plane without Cursor integration review.
+## 3. Phase 1 workstreams (mapped to official BLK findings)
 
----
+| WS | BLK focus | Work | Acceptance |
+|----|-----------|------|------------|
+| **WS-1** | BLK-P0-01, P0-05, P3-03 | WhitePact CLI entry → governance platform launcher; document package identity; no 2.0 rename | `whitepact --help` describes WhitePact; PyPI metadata aligned per `PACKAGE_IDENTITY` policy |
+| **WS-2** | BLK-P0-03, P0-02 | Wire sovereignty kernel / canonical path to hosted + dashboard dispatch; enterprise profile for stdio | Fail-closed tests; Community profile unchanged by default |
+| **WS-3** | BLK-P0-04, P0-06, P1-01 | Single authenticated SaaS surface; approvals actionable; policy management UI | E2E Playwright approve/deny; one session model |
+| **WS-4** | BLK-P1-02, P1-04 | Paddle invitation + billing verified in sandbox | E2E on qualified RC SHA with Paddle keys |
+| **WS-5** | BLK-P1-03 | SDK governance runtime methods (TS/Python) | Contract tests against `/api/v1/web` governance endpoints |
+| **WS-6** | BLK-P1-05, P1-06, P1-07 | Break-glass interrupt, SIEM export, erasure | Adversarial tests + documented data lifecycle |
+| **WS-7** | BLK-P1-08, CLOUD-* | LB/origin hardening in Terraform — **plan only** until Cloud re-audit | `terraform validate`; no apply without founder + Antigravity |
+| **WS-8** | P2/P3 backlog | SSO/SCIM, a11y, tracing, docs — after P0 closure | Per-row verification in official register |
 
-## 2. Workstreams (Cursor backlog)
+**Codex:** corporate website only — no dashboard/governance code.
 
-### WS-A — Canonical execution closure (P0)
-
-**Findings:** AG-EPR-001, AG-EPR-002, AG-EPR-006, AG-EPR-008  
-
-**Work:**
-
-1. Wire `sovereignty_kernel.evaluate()` (or approved subset) into `apply_governance`, `apply_upstream_governance`, and `resume_approval` with **fail-closed** defaults on resolver errors.
-2. Persist approval **authority / epoch / policy** snapshots at request time; resume must re-resolve against snapshots.
-3. Remove or gate **synthetic** `AuthorityContext` construction on hosted and upstream paths.
-
-**Acceptance:**
-
-- New tests in `tests/test_phase1_*` and `tests/test_mcp_governance_dispatch.py` proving deny on stale/mismatched bindings.
-- Antigravity replay of historical P0 scenarios on integrated RC SHA.
-- No regression: existing 60-test hosted governance slice green.
-
-**Fail-closed checks:** DB unavailable → refuse dispatch; resolver exception → refuse; missing epoch → refuse.
-
-### WS-B — Enterprise transport policy (P0)
-
-**Findings:** AG-EPR-004  
-
-**Work:**
-
-1. Introduce **deployment profile** (`WHITEPACT_DEPLOYMENT_PROFILE=community|enterprise`) documented in operator guide.
-2. **Community:** stdio unchanged (still unrestricted by product promise).
-3. **Enterprise:** stdio either disabled or requires local governance bootstrap token; hosted paths mandatory for managed tenants.
-
-**Acceptance:**
-
-- Contract tests: enterprise profile cannot dispatch without governance initialization.
-- Explicit **no** change to default community behavior without profile set.
-
-**Explicit non-goal:** Do **not** enable “unrestricted stdio execution” in enterprise hosted or cloud cells.
-
-### WS-C — WhitePact Cloud merge + staging qualification (P0)
-
-**Findings:** AG-EPR-015–021  
-
-**Work:**
-
-1. Complete WS-A integration **before** staging apply (grants must not authorize across broken canonical layer).
-2. After founder signs `OWNER_APPROVAL_GATE.md`, execute staging sequence in `docs/whitepact-cloud/staging/ANTIGRAVITY_INDEPENDENT_REVIEW_HANDOFF.md`.
-3. Wire `IdentityRevocationPort` to real APIs; enable executor only in staging with scoped grants.
-
-**Acceptance:**
-
-- Live matrix: N-*, I-*, A-*, O-* witnesses recorded by Antigravity.
-- Offboarding AG-EPR-018 moves from **MITIGATED local** to **VERIFIED live**.
-
-### WS-D — Integrated RC evidence (P0)
-
-**Findings:** AG-EPR-007, AG-EPR-024  
-
-**Work:**
-
-1. One green GitHub Actions run on integrated branch HEAD (full `ci.yml`: static + test jobs).
-2. `release-evidence/<sha>/final/pytest-full.log`, supply-chain scans, provenance.
-3. Update `PHASE0_MASTER_DEFECT_REGISTER.md` verification column only with Antigravity sign-off.
-
-**Acceptance:**
-
-- Founder + Antigravity agree SHA is **the** enterprise RC candidate.
-
-### WS-E — Release hygiene (P1)
-
-**Findings:** AG-EPR-009, AG-EPR-010, AG-EPR-011, AG-EPR-012  
-
-**Work:** Browser matrix, staging perf template, Paddle E2E on integrated RC.
-
-**Acceptance:** Documented in existing enterprise master report format; no production deploy claim.
-
-### WS-F — IoT / Device Bridge (P0 scope gate)
-
-**Finding:** AG-EPR-014  
-
-**Work (founder choice):**
-
-- **Option F1:** Descope from v1 enterprise RC with signed ADR (fastest to integrated product).
-- **Option F2:** Greenfield minimal device grant binding reusing `ExecutionAuthorization` patterns (longer).
-
-**Acceptance:** Either ADR in `docs/architecture/` or first end-to-end device test path.
-
----
-
-## 3. Sequencing (technical dependencies)
-
-```mermaid
-flowchart TD
-  META[META-001: Bind audit SHA] --> WS_A[WS-A Canonical execution]
-  WS_A --> WS_B[WS-B Enterprise transport policy]
-  WS_A --> INT[Integration branch merges]
-  INT --> WS_D[WS-D RC evidence CI]
-  WS_D --> GATE[Founder owner gate]
-  GATE --> WS_C[WS-C Staging apply]
-  WS_C --> AG[Antigravity AG-EPR-024 sign-off]
-  WS_F[WS-F IoT scope gate] --> INT
-```
-
----
-
-## 4. Phase 1 exit criteria (for Antigravity)
+## 4. Phase 1 exit criteria (acceptance)
 
 | # | Criterion |
 |---|-----------|
-| 1 | Audit SHA reconciled or superseded by founder-written baseline amendment |
-| 2 | Integrated RC SHA recorded; CI green; evidence folder complete |
-| 3 | All **P0** rows in master register **CLOSED** or **accepted risk** with founder sign-off |
-| 4 | Cloud staging live tests complete OR explicitly deferred with written scope cut |
-| 5 | No claim of “Production Ready” — target **Stage 2 — Qualified Staging** at most |
-| 6 | Codex website changes isolated; no governance regressions from website merges |
+| 1 | All **P0** BLK rows **VERIFIED_CLOSED** or explicitly removed from enterprise scope with fail-closed behavior |
+| 2 | **B-integrated-rc** SHA with green CI and `release-evidence` bundle |
+| 3 | Antigravity re-validates P0 reproduction matrix on B-integrated-rc |
+| 4 | Cloud: remediation for **CLOUD-AG-01..07** + **re-audit** pass before provisioning |
+| 5 | No claim of unrestricted stdio in enterprise deployment guides |
+| 6 | Paddle billing verified — not mock — for paid plans on RC |
 
----
+## 5. Founder approval checklist
 
-## 5. Risks and mitigations
-
-| Risk | Mitigation |
-|------|------------|
-| Merging PRs reopens fixed bugs | Ordered merge + full CI each step; no “merge everything” |
-| Canonical wiring breaks Community | Profile-gated behavior; default remains community |
-| Staging cost | Stay within documented BOM; no new paid tiers without approval |
-| Doc drift (RELEASE_SECURITY_GATE) | Update gate doc in same PR as WS-A closure |
-
----
-
-## 6. Founder approval checklist
-
-- [ ] Accept integrated RC merge order (§1.1) or amend
-- [ ] Accept IoT Option F1 vs F2
-- [ ] Accept staging apply after WS-A (recommended)
-- [ ] Authorize Cursor to begin **WS-A** only after Antigravity acknowledges register
-
-**Upon approval:** Cursor opens integration branch, implements WS-A first, pushes after each logical commit, updates PR, and requests Antigravity re-validation.
+- [ ] Approve integration strategy (merge vs cherry-pick) after reviewing merge-tree report
+- [ ] Approve WS ordering (recommend WS-1 → WS-2 → WS-3 before cloud merge)
+- [ ] Approve enterprise vs Community transport policy (WS-2)
+- [ ] Authorize Cursor to begin **WS-1** only after Antigravity acknowledges corrected official register
