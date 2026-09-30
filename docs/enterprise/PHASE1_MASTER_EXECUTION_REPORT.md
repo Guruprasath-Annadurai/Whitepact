@@ -10,7 +10,7 @@
 |-----------|----------|------|
 | `origin/main` | `81beb3ac50e17068c7d6f26d9a07f2cb0442dbec` | Phase 0 baseline |
 | WS-1 branch tip | `c7272aefd…` (`c7272ae`) | PR [#129](https://github.com/Guruprasath-Annadurai/Whitepact/pull/129) — M0 docs + master report |
-| WS-2 branch tip | _pending push SHA_ | Lane A — enterprise stdio gate (opening) |
+| WS-2 branch tip | _see latest push on `cursor/whitepact-ws2-runtime-authority-f7a9`_ | PR #130 (stacked on #129 until WS-1 merges) |
 | WS-1 qualified code tree | `b5641b740df63a8a408a900186f1d3cd00803174` | Exact-final-HEAD CI [36725514596](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36725514596) **success** |
 | WS-1 implementation (Antigravity) | `0207ed83ad1e0560ef270ae8c24ccde294d8fa2c` | CI [36712288188](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36712288188) **success** |
 | Cloud branch tip | `7386fadf8c88dc78044e9e7aceef9b655f6496b2` | PR #128 — **not** integrated |
@@ -22,8 +22,8 @@
 
 | Gate | Status | Evidence |
 |------|--------|----------|
-| **M0** WS-1 closure | **Engineering complete**; Antigravity confirmation pending | `docs/ws1/WS1_EVIDENCE_PACKAGE.md` |
-| **M1** WS-2 runtime authority | **In progress** (Lane A) | `docs/ws2/` (opening) |
+| **M0** WS-1 closure | **Engineering complete**; Antigravity confirmation packet published | `docs/ws1/WS1_ANTIGRAVITY_CONFIRMATION_PACKET.md` |
+| **M1** WS-2 runtime authority | **In progress** (Lane A) — stdio routes + downgrade guard + matrix tests; **BLK-P0-02/03 OPEN** | PR #130, `tests/test_mcp_ws2_authority_matrix.py` |
 | **M2** WS-3 unified SaaS | Not started | — |
 | **M3** WS-4/5/6 | Not started | — |
 | **M4** WS-7/8 | Not started; Cloud **BLOCKED — UNSAFE TO PROVISION** | `docs/phase0/ANTIGRAVITY_CLOUD_PRESTAGING_AUDIT_REGISTER.md` |

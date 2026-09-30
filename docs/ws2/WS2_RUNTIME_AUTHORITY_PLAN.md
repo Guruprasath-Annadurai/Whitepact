@@ -16,8 +16,8 @@
 
 ## WS-2 delivery slices
 
-1. **Enterprise trust domain (started):** `Settings.mcp_trust_domain` — `enterprise` refuses stdio startup; community unchanged.
-2. **Adversarial matrix:** extend `tests/test_mcp_governance_dispatch.py` + new `tests/test_mcp_authority_adversarial.py` (forged/expired/replay grants, cross-tenant, resolver failures, direct upstream).
+1. **Enterprise trust domain (in progress):** `Settings.mcp_trust_domain` + `mcp/trust_domain.py` — all stdio routes guarded (`main`, `entrypoint_main_stdio`, `_run_stdio`, subprocess/module); production forbids community downgrade; `hosted_production_preflight` requires `enterprise`.
+2. **Adversarial matrix:** `tests/test_mcp_ws2_authority_matrix.py` plus existing `test_executor_bypass_invariant.py`, `test_mcp_governance_dispatch.py`, `test_upstream_gateway.py` (M1 Antigravity still required).
 3. **Binding proof:** assert no `dispatch_tool()` on governed paths without `authorize_execution` success (static + integration).
 4. **Documentation:** enterprise deployment guide — no claim of stdio protection in enterprise mode.
 

@@ -598,6 +598,13 @@ class Settings(BaseSettings):
         raise ValueError("web_verification_delivery_url must use HTTPS outside local development")
 
     @model_validator(mode="after")
+    def _enforce_mcp_trust_domain(self) -> Settings:
+        from responsibleai.mcp.trust_domain import assert_production_mcp_trust_domain
+
+        assert_production_mcp_trust_domain(self)
+        return self
+
+    @model_validator(mode="after")
     def _enforce_paddle_environment(self) -> Settings:
         """Keep Paddle credentials and API traffic in one explicit environment."""
         if not self.paddle_api_key:
