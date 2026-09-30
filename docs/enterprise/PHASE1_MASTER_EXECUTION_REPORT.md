@@ -10,7 +10,7 @@
 |-----------|----------|------|
 | `origin/main` | `81beb3ac50e17068c7d6f26d9a07f2cb0442dbec` | Phase 0 baseline |
 | WS-1 branch tip | `c7272aefd…` (`c7272ae`) | PR [#129](https://github.com/Guruprasath-Annadurai/Whitepact/pull/129) — M0 docs + master report |
-| WS-2 branch tip | `20bd279f2f25a7ab82e19191d157431bd3eee77e` | PR #130 (stacked on #129). **Note:** `.github/workflows/ci.yml` runs on PRs to `main` / `release/whitepact-v1-rc` only — exact-head CI for #130 triggers after rebase onto merged `main`. |
+| WS-2 branch tip | `b833731`+ (M1 matrix extension pending push) | PR [#130](https://github.com/Guruprasath-Annadurai/Whitepact/pull/130) stacked on #129. **Note:** full GitHub CI on `main` after WS-1 merge + rebase. |
 | WS-1 qualified code tree | `b5641b740df63a8a408a900186f1d3cd00803174` | Exact-final-HEAD CI [36725514596](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36725514596) **success** |
 | WS-1 implementation (Antigravity) | `0207ed83ad1e0560ef270ae8c24ccde294d8fa2c` | CI [36712288188](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36712288188) **success** |
 | Cloud branch tip | `7386fadf8c88dc78044e9e7aceef9b655f6496b2` | PR #128 — **not** integrated |
@@ -23,8 +23,8 @@
 | Gate | Status | Evidence |
 |------|--------|----------|
 | **M0** WS-1 closure | **Engineering complete**; Antigravity confirmation packet published | `docs/ws1/WS1_ANTIGRAVITY_CONFIRMATION_PACKET.md` |
-| **M1** WS-2 runtime authority | **In progress** (Lane A) — stdio routes + downgrade guard + matrix tests; **BLK-P0-02/03 OPEN** | PR #130, `tests/test_mcp_ws2_authority_matrix.py` |
-| **M2** WS-3 unified SaaS | Not started | — |
+| **M1** WS-2 runtime authority | **In progress** (Lane A) — path map, static bypass invariant, stale epoch / fail-closed / concurrency matrix; **BLK-P0-02/03 OPEN** | PR #130, `docs/ws2/WS2_M1_EVIDENCE_PACKAGE.md` |
+| **M2** WS-3 unified SaaS | Analysis only (Lane B) | `docs/ws3/WS3_SAAS_UNIFIED_ANALYSIS.md` |
 | **M3** WS-4/5/6 | Not started | — |
 | **M4** WS-7/8 | Not started; Cloud **BLOCKED — UNSAFE TO PROVISION** | `docs/phase0/ANTIGRAVITY_CLOUD_PRESTAGING_AUDIT_REGISTER.md` |
 | **M5** Single integrated SHA | Open | — |
@@ -64,7 +64,8 @@ Full register: `docs/phase0/PHASE0_OFFICIAL_DEFECT_REGISTER.md`. Supplemental: `
 |-------|----------------|--------|
 | WS-1 closure CI | [36725514596](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36725514596) | **success** (wheel-smoke 3.11/3.12, full test matrix) |
 | Default wheel smoke | `scripts/wheel_default_install_smoke.sh` | **PASS** (exit 1 + guidance, no traceback) |
-| MCP governance (hosted) | `tests/test_mcp_governance_dispatch.py` | Exists; re-run on WS-2 branch |
+| WS-2 authority bundle | `pytest tests/test_mcp_ws2_authority_matrix.py tests/test_ws2_execution_boundary_invariant.py …` | **48 passed** (local, matrix + phase1 admission subset) |
+| MCP governance (hosted) | `tests/test_mcp_governance_dispatch.py` | Included in WS-2 bundle |
 
 ## Antigravity dispositions
 
