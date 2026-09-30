@@ -5,25 +5,28 @@
 | Workstream | Phase 1 WS-1 only |
 | Base SHA | `81beb3ac50e17068c7d6f26d9a07f2cb0442dbec` |
 | Implementation branch | `cursor/whitepact-ws1-cli-identity-f7a9` |
-| Implementation HEAD (qualified) | `1dcb622d4963e6e08bfba562a387a3cfb15620c0` |
-| WS-1 code commit (same tree) | `787ab98ac7ebe85bf1d769be1e2ce3d0a52fdcdb` |
-| Qualified CI run | [36704297202](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36704297202) — **success** |
+| Implementation HEAD (installation hardening) | _pending push — see PR #129_ |
+| Prior qualified HEAD | `1dcb622d4963e6e08bfba562a387a3cfb15620c0` |
+| Prior qualified CI run | [36704297202](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36704297202) — **success** |
 
 ## Finding scope (do not conflate)
 
 | ID | WS-1 addresses | Status after WS-1 |
 |----|----------------|-------------------|
-| **BLK-P0-01** | CLI launches BiasBuster instead of WhitePact | **Mitigated in tree** — `whitepact` → `whitepact.cli:main`; Antigravity retest required |
+| **BLK-P0-01** | CLI launches BiasBuster instead of WhitePact | **Mitigated in tree** — `whitepact` → `whitepact.cli:main`; Antigravity installation retest required |
 | **BLK-P0-05** | Published package/product naming mismatch | **Open** — PyPI distribution remains `rai-governance-platform`; WS-1 documents identity only, **no** distribution rename or PyPI publish |
 
 ## Changed files (inventory)
 
 | Path | Change |
 |------|--------|
-| `src/whitepact/cli.py` | **CREATE** — WhitePact product CLI |
+| `src/whitepact/cli.py` | Product CLI; **lazy sovereign/dashboard command registration** |
 | `src/biasbuster/cli.py` | Sovereign commands removed; BiasBuster-only top-level |
 | `pyproject.toml` | `whitepact` → `whitepact.cli:main` |
-| `tests/test_whitepact_cli_entrypoint.py` | **CREATE** — entrypoint regression |
+| `scripts/wheel_default_install_smoke.sh` | **CREATE** — default wheel install smoke |
+| `scripts/wheel_dashboard_install_smoke.sh` | **CREATE** — `[dashboard]` wheel smoke |
+| `.github/workflows/ci.yml` | **CREATE** `wheel-smoke` job (Py3.11 + Py3.12) |
+| `tests/test_whitepact_cli_entrypoint.py` | Entrypoint regression + lazy-import guard |
 | `tests/test_mcp_server.py` | `TestCliEntryPoints` — distinct WS-1 script mappings |
 | `tests/sovereign/test_cli_sovereign.py` | Import `whitepact.cli` |
 | `docs/PACKAGE_IDENTITY.md` | CLI entry-point table |
@@ -32,20 +35,32 @@
 
 ## Acceptance evidence
 
-### 1–2. Clean install & `whitepact --help`
+### 1. Default wheel install (no extras)
+
+Built wheel from sdist (`python -m build`), clean venv, `pip install dist/*.whl` only:
 
 ```bash
-python3 -m venv /tmp/wp-ws1-venv
-/tmp/wp-ws1-venv/bin/pip install "/path/to/Whitepact[dashboard]"
-/tmp/wp-ws1-venv/bin/whitepact --help
-/tmp/wp-ws1-venv/bin/whitepact info
+env -u PYTHONPATH bash scripts/wheel_default_install_smoke.sh
 ```
 
-Expected: help text describes **WhitePact — AI governance platform CLI**; `info` shows `rai-governance-platform`.
+Verifies:
 
-### 3. CLI behavior
+- `whitepact --help` — **WhitePact** product CLI (no import-time sovereign stack)
+- `whitepact --version` / `whitepact info`
+- `biasbuster --help` — legacy entry unchanged
+- `whitepact doctor` — **ClickException** with `pip install 'rai-governance-platform[dashboard]'` guidance (no traceback)
 
-- `whitepact doctor --json` — sovereign diagnostic (exit 0)
+### 2. Wheel install with `[dashboard]`
+
+```bash
+env -u PYTHONPATH bash scripts/wheel_dashboard_install_smoke.sh
+```
+
+Verifies `whitepact doctor --json` returns `"checks"` (sovereign path loads when extras present).
+
+### 3. CLI behavior (editable / dev install)
+
+- `whitepact doctor --json` — sovereign diagnostic (exit 0) when dashboard stack available
 - `whitepact bias run --help` — bias probe help (nested under `bias`)
 - `biasbuster run --help` — unchanged legacy entry
 
@@ -70,17 +85,17 @@ pytest tests/test_whitepact_cli_entrypoint.py tests/sovereign/test_cli_sovereign
 
 | Field | Value |
 |-------|--------|
-| HEAD SHA | `1dcb622d4963e6e08bfba562a387a3cfb15620c0` |
-| Run URL | https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36704297202 |
-| Py3.11 `Lint · Type-check · Test` | **success** |
-| Py3.12 `Lint · Type-check · Test` | **success** |
-| Workflow conclusion | **success** |
+| HEAD SHA | _updated after green `wheel-smoke` + full workflow on installation-hardening commit_ |
+| Run URL | _pending_ |
+| `Wheel install smoke` (Py3.11 / Py3.12) | _pending_ |
+| `Lint · Type-check · Test` (Py3.11 / Py3.12) | _pending_ |
+| Workflow conclusion | _pending_ |
 
-Prior run [36694625330](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36694625330) failed on `TestCliEntryPoints` (fixed in `787ab98`). Run [36699437306](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36699437306) had Py3.11 **success** but workflow **cancelled** at 45m before Py3.12 finished.
+Prior qualified run: [36704297202](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36704297202) on `1dcb622` (pre-installation-hardening).
 
 ### 8. Antigravity
 
-Independent retest of BLK-P0-01 on WS-1 HEAD.
+Independent retest of **default-install** CLI launch (post lazy-import fix) on WS-1 HEAD.
 
 ## Distribution
 
