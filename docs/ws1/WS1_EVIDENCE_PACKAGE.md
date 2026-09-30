@@ -17,8 +17,6 @@
 
 ## Changed files (inventory)
 
-## Changed files (inventory)
-
 | Path | Change |
 |------|--------|
 | `src/whitepact/cli.py` | **CREATE** — WhitePact product CLI |
