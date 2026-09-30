@@ -17,6 +17,7 @@
 | **Closure implementation** | `5cfa1f049bd974c40804db462d863d23f86af544` | `5cfa1f0` | Hardened `wheel_default_install_smoke.sh` + evidence revision |
 | **Final HEAD (exact-final-HEAD CI)** | `b5641b740df63a8a408a900186f1d3cd00803174` | `b5641b7` | Empty CI retrigger; **identical code tree to `5cfa1f0`** |
 | Final closure CI | [36725514596](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36725514596) | | **success** on `b5641b7` |
+| Documentation-only (branch tip) | `e2553ff…` | `e2553ff` | Records final CI in this package; **no code change** |
 
 Prior WS-1 entrypoint qualification: `1dcb622` — [36704297202](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36704297202).
 
