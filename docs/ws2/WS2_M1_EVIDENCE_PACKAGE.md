@@ -6,8 +6,8 @@
 
 | Milestone | SHA | Status |
 |-----------|-----|--------|
-| **Current development head** | `d9942e679251a13bf9027d30fda07ee4e16c4fdb` (superseded on push) | Replaced when branch advances |
-| **Final implementation head** | *pending* | Set when Lane A engineering complete |
+| **Current development head** | *see git tip after each push* | Authoritative for local bundle runs on stacked branch |
+| **Final implementation head** | *pending* | Set when Lane A engineering complete (not yet declared) |
 | **Final rebased head** (onto merged WS-1 `main`) | *pending* | Requires PR #129 merge + rebase of #130 |
 | **Exact-head CI-qualified SHA** | *pending* | Requires green GitHub Actions on rebased PR #130 |
 
@@ -54,7 +54,7 @@ pytest \
   -q
 ```
 
-**Exact pass count:** recorded in `docs/enterprise/PHASE1_MASTER_EXECUTION_REPORT.md` after each milestone push (not `48+`).
+**Latest local bundle result (stacked branch, pre-rebase):** **181 passed** — log: `/opt/cursor/artifacts/ws2_m1_full_bundle.log` (2026-09-30 UTC). This is **not** exact-head CI evidence.
 
 ## PostgreSQL concurrency qualification
 
