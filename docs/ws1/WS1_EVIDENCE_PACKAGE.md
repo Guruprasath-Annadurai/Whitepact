@@ -5,8 +5,17 @@
 | Workstream | Phase 1 WS-1 only |
 | Base SHA | `81beb3ac50e17068c7d6f26d9a07f2cb0442dbec` |
 | Implementation branch | `cursor/whitepact-ws1-cli-identity-f7a9` |
-| Implementation HEAD | `265ad1a633da5114a5be0e209eb6b58c8214416b` |
-| Closes (target) | BLK-P0-01, BLK-P0-05 (partial P3-03 docs) |
+| Implementation HEAD | *(updated at final commit — see § CI)* |
+| Qualified CI run | *(updated after green exact-head run)* |
+
+## Finding scope (do not conflate)
+
+| ID | WS-1 addresses | Status after WS-1 |
+|----|----------------|-------------------|
+| **BLK-P0-01** | CLI launches BiasBuster instead of WhitePact | **Mitigated in tree** — `whitepact` → `whitepact.cli:main`; Antigravity retest required |
+| **BLK-P0-05** | Published package/product naming mismatch | **Open** — PyPI distribution remains `rai-governance-platform`; WS-1 documents identity only, **no** distribution rename or PyPI publish |
+
+## Changed files (inventory)
 
 ## Changed files (inventory)
 
@@ -16,6 +25,7 @@
 | `src/biasbuster/cli.py` | Sovereign commands removed; BiasBuster-only top-level |
 | `pyproject.toml` | `whitepact` → `whitepact.cli:main` |
 | `tests/test_whitepact_cli_entrypoint.py` | **CREATE** — entrypoint regression |
+| `tests/test_mcp_server.py` | `TestCliEntryPoints` — distinct WS-1 script mappings |
 | `tests/sovereign/test_cli_sovereign.py` | Import `whitepact.cli` |
 | `docs/PACKAGE_IDENTITY.md` | CLI entry-point table |
 | `MIGRATION_WHITEPACT_V2.md` | Section 4 target entry |
@@ -53,12 +63,21 @@ Expected: help text describes **WhitePact — AI governance platform CLI**; `inf
 ### 6. Regression tests
 
 ```bash
-pytest tests/test_whitepact_cli_entrypoint.py tests/sovereign/test_cli_sovereign.py tests/test_cli.py -q --no-cov
+pytest tests/test_whitepact_cli_entrypoint.py tests/sovereign/test_cli_sovereign.py tests/test_cli.py \
+  tests/test_mcp_server.py::TestCliEntryPoints -q --no-cov
 ```
 
-### 7. CI
+### 7. CI (exact HEAD)
 
-Record GitHub Actions run URL on branch HEAD after push.
+Fill after push:
+
+| Field | Value |
+|-------|--------|
+| HEAD SHA | |
+| Run URL | |
+| Py3.11 Test job | |
+| Py3.12 Test job | |
+| Conclusion | |
 
 ### 8. Antigravity
 
