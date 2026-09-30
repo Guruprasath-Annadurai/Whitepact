@@ -14,8 +14,9 @@
 | **CI-qualified WS-1 implementation** | `0207ed83ad1e0560ef270ae8c24ccde294d8fa2c` | `0207ed8` | Lazy sovereign CLI, wheel-smoke CI job, SPDX on smoke scripts. **Antigravity installation retest target.** |
 | Implementation CI | [36712288188](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36712288188) | | **success** on `0207ed8` |
 | Documentation-only (interim) | `f4a1ef7…` | `f4a1ef7` | Recorded `0207ed8` + run 36712288188; no code change |
-| **Final closure HEAD** | _updated after push_ | | Smoke assertion hardening + this evidence revision |
-| Final closure CI | _updated after green run_ | | Exact-final-HEAD qualification |
+| **Closure implementation** | `5cfa1f049bd974c40804db462d863d23f86af544` | `5cfa1f0` | Hardened `wheel_default_install_smoke.sh` + evidence revision |
+| **Final HEAD (exact-final-HEAD CI)** | `b5641b740df63a8a408a900186f1d3cd00803174` | `b5641b7` | Empty CI retrigger; **identical code tree to `5cfa1f0`** |
+| Final closure CI | [36725514596](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36725514596) | | **success** on `b5641b7` |
 
 Prior WS-1 entrypoint qualification: `1dcb622` — [36704297202](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36704297202).
 
@@ -84,9 +85,22 @@ Workflow conclusion: **success**
 | Frontend closure | — | **success** |
 | Accessibility (WCAG2AA) | — | **success** |
 
-### 4. CI — final closure HEAD
+### 4. CI — final closure HEAD (`b5641b7`, same tree as `5cfa1f0`)
 
-_Filled after exact-final-HEAD run completes._
+Run: https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36725514596  
+Workflow conclusion: **success**
+
+| Job | Python | Result |
+|-----|--------|--------|
+| Wheel install smoke | 3.11 | **success** |
+| Wheel install smoke | 3.12 | **success** |
+| Lint · Type-check · Test | 3.11 | **success** |
+| Lint · Type-check · Test | 3.12 | **success** |
+| Build distribution | 3.12 | **success** |
+| Helm chart lint | — | **success** |
+| i18n unit tests | — | **success** |
+| Frontend closure | — | **success** |
+| Accessibility (WCAG2AA) | — | **success** |
 
 ### 5. Regression tests (local / CI subset)
 
@@ -101,7 +115,7 @@ pytest tests/test_whitepact_cli_entrypoint.py tests/sovereign/test_cli_sovereign
 |------|--------|
 | Retest target commit | `0207ed83ad1e0560ef270ae8c24ccde294d8fa2c` |
 | Outcome | **CONDITIONAL PASS** — implementation accepted |
-| Conditions for full sign-off | (1) Finalize this evidence package with verified SHAs and CI matrix; (2) Harden default-install smoke so `doctor` exit status and guidance are asserted without masking failures (`|| true`). Closure commits address both; **no** WS-2, merge, or PyPI publish required for BLK-P0-01 closure |
+| Conditions for full sign-off | (1) Finalize this evidence package with verified SHAs and CI matrix; (2) Harden default-install smoke so `doctor` exit status and guidance are asserted without masking failures. **Met** in `5cfa1f0` / CI `b5641b7` ([36725514596](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36725514596)). **No** WS-2, merge, or PyPI publish in WS-1 |
 
 ### 7. Distribution
 
