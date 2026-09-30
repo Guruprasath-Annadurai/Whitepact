@@ -5,7 +5,7 @@
 | Workstream | Phase 1 WS-1 only |
 | Base SHA | `81beb3ac50e17068c7d6f26d9a07f2cb0442dbec` |
 | Implementation branch | `cursor/whitepact-ws1-cli-identity-f7a9` |
-| Implementation HEAD | `e5ab9ac71222e2ea75556ad773eb45a38f70dc8a` |
+| Implementation HEAD | `265ad1a633da5114a5be0e209eb6b58c8214416b` |
 | Closes (target) | BLK-P0-01, BLK-P0-05 (partial P3-03 docs) |
 
 ## Changed files (inventory)
