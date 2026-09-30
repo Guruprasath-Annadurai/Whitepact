@@ -6,7 +6,7 @@
 
 | Milestone | SHA | Status |
 |-----------|-----|--------|
-| **Current development head** | *see git tip after each push* | Authoritative for local bundle runs on stacked branch |
+| **Current development head** | `20509e038383aaf672916d86b8847a23916d41de` | Authoritative for local bundle runs on stacked branch |
 | **Final implementation head** | *pending* | Set when Lane A engineering complete (not yet declared) |
 | **Final rebased head** (onto merged WS-1 `main`) | *pending* | Requires PR #129 merge + rebase of #130 |
 | **Exact-head CI-qualified SHA** | *pending* | Requires green GitHub Actions on rebased PR #130 |

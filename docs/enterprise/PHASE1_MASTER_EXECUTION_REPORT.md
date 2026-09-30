@@ -64,7 +64,7 @@ Full register: `docs/phase0/PHASE0_OFFICIAL_DEFECT_REGISTER.md`. Supplemental: `
 |-------|----------------|--------|
 | WS-1 closure CI | [36725514596](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36725514596) | **success** (wheel-smoke 3.11/3.12, full test matrix) |
 | Default wheel smoke | `scripts/wheel_default_install_smoke.sh` | **PASS** (exit 1 + guidance, no traceback) |
-| WS-2 authority bundle | `pytest tests/test_mcp_ws2_authority_matrix.py tests/test_ws2_execution_boundary_invariant.py …` | **48 passed** (local, matrix + phase1 admission subset) |
+| WS-2 pre-M1 bundle (local, stacked branch) | 15 modules — see `docs/ws2/WS2_M1_EVIDENCE_PACKAGE.md` | **181 passed** (`/opt/cursor/artifacts/ws2_m1_full_bundle.log`); PostgreSQL nonce test **PASS** when isolated PG available |
 | MCP governance (hosted) | `tests/test_mcp_governance_dispatch.py` | Included in WS-2 bundle |
 
 ## Antigravity dispositions
