@@ -10,7 +10,7 @@
 |-----------|----------|------|
 | `origin/main` | `81beb3ac50e17068c7d6f26d9a07f2cb0442dbec` | Phase 0 baseline |
 | WS-1 branch tip | `c7272aefd…` (`c7272ae`) | PR [#129](https://github.com/Guruprasath-Annadurai/Whitepact/pull/129) — M0 docs + master report |
-| WS-2 branch tip | `b833731`+ (M1 matrix extension pending push) | PR [#130](https://github.com/Guruprasath-Annadurai/Whitepact/pull/130) stacked on #129. **Note:** full GitHub CI on `main` after WS-1 merge + rebase. |
+| WS-2 development head | advancing on `cursor/whitepact-ws2-runtime-authority-f7a9` | PR [#130](https://github.com/Guruprasath-Annadurai/Whitepact/pull/130) stacked on #129 — **no exact-head CI until rebase** |
 | WS-1 qualified code tree | `b5641b740df63a8a408a900186f1d3cd00803174` | Exact-final-HEAD CI [36725514596](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36725514596) **success** |
 | WS-1 implementation (Antigravity) | `0207ed83ad1e0560ef270ae8c24ccde294d8fa2c` | CI [36712288188](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36712288188) **success** |
 | Cloud branch tip | `7386fadf8c88dc78044e9e7aceef9b655f6496b2` | PR #128 — **not** integrated |
