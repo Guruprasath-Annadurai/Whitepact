@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import re
+import sys
 from pathlib import Path
 
 from click.testing import CliRunner
@@ -67,3 +68,17 @@ def test_whitepact_info_command() -> None:
     result = runner.invoke(whitepact_main, ["info"])
     assert result.exit_code == 0
     assert "rai-governance-platform" in result.output
+
+
+def test_whitepact_cli_import_does_not_eager_load_sovereign() -> None:
+    """Default installs must not import DB-backed sovereign stack at CLI import."""
+    sovereign_cli = sys.modules.get("responsibleai.sovereign.cli")
+    # Re-import after other tests may have loaded sovereign; assert lazy path on fresh import.
+    for name in list(sys.modules):
+        if name == "whitepact.cli" or name.startswith("responsibleai.sovereign"):
+            del sys.modules[name]
+    import whitepact.cli as wp_cli  # noqa: F401
+
+    assert "responsibleai.sovereign.cli" not in sys.modules
+    if sovereign_cli is not None:
+        sys.modules["responsibleai.sovereign.cli"] = sovereign_cli

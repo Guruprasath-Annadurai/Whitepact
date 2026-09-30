@@ -5,8 +5,9 @@
 | Workstream | Phase 1 WS-1 only |
 | Base SHA | `81beb3ac50e17068c7d6f26d9a07f2cb0442dbec` |
 | Implementation branch | `cursor/whitepact-ws1-cli-identity-f7a9` |
-| Implementation HEAD | *(updated at final commit — see § CI)* |
-| Qualified CI run | *(updated after green exact-head run)* |
+| Implementation HEAD (qualified) | `1dcb622d4963e6e08bfba562a387a3cfb15620c0` |
+| WS-1 code commit (same tree) | `787ab98ac7ebe85bf1d769be1e2ce3d0a52fdcdb` |
+| Qualified CI run | [36704297202](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36704297202) — **success** |
 
 ## Finding scope (do not conflate)
 
@@ -67,15 +68,15 @@ pytest tests/test_whitepact_cli_entrypoint.py tests/sovereign/test_cli_sovereign
 
 ### 7. CI (exact HEAD)
 
-Fill after push:
-
 | Field | Value |
 |-------|--------|
-| HEAD SHA | |
-| Run URL | |
-| Py3.11 Test job | |
-| Py3.12 Test job | |
-| Conclusion | |
+| HEAD SHA | `1dcb622d4963e6e08bfba562a387a3cfb15620c0` |
+| Run URL | https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36704297202 |
+| Py3.11 `Lint · Type-check · Test` | **success** |
+| Py3.12 `Lint · Type-check · Test` | **success** |
+| Workflow conclusion | **success** |
+
+Prior run [36694625330](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36694625330) failed on `TestCliEntryPoints` (fixed in `787ab98`). Run [36699437306](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36699437306) had Py3.11 **success** but workflow **cancelled** at 45m before Py3.12 finished.
 
 ### 8. Antigravity
 
