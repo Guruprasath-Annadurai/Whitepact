@@ -344,29 +344,25 @@ async def _read_resource(uri: types.AnyUrl) -> str:
 
 
 async def _run_stdio() -> None:
+    from responsibleai.mcp.trust_domain import refuse_ungoverned_stdio_exit
+
+    refuse_ungoverned_stdio_exit()
     async with stdio_server() as (read_stream, write_stream):
         init_options = server.create_initialization_options()
         await server.run(read_stream, write_stream, init_options)
 
 
-_ENTERPRISE_STDIO_REFUSAL = (
-    "Enterprise MCP trust domain forbids ungoverned stdio execution. "
-    "Set WHITEPACT_MCP_TRUST_DOMAIN=community only for documented local "
-    "self-hosted use, or run governed hosted MCP (mcp_governance_enabled=true) "
-    "with tenant-scoped credentials."
-)
+def _run_stdio_main_body() -> None:
+    _logger.info("starting %s v1.2.0 (stdio)", server.name)
+    _log_invocation_name("stdio server")
+    asyncio.run(_run_stdio())
 
 
 def main() -> None:
     """CLI entry point: whitepact-mcp / responsibleai-mcp (stdio, self-hosted)."""
-    from responsibleai.dashboard.config import get_settings
+    from responsibleai.mcp.trust_domain import entrypoint_main_stdio
 
-    if get_settings().mcp_trust_domain == "enterprise":
-        _logger.error(_ENTERPRISE_STDIO_REFUSAL)
-        raise SystemExit(2)
-    _logger.info("starting %s v1.2.0 (stdio)", server.name)
-    _log_invocation_name("stdio server")
-    asyncio.run(_run_stdio())
+    entrypoint_main_stdio()
 
 
 # ── HTTP/SSE transport (hosted, billed, plan-gated) ─────────────────────────────
@@ -411,6 +407,11 @@ def hosted_production_preflight(
         raise HostedProductionSecurityError(
             "Production hosted MCP requires mcp_governance_enabled=true. "
             "Hosted execution must not start without tenant-scoped governance."
+        )
+    if getattr(settings, "mcp_trust_domain", "community") != "enterprise":
+        raise HostedProductionSecurityError(
+            "Production hosted MCP requires mcp_trust_domain=enterprise. "
+            "Refusing enterprise-to-community trust downgrade."
         )
     hosts = (
         allowed_hosts
