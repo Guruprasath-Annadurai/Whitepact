@@ -1,87 +1,89 @@
 # WS-2 — M1 evidence package (engineering)
 
-**Status:** Engineering in progress — **not** M1 qualified. Cursor does not self-certify closure.
+**Status:** Engineering in progress — **not** M1 qualified. **Do not** request Antigravity M1 until integration gate (§12) is satisfied.
 
-| Field | Value |
-|-------|--------|
-| Base `origin/main` SHA | `81beb3ac50e17068c7d6f26d9a07f2cb0442dbec` |
-| WS-1 PR | [#129](https://github.com/Guruprasath-Annadurai/Whitepact/pull/129) — **not merged** at time of this revision |
-| WS-2 branch | `cursor/whitepact-ws2-runtime-authority-f7a9` |
-| WS-2 PR | [#130](https://github.com/Guruprasath-Annadurai/Whitepact/pull/130) (stacked on WS-1) |
-| WS-2 tip | `cf65755a0c99814e6642781f5115a0059d333ea1` |
-| Findings | **BLK-P0-02 OPEN**, **BLK-P0-03 OPEN** until Antigravity M1 |
+## SHA ladder (no drift)
 
-## Changed-file inventory (WS-2 lane, cumulative)
+| Milestone | SHA | Status |
+|-----------|-----|--------|
+| **Current development head** | `d9942e679251a13bf9027d30fda07ee4e16c4fdb` (superseded on push) | Replaced when branch advances |
+| **Final implementation head** | *pending* | Set when Lane A engineering complete |
+| **Final rebased head** (onto merged WS-1 `main`) | *pending* | Requires PR #129 merge + rebase of #130 |
+| **Exact-head CI-qualified SHA** | *pending* | Requires green GitHub Actions on rebased PR #130 |
 
-- `src/responsibleai/mcp/trust_domain.py` — enterprise stdio refusal, production trust domain
-- `src/responsibleai/mcp/server.py` — stdio guards, hosted preflight
-- `src/responsibleai/dashboard/config.py` — `mcp_trust_domain`, production validator
-- `tests/test_mcp_enterprise_trust_domain.py`
-- `tests/test_mcp_ws2_authority_matrix.py`
-- `tests/test_ws2_execution_boundary_invariant.py`
-- `docs/ws2/WS2_RUNTIME_AUTHORITY_PLAN.md`
-- `docs/ws2/WS2_EXECUTION_PATH_MAP.md`
-- `docs/ws2/WS2_M1_EVIDENCE_PACKAGE.md` (this file)
-- `docs/ws2/WS2_ANTIGRAVITY_M1_PACKET.md`
-- `docs/enterprise/PHASE1_MASTER_EXECUTION_REPORT.md`
+> During active development, only **current development head** is authoritative for local runs. Older SHAs and pass counts are historical, not exact-head evidence.
 
-## Execution path map
+## Integration gate (WS-1 / WS-2)
 
-See `docs/ws2/WS2_EXECUTION_PATH_MAP.md`.
+| Step | Status |
+|------|--------|
+| Antigravity WS-1 M0 confirmation | Pending founder/Antigravity |
+| Founder approves merge PR #129 | Not done |
+| Merged `main` SHA recorded | *pending* (`origin/main` was `81beb3ac50e17068c7d6f26d9a07f2cb0442dbec` at last check) |
+| PR #130 rebased on merged `main` | *pending* |
+| Full repo CI on rebased head | *pending* |
 
-## Adversarial test matrix (representative)
+## Findings disposition
 
-| Scenario | Test location | Dispatch not called |
-|----------|---------------|---------------------|
-| Enterprise stdio | `test_mcp_ws2_authority_matrix.py` | N/A (process exit) |
-| Production community downgrade | matrix + `test_mcp_enterprise_trust_domain.py` | N/A |
-| Hosted governance unavailable | matrix + `test_mcp_governance_dispatch.py` | Y |
-| Forged / expired / cross-tenant / replay grant | matrix + `test_executor_bypass_invariant.py` | Y |
-| Stale revocation epoch | matrix + `test_phase1_live_admission.py` | Y |
-| Resolver / evidence fail-closed | matrix + `test_final_coverage_batch11.py` | Y |
-| Upstream unregistered | matrix + `test_upstream_gateway.py` | Y |
-| Concurrent nonce consumption | matrix + `test_phase1_execution.py` | exactly one dispatch |
-| Static bypass invariant | `test_ws2_execution_boundary_invariant.py` | CI guard |
+| ID | Status |
+|----|--------|
+| BLK-P0-02 | **OPEN** |
+| BLK-P0-03 | **OPEN** |
 
-## Test counts (local, focused bundle)
+## Test bundle (local)
 
-Command:
+Run the full WS-2 pre-M1 bundle:
 
 ```bash
-pytest tests/test_mcp_ws2_authority_matrix.py \
-  tests/test_ws2_execution_boundary_invariant.py \
+pytest \
   tests/test_mcp_enterprise_trust_domain.py \
+  tests/test_mcp_ws2_authority_matrix.py \
+  tests/test_ws2_execution_boundary_invariant.py \
   tests/test_executor_bypass_invariant.py \
+  tests/test_mcp_ws2_live_invalidation_matrix.py \
+  tests/test_mcp_ws2_failclosed_dependency_matrix.py \
+  tests/test_mcp_ws2_upstream_reconciliation.py \
+  tests/test_ws2_isolation_child_admission.py \
+  tests/test_mcp_ws2_worker_retry_matrix.py \
   tests/test_mcp_governance_dispatch.py \
+  tests/test_upstream_gateway.py \
+  tests/test_resume_after_approval.py \
   tests/test_phase1_execution.py \
-  tests/test_phase1_live_admission.py -q
+  tests/test_phase1_live_admission.py \
+  tests/test_phase7a_feature_flag.py \
+  -q
 ```
 
-Result: **48+** tests in WS-2 + admission bundle (exact count varies with collection); last run **48 passed** on WS-2 matrix + phase1 admission subset.
+**Exact pass count:** recorded in `docs/enterprise/PHASE1_MASTER_EXECUTION_REPORT.md` after each milestone push (not `48+`).
+
+## PostgreSQL concurrency qualification
+
+| Environment | Command | Result |
+|-------------|---------|--------|
+| `WHITEPACT_TEST_POSTGRES_EXECUTION` (auto-configured when isolated PG reachable) | `pytest tests/test_phase1_execution.py::test_postgres_distinct_connections_consume_once -q` | **PASS** (local cloud agent run) |
+| Unavailable PG | Same test | **skipped** — must not be treated as equivalent to SQLite |
 
 ## CI URLs
 
-- PR #130 is stacked on WS-1; **full GitHub CI on `main` triggers after rebase onto merged #129**.
-- WS-1 qualified CI: [36725514596](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36725514596)
+| Run | URL |
+|-----|-----|
+| WS-1 qualified (reference only) | [36725514596](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36725514596) |
+| PR #130 exact-head | *pending rebase onto merged `main`* |
 
-## Database / concurrency
+## Artifacts
 
-- SQLite: `test_phase1_execution.py::test_sqlite_distinct_connections_consume_once`
-- PostgreSQL: `test_postgres_distinct_connections_consume_once` when `WHITEPACT_TEST_POSTGRES_EXECUTION` is set
+- Execution paths: `docs/ws2/WS2_EXECUTION_PATH_MAP.md`
+- Allowlist review: `docs/ws2/WS2_EXECUTION_BOUNDARY_ALLOWLIST.md`
+- Antigravity packet (draft): `docs/ws2/WS2_ANTIGRAVITY_M1_PACKET.md`
 
 ## Known limitations
 
-- Community stdio remains intentionally ungoverned for documented local use; enterprise mode refuses stdio entirely.
-- Exact-head CI for PR #130 pending WS-1 merge + rebase.
-- Performance numbers captured only as sub-second smoke in matrix (not a SLA).
+- Community stdio remains ungoverned by design; enterprise forbids stdio.
+- Isolation child runner (LOCAL_DEV) executes `dispatch_tool` on stdin JSON without cryptographic admission — production blocks same-process execution without broker (`test_ws2_isolation_child_admission.py`).
+- Phase 7A worker queue qualified only in non-production; production gate refuses dispatcher start.
+- Stacked-branch local tests ≠ post-rebase integration qualification.
 
-## Non-goals (this milestone)
+## Non-goals
 
-- PyPI publish (BLK-P0-05)
-- Cloud provision / terraform apply
-- WS-3 SaaS integration merge
-- Self-declared M1 closure
-
-## Antigravity handoff
-
-See `docs/ws2/WS2_ANTIGRAVITY_M1_PACKET.md`.
+- Antigravity M1 self-certification
+- Merge PR #130 / publish PyPI / cloud provision
