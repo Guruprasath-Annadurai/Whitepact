@@ -9,7 +9,6 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-from biasbuster.cli import main
 from responsibleai.sovereign.exit_codes import (
     EXIT_GOVERNANCE,
     EXIT_INVALID,
@@ -17,6 +16,7 @@ from responsibleai.sovereign.exit_codes import (
     EXIT_UNAVAILABLE,
     EXIT_UNKNOWN,
 )
+from whitepact.cli import main
 
 
 def test_cli_status_json() -> None:

@@ -111,7 +111,7 @@ responsibleai-mcp-http = "responsibleai.mcp.server:main_http"
 **Target**: add, do not replace:
 
 ```
-whitepact         = "biasbuster.cli:main"          # new preferred name
+whitepact         = "whitepact.cli:main"           # WhitePact product CLI (WS-1)
 whitepact-mcp     = "responsibleai.mcp.server:main"
 whitepact-mcp-http = "responsibleai.mcp.server:main_http"
 ```

@@ -133,17 +133,9 @@ def _print_probe_result(result: ProbeResult) -> None:
 
 
 @click.group()
-@click.version_option()
+@click.version_option(package_name="biasbuster")
 def main() -> None:
-    """WhitePact CLI — bias testing and Sovereign governance diagnostics."""
-
-
-from responsibleai.sovereign.cli import register_top_level, sovereign  # noqa: E402
-from responsibleai.sovereign.cli_aliases import register_top_level_aliases  # noqa: E402
-
-main.add_command(sovereign)
-register_top_level(main)
-register_top_level_aliases(main)
+    """BiasBuster — open-source bias testing for LLMs."""
 
 
 @main.command()
