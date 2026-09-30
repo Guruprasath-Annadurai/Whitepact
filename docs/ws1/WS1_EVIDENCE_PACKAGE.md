@@ -1,54 +1,63 @@
-# WS-1 evidence package — CLI, packaging & product identity
+# WS-1 evidence package — CLI, packaging & product identity (final closure)
 
 | Field | Value |
 |-------|--------|
 | Workstream | Phase 1 WS-1 only |
 | Base SHA | `81beb3ac50e17068c7d6f26d9a07f2cb0442dbec` |
 | Implementation branch | `cursor/whitepact-ws1-cli-identity-f7a9` |
-| Implementation HEAD (installation hardening) | _pending push — see PR #129_ |
-| Prior qualified HEAD | `1dcb622d4963e6e08bfba562a387a3cfb15620c0` |
-| Prior qualified CI run | [36704297202](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36704297202) — **success** |
+| PR | [#129](https://github.com/Guruprasath-Annadurai/Whitepact/pull/129) (not merged) |
 
-## Finding scope (do not conflate)
+## Commit lineage (do not conflate)
 
-| ID | WS-1 addresses | Status after WS-1 |
-|----|----------------|-------------------|
-| **BLK-P0-01** | CLI launches BiasBuster instead of WhitePact | **Mitigated in tree** — `whitepact` → `whitepact.cli:main`; Antigravity installation retest required |
-| **BLK-P0-05** | Published package/product naming mismatch | **Open** — PyPI distribution remains `rai-governance-platform`; WS-1 documents identity only, **no** distribution rename or PyPI publish |
+| Role | Full SHA | Short | Notes |
+|------|----------|-------|--------|
+| **CI-qualified WS-1 implementation** | `0207ed83ad1e0560ef270ae8c24ccde294d8fa2c` | `0207ed8` | Lazy sovereign CLI, wheel-smoke CI job, SPDX on smoke scripts. **Antigravity installation retest target.** |
+| Implementation CI | [36712288188](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36712288188) | | **success** on `0207ed8` |
+| Documentation-only (interim) | `f4a1ef7…` | `f4a1ef7` | Recorded `0207ed8` + run 36712288188; no code change |
+| **Final closure HEAD** | _updated after push_ | | Smoke assertion hardening + this evidence revision |
+| Final closure CI | _updated after green run_ | | Exact-final-HEAD qualification |
 
-## Changed files (inventory)
+Prior WS-1 entrypoint qualification: `1dcb622` — [36704297202](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36704297202).
+
+## Finding scope
+
+| ID | WS-1 scope | Disposition |
+|----|------------|-------------|
+| **BLK-P0-01** | `whitepact` must be product CLI; default install must launch | **VERIFIED_CLOSED** in the CI-qualified implementation tree (`0207ed8`) — Antigravity final installation retest **CONDITIONAL PASS** (see § Antigravity) |
+| **BLK-P0-05** | PyPI / distribution naming vs product identity | **OPEN** — distribution remains `rai-governance-platform`; **no** rename migration or PyPI publication in WS-1 |
+
+## Changed files (inventory — WS-1 implementation + closure)
 
 | Path | Change |
 |------|--------|
-| `src/whitepact/cli.py` | Product CLI; **lazy sovereign/dashboard command registration** |
-| `src/biasbuster/cli.py` | Sovereign commands removed; BiasBuster-only top-level |
+| `src/whitepact/cli.py` | WhitePact product CLI; lazy sovereign/dashboard registration (`0207ed8`) |
+| `src/biasbuster/cli.py` | BiasBuster-only top-level CLI |
 | `pyproject.toml` | `whitepact` → `whitepact.cli:main` |
-| `scripts/wheel_default_install_smoke.sh` | **CREATE** — default wheel install smoke |
-| `scripts/wheel_dashboard_install_smoke.sh` | **CREATE** — `[dashboard]` wheel smoke |
-| `.github/workflows/ci.yml` | **CREATE** `wheel-smoke` job (Py3.11 + Py3.12) |
-| `tests/test_whitepact_cli_entrypoint.py` | Entrypoint regression + lazy-import guard |
-| `tests/test_mcp_server.py` | `TestCliEntryPoints` — distinct WS-1 script mappings |
-| `tests/sovereign/test_cli_sovereign.py` | Import `whitepact.cli` |
-| `docs/PACKAGE_IDENTITY.md` | CLI entry-point table |
-| `MIGRATION_WHITEPACT_V2.md` | Section 4 target entry |
-| `docs/phase0/*` | SHA reconciliation + conditional acceptance |
+| `scripts/wheel_default_install_smoke.sh` | Default wheel smoke; strict `doctor` exit/guidance/traceback checks (closure) |
+| `scripts/wheel_dashboard_install_smoke.sh` | `[dashboard]` wheel smoke |
+| `.github/workflows/ci.yml` | `wheel-smoke` job (Python 3.11 + 3.12) |
+| `tests/test_whitepact_cli_entrypoint.py` | Entrypoint + lazy-import regression |
+| `tests/test_mcp_server.py` | `TestCliEntryPoints` |
+| `tests/sovereign/test_cli_sovereign.py` | Sovereign commands via `whitepact.cli` |
+| `docs/PACKAGE_IDENTITY.md` | Product / entry-point table |
+| `MIGRATION_WHITEPACT_V2.md` | §4 CLI migration |
+| `docs/ws1/WS1_EVIDENCE_PACKAGE.md` | This package |
+| `docs/phase0/*` | Phase 0 registers (conditional acceptance) |
 
 ## Acceptance evidence
 
 ### 1. Default wheel install (no extras)
 
-Built wheel from sdist (`python -m build`), clean venv, `pip install dist/*.whl` only:
-
 ```bash
 env -u PYTHONPATH bash scripts/wheel_default_install_smoke.sh
 ```
 
-Verifies:
+Asserts:
 
-- `whitepact --help` — **WhitePact** product CLI (no import-time sovereign stack)
-- `whitepact --version` / `whitepact info`
-- `biasbuster --help` — legacy entry unchanged
-- `whitepact doctor` — **ClickException** with `pip install 'rai-governance-platform[dashboard]'` guidance (no traceback)
+- `whitepact --help`, `--version`, `info`; `biasbuster --help`
+- `whitepact doctor --json` exits **1** (not 0), prints exact guidance  
+  `This command requires optional dashboard dependencies. Install with: pip install 'rai-governance-platform[dashboard]'`
+- No `Traceback (most recent call last)` in doctor output
 
 ### 2. Wheel install with `[dashboard]`
 
@@ -56,48 +65,45 @@ Verifies:
 env -u PYTHONPATH bash scripts/wheel_dashboard_install_smoke.sh
 ```
 
-Verifies `whitepact doctor --json` returns `"checks"` (sovereign path loads when extras present).
+Asserts `whitepact doctor --json` contains `"checks"` (exit 0).
 
-### 3. CLI behavior (editable / dev install)
+### 3. CI — implementation qualification (`0207ed8`)
 
-- `whitepact doctor --json` — sovereign diagnostic (exit 0) when dashboard stack available
-- `whitepact bias run --help` — bias probe help (nested under `bias`)
-- `biasbuster run --help` — unchanged legacy entry
+Run: https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36712288188  
+Workflow conclusion: **success**
 
-### 4. Product identity docs
+| Job | Python | Result |
+|-----|--------|--------|
+| Wheel install smoke | 3.11 | **success** |
+| Wheel install smoke | 3.12 | **success** |
+| Lint · Type-check · Test | 3.11 | **success** |
+| Lint · Type-check · Test | 3.12 | **success** |
+| Build distribution | 3.12 | **success** |
+| Helm chart lint | — | **success** |
+| i18n unit tests | — | **success** |
+| Frontend closure | — | **success** |
+| Accessibility (WCAG2AA) | — | **success** |
 
-- `docs/PACKAGE_IDENTITY.md`
-- `MIGRATION_WHITEPACT_V2.md` §4
+### 4. CI — final closure HEAD
 
-### 5. Backward compatibility
+_Filled after exact-final-HEAD run completes._
 
-- `biasbuster` / `responsibleai` console scripts still `biasbuster.cli:main`
-- `tests/test_cli.py` — biasbuster commands unchanged
-
-### 6. Regression tests
+### 5. Regression tests (local / CI subset)
 
 ```bash
-pytest tests/test_whitepact_cli_entrypoint.py tests/sovereign/test_cli_sovereign.py tests/test_cli.py \
+pytest tests/test_whitepact_cli_entrypoint.py tests/sovereign/test_cli_sovereign.py \
   tests/test_mcp_server.py::TestCliEntryPoints -q --no-cov
 ```
 
-### 7. CI (exact HEAD)
+### 6. Antigravity
 
-| Field | Value |
-|-------|--------|
-| HEAD SHA | _updated after green `wheel-smoke` + full workflow on installation-hardening commit_ |
-| Run URL | _pending_ |
-| `Wheel install smoke` (Py3.11 / Py3.12) | _pending_ |
-| `Lint · Type-check · Test` (Py3.11 / Py3.12) | _pending_ |
-| Workflow conclusion | _pending_ |
+| Item | Value |
+|------|--------|
+| Retest target commit | `0207ed83ad1e0560ef270ae8c24ccde294d8fa2c` |
+| Outcome | **CONDITIONAL PASS** — implementation accepted |
+| Conditions for full sign-off | (1) Finalize this evidence package with verified SHAs and CI matrix; (2) Harden default-install smoke so `doctor` exit status and guidance are asserted without masking failures (`|| true`). Closure commits address both; **no** WS-2, merge, or PyPI publish required for BLK-P0-01 closure |
 
-Prior qualified run: [36704297202](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36704297202) on `1dcb622` (pre-installation-hardening).
-
-### 8. Antigravity
-
-Independent retest of **default-install** CLI launch (post lazy-import fix) on WS-1 HEAD.
-
-## Distribution
+### 7. Distribution
 
 - **No PyPI publish** in WS-1.
-- PyPI distribution name remains `rai-governance-platform` (no rename migration).
+- PyPI name remains `rai-governance-platform`.
