@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 # WS-1: verify built wheel with [dashboard] supports sovereign doctor.
 set -euo pipefail
 
