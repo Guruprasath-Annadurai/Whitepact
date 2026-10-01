@@ -13,6 +13,7 @@ import asyncio
 import subprocess
 import sys
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
@@ -46,6 +47,8 @@ from responsibleai.mcp.trust_domain import (
     entrypoint_main_stdio,
     refuse_ungoverned_stdio_exit,
 )
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _identity(org_id: str = "org-1") -> IdentityContext:
@@ -126,7 +129,7 @@ class TestStdioInvocationRoutes:
             capture_output=True,
             text=True,
             timeout=30,
-            cwd="/workspace",
+            cwd=str(_REPO_ROOT),
         )
         assert proc.returncode == 2
         assert "Enterprise MCP trust domain" in proc.stderr + proc.stdout
@@ -139,7 +142,7 @@ class TestStdioInvocationRoutes:
             capture_output=True,
             text=True,
             timeout=30,
-            cwd="/workspace",
+            cwd=str(_REPO_ROOT),
         )
         assert proc.returncode == 2
 
