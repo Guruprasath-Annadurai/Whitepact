@@ -103,7 +103,9 @@ class TestHostedDependencyFailClosed:
                 await apply_governance(
                     "rai_health",
                     {},
-                    OrgContext(key_id=principal, role=Role.ANALYST, org_id=org_id, plan=Plan.ENTERPRISE),
+                    OrgContext(
+                        key_id=principal, role=Role.ANALYST, org_id=org_id, plan=Plan.ENTERPRISE
+                    ),
                     services,
                     purpose="ws2-fc",
                 )
@@ -114,7 +116,9 @@ class TestHostedDependencyFailClosed:
             outcome = await apply_governance(
                 "rai_health",
                 {},
-                OrgContext(key_id=principal, role=Role.ANALYST, org_id=org_id, plan=Plan.ENTERPRISE),
+                OrgContext(
+                    key_id=principal, role=Role.ANALYST, org_id=org_id, plan=Plan.ENTERPRISE
+                ),
                 services,
                 purpose="ws2-fc",
             )
@@ -124,7 +128,9 @@ class TestHostedDependencyFailClosed:
             outcome = await apply_governance(
                 "rai_health",
                 {},
-                OrgContext(key_id=principal, role=Role.ANALYST, org_id=org_id, plan=Plan.ENTERPRISE),
+                OrgContext(
+                    key_id=principal, role=Role.ANALYST, org_id=org_id, plan=Plan.ENTERPRISE
+                ),
                 services,
                 purpose="ws2-fc",
             )
@@ -144,7 +150,9 @@ class TestHostedDependencyFailClosed:
             outcome = await apply_governance(
                 "rai_health",
                 {},
-                OrgContext(key_id=principal, role=Role.ANALYST, org_id=org_id, plan=Plan.ENTERPRISE),
+                OrgContext(
+                    key_id=principal, role=Role.ANALYST, org_id=org_id, plan=Plan.ENTERPRISE
+                ),
                 services,
                 purpose="ws2-fc",
             )
@@ -162,9 +170,7 @@ class TestHostedDependencyFailClosed:
         org_id, principal = await _seed_org(engine, seed_runtime_authority)
         resolver = MagicMock(spec=AuthorityResolver)
         resolver.resolve = AsyncMock(side_effect=AuthorityDenied("denied"))
-        services = _hosted_services(
-            engine, seed_runtime_authority, authority_resolver=resolver
-        )
+        services = _hosted_services(engine, seed_runtime_authority, authority_resolver=resolver)
         outcome = await apply_governance(
             "rai_health",
             {},
@@ -187,9 +193,7 @@ class TestHostedDependencyFailClosed:
         org_id, principal = await _seed_org(engine, seed_runtime_authority)
         evidence = MagicMock()
         evidence.record = AsyncMock(side_effect=RuntimeError("db down"))
-        services = _hosted_services(
-            engine, seed_runtime_authority, evidence_repo=evidence
-        )
+        services = _hosted_services(engine, seed_runtime_authority, evidence_repo=evidence)
         outcome = await apply_governance(
             "rai_health",
             {},

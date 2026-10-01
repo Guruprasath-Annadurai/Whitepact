@@ -55,7 +55,9 @@ def _call_sites(path: Path, callee: str) -> list[tuple[int, str]]:
 
 
 @pytest.mark.parametrize("callee,allowlist", [("dispatch_tool", _DISPATCH_TOOL_ALLOWLIST)])
-def test_consequential_dispatch_call_sites_are_allowlisted(callee: str, allowlist: frozenset[str]) -> None:
+def test_consequential_dispatch_call_sites_are_allowlisted(
+    callee: str, allowlist: frozenset[str]
+) -> None:
     violations: list[str] = []
     for py_file in sorted(_REPO_SRC.rglob("*.py")):
         rel = _relative(py_file)

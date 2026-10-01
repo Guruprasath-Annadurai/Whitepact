@@ -230,7 +230,8 @@ class TestGrantBindingAndReplayMatrix:
 
 class TestHostedAndUpstreamBypassGuards:
     async def test_call_tool_hosted_without_governance_never_dispatches(
-        self, monkeypatch: pytest.MonkeyPatch,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from responsibleai.mcp.server import _call_tool, _current_hosted, _current_org
         from responsibleai.rbac.models import OrgContext, Plan, Role
@@ -238,7 +239,9 @@ class TestHostedAndUpstreamBypassGuards:
         dispatch = AsyncMock()
         monkeypatch.setattr("responsibleai.mcp.server.dispatch_tool", dispatch)
         token_org = _current_org.set(
-            OrgContext(key_id="k1", org_id="o1", org_name="acme", plan=Plan.ENTERPRISE, role=Role.ANALYST)
+            OrgContext(
+                key_id="k1", org_id="o1", org_name="acme", plan=Plan.ENTERPRISE, role=Role.ANALYST
+            )
         )
         token_hosted = _current_hosted.set(True)
         try:
@@ -255,7 +258,9 @@ class TestHostedAndUpstreamBypassGuards:
         from responsibleai.mcp.upstream_dispatch import apply_upstream_governance
         from responsibleai.rbac.models import OrgContext, Plan, Role
 
-        ctx = OrgContext(key_id="k1", org_id="o1", org_name="acme", plan=Plan.ENTERPRISE, role=Role.ANALYST)
+        ctx = OrgContext(
+            key_id="k1", org_id="o1", org_name="acme", plan=Plan.ENTERPRISE, role=Role.ANALYST
+        )
         registry = MagicMock()
         registry.get = AsyncMock(return_value=None)
         outcome = await apply_upstream_governance(
@@ -319,9 +324,7 @@ class TestStaleRevocationEpochOnLiveExecutor:
         nonce_repo = ExecutionNonceRepository(engine)
         epochs = RevocationEpochRepository(engine)
         action = _action(org)
-        permit = authorize_execution(
-            _allow(action.action_id), action, revocation_epoch=0
-        )
+        permit = authorize_execution(_allow(action.action_id), action, revocation_epoch=0)
         await epochs.bump(org)
         assert (await epochs.current(org)).epoch == 1
         executor = InternalToolExecutor(nonce_repo=nonce_repo)

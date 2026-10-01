@@ -350,7 +350,9 @@ class TestLiveApprovalExecuteInvalidation:
 
 class TestLiveMcpBindingSubstitution:
     async def test_cross_org_api_key_never_dispatches_other_tenant_tool(
-        self, monkeypatch: pytest.MonkeyPatch, seed_runtime_authority,
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        seed_runtime_authority,
     ) -> None:
         import responsibleai.db as db_module
         from responsibleai.dashboard.config import get_settings
@@ -364,8 +366,12 @@ class TestLiveMcpBindingSubstitution:
         await engine.init()
         monkeypatch.setattr(db_module, "create_engine", lambda _url: engine)
         org_repo = OrgRepository(engine)
-        org_a = await org_repo.create_org("Org A", f"org-a-{uuid.uuid4().hex[:6]}", plan=Plan.ENTERPRISE)
-        org_b = await org_repo.create_org("Org B", f"org-b-{uuid.uuid4().hex[:6]}", plan=Plan.ENTERPRISE)
+        org_a = await org_repo.create_org(
+            "Org A", f"org-a-{uuid.uuid4().hex[:6]}", plan=Plan.ENTERPRISE
+        )
+        org_b = await org_repo.create_org(
+            "Org B", f"org-b-{uuid.uuid4().hex[:6]}", plan=Plan.ENTERPRISE
+        )
         _ka, key_a = await org_repo.create_key(org_a.id, "key-a")
         _kb, key_b = await org_repo.create_key(org_b.id, "key-b")
         await seed_runtime_authority(
