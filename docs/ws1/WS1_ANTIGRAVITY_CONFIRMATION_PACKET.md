@@ -42,7 +42,7 @@ Merge of PR #129 requires founder approval; not executed by engineering automati
 
 ## Post-qualification dependency security — Antigravity reconfirmation (M0)
 
-**Status:** **REQUESTED** (after green required CI on the requalified merge-candidate SHA documented in `docs/ws1/WS1_EVIDENCE_PACKAGE.md` § Post-qualification dependency security update).
+**Status:** **FULL PASS** — recorded 2026-10-01 (independent M0 reconfirmation on PR #129 head `1d45fb3`, CI https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36793224630).
 
 Please confirm:
 
@@ -53,4 +53,20 @@ Please confirm:
 5. **BLK-P0-01** remains **VERIFIED_CLOSED**.
 6. **BLK-P0-05** remains **OPEN** (no PyPI rename/publish in WS-1).
 
-Do **not** treat founder merge as approved until this focused confirmation is recorded.
+### Reconfirmation record (2026-10-01)
+
+| # | Check | Result |
+|---|--------|--------|
+| 1 | WS-1 closure conditions (`b5641b7` / `0207ed8` lineage) preserved — no `src/`, `pyproject.toml`, or wheel-smoke script changes since closure | **PASS** |
+| 2 | `urllib3` **2.7.0 → 2.8.0** in `requirements-security.lock` and `uv.lock` | **PASS** |
+| 3 | No CVE suppress/ignore for urllib3 advisories (pre-existing nltk `PYSEC-2026-597` / `PYSEC-2026-3740` only) | **PASS** |
+| 4 | `pip-audit` (CI matrix 3.11/3.12) + Self-Conducted Security Scan on head `1d45fb3` | **PASS** (run `36793224630` + workflow `36793224767`) |
+| 5 | Wheel install smoke 3.11 / 3.12 | **PASS** |
+| 6 | CLI / product identity unchanged (entrypoints, lazy sovereign, smoke semantics) | **PASS** |
+| 7 | No unrelated product/runtime changes — only locks + `tests/js/customer-journey.e2e.mjs` CI stability | **PASS** |
+| 8 | Commits after `8d98828` touch only `docs/ws1/WS1_EVIDENCE_PACKAGE.md` | **PASS** |
+| 9 | **BLK-P0-01** | **VERIFIED_CLOSED** |
+| 10 | **BLK-P0-05** | **OPEN** |
+| 11 | No WS-2 merge, PyPI publish, or Cloud provision in this gate | **PASS** |
+
+**M0 disposition:** **FULL PASS** — founder approval to merge PR #129 is **justified** (merge not executed by automation).
