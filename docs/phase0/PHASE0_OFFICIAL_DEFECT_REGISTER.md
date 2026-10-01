@@ -11,8 +11,8 @@ Source of truth for IDs and titles: [ANTIGRAVITY_GLOBAL_ENTERPRISE_AUDIT_2026-09
 | ID | Sev | Title (official) | Baseline | Evidence (Cursor) | Verification | Phase 1 owner |
 |----|-----|------------------|----------|-------------------|--------------|---------------|
 | BLK-P0-01 | P0 | CLI launches BiasBuster instead of WhitePact. | B-main `81beb3a` | `pyproject.toml`: `whitepact = "biasbuster.cli:main"`; `whitepact --help` → “BiasBuster — open-source bias testing” | **REPRODUCED** | Cursor |
-| BLK-P0-02 | P0 | Stdio MCP transport bypasses governance. | B-main | `mcp/server.py`: stdio documented as unrestricted; no hosted governance gate on stdio path | **REPRODUCED** (Community-by-design; enterprise gap) | Cursor |
-| BLK-P0-03 | P0 | Core authority kernel disconnected from running services. | B-main | `HEART_ENTERPRISE_READINESS.md`; no production call to `sovereignty_kernel.evaluate` on dispatch paths | **REPRODUCED** | Cursor |
+| BLK-P0-02 | P0 | Stdio MCP transport bypasses governance. | B-main | WS-2 enterprise trust domain + stdio fail-closed (PR #130) | **VERIFIED_CLOSED** (Antigravity M1) | Antigravity |
+| BLK-P0-03 | P0 | Core authority kernel disconnected from running services. | B-main | WS-2 authority binding on hosted/enterprise paths (PR #130) | **VERIFIED_CLOSED** (Antigravity M1) | Antigravity |
 | BLK-P0-04 | P0 | Web approvals table is read-only. | B-main | React `/dashboard/approvals` uses `ApprovalContractPanel` with resolve/execute actions (`web/` on main). Legacy static shell has no equivalent approvals workflow. | **PARTIALLY_MITIGATED** (SPA path); **REPRODUCED** if legacy/console path used | Cursor |
 | BLK-P0-05 | P0 | Published package/product naming mismatch. | B-main + PyPI | Project name `rai-governance-platform`; CLI/product `whitepact` → BiasBuster; `docs/PACKAGE_IDENTITY.md` on main | **REPRODUCED** | Cursor |
 | BLK-P0-06 | P0 | Dual-frontend routing and authentication collision. | B-main | Legacy `static/*.html` + `whitepact` SPA under `static/whitepact/`; multiple session/auth surfaces (`app.py` SPA mounts) | **REPRODUCED** | Cursor |
