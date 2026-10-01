@@ -8,8 +8,9 @@
 | **PyPI distribution (platform)** | `rai-governance-platform` |
 | **Canonical Python import** | `responsibleai` |
 | **Compatibility import alias** | `whitepact` (re-exports `responsibleai`; same objects) |
-| **CLI (preferred)** | `whitepact` |
-| **CLI (legacy)** | `biasbuster` |
+| **CLI (preferred)** | `whitepact` → `whitepact.cli:main` (governance / sovereign diagnostics) |
+| **CLI (legacy bias)** | `biasbuster` → `biasbuster.cli:main` (bias probes only) |
+| **CLI (legacy alias)** | `responsibleai` → `biasbuster.cli:main` (historical; bias CLI) |
 | **MCP entrypoints** | `whitepact-mcp`, `whitepact-mcp-http` |
 | **HTTP API SDK (Python)** | PyPI package `rai-client` → import `rai_client` |
 | **HTTP API SDK (TypeScript)** | npm `@responsibleai/client` |

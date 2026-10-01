@@ -174,9 +174,9 @@ class TestMCPServerIdentity:
 
 
 class TestCliEntryPoints:
-    """MIGRATION_WHITEPACT_V2.md Section 4: whitepact/whitepact-mcp/
-    whitepact-mcp-http are additive, identical entry-point functions to
-    their legacy counterparts — nothing removed, nothing repointed."""
+    """MIGRATION_WHITEPACT_V2.md Section 4 + WS-1: MCP preferred names remain
+    identical to legacy targets; ``whitepact`` is the dedicated product CLI
+    (``whitepact.cli:main``); ``biasbuster`` / ``responsibleai`` keep the bias CLI."""
 
     def test_pyproject_declares_both_legacy_and_preferred_scripts(self) -> None:
         import tomllib
@@ -186,7 +186,10 @@ class TestCliEntryPoints:
         scripts = pyproject["project"]["scripts"]
         assert scripts["responsibleai-mcp"] == scripts["whitepact-mcp"]
         assert scripts["responsibleai-mcp-http"] == scripts["whitepact-mcp-http"]
-        assert scripts["responsibleai"] == scripts["whitepact"]
+        assert scripts["whitepact"] == "whitepact.cli:main"
+        assert scripts["biasbuster"] == "biasbuster.cli:main"
+        assert scripts["responsibleai"] == "biasbuster.cli:main"
+        assert scripts["whitepact"] != scripts["responsibleai"]
 
     def test_no_legacy_script_was_removed(self) -> None:
         import tomllib

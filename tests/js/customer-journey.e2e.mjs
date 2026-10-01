@@ -113,12 +113,9 @@ try {
   const registerResponse = await registerWait;
   const registerBody = await registerResponse.json().catch(() => ({}));
   console.log("register", registerResponse.status(), registerBody, "url", page.url());
-  if (registerBody.verification_url) {
-    const target = String(registerBody.verification_url).replace(/https?:\/\/[^/]+/, baseUrl);
-    await page.goto(target, { waitUntil: "domcontentloaded" });
-  } else {
-    await page.waitForURL(/verify-email/, { timeout: 15000 });
-  }
+  // Signup may auto-navigate to verify-email when the API returns verification_url;
+  // waiting avoids racing page.goto() against that redirect (Playwright "interrupted navigation").
+  await page.waitForURL(/verify-email/, { timeout: 15000 });
   await page.getByRole("button", { name: /verify email/i }).click();
   await page.getByRole("button", { name: /continue to sign in/i }).click();
 
