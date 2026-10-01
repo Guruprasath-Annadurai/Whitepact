@@ -7,15 +7,19 @@ from __future__ import annotations
 import pytest
 
 from responsibleai.runtime.dispatcher import start_phase7a_dispatcher
-from responsibleai.runtime.gate import assert_phase7a_dispatcher_may_start, refuse_production_phase7a
+from responsibleai.runtime.errors import Phase7AProductionGateClosedError
+from responsibleai.runtime.gate import (
+    assert_phase7a_dispatcher_may_start,
+    refuse_production_phase7a,
+)
 
 
 def test_phase7a_dispatcher_blocked_in_production() -> None:
-    with pytest.raises(Exception):
+    with pytest.raises(Phase7AProductionGateClosedError):
         refuse_production_phase7a(environment="production", enabled=True)
-    with pytest.raises(Exception):
+    with pytest.raises(Phase7AProductionGateClosedError):
         start_phase7a_dispatcher(environment="production", enabled=True)
-    with pytest.raises(Exception):
+    with pytest.raises(Phase7AProductionGateClosedError):
         assert_phase7a_dispatcher_may_start(environment="prod", enabled=True)
 
 
@@ -31,7 +35,7 @@ def test_settings_production_rejects_phase7a_flag(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("WHITEPACT_ENV", "production")
     monkeypatch.setenv("WHITEPACT_PHASE7A_DISPATCHER_ENABLED", "true")
     monkeypatch.setenv("WHITEPACT_MCP_TRUST_DOMAIN", "enterprise")
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         Settings(_env_file=None)
 
 

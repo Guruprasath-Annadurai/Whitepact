@@ -11,7 +11,6 @@ import pytest
 
 from responsibleai.governance import WhitePactRuntimeGateway
 from responsibleai.governance.authority_resolver import AuthorityDenied, AuthorityResolver
-from responsibleai.governance.upstream_executor import UpstreamMCPExecutor
 from responsibleai.mcp.governance_integration import GovernanceServices, apply_governance
 from responsibleai.mcp.upstream_dispatch import apply_upstream_governance
 from responsibleai.rbac.models import OrgContext, Plan, Role
@@ -212,10 +211,10 @@ class TestUpstreamDependencyFailClosed:
         executor.execute = AsyncMock()
         registry = MagicMock()
         registry.get = AsyncMock(return_value=None)
-        from responsibleai.db import EvidenceRepository, PolicyRepository, ApprovalRepository
-        from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
+        from responsibleai.db import ApprovalRepository, EvidenceRepository, PolicyRepository
         from responsibleai.db.consent_proof_repository import ConsentProofRepository
         from responsibleai.db.delegation_repository import DelegationRepository
+        from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
         from responsibleai.db.root_authority_repository import RootAuthorityRepository
         from responsibleai.db.tool_trust_repository import ToolTrustRepository
 
@@ -262,7 +261,7 @@ class TestUpstreamDependencyFailClosed:
         executor.execute = AsyncMock()
         resolver = MagicMock(spec=AuthorityResolver)
         resolver.resolve = AsyncMock(side_effect=AuthorityDenied("no"))
-        from responsibleai.db import EvidenceRepository, PolicyRepository, ApprovalRepository
+        from responsibleai.db import ApprovalRepository, EvidenceRepository, PolicyRepository
         from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
         from responsibleai.db.tool_trust_repository import ToolTrustRepository
 

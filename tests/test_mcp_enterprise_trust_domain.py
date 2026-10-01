@@ -7,7 +7,7 @@ from __future__ import annotations
 import pytest
 
 from responsibleai.mcp.server import main
-from responsibleai.mcp.trust_domain import ENTERPRISE_STDIO_REFUSAL, entrypoint_main_stdio
+from responsibleai.mcp.trust_domain import ENTERPRISE_STDIO_REFUSAL
 
 
 def test_enterprise_trust_domain_blocks_stdio_main(monkeypatch: pytest.MonkeyPatch) -> None:

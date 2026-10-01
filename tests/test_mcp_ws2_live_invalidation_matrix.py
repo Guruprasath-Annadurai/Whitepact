@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import json
 import uuid
-from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
@@ -15,16 +14,13 @@ from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
 
 from responsibleai.dashboard.app import app, limiter, settings
-from responsibleai.db import EvidenceRepository, PolicyRepository
-from responsibleai.governance.approval import ApprovalStatus
-from responsibleai.governance.policy import PolicyRule
+from responsibleai.db import PolicyRepository
 from responsibleai.governance.models import GovernanceDecision
-from responsibleai.governance.risk import RiskTier
-from responsibleai.mcp.tools import WHITEPACT_PURPOSE_ARGUMENT
-from tests.test_mcp_governance_dispatch import TEST_GOVERNANCE_PURPOSE, _call
-from tests.test_resume_after_approval import _seed_dispatchable_approval
-from tests.org_http_fixtures import seed_org_with_key
+from responsibleai.governance.policy import PolicyRule
 from responsibleai.rbac.models import Role
+from tests.org_http_fixtures import seed_org_with_key
+from tests.test_mcp_governance_dispatch import _call
+from tests.test_resume_after_approval import _seed_dispatchable_approval
 
 pytest_plugins = ("tests.test_mcp_governance_dispatch",)
 
