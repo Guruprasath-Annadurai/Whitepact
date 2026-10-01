@@ -10,7 +10,7 @@
 |-----------|----------|------|
 | `origin/main` | `cb7f479593706d841a698dafb5463f7adc744fca` | Post–WS-1 merge (#129); merge commit |
 | WS-1 merged implementation tip | `3b7bb2543c082b19233bf68dec8978e4df1e8b77` | Merged via #129; Antigravity M0 FULL PASS; CI [36874569609](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36874569609) |
-| WS-2 development head | `4971d34a32398152a23fed68e1e9a7e737990de8` | PR [#130](https://github.com/Guruprasath-Annadurai/Whitepact/pull/130) rebased on `main`; exact-head CI [36907576815](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36907576815) **success** |
+| WS-2 development head | `32745a3be8cbb76f4b4767876122a568a392d4d9` | PR [#130](https://github.com/Guruprasath-Annadurai/Whitepact/pull/130) rebased on `main`; exact-head CI [36913753488](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36913753488) **success** |
 | WS-1 qualified code tree (historical) | `b5641b740df63a8a408a900186f1d3cd00803174` | CI [36725514596](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36725514596) **success** |
 | WS-1 implementation (Antigravity) | `0207ed83ad1e0560ef270ae8c24ccde294d8fa2c` | CI [36712288188](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36712288188) **success** |
 | Cloud branch tip | `7386fadf8c88dc78044e9e7aceef9b655f6496b2` | PR #128 — **not** integrated |
