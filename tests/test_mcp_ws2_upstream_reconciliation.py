@@ -18,6 +18,7 @@ from responsibleai.governance import (
     AuthorityContext,
     GovernanceDecision,
     IdentityContext,
+    WhitePactRuntimeGateway,
     authorize_execution,
 )
 from responsibleai.governance.models import DecisionResult
@@ -28,7 +29,6 @@ from responsibleai.governance.upstream_executor import (
     compute_upstream_target_fingerprint,
 )
 from responsibleai.mcp.upstream_dispatch import apply_upstream_governance
-from responsibleai.governance import WhitePactRuntimeGateway
 from responsibleai.rbac.models import OrgContext, Plan, Role
 
 
@@ -94,7 +94,6 @@ async def test_upstream_dispatch_records_unknown_on_executor_failure(
     )
     from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
     from responsibleai.db.tool_trust_repository import ToolTrustRepository
-    from responsibleai.governance import AuthorityContext
     from responsibleai.governance.authority_resolver import AuthorityResolver
 
     repo = OrgRepository(engine)

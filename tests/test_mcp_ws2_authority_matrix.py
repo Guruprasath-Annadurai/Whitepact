@@ -18,6 +18,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from responsibleai.dashboard.config import Settings
+from responsibleai.db.engine import create_engine
 from responsibleai.governance import (
     ActionRequest,
     AgentContext,
@@ -30,7 +31,6 @@ from responsibleai.governance import (
     InternalToolExecutor,
     authorize_execution,
 )
-from responsibleai.db.engine import create_engine
 from responsibleai.governance.models import DecisionResult
 from responsibleai.governance.risk import RiskTier
 from responsibleai.mcp.server import (
@@ -299,9 +299,11 @@ class TestStaleRevocationEpochOnLiveExecutor:
         import uuid
 
         from responsibleai.db.engine import create_engine, organizations
-        from responsibleai.db.execution_nonce_repository import ExecutionNonceRepository
+        from responsibleai.db.execution_nonce_repository import (
+            ExecutionNonceRepository,
+            StaleRevocationEpochError,
+        )
         from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
-        from responsibleai.db.execution_nonce_repository import StaleRevocationEpochError
 
         sink = AsyncMock()
         monkeypatch.setattr("responsibleai.mcp.tools.dispatch_tool", sink)
@@ -335,9 +337,9 @@ class TestApplyGovernanceInfrastructureFailClosed:
         from unittest.mock import AsyncMock, MagicMock
 
         from responsibleai.db import OrgRepository
+        from responsibleai.governance import WhitePactRuntimeGateway
         from responsibleai.governance.authority_resolver import AuthorityDenied, AuthorityResolver
         from responsibleai.mcp.governance_integration import GovernanceServices, apply_governance
-        from responsibleai.governance import WhitePactRuntimeGateway
         from responsibleai.rbac.models import OrgContext, Plan, Role
 
         dispatch = AsyncMock()
@@ -377,9 +379,9 @@ class TestApplyGovernanceInfrastructureFailClosed:
         from responsibleai.db.delegation_repository import DelegationRepository
         from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
         from responsibleai.db.root_authority_repository import RootAuthorityRepository
+        from responsibleai.governance import WhitePactRuntimeGateway
         from responsibleai.governance.authority_resolver import AuthorityResolver
         from responsibleai.mcp.governance_integration import GovernanceServices, apply_governance
-        from responsibleai.governance import WhitePactRuntimeGateway
         from responsibleai.rbac.models import OrgContext, Plan, Role
 
         dispatch = AsyncMock()
@@ -424,7 +426,6 @@ class TestApplyGovernanceInfrastructureFailClosed:
         from unittest.mock import AsyncMock
 
         from responsibleai.db.engine import create_engine, organizations
-        from responsibleai.db.execution_nonce_repository import ExecutionNonceRepository
         from responsibleai.governance.execution import ExecutionNotAuthorizedError
 
         sink = AsyncMock()
@@ -494,11 +495,6 @@ class TestConcurrentDurableConsumptionWs2Evidence:
 
     async def test_exactly_one_dispatch_under_race(self, tmp_path, monkeypatch) -> None:
         import copy
-
-        from tests.test_phase1_live_admission import _action as live_action
-        from tests.test_phase1_live_admission import _executor as live_executor_factory
-        from tests.test_phase1_live_admission import _permit as live_permit
-
         import uuid
 
         from responsibleai.db.engine import create_engine, organizations
@@ -506,6 +502,9 @@ class TestConcurrentDurableConsumptionWs2Evidence:
             ExecutionNonceRepository,
             NonceAlreadyConsumedError,
         )
+        from tests.test_phase1_live_admission import _action as live_action
+        from tests.test_phase1_live_admission import _executor as live_executor_factory
+        from tests.test_phase1_live_admission import _permit as live_permit
 
         url = str(tmp_path / "ws2-race.db")
         engine = create_engine(url)
