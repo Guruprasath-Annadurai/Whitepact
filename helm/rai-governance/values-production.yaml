@@ -1,0 +1,60 @@
+# Production overlay — validate with:
+#   python -m responsibleai.operations.helm_validate helm/rai-governance/values-production.yaml
+#   helm lint helm/rai-governance/ -f helm/rai-governance/values-production.yaml
+deploymentProfile: production
+
+replicaCount: 2
+
+podSecurityContext:
+  fsGroup: 1001
+  runAsNonRoot: true
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1001
+  capabilities:
+    drop:
+      - ALL
+
+config:
+  environment: production
+  authEnabled: true
+  allowAllOrigins: false
+  mcpHttpAllowUnauthenticatedDemo: false
+  oidcSkipVerification: false
+  vcSkipVerification: false
+  apiKeys: ""
+  autoMigrate: false
+  logJson: "true"
+  databaseUrl: ""
+  redisUrl: "redis://redis:6379/0"
+
+persistence:
+  enabled: false
+
+externalSecrets:
+  databaseUrl:
+    name: rai-governance-production-db
+    key: database-url
+
+oidc:
+  enabled: true
+  issuer: "https://idp.example.com"
+  clientId: "whitepact-production"
+  redirectUri: "https://app.example.com/auth/callback"
+  existingSecret: rai-governance-production-oidc
+
+migration:
+  enabled: true
+
+mcp:
+  enabled: true
+  replicaCount: 2
+
+networkPolicy:
+  enabled: true
+
+ingress:
+  enabled: true

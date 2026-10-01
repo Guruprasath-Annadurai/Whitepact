@@ -1,7 +1,14 @@
 ## Default values for rai-governance.
 ## Override with: helm install rai ./helm/rai-governance -f my-values.yaml
+##
+## Profile overlays: values-development.yaml | values-staging.yaml | values-production.yaml
+## Validate: python -m responsibleai.operations.helm_validate helm/rai-governance/values-production.yaml
+
+deploymentProfile: development
 
 replicaCount: 2
+
+terminationGracePeriodSeconds: 30
 
 ## Zero-downtime rollout — maxUnavailable: 0 guarantees full capacity is
 ## maintained during a deploy (paired with the PDB below); relying on
@@ -118,10 +125,15 @@ affinity:
                   - rai-governance
           topologyKey: kubernetes.io/hostname
 
-## Application configuration — maps to RAI_* env vars
+## Application configuration — maps to RAI_* / WHITEPACT_* env vars
 config:
+  environment: development
   ## Set to false to allow unauthenticated access (development only)
   authEnabled: true
+  allowAllOrigins: false
+  mcpHttpAllowUnauthenticatedDemo: false
+  oidcSkipVerification: false
+  vcSkipVerification: false
   ## Comma-separated static API keys (prefer DB-backed keys for production)
   apiKeys: ""
   ## Alert threshold for trust score drift (points)
@@ -140,6 +152,12 @@ config:
   otelEndpoint: ""
   ## Automatically run migrations on app startup. Set false for multi-replica when using migration Job.
   autoMigrate: false
+
+## External secret references (production overlays — no credentials in git)
+externalSecrets:
+  databaseUrl:
+    name: ""
+    key: "database-url"
 
 ## OIDC / SSO configuration (optional)
 oidc:

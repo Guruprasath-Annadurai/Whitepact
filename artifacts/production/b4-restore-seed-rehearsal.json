@@ -1,0 +1,11 @@
+{
+  "phase": "B4",
+  "test": "restore_with_seeded_org",
+  "timestamp": "2026-09-28T08:28:01.236658+00:00",
+  "backup_bytes": 24117,
+  "backup_sha256": "67bca12e38586e84c26876001d904fde08556155f2405dc14eb7b2e92cae28b0",
+  "measured_restore_seconds": 0.553,
+  "seeded_org_id": "8879bebf-28cf-4685-95be-57130e650d7d",
+  "restored_org_rows": 1,
+  "schema_version": "0061"
+}

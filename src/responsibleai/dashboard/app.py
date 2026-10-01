@@ -3170,9 +3170,11 @@ async def health() -> JSONResponse:
     rl_backend = "redis" if settings.redis_url else "memory"
     orgs_count = len(await _ready(_org_repo).list_orgs()) if _org_repo else 0
 
+    instance_id = os.environ.get("WHITEPACT_INSTANCE_ID") or os.environ.get("HOSTNAME")
     body = {
         "status": "healthy" if db_ok else "degraded",
         "version": __version__,
+        "instance_id": instance_id,
         "uptime_seconds": round(time.monotonic() - _START_TIME, 1),
         "timestamp": datetime.now(UTC).isoformat(),
         "checks": {

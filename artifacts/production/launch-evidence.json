@@ -1,0 +1,62 @@
+{
+  "program": "WhitePact Launch Cell B",
+  "b1_baseline_sha": "d7d7ca3e68486004a742fbdd5aa13806efe1209a",
+  "ci_qualified_sha": "3203df06f11d4f2ea4ee5d63239edcf14cda6074",
+  "ci_qualified_run": "36430111135",
+  "enterprise_staging_sha": "b7a9bf6959901b20a1e995771ca0d43122884923",
+  "security_staging_remediation_sha": "ff235300897cf59fdbe2868071b80a9fba847ef6",
+  "b4_security_state_executed_sha": "4a0a199487e7a620746d8b773670d65583db83c0",
+  "phases": {
+    "B1": {"status": "PASS", "evidence_categories": ["CI_VERIFIED", "UNIT_TESTED"]},
+    "B2": {"status": "PASS", "tests": ["tests/production/test_helm_production_contract.py"]},
+    "B3": {"status": "PASS", "evidence_categories": ["REAL_POSTGRES_TESTED"]},
+    "B4": {
+      "status": "PASS",
+      "artifacts": [
+        "artifacts/production/b4-restore-rehearsal.json",
+        "artifacts/production/b4-restore-seed-rehearsal.json",
+        "artifacts/production/b4-enterprise-dr-rehearsal.json",
+        "artifacts/production/b4-enterprise-dr-security-state.json"
+      ],
+      "evidence_categories": ["RESTORE_TESTED", "REAL_POSTGRES_TESTED", "AUTHZ_VERIFIED"]
+    },
+    "B5": {
+      "status": "PARTIAL",
+      "artifacts": ["artifacts/production/b5-b6-observability-drill.json"]
+    },
+    "B6": {"status": "PARTIAL", "artifacts": ["artifacts/production/alerts.catalog.json"]},
+    "B7": {"status": "PARTIAL", "artifacts": ["artifacts/production/b7-tabletop-evidence.json"]},
+    "B8": {
+      "status": "PARTIAL",
+      "artifacts": ["artifacts/production/b8-pg-connection-loss-drill.json"]
+    },
+    "B9": {
+      "status": "ENVIRONMENT_BLOCKED",
+      "representative_staging": "ENVIRONMENT_BLOCKED",
+      "artifacts": [
+        "artifacts/production/b9-kind-http-load.json",
+        "artifacts/production/b9-http-pg-load.json",
+        "artifacts/production/kind-bootstrap-diagnostics.json"
+      ],
+      "script_status": "IMPLEMENTED_AND_STATICALLY_VALIDATED"
+    },
+    "B10": {
+      "status": "ENVIRONMENT_BLOCKED",
+      "kubernetes_rollback": "ENVIRONMENT_BLOCKED",
+      "artifacts": [
+        "artifacts/production/b10-kind-helm-rollback.json",
+        "artifacts/production/b10-release-rollback-rehearsal.json",
+        "artifacts/production/kind-bootstrap-diagnostics.json"
+      ],
+      "script_status": "IMPLEMENTED_AND_STATICALLY_VALIDATED"
+    },
+    "B11": {"status": "PASS"},
+    "B12": {
+      "status": "PARTIAL",
+      "method": "SELF_REHEARSED",
+      "artifacts": ["artifacts/production/b12-zero-to-launch-summary.json"],
+      "execution_sha": "9b6a7f211f65b6b57433e9365e773285a06b3445"
+    }
+  },
+  "independent_validation": "OWNER_ACTION_REQUIRED"
+}

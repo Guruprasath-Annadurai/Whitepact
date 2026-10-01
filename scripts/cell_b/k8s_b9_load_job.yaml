@@ -1,0 +1,39 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
+# In-cluster load generator for B9 (targets Service, not port-forward).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cell-b-b9-load
+  namespace: cell-b-qual
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: load
+          image: python:3.12-slim
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              pip install -q httpx
+              python /scripts/b9_in_cluster_load.py \
+                --base-url "http://rai-cell-b.cell-b-qual.svc.cluster.local:8765" \
+                --duration "${LOAD_DURATION_SECONDS:-120}" \
+                --workers "${LOAD_WORKERS:-8}" \
+                --output /tmp/b9-load.json
+          env:
+            - name: LOAD_DURATION_SECONDS
+              value: "120"
+            - name: LOAD_WORKERS
+              value: "8"
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+      volumes:
+        - name: scripts
+          configMap:
+            name: cell-b-b9-load-script

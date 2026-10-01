@@ -1,0 +1,35 @@
+# Staging overlay — production-shaped configuration without live customer data.
+deploymentProfile: staging
+
+replicaCount: 2
+
+config:
+  environment: staging
+  authEnabled: true
+  allowAllOrigins: false
+  mcpHttpAllowUnauthenticatedDemo: false
+  autoMigrate: false
+  logJson: "true"
+  databaseUrl: ""
+  redisUrl: "redis://redis:6379/0"
+
+persistence:
+  enabled: false
+
+externalSecrets:
+  databaseUrl:
+    name: rai-governance-staging-db
+    key: database-url
+
+oidc:
+  enabled: true
+  issuer: "https://staging-idp.example.com"
+  clientId: "whitepact-staging"
+  redirectUri: "https://staging.example.com/auth/callback"
+  existingSecret: rai-governance-staging-oidc
+
+migration:
+  enabled: true
+
+networkPolicy:
+  enabled: true

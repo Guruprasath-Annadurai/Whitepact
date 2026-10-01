@@ -1,0 +1,31 @@
+{
+  "phase": "B9",
+  "test": "http_load_qualification",
+  "timestamp": "2026-09-28T08:28:29.710001+00:00",
+  "evidence_categories": [
+    "LOAD_TESTED",
+    "REAL_POSTGRES_TESTED",
+    "SOAK_TESTED"
+  ],
+  "environment": "uvicorn_http + isolated_postgresql",
+  "burst_duration_seconds": 8.0,
+  "soak_duration_seconds": 20.0,
+  "concurrency_workers": 3,
+  "burst": {
+    "requests": 2535,
+    "errors": 0,
+    "measured_rps": 316.88,
+    "measured_p50_ms": 8.792,
+    "measured_p95_ms": 11.622,
+    "measured_p99_ms": 15.619
+  },
+  "soak": {
+    "requests": 6233,
+    "errors": 0,
+    "measured_rps": 311.65,
+    "measured_p50_ms": 6.077,
+    "measured_p95_ms": 7.598,
+    "measured_p99_ms": 9.435
+  },
+  "limitations": "Single-node local qualification; not multi-replica staging."
+}
