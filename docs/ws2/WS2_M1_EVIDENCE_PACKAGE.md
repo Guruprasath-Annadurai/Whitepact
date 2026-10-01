@@ -1,6 +1,6 @@
 # WS-2 — M1 evidence package (engineering)
 
-**Status:** WS-1 → WS-2 **integration gate engineering complete**; exact-head CI **qualified** on `04a4a6a4e4a60ca6ed401e8af0b0a5446a717a66`. **Not** Antigravity M1 qualified. **Do not** request Antigravity M1 until founder dispatches independent review (BLK-P0-02/03 remain OPEN).
+**Status:** WS-1 → WS-2 **integration gate engineering complete**; exact-head CI **qualified** on `4971d34a32398152a23fed68e1e9a7e737990de8`. **Not** Antigravity M1 qualified. **Do not** request Antigravity M1 until founder dispatches independent review (BLK-P0-02/03 remain OPEN).
 
 ## SHA ladder (no drift)
 
@@ -8,9 +8,9 @@
 |-----------|-----|--------|
 | **Merged `main` base SHA** | `cb7f479593706d841a698dafb5463f7adc744fca` | WS-1 merge commit (PR #129); prior `main` `81beb3ac50e17068c7d6f26d9a07f2cb0442dbec` |
 | **WS-1 merged implementation tip** | `3b7bb2543c082b19233bf68dec8978e4df1e8b77` | Antigravity M0 FULL PASS; CI [36874569609](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36874569609) |
-| **Current development head** | `04a4a6a4e4a60ca6ed401e8af0b0a5446a717a66` | PR #130 tip (rebased on `cb7f479`; includes CI timeout + subprocess cwd fixes) |
-| **Final tree SHA** | `7257e0022414e02f2fd9f4b3d29edd63fa761c54` | At `04a4a6a4e4a60ca6ed401e8af0b0a5446a717a66` |
-| **Exact-head CI-qualified SHA** | `04a4a6a4e4a60ca6ed401e8af0b0a5446a717a66` | CI [36901583756](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36901583756) **success** (all required checks) |
+| **Current development head** | `4971d34a32398152a23fed68e1e9a7e737990de8` | PR #130 tip (rebased on `cb7f479`; evidence docs + integration fixes) |
+| **Final tree SHA** | `47b475eba77fb1c885e2039567637e512ef6ff7c` | At `4971d34a32398152a23fed68e1e9a7e737990de8` |
+| **Exact-head CI-qualified SHA** | `4971d34a32398152a23fed68e1e9a7e737990de8` | CI [36907576815](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36907576815) **success** (all required checks) |
 
 > Stacked-branch SHAs (`ae181d7`, `1ae68b3`, …) are **historical context only**. Do not treat them as exact-head CI evidence.
 
@@ -25,7 +25,7 @@ See `docs/ws2/WS2_INTEGRATION_GATE_STATUS.md`.
 | 3–5 Rebase + ancestry | **COMPLETE** |
 | 6 WS-2 bundle (rebased) | **COMPLETE** — **183 passed** |
 | 7 Full repo tests (rebased) | **COMPLETE** — **5179 passed**, 41 skipped, 0 failed |
-| 8 Exact-head GitHub CI | **COMPLETE** — [36901583756](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36901583756) |
+| 8 Exact-head GitHub CI | **COMPLETE** — [36907576815](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36907576815) |
 | 9 This package | **COMPLETE** (engineering handoff; Antigravity M1 separate) |
 | 10 BLK-P0-02 / BLK-P0-03 | **OPEN** |
 
@@ -75,7 +75,8 @@ pytest \
 | Run | URL |
 |-----|-----|
 | WS-1 qualified (M0, pre-merge head) | https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36874569609 |
-| PR #130 exact-head (rebased on `main`, qualified) | https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36901583756 |
+| PR #130 exact-head (rebased on `main`, qualified) | https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36907576815 |
+| PR #130 prior code head (pre-evidence doc commit) | https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36901583756 (`04a4a6a4e4a60ca6ed401e8af0b0a5446a717a66`) |
 
 ## Phase 7A scope
 

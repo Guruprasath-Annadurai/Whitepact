@@ -10,7 +10,7 @@
 |-----------|----------|------|
 | `origin/main` | `cb7f479593706d841a698dafb5463f7adc744fca` | Post–WS-1 merge (#129); merge commit |
 | WS-1 merged implementation tip | `3b7bb2543c082b19233bf68dec8978e4df1e8b77` | Merged via #129; Antigravity M0 FULL PASS; CI [36874569609](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36874569609) |
-| WS-2 development head | `04a4a6a4e4a60ca6ed401e8af0b0a5446a717a66` | PR [#130](https://github.com/Guruprasath-Annadurai/Whitepact/pull/130) rebased on `main`; exact-head CI [36901583756](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36901583756) **success** |
+| WS-2 development head | `4971d34a32398152a23fed68e1e9a7e737990de8` | PR [#130](https://github.com/Guruprasath-Annadurai/Whitepact/pull/130) rebased on `main`; exact-head CI [36907576815](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36907576815) **success** |
 | WS-1 qualified code tree (historical) | `b5641b740df63a8a408a900186f1d3cd00803174` | CI [36725514596](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36725514596) **success** |
 | WS-1 implementation (Antigravity) | `0207ed83ad1e0560ef270ae8c24ccde294d8fa2c` | CI [36712288188](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36712288188) **success** |
 | Cloud branch tip | `7386fadf8c88dc78044e9e7aceef9b655f6496b2` | PR #128 — **not** integrated |
@@ -90,4 +90,4 @@ Full register: `docs/phase0/PHASE0_OFFICIAL_DEFECT_REGISTER.md`. Supplemental: `
 ## Next executable actions
 
 1. Antigravity: independent M1 qualification per `docs/ws2/WS2_ANTIGRAVITY_M1_PACKET.md` (BLK-P0-02/03 remain OPEN until then).
-3. Lane B–F: analysis-only until M1 gate advances (no unsafe integration).
+2. Lane B–F: analysis-only until M1 gate advances (no unsafe integration).
