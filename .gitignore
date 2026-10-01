@@ -40,6 +40,12 @@ coverage.json
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
+# Terraform — never commit state or secrets
+**/.terraform/
+**/*.tfstate
+**/*.tfstate.*
+**/terraform.tfvars
+!**/terraform.tfvars.example
 .DS_Store
 *.aux
 *.log
