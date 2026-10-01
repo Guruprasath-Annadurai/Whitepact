@@ -8,7 +8,7 @@
 - **Branch:** `cursor/whitepact-ws2-runtime-authority-f7a9`
 - **PR:** [#130](https://github.com/Guruprasath-Annadurai/Whitepact/pull/130) (base `main` at `cb7f479593706d841a698dafb5463f7adc744fca`; rebased after merge of #129)
 - **Engineering head (pre–Antigravity M1):** see `docs/ws2/WS2_M1_EVIDENCE_PACKAGE.md` SHA ladder
-- **Exact-head CI (engineering):** [36907576815](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36907576815) **success** on `4971d34a32398152a23fed68e1e9a7e737990de8`
+- **Exact-head CI (engineering):** [36913753488](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36913753488) **success** on `32745a3be8cbb76f4b4767876122a568a392d4d9`
 
 ## Reproduction checklist
 
