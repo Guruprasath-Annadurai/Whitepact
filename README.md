@@ -11,48 +11,74 @@
   <a href="https://www.bestpractices.dev/projects/14112"><img src="https://www.bestpractices.dev/projects/14112/baseline" alt="OpenSSF Baseline"/></a>
 </p>
 
-<p align="center"><strong>WhitePact — an independent runtime authority, governance, and assurance layer for autonomous systems: a five-way governance decision engine (ALLOW / ALLOW_WITH_REDACTION / REQUIRE_APPROVAL / DENY / QUARANTINE), trust scoring, bias detection, guardrails, hallucination detection, compliance mapping (NIST AI RMF / EU AI Act / ISO 42001), cost intelligence, drift monitoring, a public Trust Index / leaderboard / AI Incident Database, and an MCP server (30 tools, 20 resources) with LangChain, LangGraph, and Google ADK trust-gate integrations.</strong></p>
+<p align="center"><strong>WhitePact is an independent, platform-neutral authorization boundary between an AI agent’s intent and consequential execution.</strong></p>
 
-```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                        WhitePact  v1.3.1                                     │
-│                                                                              │
-│  ┌──────────────┐  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐  │
-│  │ Governance   │  │ Trust Score │  │  Compliance  │  │  Guardrails      │  │
-│  │ 5-way decide │  │ 6-dim A–F   │  │ NIST/EU/ISO  │  │  PII + Tox       │  │
-│  └──────────────┘  └─────────────┘  └──────────────┘  └──────────────────┘  │
-│  ┌──────────────┐  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐  │
-│  │ Hallucination│  │ Cost Intel  │  │   Red Team   │  │  Drift Monitor   │  │
-│  │ Self-consist.│  │ Route+Budget│  │ 10 attacks   │  │  Alerts+Trend    │  │
-│  └──────────────┘  └─────────────┘  └──────────────┘  └──────────────────┘  │
-│  ┌──────────────┐  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐  │
-│  │ AI Passport  │  │  BiasBuster │  │ PrivacyLabel │  │  MCP Server      │  │
-│  │ SHA-256 cert │  │ 6 probes+CI │  │  Federated   │  │  30 tools/HTTP   │  │
-│  └──────────────┘  └─────────────┘  └──────────────┘  └──────────────────┘  │
-│  ┌──────────────────────────────────────────────────────────────────────────┐ │
-│  │   Governance Dashboard — FastAPI · Per-org rate limit · Alembic · OTEL  │ │
-│  └──────────────────────────────────────────────────────────────────────────┘ │
-└──────────────────────────────────────────────────────────────────────────────┘
-```
+WhitePact's primary focus is **AI Agent Runtime Authority**: evaluating whether
+an agent's proposed action is authorized before consequential execution.
+The canonical decision outcomes are **ALLOW, ALLOW_WITH_REDACTION,
+REQUIRE_APPROVAL, DENY, QUARANTINE**.
+
+> The agent may think freely. It may plan freely. But it cannot act outside
+> independently enforced authority.
+
+**Enforcement boundary.** WhitePact controls execution only where the action
+passes through an enforced WhitePact integration. Calling a decision API or
+connecting an MCP client does not, by itself, place every action behind that
+boundary. Coverage depends on the integration, identity context and deployment
+configuration. A decision record alone is not proof of the downstream outcome.
+See [ENFORCEMENT_BOUNDARY.md](ENFORCEMENT_BOUNDARY.md) for documented scope and
+limitations, and verify them against the exact build and deployment in use.
+
+**Supporting capabilities.** Trust scoring, bias detection, guardrails,
+hallucination detection, compliance mapping (NIST AI RMF / EU AI Act /
+ISO 42001), cost intelligence, drift monitoring, the Trust Index, leaderboard
+and AI Incident Database provide assessment and operational context around
+this core. The MCP server and LangChain, LangGraph and Google ADK integrations
+provide interfaces and integration options. These capabilities do not
+automatically become enforcement controls merely because they are available.
+
+**Version status — checked 26 September 2026.** The `main` branch declares
+**WhitePact v1.3.1**; the latest verified published release on GitHub and PyPI is
+**1.2.6**. Main-branch documentation may describe work not present in the
+published package. Neither version number establishes the version deployed
+on a hosted service, release-candidate approval or production readiness.
+Consult the [published release](https://github.com/Guruprasath-Annadurai/Whitepact/releases/tag/v1.2.6),
+[PyPI package](https://pypi.org/project/rai-governance-platform/) and
+[changelog](CHANGELOG.md) separately.
+
+### Capability overview
+
+| Role | Capabilities |
+|---|---|
+| Runtime authority core | Five-way decisions, policy and risk evaluation, approval workflow, execution authorization and evidence within the documented enforcement boundary |
+| Assessment and operational support | Trust Score, compliance mapping, guardrails, hallucination analysis, cost intelligence, red-team simulation and drift monitoring |
+| Additional assessment and data capabilities | AI Passport, BiasBuster and PrivacyLabel |
+| Interfaces | MCP server, Python SDK, REST API and governance dashboard |
+
+This overview describes the repository's capability areas; it is not a
+release-specific feature matrix or evidence of enterprise deployment.
 
 ---
 
 ## What this solves
 
-Every team deploying AI in production faces the same gap: **no unified way to
-prove a model — or an autonomous agent's actions — is safe, fair, compliant,
-and accountable.** Audits are manual, bias is discovered in production,
-compliance is a spreadsheet, an agent's tool calls go ungoverned, and nobody
-knows what the LLM bill will be next month.
+An autonomous agent can identify a useful action without having authority
+to execute it. The runtime question is: **who may authorize this specific
+action, against this target, under the current constraints?**
 
-WhitePact gives you one platform — a REST API, a Python SDK, an MCP server,
-and a live dashboard — that covers the full governance lifecycle:
+WhitePact focuses on that boundary. Its runtime authority components evaluate
+proposed actions; enforced integrations connect authorization to dispatch.
+Supporting assessment and operational tools help inspect risks and outcomes.
+They do not, by themselves, prove that a system is safe or compliant.
+
+The following inventory retains the broader capabilities. Read each result
+within its documented methodology and deployment scope:
 
 | Problem | Module | Output |
 |---|---|---|
 | Should this agent action be allowed, redacted, held for approval, denied, or quarantined? | `WhitePactRuntimeGateway` (governance core) | A five-way `GovernanceDecision`, deterministic, no LLM call in the decision path |
 | Is this model trustworthy? | `TrustScoreEngine` | 0–100 score, A–F grade, risk level |
-| Does it comply with regulations? | `ComplianceEngine` | NIST AI RMF, EU AI Act tier, ISO 42001 |
+| How does the supplied assessment map to frameworks? | `ComplianceEngine` | NIST AI RMF, EU AI Act tier and ISO 42001 mappings; not a compliance determination or certification |
 | Is it exposing PII? | `GuardrailsEngine` | Block / redact with audit log |
 | Is it hallucinating? | `HallucinationDetector` | Risk score, unsupported claims |
 | Can it be attacked? | `RedTeamSimulator` | 10 vectors, CVE IDs, safe-refusal rate |
@@ -64,11 +90,11 @@ and a live dashboard — that covers the full governance lifecycle:
 | Can I trust a third-party MCP server before connecting to it? | `SupplyChainScanner` | VERIFIED_FACT / INFERRED_SIGNAL / UNKNOWN verdicts — typosquat, description-content, known-incident checks |
 | Is there a tamper-evident record of every governance decision? | `EvidenceRepository` | Hash-chained `EvidenceRecord`, per-org, `verify_chain()` |
 | Does a risky action get a human in the loop? | `ApprovalRepository` | Race-safe `PENDING → APPROVED/DENIED` workflow |
-| How does this model rank against others, independently? | `Public Leaderboard` | Cross-model trust ranking from actually calling each model's API, not self-reported |
+| How does this model compare under the project's scoring methodology? | `Public Leaderboard` | Cross-model assessment results; see the published methodology and run evidence |
 | Can I cite and verify a trust score anywhere? | `Trust Index` | Free self-assessed or human-reviewed certified passport, verifiable at `/verify/{id}`, embeddable badge |
 | Has this AI system failed publicly before? | `AI Incident Database` | Crowd-reported, moderator-reviewed, hash-chained public registry |
 | Should my agent trust this third-party tool before calling it? | `rai_check_trust` + LangChain/LangGraph/ADK integrations | Free lookup, plus a real block/pause gate in-agent |
-| Can any MCP client govern every AI call? | `MCP Server` | 30 production governance tools over stdio, Streamable HTTP, or legacy HTTP+SSE |
+| How can MCP clients access WhitePact capabilities? | `MCP Server` | Tools and resources over stdio, Streamable HTTP or legacy HTTP+SSE; execution coverage depends on the enforced integration |
 
 ---
 
@@ -99,7 +125,12 @@ unless PyPI documents that distribution).
 
 ---
 
-## 30-second quickstart
+## Supporting assessment quickstart
+
+This example evaluates supplied model scores. It does not demonstrate
+execution authorization or establish that an agent's actions are governed.
+For the runtime decision example, see
+[Runtime authority core](#runtime-authority-core--five-way-decisions).
 
 ```bash
 # Start the governance dashboard
@@ -136,11 +167,12 @@ Open `http://localhost:8765` for the live dashboard and
 
 ---
 
-## Governance core — five-way decisions, not a binary block/allow
+## Runtime authority core — five-way decisions
 
-`src/responsibleai/governance/` (see `SPEC.md` Sections 4-8 for the full
-architecture contract) is a deterministic runtime authority sitting in front
-of agent tool calls:
+`src/responsibleai/governance/` (see `SPEC.md` Sections 4-8 for the
+architecture contract) evaluates proposed actions. This example shows the
+decision API; it does not dispatch a tool or demonstrate an enforced
+execution boundary:
 
 ```python
 from responsibleai.governance import WhitePactRuntimeGateway, ActionRequest, AuthorityContext
@@ -192,7 +224,7 @@ python examples/08_whitepact_enterprise_scenario.py
 
 ---
 
-## MCP Server — govern every AI call from Claude Code, Claude Desktop, or any MCP client
+## MCP Server — access runtime authority and supporting tools
 
 The MCP (Model Context Protocol) server exposes WhitePact as **30 tools and
 20 resources** (10 canonical resource URIs, dual-advertised under both
@@ -200,13 +232,21 @@ The MCP (Model Context Protocol) server exposes WhitePact as **30 tools and
 MCP-compatible client — Claude Code, Claude Desktop, Cursor, Windsurf, or your
 own agent runtime. Three transports are supported: stdio, Streamable HTTP
 (`/mcp`, current MCP spec), and legacy HTTP+SSE (`/sse` + `/messages/`, kept
-for older clients). When a team's client points at this server, every AI
-interaction is automatically governed — five-way governance decisions, trust
-scoring, guardrails, compliance checks (NIST AI RMF / EU AI Act / ISO 42001),
-bias evaluation, drift detection, cost tracking, and hash-chained audit
-evidence run on any call without code changes.
+for older clients).
+
+Connecting a client makes the advertised tools and resources available.
+It does not automatically govern every AI interaction or route unrelated
+tool calls through WhitePact. Execution control requires an enforced
+integration with the appropriate identity context and configuration.
+Assessment tools perform their specific functions when invoked; their
+availability is not a guarantee that they run on every call. See
+[ENFORCEMENT_BOUNDARY.md](ENFORCEMENT_BOUNDARY.md) before treating a setup
+as an execution control.
 
 ### Setup
+
+The setup below exposes WhitePact tools to a client. It is not, by itself,
+a demonstration of enforced authorization for the client's other actions.
 
 ```bash
 # Install
@@ -479,8 +519,10 @@ for fairness in [0.90, 0.88, 0.85, 0.72]:
 
 ## Governance Dashboard
 
-A production FastAPI application with a dark-mode SPA. A live instance is
-hosted at **[whitepact.com](https://whitepact.com)**.
+A FastAPI application with a dark-mode SPA for the project's operational
+and assessment interfaces. The project website is
+**[whitepact.com](https://whitepact.com)**; this README does not establish
+its current availability or deployed build.
 
 ```bash
 # Development (auth off, SQLite in-memory)
@@ -546,7 +588,7 @@ Trust Index standard and passport verification at `/verify/{id}` — see
 points AI crawlers/answer engines at these as canonical sources — see
 `GAME_CHANGER_STRATEGY.md` for why.
 
-### Production features
+### Deployment and operational capabilities
 
 | Feature | Detail |
 |---|---|
@@ -805,6 +847,10 @@ See [`ROADMAP.md`](ROADMAP.md) for the canonical NOW/NEXT/LATER plan. The list b
 ---
 
 ## Security & Open Source Assurance
+
+The records below concern project practices and release-artifact provenance.
+They are not evidence of a completed independent runtime-security evaluation,
+enterprise readiness, a customer deployment or a design-partner result.
 
 The official [OpenSSF/OSPS BadgeApp project](https://www.bestpractices.dev/projects/14112)
 currently records **OpenSSF Best Practices Silver** and **OSPS Baseline Level 1**.
