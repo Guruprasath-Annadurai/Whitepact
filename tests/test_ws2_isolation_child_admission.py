@@ -97,9 +97,7 @@ async def test_production_internal_executor_refuses_without_broker(
         "rai_health",
         arguments={},
     )
-    permit = authorize_execution(
-        DecisionResult(GovernanceDecision.ALLOW, action.action_id), action
-    )
+    permit = authorize_execution(DecisionResult(GovernanceDecision.ALLOW, action.action_id), action)
     sink = AsyncMock()
     monkeypatch.setattr("responsibleai.mcp.tools.dispatch_tool", sink)
     from responsibleai.isolation.errors import IsolationBackendUnavailableError, IsolationError
