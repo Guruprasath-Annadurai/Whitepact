@@ -1,28 +1,25 @@
 # WS-4 / M3 — engineering status
 
-**Branch:** `cursor/whitepact-ws4-m3-enterprise-f7a9` (stacked on WS-3 / M2 head)  
-**Cursor status:** `IN_PROGRESS`  
-**Stack head (verify on GitHub):** `cursor/whitepact-ws4-m3-enterprise-f7a9`
+**Branch:** `cursor/whitepact-ws4-m3-enterprise-f7a9` (stacked on WS-3 / M2)  
+**Cursor status:** `M3_ENGINEERING_COMPLETE — READY_FOR_INDEPENDENT_AUDIT`  
+**Engineering freeze:** record exact `git rev-parse HEAD` on PR **#133** after green CI (Antigravity certifies).
 
 ## Prerequisites
 
-- M2 marked **M2_ENGINEERING_COMPLETE — READY_FOR_INDEPENDENT_AUDIT** on `cursor/whitepact-ws3-saas-unified-f7a9` (`8591043`).
+- M2 **M2_ENGINEERING_COMPLETE — READY_FOR_INDEPENDENT_AUDIT** on `cursor/whitepact-ws3-saas-unified-f7a9`.
 
-## M3 targets (open)
+## M3 targets
 
-| ID | Scope | Notes |
-|----|--------|--------|
-| P1-02 | Team invitations | `tests/test_web_invitations_adversarial.py` (6 scenarios) |
-| P1-03 | SDK governance | `sdk/python/rai_client/governance.py`, `sdk/typescript/src/governance.ts`, `tests/test_sdk_governance_contract.py` |
-| P1-04 | Paddle sandbox | No production activation |
-| BLK-P0-05 | Package/product identity | `docs/PACKAGE_IDENTITY.md`; wheel/CLI coherence without public publish |
-| P1-05 | Break-glass | Operational UNKNOWN/reconciliation paths |
-| P1-06 | SIEM export | `GET /api/audit/siem-export`, `responsibleai/audit/siem_export.py`, `tests/test_siem_audit_export.py` |
-| P1-07 | Data lifecycle | `tests/test_web_account_lifecycle_m3.py` (sole-owner guard + step-up delete) |
-| BLK-P0-05 | Package identity | `pyproject.toml` WhitePact-first description (distribution unchanged) |
+| ID | Scope | Engineering evidence |
+|----|--------|----------------------|
+| P1-02 | Team invitations | `tests/test_web_invitations_adversarial.py` |
+| P1-03 | SDK governance | `sdk/python/rai_client/governance.py`, `sdk/typescript/src/governance.ts`, `tests/test_sdk_governance_contract.py`, `tests/test_sdk_governance_contract_matrix.py`, `tests/fixtures/governance_sdk_contract.py` |
+| P1-04 | Paddle sandbox | `tests/test_paddle_sandbox_matrix_m3.py` → canonical Paddle suites |
+| BLK-P0-05 | Package identity | `docs/PACKAGE_IDENTITY.md`, `pyproject.toml`, `tests/test_package_identity_m3.py` |
+| P1-05 | Break-glass / revocation | `tests/test_break_glass_runtime_m3.py` + `tests/test_governance_api.py` delegation revoke |
+| P1-06 | SIEM export + delivery | `siem_export.py`, `siem_delivery.py`, `tests/test_siem_audit_export.py`, `tests/test_siem_delivery_m3.py` |
+| P1-07 | Data lifecycle | `tests/test_web_account_lifecycle_m3.py` (sole-owner guard, transfer-then-delete) |
 
-## Next engineering actions
+## Next
 
-1. Dedicated `tests/test_web_invitations_adversarial.py` aligned to M3 §20 scenarios.
-2. Paddle webhook replay/out-of-order harness (sandbox only).
-3. SDK differential contract suite.
+- Stack **M4** (`cursor/whitepact-ws5-m4-cloud-hardening-f7a9`): Terraform plan-only validation, PostgreSQL concurrency, SSO/SCIM/a11y/tracing — **no cloud provision**.
