@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import uuid
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -31,25 +32,36 @@ async def web_client(monkeypatch: pytest.MonkeyPatch):
             yield client
 
 
-async def _onboard_owner(web_client: AsyncClient) -> str:
+def _unique_email(prefix: str) -> str:
+    return f"{prefix}-{uuid.uuid4().hex[:12]}@example.com"
+
+
+def _verification_token(reg_body: dict) -> str:
+    url = reg_body.get("verification_url")
+    assert url, f"expected dev verification_url in register response, got {reg_body!r}"
+    return parse_qs(urlparse(url).query)["token"][0]
+
+
+async def _onboard_owner(web_client: AsyncClient, email: str | None = None) -> str:
+    owner_email = email or _unique_email("policy-owner")
     reg = await web_client.post(
         "/api/v1/web/auth/register",
         json={
             "full_name": "Policy Owner",
-            "email": "policy-owner@example.com",
+            "email": owner_email,
             "password": "Policy-Owner-42!",
             "accepted_terms": True,
         },
     )
     assert reg.status_code == 202
-    token = parse_qs(urlparse(reg.json()["verification_url"]).query)["token"][0]
+    token = _verification_token(reg.json())
     assert (
         await web_client.post("/api/v1/web/auth/verify", json={"token": token})
     ).status_code == 200
     assert (
         await web_client.post(
             "/api/v1/web/auth/login",
-            json={"email": "policy-owner@example.com", "password": "Policy-Owner-42!"},
+            json={"email": owner_email, "password": "Policy-Owner-42!"},
         )
     ).status_code == 200
     csrf = web_client.cookies["wp_csrf"]
@@ -97,11 +109,12 @@ async def test_web_policy_read_and_admin_mutations(web_client: AsyncClient) -> N
 
 @pytest.mark.asyncio
 async def test_web_policy_mutations_require_admin(web_client: AsyncClient) -> None:
+    viewer_email = _unique_email("policy-viewer")
     owner_csrf = await _onboard_owner(web_client)
     invite = await web_client.post(
         "/api/v1/web/invitations",
         headers={"X-WP-CSRF": owner_csrf},
-        json={"email": "viewer@example.com", "role": "VIEWER"},
+        json={"email": viewer_email, "role": "VIEWER"},
     )
     assert invite.status_code in {200, 202}
     invite_url = invite.json()["invitation_url"]
@@ -111,17 +124,17 @@ async def test_web_policy_mutations_require_admin(web_client: AsyncClient) -> No
         "/api/v1/web/auth/register",
         json={
             "full_name": "Policy Viewer",
-            "email": "viewer@example.com",
+            "email": viewer_email,
             "password": "Viewer-Policy-42!",
             "accepted_terms": True,
         },
     )
     assert reg.status_code == 202
-    verify_token = parse_qs(urlparse(reg.json()["verification_url"]).query)["token"][0]
+    verify_token = _verification_token(reg.json())
     await web_client.post("/api/v1/web/auth/verify", json={"token": verify_token})
     await web_client.post(
         "/api/v1/web/auth/login",
-        json={"email": "viewer@example.com", "password": "Viewer-Policy-42!"},
+        json={"email": viewer_email, "password": "Viewer-Policy-42!"},
     )
     viewer_csrf = web_client.cookies["wp_csrf"]
     accepted = await web_client.post(
@@ -149,11 +162,12 @@ async def test_web_policy_mutations_require_admin(web_client: AsyncClient) -> No
 
 @pytest.mark.asyncio
 async def test_web_approval_resolve_requires_admin(web_client: AsyncClient) -> None:
+    analyst_email = _unique_email("policy-analyst")
     csrf = await _onboard_owner(web_client)
     invite = await web_client.post(
         "/api/v1/web/invitations",
         headers={"X-WP-CSRF": csrf},
-        json={"email": "analyst@example.com", "role": "ANALYST"},
+        json={"email": analyst_email, "role": "ANALYST"},
     )
     assert invite.status_code in {200, 202}
     token = parse_qs(urlparse(invite.json()["invitation_url"]).query)["token"][0]
@@ -161,16 +175,17 @@ async def test_web_approval_resolve_requires_admin(web_client: AsyncClient) -> N
         "/api/v1/web/auth/register",
         json={
             "full_name": "Analyst",
-            "email": "analyst@example.com",
+            "email": analyst_email,
             "password": "Analyst-Policy-42!",
             "accepted_terms": True,
         },
     )
-    verify_token = parse_qs(urlparse(reg.json()["verification_url"]).query)["token"][0]
+    assert reg.status_code == 202
+    verify_token = _verification_token(reg.json())
     await web_client.post("/api/v1/web/auth/verify", json={"token": verify_token})
     await web_client.post(
         "/api/v1/web/auth/login",
-        json={"email": "analyst@example.com", "password": "Analyst-Policy-42!"},
+        json={"email": analyst_email, "password": "Analyst-Policy-42!"},
     )
     analyst_csrf = web_client.cookies["wp_csrf"]
     accepted = await web_client.post(
