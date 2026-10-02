@@ -38,6 +38,7 @@ from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from responsibleai import __version__
+from responsibleai.audit.siem_export import encode_siem_jsonl
 from responsibleai.auth import mfa
 from responsibleai.auth.crypto_policy import validate_webhook_secret
 from responsibleai.auth.oidc import OIDCProvider
@@ -791,6 +792,14 @@ app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(RequestIDMiddleware)
 app.add_middleware(MaxBodySizeMiddleware)
+
+from responsibleai.dashboard.legacy_frontend import (  # noqa: E402
+    UnifiedSaaSLegacyRetirementMiddleware,
+    legacy_governance_retired_response,
+    unified_saas_legacy_retirement_enforced,
+)
+
+app.add_middleware(UnifiedSaaSLegacyRetirementMiddleware)
 
 # ── Static files ───────────────────────────────────────────────────────────────
 _static_dir = Path(__file__).parent / "static"
@@ -2490,6 +2499,15 @@ async def web_dashboard_domain(
             "billing_configured": (_paddle_billing_service or _stripe_service) is not None,
             "usage_meter": "not_available",
         }
+    if domain == "policies":
+        policy = await _ready(_policy_repo).get_policy(principal.org_id)
+        return {
+            "items": [_policy_rule_to_dict(r) for r in policy.rules],
+            "source": "policy_repository",
+            "domain": domain,
+            "org_id": principal.org_id,
+            "can_edit": principal.role in {Role.OWNER, Role.ADMIN},
+        }
     if domain == "usage":
         return {
             "items": [],
@@ -3114,6 +3132,8 @@ def _page_route(path: str, filename: str) -> None:
     breaking many."""
 
     async def _handler() -> HTMLResponse:
+        if unified_saas_legacy_retirement_enforced(settings):
+            return legacy_governance_retired_response()
         return HTMLResponse(content=(_static_dir / filename).read_text())
 
     app.get(path, response_class=HTMLResponse, include_in_schema=False)(_handler)
@@ -5570,6 +5590,78 @@ async def governance_reorder_policy(
     return {"org_id": _auth.org_id, "rules": [_policy_rule_to_dict(r) for r in policy.rules]}
 
 
+@app.get("/api/web/policy", tags=["web-console"])
+@limiter.limit("30/minute")
+async def web_get_policy(
+    request: Request,
+    principal: WebPrincipal = Depends(get_web_principal),
+) -> dict[str, Any]:
+    org_id = _web_org_member(principal)
+    policy = await _ready(_policy_repo).get_policy(org_id)
+    return {
+        "org_id": org_id,
+        "rules": [_policy_rule_to_dict(r) for r in policy.rules],
+        "can_edit": principal.role in {Role.OWNER, Role.ADMIN},
+    }
+
+
+@app.post("/api/web/policy/rules", tags=["web-console"])
+@limiter.limit("20/minute")
+async def web_add_policy_rule(
+    request: Request,
+    req: PolicyRuleCreateRequest,
+    principal: WebPrincipal = Depends(require_web_csrf),
+) -> dict[str, Any]:
+    org_id = _web_org_admin(principal)
+    try:
+        rule = PolicyRule(
+            rule_id=req.rule_id,
+            reason_code=req.reason_code,
+            effect=GovernanceDecision(req.effect),
+            risk_tiers=frozenset(RiskTier(t) for t in req.risk_tiers) if req.risk_tiers else None,
+            action_types=frozenset(req.action_types) if req.action_types else None,
+            targets=frozenset(req.targets) if req.targets else None,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+    existing = await _ready(_policy_repo).get_policy(org_id)
+    if any(r.rule_id == rule.rule_id for r in existing.rules):
+        raise HTTPException(409, f"Rule {rule.rule_id!r} already exists for this org.")
+    await _ready(_policy_repo).add_rule(org_id, rule)
+    return _policy_rule_to_dict(rule)
+
+
+@app.delete("/api/web/policy/rules/{rule_id}", tags=["web-console"])
+@limiter.limit("20/minute")
+async def web_remove_policy_rule(
+    request: Request,
+    rule_id: str,
+    principal: WebPrincipal = Depends(require_web_csrf),
+) -> dict[str, str]:
+    org_id = _web_org_admin(principal)
+    try:
+        await _ready(_policy_repo).remove_rule(org_id, rule_id)
+    except PolicyRuleNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from None
+    return {"status": "removed", "rule_id": rule_id}
+
+
+@app.post("/api/web/policy/reorder", tags=["web-console"])
+@limiter.limit("20/minute")
+async def web_reorder_policy(
+    request: Request,
+    req: PolicyReorderRequest,
+    principal: WebPrincipal = Depends(require_web_csrf),
+) -> dict[str, Any]:
+    org_id = _web_org_admin(principal)
+    try:
+        await _ready(_policy_repo).reorder(org_id, req.rule_ids)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+    policy = await _ready(_policy_repo).get_policy(org_id)
+    return {"org_id": org_id, "rules": [_policy_rule_to_dict(r) for r in policy.rules]}
+
+
 def _workflow_rule_to_dict(rule: WorkflowSequenceRule) -> dict[str, Any]:
     return {
         "rule_id": rule.rule_id,
@@ -7263,6 +7355,29 @@ async def export_audit_log(
         content=buf.getvalue(),
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=audit-{days}d.csv"},
+    )
+
+
+@app.get("/api/audit/siem-export", tags=["audit"])
+@limiter.limit("10/minute")
+async def export_audit_siem(
+    request: Request,
+    days: int = Query(30, ge=1, le=365),
+    limit: int = Query(5000, ge=1, le=5000),
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> Response:
+    """Export tenant-scoped audit rows as newline-delimited JSON for SIEM ingestion."""
+    if not _audit_repo:
+        raise HTTPException(503, "Audit repository not initialised")
+    scoped_org_id = _auth.org_id
+    if not scoped_org_id:
+        raise HTTPException(403, "Organization context is required for SIEM export.")
+    rows = await _ready(_audit_repo).query(org_id=scoped_org_id, days=days, limit=limit)
+    body = encode_siem_jsonl(rows)
+    return Response(
+        content=body,
+        media_type="application/x-ndjson",
+        headers={"Content-Disposition": f"attachment; filename=audit-siem-{days}d.ndjson"},
     )
 
 
