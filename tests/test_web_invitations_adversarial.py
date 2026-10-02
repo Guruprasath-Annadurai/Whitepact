@@ -196,9 +196,7 @@ async def test_invitation_expired_token_rejected(web_client: AsyncClient) -> Non
     past = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
     async with engine.raw.begin() as conn:
         await conn.execute(
-            update(web_invitations)
-            .where(web_invitations.c.id == invite_id)
-            .values(expires_at=past)
+            update(web_invitations).where(web_invitations.c.id == invite_id).values(expires_at=past)
         )
     member_csrf = await _register_verify_login(
         web_client,
