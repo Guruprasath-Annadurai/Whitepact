@@ -1,8 +1,8 @@
 # WS-4 / M3 — engineering status
 
 **Branch:** `cursor/whitepact-ws4-m3-enterprise-f7a9` (stacked on WS-3 / M2)  
-**Cursor status:** `M3_ENGINEERING_COMPLETE — READY_FOR_INDEPENDENT_AUDIT`  
-**Engineering freeze:** record exact `git rev-parse HEAD` on PR **#133** after green CI (Antigravity certifies).
+**Cursor status:** `M3_ENGINEERING_IN_PROGRESS — EXACT_HEAD_CI_PENDING`  
+**Engineering freeze:** record exact `git rev-parse HEAD` on PR **#133** only after stacked exact-head full CI green (Antigravity certifies independently).
 
 ## Prerequisites
 
