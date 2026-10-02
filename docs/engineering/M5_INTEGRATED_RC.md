@@ -2,9 +2,11 @@
 
 **Status:** `IN_PROGRESS` — **not** engineering-frozen until exact-head full CI is green.
 
-## Candidate branch
+## Candidate branch / PR
 
-`cursor/whitepact-ws5-m4-cloud-hardening-f7a9` (stack tip containing M1→M4 commits via #130→#134 chain).
+- Branch: `cursor/whitepact-m5-integrated-rc-f7a9` (alias tip of WS-5 stack)
+- **PR #135 → `main`** (full CI matrix)
+- Engineering head (verify): `e7e6074` after fetch
 
 ## Required before `M5_ENGINEERING_FROZEN`
 
