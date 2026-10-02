@@ -67,6 +67,16 @@ export class GovernanceRuntimeClient {
     return (await res.json()) as Record<string, unknown>;
   }
 
+  async revokeDelegation(identityId: string, reason: string): Promise<Record<string, unknown>> {
+    const res = await fetch(this.url(`governance/delegations/${identityId}/revoke`), {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify({ reason }),
+    });
+    if (!res.ok) throw new Error(`revokeDelegation failed: ${res.status}`);
+    return (await res.json()) as Record<string, unknown>;
+  }
+
   async executeApproval(approvalId: string): Promise<Record<string, unknown>> {
     const res = await fetch(this.url(`governance/approvals/${approvalId}/execute`), {
       method: "POST",
