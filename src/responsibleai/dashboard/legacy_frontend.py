@@ -6,12 +6,15 @@ The modern WhitePact React SPA is the only supported enterprise workspace UI.
 Legacy pages used ``localStorage['rai_api_key']`` via ``static/js/app.js`` and
 must not remain reachable as an alternate governance surface when unified SaaS
 mode is enforced.
+
+Retired shell HTML/JS/CSS live under ``legacy_templates/`` (not mounted at
+``/static``). Unified/enterprise mode serves only an explicit static allowlist.
 """
 
 from __future__ import annotations
 
 import os
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 from urllib.parse import unquote
 
@@ -22,6 +25,13 @@ from starlette.staticfiles import StaticFiles
 
 if TYPE_CHECKING:
     from responsibleai.dashboard.config import Settings
+
+_PACKAGE_DIR = Path(__file__).resolve().parent
+LEGACY_TEMPLATES_ROOT = _PACKAGE_DIR / "legacy_templates"
+LEGACY_GOVERNANCE_SHELL_DIR = LEGACY_TEMPLATES_ROOT / "governance_shell"
+
+# Former on-disk subdir name — must never be servable under /static (BLK-P0-06-BYPASS-02).
+RETIRED_LEGACY_STATIC_NAMESPACE_SEGMENTS: frozenset[str] = frozenset({"_retired_legacy_governance"})
 
 # HTTP routes that served the legacy ResponsibleAI governance shell (app.js).
 LEGACY_GOVERNANCE_PAGE_PATHS: frozenset[str] = frozenset(
@@ -44,10 +54,7 @@ LEGACY_GOVERNANCE_PAGE_PATHS: frozenset[str] = frozenset(
     }
 )
 
-# On-disk directory for retired shell HTML (not under the public static mount root).
-LEGACY_GOVERNANCE_STATIC_SUBDIR = "_retired_legacy_governance"
-
-# Static assets that only exist to power the legacy shell.
+# Static assets that only exist to power the legacy shell (community mode disk layout).
 _LEGACY_HTML_FILENAMES: frozenset[str] = frozenset(
     {
         "index.html",
@@ -80,8 +87,27 @@ LEGACY_GOVERNANCE_STATIC_PATHS: frozenset[str] = frozenset(
     | {"/static/js/app.js", "/static/js/i18n.js", "/static/css/app.css"}
 )
 
-# Canonical inventory for regression tests (relative to /static/).
+# Canonical inventory for regression tests (relative to /static/ URL paths).
 RETIRED_LEGACY_STATIC_INVENTORY: frozenset[str] = frozenset(LEGACY_GOVERNANCE_STATIC_PATHS)
+
+# Public marketing / incident surfaces that remain under /static in unified mode.
+UNIFIED_SAAS_STATIC_ALLOW_REL_PATHS: frozenset[str] = frozenset(
+    {
+        "assess.html",
+        "leaderboard.html",
+        "registry.html",
+        "trust.html",
+        "verify.html",
+        "status.html",
+        "incident_db.html",
+        "incident_db_detail.html",
+        "incident_db_report.html",
+        "locales/en.json",
+        "locales/es.json",
+    }
+)
+
+UNIFIED_SAAS_STATIC_ALLOW_PREFIXES: tuple[str, ...] = ("whitepact/",)
 
 
 def unified_saas_legacy_retirement_enforced(settings: Settings) -> bool:
@@ -97,13 +123,7 @@ def unified_saas_legacy_retirement_enforced(settings: Settings) -> bool:
 
 
 def canonicalize_http_path(path: str, *, decode: bool = True) -> str:
-    """Normalize URL path segments (slashes, dot segments) without filesystem access.
-
-    Repeated slashes collapse; ``.`` is ignored; ``..`` pops one segment but cannot
-    escape above the root (``/``). Percent-encoded segments are decoded once when
-    ``decode`` is True (Starlette usually provides a decoded ``request.url.path``;
-    callers may pass raw paths for tests).
-    """
+    """Normalize URL path segments (slashes, dot segments) without filesystem access."""
     raw = path if path.startswith("/") else f"/{path}"
     if decode:
         try:
@@ -123,7 +143,6 @@ def canonicalize_http_path(path: str, *, decode: bool = True) -> str:
 
 
 def _static_relative_path(canonical_path: str) -> str | None:
-    """Return path under ``/static/`` if ``canonical_path`` is a static URL."""
     if not canonical_path.startswith("/static/"):
         if canonical_path == "/static":
             return ""
@@ -132,14 +151,38 @@ def _static_relative_path(canonical_path: str) -> str | None:
     return rel
 
 
+def is_retired_legacy_static_namespace(relpath: str) -> bool:
+    """True when URL maps to a blocked retired namespace under /static."""
+    canonical = canonicalize_http_path(f"/static/{relpath}")
+    rel = _static_relative_path(canonical)
+    if rel is None:
+        return False
+    parts = PurePosixPath(rel).parts
+    if not parts:
+        return False
+    return parts[0] in RETIRED_LEGACY_STATIC_NAMESPACE_SEGMENTS
+
+
 def is_retired_legacy_static_relpath(relpath: str) -> bool:
     """True if a static mount relative path resolves to a retired legacy asset."""
+    if is_retired_legacy_static_namespace(relpath):
+        return True
     canonical = canonicalize_http_path(f"/static/{relpath}")
     rel = _static_relative_path(canonical)
     if rel is None:
         return False
     normalized = str(PurePosixPath(rel))
     return normalized in LEGACY_SHELL_STATIC_REL_PATHS
+
+
+def is_allowed_unified_saas_static_relpath(relpath: str) -> bool:
+    """Allowlist for production/unified static serving (BLK-P0-06-BYPASS-02)."""
+    normalized = str(PurePosixPath(relpath))
+    if not normalized:
+        return False
+    if any(normalized.startswith(prefix) for prefix in UNIFIED_SAAS_STATIC_ALLOW_PREFIXES):
+        return True
+    return normalized in UNIFIED_SAAS_STATIC_ALLOW_REL_PATHS
 
 
 def is_retired_legacy_governance_path(path: str) -> bool:
@@ -155,6 +198,20 @@ def is_retired_legacy_governance_path(path: str) -> bool:
     if rel is not None and is_retired_legacy_static_relpath(rel):
         return True
     return False
+
+
+def legacy_shell_disk_path(relpath: str) -> Path | None:
+    """Map community-mode /static relative paths to on-disk legacy template files."""
+    normalized = str(PurePosixPath(relpath))
+    if normalized in _LEGACY_HTML_FILENAMES:
+        return LEGACY_GOVERNANCE_SHELL_DIR / normalized
+    if normalized == "js/app.js":
+        return LEGACY_TEMPLATES_ROOT / "assets" / "js" / "app.js"
+    if normalized == "js/i18n.js":
+        return LEGACY_TEMPLATES_ROOT / "assets" / "js" / "i18n.js"
+    if normalized == "css/app.css":
+        return LEGACY_TEMPLATES_ROOT / "assets" / "css" / "app.css"
+    return None
 
 
 def legacy_governance_retired_response() -> HTMLResponse:
@@ -188,35 +245,7 @@ class UnifiedSaaSLegacyRetirementMiddleware(BaseHTTPMiddleware):
 
 
 class UnifiedSaasStaticFiles(StaticFiles):
-    """StaticFiles that cannot serve retired legacy shell assets in unified mode."""
-
-    def __init__(self, *args, legacy_html_dir: str | None = None, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self._legacy_html_dir = legacy_html_dir
-
-    def lookup_path(self, path: str):  # type: ignore[override]
-        from responsibleai.dashboard.config import get_settings
-
-        settings = get_settings()
-        if unified_saas_legacy_retirement_enforced(settings):
-            if is_retired_legacy_static_relpath(path):
-                return "", None
-        full_path, stat_result = super().lookup_path(path)
-        if stat_result is not None:
-            return full_path, stat_result
-        if (
-            self._legacy_html_dir
-            and not unified_saas_legacy_retirement_enforced(settings)
-            and str(PurePosixPath(path)) in LEGACY_SHELL_STATIC_REL_PATHS
-        ):
-            import os
-
-            joined = os.path.join(self._legacy_html_dir, path)
-            try:
-                return joined, os.stat(joined)
-            except OSError:
-                pass
-        return "", None
+    """StaticFiles with unified allowlist and no retired legacy under /static."""
 
     async def get_response(self, path: str, scope):  # type: ignore[override]
         from responsibleai.dashboard.config import get_settings
@@ -225,4 +254,24 @@ class UnifiedSaasStaticFiles(StaticFiles):
         if unified_saas_legacy_retirement_enforced(settings):
             if is_retired_legacy_static_relpath(path):
                 return legacy_governance_retired_response()
+            if not is_allowed_unified_saas_static_relpath(path):
+                return legacy_governance_retired_response()
         return await super().get_response(path, scope)
+
+    def lookup_path(self, path: str):  # type: ignore[override]
+        from responsibleai.dashboard.config import get_settings
+
+        settings = get_settings()
+        if unified_saas_legacy_retirement_enforced(settings):
+            if is_retired_legacy_static_relpath(path):
+                return "", None
+            if not is_allowed_unified_saas_static_relpath(path):
+                return "", None
+        full_path, stat_result = super().lookup_path(path)
+        if stat_result is not None:
+            return full_path, stat_result
+        if not unified_saas_legacy_retirement_enforced(settings):
+            disk = legacy_shell_disk_path(path)
+            if disk is not None and disk.is_file():
+                return str(disk), os.stat(disk)
+        return "", None

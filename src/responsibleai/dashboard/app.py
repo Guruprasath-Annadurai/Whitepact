@@ -793,7 +793,7 @@ app.add_middleware(RequestIDMiddleware)
 app.add_middleware(MaxBodySizeMiddleware)
 
 from responsibleai.dashboard.legacy_frontend import (  # noqa: E402
-    LEGACY_GOVERNANCE_STATIC_SUBDIR,
+    LEGACY_GOVERNANCE_SHELL_DIR,
     UnifiedSaaSLegacyRetirementMiddleware,
     UnifiedSaasStaticFiles,
     legacy_governance_retired_response,
@@ -804,13 +804,10 @@ app.add_middleware(UnifiedSaaSLegacyRetirementMiddleware)
 
 # ── Static files ───────────────────────────────────────────────────────────────
 _static_dir = Path(__file__).parent / "static"
-_legacy_governance_static_dir = _static_dir / LEGACY_GOVERNANCE_STATIC_SUBDIR
+_legacy_governance_static_dir = LEGACY_GOVERNANCE_SHELL_DIR
 app.mount(
     "/static",
-    UnifiedSaasStaticFiles(
-        directory=str(_static_dir),
-        legacy_html_dir=str(_legacy_governance_static_dir),
-    ),
+    UnifiedSaasStaticFiles(directory=str(_static_dir)),
     name="static",
 )
 
