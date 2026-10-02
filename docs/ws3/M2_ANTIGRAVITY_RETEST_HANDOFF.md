@@ -9,9 +9,14 @@
 |-------|--------|
 | Branch | `cursor/whitepact-ws3-saas-unified-f7a9` |
 | PR | #132 |
+<<<<<<< HEAD
 | Commit | *(new exact-head SHA after BYPASS-02 fix — verify on PR #132)* |
+=======
+| Commit | `d13caa114576d95eb20170eb1858387956103ae5` |
+| Tree | `ead40b9cb77f4e8b76b2bc3b92e82d666fbc9f17` |
+| Parent | `541a9036004ba0225665bc72ef2426f72efa3385` |
+>>>>>>> b863434 (fix(ci): i18n test path + StrEnum after legacy_templates move)
 | Prior failed retest | `6666530ca8be23e703e689df163bcbfa412231e4` (BYPASS-01 mitigated; BYPASS-02 open) |
-| Tree | `1e885bd509bf6da2caeabbec2be34500e532b76d` |
 | Prior failed qualification | `6b8a3c84af76a7d3ded7db0f4ce60cb0c8e9db64` (M2 **FAIL**, P0-06 reopened) |
 
 ## Finding remediated
@@ -23,7 +28,8 @@
 | Control | Implementation |
 |---------|----------------|
 | Layer A | `canonicalize_http_path()` + canonical matching in `UnifiedSaaSLegacyRetirementMiddleware` |
-| Layer B | `UnifiedSaasStaticFiles`; legacy HTML under `static/_retired_legacy_governance/` |
+| Layer B | Legacy shell under `legacy_templates/` (not mounted); unified static **allowlist** + namespace deny |
+| BYPASS-02 | `GET /static/_retired_legacy_governance/*` → **404**; 18×7 namespace alias matrix in tests |
 | Regression | `tests/test_ws3_unified_saas_legacy_frontend.py` (**48** cases, inventory + alias matrix) |
 | Local log | `/opt/cursor/artifacts/blk_p0_06_bypass01_tests.log` (**48 passed**, 2026-10-02) |
 | Full pytest (candidate tree) | `tests/test_ws3_unified_saas_legacy_frontend.py` — **48 passed** on WS-4 @ `ee7af39` / integrated @ `519f2d0` |
