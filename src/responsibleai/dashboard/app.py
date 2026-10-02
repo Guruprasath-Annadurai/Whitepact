@@ -30,7 +30,6 @@ from fastapi.responses import (
     RedirectResponse,
     Response,
 )
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -794,7 +793,9 @@ app.add_middleware(RequestIDMiddleware)
 app.add_middleware(MaxBodySizeMiddleware)
 
 from responsibleai.dashboard.legacy_frontend import (  # noqa: E402
+    LEGACY_GOVERNANCE_STATIC_SUBDIR,
     UnifiedSaaSLegacyRetirementMiddleware,
+    UnifiedSaasStaticFiles,
     legacy_governance_retired_response,
     unified_saas_legacy_retirement_enforced,
 )
@@ -803,7 +804,15 @@ app.add_middleware(UnifiedSaaSLegacyRetirementMiddleware)
 
 # ── Static files ───────────────────────────────────────────────────────────────
 _static_dir = Path(__file__).parent / "static"
-app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
+_legacy_governance_static_dir = _static_dir / LEGACY_GOVERNANCE_STATIC_SUBDIR
+app.mount(
+    "/static",
+    UnifiedSaasStaticFiles(
+        directory=str(_static_dir),
+        legacy_html_dir=str(_legacy_governance_static_dir),
+    ),
+    name="static",
+)
 
 
 # ── Auth / RBAC dependencies ───────────────────────────────────────────────────
@@ -3134,7 +3143,7 @@ def _page_route(path: str, filename: str) -> None:
     async def _handler() -> HTMLResponse:
         if unified_saas_legacy_retirement_enforced(settings):
             return legacy_governance_retired_response()
-        return HTMLResponse(content=(_static_dir / filename).read_text())
+        return HTMLResponse(content=(_legacy_governance_static_dir / filename).read_text())
 
     app.get(path, response_class=HTMLResponse, include_in_schema=False)(_handler)
 
