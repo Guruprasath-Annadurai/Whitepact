@@ -1,7 +1,8 @@
 # WS-4 / M3 — engineering status
 
 **Branch:** `cursor/whitepact-ws4-m3-enterprise-f7a9` (stacked on WS-3 / M2 head)  
-**Cursor status:** `IN_PROGRESS`
+**Cursor status:** `IN_PROGRESS`  
+**Stack head (verify on GitHub):** `cursor/whitepact-ws4-m3-enterprise-f7a9`
 
 ## Prerequisites
 
@@ -11,8 +12,8 @@
 
 | ID | Scope | Notes |
 |----|--------|--------|
-| P1-02 | Team invitations | Existing web + IAM tests; extend adversarial matrix + session invalidation on role change |
-| P1-03 | SDK governance | Python/TS contract tests vs runtime |
+| P1-02 | Team invitations | `tests/test_web_invitations_adversarial.py` (6 scenarios) |
+| P1-03 | SDK governance | `sdk/python/rai_client/governance.py`, `sdk/typescript/src/governance.ts`, `tests/test_sdk_governance_contract.py` |
 | P1-04 | Paddle sandbox | No production activation |
 | BLK-P0-05 | Package/product identity | `docs/PACKAGE_IDENTITY.md`; wheel/CLI coherence without public publish |
 | P1-05 | Break-glass | Operational UNKNOWN/reconciliation paths |
