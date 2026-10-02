@@ -38,6 +38,7 @@ from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from responsibleai import __version__
+from responsibleai.audit.siem_export import encode_siem_jsonl
 from responsibleai.auth import mfa
 from responsibleai.auth.crypto_policy import validate_webhook_secret
 from responsibleai.auth.oidc import OIDCProvider
@@ -7354,6 +7355,29 @@ async def export_audit_log(
         content=buf.getvalue(),
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=audit-{days}d.csv"},
+    )
+
+
+@app.get("/api/audit/siem-export", tags=["audit"])
+@limiter.limit("10/minute")
+async def export_audit_siem(
+    request: Request,
+    days: int = Query(30, ge=1, le=365),
+    limit: int = Query(5000, ge=1, le=5000),
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> Response:
+    """Export tenant-scoped audit rows as newline-delimited JSON for SIEM ingestion."""
+    if not _audit_repo:
+        raise HTTPException(503, "Audit repository not initialised")
+    scoped_org_id = _auth.org_id
+    if not scoped_org_id:
+        raise HTTPException(403, "Organization context is required for SIEM export.")
+    rows = await _ready(_audit_repo).query(org_id=scoped_org_id, days=days, limit=limit)
+    body = encode_siem_jsonl(rows)
+    return Response(
+        content=body,
+        media_type="application/x-ndjson",
+        headers={"Content-Disposition": f"attachment; filename=audit-siem-{days}d.ndjson"},
     )
 
 
