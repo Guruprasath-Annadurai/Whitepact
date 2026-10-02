@@ -31,4 +31,6 @@ def test_m4_terraform_suite_on_integrated_stack() -> None:
     tf = ROOT / "test_terraform_m4_validate.py"
     if tf.is_file():
         return
-    pytest.skip("test_terraform_m4_validate.py present on cursor/whitepact-ws5-m4-cloud-hardening-f7a9")
+    pytest.skip(
+        "test_terraform_m4_validate.py present on cursor/whitepact-ws5-m4-cloud-hardening-f7a9"
+    )
