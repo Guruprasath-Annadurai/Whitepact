@@ -1,21 +1,29 @@
 # M5 lineage-correct integrated RC
 
-**Status:** `IN_PROGRESS` — not frozen until exact-head **18/18** green.
+**Status:** `ENGINEERING_IN_PROGRESS — EXACT_HEAD_CI_PENDING`  
+**PR:** #137 → `main`  
+**Branch:** `cursor/whitepact-m5-lineage-integrated-f7a9`
 
-## Ancestry requirements
+## Ancestry (required)
 
-1. `893d34a9d009560a3d9f07887c1afa3018f9e6dc` must be a **literal** ancestor (`git merge-base --is-ancestor`).
-2. M3 freeze target remains `6979a51` until Antigravity qualifies M3 independently.
-3. Post-M2 commits may be rewritten for DCO only; **do not** rewrite `893d34a`.
+```bash
+git merge-base --is-ancestor 893d34a9d009560a3d9f07887c1afa3018f9e6dc HEAD
+```
 
-## Branch
+Record after each push:
 
 | Field | Value |
 |-------|--------|
-| Branch | `cursor/whitepact-m5-lineage-integrated-f7a9` |
-| Base | `6979a51` (includes literal `893d34a`) |
-| PR | Open after first green CI push |
+| HEAD | *(update on push)* |
+| Tree | `git rev-parse HEAD^{tree}` |
+| merge-base with M2 | `893d34a…` |
 
-## Non-candidates
+## Non-freeze
 
-- PR **#135** (`cursor/whitepact-m5-integrated-rc-f7a9`) after `filter-branch` — engineering evidence only.
+Green CI on #137 is **engineering evidence only** until qualified M3 + M4 gates close.
+
+PR **#135** is diagnostic / rewritten history — not final RC.
+
+## M3 gate
+
+Independent M3 engineering candidate: PR **#136** (do not mutate while exact-head CI runs).
