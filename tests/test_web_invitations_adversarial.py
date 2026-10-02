@@ -372,9 +372,7 @@ async def test_duplicate_invite_supersedes_pending(web_client: AsyncClient) -> N
         json={"token": second_token},
     )
     assert fresh_accept.status_code == 200
-    await web_client.post(
-        "/api/v1/web/auth/logout", headers={"X-WP-CSRF": web_client.cookies["wp_csrf"]}
-    )
+    await web_client.post("/api/v1/web/auth/logout", headers={"X-WP-CSRF": web_client.cookies["wp_csrf"]})
     await web_client.post(
         "/api/v1/web/auth/login",
         json={"email": owner_email, "password": "Owner-Invite-42!"},

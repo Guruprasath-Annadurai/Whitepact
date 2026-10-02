@@ -10,7 +10,7 @@
 | BLK-P0-02 | P0 | Closed on branch (WS-2) | **VERIFIED_CLOSED** | `tests/test_mcp_ws2_authority_matrix.py` |
 | BLK-P0-03 | P0 | Closed on branch (WS-2) | **VERIFIED_CLOSED** | WS-2 authority / trust domain suites |
 | BLK-P0-04 | P0 | WS-3 SPA approvals | **VERIFIED_CLOSED** | `customer-journey.e2e.mjs`, web contract tests |
-| BLK-P0-06 | P0 | **REMEDIATED** @ `6666530` (CI **18/18** run `37001975576`) | **REOPENED** — Antigravity retest required | `tests/test_ws3_unified_saas_legacy_frontend.py` (48) |
+| BLK-P0-06 | P0 | Qualified @ `893d34a` | **VERIFIED_CLOSED** (Antigravity M2) | `tests/test_ws3_unified_saas_legacy_frontend.py` |
 
 ## P1 (programme scope)
 

@@ -98,7 +98,6 @@ async def _step_up_proof(org_id: str, user_id: str, *, action: str = "DESTROY_TE
 async def test_account_delete_requires_password_and_clears_session(web_client: AsyncClient) -> None:
     email, password, user_id, org_id = await _onboard(web_client)
     csrf = web_client.cookies["wp_csrf"]
-
     def _delete_headers(proof: dict) -> dict[str, str]:
         return {
             "X-WP-CSRF": csrf,
