@@ -1,8 +1,23 @@
 # WS-4 / M3 — engineering status
 
+<<<<<<< HEAD
 **Branch:** `cursor/whitepact-ws4-m3-enterprise-f7a9` (stacked on qualified WS-3 / M2)  
 **Cursor status:** `M3_ENGINEERING_IN_PROGRESS — TARGETED_CAMPAIGN`  
 **Prerequisite:** M2 **FULL PASS — EXACT-SHA QUALIFIED** @ `893d34a` (Antigravity; CI `37022536095`)
+=======
+**Branch:** `cursor/whitepact-ws4-m3-enterprise-f7a9` (stacked on WS-3 / M2)  
+**Cursor status:** `M3_ENGINEERING_IN_PROGRESS — EXACT_HEAD_CI_PENDING`  
+<<<<<<< HEAD
+**Local targeted gate:** 33/33 pytest slices passed (see `/opt/cursor/artifacts/m3_exact_head_tests.log`).  
+**Exact-head freeze:** record `git rev-parse HEAD` on PR **#133** only after full CI matrix green (Antigravity certifies independently).
+=======
+**Engineering freeze:** record exact `git rev-parse HEAD` on PR **#133** only after stacked exact-head full CI green (Antigravity certifies independently).
+>>>>>>> origin/cursor/whitepact-ws4-m3-enterprise-f7a9
+
+## Prerequisites
+
+- M2 **M2_ENGINEERING_COMPLETE — READY_FOR_INDEPENDENT_AUDIT** on `cursor/whitepact-ws3-saas-unified-f7a9`.
+>>>>>>> origin/cursor/whitepact-ws5-m4-cloud-hardening-f7a9
 
 ## M3 targets
 
