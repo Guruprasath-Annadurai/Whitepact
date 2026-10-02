@@ -86,4 +86,12 @@ export class GovernanceRuntimeClient {
     if (!res.ok) throw new Error(`executeApproval failed: ${res.status}`);
     return (await res.json()) as Record<string, unknown>;
   }
+
+  async getEvidence(evidenceId: string): Promise<Record<string, unknown>> {
+    const res = await fetch(this.url(`governance/evidence/${evidenceId}`), {
+      headers: this.headers(),
+    });
+    if (!res.ok) throw new Error(`getEvidence failed: ${res.status}`);
+    return (await res.json()) as Record<string, unknown>;
+  }
 }
