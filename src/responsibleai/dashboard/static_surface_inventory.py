@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 
 from responsibleai.dashboard.legacy_frontend import (
@@ -15,7 +15,7 @@ from responsibleai.dashboard.legacy_frontend import (
 _STATIC_ROOT = Path(__file__).resolve().parent / "static"
 
 
-class StaticAssetClass(str, Enum):
+class StaticAssetClass(StrEnum):
     MODERN_WHITEPACT = "modern_whitepact"
     PUBLIC_SHARED = "public_shared"
     UNKNOWN = "unknown"
