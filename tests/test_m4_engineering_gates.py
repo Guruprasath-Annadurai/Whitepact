@@ -16,6 +16,7 @@ M4_SUITE_FILES: tuple[str, ...] = (
     "test_restore_admission_chokepoint.py",
     "test_siem_audit_export.py",
     "test_siem_delivery_m3.py",
+    "test_m4_audit_export_batch_smoke.py",
 )
 
 M4_SUITE_FILES_WS5: tuple[str, ...] = M4_SUITE_FILES + ("test_terraform_m4_validate.py",)
