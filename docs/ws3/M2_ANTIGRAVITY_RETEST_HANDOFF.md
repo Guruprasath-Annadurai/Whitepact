@@ -9,8 +9,9 @@
 |-------|--------|
 | Branch | `cursor/whitepact-ws3-saas-unified-f7a9` |
 | PR | #132 |
-| Commit | `d13caa114576d95eb20170eb1858387956103ae5` |
-| Tree | `ead40b9cb77f4e8b76b2bc3b92e82d666fbc9f17` |
+| **Frozen exact CI head** | `893d34a9d009560a3d9f07887c1afa3018f9e6dc` |
+| Tree (frozen head) | `ef47788f8c6b10f5a34c178588335ce3c8e7c611` |
+| BYPASS-02 implementation anchor | `d13caa114576d95eb20170eb1858387956103ae5` (tree `ead40b9…`) |
 | Parent | `541a9036004ba0225665bc72ef2426f72efa3385` |
 | Prior failed retest | `6666530ca8be23e703e689df163bcbfa412231e4` (BYPASS-01 mitigated; BYPASS-02 open) |
 | Prior failed qualification | `6b8a3c84af76a7d3ded7db0f4ce60cb0c8e9db64` (M2 **FAIL**, P0-06 reopened) |
@@ -34,9 +35,9 @@
 
 | Item | Record when green |
 |------|-------------------|
-| Workflow run ID | `37001975576` — **success** |
+| Workflow run ID | `37022536095` — **success** |
 | Python 3.11 / 3.12 | Lint · Type-check · Test — **success** |
-| Full matrix | **18/18** checks **SUCCESS** on `6666530` |
+| Full matrix | **18/18** checks **SUCCESS** on frozen head `893d34a` |
 | Path-normalization regression | `tests/test_ws3_unified_saas_legacy_frontend.py` — **48 passed** (`/opt/cursor/artifacts/m2_candidate_6666530_full_legacy_suite.log`) |
 
 **Antigravity:** retest this **exact commit** only; Cursor does **not** claim M2 PASS.
