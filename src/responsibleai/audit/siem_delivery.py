@@ -24,7 +24,9 @@ class SiemDeliveryResult:
 class SiemEventForwarder:
     """Forward NDJSON audit/SIEM payloads to an enterprise HTTP collector."""
 
-    def __init__(self, *, max_retries: int = 3, retry_delays: tuple[float, ...] = (0.0, 0.25, 1.0)) -> None:
+    def __init__(
+        self, *, max_retries: int = 3, retry_delays: tuple[float, ...] = (0.0, 0.25, 1.0)
+    ) -> None:
         self._max_retries = max(1, max_retries)
         self._retry_delays = retry_delays
         self._delivered_hashes: set[str] = set()
