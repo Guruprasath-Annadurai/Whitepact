@@ -1,7 +1,7 @@
 # M5 — integrated RC engineering gate
 
 **Branch:** stacked on M4 (`cursor/whitepact-ws5-m4-cloud-hardening-f7a9` or successor)  
-**Cursor status:** `M5_ENGINEERING_COMPLETE — READY_FOR_INDEPENDENT_AUDIT` (pending full-repo green CI SHA)
+**Cursor status:** `M5_INTEGRATED_RC_IN_PROGRESS` — see `docs/engineering/M5_INTEGRATED_RC.md`
 
 ## Integrated RC criteria
 

@@ -1,47 +1,56 @@
 # WhitePact M1–M6 — final engineering master report (Cursor)
 
-**Document status:** ENGINEERING DRAFT — **not** a qualification or Antigravity PASS.  
+**Document status:** ENGINEERING DRAFT — evidence-tracked; **not** Antigravity PASS.  
 **Date:** 2026-10-02  
-**Authority:** Cursor engineering evidence only; Antigravity certifies independently.
+**Authority:** Cursor engineering only.
 
-## Milestone summary
+## Milestone summary (evidence-based)
 
-| Milestone | Branch (engineering) | Cursor status | Independent audit |
-|-----------|----------------------|---------------|-------------------|
-| M1 | `cursor/whitepact-ws1-cli-identity-f7a9` | Engineering complete (WS-1) | Antigravity pending |
-| M2 | `cursor/whitepact-ws3-saas-unified-f7a9` / PR #132 | `M2_ENGINEERING_COMPLETE` | Antigravity pending |
-| M3 | `cursor/whitepact-ws4-m3-enterprise-f7a9` / PR #133 | `M3_ENGINEERING_COMPLETE` | Antigravity pending |
-| M4 | `cursor/whitepact-ws5-m4-cloud-hardening-f7a9` | `M4_ENGINEERING_COMPLETE` (plan-only) | Cloud **BLOCKED — UNSAFE TO PROVISION** |
-| M5 | stacked on M4 | `M5_ENGINEERING_COMPLETE` (gate defined) | Requires full-repo green CI SHA |
-| M6 | — | **NOT FROZEN** | See hard blockers below |
+| Milestone | Branch / PR | Cursor engineering | Independent audit |
+|-----------|-------------|-------------------|-------------------|
+| M1 (WS-1/2) | #130 `cursor/whitepact-ws2-runtime-authority-f7a9` | Complete on branch | **Antigravity qualified** — `BLK-P0-02` / `BLK-P0-03` **VERIFIED_CLOSED** |
+| M2 (WS-3) | #132 `cursor/whitepact-ws3-saas-unified-f7a9` | `M2_ENGINEERING_COMPLETE` @ `6b8a3c8` CI 18/18 | Antigravity formal qualification **in progress** |
+| M3 (WS-4) | #133 `cursor/whitepact-ws4-m3-enterprise-f7a9` | `M3_ENGINEERING_IN_PROGRESS` — local 33/33; **exact-head CI pending** | Not started |
+| M4 (WS-5) | #134 `cursor/whitepact-ws5-m4-cloud-hardening-f7a9` | `M4_ENGINEERING_IN_PROGRESS` — `terraform validate` only | Cloud **BLOCKED — UNSAFE TO PROVISION** |
+| M5 integrated RC | tip of #134 stack | `M5_INTEGRATED_RC_IN_PROGRESS` | Requires green full CI on frozen SHA |
+| M6 frozen RC | — | **NOT FROZEN** | Founder merge + Antigravity final campaign |
 
-## Preserved constraints (unchanged)
+## Integrated candidate (M5)
 
-- **BLK-P0-02** / **BLK-P0-03**: remain **VERIFIED_CLOSED**; no weakening.
-- No founder merge of #130/#132 without approval.
-- No PyPI publish, no `terraform apply`, no live cloud provision.
+- **Branch:** `cursor/whitepact-ws5-m4-cloud-hardening-f7a9`
+- **Commit / tree:** assign only when CI green (`docs/engineering/M5_INTEGRATED_RC.md`)
+- **Ancestry:** `main` → #130 → #132 → #133 → #134 (see `docs/engineering/STACK_INVENTORY.md`)
 
-## M3 evidence index (representative)
+## M3 exact-head evidence (Cursor local)
 
-- Invitations: `tests/test_web_invitations_adversarial.py`
-- SDK governance: `tests/test_sdk_governance_contract_matrix.py`, `sdk/typescript/src/governance.ts`
-- SIEM: `src/responsibleai/audit/siem_delivery.py`, `tests/test_siem_delivery_m3.py`
-- Lifecycle: `tests/test_web_account_lifecycle_m3.py`
-- Package identity: `tests/test_package_identity_m3.py`
+| Target | Regression |
+|--------|------------|
+| P1-02 | `tests/test_web_invitations_adversarial.py` |
+| P1-03 | `tests/test_sdk_governance_contract*.py`, `tests/fixtures/governance_sdk_contract.py` |
+| P1-04 | `tests/test_paddle_sandbox_matrix_m3.py` + canonical Paddle suites |
+| BLK-P0-05 | `tests/test_package_identity_m3.py` |
+| P1-05 | `tests/test_break_glass_runtime_m3.py`, governance revoke cascade |
+| P1-06 | `tests/test_siem_audit_export.py`, `tests/test_siem_delivery_m3.py` |
+| P1-07 | `tests/test_web_account_lifecycle_m3.py` |
 
-## M4–M5 evidence index
+Log: `/opt/cursor/artifacts/m3_exact_head_tests.log`
 
-- Terraform validate: `tests/test_terraform_m4_validate.py`, `infra/terraform/`
-- PostgreSQL concurrency: `tests/test_auth_real_postgres.py` (PG-backed)
-- SCIM/SSO regression: `tests/test_scim_and_session_lifecycle.py`
-- M5 suite gate: `tests/test_m5_integrated_rc_gate.py`
+## M5 authority campaign
 
-## Hard blockers to frozen M6 RC
+`tests/test_m5_authority_regression_campaign.py` — cross-module fail-closed slices (SDK, MCP, web, SIEM, SCIM, tenancy).
 
-1. **Integrated green CI SHA** across stacked PRs not yet recorded as Antigravity-qualified.
-2. **Cloud re-audit** (`CLOUD-AG-01`–`07`) — provisioning remains forbidden.
-3. **Founder-controlled merges** and release promotion not executed by Cursor.
+## Supply chain (CI-owned)
 
-## Engineering closing position
+Dependency review, Gitleaks, CodeQL, reproducible build, wheel smoke, Helm lint — must be green on **exact integrated SHA** (not claimed here until recorded).
 
-Cursor has delivered stacked M1–M5 **engineering-complete** artifacts on feature branches with automated regression gates. **Frozen M6 RC** and public qualification require Antigravity independent audit plus founder release actions — not simulated in this report.
+## Production exclusions
+
+- No `terraform apply`
+- No PyPI publish
+- No founder merge of open PRs without approval
+
+## Known limitations
+
+- Cloud Terraform is **design + validate** only until Antigravity cloud re-audit.
+- OTEL end-to-end tracing: REPORT_ONLY.
+- M6 defect-register closure waits on integrated green SHA + canonical review pass.
