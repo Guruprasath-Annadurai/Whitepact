@@ -1,6 +1,6 @@
 # M2 remediation — Antigravity retest handoff (BLK-P0-06-BYPASS-01)
 
-**Cursor status:** `M2_REMEDIATION_CI_PENDING` until exact-head full CI green on candidate below.  
+**Cursor status:** **`M2 REMEDIATED — READY FOR ANTIGRAVITY RETEST`** on frozen candidate below.  
 **Do not interpret as Antigravity PASS.**
 
 ## Candidate (verify on GitHub)
@@ -31,11 +31,12 @@
 
 | Item | Record when green |
 |------|-------------------|
-| Workflow run ID | `37001975576` (in progress @ push of `6666530`) |
-| Python 3.11 / 3.12 | Lint · Type-check · Test jobs on PR #132 |
-| Full matrix | All 18 checks on `6666530` |
+| Workflow run ID | `37001975576` — **success** |
+| Python 3.11 / 3.12 | Lint · Type-check · Test — **success** |
+| Full matrix | **18/18** checks **SUCCESS** on `6666530` |
+| Path-normalization regression | `tests/test_ws3_unified_saas_legacy_frontend.py` — **48 passed** (`/opt/cursor/artifacts/m2_candidate_6666530_full_legacy_suite.log`) |
 
-When fully green, set Cursor status to **`M2 REMEDIATED — READY FOR ANTIGRAVITY RETEST`** in `docs/ws3/M2_ENGINEERING_STATUS.md` only — not PASS.
+**Antigravity:** retest this **exact commit** only; Cursor does **not** claim M2 PASS.
 
 ## Antigravity retest scope
 
