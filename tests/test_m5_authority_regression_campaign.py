@@ -32,9 +32,18 @@ CAMPAIGN: list[tuple[str, str]] = [
     ("exactly-one-effect UNKNOWN", "tests/test_v1_exactly_one_effect.py"),
     ("cross-tenant org admin", "tests/test_tenant_isolation_org_admin.py"),
     ("cross-tenant webhooks", "tests/test_tenant_isolation_webhooks.py"),
-    ("trust IAM cross-tenant", "tests/test_trust_iam_admission.py::test_cross_tenant_trust_decision_blocked"),
-    ("invitation replay", "tests/test_web_invitations_adversarial.py::test_invitation_wrong_email_and_replay"),
-    ("role downgrade session", "tests/test_web_invitations_adversarial.py::test_role_downgrade_revokes_member_session"),
+    (
+        "trust IAM cross-tenant",
+        "tests/test_trust_iam_admission.py::test_cross_tenant_trust_decision_blocked",
+    ),
+    (
+        "invitation replay",
+        "tests/test_web_invitations_adversarial.py::test_invitation_wrong_email_and_replay",
+    ),
+    (
+        "role downgrade session",
+        "tests/test_web_invitations_adversarial.py::test_role_downgrade_revokes_member_session",
+    ),
     ("SCIM/session lifecycle", "tests/test_scim_and_session_lifecycle.py"),
     ("SIEM export tenant scope", "tests/test_siem_audit_export.py"),
     ("SIEM delivery retries", "tests/test_siem_delivery_m3.py"),
@@ -43,7 +52,10 @@ CAMPAIGN: list[tuple[str, str]] = [
     ("Paddle canonical seams", "tests/test_auth_canonical_seams.py"),
     ("package wheel smoke", "tests/test_package_identity_m3.py"),
     ("evidence write fail-closed", "tests/test_mcp_ws2_failclosed_dependency_matrix.py"),
-    ("MCP evidence persistence", "tests/test_mcp_governance_dispatch.py::TestEvidenceWriteFailsClosed"),
+    (
+        "MCP evidence persistence",
+        "tests/test_mcp_governance_dispatch.py::TestEvidenceWriteFailsClosed",
+    ),
     ("runtime isolation evidence", "tests/test_runtime_isolation_hardgate.py"),
 ]
 
