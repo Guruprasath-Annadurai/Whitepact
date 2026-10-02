@@ -1,7 +1,8 @@
 # WS-3 / M2 — engineering status
 
 **Branch:** `cursor/whitepact-ws3-saas-unified-f7a9`  
-**Engineering freeze SHA (verify CI):** `3dffd5a` (after DCO + ruff format gate)  
+**Engineering freeze SHA:** `6b8a3c84af76a7d3ded7db0f4ce60cb0c8e9db64` (full CI **18/18 green**, 2026-10-02; e.g. [actions run 36993780109](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/36993780109))  
+**Prior gate SHAs:** `3dffd5a` (ruff format), `6b8a3c8` (unique-email policy tests)  
 **Base (M1 qualified PR #130 head):** `74e091e63c629cc5c1c1bb0de20d16594669b175`  
 **Cursor status:** `M2_ENGINEERING_COMPLETE — READY_FOR_INDEPENDENT_AUDIT` (Cursor engineering; not independent PASS)
 
