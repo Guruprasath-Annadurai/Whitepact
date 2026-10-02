@@ -17,7 +17,8 @@
 |--------|------------------------------|
 | `origin/cursor/whitepact-ws3-saas-unified-f7a9` | `4d511985a17b5c8960f080e2ca96f83872df3e05` |
 | `origin/cursor/whitepact-ws4-m3-enterprise-f7a9` | `35d0e6cd92e1670da1f6542098511a74d10f1ead` |
-| `origin/cursor/whitepact-ws5-m4-cloud-hardening-f7a9` | *push pending — use `git rev-parse` after fetch* |
+| `origin/cursor/whitepact-ws5-m4-cloud-hardening-f7a9` | `b15e543` (verify after fetch) |
+| `origin/cursor/whitepact-m5-integrated-rc-f7a9` | same tip as WS-5 — PR to `main` for full CI |
 
 ## Ancestry (expected)
 
