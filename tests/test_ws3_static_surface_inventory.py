@@ -40,6 +40,28 @@ def test_classify_samples(relpath: str, expected: StaticAssetClass) -> None:
     assert classify_static_relpath(relpath) is expected
 
 
+def test_classify_public_shared_marketing_asset() -> None:
+    assert classify_static_relpath("assess.html") is StaticAssetClass.PUBLIC_SHARED
+
+
+def test_legacy_frontend_allowlist_and_disk_mapping() -> None:
+    from responsibleai.dashboard.legacy_frontend import (
+        canonicalize_http_path,
+        is_allowed_unified_saas_static_relpath,
+        is_retired_legacy_static_namespace,
+        legacy_shell_disk_path,
+    )
+
+    assert is_retired_legacy_static_namespace("_retired_legacy_governance/index.html")
+    assert is_allowed_unified_saas_static_relpath("whitepact/assets/app.js")
+    assert is_allowed_unified_saas_static_relpath("leaderboard.html")
+    assert not is_allowed_unified_saas_static_relpath("")
+    assert legacy_shell_disk_path("js/i18n.js") is not None
+    assert legacy_shell_disk_path("css/app.css") is not None
+    assert legacy_shell_disk_path("not-legacy.html") is None
+    assert canonicalize_http_path("static/foo", decode=False) == "/static/foo"
+
+
 def test_unified_mode_unknown_static_paths_return_404(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("WHITEPACT_UNIFIED_SAAS", "1")
     client = TestClient(app)
