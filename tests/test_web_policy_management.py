@@ -43,7 +43,9 @@ async def _onboard_owner(web_client: AsyncClient) -> str:
     )
     assert reg.status_code == 202
     token = parse_qs(urlparse(reg.json()["verification_url"]).query)["token"][0]
-    assert (await web_client.post("/api/v1/web/auth/verify", json={"token": token})).status_code == 200
+    assert (
+        await web_client.post("/api/v1/web/auth/verify", json={"token": token})
+    ).status_code == 200
     assert (
         await web_client.post(
             "/api/v1/web/auth/login",
