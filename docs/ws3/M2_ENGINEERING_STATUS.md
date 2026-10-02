@@ -6,7 +6,7 @@
 **Exact-head CI:** [run 37001975576](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/37001975576) — **18/18 SUCCESS** (completed 2026-10-02T12:23:49Z)  
 **Prior gate SHAs:** `e469087` (P0-06 layers A+B), `6666530` (ruff F401)  
 **Base (M1 qualified PR #130 head):** `74e091e63c629cc5c1c1bb0de20d16594669b175`  
-**Cursor status:** **`M2 REMEDIATED — READY FOR ANTIGRAVITY RETEST`** (not M2 PASS; `BLK-P0-06` remains **REOPENED** until independent retest)  
+**Cursor status:** **`M2 REMEDIATED AGAIN — READY FOR ANTIGRAVITY RETEST`** (BYPASS-02 fix; not M2 PASS; `BLK-P0-06` **OPEN**)  
 **Antigravity (2026-10-02):** `BLK-P0-04` / `P1-01` **VERIFIED_CLOSED**; `BLK-P0-06` **REOPENED — P0 STOP-SHIP**
 
 ## M1 freeze (do not regress)
