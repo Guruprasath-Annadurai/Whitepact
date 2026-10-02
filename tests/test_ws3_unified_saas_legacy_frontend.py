@@ -17,11 +17,35 @@ from responsibleai.dashboard.legacy_frontend import (
     unified_saas_legacy_retirement_enforced,
 )
 
+_LEGACY_HTML_FILENAMES: tuple[str, ...] = tuple(
+    sorted(
+        path.removeprefix("/static/")
+        for path in RETIRED_LEGACY_STATIC_INVENTORY
+        if path.endswith(".html")
+    )
+)
+
 
 @pytest.fixture
 def unified_saas_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setenv("WHITEPACT_UNIFIED_SAAS", "1")
     return TestClient(app)
+
+
+def _retired_namespace_bypass_aliases(html_filename: str) -> list[str]:
+    """BLK-P0-06-BYPASS-02: retired dir must never be servable under /static."""
+    rel = f"_retired_legacy_governance/{html_filename}"
+    return sorted(
+        {
+            f"/static/{rel}",
+            f"/static//{rel}",
+            f"/static///{rel}",
+            f"/static//_retired_legacy_governance//{html_filename}",
+            f"/static/./{rel}",
+            f"/static/_retired_legacy_governance/../_retired_legacy_governance/{html_filename}",
+            f"/static/{quote(rel, safe='/')}",
+        }
+    )
 
 
 def _static_path_aliases(canonical_static_path: str) -> list[str]:
@@ -139,6 +163,26 @@ def test_legacy_app_js_not_served_when_unified_saas(unified_saas_client: TestCli
         response = unified_saas_client.get(path)
         assert response.status_code == 404
         assert "rai_api_key" not in response.text
+
+
+@pytest.mark.parametrize("html_name", sorted(_LEGACY_HTML_FILENAMES))
+def test_retired_namespace_paths_never_served_bypass_02(
+    unified_saas_client: TestClient, html_name: str
+) -> None:
+    for path in _retired_namespace_bypass_aliases(html_name):
+        response = unified_saas_client.get(path)
+        assert response.status_code == 404, path
+        assert "rai_api_key" not in response.text.lower()
+        assert response.headers.get("X-WhitePact-Legacy-Frontend") == "retired"
+
+
+@pytest.mark.parametrize("html_name", sorted(_LEGACY_HTML_FILENAMES))
+def test_retired_html_not_on_static_mount_disk(html_name: str) -> None:
+    from pathlib import Path
+
+    static_root = Path(__file__).resolve().parents[1] / "src/responsibleai/dashboard/static"
+    assert not (static_root / html_name).is_file()
+    assert not (static_root / "_retired_legacy_governance" / html_name).is_file()
 
 
 def test_modern_whitepact_static_still_served(unified_saas_client: TestClient) -> None:
