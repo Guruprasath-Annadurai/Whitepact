@@ -17,8 +17,9 @@
 | P1-04 | Paddle sandbox | No production activation |
 | BLK-P0-05 | Package/product identity | `docs/PACKAGE_IDENTITY.md`; wheel/CLI coherence without public publish |
 | P1-05 | Break-glass | Operational UNKNOWN/reconciliation paths |
-| P1-06 | SIEM export | Structured streaming + failure modes |
-| P1-07 | Data lifecycle | Deletion vs evidence retention |
+| P1-06 | SIEM export | `GET /api/audit/siem-export`, `responsibleai/audit/siem_export.py`, `tests/test_siem_audit_export.py` |
+| P1-07 | Data lifecycle | `tests/test_web_account_lifecycle_m3.py` (sole-owner guard + step-up delete) |
+| BLK-P0-05 | Package identity | `pyproject.toml` WhitePact-first description (distribution unchanged) |
 
 ## Next engineering actions
 

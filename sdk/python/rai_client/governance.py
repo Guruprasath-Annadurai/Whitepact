@@ -2,9 +2,35 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
+
+
+@dataclass(frozen=True)
+class GovernanceToolOutcome:
+    """Parsed result of a governed tool call."""
+
+    raw: dict[str, Any]
+
+    @property
+    def requires_approval(self) -> bool:
+        return self.raw.get("error") == "governance_approval_required"
+
+    @property
+    def approval_id(self) -> str | None:
+        return self.raw.get("approval_id")
+
+    @property
+    def denied(self) -> bool:
+        return self.raw.get("error") == "governance_denied"
+
+    @property
+    def reconciliation_required(self) -> bool:
+        return (
+            self.raw.get("status") == "UNKNOWN" or self.raw.get("reconciliation_required") is True
+        )
 
 
 class GovernanceRuntimeClient:
@@ -36,13 +62,23 @@ class GovernanceRuntimeClient:
         arguments: dict[str, Any] | None = None,
         *,
         purpose: str = "sdk-governance",
-    ) -> dict[str, Any]:
+    ) -> GovernanceToolOutcome:
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             resp = await client.post(
                 self._url("v1/governance/tools/call"),
                 headers=self._headers(),
                 json={"name": name, "arguments": arguments or {}, "purpose": purpose},
             )
+            return GovernanceToolOutcome(raw=resp.json())
+
+    async def revoke_delegation(self, identity_id: str, *, reason: str) -> dict[str, Any]:
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            resp = await client.post(
+                self._url(f"governance/delegations/{identity_id}/revoke"),
+                headers=self._headers(),
+                json={"reason": reason},
+            )
+            resp.raise_for_status()
             return resp.json()
 
     async def list_approvals(self, status: str | None = None) -> dict[str, Any]:

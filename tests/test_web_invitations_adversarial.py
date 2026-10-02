@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlparse
 
@@ -57,17 +58,22 @@ async def _register_verify_login(
     return client.cookies["wp_csrf"]
 
 
-async def _onboard_owner(client: AsyncClient, email: str = "owner-inv@example.com") -> str:
+def _unique_email(prefix: str) -> str:
+    return f"{prefix}-{uuid.uuid4().hex[:10]}@example.com"
+
+
+async def _onboard_owner(client: AsyncClient, email: str | None = None) -> str:
+    owner_email = email or _unique_email("owner-inv")
     csrf = await _register_verify_login(
         client,
-        email=email,
+        email=owner_email,
         password="Owner-Invite-42!",
         full_name="Invite Owner",
     )
     onboard = await client.post(
         "/api/v1/web/onboarding",
         headers={"X-WP-CSRF": csrf},
-        json={"organization_name": "Invite Org", "use_case": "Testing"},
+        json={"organization_name": f"Invite Org {owner_email[:12]}", "use_case": "Testing"},
     )
     assert onboard.status_code == 200, onboard.text
     return client.cookies["wp_csrf"]
@@ -307,3 +313,71 @@ async def test_member_removal_revokes_session(web_client: AsyncClient) -> None:
     )
     async with stale:
         assert (await stale.get("/api/v1/web/session")).status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_cross_tenant_cannot_revoke_foreign_invitation(web_client: AsyncClient) -> None:
+    owner_a = _unique_email("owner-a")
+    owner_b = _unique_email("owner-b")
+    csrf_a = await _onboard_owner(web_client, owner_a)
+    invite_a = await web_client.post(
+        "/api/v1/web/invitations",
+        headers={"X-WP-CSRF": csrf_a},
+        json={"email": _unique_email("member-a"), "role": "VIEWER"},
+    )
+    invite_id_a = invite_a.json()["id"]
+    await web_client.post("/api/v1/web/auth/logout", headers={"X-WP-CSRF": csrf_a})
+    csrf_b = await _onboard_owner(web_client, owner_b)
+    foreign = await web_client.delete(
+        f"/api/v1/web/invitations/{invite_id_a}",
+        headers={"X-WP-CSRF": csrf_b},
+    )
+    assert foreign.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_duplicate_invite_supersedes_pending(web_client: AsyncClient) -> None:
+    owner_email = _unique_email("dup-owner")
+    owner_csrf = await _onboard_owner(web_client, owner_email)
+    member_email = _unique_email("dup-member")
+    first = await web_client.post(
+        "/api/v1/web/invitations",
+        headers={"X-WP-CSRF": owner_csrf},
+        json={"email": member_email, "role": "VIEWER"},
+    )
+    first_id = first.json()["id"]
+    first_token = parse_qs(urlparse(first.json()["invitation_url"]).query)["token"][0]
+    second = await web_client.post(
+        "/api/v1/web/invitations",
+        headers={"X-WP-CSRF": owner_csrf},
+        json={"email": member_email, "role": "ANALYST"},
+    )
+    second_token = parse_qs(urlparse(second.json()["invitation_url"]).query)["token"][0]
+    assert first_token != second_token
+    member_csrf = await _register_verify_login(
+        web_client,
+        email=member_email,
+        password="Member-Invite-42!",
+        full_name="Dup Member",
+    )
+    stale_accept = await web_client.post(
+        "/api/v1/web/invitations/accept",
+        headers={"X-WP-CSRF": member_csrf},
+        json={"token": first_token},
+    )
+    assert stale_accept.status_code == 400
+    fresh_accept = await web_client.post(
+        "/api/v1/web/invitations/accept",
+        headers={"X-WP-CSRF": member_csrf},
+        json={"token": second_token},
+    )
+    assert fresh_accept.status_code == 200
+    await web_client.post("/api/v1/web/auth/logout", headers={"X-WP-CSRF": web_client.cookies["wp_csrf"]})
+    await web_client.post(
+        "/api/v1/web/auth/login",
+        json={"email": owner_email, "password": "Owner-Invite-42!"},
+    )
+    owner_csrf = web_client.cookies["wp_csrf"]
+    listing = await web_client.get("/api/v1/web/invitations", headers={"X-WP-CSRF": owner_csrf})
+    statuses = {item["id"]: item["status"] for item in listing.json()["invitations"]}
+    assert statuses.get(first_id) == "REVOKED"
