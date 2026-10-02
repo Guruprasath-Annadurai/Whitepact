@@ -9,11 +9,14 @@
 | Field | Value |
 |-------|--------|
 | Gate branch | `cursor/whitepact-m3-qualification-gate-f7a9` |
-| Gate commit | **must equal** `6979a51` (no production drift) |
+| Gate commit | **must equal** `6979a51` (no production drift; no gate-branch rewrite) |
+| M3 tree (freeze) | `fccf3ada3e173a059095f29bbed83656b3267c2c` |
 | Target | `main` (full CI matrix) |
 | Cursor status | `M3_ENGINEERING_IN_PROGRESS — EXACT_HEAD_CI_PENDING` |
 
 Mark **`M3_ENGINEERING_COMPLETE — READY_FOR_ANTIGRAVITY`** only when this exact commit is **18/18** green — not independent PASS.
+
+**DCO note:** PR #136 may fail DCO until unsigned post-M2 commits in the PR range are signed without changing the `6979a51` object (repository policy). Engineering freeze remains `6979a51`; resolve DCO via signed replay after M2 boundary on a non-freeze branch if required.
 
 ## Lineage proof (required)
 
