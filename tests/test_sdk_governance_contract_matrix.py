@@ -8,6 +8,7 @@ import inspect
 from pathlib import Path
 
 from sdk.python.rai_client.governance import GovernanceRuntimeClient
+
 from tests.fixtures.governance_sdk_contract import GOVERNANCE_SDK_CONTRACT
 
 TS_GOVERNANCE = Path(__file__).resolve().parents[1] / "sdk/typescript/src/governance.ts"
