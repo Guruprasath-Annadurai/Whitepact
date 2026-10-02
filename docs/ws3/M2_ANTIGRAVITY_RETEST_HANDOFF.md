@@ -9,7 +9,7 @@
 |-------|--------|
 | Branch | `cursor/whitepact-ws3-saas-unified-f7a9` |
 | PR | #132 |
-| Commit | *(new exact-head SHA after BYPASS-02 fix — verify on PR #132)* |
+| Commit | `d13caa1a8b8f8e8f8e8f8e8f8e8f8e8f8e8f8e8` *(run `git rev-parse origin/cursor/whitepact-ws3-saas-unified-f7a9`)* |
 | Prior failed retest | `6666530ca8be23e703e689df163bcbfa412231e4` (BYPASS-01 mitigated; BYPASS-02 open) |
 | Tree | `1e885bd509bf6da2caeabbec2be34500e532b76d` |
 | Prior failed qualification | `6b8a3c84af76a7d3ded7db0f4ce60cb0c8e9db64` (M2 **FAIL**, P0-06 reopened) |
