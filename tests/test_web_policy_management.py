@@ -4,12 +4,11 @@
 
 from __future__ import annotations
 
-import json
 from urllib.parse import parse_qs, urlparse
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 from asgi_lifespan import LifespanManager
+from httpx import ASGITransport, AsyncClient
 
 from responsibleai.dashboard import app as app_module
 
