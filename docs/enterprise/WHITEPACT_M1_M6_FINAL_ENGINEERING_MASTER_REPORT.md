@@ -10,7 +10,7 @@
 |------|-----|-------------------------|-----|----------------|
 | M2 | #132 | `893d34a9d009560a3d9f07887c1afa3018f9e6dc` | [37022536095](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/37022536095) 18/18 | **Antigravity M2 FULL PASS** |
 | M3 | #133 | `c281954a3c49094df7a7b19044c3035ef40f54c8` | Pending exact-head on integrated gate | Campaign 14/14 local; **exact-head CI pending** |
-| M5 integrated | #135 | `604efd1` (verify after push) | Pending | Rebuilt with M2+M3 ancestry — **not** frozen RC |
+| M5 integrated | #135 | `50b925c` (CI in flight) | Pending | DCO-clean rebuild; M2 object `893d34a` on #132 |
 
 M2 tree: `ef47788f8c6b10f5a34c178588335ce3c8e7c611`. BYPASS-02 anchor: `d13caa1` (ancestor of `893d34a`).
 
