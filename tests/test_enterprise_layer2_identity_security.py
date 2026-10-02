@@ -247,9 +247,18 @@ async def test_totp_replay_and_removal_requires_step_up(engine) -> None:
             )
         ).scalar()
     import pyotp
+    from sqlalchemy import update
 
     code = pyotp.TOTP(secret).now()
     await svc.confirm_totp(user_id, code)
+    # If confirm lands on the prior 30s window, align replay guard with verify's window.
+    current_timestep = int(time.time()) // 30
+    async with engine.raw.begin() as conn:
+        await conn.execute(
+            update(human_totp_factors)
+            .where(human_totp_factors.c.user_id == user_id)
+            .values(last_timestep=current_timestep)
+        )
     with pytest.raises(EnterpriseError) as replay:
         await svc.verify_totp(user_id, code)
     assert replay.value.code == CHALLENGE_REPLAY
