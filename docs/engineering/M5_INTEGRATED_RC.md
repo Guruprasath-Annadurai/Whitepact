@@ -7,8 +7,9 @@
 | Field | Value (2026-10-02) |
 |-------|---------------------|
 | Branch | `cursor/whitepact-m5-integrated-rc-f7a9` |
-| Commit | `592bfb562a8731f580f677d63cd79bf2bc1f0d64` |
-| Tree | `12fe0d13695ed4eb2de51f428fb89bcb5a651df1` |
+| Commit | `519f2d0f51bce9f76392bda8821b76beaf28cee1` |
+| Tree | `b0f4c72dc533e27d3c1e7b27d883334534680548` |
+| Prior candidate | `702d277fe8efeda455c75eff5e246c7289581dad` (superseded by gate/test doc cherry-pick) |
 | PR | https://github.com/Guruprasath-Annadurai/Whitepact/pull/135 |
 
 Squashed single commit for DCO + coherent M5 gate (stacked multi-commit history remains on #130–#134).
