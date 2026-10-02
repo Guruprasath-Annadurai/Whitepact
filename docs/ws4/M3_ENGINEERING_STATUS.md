@@ -1,7 +1,8 @@
 # WS-4 / M3 — engineering status
 
 **Branch:** `cursor/whitepact-ws4-m3-enterprise-f7a9` (stacked on qualified WS-3 / M2)  
-**Cursor status:** `M3_ENGINEERING_IN_PROGRESS — TARGETED_CAMPAIGN`  
+**Head (engineering):** `c281954a3c49094df7a7b19044c3035ef40f54c8`  
+**Cursor status:** `M3_ENGINEERING_IN_PROGRESS — EXACT_HEAD_CI_PENDING`  
 **Prerequisite:** M2 **FULL PASS — EXACT-SHA QUALIFIED** @ `893d34a` (Antigravity; CI `37022536095`)
 
 ## M3 targets
@@ -18,9 +19,9 @@
 
 ## Adversarial campaign
 
-`tests/test_m3_adversarial_security_campaign.py` — focused M3 matrix (run before exact-head CI gate).
+`tests/test_m3_adversarial_security_campaign.py` — **14/14 passed** locally (`/opt/cursor/artifacts/m3_adversarial_campaign.log`).
 
 ## Exact-head gate
 
-When campaign + full local matrix green, push one M3 candidate SHA and run PR **#133** full CI.  
+Integrated full CI on PR **#135** (`cursor/whitepact-m5-integrated-rc-f7a9` → `main`) after M3 stack merge.  
 Mark **`M3_ENGINEERING_COMPLETE — READY_FOR_ANTIGRAVITY`** only after **18/18** green — not independent PASS.
