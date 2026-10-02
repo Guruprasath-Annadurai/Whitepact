@@ -1,7 +1,7 @@
 # WS-5 / M4 — engineering status
 
 **Branch:** `cursor/whitepact-ws5-m4-cloud-hardening-f7a9` (stacked on M3 / PR #133)  
-**Cursor status:** `M4_ENGINEERING_COMPLETE — READY_FOR_INDEPENDENT_AUDIT` (plan-only; **no provision**)
+**Cursor status:** `M4_ENGINEERING_IN_PROGRESS` (plan-only; **no provision**; not cloud architecture qualified)
 
 ## Scope
 
