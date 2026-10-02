@@ -17,7 +17,7 @@ Implementation anchor for BYPASS-02: `d13caa114576d95eb20170eb1858387956103ae5` 
 | Milestone | Independent | Cursor engineering |
 |-----------|-------------|-------------------|
 | M1 | `BLK-P0-02` / `BLK-P0-03` **VERIFIED_CLOSED** | WS-2 authority suites |
-| M2 | **OPEN** (`BLK-P0-06`) | Remediated BYPASS-01/02 on frozen head; retest pending |
+| M2 | **FULL PASS — EXACT-SHA QUALIFIED** @ `893d34a` (Antigravity) | `BLK-P0-06` / BYPASS-01/02 **VERIFIED_CLOSED** |
 | M3 | Not started | P1-02..P1-07 targeted suites on stacked WS-4 |
 | M4 | Cloud **BLOCKED** | Postgres/SCIM/restore/SIEM/terraform validate |
 | M5 | Blocked on M2 | Integrated CI green @ `83f0414` (evidence) |
