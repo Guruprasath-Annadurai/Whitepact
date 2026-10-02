@@ -24,7 +24,8 @@
 | Layer A | `canonicalize_http_path()` + canonical matching in `UnifiedSaaSLegacyRetirementMiddleware` |
 | Layer B | `UnifiedSaasStaticFiles`; legacy HTML under `static/_retired_legacy_governance/` |
 | Regression | `tests/test_ws3_unified_saas_legacy_frontend.py` (**48** cases, inventory + alias matrix) |
-| Local log | `/opt/cursor/artifacts/blk_p0_06_bypass01_tests.log` |
+| Local log | `/opt/cursor/artifacts/blk_p0_06_bypass01_tests.log` (**48 passed**, 2026-10-02) |
+| Full pytest (candidate tree) | `tests/test_ws3_unified_saas_legacy_frontend.py` — **48 passed** on WS-4 @ `ee7af39` / integrated @ `519f2d0` |
 
 ## CI gate (exact head)
 
