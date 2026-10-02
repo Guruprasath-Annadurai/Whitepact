@@ -25,6 +25,10 @@ async def test_siem_delivery_exhausted_retries_fail_closed() -> None:
     assert result.error
 
 
+def test_restore_admission_chokepoint_importable() -> None:
+    import tests.test_restore_admission_chokepoint  # noqa: F401
+
+
 def test_m5_chaos_regression_modules_importable() -> None:
     """Ensure fail-closed matrices remain importable for campaign subprocess runs."""
     import tests.test_mcp_ws2_failclosed_dependency_matrix  # noqa: F401
