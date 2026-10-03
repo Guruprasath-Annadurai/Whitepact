@@ -7,8 +7,10 @@
 
 | Gate | PR | Frozen exact CI head | CI | Cursor status |
 |------|-----|----------------------|-----|----------------|
-| M2 Antigravity retest | #132 | `893d34a9d009560a3d9f07887c1afa3018f9e6dc` | [37022536095](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/37022536095) 18/18 | **READY FOR ANTIGRAVITY M2 RETEST** |
-| M5 integrated evidence | #135 | `83f041429adf4f45727be7830d39ad5343cb088d` | [37022548735](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/37022548735) 18/18 | Engineering only — **not** frozen RC |
+| M2 | #132 | `893d34a9d009560a3d9f07887c1afa3018f9e6dc` | 18/18 | **FULL PASS — EXACT-SHA QUALIFIED** |
+| M3 | #136 | `620399b7973f5ed058d45218610be228e72d3ed8` | 18/18 `37107348827` | **FULL PASS — EXACT-SHA QUALIFIED** |
+| M4 gate | #138 | `bfc4a01` (pending CI) | TBD | `M4_ENGINEERING_IN_PROGRESS` |
+| M5 lineage (#137) | #137 | evidence only | — | Rebuild RC after qualified M4 |
 
 Implementation anchor for BYPASS-02: `d13caa114576d95eb20170eb1858387956103ae5` (ancestor of `893d34a`).
 
@@ -18,10 +20,10 @@ Implementation anchor for BYPASS-02: `d13caa114576d95eb20170eb1858387956103ae5` 
 |-----------|-------------|-------------------|
 | M1 | `BLK-P0-02` / `BLK-P0-03` **VERIFIED_CLOSED** | WS-2 authority suites |
 | M2 | **FULL PASS — EXACT-SHA QUALIFIED** @ `893d34a` (Antigravity) | `BLK-P0-06` / BYPASS-01/02 **VERIFIED_CLOSED** |
-| M3 | Not started | P1-02..P1-07 targeted suites on stacked WS-4 |
-| M4 | Cloud **BLOCKED** | Postgres/SCIM/restore/SIEM/terraform validate |
-| M5 | Blocked on M2 | Integrated CI green @ `83f0414` (evidence) |
-| M6 | **NOT FROZEN** | Defect register draft |
+| M3 | **QUALIFIED** @ `620399b` | P1-02..P1-07 + TOTP replay **VERIFIED_CLOSED** |
+| M4 | Not qualified | Successor @ qualified M3; PR **#138** full CI |
+| M5 | Not frozen RC | #137 not final until M1→M4 chain |
+| M6 | **NOT FROZEN** | `docs/enterprise/M6_DEFECT_REGISTER.md` |
 
 ## M4 engineering slices (local)
 
