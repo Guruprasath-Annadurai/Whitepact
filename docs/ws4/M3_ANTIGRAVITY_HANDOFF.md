@@ -1,7 +1,20 @@
 # M3 — Antigravity handoff (Cursor engineering)
 
-**Cursor status:** `M3_ENGINEERING_IN_PROGRESS — EXACT_HEAD_CI_PENDING`  
+**Cursor status:** `ENGINEERING_IN_PROGRESS — EXACT_HEAD_CI_PENDING` (post TOTP remediation)  
 **Do not claim independent M3 PASS.**
+
+## M3-P1-TOTP-REPLAY-01 (retest focus)
+
+| Item | Detail |
+|------|--------|
+| Prior CI candidate | `656de8a5caaa8c8869017a121f9437860061475b` (superseded; not independently qualified) |
+| Reproduction | Confirm/verify at end of counter `N`, reuse same OTP in counter `N+1` with `valid_window=1` |
+| Root cause | `last_timestep` tracked server wall counter, not matched OTP counter |
+| Remediation | `verify_code_with_counter` + atomic `last_timestep < matched` UPDATE |
+| Tests | `tests/test_totp_matched_counter_security.py` (boundary, confirm→verify, verify→verify, concurrency) |
+| Incident doc | `docs/ws4/M3_TOTP_REPLAY_INCIDENT.md` |
+
+**Ask Antigravity:** attempt cross-window and concurrent replay against the new exact-head SHA after full CI is green.
 
 ## Frozen M3 WS-4 head (stacked PR #133)
 
