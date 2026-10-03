@@ -42,4 +42,5 @@ are rejected after a newer counter is consumed.
 ## Evidence
 
 - Regression suite: `tests/test_totp_matched_counter_security.py`
-- Artifact: `/opt/cursor/artifacts/m3_totp_replay_remediation.json` (updated on green CI)
+- Artifact: `/opt/cursor/artifacts/m3_qualification_gate_620399b_ci.json`
+- Gate CI: **18/18** @ `620399b` — run `37107348827`

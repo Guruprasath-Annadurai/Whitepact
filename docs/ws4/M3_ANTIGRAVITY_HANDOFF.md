@@ -1,7 +1,17 @@
 # M3 — Antigravity handoff (Cursor engineering)
 
-**Cursor status:** `ENGINEERING_IN_PROGRESS — EXACT_HEAD_CI_PENDING` (post TOTP remediation)  
+**Cursor status:** `M3_ENGINEERING_COMPLETE — READY_FOR_ANTIGRAVITY RETEST`  
 **Do not claim independent M3 PASS.**
+
+## Exact-head qualification gate (PR #136)
+
+| Field | Value |
+|-------|--------|
+| Branch | `cursor/whitepact-m3-qualification-gate-f7a9` |
+| HEAD | `620399b7973f5ed058d45218610be228e72d3ed8` |
+| Tree | `15b7934d93ad8692f5a5e8c2225c5f69c130da00` |
+| CI | **18/18** — workflow `37107348827` |
+| M2 ancestor | `893d34a9d009560a3d9f07887c1afa3018f9e6dc` (verified) |
 
 ## M3-P1-TOTP-REPLAY-01 (retest focus)
 
@@ -14,7 +24,7 @@
 | Tests | `tests/test_totp_matched_counter_security.py` (boundary, confirm→verify, verify→verify, concurrency) |
 | Incident doc | `docs/ws4/M3_TOTP_REPLAY_INCIDENT.md` |
 
-**Ask Antigravity:** attempt cross-window and concurrent replay against the new exact-head SHA after full CI is green.
+**Ask Antigravity:** attempt cross-window and concurrent replay against **`620399b`**; prior incomplete filter run does not substitute for this retest.
 
 ## Frozen M3 WS-4 head (stacked PR #133)
 
