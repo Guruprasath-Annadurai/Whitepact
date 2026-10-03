@@ -3,7 +3,7 @@
 **Base:** qualified M3 @ `620399b7973f5ed058d45218610be228e72d3ed8`  
 **Branch:** `cursor/whitepact-m4-successor-engineering-f7a9`  
 **Cursor status:** `M4_ENGINEERING_COMPLETE — READY_FOR_ANTIGRAVITY` (pending **18/18** on gate exact head)  
-**Exact-head candidate (gate tip):** `6b666c81104473894757957eb857689d0fbed6b7` (CI `37128536936`, **18/18**)  
+**Exact-head candidate (gate tip):** `ec4197f230bc27f6ef1400fdcf63aa865cbc9414` (CI `37143422663`, **18/18**)  
 **Do not claim independent M4 PASS.**
 
 ## Scope matrix

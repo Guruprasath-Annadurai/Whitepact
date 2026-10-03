@@ -8,11 +8,11 @@
 | Gate branch | `cursor/whitepact-m4-qualification-gate-f7a9` |
 | Successor branch | `cursor/whitepact-m4-successor-engineering-f7a9` |
 | Intermediate evidence | `bfc4a01` — PR #138 (`docs/ws5/M4_INTERMEDIATE_CI_EVIDENCE.md`) |
-| Final candidate SHA (gate tip) | `6b666c81104473894757957eb857689d0fbed6b7` |
-| Tree | `b0475d350a4418e4db8e99302533f55dfc8d0497` |
-| Parent | `fb3b82fcf25bbf11931b07aacb4dfd8f9777b2bf` |
+| Final candidate SHA (gate tip) | `ec4197f230bc27f6ef1400fdcf63aa865cbc9414` |
+| Tree | `7822ae8f520dddfc89580d0889e118912f212cbe` |
+| Parent | `6b666c81104473894757957eb857689d0fbed6b7` |
 | Engineering closure (substantive) | `5261eb96c12246232a80cdefd9a3b79592ee7a2e` |
-| CI run (**18/18**) | [`37128536936`](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/37128536936) |
+| CI run (**18/18**) | [`37143422663`](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/37143422663) |
 
 ## Evidence map
 
