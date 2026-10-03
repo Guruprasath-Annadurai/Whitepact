@@ -10,11 +10,19 @@ ROOT = Path(__file__).resolve().parent
 
 M4_SUITE_FILES: tuple[str, ...] = (
     "test_auth_real_postgres.py",
+    "test_phase5_postgres_concurrency.py",
+    "test_phase7a_authority_kernel.py",
+    "test_pg_security_preservation.py",
     "test_scim_and_session_lifecycle.py",
+    "test_iam_adversarial_matrix.py",
     "test_restore_admission_chokepoint.py",
     "test_siem_audit_export.py",
     "test_siem_delivery_m3.py",
     "test_m4_audit_export_batch_smoke.py",
+    "test_m4_hostile_regression_campaign.py",
+    "test_m4_postgres_assault_campaign.py",
+    "test_m4_telemetry_fail_closed.py",
+    "test_totp_matched_counter_security.py",
 )
 
 M4_SUITE_FILES_WS5: tuple[str, ...] = M4_SUITE_FILES + ("test_terraform_m4_validate.py",)

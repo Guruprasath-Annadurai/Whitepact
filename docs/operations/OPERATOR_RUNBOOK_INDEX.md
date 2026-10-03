@@ -4,14 +4,15 @@
 
 | Runbook | Path | Status |
 |---------|------|--------|
-| Incident response | *(draft)* | TODO |
-| Credential rotation | *(draft)* | TODO |
+| Incident response | `docs/operations/runbooks/INCIDENT_RESPONSE.md` | draft |
+| Credential rotation / API key | `docs/operations/runbooks/CREDENTIAL_COMPROMISE.md` | draft |
 | Approval service outage | *(draft)* | TODO |
-| Database outage | *(draft)* | TODO |
+| Database outage | `docs/operations/runbooks/DATABASE_OUTAGE.md` | draft |
+| Restore verification | `docs/operations/runbooks/RESTORE_VERIFICATION.md` | draft |
 | SIEM delivery outage | `docs/ws4/M3_QUALIFICATION_GATE.md` (export survives) | partial |
 | Revocation / stale grant | `tests/test_break_glass_runtime_m3.py` | test-backed |
 | MCP compromise | `docs/ws2/WS2_RUNTIME_AUTHORITY_PLAN.md` | reference |
-| Executor UNKNOWN | `tests/test_mcp_ws2_upstream_reconciliation.py` | test-backed |
+| Executor UNKNOWN | `docs/operations/runbooks/EXECUTOR_UNKNOWN_OUTCOME.md` | draft |
 | Emergency shutdown | *(draft)* | TODO |
 
 Cloud: **BLOCKED — UNSAFE TO PROVISION** until independent cloud re-audit.
