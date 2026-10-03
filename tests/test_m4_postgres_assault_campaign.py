@@ -24,6 +24,7 @@ M4_PG_PYTEST_TARGETS: tuple[str, ...] = (
     "tests/test_phase7a_authority_kernel.py::test_expired_lease_fails_cas",
     "tests/test_phase7a_authority_kernel.py::test_lease_reacquisition_advances_generation",
     "tests/test_phase5_postgres_concurrency.py",
+    "tests/test_pg_security_preservation.py::test_production_repository_compatibility_post_upgrade",
 )
 
 

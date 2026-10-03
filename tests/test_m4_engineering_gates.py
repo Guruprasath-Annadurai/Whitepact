@@ -22,6 +22,13 @@ M4_SUITE_FILES: tuple[str, ...] = (
     "test_m4_hostile_regression_campaign.py",
     "test_m4_postgres_assault_campaign.py",
     "test_m4_telemetry_fail_closed.py",
+    "test_m4_otel_correlation.py",
+    "test_m4_scim_adversarial_extension.py",
+    "test_m4_audit_index_performance_guard.py",
+    "test_m4_chaos_fail_closed.py",
+    "test_m4_revocation_under_failure.py",
+    "test_m4_restore_drill_evidence.py",
+    "test_m4_m123_regression_index.py",
     "test_totp_matched_counter_security.py",
 )
 
