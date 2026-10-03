@@ -1,6 +1,6 @@
 # M4 — Antigravity handoff
 
-**Status:** `M4_ENGINEERING_COMPLETE — READY_FOR_ANTIGRAVITY` (pending exact-head **18/18** on gate SHA recorded below).  
+**Status:** `M4_ENGINEERING_COMPLETE — READY_FOR_ANTIGRAVITY` (exact-head **18/18** CI pending on DCO-signed gate tip below).  
 **Qualified M3 ancestor (immutable):** `620399b7973f5ed058d45218610be228e72d3ed8` / tree `15b7934d93ad8692f5a5e8c2225c5f69c130da00`
 
 | Field | Value |
@@ -8,11 +8,11 @@
 | Gate branch | `cursor/whitepact-m4-qualification-gate-f7a9` |
 | Successor branch | `cursor/whitepact-m4-successor-engineering-f7a9` |
 | Intermediate evidence | `bfc4a01` — PR #138 (`docs/ws5/M4_INTERMEDIATE_CI_EVIDENCE.md`) |
-| Final candidate SHA (gate tip) | `c6e669de0895d314292fe09cda3b898359667bab` |
-| Engineering closure | `02df01ec7e54a075a9c2b0e730952c54a7540b8f` |
-| Parent (gate tip) | `c3c64ea83a86fe803dc6fcc6a0d81d7a161df91d` |
-| Tree (gate tip) | `c7f7341147cff439649b910fa04cbf03b12bba45` |
-| CI run | *(record workflow id when 18/18)* |
+| Final candidate SHA (gate tip) | `da4fa7d` *(full hash after push — DCO-signed lineage)* |
+| Engineering closure (substantive) | `5261eb9` *(DCO-signed; same tree as pre-rebase `02df01e`)* |
+| Qualified M3 ancestor | `620399b7973f5ed058d45218610be228e72d3ed8` |
+| CI run (prior tip, 17/18 — DCO miss) | `37120233461` @ `cf7ce4a` |
+| CI run (authoritative freeze) | *(record on green **18/18** for gate tip)* |
 
 ## Evidence map
 
