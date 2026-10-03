@@ -6,8 +6,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 ROOT = Path(__file__).resolve().parent
 
 M4_SUITE_FILES: tuple[str, ...] = (
@@ -27,11 +25,6 @@ def test_m4_required_suites_present() -> None:
         assert (ROOT / name).is_file(), f"missing M4 suite: {name}"
 
 
-def test_m4_terraform_suite_on_integrated_stack() -> None:
-    """Terraform validate gate ships on WS-5 / M5 integrated branch."""
-    tf = ROOT / "test_terraform_m4_validate.py"
-    if tf.is_file():
-        return
-    pytest.skip(
-        "test_terraform_m4_validate.py present on cursor/whitepact-ws5-m4-cloud-hardening-f7a9"
-    )
+def test_m4_terraform_validate_suite_present() -> None:
+    """Plan-only terraform validate ships on the qualified M4 successor stack."""
+    assert (ROOT / "test_terraform_m4_validate.py").is_file()
