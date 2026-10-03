@@ -31,7 +31,9 @@ async def engine():
 
 async def _user(engine) -> str:
     web = WebIdentityRepository(engine)
-    user_id, token = await web.register("Human", "totp-security@example.com", "correct-horse-battery-staple-9")
+    user_id, token = await web.register(
+        "Human", "totp-security@example.com", "correct-horse-battery-staple-9"
+    )
     assert await web.verify_email(token)
     return user_id
 
@@ -109,7 +111,9 @@ async def test_m3_p1_reproduce_cross_window_verify_replay(engine) -> None:
     async with engine.raw.connect() as conn:
         last = (
             await conn.execute(
-                select(human_totp_factors.c.last_timestep).where(human_totp_factors.c.user_id == user_id)
+                select(human_totp_factors.c.last_timestep).where(
+                    human_totp_factors.c.user_id == user_id
+                )
             )
         ).scalar()
     assert last == counter_n
