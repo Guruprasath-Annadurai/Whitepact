@@ -8,10 +8,10 @@
 | Gate branch | `cursor/whitepact-m4-qualification-gate-f7a9` |
 | Successor branch | `cursor/whitepact-m4-successor-engineering-f7a9` |
 | Intermediate evidence | `bfc4a01` — PR #138 (`docs/ws5/M4_INTERMEDIATE_CI_EVIDENCE.md`) |
-| Final candidate SHA (gate tip) | `48ca2dd6f089ebec0718bba53bbb02c4aa1444c7` |
+| Final candidate SHA (gate tip) | `c6e669de0895d314292fe09cda3b898359667bab` |
 | Engineering closure | `02df01ec7e54a075a9c2b0e730952c54a7540b8f` |
-| Parent (gate tip) | `02df01ec7e54a075a9c2b0e730952c54a7540b8f` |
-| Tree (gate tip) | `3b7fc431ca31fa9725d1ddc1ef43fb55c4904337` |
+| Parent (gate tip) | `c3c64ea83a86fe803dc6fcc6a0d81d7a161df91d` |
+| Tree (gate tip) | `c7f7341147cff439649b910fa04cbf03b12bba45` |
 | CI run | *(record workflow id when 18/18)* |
 
 ## Evidence map
