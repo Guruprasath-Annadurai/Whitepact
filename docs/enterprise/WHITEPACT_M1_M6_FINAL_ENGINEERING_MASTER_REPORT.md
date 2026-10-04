@@ -1,6 +1,6 @@
 # WhitePact M1–M6 — final engineering master report (Cursor)
 
-**Document status:** M6 engineering closure in progress — **not** Antigravity M6 PASS.
+**Document status:** `M6_ENGINEERING_COMPLETE — READY_FOR_FINAL_ANTIGRAVITY_QUALIFICATION` @ `efd274d` — **not** Antigravity M6 PASS.
 
 ## Qualified milestones (Antigravity)
 
