@@ -1,38 +1,49 @@
 # WhitePact M1–M6 — final engineering master report (Cursor)
 
-**Document status:** ENGINEERING DRAFT — evidence-tracked; **not** Antigravity PASS.  
-**Parallel engineering branch:** `cursor/whitepact-m3-m6-parallel-engineering-f7a9` (does not supersede frozen CI heads).
+**Document status:** ENGINEERING DRAFT — **not** Antigravity PASS for M4/M5/M6.  
+**Parallel prep branch:** `cursor/whitepact-m5-m6-parallel-prep-f7a9` (does not modify frozen M4).
 
-## Frozen qualification heads (exact SHA discipline)
+## Qualified milestones (Antigravity)
 
-| Gate | PR | Frozen exact CI head | CI | Cursor status |
-|------|-----|----------------------|-----|----------------|
-| M2 Antigravity retest | #132 | `893d34a9d009560a3d9f07887c1afa3018f9e6dc` | [37022536095](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/37022536095) 18/18 | **READY FOR ANTIGRAVITY M2 RETEST** |
-| M5 integrated evidence | #135 | `83f041429adf4f45727be7830d39ad5343cb088d` | [37022548735](https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/37022548735) 18/18 | Engineering only — **not** frozen RC |
+| Milestone | Exact SHA | Independent status |
+|-----------|-----------|-------------------|
+| M1 | Per Antigravity M1 record | **QUALIFIED** |
+| M2 | `893d34a9d009560a3d9f07887c1afa3018f9e6dc` | **QUALIFIED** |
+| M3 | `620399b7973f5ed058d45218610be228e72d3ed8` | **QUALIFIED** |
 
-Implementation anchor for BYPASS-02: `d13caa114576d95eb20170eb1858387956103ae5` (ancestor of `893d34a`).
+## M4 (independent audit — frozen candidate)
 
-## Milestone summary
+| Field | Value |
+|-------|--------|
+| Frozen exact SHA | `52d9b3c5497af24bb7d4a7147e33deaadc64296e` |
+| Tree | `2c0447e733b3d96dea1feaf0144f5ec3aa43b8b4` |
+| Engineering substance | `5261eb96c12246232a80cdefd9a3b79592ee7a2e` |
+| Gate branch | `cursor/whitepact-m4-qualification-gate-f7a9` |
+| Cursor status | **UNDER ANTIGRAVITY AUDIT** — Cursor does **not** write M4 PASS |
+| Evidence | `docs/ws5/M4_ANTIGRAVITY_HANDOFF.md`, `docs/ws5/M4_EXACT_HEAD_CI_EVIDENCE.md` |
 
-| Milestone | Independent | Cursor engineering |
-|-----------|-------------|-------------------|
-| M1 | `BLK-P0-02` / `BLK-P0-03` **VERIFIED_CLOSED** | WS-2 authority suites |
-| M2 | **FULL PASS — EXACT-SHA QUALIFIED** @ `893d34a` (Antigravity) | `BLK-P0-06` / BYPASS-01/02 **VERIFIED_CLOSED** |
-| M3 | Not started | P1-02..P1-07 targeted suites on stacked WS-4 |
-| M4 | Cloud **BLOCKED** | Postgres/SCIM/restore/SIEM/terraform validate |
-| M5 | Blocked on M2 | Integrated CI green @ `83f0414` (evidence) |
-| M6 | **NOT FROZEN** | Defect register draft |
+## M5 preparation
 
-## M4 engineering slices (local)
+| Field | Value |
+|-------|--------|
+| Status | `M5_PREPARATION_ONLY — WAITING_FOR_QUALIFIED_M4_BASE` |
+| Rebuild plan | `docs/ws6/M5_REBUILD_PLAN.md` |
+| Integrated tests | `tests/test_m5_integrated_regression_campaign.py` |
+| Chaos | `tests/test_m5_chaos_campaign_matrix.py` |
+| PR #137 | Reference only — **not** final authoritative RC |
 
-| Area | Regression anchor |
-|------|-------------------|
-| PostgreSQL concurrency | `tests/test_auth_real_postgres.py`, `tests/test_phase3_postgres_concurrency.py` |
-| SSO/SCIM | `tests/test_scim_and_session_lifecycle.py`, `tests/test_iam_adversarial_matrix.py` |
-| Restore | `tests/test_restore_admission_chokepoint.py` |
-| Audit / SIEM | `tests/test_siem_audit_export.py`, `tests/test_m4_audit_export_batch_smoke.py` |
-| Accessibility | CI `Accessibility (WCAG2AA)` on integrated head |
+## M6 engineering
+
+| Artifact | Path |
+|----------|------|
+| Defect register | `docs/enterprise/M6_DEFECT_REGISTER.md` |
+| Authority path proof | `docs/enterprise/FINAL_AUTHORITY_PATH_PROOF.md` |
+| Claims matrix | `docs/enterprise/FINAL_CLAIMS_MATRIX.md` |
+| Known limitations | `docs/enterprise/KNOWN_LIMITATIONS.md` |
+| Artifact inventory | `docs/enterprise/FINAL_ARTIFACT_INVENTORY.md` |
+| Release checklist | `docs/enterprise/FINAL_RELEASE_CHECKLIST.md` |
+| Cloud prep | `docs/enterprise/CLOUD_QUALIFICATION_PREP.md` |
 
 ## Production exclusions
 
-No `terraform apply`, PyPI publish, founder merge, or DNS changes without explicit approval.
+No merge to `main`, PyPI/npm publish, `terraform apply`, DNS mutation, or production billing without explicit approval.
