@@ -57,6 +57,14 @@ def test_m6_qualified_m5_ancestor_recorded() -> None:
 
 
 def test_m6_git_ancestry_from_qualified_m5() -> None:
+    verify = subprocess.run(
+        ["git", "rev-parse", "--verify", f"{QUALIFIED_M5}^{{commit}}"],
+        cwd=REPO,
+        capture_output=True,
+    )
+    if verify.returncode != 0:
+        pytest.skip("Qualified M5 object not present (shallow CI checkout)")
+
     result = subprocess.run(
         ["git", "merge-base", "--is-ancestor", QUALIFIED_M5, "HEAD"],
         cwd=REPO,
