@@ -19,3 +19,9 @@ def test_m5_integrated_rc_anchor_suites_present() -> None:
     ]
     for name in suites:
         assert (root / name).is_file(), name
+
+
+def test_m5_antigravity_handoff_present() -> None:
+    handoff = Path(__file__).resolve().parent.parent / "docs" / "ws6" / "M5_ANTIGRAVITY_HANDOFF.md"
+    assert handoff.is_file()
+    assert "52d9b3c5497af24bb7d4a7147e33deaadc64296e" in handoff.read_text(encoding="utf-8")
