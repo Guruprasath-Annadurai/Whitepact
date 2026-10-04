@@ -316,6 +316,8 @@ jobs:
           WHITEPACT_TEST_DATABASE_URL: postgresql+asyncpg://wp:wp@127.0.0.1:55432/whitepact_e2e
           WHITEPACT_TEST_PYTHON: python
         run: npm run test:customer-journey
+      - name: Corporate public routes, accessibility, responsive and truth gate
+        run: npm run test:corporate-website
 
   i18n-tests:
     name: i18n unit tests

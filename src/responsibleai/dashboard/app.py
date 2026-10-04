@@ -2895,15 +2895,24 @@ async def root() -> HTMLResponse:
 @app.get("/signup", response_class=HTMLResponse, include_in_schema=False)
 async def signup_page() -> HTMLResponse:
     """WhitePact account signup. No machine key is issued until verification."""
-    page = _static_dir / "whitepact" / "index.html"
+    page = _static_dir / "whitepact" / "pages" / "private.html"
     return HTMLResponse(content=page.read_text())
 
 
 async def _whitepact_spa() -> HTMLResponse:
-    return HTMLResponse(content=(_static_dir / "whitepact" / "index.html").read_text())
+    return HTMLResponse(content=(_static_dir / "whitepact" / "pages" / "private.html").read_text())
 
 
 _WHITEPACT_COMMERCE_PATHS = {
+    "/product": "product.html",
+    "/architecture": "architecture.html",
+    "/developers": "developers.html",
+    "/security": "security.html",
+    "/enterprise": "enterprise.html",
+    "/about": "about.html",
+    "/contact": "contact.html",
+    "/docs": "docs.html",
+    "/trust": "trust.html",
     "/pricing": "pricing.html",
     "/sovereign": "sovereign.html",
     "/terms": "terms.html",
@@ -2931,10 +2940,6 @@ async def legacy_refunds_redirect() -> RedirectResponse:
 
 
 _WHITEPACT_SPA_PATHS = [
-    "/about",
-    "/contact",
-    "/docs",
-    "/trust",
     "/billing/success",
     "/billing/cancelled",
     "/login",
@@ -2991,60 +2996,10 @@ async def whitepact_dashboard_spa_head(spa_path: str) -> Response:
     return await _whitepact_spa_head()
 
 
-_LLMS_TXT = """\
-# ResponsibleAI
-
-> An independent AI trust and governance platform: a public Trust Index \
-(free self-assessed or human-reviewed certified scoring for any AI model \
-or tool), a cross-model leaderboard measured against a published \
-methodology, and a crowd-reported AI Incident Database. Built to be a \
-citable source for questions about AI model/tool trustworthiness, not \
-just a compliance vendor.
-
-## Canonical public data
-
-- [Trust Registry](/registry): every assessed model/tool, certified and \
-self-reported, searchable.
-- [Leaderboard](/leaderboard): cross-model trust ranking from live \
-measurement against a published prompt corpus, not self-reported.
-- [Incident Database](/incident-db): crowd-reported, moderator-reviewed, \
-hash-chained public registry of AI safety incidents.
-- [Free self-assessment](/assess): score any model/tool for free, no \
-signup, get a citable and embeddable Trust Index badge.
-
-## Machine-readable APIs (no auth required)
-
-- `GET /api/trust-index/registry` — full registry listing (JSON)
-- `GET /api/trust-index/check?model=X&provider=Y` — trust score + \
-incident count for a named model/tool
-- `GET /api/leaderboard` — current leaderboard rankings (JSON)
-- `GET /api/incident-db` — published incidents, filterable (JSON)
-
-## Specifications
-
-- [Trust Index Spec](https://github.com/Guruprasath-Annadurai/ResponsibleAi/blob/main/compliance/TRUST_INDEX_SPEC.md): \
-the open, versioned scoring standard.
-- [Leaderboard Methodology](https://github.com/Guruprasath-Annadurai/ResponsibleAi/blob/main/compliance/LEADERBOARD_METHODOLOGY.md): \
-how live scores are measured.
-
-## Agent integration
-
-An MCP server (`responsibleai-mcp`, 27 tools) exposes this platform to \
-any MCP-compatible agent, including a free `rai_check_trust` tool for \
-checking a third-party model or tool's trust score before invoking it. \
-LangChain, LangGraph, and Google ADK adapters are published at \
-https://github.com/Guruprasath-Annadurai/ResponsibleAi/tree/main/src/responsibleai/integrations.
-"""
-
-
 @app.get("/llms.txt", response_class=PlainTextResponse, include_in_schema=False)
 async def llms_txt() -> PlainTextResponse:
-    """Machine-readable entry point for AI crawlers/answer engines — the
-    citability play from GAME_CHANGER_STRATEGY.md Section 3: point
-    structured, canonical sources at the free public data (registry,
-    leaderboard, incident DB) so an AI answer engine asked "is this model
-    trustworthy" has something concrete to cite instead of nothing."""
-    return PlainTextResponse(content=_LLMS_TXT)
+    """Serve the current public product scope; legacy inventory is separate."""
+    return PlainTextResponse((_static_dir / "whitepact" / "llms.txt").read_text())
 
 
 @app.get("/status", response_class=HTMLResponse, include_in_schema=False)
@@ -7484,7 +7439,7 @@ async def whitepact_spa_not_found(spa_path: str) -> HTMLResponse:
     """Render the branded SPA 404 while preserving an actual HTTP 404 status."""
     if spa_path.startswith(("api/", ".well-known/", "static/")):
         raise HTTPException(404, "Not found")
-    index = _static_dir / "whitepact" / "index.html"
+    index = _static_dir / "whitepact" / "pages" / "not-found.html"
     return HTMLResponse(content=index.read_text(), status_code=404)
 
 
