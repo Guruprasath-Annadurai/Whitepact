@@ -12,7 +12,7 @@
 | P1-07 | M3 | P1 | Lifecycle | `620399b` | `VERIFIED_CLOSED` | — | Antigravity M3 |
 | BLK-P0-06 | M2 | P0 | Web static | `893d34a` | `VERIFIED_CLOSED` | BYPASS-01/02 | Antigravity M2 |
 | M4-QUAL | M4 | — | WS-5 | `52d9b3c5497af24bb7d4a7147e33deaadc64296e` | `VERIFIED_CLOSED` | Antigravity **FULL PASS (EXACT-SHA)** | **QUALIFIED** |
-| M5-RC-FREEZE | M5 | — | Integration | `cursor/whitepact-m5-integrated-rc-f7a9` | `OPEN` | Full 18/18 on exact-head RC | **PENDING** |
+| M5-RC-FREEZE | M5 | — | Integration | `c77bdef` @ CI `37188931027` | `ENGINEERING_FIXED — INDEPENDENT RETEST REQUIRED` | 18/18 green; Antigravity M5 pending | **PENDING** |
 | RUNBOOK-DRAFT | M6 | P3 | Ops | prep branch | `OPEN` | Complete operator runbooks | — |
 | ORIGIN-LIVE-BYPASS | M4/M6 | P2 | Cloud | static tests only | `ACCEPTED LIMITATION` | Staging drill post-deploy | — |
 

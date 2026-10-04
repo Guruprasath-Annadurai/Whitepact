@@ -1,6 +1,6 @@
 # M5 integration status
 
-**Status:** `M5_AUTHORITATIVE_INTEGRATION_IN_PROGRESS`
+**Status:** `M5_ENGINEERING_COMPLETE — READY_FOR_ANTIGRAVITY`
 
 | Field | Value |
 |-------|--------|

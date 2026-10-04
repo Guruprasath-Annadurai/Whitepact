@@ -27,8 +27,8 @@
 
 | Field | Value |
 |-------|--------|
-| Status | `M5_AUTHORITATIVE_INTEGRATION_IN_PROGRESS` |
-| Branch | `cursor/whitepact-m5-integrated-rc-f7a9` (from `52d9b3c`) |
+| Status | `M5_ENGINEERING_COMPLETE — READY_FOR_ANTIGRAVITY` |
+| Branch / SHA | `cursor/whitepact-m5-integrated-rc-f7a9` @ `c77bdef` (CI `37188931027`, 18/18) |
 | Rebuild plan | `docs/ws6/M5_REBUILD_PLAN.md` |
 | Integrated tests | `tests/test_m5_integrated_regression_campaign.py` |
 | Chaos | `tests/test_m5_chaos_campaign_matrix.py` |
