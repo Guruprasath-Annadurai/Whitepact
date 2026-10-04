@@ -1,7 +1,7 @@
 # Final authority path — engineering proof map
 
 **Status:** ENGINEERING EVIDENCE (not Antigravity PASS).  
-**Lineage anchor:** M3 `620399b`, M4 audit `52d9b3c` (frozen).
+**Lineage anchor:** M3 `620399b`, M4 `52d9b3c`, M5 `46685fa` (Antigravity qualified).
 
 | Stage | Module(s) | Persistence | Trust boundary | Fail-closed behavior | Tests |
 |-------|-----------|-------------|----------------|----------------------|-------|

@@ -19,6 +19,8 @@
 | M2 | `893d34a` | **QUALIFIED** |
 | M3 | `620399b` | **QUALIFIED** |
 | M4 | `52d9b3c5497af24bb7d4a7147e33deaadc64296e` | **QUALIFIED** (Antigravity exact-SHA PASS) |
+| M5 | `46685fad1ad49cfde36341ea1fad146ce1d2e714` | **QUALIFIED** (Antigravity exact-SHA PASS) |
+| M6 | M6 gate branch tip | **IMPLEMENTED_NOT_EXTERNALLY_QUALIFIED** until Antigravity M6 |
 
 ## Planned (not production-proven)
 

@@ -4,7 +4,8 @@
 |------|-------|--------|
 | M1–M3 Antigravity qualified lineage | Antigravity | M1–M3 **PASS** |
 | M4 Antigravity exact-SHA | Antigravity | **IN PROGRESS** @ `52d9b3c` |
-| M5 integrated RC from qualified M4 | Cursor | **NOT STARTED** (prep only) |
+| M5 Antigravity qualified | Antigravity | **PASS** @ `46685fa` |
+| M6 engineering RC from qualified M5 | Cursor | **IN PROGRESS** |
 | M6 defect register clean for launch P0/P1 | Cursor | **IN PROGRESS** |
 | Final Antigravity assault (M5/M6) | Antigravity | **NOT STARTED** |
 | Cloud qualification (deployed) | Antigravity | **BLOCKED** (no apply) |

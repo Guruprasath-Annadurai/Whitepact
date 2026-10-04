@@ -10,6 +10,8 @@
 | Paddle | Sandbox tests only; production billing not activated | Policy |
 | OTEL | No-op safe; full SaaS trace backend not required for RC | Engineering |
 | Runbooks | Several marked **draft** in operator index | `OPEN` for M6 polish |
-| M5 RC | Not frozen until qualified M4 base | `M5_PREPARATION_ONLY` |
+| M5 | Qualified @ `46685fa` | Antigravity PASS |
+| M6 | Independent qualification pending | Engineering RC on M6 branch |
+| SBOM | Generator not recorded for M6 RC | `DEFERRED — NON-BLOCKING` |
 
 Performance limits and unsupported third-party integrations are tracked in `docs/enterprise/M6_DEFECT_REGISTER.md`.
