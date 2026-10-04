@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# M5 integrated regression gate (preparation). Does not publish or deploy.
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
+# M5 integrated regression gate. Does not publish or deploy.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"

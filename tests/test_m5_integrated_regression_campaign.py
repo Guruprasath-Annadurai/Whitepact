@@ -52,5 +52,5 @@ def test_m5_prep_status_document_exists() -> None:
     doc = ROOT.parent / "docs" / "ws6" / "M5_PREP_STATUS.md"
     assert doc.is_file()
     text = doc.read_text(encoding="utf-8")
-    assert "M5_PREPARATION_ONLY" in text
-    assert "WAITING_FOR_QUALIFIED_M4_BASE" in text
+    assert "M5_AUTHORITATIVE_INTEGRATION_IN_PROGRESS" in text or "M5_ENGINEERING_COMPLETE" in text
+    assert "52d9b3c" in text

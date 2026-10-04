@@ -18,7 +18,7 @@
 | M1 | Per Antigravity M1 record | **QUALIFIED** |
 | M2 | `893d34a` | **QUALIFIED** |
 | M3 | `620399b` | **QUALIFIED** |
-| M4 | `52d9b3c` (frozen candidate) | **IN PROGRESS** — no Cursor PASS |
+| M4 | `52d9b3c5497af24bb7d4a7147e33deaadc64296e` | **QUALIFIED** (Antigravity exact-SHA PASS) |
 
 ## Planned (not production-proven)
 

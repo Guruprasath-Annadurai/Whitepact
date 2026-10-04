@@ -1,24 +1,13 @@
-# M5 preparation status
+# M5 integration status
 
-**Status:** `M5_PREPARATION_ONLY — WAITING_FOR_QUALIFIED_M4_BASE`
+**Status:** `M5_AUTHORITATIVE_INTEGRATION_IN_PROGRESS`
 
 | Field | Value |
 |-------|--------|
-| Parallel prep branch | `cursor/whitepact-m5-m6-parallel-prep-f7a9` |
-| Lineage anchor (read-only) | Frozen M4 `52d9b3c5497af24bb7d4a7147e33deaadc64296e` |
+| Authoritative branch | `cursor/whitepact-m5-integrated-rc-f7a9` |
+| Qualified M4 base (immutable) | `52d9b3c5497af24bb7d4a7147e33deaadc64296e` — **Antigravity FULL PASS** |
 | Qualified M3 | `620399b7973f5ed058d45218610be228e72d3ed8` |
-| Authoritative M5 RC | **Not frozen** — do not treat PR #137 as final |
+| Prep integrated | `635b8120d34f56b27065b771da911c80ff11d5c1` |
+| Obsolete reference | PR #137 — **not** authoritative (see `M5_PR137_DISPOSITION.md`) |
 
-## Allowed now
-
-- Rebuild plan, regression/chaos matrices, M6 evidence docs, clean-install smoke tests, supply-chain evidence indexes, cloud **static** hardening.
-
-## Forbidden until Antigravity M4 PASS
-
-- Freezing final M5 exact-head SHA
-- Rebasing integrated RC onto a **new** M4 candidate without formal PASS
-- Merging to `main`, publishing packages, production deploy
-
-## On M4 PASS
-
-Follow `docs/ws6/M5_REBUILD_PLAN.md` § "Activation checklist".
+Freeze `M5_ENGINEERING_COMPLETE — READY_FOR_ANTIGRAVITY` only after **18/18** on recorded exact-head SHA.

@@ -11,8 +11,8 @@
 | P1-06 | M3 | P1 | SIEM | `620399b`, export + delivery | `VERIFIED_CLOSED` | — | Antigravity M3 |
 | P1-07 | M3 | P1 | Lifecycle | `620399b` | `VERIFIED_CLOSED` | — | Antigravity M3 |
 | BLK-P0-06 | M2 | P0 | Web static | `893d34a` | `VERIFIED_CLOSED` | BYPASS-01/02 | Antigravity M2 |
-| M4-AUDIT | M4 | — | WS-5 | `52d9b3c` frozen | `OPEN` (independent audit) | Antigravity qualification in progress | **PENDING** |
-| M5-RC-FREEZE | M5 | — | Integration | — | `DEFERRED — NON-BLOCKING` | Wait for qualified M4 | — |
+| M4-QUAL | M4 | — | WS-5 | `52d9b3c5497af24bb7d4a7147e33deaadc64296e` | `VERIFIED_CLOSED` | Antigravity **FULL PASS (EXACT-SHA)** | **QUALIFIED** |
+| M5-RC-FREEZE | M5 | — | Integration | `cursor/whitepact-m5-integrated-rc-f7a9` | `OPEN` | Full 18/18 on exact-head RC | **PENDING** |
 | RUNBOOK-DRAFT | M6 | P3 | Ops | prep branch | `OPEN` | Complete operator runbooks | — |
 | ORIGIN-LIVE-BYPASS | M4/M6 | P2 | Cloud | static tests only | `ACCEPTED LIMITATION` | Staging drill post-deploy | — |
 

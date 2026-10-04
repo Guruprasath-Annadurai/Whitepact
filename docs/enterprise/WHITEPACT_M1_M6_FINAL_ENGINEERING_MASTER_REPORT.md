@@ -19,14 +19,16 @@
 | Tree | `2c0447e733b3d96dea1feaf0144f5ec3aa43b8b4` |
 | Engineering substance | `5261eb96c12246232a80cdefd9a3b79592ee7a2e` |
 | Gate branch | `cursor/whitepact-m4-qualification-gate-f7a9` |
-| Cursor status | **UNDER ANTIGRAVITY AUDIT** — Cursor does **not** write M4 PASS |
+| Antigravity | **FULL PASS (EXACT-SHA QUALIFIED)** |
+| Cursor status | M4 **VERIFIED_CLOSED** — M5 integration in progress |
 | Evidence | `docs/ws5/M4_ANTIGRAVITY_HANDOFF.md`, `docs/ws5/M4_EXACT_HEAD_CI_EVIDENCE.md` |
 
 ## M5 preparation
 
 | Field | Value |
 |-------|--------|
-| Status | `M5_PREPARATION_ONLY — WAITING_FOR_QUALIFIED_M4_BASE` |
+| Status | `M5_AUTHORITATIVE_INTEGRATION_IN_PROGRESS` |
+| Branch | `cursor/whitepact-m5-integrated-rc-f7a9` (from `52d9b3c`) |
 | Rebuild plan | `docs/ws6/M5_REBUILD_PLAN.md` |
 | Integrated tests | `tests/test_m5_integrated_regression_campaign.py` |
 | Chaos | `tests/test_m5_chaos_campaign_matrix.py` |
