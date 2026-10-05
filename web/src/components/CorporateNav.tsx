@@ -27,7 +27,7 @@ export function CorporateNav() {
     <header className="corporate-nav" onKeyDown={(event) => {
       if (event.key === "Escape" && open) { event.preventDefault(); close(true); }
     }}>
-      <Brand />
+      <Brand optimized />
       <button ref={toggle} className="corporate-toggle" aria-expanded={open} aria-controls="corporate-navigation" aria-label={open ? "Close menu" : "Open menu"} onClick={() => {
         if (open) close(true);
         else { setOpen(true); focusFrame.current = requestAnimationFrame(() => { focusFrame.current = undefined; navigation.current?.querySelector<HTMLAnchorElement>("a")?.focus(); }); }

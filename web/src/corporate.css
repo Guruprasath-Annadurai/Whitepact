@@ -28,3 +28,174 @@
  .corporate-nav nav .wp-button{margin-top:12px;justify-content:center}
 }
 @media(max-width:600px){.corporate-nav{padding:16px}.corporate-nav>.wp-brand{width:145px}}
+
+/* Phase 2: editorial infrastructure, scoped to corporate surfaces. */
+.marketing-page .section{min-height:0;padding-block:80px;width:min(1180px,calc(100% - 64px))}
+.marketing-page .section h2{font-size:clamp(30px,3.4vw,48px);line-height:1.15;letter-spacing:-.035em}
+.marketing-page .section-heading>span{display:block;max-width:760px;line-height:1.75;font-size:17px;margin-top:20px}
+.marketing-page .section-heading>p,.page-kicker{font-size:13px;letter-spacing:.06em;text-transform:none}
+.corporate-nav nav{font-size:14px;gap:18px}
+.corporate-nav nav .wp-button{font-size:14px}
+.corporate-nav .wp-brand picture,.corporate-footer .wp-brand picture{display:block;width:100%}
+.corporate-nav .wp-brand picture img,.corporate-footer .wp-brand picture img{height:auto;width:100%}
+.corporate-hero.hero{width:min(1244px,100%);min-height:0;grid-template-columns:minmax(0,1fr) minmax(0,.9fr);gap:64px;padding:80px 32px 70px}
+.corporate-hero .hero-copy{padding:0;min-width:0}
+.corporate-hero .hero-copy>p.hero-category{font-size:14px;color:#ff6674;letter-spacing:.04em;margin:0 0 22px}
+.corporate-hero h1{font-size:clamp(38px,4.1vw,62px);line-height:1.13;letter-spacing:-.045em}
+.corporate-hero .hero-copy>p{font-size:18px;line-height:1.7;margin:24px 0;max-width:580px}
+.corporate-hero .hero-copy>p.hero-availability{font-size:14px;margin:20px 0 0}
+.authority-boundary{margin:0;border:1px solid #3d454e;border-radius:8px;background:#0b0e12;padding:24px;min-width:0}
+.authority-boundary figcaption{font-size:15px;font-weight:600;line-height:1.6}
+.authority-boundary figcaption>span{display:block;color:#aeb6c1;font-size:13px;font-weight:400;margin-top:6px}
+.authority-boundary>ol{list-style:none;padding:0;margin:24px 0;display:grid;gap:20px}
+.authority-boundary>ol>li{position:relative;border-left:2px solid #525b67;padding:0 0 0 18px}
+.authority-boundary>ol>li+li:before{content:"↓";position:absolute;top:-23px;left:16px;color:#aeb6c1}
+.authority-boundary li>span{color:#b5bdc7;font:13px/1.6 "IBM Plex Mono",monospace}
+.authority-boundary li>strong{display:block;font-size:17px;margin-top:5px;line-height:1.5}
+.authority-boundary li>p,.authority-boundary>p{font-size:14px;color:#b5bdc7;line-height:1.65;margin:7px 0 0}
+.authority-boundary>ol>.boundary-evaluation{border-color:#ff4d60}
+.boundary-evaluation ul{display:flex;flex-wrap:wrap;gap:6px 16px;list-style:none;padding:0;margin:12px 0;font-size:14px;color:#b5bdc7}
+.boundary-outcomes{display:flex;flex-wrap:wrap;gap:8px;border-top:1px solid #30363e;padding-top:16px;font-size:13px;color:#d8dce1}
+.boundary-outcomes span{padding:5px 8px;background:#171c23;border-radius:3px}
+.marketing-page .doctrine-band{display:flex;gap:36px;justify-content:space-between;align-items:center;padding-block:36px}
+.doctrine-band>p{font-size:20px;line-height:1.6;max-width:790px;margin:0;color:#e2e6ea}
+.doctrine-band>a{flex-shrink:0}
+.authorization-primer dl{margin:36px 0 0;display:grid;grid-template-columns:1fr 1fr;gap:0 40px}
+.authorization-primer dl>div{border-top:1px solid #30363e;padding:22px 0;display:grid;grid-template-columns:130px minmax(0,1fr);gap:20px}
+.authorization-primer dt{font-size:15px;font-weight:600;color:#e4e7eb}
+.authorization-primer dd{margin:0;font-size:15px;line-height:1.65}
+.authorization-primer dd strong{font-weight:600}
+.authorization-primer dd p{margin:5px 0 0}
+.grant-lifecycle ol{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;list-style-position:inside;margin:36px 0;padding:0;counter-reset:grant}
+.grant-lifecycle li{list-style:none;border-top:2px solid #46505b;border-right:1px solid #30363e;padding:22px;counter-increment:grant}
+.grant-lifecycle li:last-child{border-right:0}
+.grant-lifecycle li:before{content:"0" counter(grant);font:13px "IBM Plex Mono";color:#ff6674}
+.grant-lifecycle h3{font-size:18px;margin:14px 0 10px}
+.grant-lifecycle p{font-size:15px;line-height:1.7}
+.marketing-page .control-plane,.marketing-page .mcp-section,.marketing-page .evidence-section,.marketing-page .developer-entry,.marketing-page .enterprise-section{gap:60px}
+.marketing-page .comparison header{gap:40px}
+.marketing-page .comparison>div{margin-top:30px}
+.marketing-page .comparison article{min-height:0;padding:28px}
+.marketing-page .comparison article p,.marketing-page .section p{line-height:1.75}
+.marketing-page .layer{min-height:110px}
+.marketing-page .evidence-table em{font-size:13px}
+.marketing-page .decision-trace i{background:#b5bdc7;box-shadow:none}
+.marketing-page .layer p{font-size:15px;line-height:1.7}
+.marketing-page .final-cta{min-height:0;padding:80px 24px;display:block;text-align:center}
+.marketing-page .final-cta h2{font-size:clamp(34px,4vw,58px);line-height:1.15}
+.marketing-page .final-cta>p:not(.page-kicker){color:#b5bdc7;line-height:1.7}
+.marketing-page .final-cta .hero-actions{justify-content:center;margin-top:24px}
+.editorial-page,.docs-page,.contact-page,.trust-page main{padding-block:80px 100px;width:min(1180px,calc(100% - 64px))}
+.editorial-page>h1,.docs-page>h1,.contact-page>h1,.trust-page h1{font-size:clamp(38px,5vw,68px);line-height:1.15;letter-spacing:-.04em}
+.page-lead{font-size:18px;line-height:1.75}
+.editorial-page>section{padding-block:36px}
+.editorial-page section h2{line-height:1.4}
+.editorial-page p{max-width:860px}
+.corporate-page-index{display:flex;flex-wrap:wrap;gap:8px 24px;border-block:1px solid #30363e;padding:16px 0;margin:32px 0}
+.corporate-page-index a{min-height:44px;display:inline-flex;align-items:center;color:#c6ccd4;line-height:1.5}
+.architecture-planes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:24px 0}
+.architecture-planes article{border:1px solid #3d454e;border-radius:6px;padding:24px;min-width:0}
+.architecture-planes h3{font-size:19px;margin:0 0 12px}
+.architecture-planes p{font-size:15px;line-height:1.7}
+.architecture-planes ol{margin:18px 0;padding-left:22px;font-size:15px;line-height:2}
+.architecture-plane-purpose{color:#c6ccd4}
+.control-explainers{display:grid;gap:12px;margin:24px 0}
+.control-explainers details{border:1px solid #3d454e;border-radius:6px;padding:0 22px}
+.control-explainers summary{min-height:58px;padding:16px 0;cursor:pointer;font-weight:600;line-height:1.6}
+.control-explainers summary>span{display:block;color:#b5bdc7;font-size:14px;font-weight:400;max-width:780px;margin-top:4px}
+.control-explainers dt{margin-top:16px}
+.control-explainers dd{padding:5px 0 12px;border-bottom:1px solid #30363e}
+.control-explainers dl{margin:0 0 22px}
+.control-explainers dl>div{display:grid;grid-template-columns:110px minmax(0,1fr);gap:18px;padding:12px 0;border-top:1px solid #30363e;font-size:15px;line-height:1.7}
+.control-explainers dt{font-weight:600;color:#c6ccd4}
+.control-explainers dd{margin:0;overflow-wrap:anywhere}
+.enterprise-control-list{margin:24px 0}
+.enterprise-control-list>div{border-top:1px solid #30363e;padding:20px 0}
+.enterprise-control-list dt{font-weight:600;font-size:17px;line-height:1.6}
+.enterprise-control-list dd{margin:10px 0 0;font-size:15px;line-height:1.75;color:#b5bdc7}
+.control-status{display:inline-block;margin-left:12px;color:#c6ccd4;border:1px solid #48525e;border-radius:4px;padding:3px 8px;font-size:13px;font-weight:400}
+.corporate-footer{display:block;padding:48px 0;width:min(1180px,calc(100% - 64px))}
+.corporate-footer .footer-brand{display:flex;align-items:center;gap:28px;flex-wrap:wrap;margin-bottom:36px}
+.corporate-footer nav{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:36px}
+.corporate-footer nav>section{display:flex;flex-direction:column}
+.corporate-footer h2{font-size:15px;font-weight:600;color:#e4e7eb;margin:0 0 12px}
+.corporate-footer .footer-identity{margin-bottom:32px;max-width:520px}
+.corporate-footer .footer-identity .wp-brand{width:170px}
+.corporate-footer .footer-identity p{font-size:15px;line-height:1.75;margin:14px 0 0}
+.corporate-footer .footer-identity .footer-boundary{font-size:14px}
+.corporate-footer nav ul{list-style:none;margin:0;padding:0}
+.corporate-footer a{font-size:14px;min-height:44px;line-height:1.5}
+.docs-layout{display:grid;grid-template-columns:210px minmax(0,1fr);gap:48px;margin-top:48px}
+.docs-sidebar{align-self:start;position:sticky;top:24px}
+.docs-sidebar nav{display:grid;gap:4px}
+.docs-sidebar h2{font-size:16px;margin:0 0 16px}
+.docs-sidebar a{display:block;min-height:44px;padding:10px 0;color:#c6ccd4;font-size:14px;line-height:1.5}
+.docs-content{min-width:0}
+.docs-body{min-width:0}
+.docs-concepts{border:1px solid #3d454e;border-radius:6px;margin-bottom:28px}
+.docs-concepts summary{padding:20px;cursor:pointer;min-height:60px;line-height:1.7;font-weight:600}
+.docs-concepts summary:focus-visible{outline:2px solid white;outline-offset:4px}
+.docs-body .docs-grid{margin:0 0 36px;grid-template-columns:1fr}
+.docs-body .docs-grid article{padding:20px 24px;min-height:0;border-right:0}
+.docs-body .docs-grid article h2{font-size:18px;margin:8px 0}
+.docs-body .docs-example{display:block;margin:0;padding:32px 0;border-top:1px solid #30363e;scroll-margin-top:24px}
+.docs-body .docs-example h2{font-size:24px;line-height:1.4}
+.docs-body .docs-example p,.docs-body .docs-example li{font-size:16px;line-height:1.8;color:#b5bdc7}
+.docs-body .docs-code{min-width:0;margin-top:20px}
+.docs-body .docs-code pre{overflow:auto;border:1px solid #3d454e;padding:20px;font:13px/1.9 "IBM Plex Mono",monospace;background:#0b0e12;border-radius:6px;max-width:100%;margin:8px 0}
+.docs-code-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;font-size:14px;color:#c6ccd4}
+.docs-code-toolbar button{min-height:44px;padding:10px 16px;border:1px solid #48525e;border-radius:4px;background:#11161c;color:#e4e7eb;cursor:pointer}
+.docs-code-toolbar button:focus-visible{outline:2px solid white;outline-offset:4px}
+.docs-body p.docs-copy-status{font-size:14px;min-height:24px;margin:0}
+.docs-prerequisites{padding-left:22px}
+.result-guide>div{border-top:1px solid #3d454e;padding:18px 0;line-height:1.75}
+.result-guide dt{font-size:14px;color:#e4e7eb;overflow-wrap:anywhere}
+.result-guide dd{font-size:16px;color:#b5bdc7;margin:8px 0 0}
+.trust-summary{display:flex;flex-wrap:wrap;gap:8px 32px;border-block:1px solid #3d454e;padding:16px 0;margin-top:32px;font-size:15px;color:#b5bdc7}
+.trust-summary p{margin:8px 0;line-height:1.7}
+.trust-status{border-left:2px solid #647181;padding-left:12px}
+.trust-grid article .trust-limitation{padding-top:14px;border-top:1px solid #30363e;font-size:14px}
+.docs-content>section{scroll-margin-top:24px;border-top:1px solid #30363e;padding:32px 0}
+.docs-content h2{font-size:24px;line-height:1.4}
+.docs-content p,.docs-content li{color:#b5bdc7;line-height:1.8;font-size:16px}
+.docs-content li+li{margin-top:8px}
+.docs-content pre{max-width:100%;overflow:auto;border:1px solid #3d454e;padding:20px;font:13px/1.9 "IBM Plex Mono",monospace;background:#0b0e12;border-radius:6px}
+.code-example-header{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.code-copy{border:1px solid #48525e;border-radius:4px;background:#11161c;color:#e4e7eb;padding:10px 14px;min-height:44px;cursor:pointer;font-size:14px}
+.copy-status{font-size:14px;line-height:1.6;color:#c6ccd4;min-height:24px}
+.docs-content table{width:100%;border-collapse:collapse;font-size:14px;line-height:1.7}
+.docs-content th,.docs-content td{padding:14px;text-align:left;border-bottom:1px solid #3d454e;vertical-align:top}
+.docs-content th{color:#e4e7eb}
+.contact-grid{gap:0;margin-top:40px}
+.contact-grid article{min-height:0;padding:28px}
+.contact-grid a{font-size:15px;min-height:44px;line-height:1.6}
+.trust-grid{margin-top:40px}
+.trust-grid article{padding:28px;min-height:0}
+.trust-grid h2{font-size:20px;line-height:1.4}
+.trust-grid article p,.trust-grid article a{font-size:15px;line-height:1.75}
+.trust-grid a{display:inline-flex;align-items:center;min-height:44px}
+.editorial-page a:focus-visible,.docs-page a:focus-visible,.corporate-footer a:focus-visible,.control-explainers summary:focus-visible,.code-copy:focus-visible{outline:2px solid #f3f5f7;outline-offset:5px;border-radius:2px}
+@media(max-width:1190px){.corporate-nav nav{gap:0}.corporate-hero.hero{gap:32px}.authorization-primer dl>div{grid-template-columns:1fr;gap:6px}}
+@media(max-width:1024px){.corporate-hero.hero{grid-template-columns:1fr 1fr;padding-top:60px}.corporate-hero h1{font-size:42px}.grant-lifecycle ol{grid-template-columns:1fr 1fr;gap:20px}.grant-lifecycle li:nth-child(2n){border-right:0}.docs-layout{gap:28px;grid-template-columns:170px minmax(0,1fr)}}
+@media(max-width:820px){
+ .corporate-hero.hero{grid-template-columns:1fr;padding:48px 24px;gap:32px;overflow:visible}
+ .corporate-hero h1{font-size:clamp(38px,7vw,52px)}
+ .marketing-page .section{width:calc(100% - 48px);padding-block:56px}
+ .marketing-page .doctrine-band{display:block;padding-block:28px}.doctrine-band>a{margin-top:20px}
+ .marketing-page .control-plane,.marketing-page .mcp-section,.marketing-page .evidence-section,.marketing-page .developer-entry,.marketing-page .enterprise-section{gap:32px}
+ .editorial-page,.docs-page,.contact-page,.trust-page main{width:calc(100% - 48px);padding-block:56px 72px}
+ .architecture-planes{grid-template-columns:1fr}.corporate-footer{width:calc(100% - 48px)}.corporate-footer nav{grid-template-columns:1fr 1fr;gap:28px}
+ .docs-layout{grid-template-columns:1fr;gap:24px}.docs-sidebar{position:static;border:1px solid #3d454e;padding:20px}.docs-sidebar nav{grid-template-columns:repeat(2,minmax(0,1fr));gap:0 20px}
+}
+@media(max-width:520px){
+ .corporate-hero.hero{padding-inline:20px}.corporate-hero h1{font-size:38px}.corporate-hero .hero-copy>p{font-size:17px}
+ .authority-boundary{padding:20px}.marketing-page .section,.editorial-page,.docs-page,.contact-page,.trust-page main,.corporate-footer{width:calc(100% - 40px)}
+ .authorization-primer dl{grid-template-columns:1fr}.authorization-primer dl>div{padding:18px 0}
+ .grant-lifecycle ol{grid-template-columns:1fr;gap:12px}.grant-lifecycle li{border-right:0;padding-inline:0}
+ .control-explainers dl>div{grid-template-columns:1fr;gap:4px}.control-status{margin-left:0;margin-top:8px;display:table}
+ .corporate-page-index{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 16px;font-size:14px}.corporate-page-index a{overflow-wrap:anywhere}
+ .docs-sidebar nav{grid-template-columns:1fr 1fr}.docs-content pre{padding:16px;font-size:12px}
+ .docs-body .docs-code pre{padding:16px;font-size:12px}.docs-body .docs-grid article{padding:20px}.architecture-planes article{padding:20px}
+ .marketing-page .final-cta .hero-actions{display:flex;flex-direction:column;align-items:stretch}
+}
+@media(prefers-reduced-motion:reduce){.authority-boundary *{animation:none!important;transition:none!important}}

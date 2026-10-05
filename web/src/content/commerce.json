@@ -2,7 +2,7 @@
   "home": {
     "path": "/",
     "title": "WhitePact | Independent Authority Before Agent Action",
-    "heading": "Authority must be independently enforced",
+    "heading": "Before an agent acts, verify its authority",
     "description": "An independent pre-execution runtime authorization boundary for supported, configured AI agent actions. Authentication and intent alone do not authorize execution.",
     "sections": [
       [
@@ -12,6 +12,10 @@
       [
         "Supported boundaries",
         "WhitePact separates intent and authentication from independently enforced authority on supported configured execution paths. It does not govern arbitrary code outside those paths."
+      ],
+      [
+        "From intent to guarded admission",
+        "Authentication identifies the caller. Intent describes the attempted action. Configured authority, consent, policy and risk inform judgment. Authorized approval may be required, but cannot create missing authority. Supported execution paths admit scoped, time-bound grants and record known outcomes. UNKNOWN requires reconciliation, not automatic retry."
       ],
       [
         "Start with local evaluation",

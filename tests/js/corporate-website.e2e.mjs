@@ -26,12 +26,20 @@ const origin = `http://127.0.0.1:${server.address().port}`;
 console.log(`Local production-built public preview: ${origin}`);
 const browser = await chromium.launch({ headless: true });
 const failures = [];
+const widths = [375, 390, 430, 768, 820, 1024, 1280, 1440, 1600, 1920];
+const screenshotDirectory = process.env.WHITEPACT_WEBSITE_SCREENSHOTS;
+if (screenshotDirectory) {
+  assert.ok(path.isAbsolute(screenshotDirectory), "screenshot directory must be absolute");
+  assert.ok(!path.resolve(screenshotDirectory).startsWith(root + path.sep), "screenshots must remain outside the repository");
+  fs.mkdirSync(screenshotDirectory, { recursive: true });
+}
 let scans = 0;
 let layouts = 0;
 try {
   const context = await browser.newContext();
   const page = await context.newPage();
-  for (const width of [375, 768, 1024, 1440]) {
+  for (const width of widths) {
+    console.log(`Checking ${routes.length} public routes at ${width}px`);
     await page.setViewportSize({ width, height: 900 });
     for (const route of routes) {
       const errors = [];
@@ -47,6 +55,9 @@ try {
         assert.equal(await page.getByRole("main").evaluate(element => element === document.activeElement), true, `${route} skip focus`);
         assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), `${route} overflow at ${width}`);
         assert.deepEqual(errors, [], `${route} runtime error`);
+        for (const diagram of await page.locator("figure").all()) {
+          assert.ok((await diagram.innerText()).trim().length > 0, `${route} diagram has readable semantic equivalent`);
+        }
         if (width < 1190) {
           const toggle = page.getByRole("button", { name: "Open menu" });
           await toggle.click();
@@ -62,12 +73,23 @@ try {
         assert.deepEqual(violations.map(v => ({ id: v.id, nodes: v.nodes.map(n => n.target) })), [], `${route} axe at ${width}`);
         scans += 1;
         layouts += 1;
+        if (screenshotDirectory && [375, 390, 1440].includes(width)) await page.screenshot({ path: path.join(screenshotDirectory, `${route === "/" ? "home" : route.slice(1)}-${width}.png`), fullPage: true });
       } catch (error) { failures.push(error.message); }
       page.off("pageerror", onError);
     }
   }
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(origin + "/docs", { waitUntil: "networkidle" });
+  for (const disclosure of await page.locator("details").all()) {
+    const summary = disclosure.locator("summary");
+    assert.ok((await summary.innerText()).trim(), "documentation disclosure has a name");
+    await summary.focus();
+    const before = await disclosure.evaluate(element => element.open);
+    await page.keyboard.press("Enter");
+    assert.equal(await disclosure.evaluate(element => element.open), !before, "native disclosure opens with keyboard");
+    await page.keyboard.press("Enter");
+    assert.equal(await disclosure.evaluate(element => element.open), before);
+  }
   for (const code of await page.locator("pre").all()) {
     assert.equal(await code.getAttribute("tabindex"), "0", "code scrolling is keyboard reachable");
     await code.focus();
@@ -91,7 +113,28 @@ try {
   assert.equal(await page.getByRole("tab", { name: "Send sensitive email" }).getAttribute("aria-selected"), "true");
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.reload({ waitUntil: "networkidle" });
-  assert.equal(await page.getByRole("button", { name: "Enable optional 3D illustration" }).isVisible(), false);
+  assert.equal(await page.getByRole("button", { name: "Enable optional 3D illustration" }).isVisible().catch(() => false), false);
+  // Browser-equivalent 200% layout viewport (1440 physical pixels / 2) plus
+  // explicit text scaling. This is a reflow check, not a claim of OS-level zoom.
+  for (const route of routes) {
+    await page.setViewportSize({ width: 720, height: 450 });
+    await page.goto(origin + route, { waitUntil: "networkidle" });
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), `${route} 200% equivalent reflow`);
+    const textScale = await page.evaluate(() => {
+      const elements = Array.from(document.querySelectorAll("main *, header *, footer *"));
+      const sizes = elements.map(element => [element, parseFloat(getComputedStyle(element).fontSize)]);
+      const sample = document.querySelector("main p");
+      const before = parseFloat(getComputedStyle(sample).fontSize);
+      // Snapshot first, then apply bottom-up: inherited sizes cannot compound.
+      for (const [element, size] of sizes.reverse()) element.style.setProperty("font-size", `${size * 2}px`, "important");
+      return { before, after: parseFloat(getComputedStyle(sample).fontSize), sample: sample.outerHTML.slice(0, 500) };
+    });
+    await page.waitForTimeout(400);
+    textScale.after = await page.locator("main p").first().evaluate(element => parseFloat(getComputedStyle(element).fontSize));
+    assert.equal(textScale.after, textScale.before * 2, `${route} actual text enlargement: ${textScale.sample}`);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), `${route} 200% text scaling overflow`);
+    assert.equal(await page.getByRole("heading", { level: 1 }).isVisible(), true);
+  }
   const noJs = await browser.newContext({ javaScriptEnabled: false });
   const staticPage = await noJs.newPage();
   for (const route of routes) {
@@ -100,7 +143,7 @@ try {
     assert.equal(await staticPage.locator('link[rel="canonical"]').getAttribute("href"), `https://whitepact.com${route}`);
   }
   await noJs.close();
-  console.log(JSON.stringify({ axeScansPassed: scans, responsiveLayoutsPassed: layouts, expected: 60, keyboardAndTruthChecks: "PASS", noJsRoutes: 15, failures }, null, 2));
+  console.log(JSON.stringify({ axeScansPassed: scans, responsiveLayoutsPassed: layouts, expected: routes.length * widths.length, widths, keyboardAndTruthChecks: "PASS", reducedMotion: "PASS", zoomEquivalentAndTextScalingRoutes: routes.length, noJsRoutes: 15, failures }, null, 2));
   if (failures.length) process.exitCode = 1;
 } finally {
   await browser.close();

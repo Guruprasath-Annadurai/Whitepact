@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Guruprasath Annadurai
 // SPDX-License-Identifier: MIT
-import { lazy, Suspense, useCallback, useState } from "react";
-import { ArrowRight, Check, Code2, FileCheck2, Power, ShieldCheck, UserRoundCheck, X } from "lucide-react";
+import { useCallback, useState } from "react";
+import { ArrowRight, Check, Code2, FileCheck2, ShieldCheck, X } from "lucide-react";
 import { AccessibleDialog } from "../../components/AccessibleDialog";
 import { CorporateNav } from "../../components/CorporateNav";
 import commerce from "../../content/commerce.json";
@@ -9,11 +9,8 @@ import { controlChain } from "../../content/control-chain";
 import { ButtonLink } from "../../components/Button";
 import { Seo } from "../../components/Seo";
 import { publicAsset } from "../../lib/assets";
-import { TrustCoreBoundary } from "../../components/TrustCoreBoundary";
 import { PublicFooter } from "./PublicPages";
 import { PricingCards } from "./PricingCards";
-
-const TrustCore = lazy(() => import("../../components/TrustCore").then((module) => ({ default: module.TrustCore })));
 
 const scenarios = [
   ["Transfer funds", "agent://finance-agent", "Transfer ₹480,000 to a new beneficiary", "EXCEEDED", "CRITICAL"],
@@ -99,10 +96,9 @@ function PricingSection() {
 }
 
 function ProductClosureSections() { return <>
-  <section className="section feature-ledger" aria-labelledby="passport-title"><article><UserRoundCheck /><p>Agent Passport</p><h2 id="passport-title">Identity is not authority<span>.</span></h2><span>Bind each workload to a verified principal, declared purpose, authority ceiling and revocation state before runtime access.</span></article><article><Power /><p>Revocation and kill switch</p><h2>Stop authority before the next action<span>.</span></h2><span>Revoke credentials and authority without waiting for an agent session to end. Enforcement happens at the action boundary.</span></article></section>
   <section className="section comparison" aria-labelledby="comparison-title"><header><p>Deployment choice</p><h2 id="comparison-title">Open source control.<br />Managed operational path<span>.</span></h2></header><div><article><Code2 /><h3>Community</h3><p>Run the MIT-licensed core in your environment. You own infrastructure, data operations and availability.</p></article><article><ShieldCheck /><h3>WhitePact Cloud</h3><p>Use hosted identity, API keys, billing and governance surfaces when the production service and your entitlement are active.</p></article></div></section>
   <section className="section developer-entry" id="developers"><div><p>Developers</p><h2>One boundary.<br />API or MCP<span>.</span></h2><span>Follow local setup first. A scoped test credential authenticates requests; independent backend authority and consent are still required.</span></div><div className="developer-steps"><p><strong>01</strong>Create a test key in your organization.</p><p><strong>02</strong>Connect a server or MCP client.</p><p><strong>03</strong>Inspect the decision and evidence.</p><a href="/docs">Open developer documentation <ArrowRight /></a></div></section>
-  <section className="section enterprise-section" id="enterprise"><div><p>Enterprise</p><h2>Private control<br />without false assurance<span>.</span></h2><span>Evaluate private or self-hosted deployment and negotiated support. SSO and SCIM production availability are not promised. SOC 2 and ISO 27001 certification are not currently claimed.</span></div><div className="enterprise-list">{["Identity integration requirements review", "Tenant and credential requirements review", "Private deployment architecture", "Documented security and assurance boundaries"].map(item=><p key={item}><Check />{item}</p>)}<a href="/contact">Discuss enterprise architecture <ArrowRight /></a></div></section>
+  <section className="section enterprise-section" id="enterprise"><div><p>Enterprise evaluation</p><h2>Know what is enforced.<br />Know what you operate<span>.</span></h2><span>Review identity lifecycle, approval separation, evidence and deployment responsibility. SSO and SCIM require deployment-specific qualification. SOC 2 and ISO 27001 certification are not currently claimed.</span></div><div className="enterprise-list">{["Identity and tenant-boundary review", "Scope, revocation and approval review", "Deployment and operational responsibility", "Assurance evidence and known limitations"].map(item=><p key={item}><Check aria-hidden="true" />{item}</p>)}<a href="/enterprise">Review the enterprise checklist <ArrowRight /></a></div></section>
   <section className="section trust-entry"><div><FileCheck2 /><h2>Trust is a record,<br />not a badge<span>.</span></h2><p>Review implemented controls, OpenSSF evidence, external-review status and known limitations without certification theatre.</p></div><a className="wp-button wp-button--secondary" href="/trust">Open Trust Center <ArrowRight /></a></section>
   </>; }
 
@@ -112,21 +108,34 @@ export function HomePage() {
       <Seo title={commerce.home.title} description={commerce.home.description} />
       <CorporateNav />
       <main id="main-content" tabIndex={-1}>
-        <section className="hero">
-          <div className="hero-copy"><h1>AI agents can plan.<br /><span>Authority must be<br />independently enforced.</span></h1><p>An independent pre-execution runtime authorization boundary for supported, configured agent actions. Authentication and intent alone do not authorize execution.</p><div className="hero-actions"><ButtonLink to="/docs">Start with the docs <ArrowRight size={18} /></ButtonLink><a className="wp-button wp-button--secondary" href="https://github.com/Guruprasath-Annadurai/Whitepact#quick-start">Run WhitePact locally</a></div><a className="text-link" href="https://github.com/Guruprasath-Annadurai/Whitepact">View on GitHub <ArrowRight size={15} /></a></div>
-          <DeferredTrustCore />
+        <section className="hero corporate-hero">
+          <div className="hero-copy"><p className="hero-category">Independent runtime authority</p><h1>Before an agent acts,<br /><span>verify its authority.</span></h1><p>WhitePact evaluates whether an AI-agent action is authorized before supported execution paths proceed. Knowing who an agent is—and what it wants—is not permission to act.</p><div className="hero-actions"><ButtonLink to="/docs">Start with the docs <ArrowRight size={18} /></ButtonLink><a className="wp-button wp-button--secondary" href="https://github.com/Guruprasath-Annadurai/Whitepact">View GitHub <ArrowRight size={18} /></a></div><p className="hero-availability">Evaluate the source locally. Hosted availability requires separate verification.</p></div>
+          <BoundaryIllustration />
         </section>
-        <section className="section"><p className="page-lead">The agent may think freely. It may plan freely. But it cannot act outside independently enforced authority.</p><a className="text-link" href="/architecture">Review the conceptual control chain <ArrowRight size={17} /></a></section>
-        <GovernanceDemo /><PlatformSection /><AuthorityBoundarySection /><McpSection /><EvidenceSection /><ProductClosureSections /><PricingSection />
-        <section className="final-cta"><h2>Route supported agent actions through<br />WhitePact controls<span>.</span></h2><ButtonLink to="/docs">Start locally <ArrowRight size={18} /></ButtonLink></section>
+        <section className="section doctrine-band" aria-label="WhitePact doctrine"><p>The agent may think freely. It may plan freely. But it cannot act outside independently enforced authority.</p><a className="text-link" href="/architecture">Understand the boundary <ArrowRight size={17} /></a></section>
+        <section className="section authorization-primer" aria-labelledby="primer-title"><div className="section-heading"><p>Different questions. Different controls.</p><h2 id="primer-title">Authentication is a beginning.<br />Not an execution decision.</h2><span>Prompt-layer guardrails inspect content. Runtime authority determines whether a specific principal may perform a specific action now.</span></div><dl>{[
+          ["Authentication", "Who is making the request?", "A credential establishes identity, not permission."],
+          ["Intent", "What action is being attempted?", "An agent's plan is an input, never an authorization."],
+          ["Policy", "What rules apply?", "Evaluate the configured context and constraints."],
+          ["Authority", "Is this action permitted now?", "Scope, delegation, consent and revocation must be valid."],
+          ["Approval", "Does this instance need human review?", "An approval cannot repair absent authority."],
+          ["Execution grant", "What exactly may proceed?", "Scope and time bounds apply on supported guarded paths."],
+          ["Evidence", "What happened, and why?", "Record known outcomes. Preserve uncertainty as UNKNOWN."],
+        ].map(([term, question, copy]) => <div key={term}><dt>{term}</dt><dd><strong>{question}</strong><p>{copy}</p></dd></div>)}</dl></section>
+        <PlatformSection /><AuthorityBoundarySection /><GovernanceDemo />
+        <section className="section grant-lifecycle" aria-labelledby="grant-title"><div className="section-heading"><p>Approval is not execution</p><h2 id="grant-title">A bounded grant.<br />A guarded admission.</h2><span>On supported paths, judgment precedes a scoped, short-lived execution grant. The execution boundary—not the browser—checks whether it may still be used.</span></div><ol aria-label="Conceptual execution grant lifecycle">{[["Evaluate", "Resolve current authority and applicable constraints."], ["Review", "Wait for authorized approvers when required."], ["Admit", "Check binding, scope, expiry and current validity."], ["Record", "Return evidence of the known outcome; reconcile UNKNOWN."]].map(([title, copy]) => <li key={title}><h3>{title}</h3><p>{copy}</p></li>)}</ol><p>Conceptual illustration. Inspect the selected adapter contract: not every integration provides the same isolation or lifecycle behavior. Revocation cannot reverse an effect already completed.</p></section>
+        <McpSection /><EvidenceSection /><ProductClosureSections /><PricingSection />
+        <section className="final-cta"><p className="page-kicker">Start with a supported path</p><h2>Bring authority to<br />your agent architecture<span>.</span></h2><p>Review the integration and its limits before connecting consequential tools.</p><div className="hero-actions"><ButtonLink to="/docs">Read the docs <ArrowRight size={18} /></ButtonLink><ButtonLink to="/contact" variant="secondary">Request evaluation <ArrowRight size={18} /></ButtonLink></div></section>
       </main>
       <PublicFooter />
     </div>
   );
 }
 
-function DeferredTrustCore() {
-  const [enabled, setEnabled] = useState(false);
-  const fallback = <div className="trust-core-static" role="img" aria-label="WhitePact Trust Core illustration"><img src={publicAsset("trust-core-head.webp")} alt="" /></div>;
-  return <div className="trust-core-deferred">{enabled ? <TrustCoreBoundary><Suspense fallback={fallback}><TrustCore /></Suspense></TrustCoreBoundary> : <>{fallback}<button className="optional-core" onClick={() => { if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches && window.matchMedia("(min-width: 821px)").matches) setEnabled(true); }}>Enable optional 3D illustration</button></>}</div>;
+function BoundaryIllustration() {
+  return <figure className="authority-boundary" aria-labelledby="boundary-caption"><figcaption id="boundary-caption">Agent intent → consequential execution <span>Conceptual boundary · not a live decision</span></figcaption><ol>
+    <li className="boundary-request"><span>01 · Agent intent</span><strong>Requested action</strong><p>Principal · purpose · target · arguments</p></li>
+    <li className="boundary-evaluation"><span>02 · WhitePact</span><strong>Independent authority evaluation</strong><ul><li>Identity &amp; consent</li><li>Authority &amp; policy</li><li>Risk &amp; approval</li></ul><p>Judgment → scoped execution grant</p></li>
+    <li className="boundary-effect"><span>03 · Supported execution path</span><strong>Guarded action admission</strong><p>Tool / system → outcome &amp; evidence</p></li>
+  </ol><div className="boundary-outcomes"><span>Denied: no execution</span><span>Approval: wait</span><span>UNKNOWN: reconcile</span></div><p>Direct paths outside this boundary are not automatically governed.</p></figure>;
 }
