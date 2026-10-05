@@ -29,6 +29,16 @@ def test_cloud_staging_docs_present() -> None:
         assert (CLOUD / name).is_file(), name
 
 
+def test_staging_plan_documents_nat_not_tier_hcloud_firewall() -> None:
+    text = (CLOUD / "CLOUD_HOST_FIREWALL_POLICY.md").read_text(encoding="utf-8")
+    assert "nftables" in text
+    main = (ROOT / "infra" / "terraform" / "modules" / "whitepact-hetzner-foundation" / "main.tf").read_text(
+        encoding="utf-8"
+    )
+    assert "hcloud_firewall.nat_gateway" in main
+    assert "hcloud_firewall.authority" not in main
+
+
 def test_cloud_cost_plan_requires_owner_gate() -> None:
     text = (CLOUD / "CLOUD_STAGING_COST_AND_RESOURCE_PLAN.md").read_text(encoding="utf-8")
     assert "APPROVE STAGING CLOUD PROVISIONING" in text

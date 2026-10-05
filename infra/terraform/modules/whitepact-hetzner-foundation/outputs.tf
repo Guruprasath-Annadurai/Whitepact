@@ -10,6 +10,15 @@ output "load_balancer_ipv4" {
   value       = hcloud_load_balancer.saas.ipv4
 }
 
+output "nat_gateway_public_ipv4" {
+  description = "Operator SSH / WireGuard entry (not in app request path)"
+  value       = var.enable_nat_gateway ? hcloud_server.nat_gateway[0].ipv4_address : null
+}
+
+output "nat_gateway_private_ip" {
+  value = var.enable_nat_gateway ? local.nat_private_ip : null
+}
+
 output "saas_private_ips" {
   value = [for s in hcloud_server.saas : s.network[0].ip]
 }

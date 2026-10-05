@@ -18,6 +18,8 @@ module "foundation" {
   source = "../../modules/whitepact-hetzner-foundation"
 
   environment             = "staging"
+  enable_nat_gateway      = true
+  nat_gateway_server_type = "cx23"
   location                = var.location
   saas_server_type        = var.saas_server_type
   authority_server_type   = var.authority_server_type

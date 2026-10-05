@@ -47,6 +47,36 @@ variable "execution_subnet_cidr" {
   default = "10.42.3.0/24"
 }
 
+variable "mgmt_subnet_cidr" {
+  description = "Management / NAT gateway subnet"
+  type        = string
+  default     = "10.42.4.0/24"
+}
+
+variable "enable_nat_gateway" {
+  description = "Dedicated public NAT/management gateway for private-only nodes (required for egress)."
+  type        = bool
+  default     = true
+}
+
+variable "nat_gateway_server_type" {
+  description = "Smallest suitable SKU with public Primary IPv4 (staging: CX23)."
+  type        = string
+  default     = "cx23"
+}
+
+variable "nat_gateway_private_ip" {
+  description = "Private IP of NAT gateway (must not be network first IP or 172.31.1.1)."
+  type        = string
+  default     = ""
+}
+
+variable "lb_private_ip" {
+  description = "Load balancer private IP on saas subnet (for host firewall rules)."
+  type        = string
+  default     = ""
+}
+
 variable "admin_cidr_allowlist" {
   description = "CIDRs permitted for SSH/bastion (no 0.0.0.0/0 on database paths)"
   type        = list(string)
