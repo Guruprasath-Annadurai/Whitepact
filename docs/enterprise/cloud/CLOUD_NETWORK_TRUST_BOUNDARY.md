@@ -4,9 +4,10 @@
 
 | Zone | Trust | Ingress | Egress |
 |------|-------|---------|--------|
-| Cloudflare edge | Untrusted Internet | Public HTTPS | To origin (authenticated path) |
-| Hetzner LB | Semi-trusted (CF-only if firewalled) | 443/80 from Cloudflare IPs | Private → SaaS :8765 |
-| SaaS application | Trusted app tier | LB + admin SSH allowlist | Postgres, Redis, telemetry |
+| Cloudflare edge | Untrusted Internet | Public HTTPS | To origin (TLS, Full strict) |
+| Hetzner LB | Public entry; **no TLS termination in staging** | TCP :443 from Internet | TCP passthrough → SaaS :443 |
+| Origin reverse proxy (Caddy/Nginx) | Trust boundary for AOP | TLS :443 from LB private IP only (firewall) | HTTP to app :8765/:8766 |
+| SaaS application | Trusted app tier | Not directly public | Postgres, Redis, telemetry |
 | Authority / Postgres | High trust data | 5432 from SaaS + execution subnets only | Documented HTTPS (updates, R2 API) |
 | Execution | Isolated | SSH admin only | Allowlisted upstream HTTPS + Postgres admission |
 

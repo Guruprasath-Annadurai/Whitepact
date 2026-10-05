@@ -248,21 +248,25 @@ resource "hcloud_load_balancer_target" "saas" {
   use_private_ip   = true
 }
 
-resource "hcloud_load_balancer_service" "http" {
+resource "hcloud_load_balancer_service" "public" {
   load_balancer_id = hcloud_load_balancer.saas.id
-  protocol         = "http"
-  listen_port      = 80
-  destination_port = 8765
+  protocol         = var.lb_service_protocol
+  listen_port      = var.lb_listen_port
+  destination_port = var.lb_destination_port
 
   health_check {
-    protocol = "http"
-    port     = 8765
+    protocol = var.lb_health_check_protocol
+    port     = var.lb_health_check_port
     interval = 15
     timeout  = 10
     retries  = 3
-    http {
-      path         = "/livez"
-      status_codes = ["2??", "3??"]
+
+    dynamic "http" {
+      for_each = contains(["http", "https"], var.lb_health_check_protocol) ? [1] : []
+      content {
+        path         = "/livez"
+        status_codes = ["2??", "3??"]
+      }
     }
   }
 }

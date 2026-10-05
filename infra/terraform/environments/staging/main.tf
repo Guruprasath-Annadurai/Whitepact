@@ -27,6 +27,13 @@ module "foundation" {
   authority_egress_cidrs  = var.authority_egress_cidrs
   saas_public_ipv4        = false
 
+  # Cloudflare Full (strict) → LB TCP passthrough → origin Caddy/Nginx (TLS + per-hostname AOP).
+  lb_service_protocol     = "tcp"
+  lb_listen_port          = 443
+  lb_destination_port     = 443
+  lb_health_check_protocol = "http"
+  lb_health_check_port    = 8765
+
   labels = {
     cost_tier   = "staging"
     m6_sha      = "ee6e4a26becf7e89a933202651fba3b4e7a8176d"

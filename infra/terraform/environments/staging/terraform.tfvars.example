@@ -6,7 +6,7 @@ saas_server_type      = "cx33"
 authority_server_type = "cx33"
 execution_server_type = "cx23"
 
-# Operator home / bastion / VPN egress only
+# REQUIRED: replace with operator home/VPN egress /32 before apply — never 0.0.0.0/0
 admin_cidr_allowlist = ["203.0.113.10/32"]
 
 # Documented MCP/upstream HTTPS destinations for staging sandboxes

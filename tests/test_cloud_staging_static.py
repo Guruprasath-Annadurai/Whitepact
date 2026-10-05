@@ -38,6 +38,9 @@ def test_cloud_cost_plan_requires_owner_gate() -> None:
 def test_staging_terraform_root_present() -> None:
     staging = ROOT / "infra" / "terraform" / "environments" / "staging"
     assert (staging / "main.tf").is_file()
+    main = (staging / "main.tf").read_text(encoding="utf-8")
+    assert 'lb_service_protocol     = "tcp"' in main
+    assert "lb_listen_port          = 443" in main
 
 
 def test_upload_backup_script_has_spdx() -> None:

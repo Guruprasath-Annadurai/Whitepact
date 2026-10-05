@@ -112,3 +112,35 @@ variable "labels" {
   type    = map(string)
   default = {}
 }
+
+variable "lb_service_protocol" {
+  description = "LB frontend protocol: http, https (TLS terminates at LB), or tcp (passthrough for origin TLS/AOP)."
+  type        = string
+  default     = "http"
+
+  validation {
+    condition     = contains(["http", "https", "tcp"], var.lb_service_protocol)
+    error_message = "lb_service_protocol must be http, https, or tcp."
+  }
+}
+
+variable "lb_listen_port" {
+  type    = number
+  default = 80
+}
+
+variable "lb_destination_port" {
+  type    = number
+  default = 8765
+}
+
+variable "lb_health_check_protocol" {
+  description = "Health check protocol (can differ from frontend, e.g. tcp:443 public + http:8765 /livez)."
+  type        = string
+  default     = "http"
+}
+
+variable "lb_health_check_port" {
+  type    = number
+  default = 8765
+}
