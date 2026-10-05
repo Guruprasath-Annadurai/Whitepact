@@ -3,6 +3,7 @@
 """Corporate HTML delivery must stay separate from protected product operations."""
 
 import json
+import re
 from html import unescape
 from pathlib import Path
 
@@ -27,7 +28,12 @@ async def test_anonymous_corporate_metadata_with_auth_enabled(page, monkeypatch)
         assert response.status_code == 200
         assert f"<title>{page['title']}</title>" in response.text
         assert f'href="https://whitepact.com{page["path"]}"' in response.text
-        assert "<noscript>" in response.text
+        # Public content must exist before scripts run, including when scripts
+        # fail (not only when the browser activates a noscript fallback).
+        headings = re.findall(r"<h1(?:\s[^>]*)?>(.*?)</h1>", response.text, re.S)
+        assert len(headings) == 1
+        heading_text = " ".join(unescape(re.sub(r"<[^>]*>", " ", headings[0])).split())
+        assert page["heading"] in heading_text
         for attribute, value in (
             ('property="og:title"', page["title"]),
             ('property="og:description"', page["description"]),
@@ -35,7 +41,6 @@ async def test_anonymous_corporate_metadata_with_auth_enabled(page, monkeypatch)
             ('name="twitter:description"', page["description"]),
         ):
             assert f'<meta {attribute} content="{value}"' in unescape(response.text)
-        assert page["heading"] in response.text
         assert 'href="/architecture"' in response.text
         assert "Missing or invalid Authorization" not in response.text
         csp = response.headers["content-security-policy"]

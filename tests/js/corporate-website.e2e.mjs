@@ -8,17 +8,29 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import AxeBuilder from "@axe-core/playwright";
+import "./corporate-release-audit.mjs";
+import { verifyCorporateFailureModes } from "./corporate-failure.e2e.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const built = path.join(root, "src/responsibleai/dashboard/static/whitepact");
 const routes = ["/", "/product", "/architecture", "/developers", "/docs", "/security", "/enterprise", "/trust", "/about", "/contact", "/pricing", "/privacy", "/terms", "/refund-policy", "/sovereign"];
-const mime = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".png": "image/png", ".webp": "image/webp", ".woff2": "font/woff2" };
+const mime = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".png": "image/png", ".webp": "image/webp", ".woff2": "font/woff2", ".xml": "application/xml", ".txt": "text/plain" };
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, "http://localhost");
-  const relative = url.pathname.startsWith("/static/whitepact/") ? url.pathname.slice("/static/whitepact/".length) : routes.includes(url.pathname) ? `pages/${url.pathname === "/" ? "home" : url.pathname.slice(1)}.html` : "pages/private.html";
+  const isAsset = url.pathname.startsWith("/static/whitepact/");
+  const publicRoute = routes.includes(url.pathname);
+  const discovery = ["/robots.txt", "/sitemap.xml", "/llms.txt"].includes(url.pathname);
+  const relative = isAsset ? url.pathname.slice("/static/whitepact/".length) : discovery ? url.pathname.slice(1) : publicRoute ? `pages/${url.pathname === "/" ? "home" : url.pathname.slice(1)}.html` : "pages/not-found.html";
   const filename = path.resolve(built, relative);
   if (!filename.startsWith(built + path.sep) || !fs.existsSync(filename)) { res.writeHead(404).end(); return; }
-  res.writeHead(200, { "Content-Type": mime[path.extname(filename)] ?? "application/octet-stream" });
+  res.writeHead(isAsset || publicRoute || discovery ? 200 : 404, {
+    "Content-Type": mime[path.extname(filename)] ?? (discovery ? "text/plain" : "application/octet-stream"),
+    "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'none'; form-action 'self'",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+    "X-Frame-Options": "DENY",
+  });
   fs.createReadStream(filename).pipe(res);
 });
 await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
@@ -26,7 +38,7 @@ const origin = `http://127.0.0.1:${server.address().port}`;
 console.log(`Local production-built public preview: ${origin}`);
 const browser = await chromium.launch({ headless: true });
 const failures = [];
-const widths = [375, 390, 430, 768, 820, 1024, 1280, 1440, 1600, 1920];
+const widths = [320, 360, 375, 390, 412, 768, 1024, 1280, 1440, 1920];
 const screenshotDirectory = process.env.WHITEPACT_WEBSITE_SCREENSHOTS;
 if (screenshotDirectory) {
   assert.ok(path.isAbsolute(screenshotDirectory), "screenshot directory must be absolute");
@@ -36,7 +48,18 @@ if (screenshotDirectory) {
 let scans = 0;
 let layouts = 0;
 try {
+  const homeHtml = fs.readFileSync(path.join(built, "pages/home.html"), "utf8");
+  assert.match(homeHtml, /data-prerendered="home"/, "home content is present before JavaScript");
+  assert.equal((homeHtml.match(/<h1[ >]/g) ?? []).length, 1, "static home has one meaningful heading");
+  assert.equal(homeHtml.includes('="/assets/'), false, "prerendered asset paths use the production base");
+  assert.equal((homeHtml.match(/rel="preload"[^>]+as="font"/g) ?? []).length, 2, "only two critical fonts are preloaded");
+  const privateHtml = fs.readFileSync(path.join(built, "pages/private.html"), "utf8");
+  assert.equal(privateHtml.includes("data-prerendered"), false, "private state is never prerendered");
+  assert.equal(privateHtml.includes('as="font"'), false, "public font hints do not change private shell");
+  assert.match(fs.readFileSync(path.join(built, "pages/contact.html"), "utf8"), /mailto:annaduraiguruprasath7@gmail\.com/, "contact remains actionable without JavaScript");
   const context = await browser.newContext();
+  const publicRequests = [];
+  context.on("request", request => publicRequests.push(request.url()));
   const page = await context.newPage();
   for (const width of widths) {
     console.log(`Checking ${routes.length} public routes at ${width}px`);
@@ -44,7 +67,9 @@ try {
     for (const route of routes) {
       const errors = [];
       const onError = error => errors.push(error.message);
+      const onConsole = message => { if (message.type() === "error") errors.push(message.text()); };
       page.on("pageerror", onError);
+      page.on("console", onConsole);
       await page.goto(origin + route, { waitUntil: "networkidle" });
       await page.getByRole("heading", { level: 1 }).waitFor();
       try {
@@ -76,6 +101,7 @@ try {
         if (screenshotDirectory && [375, 390, 1440].includes(width)) await page.screenshot({ path: path.join(screenshotDirectory, `${route === "/" ? "home" : route.slice(1)}-${width}.png`), fullPage: true });
       } catch (error) { failures.push(error.message); }
       page.off("pageerror", onError);
+      page.off("console", onConsole);
     }
   }
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -117,6 +143,9 @@ try {
   // Browser-equivalent 200% layout viewport (1440 physical pixels / 2) plus
   // explicit text scaling. This is a reflow check, not a claim of OS-level zoom.
   for (const route of routes) {
+    await page.setViewportSize({ width: 360, height: 225 });
+    await page.goto(origin + route, { waitUntil: "networkidle" });
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), `${route} 400% equivalent reflow`);
     await page.setViewportSize({ width: 720, height: 450 });
     await page.goto(origin + route, { waitUntil: "networkidle" });
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), `${route} 200% equivalent reflow`);
@@ -143,6 +172,26 @@ try {
     assert.equal(await staticPage.locator('link[rel="canonical"]').getAttribute("href"), `https://whitepact.com${route}`);
   }
   await noJs.close();
+  const missing = await page.goto(origin + "/not-a-public-route", { waitUntil: "networkidle" });
+  assert.equal(missing.status(), 404, "unknown route returns HTTP 404");
+  assert.match(await page.locator('meta[name="robots"]').getAttribute("content"), /^noindex,\s*nofollow$/);
+  for (const discovery of ["/robots.txt", "/sitemap.xml", "/llms.txt"]) {
+    assert.equal((await context.request.get(origin + discovery)).status(), 200, `${discovery} available`);
+  }
+  const faults = await browser.newContext();
+  const faultPage = await faults.newPage();
+  await faults.route("**/*", route => /\.(?:js|woff2|png|webp)(?:\?|$)/.test(route.request().url()) ? route.abort() : route.continue());
+  for (const route of routes) {
+    await faultPage.goto(origin + route, { waitUntil: "networkidle" });
+    assert.equal(await faultPage.locator("h1").count(), 1, `${route} remains understandable when scripts/assets fail`);
+    assert.equal(await faultPage.locator('a[href="/contact"]').count() > 0, true, `${route} static evaluation navigation`);
+  }
+  await faults.close();
+  assert.equal(publicRequests.some(url => !url.startsWith(origin + "/")), false, "public browsing contacts no external origin");
+  assert.equal(publicRequests.some(url => new URL(url).pathname.startsWith("/api/")), false, "public route browsing makes no protected API calls");
+  assert.equal((await context.cookies()).length, 0, "static corporate browsing sets no cookies");
+  assert.deepEqual(await page.evaluate(() => ({ local: localStorage.length, session: sessionStorage.length })), { local: 0, session: 0 }, "public browsing writes no storage");
+  await verifyCorporateFailureModes(browser, origin, routes);
   console.log(JSON.stringify({ axeScansPassed: scans, responsiveLayoutsPassed: layouts, expected: routes.length * widths.length, widths, keyboardAndTruthChecks: "PASS", reducedMotion: "PASS", zoomEquivalentAndTextScalingRoutes: routes.length, noJsRoutes: 15, failures }, null, 2));
   if (failures.length) process.exitCode = 1;
 } finally {

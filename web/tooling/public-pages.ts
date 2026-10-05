@@ -1,8 +1,10 @@
 // Copyright (c) 2026 Guruprasath Annadurai
 // SPDX-License-Identifier: MIT
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { Plugin } from "vite";
+import { createServer } from "vite";
+import react from "@vitejs/plugin-react";
 import commerce from "../src/content/commerce.json" with { type: "json" };
 import corporate from "../src/content/corporate.json" with { type: "json" };
 import information from "../src/content/public-info.json" with { type: "json" };
@@ -24,21 +26,40 @@ function metadata(template: string, page: Page) {
 /** Static editorial fallbacks and metadata. No remote fetching or request-time SSR. */
 export function publicPages(): Plugin {
   let outDir: string;
+  let root: string;
   return {
     name: "whitepact-public-pages",
     apply: "build",
-    configResolved(config) { outDir = resolve(config.root, config.build.outDir); },
+    configResolved(config) { root = config.root; outDir = resolve(config.root, config.build.outDir); },
     async closeBundle() {
       const template = await readFile(resolve(outDir, "index.html"), "utf8");
+      const renderer = await createServer({ root, base: "/static/whitepact/", configFile: false, plugins: [react()], server: { middlewareMode: true, hmr: false, ws: false }, appType: "custom" });
+      let home: string;
+      try {
+        const module = await renderer.ssrLoadModule("/tooling/prerender-home.tsx");
+        home = module.renderHome();
+      } finally { await renderer.close(); }
+      // Public heading/body fonts otherwise wait for the stylesheet discovery
+      // round trip. Keep preloads off private application shells and avoid
+      // preloading below-the-fold weights or optional illustration assets.
+      const assets = await readdir(resolve(outDir, "assets"));
+      const criticalFonts = ["sora-latin-400-normal-", "manrope-latin-400-normal-"]
+        .map(prefix => assets.find(name => name.startsWith(prefix) && name.endsWith(".woff2")));
+      if (criticalFonts.some(name => !name)) throw new Error("Public critical font missing from build");
+      const fontPreloads = criticalFonts.map(name => `<link rel="preload" href="/static/whitepact/assets/${name}" as="font" type="font/woff2" crossorigin />`).join("\n");
       await mkdir(resolve(outDir, "pages"), { recursive: true });
       const pages: Record<string, Page> = { ...commerce, ...information, ...corporate };
       const navigation = links.map(([href, label]) => `<a href="${href}">${label}</a>`).join(" ");
       for (const [key, page] of Object.entries(pages)) {
-        let html = metadata(template, page);
+        let html = metadata(template, page).replace("</head>", `${fontPreloads}\n</head>`);
         const prices = key === "pricing" || key === "home" ? `<div class="launch-pricing" aria-label="Evaluation options">${commerce.pricing.plans.map(plan => `<article><h3>${escape(plan.name)}</h3><p>${escape(plan.status)}</p><strong>${escape(plan.monthly)}</strong><p>${escape(plan.copy)}</p><a href="${escape(plan.href)}">${escape(plan.cta)}</a></article>`).join("")}</div>` : "";
         const fallback = `<noscript><header><a href="/">WhitePact</a><nav aria-label="Primary navigation">${navigation}</nav></header><main id="static-main" class="editorial-page"><h1>${escape(page.heading)}</h1><p class="page-lead">${escape(page.description)}</p>${page.sections.map(([title, copy]) => `<section><div><h2>${escape(title)}</h2><p>${escape(copy)}</p></div></section>`).join("")}${prices}<p><a href="/contact">Discuss an evaluation</a></p></main><footer><nav aria-label="Public footer">${navigation}</nav></footer></noscript>`;
         const chain = key === "home" || key === "architecture" ? `<section><h2>Conceptual control chain</h2><p>This map does not assert every adapter invokes every subsystem. Isolation depends on configured deployment.</p><ol>${controlChain.map(stage => `<li>${escape(stage)}</li>`).join("")}</ol></section>` : "";
-        html = html.replace('<div id="root"></div>', `<div id="root"></div>${fallback.replace("</main>", `${chain}</main>`)}`);
+        const contact = key === "contact" ? '<p><a href="mailto:annaduraiguruprasath7@gmail.com?subject=WhitePact%20evaluation">Start an evaluation inquiry</a></p><p>This published project contact is not a staffed support desk or an SLA-backed service. Do not send credentials or confidential execution data.</p>' : "";
+        const disclosure = key === "contact" || key === "security" ? '<p><a href="https://github.com/Guruprasath-Annadurai/Whitepact/blob/main/SECURITY.md">Coordinated security disclosure process</a></p>' : "";
+        html = key === "home"
+          ? html.replace('<div id="root"></div>', `<div id="root" data-prerendered="home">${home}</div><noscript><p>Interactive demonstration controls require JavaScript. Documentation and evaluation links remain available.</p></noscript>`)
+          : html.replace('<div id="root"></div>', `<div id="root">${fallback.replace(/^<noscript>|<\/noscript>$/g, "").replace("</main>", `${chain}${contact}${disclosure}</main>`)}</div>`);
         await writeFile(resolve(outDir, "pages", `${key}.html`), html);
       }
       // Auth, billing returns and product shells never inherit the public home canonical.
@@ -54,7 +75,7 @@ export function publicPages(): Plugin {
       await writeFile(resolve(outDir, "pages", "private.html"), privateHtml);
       const notFound = privateHtml.replace(/WhitePact authenticated application/g, "Page not found | WhitePact")
         .replace(/Session and backend authorization are required for protected operations\./g, "The requested page could not be found.")
-        .replace('<div id="root"></div>', '<div id="root"></div><noscript><main><h1>Page not found</h1><p>The requested page does not exist.</p><a href="/">Return home</a></main></noscript>');
+        .replace('<div id="root"></div>', '<div id="root"><main><h1>Page not found</h1><p>The requested page does not exist.</p><a href="/">Return home</a></main></div>');
       await writeFile(resolve(outDir, "pages", "not-found.html"), notFound);
     },
   };
