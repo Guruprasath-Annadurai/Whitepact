@@ -1,0 +1,16 @@
+# Copy to terraform.tfvars (never commit). Requires OWNER APPROVAL before apply.
+
+location = "fsn1"
+
+saas_server_type      = "cx33"
+authority_server_type = "cx33"
+execution_server_type = "cx23"
+
+# Operator home / bastion / VPN egress only
+admin_cidr_allowlist = ["203.0.113.10/32"]
+
+# Documented MCP/upstream HTTPS destinations for staging sandboxes
+execution_egress_cidrs = ["198.51.100.0/24"]
+
+# Hetzner metadata + Cloudflare R2 S3 API endpoints (replace with documented CIDRs at apply time)
+authority_egress_cidrs = ["10.255.0.1/32"]
