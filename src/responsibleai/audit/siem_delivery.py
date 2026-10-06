@@ -1,6 +1,14 @@
 # Copyright (c) 2026 Guruprasath Annadurai
 # SPDX-License-Identifier: MIT
-"""Best-effort SIEM HTTP delivery with retries and idempotent correlation keys (P1-06)."""
+"""Best-effort SIEM HTTP delivery with retries and idempotent correlation keys (P1-06).
+
+SIEM collector destinations are validated through the canonical WhitePact safe egress
+boundary (:func:`responsibleai.net.egress.create_safe_async_client`) with
+``DestinationPolicy.PUBLIC_ONLY``. Tenant-supplied SIEM URLs do not receive
+``TRUSTED_PRIVATE`` authority; private on-prem collectors are not part of the
+current supported delivery contract unless an administrator exposes an explicit
+trusted-destination policy in a future configuration surface.
+"""
 
 from __future__ import annotations
 
@@ -10,6 +18,12 @@ import hmac
 from dataclasses import dataclass
 
 import httpx
+
+from responsibleai.net.egress import (
+    DestinationPolicy,
+    EgressSecurityError,
+    create_safe_async_client,
+)
 
 
 @dataclass(frozen=True)
@@ -66,19 +80,23 @@ class SiemEventForwarder:
         while len(delays) < self._max_retries:
             delays.append(delays[-1] if delays else 1.0)
 
-        for attempt, delay in enumerate(delays):
-            if delay:
-                await asyncio.sleep(delay)
-            attempts = attempt + 1
-            try:
-                async with httpx.AsyncClient(timeout=15.0) as client:
+        async with create_safe_async_client(
+            timeout=15.0,
+            policy=DestinationPolicy.PUBLIC_ONLY,
+            follow_redirects=False,
+        ) as client:
+            for attempt, delay in enumerate(delays):
+                if delay:
+                    await asyncio.sleep(delay)
+                attempts = attempt + 1
+                try:
                     resp = await client.post(url, content=body.encode("utf-8"), headers=headers)
-                last_status = resp.status_code
-                if resp.is_success:
-                    self._delivered_hashes.add(key)
-                    return SiemDeliveryResult(True, attempts, last_status, None)
-                last_error = f"HTTP {resp.status_code}"
-            except httpx.HTTPError as exc:
-                last_error = str(exc)
+                    last_status = resp.status_code
+                    if resp.is_success:
+                        self._delivered_hashes.add(key)
+                        return SiemDeliveryResult(True, attempts, last_status, None)
+                    last_error = f"HTTP {resp.status_code}"
+                except (httpx.HTTPError, EgressSecurityError) as exc:
+                    last_error = str(exc)
 
         return SiemDeliveryResult(False, attempts, last_status, last_error)
