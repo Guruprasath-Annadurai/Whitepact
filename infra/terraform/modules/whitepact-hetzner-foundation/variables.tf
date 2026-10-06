@@ -83,6 +83,12 @@ variable "admin_cidr_allowlist" {
   default     = []
 }
 
+variable "admin_ssh_key_ids" {
+  description = "Hetzner SSH key IDs installed on administered servers. A key that exists only in the project is not installed unless listed here."
+  type        = list(string)
+  default     = []
+}
+
 variable "saas_server_type" {
   type    = string
   default = "cx22"
