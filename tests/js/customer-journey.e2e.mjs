@@ -7,9 +7,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 
-const baseUrl = process.env.WHITEPACT_TEST_BASE_URL ?? "http://127.0.0.1:18765";
+const testPort = process.env.WHITEPACT_TEST_PORT ?? "18765";
+const baseUrl = process.env.WHITEPACT_TEST_BASE_URL ?? `http://127.0.0.1:${testPort}`;
 const managed = !process.env.WHITEPACT_TEST_BASE_URL;
-const databaseUrl = process.env.WHITEPACT_TEST_DATABASE_URL ?? "sqlite:///:memory:";
+const dbPath = path.join(os.tmpdir(), `whitepact-customer-journey-${Date.now()}.db`);
+const databaseUrl = process.env.WHITEPACT_TEST_DATABASE_URL ?? `sqlite:///${dbPath}`;
 const password = "Journey-Secure-42!";
 const email = `journey-${Date.now()}@example.com`;
 const repositoryRoot = process.env.WHITEPACT_TEST_REPOSITORY_ROOT
@@ -41,12 +43,13 @@ async function waitForReady(url, timeoutMs = 30000) {
 
 async function startServer() {
   if (!managed) return null;
+  if (!process.env.WHITEPACT_TEST_DATABASE_URL) fs.closeSync(fs.openSync(dbPath, "w"));
   const env = {
     ...process.env,
     RAI_AUTH_ENABLED: "false",
     WHITEPACT_AUTH_ENABLED: "false",
-    RAI_DB_PATH: ":memory:",
-    WHITEPACT_DB_PATH: ":memory:",
+    RAI_DB_PATH: dbPath,
+    WHITEPACT_DB_PATH: dbPath,
     RAI_AUTO_MIGRATE: "true",
     WHITEPACT_WEB_AUTH_DEV_TOKENS: "true",
     RAI_WEB_AUTH_DEV_TOKENS: "true",
@@ -59,11 +62,12 @@ async function startServer() {
     RAI_AUTH_ENABLED: "true",
     RAI_LOG_LEVEL: "WARNING",
     PHASE7A_DISPATCHER_ENABLED: "false",
+    WHITEPACT_UNIFIED_SAAS: "1",
   };
   if (process.env.WHITEPACT_TEST_DATABASE_URL) env.WHITEPACT_DATABASE_URL = databaseUrl;
   const child = spawn(
     testPython,
-    ["-m", "uvicorn", "responsibleai.dashboard.app:app", "--host", "127.0.0.1", "--port", "18765"],
+    ["-m", "uvicorn", "responsibleai.dashboard.app:app", "--host", "127.0.0.1", "--port", testPort],
     { cwd: repositoryRoot, env, stdio: "inherit" },
   );
   await waitForReady(baseUrl);
@@ -130,6 +134,13 @@ try {
   await page.getByRole("button", { name: /continue/i }).click();
   await page.getByRole("button", { name: /create workspace/i }).click();
   await page.waitForURL(/dashboard/, { timeout: 15000 });
+
+  const legacySettings = await context.request.get(`${baseUrl}/settings`);
+  check(legacySettings.status() === 404, `legacy /settings retired (${legacySettings.status()})`);
+  const legacyShell = await context.request.get(`${baseUrl}/static/index.html`);
+  check(legacyShell.status() === 404, `legacy static index retired (${legacyShell.status()})`);
+  const publicAssess = await context.request.get(`${baseUrl}/assess`);
+  check(publicAssess.ok(), `public /assess still available (${publicAssess.status()})`);
 
   const session = await context.request.get(`${baseUrl}/api/v1/web/session`);
   check(session.ok(), `session API ${session.status()}`);
@@ -329,6 +340,19 @@ try {
   await page.getByText(/no api keys/i).waitFor({ timeout: 10000 });
   const keysAfter = await context.request.get(`${baseUrl}/api/v1/web/api-keys`);
   check((await keysAfter.json()).keys.length === 0, "revoked key absent from backend");
+
+  await page.goto(`${baseUrl}/dashboard/policy`, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "Policy", exact: true }).waitFor();
+  await page.getByLabel(/^rule id$/i).fill("browser-journey-rule");
+  await page.getByLabel(/^reason code$/i).fill("BROWSER_JOURNEY_POLICY");
+  await page.getByRole("button", { name: /add rule/i }).click();
+  await page.getByText("browser-journey-rule").waitFor({ timeout: 10000 });
+  const policyApi = await context.request.get(`${baseUrl}/api/v1/web/policy`);
+  const policyBody = await policyApi.json();
+  check(
+    policyBody.rules?.some((rule) => rule.rule_id === "browser-journey-rule"),
+    "policy rule persisted via SPA",
+  );
 
   await page.getByRole("button", { name: /sign out/i }).click();
   await page.waitForURL(/\/$|login/, { timeout: 15000 });
