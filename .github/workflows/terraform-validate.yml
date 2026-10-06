@@ -1,0 +1,26 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
+name: Terraform validate (Enterprise Cloud V1)
+
+on:
+  pull_request:
+    paths:
+      - "infra/terraform/**"
+      - "scripts/infrastructure/**"
+      - "tests/infrastructure/**"
+  push:
+    branches:
+      - "cursor/whitepact-enterprise-cloud-v1-f7a9"
+    paths:
+      - "infra/terraform/**"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+      - name: Terraform fmt and validate
+        run: bash scripts/infrastructure/validate-terraform.sh

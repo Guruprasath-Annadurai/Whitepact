@@ -249,6 +249,7 @@ class TestCancellationPathCleanup:
 
         outcome_b = await task_b
         assert outcome_b.is_success, "Cancelling execution A must not affect execution B"
+        await asyncio.sleep(1.0)  # cancellation cleanup races docker rm on shared runners
         assert not _container_exists(name_a), "Cancelled container A not cleaned up"
         assert not _container_exists(name_b), "Completed container B not cleaned up"
 
