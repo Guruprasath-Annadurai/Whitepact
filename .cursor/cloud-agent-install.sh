@@ -48,7 +48,6 @@ install_pinned_terraform() {
   zip_name="terraform_${TERRAFORM_REQUIRED_VERSION}_linux_${arch}.zip"
   sums_name="terraform_${TERRAFORM_REQUIRED_VERSION}_SHA256SUMS"
   tmpdir="$(mktemp -d)"
-  trap 'rm -rf "$tmpdir"' RETURN
 
   curl -fsSL "${TERRAFORM_RELEASE_BASE}/${sums_name}" -o "${tmpdir}/${sums_name}"
   expected_sha="$(
@@ -74,6 +73,7 @@ install_pinned_terraform() {
   fi
 
   sudo install -m 0755 "${tmpdir}/terraform" /usr/local/bin/terraform
+  rm -rf "$tmpdir"
 }
 
 ensure_pinned_terraform() {
