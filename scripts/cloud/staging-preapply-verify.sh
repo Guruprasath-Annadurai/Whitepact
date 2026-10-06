@@ -14,11 +14,16 @@ types = sorted({r["type"] for r in creates})
 print("CREATE resource types:", ", ".join(types))
 print("CREATE count:", len(creates))
 
+def public_net(after):
+    pub = (after or {}).get("public_net") or {}
+    if isinstance(pub, list):
+        pub = pub[0] if pub else {}
+    return pub if isinstance(pub, dict) else {}
+
 servers = [r for r in creates if r["type"] == "hcloud_server"]
 for s in servers:
     name = s["change"]["after"].get("name", "?")
-    pub = s["change"]["after"].get("public_net", {})
-    ipv4 = pub.get("ipv4_enabled") if isinstance(pub, dict) else None
+    ipv4 = public_net(s["change"]["after"]).get("ipv4_enabled")
     print(f"  server {name}: public ipv4_enabled={ipv4}")
 
 def planned_servers(changes):
@@ -57,7 +62,7 @@ if missing:
 print("SSH_KEY_ATTACHMENT=PASS")
 
 nat = [r for r in creates if r["type"] == "hcloud_server" and "nat" in r["change"]["after"].get("name", "")]
-public_servers = [r for r in servers if r["change"]["after"].get("public_net", {}).get("ipv4_enabled")]
+public_servers = [r for r in servers if public_net(r["change"]["after"]).get("ipv4_enabled")]
 if len(public_servers) != 1:
     raise SystemExit(f"FAIL: expected exactly 1 server with public IPv4, got {len(public_servers)}")
 if not nat:
