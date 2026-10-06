@@ -206,6 +206,20 @@ class Settings(BaseSettings):
             "and remains a distinct, documented trust domain."
         ),
     )
+    mcp_trust_domain: Literal["community", "enterprise"] = Field(
+        default="community",
+        validation_alias=AliasChoices(
+            "mcp_trust_domain",
+            "WHITEPACT_MCP_TRUST_DOMAIN",
+            "RAI_MCP_TRUST_DOMAIN",
+        ),
+        description=(
+            "MCP stdio entrypoint trust domain. 'community' (default): "
+            "documented local self-hosted stdio without organizational governance. "
+            "'enterprise': stdio MCP refuses to start; use hosted MCP with "
+            "mcp_governance_enabled and tenant-scoped credentials."
+        ),
+    )
 
     # Redis (optional — falls back to in-memory rate limiting)
     redis_url: str | None = Field(
@@ -582,6 +596,13 @@ class Settings(BaseSettings):
         if normalized.startswith(("http://localhost", "http://127.0.0.1", "http://[::1]")):
             return normalized
         raise ValueError("web_verification_delivery_url must use HTTPS outside local development")
+
+    @model_validator(mode="after")
+    def _enforce_mcp_trust_domain(self) -> Settings:
+        from responsibleai.mcp.trust_domain import assert_production_mcp_trust_domain
+
+        assert_production_mcp_trust_domain(self)
+        return self
 
     @model_validator(mode="after")
     def _enforce_paddle_environment(self) -> Settings:
