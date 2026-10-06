@@ -9,6 +9,7 @@ import hmac
 import json
 import os
 from datetime import UTC, datetime
+from html.parser import HTMLParser
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -322,10 +323,61 @@ async def test_password_reset_delivery_uses_authenticated_https_webhook(monkeypa
 
 
 async def test_unknown_website_route_has_branded_http_404(web_client):
+    class Public404(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.has_root = False
+            self.headings = []
+            self.links = []
+            self.active_link = None
+            self.in_heading = False
+
+        def handle_starttag(self, tag, attrs):
+            attributes = dict(attrs)
+            if tag == "div" and attributes.get("id") == "root":
+                self.has_root = True
+            if tag == "h1":
+                self.in_heading = True
+            if tag == "a":
+                self.active_link = [attributes.get("href"), ""]
+                self.links.append(self.active_link)
+
+        def handle_endtag(self, tag):
+            if tag == "h1":
+                self.in_heading = False
+            if tag == "a":
+                self.active_link = None
+
+        def handle_data(self, data):
+            if self.in_heading:
+                self.headings.append(data.strip())
+            if self.active_link is not None:
+                self.active_link[1] += data
+
     response = await web_client.get("/this-page-does-not-exist")
     assert response.status_code == 404
-    assert '<div id="root"></div>' in response.text
+    assert response.headers["content-type"].startswith("text/html")
+    public_page = Public404()
+    public_page.feed(response.text)
+    assert public_page.has_root
+    assert " ".join(public_page.headings) == "Page not found"
+    assert any(href == "/" and label.strip() == "Return home" for href, label in public_page.links)
+    assert "WhitePact" in response.text
+    assert 'name="robots" content="noindex,nofollow"' in response.text
+    assert 'rel="canonical" href="https://whitepact.com/"' not in response.text
     assert response.headers["x-content-type-options"] == "nosniff"
+    # Parse the response itself, without executing scripts. Signing in must not
+    # serialize the caller's session, identity or organization into public HTML.
+    csrf = await _verified_session(web_client)
+    onboarded = await web_client.post(
+        "/api/v1/web/onboarding",
+        headers={"X-WP-CSRF": csrf},
+        json={"organization_name": "Private 404 test organization", "use_case": "Local test"},
+    )
+    assert onboarded.status_code == 200
+    signed_in = await web_client.get("/this-page-does-not-exist")
+    assert signed_in.status_code == 404
+    assert signed_in.text == response.text
 
 
 async def test_unknown_api_route_remains_json_404(web_client):
