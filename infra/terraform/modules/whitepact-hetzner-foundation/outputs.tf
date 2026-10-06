@@ -20,7 +20,7 @@ output "nat_gateway_private_ip" {
 }
 
 output "saas_private_ips" {
-  value = [for s in hcloud_server.saas : s.network[0].ip]
+  value = [for s in hcloud_server.saas : one([for n in s.network : n.ip])]
 }
 
 output "authority_private_ip" {
@@ -28,5 +28,5 @@ output "authority_private_ip" {
 }
 
 output "execution_private_ips" {
-  value = [for s in hcloud_server.execution : s.network[0].ip]
+  value = [for s in hcloud_server.execution : one([for n in s.network : n.ip])]
 }
