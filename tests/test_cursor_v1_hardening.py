@@ -56,6 +56,7 @@ def test_hosted_production_preflight_requires_allowlist() -> None:
         is_production=True,
         mcp_http_allow_unauthenticated_demo=False,
         mcp_governance_enabled=True,
+        mcp_trust_domain="enterprise",
         multi_replica=False,
     )
     with pytest.raises(HostedProductionSecurityError, match="ALLOWED_HOSTS"):
@@ -76,6 +77,7 @@ def test_hosted_production_preflight_rejects_multi_replica() -> None:
         is_production=True,
         mcp_http_allow_unauthenticated_demo=False,
         mcp_governance_enabled=True,
+        mcp_trust_domain="enterprise",
         multi_replica=True,
     )
     with pytest.raises(HostedProductionSecurityError, match="one authenticated"):
