@@ -2,6 +2,8 @@
 
 Scripts in this directory prepare the **engineering environment** for Cloud Agents (dependency install, tool checks).
 
+`cloud-agent-install.sh` installs **Terraform 1.9.8** from the official HashiCorp release (HTTPS + SHA256 verification) when it is not already present. If another Terraform version is already on `PATH`, install **fails closed** rather than replacing it.
+
 They do **not**:
 
 - run `terraform apply` or call Hetzner
