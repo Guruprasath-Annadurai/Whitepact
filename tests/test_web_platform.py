@@ -11,6 +11,7 @@ import os
 from datetime import UTC, datetime
 from html.parser import HTMLParser
 from urllib.parse import parse_qs, urlparse
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -148,22 +149,23 @@ async def web_client(monkeypatch):
             yield client
 
 
-async def _verified_session(client: AsyncClient) -> str:
+async def _verified_session(client: AsyncClient, *, email: str = "grace@example.com") -> str:
     registration = await client.post(
         "/api/v1/web/auth/register",
         json={
             "full_name": "Grace Hopper",
-            "email": "grace@example.com",
+            "email": email,
             "password": "Compiler-Pioneer-42!",
             "accepted_terms": True,
         },
     )
     assert registration.status_code == 202
+    assert "verification_url" in registration.json(), "Test identity must be a new registration"
     token = parse_qs(urlparse(registration.json()["verification_url"]).query)["token"][0]
     assert (await client.post("/api/v1/web/auth/verify", json={"token": token})).status_code == 200
     login = await client.post(
         "/api/v1/web/auth/login",
-        json={"email": "grace@example.com", "password": "Compiler-Pioneer-42!"},
+        json={"email": email, "password": "Compiler-Pioneer-42!"},
     )
     assert login.status_code == 200
     return client.cookies["wp_csrf"]
@@ -368,7 +370,9 @@ async def test_unknown_website_route_has_branded_http_404(web_client):
     assert response.headers["x-content-type-options"] == "nosniff"
     # Parse the response itself, without executing scripts. Signing in must not
     # serialize the caller's session, identity or organization into public HTML.
-    csrf = await _verified_session(web_client)
+    # The full suite may retain earlier identities in its database. Do not reuse
+    # the lifecycle test's account: duplicate registration must not reveal a token.
+    csrf = await _verified_session(web_client, email=f"public-404-{uuid4().hex}@example.com")
     onboarded = await web_client.post(
         "/api/v1/web/onboarding",
         headers={"X-WP-CSRF": csrf},
