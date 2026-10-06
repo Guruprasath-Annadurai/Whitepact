@@ -10,4 +10,4 @@ Disallow: /forgot-password
 Disallow: /accept-invitation
 Disallow: /billing/
 Disallow: /sovereign/workbench
-Sitemap: https://whitepact.com/sitemap.xml
+Sitemap: __WHITEPACT_SITE_ORIGIN__/sitemap.xml

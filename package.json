@@ -6,7 +6,8 @@
     "a11y": "node tests/js/accessibility.test.mjs",
     "test:i18n": "node --test tests/js/i18n.test.js",
     "test:customer-journey": "node tests/js/customer-journey.e2e.mjs",
-    "test:corporate-website": "node tests/js/corporate-website.e2e.mjs"
+    "test:corporate-website": "node tests/js/corporate-website.e2e.mjs",
+    "audit:website-postdeploy": "node tests/js/website-postdeploy.e2e.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",

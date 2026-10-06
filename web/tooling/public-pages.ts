@@ -9,13 +9,14 @@ import commerce from "../src/content/commerce.json" with { type: "json" };
 import corporate from "../src/content/corporate.json" with { type: "json" };
 import information from "../src/content/public-info.json" with { type: "json" };
 import { controlChain } from "../src/content/control-chain.ts";
+import { siteContract } from "../src/content/site-origin.ts";
 
 const escape = (text: string) => text.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!);
 const links = [["/product", "Product"], ["/architecture", "Architecture"], ["/developers", "Developers"], ["/security", "Security"], ["/enterprise", "Enterprise"], ["/docs", "Docs"], ["/about", "Company"], ["/trust", "Trust"], ["/pricing", "Pricing"], ["/terms", "Terms"], ["/privacy", "Privacy"], ["/refund-policy", "Refund Policy"], ["/contact", "Contact"]];
 type Page = { path: string; title: string; heading: string; description: string; sections: string[][] };
 
-function metadata(template: string, page: Page) {
-  const url = `https://whitepact.com${page.path}`;
+function metadata(template: string, page: Page, origin: string) {
+  const url = `${origin}${page.path}`;
   let html = template.replace(/<title>[^<]*<\/title>/, `<title>${escape(page.title)}</title>`);
   for (const [selector, value] of [['name="description"', page.description], ['property="og:title"', page.title], ['property="og:description"', page.description], ['property="og:url"', url], ['name="twitter:title"', page.title], ['name="twitter:description"', page.description]]) {
     html = html.replace(new RegExp(`<meta ${selector} content="[^"]*"\\s*/?>`), `<meta ${selector} content="${escape(value)}" />`);
@@ -24,7 +25,16 @@ function metadata(template: string, page: Page) {
 }
 
 /** Static editorial fallbacks and metadata. No remote fetching or request-time SSR. */
-export function publicPages(): Plugin {
+export function originMetadata(site = siteContract()): Plugin {
+  return {
+    name: "whitepact-site-origin",
+    transformIndexHtml(html) {
+      return html.split("__WHITEPACT_SITE_ORIGIN__").join(site.origin).replace(/<meta name="robots" content="[^"]*"\s*\/?>/, `<meta name="robots" content="${site.noIndex ? "noindex,nofollow" : "index, follow"}" />`);
+    },
+  };
+}
+
+export function publicPages(site = siteContract()): Plugin {
   let outDir: string;
   let root: string;
   return {
@@ -51,7 +61,7 @@ export function publicPages(): Plugin {
       const pages: Record<string, Page> = { ...commerce, ...information, ...corporate };
       const navigation = links.map(([href, label]) => `<a href="${href}">${label}</a>`).join(" ");
       for (const [key, page] of Object.entries(pages)) {
-        let html = metadata(template, page).replace("</head>", `${fontPreloads}\n</head>`);
+        let html = metadata(template, page, site.origin).replace("</head>", `${fontPreloads}\n</head>`);
         const prices = key === "pricing" || key === "home" ? `<div class="launch-pricing" aria-label="Evaluation options">${commerce.pricing.plans.map(plan => `<article><h3>${escape(plan.name)}</h3><p>${escape(plan.status)}</p><strong>${escape(plan.monthly)}</strong><p>${escape(plan.copy)}</p><a href="${escape(plan.href)}">${escape(plan.cta)}</a></article>`).join("")}</div>` : "";
         const fallback = `<noscript><header><a href="/">WhitePact</a><nav aria-label="Primary navigation">${navigation}</nav></header><main id="static-main" class="editorial-page"><h1>${escape(page.heading)}</h1><p class="page-lead">${escape(page.description)}</p>${page.sections.map(([title, copy]) => `<section><div><h2>${escape(title)}</h2><p>${escape(copy)}</p></div></section>`).join("")}${prices}<p><a href="/contact">Discuss an evaluation</a></p></main><footer><nav aria-label="Public footer">${navigation}</nav></footer></noscript>`;
         const chain = key === "home" || key === "architecture" ? `<section><h2>Conceptual control chain</h2><p>This map does not assert every adapter invokes every subsystem. Isolation depends on configured deployment.</p><ol>${controlChain.map(stage => `<li>${escape(stage)}</li>`).join("")}</ol></section>` : "";
@@ -77,6 +87,16 @@ export function publicPages(): Plugin {
         .replace(/Session and backend authorization are required for protected operations\./g, "The requested page could not be found.")
         .replace('<div id="root"></div>', '<div id="root"><main><h1>Page not found</h1><p>The requested page does not exist.</p><a href="/">Return home</a></main></div>');
       await writeFile(resolve(outDir, "pages", "not-found.html"), notFound);
+      // Route truth is the same editorial inventory used to emit public HTML.
+      const routes = Object.values(pages).map(page => page.path).sort();
+      await writeFile(resolve(outDir, "public-routes.json"), JSON.stringify({ version: 1, origin: site.origin, profile: site.profile, routes, redirects: { "/refunds": "/refund-policy" } }, null, 2) + "\n");
+      const productionRobots = await readFile(resolve(root, "public/robots.txt"), "utf8");
+      const robots = site.noIndex ? "User-agent: *\nDisallow: /\n" : productionRobots.split("__WHITEPACT_SITE_ORIGIN__").join(site.origin);
+      await writeFile(resolve(outDir, "robots.txt"), robots);
+      await writeFile(resolve(outDir, "sitemap.xml"), `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${routes.map(route => `  <url><loc>${site.origin}${route}</loc></url>`).join("\n")}\n</urlset>\n`);
+      const llms = await readFile(resolve(root, "public/llms.txt"), "utf8");
+      await writeFile(resolve(outDir, "llms.txt"), llms.split("__WHITEPACT_SITE_ORIGIN__").join(site.origin));
+      await writeFile(resolve(outDir, "maintenance.html"), '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Temporarily unavailable | WhitePact</title></head><body><main><h1>WhitePact is temporarily unavailable</h1><p>Please try again later. No action completion is implied by this page.</p></main></body></html>\n');
     },
   };
 }

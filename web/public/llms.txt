@@ -8,14 +8,14 @@ The agent may think freely. It may plan freely. But it cannot act outside indepe
 
 ## Current public product
 
-- [Product](https://whitepact.com/product): supported boundary and product scope.
-- [Architecture](https://whitepact.com/architecture): conceptual control chain and limitations.
-- [Developers](https://whitepact.com/developers): source references and integration entry.
-- [Docs](https://whitepact.com/docs): local setup, API and MCP result handling.
-- [Security](https://whitepact.com/security): threat boundary and disclosure.
-- [Trust](https://whitepact.com/trust): implemented controls versus external assurance.
-- [Enterprise](https://whitepact.com/enterprise): requirements-led evaluation.
-- [Sovereign](https://whitepact.com/sovereign): authority analysis; not execution authority.
+- [Product](__WHITEPACT_SITE_ORIGIN__/product): supported boundary and product scope.
+- [Architecture](__WHITEPACT_SITE_ORIGIN__/architecture): conceptual control chain and limitations.
+- [Developers](__WHITEPACT_SITE_ORIGIN__/developers): source references and integration entry.
+- [Docs](__WHITEPACT_SITE_ORIGIN__/docs): local setup, API and MCP result handling.
+- [Security](__WHITEPACT_SITE_ORIGIN__/security): threat boundary and disclosure.
+- [Trust](__WHITEPACT_SITE_ORIGIN__/trust): implemented controls versus external assurance.
+- [Enterprise](__WHITEPACT_SITE_ORIGIN__/enterprise): requirements-led evaluation.
+- [Sovereign](__WHITEPACT_SITE_ORIGIN__/sovereign): authority analysis; not execution authority.
 - [Repository](https://github.com/Guruprasath-Annadurai/Whitepact): implementation and release evidence.
 
 ## Boundaries
