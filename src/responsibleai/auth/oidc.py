@@ -216,13 +216,14 @@ class OIDCProvider:
         token_endpoint = disc.get("token_endpoint", f"{self.issuer.rstrip('/')}/token")
 
         async with httpx.AsyncClient(timeout=15.0) as client:
-            form = {
+            form: dict[str, str] = {
                 "grant_type": "authorization_code",
                 "code": code,
                 "redirect_uri": redirect_uri,
                 "client_id": self.client_id,
-                "client_secret": client_secret,
             }
+            if client_secret.strip():
+                form["client_secret"] = client_secret
             if code_verifier:
                 form["code_verifier"] = code_verifier
             resp = await client.post(

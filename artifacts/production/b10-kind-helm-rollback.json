@@ -1,0 +1,14 @@
+{
+  "phase": "B10",
+  "status": "ENVIRONMENT_BLOCKED",
+  "source_sha": "ab6b5bbc35f3637f9caad18b66f5923aa6cd59d1",
+  "timestamp": "2026-09-28T17:45:00Z",
+  "attempted_procedure": "scripts/cell_b/kind_b9_b10_qualification.sh",
+  "reason": "kind cluster bootstrap failed before Helm install; cannot execute live helm rollback on this VM",
+  "completed_substitute": "artifacts/production/b10-release-rollback-rehearsal.json",
+  "substitute_limitation": "Helm values validation only — not cluster rollback",
+  "owner_action_required": [
+    "Owner staging Kubernetes cluster",
+    "helm rollback rehearsal per docs/production/B10_ROLLBACK_PROCEDURE.md"
+  ]
+}

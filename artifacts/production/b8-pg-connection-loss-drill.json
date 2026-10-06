@@ -1,0 +1,12 @@
+{
+  "phase": "B8",
+  "test": "synthetic_db_ping_failure",
+  "timestamp": "2026-09-28T17:29:58.367968+00:00",
+  "livez_status": 200,
+  "readyz_status": 503,
+  "expected": {
+    "livez": 200,
+    "readyz": 503
+  },
+  "passed": true
+}
