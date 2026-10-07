@@ -21,8 +21,57 @@ from responsibleai.sovereign.api_deps import get_bound_engine, get_web_identity_
 _sovereign_org: ContextVar[str | None] = ContextVar("sovereign_org", default=None)
 _sovereign_principal: ContextVar[str | None] = ContextVar("sovereign_principal", default=None)
 
-_BASIC_PATHS = frozenset({"/api/sovereign/status", "/api/sovereign/capabilities"})
 _PRIVILEGED_RANK = role_privilege(Role.SECURITY_ADMIN)
+
+
+def is_sovereign_view_path(path: str) -> bool:
+    """Status and capabilities are the only sovereign reads open to ORG_VIEW."""
+    normalized = path.rstrip("/") or path
+    return normalized.endswith("/sovereign/status") or normalized.endswith(
+        "/sovereign/capabilities"
+    )
+
+
+def assert_sovereign_role(path: str, role: Role | None) -> None:
+    """Shared browser and machine privilege policy.
+
+    Status and capabilities require ORG_VIEW. Every other sovereign operation
+    requires security-admin equivalent privilege so a browser route cannot
+    undercut the machine route.
+    """
+    if role is None:
+        raise HTTPException(status_code=401, detail="Sign in is required.")
+    if is_sovereign_view_path(path):
+        if not has_rbac_permission(role, Permission.ORG_VIEW):
+            raise HTTPException(status_code=403, detail="Forbidden.")
+        return
+    if role_privilege(role) < _PRIVILEGED_RANK:
+        raise HTTPException(status_code=403, detail="Forbidden.")
+
+
+async def authorize_org_view(principal) -> None:
+    """Require an active tenant membership through the existing IAM service."""
+    if principal is None or principal.role is None or not principal.org_id:
+        raise HTTPException(status_code=401, detail="Sign in is required.")
+    engine = get_bound_engine()
+    if engine is None:
+        raise HTTPException(status_code=401, detail="Sign in is required.")
+    actor = Actor(
+        actor_type="human",
+        actor_id=principal.user_id,
+        user_id=principal.user_id,
+        org_id=principal.org_id,
+        role=principal.role,
+        membership_status="ACTIVE",
+    )
+    try:
+        await EnterpriseIAM(engine).authorize(
+            actor,
+            Permission.ORG_VIEW,
+            org_id=principal.org_id,
+        )
+    except EnterpriseError as exc:
+        raise HTTPException(status_code=403, detail="Forbidden.") from exc
 
 
 def bound_organization_id() -> str | None:
@@ -48,32 +97,8 @@ async def enforce_sovereign_access(request: Request):
     if principal is None or principal.role is None or not principal.org_id:
         raise HTTPException(status_code=401, detail="Sign in is required.")
 
-    path = request.url.path.rstrip("/") or request.url.path
-    if path in _BASIC_PATHS:
-        if not has_rbac_permission(principal.role, Permission.ORG_VIEW):
-            raise HTTPException(status_code=403, detail="Forbidden.")
-    elif role_privilege(principal.role) < _PRIVILEGED_RANK:
-        raise HTTPException(status_code=403, detail="Forbidden.")
-
-    engine = get_bound_engine()
-    if engine is None:
-        raise HTTPException(status_code=401, detail="Sign in is required.")
-    actor = Actor(
-        actor_type="human",
-        actor_id=principal.user_id,
-        user_id=principal.user_id,
-        org_id=principal.org_id,
-        role=principal.role,
-        membership_status="ACTIVE",
-    )
-    try:
-        await EnterpriseIAM(engine).authorize(
-            actor,
-            Permission.ORG_VIEW,
-            org_id=principal.org_id,
-        )
-    except EnterpriseError as exc:
-        raise HTTPException(status_code=403, detail="Forbidden.") from exc
+    assert_sovereign_role(request.url.path, principal.role)
+    await authorize_org_view(principal)
 
     org_token = _sovereign_org.set(principal.org_id)
     principal_token = _sovereign_principal.set(f"web:{principal.user_id}")

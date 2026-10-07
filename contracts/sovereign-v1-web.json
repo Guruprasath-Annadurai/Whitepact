@@ -215,7 +215,7 @@
       "feature_version": "1.0.0",
       "negotiation_name": "status",
       "availability": "AVAILABLE",
-      "authentication": "none for GET /api/web/sovereign/status and /capabilities; web_session+csrf for other browser POST routes; machine /api/sovereign/status and /api/sovereign/capabilities require an authenticated principal",
+      "authentication": "authenticated browser principal with an active tenant; GET /api/web/sovereign/status and /capabilities require ORG_VIEW; other browser routes require web_session, CSRF, and security-admin equivalent privilege; machine /api/sovereign/status and /api/sovereign/capabilities require an authenticated principal",
       "zero_effect": true,
       "endpoints": [
         {
@@ -239,7 +239,7 @@
       "feature_version": "1.0.0",
       "negotiation_name": null,
       "availability": "AVAILABLE",
-      "authentication": "none for GET /api/web/sovereign/status and /capabilities; web_session+csrf for other browser POST routes; machine /api/sovereign/status and /api/sovereign/capabilities require an authenticated principal",
+      "authentication": "authenticated browser principal with an active tenant; GET /api/web/sovereign/status and /capabilities require ORG_VIEW; other browser routes require web_session, CSRF, and security-admin equivalent privilege; machine /api/sovereign/status and /api/sovereign/capabilities require an authenticated principal",
       "zero_effect": true,
       "endpoints": [
         {

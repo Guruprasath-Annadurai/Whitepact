@@ -21,6 +21,7 @@ from responsibleai.sovereign.effective import EffectiveAuthoritySnapshot
 from responsibleai.sovereign.errors import SovereignCapabilityError, SovereignTenantIsolationError
 from responsibleai.sovereign.policy_lab import PolicyTestCase
 from responsibleai.sovereign.service import SovereignService
+from responsibleai.sovereign.web_auth import require_browser_sovereign_read
 from responsibleai.sovereign.web_routes import web_router
 
 router = APIRouter(
@@ -352,6 +353,16 @@ async def post_bom(body: OrgBody, svc: SovereignService = Depends(_svc)) -> dict
     return (await svc.authority_bom_async(_ctx(body))).model_dump()
 
 
-# Web session mirror (same service layer)
-web_router.add_api_route("/status", sovereign_status, methods=["GET"])
-web_router.add_api_route("/capabilities", sovereign_capabilities, methods=["GET"])
+# Browser reads use the same service handlers and the shared view policy.
+web_router.add_api_route(
+    "/status",
+    sovereign_status,
+    methods=["GET"],
+    dependencies=[Depends(require_browser_sovereign_read)],
+)
+web_router.add_api_route(
+    "/capabilities",
+    sovereign_capabilities,
+    methods=["GET"],
+    dependencies=[Depends(require_browser_sovereign_read)],
+)

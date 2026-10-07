@@ -6877,8 +6877,10 @@ async def get_drift_trend(
     provider: str,
     _auth: OrgContext = Depends(require_role(Role.VIEWER)),
 ) -> dict[str, Any]:
-    trend = await _ready(_trust_repo).trend(model_name, provider)
-    history = await _ready(_trust_repo).history(model_name, provider, limit=10)
+    if not _auth.org_id:
+        raise HTTPException(401, "Sign in is required.")
+    trend = await _ready(_trust_repo).trend(model_name, provider, org_id=_auth.org_id)
+    history = await _ready(_trust_repo).history(model_name, provider, limit=10, org_id=_auth.org_id)
     return {"trend": trend, "recent_history": history}
 
 
