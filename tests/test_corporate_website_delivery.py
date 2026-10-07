@@ -105,7 +105,12 @@ async def test_discovery_and_unknown_url_boundary():
     async with AsyncClient(transport=ASGITransport(app), base_url="http://test") as client:
         discovery = (await client.get("/llms.txt")).text
         assert "# WhitePact" in discovery
-        assert "independently enforced authority" in discovery
+        assert "require independently evaluated authority" in discovery
+        assert "supported, configured WhitePact enforcement paths" in discovery
+        assert (
+            "Direct calls outside those paths and compromised infrastructure "
+            "are not universally controlled." in discovery
+        )
         assert "certified scoring" not in discovery
         sitemap = (await client.get("/sitemap.xml")).text
         for page in PUBLIC.values():

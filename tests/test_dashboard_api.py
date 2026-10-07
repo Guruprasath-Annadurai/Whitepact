@@ -940,7 +940,12 @@ class TestPublicPagesLoad:
         assert "text/plain" in r.headers["content-type"]
         assert "# WhitePact" in r.text
         assert "https://whitepact.com/architecture" in r.text
-        assert "independently enforced authority" in r.text
+        assert "require independently evaluated authority" in r.text
+        assert "supported, configured WhitePact enforcement paths" in r.text
+        assert (
+            "Direct calls outside those paths and compromised infrastructure "
+            "are not universally controlled." in r.text
+        )
         assert "supported" in r.text
         assert "certified scoring" not in r.text
 
