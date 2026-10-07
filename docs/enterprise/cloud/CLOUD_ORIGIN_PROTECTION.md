@@ -30,7 +30,7 @@ Terraform (staging): `lb_service_protocol = "tcp"`, `lb_listen_port = 443`, `lb_
 
 > A direct TLS client to the Hetzner LB public IPv4 **without** Cloudflare’s authorized client certificate must **fail TLS** at the origin reverse proxy before WhitePact application handlers run.
 
-Proof: `curl -vk https://<lb-ipv4>/` from arbitrary Internet host → handshake failure or 403 **without** reaching `/api/*` governance paths.
+Proof: `bash scripts/cloud/gate2/verify_origin_aop.sh` builds a throwaway CA and checks that a missing client certificate and a wrong client certificate are denied, and a certificate signed by that CA is allowed. The production listener is `deploy/origin/nginx-cloudflare-aop.conf` (`ssl_verify_client on`). A live `curl -vk https://<lb-ipv4>/` remains an apply-time check and is not claimed here.
 
 ### What we do **not** rely on
 

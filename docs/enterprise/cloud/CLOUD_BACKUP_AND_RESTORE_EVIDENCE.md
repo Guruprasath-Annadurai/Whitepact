@@ -5,8 +5,9 @@
 ```
 PostgreSQL (authority, private)
   → pg_dump local (scripts/backup-postgres.sh)
-  → gzip + sha256 manifest
-  → upload (scripts/cloud/upload-backup-to-r2.sh)
+  → gzip
+  → Fernet authenticated encryption + checksum manifest
+  → upload ciphertext only (scripts/cloud/upload-backup-to-r2.sh)
   → outbound TCP 443 via Hetzner network route 0.0.0.0/0 → NAT gateway → Internet
   → Cloudflare R2 (private bucket)
 ```

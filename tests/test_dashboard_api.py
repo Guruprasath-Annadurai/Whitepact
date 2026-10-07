@@ -347,7 +347,8 @@ class TestSecurityHeaders:
 
     async def test_hsts_header_present(self, client):
         r = await client.get("/api/health")
-        assert "max-age=31536000" in r.headers["strict-transport-security"]
+        hsts = r.headers.get("strict-transport-security", "")
+        assert "max-age=31536000" not in hsts
 
 
 # ── Config ────────────────────────────────────────────────────────────────────

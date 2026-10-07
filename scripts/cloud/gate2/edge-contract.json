@@ -11,7 +11,8 @@
   "edge": {
     "provider": "cloudflare",
     "tls_mode": "full_strict",
-    "origin": "hetzner_lb",
+    "origin": "hetzner_lb_tcp_passthrough",
+    "hsts_authority": "application_middleware",
     "record": {
       "type": "A",
       "name": "staging.example.invalid",
@@ -21,44 +22,80 @@
     },
     "authenticated_origin_pull": {
       "mode": "zone",
+      "enforced_at": "origin_reverse_proxy",
       "origin_verifies_cloudflare_client_certificate": true
     },
     "hsts": {
       "stages": [
-        {"max_age": 0, "include_subdomains": false, "preload": false},
-        {"max_age": 300, "include_subdomains": false, "preload": false},
-        {"max_age": 86400, "include_subdomains": true, "preload": false}
+        {"name": "initial", "max_age": 0, "include_subdomains": false, "preload": false},
+        {"name": "stage1", "max_age": 300, "include_subdomains": false, "preload": false},
+        {"name": "stage2", "max_age": 86400, "include_subdomains": true, "preload": false}
       ],
-      "preload_requires_owner": true
+      "disabled_emits_header": false,
+      "preload_requires_owner": true,
+      "production_default_stage": "stage1"
     },
     "waf_baseline": ["cloudflare_managed", "owasp_core"],
-    "rate_limit_baseline": {
-      "path": "/api/",
-      "requests": 600,
-      "period_seconds": 60,
-      "action": "block"
+    "waf_status": "parameterized_not_production_tuned",
+    "rate_limits": {
+      "tuned": false,
+      "status": "baseline-not-production-tuned",
+      "classes": {
+        "login_auth": {"requests": 20, "period_seconds": 60, "action": "block", "rationale": "Credential endpoints are tighter than the general API."},
+        "signup": {"requests": 10, "period_seconds": 60, "action": "block", "rationale": "Account creation is slower than authenticated API use."},
+        "general_api": {"requests": 300, "period_seconds": 60, "action": "block", "rationale": "Broad API budget. It is not the login limit."},
+        "mcp": {"requests": 120, "period_seconds": 60, "action": "block", "rationale": "Tool traffic is separate from browser login."},
+        "webhooks": {"requests": 60, "period_seconds": 60, "action": "block", "rationale": "Provider retries need their own budget."},
+        "exports": {"requests": 10, "period_seconds": 60, "action": "block", "rationale": "Exports are heavy reads."},
+        "health": {"requests": 600, "period_seconds": 60, "action": "log", "rationale": "Probes must not consume the login budget."}
+      }
     }
   },
   "origin_lockdown": {
     "before": "nat_ssh_from_founder_32_only",
-    "after": "lb_443_from_cloudflare_ranges_only",
+    "after": "public_hetzner_lb_tcp_passthrough_origin_aop",
+    "lb_source_cidr_filter": false,
+    "lb_source_cidr_filter_supported": false,
+    "direct_lb_connection": "reaches_tls_listener_then_fails_origin_authentication",
     "saas_public_ipv4": false,
     "authority_public_ipv4": false,
-    "execution_public_ipv4": false
+    "execution_public_ipv4": false,
+    "note": "Hetzner load balancer services cannot restrict port 443 to Cloudflare CIDRs. Origin TLS client-certificate authentication is the enforceable boundary."
   },
   "backup": {
     "destination": "cloudflare_r2",
     "object_must_be_encrypted_before_upload": true,
-    "cipher": "aes-256-cbc-pbkdf2",
+    "cipher": "fernet",
+    "authenticated": true,
+    "plaintext_upload": false,
+    "key_env": "WHITEPACT_BACKUP_ENCRYPTION_KEY",
     "key_location": "operator_secret_store",
     "key_must_not_be_committed": true,
+    "key_must_not_be_stored_beside_object": true,
     "r2_credentials_are_not_the_backup_key": true,
     "retention_days_staging": 30,
-    "restore_requires_sha256_match": true
+    "min_recovery_points": 3,
+    "restore_requires_sha256_match": true,
+    "restore_drops_active_database_first": false
+  },
+  "staging_robots": {
+    "header": "X-Robots-Tag: noindex, nofollow",
+    "production_separately_configurable": true
   },
   "observability": {
     "health_path": "/livez",
     "health_port": 8765,
+    "signals": [
+      "backup_age",
+      "backup_failure",
+      "restore_drill_failure",
+      "origin_tls_failure",
+      "disk_threshold",
+      "db_connectivity",
+      "application_health",
+      "execution_service_health"
+    ],
+    "alerts_claimed_active": false,
     "alert_on": ["origin_tls_fail", "backup_age_hours_gt_26", "restore_drill_fail"]
   }
 }

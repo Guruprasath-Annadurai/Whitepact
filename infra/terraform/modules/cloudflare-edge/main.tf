@@ -38,7 +38,8 @@ resource "cloudflare_record" "app" {
   ttl     = 1
 }
 
-# Rate limiting / WAF rules depend on plan — configure in dashboard or Rulesets API after plan verification.
+# Route-aware WAF, rate limits, TLS, and authenticated origin pulls are in gate2.tf.
+# Plan-specific resources stay at count 0 unless both the enable flag and the plan flag are true.
 
 variable "enable_origin_protection" {
   description = "When true, documents orange-cloud + authenticated origin pull (requires paid plan features)."

@@ -6,7 +6,7 @@ This runbook prepares the next gate. It does not change Cloudflare, DNS, R2, Het
 
 Cloudflare proxies an A record to the Hetzner load balancer. TLS mode is Full (strict). The origin checks the Cloudflare client certificate (authenticated origin pull). HSTS starts at `max-age=0`, then 300 seconds, then 86400 seconds with `includeSubDomains`. Preload stays off until the owner asks for it.
 
-WAF baseline is the Cloudflare managed ruleset plus OWASP core. The rate-limit baseline is 600 requests per 60 seconds on `/api/`, action block.
+WAF baseline is the Cloudflare managed ruleset plus OWASP core, created only when the account plan flag is set. Rate limits are route-specific (login, signup, API, MCP, webhooks, exports, health) and are not production-tuned until staging evidence exists.
 
 The contract is `scripts/cloud/gate2/edge-contract.json`. Check it with:
 
@@ -16,11 +16,11 @@ python3 scripts/cloud/gate2/verify_dry_run.py
 
 ## Origin lockdown
 
-Before cutover, only the NAT server has a public address and SSH is limited to the founder `/32`. After cutover, load-balancer port 443 accepts Cloudflare ranges only. SaaS, authority, and execution stay without public IPv4. The verifier reads `saas_public_ipv4 = false` from the staging root and does not edit it.
+Before cutover, only the NAT server has a public address and SSH is limited to the founder `/32`. After cutover the Hetzner load balancer still accepts TCP/443 from the public Internet. It cannot restrict that port to Cloudflare CIDRs. A direct client reaches the origin TLS listener and is rejected unless it presents the Cloudflare authenticated-origin certificate. SaaS, authority, and execution stay without public IPv4. The verifier reads `saas_public_ipv4 = false` from the staging root and does not edit it.
 
 ## Backup and restore
 
-Postgres dumps are encrypted with AES-256-CBC and PBKDF2 before any upload. The backup key lives in the operator secret store. R2 credentials are not the backup key. Staging retention is 30 days. A restore is accepted only when the SHA-256 of the decrypted bytes matches the manifest.
+Postgres dumps are gzip-compressed and encrypted with Fernet (authenticated AES-CBC plus HMAC) before any upload. The key is `WHITEPACT_BACKUP_ENCRYPTION_KEY` and is not stored next to the object. R2 credentials are not the backup key. Plaintext `.sql.gz` is not uploaded. Staging retention is 30 days and never deletes the newest viable recovery points. Restore validates the manifest before it creates a staging database. The active database is not dropped first. A restore is accepted only when the decrypted checksum matches and the staging checks pass.
 
 Local proof, with no bucket creation:
 
