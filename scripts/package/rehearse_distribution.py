@@ -16,6 +16,9 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from dual_ownership import DualOwnershipError, assert_exclusive_code_ownership, write_wheel  # noqa: E402
+
 CANDIDATES = (
     "rai-governance-platform",
     "whitepact",
@@ -150,6 +153,22 @@ def main() -> None:
     env["SOURCE_DATE_EPOCH"] = "0"
     run([sys.executable, "-m", "build", "--outdir", str(renamed_out)], cwd=rename, env=env)
     renamed = next(renamed_out.glob("*.whl"))
+    try:
+        assert_exclusive_code_ownership([wheel_a, renamed])
+    except DualOwnershipError as exc:
+        lines.append(f"DUAL_CODE_OWNERSHIP=REJECTED {exc}")
+    else:
+        raise SystemExit("two full-code distributions were accepted")
+    shim = work / "rai_governance_platform-9.9.9-py3-none-any.whl"
+    write_wheel(
+        shim,
+        distribution="rai-governance-platform",
+        version="9.9.9",
+        files={},
+        requires=["whitepact-distribution-rehearsal-local"],
+    )
+    assert_exclusive_code_ownership([renamed, shim])
+    lines.append("SHIM_CODE_OWNERSHIP=NONE")
     run([str(pip), "install", "--upgrade", str(renamed)])
     show = subprocess.run(
         [str(pip), "show", "rai-governance-platform"],

@@ -70,6 +70,11 @@ dashboard = [
     "cryptography>=50.0.0",  # PYSEC-2026-3552 fixed in 50.0.0 -- verified working, tests pass
     "pyotp>=2.9.0",
     "cbor2>=5.6.0",
+    # whitepact doctor loads whitepact.yaml through responsibleai.sovereign.manifest.
+    "PyYAML>=6.0.3",
+    # sqlalchemy[asyncio] imports greenlet. Pin it here so doctor does not depend on
+    # an extra that a resolver might drop.
+    "greenlet>=3.0.3",
 ]
 postgres   = ["asyncpg>=0.29.0"]
 redis      = ["limits[redis]>=3.6.0"]

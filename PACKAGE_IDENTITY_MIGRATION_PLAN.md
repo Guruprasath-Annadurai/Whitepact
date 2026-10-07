@@ -48,6 +48,22 @@ The owner must pick one. This document does not.
 
 Candidate names to decide among, not to publish from this branch: `whitepact`, `whitepact-governance`, `whitepact-platform`. None is approved here.
 
+## Owner decision matrix
+
+This matrix is not a decision. The owner still has to pick one option. No option below is approved by this branch.
+
+| | Option A: retain `rai-governance-platform` | Option B: canonical `whitepact` | Option C: `whitepact-governance` or `whitepact-platform` |
+| --- | --- | --- | --- |
+| Developer UX | Install command stays `pip install rai-governance-platform`. Product CLI stays `whitepact`. The distribution name and the product name remain different. | `pip install whitepact` matches the CLI and the product name. Existing pins of `rai-governance-platform` need a documented shim cycle. | Same as B, with a longer install name. Use this only if `whitepact` is unavailable or too generic to claim. |
+| Brand | Product brand is already WhitePact. The PyPI name stays the historical ResponsibleAI name. | Public package name matches the product brand. | Brand is explicit, and the name is less likely to collide with an unrelated `whitepact` project. |
+| Migration complexity | No metadata rename, no Trusted Publisher change, no shim. | New PyPI project, new trusted publisher, extra self-references renamed, and one metadata-only shim release of `rai-governance-platform`. | Same sequence as B, after the owner picks which fallback name. |
+| Compatibility | Imports and console scripts stay as they are. | Imports stay `responsibleai`, `whitepact`, `biasbuster`, and `privacylabel` inside the new wheel only. The old project becomes a dependency shim with no packages of its own. | Same compatibility rule as B. |
+| PyPI risk | Lowest. The project is already published. Latest live version observed on 2026-10-07 was `1.2.6`; this tree is `1.3.1` and is not what PyPI is serving. | `whitepact` was not published on 2026-10-07. That is not a reservation. The name may be considered generic, and availability can change before the owner decides. | Neither fallback was published on 2026-10-07. Same non-reservation caveat. These names are more specific than `whitepact`. |
+| Release sequence | Keep publishing `rai-governance-platform` only. Do not upload a second project that contains the same code. | 1. Owner records the name. 2. Publish the new project; it owns the code. 3. Publish one `rai-governance-platform` release whose only job is `Requires-Dist` on that project, with no import packages. 4. Keep the old install command marked legacy for one cycle. 5. Stop publishing new shim versions. Leave the last shim installable. | Same sequence as B, using the chosen fallback name. |
+| Rollback | Pin the previous `rai-governance-platform` version. Do not yank the last known-good release as part of an identity change. | Pin the last full `rai-governance-platform` release from before the shim, or pin the new project's previous version. Do not rebuild different bytes under the same version. Do not delete the old project. | Same rollback as B. |
+
+Invariant for B and C: the full codebase is never published under both `rai-governance-platform` and the new name. `scripts/package/dual_ownership.py` rejects that pair. A metadata-only shim is the allowed legacy artifact.
+
 ## Compatibility strategy
 
 - Imports stay `responsibleai`, `whitepact`, `biasbuster`, and `privacylabel` inside one wheel. Callers do not rewrite imports when only the distribution name changes.

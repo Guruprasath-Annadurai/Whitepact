@@ -50,7 +50,7 @@ All settings are prefixed with `RAI_`. See [.env.example](.env.example) for the 
 python3 -m venv .venv
 source .venv/bin/activate
 
-pip install "biasbuster[dashboard]"
+pip install "rai-governance-platform[dashboard]"
 # or from source:
 pip install -e ".[dashboard]"
 
@@ -158,9 +158,9 @@ Response fields: `status`, `uptime_seconds`, `checks.database`, `checks.auth`, `
 ## PyPI install
 
 ```bash
-pip install biasbuster                      # core only
-pip install "biasbuster[dashboard]"         # + governance API
-pip install "biasbuster[all]"               # + all provider integrations
+pip install rai-governance-platform                      # core only
+pip install "rai-governance-platform[dashboard]"         # + governance API
+pip install "rai-governance-platform[all]"               # + all provider integrations
 ```
 
 ---
@@ -172,7 +172,7 @@ pip install "biasbuster[all]"               # + all provider integrations
 docker compose pull && docker compose up -d
 
 # Bare metal
-pip install --upgrade "biasbuster[dashboard]"
+pip install --upgrade "rai-governance-platform[dashboard]"
 ```
 
 Database schema migrations run automatically on startup via `CREATE TABLE IF NOT EXISTS`.
