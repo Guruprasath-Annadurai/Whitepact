@@ -9,7 +9,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from responsibleai.ops.backup_crypto import BackupRejectedError, decrypt_dump, load_manifest
+from responsibleai.ops.backup_crypto import BackupRejectedError, decrypt_dump
 
 _IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,62}$")
 
@@ -41,15 +41,12 @@ class PreparedRestore:
 
 def prepare_restore(backup: Path, secret: str, work_dir: Path) -> PreparedRestore:
     manifest_path = Path(str(backup) + ".manifest.json")
-    manifest = load_manifest(manifest_path)
-    plain = decrypt_dump(backup, manifest_path, secret, work_dir)
-    relations_raw = manifest.get("required_relations")
+    plain, claims = decrypt_dump(backup, manifest_path, secret, work_dir)
     relations: list[str] = []
-    if isinstance(relations_raw, list):
-        for item in relations_raw:
-            if not isinstance(item, str) or not _IDENT.fullmatch(item):
-                raise BackupRejectedError("Manifest required_relations contains an unsafe name.")
-            relations.append(item)
+    for item in claims.required_relations:
+        if not _IDENT.fullmatch(item):
+            raise BackupRejectedError("Manifest required_relations contains an unsafe name.")
+        relations.append(item)
     staging = new_staging_name()
     quote_ident(staging)
     return PreparedRestore(plain, staging, tuple(relations))

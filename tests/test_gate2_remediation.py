@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+import gzip
+import hashlib
 import json
 import os
 import subprocess
@@ -18,6 +20,7 @@ from responsibleai.dashboard.edge_policy import hsts_header_value, preload_suppr
 from responsibleai.ops.backup_crypto import (
     BackupRejectedError,
     assert_upload_allowed,
+    decrypt_dump,
     encrypt_dump,
     seal_compressed,
 )
@@ -52,7 +55,11 @@ def _key() -> str:
 
 
 def _artifact(
-    tmp_path: Path, plain: bytes = DUMP, secret: str | None = None, **kwargs: object
+    tmp_path: Path,
+    plain: bytes = DUMP,
+    secret: str | None = None,
+    *,
+    relations: list[str] | None = None,
 ) -> Path:
     secret = secret or _key()
     dest = tmp_path / "backup.sql.gz.enc"
@@ -62,7 +69,7 @@ def _artifact(
         dest,
         database="fixture",
         tool_version="1.3.1",
-        required_relations=list(kwargs.get("relations") or []),
+        required_relations=relations,
     )
     return dest
 
@@ -99,6 +106,8 @@ def test_restore_script_does_not_drop_the_active_database_first() -> None:
     assert "DROP" not in first
     assert "DROP" not in second
     assert "RENAME TO" in first and "RENAME TO" in second
+    assert "mapfile" not in text
+    assert "readarray" not in text
 
 
 def test_corrupt_wrong_checksum_wrong_key_empty_truncated_and_missing_manifest(
@@ -174,7 +183,7 @@ def test_corrupt_wrong_checksum_wrong_key_empty_truncated_and_missing_manifest(
 
 def test_invalid_sql_restore_leaves_source_and_drops_only_staging(tmp_path: Path) -> None:
     if not _postgres_up():
-        pytest.skip("isolated Postgres is not listening on 127.0.0.1:55432")
+        pytest.fail("isolated Postgres is not listening on 127.0.0.1:55432")
     suffix = os.urandom(3).hex()
     source = f"wp_src_{suffix}"
     assert _psql("-c", f'CREATE DATABASE "{source}"').returncode == 0
@@ -219,7 +228,7 @@ def test_invalid_sql_restore_leaves_source_and_drops_only_staging(tmp_path: Path
 
 def test_backup_restore_drill_keeps_source_until_copy_verifies(tmp_path: Path) -> None:
     if not _postgres_up():
-        pytest.skip("isolated Postgres is not listening on 127.0.0.1:55432")
+        pytest.fail("isolated Postgres is not listening on 127.0.0.1:55432")
     suffix = os.urandom(3).hex()
     source = f"wp_src_{suffix}"
     secret = _key()
@@ -465,6 +474,11 @@ def test_origin_contract_and_nginx_do_not_claim_lb_cidr_filter() -> None:
     ):
         assert needle in terraform
     assert 'ssl              = "strict"' in terraform
+    edge_main = (ROOT / "infra/terraform/modules/cloudflare-edge/main.tf").read_text(
+        encoding="utf-8"
+    )
+    assert 'resource "cloudflare_zero_trust_tunnel_cloudflared" "admin"' in edge_main
+    assert 'resource "cloudflare_tunnel" "admin"' not in edge_main
     assert "var.enable_waf_managed_rules && var.plan_allows_waf_managed_rules ? 1 : 0" in terraform
 
 
@@ -561,6 +575,104 @@ def test_retention_timezone_boundary_and_dry_run_default(tmp_path: Path) -> None
     assert body["dry_run"] is False
     assert "newest" not in body["delete"]
     assert "stale" in body["delete"]
+
+
+BASH32 = Path("/opt/bash32/bin/bash")
+
+
+def _manifest(path: Path) -> tuple[Path, dict[str, object]]:
+    manifest_path = path.with_name(path.name + ".manifest.json")
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise AssertionError("manifest must be an object")
+    return manifest_path, {str(key): value for key, value in payload.items()}
+
+
+def _write_manifest(path: Path, payload: dict[str, object]) -> None:
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def test_unauthenticated_manifest_fields_can_change_and_bound_fields_cannot(
+    tmp_path: Path,
+) -> None:
+    secret = _key()
+    dest = _artifact(tmp_path, secret=secret, relations=["gate2_marker", "other_rel"])
+    manifest_path, manifest = _manifest(dest)
+    manifest["created_at"] = "2020-01-01T00:00:00Z"
+    manifest["tool_version"] = "9.9.9"
+    _write_manifest(manifest_path, manifest)
+    plain, claims = decrypt_dump(dest, manifest_path, secret, tmp_path / "open")
+    assert plain.read_bytes().startswith(b"--")
+    assert claims.required_relations == ("gate2_marker", "other_rel")
+    assert claims.version == "1"
+
+    manifest["version"] = "0"
+    _write_manifest(manifest_path, manifest)
+    with pytest.raises(BackupRejectedError, match="version"):
+        decrypt_dump(dest, manifest_path, secret, tmp_path / "downgrade-sidecar")
+
+    manifest["version"] = "1"
+    manifest["required_relations"] = ["gate2_marker"]
+    _write_manifest(manifest_path, manifest)
+    with pytest.raises(BackupRejectedError, match="required_relations"):
+        decrypt_dump(dest, manifest_path, secret, tmp_path / "relations")
+
+
+def test_future_schema_and_raw_gzip_downgrade_are_rejected(tmp_path: Path) -> None:
+    secret = _key()
+    compressed = gzip.compress(DUMP, mtime=0)
+    future = tmp_path / "future.sql.gz.enc"
+    seal_compressed(
+        compressed,
+        DUMP,
+        secret,
+        future,
+        database="fixture",
+        tool_version="1.3.1",
+        schema_version="99",
+    )
+    with pytest.raises(BackupRejectedError, match="Unsupported backup schema version"):
+        decrypt_dump(
+            future, future.with_name(future.name + ".manifest.json"), secret, tmp_path / "f"
+        )
+
+    old = tmp_path / "old.sql.gz.enc"
+    seal_compressed(
+        compressed,
+        DUMP,
+        secret,
+        old,
+        database="fixture",
+        tool_version="1.3.1",
+        schema_version="0",
+    )
+    with pytest.raises(BackupRejectedError, match="Unsupported backup schema version"):
+        decrypt_dump(old, old.with_name(old.name + ".manifest.json"), secret, tmp_path / "o")
+
+    current = _artifact(tmp_path / "current", secret=secret)
+    manifest_path, manifest = _manifest(current)
+    raw = Fernet(secret.encode("ascii")).encrypt(compressed)
+    current.write_bytes(raw)
+    manifest["ciphertext_sha256"] = hashlib.sha256(raw).hexdigest()
+    _write_manifest(manifest_path, manifest)
+    with pytest.raises(BackupRejectedError, match="downgraded"):
+        decrypt_dump(current, manifest_path, secret, tmp_path / "raw")
+
+
+def test_bash32_can_parse_restore_script() -> None:
+    if not BASH32.is_file():
+        pytest.fail("Bash 3.2 is required at /opt/bash32/bin/bash")
+    syntax = subprocess.run(
+        [str(BASH32), "-n", str(RESTORE)], check=False, capture_output=True, text=True
+    )
+    assert syntax.returncode == 0, syntax.stderr
+    version = subprocess.run(
+        [str(BASH32), "-c", "echo ${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert version.stdout.strip() == "3.2"
 
 
 def test_origin_aop_harness() -> None:

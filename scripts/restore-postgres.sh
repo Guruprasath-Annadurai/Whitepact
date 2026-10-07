@@ -69,7 +69,32 @@ fi
 
 STAGING="$("$PYTHON" -c 'import json,sys; print(json.load(sys.stdin)["staging_database"])' <<<"$PLAN")"
 PLAIN="$("$PYTHON" -c 'import json,sys; print(json.load(sys.stdin)["plain_path"])' <<<"$PLAN")"
-mapfile -t RELATIONS < <("$PYTHON" -c 'import json,sys; print("\n".join(json.load(sys.stdin)["required_relations"]))' <<<"$PLAN")
+RELATIONS_FILE="$WORK/relations.txt"
+# One relation per line. Compatible with Bash 3.2, which has no read-array builtin.
+if ! "$PYTHON" -c 'import json,sys
+data=json.load(sys.stdin)
+rels=data["required_relations"]
+if not isinstance(rels, list):
+    raise SystemExit(1)
+lines=[]
+for item in rels:
+    if not isinstance(item, str):
+        raise SystemExit(1)
+    lines.append(item)
+sys.stdout.write("\n".join(lines))
+if lines:
+    sys.stdout.write("\n")
+' >"$RELATIONS_FILE" <<<"$PLAN"; then
+  echo "ERROR: restore plan could not be read. The active database was not modified." >&2
+  exit 2
+fi
+RELATIONS=()
+while IFS= read -r rel || [ -n "${rel:-}" ]; do
+  if [ -z "$rel" ]; then
+    continue
+  fi
+  RELATIONS[${#RELATIONS[@]}]="$rel"
+done <"$RELATIONS_FILE"
 if ! [[ "$STAGING" =~ ^[A-Za-z_][A-Za-z0-9_]{0,62}$ ]]; then
   echo "ERROR: staging name rejected" >&2
   exit 2
@@ -93,6 +118,7 @@ if [ "$restore_ok" -ne 1 ]; then
   exit 1
 fi
 
+if [ "${#RELATIONS[@]}" -gt 0 ]; then
 for rel in "${RELATIONS[@]}"; do
   if [ -z "$rel" ]; then
     continue
@@ -109,6 +135,7 @@ for rel in "${RELATIONS[@]}"; do
     exit 1
   fi
 done
+fi
 
 echo "[$(date -u +%FT%TZ)] Staging restore verified: ${STAGING}"
 echo "Active database ${ACTIVE_DB} was not dropped."

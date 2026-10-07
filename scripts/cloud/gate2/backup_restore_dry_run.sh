@@ -14,7 +14,8 @@ PYTHON="${WHITEPACT_PYTHON:-python3}"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 chmod 700 "$WORK"
-export WHITEPACT_BACKUP_ENCRYPTION_KEY="$("$PYTHON" -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
+WHITEPACT_BACKUP_ENCRYPTION_KEY="$("$PYTHON" -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
+export WHITEPACT_BACKUP_ENCRYPTION_KEY
 printf '%s\n' '--' 'PostgreSQL database dump' '-- whitepact backup fixture' 'SELECT 1;' > "$WORK/plain.sql"
 "$PYTHON" -m responsibleai.ops encrypt \
   --input "$WORK/plain.sql" \

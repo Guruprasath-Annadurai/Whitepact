@@ -54,11 +54,18 @@ variable "admin_hostname" {
 }
 
 # Stub: Cloudflare Tunnel for admin plane — apply only with owner approval and account credentials.
-resource "cloudflare_tunnel" "admin" {
+# Same arguments as the deprecated cloudflare_tunnel resource. count stays 0 unless
+# admin_hostname is set, so this replacement does not describe a live tunnel.
+resource "cloudflare_zero_trust_tunnel_cloudflared" "admin" {
   count      = var.admin_hostname != "" ? 1 : 0
   account_id = var.cloudflare_account_id
   name       = "whitepact-cloud-admin"
   secret     = var.tunnel_secret_placeholder
+}
+
+moved {
+  from = cloudflare_tunnel.admin
+  to   = cloudflare_zero_trust_tunnel_cloudflared.admin
 }
 
 variable "cloudflare_account_id" {
