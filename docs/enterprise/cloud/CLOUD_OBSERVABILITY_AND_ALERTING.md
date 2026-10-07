@@ -16,6 +16,10 @@
 - Do not expose unauthenticated `/metrics` on public LB.
 - If Prometheus scrape is required, bind to private network + mTLS or SSH tunnel.
 
+## Signal hooks
+
+`scripts/cloud/gate2/health_signals.sh` prints JSON for backup age, backup failure, restore-drill failure, origin TLS failure, disk threshold, database connectivity, application health, and execution-service health. `condition_met` is an engineering result. The script sets `alerts_dispatched` to false. It does not claim a pager, webhook, or paid monitor is active.
+
 ## Alerts (minimum)
 
 | Signal | Tool (low-cost) | Action |

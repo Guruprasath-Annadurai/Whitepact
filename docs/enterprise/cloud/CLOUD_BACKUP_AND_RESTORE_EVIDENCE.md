@@ -5,8 +5,9 @@
 ```
 PostgreSQL (authority, private)
   → pg_dump local (scripts/backup-postgres.sh)
-  → gzip + sha256 manifest
-  → upload (scripts/cloud/upload-backup-to-r2.sh)
+  → gzip
+  → Fernet authenticated encryption. The token binds schema version, database name, compression, dump format, required relations, and plaintext hash. The sidecar timestamp and tool version are shape-checked only.
+  → upload ciphertext only (scripts/cloud/upload-backup-to-r2.sh)
   → outbound TCP 443 via Hetzner network route 0.0.0.0/0 → NAT gateway → Internet
   → Cloudflare R2 (private bucket)
 ```
