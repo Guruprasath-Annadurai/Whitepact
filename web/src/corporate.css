@@ -5,6 +5,10 @@
 /* Public pages must reflow below 320 CSS px when a narrow viewport is zoomed.
  * Keep the separate console/auth floor unchanged; do not conceal overflow. */
 body:has(.corporate-nav,.sovereign-public){min-width:0}
+/* Skip-link focus must finish scrolling before the next pointer interaction.
+ * Animated document scrolling can move the menu between pointerdown and
+ * pointerup, retargeting its click to an ancestor. */
+html:has(.corporate-nav,.sovereign-public){scroll-behavior:auto}
 .marketing-page,.subpage{overflow-wrap:anywhere}
 .marketing-page img,.subpage img{max-width:100%}
 .corporate-nav{flex-wrap:wrap;min-width:0}
@@ -64,7 +68,6 @@ body:has(.corporate-nav,.sovereign-public){min-width:0}
 .marketing-page .section-heading>span{display:block;max-width:760px;line-height:1.75;font-size:17px;margin-top:20px}
 .marketing-page .section-heading>p,.page-kicker{font-size:13px;letter-spacing:.06em;text-transform:none}
 .corporate-nav nav{font-size:14px;gap:18px}
-.corporate-nav nav .wp-button{font-size:14px}
 .corporate-nav .wp-brand picture,.corporate-footer .wp-brand picture{display:block;width:100%}
 .corporate-nav .wp-brand picture img,.corporate-footer .wp-brand picture img{height:auto;width:100%}
 .corporate-hero.hero{width:min(1244px,100%);min-height:0;grid-template-columns:minmax(0,1fr) minmax(0,.9fr);gap:64px;padding:80px 32px 70px}

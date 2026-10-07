@@ -84,6 +84,7 @@ try {
       try {
         assert.equal(await page.getByRole("heading", { level: 1 }).count(), 1);
         assert.equal(await page.getByRole("main").getAttribute("id"), "main-content");
+        assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).scrollBehavior), "auto", "public skip-focus scrolling must not move pointer targets during a press");
         await page.getByRole("link", { name: "Skip to main content" }).focus();
         await page.keyboard.press("Enter");
         assert.equal(await page.getByRole("main").evaluate(element => element === document.activeElement), true, `${route} skip focus`);
@@ -94,7 +95,7 @@ try {
         }
         if (width < 1190) {
           const toggle = page.getByRole("button", { name: "Open menu" });
-          await toggle.click();
+          await toggle.click({ delay: 120 });
           await page.getByRole("navigation", { name: "Primary navigation" }).getByRole("link", { name: "Product", exact: true }).waitFor({ state: "visible" });
           await page.keyboard.press("Escape");
           assert.equal(await toggle.getAttribute("aria-expanded"), "false");

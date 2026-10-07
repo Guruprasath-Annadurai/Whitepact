@@ -86,3 +86,26 @@ WHITEPACT_WEBSITE_BROWSER=webkit npm run test:corporate-website
 The default is `chromium`; `msedge` is supported only when that channel is installed. Missing browser executables are failures, not silently substituted engines. Record browser name/version with each result. Playwright WebKit is engine-level evidence, **not** a claim that native Safari or iOS Safari was tested. Native Safari, native zoom and assistive-technology checks remain separately identified evidence.
 
 The responsive matrix includes 320, 360, 375, 390, 412, 430, 768, 1024, 1280, 1440, 1728 and 1920 CSS pixels. The suite also checks mobile disclosure dismissal, keyboard navigation and browser back/forward. Optional `WHITEPACT_WEBSITE_SCREENSHOTS` must be an absolute directory outside the repository; screenshots are named by browser, route and width. Never claim a final pass from an interrupted run or one that traversed different artifact generations.
+## Public navigation pointer/scroll regression
+
+The global smooth document scroll could continue after activating the skip
+link. In Firefox 153.0 on macOS 27.0.1, a subsequent 120 ms menu press was
+observed with `pointerdown` on the toggle at scrollY 36, followed by
+`pointerup` on the hero at scrollY 77. The resulting `click` targeted their
+ancestor rather than the button, so the menu's click handler never ran.
+This is not an authority, API, or hydration failure.
+
+The focused comparison reproduced one failure in ten smooth-scroll presses
+and zero in ten instant-scroll presses; a separate instant-scroll sequence
+also completed thirty presses without failure. Those observations identify
+the mechanism, not a statistical reliability guarantee. The public document
+now uses standards-based `scroll-behavior: auto`, scoped to the corporate and
+Sovereign public shells. Console/auth behavior is unchanged. A redundant
+14 px button font rule was removed (the shared button already defines it) to
+keep the existing initial CSS budget intact.
+
+The browser gate checks computed public scroll behavior and performs a
+120 ms press immediately after skip-link focus at every mobile route/width.
+Do not mask this regression with forced clicks, sleeps, browser-specific
+user-agent branches, or test retries. Native Safari observations and
+Playwright WebKit results must continue to be reported separately.
