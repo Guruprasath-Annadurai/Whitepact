@@ -1,0 +1,64 @@
+{
+  "name": "whitepact-staging-gate2",
+  "status": "dry-run-only",
+  "mutations": {
+    "cloudflare": false,
+    "dns": false,
+    "r2": false,
+    "hetzner": false,
+    "gcp": false
+  },
+  "edge": {
+    "provider": "cloudflare",
+    "tls_mode": "full_strict",
+    "origin": "hetzner_lb",
+    "record": {
+      "type": "A",
+      "name": "staging.example.invalid",
+      "proxied": true,
+      "ttl": 1,
+      "target": "lb_public_ipv4"
+    },
+    "authenticated_origin_pull": {
+      "mode": "zone",
+      "origin_verifies_cloudflare_client_certificate": true
+    },
+    "hsts": {
+      "stages": [
+        {"max_age": 0, "include_subdomains": false, "preload": false},
+        {"max_age": 300, "include_subdomains": false, "preload": false},
+        {"max_age": 86400, "include_subdomains": true, "preload": false}
+      ],
+      "preload_requires_owner": true
+    },
+    "waf_baseline": ["cloudflare_managed", "owasp_core"],
+    "rate_limit_baseline": {
+      "path": "/api/",
+      "requests": 600,
+      "period_seconds": 60,
+      "action": "block"
+    }
+  },
+  "origin_lockdown": {
+    "before": "nat_ssh_from_founder_32_only",
+    "after": "lb_443_from_cloudflare_ranges_only",
+    "saas_public_ipv4": false,
+    "authority_public_ipv4": false,
+    "execution_public_ipv4": false
+  },
+  "backup": {
+    "destination": "cloudflare_r2",
+    "object_must_be_encrypted_before_upload": true,
+    "cipher": "aes-256-cbc-pbkdf2",
+    "key_location": "operator_secret_store",
+    "key_must_not_be_committed": true,
+    "r2_credentials_are_not_the_backup_key": true,
+    "retention_days_staging": 30,
+    "restore_requires_sha256_match": true
+  },
+  "observability": {
+    "health_path": "/livez",
+    "health_port": 8765,
+    "alert_on": ["origin_tls_fail", "backup_age_hours_gt_26", "restore_drill_fail"]
+  }
+}
