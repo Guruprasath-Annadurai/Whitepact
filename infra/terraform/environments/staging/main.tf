@@ -14,11 +14,16 @@ terraform {
 
 provider "hcloud" {}
 
+data "hcloud_ssh_key" "staging_admin" {
+  name = "whitepact-staging-admin"
+}
+
 module "foundation" {
   source = "../../modules/whitepact-hetzner-foundation"
 
   environment             = "staging"
   enable_nat_gateway      = true
+  admin_ssh_key_ids       = [data.hcloud_ssh_key.staging_admin.id]
   nat_gateway_server_type = "cx23"
   location                = var.location
   saas_server_type        = var.saas_server_type

@@ -91,6 +91,7 @@ resource "hcloud_server" "nat_gateway" {
   server_type = var.nat_gateway_server_type
   location    = var.location
   image       = "ubuntu-24.04"
+  ssh_keys    = var.admin_ssh_key_ids
   labels      = merge(local.common_labels, { tier = "nat", role = "mgmt-egress" })
 
   user_data = templatefile("${path.module}/templates/cloud-init-nat-gateway.yaml", {
@@ -120,6 +121,7 @@ resource "hcloud_server" "saas" {
   server_type = var.saas_server_type
   location    = var.location
   image       = "ubuntu-24.04"
+  ssh_keys    = var.admin_ssh_key_ids
   labels      = merge(local.common_labels, { tier = "saas", role = "dashboard-mcp" })
 
   user_data = templatefile("${path.module}/templates/cloud-init-nftables.yaml", {
@@ -146,6 +148,7 @@ resource "hcloud_server" "authority" {
   server_type = var.authority_server_type
   location    = var.location
   image       = "ubuntu-24.04"
+  ssh_keys    = var.admin_ssh_key_ids
   labels      = merge(local.common_labels, { tier = "authority", role = "postgres-governance" })
 
   user_data = templatefile("${path.module}/templates/cloud-init-nftables.yaml", {
@@ -172,6 +175,7 @@ resource "hcloud_server" "execution" {
   server_type = var.execution_server_type
   location    = var.location
   image       = "ubuntu-24.04"
+  ssh_keys    = var.admin_ssh_key_ids
   labels      = merge(local.common_labels, { tier = "execution", role = "isolated-executor" })
 
   user_data = templatefile("${path.module}/templates/cloud-init-nftables.yaml", {

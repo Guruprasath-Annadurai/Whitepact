@@ -1,5 +1,23 @@
 # Cloud deployment evidence
 
+## Test reporting correction (2026-10-07)
+
+Branch `cursor/whitepact-cloud-staging-ssh-key-remediation-5eb0`, commit `50c63acb5fa37c69ea459a611fb48e408d12de0b`.
+
+An earlier pull-request description checked “All tests pass locally (pytest)” before pytest had been run. That claim is withdrawn.
+
+TARGETED PYTEST (`--no-cov`): 40 passed, 0 failed.
+
+- `tests/test_cloud_staging_static.py`
+- `tests/test_m4_cloud_origin_static.py`
+- `tests/test_terraform_m4_validate.py`
+- `tests/test_m4_engineering_gates.py`
+- `tests/test_m4_hostile_regression_campaign.py`
+
+FULL PYTEST was not run for this correction.
+
+The same HEAD repeated a read-only provider plan with Terraform 1.9.8 and locked hcloud 1.69.0. `terraform fmt -check`, `init -backend=false`, and `validate` passed. Hetzner inventory: 0 servers, networks, firewalls, load balancers, volumes, primary IPs, and floating IPs; 1 SSH key `whitepact-staging-admin`. Plan actions: CREATE=15 UPDATE=0 REPLACE=0 DELETE=0. `PLAN_VERIFIER=PASS`. `SSH_KEY_ATTACHMENT=PASS`. No `terraform apply`.
+
 ## Pre-flight audit (2026-10-05)
 
 | Area | Repo state | Gap |
