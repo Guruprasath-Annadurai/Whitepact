@@ -67,6 +67,13 @@ describe("corporate website truth and navigation", () => {
     expect(screen.getByRole("button", { name: "Open menu" })).toHaveFocus();
     expect(screen.getByRole("button", { name: "Open menu" })).toHaveAttribute("aria-expanded", "false");
   });
+  it("dismisses the navigation disclosure when the visitor moves to the page", async () => {
+    const user = userEvent.setup();
+    at("/");
+    await user.click(screen.getByRole("button", { name: "Open menu" }));
+    await user.click(screen.getByRole("heading", { level: 1 }));
+    expect(screen.getByRole("button", { name: "Open menu" })).toHaveAttribute("aria-expanded", "false");
+  });
   it("never represents denied or exceeded authority as an approval path", async () => {
     const user = userEvent.setup();
     at("/");

@@ -71,3 +71,18 @@ Build the existing locked frontend first so `public-routes.json` is generated. B
 - Final current-code focused browser run: **9 passed, 1 failed**, exit 1. Remaining failure is `zoom-200`, homepage `/`, 375px. Ordinary mobile widths, no-JS, blocked-assets meaningful content, axe, actual keyboard navigation/menu behavior, reduced motion, CDP slow network, offline-after-load and lab LCP/CLS probes passed within this focused homepage scope.
 - CSS zoom 200% at 375px is a reflow approximation (approximately 187.5 CSS-pixel effective width), not independent native browser zoom proof. Failure is not suppressed; no product defect conclusion or product fix is made.
 - No fresh full-matrix PASS exists for the final harness. Track C remains **PARTIAL** pending full current-code browser qualification and native zoom adjudication. External host, owner-contact, maintenance and rollback acceptance remains UNVERIFIED.
+
+## Website-completion browser execution
+
+The historical results above remain historical; they must not be substituted for a fresh result on a successor website head. The corporate browser suite now supports an explicit engine/channel and serves a private snapshot of the built artifact, preventing a concurrent rebuild from replacing files underneath its HTTP fixture.
+
+```sh
+npm --prefix web run build
+WHITEPACT_WEBSITE_BROWSER=chrome npm run test:corporate-website
+WHITEPACT_WEBSITE_BROWSER=firefox npm run test:corporate-website
+WHITEPACT_WEBSITE_BROWSER=webkit npm run test:corporate-website
+```
+
+The default is `chromium`; `msedge` is supported only when that channel is installed. Missing browser executables are failures, not silently substituted engines. Record browser name/version with each result. Playwright WebKit is engine-level evidence, **not** a claim that native Safari or iOS Safari was tested. Native Safari, native zoom and assistive-technology checks remain separately identified evidence.
+
+The responsive matrix includes 320, 360, 375, 390, 412, 430, 768, 1024, 1280, 1440, 1728 and 1920 CSS pixels. The suite also checks mobile disclosure dismissal, keyboard navigation and browser back/forward. Optional `WHITEPACT_WEBSITE_SCREENSHOTS` must be an absolute directory outside the repository; screenshots are named by browser, route and width. Never claim a final pass from an interrupted run or one that traversed different artifact generations.

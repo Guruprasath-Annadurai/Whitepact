@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Guruprasath Annadurai
 // SPDX-License-Identifier: MIT
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Menu, X } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { Brand } from "./Brand";
@@ -16,6 +16,24 @@ export function CorporateNav() {
   const toggle = useRef<HTMLButtonElement>(null);
   const navigation = useRef<HTMLElement>(null);
   const focusFrame = useRef<number | undefined>(undefined);
+  const header = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    function dismissOutside(event: Event) {
+      if (event.target instanceof Node && !header.current?.contains(event.target)) {
+        if (focusFrame.current !== undefined) cancelAnimationFrame(focusFrame.current);
+        focusFrame.current = undefined;
+        setOpen(false);
+      }
+    }
+    document.addEventListener("pointerdown", dismissOutside);
+    document.addEventListener("focusin", dismissOutside);
+    return () => {
+      document.removeEventListener("pointerdown", dismissOutside);
+      document.removeEventListener("focusin", dismissOutside);
+      if (focusFrame.current !== undefined) cancelAnimationFrame(focusFrame.current);
+    };
+  }, [open]);
   function close(restore = false) {
     if (focusFrame.current !== undefined) cancelAnimationFrame(focusFrame.current);
     focusFrame.current = undefined;
@@ -24,7 +42,7 @@ export function CorporateNav() {
   }
   return <>
     <a className="corporate-skip" href="#main-content">Skip to main content</a>
-    <header className="corporate-nav" onKeyDown={(event) => {
+    <header ref={header} className="corporate-nav" onKeyDown={(event) => {
       if (event.key === "Escape" && open) { event.preventDefault(); close(true); }
     }}>
       <Brand optimized />

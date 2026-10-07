@@ -5,14 +5,19 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
-import { chromium } from "playwright";
+import { chromium, firefox, webkit } from "playwright";
 import AxeBuilder from "@axe-core/playwright";
 import "./corporate-release-audit.mjs";
 import { verifyCorporateFailureModes } from "./corporate-failure.e2e.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const built = path.join(root, "src/responsibleai/dashboard/static/whitepact");
+// A rebuild must not replace files beneath a running qualification server.
+// Each run serves an immutable private snapshot of the production artifact.
+const artifactSnapshot = fs.mkdtempSync(path.join(os.tmpdir(), "whitepact-browser-artifact-"));
+const built = path.join(artifactSnapshot, "whitepact");
+fs.cpSync(path.join(root, "src/responsibleai/dashboard/static/whitepact"), built, { recursive: true });
 const routes = ["/", "/product", "/architecture", "/developers", "/docs", "/security", "/enterprise", "/trust", "/about", "/contact", "/pricing", "/privacy", "/terms", "/refund-policy", "/sovereign"];
 const mime = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".png": "image/png", ".webp": "image/webp", ".woff2": "font/woff2", ".xml": "application/xml", ".txt": "text/plain" };
 const server = http.createServer((req, res) => {
@@ -36,9 +41,13 @@ const server = http.createServer((req, res) => {
 await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
 console.log(`Local production-built public preview: ${origin}`);
-const browser = await chromium.launch({ headless: true });
+const browserName = process.env.WHITEPACT_WEBSITE_BROWSER ?? "chromium";
+assert.ok(["chromium", "chrome", "msedge", "firefox", "webkit"].includes(browserName), "browser must be an explicitly supported engine or installed channel");
+const engine = browserName === "firefox" ? firefox : browserName === "webkit" ? webkit : chromium;
+const browser = await engine.launch({ headless: true, ...(["chrome", "msedge"].includes(browserName) ? { channel: browserName } : {}) });
+console.log(`Browser under test: ${browserName} ${browser.version()}`);
 const failures = [];
-const widths = [320, 360, 375, 390, 412, 768, 1024, 1280, 1440, 1920];
+const widths = [320, 360, 375, 390, 412, 430, 768, 1024, 1280, 1440, 1728, 1920];
 const screenshotDirectory = process.env.WHITEPACT_WEBSITE_SCREENSHOTS;
 if (screenshotDirectory) {
   assert.ok(path.isAbsolute(screenshotDirectory), "screenshot directory must be absolute");
@@ -90,6 +99,9 @@ try {
           await page.keyboard.press("Escape");
           assert.equal(await toggle.getAttribute("aria-expanded"), "false");
           assert.equal(await toggle.evaluate(element => element === document.activeElement), true);
+          await toggle.click();
+          await page.getByRole("contentinfo").click({ position: { x: 5, y: 5 } });
+          assert.equal(await toggle.getAttribute("aria-expanded"), "false", "outside interaction dismisses mobile navigation");
         } else {
           assert.equal(await page.getByRole("navigation", { name: "Primary navigation" }).isVisible(), true);
         }
@@ -98,8 +110,11 @@ try {
         assert.deepEqual(violations.map(v => ({ id: v.id, nodes: v.nodes.map(n => n.target) })), [], `${route} axe at ${width}`);
         scans += 1;
         layouts += 1;
-        if (screenshotDirectory && [375, 390, 1440].includes(width)) await page.screenshot({ path: path.join(screenshotDirectory, `${route === "/" ? "home" : route.slice(1)}-${width}.png`), fullPage: true });
-      } catch (error) { failures.push(error.message); }
+        if (screenshotDirectory && [375, 390, 430, 768, 1440, 1728].includes(width)) await page.screenshot({ path: path.join(screenshotDirectory, `${browserName}-${route === "/" ? "home" : route.slice(1)}-${width}.png`), fullPage: true });
+      } catch (error) {
+        failures.push(`${browserName} ${route} at ${width}px: ${error.message}`);
+        if (screenshotDirectory) await page.screenshot({ path: path.join(screenshotDirectory, `${browserName}-failure-${route === "/" ? "home" : route.slice(1)}-${width}.png`), fullPage: true }).catch(() => {});
+      }
       page.off("pageerror", onError);
       page.off("console", onConsole);
     }
@@ -125,6 +140,12 @@ try {
   await page.getByRole("heading", { level: 1 }).filter({ hasText: "authority" }).waitFor();
   assert.equal(new URL(page.url()).pathname, "/architecture");
   assert.equal(await page.getByRole("navigation", { name: "Primary navigation" }).getByRole("link", { name: "Architecture", exact: true }).getAttribute("aria-current"), "page");
+  await page.goBack();
+  await page.getByRole("navigation", { name: "Documentation sections" }).waitFor();
+  assert.equal(new URL(page.url()).pathname, "/docs", "browser back restores the documentation route");
+  await page.goForward();
+  await page.getByRole("navigation", { name: "Primary navigation" }).getByRole("link", { name: "Architecture", exact: true }).waitFor();
+  assert.equal(new URL(page.url()).pathname, "/architecture", "browser forward restores the architecture route");
   const requests = [];
   page.on("request", request => requests.push(request.url()));
   await page.goto(origin, { waitUntil: "networkidle" });
@@ -192,9 +213,10 @@ try {
   assert.equal((await context.cookies()).length, 0, "static corporate browsing sets no cookies");
   assert.deepEqual(await page.evaluate(() => ({ local: localStorage.length, session: sessionStorage.length })), { local: 0, session: 0 }, "public browsing writes no storage");
   await verifyCorporateFailureModes(browser, origin, routes);
-  console.log(JSON.stringify({ axeScansPassed: scans, responsiveLayoutsPassed: layouts, expected: routes.length * widths.length, widths, keyboardAndTruthChecks: "PASS", reducedMotion: "PASS", zoomEquivalentAndTextScalingRoutes: routes.length, noJsRoutes: 15, failures }, null, 2));
+  console.log(JSON.stringify({ browser: browserName, browserVersion: browser.version(), axeScansPassed: scans, responsiveLayoutsPassed: layouts, expected: routes.length * widths.length, widths, keyboardAndTruthChecks: "PASS", reducedMotion: "PASS", zoomEquivalentAndTextScalingRoutes: routes.length, noJsRoutes: 15, failures }, null, 2));
   if (failures.length) process.exitCode = 1;
 } finally {
   await browser.close();
   await new Promise(resolve => server.close(resolve));
+  fs.rmSync(artifactSnapshot, { recursive: true, force: true });
 }
