@@ -2,23 +2,52 @@
 /* SPDX-License-Identifier: MIT */
 .corporate-skip{position:fixed;top:12px;left:16px;z-index:1000;background:#fff;color:#111;padding:12px 18px;transform:translateY(-180%)}
 .corporate-skip:focus{transform:none}
+/* Public pages must reflow below 320 CSS px when a narrow viewport is zoomed.
+ * Keep the separate console/auth floor unchanged; do not conceal overflow. */
+body:has(.corporate-nav,.sovereign-public){min-width:0}
+.marketing-page,.subpage{overflow-wrap:anywhere}
+.marketing-page img,.subpage img{max-width:100%}
+.corporate-nav{flex-wrap:wrap;min-width:0}
+.corporate-nav>.wp-brand{max-width:calc(100% - 68px)}
+.corporate-nav nav{flex-wrap:wrap;max-width:100%;min-width:0}
+.corporate-footer .wp-brand{max-width:100%}
+.marketing-page .scenario-tabs{flex-wrap:wrap;overflow:visible}
+.marketing-page .scenario-tabs button{white-space:normal;max-width:100%;min-width:0;text-align:left}
+.marketing-page .section{container-type:inline-size;container-name:public-section}
+.marketing-page .decision-result{min-width:0;overflow-wrap:anywhere}
+.marketing-page .decision-result button{max-width:100%;white-space:normal;overflow-wrap:anywhere}
+.sovereign-public{min-width:0;overflow-wrap:anywhere}
+.sovereign-public main{container-type:inline-size;container-name:public-sovereign}
+.sovereign-public img,.sovereign-public .wp-brand{max-width:100%}
+.sovereign-public .sov-public-nav{height:auto;min-height:72px;flex-wrap:wrap;gap:16px;min-width:0}
+.sovereign-public .sov-public-nav nav,.sovereign-public .sov-public-nav>div{flex-wrap:wrap;max-width:100%;min-width:0}
+.sovereign-public .hero-actions{flex-wrap:wrap;min-width:0}
+.sovereign-public .wp-button{max-width:100%;white-space:normal;overflow-wrap:anywhere}
+.sovereign-public .sov-hero{grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr)}
+.sovereign-public .sov-hero>div,.sovereign-public .sov-band>div{min-width:0}
+@container public-section (max-width:820px){
+ .marketing-page .console-frame{grid-template-columns:minmax(0,1fr)}
+ .marketing-page .decision-result{border-left:0;border-top:1px solid var(--red)}
+ .marketing-page .decision-trace{grid-template-columns:minmax(0,1fr)}
+}
+@container public-sovereign (max-width:820px){
+ .sovereign-public .sov-hero,.sovereign-public .sov-band,.sovereign-public .sov-principles,.sovereign-public .sov-capabilities{grid-template-columns:minmax(0,1fr);gap:24px}
+ .sovereign-public .sov-preview>section{grid-template-columns:minmax(0,1fr)}
+ .sovereign-public .sov-hero h1{font-size:clamp(28px,10cqi,43px)}
+ .sovereign-public .sov-preview__flow,.sovereign-public .sov-debug ol{grid-template-columns:minmax(0,1fr)}
+}
 .corporate-nav{position:relative;display:flex;align-items:center;justify-content:space-between;gap:24px;max-width:1440px;margin:auto;padding:28px 32px;border-bottom:1px solid #252a30}
 .corporate-nav>.wp-brand{flex-shrink:0;width:165px}
-.corporate-nav nav{display:flex;align-items:center;gap:20px;font-size:12px}
-.corporate-nav nav a{color:#b8bec5;white-space:nowrap}
+.corporate-nav nav{display:flex;align-items:center}
+.corporate-nav nav a{color:#b8bec5;white-space:normal;overflow-wrap:anywhere}
 .corporate-nav nav a:hover,.corporate-nav nav a[aria-current=page]{color:#fff;text-decoration:underline;text-underline-offset:7px}
-.corporate-nav nav .wp-button{color:#fff;font-size:12px;padding:0 16px}
+.corporate-nav nav .wp-button{color:#fff;padding:0 16px}
 .corporate-toggle{display:none;border:1px solid #424a54;border-radius:4px;width:44px;height:44px;background:transparent;color:#fff;align-items:center;justify-content:center}
 #main-content:focus{outline:none}
 .trust-grid article>svg{display:none}
-.trust-grid article p{line-height:1.7}
 .docs-example p{overflow-wrap:anywhere}
 .conceptual-chain{display:flex;flex-wrap:wrap;gap:12px;list-style:none;padding:0}
 .conceptual-chain li{border:1px solid #424a54;padding:10px 12px;font-size:12px}
-.optional-core{display:block;position:relative;margin:0 auto 20px;border:1px solid #424a54;background:#080b0e;color:#c7ccd2;padding:10px 14px;font-size:12px;min-height:44px}
-/* Keep the explanation and evaluation CTA ahead of decorative media. */
-@media(min-width:821px){.hero{min-height:700px;padding-top:56px;padding-bottom:40px}.hero .trust-core-static{height:500px}.hero .trust-core-static img{height:500px;object-fit:contain}.hero .trust-core{height:500px;min-height:0}}
-@media(max-width:820px),(prefers-reduced-motion:reduce){.optional-core{display:none}}
 @media(max-width:1190px){
  .corporate-nav{padding:20px 24px}
  .corporate-toggle{display:flex}
@@ -103,11 +132,10 @@
 .control-explainers details{border:1px solid #3d454e;border-radius:6px;padding:0 22px}
 .control-explainers summary{min-height:58px;padding:16px 0;cursor:pointer;font-weight:600;line-height:1.6}
 .control-explainers summary>span{display:block;color:#b5bdc7;font-size:14px;font-weight:400;max-width:780px;margin-top:4px}
-.control-explainers dt{margin-top:16px}
 .control-explainers dd{padding:5px 0 12px;border-bottom:1px solid #30363e}
 .control-explainers dl{margin:0 0 22px}
 .control-explainers dl>div{display:grid;grid-template-columns:110px minmax(0,1fr);gap:18px;padding:12px 0;border-top:1px solid #30363e;font-size:15px;line-height:1.7}
-.control-explainers dt{font-weight:600;color:#c6ccd4}
+.control-explainers dt{margin-top:16px;font-weight:600;color:#c6ccd4}
 .control-explainers dd{margin:0;overflow-wrap:anywhere}
 .enterprise-control-list{margin:24px 0}
 .enterprise-control-list>div{border-top:1px solid #30363e;padding:20px 0}
@@ -115,8 +143,7 @@
 .enterprise-control-list dd{margin:10px 0 0;font-size:15px;line-height:1.75;color:#b5bdc7}
 .control-status{display:inline-block;margin-left:12px;color:#c6ccd4;border:1px solid #48525e;border-radius:4px;padding:3px 8px;font-size:13px;font-weight:400}
 .corporate-footer{display:block;padding:48px 0;width:min(1180px,calc(100% - 64px))}
-.corporate-footer .footer-brand{display:flex;align-items:center;gap:28px;flex-wrap:wrap;margin-bottom:36px}
-.corporate-footer nav{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:36px}
+.corporate-footer nav{min-width:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:36px}
 .corporate-footer nav>section{display:flex;flex-direction:column}
 .corporate-footer h2{font-size:15px;font-weight:600;color:#e4e7eb;margin:0 0 12px}
 .corporate-footer .footer-identity{margin-bottom:32px;max-width:520px}
@@ -130,8 +157,7 @@
 .docs-sidebar nav{display:grid;gap:4px}
 .docs-sidebar h2{font-size:16px;margin:0 0 16px}
 .docs-sidebar a{display:block;min-height:44px;padding:10px 0;color:#c6ccd4;font-size:14px;line-height:1.5}
-.docs-content{min-width:0}
-.docs-body{min-width:0}
+.docs-content,.docs-body{min-width:0}
 .docs-concepts{border:1px solid #3d454e;border-radius:6px;margin-bottom:28px}
 .docs-concepts summary{padding:20px;cursor:pointer;min-height:60px;line-height:1.7;font-weight:600}
 .docs-concepts summary:focus-visible{outline:2px solid white;outline-offset:4px}
@@ -194,8 +220,21 @@
  .grant-lifecycle ol{grid-template-columns:1fr;gap:12px}.grant-lifecycle li{border-right:0;padding-inline:0}
  .control-explainers dl>div{grid-template-columns:1fr;gap:4px}.control-status{margin-left:0;margin-top:8px;display:table}
  .corporate-page-index{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 16px;font-size:14px}.corporate-page-index a{overflow-wrap:anywhere}
- .docs-sidebar nav{grid-template-columns:1fr 1fr}.docs-content pre{padding:16px;font-size:12px}
+ .docs-content pre{padding:16px;font-size:12px}
  .docs-body .docs-code pre{padding:16px;font-size:12px}.docs-body .docs-grid article{padding:20px}.architecture-planes article{padding:20px}
  .marketing-page .final-cta .hero-actions{display:flex;flex-direction:column;align-items:stretch}
 }
 @media(prefers-reduced-motion:reduce){.authority-boundary *{animation:none!important;transition:none!important}}
+@media(max-width:319px){
+ .corporate-nav{padding:16px 12px;gap:8px}
+ .corporate-nav>.wp-brand{width:min(120px,55vw)}
+ .corporate-nav nav a{white-space:normal;overflow-wrap:anywhere}
+ .corporate-hero.hero{padding-inline:12px}
+ .corporate-hero h1,.marketing-page h2,.editorial-page h1,.docs-page h1,.contact-page h1,.trust-page h1{font-size:clamp(24px,10vw,32px);overflow-wrap:anywhere}
+ .marketing-page,.subpage,.trust-page{min-width:0}
+ .marketing-page .section,.editorial-page,.docs-page,.contact-page,.trust-page main,.corporate-footer{width:calc(100% - 24px);min-width:0}
+ .marketing-page .wp-button,.subpage .wp-button{padding-inline:10px;white-space:normal;max-width:100%}
+ .authority-boundary{padding:12px;min-width:0}
+ .corporate-footer nav,.docs-sidebar nav,.corporate-page-index{grid-template-columns:minmax(0,1fr)}
+ .architecture-planes article,.docs-body .docs-grid article{padding:12px;min-width:0}
+}

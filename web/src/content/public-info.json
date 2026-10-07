@@ -7,7 +7,7 @@
     "sections": [
       [
         "Doctrine",
-        "The agent may think freely. It may plan freely. But it cannot act outside independently enforced authority."
+        "Operating doctrine: an agent may think and plan freely. Consequential actions routed through supported, configured WhitePact enforcement paths require independently evaluated authority. Direct calls outside those paths and compromised infrastructure are not universally controlled."
       ],
       [
         "Operating principle",
@@ -39,7 +39,7 @@
     "sections": [
       [
         "Local setup",
-        "Clone https://github.com/Guruprasath-Annadurai/Whitepact.git, check out 52d9b3c5497af24bb7d4a7147e33deaadc64296e, run pip install -e \".[dashboard]\" in that checkout, then start uvicorn responsibleai.dashboard.app:app on localhost. The published distribution was 1.2.6 when checked on 2026-10-04 and may differ from this source baseline. Follow database, encryption and authority prerequisites before consequential testing."
+        "Clone https://github.com/Guruprasath-Annadurai/Whitepact.git, check out 52d9b3c5497af24bb7d4a7147e33deaadc64296e, run pip install -e \".[dashboard]\" in that checkout, then start uvicorn responsibleai.dashboard.app:app on localhost. Package publication for this website release is not verified; no published-package installation command is supplied. Follow database, encryption and authority prerequisites before consequential testing."
       ],
       [
         "Authentication is not authority",

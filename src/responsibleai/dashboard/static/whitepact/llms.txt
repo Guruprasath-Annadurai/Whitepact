@@ -4,7 +4,7 @@
 > configured AI agent actions. Authentication, intent and subscriptions alone
 > do not authorize execution. Unsupported paths are not universally governed.
 
-The agent may think freely. It may plan freely. But it cannot act outside independently enforced authority.
+Operating doctrine: an agent may think and plan freely. Consequential actions routed through supported, configured WhitePact enforcement paths require independently evaluated authority. Direct calls outside those paths and compromised infrastructure are not universally controlled.
 
 ## Current public product
 

@@ -91,8 +91,10 @@ describe("public website", () => {
   it("publishes a truthful Sovereign product page", async () => {
     renderAt("/sovereign");
     expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("See authority before it becomes action");
-    expect(screen.getByText("Available after authentication")).toBeInTheDocument();
-    expect(screen.getAllByText("Authenticated live route")).toHaveLength(2);
+    expect(screen.getByText("Requires verified deployment and authentication")).toBeInTheDocument();
+    expect(screen.getAllByText("Implemented route · deployment dependent")).toHaveLength(2);
+    expect(screen.queryByText("Available after authentication")).not.toBeInTheDocument();
+    expect(screen.queryByText("Authenticated live route")).not.toBeInTheDocument();
     expect(screen.queryByText(/guaranteed|production proven|gauntlet pass/i)).not.toBeInTheDocument();
   });
 
