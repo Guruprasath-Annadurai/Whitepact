@@ -148,31 +148,31 @@ class TestAuditCleanup:
 
 class TestEndpointSummary:
     async def test_summary_empty(self, repo):
-        summary = await repo.endpoint_summary(days=7)
+        summary = await repo.endpoint_summary("org-summary", days=7)
         assert summary == []
 
     async def test_summary_counts_by_endpoint(self, repo):
         for _ in range(3):
-            await repo.write(_entry(endpoint="/api/evaluate"))
+            await repo.write(_entry(endpoint="/api/evaluate", org_id="org-summary"))
         for _ in range(2):
-            await repo.write(_entry(endpoint="/api/scan"))
-        summary = await repo.endpoint_summary(days=1)
+            await repo.write(_entry(endpoint="/api/scan", org_id="org-summary"))
+        summary = await repo.endpoint_summary("org-summary", days=1)
         counts = {s["endpoint"]: s["count"] for s in summary}
         assert counts["/api/evaluate"] == 3
         assert counts["/api/scan"] == 2
 
     async def test_summary_includes_avg_ms(self, repo):
-        await repo.write(_entry(endpoint="/api/test", duration_ms=100.0))
-        await repo.write(_entry(endpoint="/api/test", duration_ms=200.0))
-        summary = await repo.endpoint_summary(days=1)
+        await repo.write(_entry(endpoint="/api/test", duration_ms=100.0, org_id="org-summary"))
+        await repo.write(_entry(endpoint="/api/test", duration_ms=200.0, org_id="org-summary"))
+        summary = await repo.endpoint_summary("org-summary", days=1)
         assert summary[0]["avg_ms"] == 150.0
 
     async def test_summary_ordered_by_count_desc(self, repo):
         for _ in range(5):
-            await repo.write(_entry(endpoint="/api/heavy"))
+            await repo.write(_entry(endpoint="/api/heavy", org_id="org-summary"))
         for _ in range(2):
-            await repo.write(_entry(endpoint="/api/light"))
-        summary = await repo.endpoint_summary(days=1)
+            await repo.write(_entry(endpoint="/api/light", org_id="org-summary"))
+        summary = await repo.endpoint_summary("org-summary", days=1)
         assert summary[0]["endpoint"] == "/api/heavy"
 
 

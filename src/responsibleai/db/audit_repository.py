@@ -223,8 +223,10 @@ class AuditRepository:
             result = await conn.execute(delete(audit_log).where(audit_log.c.timestamp < cutoff))
         return result.rowcount
 
-    async def endpoint_summary(self, days: int = 7) -> list[dict[str, Any]]:
-        """Top endpoints by request count for the last N days."""
+    async def endpoint_summary(self, org_id: str, *, days: int = 7) -> list[dict[str, Any]]:
+        """Top endpoints for one organization. Tenant callers must pass org_id."""
+        if not org_id:
+            raise ValueError("org_id is required")
         cutoff = _days_ago(days)
         stmt = (
             select(
@@ -232,7 +234,7 @@ class AuditRepository:
                 func.count().label("count"),
                 func.avg(audit_log.c.duration_ms).label("avg_ms"),
             )
-            .where(audit_log.c.timestamp >= cutoff)
+            .where(audit_log.c.timestamp >= cutoff, audit_log.c.org_id == org_id)
             .group_by(audit_log.c.endpoint)
             .order_by(func.count().desc())
             .limit(20)
