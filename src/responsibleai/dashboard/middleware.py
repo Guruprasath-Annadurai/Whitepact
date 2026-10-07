@@ -172,11 +172,9 @@ def _is_whitepact_spa_path(path: str) -> bool:
     )
 
 
-# Safe to set at the application layer even though TLS termination is the
-# deployer's job (DEPLOYMENT.md's nginx config): browsers ignore
-# Strict-Transport-Security on plain-HTTP responses per spec, so this is a
-# no-op when accessed directly over HTTP and a real defense-in-depth layer
-# once a proxy terminates TLS in front of it.
+# HSTS is not in this static map. edge_policy is the only writer, and it
+# reads explicit configuration. Development and test omit the header.
+# Production defaults to max-age=300 without includeSubDomains or preload.
 _SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
@@ -185,8 +183,32 @@ _SECURITY_HEADERS = {
     "Cache-Control": "no-store",
     "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
     "Content-Security-Policy": _CONTENT_SECURITY_POLICY,
-    "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
 }
+
+
+def _edge_response_headers() -> dict[str, str]:
+    """Read the one hosted HSTS and robots policy. Never fall back to a year-long HSTS."""
+    try:
+        from responsibleai.dashboard.config import get_settings
+        from responsibleai.dashboard.edge_policy import hsts_header_value, robots_tag
+
+        settings = get_settings()
+    except Exception:  # noqa: BLE001 — a config failure must not emit a year-long HSTS header
+        return {}
+    headers: dict[str, str] = {}
+    hsts = hsts_header_value(
+        environment=settings.environment,
+        stage=settings.hsts_stage,
+        include_subdomains=settings.hsts_include_subdomains,
+        preload=settings.hsts_preload,
+        preload_authorized=settings.hsts_preload_authorized,
+    )
+    if hsts:
+        headers["Strict-Transport-Security"] = hsts
+    robots = robots_tag(environment=settings.environment, robots_noindex=settings.robots_noindex)
+    if robots:
+        headers["X-Robots-Tag"] = robots
+    return headers
 
 
 MAX_REQUEST_BODY_BYTES = 10 * 1024 * 1024
@@ -237,6 +259,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         response = await call_next(request)
         for header, value in _SECURITY_HEADERS.items():
+            response.headers[header] = value
+        for header, value in _edge_response_headers().items():
             response.headers[header] = value
         if _is_whitepact_spa_path(request.url.path):
             response.headers["Content-Security-Policy"] = _WHITEPACT_CONTENT_SECURITY_POLICY

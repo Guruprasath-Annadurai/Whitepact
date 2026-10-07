@@ -10,7 +10,7 @@ write_files:
           type filter hook input priority 0; policy drop;
           ct state established,related accept
           iif "lo" accept
-          tcp dport 22 ip saddr { ${admin_cidrs} } accept comment "admin SSH maintenance path"
+          # Operator SSH is on NAT gateway only; private tiers use mgmt_ssh rules in tier_input_rules.
           ${tier_input_rules}
         }
         chain forward {

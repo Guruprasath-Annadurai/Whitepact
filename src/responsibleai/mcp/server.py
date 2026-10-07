@@ -708,13 +708,26 @@ def _build_http_app() -> Any:
     ) or _env_bool("RAI_MCP_HTTP_TRUST_FORWARDED_HEADERS", default=False)
 
     def _peer_ip(request: Request) -> str:
-        if trust_forwarded:
-            xff = request.headers.get("x-forwarded-for")
-            if xff:
-                client = xff.split(",")[0].strip()
-                if client:
-                    return client
-        return request.client.host if request.client else "unknown"
+        from responsibleai.ops.client_ip import resolve_client_ip
+
+        trusted = [
+            item.strip()
+            for item in os.environ.get("WHITEPACT_TRUSTED_PROXY_CIDRS", "").split(",")
+            if item.strip()
+        ]
+        cloudflare = [
+            item.strip()
+            for item in os.environ.get("WHITEPACT_CLOUDFLARE_PROXY_CIDRS", "").split(",")
+            if item.strip()
+        ]
+        peer = request.client.host if request.client else None
+        return resolve_client_ip(
+            peer=peer,
+            headers={key: value for key, value in request.headers.items()},
+            trusted_proxy_cidrs=trusted,
+            cloudflare_cidrs=cloudflare,
+            legacy_trust_forwarded=trust_forwarded,
+        )
 
     def _client_key(request: Request) -> tuple[str, str]:
         """Returns (rate_limit_key, peer_ip) using non-secret credential fingerprinting.

@@ -5,8 +5,8 @@ variable "environment" {
   description = "deployment label: development | production"
   type        = string
   validation {
-    condition     = contains(["development", "production"], var.environment)
-    error_message = "environment must be development or production"
+    condition     = contains(["development", "staging", "production"], var.environment)
+    error_message = "environment must be development, staging, or production"
   }
 }
 
@@ -47,8 +47,44 @@ variable "execution_subnet_cidr" {
   default = "10.42.3.0/24"
 }
 
+variable "mgmt_subnet_cidr" {
+  description = "Management / NAT gateway subnet"
+  type        = string
+  default     = "10.42.4.0/24"
+}
+
+variable "enable_nat_gateway" {
+  description = "Dedicated public NAT/management gateway for private-only nodes (required for egress)."
+  type        = bool
+  default     = true
+}
+
+variable "nat_gateway_server_type" {
+  description = "Smallest suitable SKU with public Primary IPv4 (staging: CX23)."
+  type        = string
+  default     = "cx23"
+}
+
+variable "nat_gateway_private_ip" {
+  description = "Private IP of NAT gateway (must not be network first IP or 172.31.1.1)."
+  type        = string
+  default     = ""
+}
+
+variable "lb_private_ip" {
+  description = "Load balancer private IP on saas subnet (for host firewall rules)."
+  type        = string
+  default     = ""
+}
+
 variable "admin_cidr_allowlist" {
   description = "CIDRs permitted for SSH/bastion (no 0.0.0.0/0 on database paths)"
+  type        = list(string)
+  default     = []
+}
+
+variable "admin_ssh_key_ids" {
+  description = "Hetzner SSH key IDs installed on administered servers. A key that exists only in the project is not installed unless listed here."
   type        = list(string)
   default     = []
 }
@@ -111,4 +147,36 @@ variable "saas_public_ipv4" {
 variable "labels" {
   type    = map(string)
   default = {}
+}
+
+variable "lb_service_protocol" {
+  description = "LB frontend protocol: http, https (TLS terminates at LB), or tcp (passthrough for origin TLS/AOP)."
+  type        = string
+  default     = "http"
+
+  validation {
+    condition     = contains(["http", "https", "tcp"], var.lb_service_protocol)
+    error_message = "lb_service_protocol must be http, https, or tcp."
+  }
+}
+
+variable "lb_listen_port" {
+  type    = number
+  default = 80
+}
+
+variable "lb_destination_port" {
+  type    = number
+  default = 8765
+}
+
+variable "lb_health_check_protocol" {
+  description = "Health check protocol (can differ from frontend, e.g. tcp:443 public + http:8765 /livez)."
+  type        = string
+  default     = "http"
+}
+
+variable "lb_health_check_port" {
+  type    = number
+  default = 8765
 }

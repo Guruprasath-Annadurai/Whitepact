@@ -1,6 +1,8 @@
 # Cloud qualification prep package (static)
 
-**Status:** PLAN / DOCUMENTATION ONLY — not deployed cloud readiness.
+**Status:** Staging plan package under `docs/enterprise/cloud/` — **not deployed** until Owner Gate 1.
+
+See `docs/enterprise/cloud/CLOUD_ANTIGRAVITY_HANDOFF.md`.
 
 ## Scope
 

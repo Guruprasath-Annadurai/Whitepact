@@ -52,6 +52,7 @@ dependencies = [
     # migrate the kwargs) deliberately, in its own change.
     "mcp>=1.0.0,<2.0.0",
     "alembic>=1.13.0",
+    "cryptography>=50.0.0",
 ]
 
 [project.optional-dependencies]
