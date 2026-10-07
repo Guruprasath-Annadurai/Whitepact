@@ -289,7 +289,7 @@ def test_connect_rejects_embedded_credentials(
     result = CliRunner().invoke(
         main, ["connect", "--url", "http://user:super-secret@127.0.0.1:8000"]
     )
-    assert result.exit_code != EXIT_OK
+    assert result.exit_code == EXIT_INVALID
     assert "super-secret" not in result.output
     assert not (tmp_path / "context.json").exists()
 

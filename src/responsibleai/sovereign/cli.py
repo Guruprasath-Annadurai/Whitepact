@@ -10,6 +10,7 @@ from pathlib import Path
 import click
 
 from responsibleai.sovereign import cli_core
+from responsibleai.sovereign.exit_codes import EXIT_INVALID
 from responsibleai.sovereign.service import SovereignService
 
 
@@ -136,7 +137,8 @@ def register_top_level(main: click.Group) -> None:
         try:
             base_url = validate_developer_base_url(url)
         except ValueError as exc:
-            raise click.ClickException(str(exc)) from exc
+            click.echo(str(exc), err=True)
+            raise click.exceptions.Exit(EXIT_INVALID) from exc
         probe = probe_base_url(base_url)
         state = "verified" if probe.ok else "unverified"
         save_connection(
