@@ -187,7 +187,7 @@ class TrustScoreEngine:
         Parameters
         ----------
         bias_divergence : float | None
-            BiasBuster overall divergence score (0=no bias → higher fairness).
+            Bias-probe overall divergence score (0=no bias → higher fairness).
         privacy_budget_fraction : float | None
             Fraction of privacy budget remaining (0-1).
         hallucination_risk : float | None
