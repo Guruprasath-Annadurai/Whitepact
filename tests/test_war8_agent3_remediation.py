@@ -74,9 +74,16 @@ def _bearer(token: str) -> dict[str, str]:
 @pytest.mark.asyncio
 async def test_anonymous_sovereign_get_rejected(sovereign_app) -> None:
     client, _, _ = sovereign_app
-    res = await client.get("/api/sovereign/authority/effective")
-    assert res.status_code == 401
-    assert "traceback" not in res.text.lower()
+    for path in (
+        "/api/sovereign/status",
+        "/api/sovereign/capabilities",
+        "/api/sovereign/authority/effective",
+        "/api/sovereign/xray",
+    ):
+        res = await client.get(path)
+        assert res.status_code == 401, path
+        assert "traceback" not in res.text.lower()
+        assert "sovereign_version" not in res.text
 
 
 @pytest.mark.asyncio
