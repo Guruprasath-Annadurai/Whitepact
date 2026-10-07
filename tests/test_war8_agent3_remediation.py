@@ -252,6 +252,31 @@ async def test_disabled_org_fails_before_shadow_write(sovereign_app) -> None:
 
 
 @pytest.mark.asyncio
+async def test_suspended_org_fails_before_shadow_write(sovereign_app) -> None:
+    client, engine, identities = sovereign_app
+    org_id, _user_id, token = await _member(identities, "war8-suspended-org")
+    async with engine.raw.begin() as conn:
+        await conn.execute(
+            update(organizations)
+            .where(organizations.c.id == org_id)
+            .values(governance_status="SUSPENDED")
+        )
+    res = await client.post(
+        "/api/sovereign/shadow",
+        json={
+            "organization_id": org_id,
+            "agent_id": "agent",
+            "action_type": "read",
+            "persist": True,
+        },
+        headers=_bearer(token),
+    )
+    assert res.status_code in {401, 403}
+    assert await _shadow_count(engine, org_id) == 0
+    assert org_id not in res.text
+
+
+@pytest.mark.asyncio
 async def test_endpoint_summary_is_org_scoped() -> None:
     engine = create_engine(":memory:")
     await engine.init()
