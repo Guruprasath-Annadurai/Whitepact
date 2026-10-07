@@ -4373,6 +4373,21 @@ async def eval_results(
 # ── Audit log ─────────────────────────────────────────────────────────────────
 
 
+def _audit_tenant_org(_auth: OrgContext, requested_org_id: str | None) -> str | None:
+    """Tenant audit reads never fall back to a global log.
+
+    A caller with an organization is pinned to it. A mismatched org_id is a
+    miss, not a filter. Callers with no organization cannot select one.
+    """
+    if _auth.org_id:
+        if requested_org_id and requested_org_id != _auth.org_id:
+            raise HTTPException(404, "Not found")
+        return _auth.org_id
+    if requested_org_id:
+        raise HTTPException(404, "Not found")
+    return None
+
+
 @app.get("/api/audit-log", tags=["rbac"])
 @limiter.limit("30/minute")
 async def query_audit_log(
@@ -4384,18 +4399,17 @@ async def query_audit_log(
     offset: int = Query(default=0, ge=0),
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, Any]:
-    scoped_org_id: str | None
-    if _auth.org_id is not None:
-        scoped_org_id = _auth.org_id
-    elif _auth.is_legacy and _auth.role == Role.OWNER:
-        scoped_org_id = org_id
+    scoped_org_id = _audit_tenant_org(_auth, org_id)
+    if scoped_org_id is None:
+        entries: list[dict[str, Any]] = []
+        total = 0
+        summary: list[dict[str, Any]] = []
     else:
-        scoped_org_id = None
-    entries = await _ready(_audit_repo).query(
-        org_id=scoped_org_id, endpoint=endpoint, days=days, limit=limit, offset=offset
-    )
-    total = await _ready(_audit_repo).count(days=days, org_id=scoped_org_id)
-    summary = await _ready(_audit_repo).endpoint_summary(days=days)
+        entries = await _ready(_audit_repo).query(
+            org_id=scoped_org_id, endpoint=endpoint, days=days, limit=limit, offset=offset
+        )
+        total = await _ready(_audit_repo).count(days=days, org_id=scoped_org_id)
+        summary = await _ready(_audit_repo).endpoint_summary(scoped_org_id, days=days)
     return {
         "entries": entries,
         "total": total,
@@ -4478,11 +4492,15 @@ async def list_incidents(
 ) -> dict[str, Any]:
     scoped_org_id: str | None
     if _auth.org_id is not None:
+        if org_id and org_id != _auth.org_id:
+            raise HTTPException(404, "Not found")
         scoped_org_id = _auth.org_id
     elif _auth.is_legacy and _auth.role == Role.OWNER:
+        # Auth-disabled development principal only. Production static keys
+        # are VIEWER and fall through to an empty result, not a global list.
         scoped_org_id = org_id
     else:
-        scoped_org_id = None
+        return {"incidents": [], "limit": limit, "offset": offset}
     incidents_list = await _ready(_incident_repo).list(
         org_id=scoped_org_id,
         severity=severity,
@@ -7278,19 +7296,15 @@ async def list_audit_entries(
     """Query the governance audit log. Always scoped to the authenticated org."""
     if not _audit_repo:
         raise HTTPException(503, "Audit repository not initialised")
-    # Org-specific keys: force scope to their org regardless of query param.
-    # Legacy super-admin keys (is_legacy=True, role=OWNER): allow cross-org filter.
-    scoped_org_id: str | None
-    if _auth.org_id is not None:
-        scoped_org_id = _auth.org_id
-    elif _auth.is_legacy and _auth.role == Role.OWNER:
-        scoped_org_id = org_id
+    scoped_org_id = _audit_tenant_org(_auth, org_id)
+    if scoped_org_id is None:
+        rows: list[dict[str, Any]] = []
+        total = 0
     else:
-        scoped_org_id = None
-    rows = await _ready(_audit_repo).query(
-        org_id=scoped_org_id, endpoint=endpoint, days=days, limit=limit, offset=offset
-    )
-    total = await _ready(_audit_repo).count(days=days, org_id=scoped_org_id)
+        rows = await _ready(_audit_repo).query(
+            org_id=scoped_org_id, endpoint=endpoint, days=days, limit=limit, offset=offset
+        )
+        total = await _ready(_audit_repo).count(days=days, org_id=scoped_org_id)
     return {
         "entries": rows,
         "total": total,
@@ -7311,14 +7325,11 @@ async def export_audit_log(
     """Export audit log as CSV. Results scoped to authenticated org."""
     if not _audit_repo:
         raise HTTPException(503, "Audit repository not initialised")
-    scoped_org_id: str | None
-    if _auth.org_id is not None:
-        scoped_org_id = _auth.org_id
-    elif _auth.is_legacy and _auth.role == Role.OWNER:
-        scoped_org_id = org_id
+    scoped_org_id = _audit_tenant_org(_auth, org_id)
+    if scoped_org_id is None:
+        rows = []
     else:
-        scoped_org_id = None
-    rows = await _ready(_audit_repo).query(org_id=scoped_org_id, days=days, limit=5000)
+        rows = await _ready(_audit_repo).query(org_id=scoped_org_id, days=days, limit=5000)
     import csv as _csv
     import io as _io
 
@@ -7407,12 +7418,16 @@ async def verify_audit_chain(
 @app.get("/api/audit/summary", tags=["audit"])
 async def audit_endpoint_summary(
     days: int = Query(7, ge=1, le=90),
+    org_id: str | None = Query(default=None),
     _auth: OrgContext = Depends(get_org_context),
 ) -> dict[str, Any]:
-    """Top endpoints by request count and average latency."""
+    """Top endpoints for the authenticated organization only."""
     if not _audit_repo:
         raise HTTPException(503, "Audit repository not initialised")
-    summary = await _ready(_audit_repo).endpoint_summary(days=days)
+    scoped_org_id = _audit_tenant_org(_auth, org_id)
+    if scoped_org_id is None:
+        return {"days": days, "endpoints": []}
+    summary = await _ready(_audit_repo).endpoint_summary(scoped_org_id, days=days)
     return {"days": days, "endpoints": summary}
 
 
