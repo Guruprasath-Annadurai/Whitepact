@@ -12,6 +12,7 @@ from typing import Any
 from sqlalchemy import delete, insert, select
 
 from responsibleai.db.engine import DatabaseEngine, eval_baselines, eval_runs
+from responsibleai.db.tenant_scope import org_scope
 
 
 class EvalRepository:
@@ -48,9 +49,17 @@ class EvalRepository:
             )
         return run_id
 
-    async def get_run(self, run_id: str) -> dict[str, Any] | None:
+    async def get_run(self, run_id: str, org_id: str | None = None) -> dict[str, Any] | None:
+        """Load one run in the caller scope. None matches only NULL-org rows."""
         async with self._engine.raw.connect() as conn:
-            row = (await conn.execute(select(eval_runs).where(eval_runs.c.id == run_id))).fetchone()
+            row = (
+                await conn.execute(
+                    select(eval_runs).where(
+                        eval_runs.c.id == run_id,
+                        org_scope(eval_runs.c.org_id, org_id),
+                    )
+                )
+            ).fetchone()
         if row is None:
             return None
         return {**dict(row._mapping), "payload": json.loads(row.payload)}
@@ -81,15 +90,20 @@ class EvalRepository:
             q = q.where(eval_runs.c.run_type == run_type)
         if model:
             q = q.where(eval_runs.c.model == model)
-        if org_id:
-            q = q.where(eval_runs.c.org_id == org_id)
+        q = q.where(org_scope(eval_runs.c.org_id, org_id))
         async with self._engine.raw.connect() as conn:
             rows = (await conn.execute(q)).fetchall()
         return [dict(r._mapping) for r in rows]
 
-    async def delete_run(self, run_id: str) -> bool:
+    async def delete_run(self, run_id: str, org_id: str | None = None) -> bool:
+        """Delete one run in the caller scope. None matches only NULL-org rows."""
         async with self._engine.raw.begin() as conn:
-            result = await conn.execute(delete(eval_runs).where(eval_runs.c.id == run_id))
+            result = await conn.execute(
+                delete(eval_runs).where(
+                    eval_runs.c.id == run_id,
+                    org_scope(eval_runs.c.org_id, org_id),
+                )
+            )
         return result.rowcount > 0
 
     # ── Baselines ─────────────────────────────────────────────────────────────
@@ -110,6 +124,7 @@ class EvalRepository:
                         eval_baselines.c.model == model,
                         eval_baselines.c.suite == suite,
                         eval_baselines.c.metric == metric,
+                        org_scope(eval_baselines.c.org_id, org_id),
                     )
                 )
             ).fetchone()
@@ -132,16 +147,26 @@ class EvalRepository:
                     )
                 )
 
-    async def get_baselines(self, model: str) -> dict[str, float]:
+    async def get_baselines(self, model: str, org_id: str | None = None) -> dict[str, float]:
+        """Baselines for one scope. None matches only NULL-org rows."""
         async with self._engine.raw.connect() as conn:
             rows = (
-                await conn.execute(select(eval_baselines).where(eval_baselines.c.model == model))
+                await conn.execute(
+                    select(eval_baselines).where(
+                        eval_baselines.c.model == model,
+                        org_scope(eval_baselines.c.org_id, org_id),
+                    )
+                )
             ).fetchall()
         return {f"{r.suite}:{r.metric}": r.score for r in rows}
 
-    async def delete_baselines(self, model: str) -> int:
+    async def delete_baselines(self, model: str, org_id: str | None = None) -> int:
+        """Delete baselines for one scope. None matches only NULL-org rows."""
         async with self._engine.raw.begin() as conn:
             result = await conn.execute(
-                delete(eval_baselines).where(eval_baselines.c.model == model)
+                delete(eval_baselines).where(
+                    eval_baselines.c.model == model,
+                    org_scope(eval_baselines.c.org_id, org_id),
+                )
             )
         return result.rowcount
