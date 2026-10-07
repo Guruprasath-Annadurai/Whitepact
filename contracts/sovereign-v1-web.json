@@ -6,6 +6,12 @@
     "400": {
       "description": "invalid request body or missing required fields"
     },
+    "401": {
+      "description": "authentication required"
+    },
+    "403": {
+      "description": "authenticated principal lacks the required role or membership"
+    },
     "404": {
       "description": "tenant isolation violation or resource not found for organization"
     },
@@ -17,9 +23,9 @@
     }
   },
   "tenant_behavior": {
-    "internal_api": "organization_id required on /api/sovereign/* request bodies; cross-tenant access returns HTTP 404",
+    "internal_api": "authenticated principal required on /api/sovereign/*; organization_id must match the principal organization or the request returns HTTP 404; anonymous access returns HTTP 401",
     "browser_api": "tenant derived from authenticated wp_session; browser-supplied organization_id rejected with HTTP 400",
-    "principal_id": "optional on internal API only; web API sets principal_id from session server-side"
+    "principal_id": "client principal_id is ignored; the server binds principal_id from the authenticated session"
   },
   "zero_effect_operations": [
     "simulate_blast_radius",
@@ -209,7 +215,7 @@
       "feature_version": "1.0.0",
       "negotiation_name": "status",
       "availability": "AVAILABLE",
-      "authentication": "none for GET /api/web/sovereign/status and /capabilities; web_session+csrf for other browser POST routes",
+      "authentication": "none for GET /api/web/sovereign/status and /capabilities; web_session+csrf for other browser POST routes; machine /api/sovereign/status and /api/sovereign/capabilities require an authenticated principal",
       "zero_effect": true,
       "endpoints": [
         {
@@ -233,7 +239,7 @@
       "feature_version": "1.0.0",
       "negotiation_name": null,
       "availability": "AVAILABLE",
-      "authentication": "none for GET /api/web/sovereign/status and /capabilities; web_session+csrf for other browser POST routes",
+      "authentication": "none for GET /api/web/sovereign/status and /capabilities; web_session+csrf for other browser POST routes; machine /api/sovereign/status and /api/sovereign/capabilities require an authenticated principal",
       "zero_effect": true,
       "endpoints": [
         {
@@ -261,9 +267,13 @@
       "feature_version": "1.0.0",
       "negotiation_name": "xray",
       "availability": "AVAILABLE",
-      "authentication": "org body",
+      "authentication": "authenticated principal",
       "zero_effect": true,
       "endpoints": [
+        {
+          "method": "GET",
+          "path": "/api/sovereign/xray"
+        },
         {
           "method": "POST",
           "path": "/api/sovereign/xray"
@@ -292,7 +302,7 @@
       "feature_version": "1.0.0",
       "negotiation_name": "explain",
       "availability": "AVAILABLE",
-      "authentication": "org body",
+      "authentication": "authenticated principal",
       "zero_effect": true,
       "endpoints": [
         {
@@ -338,7 +348,7 @@
       "feature_version": "1.0.0",
       "negotiation_name": "trace",
       "availability": "AVAILABLE",
-      "authentication": "org body",
+      "authentication": "authenticated principal",
       "zero_effect": true,
       "endpoints": [
         {
@@ -396,9 +406,13 @@
       "feature_version": "1.0.0",
       "negotiation_name": "authority_effective",
       "availability": "AVAILABLE",
-      "authentication": "org body",
+      "authentication": "authenticated principal",
       "zero_effect": true,
       "endpoints": [
+        {
+          "method": "GET",
+          "path": "/api/sovereign/authority/effective"
+        },
         {
           "method": "POST",
           "path": "/api/sovereign/authority/effective"
@@ -427,7 +441,7 @@
       "feature_version": "1.0.0",
       "negotiation_name": "authority_compare",
       "availability": "AVAILABLE",
-      "authentication": "org body",
+      "authentication": "authenticated principal",
       "zero_effect": true,
       "endpoints": [
         {
@@ -473,7 +487,7 @@
       "feature_version": "1.0.0",
       "negotiation_name": "authority_drift",
       "availability": "AVAILABLE",
-      "authentication": "org body",
+      "authentication": "authenticated principal",
       "zero_effect": true,
       "endpoints": [
         {
@@ -519,7 +533,7 @@
       "feature_version": "1.0.0",
       "negotiation_name": "simulate_blast_radius",
       "availability": "AVAILABLE",
-      "authentication": "org body",
+      "authentication": "authenticated principal",
       "zero_effect": true,
       "endpoints": [
         {
@@ -571,7 +585,7 @@
       "feature_version": "1.0.0",
       "negotiation_name": "simulate_mission",
       "availability": "AVAILABLE",
-      "authentication": "org body",
+      "authentication": "authenticated principal",
       "zero_effect": true,
       "endpoints": [
         {
@@ -636,7 +650,7 @@
       "feature_version": "1.0.0",
       "negotiation_name": "shadow",
       "availability": "AVAILABLE",
-      "authentication": "org body",
+      "authentication": "authenticated principal",
       "zero_effect": true,
       "endpoints": [
         {
@@ -694,7 +708,7 @@
       "feature_version": "1.0.0",
       "negotiation_name": "policy_lab",
       "availability": "AVAILABLE",
-      "authentication": "org body",
+      "authentication": "authenticated principal",
       "zero_effect": true,
       "endpoints": [
         {
@@ -750,7 +764,7 @@
       "feature_version": "1.0.0",
       "negotiation_name": "policy_lab",
       "availability": "AVAILABLE",
-      "authentication": "org body",
+      "authentication": "authenticated principal",
       "zero_effect": true,
       "endpoints": [
         {
@@ -807,7 +821,7 @@
       "feature_version": "1.0.0",
       "negotiation_name": "policy_lab",
       "availability": "AVAILABLE",
-      "authentication": "org body",
+      "authentication": "authenticated principal",
       "zero_effect": true,
       "endpoints": [
         {
@@ -856,7 +870,7 @@
       "feature_version": "1.0.0",
       "negotiation_name": "policy_lab",
       "availability": "AVAILABLE",
-      "authentication": "org body",
+      "authentication": "authenticated principal",
       "zero_effect": true,
       "endpoints": [
         {
@@ -905,7 +919,7 @@
       "feature_version": "1.0.0",
       "negotiation_name": "policy_lab",
       "availability": "AVAILABLE",
-      "authentication": "org body",
+      "authentication": "authenticated principal",
       "zero_effect": true,
       "endpoints": [
         {
@@ -961,7 +975,7 @@
       "feature_version": "1.0.0",
       "negotiation_name": "gauntlet",
       "availability": "AVAILABLE",
-      "authentication": "org body",
+      "authentication": "authenticated principal",
       "zero_effect": true,
       "endpoints": [
         {
@@ -1019,7 +1033,7 @@
       "feature_version": "1.0.0",
       "negotiation_name": "flight_recorder",
       "availability": "AVAILABLE",
-      "authentication": "org body",
+      "authentication": "authenticated principal",
       "zero_effect": true,
       "endpoints": [
         {
@@ -1065,7 +1079,7 @@
       "feature_version": "1.0.0",
       "negotiation_name": "time_machine",
       "availability": "AVAILABLE",
-      "authentication": "org body",
+      "authentication": "authenticated principal",
       "zero_effect": true,
       "endpoints": [
         {
@@ -1111,7 +1125,7 @@
       "feature_version": "1.0.0",
       "negotiation_name": "evidence",
       "availability": "AVAILABLE",
-      "authentication": "org body",
+      "authentication": "authenticated principal",
       "zero_effect": true,
       "endpoints": [
         {
@@ -1157,7 +1171,7 @@
       "feature_version": "1.0.0",
       "negotiation_name": "capsule",
       "availability": "AVAILABLE",
-      "authentication": "org body",
+      "authentication": "authenticated principal",
       "zero_effect": true,
       "endpoints": [
         {
@@ -1244,7 +1258,7 @@
       "feature_version": "1.0.0",
       "negotiation_name": "authority_bom",
       "availability": "EXPERIMENTAL",
-      "authentication": "org body",
+      "authentication": "authenticated principal",
       "zero_effect": true,
       "endpoints": [
         {
