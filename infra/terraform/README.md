@@ -10,4 +10,10 @@ terraform init -backend=false
 terraform validate
 ```
 
-Environment roots under `environments/` require provider credentials and are not applied in Phase 1 CI by default.
+Environment roots under `environments/` require provider credentials and are not applied without owner approval.
+
+| Environment | Path | Purpose |
+|-------------|------|---------|
+| development | `environments/development/` | Minimum dev sizing |
+| staging | `environments/staging/` | Production-like qualification (see `docs/enterprise/cloud/`) |
+| production | `environments/production/` | Launch topology (2× SaaS) |

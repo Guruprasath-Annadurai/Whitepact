@@ -157,6 +157,40 @@ class Settings(BaseSettings):
         ),
         description="Deployment environment (development, staging, production).",
     )
+    hsts_stage: Literal["disabled", "initial", "stage1", "stage2"] | None = Field(
+        default=None,
+        validation_alias=AliasChoices("WHITEPACT_HSTS_STAGE", "RAI_HSTS_STAGE"),
+        description=(
+            "Authoritative HSTS stage. Unset uses stage1 in production and "
+            "disabled in every other environment. Year-long max-age is not a default."
+        ),
+    )
+    hsts_include_subdomains: bool | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "WHITEPACT_HSTS_INCLUDE_SUBDOMAINS",
+            "RAI_HSTS_INCLUDE_SUBDOMAINS",
+        ),
+        description="Override includeSubDomains. Unset follows the stage default.",
+    )
+    hsts_preload: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("WHITEPACT_HSTS_PRELOAD", "RAI_HSTS_PRELOAD"),
+        description="Request the HSTS preload token. Ignored unless preload is authorized.",
+    )
+    hsts_preload_authorized: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "WHITEPACT_HSTS_PRELOAD_AUTHORIZED",
+            "RAI_HSTS_PRELOAD_AUTHORIZED",
+        ),
+        description="Owner authorization required before preload is emitted.",
+    )
+    robots_noindex: bool | None = Field(
+        default=None,
+        validation_alias=AliasChoices("WHITEPACT_ROBOTS_NOINDEX", "RAI_ROBOTS_NOINDEX"),
+        description="Unset follows the environment: staging sends noindex, production does not.",
+    )
 
     # PostgreSQL (optional — defaults to SQLite via db_path)
     database_url: str | None = Field(

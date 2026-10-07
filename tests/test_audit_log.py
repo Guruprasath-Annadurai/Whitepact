@@ -60,7 +60,7 @@ class TestAuditWrite:
 
     async def test_query_entry_has_expected_fields(self, repo):
         await repo.write(_entry(org_id="org1", key_id="k1"))
-        entries = await repo.query(days=1)
+        entries = await repo.query(org_id="org1", days=1)
         e = entries[0]
         for field in (
             "id",
