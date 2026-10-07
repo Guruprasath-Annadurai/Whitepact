@@ -6479,16 +6479,12 @@ async def list_webhooks(
     request: Request,
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
 ) -> dict[str, Any]:
-    # Org-specific keys: force scope to their org. Legacy super-admin keys
-    # (is_legacy=True, role=OWNER): see everything, same as /api/audit.
-    scoped_org_id: str | None
-    if _auth.org_id is not None:
-        scoped_org_id = _auth.org_id
-    elif _auth.is_legacy and _auth.role == Role.OWNER:
-        scoped_org_id = None
-    else:
-        scoped_org_id = _auth.org_id
-    return {"webhooks": [c.to_dict() for c in _webhook_manager.list_webhooks(org_id=scoped_org_id)]}
+    return {
+        "webhooks": [
+            c.to_dict()
+            for c in _webhook_manager.list_webhooks(org_id=_auth.org_id, tenant_bound=True)
+        ]
+    }
 
 
 @app.delete("/api/webhooks/{webhook_id}", tags=["webhooks"])
@@ -6498,8 +6494,9 @@ async def delete_webhook(
     webhook_id: str,
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, Any]:
-    scoped_org_id = _auth.org_id if not (_auth.is_legacy and _auth.role == Role.OWNER) else None
-    if not await _webhook_manager.remove_and_persist(webhook_id, org_id=scoped_org_id):
+    if not await _webhook_manager.remove_and_persist(
+        webhook_id, org_id=_auth.org_id, tenant_bound=True
+    ):
         raise HTTPException(404, "Webhook not found")
     return {"deleted": webhook_id}
 
@@ -6511,11 +6508,10 @@ async def webhook_deliveries(
     limit: int = Query(default=50, ge=1, le=500),
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
 ) -> dict[str, Any]:
-    scoped_org_id = _auth.org_id if not (_auth.is_legacy and _auth.role == Role.OWNER) else None
     return {
-        "deliveries": _webhook_manager.delivery_log(limit, org_id=scoped_org_id),
-        "total": _webhook_manager.total_deliveries_for(scoped_org_id),
-        "failed": _webhook_manager.failed_deliveries_for(scoped_org_id),
+        "deliveries": _webhook_manager.delivery_log(limit, org_id=_auth.org_id, tenant_bound=True),
+        "total": _webhook_manager.total_deliveries_for(_auth.org_id, tenant_bound=True),
+        "failed": _webhook_manager.failed_deliveries_for(_auth.org_id, tenant_bound=True),
     }
 
 

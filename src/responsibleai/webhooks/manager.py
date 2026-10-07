@@ -156,14 +156,17 @@ class WebhookManager:
             await self._config_repo.create(config)
         return config
 
-    async def remove_and_persist(self, webhook_id: str, org_id: str | None = None) -> bool:
+    async def remove_and_persist(
+        self, webhook_id: str, org_id: str | None = None, *, tenant_bound: bool = False
+    ) -> bool:
         """Remove a webhook. If org_id is given, only removes a config owned
         by that org (returns False otherwise) — enforces tenant isolation."""
         cfg = self._configs.get(webhook_id)
         if cfg is None:
             return False
-        if org_id is not None and cfg.org_id != org_id:
-            return False
+        if tenant_bound or org_id is not None:
+            if cfg.org_id != org_id:
+                return False
         removed_locally = self.remove(webhook_id)
         if self._config_repo is not None:
             await self._config_repo.delete(webhook_id, org_id=org_id)
@@ -172,9 +175,17 @@ class WebhookManager:
     def get(self, webhook_id: str) -> WebhookConfig | None:
         return self._configs.get(webhook_id)
 
-    def list_webhooks(self, org_id: str | None = None) -> list[WebhookConfig]:
-        """List registered webhooks. Pass org_id to scope to one tenant —
-        omit only for legacy/super-admin cross-org visibility."""
+    def list_webhooks(
+        self, org_id: str | None = None, *, tenant_bound: bool = False
+    ) -> list[WebhookConfig]:
+        """List webhooks. Unscoped listing is for process metrics only.
+
+        ``tenant_bound=True`` returns one tenant, including the explicit
+        unscoped tenant represented by ``org_id is None``. It never returns
+        every tenant.
+        """
+        if tenant_bound:
+            return [c for c in self._configs.values() if c.org_id == org_id]
         if org_id is None:
             return list(self._configs.values())
         return [c for c in self._configs.values() if c.org_id == org_id]
@@ -349,22 +360,26 @@ class WebhookManager:
 
     # ── Delivery log ──────────────────────────────────────────────────────────
 
-    def delivery_log(self, limit: int = 100, org_id: str | None = None) -> list[dict[str, Any]]:
-        if org_id is not None:
+    def delivery_log(
+        self, limit: int = 100, org_id: str | None = None, *, tenant_bound: bool = False
+    ) -> list[dict[str, Any]]:
+        if tenant_bound or org_id is not None:
             entries = [d for d in self._delivery_log if d.org_id == org_id][-limit:]
         else:
             entries = list(self._delivery_log)[-limit:]
         return [d.to_dict() for d in reversed(entries)]
 
-    def total_deliveries_for(self, org_id: str | None = None) -> int:
-        if org_id is None:
-            return len(self._delivery_log)
-        return sum(1 for d in self._delivery_log if d.org_id == org_id)
+    def total_deliveries_for(self, org_id: str | None = None, *, tenant_bound: bool = False) -> int:
+        if tenant_bound or org_id is not None:
+            return sum(1 for d in self._delivery_log if d.org_id == org_id)
+        return len(self._delivery_log)
 
-    def failed_deliveries_for(self, org_id: str | None = None) -> int:
-        if org_id is None:
-            return sum(1 for d in self._delivery_log if not d.success)
-        return sum(1 for d in self._delivery_log if d.org_id == org_id and not d.success)
+    def failed_deliveries_for(
+        self, org_id: str | None = None, *, tenant_bound: bool = False
+    ) -> int:
+        if tenant_bound or org_id is not None:
+            return sum(1 for d in self._delivery_log if d.org_id == org_id and not d.success)
+        return sum(1 for d in self._delivery_log if not d.success)
 
     @property
     def total_deliveries(self) -> int:
