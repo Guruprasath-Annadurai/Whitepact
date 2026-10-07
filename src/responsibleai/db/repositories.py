@@ -18,6 +18,7 @@ from responsibleai.cost.models import (
     get_pricing,
 )
 from responsibleai.db.engine import DatabaseEngine, token_usage, trust_scores
+from responsibleai.db.tenant_scope import org_scope as _match_org
 from responsibleai.trust.score import TrustScore
 
 
@@ -319,13 +320,6 @@ class TrustRepository:
         async with self._engine.raw.connect() as conn:
             row = (await conn.execute(stmt)).fetchone()
         return float(row[0]) if row else None
-
-
-def _match_org(column: Any, org_id: str | None) -> Any:
-    """Bind a query to one tenant. A missing org matches only unscoped rows."""
-    if org_id is None:
-        return column.is_(None)
-    return column == org_id
 
 
 def _days_ago_iso(days: int) -> str:

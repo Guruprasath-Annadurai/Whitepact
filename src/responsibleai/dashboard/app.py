@@ -3183,6 +3183,10 @@ async def branding() -> dict[str, Any]:
 
 @app.get("/api/health", tags=["ops"])
 async def health() -> JSONResponse:
+    """Public process health. Counts are integers only: no URLs, secrets, or tenant ids.
+
+    ``webhooks_registered`` and ``orgs`` are system-wide operational totals.
+    """
     db_ok = True
     try:
         if _cost_repo:
@@ -3208,7 +3212,7 @@ async def health() -> JSONResponse:
             "otel": "enabled" if settings.otel_endpoint else "disabled",
             "auth": "enabled" if (settings.auth_enabled and settings.api_keys) else "disabled",
             "websocket_connections": _ws_manager.connection_count,
-            "webhooks_registered": len(_webhook_manager.list_webhooks()),
+            "webhooks_registered": _webhook_manager.platform_webhook_count(),
             "orgs": orgs_count,
         },
         "modules": [
@@ -3334,10 +3338,16 @@ async def restore_reconcile(request: Request) -> JSONResponse:
 async def metrics(
     request: Request, _auth: OrgContext = Depends(require_role(Role.ANALYST))
 ) -> dict[str, Any]:
+    """Process counters are platform aggregates. Customer totals follow the caller scope.
+
+    ``org_id is None`` is the NULL tenant, not every tenant. Webhook and audit
+    figures are counts only.
+    """
+    scope = _auth.org_id
     total_requests = _REQUEST_COUNTER["total"]
     errors = _REQUEST_COUNTER["errors"]
-    total_cost = await _ready(_cost_repo).total_cost(30) if _cost_repo else 0.0
-    audit_count = await _ready(_audit_repo).count(30) if _audit_repo else 0
+    total_cost = await _ready(_cost_repo).total_cost(30, org_id=scope) if _cost_repo else 0.0
+    audit_count = await _ready(_audit_repo).count(30, org_id=scope) if _audit_repo else 0
     return {
         "uptime_seconds": round(time.monotonic() - _START_TIME, 1),
         "total_requests": total_requests,
@@ -3353,9 +3363,9 @@ async def metrics(
         "monthly_budget_usd": settings.monthly_budget_usd,
         "monthly_spend_usd": round(total_cost, 4),
         "websocket_connections": _ws_manager.connection_count,
-        "webhooks_registered": len(_webhook_manager.list_webhooks()),
-        "webhook_deliveries": _webhook_manager.total_deliveries,
-        "webhook_failures": _webhook_manager.failed_deliveries,
+        "webhooks_registered": len(_webhook_manager.list_webhooks(org_id=scope, tenant_bound=True)),
+        "webhook_deliveries": _webhook_manager.total_deliveries_for(scope, tenant_bound=True),
+        "webhook_failures": _webhook_manager.failed_deliveries_for(scope, tenant_bound=True),
         "audit_entries_30d": audit_count,
     }
 
@@ -4320,7 +4330,7 @@ async def eval_regression(
     baselines = _regression_detector.get_baselines(model)
     db_baselines: dict[str, float] = {}
     if _eval_repo:
-        db_baselines = await _eval_repo.get_baselines(model)
+        db_baselines = await _eval_repo.get_baselines(model, org_id=_auth.org_id)
     return {
         "model": model,
         "in_memory_baselines": baselines,
@@ -4400,16 +4410,11 @@ async def query_audit_log(
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, Any]:
     scoped_org_id = _audit_tenant_org(_auth, org_id)
-    if scoped_org_id is None:
-        entries: list[dict[str, Any]] = []
-        total = 0
-        summary: list[dict[str, Any]] = []
-    else:
-        entries = await _ready(_audit_repo).query(
-            org_id=scoped_org_id, endpoint=endpoint, days=days, limit=limit, offset=offset
-        )
-        total = await _ready(_audit_repo).count(days=days, org_id=scoped_org_id)
-        summary = await _ready(_audit_repo).endpoint_summary(scoped_org_id, days=days)
+    entries = await _ready(_audit_repo).query(
+        org_id=scoped_org_id, endpoint=endpoint, days=days, limit=limit, offset=offset
+    )
+    total = await _ready(_audit_repo).count(days=days, org_id=scoped_org_id)
+    summary = await _ready(_audit_repo).endpoint_summary(scoped_org_id, days=days)
     return {
         "entries": entries,
         "total": total,
@@ -4487,20 +4492,22 @@ async def list_incidents(
     days: int = Query(default=90, ge=1, le=365),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
-    org_id: str | None = Query(default=None, description="Cross-org filter (super-admin only)"),
+    org_id: str | None = Query(default=None, description="Must match the caller organization."),
     _auth: OrgContext = Depends(require_role(Role.VIEWER)),
 ) -> dict[str, Any]:
-    scoped_org_id: str | None
     if _auth.org_id is not None:
         if org_id and org_id != _auth.org_id:
             raise HTTPException(404, "Not found")
         scoped_org_id = _auth.org_id
-    elif _auth.is_legacy and _auth.role == Role.OWNER:
-        # Auth-disabled development principal only. Production static keys
-        # are VIEWER and fall through to an empty result, not a global list.
-        scoped_org_id = org_id
+    elif org_id:
+        # A caller with no organization cannot select one. Legacy static
+        # viewers keep the Agent-3 empty concealment. Every other no-org
+        # caller, including the auth-disabled owner, is a miss.
+        if _auth.is_legacy and _auth.role == Role.VIEWER:
+            return {"incidents": [], "limit": limit, "offset": offset}
+        raise HTTPException(404, "Not found")
     else:
-        return {"incidents": [], "limit": limit, "offset": offset}
+        scoped_org_id = None
     incidents_list = await _ready(_incident_repo).list(
         org_id=scoped_org_id,
         severity=severity,
@@ -4519,11 +4526,8 @@ async def get_incident(
     incident_id: str,
     _auth: OrgContext = Depends(require_role(Role.VIEWER)),
 ) -> dict[str, Any]:
-    record = await _ready(_incident_repo).get(incident_id)
+    record = await _ready(_incident_repo).get(incident_id, org_id=_auth.org_id)
     if record is None:
-        raise HTTPException(404, "Incident not found.")
-    is_super_admin = _auth.is_legacy and _auth.role == Role.OWNER
-    if not is_super_admin and record["org_id"] is not None and record["org_id"] != _auth.org_id:
         raise HTTPException(404, "Incident not found.")
     return record
 
@@ -6522,9 +6526,8 @@ async def test_webhook(
     webhook_id: str,
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, Any]:
-    cfg = _webhook_manager.get(webhook_id)
-    is_super_admin = _auth.is_legacy and _auth.role == Role.OWNER
-    if cfg is None or (not is_super_admin and cfg.org_id != _auth.org_id):
+    cfg = _webhook_manager.get_for_scope(webhook_id, _auth.org_id)
+    if cfg is None:
         raise HTTPException(404, "Webhook not found")
     deliveries = await _webhook_manager.fire(
         WebhookEvent.TRUST_SCORE_CHANGED,
@@ -7295,14 +7298,10 @@ async def list_audit_entries(
     if not _audit_repo:
         raise HTTPException(503, "Audit repository not initialised")
     scoped_org_id = _audit_tenant_org(_auth, org_id)
-    if scoped_org_id is None:
-        rows: list[dict[str, Any]] = []
-        total = 0
-    else:
-        rows = await _ready(_audit_repo).query(
-            org_id=scoped_org_id, endpoint=endpoint, days=days, limit=limit, offset=offset
-        )
-        total = await _ready(_audit_repo).count(days=days, org_id=scoped_org_id)
+    rows = await _ready(_audit_repo).query(
+        org_id=scoped_org_id, endpoint=endpoint, days=days, limit=limit, offset=offset
+    )
+    total = await _ready(_audit_repo).count(days=days, org_id=scoped_org_id)
     return {
         "entries": rows,
         "total": total,
@@ -7324,10 +7323,7 @@ async def export_audit_log(
     if not _audit_repo:
         raise HTTPException(503, "Audit repository not initialised")
     scoped_org_id = _audit_tenant_org(_auth, org_id)
-    if scoped_org_id is None:
-        rows = []
-    else:
-        rows = await _ready(_audit_repo).query(org_id=scoped_org_id, days=days, limit=5000)
+    rows = await _ready(_audit_repo).query(org_id=scoped_org_id, days=days, limit=5000)
     import csv as _csv
     import io as _io
 
@@ -7423,8 +7419,6 @@ async def audit_endpoint_summary(
     if not _audit_repo:
         raise HTTPException(503, "Audit repository not initialised")
     scoped_org_id = _audit_tenant_org(_auth, org_id)
-    if scoped_org_id is None:
-        return {"days": days, "endpoints": []}
     summary = await _ready(_audit_repo).endpoint_summary(scoped_org_id, days=days)
     return {"days": days, "endpoints": summary}
 
