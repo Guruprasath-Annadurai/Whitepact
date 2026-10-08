@@ -28,6 +28,12 @@ from responsibleai.ops.client_ip import resolve_client_ip
 from responsibleai.ops.gate2_signals import SignalSnapshot, evaluate
 from responsibleai.ops.r2_retention import BackupObject, plan_retention
 from responsibleai.ops.restore_flow import cutover_sql
+from tests.gate2_bash32 import (
+    Bash32RejectedError,
+    Bash32UnavailableError,
+    bash_version,
+    discover_bash32,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 RESTORE = ROOT / "scripts" / "restore-postgres.sh"
@@ -577,9 +583,6 @@ def test_retention_timezone_boundary_and_dry_run_default(tmp_path: Path) -> None
     assert "stale" in body["delete"]
 
 
-BASH32 = Path("/opt/bash32/bin/bash")
-
-
 def _manifest(path: Path) -> tuple[Path, dict[str, object]]:
     manifest_path = path.with_name(path.name + ".manifest.json")
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -660,19 +663,17 @@ def test_future_schema_and_raw_gzip_downgrade_are_rejected(tmp_path: Path) -> No
 
 
 def test_bash32_can_parse_restore_script() -> None:
-    if not BASH32.is_file():
-        pytest.fail("Bash 3.2 is required at /opt/bash32/bin/bash")
+    try:
+        bash32 = discover_bash32()
+    except Bash32UnavailableError as exc:
+        pytest.skip(str(exc))
+    except Bash32RejectedError as exc:
+        pytest.fail(str(exc))
+    assert bash_version(bash32) == (3, 2)
     syntax = subprocess.run(
-        [str(BASH32), "-n", str(RESTORE)], check=False, capture_output=True, text=True
+        [str(bash32), "-n", str(RESTORE)], check=False, capture_output=True, text=True
     )
     assert syntax.returncode == 0, syntax.stderr
-    version = subprocess.run(
-        [str(BASH32), "-c", "echo ${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}"],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert version.stdout.strip() == "3.2"
 
 
 def test_origin_aop_harness() -> None:
