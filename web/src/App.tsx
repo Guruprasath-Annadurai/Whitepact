@@ -20,11 +20,13 @@ const DomainPage = lazy(() => import("./features/dashboard/DomainPage").then((mo
 const PolicyPage = lazy(() => import("./features/policy/PolicyPage").then((module) => ({ default: module.PolicyPage })));
 const SovereignPage = lazy(() => import("./features/sovereign/SovereignPage").then((module) => ({ default: module.SovereignPage })));
 const SovereignWorkbench = lazy(() => import("./features/sovereign/SovereignWorkbench").then((module) => ({ default: module.SovereignWorkbench })));
+const CorporatePage = lazy(() => import("./features/marketing/CorporatePages").then((module) => ({ default: module.CorporatePage })));
 
 export default function App() {
   return (
-    <Suspense fallback={<div className="app-loading"><span>Loading WhitePact</span></div>}><Routes>
+    <Suspense fallback={<div className="app-loading" role="status"><span>Loading WhitePact</span></div>}><Routes>
       <Route path="/" element={<HomePage />} />
+      {(["product", "architecture", "developers", "security", "enterprise"] as const).map((pageKey) => <Route key={pageKey} path={`/${pageKey}`} element={<CorporatePage pageKey={pageKey} />} />)}
       <Route path="/about" element={<AboutPage />} />
       <Route path="/contact" element={<ContactPage />} />
       <Route path="/docs" element={<DocsPage />} />

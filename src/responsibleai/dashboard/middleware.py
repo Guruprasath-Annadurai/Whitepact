@@ -144,6 +144,15 @@ _WHITEPACT_CONTENT_SECURITY_POLICY = whitepact_csp_with_paddle(
 )
 
 _WHITEPACT_PAGE_PATHS = {
+    "/product",
+    "/architecture",
+    "/developers",
+    "/security",
+    "/enterprise",
+    "/pricing",
+    "/refund-policy",
+    "/sovereign",
+    "/sovereign/workbench",
     "/",
     "/signup",
     "/login",

@@ -121,10 +121,11 @@ jobs:
 
       - name: Upload coverage to Codecov
         if: matrix.python-version == '3.12'
-        uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4.6.0
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: coverage.xml
           fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   wheel-smoke:
     name: Wheel install smoke
@@ -294,6 +295,10 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # Retention compares qualified ancestor assets; manifest names the real PR head.
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
@@ -316,6 +321,20 @@ jobs:
           WHITEPACT_TEST_DATABASE_URL: postgresql+asyncpg://wp:wp@127.0.0.1:55432/whitepact_e2e
           WHITEPACT_TEST_PYTHON: python
         run: npm run test:customer-journey
+      - name: Corporate public routes, accessibility, responsive and truth gate
+        run: npm run test:corporate-website
+      - name: Public website launch integration contract
+        run: |
+          node --test tests/js/website-launch-contract.test.mjs
+          node web/tooling/launch-contract.mjs audit
+          node web/tooling/launch-contract.mjs preview-smoke
+          node web/tooling/launch-contract.mjs manifest --output "$RUNNER_TEMP/whitepact-website-manifest.json"
+      - name: Retain exact website artifact manifest
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: website-artifact-manifest
+          path: ${{ runner.temp }}/whitepact-website-manifest.json
+          if-no-files-found: error
 
   i18n-tests:
     name: i18n unit tests
