@@ -117,13 +117,13 @@ class TestApiKeyManagement:
 
     async def test_list_keys_excludes_revoked(self, repo, org):
         key_rec, _ = await repo.create_key(org.id, "k1", Role.VIEWER)
-        await repo.revoke_key(key_rec.id)
+        await repo.revoke_key(key_rec.id, org_id=org.id)
         keys = await repo.list_keys(org.id)
         assert len(keys) == 0
 
     async def test_revoke_key_returns_true(self, repo, org):
         key_rec, _ = await repo.create_key(org.id, "k", Role.ANALYST)
-        assert await repo.revoke_key(key_rec.id) is True
+        assert await repo.revoke_key(key_rec.id, org_id=org.id) is True
 
     async def test_revoke_missing_key_returns_false(self, repo):
         assert await repo.revoke_key("missing-key-id") is False
@@ -151,7 +151,7 @@ class TestAuthentication:
 
     async def test_authenticate_revoked_key_returns_none(self, repo, org):
         key_rec, raw = await repo.create_key(org.id, "k", Role.ANALYST)
-        await repo.revoke_key(key_rec.id)
+        await repo.revoke_key(key_rec.id, org_id=org.id)
         assert await repo.authenticate(raw) is None
 
     async def test_authenticate_sets_org_name(self, repo, org):

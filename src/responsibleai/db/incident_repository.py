@@ -19,6 +19,7 @@ from typing import Any
 from sqlalchemy import delete, insert, select
 
 from responsibleai.db.engine import DatabaseEngine, incidents
+from responsibleai.db.tenant_scope import org_scope
 
 
 def _days_ago(days: int) -> str:
@@ -61,13 +62,19 @@ class IncidentRepository:
                     raw_payload=json.dumps(raw_payload) if raw_payload is not None else None,
                 )
             )
-        return await self.get(record["incident_id"])  # type: ignore[return-value]
+        stored = await self.get(record["incident_id"], org_id=org_id)
+        if stored is None:
+            raise RuntimeError("incident insert was not visible in its own scope")
+        return stored
 
-    async def get(self, incident_id: str) -> dict[str, Any] | None:
+    async def get(self, incident_id: str, org_id: str | None = None) -> dict[str, Any] | None:
+        """Load one incident in the caller's scope. None matches only NULL-org rows."""
+        stmt = select(incidents).where(
+            incidents.c.id == incident_id,
+            org_scope(incidents.c.org_id, org_id),
+        )
         async with self._engine.raw.connect() as conn:
-            row = (
-                await conn.execute(select(incidents).where(incidents.c.id == incident_id))
-            ).fetchone()
+            row = (await conn.execute(stmt)).fetchone()
         return self._row_to_dict(row) if row else None
 
     async def list(
@@ -87,8 +94,7 @@ class IncidentRepository:
             .limit(limit)
             .offset(offset)
         )
-        if org_id:
-            stmt = stmt.where(incidents.c.org_id == org_id)
+        stmt = stmt.where(org_scope(incidents.c.org_id, org_id))
         if severity:
             stmt = stmt.where(incidents.c.severity == severity)
         if status:
