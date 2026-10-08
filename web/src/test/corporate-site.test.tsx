@@ -115,6 +115,7 @@ describe("corporate website truth and navigation", () => {
     expect(document.body).toHaveTextContent("pip install -e ./sdk/python");
     expect(document.body).toHaveTextContent("git checkout c1d7803fce0787f9183e18bb38134f73a6c0f57d");
     expect(document.body).not.toHaveTextContent("52d9b3c5497af24bb7d4a7147e33deaadc64296e");
+    expect(screen.getByRole("link", { name: "Repository quick start" })).toHaveAttribute("href", "https://github.com/Guruprasath-Annadurai/Whitepact/blob/c1d7803fce0787f9183e18bb38134f73a6c0f57d/README.md#30-second-quickstart");
   });
   it("qualifies trust controls with status, scope, evidence and limitations", () => {
     at("/trust");
