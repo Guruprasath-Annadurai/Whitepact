@@ -19,14 +19,14 @@ provider "hcloud" {
 module "foundation" {
   source = "../../modules/whitepact-hetzner-foundation"
 
-  environment         = "development"
-  location            = var.location
-  saas_server_type    = "cx22"
-  authority_server_type = "cx22"
-  execution_server_type = "cx22"
-  admin_cidr_allowlist  = var.admin_cidr_allowlist
-  execution_egress_cidrs  = var.execution_egress_cidrs
-  authority_egress_cidrs  = var.authority_egress_cidrs
+  environment            = "development"
+  location               = var.location
+  saas_server_type       = "cx22"
+  authority_server_type  = "cx22"
+  execution_server_type  = "cx22"
+  admin_cidr_allowlist   = var.admin_cidr_allowlist
+  execution_egress_cidrs = var.execution_egress_cidrs
+  authority_egress_cidrs = var.authority_egress_cidrs
   labels = {
     cost_tier = "dev-minimum"
   }
