@@ -5,10 +5,11 @@ import { Link } from "react-router-dom";
 import { CorporateNav } from "../../components/CorporateNav";
 import { Seo } from "../../components/Seo";
 import corporate from "../../content/corporate.json";
+import { qualifiedPlatformSource } from "../../content/package-release";
 import { controlChain } from "../../content/control-chain";
 import { PublicFooter } from "./PublicPages";
 
-const baseline = "https://github.com/Guruprasath-Annadurai/Whitepact/blob/52d9b3c5497af24bb7d4a7147e33deaadc64296e/";
+const baseline = qualifiedPlatformSource;
 const developerReferences = [
   ["CLI source", "src/whitepact/cli.py"],
   ["Python governance client", "sdk/python/rai_client/governance.py"],

@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 /** Editorial release evidence, not runtime authorization or an entitlement. */
+export const qualifiedPlatformCommit = "c1d7803fce0787f9183e18bb38134f73a6c0f57d";
+export const qualifiedPlatformSource = `https://github.com/Guruprasath-Annadurai/Whitepact/blob/${qualifiedPlatformCommit}/`;
+
 export type PackagePublication = {
   ownerApproved: boolean;
   registryVerified: boolean;

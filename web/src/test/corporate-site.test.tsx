@@ -99,7 +99,13 @@ describe("corporate website truth and navigation", () => {
     expect(screen.queryByText(/No subscription change was made/)).not.toBeInTheDocument();
     expect(document.querySelector('meta[name="robots"]')).toHaveAttribute("content", "noindex, nofollow");
   });
-  it("documents existing evidence interfaces and the baseline SDK limitation", () => {
+  it("pins developer references to the qualified integrated platform", () => {
+    at("/developers");
+    for (const label of ["CLI source", "Python governance client", "TypeScript governance source", "Repository setup"]) {
+      expect(screen.getByRole("link", { name: label })).toHaveAttribute("href", expect.stringContaining("c1d7803fce0787f9183e18bb38134f73a6c0f57d"));
+    }
+  });
+  it("documents existing evidence interfaces and the SDK limitation at the qualified source", () => {
     at("/docs");
     expect(document.body).toHaveTextContent("GET /api/web/evidence/EVIDENCE_ID");
     expect(document.body).not.toHaveTextContent("GET /api/governance/evidence/EVIDENCE_ID");
@@ -107,6 +113,8 @@ describe("corporate website truth and navigation", () => {
     expect(document.body).toHaveTextContent("backend does not provide");
     expect(document.body).toHaveTextContent('pip install -e ".[dashboard]"');
     expect(document.body).toHaveTextContent("pip install -e ./sdk/python");
+    expect(document.body).toHaveTextContent("git checkout c1d7803fce0787f9183e18bb38134f73a6c0f57d");
+    expect(document.body).not.toHaveTextContent("52d9b3c5497af24bb7d4a7147e33deaadc64296e");
   });
   it("qualifies trust controls with status, scope, evidence and limitations", () => {
     at("/trust");
@@ -116,7 +124,7 @@ describe("corporate website truth and navigation", () => {
       expect(card).toHaveTextContent("Status:");
       expect(card).toHaveTextContent("Scope:");
       expect(card).toHaveTextContent("Limitation:");
-      expect(within(card as HTMLElement).getByRole("link")).toHaveAttribute("href", expect.stringContaining("52d9b3c5497af24bb7d4a7147e33deaadc64296e"));
+      expect(within(card as HTMLElement).getByRole("link")).toHaveAttribute("href", expect.stringContaining("c1d7803fce0787f9183e18bb38134f73a6c0f57d"));
     }
   });
 });

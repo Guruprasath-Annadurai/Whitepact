@@ -39,7 +39,7 @@
     "sections": [
       [
         "Local setup",
-        "Clone https://github.com/Guruprasath-Annadurai/Whitepact.git, check out 52d9b3c5497af24bb7d4a7147e33deaadc64296e, run pip install -e \".[dashboard]\" in that checkout, then start uvicorn responsibleai.dashboard.app:app on localhost. Package publication for this website release is not verified; no published-package installation command is supplied. Follow database, encryption and authority prerequisites before consequential testing."
+        "Clone https://github.com/Guruprasath-Annadurai/Whitepact.git, check out c1d7803fce0787f9183e18bb38134f73a6c0f57d, run pip install -e \".[dashboard]\" in that checkout, then start uvicorn responsibleai.dashboard.app:app on localhost. Package publication for this website release is not verified; no published-package installation command is supplied. Follow database, encryption and authority prerequisites before consequential testing."
       ],
       [
         "Authentication is not authority",
