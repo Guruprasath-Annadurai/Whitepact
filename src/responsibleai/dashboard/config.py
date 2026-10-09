@@ -268,14 +268,11 @@ class Settings(BaseSettings):
             "Set true when running more than one instance of this process "
             "(load-balanced replicas, Kubernetes with replicas>1, etc.). "
             "Purely a self-declaration for a startup readiness check — it "
-            "does not itself change any behavior. In-memory rate limiting "
+            "does not itself change counter storage. In-memory rate limiting "
             "and SQLite each give per-instance-only state, which is silently "
-            "wrong (not just slow) once more than one instance shares "
-            "traffic: each replica enforces its own separate rate-limit "
-            "counter and its own separate database. Declaring this lets "
-            "startup warn loudly about that instead of the failure mode "
-            "being 'requests occasionally get 2x the intended rate limit "
-            "and no one knows why.'"
+            "wrong once more than one instance shares traffic. Production "
+            "refuses to start when this flag is set and those backends are "
+            "not shared. Non-production logs a warning."
         ),
     )
 
@@ -755,6 +752,19 @@ def multi_replica_problems(db_backend: str, rate_limit_backend: str) -> list[str
             "across replicas."
         )
     return problems
+
+
+def enforce_shared_backends_for_multi_replica(*, production: bool, problems: list[str]) -> None:
+    """Production must not advertise a shared ceiling it cannot enforce.
+
+    Non-production keeps the warning path so local SQLite work is possible.
+    """
+    if production and problems:
+        raise RuntimeError(
+            "Refusing to start production with multi-replica mode while "
+            "shared backends are missing. Each replica would enforce its "
+            "own counters. " + " ".join(problems)
+        )
 
 
 _settings: Settings | None = None

@@ -688,9 +688,14 @@ def _build_http_app() -> Any:
         stateless=True,
         security_settings=transport_security,
     )
+    _auth_max_failures = int(os.environ.get("RAI_MCP_HTTP_AUTH_MAX_FAILURES", "10"))
+    # Peer ceiling equals the credential ceiling. A higher peer budget let
+    # one source address multiply failed-auth attempts by presenting a new
+    # bearer token for each batch.
     auth_limiter = _AuthFailureLimiter(
-        max_failures=int(os.environ.get("RAI_MCP_HTTP_AUTH_MAX_FAILURES", "10")),
+        max_failures=_auth_max_failures,
         window_seconds=float(os.environ.get("RAI_MCP_HTTP_AUTH_WINDOW_SECONDS", "60")),
+        peer_max_failures=_auth_max_failures,
     )
 
     @asynccontextmanager
