@@ -361,6 +361,16 @@ def validate_attenuation(parent: AuthorityContext, child: AuthorityContext) -> s
       accounting for UTC wraparound (e.g. parent ``(22, 6)`` covers
       22:00-06:00; a child claiming ``(20, 6)`` illegally adds hour 20).
       Parent having no window at all means parent is unconstrained here.
+    - ``constraints["memory_scope"]``: if the parent binds a memory
+      namespace, the child must bind one too, and the child's scope
+      must be exactly the parent's or a descendant
+      (``child == parent`` or ``child.startswith(parent + ":")``).
+      This is the same prefix rule ``constraint_violation()`` uses at
+      action time. Omitting it here let a delegation grant a wider
+      namespace than the delegator held; the child's own later check
+      would then enforce only the widened scope. A non-string scope
+      fails closed. Parent having no memory scope means the parent is
+      unconstrained here, so a child may narrow itself.
 
     Explicitly **not** checked here (documented, not silently skipped):
     ``delegation_chain`` identity/depth consistency (already covered
@@ -437,6 +447,22 @@ def validate_attenuation(parent: AuthorityContext, child: AuthorityContext) -> s
                 field="allowed_hours_utc",
                 parent_window=f"{parent_hours[0]}-{parent_hours[1]}",
                 child_window=f"{child_hours[0]}-{child_hours[1]}" if child_hours else "<unset>",
+            )
+
+    parent_memory = parent.constraints.get("memory_scope")
+    if parent_memory is not None:
+        child_memory = child.constraints.get("memory_scope")
+        contained = (
+            isinstance(parent_memory, str)
+            and isinstance(child_memory, str)
+            and (child_memory == parent_memory or child_memory.startswith(f"{parent_memory}:"))
+        )
+        if not contained:
+            return format_reason(
+                ReasonCode.DELEGATION_AUTHORITY_ESCALATION,
+                field="memory_scope",
+                parent_scope=parent_memory,
+                child_scope=child_memory if child_memory is not None else "<unset>",
             )
 
     return None

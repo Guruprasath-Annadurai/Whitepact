@@ -122,6 +122,78 @@ class TestAttenuationProperties:
         assert reason is not None
         assert reason.startswith("DELEGATION_AUTHORITY_ESCALATION")
 
+    @given(
+        parent_scope=st.text(
+            alphabet=st.characters(whitelist_categories=("Ll", "Nd"), whitelist_characters="_-"),
+            min_size=1,
+            max_size=16,
+        ),
+        suffix=st.text(
+            alphabet=st.characters(whitelist_categories=("Ll", "Nd")),
+            min_size=1,
+            max_size=8,
+        ),
+    )
+    def test_descendant_memory_scope_never_escalates(self, parent_scope: str, suffix: str) -> None:
+        shared_types = frozenset({"mcp_tool_call"})
+        child_scope = f"{parent_scope}:{suffix}"
+        parent = _authority(
+            granted_action_types=shared_types,
+            constraints={"memory_scope": parent_scope},
+        )
+        child = _authority(
+            granted_action_types=shared_types,
+            constraints={"memory_scope": child_scope},
+        )
+        assert validate_attenuation(parent, child) is None
+
+    @given(
+        parent_scope=st.text(
+            alphabet=st.characters(whitelist_categories=("Ll", "Nd"), whitelist_characters="_-"),
+            min_size=1,
+            max_size=16,
+        ),
+        extra=st.text(
+            alphabet=st.characters(whitelist_categories=("Ll", "Nd")),
+            min_size=1,
+            max_size=8,
+        ),
+    )
+    def test_sibling_memory_scope_always_escalates(self, parent_scope: str, extra: str) -> None:
+        sibling = f"{parent_scope}{extra}"
+        assume(sibling != parent_scope)
+        assume(not sibling.startswith(f"{parent_scope}:"))
+        shared_types = frozenset({"mcp_tool_call"})
+        parent = _authority(
+            granted_action_types=shared_types,
+            constraints={"memory_scope": parent_scope},
+        )
+        child = _authority(
+            granted_action_types=shared_types,
+            constraints={"memory_scope": sibling},
+        )
+        reason = validate_attenuation(parent, child)
+        assert reason is not None
+        assert "memory_scope" in reason
+
+    @given(
+        parent_scope=st.text(
+            alphabet=st.characters(whitelist_categories=("Ll", "Nd"), whitelist_characters="_-"),
+            min_size=1,
+            max_size=16,
+        )
+    )
+    def test_unset_child_memory_scope_always_escalates(self, parent_scope: str) -> None:
+        shared_types = frozenset({"mcp_tool_call"})
+        parent = _authority(
+            granted_action_types=shared_types,
+            constraints={"memory_scope": parent_scope},
+        )
+        child = _authority(granted_action_types=shared_types)
+        reason = validate_attenuation(parent, child)
+        assert reason is not None
+        assert "memory_scope" in reason
+
 
 class TestConstraintViolationProperties:
     @given(

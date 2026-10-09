@@ -3,8 +3,11 @@ name: CI
 on:
   push:
     branches: ["main", "develop", "release/whitepact-v1-rc"]
+  # cursor/whitepact-rc-remediation-b6a9 is an ancestor of the stacked
+  # qualification draft. A pull request onto it has the same tree as its
+  # head. release/whitepact-v1-rc does not: that history is unrelated.
   pull_request:
-    branches: ["main", "release/whitepact-v1-rc"]
+    branches: ["main", "release/whitepact-v1-rc", "cursor/whitepact-rc-remediation-b6a9"]
 
 # CI only needs to read repository contents. Individual jobs do not receive
 # broader token capabilities unless explicitly added later.
@@ -350,3 +353,33 @@ jobs:
 
       - name: Run i18n unit tests (locale resolution, fallback, catalog integrity)
         run: node --test tests/js/i18n.test.js
+
+  checkout-identity:
+    name: Candidate tree matches checkout
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Distinguish the synthetic merge SHA from the candidate HEAD
+        env:
+          CANDIDATE_HEAD: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          tested_sha=$(git rev-parse HEAD)
+          tested_tree=$(git rev-parse 'HEAD^{tree}')
+          echo "tested_sha=$tested_sha"
+          echo "tested_tree=$tested_tree"
+          echo "candidate_head=${CANDIDATE_HEAD}"
+          if [ -z "${CANDIDATE_HEAD}" ]; then
+            echo "Push event. github.sha is the commit under test."
+            exit 0
+          fi
+          git fetch --depth=1 origin "pull/${PR_NUMBER}/head:pr-head"
+          candidate_tree=$(git rev-parse 'pr-head^{tree}')
+          echo "candidate_tree=$candidate_tree"
+          if [ "$tested_tree" != "$candidate_tree" ]; then
+            echo "Synthetic merge tree differs from the candidate HEAD tree."
+            exit 1
+          fi
+          echo "TESTED TREE MATCHES CANDIDATE HEAD TREE"

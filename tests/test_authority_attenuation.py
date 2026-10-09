@@ -218,6 +218,61 @@ class TestAllowedHoursUtcEscalation:
         assert validate_attenuation(parent, child) is None
 
 
+class TestMemoryScopeEscalation:
+    """A delegated authority must not widen ``memory_scope``.
+
+    Action-time ``constraint_violation()`` checks only the authority
+    being evaluated. If attenuation ignored this field, a child grant
+    could replace ``org:acme`` with ``org`` and then read another
+    tenant's memory under the child's own, wider prefix.
+    """
+
+    def test_identical_scope_passes(self) -> None:
+        parent = _authority(memory_scope="org:acme")
+        child = _authority(memory_scope="org:acme")
+        assert validate_attenuation(parent, child) is None
+
+    def test_descendant_scope_passes(self) -> None:
+        parent = _authority(memory_scope="org:acme")
+        child = _authority(memory_scope="org:acme:agent:bot1")
+        assert validate_attenuation(parent, child) is None
+
+    def test_wider_ancestor_scope_denied(self) -> None:
+        parent = _authority(memory_scope="org:acme:agent:bot1")
+        child = _authority(memory_scope="org:acme")
+        reason = validate_attenuation(parent, child)
+        assert reason is not None
+        assert reason.startswith("DELEGATION_AUTHORITY_ESCALATION")
+        assert "memory_scope" in reason
+
+    def test_sibling_prefix_is_not_a_descendant(self) -> None:
+        parent = _authority(memory_scope="org:acme")
+        child = _authority(memory_scope="org:acme2")
+        reason = validate_attenuation(parent, child)
+        assert reason is not None
+        assert "memory_scope" in reason
+
+    def test_unset_child_scope_denied_when_parent_constrains(self) -> None:
+        parent = _authority(memory_scope="org:acme")
+        child = _authority()
+        reason = validate_attenuation(parent, child)
+        assert reason is not None
+        assert "memory_scope" in reason
+        assert "<unset>" in reason
+
+    def test_non_string_child_scope_fails_closed(self) -> None:
+        parent = _authority(memory_scope="org:acme")
+        child = _authority(memory_scope=1)
+        reason = validate_attenuation(parent, child)
+        assert reason is not None
+        assert "memory_scope" in reason
+
+    def test_unconstrained_parent_lets_child_narrow(self) -> None:
+        parent = _authority()
+        child = _authority(memory_scope="org:acme:agent:bot1")
+        assert validate_attenuation(parent, child) is None
+
+
 class TestMethodWrapper:
     def test_validate_delegation_to_matches_function(self) -> None:
         parent = _authority(max_value_usd=500_000)
