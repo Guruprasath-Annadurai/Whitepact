@@ -2,7 +2,7 @@
 
 **Public launch is not authorized. No DNS change, announcement, or paid signup was made.**
 
-Each stage needs its own owner authorization, one exact SHA, and the evidence checker at `GO` or an explicit `CONDITIONAL_GO` scope. The current checker result is `NO-GO`.
+Each stage needs its own owner authorization and one exact SHA. The evidence checker cannot grant that authorization: while artifact verification is unavailable its decision stays `NO-GO`.
 
 ## Stage A — Production infrastructure acceptance
 

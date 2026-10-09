@@ -30,7 +30,7 @@ Fill this in for one SHA. Leave a row blank and the decision stays NO-GO.
 ## Decision
 
 - GO — every row accepted, checker printed `GO`, no `conditional_scope`.
-- CONDITIONAL GO — checker printed `CONDITIONAL_GO` and the scope is: _______________
+- CONDITIONAL GO — not available from `scripts/release_evidence_check.py`. That checker stays `NO-GO` while verification is unavailable.
 - NO-GO — any row empty or failed.
 
 ## Current engineering entry

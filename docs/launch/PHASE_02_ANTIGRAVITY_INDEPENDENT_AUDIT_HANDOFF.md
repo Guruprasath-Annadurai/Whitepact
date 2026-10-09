@@ -51,7 +51,7 @@ python scripts/release_evidence_check.py docs/launch/evidence/rc-0cdef394.json
 
 Expected pin result: `All GitHub Actions dependencies are pinned to immutable commit SHAs.`
 
-Expected evidence result: exit code 1, decision `NO-GO`, only `ci.canonical` accepted.
+Expected evidence result: exit code 1, decision `NO-GO`, `accepted` empty, `declared` only `ci.canonical`, artifact verification `UNVERIFIED`.
 
 Terraform, local, no credentials:
 

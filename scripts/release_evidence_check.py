@@ -2,16 +2,18 @@
 # SPDX-License-Identifier: MIT
 """Fail-closed release evidence checker.
 
-A local test log cannot satisfy a live, independent, or owner gate.
-``GO`` is returned only when every mandatory gate has an accepted
-evidence record of the required kind. Missing evidence is ``NO-GO``.
-This script does not contact GitHub, a cloud provider, or Antigravity.
+Completeness, artifact verification, and independent authorization are
+separate questions. A record that says ``ACCEPTED`` is a declaration,
+not proof. This script does not contact GitHub, a cloud provider, or
+an independent reviewer, so live verification is unavailable and the
+production decision stays ``NO-GO``.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,6 +28,13 @@ OWNER_APPROVAL = "owner_approval"
 GO = "GO"
 CONDITIONAL_GO = "CONDITIONAL_GO"
 NO_GO = "NO-GO"
+UNVERIFIED = "UNVERIFIED"
+
+_PLACEHOLDER = re.compile(
+    r"(placeholder|changeme|example\.com|example\.org|example\.net|"
+    r"evidence\.example|\blocalhost\b|127\.0\.0\.1|\bTODO\b|\bTBD\b)",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -66,51 +75,60 @@ def _records(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return found
 
 
-def _accepted(gate: Gate, record: dict[str, Any] | None) -> str | None:
+def _artifact_problem(artifact: object) -> str | None:
+    if not isinstance(artifact, str) or not artifact.strip():
+        return "accepted record has no artifact pointer"
+    value = artifact.strip()
+    if _PLACEHOLDER.search(value):
+        return "placeholder artifact is not production proof"
+    if not value.startswith("https://") or any(character.isspace() for character in value):
+        return "artifact pointer is not a verifiable https URL"
+    return None
+
+
+def _declaration_problem(gate: Gate, record: dict[str, Any] | None) -> str | None:
     if record is None:
         return "missing evidence"
     if record.get("status") != "ACCEPTED":
         return f"status is {record.get('status')!r}"
     if record.get("kind") != gate.kind:
         return f"kind {record.get('kind')!r} does not match required {gate.kind}"
-    artifact = record.get("artifact")
-    if gate.requires_artifact and not (isinstance(artifact, str) and artifact.strip()):
-        return "accepted record has no artifact pointer"
+    if gate.requires_artifact:
+        return _artifact_problem(record.get("artifact"))
     return None
 
 
 def evaluate(payload: dict[str, Any]) -> dict[str, Any]:
-    """Return a decision that fails closed.
+    """Separate a complete declaration from production proof.
 
-    ``CONDITIONAL_GO`` is never inferred. A caller must set
-    ``conditional_scope`` to a non-empty string and every blocking
-    failure must be absent. Any mandatory failure is ``NO-GO``.
+    Caller-supplied ``decision``, ``artifact_verification``, and
+    ``independent_authorization`` fields are ignored. ``GO`` and
+    ``CONDITIONAL_GO`` are not produced while this process cannot
+    verify artifacts or an independent authorization.
     """
     found = _records(payload)
     failures: list[dict[str, str]] = []
-    accepted: list[str] = []
+    declared: list[str] = []
     for gate in GATES:
         if not gate.mandatory:
             continue
-        reason = _accepted(gate, found.get(gate.gate_id))
+        reason = _declaration_problem(gate, found.get(gate.gate_id))
         if reason is None:
-            accepted.append(gate.gate_id)
+            declared.append(gate.gate_id)
         else:
             failures.append({"gate_id": gate.gate_id, "reason": reason})
 
-    scope = payload.get("conditional_scope")
-    if not failures and isinstance(scope, str) and scope.strip():
-        decision = CONDITIONAL_GO
-    elif not failures:
-        decision = GO
-    else:
-        decision = NO_GO
-
+    completeness = "COMPLETE" if not failures else "INCOMPLETE"
     return {
-        "decision": decision,
-        "accepted": accepted,
+        "decision": NO_GO,
+        "completeness": completeness,
+        "artifact_verification": UNVERIFIED,
+        "independent_authorization": UNVERIFIED,
+        "production_proof": False,
+        "declared": declared,
+        "accepted": [],
         "failures": failures,
-        "conditional_scope": scope if decision == CONDITIONAL_GO else None,
+        "conditional_scope": None,
     }
 
 
@@ -122,7 +140,11 @@ def main(argv: list[str] | None = None) -> int:
     result = evaluate(payload)
     json.dump(result, sys.stdout, indent=2)
     sys.stdout.write("\n")
-    return 0 if result["decision"] == GO else 2 if result["decision"] == CONDITIONAL_GO else 1
+    if result["decision"] == GO:
+        return 0
+    if result["decision"] == CONDITIONAL_GO:
+        return 2
+    return 1
 
 
 if __name__ == "__main__":

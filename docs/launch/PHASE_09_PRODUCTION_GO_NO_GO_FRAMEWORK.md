@@ -2,7 +2,7 @@
 
 **Current automated decision: NO-GO.**
 
-The checker is `scripts/release_evidence_check.py`. It returns `GO` only when every mandatory gate has an accepted evidence record of the required kind. A local log cannot satisfy a live, independent, or owner gate. `CONDITIONAL_GO` is returned only when the caller sets a non-empty `conditional_scope` and there are zero failures. It is not inferred from a partial packet.
+The checker is `scripts/release_evidence_check.py`. It reports three separate results: evidence completeness, artifact verification, and independent authorization. A status of `ACCEPTED` is only a declaration. Placeholder URLs and self-asserted verification fields are not production proof. This checker does not contact GitHub, a cloud provider, or an independent reviewer, so artifact verification and independent authorization stay `UNVERIFIED` and the decision stays `NO-GO`.
 
 ## Gates
 
@@ -35,15 +35,16 @@ Command:
 python scripts/release_evidence_check.py docs/launch/evidence/rc-0cdef394.json
 ```
 
-Observed: exit code 1, `decision` `NO-GO`, `accepted` contains only `ci.canonical`.
+Observed: exit code 1, `decision` `NO-GO`, `production_proof` false, `accepted` empty. `declared` contains only `ci.canonical`. Completeness is `INCOMPLETE`. Artifact verification and independent authorization are `UNVERIFIED`.
 
-That CI acceptance does not include the successor's memory-scope fix or the action-pin fix. Do not mark `ci.canonical` accepted for the successor until a new run exists.
+That CI URL does not include the successor's memory-scope fix or the action-pin fix. Declaring it does not verify the artifact.
 
 ## Decision rules
 
-- **GO.** Every mandatory gate accepted with the right kind and, where required, an artifact pointer. Not available now.
-- **CONDITIONAL GO.** Same completeness, plus an explicit scope string such as one design partner and a named tool allowlist. Not available now. A scope string with missing gates stays `NO-GO` (`tests/test_release_evidence_check.py`).
-- **NO-GO.** Any mandatory gate missing, mistyped, or without its artifact. This is the current result.
+- **Completeness.** Every mandatory gate has a declaration of the required kind and, where required, a non-placeholder `https` artifact pointer. Completeness is not authorization.
+- **Artifact verification.** Unavailable in this checker. A URL string is not a fetched, hash-checked artifact.
+- **Independent authorization.** Unavailable in this checker. An `ACCEPTED` owner or auditor row is not an authorization record this process can verify.
+- **NO-GO.** The production decision while either verification result is `UNVERIFIED`, and also while completeness is `INCOMPLETE`. This is the current result. `GO` and `CONDITIONAL_GO` are not emitted.
 
 A local PASS is not a live staging PASS. The checker encodes that by kind, not by a comment.
 
