@@ -8,13 +8,13 @@
     "url": "https://github.com/Guruprasath-Annadurai/Whitepact",
     "source": "github"
   },
-  "version": "1.2.3",
+  "version": "1.2.6",
   "packages": [
     {
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "rai-governance-platform",
-      "version": "1.2.2",
+      "version": "1.2.6",
       "runtimeHint": "uvx",
       "runtimeArguments": [
         {
@@ -51,7 +51,7 @@
       "headers": [
         {
           "name": "Authorization",
-          "description": "Bearer API key for the hosted WhitePact MCP server. Obtain one from the WhitePact dashboard (Settings → API Keys) after creating a free org.",
+          "description": "Required Bearer credential. Unauthenticated calls return 401. This remote is not an anonymous demo, and a public self-serve signup that issues the credential was not verified on 2026-10-09.",
           "isRequired": true,
           "isSecret": true,
           "placeholder": "Bearer <your-api-key>"
@@ -64,7 +64,7 @@
       "headers": [
         {
           "name": "Authorization",
-          "description": "Bearer API key for the hosted WhitePact MCP server. Obtain one from the WhitePact dashboard (Settings → API Keys) after creating a free org.",
+          "description": "Required Bearer credential. Unauthenticated calls return 401. This remote is not an anonymous demo, and a public self-serve signup that issues the credential was not verified on 2026-10-09.",
           "isRequired": true,
           "isSecret": true,
           "placeholder": "Bearer <your-api-key>"
@@ -78,6 +78,8 @@
       "resource_count_canonical": 10,
       "resource_count_advertised": 20,
       "resource_note": "Canonical resources are served under both whitepact:// and rai:// URI schemes (dual-scheme, see MIGRATION_WHITEPACT_V2.md Section 6) — 20 is the advertised count over the wire, 10 is the count of distinct underlying resources.",
+      "package_pin_note": "packages[0].version is the newest PyPI release verified on 2026-10-09 (rai-governance-platform 1.2.6). Source pyproject.toml is 1.3.1 and is not a published install. The hosted server card on that date reported serverInfo.version 1.3.1; that string is the running host, not a PyPI version.",
+      "hosted_remote_note": "On 2026-10-09, POST /mcp and GET /sse returned 401 without a bearer token. /.well-known/mcp/server-card.json returned authentication.required true, 30 tools, and 20 resources. Do not describe the remote as anonymously usable.",
       "license": "MIT",
       "governance_decision_model": ["ALLOW", "ALLOW_WITH_REDACTION", "REQUIRE_APPROVAL", "DENY", "QUARANTINE"]
     }
