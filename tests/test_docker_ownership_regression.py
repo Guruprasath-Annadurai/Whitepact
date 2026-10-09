@@ -32,6 +32,7 @@ def _enable_containment_probe(monkeypatch: pytest.MonkeyPatch) -> None:
 
     enable_containment_probe(monkeypatch)
 
+
 SLOW_SUCCESS_SCRIPT = """
 import sys, json, time
 time.sleep(1.0)
