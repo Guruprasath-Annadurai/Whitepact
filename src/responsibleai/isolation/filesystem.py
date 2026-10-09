@@ -48,16 +48,15 @@ class EphemeralWorkspace:
 
     def populate(self, files: Mapping[str, str | bytes]) -> None:
         """Safely write files into the workspace, preventing directory traversal."""
-        root = self.path
+        root = self.path.resolve()
         for rel_path, content in files.items():
-            # Validate path does not escape workspace root
-            target = (root / rel_path).resolve()
-            if not str(target).startswith(str(root)):
-                raise FilesystemEscapeError(
-                    f"Path '{rel_path}' attempts traversal outside workspace root."
-                )
+            target = _workspace_target(root, rel_path)
             target.parent.mkdir(parents=True, exist_ok=True)
             os.chmod(target.parent, _DIR_MODE)
+            if target.is_symlink():
+                raise FilesystemEscapeError(
+                    f"Path '{rel_path}' resolves through a symlink outside the workspace."
+                )
             if isinstance(content, str):
                 target.write_text(content, encoding="utf-8")
             else:
@@ -112,6 +111,36 @@ class EphemeralWorkspace:
                 pass
         self._temp_dir = None
         self._path = None
+
+
+def _workspace_target(root: Path, rel_path: object) -> Path:
+    """Resolve a relative workspace path without following symlinks out of root."""
+    if not isinstance(rel_path, str) or not rel_path or "\x00" in rel_path:
+        raise FilesystemEscapeError(f"Path {rel_path!r} is not a workspace-relative path.")
+    if rel_path.startswith(("/", "\\")) or Path(rel_path).is_absolute():
+        raise FilesystemEscapeError(f"Path '{rel_path}' attempts traversal outside workspace root.")
+    current = root
+    for part in Path(rel_path).parts:
+        if part in {"", ".."} or "\x00" in part:
+            raise FilesystemEscapeError(
+                f"Path '{rel_path}' attempts traversal outside workspace root."
+            )
+        if part == ".":
+            continue
+        current = current / part
+        if current.is_symlink():
+            raise FilesystemEscapeError(
+                f"Path '{rel_path}' resolves through a symlink outside the workspace."
+            )
+    try:
+        common = os.path.commonpath([str(root), str(current)])
+    except ValueError as exc:
+        raise FilesystemEscapeError(
+            f"Path '{rel_path}' attempts traversal outside workspace root."
+        ) from exc
+    if common != str(root):
+        raise FilesystemEscapeError(f"Path '{rel_path}' attempts traversal outside workspace root.")
+    return current
 
 
 def workspace_is_world_accessible(path: Path) -> bool:
