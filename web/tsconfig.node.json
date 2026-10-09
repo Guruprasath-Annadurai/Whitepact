@@ -9,5 +9,5 @@
     "allowSyntheticDefaultImports": true,
     "noEmit": true
   },
-  "include": ["vite.config.ts", "tooling/**/*.ts", "src/content/*.json"]
+  "include": ["vite.config.ts", "tooling/**/*.ts", "src/content/*.json", "src/content/control-chain.ts"]
 }
