@@ -8,7 +8,7 @@ Local `git merge-tree --write-tree` on this worktree:
 
 | Base | Result |
 |------|--------|
-| `cursor/whitepact-rc-remediation-b6a9` (`0cdef3947503adf7c3f08a5116a4808deda1d3f7`) | Tree `c0401db2533bba9b8dfaab2a5902bf88aa17e434`, the same tree as the candidate head at the time of that check |
+| `cursor/whitepact-rc-remediation-b6a9` (`0cdef3947503adf7c3f08a5116a4808deda1d3f7`) | Equal to the branch head tree. First observed for `47adb948` as `c0401db2533bba9b8dfaab2a5902bf88aa17e434`. The base stays an ancestor, so later commits on this branch keep that equality. Recompute with `git merge-tree --write-tree origin/cursor/whitepact-rc-remediation-b6a9 HEAD`. |
 | `main` (`38f927229b4ea53d19a9107c78653307f5263629`) | Same tree. `main` is an ancestor. A pull request to `main` was not opened. |
 | `release/whitepact-v1-rc` (`683d1c382ee2fe4a37c2335f201029d47e8471ae`) | `fatal: refusing to merge unrelated histories` |
 
