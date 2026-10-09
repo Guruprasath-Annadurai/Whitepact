@@ -37,6 +37,7 @@ Installation retest: **CONDITIONAL PASS** — engineering closure conditions met
 ## Founder merge gate
 
 Merge of PR #129 requires founder approval; not executed by engineering automation.
+<<<<<<< HEAD
 
 ---
 
@@ -70,3 +71,5 @@ Please confirm:
 | 11 | No WS-2 merge, PyPI publish, or Cloud provision in this gate | **PASS** |
 
 **M0 disposition:** **FULL PASS** — founder approval to merge PR #129 is **justified** (merge not executed by automation).
+=======
+>>>>>>> 20bd279 (feat(ws2): harden MCP trust domain and authority adversarial matrix)

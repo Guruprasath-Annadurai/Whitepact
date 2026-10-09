@@ -28,6 +28,7 @@ from typing import Any
 from sqlalchemy import delete, func, insert, select
 
 from responsibleai.db.engine import DatabaseEngine, audit_log
+from responsibleai.db.tenant_scope import org_scope
 from responsibleai.rbac.models import AuditEntry
 
 _GENESIS_HASH = "0" * 64
@@ -39,6 +40,23 @@ def _now() -> str:
 
 def _days_ago(days: int) -> str:
     return (datetime.now(UTC) - timedelta(days=days)).isoformat()
+
+
+def _audit_entry_dict(r: Any) -> dict[str, Any]:
+    return {
+        "id": r.id,
+        "timestamp": r.timestamp,
+        "org_id": r.org_id,
+        "key_id": r.key_id,
+        "endpoint": r.endpoint,
+        "method": r.method,
+        "status_code": r.status_code,
+        "ip_address": r.ip_address,
+        "request_id": r.request_id,
+        "duration_ms": r.duration_ms,
+        "entry_hash": r.entry_hash,
+        "prev_hash": r.prev_hash,
+    }
 
 
 def _compute_entry_hash(prev_hash: str, entry: AuditEntry) -> str:
@@ -181,40 +199,60 @@ class AuditRepository:
             .limit(limit)
             .offset(offset)
         )
-        if org_id:
-            stmt = stmt.where(audit_log.c.org_id == org_id)
+        stmt = stmt.where(org_scope(audit_log.c.org_id, org_id))
         if endpoint:
             stmt = stmt.where(audit_log.c.endpoint == endpoint)
 
         async with self._engine.raw.connect() as conn:
             rows = (await conn.execute(stmt)).fetchall()
-
-        return [
-            {
-                "id": r.id,
-                "timestamp": r.timestamp,
-                "org_id": r.org_id,
-                "key_id": r.key_id,
-                "endpoint": r.endpoint,
-                "method": r.method,
-                "status_code": r.status_code,
-                "ip_address": r.ip_address,
-                "request_id": r.request_id,
-                "duration_ms": r.duration_ms,
-                "entry_hash": r.entry_hash,
-                "prev_hash": r.prev_hash,
-            }
-            for r in rows
-        ]
+        return [_audit_entry_dict(r) for r in rows]
 
     async def count(self, days: int = 30, org_id: str | None = None) -> int:
         cutoff = _days_ago(days)
         stmt = select(func.count()).select_from(audit_log).where(audit_log.c.timestamp >= cutoff)
-        if org_id:
-            stmt = stmt.where(audit_log.c.org_id == org_id)
+        stmt = stmt.where(org_scope(audit_log.c.org_id, org_id))
         async with self._engine.raw.connect() as conn:
             result = (await conn.execute(stmt)).scalar()
         return result or 0
+
+    async def query_platform(
+        self,
+        endpoint: str | None = None,
+        days: int = 30,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """Explicit cross-tenant read. Not a tenant API. None is not this method."""
+        return await self._query_unscoped(endpoint=endpoint, days=days, limit=limit, offset=offset)
+
+    async def count_platform(self, days: int = 30) -> int:
+        """Explicit cross-tenant count. Not a tenant API."""
+        cutoff = _days_ago(days)
+        stmt = select(func.count()).select_from(audit_log).where(audit_log.c.timestamp >= cutoff)
+        async with self._engine.raw.connect() as conn:
+            result = (await conn.execute(stmt)).scalar()
+        return result or 0
+
+    async def _query_unscoped(
+        self,
+        endpoint: str | None = None,
+        days: int = 30,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        cutoff = _days_ago(days)
+        stmt = (
+            select(audit_log)
+            .where(audit_log.c.timestamp >= cutoff)
+            .order_by(audit_log.c.timestamp.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        if endpoint:
+            stmt = stmt.where(audit_log.c.endpoint == endpoint)
+        async with self._engine.raw.connect() as conn:
+            rows = (await conn.execute(stmt)).fetchall()
+        return [_audit_entry_dict(r) for r in rows]
 
     async def cleanup(self, retention_days: int = 90) -> int:
         """Delete entries older than *retention_days*. Returns deleted count."""
@@ -223,8 +261,10 @@ class AuditRepository:
             result = await conn.execute(delete(audit_log).where(audit_log.c.timestamp < cutoff))
         return result.rowcount
 
-    async def endpoint_summary(self, days: int = 7) -> list[dict[str, Any]]:
-        """Top endpoints by request count for the last N days."""
+    async def endpoint_summary(self, org_id: str | None, *, days: int = 7) -> list[dict[str, Any]]:
+        """Top endpoints for one scope. None is the NULL tenant. Empty string is rejected."""
+        if org_id is not None and not org_id:
+            raise ValueError("org_id is required")
         cutoff = _days_ago(days)
         stmt = (
             select(
@@ -232,7 +272,7 @@ class AuditRepository:
                 func.count().label("count"),
                 func.avg(audit_log.c.duration_ms).label("avg_ms"),
             )
-            .where(audit_log.c.timestamp >= cutoff)
+            .where(audit_log.c.timestamp >= cutoff, org_scope(audit_log.c.org_id, org_id))
             .group_by(audit_log.c.endpoint)
             .order_by(func.count().desc())
             .limit(20)

@@ -146,7 +146,7 @@ class TestApiKeys:
     async def test_revoked_keys_excluded_from_list(self, repo):
         org = await repo.create_org("Acme", "acme")
         key_rec, _ = await repo.create_key(org.id, "ci-key")
-        await repo.revoke_key(key_rec.id)
+        await repo.revoke_key(key_rec.id, org_id=org.id)
         assert await repo.list_keys(org.id) == []
 
     async def test_revoke_missing_key_returns_false(self, repo):
@@ -180,7 +180,7 @@ class TestAuthenticate:
     async def test_revoked_key_returns_none(self, repo):
         org = await repo.create_org("Acme", "acme")
         key_rec, raw = await repo.create_key(org.id, "ci-key")
-        await repo.revoke_key(key_rec.id)
+        await repo.revoke_key(key_rec.id, org_id=org.id)
         assert await repo.authenticate(raw) is None
 
     async def test_sso_required_org_raises(self, repo):

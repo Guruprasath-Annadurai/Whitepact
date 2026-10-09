@@ -1,0 +1,17 @@
+# Copy to terraform.tfvars locally — NEVER commit.
+# Or export TF_VAR_admin_cidr_allowlist='["YOUR.PUBLIC.IP.ADDRESS/32"]' with HCLOUD_TOKEN set.
+
+location = "fsn1"
+
+saas_server_type      = "cx33"
+authority_server_type = "cx33"
+execution_server_type = "cx23"
+
+# Operator home/VPN egress — REQUIRED (approved Gate 1: SSH via NAT only)
+admin_cidr_allowlist = ["YOUR.PUBLIC.IP.ADDRESS/32"]
+
+# Staging sandbox upstream documentation (TEST-NET-3); broaden only with owner approval
+execution_egress_cidrs = ["203.0.113.0/24"]
+
+# Placeholder; broad HTTPS egress for R2 is via NAT + host nftables when enabled
+authority_egress_cidrs = ["10.255.0.1/32"]
