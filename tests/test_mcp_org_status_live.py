@@ -102,8 +102,14 @@ class TestAuthenticatedCallerGetsRealOrgData:
         await _call(app, raw_key, "rai_health", {})
         result = await _call(app, raw_key, "rai_org_status", {})
         payload = json.loads(result.content[0].text)
-        # 2 prior calls + this org_status call itself = 3.
-        assert payload["usage"]["calls_this_month"] == 3
+        # The tool snapshot is taken during execution, before the
+        # authorized call is metered. The two earlier calls are visible.
+        # This call is recorded after authorization returns.
+        assert payload["usage"]["calls_this_month"] == 2
+        from responsibleai.db.mcp_usage_repository import McpUsageRepository
+
+        usage = await McpUsageRepository(engine).usage_this_month(org_id)
+        assert usage["allowed_calls"] == 3
 
     async def test_caller_supplied_metrics_still_merged_in(self, hosted_app) -> None:
         """The real org fields are additive -- caller-supplied

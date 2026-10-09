@@ -18,7 +18,7 @@ FH-01 through FH-07 are present via the PR #175 cherry-picks. Local regression c
 | ID | Severity | Status | Evidence |
 | --- | --- | --- | --- |
 | LG-01 | P1 | Engineering fixed. Independent retest required. | Container runner treated a missing `responsibleai` import as a successful echo. `6b9115f`. `tests/test_launch_gate_isolation_runner.py`. |
-| LG-02 | P1 | Engineering fixed. Independent retest required. | Hosted metering recorded `allowed=True` before governance, so a denial consumed quota. Hosted execution with no usage repository now returns `quota_enforcement_unavailable` and does not call governance. `87e762c`. `tests/test_launch_gate_hosted_metering.py`. |
+| LG-02 | P1 | Engineering fixed. Independent retest required. | Hosted metering recorded `allowed=True` before governance, so a denial consumed quota. Hosted execution with no usage repository now returns `quota_enforcement_unavailable` and does not call governance. An in-flight tool reads the prior allowed count; its own call is recorded after authorization returns. `87e762c`. `tests/test_launch_gate_hosted_metering.py`. `tests/test_mcp_org_status_live.py`. |
 | LG-03 | P1 | Engineering fixed. Independent retest required. | Resume substituted `unknown` when `requested_by` was blank. `c535770`. `tests/test_launch_gate_resume_identity.py`. |
 | LG-04 | P2 | Open. | `DockerContainerBackend` still runs a caller-supplied `runner.py` from `workspace_files`. `IsolationBroker` does not pass workspace files. Direct backend callers can still replace the entrypoint. |
 | FH-06-LIVE | P2 | Blocked. | Offline Ed25519 head witness is local. Live anchoring is not deployed. |
