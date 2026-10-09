@@ -305,6 +305,45 @@ class TestIdentityResolutionBatch13:
         assert ctx.authentication_method == "saml"
         monkeypatch.undo()
 
+    async def test_resolve_oidc_unknown_org_returns_none(self, engine) -> None:
+        repo = OrgRepository(engine)
+        provider = MagicMock()
+        provider.validate_token = AsyncMock(
+            return_value=JWTClaims(sub="user-oidc", org_id="missing-org", roles=["ADMIN"])
+        )
+        monkeypatch = pytest.MonkeyPatch()
+        monkeypatch.setattr(app_module, "_oidc_provider", provider)
+        monkeypatch.setattr(app_module, "_org_repo", repo)
+        assert await _resolve_oidc_context("eyJhbGciOiJIUzI1NiJ9.e30.sig") is None
+        monkeypatch.undo()
+
+    async def test_resolve_oidc_missing_org_claim_returns_none(self, engine) -> None:
+        repo = OrgRepository(engine)
+        provider = MagicMock()
+        provider.validate_token = AsyncMock(
+            return_value=JWTClaims(sub="user-oidc", org_id=None, roles=["ADMIN"])
+        )
+        monkeypatch = pytest.MonkeyPatch()
+        monkeypatch.setattr(app_module, "_oidc_provider", provider)
+        monkeypatch.setattr(app_module, "_org_repo", repo)
+        assert await _resolve_oidc_context("eyJhbGciOiJIUzI1NiJ9.e30.sig") is None
+        monkeypatch.undo()
+
+    async def test_resolve_saml_unknown_org_returns_none(self, engine) -> None:
+        repo = OrgRepository(engine)
+        claims = SAMLAssertionClaims(
+            sub="saml-user",
+            org_id="missing-org",
+            roles=["ADMIN"],
+            email="saml@example.com",
+        )
+        monkeypatch = pytest.MonkeyPatch()
+        monkeypatch.setattr(app_module, "_saml_config", MagicMock())
+        monkeypatch.setattr(app_module, "_org_repo", repo)
+        monkeypatch.setattr(app_module, "validate_session_token", lambda _cfg, _tok: claims)
+        assert await _resolve_saml_context("wp_saml.valid.token") is None
+        monkeypatch.undo()
+
     async def test_resolve_transport_rejects_legacy_key_in_production(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

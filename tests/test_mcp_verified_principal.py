@@ -135,6 +135,33 @@ class TestVerifiedPrincipalAuth:
         assert claims[0].holder_kind == "service_account"
         assert claims[0].issuer == "https://issuer.example.com"
 
+    async def test_vc_unknown_org_is_rejected(self, mcp_app) -> None:
+        """A trusted issuer cannot name a tenant WhitePact does not have."""
+        build, _org_id, _raw_key, engine = mcp_app
+        app = await build(vc_trusted_issuers=["https://issuer.example.com"])
+        token = _make_vc_jwt(_vc_payload(sub="ghost-agent", org_id="org-does-not-exist"))
+        async with await _raw_client(app) as client:
+            response = await client.post(
+                "/mcp",
+                json={"jsonrpc": "2.0", "method": "ping", "id": 1},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert response.status_code == 401
+        principal_repo = PrincipalRepository(engine)
+        assert await principal_repo.get_recent_for_principal("ghost-agent") == []
+
+    async def test_vc_missing_org_is_rejected(self, mcp_app) -> None:
+        build, _org_id, _raw_key, _engine = mcp_app
+        app = await build(vc_trusted_issuers=["https://issuer.example.com"])
+        token = _make_vc_jwt(_vc_payload(org_id=None))
+        async with await _raw_client(app) as client:
+            response = await client.post(
+                "/mcp",
+                json={"jsonrpc": "2.0", "method": "ping", "id": 1},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert response.status_code == 401
+
     async def test_untrusted_issuer_rejected(self, mcp_app) -> None:
         build, org_id, _raw_key, _engine = mcp_app
         app = await build(vc_trusted_issuers=["https://issuer.example.com"])

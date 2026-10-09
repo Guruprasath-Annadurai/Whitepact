@@ -809,6 +809,13 @@ def _build_http_app() -> Any:
         except ValueError:
             return None
 
+        org = await _org_repo.get_org(claims.org_id) if claims.org_id else None
+        if org is None:
+            # A verified presentation proves the issuer signed the claims.
+            # It does not create a WhitePact tenant. Match hosted OIDC:
+            # unknown or missing org claims do not authenticate.
+            return None
+
         try:
             claim = build_principal_claim(claims)
             await _principal_repo.record(claim)
@@ -823,7 +830,6 @@ def _build_http_app() -> Any:
                 claims.issuer,
             )
 
-        org = await _org_repo.get_org(claims.org_id) if claims.org_id else None
         role = Role.VIEWER
         for raw_role in claims.roles:
             candidate = role_from_str(raw_role)
@@ -834,10 +840,10 @@ def _build_http_app() -> Any:
         return OrgContext(
             key_id=f"vc:{claims.sub}",
             role=role,
-            org_id=claims.org_id,
-            org_name=org.name if org else None,
+            org_id=org.id,
+            org_name=org.name,
             is_legacy=False,
-            plan=org.plan if org else Plan.FREE,
+            plan=org.plan,
             authentication_method="vc",
         )
 

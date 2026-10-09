@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import base64
 import datetime
+import uuid
 
 import pytest
 from asgi_lifespan import LifespanManager
@@ -74,7 +75,9 @@ def saml_config(idp_keypair: tuple[str, str]) -> SAMLConfig:
     )
 
 
-def _signed_response(idp_keypair: tuple[str, str], *, in_response_to: str = "") -> str:
+def _signed_response(
+    idp_keypair: tuple[str, str], *, in_response_to: str = "", org_id: str | None = None
+) -> str:
     key_pem, cert_pem = idp_keypair
     now = datetime.datetime.now(datetime.UTC)
     not_before = (now - datetime.timedelta(minutes=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -92,6 +95,7 @@ def _signed_response(idp_keypair: tuple[str, str], *, in_response_to: str = "") 
     </saml:Conditions>
     <saml:AttributeStatement>
       <saml:Attribute Name="roles"><saml:AttributeValue>ADMIN</saml:AttributeValue></saml:Attribute>
+      {f'<saml:Attribute Name="org_id"><saml:AttributeValue>{org_id}</saml:AttributeValue></saml:Attribute>' if org_id else ""}
     </saml:AttributeStatement>
   </saml:Assertion>
 </samlp:Response>"""
@@ -291,12 +295,32 @@ class TestResolveSamlContext:
     async def test_get_org_context_accepts_saml_session_token(
         self, client: AsyncClient, configured_saml: SAMLConfig, idp_keypair: tuple[str, str]
     ) -> None:
-        resp = _signed_response(idp_keypair)
+        from responsibleai.dashboard import app as app_module
+        from responsibleai.rbac.models import Plan
+
+        org = await app_module._org_repo.create_org(
+            "SAML Acme", f"saml-acme-{uuid.uuid4().hex[:8]}", plan=Plan.ENTERPRISE
+        )
+        resp = _signed_response(idp_keypair, org_id=org.id)
         claims = parse_and_validate_response(resp, configured_saml, expected_request_id=None)
         token = mint_session_token(configured_saml, claims)
         r = await client.get("/api/auth/session", headers={"Authorization": f"Bearer {token}"})
         assert r.status_code == 200
-        assert r.json()["key_id"] == f"saml:{claims.sub}"
+        body = r.json()
+        assert body["key_id"] == f"saml:{claims.sub}"
+        assert body["org_id"] == org.id
+        assert body["org_name"] == org.name
+
+    @pytest.mark.asyncio
+    async def test_get_org_context_rejects_saml_session_without_tenant(
+        self, client: AsyncClient, configured_saml: SAMLConfig, idp_keypair: tuple[str, str]
+    ) -> None:
+        resp = _signed_response(idp_keypair)
+        claims = parse_and_validate_response(resp, configured_saml, expected_request_id=None)
+        assert claims.org_id is None
+        token = mint_session_token(configured_saml, claims)
+        r = await client.get("/api/auth/session", headers={"Authorization": f"Bearer {token}"})
+        assert r.status_code == 401
 
     @pytest.mark.asyncio
     async def test_get_org_context_rejects_garbage_saml_token(

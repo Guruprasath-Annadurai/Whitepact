@@ -846,7 +846,15 @@ async def _resolve_oidc_context(token: str) -> OrgContext | None:
     except ValueError:
         return None
 
-    org = await _org_repo.get_org(claims.org_id) if (_org_repo and claims.org_id) else None
+    if _org_repo is None or not claims.org_id:
+        return None
+    org = await _org_repo.get_org(claims.org_id)
+    if org is None:
+        # A valid IdP signature proves who issued the JWT, not membership
+        # in a WhitePact tenant. Never manufacture a FREE tenant context
+        # for an unknown or missing org claim. Hosted MCP OIDC already
+        # fails closed here; the dashboard path must match it.
+        return None
     role = Role.VIEWER
     for raw_role in claims.roles:
         candidate = role_from_str(raw_role)
@@ -857,10 +865,10 @@ async def _resolve_oidc_context(token: str) -> OrgContext | None:
     return OrgContext(
         key_id=f"oidc:{claims.sub}",
         role=role,
-        org_id=claims.org_id,
-        org_name=org.name if org else None,
+        org_id=org.id,
+        org_name=org.name,
         is_legacy=False,
-        plan=org.plan if org else Plan.FREE,
+        plan=org.plan,
         authentication_method="oidc",
     )
 
@@ -880,7 +888,13 @@ async def _resolve_saml_context(token: str) -> OrgContext | None:
     if claims is None:
         return None
 
-    org = await _org_repo.get_org(claims.org_id) if (_org_repo and claims.org_id) else None
+    if _org_repo is None or not claims.org_id:
+        return None
+    org = await _org_repo.get_org(claims.org_id)
+    if org is None:
+        # Same tenant-binding rule as OIDC. A signed SAML session does not
+        # authorize a tenant WhitePact does not have.
+        return None
     role = Role.VIEWER
     for raw_role in claims.roles:
         candidate = role_from_str(raw_role)
@@ -891,10 +905,10 @@ async def _resolve_saml_context(token: str) -> OrgContext | None:
     return OrgContext(
         key_id=f"saml:{claims.sub}",
         role=role,
-        org_id=claims.org_id,
-        org_name=org.name if org else None,
+        org_id=org.id,
+        org_name=org.name,
         is_legacy=False,
-        plan=org.plan if org else Plan.FREE,
+        plan=org.plan,
         authentication_method="saml",
     )
 
