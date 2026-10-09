@@ -47,9 +47,11 @@ resource "google_storage_bucket" "dr_backup_secondary" {
     enabled = true
   }
 
-  encryption {
-    default_kms_key_name = null
-  }
+  # google provider 5.x rejects encryption.default_kms_key_name = null as a
+  # missing required argument. This optional module is not given a
+  # customer-managed key, so the encryption block is omitted and the bucket
+  # uses the provider default, Google-managed encryption. Versioning and
+  # uniform bucket access stay enabled. Do not invent a KMS key here.
 
   labels = {
     product     = "whitepact"
