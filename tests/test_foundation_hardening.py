@@ -336,6 +336,35 @@ def _load_table(ns: str, path: Path) -> None:
         pytest.fail(loaded.stderr or loaded.stdout)
 
 
+def _function_body(path: Path, name: str) -> str:
+    text = path.read_text(encoding="utf-8")
+    marker = f"def {name}"
+    start = text.index(marker)
+    following = text.find("\ndef ", start + len(marker))
+    return text[start:] if following < 0 else text[start:following]
+
+
+def test_linux_nft_and_nginx_security_tests_stay_mandatory() -> None:
+    """Missing nftables or nginx fails the run. These checks are not optional."""
+    nft_body = _function_body(
+        ROOT / "tests" / "test_foundation_hardening.py",
+        "test_isolated_nft_authority_https_allowlist",
+    )
+    nginx_body = _function_body(
+        ROOT / "tests" / "test_phase34_origin_aop.py",
+        "test_nginx_origin_config_rejects_missing_and_wrong_client_certificates",
+    )
+    assert "pytest.skip" not in nft_body
+    assert "pytest.importorskip" not in nft_body
+    assert 'pytest.fail("nft and ip are required' in nft_body
+    assert "pytest.skip" not in nginx_body
+    assert "pytest.importorskip" not in nginx_body
+    assert "pytest.fail" in nginx_body
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert "nftables" in workflow
+    assert "nginx" in workflow
+
+
 def test_isolated_nft_authority_https_allowlist() -> None:
     """Reproduce the effective output policy in a network namespace.
 

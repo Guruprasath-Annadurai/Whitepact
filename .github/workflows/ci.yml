@@ -89,6 +89,11 @@ jobs:
             --ignore-vuln PYSEC-2026-597 \
             --ignore-vuln PYSEC-2026-3740
 
+      - name: Install mandatory Linux security-test tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nftables iproute2 nginx
+
       - name: Run tests with coverage
         run: |
           pytest tests/ \
