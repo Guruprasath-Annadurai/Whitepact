@@ -14,7 +14,7 @@ Inspected before any edit:
 | PR #171 `cursor/whitepact-canonical-reconcile-d20d` | `6801d4ad0047d15a196ab9caeffacf54f9ce557e` | Matches the historic reference. Ancestor of this work. |
 | PR #172 `cursor/whitepact-phase3-preflight-b6a9` | `7a0852899afd997264c384a9ff5ca5f99a65c7ca` | Current tip. Historic note `6fefece7b7620ae2f1fa7c307f6720e4bbde709f` is the parent of the docs commit that moved the tip. Tree at branch point `1262198173e52df94c7c85d75ea24a02e6da7e99`. |
 
-Hardening branch: `cursor/whitepact-foundation-hardening-934e`, created as a separate worktree at `/workspace/hardening` from `7a0852899afd997264c384a9ff5ca5f99a65c7ca`. Launch-candidate histories were not rewritten. This branch is not merged.
+Hardening branch: `cursor/whitepact-foundation-hardening-934e`, created as a separate worktree at `/workspace/hardening` from `7a0852899afd997264c384a9ff5ca5f99a65c7ca`. Draft review: https://github.com/Guruprasath-Annadurai/Whitepact/pull/174 against `cursor/whitepact-phase3-preflight-b6a9`. Launch-candidate histories were not rewritten. This branch is not merged.
 
 `origin/main` does not contain the qualified memory-scope and evidence commits. Hardening was stacked on the preflight tip so those protections stay in the tree. The review diff is against that preflight branch, not against `main`.
 
