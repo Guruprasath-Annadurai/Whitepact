@@ -20,10 +20,10 @@ async def enrich_agent_trust_state(agent: AgentContext, trust_client: TrustClien
     ``agent.provider``/``agent.model`` are both set — an action that
     doesn't name a third-party model has nothing for the Trust Index to
     look up, so this is a no-op in that case rather than an error.
-    Fails open on any lookup error (network, timeout, unknown model) via
-    ``TrustCheckResult.error`` — `WhitePactRuntimeGateway`'s consultation
-    of ``trust_state`` already accounts for that (``known=False`` never
-    triggers a low-trust downgrade)."""
+    A lookup error is stored on ``TrustCheckResult.error`` and does not
+    raise here. The gateway treats that error as unavailable trust and
+    requires approval. A successful response with ``known=False`` is an
+    unknown model, not an outage, and does not by itself escalate."""
     if agent.provider and agent.model:
         agent.trust_state = await trust_client.check_async(agent.model, agent.provider)
     return agent
