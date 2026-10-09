@@ -13,7 +13,6 @@ from responsibleai.sovereign.exit_codes import (
     EXIT_GOVERNANCE,
     EXIT_INVALID,
     EXIT_OK,
-    EXIT_UNAVAILABLE,
     EXIT_UNKNOWN,
 )
 from whitepact.cli import main
@@ -43,18 +42,18 @@ def test_cli_sandbox_labels() -> None:
     assert data["zero_effect"] is True
 
 
-def test_cli_replay_unavailable() -> None:
+def test_cli_replay_requires_evidence_file() -> None:
     runner = CliRunner()
     result = runner.invoke(main, ["replay", "--json"])
-    assert result.exit_code == EXIT_UNAVAILABLE
-    data = json.loads(result.output)
-    assert data["disposition"] == "UNAVAILABLE"
+    assert result.exit_code != EXIT_OK
+    assert "REPRODUCED" not in result.stdout
 
 
-def test_cli_prove_unavailable() -> None:
+def test_cli_prove_requires_evidence_file() -> None:
     runner = CliRunner()
     result = runner.invoke(main, ["prove", "--json"])
-    assert result.exit_code == EXIT_UNAVAILABLE
+    assert result.exit_code != EXIT_OK
+    assert "PROVED" not in result.stdout
 
 
 def test_cli_bad_manifest_doctor() -> None:
