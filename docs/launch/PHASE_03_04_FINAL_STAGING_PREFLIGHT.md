@@ -2,12 +2,14 @@
 
 **Live staging: NO-GO.** This package does not run `terraform apply`, change DNS, provision paid resources, activate billing, or deploy production.
 
-Pinned candidates stay where they are:
+Pinned candidates stay where they are. PR #171 and PR #174 are not modified, and the Foundation Hardening branch is not merged.
 
-| PR | Commit | Treatment |
-|----|--------|-----------|
-| #171 | `6801d4ad0047d15a196ab9caeffacf54f9ce557e` | Not modified |
-| #172 | `6fefece7b7620ae2f1fa7c307f6720e4bbde709f` | Not modified. This branch starts there and adds the preflight. |
+| Ref | Commit | Treatment |
+|-----|--------|-----------|
+| Preflight base | `6fefece7b7620ae2f1fa7c307f6720e4bbde709f` | Exact base of this branch. Tree `043b5f14f63b32ea60d3c168d4fcf3bf27800d14`. |
+| PR #171 | `6801d4ad0047d15a196ab9caeffacf54f9ce557e` | Ancestor of the base. This branch does not change that PR. |
+| PR #172 current head | `7a0852899afd997264c384a9ff5ca5f99a65c7ca` | Not an ancestor of this branch. `6fefece7` is its parent. The only commit on PR #172 that this branch does not contain is that head, which edits `docs/launch/ANTIGRAVITY_DELTA_6801d4.md`. |
+| PR #174 | Foundation Hardening | Not merged. |
 
 Offline checks in this commit are not Phase 4 staging acceptance.
 
@@ -19,9 +21,11 @@ Offline checks in this commit are not Phase 4 staging acceptance.
 4. SSH password authentication is disabled on the NAT gateway and the private tiers. Root key login is unchanged.
 5. The default route waits for the NAT server. Servers wait for their subnet and the route. Load balancer targets wait for the private load-balancer attachment.
 6. `0.0.0.0/0` and `::/0` are rejected on admin, SaaS, authority, and execution egress. Staging and production require an admin SSH key id. An admin Cloudflare tunnel cannot be planned with `REPLACE_BEFORE_APPLY`.
-7. The staging root refuses a plan whose FSN1 estimate exceeds 3595 euro cents.
+7. The staging root refuses a plan whose FSN1 price-book estimate exceeds 3595 euro cents. That check is not a Hetzner billing alert.
+8. NAT forwarding now binds each public destination allowlist to its source subnet. A SaaS, authority, or execution address is not forwarded to another tier's destinations. DNS and NTP are limited to those three workload subnets. The management subnet is not a forward source.
+9. `infra/postgres/whitepact_execution_role.sql` creates `whitepact_execution` with no table privileges and no execute right on `whitepact_admit_execution`. The authority role is the only grantee of that function.
 
-Execution to authority PostgreSQL on port 5432 remains the documented admission path. It was not removed.
+Execution to authority PostgreSQL on port 5432 remains the network path. The execution login cannot use it to mutate canonical authority or to admit itself.
 
 ## Exact Hetzner staging cost
 
@@ -38,7 +42,9 @@ Location scope: Falkenstein / Nuremberg / Helsinki. Prices exclude VAT. Reviewed
 | Private network and firewall | — | 0.00 | Included |
 | **Approved ceiling** | | **35.95** | 3595 euro cents |
 
-The approved shape is `at_ceiling`. Any added resource is a new approval. The alert action is: do not enable backups, volumes, a second server, or unmetered traffic.
+The approved shape is `at_ceiling` for the Terraform price-book estimate only. That estimate is not a Hetzner billing alert, does not include VAT, and does not include backups. No `hcloud` budget or spending-alert resource exists in this module. Creating a console spending alert remains an owner action. Any added resource is a new approval. Do not enable backups, volumes, a second server, or unmetered traffic under this ceiling.
+
+Enabling `enable_server_backups` adds 20 percent of the server SKUs, rounded up to the next euro cent (560 cents on this shape). 3595 + 560 exceeds the ceiling, so a plan that turns backups on is refused until the owner sets a new ceiling. The displayed optional backup price remains 5.592 EUR, which is the unrounded 20 percent.
 
 Optional, not in the staging root and not in the ceiling:
 
@@ -76,12 +82,39 @@ The pytest module `tests/test_phase34_staging_preflight.py` also rehearses, on t
 | SAAS-EGRESS | Replace 10.255.0.3/32 with the package mirror or registry ranges the owner accepts. |
 | EXECUTION-EGRESS | Replace 203.0.113.10/32 with the governed MCP upstream ranges. TEST-NET-3 is not a customer destination. |
 | CLOUDFLARE | Decide whether the first apply includes Cloudflare. The staging root does not. DNS stays unchanged. |
+| ORIGIN-AOP-MATERIAL | Provide the Cloudflare client CA, the origin certificate, and the origin private key outside git. Also enable zone or per-hostname authenticated origin pulls. Those artifacts are absent from this staging setup. |
 | R2-SECRETS | Provide R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET, R2_ENDPOINT, and WHITEPACT_BACKUP_ENCRYPTION_KEY outside git. |
-| APP-SECRETS | Provide POSTGRES_PASSWORD and REDIS_PASSWORD on the hosts, not in Terraform state comments. |
+| APP-SECRETS | Provide POSTGRES_PASSWORD on the authority host and REDIS_PASSWORD on the SaaS host. Do not copy the authority owner password to the execution tier. |
+| EXECUTION-DB-ROLE | Set WHITEPACT_EXECUTION_DB_PASSWORD for role whitepact_execution. It must differ from POSTGRES_PASSWORD. Apply infra/postgres/whitepact_execution_role.sql as the migrator after migrations. |
 | BACKUP-DELETE | Retention deletion stays dry-run until the owner passes --delete on a reviewed plan. |
-| VAT | 35.95 EUR is exclusive of VAT. A German 19 percent VAT invoice would be 42.7805 EUR. Confirm the billing country. |
+| VAT | 35.95 EUR is exclusive of VAT. A German 19 percent VAT invoice would be 42.7805 EUR. Confirm the billing country. The ceiling does not add this tax. |
+| BILLING-ALERT | Create a Hetzner console spending alert separately. Terraform does not create one. The 3595 cent ceiling is a price-book estimate. |
 | LIVE-ACCEPTANCE | Offline tests are not staging acceptance. Do not mark Phase 4 live checks passed from this package. |
-| ANTIGRAVITY | Independent review of this successor is still required. PR #171 at 6801d4ad and PR #172 at 6fefece7 stay unmodified. |
+| PR172-ANCESTRY | This branch's base is 6fefece7b7620ae2f1fa7c307f6720e4bbde709f. Current PR #172 head 7a0852899afd997264c384a9ff5ca5f99a65c7ca is not an ancestor. |
+| ANTIGRAVITY | Independent review of this successor is still required. PR #171 at 6801d4ad0047d15a196ab9caeffacf54f9ce557e is not modified. PR #172's current head is not this branch's base. |
+
+## Cloudflare-to-origin client certificate
+
+The nginx listener in `deploy/origin/nginx-cloudflare-aop.conf` sets `ssl_verify_client on` and was checked with nginx 1.24, the Ubuntu 24.04 package. nginx completes the TLS handshake, then refuses the request before `proxy_pass`. A missing client certificate returns HTTP 400 `No required SSL certificate was sent`. A certificate from the wrong CA returns HTTP 400 `The SSL certificate error`. A certificate signed by the configured CA is proxied to the application upstream. That proves the file's directive. It does not prove staging enforces it.
+
+SaaS cloud-init stages that file and writes `ORIGIN_AOP_MATERIAL_MISSING` when the certificate files are absent. It does not start nginx. Authority and execution cloud-init do not receive the listener.
+
+Artifacts still missing from the staging setup:
+
+| Artifact | State |
+|----------|--------|
+| Cloudflare edge module in the staging root | Missing |
+| `enable_authenticated_origin_pulls` and `plan_allows_authenticated_origin_pulls` | Missing |
+| Per-hostname `cloudflare_authenticated_origin_pulls_certificate` resource | Missing from the edge module |
+| Proxied DNS A record | Missing. DNS is unchanged. |
+| Zone Full (strict) TLS applied by the staging root | Missing |
+| Cloudflare authenticated-origin-pull CA bundle | Missing |
+| Origin certificate | Missing |
+| Origin private key | Missing. It must not be committed. |
+| nginx package on the SaaS image | Missing. Cloud-init does not install it. |
+| Real origin hostname | Missing. The file still says `staging.example.invalid`. |
+
+`origin_client_certificate_enforced` stays false until those artifacts exist. Do not record this offline nginx probe as live origin protection.
 
 ## Owner approval request
 
@@ -89,4 +122,4 @@ Please approve or reject this inventory. Approval is the single line:
 
 `APPROVE STAGING CLOUD PROVISIONING`
 
-That line would authorize a later staging apply of the 35.95 EUR / month (ex VAT) shape above. It does not authorize production, a DNS change, Cloudflare cutover, R2 deletion, billing activation, or treating this offline package as Phase 4 acceptance. Until that line is recorded by the owner, the gate remains NO-GO.
+That line would authorize a later staging apply of the 35.95 EUR / month ex VAT server, IPv4, and LB11 shape above. It does not authorize production, a DNS change, Cloudflare cutover, authenticated-origin-pull enablement, R2 deletion, billing activation, Hetzner backups, VAT treatment, or treating this offline package as Phase 4 acceptance. It also does not create a Hetzner billing alert. Until that line is recorded by the owner, the gate remains NO-GO.

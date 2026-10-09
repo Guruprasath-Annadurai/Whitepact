@@ -25,14 +25,27 @@ locals {
     && local.nat_unit_cents != null
     && local.lb_unit_cents != null
   )
-  estimated_monthly_cents = (
+  server_shape_cents = (
     local.price_book_complete
     ? (local.saas_unit_cents * local.saas_count)
     + local.authority_unit_cents
     + (local.execution_unit_cents * local.execution_count)
     + (local.nat_unit_cents * local.nat_count)
+    : -1
+  )
+  # 20 percent of server SKUs only, rounded up to the next euro cent.
+  # VAT is not added. A Hetzner console spending alert is not created.
+  backup_monthly_cents = (
+    var.enable_server_backups && local.server_shape_cents >= 0
+    ? ((local.server_shape_cents * 20) + 99) / 100
+    : 0
+  )
+  estimated_monthly_cents = (
+    local.price_book_complete
+    ? local.server_shape_cents
     + (local.ipv4_unit_cents * local.public_ipv4_count)
     + local.lb_unit_cents
+    + local.backup_monthly_cents
     : -1
   )
 }
@@ -52,7 +65,7 @@ resource "terraform_data" "monthly_cost_ceiling" {
           && local.estimated_monthly_cents <= var.monthly_cost_ceiling_cents
         )
       )
-      error_message = "Refusing to plan: the Hetzner shape is missing from the FSN1 price book or its estimate exceeds monthly_cost_ceiling_cents. Do not apply a larger SKU, backup, or volume without a new owner ceiling."
+      error_message = "Refusing to plan: the Terraform price-book estimate is missing a SKU or exceeds monthly_cost_ceiling_cents. This check is not a Hetzner billing alert. It excludes VAT. Server backups are added only when enable_server_backups is true, and that larger estimate still has to fit under an owner ceiling."
     }
   }
 }

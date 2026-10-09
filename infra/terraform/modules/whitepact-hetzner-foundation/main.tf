@@ -132,6 +132,8 @@ resource "hcloud_server" "saas" {
     admin_cidrs       = local.admin_cidr_nft
     tier_input_rules  = local.saas_nft_input
     tier_output_rules = local.saas_nft_output
+    extra_write_files = local.saas_origin_write_files
+    extra_runcmd      = local.saas_origin_runcmd
   })
 
   public_net {
@@ -161,6 +163,8 @@ resource "hcloud_server" "authority" {
     admin_cidrs       = local.admin_cidr_nft
     tier_input_rules  = local.authority_nft_input
     tier_output_rules = local.authority_nft_output
+    extra_write_files = ""
+    extra_runcmd      = ""
   })
 
   public_net {
@@ -189,6 +193,8 @@ resource "hcloud_server" "execution" {
     admin_cidrs       = local.admin_cidr_nft
     tier_input_rules  = "tcp dport 22 ip saddr { ${local.mgmt_ssh_nft} } accept comment \"SSH via bastion\""
     tier_output_rules = join("\n          ", local.execution_nft_output)
+    extra_write_files = ""
+    extra_runcmd      = ""
   })
 
   public_net {

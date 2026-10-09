@@ -205,8 +205,14 @@ variable "ntp_server_cidrs" {
   }
 }
 
+variable "enable_server_backups" {
+  description = "When true, the price-book estimate adds 20 percent of the server SKUs, rounded up to the next euro cent. Backups are outside the staging ceiling unless a new owner ceiling covers them. This is not a Hetzner billing alert."
+  type        = bool
+  default     = false
+}
+
 variable "monthly_cost_ceiling_cents" {
-  description = "Maximum estimated monthly Hetzner charge in euro cents, VAT exclusive. 0 disables the check. Staging sets 3595 (35.95 EUR)."
+  description = "Terraform price-book ceiling in euro cents, VAT exclusive, backups excluded unless enable_server_backups is true. This is not a Hetzner billing alert. 0 disables the check. Staging sets 3595 (35.95 EUR)."
   type        = number
   default     = 0
 

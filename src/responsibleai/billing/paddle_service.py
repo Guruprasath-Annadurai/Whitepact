@@ -44,13 +44,17 @@ class PaddleNotConfiguredError(PaddleBillingError):
     """Raised when Paddle billing is invoked without API credentials."""
 
 
-class PaddleWebhookRejected(PaddleBillingError):
+class PaddleWebhookRejectedError(PaddleBillingError):
     """A sandbox or live webhook failed verification. The message has no secret."""
 
     def __init__(self, status_code: int, detail: str) -> None:
         super().__init__(detail)
         self.status_code = status_code
         self.detail = detail
+
+
+# Existing callers and tests catch this name. It is the same rejection.
+PaddleWebhookRejected = PaddleWebhookRejectedError
 
 
 def verify_paddle_webhook_signature(

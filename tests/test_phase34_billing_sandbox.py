@@ -72,7 +72,9 @@ def test_sandbox_client_refuses_a_live_key_and_stays_on_the_sandbox_host() -> No
     assert service._api_base == PADDLE_API_BASES["sandbox"]
     assert "sandbox-api.paddle.com" in service._api_base
     with pytest.raises(PaddleBillingError, match="sandbox"):
-        PaddleBillingService("pdl_live_apikey_test", {Plan.PRO: "pri_sandbox"}, environment="sandbox")
+        PaddleBillingService(
+            "pdl_live_apikey_test", {Plan.PRO: "pri_sandbox"}, environment="sandbox"
+        )
 
 
 def test_saas_admin_downgrade_and_sso_do_not_require_a_commercial_plan() -> None:

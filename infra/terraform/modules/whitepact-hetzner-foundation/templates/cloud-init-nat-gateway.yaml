@@ -1,6 +1,6 @@
 #cloud-config
 # NAT + management gateway — IP forwarding and masquerade for private-network egress.
-# Forwarding is destination-allowlisted. Host nftables on private nodes are not the only control.
+# Forwarding is source-tier and destination allowlisted. A private tier cannot use another tier's destinations.
 write_files:
   - path: /etc/ssh/sshd_config.d/99-whitepact-admin.conf
     permissions: "0644"

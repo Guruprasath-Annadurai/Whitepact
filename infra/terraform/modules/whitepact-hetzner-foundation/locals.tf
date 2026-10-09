@@ -74,18 +74,41 @@ locals {
     local.infra_nft_output,
   )
 
+  # Each tier may use only its own public destinations. A compromised host on one
+  # private subnet must not be forwarded to another tier's allowlist. DNS and NTP
+  # stay shared infrastructure, and only the three workload subnets may reach them.
+  # The management subnet is not a workload source.
   nat_forward_rules = join("\n          ", concat(
     [
-      "iif \"${local.nat_private_iface}\" oif \"${local.nat_public_iface}\" ip daddr { ${join(", ", var.saas_egress_cidrs)} } tcp dport { 80, 443 } accept comment \"saas allowlist\"",
-      "iif \"${local.nat_private_iface}\" oif \"${local.nat_public_iface}\" ip daddr { ${join(", ", var.authority_egress_cidrs)} } tcp dport 443 accept comment \"authority allowlist\"",
+      "iif \"${local.nat_private_iface}\" oif \"${local.nat_public_iface}\" ip saddr { ${var.saas_subnet_cidr} } ip daddr { ${join(", ", var.saas_egress_cidrs)} } tcp dport { 80, 443 } accept comment \"saas allowlist\"",
+      "iif \"${local.nat_private_iface}\" oif \"${local.nat_public_iface}\" ip saddr { ${var.authority_subnet_cidr} } ip daddr { ${join(", ", var.authority_egress_cidrs)} } tcp dport 443 accept comment \"authority allowlist\"",
     ],
     var.enable_execution_egress_allowlist ? [
-      "iif \"${local.nat_private_iface}\" oif \"${local.nat_public_iface}\" ip daddr { ${join(", ", var.execution_egress_cidrs)} } tcp dport 443 accept comment \"execution allowlist\"",
+      "iif \"${local.nat_private_iface}\" oif \"${local.nat_public_iface}\" ip saddr { ${var.execution_subnet_cidr} } ip daddr { ${join(", ", var.execution_egress_cidrs)} } tcp dport 443 accept comment \"execution allowlist\"",
     ] : [],
     [
-      "iif \"${local.nat_private_iface}\" oif \"${local.nat_public_iface}\" ip daddr { ${local.dns_nft} } udp dport 53 accept comment \"DNS\"",
-      "iif \"${local.nat_private_iface}\" oif \"${local.nat_public_iface}\" ip daddr { ${local.dns_nft} } tcp dport 53 accept comment \"DNS TCP\"",
-      "iif \"${local.nat_private_iface}\" oif \"${local.nat_public_iface}\" ip daddr { ${local.ntp_nft} } udp dport 123 accept comment \"NTP\"",
+      "iif \"${local.nat_private_iface}\" oif \"${local.nat_public_iface}\" ip saddr { ${var.saas_subnet_cidr}, ${var.authority_subnet_cidr}, ${var.execution_subnet_cidr} } ip daddr { ${local.dns_nft} } udp dport 53 accept comment \"DNS\"",
+      "iif \"${local.nat_private_iface}\" oif \"${local.nat_public_iface}\" ip saddr { ${var.saas_subnet_cidr}, ${var.authority_subnet_cidr}, ${var.execution_subnet_cidr} } ip daddr { ${local.dns_nft} } tcp dport 53 accept comment \"DNS TCP\"",
+      "iif \"${local.nat_private_iface}\" oif \"${local.nat_public_iface}\" ip saddr { ${var.saas_subnet_cidr}, ${var.authority_subnet_cidr}, ${var.execution_subnet_cidr} } ip daddr { ${local.ntp_nft} } udp dport 123 accept comment \"NTP\"",
     ],
   ))
+
+  # The origin listener is staged on SaaS only. Cloud-init must not start it:
+  # the Cloudflare client CA, origin certificate, and origin key are not in this module.
+  saas_origin_write_files = <<EOT
+  - path: /etc/nginx/sites-available/whitepact-origin.conf
+    permissions: "0644"
+    content: |
+      ${replace(file("${path.module}/../../../../deploy/origin/nginx-cloudflare-aop.conf"), "\n", "\n      ")}
+  - path: /var/lib/whitepact/origin-aop.contract
+    permissions: "0644"
+    content: |
+      listener=staged
+      start_without_client_ca=forbidden
+      start_without_origin_certificate=forbidden
+EOT
+  saas_origin_runcmd      = <<EOT
+  - [bash, -lc, "install -d /var/lib/whitepact /etc/whitepact/origin"]
+  - [bash, -lc, "if test -s /etc/whitepact/origin/cloudflare-aop-ca.pem && test -s /etc/whitepact/origin/server.crt && test -s /etc/whitepact/origin/server.key; then echo ORIGIN_AOP_MATERIAL_PRESENT > /var/lib/whitepact/origin-aop.status; else echo ORIGIN_AOP_MATERIAL_MISSING > /var/lib/whitepact/origin-aop.status; fi"]
+EOT
 }

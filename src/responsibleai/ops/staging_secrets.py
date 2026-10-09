@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import hmac
 from collections.abc import Mapping
 from dataclasses import dataclass
 
@@ -18,6 +19,7 @@ BACKUP_SECRET_NAMES = (
 )
 STAGING_APP_SECRET_NAMES = (
     "POSTGRES_PASSWORD",
+    "WHITEPACT_EXECUTION_DB_PASSWORD",
     "REDIS_PASSWORD",
 )
 EDGE_SECRET_NAMES = ("CLOUDFLARE_API_TOKEN",)
@@ -52,12 +54,37 @@ def _status(value: str | None) -> str:
     return "present"
 
 
+def _same_secret(left: str, right: str) -> bool:
+    left_bytes = left.encode()
+    right_bytes = right.encode()
+    if len(left_bytes) != len(right_bytes):
+        return False
+    return hmac.compare_digest(left_bytes, right_bytes)
+
+
 def review_secrets(env: Mapping[str, str], names: tuple[str, ...]) -> tuple[SecretCheck, ...]:
-    return tuple(SecretCheck(name, _status(env.get(name))) for name in names)
+    checks: list[SecretCheck] = []
+    for name in names:
+        raw = env.get(name)
+        status = _status(raw)
+        owner = env.get("POSTGRES_PASSWORD")
+        if (
+            name == "WHITEPACT_EXECUTION_DB_PASSWORD"
+            and status == "present"
+            and raw is not None
+            and owner is not None
+            and _status(owner) == "present"
+            and _same_secret(owner, raw)
+        ):
+            status = "reused_authority_owner"
+        checks.append(SecretCheck(name, status))
+    return tuple(checks)
 
 
 def review_staging_secrets(env: Mapping[str, str]) -> tuple[SecretCheck, ...]:
-    names = TERRAFORM_SECRET_NAMES + BACKUP_SECRET_NAMES + STAGING_APP_SECRET_NAMES + EDGE_SECRET_NAMES
+    names = (
+        TERRAFORM_SECRET_NAMES + BACKUP_SECRET_NAMES + STAGING_APP_SECRET_NAMES + EDGE_SECRET_NAMES
+    )
     return review_secrets(env, names)
 
 

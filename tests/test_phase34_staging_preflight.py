@@ -30,10 +30,11 @@ from responsibleai.governance.models import (
     IdentityContext,
 )
 from responsibleai.isolation.environment import build_isolated_environment
-from responsibleai.ops.isolated_restore import rehearse_isolated_restore, rehearsal_passes
+from responsibleai.ops.isolated_restore import rehearsal_passes, rehearse_isolated_restore
 from responsibleai.ops.staging_cost import (
     STAGING_CEILING_CENTS,
     assess_spend,
+    cost_controls,
     optional_backup_eur,
     staging_monthly_cents,
 )
@@ -50,7 +51,17 @@ from responsibleai.ops.staging_scope import (
     offline_record,
 )
 from responsibleai.ops.staging_secrets import review_staging_secrets
-from responsibleai.ops.staging_static import OWNER_DEPENDENCIES, isolation_defects
+from responsibleai.ops.staging_static import (
+    OWNER_DEPENDENCIES,
+    PR_171_SHA,
+    PR_172_HEAD_IS_ANCESTOR,
+    PR_172_HEAD_SHA,
+    PREFLIGHT_BASE_SHA,
+    PREFLIGHT_BASE_TREE,
+    isolation_defects,
+    nat_cross_tier_forward,
+    nat_source_separation_violations,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -81,6 +92,18 @@ def test_staging_cost_is_the_approved_ceiling() -> None:
     assert critical.severity == "critical"
     assert critical.blocks_apply is True
     assert optional_backup_eur() == "5.592"
+    controls = cost_controls()
+    assert controls["kind"] == "terraform_price_book_ceiling"
+    assert controls["is_billing_alert"] is False
+    assert controls["billing_alert_configured"] is False
+    assert controls["includes_vat"] is False
+    assert controls["includes_backups"] is False
+    assert controls["hypothetical_de_gross_eur"] == "42.7805"
+    assert controls["ceiling_cents"] == 3595
+    server_cents = 849 + 849 + 549 + 549
+    terraform_backup_cents = ((server_cents * 20) + 99) // 100
+    assert terraform_backup_cents == 560
+    assert STAGING_CEILING_CENTS + terraform_backup_cents > STAGING_CEILING_CENTS
 
 
 def test_secret_review_does_not_echo_values() -> None:
@@ -92,6 +115,22 @@ def test_secret_review_does_not_echo_values() -> None:
     assert by_name["HCLOUD_TOKEN"] == "present"
     assert by_name["R2_BUCKET"] == "placeholder"
     assert by_name["POSTGRES_PASSWORD"] == "missing"
+    assert by_name["WHITEPACT_EXECUTION_DB_PASSWORD"] == "missing"
+    reused = "authority-owner-secret-value"
+    distinct = review_staging_secrets(
+        {"POSTGRES_PASSWORD": reused, "WHITEPACT_EXECUTION_DB_PASSWORD": reused + "-exec"}
+    )
+    reused_checks = review_staging_secrets(
+        {"POSTGRES_PASSWORD": reused, "WHITEPACT_EXECUTION_DB_PASSWORD": reused}
+    )
+    reused_rendered = json.dumps([item.status for item in reused_checks])
+    assert reused not in reused_rendered
+    assert {item.name: item.status for item in reused_checks}[
+        "WHITEPACT_EXECUTION_DB_PASSWORD"
+    ] == ("reused_authority_owner")
+    assert {item.name: item.status for item in distinct}[
+        "WHITEPACT_EXECUTION_DB_PASSWORD"
+    ] == "present"
 
 
 def test_rollout_plan_has_no_apply_and_refuses_production_health() -> None:
@@ -107,7 +146,9 @@ def test_rollout_plan_has_no_apply_and_refuses_production_health() -> None:
         plan_health("https://whitepact.com/livez")
     rollback = plan_rollback("b" * 40, "c" * 40)
     assert rollback["execute"] is False
-    assert "DROP" not in " ".join(rollback["steps"]).upper() or "Do not drop" in " ".join(rollback["steps"])
+    assert "DROP" not in " ".join(rollback["steps"]).upper() or "Do not drop" in " ".join(
+        rollback["steps"]
+    )
 
 
 def test_offline_record_cannot_claim_staging_acceptance() -> None:
@@ -120,10 +161,14 @@ def test_offline_record_cannot_claim_staging_acceptance() -> None:
 
 def test_governed_mcp_and_tenant_isolation_offline(tmp_path: Path) -> None:
     action = _action("org-a")
-    deny = DecisionResult(decision=GovernanceDecision.DENY, action_id=action.action_id, reason_codes=["NO_GRANT"])
+    deny = DecisionResult(
+        decision=GovernanceDecision.DENY, action_id=action.action_id, reason_codes=["NO_GRANT"]
+    )
     with pytest.raises(DecisionNotExecutableError):
         authorize_execution(deny, action)
-    allow = DecisionResult(decision=GovernanceDecision.ALLOW, action_id=action.action_id, reason_codes=["GRANT"])
+    allow = DecisionResult(
+        decision=GovernanceDecision.ALLOW, action_id=action.action_id, reason_codes=["GRANT"]
+    )
     permit = authorize_execution(allow, action, ttl_seconds=60)
     import asyncio
 
@@ -144,7 +189,9 @@ def test_governed_mcp_and_tenant_isolation_offline(tmp_path: Path) -> None:
     )
     assert "POSTGRES_PASSWORD" not in env
     assert env["WHITEPACT_TENANT_ID"] == "org-a"
-    backend = (ROOT / "src/responsibleai/isolation/container_backend.py").read_text(encoding="utf-8")
+    backend = (ROOT / "src/responsibleai/isolation/container_backend.py").read_text(
+        encoding="utf-8"
+    )
     assert "--network=none" in backend
     assert "docker.sock" not in backend
     rehearsal = rehearse_isolated_restore(tmp_path, secret="offline-restore-secret")
@@ -156,7 +203,9 @@ def test_governed_mcp_and_tenant_isolation_offline(tmp_path: Path) -> None:
 
 def test_offline_load_rehearsal_stays_offline() -> None:
     action = _action()
-    decision = DecisionResult(decision=GovernanceDecision.ALLOW, action_id=action.action_id, reason_codes=["LOAD"])
+    decision = DecisionResult(
+        decision=GovernanceDecision.ALLOW, action_id=action.action_id, reason_codes=["LOAD"]
+    )
     samples: list[float] = []
     for _ in range(50):
         started = time.perf_counter()
@@ -167,6 +216,72 @@ def test_offline_load_rehearsal_stays_offline() -> None:
     assert p95 < 0.05
     record = offline_record("load", passed=True)
     assert record.live_staging_accepted is False
+
+
+def test_nat_forwarding_rejects_cross_tier_sources() -> None:
+    locals_text = (
+        ROOT / "infra/terraform/modules/whitepact-hetzner-foundation/locals.tf"
+    ).read_text(encoding="utf-8")
+    assert nat_source_separation_violations(locals_text) == ()
+    hostile = (
+        ("var.saas_subnet_cidr", "var.authority_egress_cidrs"),
+        ("var.saas_subnet_cidr", "var.execution_egress_cidrs"),
+        ("var.authority_subnet_cidr", "var.saas_egress_cidrs"),
+        ("var.authority_subnet_cidr", "var.execution_egress_cidrs"),
+        ("var.execution_subnet_cidr", "var.saas_egress_cidrs"),
+        ("var.execution_subnet_cidr", "var.authority_egress_cidrs"),
+        ("var.mgmt_subnet_cidr", "var.saas_egress_cidrs"),
+        ("var.mgmt_subnet_cidr", "var.authority_egress_cidrs"),
+        ("var.mgmt_subnet_cidr", "var.execution_egress_cidrs"),
+    )
+    for source_var, dest_var in hostile:
+        assert nat_cross_tier_forward(locals_text, source_var, dest_var) is False
+    assert nat_cross_tier_forward(locals_text, "var.saas_subnet_cidr", "var.saas_egress_cidrs")
+    assert nat_cross_tier_forward(
+        locals_text, "var.authority_subnet_cidr", "var.authority_egress_cidrs"
+    )
+    assert nat_cross_tier_forward(
+        locals_text, "var.execution_subnet_cidr", "var.execution_egress_cidrs"
+    )
+    stolen = (
+        'nat_forward_rules = join("\\n", concat(\n'
+        "  [\n"
+        '    "ip saddr { ${var.saas_subnet_cidr} } ip daddr { ${var.authority_egress_cidrs} } '
+        'tcp dport 443 accept comment \\"stolen\\"",\n'
+        '    "ip daddr { ${var.saas_egress_cidrs} } tcp dport 443 accept comment \\"open\\"",\n'
+        "  ],\n"
+        "))\n"
+        "}\n"
+    )
+    violations = nat_source_separation_violations(stolen)
+    assert any("SaaS source can reach authority destinations." in item for item in violations)
+    assert any("no source restriction" in item for item in violations)
+
+
+def test_cost_ceiling_is_not_a_billing_alert() -> None:
+    foundation = ROOT / "infra/terraform/modules/whitepact-hetzner-foundation"
+    cost = (foundation / "cost.tf").read_text(encoding="utf-8")
+    variables = (foundation / "variables.tf").read_text(encoding="utf-8")
+    staging = (ROOT / "infra/terraform/environments/staging/main.tf").read_text(encoding="utf-8")
+    module_text = "\n".join(path.read_text(encoding="utf-8") for path in foundation.glob("*.tf"))
+    assert "not a Hetzner billing alert" in cost
+    assert "enable_server_backups" in variables
+    assert "enable_server_backups = true" not in staging
+    assert 'resource "hcloud_' in module_text
+    assert "hcloud_budget" not in module_text
+    assert "billing_alert" not in module_text.replace("is_billing_alert", "").replace(
+        "billing_alert_configured", ""
+    )
+
+
+def test_preflight_branch_base_is_recorded() -> None:
+    doc = (ROOT / "docs/launch/PHASE_03_04_FINAL_STAGING_PREFLIGHT.md").read_text(encoding="utf-8")
+    assert PREFLIGHT_BASE_SHA in doc
+    assert PREFLIGHT_BASE_TREE in doc
+    assert PR_172_HEAD_SHA in doc
+    assert PR_171_SHA in doc
+    assert PR_172_HEAD_IS_ANCESTOR is False
+    assert "not an ancestor" in doc
 
 
 def test_owner_dependencies_are_listed_for_the_preflight_doc() -> None:
@@ -198,6 +313,15 @@ def test_offline_preflight_script() -> None:
     assert report["monthly_eur_ex_vat"] == "35.95"
     assert report["defects"] == []
     assert report["spend_alert"]["severity"] == "at_ceiling"
+    assert report["spend_alert"]["is_billing_alert"] is False
+    assert report["cost_controls"]["billing_alert_configured"] is False
+    assert report["cost_controls"]["includes_vat"] is False
+    assert report["cost_controls"]["includes_backups"] is False
+    assert report["origin_client_certificate_enforced"] is False
+    assert "cloudflare_aop_ca_bundle" in report["origin_artifacts_missing"]
+    assert report["staging_provisioning"] == "NO-GO"
+    assert report["ancestry"]["preflight_base_sha"] == PREFLIGHT_BASE_SHA
+    assert report["ancestry"]["pr_172_head_is_ancestor"] is False
 
 
 @pytest.mark.skipif(shutil.which("terraform") is None, reason="terraform CLI not installed")

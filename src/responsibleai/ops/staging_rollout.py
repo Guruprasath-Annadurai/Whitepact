@@ -12,8 +12,12 @@ OWNER_GATE_PHRASE = "APPROVE STAGING CLOUD PROVISIONING"
 _SHA = re.compile(r"^[0-9a-f]{40}$")
 
 
-class StagingRolloutRefused(RuntimeError):
+class StagingRolloutRefusedError(RuntimeError):
     """The requested rollout step is not authorized."""
+
+
+# Existing callers and tests catch this name. It is the same refusal.
+StagingRolloutRefused = StagingRolloutRefusedError
 
 
 def assert_owner_gate(token: str) -> None:

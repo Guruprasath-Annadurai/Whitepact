@@ -15,14 +15,27 @@ sys.path.insert(0, str(ROOT / "src"))
 from responsibleai.ops.staging_cost import (  # noqa: E402
     STAGING_CEILING_CENTS,
     assess_spend,
+    cost_controls,
     optional_backup_eur,
     staging_lines,
     staging_monthly_cents,
 )
+from responsibleai.ops.staging_origin_protection import (  # noqa: E402
+    missing_artifact_ids,
+    origin_client_certificate_enforced,
+)
 from responsibleai.ops.staging_rollout import plan_deploy, plan_health, plan_rollback  # noqa: E402
 from responsibleai.ops.staging_scope import offline_record  # noqa: E402
 from responsibleai.ops.staging_secrets import blocked_names, review_staging_secrets  # noqa: E402
-from responsibleai.ops.staging_static import OWNER_DEPENDENCIES, isolation_defects  # noqa: E402
+from responsibleai.ops.staging_static import (  # noqa: E402
+    OWNER_DEPENDENCIES,
+    PR_171_SHA,
+    PR_172_HEAD_IS_ANCESTOR,
+    PR_172_HEAD_SHA,
+    PREFLIGHT_BASE_SHA,
+    PREFLIGHT_BASE_TREE,
+    isolation_defects,
+)
 
 
 def main() -> int:
@@ -48,7 +61,21 @@ def main() -> int:
             "severity": alert.severity,
             "blocks_apply": alert.blocks_apply,
             "action": alert.action,
+            "is_billing_alert": False,
         },
+        "cost_controls": cost_controls(),
+        "origin_client_certificate_enforced": origin_client_certificate_enforced(),
+        "origin_artifacts_missing": list(missing_artifact_ids()),
+        "ancestry": {
+            "preflight_base_sha": PREFLIGHT_BASE_SHA,
+            "preflight_base_tree": PREFLIGHT_BASE_TREE,
+            "pr_172_head_sha": PR_172_HEAD_SHA,
+            "pr_172_head_is_ancestor": PR_172_HEAD_IS_ANCESTOR,
+            "pr_171_sha": PR_171_SHA,
+            "pr_171_modified": False,
+            "foundation_hardening_merged": False,
+        },
+        "staging_provisioning": "NO-GO",
         "secrets_missing_in_this_process": list(blocked_names(secret_report)),
         "health": plan_health(None),
         "rollback_execute": plan_rollback("b" * 40, "c" * 40)["execute"],

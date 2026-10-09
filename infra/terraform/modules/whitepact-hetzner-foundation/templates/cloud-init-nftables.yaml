@@ -35,6 +35,7 @@ write_files:
       #!/usr/sbin/nft -f
       flush ruleset
       include "/etc/nftables.d/whitepact-tier.nft"
+${extra_write_files}
 runcmd:
   - [bash, -lc, "mkdir -p /etc/nftables.d"]
   - [bash, -lc, "nft -f /etc/nftables.conf"]
@@ -42,3 +43,4 @@ runcmd:
   - [systemctl, enable, nftables]
   - [systemctl, restart, nftables]
   - [bash, -lc, "systemctl reload ssh || systemctl reload sshd || true"]
+${extra_runcmd}

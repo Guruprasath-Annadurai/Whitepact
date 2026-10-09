@@ -10,7 +10,12 @@ from pathlib import Path
 
 from responsibleai.ops.backup_crypto import encrypt_dump
 from responsibleai.ops.r2_retention import BackupObject, plan_retention
-from responsibleai.ops.restore_flow import create_staging_sql, cutover_sql, drop_staging_sql, prepare_restore
+from responsibleai.ops.restore_flow import (
+    create_staging_sql,
+    cutover_sql,
+    drop_staging_sql,
+    prepare_restore,
+)
 
 _DUMP = b"-- PostgreSQL database dump\nCREATE TABLE evidence (id int);\n"
 
@@ -53,7 +58,9 @@ def rehearse_isolated_restore(work_dir: Path, *, secret: str) -> RestoreRehearsa
         BackupObject("oldest", now - timedelta(days=40), True),
         BackupObject("unviable", now - timedelta(days=2), False),
     ]
-    plan = plan_retention(objects, now=now, retain_days=30, min_recovery_points=2, destructive=False)
+    plan = plan_retention(
+        objects, now=now, retain_days=30, min_recovery_points=2, destructive=False
+    )
     newest_deleted = "newest" in plan.delete
     return RestoreRehearsal(
         scratch_database=prepared.staging_database,

@@ -111,6 +111,40 @@ def optional_backup_eur(book: dict[str, object] | None = None) -> str:
     return f"{eur:.3f}"
 
 
+def cost_controls(book: dict[str, object] | None = None) -> dict[str, object]:
+    """Separate the Terraform ceiling from billing alerts, VAT, and backups.
+
+    The ceiling is a static price-book comparison. It does not create a Hetzner
+    spending alert, does not add VAT, and does not include optional backups.
+    """
+    estimate = staging_monthly_cents(book)
+    backup = optional_backup_eur(book)
+    return {
+        "kind": "terraform_price_book_ceiling",
+        "estimated_cents": estimate,
+        "ceiling_cents": STAGING_CEILING_CENTS,
+        "includes_vat": False,
+        "includes_backups": False,
+        "is_billing_alert": False,
+        "billing_alert_configured": False,
+        "optional_backup_eur_ex_vat": backup,
+        "vat_rate_confirmed": False,
+        "hypothetical_de_vat_rate": "0.19",
+        "hypothetical_de_gross_eur": _de_gross_eur(estimate),
+        "billing_alert_note": (
+            "No Hetzner spending alert, budget, or invoice webhook is created by Terraform. "
+            "The console alert is an owner action and is not evidence that this ceiling fired."
+        ),
+    }
+
+
+def _de_gross_eur(cents_ex_vat: int) -> str:
+    from decimal import Decimal
+
+    gross = (Decimal(cents_ex_vat) * Decimal("1.19")) / Decimal(100)
+    return f"{gross:.4f}"
+
+
 def assess_spend(estimated_cents: int, ceiling_cents: int = STAGING_CEILING_CENTS) -> SpendAlert:
     if estimated_cents < 0 or ceiling_cents < 0:
         raise PriceBookError("Costs cannot be negative.")
@@ -130,8 +164,9 @@ def assess_spend(estimated_cents: int, ceiling_cents: int = STAGING_CEILING_CENT
             estimated_cents=estimated_cents,
             ceiling_cents=ceiling_cents,
             action=(
-                "The approved shape consumes the entire ceiling. Do not enable Hetzner backups, "
-                "volumes, a second server, or traffic beyond the included allowance without a new owner ceiling."
+                "The Terraform price-book estimate consumes the entire ceiling. "
+                "This is not a Hetzner billing alert and it excludes VAT. "
+                "Do not enable Hetzner backups, volumes, a second server, or traffic beyond the included allowance without a new owner ceiling."
             ),
         )
     if estimated_cents * 10 >= ceiling_cents * 8:

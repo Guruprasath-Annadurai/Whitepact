@@ -7,8 +7,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-class StagingAcceptanceRefused(RuntimeError):
+class StagingAcceptanceRefusedError(RuntimeError):
     """An offline result was presented as a live staging pass."""
+
+
+# Existing callers and tests catch this name. It is the same refusal.
+StagingAcceptanceRefused = StagingAcceptanceRefusedError
 
 
 @dataclass(frozen=True)
@@ -22,15 +26,15 @@ class AcceptanceRecord:
         if self.scope not in {"offline", "staging"}:
             raise StagingAcceptanceRefused("Acceptance scope must be offline or staging.")
         if self.scope == "offline" and self.live_staging_accepted:
-            raise StagingAcceptanceRefused(
-                "Offline test success is not staging acceptance."
-            )
+            raise StagingAcceptanceRefused("Offline test success is not staging acceptance.")
         if self.scope == "staging" and self.live_staging_accepted and not self.passed:
             raise StagingAcceptanceRefused("A failed live check cannot be accepted.")
 
 
 def offline_record(suite: str, *, passed: bool) -> AcceptanceRecord:
-    return AcceptanceRecord(suite=suite, scope="offline", passed=passed, live_staging_accepted=False)
+    return AcceptanceRecord(
+        suite=suite, scope="offline", passed=passed, live_staging_accepted=False
+    )
 
 
 def claim_staging_acceptance(record: AcceptanceRecord) -> None:

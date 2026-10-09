@@ -32,6 +32,20 @@ output "execution_private_ips" {
 }
 
 output "estimated_monthly_cents" {
-  description = "VAT-exclusive Hetzner estimate for this shape. -1 when a SKU is absent from the price book."
+  description = "Terraform price-book estimate in euro cents. VAT exclusive. Backups excluded unless enable_server_backups is true. Not a Hetzner billing alert. -1 when a SKU is absent from the price book."
   value       = local.estimated_monthly_cents
+}
+
+output "cost_control" {
+  description = "Separates the Terraform ceiling from billing alerts, VAT, and backups."
+  value = {
+    kind                     = "terraform_price_book_ceiling"
+    is_billing_alert         = false
+    billing_alert_configured = false
+    includes_vat             = false
+    includes_backups         = var.enable_server_backups
+    estimated_monthly_cents  = local.estimated_monthly_cents
+    ceiling_cents            = var.monthly_cost_ceiling_cents
+    backup_monthly_cents     = local.backup_monthly_cents
+  }
 }
