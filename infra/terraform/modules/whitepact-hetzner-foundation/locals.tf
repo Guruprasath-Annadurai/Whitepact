@@ -58,12 +58,10 @@ locals {
     "tcp dport 5432 ip saddr { ${var.saas_subnet_cidr}, ${var.execution_subnet_cidr} } accept",
     "tcp dport 22 ip saddr { ${local.mgmt_ssh_nft} } accept comment \"SSH via bastion\"",
   ])
-  # Backup and update endpoints belong in authority_egress_cidrs. A trailing
-  # "tcp dport 443 accept" made that allowlist dead whenever NAT was enabled:
-  # nftables is first-match, and the output chain's default is drop only for
-  # destinations that no earlier rule accepted. Do not add an unrestricted
-  # HTTPS accept here. Pinned DNS and NTP stay in infra_nft_output. They are
-  # not a substitute for the HTTPS allowlist.
+  # Backup and update endpoints belong in authority_egress_cidrs. An
+  # unrestricted HTTPS accept after the allowlist made that list dead under
+  # first-match nftables. Do not add one. Pinned DNS and NTP stay in
+  # infra_nft_output. They are not a substitute for the HTTPS allowlist.
   authority_nft_output = join("\n          ", concat(
     ["tcp dport 443 ip daddr { ${join(", ", var.authority_egress_cidrs)} } accept comment \"authority egress allowlist\""],
     local.infra_nft_output,
