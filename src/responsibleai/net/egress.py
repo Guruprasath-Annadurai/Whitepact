@@ -207,7 +207,11 @@ def normalize_and_validate_url(
             f"Target host {host!r} is a forbidden network address ({parsed_ip})"
         )
 
-    port = parsed.port
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise InvalidURLError(f"Invalid URL port: {exc}") from exc
+
     if port is None:
         port = 443 if parsed.scheme == "https" else 80
     elif not (1 <= port <= 65535):

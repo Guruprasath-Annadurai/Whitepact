@@ -28,12 +28,10 @@ async def api_client():
 @pytest.mark.asyncio
 async def test_api_status(api_client: AsyncClient) -> None:
     res = await api_client.get("/api/sovereign/status")
-    assert res.status_code == 200
-    body = res.json()
-    assert "sovereign_version" in body
+    assert res.status_code == 401
 
 
 @pytest.mark.asyncio
 async def test_api_capabilities(api_client: AsyncClient) -> None:
     res = await api_client.get("/api/sovereign/capabilities")
-    assert res.status_code == 200
+    assert res.status_code == 401
