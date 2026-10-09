@@ -277,8 +277,21 @@ async def _call_tool(
                 "message": "Hosted tool execution requires tenant-scoped governance. No action was taken.",
             }
         )
-    if usage_repo is not None and ctx is not None and ctx.org_id:
-        await usage_repo.record_call(ctx.org_id, name, ctx.plan.value, allowed=True)
+    if _current_hosted.get() and usage_repo is None and ctx is not None and ctx.org_id:
+        return _text_and_structured(
+            {
+                "error": "quota_enforcement_unavailable",
+                "message": (
+                    "Hosted tool execution requires usage metering before any action. "
+                    "No action was taken."
+                ),
+            }
+        )
+
+    async def _meter(allowed: bool) -> None:
+        if usage_repo is not None and ctx is not None and ctx.org_id:
+            await usage_repo.record_call(ctx.org_id, name, ctx.plan.value, allowed=allowed)
+
     if governance is not None and ctx is not None and ctx.org_id:
         # Local import: keeps the stdio transport's import graph free of
         # the DB/governance layer unless a hosted-HTTP connection with
@@ -288,6 +301,7 @@ async def _call_tool(
 
         purpose = call_arguments.get(WHITEPACT_PURPOSE_ARGUMENT)
         if not isinstance(purpose, str) or not purpose.strip():
+            await _meter(False)
             return _text_and_structured(
                 {
                     "error": "governance_purpose_required",
@@ -310,7 +324,9 @@ async def _call_tool(
             name, governed_arguments, ctx, governance, purpose=purpose.strip()
         )
         if not outcome.proceed:
+            await _meter(False)
             return _text_and_structured(outcome.blocked_response or {"error": "governance_blocked"})
+        await _meter(True)
         # apply_governance() already ran the tool via InternalToolExecutor
         # once it had a valid ExecutionAuthorization — outcome.result is
         # that result. Calling dispatch_tool() again here would both
