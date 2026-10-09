@@ -63,7 +63,8 @@ class TestSecurityHeadersMiddleware:
         assert resp.headers["X-Content-Type-Options"] == "nosniff"
         assert resp.headers["X-Frame-Options"] == "DENY"
         assert "Content-Security-Policy" in resp.headers
-        assert "Strict-Transport-Security" in resp.headers
+        hsts = resp.headers.get("Strict-Transport-Security", "")
+        assert "max-age=31536000" not in hsts
 
     def test_whitepact_spa_uses_strict_csp(self):
         app = FastAPI()

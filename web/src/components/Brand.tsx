@@ -3,10 +3,10 @@
 import { Link } from "react-router-dom";
 import { publicAsset } from "../lib/assets";
 
-export function Brand({ compact = false }: { compact?: boolean }) {
+export function Brand({ compact = false, optimized = false }: { compact?: boolean; optimized?: boolean }) {
   return (
     <Link className={`wp-brand ${compact ? "wp-brand--compact" : ""}`} to="/" aria-label="WhitePact home">
-      <img src={publicAsset("whitepact-wordmark.png")} alt="WhitePact" />
+      {optimized ? <picture><source type="image/webp" srcSet={publicAsset("whitepact-wordmark.webp")} /><img src={publicAsset("whitepact-wordmark.png")} alt="WhitePact" width={1200} height={388} /></picture> : <img src={publicAsset("whitepact-wordmark.png")} alt="WhitePact" />}
     </Link>
   );
 }

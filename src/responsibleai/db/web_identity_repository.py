@@ -351,6 +351,9 @@ class WebIdentityRepository:
             ).fetchone()
             if session is None:
                 return None
+            idle = getattr(session, "inactivity_expires_at", None)
+            if idle and idle <= _iso(now):
+                return None
             user = (
                 await conn.execute(
                     select(web_users).where(
@@ -388,7 +391,7 @@ class WebIdentityRepository:
                 if org is None:
                     return None
                 gov = getattr(org, "governance_status", "ACTIVE") or "ACTIVE"
-                if gov == "DISABLED" or gov == "SUSPENDED":
+                if gov != "ACTIVE" or getattr(org, "deactivated_at", None):
                     return None
             await conn.execute(
                 update(web_sessions)

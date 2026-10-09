@@ -157,6 +157,40 @@ class Settings(BaseSettings):
         ),
         description="Deployment environment (development, staging, production).",
     )
+    hsts_stage: Literal["disabled", "initial", "stage1", "stage2"] | None = Field(
+        default=None,
+        validation_alias=AliasChoices("WHITEPACT_HSTS_STAGE", "RAI_HSTS_STAGE"),
+        description=(
+            "Authoritative HSTS stage. Unset uses stage1 in production and "
+            "disabled in every other environment. Year-long max-age is not a default."
+        ),
+    )
+    hsts_include_subdomains: bool | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "WHITEPACT_HSTS_INCLUDE_SUBDOMAINS",
+            "RAI_HSTS_INCLUDE_SUBDOMAINS",
+        ),
+        description="Override includeSubDomains. Unset follows the stage default.",
+    )
+    hsts_preload: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("WHITEPACT_HSTS_PRELOAD", "RAI_HSTS_PRELOAD"),
+        description="Request the HSTS preload token. Ignored unless preload is authorized.",
+    )
+    hsts_preload_authorized: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "WHITEPACT_HSTS_PRELOAD_AUTHORIZED",
+            "RAI_HSTS_PRELOAD_AUTHORIZED",
+        ),
+        description="Owner authorization required before preload is emitted.",
+    )
+    robots_noindex: bool | None = Field(
+        default=None,
+        validation_alias=AliasChoices("WHITEPACT_ROBOTS_NOINDEX", "RAI_ROBOTS_NOINDEX"),
+        description="Unset follows the environment: staging sends noindex, production does not.",
+    )
 
     # PostgreSQL (optional — defaults to SQLite via db_path)
     database_url: str | None = Field(
@@ -206,6 +240,20 @@ class Settings(BaseSettings):
             "and remains a distinct, documented trust domain."
         ),
     )
+    mcp_trust_domain: Literal["community", "enterprise"] = Field(
+        default="community",
+        validation_alias=AliasChoices(
+            "mcp_trust_domain",
+            "WHITEPACT_MCP_TRUST_DOMAIN",
+            "RAI_MCP_TRUST_DOMAIN",
+        ),
+        description=(
+            "MCP stdio entrypoint trust domain. 'community' (default): "
+            "documented local self-hosted stdio without organizational governance. "
+            "'enterprise': stdio MCP refuses to start; use hosted MCP with "
+            "mcp_governance_enabled and tenant-scoped credentials."
+        ),
+    )
 
     # Redis (optional — falls back to in-memory rate limiting)
     redis_url: str | None = Field(
@@ -220,14 +268,11 @@ class Settings(BaseSettings):
             "Set true when running more than one instance of this process "
             "(load-balanced replicas, Kubernetes with replicas>1, etc.). "
             "Purely a self-declaration for a startup readiness check — it "
-            "does not itself change any behavior. In-memory rate limiting "
+            "does not itself change counter storage. In-memory rate limiting "
             "and SQLite each give per-instance-only state, which is silently "
-            "wrong (not just slow) once more than one instance shares "
-            "traffic: each replica enforces its own separate rate-limit "
-            "counter and its own separate database. Declaring this lets "
-            "startup warn loudly about that instead of the failure mode "
-            "being 'requests occasionally get 2x the intended rate limit "
-            "and no one knows why.'"
+            "wrong once more than one instance shares traffic. Production "
+            "refuses to start when this flag is set and those backends are "
+            "not shared. Non-production logs a warning."
         ),
     )
 
@@ -584,6 +629,13 @@ class Settings(BaseSettings):
         raise ValueError("web_verification_delivery_url must use HTTPS outside local development")
 
     @model_validator(mode="after")
+    def _enforce_mcp_trust_domain(self) -> Settings:
+        from responsibleai.mcp.trust_domain import assert_production_mcp_trust_domain
+
+        assert_production_mcp_trust_domain(self)
+        return self
+
+    @model_validator(mode="after")
     def _enforce_paddle_environment(self) -> Settings:
         """Keep Paddle credentials and API traffic in one explicit environment."""
         if not self.paddle_api_key:
@@ -700,6 +752,19 @@ def multi_replica_problems(db_backend: str, rate_limit_backend: str) -> list[str
             "across replicas."
         )
     return problems
+
+
+def enforce_shared_backends_for_multi_replica(*, production: bool, problems: list[str]) -> None:
+    """Production must not advertise a shared ceiling it cannot enforce.
+
+    Non-production keeps the warning path so local SQLite work is possible.
+    """
+    if production and problems:
+        raise RuntimeError(
+            "Refusing to start production with multi-replica mode while "
+            "shared backends are missing. Each replica would enforce its "
+            "own counters. " + " ".join(problems)
+        )
 
 
 _settings: Settings | None = None

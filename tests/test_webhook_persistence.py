@@ -392,7 +392,8 @@ class TestWebhookConfigRepository:
 
         assert len(manager.list_webhooks(org_id="org-a")) == 2
         assert len(manager.list_webhooks(org_id="org-b")) == 1
-        assert len(manager.list_webhooks()) == 3
+        assert manager.list_webhooks() == []
+        assert manager.platform_webhook_count() == 3
 
 
 # ── per-org rate limit key function ──────────────────────────────────────────

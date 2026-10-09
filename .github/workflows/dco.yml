@@ -1,14 +1,17 @@
 name: DCO
 
 # Enforces CONTRIBUTING.md's Developer Certificate of Origin requirement:
-# every commit in a PR must carry a real "Signed-off-by:" trailer (from
-# `git commit -s`). Implemented as a plain shell check rather than a
-# third-party GitHub App/Action so it needs no external installation and
-# stays fully inspectable in this repo.
+# every non-merge commit in a PR must carry a real "Signed-off-by:" trailer
+# (from `git commit -s`). Two exact historical SHAs are owner-approved
+# exceptions recorded in compliance/DCO_HISTORICAL_EXCEPTION_2026-10-09.md.
+# An exception is not a sign-off. There is no date, author, or bot exemption.
+# Implemented as a plain shell check rather than a third-party GitHub
+# App/Action so it needs no external installation and stays fully
+# inspectable in this repo.
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, cursor/whitepact-rc-remediation-b6a9]
 
 permissions:
   contents: read
@@ -24,11 +27,14 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Check every commit is signed off
+        env:
+          DCO_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          DCO_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
 
-          base="${{ github.event.pull_request.base.sha }}"
-          head="${{ github.event.pull_request.head.sha }}"
+          base="${DCO_BASE_SHA}"
+          head="${DCO_HEAD_SHA}"
 
           # Non-merge commits introduced by this PR.
           commits=$(git rev-list --no-merges "${base}..${head}")
@@ -40,6 +46,15 @@ jobs:
 
           missing=0
           for sha in $commits; do
+            # Owner-approved on 2026-10-09. Exact SHAs only. Not a sign-off.
+            case "$sha" in
+              015fab741427a5a9cae5bca7adaa9729c78da9e5|681ce9566f0ef9b68b6fc97212cc2fb7a44135e3)
+                echo "Owner-approved historical DCO exception for ${sha}."
+                echo "This exception is not a Signed-off-by trailer."
+                echo "Record: compliance/DCO_HISTORICAL_EXCEPTION_2026-10-09.md"
+                continue
+                ;;
+            esac
             msg=$(git log -1 --format=%B "$sha")
             if ! echo "$msg" | grep -qE '^Signed-off-by: .+ <.+@.+>$'; then
               echo "::error::Commit $sha is missing a 'Signed-off-by:' trailer."
@@ -54,7 +69,8 @@ jobs:
             echo "  git commit --amend -s          # most recent commit"
             echo "  git rebase --exec 'git commit --amend --no-edit -s' -i ${base}"
             echo "See CONTRIBUTING.md's DCO section for details."
+            echo "Do not amend 015fab741427a5a9cae5bca7adaa9729c78da9e5 or 681ce9566f0ef9b68b6fc97212cc2fb7a44135e3."
             exit 1
           fi
 
-          echo "All commits are signed off."
+          echo "DCO check passed."
