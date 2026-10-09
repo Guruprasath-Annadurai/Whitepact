@@ -15,6 +15,7 @@ Claims below are limited to what this repository and the recorded CI run support
 | SOC 2, ISO, or similar certification | No | Not in this review | Badges |
 | Named customers or design partners | No | Not supplied | Logos |
 | Uptime SLO | No | Proposal only in Phase 6 | 99.9% on the site |
+| Local `whitepact-mcp` stdio is governed or tenant-protected | No | `docs/launch/LOCAL_STDIO_MCP_SCOPE.md` | Calling community stdio a control, a firewall, or protected execution |
 
 ## Supported integrations the docs already name
 

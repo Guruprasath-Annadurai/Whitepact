@@ -353,6 +353,9 @@ async def _run_stdio() -> None:
 
 
 def _run_stdio_main_body() -> None:
+    from responsibleai.mcp.trust_domain import write_community_stdio_boundary
+
+    write_community_stdio_boundary()
     _logger.info("starting %s v1.2.0 (stdio)", server.name)
     _log_invocation_name("stdio server")
     asyncio.run(_run_stdio())
