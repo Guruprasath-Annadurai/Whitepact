@@ -30,7 +30,7 @@ Required with the approval:
 - Hetzner project and token location
 - Admin CIDR
 - Confirmation that 35.95 EUR/month ex VAT plus tax is acceptable
-- Whether optional backups (~7.19 EUR/month ex VAT in the cost plan) are in or out
+- Whether optional server backups (5.592 EUR/month ex VAT, 20% of the four server SKUs) are in or out. They are outside the 35.95 ceiling.
 - Statement that production remains unapproved
 
 ## If the owner refuses

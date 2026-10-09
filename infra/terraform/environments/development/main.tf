@@ -27,6 +27,7 @@ module "foundation" {
   admin_cidr_allowlist   = var.admin_cidr_allowlist
   execution_egress_cidrs = var.execution_egress_cidrs
   authority_egress_cidrs = var.authority_egress_cidrs
+  saas_egress_cidrs      = var.saas_egress_cidrs
   labels = {
     cost_tier = "dev-minimum"
   }

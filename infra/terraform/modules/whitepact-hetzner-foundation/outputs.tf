@@ -30,3 +30,8 @@ output "authority_private_ip" {
 output "execution_private_ips" {
   value = [for s in hcloud_server.execution : one([for n in s.network : n.ip])]
 }
+
+output "estimated_monthly_cents" {
+  description = "VAT-exclusive Hetzner estimate for this shape. -1 when a SKU is absent from the price book."
+  value       = local.estimated_monthly_cents
+}

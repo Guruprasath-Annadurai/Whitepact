@@ -17,3 +17,8 @@ variable "authority_egress_cidrs" {
   type    = list(string)
   default = ["10.255.0.1/32"]
 }
+
+variable "saas_egress_cidrs" {
+  type    = list(string)
+  default = ["10.255.0.3/32"]
+}

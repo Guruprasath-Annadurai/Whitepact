@@ -81,12 +81,25 @@ variable "admin_cidr_allowlist" {
   description = "CIDRs permitted for SSH/bastion (no 0.0.0.0/0 on database paths)"
   type        = list(string)
   default     = []
+
+  validation {
+    condition = alltrue([
+      for cidr in var.admin_cidr_allowlist :
+      cidr != "0.0.0.0/0" && cidr != "::/0"
+    ])
+    error_message = "admin_cidr_allowlist must not contain 0.0.0.0/0 or ::/0."
+  }
 }
 
 variable "admin_ssh_key_ids" {
   description = "Hetzner SSH key IDs installed on administered servers. A key that exists only in the project is not installed unless listed here."
   type        = list(string)
   default     = []
+
+  validation {
+    condition     = var.environment == "development" || length(var.admin_ssh_key_ids) > 0
+    error_message = "staging and production require at least one admin SSH key id."
+  }
 }
 
 variable "saas_server_type" {
@@ -118,23 +131,88 @@ variable "execution_egress_cidrs" {
   validation {
     condition = (
       !var.enable_execution_egress_allowlist
-      || length(var.execution_egress_cidrs) > 0
+      || (
+        length(var.execution_egress_cidrs) > 0
+        && alltrue([
+          for cidr in var.execution_egress_cidrs :
+          cidr != "0.0.0.0/0" && cidr != "::/0"
+        ])
+      )
     )
-    error_message = "execution_egress_cidrs must be non-empty when enable_execution_egress_allowlist is true (fail closed)."
+    error_message = "execution_egress_cidrs must be a non-empty explicit allowlist when enable_execution_egress_allowlist is true (no 0.0.0.0/0 or ::/0)."
   }
 }
 
 variable "authority_egress_cidrs" {
-  description = "Permitted outbound HTTPS destinations for authority tier (updates, telemetry, R2 backup API endpoints)."
+  description = "Permitted outbound HTTPS destinations for authority tier (updates, telemetry, R2 backup API endpoints). NAT does not widen this list."
   type        = list(string)
   default     = ["10.255.0.1/32"]
 
   validation {
     condition = (
       length(var.authority_egress_cidrs) > 0
-      && !contains(var.authority_egress_cidrs, "0.0.0.0/0")
+      && alltrue([
+        for cidr in var.authority_egress_cidrs :
+        cidr != "0.0.0.0/0" && cidr != "::/0"
+      ])
     )
-    error_message = "authority_egress_cidrs must be a non-empty explicit allowlist (no 0.0.0.0/0)."
+    error_message = "authority_egress_cidrs must be a non-empty explicit allowlist (no 0.0.0.0/0 or ::/0)."
+  }
+}
+
+variable "saas_egress_cidrs" {
+  description = "Permitted outbound HTTP(S) destinations for the SaaS tier. Enabling the NAT gateway does not open 0.0.0.0/0."
+  type        = list(string)
+  default     = ["10.255.0.3/32"]
+
+  validation {
+    condition = (
+      length(var.saas_egress_cidrs) > 0
+      && alltrue([
+        for cidr in var.saas_egress_cidrs :
+        cidr != "0.0.0.0/0" && cidr != "::/0"
+      ])
+    )
+    error_message = "saas_egress_cidrs must be a non-empty explicit allowlist (no 0.0.0.0/0 or ::/0)."
+  }
+}
+
+variable "dns_resolver_cidrs" {
+  description = "Recursive resolvers private nodes may query. Defaults are Hetzner public DNS."
+  type        = list(string)
+  default     = ["185.12.64.1/32", "185.12.64.2/32"]
+
+  validation {
+    condition = alltrue([
+      for cidr in var.dns_resolver_cidrs :
+      cidr != "0.0.0.0/0" && cidr != "::/0"
+    ])
+    error_message = "dns_resolver_cidrs must not contain 0.0.0.0/0 or ::/0."
+  }
+}
+
+variable "ntp_server_cidrs" {
+  description = "NTP servers private nodes may query. Defaults are Cloudflare time anycast."
+  type        = list(string)
+  default     = ["162.159.200.1/32", "162.159.200.123/32"]
+
+  validation {
+    condition = alltrue([
+      for cidr in var.ntp_server_cidrs :
+      cidr != "0.0.0.0/0" && cidr != "::/0"
+    ])
+    error_message = "ntp_server_cidrs must not contain 0.0.0.0/0 or ::/0."
+  }
+}
+
+variable "monthly_cost_ceiling_cents" {
+  description = "Maximum estimated monthly Hetzner charge in euro cents, VAT exclusive. 0 disables the check. Staging sets 3595 (35.95 EUR)."
+  type        = number
+  default     = 0
+
+  validation {
+    condition     = var.monthly_cost_ceiling_cents >= 0
+    error_message = "monthly_cost_ceiling_cents must be zero or positive."
   }
 }
 

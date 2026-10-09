@@ -13,6 +13,7 @@ venv/
 !.env.prod.example
 *.json
 !scripts/cloud/gate2/edge-contract.json
+!infra/terraform/modules/whitepact-hetzner-foundation/pricing/hetzner-fsn1.json
 !docs/launch/evidence/*.json
 !web/src/content/commerce.json
 !web/src/content/corporate.json

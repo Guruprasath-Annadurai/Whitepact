@@ -23,8 +23,10 @@ module "foundation" {
   authority_server_type  = var.authority_server_type
   execution_server_type  = var.execution_server_type
   admin_cidr_allowlist   = var.admin_cidr_allowlist
+  admin_ssh_key_ids      = var.admin_ssh_key_ids
   execution_egress_cidrs = var.execution_egress_cidrs
   authority_egress_cidrs = var.authority_egress_cidrs
+  saas_egress_cidrs      = var.saas_egress_cidrs
   labels = {
     cost_tier = "production"
   }

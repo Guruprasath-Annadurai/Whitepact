@@ -10,7 +10,7 @@ Hetzner Cloud Firewalls **do not secure private Cloud Network traffic** ([Firewa
 | In | TCP **8765** from LB (health) |
 | In | TCP **8765/8766** from saas subnet (internal) |
 | In | TCP **22** from NAT gateway private IP only |
-| Out | PostgreSQL, Redis, **80/443** (egress via NAT) |
+| Out | PostgreSQL, Redis, HTTP(S) only to `saas_egress_cidrs`, DNS and NTP to pinned resolvers, DHCP renew |
 
 ## PostgreSQL authority (private)
 
@@ -18,7 +18,7 @@ Hetzner Cloud Firewalls **do not secure private Cloud Network traffic** ([Firewa
 |-----------|--------|
 | In | TCP **5432** from saas + execution subnets |
 | In | TCP **22** from NAT gateway only |
-| Out | TCP **443** (R2 backup + updates via NAT) |
+| Out | TCP **443** only to `authority_egress_cidrs`, plus pinned DNS and NTP. NAT does not add a world-wide HTTPS accept. |
 
 No inbound Internet exposure.
 
@@ -27,13 +27,13 @@ No inbound Internet exposure.
 | Direction | Allow |
 |-----------|--------|
 | In | TCP **22** from NAT gateway only |
-| Out | PostgreSQL to authority; **443** to `execution_egress_cidrs` when allowlist enabled |
+| Out | PostgreSQL to authority; **443** to `execution_egress_cidrs` when allowlist enabled; pinned DNS and NTP |
 
 ## NAT / management gateway (public Primary IPv4)
 
 | Layer | Control |
 |-------|---------|
 | Hetzner Cloud Firewall | SSH **22** from operator `/32` only |
-| Host nftables | Forward + masquerade; input SSH from operator CIDR |
+| Host nftables | Masquerade, SSH from the operator CIDR, and forward only to the tier allowlists plus pinned DNS and NTP. Rules are loaded from `/etc/nftables.conf`. |
 
 Reproduced by Terraform module + `cloud-init-nat-gateway.yaml`.

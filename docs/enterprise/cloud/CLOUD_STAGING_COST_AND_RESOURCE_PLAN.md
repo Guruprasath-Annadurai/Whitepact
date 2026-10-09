@@ -24,7 +24,7 @@
 
 | Item | EUR/mo ex VAT | Notes |
 |------|---------------|--------|
-| Hetzner backups (×4 servers) | ~7.19 | 20% × (8.49+8.49+5.49+5.49) per [billing FAQ](https://docs.hetzner.com/cloud/billing/faq/) |
+| Hetzner backups (×4 servers) | **5.592** | 20% of server SKUs only: 0.20 × (8.49+8.49+5.49+5.49). Not 20% of the 35.95 subtotal. |
 | Volume 20 GB | ~1.14 | €0.0572/GB-mo (adjustment table) |
 | Cloudflare **Pro** | ~€20 | **Optional only** — not required for AOP / Full (strict) / Universal SSL ([AOP docs](https://developers.cloudflare.com/ssl/origin-configuration/authenticated-origin-pull/)) |
 | R2 | ~$0 staging | [R2 free tier](https://developers.cloudflare.com/r2/pricing/) |

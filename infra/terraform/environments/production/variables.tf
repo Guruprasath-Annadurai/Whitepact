@@ -29,3 +29,13 @@ variable "execution_egress_cidrs" {
 variable "authority_egress_cidrs" {
   type = list(string)
 }
+
+variable "saas_egress_cidrs" {
+  description = "Explicit SaaS HTTP(S) destinations. Required before any production plan."
+  type        = list(string)
+}
+
+variable "admin_ssh_key_ids" {
+  description = "Hetzner SSH key IDs. Production servers are not created without one."
+  type        = list(string)
+}

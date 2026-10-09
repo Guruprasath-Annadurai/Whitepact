@@ -52,6 +52,9 @@ resource "hcloud_network_route" "default_via_nat" {
   network_id  = hcloud_network.private.id
   destination = "0.0.0.0/0"
   gateway     = local.nat_private_ip
+
+  # The gateway IP is not routable until the NAT server is attached.
+  depends_on = [hcloud_server.nat_gateway]
 }
 
 # Hetzner Cloud Firewalls cannot be applied to servers without a public network interface
@@ -96,8 +99,9 @@ resource "hcloud_server" "nat_gateway" {
 
   user_data = templatefile("${path.module}/templates/cloud-init-nat-gateway.yaml", {
     admin_cidrs   = local.admin_cidr_nft
-    public_iface  = "eth0"
-    private_iface = "enp7s0"
+    public_iface  = local.nat_public_iface
+    private_iface = local.nat_private_iface
+    forward_rules = local.nat_forward_rules
   })
 
   public_net {
@@ -141,6 +145,8 @@ resource "hcloud_server" "saas" {
   }
 
   firewall_ids = var.saas_public_ipv4 ? [hcloud_firewall.saas_public[0].id] : []
+
+  depends_on = [hcloud_network_subnet.saas, hcloud_network_route.default_via_nat]
 }
 
 resource "hcloud_server" "authority" {
@@ -167,6 +173,7 @@ resource "hcloud_server" "authority" {
     ip         = cidrhost(var.authority_subnet_cidr, 10)
   }
 
+  depends_on = [hcloud_network_subnet.authority, hcloud_network_route.default_via_nat]
 }
 
 resource "hcloud_server" "execution" {
@@ -194,6 +201,7 @@ resource "hcloud_server" "execution" {
     ip         = cidrhost(var.execution_subnet_cidr, 10 + count.index)
   }
 
+  depends_on = [hcloud_network_subnet.execution, hcloud_network_route.default_via_nat]
 }
 
 resource "hcloud_load_balancer" "saas" {
@@ -207,6 +215,8 @@ resource "hcloud_load_balancer_network" "saas" {
   load_balancer_id = hcloud_load_balancer.saas.id
   network_id       = hcloud_network.private.id
   ip               = cidrhost(var.saas_subnet_cidr, 5)
+
+  depends_on = [hcloud_network_subnet.saas]
 }
 
 resource "hcloud_load_balancer_target" "saas" {
@@ -215,6 +225,8 @@ resource "hcloud_load_balancer_target" "saas" {
   load_balancer_id = hcloud_load_balancer.saas.id
   server_id        = hcloud_server.saas[count.index].id
   use_private_ip   = true
+
+  depends_on = [hcloud_load_balancer_network.saas]
 }
 
 resource "hcloud_load_balancer_service" "public" {
