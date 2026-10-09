@@ -78,6 +78,21 @@ class TestTrustDimension:
         assert result.allowed is False
         assert any("no Trust Index record" in r for r in result.reasons)
 
+    def test_trust_lookup_error_fails_closed(self) -> None:
+        failed = TrustCheckResult(
+            model="partner-agent",
+            provider="acme-corp",
+            known=False,
+            trust_score=None,
+            certified=False,
+            has_reported_incidents=False,
+            error="connection refused",
+        )
+        gate = A2ATrustGate(min_score=0, client=_client_returning(failed))
+        result = gate.check("partner-agent", "acme-corp", BENIGN_MESSAGE)
+        assert result.allowed is False
+        assert any("trust lookup unavailable" in r for r in result.reasons)
+
     def test_unknown_agent_blocked_when_require_known(self) -> None:
         gate = A2ATrustGate(
             min_score=70, require_known=True, client=_client_returning(_unknown_result())
