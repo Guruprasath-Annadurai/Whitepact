@@ -84,15 +84,27 @@ def _build_provider(provider: str, model: str | None) -> object:
     sys.exit(1)
 
 
+def _cli_product_name() -> str:
+    """WhitePact when this runner is mounted on the product CLI."""
+    ctx = click.get_current_context(silent=True)
+    while ctx is not None and ctx.parent is not None:
+        ctx = ctx.parent
+    if ctx is not None and ctx.info_name == "whitepact":
+        return "WhitePact"
+    return "BiasBuster"
+
+
 def _print_suite_result(suite: SuiteResult) -> None:
     color = SEVERITY_COLORS.get(
         suite.probe_results[0].severity if suite.probe_results else "none", "white"
     )
 
+    product = _cli_product_name()
+    title = "BiasBuster Report" if product == "BiasBuster" else "WhitePact bias report"
     console.print()
     console.print(
         Panel.fit(
-            f"[bold]BiasBuster Report[/]\n"
+            f"[bold]{title}[/]\n"
             f"Provider: [cyan]{suite.provider_name}[/] · Model: [cyan]{suite.model_name}[/]\n"
             f"Overall score: [{color}]{suite.overall_score:.4f}[/]  "
             f"Status: {'[green]PASSED[/]' if suite.passed else '[red]FAILED[/]'}",
@@ -182,8 +194,10 @@ def run(
     built_provider = _build_provider(provider, model)
 
     if not quiet:
+        product = _cli_product_name()
+        banner = "BiasBuster" if product == "BiasBuster" else "WhitePact"
         console.print(
-            f"\n[bold cyan]BiasBuster[/] running [bold]{', '.join(probe_names)}[/] "
+            f"\n[bold cyan]{banner}[/] running [bold]{', '.join(probe_names)}[/] "
             f"against [bold]{provider}[/] / [bold]{model or 'default'}[/] …\n"
         )
 
@@ -204,7 +218,7 @@ def run(
                 console.print(f"\n[dim]JSON report saved to {json_path}[/]")
         if fmt in ("html", "both"):
             html_path = base.with_suffix(".html")
-            HtmlReporter().save(suite, html_path)
+            HtmlReporter(product=_cli_product_name()).save(suite, html_path)
             if not quiet:
                 console.print(f"[dim]HTML report saved to {html_path}[/]")
 

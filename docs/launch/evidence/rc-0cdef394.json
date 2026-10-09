@@ -1,0 +1,12 @@
+{
+  "note": "Partial packet for SHA 0cdef3947503adf7c3f08a5116a4808deda1d3f7. GitHub Actions success is not an independent qualification and does not cover the successor memory-scope fix.",
+  "evidence": [
+    {
+      "gate_id": "ci.canonical",
+      "kind": "github_actions",
+      "status": "ACCEPTED",
+      "artifact": "https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/37900487645",
+      "sha": "0cdef3947503adf7c3f08a5116a4808deda1d3f7"
+    }
+  ]
+}

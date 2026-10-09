@@ -56,6 +56,10 @@ class ReasonCode(StrEnum):
     UNAPPROVED_MCP_SERVER = "UNAPPROVED_MCP_SERVER"
     TARGET_QUARANTINED = "TARGET_QUARANTINED"
     TRUST_ASSESSMENT_STALE = "TRUST_ASSESSMENT_STALE"
+    # Lookup failed (timeout, transport error, non-success HTTP) and no
+    # fresh Trust Index result exists. Distinct from an unknown model,
+    # which is a successful response with known=false.
+    TRUST_LOOKUP_UNAVAILABLE = "TRUST_LOOKUP_UNAVAILABLE"
     GOVERNANCE_DEPENDENCY_UNAVAILABLE = "GOVERNANCE_DEPENDENCY_UNAVAILABLE"
     APPROVAL_REQUIRED = "APPROVAL_REQUIRED"
     APPROVAL_EXPIRED = "APPROVAL_EXPIRED"
