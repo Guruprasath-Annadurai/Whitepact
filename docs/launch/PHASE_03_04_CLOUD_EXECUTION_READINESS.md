@@ -29,6 +29,10 @@ Terraform v1.9.8, `init -backend=false -input=false`, then `validate`, for devel
 
 No Hetzner, Cloudflare, or Google credential was used. A plan would refresh live state and was not run.
 
+## Local image smoke, not a staging deploy
+
+`docker build -t whitepact-phase3-smoke:local .` completed on this workstation. Image `1f9d9e7a62f9`. `docker run --rm --entrypoint id` printed `uid=1001(appuser)`. The same image has no `/var/run/docker.sock` and `os.geteuid()` is not 0. This does not deploy the image, open a port, or prove worker-to-authority isolation on Hetzner.
+
 ## Isolation as written, not as proven live
 
 - Authority and execution servers have `ipv4_enabled = false`.
