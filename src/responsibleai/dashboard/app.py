@@ -57,6 +57,8 @@ from responsibleai.billing import (
     PaddleBillingService,
     PaddleCheckoutRequest,
     PaddleNotConfiguredError,
+    PaddleWebhookRejected,
+    verify_paddle_webhook_signature,
     StripeBillingError,
     StripeNotConfiguredError,
     StripeService,
@@ -3984,33 +3986,16 @@ async def paddle_webhook(request: Request) -> dict[str, Any]:
 
     raw_body = await request.body()
     sig_header = request.headers.get("paddle-signature", "")
-    if not sig_header:
-        raise HTTPException(400, "Missing Paddle-Signature header.")
-
-    sig_parts = dict(re.findall(r"([a-z0-9_]+)=([^;]+)", sig_header))
-    ts_str = sig_parts.get("ts")
-    h1 = sig_parts.get("h1")
-    if not ts_str or not h1:
-        raise HTTPException(400, "Malformed Paddle-Signature header.")
-
-    try:
-        ts = int(ts_str)
-    except ValueError:
-        raise HTTPException(400, "Invalid timestamp in Paddle-Signature header.") from None
-
     tolerance = getattr(settings, "paddle_signature_tolerance_seconds", 300)
-    now_ts = int(datetime.now(UTC).timestamp())
-    if (now_ts - ts) > tolerance:
-        raise HTTPException(400, f"Paddle webhook signature has expired (> {tolerance}s).")
-    if (ts - now_ts) > tolerance:
-        raise HTTPException(
-            400, f"Paddle webhook signature timestamp is in the future (> {tolerance}s)."
+    try:
+        verify_paddle_webhook_signature(
+            secret_key,
+            raw_body,
+            sig_header,
+            tolerance_seconds=tolerance,
         )
-
-    signed_payload = f"{ts_str}:".encode() + raw_body
-    computed_sig = hmac.new(secret_key.encode("utf-8"), signed_payload, hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(computed_sig, h1):
-        raise HTTPException(400, "Invalid Paddle webhook signature.")
+    except PaddleWebhookRejected as exc:
+        raise HTTPException(exc.status_code, exc.detail) from None
 
     try:
         payload = json.loads(raw_body.decode("utf-8"))

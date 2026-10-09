@@ -6,6 +6,8 @@ from responsibleai.billing.paddle_service import (
     PaddleBillingService,
     PaddleCheckoutRequest,
     PaddleNotConfiguredError,
+    PaddleWebhookRejected,
+    verify_paddle_webhook_signature,
 )
 from responsibleai.billing.stripe_service import (
     StripeBillingError,
@@ -19,6 +21,8 @@ __all__ = [
     "PaddleBillingService",
     "PaddleCheckoutRequest",
     "PaddleNotConfiguredError",
+    "PaddleWebhookRejected",
+    "verify_paddle_webhook_signature",
     "StripeBillingError",
     "StripeNotConfiguredError",
     "StripeService",

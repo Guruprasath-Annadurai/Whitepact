@@ -51,3 +51,5 @@ jobs:
         run: |
           terraform init -backend=false
           terraform validate
+      - name: Offline preflight (cost ceiling, isolation, no secret values)
+        run: python3 scripts/cloud/staging/preflight_offline.py
