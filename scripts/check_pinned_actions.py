@@ -11,6 +11,7 @@ action refs after the repository has been hardened.
 
 from __future__ import annotations
 
+import argparse
 import re
 from pathlib import Path
 
@@ -40,10 +41,18 @@ def unpinned_references(text: str, *, label: str = "workflow") -> list[str]:
     return failures
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--workflows",
+        type=Path,
+        default=WORKFLOWS,
+        help="Directory of workflow files. Defaults to .github/workflows.",
+    )
+    args = parser.parse_args(argv)
     failures: list[str] = []
 
-    for path in sorted(WORKFLOWS.glob("*.y*ml")):
+    for path in sorted(args.workflows.glob("*.y*ml")):
         failures.extend(unpinned_references(path.read_text(encoding="utf-8"), label=str(path)))
 
     if failures:
