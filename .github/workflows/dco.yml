@@ -11,7 +11,7 @@ name: DCO
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, cursor/whitepact-rc-remediation-b6a9]
 
 permissions:
   contents: read

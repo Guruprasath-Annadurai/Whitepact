@@ -28,7 +28,7 @@ jobs:
             echo "Owner Gate 1 acknowledgement required." >&2
             exit 1
           fi
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.event.inputs.git_sha }}
       - name: Record provenance
@@ -43,7 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging-cloud
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.event.inputs.git_sha }}
       - name: Validate Terraform staging root (no apply)
