@@ -12,6 +12,7 @@ import re
 import subprocess
 from pathlib import Path
 
+import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -60,6 +61,67 @@ def _run_check(repo: Path, base: str, head: str) -> subprocess.CompletedProcess[
 
 def _git(repo: Path, *args: str) -> str:
     return subprocess.check_output(["git", *args], cwd=repo, text=True).strip()
+
+
+def _object_exists(sha: str) -> bool:
+    return (
+        subprocess.run(["git", "cat-file", "-e", sha], cwd=ROOT, capture_output=True).returncode
+        == 0
+    )
+
+
+def _ref_exists(ref: str) -> bool:
+    return (
+        subprocess.run(
+            ["git", "rev-parse", "--verify", "--quiet", ref],
+            cwd=ROOT,
+            capture_output=True,
+        ).returncode
+        == 0
+    )
+
+
+def _ensure_pr_history() -> None:
+    """The CI checkout is depth 1, so October 5 ancestors are not local yet.
+
+    Those commits are ancestors of this pull request, not advertised tips.
+    Deepen this clone instead of asking GitHub for an unadvertised object.
+    """
+    needed = (*HISTORICAL, HISTORICAL_PARENT)
+    notes: list[str] = []
+    if not all(_object_exists(sha) for sha in needed):
+        fetched = subprocess.run(
+            ["git", "fetch", "--no-tags", "--unshallow", "origin"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if fetched.returncode != 0:
+            notes.append(fetched.stderr.strip())
+            deepened = subprocess.run(
+                ["git", "fetch", "--no-tags", "--deepen=400", "origin"],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if deepened.returncode != 0:
+                notes.append(deepened.stderr.strip())
+    if not _ref_exists("refs/remotes/origin/main"):
+        fetched_main = subprocess.run(
+            ["git", "fetch", "--no-tags", "origin", "main:refs/remotes/origin/main"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if fetched_main.returncode != 0:
+            notes.append(fetched_main.stderr.strip())
+    missing = [sha for sha in needed if not _object_exists(sha)]
+    if missing or not _ref_exists("refs/remotes/origin/main"):
+        detail = "\n".join(note for note in notes if note)
+        pytest.fail(f"DCO history is not available: {missing or ['origin/main']}\n{detail}")
 
 
 def _init_repo(path: Path) -> None:
@@ -115,6 +177,7 @@ def test_governance_record_names_the_same_commits_and_denies_signoff() -> None:
 
 
 def test_historical_commits_have_no_signoff_and_are_recognized() -> None:
+    _ensure_pr_history()
     for sha in HISTORICAL:
         message = _git(ROOT, "log", "-1", "--format=%B", sha)
         assert re.search(SIGN_OFF_RE, message, flags=re.MULTILINE) is None
@@ -131,6 +194,7 @@ def test_historical_commits_have_no_signoff_and_are_recognized() -> None:
 
 def test_candidate_range_passes_with_only_those_exceptions(tmp_path: Path) -> None:
     del tmp_path
+    _ensure_pr_history()
     base = _git(ROOT, "rev-parse", "origin/main")
     result = _run_check(ROOT, base, "HEAD")
     assert result.returncode == 0, result.stdout + result.stderr
