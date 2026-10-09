@@ -11,6 +11,14 @@ not a shared public registry.
 
 Write-once: there is no `update`/`delete` here, deliberately — evidence
 that could be edited after the fact isn't evidence.
+
+The hash chain detects a partial edit that does not recompute every
+later hash. It does not resist an attacker who can rewrite the rows and
+recompute the chain. That attacker is outside this repository's trust
+boundary. Independent verification uses
+``governance.evidence_witness.EvidenceHeadWitness``, signed by a key
+that is not stored in this database. Live publication of those witnesses
+is an external deployment gate, not something this process performs.
 """
 
 from __future__ import annotations
@@ -396,12 +404,14 @@ class EvidenceRepository:
         ]
 
     async def verify_chain(self, org_id: str | None) -> bool:
-        """Re-walk *org_id*'s entire chain in insertion order and
-        recompute every hash from scratch, comparing against what's
-        stored. Returns False the moment any entry's hash, or the
-        prev_hash link between consecutive entries, doesn't match --
-        proof the record was edited or reordered after the fact, or
-        that a hash was tampered with directly.
+        """Re-walk *org_id*'s chain and compare stored hashes with a
+        recomputation. Returns False when a stored hash or prev_hash
+        link does not match that recomputation.
+
+        A True result is not proof against a database administrator who
+        rewrites the rows and recomputes the hashes. Use an external
+        ``EvidenceHeadWitness`` for that check. This method only detects
+        inconsistency inside the stored chain.
         """
         org_filter = (
             governance_evidence.c.org_id.is_(None)

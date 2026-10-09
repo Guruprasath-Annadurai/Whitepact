@@ -17,13 +17,16 @@ const DashboardShell = lazy(() => import("./features/dashboard/DashboardShell").
 const OverviewPage = lazy(() => import("./features/dashboard/OverviewPage").then((module) => ({ default: module.OverviewPage })));
 const ApiKeysPage = lazy(() => import("./features/api-keys/ApiKeysPage").then((module) => ({ default: module.ApiKeysPage })));
 const DomainPage = lazy(() => import("./features/dashboard/DomainPage").then((module) => ({ default: module.DomainPage })));
+const PolicyPage = lazy(() => import("./features/policy/PolicyPage").then((module) => ({ default: module.PolicyPage })));
 const SovereignPage = lazy(() => import("./features/sovereign/SovereignPage").then((module) => ({ default: module.SovereignPage })));
 const SovereignWorkbench = lazy(() => import("./features/sovereign/SovereignWorkbench").then((module) => ({ default: module.SovereignWorkbench })));
+const CorporatePage = lazy(() => import("./features/marketing/CorporatePages").then((module) => ({ default: module.CorporatePage })));
 
 export default function App() {
   return (
-    <Suspense fallback={<div className="app-loading"><span>Loading WhitePact</span></div>}><Routes>
+    <Suspense fallback={<div className="app-loading" role="status"><span>Loading WhitePact</span></div>}><Routes>
       <Route path="/" element={<HomePage />} />
+      {(["product", "architecture", "developers", "security", "enterprise"] as const).map((pageKey) => <Route key={pageKey} path={`/${pageKey}`} element={<CorporatePage pageKey={pageKey} />} />)}
       <Route path="/about" element={<AboutPage />} />
       <Route path="/contact" element={<ContactPage />} />
       <Route path="/docs" element={<DocsPage />} />
@@ -47,6 +50,7 @@ export default function App() {
       <Route path="/dashboard" element={<><Seo title="Workspace | WhitePact" description="Authenticated WhitePact AI governance workspace." path="/dashboard" noIndex /><DashboardShell /></>}>
         <Route index element={<OverviewPage />} />
         <Route path="api-keys" element={<ApiKeysPage />} />
+        <Route path="policy" element={<PolicyPage />} />
         {(["approvals", "evidence", "security", "organization", "members", "billing"] as const).map((domain) => <Route key={domain} path={domain} element={<DomainPage domainKey={domain} />} />)}
         <Route path="*" element={<NotFoundPage />} />
       </Route>

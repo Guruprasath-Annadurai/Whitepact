@@ -30,6 +30,7 @@ from responsibleai.db.engine import (
     tenant_tombstones,
 )
 from responsibleai.db.revocation_epoch_repository import bump_epoch_on_connection
+from responsibleai.db.tenant_scope import org_scope
 from responsibleai.rbac.models import (
     GovernanceStatus,
     Organization,
@@ -183,6 +184,19 @@ class OrgRepository:
         async with self._engine.raw.begin() as conn:
             result = await conn.execute(
                 update(organizations).where(organizations.c.id == org_id).values(**values)
+            )
+        return result.rowcount > 0
+
+    async def deactivate_org(self, org_id: str) -> bool:
+        """Mark a tenant deleted. Authentication must reject the row afterward."""
+        async with self._engine.raw.begin() as conn:
+            result = await conn.execute(
+                update(organizations)
+                .where(organizations.c.id == org_id)
+                .values(
+                    governance_status=GovernanceStatus.DISABLED.value,
+                    deactivated_at=_now(),
+                )
             )
         return result.rowcount > 0
 
@@ -483,9 +497,8 @@ class OrgRepository:
         return key_rec, raw
 
     async def revoke_key(self, key_id: str, org_id: str | None = None) -> bool:
-        where = org_api_keys.c.id == key_id
-        if org_id is not None:
-            where = where & (org_api_keys.c.org_id == org_id)
+        """Revoke one key in the caller scope. None matches only NULL-org keys."""
+        where = (org_api_keys.c.id == key_id) & org_scope(org_api_keys.c.org_id, org_id)
         async with self._engine.raw.begin() as conn:
             resolved_org = await conn.scalar(select(org_api_keys.c.org_id).where(where))
             if resolved_org is not None:
