@@ -65,7 +65,11 @@ from responsibleai.compliance.engine import ComplianceEngine
 from responsibleai.cost.analyzer import CostAnalyzer
 from responsibleai.cost.models import BudgetPolicy, TokenUsage
 from responsibleai.cost.router import ModelRouter
-from responsibleai.dashboard.config import get_settings, multi_replica_problems
+from responsibleai.dashboard.config import (
+    enforce_shared_backends_for_multi_replica,
+    get_settings,
+    multi_replica_problems,
+)
 from responsibleai.dashboard.logging_config import configure_logging, get_logger
 from responsibleai.dashboard.middleware import (
     AuthFailureLimiter,
@@ -281,14 +285,20 @@ logger = get_logger("app")
 
 
 def _get_rate_limit_key(request: Request) -> str:
-    """Rate limit by API key (per org / per key) when present, IP address otherwise.
+    """Rate-limit authenticated calls by organization, not by bearer token.
 
-    Using the API key as the bucket key means each organisation gets its own
-    quota rather than sharing a pool with all other tenants on the same IP
-    (common in cloud-hosted or NAT environments).
+    ``get_org_context`` records ``request.state.audit_org_id`` before route
+    limits run. Keying the bucket by the token let an organization multiply
+    the ceiling by rotating API keys. Unauthenticated calls still bucket by
+    source address. A presented bearer token with no resolved organization
+    is hashed so distinct guesses do not share one anonymous bucket with
+    each other, and still do not create an extra organization quota.
     """
     import hashlib as _hashlib
 
+    org_id = getattr(request.state, "audit_org_id", None)
+    if isinstance(org_id, str) and org_id:
+        return "org:" + org_id
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Bearer "):
         token = auth[7:].strip()
@@ -610,6 +620,10 @@ async def lifespan(application: FastAPI):
 
     if settings.multi_replica:
         problems = multi_replica_problems(db_backend, rl_backend)
+        enforce_shared_backends_for_multi_replica(
+            production=settings.is_production,
+            problems=problems,
+        )
         if problems:
             logger.warning(
                 "multi_replica_misconfigured",
@@ -5114,10 +5128,9 @@ async def governance_verify_evidence(
     request: Request,
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
 ) -> dict[str, Any]:
-    """Recomputes this org's evidence hash chain from scratch and reports
-    whether it's intact -- the same tamper-evidence check
-    /api/incident-db/verify offers for the public registry, scoped here
-    to the caller's own org rather than public."""
+    """Recomputes this org's stored evidence hash chain. A match detects
+    internal inconsistency only. It does not detect a rewrite that
+    recomputes every hash. Scoped to the caller's organization."""
     if not _auth.org_id:
         raise HTTPException(
             400, "Governance evidence requires an org-scoped API key, not a legacy flat key."
