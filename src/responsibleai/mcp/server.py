@@ -565,6 +565,10 @@ def _build_http_app() -> Any:
 
     from responsibleai.auth.mcp_oauth import McpOAuthAuthorizationServer, OAuthProtocolError
     from responsibleai.auth.oidc import OIDCProvider
+    from responsibleai.auth.tenant_admission import (
+        TenantAdmissionDeniedError,
+        admit_sso_principal,
+    )
     from responsibleai.auth.verifiable_credential import (
         VerifiableCredentialProvider,
         looks_like_vc_jwt,
@@ -574,11 +578,11 @@ def _build_http_app() -> Any:
         McpUsageRepository,
         OrgRepository,
         PrincipalRepository,
+        WebIdentityRepository,
         create_engine,
     )
-    from responsibleai.governance.principal import build_principal_claim
+    from responsibleai.governance.principal import PrincipalClaim, build_principal_claim
     from responsibleai.rbac.models import Plan, Role
-    from responsibleai.rbac.permissions import role_from_str
 
     settings = get_settings()
     hosted_production_preflight(settings)
@@ -781,26 +785,25 @@ def _build_http_app() -> Any:
         except ValueError:
             return None
 
-        org = await _org_repo.get_org(claims.org_id) if claims.org_id else None
-        if org is None:
-            # A valid IdP signature proves who issued the JWT, not membership
-            # in a WhitePact tenant. Never manufacture a FREE tenant context
-            # for an unknown or missing org claim.
+        try:
+            admitted = await admit_sso_principal(
+                org_repo=_org_repo,
+                identity_repo=WebIdentityRepository(_db_engine),
+                claimed_org_id=claims.org_id,
+                issuer=_oidc_provider.issuer,
+                subject=claims.sub,
+                claimed_roles=claims.roles,
+            )
+        except TenantAdmissionDeniedError:
             return None
-        role = Role.VIEWER
-        for raw_role in claims.roles:
-            candidate = role_from_str(raw_role)
-            if candidate.value == raw_role.upper():
-                role = candidate
-                break
 
         return OrgContext(
             key_id=f"oidc:{claims.sub}",
-            role=role,
-            org_id=claims.org_id,
-            org_name=org.name,
+            role=admitted.role,
+            org_id=admitted.org_id,
+            org_name=admitted.org_name,
             is_legacy=False,
-            plan=org.plan,
+            plan=admitted.plan,
             authentication_method="oidc",
         )
 
@@ -826,34 +829,46 @@ def _build_http_app() -> Any:
             return None
 
         try:
-            claim = build_principal_claim(claims)
+            admitted = await admit_sso_principal(
+                org_repo=_org_repo,
+                identity_repo=WebIdentityRepository(_db_engine),
+                claimed_org_id=claims.org_id,
+                issuer=claims.issuer,
+                subject=claims.sub,
+                claimed_roles=claims.roles,
+            )
+        except TenantAdmissionDeniedError:
+            # Reject before any principal row is written. A signed
+            # credential for an unknown, inactive, or unbound tenant
+            # must not poison the directory.
+            return None
+
+        verified = build_principal_claim(claims)
+        claim = PrincipalClaim(
+            principal_id=verified.principal_id,
+            org_id=admitted.org_id,
+            issuer=verified.issuer,
+            credential_type=verified.credential_type,
+            holder_kind=verified.holder_kind,
+            claim_keys=verified.claim_keys,
+        )
+        try:
             await _principal_repo.record(claim)
         except Exception:
-            # Audit-trail write only -- the principal is already fully
-            # verified by this point (see auth/verifiable_credential.py);
-            # a DB failure here must not block an otherwise-valid
-            # authentication, matching OutcomeRecord's fail-open posture.
             _logger.exception(
                 "verified_principal_audit_write_failed principal_sub=%s issuer=%s",
                 claims.sub,
                 claims.issuer,
             )
-
-        org = await _org_repo.get_org(claims.org_id) if claims.org_id else None
-        role = Role.VIEWER
-        for raw_role in claims.roles:
-            candidate = role_from_str(raw_role)
-            if candidate.value == raw_role.upper():
-                role = candidate
-                break
+            return None
 
         return OrgContext(
             key_id=f"vc:{claims.sub}",
-            role=role,
-            org_id=claims.org_id,
-            org_name=org.name if org else None,
+            role=admitted.role,
+            org_id=admitted.org_id,
+            org_name=admitted.org_name,
             is_legacy=False,
-            plan=org.plan if org else Plan.FREE,
+            plan=admitted.plan,
             authentication_method="vc",
         )
 

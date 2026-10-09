@@ -51,6 +51,11 @@ from responsibleai.auth.saml import (
     peek_in_response_to,
     validate_session_token,
 )
+from responsibleai.auth.tenant_admission import (
+    AdmittedPrincipal,
+    TenantAdmissionDeniedError,
+    admit_sso_principal,
+)
 from responsibleai.billing import (
     PADDLE_SUBSCRIPTION_ENTITLEMENT_EVENTS,
     PaddleBillingError,
@@ -831,13 +836,50 @@ app.mount(
 # ── Auth / RBAC dependencies ───────────────────────────────────────────────────
 
 
+def _identity_repo_for(org_repo: OrgRepository) -> WebIdentityRepository:
+    """Use the same database the organization lookup just used."""
+    if (
+        _web_identity_repo is not None
+        and getattr(_web_identity_repo, "_engine", None) is org_repo._engine
+    ):
+        return _web_identity_repo
+    return WebIdentityRepository(org_repo._engine)
+
+
+async def _admit_dashboard_principal(
+    *,
+    claimed_org_id: str | None,
+    issuer: str | None,
+    subject: str | None,
+    claimed_roles: list[str] | None,
+) -> AdmittedPrincipal | None:
+    if _org_repo is None:
+        return None
+    try:
+        return await admit_sso_principal(
+            org_repo=_org_repo,
+            identity_repo=_identity_repo_for(_org_repo),
+            claimed_org_id=claimed_org_id,
+            issuer=issuer,
+            subject=subject,
+            claimed_roles=claimed_roles,
+        )
+    except TenantAdmissionDeniedError:
+        logger.info(
+            "sso_tenant_admission_denied org_id=%s subject=%s",
+            claimed_org_id,
+            subject,
+        )
+        return None
+
+
 async def _resolve_oidc_context(token: str) -> OrgContext | None:
     """Validate an OIDC-issued Bearer JWT and map its claims to an OrgContext.
 
     Static API keys are prefixed "rai_"; anything else is attempted as a JWT
-    when an OIDC provider is configured. This is what makes SSO login
-    actually usable as an API credential — previously /api/auth/callback
-    returned claims but nothing accepted the resulting token afterward.
+    when an OIDC provider is configured. A valid signature does not create a
+    tenant or a role. The organization must exist and be active, and the
+    subject must already be bound to that organization.
     """
     if _oidc_provider is None or token.startswith("rai_"):
         return None
@@ -846,21 +888,22 @@ async def _resolve_oidc_context(token: str) -> OrgContext | None:
     except ValueError:
         return None
 
-    org = await _org_repo.get_org(claims.org_id) if (_org_repo and claims.org_id) else None
-    role = Role.VIEWER
-    for raw_role in claims.roles:
-        candidate = role_from_str(raw_role)
-        if candidate.value == raw_role.upper():
-            role = candidate
-            break
+    admitted = await _admit_dashboard_principal(
+        claimed_org_id=claims.org_id,
+        issuer=_oidc_provider.issuer,
+        subject=claims.sub,
+        claimed_roles=claims.roles,
+    )
+    if admitted is None:
+        return None
 
     return OrgContext(
         key_id=f"oidc:{claims.sub}",
-        role=role,
-        org_id=claims.org_id,
-        org_name=org.name if org else None,
+        role=admitted.role,
+        org_id=admitted.org_id,
+        org_name=admitted.org_name,
         is_legacy=False,
-        plan=org.plan if org else Plan.FREE,
+        plan=admitted.plan,
         authentication_method="oidc",
     )
 
@@ -880,21 +923,22 @@ async def _resolve_saml_context(token: str) -> OrgContext | None:
     if claims is None:
         return None
 
-    org = await _org_repo.get_org(claims.org_id) if (_org_repo and claims.org_id) else None
-    role = Role.VIEWER
-    for raw_role in claims.roles:
-        candidate = role_from_str(raw_role)
-        if candidate.value == raw_role.upper():
-            role = candidate
-            break
+    admitted = await _admit_dashboard_principal(
+        claimed_org_id=claims.org_id,
+        issuer=_saml_config.idp_entity_id,
+        subject=claims.sub,
+        claimed_roles=claims.roles,
+    )
+    if admitted is None:
+        return None
 
     return OrgContext(
         key_id=f"saml:{claims.sub}",
-        role=role,
-        org_id=claims.org_id,
-        org_name=org.name if org else None,
+        role=admitted.role,
+        org_id=admitted.org_id,
+        org_name=admitted.org_name,
         is_legacy=False,
-        plan=org.plan if org else Plan.FREE,
+        plan=admitted.plan,
         authentication_method="saml",
     )
 
@@ -7023,6 +7067,15 @@ async def saml_acs(request: Request) -> Response:
     except SAMLError as e:
         raise HTTPException(401, f"SAML assertion validation failed: {e}") from None
 
+    admitted = await _admit_dashboard_principal(
+        claimed_org_id=claims.org_id,
+        issuer=_saml_config.idp_entity_id,
+        subject=claims.sub,
+        claimed_roles=claims.roles,
+    )
+    if admitted is None:
+        raise HTTPException(401, "SAML tenant admission failed")
+
     session_token = mint_session_token(_saml_config, claims)
     fragment = (
         f"token={quote(session_token)}&name={quote(claims.name or claims.email or claims.sub)}"
@@ -7084,6 +7137,15 @@ async def auth_callback(
     except ValueError as e:
         logger.warning("oidc_token_validation_failed", reason=str(e))
         raise HTTPException(401, "OIDC token validation failed.") from None
+
+    admitted = await _admit_dashboard_principal(
+        claimed_org_id=claims.org_id,
+        issuer=_oidc_provider.issuer,
+        subject=claims.sub,
+        claimed_roles=claims.roles,
+    )
+    if admitted is None:
+        raise HTTPException(401, "OIDC tenant admission failed")
 
     access_token = tokens.get("access_token") or ""
     fragment = (

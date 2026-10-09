@@ -187,6 +187,19 @@ class OrgRepository:
             )
         return result.rowcount > 0
 
+    async def deactivate_org(self, org_id: str) -> bool:
+        """Mark a tenant deleted. Authentication must reject the row afterward."""
+        async with self._engine.raw.begin() as conn:
+            result = await conn.execute(
+                update(organizations)
+                .where(organizations.c.id == org_id)
+                .values(
+                    governance_status=GovernanceStatus.DISABLED.value,
+                    deactivated_at=_now(),
+                )
+            )
+        return result.rowcount > 0
+
     async def set_governance_status(self, org_id: str, status: str | GovernanceStatus) -> bool:
         """Human/admin organization lifecycle. Never called from billing webhooks.
 
