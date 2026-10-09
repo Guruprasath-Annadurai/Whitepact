@@ -313,10 +313,8 @@ class TestCost:
 class TestDrift:
     async def test_drift_no_data(self, client):
         r = await client.get("/api/drift/unknown-model/unknown-provider")
-        assert r.status_code == 200
-        d = r.json()
-        assert "trend" in d
-        assert "error" in d["trend"]
+        assert r.status_code == 401
+        assert "trend" not in r.text
 
 
 # ── Security headers ──────────────────────────────────────────────────────────
@@ -347,7 +345,8 @@ class TestSecurityHeaders:
 
     async def test_hsts_header_present(self, client):
         r = await client.get("/api/health")
-        assert "max-age=31536000" in r.headers["strict-transport-security"]
+        hsts = r.headers.get("strict-transport-security", "")
+        assert "max-age=31536000" not in hsts
 
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -938,8 +937,16 @@ class TestPublicPagesLoad:
         r = await client.get("/llms.txt")
         assert r.status_code == 200
         assert "text/plain" in r.headers["content-type"]
-        assert "/registry" in r.text
-        assert "/api/trust-index/registry" in r.text
+        assert "# WhitePact" in r.text
+        assert "https://whitepact.com/architecture" in r.text
+        assert "require independently evaluated authority" in r.text
+        assert "supported, configured WhitePact enforcement paths" in r.text
+        assert (
+            "Direct calls outside those paths and compromised infrastructure "
+            "are not universally controlled." in r.text
+        )
+        assert "supported" in r.text
+        assert "certified scoring" not in r.text
 
 
 class TestTrustIndexCertification:

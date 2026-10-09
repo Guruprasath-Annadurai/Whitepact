@@ -20,6 +20,7 @@ from responsibleai.db.engine import (
     token_usage,
     tool_trust_scores,
 )
+from responsibleai.db.tenant_scope import org_scope
 
 
 def _now() -> str:
@@ -126,9 +127,10 @@ class RetentionManager:
             ]
 
     async def run_retention_cleanup(self, org_id: str | None = None) -> RetentionExecutionReport:
-        """Evaluates retention policies and prunes eligible expired records.
+        """Prune expired records for one scope.
 
-        Skips any category currently protected by an active legal hold.
+        ``org_id is None`` selects policies whose organization is NULL. It does
+        not select every tenant. Skips a category protected by a legal hold.
         """
         assert_restore_readiness_admitted()
 
@@ -137,9 +139,9 @@ class RetentionManager:
         held_cats: list[str] = []
 
         async with self._engine.raw.begin() as conn:
-            query = select(data_retention_policies)
-            if org_id:
-                query = query.where(data_retention_policies.c.org_id == org_id)
+            query = select(data_retention_policies).where(
+                org_scope(data_retention_policies.c.org_id, org_id)
+            )
             policies = (await conn.execute(query)).fetchall()
 
             for pol in policies:
