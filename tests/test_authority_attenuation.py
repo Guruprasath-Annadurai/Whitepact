@@ -297,7 +297,14 @@ class TestMemoryScopeEscalation:
 
     def test_malformed_scopes_fail_closed(self) -> None:
         parent = _authority(memory_scope="org:acme")
-        for child_scope in ("", " org:acme", "org:acme ", "org:acme:", "org::acme", "org:acme: agent"):
+        for child_scope in (
+            "",
+            " org:acme",
+            "org:acme ",
+            "org:acme:",
+            "org::acme",
+            "org:acme: agent",
+        ):
             reason = validate_attenuation(parent, _authority(memory_scope=child_scope))
             assert reason is not None
             assert "memory_scope" in reason
