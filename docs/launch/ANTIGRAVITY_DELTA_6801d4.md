@@ -25,11 +25,14 @@ It does not transfer to PR #171.
 
 Checkout identity for those checks is the synthetic merge commit GitHub builds for the pull request, plus the candidate tree comparison in `.github/workflows/ci.yml` job `checkout-identity`. A green result is a tree-equivalent run only when that job prints `TESTED TREE MATCHES CANDIDATE HEAD TREE`. It is not an automatic restatement of the Phase 2 pass.
 
-Published merge ref while CI run `37921970024` was in progress:
+CI run `37921970024` completed with all 19 checks successful. The checkout job printed `TESTED TREE MATCHES CANDIDATE HEAD TREE`.
 
 - Checkout SHA `5e4322f01c43a7b62621e33bbb5914101db43b25`
 - Checkout tree `4068d443c481327c15a14ab281f6cc28122444fc`
-- That tree equals the candidate tree. The job `Candidate tree matches checkout` had already passed. Python 3.11, Python 3.12, and frontend closure were still running.
+- Candidate HEAD `6801d4ad0047d15a196ab9caeffacf54f9ce557e`
+- Candidate tree `4068d443c481327c15a14ab281f6cc28122444fc`
+
+Python 3.11: 5917 passed, 6 skipped. Pure branch 5775/7134 (80.95%). Pure statement 26645/29157 (91.38%). Python 3.12: 5917 passed, 6 skipped. Pure branch 5803/7134 (81.34%). Pure statement 26687/29157 (91.53%). Frontend closure passed. This is CI evidence for `6801d4ad` only. It is not the Phase 2 full pass, and it is not staging acceptance.
 
 ## Not in this delta
 
