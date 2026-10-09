@@ -123,6 +123,55 @@ def test_conditional_scope_does_not_authorize_launch() -> None:
     assert result["decision"] == "NO-GO"
 
 
+@pytest.mark.parametrize(
+    "artifact",
+    [
+        "http://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/1",
+        "file:///tmp/approval.txt",
+        "https://127.0.0.1/ci",
+        "https://localhost/ci",
+        "https://github.com/Guruprasath-Annadurai/Whitepact/actions/runs/1 ",
+    ],
+)
+def test_unverifiable_artifact_urls_are_incomplete(artifact: str) -> None:
+    payload = _shaped()
+    evidence = payload["evidence"]
+    assert isinstance(evidence, list)
+    for record in evidence:
+        assert isinstance(record, dict)
+        if record["gate_id"] == "ci.canonical":
+            record["artifact"] = artifact
+    result = evaluate(payload)
+    assert result["packet_completeness"] == "INCOMPLETE"
+    assert result["production_authorization"] == "NO-GO"
+    assert any(item["gate_id"] == "ci.canonical" for item in result["failures"])
+
+
+def test_self_declared_authorization_fields_are_ignored() -> None:
+    payload = _shaped()
+    payload["decision"] = "GO"
+    payload["production_authorization"] = "GO"
+    payload["independent_verification"] = "VERIFIED"
+    payload["owner_approval"] = "AUTHORIZED"
+    payload["conditional_scope"] = "one design partner"
+    result = evaluate(payload)
+    assert result["packet_completeness"] == "COMPLETE"
+    assert result["independent_verification"] == "UNVERIFIED"
+    assert result["owner_approval"] == "NOT_AUTHORIZED"
+    assert result["production_authorization"] == "NO-GO"
+    assert result["decision"] == "NO-GO"
+
+
+def test_predecessor_packet_cannot_authorize_this_successor() -> None:
+    path = Path(__file__).resolve().parents[1] / "docs" / "launch" / "evidence" / "rc-0cdef394.json"
+    result = evaluate(json.loads(path.read_text(encoding="utf-8")))
+    assert result["packet_completeness"] == "INCOMPLETE"
+    assert result["independent_verification"] == "UNVERIFIED"
+    assert result["owner_approval"] == "NOT_AUTHORIZED"
+    assert result["production_authorization"] == "NO-GO"
+    assert result["decision"] == "NO-GO"
+
+
 def test_cli_never_exits_zero_for_an_untrusted_packet(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -43,6 +43,35 @@ def test_local_action_is_ignored() -> None:
     assert _MODULE.unpinned_references(text) == []
 
 
+def test_mutable_third_party_tags_are_rejected_in_both_forms() -> None:
+    mutations = (
+        "uses: actions/checkout@v4",
+        "- uses: actions/checkout@v4",
+        "uses: actions/checkout@main",
+        "- uses: actions/setup-python@master",
+        "uses: azure/setup-helm@v4.2.0",
+        "- uses: docker/setup-buildx-action@latest",
+        "uses: actions/checkout@11d5960a326750d5838078e36cf38b85af67726",
+        "- uses: actions/checkout",
+        'uses: "actions/checkout@v4"',
+    )
+    for text in mutations:
+        hits = _MODULE.unpinned_references(f"      {text}\n")
+        assert hits, text
+        assert "actions/" in hits[0] or "azure/" in hits[0] or "docker/" in hits[0]
+
+
+def test_pinned_forms_survive_the_same_mutations() -> None:
+    pinned = (
+        f"uses: {PINNED}",
+        f"- uses: {PINNED} # v4",
+        "uses: ./.github/actions/local",
+        "- uses: ./.github/actions/local",
+    )
+    for text in pinned:
+        assert _MODULE.unpinned_references(f"      {text}\n") == []
+
+
 def test_policy_gate_accepts_the_repository() -> None:
     root = Path(__file__).resolve().parents[1] / ".github" / "workflows"
     assert _MODULE.main(["--workflows", str(root)]) == 0

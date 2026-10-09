@@ -9,7 +9,7 @@ The checker is `scripts/release_evidence_check.py`. It reports four separate res
 3. `owner_approval` — always `NOT_AUTHORIZED`. A JSON claim is not an owner signature.
 4. `production_authorization` — always `NO-GO`.
 
-A complete packet still cannot produce a production GO. `conditional_scope` in the packet does not authorize a limited launch.
+A complete packet still cannot produce a production GO. `conditional_scope` in the packet does not authorize a limited launch. Caller-supplied `decision`, `production_authorization`, `independent_verification`, and `owner_approval` fields are ignored. `http`, `file`, `localhost`, and `127.0.0.1` artifact pointers are incomplete.
 
 ## Gates
 

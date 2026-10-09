@@ -45,7 +45,8 @@ NO_GO = "NO-GO"
 _SHA = re.compile(r"^[0-9a-f]{40}$")
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 _PLACEHOLDER = re.compile(
-    r"(example(?:\.(?:com|org|net))?|placeholder|changeme|\btodo\b|\btbd\b|dummy)",
+    r"(example(?:\.(?:com|org|net))?|placeholder|changeme|\btodo\b|\btbd\b|dummy|"
+    r"localhost|127\.0\.0\.1)",
     re.IGNORECASE,
 )
 _VERIFIER = (
@@ -129,6 +130,8 @@ def _bound(record: dict[str, Any], head: str, tree: str, gate: Gate) -> str | No
     digest = record.get("artifact_digest")
     if not isinstance(artifact, str) or not artifact.startswith("https://"):
         return "artifact must be an https URL"
+    if any(character.isspace() for character in artifact):
+        return "artifact URL contains whitespace"
     if _PLACEHOLDER.search(artifact):
         return "artifact URL is a placeholder"
     if not isinstance(digest, str) or _DIGEST.fullmatch(digest) is None:
