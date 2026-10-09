@@ -18,7 +18,7 @@ Hetzner Cloud Firewalls **do not secure private Cloud Network traffic** ([Firewa
 |-----------|--------|
 | In | TCP **5432** from saas + execution subnets |
 | In | TCP **22** from NAT gateway only |
-| Out | TCP **443** only to `authority_egress_cidrs`, plus pinned DNS and NTP. NAT does not add a world-wide HTTPS accept. |
+| Out | TCP **443** only to `authority_egress_cidrs` (R2 backup and update endpoints must be listed), plus pinned DNS and NTP. NAT does not add an unrestricted or world-wide HTTPS accept. |
 
 No inbound Internet exposure.
 
@@ -34,6 +34,6 @@ No inbound Internet exposure.
 | Layer | Control |
 |-------|---------|
 | Hetzner Cloud Firewall | SSH **22** from operator `/32` only |
-| Host nftables | Masquerade, SSH from the operator CIDR, and forward only to the tier allowlists plus pinned DNS and NTP. Rules are loaded from `/etc/nftables.conf`. |
+| Host nftables | Masquerade, SSH from the operator CIDR, and forward only when the source subnet owns that destination allowlist. DNS and NTP are limited to the three workload subnets. Rules are loaded from `/etc/nftables.conf`. |
 
 Reproduced by Terraform module + `cloud-init-nat-gateway.yaml`.
