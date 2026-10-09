@@ -1,17 +1,30 @@
 # Copyright (c) 2026 Guruprasath Annadurai
 # SPDX-License-Identifier: MIT
-"""Fail-closed release evidence checker.
+"""Separate launch-evidence completeness from release authorization.
 
-A local test log cannot satisfy a live, independent, or owner gate.
-``GO`` is returned only when every mandatory gate has an accepted
-evidence record of the required kind. Missing evidence is ``NO-GO``.
-This script does not contact GitHub, a cloud provider, or Antigravity.
+This process reads a JSON packet. It does not contact GitHub, a cloud
+provider, Antigravity, or an owner. A packet that says ACCEPTED, even
+with a URL and a digest, is not proof. Production authorization from
+this command is always NO-GO.
+
+Four results are reported separately:
+
+1. ``packet_completeness`` — the packet names every gate and binds each
+   claim to a head, tree, environment, and, where required, an artifact
+   digest. Placeholder values are incomplete.
+2. ``independent_verification`` — always ``UNVERIFIED`` here. An
+   external reviewer must fetch the named artifact and compare it to
+   the candidate head and tree.
+3. ``owner_approval`` — always ``NOT_AUTHORIZED`` here. A JSON field
+   cannot authorize spend, staging, or launch.
+4. ``production_authorization`` — always ``NO-GO``.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,9 +36,25 @@ INDEPENDENT_AUDIT = "independent_audit"
 LIVE_STAGING = "live_staging"
 OWNER_APPROVAL = "owner_approval"
 
-GO = "GO"
-CONDITIONAL_GO = "CONDITIONAL_GO"
+COMPLETE = "COMPLETE"
+INCOMPLETE = "INCOMPLETE"
+UNVERIFIED = "UNVERIFIED"
+NOT_AUTHORIZED = "NOT_AUTHORIZED"
 NO_GO = "NO-GO"
+
+_SHA = re.compile(r"^[0-9a-f]{40}$")
+_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
+_PLACEHOLDER = re.compile(
+    r"(example(?:\.(?:com|org|net))?|placeholder|changeme|\btodo\b|\btbd\b|dummy)",
+    re.IGNORECASE,
+)
+_VERIFIER = (
+    "Fetch the artifact outside this process. Compare its git head and "
+    "tree to the candidate. Accept GitHub Actions only from a run whose "
+    "headSha equals the candidate head. Accept independent qualification "
+    "only from Antigravity's own report. Accept owner approval only from "
+    "the owner, not from this packet."
+)
 
 
 @dataclass(frozen=True)
@@ -36,8 +65,6 @@ class Gate:
     requires_artifact: bool = False
 
 
-# Live and owner gates require an artifact pointer. A bare status string
-# is not evidence.
 GATES: tuple[Gate, ...] = (
     Gate("runtime.authority", LOCAL_TEST),
     Gate("tenant.isolation", LOCAL_TEST),
@@ -66,51 +93,97 @@ def _records(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return found
 
 
-def _accepted(gate: Gate, record: dict[str, Any] | None) -> str | None:
-    if record is None:
-        return "missing evidence"
+def _candidate(payload: dict[str, Any]) -> tuple[str, str] | str:
+    raw = payload.get("candidate")
+    if not isinstance(raw, dict):
+        return "candidate head and tree are missing"
+    head = raw.get("head")
+    tree = raw.get("tree")
+    if not isinstance(head, str) or _SHA.fullmatch(head) is None:
+        return "candidate head is not a 40-character git sha"
+    if not isinstance(tree, str) or _SHA.fullmatch(tree) is None:
+        return "candidate tree is not a 40-character git sha"
+    return head, tree
+
+
+def _bound(record: dict[str, Any], head: str, tree: str, gate: Gate) -> str | None:
     if record.get("status") != "ACCEPTED":
         return f"status is {record.get('status')!r}"
     if record.get("kind") != gate.kind:
         return f"kind {record.get('kind')!r} does not match required {gate.kind}"
+    if record.get("head") != head or record.get("tree") != tree:
+        return "evidence head or tree does not match the candidate"
+    environment = record.get("environment")
+    if not isinstance(environment, str) or not environment.strip():
+        return "environment is missing"
+    if _PLACEHOLDER.search(environment):
+        return "environment is a placeholder"
+    authority = record.get("verification_authority")
+    if not isinstance(authority, str) or not authority.strip():
+        return "verification authority is missing"
+    if _PLACEHOLDER.search(authority):
+        return "verification authority is a placeholder"
+    if not gate.requires_artifact:
+        return None
     artifact = record.get("artifact")
-    if gate.requires_artifact and not (isinstance(artifact, str) and artifact.strip()):
-        return "accepted record has no artifact pointer"
+    digest = record.get("artifact_digest")
+    if not isinstance(artifact, str) or not artifact.startswith("https://"):
+        return "artifact must be an https URL"
+    if _PLACEHOLDER.search(artifact):
+        return "artifact URL is a placeholder"
+    if not isinstance(digest, str) or _DIGEST.fullmatch(digest) is None:
+        return "artifact digest must be sha256:<64 hex>"
+    if gate.kind in {LIVE_STAGING, OWNER_APPROVAL, INDEPENDENT_AUDIT} and environment in {
+        "offline",
+        "local",
+        "unit-test",
+    }:
+        return "live, independent, and owner gates cannot use an offline environment"
     return None
 
 
 def evaluate(payload: dict[str, Any]) -> dict[str, Any]:
-    """Return a decision that fails closed.
-
-    ``CONDITIONAL_GO`` is never inferred. A caller must set
-    ``conditional_scope`` to a non-empty string and every blocking
-    failure must be absent. Any mandatory failure is ``NO-GO``.
-    """
-    found = _records(payload)
+    """Score completeness. Never authorize production."""
     failures: list[dict[str, str]] = []
-    accepted: list[str] = []
+    candidate = _candidate(payload)
+    if isinstance(candidate, str):
+        failures.append({"gate_id": "candidate", "reason": candidate})
+        head = tree = ""
+    else:
+        head, tree = candidate
+    try:
+        found = _records(payload)
+    except ValueError as exc:
+        return _decision([{"gate_id": "packet", "reason": str(exc)}])
+
     for gate in GATES:
         if not gate.mandatory:
             continue
-        reason = _accepted(gate, found.get(gate.gate_id))
-        if reason is None:
-            accepted.append(gate.gate_id)
-        else:
+        record = found.get(gate.gate_id)
+        if record is None:
+            failures.append({"gate_id": gate.gate_id, "reason": "missing evidence"})
+            continue
+        if isinstance(candidate, str):
+            continue
+        reason = _bound(record, head, tree, gate)
+        if reason is not None:
             failures.append({"gate_id": gate.gate_id, "reason": reason})
+    return _decision(failures)
 
-    scope = payload.get("conditional_scope")
-    if not failures and isinstance(scope, str) and scope.strip():
-        decision = CONDITIONAL_GO
-    elif not failures:
-        decision = GO
-    else:
-        decision = NO_GO
 
+def _decision(failures: list[dict[str, str]]) -> dict[str, Any]:
     return {
-        "decision": decision,
-        "accepted": accepted,
+        "packet_completeness": INCOMPLETE if failures else COMPLETE,
+        "independent_verification": UNVERIFIED,
+        "owner_approval": NOT_AUTHORIZED,
+        "production_authorization": NO_GO,
+        "decision": NO_GO,
         "failures": failures,
-        "conditional_scope": scope if decision == CONDITIONAL_GO else None,
+        "verifier_procedure": _VERIFIER,
+        "trust_boundary": (
+            "This checker does not authenticate artifacts or approvals. "
+            "production_authorization stays NO-GO."
+        ),
     }
 
 
@@ -122,7 +195,7 @@ def main(argv: list[str] | None = None) -> int:
     result = evaluate(payload)
     json.dump(result, sys.stdout, indent=2)
     sys.stdout.write("\n")
-    return 0 if result["decision"] == GO else 2 if result["decision"] == CONDITIONAL_GO else 1
+    return 0 if result["production_authorization"] != NO_GO else 1
 
 
 if __name__ == "__main__":

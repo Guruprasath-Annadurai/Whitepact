@@ -1,6 +1,6 @@
 # Copyright (c) 2026 Guruprasath Annadurai
 # SPDX-License-Identifier: MIT
-"""The release checker must not promote local tests to a launch GO."""
+"""Untrusted evidence JSON cannot authorize a production launch."""
 
 from __future__ import annotations
 
@@ -23,22 +23,38 @@ GATES = _MODULE.GATES
 evaluate = _MODULE.evaluate
 main = _MODULE.main
 
+HEAD = "47adb948d76746ce7166ae4a49503b671006049d"
+TREE = "c0401db2533bba9b8dfaab2a5902bf88aa17e434"
+DIGEST = "sha256:" + ("ab" * 32)
 
-def _accepted(gate_id: str, kind: str, artifact: str | None = None) -> dict[str, str]:
-    record = {"gate_id": gate_id, "kind": kind, "status": "ACCEPTED"}
-    if artifact is not None:
-        record["artifact"] = artifact
+
+def _record(gate_id: str, kind: str, *, artifact: bool) -> dict[str, str]:
+    record = {
+        "gate_id": gate_id,
+        "kind": kind,
+        "status": "ACCEPTED",
+        "head": HEAD,
+        "tree": TREE,
+        "environment": "recorded-ci" if kind != "live_staging" else "staging",
+        "verification_authority": "unverified-packet-claim",
+    }
+    if kind == "owner_approval":
+        record["environment"] = "owner-record"
+    if kind == "independent_audit":
+        record["environment"] = "antigravity-record"
+    if artifact:
+        record["artifact"] = f"https://github.com/Guruprasath-Annadurai/Whitepact/actions/{gate_id}"
+        record["artifact_digest"] = DIGEST
     return record
 
 
-def _complete(**overrides: str) -> dict[str, object]:
-    evidence = []
-    for gate in GATES:
-        artifact = f"https://evidence.example/{gate.gate_id}" if gate.requires_artifact else None
-        evidence.append(_accepted(gate.gate_id, gate.kind, artifact))
-    payload: dict[str, object] = {"evidence": evidence}
-    payload.update(overrides)
-    return payload
+def _shaped() -> dict[str, object]:
+    return {
+        "candidate": {"head": HEAD, "tree": TREE},
+        "evidence": [
+            _record(gate.gate_id, gate.kind, artifact=gate.requires_artifact) for gate in GATES
+        ],
+    }
 
 
 def test_catalog_separates_local_and_live_kinds() -> None:
@@ -50,68 +66,68 @@ def test_catalog_separates_local_and_live_kinds() -> None:
     assert kinds["owner.legal"] == "owner_approval"
 
 
-def test_local_success_alone_is_no_go() -> None:
-    payload = {
-        "evidence": [
-            _accepted("runtime.authority", "local_test"),
-            _accepted("tenant.isolation", "local_test"),
-            _accepted("grant.replay", "local_test"),
-        ]
-    }
+def test_placeholder_urls_are_incomplete() -> None:
+    payload = _shaped()
+    evidence = payload["evidence"]
+    assert isinstance(evidence, list)
+    for record in evidence:
+        assert isinstance(record, dict)
+        if record["gate_id"] == "ci.canonical":
+            record["artifact"] = "https://evidence.example/ci"
     result = evaluate(payload)
-    assert result["decision"] == "NO-GO"
-    missing = {item["gate_id"] for item in result["failures"]}
-    assert "staging.live" in missing
-    assert "independent.qualification" in missing
-    assert "owner.infrastructure" in missing
+    assert result["packet_completeness"] == "INCOMPLETE"
+    assert result["production_authorization"] == "NO-GO"
+    assert any(item["gate_id"] == "ci.canonical" for item in result["failures"])
+
+
+def test_mismatched_head_is_incomplete() -> None:
+    payload = _shaped()
+    evidence = payload["evidence"]
+    assert isinstance(evidence, list)
+    evidence[0]["head"] = "0" * 40
+    result = evaluate(payload)
+    assert result["packet_completeness"] == "INCOMPLETE"
+    assert "head or tree" in result["failures"][0]["reason"]
 
 
 def test_live_gate_cannot_be_satisfied_by_a_local_log() -> None:
-    payload = _complete()
+    payload = _shaped()
     evidence = payload["evidence"]
     assert isinstance(evidence, list)
     for record in evidence:
         assert isinstance(record, dict)
         if record["gate_id"] == "staging.live":
             record["kind"] = "local_test"
+            record["environment"] = "offline"
     result = evaluate(payload)
     assert result["decision"] == "NO-GO"
     assert any(item["gate_id"] == "staging.live" for item in result["failures"])
 
 
-def test_accepted_live_gate_without_artifact_is_no_go() -> None:
-    payload = _complete()
-    evidence = payload["evidence"]
-    assert isinstance(evidence, list)
-    for record in evidence:
-        assert isinstance(record, dict)
-        if record["gate_id"] == "ci.canonical":
-            del record["artifact"]
-    result = evaluate(payload)
-    assert result["decision"] == "NO-GO"
-    assert "artifact" in result["failures"][0]["reason"]
-
-
-def test_complete_independent_packet_is_go() -> None:
-    result = evaluate(_complete())
-    assert result["decision"] == "GO"
+def test_shaped_packet_is_complete_and_still_no_go() -> None:
+    result = evaluate(_shaped())
     assert result["failures"] == []
+    assert result["packet_completeness"] == "COMPLETE"
+    assert result["independent_verification"] == "UNVERIFIED"
+    assert result["owner_approval"] == "NOT_AUTHORIZED"
+    assert result["production_authorization"] == "NO-GO"
+    assert result["decision"] == "NO-GO"
+    assert "Antigravity" in result["verifier_procedure"]
 
 
-def test_explicit_scope_with_complete_evidence_is_conditional() -> None:
-    result = evaluate(_complete(conditional_scope="one design partner, read-only tools"))
-    assert result["decision"] == "CONDITIONAL_GO"
-    assert result["conditional_scope"] == "one design partner, read-only tools"
-
-
-def test_conditional_scope_does_not_hide_a_failure() -> None:
-    result = evaluate({"conditional_scope": "limited rollout", "evidence": []})
+def test_conditional_scope_does_not_authorize_launch() -> None:
+    payload = _shaped()
+    payload["conditional_scope"] = "one design partner"
+    result = evaluate(payload)
+    assert result["production_authorization"] == "NO-GO"
     assert result["decision"] == "NO-GO"
 
 
-def test_cli_exits_nonzero_for_no_go(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli_never_exits_zero_for_an_untrusted_packet(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     path = tmp_path / "evidence.json"
-    path.write_text(json.dumps({"evidence": []}), encoding="utf-8")
+    path.write_text(json.dumps(_shaped()), encoding="utf-8")
     assert main([str(path)]) == 1
     printed = json.loads(capsys.readouterr().out)
-    assert printed["decision"] == "NO-GO"
+    assert printed["production_authorization"] == "NO-GO"

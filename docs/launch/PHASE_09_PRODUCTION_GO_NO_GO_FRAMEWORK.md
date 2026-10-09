@@ -2,7 +2,14 @@
 
 **Current automated decision: NO-GO.**
 
-The checker is `scripts/release_evidence_check.py`. It returns `GO` only when every mandatory gate has an accepted evidence record of the required kind. A local log cannot satisfy a live, independent, or owner gate. `CONDITIONAL_GO` is returned only when the caller sets a non-empty `conditional_scope` and there are zero failures. It is not inferred from a partial packet.
+The checker is `scripts/release_evidence_check.py`. It reports four separate results:
+
+1. `packet_completeness` — every gate is present and bound to the candidate head, tree, environment, and, where required, an `https` artifact plus `sha256:` digest. Placeholder hosts and placeholder text are incomplete.
+2. `independent_verification` — always `UNVERIFIED` in this process. It does not fetch URLs or trust a status string.
+3. `owner_approval` — always `NOT_AUTHORIZED`. A JSON claim is not an owner signature.
+4. `production_authorization` — always `NO-GO`.
+
+A complete packet still cannot produce a production GO. `conditional_scope` in the packet does not authorize a limited launch.
 
 ## Gates
 
@@ -35,17 +42,18 @@ Command:
 python scripts/release_evidence_check.py docs/launch/evidence/rc-0cdef394.json
 ```
 
-Observed: exit code 1, `decision` `NO-GO`, `accepted` contains only `ci.canonical`.
+Observed before the trust-boundary change: exit code 1 and `decision` `NO-GO`. After that change the same packet stays `NO-GO`, and a fully shaped untrusted packet is also `NO-GO` with `independent_verification` `UNVERIFIED` and `owner_approval` `NOT_AUTHORIZED`.
 
 That CI acceptance does not include the successor's memory-scope fix or the action-pin fix. Do not mark `ci.canonical` accepted for the successor until a new run exists.
 
 ## Decision rules
 
-- **GO.** Every mandatory gate accepted with the right kind and, where required, an artifact pointer. Not available now.
-- **CONDITIONAL GO.** Same completeness, plus an explicit scope string such as one design partner and a named tool allowlist. Not available now. A scope string with missing gates stays `NO-GO` (`tests/test_release_evidence_check.py`).
-- **NO-GO.** Any mandatory gate missing, mistyped, or without its artifact. This is the current result.
+- **Packet completeness.** Structural only. A placeholder URL, a missing digest, or a head/tree mismatch is incomplete.
+- **Independent verification.** Not performed by this script. The required procedure is in the command's `verifier_procedure` field.
+- **Owner approval.** Not granted by this script.
+- **Production authorization.** `NO-GO` from this script, including when the packet is complete and includes `conditional_scope`.
 
-A local PASS is not a live staging PASS. The checker encodes that by kind, not by a comment.
+A local PASS is not a live staging PASS. A URL in the packet is not an authenticated artifact.
 
 ## Gate
 
