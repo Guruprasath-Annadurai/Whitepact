@@ -1,0 +1,40 @@
+#cloud-config
+# Development host bootstrap for a future authorized VM.
+# No secrets, no repository deploy key, no public service ports.
+ssh_pwauth: false
+package_update: true
+packages:
+  - docker.io
+  - iptables
+write_files:
+  - path: /usr/local/sbin/whitepact-drop-metadata.sh
+    permissions: "0755"
+    content: |
+      #!/bin/sh
+      # OCI's resolver is 169.254.169.254 UDP/TCP 53. Metadata HTTP is the
+      # same address on TCP 80. Drop only metadata HTTP(S) from containers.
+      if ! iptables -C DOCKER-USER -d 169.254.169.254/32 -p tcp -m multiport --dports 80,443 -j DROP 2>/dev/null; then
+        iptables -I DOCKER-USER -d 169.254.169.254/32 -p tcp -m multiport --dports 80,443 -j DROP
+      fi
+      if ! ip6tables -C DOCKER-USER -d fd00:ec2::254/128 -p tcp -m multiport --dports 80,443 -j DROP 2>/dev/null; then
+        ip6tables -I DOCKER-USER -d fd00:ec2::254/128 -p tcp -m multiport --dports 80,443 -j DROP
+      fi
+  - path: /etc/systemd/system/whitepact-drop-metadata.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Drop container HTTP access to cloud metadata addresses
+      After=docker.service
+      Requires=docker.service
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/sbin/whitepact-drop-metadata.sh
+      RemainAfterExit=yes
+
+      [Install]
+      WantedBy=multi-user.target
+runcmd:
+  - systemctl daemon-reload
+  - systemctl enable --now docker.service
+  - systemctl enable --now whitepact-drop-metadata.service
