@@ -18,6 +18,7 @@ from responsibleai.cost.models import (
     get_pricing,
 )
 from responsibleai.db.engine import DatabaseEngine, token_usage, trust_scores
+from responsibleai.db.tenant_scope import org_scope as _match_org
 from responsibleai.trust.score import TrustScore
 
 
@@ -74,8 +75,7 @@ class CostRepository:
         stmt = select(func.coalesce(func.sum(token_usage.c.total_cost), 0.0))
         if days is not None:
             stmt = stmt.where(token_usage.c.recorded_at >= _days_ago_iso(days))
-        if org_id is not None:
-            stmt = stmt.where(token_usage.c.org_id == org_id)
+        stmt = stmt.where(_match_org(token_usage.c.org_id, org_id))
         async with self._engine.raw.connect() as conn:
             result = await conn.execute(stmt)
             return float(result.scalar() or 0.0)
@@ -89,8 +89,7 @@ class CostRepository:
         )
         if days is not None:
             stmt = stmt.where(token_usage.c.recorded_at >= _days_ago_iso(days))
-        if org_id is not None:
-            stmt = stmt.where(token_usage.c.org_id == org_id)
+        stmt = stmt.where(_match_org(token_usage.c.org_id, org_id))
         async with self._engine.raw.connect() as conn:
             row = (await conn.execute(stmt)).one()
         inp, out = int(row[0]), int(row[1])
@@ -100,8 +99,7 @@ class CostRepository:
         stmt = select(func.count()).select_from(token_usage)
         if days is not None:
             stmt = stmt.where(token_usage.c.recorded_at >= _days_ago_iso(days))
-        if org_id is not None:
-            stmt = stmt.where(token_usage.c.org_id == org_id)
+        stmt = stmt.where(_match_org(token_usage.c.org_id, org_id))
         async with self._engine.raw.connect() as conn:
             return int((await conn.execute(stmt)).scalar() or 0)
 
@@ -116,8 +114,7 @@ class CostRepository:
         )
         if days is not None:
             stmt = stmt.where(token_usage.c.recorded_at >= _days_ago_iso(days))
-        if org_id is not None:
-            stmt = stmt.where(token_usage.c.org_id == org_id)
+        stmt = stmt.where(_match_org(token_usage.c.org_id, org_id))
         async with self._engine.raw.connect() as conn:
             rows = (await conn.execute(stmt)).fetchall()
         return {r[0]: round(float(r[1]), 6) for r in rows}
@@ -135,8 +132,7 @@ class CostRepository:
         )
         if days is not None:
             stmt = stmt.where(token_usage.c.recorded_at >= _days_ago_iso(days))
-        if org_id is not None:
-            stmt = stmt.where(token_usage.c.org_id == org_id)
+        stmt = stmt.where(_match_org(token_usage.c.org_id, org_id))
         async with self._engine.raw.connect() as conn:
             rows = (await conn.execute(stmt)).fetchall()
         return {r[0]: round(float(r[1]), 6) for r in rows}
@@ -170,8 +166,7 @@ class CostRepository:
             .group_by(text("day"))
             .order_by(text("day"))
         )
-        if org_id is not None:
-            stmt = stmt.where(token_usage.c.org_id == org_id)
+        stmt = stmt.where(_match_org(token_usage.c.org_id, org_id))
         async with self._engine.raw.connect() as conn:
             rows = (await conn.execute(stmt)).fetchall()
         return [
@@ -255,8 +250,7 @@ class TrustRepository:
             .order_by(trust_scores.c.recorded_at.desc())
             .limit(limit)
         )
-        if org_id is not None:
-            stmt = stmt.where(trust_scores.c.org_id == org_id)
+        stmt = stmt.where(_match_org(trust_scores.c.org_id, org_id))
         async with self._engine.raw.connect() as conn:
             rows = (await conn.execute(stmt)).fetchall()
         return [
@@ -302,8 +296,7 @@ class TrustRepository:
 
     async def all_models(self, org_id: str | None = None) -> list[dict[str, str]]:
         stmt = select(trust_scores.c.model_name, trust_scores.c.provider).distinct()
-        if org_id is not None:
-            stmt = stmt.where(trust_scores.c.org_id == org_id)
+        stmt = stmt.where(_match_org(trust_scores.c.org_id, org_id))
         async with self._engine.raw.connect() as conn:
             rows = (await conn.execute(stmt)).fetchall()
         return [{"model_name": r[0], "provider": r[1]} for r in rows]
@@ -323,8 +316,7 @@ class TrustRepository:
             .offset(1)
             .limit(1)
         )
-        if org_id is not None:
-            stmt = stmt.where(trust_scores.c.org_id == org_id)
+        stmt = stmt.where(_match_org(trust_scores.c.org_id, org_id))
         async with self._engine.raw.connect() as conn:
             row = (await conn.execute(stmt)).fetchone()
         return float(row[0]) if row else None

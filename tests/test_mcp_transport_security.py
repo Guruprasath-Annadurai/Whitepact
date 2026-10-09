@@ -201,6 +201,34 @@ class TestAuthRateLimitIntegration:
         assert statuses[:3] == [401, 401, 401]
         assert statuses[3:] == [429, 429]
 
+    async def test_rotating_bearer_tokens_does_not_reset_peer_budget(
+        self, app_factory, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A new Authorization value from the same address must not receive
+        a fresh authentication-failure budget."""
+        monkeypatch.setenv("RAI_MCP_HTTP_AUTH_MAX_FAILURES", "2")
+        monkeypatch.setenv("RAI_MCP_HTTP_AUTH_WINDOW_SECONDS", "60")
+        app, _raw_key = await app_factory()
+        async with await _raw_client(app) as client:
+            first = await client.post(
+                "/mcp",
+                json={"jsonrpc": "2.0", "method": "ping", "id": 1},
+                headers={"Authorization": "Bearer wrong-key-a"},
+            )
+            second = await client.post(
+                "/mcp",
+                json={"jsonrpc": "2.0", "method": "ping", "id": 1},
+                headers={"Authorization": "Bearer wrong-key-a"},
+            )
+            rotated = await client.post(
+                "/mcp",
+                json={"jsonrpc": "2.0", "method": "ping", "id": 1},
+                headers={"Authorization": "Bearer wrong-key-b"},
+            )
+        assert first.status_code == 401
+        assert second.status_code == 401
+        assert rotated.status_code == 429
+
     async def test_failure_budget_is_shared_between_transports(
         self, app_factory, monkeypatch: pytest.MonkeyPatch
     ) -> None:
