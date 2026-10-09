@@ -42,7 +42,18 @@ except ImportError:  # pragma: no cover - exercised only when extra isn't instal
     _LANGCHAIN_AVAILABLE = False
     AgentMiddleware = object  # type: ignore[assignment,misc]
 
-from responsibleai.integrations.client import TrustClient
+from responsibleai.integrations.client import TrustCheckResult, TrustClient
+
+
+def _trust_block_reason(result: TrustCheckResult, min_score: float) -> str:
+    if result.error and not result.stale:
+        return "trust lookup unavailable"
+    if result.stale:
+        return "trust assessment is stale"
+    if result.known:
+        return f"score {result.overall_score} below minimum {min_score}"
+    return "no Trust Index record found"
+
 
 if TYPE_CHECKING:
     from langchain.agents.middleware.types import ToolCallRequest
@@ -68,11 +79,9 @@ class TrustGateMiddleware(AgentMiddleware):  # type: ignore[misc]
     pair — a third-party MCP server or tool can self-assess under its own
     name exactly the way a model does.
 
-    Fails open on network errors and on unknown (never-assessed) tools by
-    default — see `TrustCheckResult.passes()` for the reasoning. Set
-    `require_known=True` to block anything with no Trust Index record at
-    all, which is a stricter, allow-listing posture some deployments will
-    want instead.
+    Admission follows ``TrustCheckResult.passes()`` and fails closed.
+    A network error, a stale result, or an unknown tool does not call
+    the wrapped handler. ``require_known`` does not reopen that path.
     """
 
     def __init__(
@@ -115,12 +124,7 @@ class TrustGateMiddleware(AgentMiddleware):  # type: ignore[misc]
         provider = self._provider_for(tool_name)
         result = self.client.check(tool_name, provider)
         if not result.passes(min_score=self.min_score, require_known=self.require_known):
-            reason = (
-                f"score {result.overall_score} below minimum {self.min_score}"
-                if result.known
-                else "no Trust Index record found and require_known=True"
-            )
-            return self._blocked_message(request, reason)
+            return self._blocked_message(request, _trust_block_reason(result, self.min_score))
         return handler(request)
 
     async def awrap_tool_call(
@@ -132,10 +136,5 @@ class TrustGateMiddleware(AgentMiddleware):  # type: ignore[misc]
         provider = self._provider_for(tool_name)
         result = await self.client.check_async(tool_name, provider)
         if not result.passes(min_score=self.min_score, require_known=self.require_known):
-            reason = (
-                f"score {result.overall_score} below minimum {self.min_score}"
-                if result.known
-                else "no Trust Index record found and require_known=True"
-            )
-            return self._blocked_message(request, reason)
+            return self._blocked_message(request, _trust_block_reason(result, self.min_score))
         return await handler(request)
