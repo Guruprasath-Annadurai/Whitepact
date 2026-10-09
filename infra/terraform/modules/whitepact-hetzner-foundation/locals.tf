@@ -43,10 +43,16 @@ locals {
     "tcp dport 5432 ip saddr { ${var.saas_subnet_cidr}, ${var.execution_subnet_cidr} } accept",
     "tcp dport 22 ip saddr { ${local.mgmt_ssh_nft} } accept comment \"SSH via bastion\"",
   ])
-  authority_nft_output = join("\n          ", concat(
-    [for cidr in var.authority_egress_cidrs : "tcp dport 443 ip daddr { ${cidr} } accept"],
-    var.enable_nat_gateway ? ["tcp dport 443 accept comment \"R2 backup upload via NAT\""] : [],
-  ))
+  # Backup and update endpoints belong in authority_egress_cidrs. A trailing
+  # "tcp dport 443 accept" made that allowlist dead whenever NAT was enabled:
+  # nftables is first-match, and the output chain's default is drop only for
+  # destinations that no earlier rule accepted. Do not add an unrestricted
+  # HTTPS accept here. Hostname backup still requires the resolved R2 (or
+  # update) addresses to be in the allowlist; port 53 is not opened by this
+  # chain.
+  authority_nft_output = join("\n          ", [
+    for cidr in var.authority_egress_cidrs : "tcp dport 443 ip daddr { ${cidr} } accept comment \"authority egress allowlist\""
+  ])
   execution_nft_output = concat(
     [
       for cidr in var.execution_egress_cidrs :

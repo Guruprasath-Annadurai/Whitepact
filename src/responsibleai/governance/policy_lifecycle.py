@@ -34,7 +34,7 @@ from responsibleai.db.revocation_epoch_repository import (
     lock_epoch,
 )
 from responsibleai.governance.models import GovernanceDecision
-from responsibleai.governance.policy import PolicyRule
+from responsibleai.governance.policy import PolicyRule, reject_shadowed_restrictive_rules
 from responsibleai.governance.risk import RiskTier
 from responsibleai.iam.enums import PrivilegedAction
 from responsibleai.iam.errors import PrivilegedAccessDeniedError
@@ -165,6 +165,7 @@ class PolicyLifecycleManager:
         break_glass_session_id: str | None = None,
     ) -> PolicyRevision:
         """Create an immutable policy revision. Monotonically numbered per org."""
+        reject_shadowed_restrictive_rules(rules)
         is_crit = is_critical_policy(rules)
         digest = compute_policy_digest(rules)
 

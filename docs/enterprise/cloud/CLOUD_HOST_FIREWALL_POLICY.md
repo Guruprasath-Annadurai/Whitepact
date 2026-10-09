@@ -18,7 +18,7 @@ Hetzner Cloud Firewalls **do not secure private Cloud Network traffic** ([Firewa
 |-----------|--------|
 | In | TCP **5432** from saas + execution subnets |
 | In | TCP **22** from NAT gateway only |
-| Out | TCP **443** (R2 backup + updates via NAT) |
+| Out | TCP **443** only to `authority_egress_cidrs` (R2 backup and update endpoints must be listed). NAT does not add an unrestricted HTTPS accept. |
 
 No inbound Internet exposure.
 
