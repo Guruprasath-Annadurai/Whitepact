@@ -8,11 +8,11 @@ rewrites the rows and recomputes every hash. This module is the
 smallest check that does: a signature over the chain head, made by a
 key that is not stored in the evidence database.
 
-Live publication of witnesses (transparency log, object lock, operator
-HSM) is not performed here. ``LIVE_ANCHOR_STATUS`` stays
-``EXTERNAL_BLOCKER`` until an authorized deployment holds the signing
-key outside the database and publishes witnesses on a schedule.
-Verification of a witness that an operator already has is local.
+``governance.evidence_publication`` can append a signed head to a
+directory outside the database and can build an object-lock PUT.
+``LIVE_ANCHOR_STATUS`` stays ``EXTERNAL_BLOCKER``. A local directory is
+not a separate administrative domain, and object-store configuration is
+not a live witness until an auditor reads a retention-locked object.
 """
 
 from __future__ import annotations

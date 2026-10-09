@@ -18,6 +18,15 @@ jobs:
   test:
     name: Lint · Type-check · Test
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    # Full suite (~5.2k tests) can exceed 45m on 3.12; 3.11 finished ~44m27s on PR #130.
+    timeout-minutes: 55
+    env:
+      WHITEPACT_REDIS_URL: redis://127.0.0.1:6379/0
+      WHITEPACT_REQUIRE_REDIS: "1"
     services:
       postgres:
         image: postgres:16-alpine
@@ -32,12 +41,15 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.11", "3.12"]
-    # Full suite (~5.2k tests) can exceed 45m on 3.12; 3.11 finished ~44m27s on PR #130.
-    timeout-minutes: 55
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -51,13 +63,13 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip setuptools
-          pip install -e ".[dev,openai,anthropic,sso,sentiment,postgres]"
+          pip install -e ".[dev,openai,anthropic,sso,sentiment,postgres,redis]"
 
       - name: Lint with ruff
-        run: ruff check src/ tests/
+        run: ruff check src/ tests/ sdk/python/
 
       - name: Check formatting with ruff
-        run: ruff format --check src/ tests/
+        run: ruff format --check src/ tests/ sdk/python/
 
       - name: Type-check with mypy
         run: mypy src/responsibleai
@@ -92,10 +104,13 @@ jobs:
       - name: Install mandatory Linux security-test tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y nftables iproute2 nginx
+          sudo apt-get install -y nftables iproute2 nginx acl
 
       - name: Security-fix inclusion gate
         run: python scripts/check_security_fix_inclusion.py
+
+      - name: Security regression behavior gate
+        run: python scripts/check_security_regressions.py
 
       - name: Run tests with coverage
         run: |

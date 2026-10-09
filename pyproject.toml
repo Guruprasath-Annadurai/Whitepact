@@ -206,8 +206,22 @@ addopts      = "--cov=src/responsibleai --cov=src/biasbuster --cov=src/privacyla
 [tool.ruff]
 target-version = "py311"
 line-length    = 100
-src            = ["src", "tests"]
+# Mandatory format and lint scope is src/, tests/, and sdk/python/.
+# CI invokes ruff on those paths. `ruff format .` also discovers Markdown
+# and reformats fenced examples; documentation is not Python source.
+# migrations/ stays outside the gate: reformatting historical Alembic
+# modules would be unrelated whitespace, and that drift is recorded in
+# docs/launch/RUFF_SCOPE.md rather than hidden by a rewritten schema.
+src            = ["src", "tests", "sdk/python"]
 exclude        = ["examples", "scripts"]
+extend-exclude = [
+    "docs",
+    "wiki",
+    "compliance",
+    "migrations",
+    "*.md",
+    "*.markdown",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "N"]

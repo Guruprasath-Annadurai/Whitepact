@@ -34,6 +34,51 @@ def pytest_configure(config):
         pass
 
 
+_QUALIFICATION_SKIPS: list[dict[str, str]] = []
+
+
+def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+    """Record skips when WHITEPACT_QUALIFICATION_SKIP_LOG is set.
+
+    A skip is not a pass. The log is the release qualification record of
+    every skip in that run.
+    """
+    if not os.environ.get("WHITEPACT_QUALIFICATION_SKIP_LOG"):
+        return
+    if not report.skipped:
+        return
+    reason = ""
+    longrepr = report.longrepr
+    if isinstance(longrepr, tuple) and len(longrepr) >= 3:
+        reason = str(longrepr[2])
+    elif longrepr is not None:
+        reason = str(longrepr)
+    _QUALIFICATION_SKIPS.append({"nodeid": report.nodeid, "reason": reason})
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    import json
+
+    destination = os.environ.get("WHITEPACT_QUALIFICATION_SKIP_LOG")
+    if not destination:
+        return
+    path = Path(destination)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    unique: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in _QUALIFICATION_SKIPS:
+        if item["nodeid"] in seen:
+            continue
+        seen.add(item["nodeid"])
+        unique.append(item)
+    payload = {
+        "exit_status": exitstatus,
+        "skip_count": len(unique),
+        "skips": unique,
+    }
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
 TEST_GOVERNANCE_PURPOSE = "automated-test"
 
 

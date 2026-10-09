@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import shutil
 import socket
 import subprocess
 import threading
@@ -92,12 +91,14 @@ def _openssl(*args: str, timeout: int = 5) -> subprocess.CompletedProcess[str]:
 
 
 def test_nginx_origin_config_rejects_missing_and_wrong_client_certificates(tmp_path: Path) -> None:
-    if (
-        shutil.which("nginx") is None
-        or shutil.which("openssl") is None
-        or shutil.which("curl") is None
-    ):
-        pytest.fail("nginx, openssl, and curl are required to validate the origin listener")
+    from tests.linux_security import require_linux_tools
+
+    require_linux_tools(
+        "nginx",
+        "openssl",
+        "curl",
+        purpose="authenticated origin pull rejects a missing or wrong client certificate",
+    )
     ca_key = tmp_path / "ca.key"
     ca_pem = tmp_path / "ca.pem"
     server_key = tmp_path / "server.key"

@@ -35,6 +35,7 @@ from responsibleai.governance.policy import (
 )
 from responsibleai.governance.policy_lifecycle import PolicyLifecycleManager
 from responsibleai.governance.risk import RiskTier
+from tests.linux_security import require_linux_tools
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCALS = ROOT / "infra" / "terraform" / "modules" / "whitepact-hetzner-foundation" / "locals.tf"
@@ -345,7 +346,12 @@ def _function_body(path: Path, name: str) -> str:
 
 
 def test_linux_nft_and_nginx_security_tests_stay_mandatory() -> None:
-    """Missing nftables or nginx fails the run. These checks are not optional."""
+    """Linux must fail closed when nft or nginx is missing.
+
+    Non-Linux hosts take an explicit qualification skip inside
+    ``tests/linux_security.py``. That skip is not inside the security
+    test body, and it is not a pass.
+    """
     nft_body = _function_body(
         ROOT / "tests" / "test_foundation_hardening.py",
         "test_isolated_nft_authority_https_allowlist",
@@ -354,15 +360,24 @@ def test_linux_nft_and_nginx_security_tests_stay_mandatory() -> None:
         ROOT / "tests" / "test_phase34_origin_aop.py",
         "test_nginx_origin_config_rejects_missing_and_wrong_client_certificates",
     )
+    helper = (ROOT / "tests" / "linux_security.py").read_text(encoding="utf-8")
+    assert "require_linux_tools" in nft_body
+    assert '"nft"' in nft_body
+    assert '"ip"' in nft_body
     assert "pytest.skip" not in nft_body
     assert "pytest.importorskip" not in nft_body
-    assert 'pytest.fail("nft and ip are required' in nft_body
+    assert "require_linux_tools" in nginx_body
     assert "pytest.skip" not in nginx_body
     assert "pytest.importorskip" not in nginx_body
-    assert "pytest.fail" in nginx_body
+    assert 'sys.platform != "linux"' in helper
+    assert "QUALIFICATION_SKIP" in helper
+    assert "Linux security CI is missing required tools" in helper
+    assert "pytest.fail" in helper
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     assert "nftables" in workflow
+    assert "iproute2" in workflow
     assert "nginx" in workflow
+    assert "acl" in workflow
 
 
 def test_isolated_nft_authority_https_allowlist() -> None:
@@ -371,8 +386,11 @@ def test_isolated_nft_authority_https_allowlist() -> None:
     The historical NAT backup rule accepted every TCP/443 destination.
     The remediated chain accepts only the backup allowlist.
     """
-    if shutil.which("nft") is None or shutil.which("ip") is None:
-        pytest.fail("nft and ip are required to reproduce the egress policy")
+    require_linux_tools(
+        "nft",
+        "ip",
+        purpose="nftables egress allowlist negative test in a network namespace",
+    )
     prefix = _sudo()
     ns = f"wp-egress-{uuid.uuid4().hex[:8]}"
     created = _run([*prefix, "ip", "netns", "add", ns])

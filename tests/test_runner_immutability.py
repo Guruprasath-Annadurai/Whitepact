@@ -18,6 +18,7 @@ from responsibleai.isolation.container_backend import (
 from responsibleai.isolation.errors import FilesystemEscapeError, IsolationPolicyViolationError
 from responsibleai.isolation.filesystem import EphemeralWorkspace
 from responsibleai.isolation.models import IsolatedExecutionRequest, IsolationProfile
+from tests.linux_security import require_linux_tools
 
 
 def test_reserved_runner_paths_are_recognized() -> None:
@@ -62,8 +63,22 @@ async def test_direct_backend_rejects_caller_runner(monkeypatch: pytest.MonkeyPa
     launched.assert_not_called()
 
 
+def _stub_acl_grant_for_runner_selection(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Let portable runner-selection tests proceed without a Linux ACL.
+
+    Returning True from ``_try_setfacl`` does not verify POSIX ACL
+    enforcement. ``test_linux_workspace_acl_grants_container_uid`` and
+    ``tests/test_isolation_workspace_permissions.py`` exercise the real
+    control and do not use this stub.
+    """
+    from responsibleai.isolation import filesystem as filesystem_module
+
+    monkeypatch.setattr(filesystem_module, "_try_setfacl", lambda *_args, **_kwargs: True)
+
+
 @pytest.mark.asyncio
 async def test_direct_backend_mounts_trusted_runner(monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub_acl_grant_for_runner_selection(monkeypatch)
     backend = DockerContainerBackend(docker_cmd="docker")
     monkeypatch.setattr(backend, "is_available", lambda: True)
     captured: dict[str, object] = {}
@@ -143,3 +158,36 @@ async def test_broker_does_not_forward_workspace_files() -> None:
     await broker.execute(auth, action)
     request = mock_backend.execute.await_args.args[0]
     assert request.workspace_files == {}
+
+
+def test_linux_workspace_acl_grants_container_uid() -> None:
+    """Real setfacl grant. This test does not stub host ACL operations."""
+    import os
+    import stat
+    import subprocess
+
+    from responsibleai.isolation.filesystem import (
+        EphemeralWorkspace,
+        workspace_is_world_accessible,
+    )
+
+    require_linux_tools(
+        "setfacl",
+        "getfacl",
+        purpose="POSIX ACL grant for container UID 65534",
+    )
+    with EphemeralWorkspace("act", "org") as workspace:
+        workspace.populate({"notes.txt": "secret"})
+        workspace.prepare_for_container(uid=65534, gid=65534)
+        assert not workspace_is_world_accessible(workspace.path)
+        assert stat.S_IMODE(os.stat(workspace.path).st_mode) & 0o007 == 0
+        listed = subprocess.run(
+            ["getfacl", "-n", "-p", str(workspace.path / "notes.txt")],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        assert listed.returncode == 0, listed.stderr
+        assert "user:65534:r" in listed.stdout
+        assert "other::---" in listed.stdout or "other::" in listed.stdout

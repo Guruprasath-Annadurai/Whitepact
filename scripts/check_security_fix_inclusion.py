@@ -10,6 +10,7 @@ script is not a qualification of those controls.
 
 from __future__ import annotations
 
+import ast
 import json
 import sys
 from pathlib import Path
@@ -78,25 +79,51 @@ def _read(rel: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _function_names(paths: list[str]) -> set[str]:
+    names: set[str] = set()
+    for rel in paths:
+        text = _read(rel)
+        if not text:
+            continue
+        tree = ast.parse(text)
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                names.add(node.name)
+    return names
+
+
 def evaluate() -> dict[str, object]:
     missing: list[dict[str, str]] = []
     present: list[str] = []
     for control, spec in CONTROLS.items():
         blob = "\n".join(_read(path) for path in spec["files"])
         tests = "\n".join(_read(path) for path in spec["tests"])
+        functions = _function_names(spec["tests"])
         ok = True
         for marker in spec["markers"]:
             if marker not in blob:
                 missing.append({"control": control, "missing": marker, "kind": "implementation"})
                 ok = False
         for marker in spec["test_markers"]:
-            if marker not in tests:
-                missing.append({"control": control, "missing": marker, "kind": "regression-test"})
+            if marker.startswith("test_"):
+                if marker not in functions:
+                    missing.append(
+                        {
+                            "control": control,
+                            "missing": marker,
+                            "kind": "regression-function",
+                        }
+                    )
+                    ok = False
+            elif marker not in tests:
+                missing.append({"control": control, "missing": marker, "kind": "regression-text"})
                 ok = False
         if ok:
             present.append(control)
     return {
         "gate": "security-fix-inclusion",
+        "text_match_is_not_enforcement": True,
+        "behavioral_gate": "scripts/check_security_regressions.py",
         "present": present,
         "missing": missing,
         "passed": not missing,

@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import functools
 import os
+import shutil
 import stat
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -24,6 +26,7 @@ from responsibleai.isolation.filesystem import (
     EphemeralWorkspace,
     workspace_is_world_accessible,
 )
+from tests.linux_security import QUALIFICATION_SKIP_PREFIX
 
 
 def _other_bits(mode: int) -> int:
@@ -49,11 +52,23 @@ def _container_uid_mapping_supported() -> bool:
 
 
 def _require_container_uid_mapping() -> None:
-    if not _container_uid_mapping_supported():
+    if sys.platform != "linux":
         pytest.skip(
-            "POSIX ACL (setfacl) and root chown are unavailable; production "
-            "correctly refuses prepare_for_container rather than world-readable "
-            "modes. Linux/Docker hosts with setfacl still run this check."
+            f"{QUALIFICATION_SKIP_PREFIX} platform={sys.platform} "
+            "purpose=POSIX ACL or root chown for container UID 65534. "
+            "This host cannot execute the Linux workspace-mapping control. "
+            "The skip is not a pass."
+        )
+    if os.geteuid() != 0 and shutil.which("setfacl") is None:
+        pytest.fail(
+            "Linux security CI is missing required tools: setfacl. "
+            "Real ACL enforcement for the container workspace was not verified."
+        )
+    if not _container_uid_mapping_supported():
+        pytest.fail(
+            "Linux host could not grant container UID 65534 access. "
+            "setfacl failed or the filesystem rejected the ACL. "
+            "Refusing to skip a mandatory Linux isolation check."
         )
 
 
@@ -149,7 +164,11 @@ def test_unrelated_uid_denied_after_container_prepare() -> None:
     _require_container_uid_mapping()
     docker = _docker_available()
     if not docker and os.geteuid() != 0:
-        pytest.skip("Docker or root is required to probe an unrelated UID after ACL/chown")
+        pytest.skip(
+            f"{QUALIFICATION_SKIP_PREFIX} platform={sys.platform} "
+            "purpose=foreign UID probe after ACL grant. "
+            "Docker or root is required. The skip is not a pass."
+        )
     with EphemeralWorkspace("act", "org") as ws:
         ws.populate({"secret.txt": "unrelated-must-not-read\n"})
         ws.prepare_for_container()
@@ -193,7 +212,11 @@ def test_container_uid_can_read_after_prepare() -> None:
     _require_container_uid_mapping()
     docker = _docker_available()
     if not docker:
-        pytest.skip("Docker daemon required to prove container UID mapping")
+        pytest.skip(
+            f"{QUALIFICATION_SKIP_PREFIX} platform={sys.platform} "
+            "purpose=container UID read after real ACL grant. "
+            "Docker daemon is required. The skip is not a pass."
+        )
     with EphemeralWorkspace("act", "org") as ws:
         ws.populate({"runner.py": "ok\n"})
         ws.prepare_for_container(uid=DEFAULT_CONTAINER_UID, gid=DEFAULT_CONTAINER_GID)
@@ -227,11 +250,18 @@ def _docker_available() -> bool:
 def test_prepare_fails_closed_when_acl_and_root_are_unavailable() -> None:
     if _container_uid_mapping_supported() and os.geteuid() != 0:
         pytest.skip(
-            "This host can grant container UID access; fail-closed is covered "
-            "by stubbing setfacl and a non-root euid."
+            f"{QUALIFICATION_SKIP_PREFIX} platform={sys.platform} "
+            "purpose=fail-closed path when ACL and root are both unavailable. "
+            "This host can grant container UID access. The stubbed test "
+            "test_prepare_does_not_chmod_world_readable_even_if_acl_missing "
+            "covers the refusal. The skip is not a pass."
         )
     if os.geteuid() == 0:
-        pytest.skip("Root host uses chown rather than the fail-closed missing-capability path")
+        pytest.skip(
+            f"{QUALIFICATION_SKIP_PREFIX} platform={sys.platform} "
+            "purpose=fail-closed path when ACL and root are both unavailable. "
+            "Root uses chown. The skip is not a pass."
+        )
     with EphemeralWorkspace("act", "org") as ws:
         ws.populate({"f.txt": "x"})
         assert stat.S_IMODE(os.stat(ws.path).st_mode) == 0o700
