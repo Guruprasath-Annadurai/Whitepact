@@ -73,7 +73,15 @@ FH-07. Lifespan called `multi_replica_problems` and only logged. `enforce_shared
 
 ## F. Remediation files
 
-Code and tests on `cursor/whitepact-foundation-hardening-934e`. Commit subjects are in git log on that branch. Changed areas are the files in section C plus:
+Code and tests on `cursor/whitepact-foundation-hardening-934e`, parent `7a0852899afd997264c384a9ff5ca5f99a65c7ca`:
+
+- `cdef4c7` fix(net): keep authority HTTPS on the egress allowlist
+- `2bccc8b` fix(governance): require approval when trust lookup fails
+- `29f8b24` fix(policy): reject stricter rules hidden by an earlier match
+- `06093e1` fix(security): stop key rotation from multiplying ceilings
+- `bfbd9af` fix(evidence): do not treat a recomputed hash chain as an external witness
+
+Changed areas are the files in section C plus:
 
 - `tests/test_foundation_hardening.py`
 - `tests/test_governance_trust_state.py`
