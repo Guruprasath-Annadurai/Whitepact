@@ -272,6 +272,54 @@ class TestMemoryScopeEscalation:
         child = _authority(memory_scope="org:acme:agent:bot1")
         assert validate_attenuation(parent, child) is None
 
+    def test_org_acme_cannot_delegate_broader_org(self) -> None:
+        parent = _authority(memory_scope="org:acme")
+        child = _authority(memory_scope="org")
+        reason = validate_attenuation(parent, child)
+        assert reason is not None
+        assert reason.startswith("DELEGATION_AUTHORITY_ESCALATION")
+        assert "parent_scope=org:acme" in reason
+        assert "child_scope=org" in reason
+
+    def test_cross_tenant_scope_denied(self) -> None:
+        parent = _authority(memory_scope="org:acme")
+        child = _authority(memory_scope="org:other")
+        reason = validate_attenuation(parent, child)
+        assert reason is not None
+        assert "memory_scope" in reason
+
+    def test_hyphen_sibling_is_not_a_descendant(self) -> None:
+        parent = _authority(memory_scope="org:acme")
+        child = _authority(memory_scope="org:acme-eu")
+        reason = validate_attenuation(parent, child)
+        assert reason is not None
+        assert "memory_scope" in reason
+
+    def test_malformed_scopes_fail_closed(self) -> None:
+        parent = _authority(memory_scope="org:acme")
+        for child_scope in ("", " org:acme", "org:acme ", "org:acme:", "org::acme", "org:acme: agent"):
+            reason = validate_attenuation(parent, _authority(memory_scope=child_scope))
+            assert reason is not None
+            assert "memory_scope" in reason
+        reason = validate_attenuation(_authority(memory_scope=""), _authority(memory_scope=""))
+        assert reason is not None
+        reason = validate_attenuation(
+            _authority(memory_scope="org:acme"), _authority(memory_scope=["org:acme"])
+        )
+        assert reason is not None
+
+    def test_multi_hop_cannot_widen_after_a_narrow_grant(self) -> None:
+        root = _authority(memory_scope="org:acme")
+        mid = _authority(memory_scope="org:acme:team")
+        leaf = _authority(memory_scope="org")
+        assert validate_attenuation(root, mid) is None
+        widened = validate_attenuation(mid, leaf)
+        assert widened is not None
+        assert "child_scope=org" in widened
+        back_to_parent = validate_attenuation(mid, root)
+        assert back_to_parent is not None
+        assert "child_scope=org:acme" in back_to_parent
+
 
 class TestMethodWrapper:
     def test_validate_delegation_to_matches_function(self) -> None:

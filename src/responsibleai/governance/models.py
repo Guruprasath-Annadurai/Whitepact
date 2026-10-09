@@ -362,15 +362,16 @@ def validate_attenuation(parent: AuthorityContext, child: AuthorityContext) -> s
       22:00-06:00; a child claiming ``(20, 6)`` illegally adds hour 20).
       Parent having no window at all means parent is unconstrained here.
     - ``constraints["memory_scope"]``: if the parent binds a memory
-      namespace, the child must bind one too, and the child's scope
-      must be exactly the parent's or a descendant
-      (``child == parent`` or ``child.startswith(parent + ":")``).
-      This is the same prefix rule ``constraint_violation()`` uses at
-      action time. Omitting it here let a delegation grant a wider
-      namespace than the delegator held; the child's own later check
-      would then enforce only the widened scope. A non-string scope
-      fails closed. Parent having no memory scope means the parent is
-      unconstrained here, so a child may narrow itself.
+      namespace, the child must bind a well-formed one too, and the
+      child's scope must be exactly the parent's or a colon-delimited
+      descendant (``child == parent`` or
+      ``child.startswith(parent + ":")``). This is the same prefix
+      rule ``constraint_violation()`` uses at action time. Omitting it
+      here let a delegation grant a wider namespace than the delegator
+      held; the child's own later check would then enforce only the
+      widened scope. A non-string, empty, padded, or empty-segment
+      scope fails closed. Parent having no memory scope means the
+      parent is unconstrained here, so a child may narrow itself.
 
     Explicitly **not** checked here (documented, not silently skipped):
     ``delegation_chain`` identity/depth consistency (already covered
@@ -452,12 +453,7 @@ def validate_attenuation(parent: AuthorityContext, child: AuthorityContext) -> s
     parent_memory = parent.constraints.get("memory_scope")
     if parent_memory is not None:
         child_memory = child.constraints.get("memory_scope")
-        contained = (
-            isinstance(parent_memory, str)
-            and isinstance(child_memory, str)
-            and (child_memory == parent_memory or child_memory.startswith(f"{parent_memory}:"))
-        )
-        if not contained:
+        if not _memory_scope_contained(parent_memory, child_memory):
             return format_reason(
                 ReasonCode.DELEGATION_AUTHORITY_ESCALATION,
                 field="memory_scope",
@@ -466,6 +462,27 @@ def validate_attenuation(parent: AuthorityContext, child: AuthorityContext) -> s
             )
 
     return None
+
+
+def _well_formed_memory_scope(scope: object) -> bool:
+    """A memory namespace is non-empty colon-separated segments.
+
+    Padding and empty segments are rejected so ``org:acme`` does not
+    contain ``org:acme:`` or `` org:acme``.
+    """
+    if not isinstance(scope, str) or not scope or scope != scope.strip():
+        return False
+    parts = scope.split(":")
+    return all(part and not any(character.isspace() for character in part) for part in parts)
+
+
+def _memory_scope_contained(parent_scope: object, child_scope: object) -> bool:
+    """True when ``child_scope`` is ``parent_scope`` or a descendant of it."""
+    if not isinstance(parent_scope, str) or not isinstance(child_scope, str):
+        return False
+    if not _well_formed_memory_scope(parent_scope) or not _well_formed_memory_scope(child_scope):
+        return False
+    return child_scope == parent_scope or child_scope.startswith(f"{parent_scope}:")
 
 
 @dataclass
