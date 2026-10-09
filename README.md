@@ -97,6 +97,14 @@ see `MIGRATION_WHITEPACT_V2.md` Section 3 and `docs/PACKAGE_IDENTITY.md`
 for install vs import vs product naming (do not use `pip install whitepact`
 unless PyPI documents that distribution).
 
+The version shown in this source tree (`1.3.1` in `pyproject.toml`) is not
+automatically the version `pip install` resolves. On 2026-10-09 the newest
+release on PyPI was `rai-governance-platform==1.2.6`. In that published
+wheel the `whitepact` console script still launches `biasbuster.cli:main`;
+`whitepact-mcp` and `whitepact-mcp-http` are the MCP entrypoints. Do not
+document `pip install rai-governance-platform==1.3.1` until that version
+is actually published.
+
 ---
 
 ## 30-second quickstart

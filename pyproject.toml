@@ -17,7 +17,11 @@ keywords = [
     "cost-intelligence", "token-tracking", "drift-detection", "model-routing",
 ]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
+    # Source 1.3.1 is not the published release, and the hosted enterprise
+    # service does not have global production authorization. PyPI 1.2.6
+    # still carries Development Status :: 5 - Production/Stable until a
+    # later publish. This classifier is not a certification.
+    "Development Status :: 4 - Beta",
     "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",

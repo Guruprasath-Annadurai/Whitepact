@@ -1,0 +1,17 @@
+# DRAFT ONLY. Do not open a pull request against github.com/cncf/landscape.
+# Blocked on 2026-10-09: GitHub star count was 2; the guideline cited in
+# the landscape README is 300. This repository also has no official SVG.
+# WhitePact is not a CNCF project and this file does not say that it is.
+item:
+  name: WhitePact
+  description: Open-source runtime authorization and governance for autonomous AI agents.
+  homepage_url: https://github.com/Guruprasath-Annadurai/Whitepact
+  repo_url: https://github.com/Guruprasath-Annadurai/Whitepact
+  logo: whitepact-wordmark-draft.svg
+  crunchbase: ""
+  extra:
+    license: MIT
+    note: >-
+      Draft category to confirm later: Security & Compliance.
+      Do not set a CNCF project tier. Do not submit while the star
+      guideline and the official SVG are unmet.

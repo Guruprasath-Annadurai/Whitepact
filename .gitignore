@@ -27,6 +27,7 @@ venv/
 !grafana/dashboards/*.json
 !src/responsibleai/dashboard/static/locales/*.json
 !server.json
+!docs/ecosystem/inventory.json
 !plugins/**/*.json
 !distribution/**/*.json
 !security/*.openvex.json

@@ -5,8 +5,10 @@ original `biasbuster`/`privacylabel`/`responsibleai` packages plus the new
 `whitepact` alias — see `MIGRATION_WHITEPACT_V2.md`) is an AI governance and
 runtime-authority platform: trust scoring, guardrails, compliance mapping,
 bias evaluation, a governance decision engine (ALLOW / ALLOW_WITH_REDACTION /
-REQUIRE_APPROVAL / DENY / QUARANTINE), and an MCP server exposing all of it as
-27 tools. Contributions are welcome — bug reports, new probes/checks, provider
+REQUIRE_APPROVAL / DENY / QUARANTINE), and an MCP server. Source `TOOL_DEFS` contains 31 tool definitions,
+including the non-production `test.counter.increment` tool. The hosted
+server card checked on 2026-10-09 advertised 30 tools and 20 resources
+(10 canonical resources under both `whitepact://` and `rai://`). Contributions are welcome — bug reports, new probes/checks, provider
 integrations, documentation fixes, governance-policy improvements, anything
 that makes the platform more correct or more honest about what it does.
 
