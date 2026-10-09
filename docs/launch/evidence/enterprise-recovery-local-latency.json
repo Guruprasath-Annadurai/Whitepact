@@ -1,0 +1,56 @@
+{
+  "qualification": "One local VM. Not a production capacity claim. Security checks were not disabled. ASGI transport does not include a public network hop.",
+  "python": "3.12.3",
+  "platform": "Linux-6.12.94+-x86_64-with-glibc2.39",
+  "cpu_count": 4,
+  "command": "python scripts/measure_recovery_latency.py --requests 400 --concurrency 20",
+  "sqlite_file": {
+    "db_backend": "sqlite-file",
+    "note": "Temporary SQLite file via the dashboard lifespan. /api/health lists organizations and is not an authorization benchmark.",
+    "api_health": {
+      "requests": 400,
+      "concurrency": 20,
+      "error_rate": 0.0,
+      "throughput_rps": 192.79,
+      "p50_ms": 68.028,
+      "p95_ms": 213.702,
+      "p99_ms": 222.795
+    },
+    "healthz": {
+      "requests": 400,
+      "concurrency": 20,
+      "error_rate": 0.0,
+      "throughput_rps": 565.5,
+      "p50_ms": 21.251,
+      "p95_ms": 103.68,
+      "p99_ms": 104.161
+    }
+  },
+  "postgresql_local": {
+    "db_backend": "postgresql",
+    "note": "Disposable local PostgreSQL 16 on 127.0.0.1 after alembic upgrade head. Same process and ASGI transport. Not a multi-replica production database.",
+    "api_health": {
+      "requests": 400,
+      "concurrency": 20,
+      "error_rate": 0.0,
+      "throughput_rps": 173.45,
+      "p50_ms": 95.2,
+      "p95_ms": 212.49,
+      "p99_ms": 214.888
+    },
+    "healthz": {
+      "requests": 400,
+      "concurrency": 20,
+      "error_rate": 0.0,
+      "throughput_rps": 544.73,
+      "p50_ms": 23.379,
+      "p95_ms": 105.56,
+      "p99_ms": 106.42
+    }
+  },
+  "gateway_in_process_single_thread": {
+    "note": "WhitePactRuntimeGateway.evaluate in-process, concurrency 1, 1000 iterations on the SQLite run. Not an HTTP measurement.",
+    "allow": {"p50_ms": 0.016, "p95_ms": 0.018, "p99_ms": 0.022, "throughput_rps": 59940.83, "error_rate": 0.0},
+    "deny": {"p50_ms": 0.001, "p95_ms": 0.002, "p99_ms": 0.002, "throughput_rps": 622001.56, "error_rate": 0.0}
+  }
+}

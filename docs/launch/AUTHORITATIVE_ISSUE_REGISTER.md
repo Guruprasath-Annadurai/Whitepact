@@ -1,6 +1,8 @@
 # Authoritative issue register
 
-This file is the current register for the launch-gate candidate branched from `8aea364ac586e6498fefc4fa37de55a7e25c1bf7` (PR #175). It does not replace historical registers. Those files stay as records of earlier reviews. They are not deleted.
+Superseded for the enterprise-recovery candidate by `docs/launch/ENTERPRISE_RECOVERY_ISSUE_REGISTER.md`. The findings in this file remain the record of launch-gate candidate `5fbd48b1af72b965e95f839191b8f19c6fa37f6e` (tree `4950a0d6c380fbaf07dbe875c3ac5eecb3fd6803`). They are not rewritten.
+
+This file is the register for the launch-gate candidate branched from `8aea364ac586e6498fefc4fa37de55a7e25c1bf7` (PR #175). It does not replace historical registers. Those files stay as records of earlier reviews. They are not deleted.
 
 Superseded for current status, kept on disk:
 
