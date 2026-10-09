@@ -44,6 +44,13 @@ def test_execution_role_sql_matches_the_committed_contract() -> None:
         "GRANT EXECUTE ON FUNCTION whitepact_admit_execution(text) TO whitepact_authority" in text
     )
     assert "PASSWORD" not in text
+    joined = "\n".join(hostile_statements())
+    for name in CANONICAL_AUTHORITY_TABLES:
+        assert f"INSERT INTO {name} " in joined
+        assert f"DELETE FROM {name}" in joined
+        assert f"SELECT * FROM {name}" in joined
+    for name in CANONICAL_AUTHORITY_TABLES + ADMISSION_TABLES:
+        assert name in fixture_tables_sql()
 
 
 def _psql(
