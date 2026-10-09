@@ -79,6 +79,16 @@ def test_submission_copy_has_usable_lengths_and_no_forbidden_claims() -> None:
         assert phrase not in copy
 
 
+def test_source_classifier_is_beta_and_does_not_rewrite_pypi() -> None:
+    pyproject = tomllib.loads(PYPROJECT.read_text())
+    classifiers = pyproject["project"]["classifiers"]
+    assert "Development Status :: 4 - Beta" in classifiers
+    assert "Development Status :: 5 - Production/Stable" not in classifiers
+    ledger = (ROOT / "docs" / "ecosystem" / "PUBLIC_CLAIMS_LEDGER.md").read_text()
+    assert "Development Status :: 5 - Production/Stable" in ledger
+    assert "1.2.6" in ledger
+
+
 def test_server_json_pins_the_published_package_not_source() -> None:
     server = json.loads(SERVER_JSON.read_text())
     pyproject = tomllib.loads(PYPROJECT.read_text())

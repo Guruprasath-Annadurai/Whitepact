@@ -57,12 +57,14 @@ That Trove classifier is not a statement that the hosted enterprise service
 has global production authorization. It is also not a SOC 2 claim, a customer
 claim, or a promise of complete runtime protection.
 
-This documentation commit leaves the source classifier unchanged so the
-metadata edit can stay in its own commit. The following commit on this branch
-sets the source classifier to `Development Status :: 4 - Beta` because source
-`1.3.1` is unpublished and the hosted enterprise release is still under
-operational qualification. Republishing PyPI is out of scope, so the live
-`1.2.6` classifier remains Production/Stable until a later release.
+The source classifier in this branch is `Development Status :: 4 - Beta`.
+That edit is metadata only. It was made because source `1.3.1` is unpublished
+and the hosted enterprise release is still under operational qualification.
+Republishing PyPI is out of scope, so the live `1.2.6` wheel still carries
+`Development Status :: 5 - Production/Stable` until a later release. A local
+`python -m build --wheel` of this branch produced
+`rai_governance_platform-1.3.1-py3-none-any.whl` with
+`Classifier: Development Status :: 4 - Beta`. That wheel was not uploaded.
 
 ## Hosted MCP remote
 
