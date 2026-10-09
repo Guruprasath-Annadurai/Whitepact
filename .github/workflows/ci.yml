@@ -94,6 +94,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y nftables iproute2 nginx
 
+      - name: Security-fix inclusion gate
+        run: python scripts/check_security_fix_inclusion.py
+
       - name: Run tests with coverage
         run: |
           pytest tests/ \
