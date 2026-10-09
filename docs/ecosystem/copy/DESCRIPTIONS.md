@@ -78,7 +78,7 @@ MIT License. Copyright (c) 2026 Guruprasath Annadurai. The software is provided 
 
 ## Availability and limitations
 
-Self-hosted technical evaluation is available from the published package or from qualified source. The hosted MCP endpoint requires authentication. A public self-serve flow that issues that credential was not verified. The dashboard at whitepact.com reported version 1.2.6 on 2026-10-09. The managed enterprise release has not received final global production authorization. OpenSSF Best Practices silver is a project badge, not a certification of the hosted service. No Docker Hub image was found. No Hugging Face Space was published by this work.
+Self-hosted technical evaluation is available from published PyPI 1.2.6 or from qualified source. Source 1.3.1 is not that published release. The hosted MCP endpoint requires a bearer credential and does not support anonymous access. A public self-serve flow that issues that credential was not verified. On 2026-10-09, https://whitepact.com served the older ResponsibleAI governance dashboard at version 1.2.6. The newer corporate website in this repository was not the page that host returned. The managed enterprise release has not received final global production authorization. OpenSSF Best Practices silver is a project badge, not a certification of the hosted service. No Docker Hub image was found. No Hugging Face Space was published by this work.
 
 ## Support and security
 

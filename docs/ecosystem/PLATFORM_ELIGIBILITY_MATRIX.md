@@ -6,13 +6,15 @@ Statuses mean preparation state only. None of these rows is a submission, an app
 
 | Status | Meaning |
 |---|---|
-| GREEN | Submission-ready. The owner still has to submit. |
+| GREEN | Ready for the owner to act. Two of the three are external directories. GitHub Discussions is a first-party community post, not an external directory. |
 | YELLOW | A minor fix or an external prerequisite remains. |
 | RED | A mandatory requirement is not met. |
 | BLUE | Already live on the authoritative site checked below. |
 | GREY | The free route or the live listing could not be verified. |
 
 Platforms in this inventory: 45. GREEN 3. YELLOW 5. RED 10. BLUE 7. GREY 20.
+
+Of those 45, the actionable split is 2 external directory submissions (Future Tools, Ignlab Launch), 1 first-party community post (GitHub Discussions), 7 already-live entries, 5 conditional platforms, 10 blocked platforms, and 20 unverified platforms. The missing-inventory defect is not a sixth conditional platform.
 
 Machine-readable source: `docs/ecosystem/inventory.json`.
 
@@ -92,7 +94,7 @@ Remaining blocker: The official FAQ requires a logo and screenshots. This reposi
 
 ### Future Tools (`future-tools`)
 
-Status: GREEN.
+Status: GREEN. Channel: external directory.
 
 Evidence: Submit page returned 200. FAQ text fetched the same day says the site is kept free for people who submit tools and that inclusion is not guaranteed.
 
@@ -104,7 +106,7 @@ Remaining blocker: Manual review can still reject the listing. The live homepage
 
 ### Ignlab Launch (`ignlab-launch`)
 
-Status: GREEN.
+Status: GREEN. Channel: external directory.
 
 Evidence: https://launch.ignlab.net/ and submit.html fetched 2026-10-09. The site states submission is free, has no account, and has no featured-listing fee.
 
@@ -116,7 +118,7 @@ Remaining blocker: Reviewers must approve it before it is public. Screenshot is 
 
 ### GitHub Discussions (`github-discussions`)
 
-Status: GREEN.
+Status: GREEN. Channel: first-party repository community activity, not an external directory.
 
 Evidence: GitHub GraphQL on 2026-10-09 returned categories Announcements, General, Ideas, Polls, Q&A, and Show and tell.
 

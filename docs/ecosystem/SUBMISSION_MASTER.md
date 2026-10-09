@@ -58,12 +58,17 @@ count, a certification, or a claim that the hosted enterprise service is
 available worldwide. Do not paste the robot illustration at
 `web/public/assets/trust-core-head.webp` as a product screenshot.
 
-## Ready for the owner to submit
+## Ready for the owner to act
 
-These are GREEN in the matrix. Submission is still the owner’s action.
+These three are GREEN. None has been submitted.
+
+External directories, two:
 
 1. Future Tools: https://futuretools.io/submit-a-tool
 2. Ignlab Launch: https://launch.ignlab.net/submit.html
+
+First-party community post, one. This is not an external directory:
+
 3. GitHub Discussions: https://github.com/Guruprasath-Annadurai/Whitepact/discussions
 
 DevHunt is prepared but not GREEN until an authentic UI screenshot exists.

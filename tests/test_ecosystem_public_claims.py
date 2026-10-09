@@ -68,6 +68,23 @@ def test_inventory_ids_are_unique_and_cover_the_matrix() -> None:
         assert item["status"] in matrix
     assert data["published_pypi_version"] == "1.2.6"
     assert data["source_version"] == "1.3.1"
+    counts = data["classification_counts"]
+    assert counts == {
+        "external_directory_submission_ready": 2,
+        "first_party_community_posting_ready": 1,
+        "already_live": 7,
+        "conditional": 5,
+        "blocked": 10,
+        "unverified": 20,
+    }
+    by_id = {item["id"]: item for item in platforms}
+    assert by_id["future-tools"]["status"] == "GREEN"
+    assert by_id["future-tools"]["channel"] == "external_directory"
+    assert by_id["ignlab-launch"]["status"] == "GREEN"
+    assert by_id["ignlab-launch"]["channel"] == "external_directory"
+    assert by_id["github-discussions"]["status"] == "GREEN"
+    assert by_id["github-discussions"]["channel"] == "first_party_community"
+    assert "not an external directory" in matrix
 
 
 def test_submission_copy_has_usable_lengths_and_no_forbidden_claims() -> None:
@@ -77,6 +94,13 @@ def test_submission_copy_has_usable_lengths_and_no_forbidden_claims() -> None:
     copy = COPY.read_text()
     for phrase in FORBIDDEN:
         assert phrase not in copy
+    assert "1.2.6" in copy
+    assert "1.3.1" in copy
+    assert "bearer credential" in copy
+    assert "does not support anonymous access" in copy
+    assert "operational qualification" in copy
+    assert "older ResponsibleAI governance dashboard" in copy
+    assert "was not the page that host returned" in copy
 
 
 def test_source_classifier_is_beta_and_does_not_rewrite_pypi() -> None:

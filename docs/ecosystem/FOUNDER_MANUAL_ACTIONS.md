@@ -4,6 +4,9 @@ Do these yourself. This branch does not submit, post, publish, or pay.
 
 ## Wave 1 — paste now
 
+Future Tools and Ignlab are the two external directories. GitHub Discussions
+is a post in this repository, not a third directory.
+
 1. Future Tools. Open https://futuretools.io/submit-a-tool. Use the product
    name WhitePact, the URL https://whitepact.com, and the 100-word
    description. Say the pricing model is open source with a hosted release
