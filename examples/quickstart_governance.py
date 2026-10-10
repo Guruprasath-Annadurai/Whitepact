@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """README quickstart: evaluate one agent action with the governance gateway.
 
 Runs offline: no LLM call, no database, no network. Kept in sync with the
