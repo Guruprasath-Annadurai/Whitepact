@@ -219,3 +219,71 @@ class TestMediaDecoding:
             await detector.detect_image(tmp_path / "x.jpg")
         with pytest.raises(DetectorUnavailableError):
             await detector.detect_video(tmp_path / "x.mp4")
+
+
+class _StubCapture:
+    """A decoder double: ``readable`` is the set of read() call numbers that return a frame."""
+
+    readable: frozenset[int] = frozenset()
+
+    def __init__(self, _path: str) -> None:
+        self.reads = 0
+
+    def isOpened(self) -> bool:  # noqa: N802 (OpenCV's name)
+        return True
+
+    def get(self, _prop: int) -> int:
+        return 4
+
+    def set(self, _prop: int, _idx: int) -> None:
+        return None
+
+    def read(self) -> tuple[bool, np.ndarray | None]:
+        self.reads += 1
+        if self.reads in self.readable:
+            return True, np.full((32, 32, 3), 128, dtype=np.uint8)
+        return False, None
+
+    def release(self) -> None:
+        return None
+
+
+def _stub_cv2(monkeypatch: pytest.MonkeyPatch, readable: frozenset[int]) -> None:
+    """Exercise the frame-sampling path without OpenCV (adapted from PR #181)."""
+    import types
+
+    capture = type("Capture", (_StubCapture,), {"readable": readable})
+    fake = types.SimpleNamespace(
+        VideoCapture=capture,
+        CAP_PROP_FRAME_COUNT=7,
+        CAP_PROP_POS_FRAMES=1,
+        COLOR_BGR2RGB=4,
+        cvtColor=lambda frame, _code: frame[..., ::-1],
+    )
+    monkeypatch.setattr(detector_module, "_CV2_AVAILABLE", True)
+    monkeypatch.setattr(detector_module, "cv2", fake, raising=False)
+
+
+class TestVideoSamplingPath:
+    @pytest.mark.asyncio
+    async def test_dropped_frames_are_skipped_and_the_rest_aggregated(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _stub_cv2(monkeypatch, frozenset({2, 3, 4}))  # the first read fails
+        clip = tmp_path / "clip.mp4"
+        clip.write_bytes(b"\x00" * 16)
+        result = await DeepfakeDetector(allow_experimental=True).detect_video(clip, sample_frames=4)
+        assert result.metadata["frames_sampled"] == 3
+        assert sum(result.frame_distribution.values()) == 3
+        assert result.validated is False and result.experimental is True
+
+    @pytest.mark.asyncio
+    async def test_a_video_with_no_decodable_frame_raises_instead_of_reporting_authentic(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # PR #181 asserted is_fake=False here. An undecodable video is *unknown*, never real.
+        _stub_cv2(monkeypatch, frozenset())
+        clip = tmp_path / "clip.mp4"
+        clip.write_bytes(b"\x00" * 16)
+        with pytest.raises(UnreadableMediaError):
+            await DeepfakeDetector(allow_experimental=True).detect_video(clip, sample_frames=2)
