@@ -20,11 +20,21 @@ this commit — see the migration doc for why it isn't done in one step.
 
 from __future__ import annotations
 
-from responsibleai import *  # noqa: F401,F403 -- intentional full re-export, see module docstring
-from responsibleai import __all__ as __all__
-from responsibleai import __version__ as __version__
+from typing import Any
 
-# Not added to ``__all__``: that tuple must stay identical to
-# ``responsibleai.__all__``. Import the client from ``whitepact.client``
-# or as ``from whitepact import WhitePactClient``.
-from whitepact.client import WhitePactClient as WhitePactClient
+import responsibleai
+
+__version__ = responsibleai.__version__
+__all__ = responsibleai.__all__
+
+
+def __getattr__(name: str) -> Any:
+    if name == "WhitePactClient":
+        from whitepact.client import WhitePactClient
+
+        return WhitePactClient
+    return getattr(responsibleai, name)
+
+
+def __dir__() -> list[str]:
+    return sorted(list(set(dir(responsibleai) + list(__all__) + ["WhitePactClient"])))
