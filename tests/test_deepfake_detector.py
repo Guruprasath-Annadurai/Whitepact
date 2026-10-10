@@ -4,9 +4,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pytest
 
-from privacylabel.deepfake.detector import DeepfakeDetector, DeepfakeResult
+from privacylabel.deepfake import detector as detector_module
+from privacylabel.deepfake.detector import (
+    EXPERIMENTAL_NOTICE,
+    VALIDATED_DETECTORS,
+    DeepfakeDetector,
+    DeepfakeResult,
+    DetectorNotValidatedError,
+    DetectorUnavailableError,
+    UnreadableMediaError,
+)
 from privacylabel.deepfake.ensemble import EnsembleVoter, ModelScore, VotingStrategy
 
 
@@ -76,11 +86,15 @@ class TestDeepfakeDetectorInit:
         detector = DeepfakeDetector()
         assert detector._threshold == 0.5
         assert detector._sample_frames == 30
-        assert not detector._loaded
+        assert detector._allow_experimental is False
 
     def test_custom_threshold(self) -> None:
         detector = DeepfakeDetector(threshold=0.7)
         assert detector._threshold == 0.7
+
+    def test_no_detector_is_marked_validated(self) -> None:
+        """Nothing here has a labelled evaluation, so nothing may claim to be validated."""
+        assert VALIDATED_DETECTORS == frozenset()
 
 
 class TestDeepfakeDetectorResult:
@@ -90,7 +104,7 @@ class TestDeepfakeDetectorResult:
             is_fake=True,
             confidence=0.85,
             ensemble_score=0.92,
-            model_scores={"xception": 0.90, "efficientnet": 0.94},
+            model_scores={"heuristic": 0.90},
         )
         d = result.to_dict()
         assert d["media_path"] == "test.jpg"
@@ -99,6 +113,15 @@ class TestDeepfakeDetectorResult:
         assert "ensemble_score" in d
         assert "model_scores" in d
 
+    def test_result_is_experimental_and_unvalidated_by_default(self) -> None:
+        d = DeepfakeResult(
+            media_path="x", is_fake=False, confidence=0.1, ensemble_score=0.1
+        ).to_dict()
+        assert d["validated"] is False
+        assert d["experimental"] is True
+        assert d["limitations"] == EXPERIMENTAL_NOTICE
+        assert d["method_detected"] == "unclassified"
+
     def test_result_scores_rounded(self) -> None:
         result = DeepfakeResult(
             media_path="x",
@@ -106,94 +129,93 @@ class TestDeepfakeDetectorResult:
             confidence=0.123456789,
             ensemble_score=0.123456789,
         )
-        d = result.to_dict()
-        assert d["confidence"] == pytest.approx(0.1235, abs=0.0001)
+        assert result.to_dict()["confidence"] == pytest.approx(0.1235, abs=0.0001)
 
     def test_result_immutable(self) -> None:
-        result = DeepfakeResult(
-            media_path="x",
-            is_fake=False,
-            confidence=0.1,
-            ensemble_score=0.1,
-        )
+        result = DeepfakeResult(media_path="x", is_fake=False, confidence=0.1, ensemble_score=0.1)
         with pytest.raises(AttributeError):
             result.is_fake = True  # type: ignore[misc]
 
 
-class TestDeepfakeDetectorImageAsync:
+def _flat() -> np.ndarray:
+    return np.full((64, 64, 3), 128, dtype=np.uint8)
+
+
+def _noisy() -> np.ndarray:
+    rng = np.random.default_rng(1234)
+    return rng.integers(0, 256, (64, 64, 3), dtype=np.uint8)
+
+
+class TestExperimentalOptIn:
+    """An unvalidated detector must not hand out verdicts unless explicitly asked."""
+
+    def test_detect_array_requires_opt_in(self) -> None:
+        with pytest.raises(DetectorNotValidatedError):
+            DeepfakeDetector().detect_array(_flat())
+
     @pytest.mark.asyncio
-    async def test_detect_returns_deepfake_result(self, tmp_path: Path) -> None:
-        # Create a minimal fake image file
-        img_path = tmp_path / "test.jpg"
-        # Write a 1-pixel JPEG-like binary (detector falls back to mock if torch absent)
-        try:
-            import io
+    async def test_detect_image_requires_opt_in(self, tmp_path: Path) -> None:
+        with pytest.raises(DetectorNotValidatedError):
+            await DeepfakeDetector().detect_image(tmp_path / "x.jpg")
 
-            from PIL import Image as PILImage
+    @pytest.mark.asyncio
+    async def test_detect_video_requires_opt_in(self, tmp_path: Path) -> None:
+        with pytest.raises(DetectorNotValidatedError):
+            await DeepfakeDetector().detect_video(tmp_path / "x.mp4")
 
-            img = PILImage.new("RGB", (224, 224), color=(100, 150, 200))
-            buf = io.BytesIO()
-            img.save(buf, format="JPEG")
-            img_path.write_bytes(buf.getvalue())
-        except ImportError:
-            img_path.write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 100)
 
-        detector = DeepfakeDetector()
-        result = await detector.detect_image(str(img_path))
-        assert isinstance(result, DeepfakeResult)
-        assert result.media_path == str(img_path)
+class TestHeuristicIsDeterministicAndInputDependent:
+    """The previous implementation scored random noise; scores must follow the pixels."""
+
+    def test_same_pixels_give_identical_results(self) -> None:
+        detector = DeepfakeDetector(allow_experimental=True)
+        first = detector.detect_array(_noisy())
+        second = detector.detect_array(_noisy())
+        assert first == second
+
+    def test_score_depends_on_the_input(self) -> None:
+        detector = DeepfakeDetector(allow_experimental=True)
+        flat = detector.detect_array(_flat())
+        noisy = detector.detect_array(_noisy())
+        assert flat.ensemble_score != noisy.ensemble_score
+        assert flat.ensemble_score < noisy.ensemble_score
+
+    def test_result_declares_itself_experimental(self) -> None:
+        result = DeepfakeDetector(allow_experimental=True).detect_array(_noisy())
+        assert result.validated is False
+        assert result.experimental is True
         assert 0.0 <= result.ensemble_score <= 1.0
-        assert 0.0 <= result.confidence
+
+    def test_empty_array_is_rejected_not_scored(self) -> None:
+        with pytest.raises(UnreadableMediaError):
+            DeepfakeDetector(allow_experimental=True).detect_array(np.zeros((0, 0, 3)))
+
+
+class TestMediaDecoding:
+    @pytest.mark.asyncio
+    async def test_unreadable_image_is_never_scored(self, tmp_path: Path) -> None:
+        bad = tmp_path / "not-an-image.jpg"
+        bad.write_bytes(b"\x00" * 128)
+        detector = DeepfakeDetector(allow_experimental=True)
+        with pytest.raises((UnreadableMediaError, DetectorUnavailableError)):
+            await detector.detect_image(bad)
 
     @pytest.mark.asyncio
-    async def test_detect_result_has_model_scores(self, tmp_path: Path) -> None:
-        img_path = tmp_path / "test2.jpg"
-        try:
-            import io
-
-            from PIL import Image as PILImage
-
-            img = PILImage.new("RGB", (224, 224))
-            buf = io.BytesIO()
-            img.save(buf, format="JPEG")
-            img_path.write_bytes(buf.getvalue())
-        except ImportError:
-            img_path.write_bytes(b"\xff\xd8\xff" + b"\x00" * 50)
-
-        detector = DeepfakeDetector()
-        result = await detector.detect_image(str(img_path))
-        assert len(result.model_scores) >= 1
+    async def test_unreadable_video_is_never_reported_authentic(self, tmp_path: Path) -> None:
+        bad = tmp_path / "not-a-video.mp4"
+        bad.write_bytes(b"\x00" * 1024)
+        detector = DeepfakeDetector(sample_frames=10, allow_experimental=True)
+        with pytest.raises((UnreadableMediaError, DetectorUnavailableError)):
+            await detector.detect_video(bad, sample_frames=10)
 
     @pytest.mark.asyncio
-    async def test_detect_video_frame_distribution(self, tmp_path: Path) -> None:
-        """Video detection without cv2 returns a synthesised result."""
-        video_path = tmp_path / "fake.mp4"
-        video_path.write_bytes(b"\x00" * 1024)  # dummy file
-
-        detector = DeepfakeDetector(sample_frames=10)
-        result = await detector.detect_video(str(video_path), sample_frames=10)
-        assert isinstance(result, DeepfakeResult)
-        assert "frames_sampled" in result.metadata
-        assert isinstance(result.frame_distribution, dict)
-
-
-class TestClassifyMethod:
-    def test_high_score_is_face_swap(self) -> None:
-        detector = DeepfakeDetector()
-        method = detector._classify_method({"model": 0.85})
-        assert method == "face_swap"
-
-    def test_moderate_score_is_expression_synthesis(self) -> None:
-        detector = DeepfakeDetector()
-        method = detector._classify_method({"model": 0.65})
-        assert method == "expression_synthesis"
-
-    def test_low_score_is_likely_authentic(self) -> None:
-        detector = DeepfakeDetector()
-        method = detector._classify_method({"model": 0.2})
-        assert method == "likely_authentic"
-
-    def test_empty_scores_is_unknown(self) -> None:
-        detector = DeepfakeDetector()
-        method = detector._classify_method({})
-        assert method == "unknown"
+    async def test_missing_decoder_fails_explicitly(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(detector_module, "_PIL_AVAILABLE", False)
+        monkeypatch.setattr(detector_module, "_CV2_AVAILABLE", False)
+        detector = DeepfakeDetector(allow_experimental=True)
+        with pytest.raises(DetectorUnavailableError):
+            await detector.detect_image(tmp_path / "x.jpg")
+        with pytest.raises(DetectorUnavailableError):
+            await detector.detect_video(tmp_path / "x.mp4")
