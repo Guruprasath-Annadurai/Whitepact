@@ -182,6 +182,62 @@ class TestDeepfakeDetectorImageAsync:
             await detector.detect_video(str(video_path), sample_frames=10)
 
     @pytest.mark.asyncio
+    async def test_detect_video_with_fake_cv2_aggregates_frames(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Covers the cv2 frame-sampling path with a stub capture (one dropped frame)."""
+        import types
+
+        import numpy as np
+
+        import privacylabel.deepfake.detector as det
+
+        class _Cap:
+            def __init__(self, _path: str) -> None:
+                self.reads = 0
+
+            def get(self, _prop: int) -> int:
+                return 4
+
+            def set(self, _prop: int, _idx: int) -> None:
+                return None
+
+            def read(self) -> tuple[bool, np.ndarray | None]:
+                self.reads += 1
+                if self.reads == 1:
+                    return False, None
+                return True, np.full((32, 32, 3), 128, dtype=np.uint8)
+
+            def release(self) -> None:
+                return None
+
+        fake_cv2 = types.SimpleNamespace(
+            VideoCapture=_Cap,
+            CAP_PROP_FRAME_COUNT=7,
+            CAP_PROP_POS_FRAMES=1,
+            COLOR_BGR2RGB=4,
+            cvtColor=lambda frame, _code: frame[..., ::-1],
+        )
+        monkeypatch.setattr(det, "_CV2_AVAILABLE", True)
+        monkeypatch.setattr(det, "cv2", fake_cv2, raising=False)
+        video_path = tmp_path / "clip.mp4"
+        video_path.write_bytes(b"\x00" * 16)
+
+        detector = DeepfakeDetector()
+        monkeypatch.setattr(detector, "_predict_image", lambda _img: {"m": 0.9})
+        result = await detector.detect_video(str(video_path), sample_frames=4)
+        assert result.metadata["frames_sampled"] == 3
+        assert result.metadata["experimental"] is True
+        assert result.affected_frames == [0, 1, 2]
+        assert sum(result.frame_distribution.values()) == 3
+
+        # All frames unreadable -> falls back to a single 0.0 probability.
+        _Cap.read = lambda self: (False, None)  # type: ignore[method-assign]
+        empty = await detector.detect_video(str(video_path), sample_frames=2)
+        assert empty.metadata["frames_sampled"] == 1
+        assert empty.is_fake is False
+
+    @pytest.mark.asyncio
     async def test_detect_image_is_deterministic(self, tmp_path: Path) -> None:
         pil = pytest.importorskip("PIL.Image")
         img_path = tmp_path / "det.png"
