@@ -25,7 +25,11 @@ async def pg() -> AsyncIterator[str]:
 
 
 async def test_an_org_edited_before_the_migration_gets_a_verifiable_baseline(pg: str) -> None:
-    await _upgrade_head(pg, start="0061")  # leaves the schema at 0062; rebuild at 0061 below
+    from responsibleai.db.migrate import _find_alembic_ini, _migration_env, _run_alembic
+
+    ini = _find_alembic_ini()
+    assert ini is not None
+    await _run_alembic(ini, _migration_env(pg), "upgrade", "0061")  # the schema before 0062
     engine = create_engine(pg)
     await engine.init(auto_create_tables=False)
     from responsibleai.db import OrgRepository
@@ -33,8 +37,6 @@ async def test_an_org_edited_before_the_migration_gets_a_verifiable_baseline(pg:
     old = (await OrgRepository(engine).create_org("Old Co", "old-co")).id
     untouched = (await OrgRepository(engine).create_org("Untouched Co", "untouched-co")).id
     async with engine.raw.begin() as conn:
-        await conn.execute(text("DROP TABLE governance_policy_history"))
-        await conn.execute(text("UPDATE alembic_version SET version_num = '0061'"))
         await conn.execute(
             text(
                 "INSERT INTO governance_policies (id, org_id, rule_id, reason_code, effect, "

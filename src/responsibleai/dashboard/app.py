@@ -5551,17 +5551,29 @@ async def governance_get_policy(
 async def governance_policy_history(
     request: Request,
     limit: int = 100,
+    checkpoint_version: int | None = None,
+    checkpoint_digest: str | None = None,
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, Any]:
-    """Who changed which policy rule, and the rules in force after each change (ADMIN+)."""
+    """Who changed which policy rule, and the rules in force after each change (ADMIN+).
+
+    ``checkpoint_version`` + ``checkpoint_digest`` (a ``head`` value you retained outside this
+    database) make ``chain_valid`` also prove the history still contains that exact entry."""
     if not _auth.org_id:
         raise HTTPException(
             400, "Governance policy requires an org-scoped API key, not a legacy flat key."
         )
     repo = _ready(_policy_repo)
+    checkpoint = (
+        {"version": checkpoint_version, "entry_digest": checkpoint_digest}
+        if checkpoint_version is not None and checkpoint_digest
+        else None
+    )
     return {
         "org_id": _auth.org_id,
-        "chain_valid": await repo.verify_history(_auth.org_id),
+        "chain_valid": await repo.verify_history(_auth.org_id, checkpoint=checkpoint),
+        "checkpoint_checked": checkpoint is not None,
+        "head": await repo.history_head(_auth.org_id),
         "entries": await repo.history(_auth.org_id, limit=limit),
     }
 
@@ -5678,13 +5690,22 @@ async def web_get_policy(
 async def web_policy_history(
     request: Request,
     limit: int = 100,
+    checkpoint_version: int | None = None,
+    checkpoint_digest: str | None = None,
     principal: WebPrincipal = Depends(get_web_principal),
 ) -> dict[str, Any]:
     org_id = _web_org_admin(principal)
     repo = _ready(_policy_repo)
+    checkpoint = (
+        {"version": checkpoint_version, "entry_digest": checkpoint_digest}
+        if checkpoint_version is not None and checkpoint_digest
+        else None
+    )
     return {
         "org_id": org_id,
-        "chain_valid": await repo.verify_history(org_id),
+        "chain_valid": await repo.verify_history(org_id, checkpoint=checkpoint),
+        "checkpoint_checked": checkpoint is not None,
+        "head": await repo.history_head(org_id),
         "entries": await repo.history(org_id, limit=limit),
     }
 

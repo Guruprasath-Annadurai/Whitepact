@@ -324,3 +324,128 @@ async def test_activating_a_lifecycle_revision_writes_history_in_the_same_transa
     )
     assert [r["rule_id"] for r in entry["rules"]] == ["lc-1"]
     assert await policy.verify_history(org_id) is True
+
+
+async def _three_changes(policy) -> None:
+    for i in range(3):
+        await policy.add_rule(
+            "org-a", _rule(f"r{i}", GovernanceDecision.DENY, f"a{i}"), actor=ALICE
+        )
+
+
+async def test_a_gap_in_the_version_sequence_is_detected_even_with_a_consistent_chain(repo) -> None:
+    """Re-number and re-chain the survivors so every digest recomputes; the gap alone must fail."""
+    policy, engine = repo
+    await _three_changes(policy)
+    async with engine.raw.begin() as conn:
+        await conn.execute(
+            text("UPDATE governance_policy_versions SET version = 4 WHERE org_id = 'org-a'")
+        )
+        await conn.execute(
+            text("UPDATE governance_policy_history SET version = 4 WHERE version = 3")
+        )
+    assert await policy.verify_history("org-a") is False
+
+
+async def test_the_front_of_the_history_cannot_be_cut_off(repo) -> None:
+    policy, engine = repo
+    await _three_changes(policy)
+    async with engine.raw.begin() as conn:
+        await conn.execute(text("DELETE FROM governance_policy_history WHERE version = 1"))
+    assert await policy.verify_history("org-a") is False
+
+
+async def test_a_baseline_row_anywhere_but_first_is_invalid(repo) -> None:
+    policy, engine = repo
+    await _three_changes(policy)
+    async with engine.raw.begin() as conn:
+        await conn.execute(
+            text("UPDATE governance_policy_history SET change = 'baseline' WHERE version = 2")
+        )
+    assert await policy.verify_history("org-a") is False
+
+
+async def test_a_retained_checkpoint_defeats_a_complete_rewrite_that_recomputes_every_digest(
+    repo,
+) -> None:
+    """Someone with write access to both tables can rebuild a self-consistent history. The external
+    checkpoint still names the digest the real history had."""
+    import hashlib
+    import json
+
+    from responsibleai.db.policy_repository import (
+        _HISTORY_GENESIS,
+        PolicyActor,
+        _history_entry_digest,
+    )
+
+    policy, engine = repo
+    await _three_changes(policy)
+    checkpoint = await policy.history_head("org-a")
+    assert checkpoint is not None and checkpoint["version"] == 3
+    assert await policy.verify_history("org-a", checkpoint=checkpoint) is True
+
+    # Attacker rewrites who made version 2 and rebuilds every digest from there.
+    entries = sorted(await policy.history("org-a"), key=lambda e: e["version"])
+    prev = _HISTORY_GENESIS
+    async with engine.raw.begin() as conn:
+        for entry in entries:
+            actor = PolicyActor(
+                "web_user", "mallory" if entry["version"] == 2 else entry["actor_id"]
+            )
+            rules_json = json.dumps(entry["rules"], sort_keys=True, separators=(",", ":"))
+            rules_digest = hashlib.sha256(rules_json.encode()).hexdigest()
+            digest = _history_entry_digest(
+                prev,
+                "org-a",
+                entry["version"],
+                entry["change"],
+                entry["rule_id"],
+                actor,
+                rules_digest,
+                entry["created_at"],
+            )
+            await conn.execute(
+                text(
+                    "UPDATE governance_policy_history SET actor_id = :a, rules_digest = :rd, "
+                    "rules_json = :rj, prev_entry_digest = :p, entry_digest = :d WHERE version = :v"
+                ),
+                {
+                    "a": actor.actor_id,
+                    "rd": rules_digest,
+                    "rj": rules_json,
+                    "p": prev,
+                    "d": digest,
+                    "v": entry["version"],
+                },
+            )
+            prev = digest
+    assert await policy.verify_history("org-a") is True, "the rewrite is internally consistent"
+    assert await policy.verify_history("org-a", checkpoint=checkpoint) is False
+
+
+async def test_a_consistent_rollback_of_history_and_counter_is_caught_by_the_checkpoint(
+    repo,
+) -> None:
+    policy, engine = repo
+    await _three_changes(policy)
+    checkpoint = await policy.history_head("org-a")
+    async with engine.raw.begin() as conn:
+        await conn.execute(text("DELETE FROM governance_policy_history WHERE version = 3"))
+        await conn.execute(
+            text("UPDATE governance_policy_versions SET version = 2 WHERE org_id = 'org-a'")
+        )
+    assert await policy.verify_history("org-a") is True, "internally consistent at version 2"
+    assert await policy.verify_history("org-a", checkpoint=checkpoint) is False
+
+
+async def test_a_checkpoint_from_another_org_or_a_wrong_digest_never_matches(repo) -> None:
+    policy, _engine = repo
+    await _three_changes(policy)
+    await policy.add_rule("org-b", _rule("b0", GovernanceDecision.DENY, "b"), actor=KEY)
+    other = await policy.history_head("org-b")
+    assert await policy.verify_history("org-a", checkpoint=other) is False
+    assert (
+        await policy.verify_history("org-a", checkpoint={"version": 3, "entry_digest": "0" * 64})
+        is False
+    )

@@ -351,17 +351,27 @@ class PolicyRepository:
             for row in rows
         ]
 
-    async def verify_history(self, org_id: str) -> bool:
-        """Recompute the org's history chain and cross-check it against the policy-version counter.
+    async def verify_history(
+        self, org_id: str, *, checkpoint: dict[str, Any] | None = None
+    ) -> bool:
+        """Verify the org's policy history. True only if every check below holds.
 
-        False if any row was altered, removed or reordered, **or if the history does not reach the
-        current policy version**: deleting every row (or only the newest ones) leaves a chain that is
-        internally valid, so the check also requires the last history version to equal
-        ``governance_policy_versions.version`` (and an empty history only for a never-edited org).
+        * Every row's rules digest and entry digest recompute, and each row chains from its predecessor.
+        * The sequence is strict: versions rise by exactly 1, with no gap and no duplicate.
+        * The first row is either version 1 of a new organization (a normal change, genesis predecessor)
+          or the single ``baseline`` row migration 0062 wrote for an organization that already had a
+          policy version. A ``baseline`` anywhere else is invalid, as is a first row that is neither
+          (the front of the history was cut off).
+        * The newest history version equals ``governance_policy_versions.version`` (an empty history is
+          valid only for a never-edited org). This catches deleted tails, deleted whole histories and a
+          counter moved out-of-band.
+        * With ``checkpoint`` (a ``history_head()`` value retained OUTSIDE the database), the history
+          must still contain that exact version with that exact digest. This is the only check that
+          survives someone who can rewrite both tables and recompute every digest, and it also detects
+          a consistent rollback (history and counter both reset to an earlier version).
 
-        Limit, stated plainly: both tables live in the same database. Someone who can rewrite both,
-        recomputing every digest, defeats this check; only a digest retained outside the database
-        (``history_head()`` is what to anchor) detects that.
+        Without a retained checkpoint, "valid" means internally consistent, not "untampered by a
+        database administrator".
         """
         async with self._engine.raw.connect() as conn:
             rows = (
@@ -372,12 +382,31 @@ class PolicyRepository:
                 )
             ).fetchall()
         current_version = await self.get_policy_version(org_id)
+        if checkpoint is not None:
+            wanted = [
+                r
+                for r in rows
+                if r.version == checkpoint.get("version")
+                and r.entry_digest == checkpoint.get("entry_digest")
+            ]
+            if not wanted:
+                return False
         if not rows:
             return current_version == 0
         if rows[-1].version != current_version:
             return False
         prev = _HISTORY_GENESIS
-        for row in rows:
+        expected_version: int | None = None
+        for index, row in enumerate(rows):
+            if index == 0:
+                if row.change == "baseline":
+                    if row.version < 1:
+                        return False
+                elif row.version != 1:
+                    return False  # the front of the history is missing
+            else:
+                if row.change == "baseline" or row.version != expected_version:
+                    return False
             if hashlib.sha256(row.rules_json.encode("utf-8")).hexdigest() != row.rules_digest:
                 return False
             actor = PolicyActor(row.actor_type, row.actor_id)
@@ -394,6 +423,7 @@ class PolicyRepository:
             if row.prev_entry_digest != prev or row.entry_digest != expected:
                 return False
             prev = row.entry_digest
+            expected_version = row.version + 1
         return True
 
     async def history_head(self, org_id: str) -> dict[str, Any] | None:
