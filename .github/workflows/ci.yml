@@ -352,7 +352,7 @@ jobs:
           npx playwright install --with-deps chromium
       - name: TypeScript SDK build and tests
         run: |
-          npm --prefix sdk/typescript install --no-audit --no-fund
+          npm --prefix sdk/typescript ci --no-audit --no-fund
           npm --prefix sdk/typescript test
       - name: Frontend static checks and unit tests
         run: |
