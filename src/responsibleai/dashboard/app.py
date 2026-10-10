@@ -7343,11 +7343,12 @@ async def auth_login(
         )
         target_redirect = settings.oidc_redirect_uri
 
-        initiating_session = request.cookies.get("wp_session")
-        oauth_tx = _accepted_oauth_tx_cookie(request.cookies.get("wp_oauth_tx")) or (
-            _web_token_hash(initiating_session) if initiating_session else secrets.token_urlsafe(32)
-        )
-        bound_session_id = _web_token_hash(oauth_tx)
+        # The flow is bound to this browser by the wp_oauth_tx cookie. An existing cookie of the shape
+        # this server issues is reused as-is and NOT written back (no request-supplied value is ever
+        # re-issued as a Set-Cookie); otherwise a fresh random value is minted and set below.
+        existing_tx = _accepted_oauth_tx_cookie(request.cookies.get("wp_oauth_tx"))
+        fresh_tx = None if existing_tx else secrets.token_urlsafe(32)
+        bound_session_id = _web_token_hash(existing_tx or fresh_tx or "")
 
         await _ready(_web_identity_repo).create_oauth_flow_state(
             state=state,
@@ -7366,15 +7367,18 @@ async def auth_login(
             code_challenge=challenge,
         )
         resp = JSONResponse({"authorization_url": url, "state": state})
-        resp.set_cookie(
-            "wp_oauth_tx",
-            oauth_tx,
-            httponly=True,
-            samesite="lax",
-            secure=settings.web_session_secure,
-            path="/",
-            max_age=300,
-        )
+        if fresh_tx is not None:
+            resp.set_cookie(
+                "wp_oauth_tx",
+                fresh_tx,
+                httponly=True,
+                samesite="lax",
+                secure=settings.web_session_secure,
+                path="/",
+                # Longer than a flow (300 s): later sign-in attempts reuse this cookie without
+                # refreshing it, so it must outlive any flow started from it.
+                max_age=3600,
+            )
         return resp
 
     if provider_id == "saml":
