@@ -483,6 +483,12 @@ result = detector.analyze(
 print(f"Risk: {result.hallucination_risk:.2f}  Level: {result.risk_level}")
 ```
 
+> **What this measures.** Three heuristic signals: TF-IDF agreement between the candidate
+> responses, hedging-phrase regexes, and regexes for specific-looking claims with no
+> attribution. It does **not** extract claims, retrieve evidence, verify sources or check
+> facts, so a confident wrong answer can score low risk. Treat it as a triage signal, not as
+> verified factual correctness.
+
 ### Compliance — NIST AI RMF, EU AI Act, ISO 42001
 
 ```python

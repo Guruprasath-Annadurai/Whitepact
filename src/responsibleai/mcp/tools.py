@@ -142,7 +142,9 @@ TOOL_DEFS: list[types.Tool] = [
             "Detect hallucination risk in AI-generated text. Analyses hedging language, "
             "self-consistency across candidate responses, unsupported factual claims, and "
             "(when a `source` is supplied) explicit factual disagreement with that source "
-            "-- e.g. the source names one day/month/number and the response names another."
+            "-- e.g. the source names one day/month/number and the response names another. "
+            "Heuristic triage signals only: it does not retrieve evidence or verify facts, so "
+            "a low score is not proof an answer is correct."
         ),
         inputSchema={
             "type": "object",

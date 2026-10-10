@@ -1,12 +1,21 @@
 # Copyright (c) 2026 Guruprasath Annadurai
 # SPDX-License-Identifier: MIT
 """
-Hallucination Detector — estimate factual reliability of LLM outputs.
+Hallucination Detector — heuristic risk signals for LLM output. NOT a fact checker.
 
-Three independent signals:
-1. Self-consistency  — how much do multiple candidate responses agree?
-2. Hedging           — how much uncertain language does the text contain?
-3. Unsupported claims — specific factual claims without source attribution.
+Three lexical/statistical signals:
+1. Self-consistency  — TF-IDF cosine similarity between candidate responses.
+2. Hedging           — regular-expression matches for uncertain language.
+3. Unsupported claims — regular-expression matches for specific-looking claims (years,
+   percentages, "studies show") that carry no attribution phrase.
+
+When a ``source`` text is supplied it also flags explicit numeric/date disagreement with
+that source.
+
+What it does NOT do: it does not extract claims, retrieve evidence, verify sources, or
+evaluate factual consistency with the world. A fluent, confident, wrong answer scores low
+risk; a hedged, correct one scores higher. The score is a triage signal, never proof that
+an output is true or false, and must not be reported as verified factual correctness.
 """
 
 from __future__ import annotations
