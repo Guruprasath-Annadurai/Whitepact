@@ -77,6 +77,7 @@ import json
 import logging
 import os
 import sys
+from collections.abc import MutableMapping
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -543,6 +544,38 @@ class _AuthFailureLimiter:
                 self._prune(f"peer_agg:{peer_key}", now).append(now)
 
 
+MAX_MCP_REQUEST_BYTES = 4 * 1024 * 1024
+
+
+def _reject_malformed_json_rpc_body(body: bytes) -> Any:
+    """400 for a body that is not UTF-8 JSON, 413 for one over the limit; ``None`` if acceptable.
+
+    Shape validation (JSON-RPC fields, methods, arguments) stays with the protocol layer; this only
+    guarantees that what reaches it is parseable text, so a client mistake is never a server error.
+    """
+    import json as _json
+
+    from starlette.responses import JSONResponse
+
+    if len(body) > MAX_MCP_REQUEST_BYTES:
+        return JSONResponse(
+            {
+                "jsonrpc": "2.0",
+                "id": None,
+                "error": {"code": -32600, "message": "Request too large"},
+            },
+            status_code=413,
+        )
+    try:
+        _json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return JSONResponse(
+            {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}},
+            status_code=400,
+        )
+    return None
+
+
 def _build_http_app() -> Any:
     """Construct the ASGI app for hosted MCP. Imports are local — this path
     pulls in Starlette + the DB layer, which self-hosted stdio users never need.
@@ -1007,6 +1040,27 @@ def _build_http_app() -> Any:
             if error is not None:
                 await error(scope, receive, send)
                 return
+
+            if request.method == "POST":
+                # A malformed body is the client's mistake (400), not the server's (500). The pinned
+                # SDK answers invalid UTF-8 with 500 "Error handling POST request"; check first and
+                # replay the validated body to it.
+                body = await request.body()
+                rejected = _reject_malformed_json_rpc_body(body)
+                if rejected is not None:
+                    await rejected(scope, receive, send)
+                    return
+                replayed = False
+                original_receive = receive
+
+                async def receive_replay() -> MutableMapping[str, Any]:
+                    nonlocal replayed
+                    if not replayed:
+                        replayed = True
+                        return {"type": "http.request", "body": body, "more_body": False}
+                    return await original_receive()
+
+                receive = receive_replay
 
             org_token = _current_org.set(ctx)
             usage_token = _current_usage_repo.set(_usage_repo)

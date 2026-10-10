@@ -16,7 +16,7 @@ from pydantic_settings import (
     PydanticBaseSettingsSource,
     SettingsConfigDict,
 )
-from pydantic_settings.sources import EnvSettingsSource
+from pydantic_settings.sources import DotEnvSettingsSource, EnvSettingsSource
 
 from responsibleai.environment import PRODUCTION_ALIASES as PRODUCTION_ENVIRONMENTS
 from responsibleai.environment import is_production as _process_is_production
@@ -69,10 +69,21 @@ class Settings(BaseSettings):
             case_sensitive=False,
             env_prefix=WHITEPACT_ENV_PREFIX,
         )
+        # The same WHITEPACT_ prefix must work in a ``.env`` file. Before this source existed, a
+        # WHITEPACT_ENV=production (or WHITEPACT_AUTH_ENABLED, WHITEPACT_VC_SKIP_VERIFICATION, ...)
+        # line in ``.env`` was silently ignored, because the dotenv source only knew the RAI_ prefix.
+        whitepact_dotenv_settings = DotEnvSettingsSource(
+            settings_cls,
+            env_file=getattr(dotenv_settings, "env_file", None),
+            env_file_encoding=getattr(dotenv_settings, "env_file_encoding", None) or "utf-8",
+            case_sensitive=False,
+            env_prefix=WHITEPACT_ENV_PREFIX,
+        )
         return (
             init_settings,
             whitepact_env_settings,
             env_settings,
+            whitepact_dotenv_settings,
             dotenv_settings,
             file_secret_settings,
         )
@@ -680,6 +691,31 @@ class Settings(BaseSettings):
         except RuntimeError as exc:
             raise ValueError(str(exc)) from exc
         return data
+
+    @model_validator(mode="after")
+    def _refuse_unsafe_flags_in_production(self) -> Settings:
+        """Development conveniences that remove authentication or session protection must never be on
+        in production, whichever way they were configured (environment variable, ``.env`` file or code).
+        Boot-time preflights read some of these from ``os.environ`` only; this check sees the resolved
+        value."""
+        if not self.is_production:
+            return self
+        unsafe = [
+            name
+            for name, on in (
+                ("oidc_skip_verification", self.oidc_skip_verification),
+                ("vc_skip_verification", self.vc_skip_verification),
+                ("mcp_http_allow_unauthenticated_demo", self.mcp_http_allow_unauthenticated_demo),
+                ("web_auth_dev_tokens", self.web_auth_dev_tokens),
+                ("web_session_insecure (web_session_secure=false)", not self.web_session_secure),
+            )
+            if on
+        ]
+        if unsafe:
+            raise ValueError(
+                "Production refuses development-only settings: " + ", ".join(unsafe) + "."
+            )
+        return self
 
     @model_validator(mode="after")
     def _enforce_production_database(self) -> Settings:
