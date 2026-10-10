@@ -1,4 +1,19 @@
-"""WhitePact runtime governance helpers for the HTTP API (SDK P1-03)."""
+"""WhitePact runtime governance helpers for the HTTP API (SDK P1-03).
+
+Enforcement boundary, stated plainly:
+
+* ``call_tool`` asks the **server** to run a tool. The decision, the single-use grant, the isolated
+  execution and the evidence all happen on the server, so a tool that runs through this call cannot
+  skip them. A ``governance_denied`` or ``governance_approval_required`` outcome means the tool did
+  **not** run.
+* This client cannot stop code that never calls it. An agent that reaches a downstream system by
+  another route (its own HTTP client, a direct database connection) is outside WhitePact's
+  authority, and no result here says otherwise.
+* Reading ``denied`` or ``requires_approval`` is a convenience for the caller. Honouring it is the
+  caller's responsibility; nothing in this process enforces it.
+
+See ``ENFORCEMENT_BOUNDARY.md`` and ``docs/launch/ENFORCEMENT_PATH_MATRIX.md``.
+"""
 
 from __future__ import annotations
 
