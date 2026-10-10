@@ -20,6 +20,22 @@ not an independent production verdict.
 | Tenant separation | Audit export for org A did not contain org B. SSO admission will not create a tenant from a claim. | Cloud IAM and Access policies are tenant-scoped in the vendor account model. | Local tests passed. A hostile multi-tenant cloud deployment was not run. |
 | Incident investigation | SIEM JSONL export exists. Chain verification is not an external witness. | Cloudflare and Entra ship retained logs to customer tools. | WhitePact can export. Retention on an independent store is blocked. |
 
+## Additional vendors (consulted 2026-10-10)
+
+These are content-and-conversation guardrail libraries and governance registries. They
+overlap WhitePact in part and are not like-for-like with an independent pre-execution
+authorization layer. Statements are taken from each vendor's own documentation; no
+independent review or customer evidence was found, and no benchmark is compared.
+
+| Vendor | Documented capability | Relation to WhitePact | Gap or advantage |
+| --- | --- | --- | --- |
+| NVIDIA NeMo Guardrails | Open-source toolkit. Five rail types: input, dialog, retrieval, execution, output. Execution rails "control tool and action calls". Configured in YAML plus Colang flows. Built-in flows cover jailbreak detection, PII masking, topic control, self-check moderation and hallucination checks. | Overlaps on tool-call gating. Rails run in the application's own process and configuration. The cited pages do not describe a separate identity-bound authorization decision, approval object or tamper-evident evidence chain. | NeMo has a far broader catalogue of content rails and a larger ecosystem. WhitePact's distinct claim is an independent authorization decision with human delegation, approvals, evidence and isolated execution. That claim here rests on this repository's tests, not on an outside assessment. |
+| Guardrails AI | Open-source `Guard` composed of validators from a Hub. Validators chain into input and output guards; custom validators are supported; guards are best deployed server-side. A July 2026 README note says validators are moving to standard PyPI packages and hosted remote inferencing is being discontinued. | Output and input validation. The cited pages describe validating text, not authorizing an agent action under delegated authority. | Guardrails AI has a mature validator hub. WhitePact has no comparable validator catalogue. |
+| Lakera Guard | Hosted API. `/v2/guard` takes messages and a project id and returns `flagged`. Policies hold input and output detectors with thresholds; `prompt_attack` is the prompt-injection detector. A project in Detection mode never sets `flagged`. Guidance recommends scanning tool outputs and retrieved data. | Detects prompt injection and data leakage in content. Does not decide whether an agent may act. A detector verdict is an input to a decision, not an authority grant. | Lakera's detection models are trained on its own attack data; WhitePact ships no comparable detector (its heuristics are keyword and regex). The two can sit in series. |
+| Credo AI (Agent Registry, Agent Governor) | Registry: agent inventory, agent cards, autonomy classification, reviewers and approvals (public preview). Governor: governance-as-code in the agent harness, starting with Claude Code (research preview); policy resolves to allow, block, escalate or advise with a structured decision record; custom policy upload is marked "coming soon". | Closest in intent: runtime allow/block/escalate with a decision record. Both products are described by the vendor as early. All capability statements are the vendor's own. | Credo is a governance-programme platform with a registry. WhitePact does not have that breadth. WhitePact's decision engine is a separate, tested kernel with approvals, short-lived execution permits and evidence. Neither side has an independent comparison. |
+
+Not claimed: that WhitePact is better, faster or more complete than any vendor above.
+
 Sources:
 
 - https://learn.microsoft.com/en-us/entra/identity/conditional-access/agent-id
@@ -28,3 +44,10 @@ Sources:
 - https://docs.cloud.google.com/model-armor/model-armor-mcp-google-cloud-integration
 - https://developers.cloudflare.com/cloudflare-one/access-controls/ai-controls/mcp-portals/
 - https://developers.cloudflare.com/changelog/post/2026-02-27-mcp-portal-logpush/
+- https://docs.nvidia.com/nemo/guardrails/latest/about/rail-types.html
+- https://github.com/NVIDIA-NeMo/Guardrails
+- https://www.guardrailsai.com/docs/concepts/hub
+- https://github.com/guardrails-ai/guardrails
+- https://docs.lakera.ai/docs/quickstart
+- https://www.credo.ai/agent-governor
+- https://www.credo.ai/ai-agent-registry
