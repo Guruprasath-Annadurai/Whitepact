@@ -54,6 +54,22 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+LAST_USED_REFRESH_SECONDS = 60
+
+
+def _last_used_is_stale(last_used: object) -> bool:
+    """True when ``last_used_at`` is missing, unparseable, or older than the refresh interval."""
+    if not last_used:
+        return True
+    try:
+        previous = datetime.fromisoformat(str(last_used))
+    except ValueError:
+        return True
+    if previous.tzinfo is None:
+        previous = previous.replace(tzinfo=UTC)
+    return (datetime.now(UTC) - previous).total_seconds() >= LAST_USED_REFRESH_SECONDS
+
+
 def _hash_key(raw: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
@@ -614,16 +630,20 @@ class OrgRepository:
         if org is not None and org.sso_required:
             raise SSORequiredError(org.id)
 
-        # Update last_used_at (best-effort, fire & forget)
-        try:
-            async with self._engine.raw.begin() as conn:
-                await conn.execute(
-                    update(org_api_keys)
-                    .where(org_api_keys.c.id == row.id)
-                    .values(last_used_at=_now())
-                )
-        except Exception:
-            pass
+        # last_used_at is telemetry, not an authorization input: revocation, expiry and the key
+        # hash are all re-read from the database on every call above. Writing and committing it on
+        # every request cost a database round trip and a commit per authenticated call, so it is
+        # refreshed at most once per interval. Best effort.
+        if _last_used_is_stale(getattr(row, "last_used_at", None)):
+            try:
+                async with self._engine.raw.begin() as conn:
+                    await conn.execute(
+                        update(org_api_keys)
+                        .where(org_api_keys.c.id == row.id)
+                        .values(last_used_at=_now())
+                    )
+            except Exception:
+                pass
 
         return OrgContext(
             key_id=row.id,

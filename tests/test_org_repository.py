@@ -265,3 +265,60 @@ class TestMfaLifecycle:
 
     async def test_consume_backup_code_missing_key_returns_false(self, repo):
         assert await repo.consume_backup_code("nonexistent", []) is False
+
+
+class TestLastUsedRefreshIsThrottledButAuthorizationIsNot:
+    """last_used_at is telemetry; revocation and expiry must still apply on every call."""
+
+    @staticmethod
+    def _count_writes(repo, monkeypatch) -> dict[str, int]:
+        real_begin = type(repo._engine.raw).begin
+        calls = {"n": 0}
+
+        def _counting_begin(self, *args, **kwargs):
+            calls["n"] += 1
+            return real_begin(self, *args, **kwargs)
+
+        monkeypatch.setattr(type(repo._engine.raw), "begin", _counting_begin)
+        return calls
+
+    async def test_repeat_calls_inside_the_interval_do_not_write(self, repo, monkeypatch):
+        org = await repo.create_org("Acme", "acme")
+        _rec, raw = await repo.create_key(org.id, "ci-key")
+        calls = self._count_writes(repo, monkeypatch)
+        for _ in range(5):
+            assert await repo.authenticate(raw) is not None
+        assert calls["n"] == 1, "only the first use should write last_used_at"
+
+    async def test_a_stale_value_is_refreshed(self, repo, monkeypatch):
+        from datetime import UTC, datetime, timedelta
+
+        from sqlalchemy import update
+
+        from responsibleai.db.engine import org_api_keys
+        from responsibleai.db.org_repository import LAST_USED_REFRESH_SECONDS
+
+        org = await repo.create_org("Acme", "acme")
+        rec, raw = await repo.create_key(org.id, "ci-key")
+        stale = (datetime.now(UTC) - timedelta(seconds=LAST_USED_REFRESH_SECONDS + 5)).isoformat()
+        async with repo._engine.raw.begin() as conn:
+            await conn.execute(
+                update(org_api_keys).where(org_api_keys.c.id == rec.id).values(last_used_at=stale)
+            )
+        calls = self._count_writes(repo, monkeypatch)
+        await repo.authenticate(raw)
+        assert calls["n"] == 1
+        assert (await repo.get_key(rec.id)).last_used_at > stale
+
+    async def test_revocation_is_enforced_immediately_despite_throttling(self, repo):
+        org = await repo.create_org("Acme", "acme")
+        rec, raw = await repo.create_key(org.id, "ci-key")
+        assert await repo.authenticate(raw) is not None  # warms last_used_at
+        assert await repo.revoke_key(rec.id, org_id=org.id) is True
+        assert await repo.authenticate(raw) is None
+
+    @pytest.mark.parametrize("bad", [None, "", "not-a-date", "2020-13-45T99:99:99"])
+    def test_unparseable_last_used_counts_as_stale(self, bad):
+        from responsibleai.db.org_repository import _last_used_is_stale
+
+        assert _last_used_is_stale(bad) is True
