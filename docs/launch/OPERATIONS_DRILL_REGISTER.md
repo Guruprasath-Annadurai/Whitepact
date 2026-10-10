@@ -20,7 +20,7 @@ outage is required and is not service recovery.
 | Evidence publication reopen | Passed. A new log object read the same directory. |
 | nftables egress negative test | Passed in a local network namespace. |
 | nginx client-certificate rejection | Passed on local nginx. |
-| Database backup and restore | Not run. |
+| Database backup and restore | **Run on a disposable local PostgreSQL 16, not on deployed infrastructure** (`tests/test_backup_restore_application_drill.py`): real migrated schema, a tenant, an executed approval, evidence chain, a revoked key. After `backup-postgres.sh` and `restore-postgres.sh` the copy holds the backup-time state and none of the later state, is at the migration head, its evidence chain verifies, the spent execution nonce is still refused, a key revoked before the backup is still revoked. Measured on one Apple M4 with a 5-table dataset: backup 0.4 s, restore and verify 1.1 s. That is a harness timing, **not an RTO or RPO**. Not drilled: a production-size database, point-in-time recovery, restore on a different host, off-host encrypted storage, key loss. |
 | Evidence object restore | Not run. No object store. |
 | Secret rotation on a deployed host | Key rotation passed in a temp directory only. |
 | Node failure and multi-replica failover | Not run. |
