@@ -142,15 +142,80 @@ Open `http://localhost:8765` for the live dashboard and
 architecture contract) is a deterministic runtime authority sitting in front
 of agent tool calls:
 
-```python
-from responsibleai.governance import WhitePactRuntimeGateway, ActionRequest, AuthorityContext
+Runs exactly as written after `pip install "rai-governance-platform[dashboard]"` (the
+evidence store needs the `dashboard` extra; the decision engine alone needs only the base
+install). It is the file `examples/00_quickstart.py`, and CI executes it on every change:
 
+```python
+import asyncio
+
+from responsibleai.db.engine import create_engine, organizations
+from responsibleai.db.evidence_repository import EvidenceRepository
+from responsibleai.governance import ActionRequest, AuthorityContext, WhitePactRuntimeGateway
+from responsibleai.governance.evidence import build_evidence_record
+from responsibleai.governance.models import AgentContext, IdentityContext
+
+TOOL = "mcp:tool:rai_scan"
 gateway = WhitePactRuntimeGateway()
-result = gateway.evaluate(
-    action=ActionRequest(tool_name="rai_scan", arguments={"text": "..."}),
-    authority=AuthorityContext(org_id="acme", agent_id="agent-1"),
+agent = AgentContext(
+    identity=IdentityContext(identity_id="agent-1", kind="agent", org_id="acme"),
+    organization_id="acme",
+    agent_id="agent-1",
 )
-print(result.decision)  # GovernanceDecision.ALLOW | ALLOW_WITH_REDACTION | REQUIRE_APPROVAL | DENY | QUARANTINE
+
+
+def evaluate(arguments, *, granted=(TOOL,), require_approval=(), violations=0):
+    """Ask the gateway for a decision. Authority comes from a human (`delegated_by`)."""
+    action = ActionRequest(agent=agent, action_type=TOOL, target="rai_scan", arguments=arguments)
+    authority = AuthorityContext(
+        delegated_by="alice@acme.com",
+        granted_action_types=frozenset(granted),
+        require_approval_for=frozenset(require_approval),
+    )
+    result = gateway.evaluate(action, authority, recent_violation_count=violations)
+    return action, authority, result
+
+
+cases = {
+    "ALLOW": evaluate({"text": "hello"}),
+    "DENY (no delegated authority)": evaluate({"text": "hello"}, granted=()),
+    "REQUIRE_APPROVAL": evaluate({"text": "hello"}, require_approval=(TOOL,)),
+    "ALLOW_WITH_REDACTION": evaluate({"text": "Contact jane@example.com, SSN 123-45-6789"}),
+    "QUARANTINE (repeated denials)": evaluate({"text": "hello"}, violations=5),
+}
+for label, (_, _, result) in cases.items():
+    print(f"{label:32} -> {result.decision.value}")
+
+
+async def record_evidence() -> None:
+    """Every decision becomes a per-organization, hash-chained evidence record."""
+    engine = create_engine(":memory:")
+    await engine.init()
+    async with engine.raw.begin() as conn:
+        await conn.execute(
+            organizations.insert().values(
+                id="acme", name="Acme", slug="acme", created_at="2026-01-01T00:00:00Z"
+            )
+        )
+    repo = EvidenceRepository(engine)
+    for action, authority, result in cases.values():
+        await repo.record(build_evidence_record(action, agent, authority, result))
+    print("evidence chain intact:", await repo.verify_chain("acme"))
+    await engine.close()
+
+
+asyncio.run(record_evidence())
+```
+
+Expected output (deterministic):
+
+```text
+ALLOW                            -> ALLOW
+DENY (no delegated authority)    -> DENY
+REQUIRE_APPROVAL                 -> REQUIRE_APPROVAL
+ALLOW_WITH_REDACTION             -> ALLOW_WITH_REDACTION
+QUARANTINE (repeated denials)    -> QUARANTINE
+evidence chain intact: True
 ```
 
 - **Risk tiering** (`governance/risk.py`) — every MCP tool is classified
@@ -363,6 +428,8 @@ against the hosted endpoint.
 ### Trust scoring
 
 ```python
+from pathlib import Path
+
 from responsibleai import TrustScoreEngine, PassportGenerator
 
 engine = TrustScoreEngine()
@@ -378,8 +445,14 @@ passport = PassportGenerator().generate(
     compliance_summary={"overall": 80.5},
 )
 print(passport.passport_id)
-passport.export_html("passport.html")
+Path("passport.html").write_text(passport.to_html())
 ```
+
+> **What this score is.** `TrustScoreEngine` is a weighted average of the six dimension
+> values *you pass in*. It does not measure fairness, privacy, security, robustness,
+> compliance or authenticity, so it is not independent verification of an agent's
+> trustworthiness. The `authenticity` input is experimental: no deepfake detector in this
+> repository has a labelled evaluation (see `privacylabel/deepfake/detector.py`).
 
 ### Guardrails — block PII before it reaches a log
 
@@ -390,8 +463,8 @@ guardrails = GuardrailsEngine()
 result = guardrails.scan("Customer SSN is 123-45-6789, email: alice@company.com")
 
 print(result.is_blocked)      # True
-print(result.pii_count)       # 2
-print(result.redacted_text)   # "Customer SSN is [SSN], email: [EMAIL]"
+print(len(result.pii_findings))  # 2
+print(result.redacted_text)   # "Customer SSN is [REDACTED], email: [REDACTED]"
 ```
 
 ### Hallucination detection
@@ -422,7 +495,7 @@ report = engine.evaluate(
     compliance_maturity=0.90, use_case="credit_scoring",
 )
 print(f"Score: {report.compliance_score * 100:.1f}%")
-print(f"EU AI Act tier: {report.eu_ai_act_tier.value}")  # high_risk
+print(f"EU AI Act tier: {report.eu_ai_act_tier.value}")  # HIGH
 ```
 
 ### Red team simulation
@@ -431,12 +504,20 @@ print(f"EU AI Act tier: {report.eu_ai_act_tier.value}")  # high_risk
 from responsibleai import RedTeamSimulator
 
 simulator = RedTeamSimulator()
-report = simulator.run_all()
 
-print(f"Security score: {report.security_score:.1f}/100")
-print(f"Vulnerabilities: {len(report.vulnerabilities)}")
+
+def my_model(prompt: str) -> str:
+    """Replace with a call to the model under test."""
+    return "I can't help with that request."
+
+
+responses = {a["name"]: my_model(a["payload"]) for a in simulator.get_attack_payloads()}
+report = simulator.analyze_responses("my-model", "my-provider", responses)
+
+print(f"Security score: {report.security_score * 100:.1f}/100")  # 100.0/100 for this model
+print(f"Vulnerabilities: {len(report.vulnerabilities)}")         # 0
 for v in report.critical_vulnerabilities:
-    print(f"  [{v['cwe_id']}] {v['name']}")
+    print(f"  [{v.vector.cwe_id}] {v.vector.name}")
 ```
 
 ### Cost intelligence
@@ -467,12 +548,12 @@ from responsibleai import TrustScoreEngine, TrustDriftMonitor
 monitor = TrustDriftMonitor(db_path=":memory:", alert_threshold=5.0)
 engine = TrustScoreEngine()
 
-for fairness in [0.90, 0.88, 0.85, 0.72]:
+for fairness in [0.90, 0.88, 0.85, 0.30]:
     score = engine.compute(fairness=fairness, privacy=0.85, security=0.80,
                            robustness=0.80, compliance=0.85, authenticity=0.85)
     alert = monitor.record("gpt-4o", "openai", score)
     if alert:
-        print(f"Drift alert! {alert.severity}: {alert.delta:.1f} pt drop")
+        print(f"Drift alert! {alert.severity}: {abs(alert.delta):.1f} pt drop")  # high: 11.0 pt drop
 ```
 
 ---
