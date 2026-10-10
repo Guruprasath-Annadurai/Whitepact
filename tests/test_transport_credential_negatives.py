@@ -233,3 +233,73 @@ async def test_another_tenant_cannot_resolve_or_execute_this_tenants_approval(or
     await engine.close()
     assert row is not None and str(row[0]).upper() in {"PENDING", "REQUIRE_APPROVAL"}, row
     assert (await _counter(client, raw))["counter"] == 0
+
+
+async def test_another_tenant_cannot_read_or_annotate_this_tenants_evidence(org) -> None:
+    from httpx import AsyncClient
+
+    from responsibleai.db.engine import governance_evidence, governance_outcomes
+    from responsibleai.rbac.models import Role
+    from tests.test_v1_customer_journey import _onboard, _register, _token_from_url, _verify_login
+
+    client, pg, org_id, raw = org
+    await _call(client, raw)  # writes tenant A evidence
+
+    engine = create_engine(pg)
+    await engine.init(auto_create_tables=False)
+    async with engine.raw.connect() as conn:
+        evidence_id = (
+            await conn.execute(
+                select(governance_evidence.c.id).where(governance_evidence.c.org_id == org_id)
+            )
+        ).scalar()
+    assert evidence_id
+
+    other = AsyncClient(transport=client._transport, base_url="http://test")
+    try:
+        _, body = await _register(other, name="Evidence Other", email="evidence.other@example.com")
+        csrf = await _verify_login(
+            other, "evidence.other@example.com", _token_from_url(body["verification_url"])
+        )
+        session = await _onboard(other, csrf, "Evidence Other Org")
+        other_org = session["organization"]["id"]
+        assert other_org != org_id
+
+        # Web session of tenant B.
+        assert (await other.get(f"/api/v1/web/evidence/{evidence_id}")).status_code == 404
+        assert (
+            await other.get(f"/api/v1/web/evidence/{evidence_id}/attestation")
+        ).status_code == 404
+        listing = await other.get("/api/v1/web/evidence")
+        assert evidence_id not in listing.text
+
+        # API key of tenant B.
+        _record, other_raw = await OrgRepository(engine).create_key(
+            other_org, "b-key", role=Role.ANALYST
+        )
+        headers = {"Authorization": f"Bearer {other_raw}"}
+        attestation = await client.get(
+            f"/api/v1/governance/evidence/{evidence_id}/attestation", headers=headers
+        )
+        assert attestation.status_code == 404, attestation.text
+        from responsibleai.dashboard.app import OutcomeReportRequest
+
+        # The payload is valid for its owner, so the 404 below is about tenancy, not validation.
+        OutcomeReportRequest(status="SUCCEEDED", result_summary="forged by another tenant")
+        annotate = await client.post(
+            f"/api/v1/governance/evidence/{evidence_id}/outcome",
+            headers=headers,
+            json={"status": "SUCCEEDED", "result_summary": "forged by another tenant"},
+        )
+        assert annotate.status_code == 404, annotate.text
+    finally:
+        await other.aclose()
+
+    async with engine.raw.connect() as conn:
+        outcomes = (
+            await conn.execute(
+                select(governance_outcomes).where(governance_outcomes.c.evidence_id == evidence_id)
+            )
+        ).fetchall()
+    await engine.close()
+    assert outcomes == [], "another tenant attached an outcome to this tenant's evidence"
