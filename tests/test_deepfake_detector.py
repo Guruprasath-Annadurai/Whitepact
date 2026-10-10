@@ -123,6 +123,7 @@ class TestDeepfakeDetectorResult:
 class TestDeepfakeDetectorImageAsync:
     @pytest.mark.asyncio
     async def test_detect_returns_deepfake_result(self, tmp_path: Path) -> None:
+        pytest.importorskip("PIL")
         # Create a minimal fake image file
         img_path = tmp_path / "test.jpg"
         # Write a 1-pixel JPEG-like binary (detector falls back to mock if torch absent)
@@ -147,6 +148,7 @@ class TestDeepfakeDetectorImageAsync:
 
     @pytest.mark.asyncio
     async def test_detect_result_has_model_scores(self, tmp_path: Path) -> None:
+        pytest.importorskip("PIL")
         img_path = tmp_path / "test2.jpg"
         try:
             import io
@@ -165,16 +167,51 @@ class TestDeepfakeDetectorImageAsync:
         assert len(result.model_scores) >= 1
 
     @pytest.mark.asyncio
-    async def test_detect_video_frame_distribution(self, tmp_path: Path) -> None:
-        """Video detection without cv2 returns a synthesised result."""
+    async def test_detect_video_without_cv2_raises_not_implemented(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Stub behaviour: no synthesised/random scores when cv2 is absent."""
+        import privacylabel.deepfake.detector as det
+
+        monkeypatch.setattr(det, "_CV2_AVAILABLE", False)
         video_path = tmp_path / "fake.mp4"
         video_path.write_bytes(b"\x00" * 1024)  # dummy file
 
         detector = DeepfakeDetector(sample_frames=10)
-        result = await detector.detect_video(str(video_path), sample_frames=10)
-        assert isinstance(result, DeepfakeResult)
-        assert "frames_sampled" in result.metadata
-        assert isinstance(result.frame_distribution, dict)
+        with pytest.raises(NotImplementedError):
+            await detector.detect_video(str(video_path), sample_frames=10)
+
+    @pytest.mark.asyncio
+    async def test_detect_image_is_deterministic(self, tmp_path: Path) -> None:
+        pil = pytest.importorskip("PIL.Image")
+        img_path = tmp_path / "det.png"
+        pil.new("RGB", (64, 64), color=(10, 200, 30)).save(img_path)
+        a = await DeepfakeDetector().detect_image(str(img_path))
+        b = await DeepfakeDetector().detect_image(str(img_path))
+        assert a.ensemble_score == b.ensemble_score
+        assert a.metadata["experimental"] is True
+
+    @pytest.mark.asyncio
+    async def test_detect_image_without_pillow_or_torch_raises(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import builtins
+
+        import privacylabel.deepfake.detector as det
+
+        monkeypatch.setattr(det, "_TORCH_AVAILABLE", False)
+        real_import = builtins.__import__
+
+        def _no_pil(name, *args, **kwargs):
+            if name == "PIL" or name.startswith("PIL."):
+                raise ImportError("no PIL")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", _no_pil)
+        img_path = tmp_path / "x.jpg"
+        img_path.write_bytes(b"\xff\xd8\xff" + b"\x00" * 50)
+        with pytest.raises(NotImplementedError):
+            await DeepfakeDetector().detect_image(str(img_path))
 
 
 class TestClassifyMethod:

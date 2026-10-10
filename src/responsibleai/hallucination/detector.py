@@ -7,6 +7,13 @@ Three independent signals:
 1. Self-consistency  — how much do multiple candidate responses agree?
 2. Hedging           — how much uncertain language does the text contain?
 3. Unsupported claims — specific factual claims without source attribution.
+
+.. warning::
+   **EXPERIMENTAL / HEURISTIC.** This is *not* fact verification. It does not
+   check claims against any source of truth; it combines TF-IDF agreement
+   between candidate responses with regex patterns for hedging language and
+   unattributed numbers/dates. Treat the score as a weak signal for triage,
+   not as evidence that an output is true or false.
 """
 
 from __future__ import annotations
@@ -82,6 +89,9 @@ class HallucinationResult:
 class HallucinationDetector:
     """
     Estimate hallucination risk in LLM output.
+
+    Experimental heuristic (TF-IDF self-consistency + regex signals); it does
+    not verify facts. See the module docstring.
 
     Parameters
     ----------
