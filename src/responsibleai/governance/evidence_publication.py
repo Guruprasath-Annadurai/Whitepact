@@ -22,6 +22,7 @@ import os
 import re
 import stat
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -425,6 +426,7 @@ def put_object_lock(
     """
     if not endpoint or not bucket or not access_key_id or not secret_access_key:
         raise WitnessRequiredUnavailableError("object store witness is not configured")
+    _require_https_endpoint(endpoint)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     day = stamp[:8]
     payload_hash = hashlib.sha256(body).hexdigest()
@@ -496,6 +498,33 @@ def put_object_lock(
     return status
 
 
+def _require_https_endpoint(endpoint: str) -> None:
+    """Refuse any endpoint that is not a plain https origin.
+
+    The request carries a SigV4 Authorization header. A ``file:``, ``ftp:`` or ``http:``
+    endpoint, one with embedded credentials, or one with no host must never be handed to
+    the HTTP client. Bandit B310 flagged the unrestricted ``urlopen`` that followed.
+    """
+    parsed = urllib.parse.urlsplit(endpoint)
+    if parsed.scheme != "https" or not parsed.hostname:
+        raise WitnessRequiredUnavailableError("object store endpoint must be an https URL")
+    if parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise WitnessRequiredUnavailableError(
+            "object store endpoint must not embed credentials, a query or a fragment"
+        )
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """A signed request must go to the configured host and nowhere else."""
+
+    def redirect_request(self, *args: object, **kwargs: object) -> None:  # type: ignore[override]
+        return None
+
+
 def _urllib_transport(request: urllib.request.Request) -> tuple[int, bytes]:
-    with urllib.request.urlopen(request, timeout=10) as response:  # noqa: S310
+    # Re-check at the point of use so a Request built elsewhere cannot reach the network
+    # over another scheme.
+    _require_https_endpoint(request.full_url)
+    opener = urllib.request.build_opener(_NoRedirect)
+    with opener.open(request, timeout=10) as response:
         return int(response.status), response.read()

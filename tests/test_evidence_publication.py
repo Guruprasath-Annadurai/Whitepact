@@ -218,3 +218,58 @@ def test_signing_key_object_is_not_a_string_export(tmp_path) -> None:
     key_id, private = store.current_private()
     assert key_id
     assert not isinstance(private, str)
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "file:///etc/passwd",
+        "ftp://example.com",
+        "http://example.r2.cloudflarestorage.com",
+        "https://",
+        "example.r2.cloudflarestorage.com",
+        "https://user:pass@example.r2.cloudflarestorage.com",
+        "https://example.r2.cloudflarestorage.com?x=1",
+        "https://example.r2.cloudflarestorage.com#frag",
+    ],
+)
+def test_object_store_endpoint_must_be_a_plain_https_origin(endpoint: str) -> None:
+    """Bandit B310: the signed request must never reach file:, ftp:, http: or odd URLs."""
+    called: list[Request] = []
+
+    def transport(request: Request) -> tuple[int, bytes]:
+        called.append(request)
+        return 200, b""
+
+    with pytest.raises(WitnessRequiredUnavailableError, match="https|credentials"):
+        put_object_lock(
+            endpoint=endpoint,
+            bucket="witness",
+            key="org-a/1.json",
+            body=b"{}",
+            access_key_id="access",
+            secret_access_key="secret",
+            transport=transport,
+        )
+    assert called == []
+
+
+def test_real_transport_refuses_a_non_https_request_before_any_network_io() -> None:
+    from responsibleai.governance import evidence_publication as ep
+
+    with pytest.raises(WitnessRequiredUnavailableError, match="https"):
+        ep._urllib_transport(Request("file:///etc/passwd", data=b"{}", method="PUT"))
+
+
+def test_real_transport_never_follows_a_redirect() -> None:
+    """A signed Authorization header must not be replayed to a redirect target."""
+    from responsibleai.governance import evidence_publication as ep
+
+    handler = ep._NoRedirect()
+    request = Request("https://example.r2.cloudflarestorage.com/b/k", data=b"{}", method="PUT")
+    assert (
+        handler.redirect_request(
+            request, None, 307, "Temporary Redirect", {}, "https://evil.example/"
+        )
+        is None
+    )
