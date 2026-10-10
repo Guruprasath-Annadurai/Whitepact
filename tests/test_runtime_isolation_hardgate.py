@@ -22,6 +22,7 @@ import pathlib
 import shutil
 import tempfile
 import uuid
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -208,34 +209,57 @@ class TestProcessProcPtraceIsolation:
     @pytest.mark.usefixtures("real_container_host")
     async def test_control_plane_proc_and_fds(self):
         control_plane_pid = os.getpid()
+        # Identify the control plane by what it IS (its full command line), not by its PID
+        # number. A fresh PID namespace numbers processes 1, 2, 3..., so a low control-plane
+        # PID (any short-lived harness) collides with the container's own probe process and
+        # reports "visible" for the wrong process. A real host process never has this command
+        # line inside the container unless the container can see the host's processes.
+        control_plane_cmdline = Path("/proc/self/cmdline").read_bytes().hex()
         probe_script = f"""
 import sys, os, json, signal
 
 cp_pid = {control_plane_pid}
+cp_cmdline = bytes.fromhex({control_plane_cmdline!r})
 
-# 1. Can we see control-plane process?
+# 1. Can we see the control-plane process? Match by identity across every visible PID.
 pids = [int(p) for p in os.listdir("/proc") if p.isdigit()]
-cp_pid_visible = cp_pid in pids
+matched = []
+for candidate in pids:
+    try:
+        with open(f"/proc/{{candidate}}/cmdline", "rb") as handle:
+            if handle.read() == cp_cmdline:
+                matched.append(candidate)
+    except OSError:
+        pass
+cp_pid_visible = bool(matched)
+if matched:
+    cp_pid = matched[0]
 
-# 2. Can we read /proc/<cp_pid>/environ?
-environ_read = "BLOCKED"
+# 2. Can we read /proc/<cp_pid>/environ? (only meaningful when it is truly visible)
+environ_read = "BLOCKED: control plane not present in this PID namespace"
 try:
+    if not cp_pid_visible:
+        raise FileNotFoundError("control plane not visible")
     with open(f"/proc/{{cp_pid}}/environ", "rb") as f:
         environ_read = "OPEN: " + repr(f.read(20))
 except Exception as e:
     environ_read = "BLOCKED: " + type(e).__name__
 
 # 3. Can we read /proc/<cp_pid>/mem?
-mem_read = "BLOCKED"
+mem_read = "BLOCKED: control plane not present in this PID namespace"
 try:
+    if not cp_pid_visible:
+        raise FileNotFoundError("control plane not visible")
     with open(f"/proc/{{cp_pid}}/mem", "rb") as f:
         mem_read = "OPEN: " + repr(f.read(20))
 except Exception as e:
     mem_read = "BLOCKED: " + type(e).__name__
 
 # 4. Can we signal control-plane PID?
-signal_sent = "BLOCKED"
+signal_sent = "BLOCKED_ESRCH"
 try:
+    if not cp_pid_visible:
+        raise ProcessLookupError("control plane not visible")
     os.kill(cp_pid, 0)
     signal_sent = "OPEN"
 except ProcessLookupError:
