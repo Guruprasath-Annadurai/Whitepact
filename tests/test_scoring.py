@@ -167,3 +167,77 @@ class TestBootstrapConfidenceInterval:
         lo_t, hi_t = bootstrap_confidence_interval(tight)
         lo_w, hi_w = bootstrap_confidence_interval(wide)
         assert (hi_w - lo_w) > (hi_t - lo_t)
+
+
+class TestVaderNeverDownloadsAtScoringTime:
+    """Scoring must not reach the network; the lexicon is provisioned at setup time."""
+
+    @staticmethod
+    def _install_fake_nltk(monkeypatch, *, lexicon_present: bool):
+        import sys
+        import types
+
+        downloads: list[str] = []
+
+        class FakeAnalyzer:
+            def __init__(self) -> None:
+                if not lexicon_present:
+                    raise LookupError("vader_lexicon not found")
+
+            def polarity_scores(self, text: str) -> dict[str, float]:
+                return {"compound": 0.9 if "great" in text else -0.9}
+
+        nltk = types.ModuleType("nltk")
+        nltk.download = lambda name, **_: downloads.append(name) or False  # type: ignore[attr-defined]
+        sentiment = types.ModuleType("nltk.sentiment")
+        vader = types.ModuleType("nltk.sentiment.vader")
+        vader.SentimentIntensityAnalyzer = FakeAnalyzer  # type: ignore[attr-defined]
+        for name, module in (
+            ("nltk", nltk),
+            ("nltk.sentiment", sentiment),
+            ("nltk.sentiment.vader", vader),
+        ):
+            monkeypatch.setitem(sys.modules, name, module)
+        monkeypatch.setattr("biasbuster.core.scoring._warned_lexicon_missing", False)
+        return downloads
+
+    def test_missing_lexicon_returns_none_and_never_downloads(self, monkeypatch) -> None:
+        from biasbuster.core import scoring
+
+        downloads = self._install_fake_nltk(monkeypatch, lexicon_present=False)
+        assert scoring._get_vader() is None
+        assert downloads == []
+
+    def test_missing_lexicon_degrades_to_zero_divergence_without_raising(self, monkeypatch) -> None:
+        from biasbuster.core import scoring
+
+        downloads = self._install_fake_nltk(monkeypatch, lexicon_present=False)
+        divergence = scoring.compute_sentiment_divergence(["great work", "terrible work"])
+        assert divergence == 0.0
+        assert downloads == []
+
+    def test_missing_lexicon_warns_exactly_once(self, monkeypatch, caplog) -> None:
+        from biasbuster.core import scoring
+
+        self._install_fake_nltk(monkeypatch, lexicon_present=False)
+        with caplog.at_level("WARNING", logger="biasbuster.core.scoring"):
+            scoring._get_vader()
+            scoring._get_vader()
+        assert len([r for r in caplog.records if "lexicon" in r.getMessage()]) == 1
+
+    def test_provisioned_lexicon_is_used(self, monkeypatch) -> None:
+        from biasbuster.core import scoring
+
+        downloads = self._install_fake_nltk(monkeypatch, lexicon_present=True)
+        assert scoring._get_vader() is not None
+        assert scoring.compute_sentiment_divergence(["great work", "terrible work"]) > 0.0
+        assert downloads == []
+
+    def test_nltk_not_installed_returns_none(self, monkeypatch) -> None:
+        import sys
+
+        from biasbuster.core import scoring
+
+        monkeypatch.setitem(sys.modules, "nltk", None)  # makes `import nltk...` raise ImportError
+        monkeypatch.setitem(sys.modules, "nltk.sentiment.vader", None)
+        assert scoring._get_vader() is None
