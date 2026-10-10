@@ -11,29 +11,98 @@
   <a href="https://www.bestpractices.dev/projects/14112"><img src="https://www.bestpractices.dev/projects/14112/baseline" alt="OpenSSF Baseline"/></a>
 </p>
 
-<p align="center"><strong>WhitePact — an independent runtime authority, governance, and assurance layer for autonomous systems: a five-way governance decision engine (ALLOW / ALLOW_WITH_REDACTION / REQUIRE_APPROVAL / DENY / QUARANTINE), trust scoring, bias detection, guardrails, hallucination detection, compliance mapping (NIST AI RMF / EU AI Act / ISO 42001), cost intelligence, drift monitoring, a public Trust Index / leaderboard / AI Incident Database, and an MCP server (30 tools, 20 resources) with LangChain, LangGraph, and Google ADK trust-gate integrations.</strong></p>
+# WhitePact
 
+**What it is.** WhitePact is a deterministic authorization layer for AI agent
+actions. Before an agent calls a tool, moves money, or deploys something,
+WhitePact evaluates the request against the authority that was actually
+delegated to that agent and returns one of five outcomes: `ALLOW`,
+`ALLOW_WITH_REDACTION`, `REQUIRE_APPROVAL`, `DENY`, or `QUARANTINE`. No LLM is
+called in the decision path, so the same input always gives the same decision.
+Every decision is written to a per-organisation, hash-chained audit log, and
+`REQUIRE_APPROVAL` opens a human approval request (with a LangGraph interrupt
+integration).
+
+**Why.** Agent frameworks make it easy to give a model tools and hard to prove
+afterwards what it was allowed to do, who approved it, and whether the record
+was altered. WhitePact puts that check in one place: in front of MCP tool
+calls, LangChain / LangGraph / Google ADK agents, or a REST API.
+
+**Maturity (honest status).** Independent open-source project by one author,
+started May 2026, currently WhitePact v1.3.1. About 5,000 automated tests at roughly 87%
+line coverage. Published on PyPI as
+[`rai-governance-platform`](https://pypi.org/project/rai-governance-platform/).
+No known production deployments yet; treat it as early-stage software and
+review it before relying on it. The governance core (gateway, policy,
+evidence chain, approvals) is the most tested part. Some side modules are
+**experimental**: the deepfake detector is a stub without trained weights, and
+the hallucination detector is a heuristic, not fact verification (see
+[docs/EXPERIMENTAL_MODULES.md](docs/EXPERIMENTAL_MODULES.md)).
+
+## Architecture
+
+```mermaid
+flowchart LR
+    A[AI agent<br/>MCP client / LangChain / LangGraph / ADK] -->|ActionRequest| G[WhitePactRuntimeGateway]
+    G --> R[Risk tiering<br/>fixed table]
+    G --> P[Policy engine<br/>first-match rules]
+    G --> C[Delegated authority<br/>+ constraints]
+    R & P & C --> D{Five-way decision}
+    D -->|ALLOW / ALLOW_WITH_REDACTION| T[Tool executes]
+    D -->|REQUIRE_APPROVAL| H[Human approval queue<br/>LangGraph interrupt]
+    D -->|DENY / QUARANTINE| X[Blocked]
+    D --> E[(Hash-chained evidence<br/>PostgreSQL / SQLite)]
+    API[FastAPI dashboard<br/>RBAC, TOTP MFA, Redis rate limits, OpenTelemetry] --- G
 ```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                        WhitePact  v1.3.1                                     │
-│                                                                              │
-│  ┌──────────────┐  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐  │
-│  │ Governance   │  │ Trust Score │  │  Compliance  │  │  Guardrails      │  │
-│  │ 5-way decide │  │ 6-dim A–F   │  │ NIST/EU/ISO  │  │  PII + Tox       │  │
-│  └──────────────┘  └─────────────┘  └──────────────┘  └──────────────────┘  │
-│  ┌──────────────┐  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐  │
-│  │ Hallucination│  │ Cost Intel  │  │   Red Team   │  │  Drift Monitor   │  │
-│  │ Self-consist.│  │ Route+Budget│  │ 10 attacks   │  │  Alerts+Trend    │  │
-│  └──────────────┘  └─────────────┘  └──────────────┘  └──────────────────┘  │
-│  ┌──────────────┐  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐  │
-│  │ AI Passport  │  │  BiasBuster │  │ PrivacyLabel │  │  MCP Server      │  │
-│  │ SHA-256 cert │  │ 6 probes+CI │  │  Federated   │  │  30 tools/HTTP   │  │
-│  └──────────────┘  └─────────────┘  └──────────────┘  └──────────────────┘  │
-│  ┌──────────────────────────────────────────────────────────────────────────┐ │
-│  │   Governance Dashboard — FastAPI · Per-org rate limit · Alembic · OTEL  │ │
-│  └──────────────────────────────────────────────────────────────────────────┘ │
-└──────────────────────────────────────────────────────────────────────────────┘
+
+## Quickstart (governance core, offline)
+
+```bash
+pip install rai-governance-platform
 ```
+
+```python
+from responsibleai.governance import WhitePactRuntimeGateway
+from responsibleai.governance.models import (
+    ActionRequest,
+    AgentContext,
+    AuthorityContext,
+    IdentityContext,
+)
+
+gateway = WhitePactRuntimeGateway()
+
+# Who is acting: an agent authenticated with an API key belonging to org "acme".
+identity = IdentityContext(identity_id="key-1", kind="api_key", org_id="acme")
+agent = AgentContext(identity=identity, framework="mcp-client")
+
+# What it was delegated to do: MCP tool calls, plus deployments that need a human.
+authority = AuthorityContext(
+    delegated_by="acme",
+    granted_action_types=frozenset({"mcp_tool_call", "deployment"}),
+    require_approval_for=frozenset({"deployment"}),
+)
+
+for action in (
+    ActionRequest(agent=agent, action_type="mcp_tool_call", target="rai_health"),
+    ActionRequest(agent=agent, action_type="deployment", target="prod"),
+    ActionRequest(agent=agent, action_type="payment", target="vendor-42"),
+):
+    result = gateway.evaluate(action, authority)
+    print(f"{action.action_type:>14} -> {result.decision.value}  {result.reason_codes}")
+```
+
+Output:
+
+```text
+ mcp_tool_call -> ALLOW  []
+    deployment -> REQUIRE_APPROVAL  ['APPROVAL_REQUIRED:action_type=deployment']
+       payment -> DENY  ['AUTHORITY_NOT_DELEGATED:action_type=payment']
+```
+
+This exact script lives at
+[`examples/quickstart_governance.py`](examples/quickstart_governance.py) and is
+run in CI by `tests/test_readme_quickstart.py`.
 
 ---
 
@@ -54,13 +123,13 @@ and a live dashboard — that covers the full governance lifecycle:
 | Is this model trustworthy? | `TrustScoreEngine` | 0–100 score, A–F grade, risk level |
 | Does it comply with regulations? | `ComplianceEngine` | NIST AI RMF, EU AI Act tier, ISO 42001 |
 | Is it exposing PII? | `GuardrailsEngine` | Block / redact with audit log |
-| Is it hallucinating? | `HallucinationDetector` | Risk score, unsupported claims |
+| Is it hallucinating? *(experimental heuristic)* | `HallucinationDetector` | Heuristic risk score (TF-IDF self-consistency + hedging/claim regexes); not fact verification |
 | Can it be attacked? | `RedTeamSimulator` | 10 vectors, CVE IDs, safe-refusal rate |
 | How much is it costing? | `CostTracker` + `ModelRouter` | Per-model USD, routing to cheapest viable model |
 | Is it getting worse over time? | `TrustDriftMonitor` | 7/30-day trend, severity alerts |
 | Is it biased? | `BiasBuster` | 6 demographic probes, CI gate |
 | Is this data labeled privately? | `PrivacyLabel` | Federated DP labels, never leaves device |
-| Is this media real? | `DeepfakeDetector` | Ensemble confidence, method detected |
+| Is this media real? *(experimental stub)* | `DeepfakeDetector` | Stub only: no trained weights shipped; scores are not meaningful |
 | Can I trust a third-party MCP server before connecting to it? | `SupplyChainScanner` | VERIFIED_FACT / INFERRED_SIGNAL / UNKNOWN verdicts — typosquat, description-content, known-incident checks |
 | Is there a tamper-evident record of every governance decision? | `EvidenceRepository` | Hash-chained `EvidenceRecord`, per-org, `verify_chain()` |
 | Does a risky action get a human in the loop? | `ApprovalRepository` | Race-safe `PENDING → APPROVED/DENIED` workflow |
@@ -99,12 +168,13 @@ unless PyPI documents that distribution).
 
 ---
 
-## 30-second quickstart
+## Dashboard quickstart (REST API)
 
 ```bash
 # Start the governance dashboard
 pip install "rai-governance-platform[dashboard]"
-uvicorn responsibleai.dashboard.app:app --port 8765
+# Local development only: auth is ON by default, so turn it off for a local try-out
+RAI_AUTH_ENABLED=false uvicorn responsibleai.dashboard.app:app --port 8765
 
 # Evaluate a model (no LLM key needed — supply your own scores)
 curl -X POST http://localhost:8765/api/evaluate \
@@ -124,9 +194,9 @@ curl -X POST http://localhost:8765/api/evaluate \
 ```json
 {
   "trust_score": { "trust_score": 83.65, "grade": "B", "risk": "LOW" },
-  "compliance": { "overall_score": 80.5, "eu_ai_act_tier": "limited_risk", "violations": 0 },
-  "passport_id": "rai-a3f7c2b1",
-  "passport_hash": "4d8e1f2a9c3b7e6d...",
+  "compliance": { "overall_score": 100.0, "eu_ai_act_tier": "MINIMAL", "violations": 0 },
+  "passport_id": "8f82462d-...",
+  "passport_hash": "80a7c03d711b1aa4...",
   "drift_alert": null
 }
 ```
@@ -142,16 +212,8 @@ Open `http://localhost:8765` for the live dashboard and
 architecture contract) is a deterministic runtime authority sitting in front
 of agent tool calls:
 
-```python
-from responsibleai.governance import WhitePactRuntimeGateway, ActionRequest, AuthorityContext
-
-gateway = WhitePactRuntimeGateway()
-result = gateway.evaluate(
-    action=ActionRequest(tool_name="rai_scan", arguments={"text": "..."}),
-    authority=AuthorityContext(org_id="acme", agent_id="agent-1"),
-)
-print(result.decision)  # GovernanceDecision.ALLOW | ALLOW_WITH_REDACTION | REQUIRE_APPROVAL | DENY | QUARANTINE
-```
+See the [Quickstart](#quickstart-governance-core-offline) above for a runnable
+example (`examples/quickstart_governance.py`).
 
 - **Risk tiering** (`governance/risk.py`) — every MCP tool is classified
   against a hardcoded, drift-tested table, not inferred at call time.
