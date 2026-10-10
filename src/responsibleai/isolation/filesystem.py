@@ -212,6 +212,43 @@ def _try_setfacl(root: Path, *, uid: int) -> bool:
     return True
 
 
+def grant_container_read(
+    path: Path,
+    *,
+    uid: int = DEFAULT_CONTAINER_UID,
+    gid: int = DEFAULT_CONTAINER_GID,
+) -> None:
+    """Let the container UID read ONE file, and nobody else on the host.
+
+    The file stays ``0400``. The container UID is granted read through a POSIX ACL, or by
+    ``chown`` when the host process is root. Like ``prepare_for_container`` this never
+    falls back to a world-readable mode and fails closed when neither is possible. (A bind
+    mounted file keeps its host owner and mode on Linux, so without a grant the container
+    UID gets EACCES; macOS Docker Desktop ignores host permissions and hides the problem.)
+    """
+    os.chmod(path, 0o400)
+    setfacl = shutil.which("setfacl")
+    if setfacl is not None:
+        try:
+            subprocess.run(  # noqa: S603
+                [setfacl, "-m", f"u:{uid}:r", str(path)],
+                check=True,
+                capture_output=True,
+                timeout=10,
+            )
+            return
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
+            pass
+    if os.geteuid() == 0:
+        os.chown(path, uid, gid)
+        return
+    raise IsolationFilesystemPermissionError(
+        "Cannot grant the unprivileged container UID read access to the trusted runner "
+        "without making it world-readable. Install POSIX ACLs (setfacl) or run the isolation "
+        "host as root. Refusing a world-readable fallback."
+    )
+
+
 def _chown_tree(root: Path, *, uid: int, gid: int) -> None:
     os.chown(root, uid, gid)
     for dirpath, dirnames, filenames in os.walk(root):

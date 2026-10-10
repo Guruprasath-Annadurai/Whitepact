@@ -74,6 +74,13 @@ def _stub_acl_grant_for_runner_selection(monkeypatch: pytest.MonkeyPatch) -> Non
     from responsibleai.isolation import filesystem as filesystem_module
 
     monkeypatch.setattr(filesystem_module, "_try_setfacl", lambda *_args, **_kwargs: True)
+    # The trusted-runner grant is stubbed on the same terms: these tests select the runner,
+    # they do not verify the grant. test_trusted_runner_is_readable_only_by_the_container_uid_
+    # and_never_writable and the real-container tests exercise it.
+    monkeypatch.setattr(
+        "responsibleai.isolation.container_backend.grant_container_read",
+        lambda *_args, **_kwargs: None,
+    )
 
 
 @pytest.mark.asyncio
@@ -193,26 +200,41 @@ def test_linux_workspace_acl_grants_container_uid() -> None:
         assert "other::---" in listed.stdout or "other::" in listed.stdout
 
 
-def test_trusted_runner_is_container_readable_but_never_writable() -> None:
-    """Regression: a 0o400 runner was unreadable to the container UID on Linux.
+def test_trusted_runner_is_readable_only_by_the_container_uid_and_never_writable() -> None:
+    """Regression: a bare 0o400 runner was unreadable to the container UID on Linux.
 
-    The container runs as UID 65534. A bind-mounted file keeps its host owner and mode on
-    Linux, so the runner must be readable by 'other' -- while no one may write it and no
-    other host user may reach it through its parent directory. macOS Docker Desktop ignores
-    host permissions, so only a mode-level check catches this on a developer laptop; the
-    real-container tests prove it end to end on Linux.
+    The container runs as UID 65534 and a bind-mounted file keeps its host owner and mode on
+    Linux, so every isolated run died with EACCES (PR #179 CI). The fix must not make the
+    file world-readable (CodeQL py/overly-permissive-file): it grants UID 65534 alone, by
+    ACL or by chown as root, and fails closed where neither is possible. macOS Docker
+    Desktop ignores host permissions, so only this mode-level check catches a regression on
+    a laptop; the real-container tests prove it end to end on Linux.
     """
     import os
     import shutil
     import stat
+    import subprocess
+
+    from responsibleai.isolation.errors import IsolationFilesystemPermissionError
+    from tests.docker_runtime import host_can_map_container_uid
 
     backend = DockerContainerBackend()
+    if not host_can_map_container_uid():
+        with pytest.raises(IsolationFilesystemPermissionError, match="world-readable"):
+            backend._install_trusted_runner("print('trusted')\n")
+        return
+
     runner = backend._install_trusted_runner("print('trusted')\n")
     try:
-        mode = stat.S_IMODE(os.stat(runner).st_mode)
-        assert mode & stat.S_IROTH, f"runner not readable by the container UID: {mode:o}"
+        info = os.stat(runner)
+        mode = stat.S_IMODE(info.st_mode)
+        assert not mode & stat.S_IROTH, f"runner must not be world-readable: {mode:o}"
         assert mode & 0o222 == 0, f"runner must not be writable by anyone: {mode:o}"
-        parent_mode = stat.S_IMODE(os.stat(runner.parent).st_mode)
-        assert parent_mode == 0o700, f"runner directory must be owner-only: {parent_mode:o}"
+        assert stat.S_IMODE(os.stat(runner.parent).st_mode) == 0o700
+        if info.st_uid != 65534:  # not chowned, so an ACL must name the container UID
+            acl = subprocess.run(  # noqa: S603
+                ["getfacl", "-p", str(runner)], capture_output=True, text=True, check=True
+            ).stdout
+            assert "user:65534:r" in acl, acl
     finally:
         shutil.rmtree(runner.parent, ignore_errors=True)

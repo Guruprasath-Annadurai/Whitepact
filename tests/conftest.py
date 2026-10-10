@@ -127,6 +127,10 @@ def portable_workspace_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         EphemeralWorkspace, "prepare_for_container", lambda self, *args, **kwargs: None
     )
+    monkeypatch.setattr(
+        "responsibleai.isolation.container_backend.grant_container_read",
+        lambda *args, **kwargs: None,
+    )
 
 
 @pytest.fixture
