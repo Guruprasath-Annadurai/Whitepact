@@ -15,8 +15,8 @@ import pytest
 from httpx import AsyncClient
 
 import responsibleai.dashboard.app as app_module
-from tests.step_up_helpers import enroll_human_mfa
 from tests import test_auth_canonical_seams as _seams
+from tests.step_up_helpers import enroll_human_mfa
 from tests.test_auth_canonical_seams import _get_step_up_detail, _onboard_org, _register_and_login
 
 web_client = _seams.web_client  # fixture, re-exported under its own name
