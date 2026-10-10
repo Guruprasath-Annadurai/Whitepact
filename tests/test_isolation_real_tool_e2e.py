@@ -26,6 +26,8 @@ from typing import Any
 import pytest
 
 from responsibleai.governance.execution import (
+    AuthorizationActionMismatchError,
+    AuthorizationAlreadyConsumedError,
     ExecutionAuthorization,
     InternalToolExecutor,
     authorize_execution,
@@ -283,3 +285,94 @@ class TestRealContainerExecution:
         message = str(excinfo.value)
         assert "isolated runtime unavailable" in message, message
         assert "Pulling" not in message.split("isolated runtime unavailable")[0][-200:]
+
+
+class TestHostSideFixtureCannotBeReachedByUntrustedInput:
+    """Adversarial review of the one host-side exception (P0 in the master directive).
+
+    The exception is selected by an exact string match on ``action.action_type`` after the
+    action was authenticated and admitted, gated by deployment configuration that no request
+    can set. Everything an attacker controls must still land in the container broker.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "tool_name",
+        [
+            SYNTHETIC_COUNTER_TOOL + " ",
+            " " + SYNTHETIC_COUNTER_TOOL,
+            SYNTHETIC_COUNTER_TOOL.upper(),
+            SYNTHETIC_COUNTER_TOOL.replace(".", "․"),  # one-dot-leader lookalike
+            SYNTHETIC_COUNTER_TOOL + "\x00",
+            SYNTHETIC_COUNTER_TOOL + "/../rai_scan",
+            "test.counter.increment.v2",
+            "x." + SYNTHETIC_COUNTER_TOOL,
+            "",
+        ],
+    )
+    async def test_lookalike_tool_names_stay_isolated(
+        self,
+        clean_environment: Any,
+        host_tool_spy: list[str],
+        tool_name: str,
+    ) -> None:
+        clean_environment.setenv(SYNTHETIC_HOST_TOOL_ENV, "1")  # the most permissive deployment
+        broker = _RecordingBroker()
+        action = _action(tool_name, {})
+        await InternalToolExecutor(broker=broker).execute(_authorization(action), action)
+        assert host_tool_spy == [], f"{tool_name!r} reached host-side execution"
+        assert broker.calls == [tool_name]
+
+    @pytest.mark.asyncio
+    async def test_arguments_cannot_select_the_route(
+        self, clean_environment: Any, host_tool_spy: list[str]
+    ) -> None:
+        clean_environment.setenv(SYNTHETIC_HOST_TOOL_ENV, "1")
+        broker = _RecordingBroker()
+        hostile = {
+            "action_type": SYNTHETIC_COUNTER_TOOL,
+            "tool": SYNTHETIC_COUNTER_TOOL,
+            "host_side": True,
+            SYNTHETIC_HOST_TOOL_ENV: "1",
+        }
+        action = _action("rai_scan", hostile)
+        await InternalToolExecutor(broker=broker).execute(_authorization(action), action)
+        assert host_tool_spy == [] and broker.calls == ["rai_scan"]
+
+    @pytest.mark.asyncio
+    async def test_a_caller_cannot_spoof_the_tenant_the_fixture_writes_for(
+        self, clean_environment: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        clean_environment.setenv(SYNTHETIC_HOST_TOOL_ENV, "1")
+        seen: list[dict[str, Any]] = []
+
+        async def spy(name: str, args: dict[str, Any], **_: Any) -> dict[str, Any]:
+            seen.append(dict(args))
+            return {}
+
+        monkeypatch.setattr("responsibleai.mcp.tools.dispatch_tool", spy)
+        action = _action(SYNTHETIC_COUNTER_TOOL, {"_whitepact_organization_id": "victim-tenant"})
+        await InternalToolExecutor(broker=_RecordingBroker()).execute(
+            _authorization(action), action
+        )
+        assert seen[0]["_whitepact_organization_id"] == "tenant-a", (
+            "the tenant must come from the authenticated action, never from caller arguments"
+        )
+
+    @pytest.mark.asyncio
+    async def test_an_unadmitted_action_never_reaches_either_route(
+        self, clean_environment: Any, host_tool_spy: list[str]
+    ) -> None:
+        """Admission precedes routing: a consumed or mismatched grant stops everything."""
+        clean_environment.setenv(SYNTHETIC_HOST_TOOL_ENV, "1")
+        broker = _RecordingBroker()
+        action = _action(SYNTHETIC_COUNTER_TOOL, {})
+        authorization = _authorization(action)
+        executor = InternalToolExecutor(broker=broker)
+        await executor.execute(authorization, action)
+        with pytest.raises(AuthorizationAlreadyConsumedError):
+            await executor.execute(authorization, action)  # replay
+        other = _action("rai_scan", {})
+        with pytest.raises((AuthorizationAlreadyConsumedError, AuthorizationActionMismatchError)):
+            await executor.execute(authorization, other)  # grant for a different action
+        assert host_tool_spy == [SYNTHETIC_COUNTER_TOOL] and broker.calls == []
