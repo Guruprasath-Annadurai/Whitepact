@@ -108,8 +108,21 @@ async def test_history_is_per_tenant(repo) -> None:
         "UPDATE governance_policy_history SET rules_json = '[]' WHERE version = 2",
         "UPDATE governance_policy_history SET change = 'rule_removed' WHERE version = 2",
         "DELETE FROM governance_policy_history WHERE version = 2",
-        "UPDATE governance_policy_history SET prev_entry_digest = 'f' || substr(prev_entry_digest, 2) "
+        # Toggling the leading character guarantees the digest is modified,
+        # avoiding the 1/16 collision when prev_entry_digest already starts with 'f':
+        "UPDATE governance_policy_history SET prev_entry_digest = "
+        "CASE WHEN substr(prev_entry_digest, 1, 1) = 'f' THEN '0' ELSE 'f' END || substr(prev_entry_digest, 2) "
         "WHERE version = 3",
+        # Rewriting entry digest
+        "UPDATE governance_policy_history SET entry_digest = "
+        "CASE WHEN substr(entry_digest, 1, 1) = 'f' THEN '0' ELSE 'f' END || substr(entry_digest, 2) "
+        "WHERE version = 2",
+        # Altering version sequence / ordering
+        "UPDATE governance_policy_history SET version = 99 WHERE version = 2",
+        # Tampering with creation timestamp
+        "UPDATE governance_policy_history SET created_at = '1970-01-01 00:00:00' WHERE version = 2",
+        # Cross-tenant tampering / moving a row to another organization
+        "UPDATE governance_policy_history SET org_id = 'org-b' WHERE version = 2",
     ],
 )
 async def test_a_rewritten_or_deleted_history_row_is_detected(repo, tamper: str) -> None:
@@ -122,6 +135,50 @@ async def test_a_rewritten_or_deleted_history_row_is_detected(repo, tamper: str)
     async with engine.raw.begin() as conn:
         await conn.execute(text(tamper))
     assert await policy.verify_history("org-a") is False
+
+
+async def test_history_reordering_is_detected(repo) -> None:
+    policy, engine = repo
+    for i in range(3):
+        await policy.add_rule(
+            "org-a", _rule(f"r{i}", GovernanceDecision.DENY, f"a{i}"), actor=ALICE
+        )
+    assert await policy.verify_history("org-a") is True
+    # Swap versions of row 1 and row 2
+    async with engine.raw.begin() as conn:
+        await conn.execute(
+            text("UPDATE governance_policy_history SET version = -1 WHERE version = 1")
+        )
+        await conn.execute(
+            text("UPDATE governance_policy_history SET version = 1 WHERE version = 2")
+        )
+        await conn.execute(
+            text("UPDATE governance_policy_history SET version = 2 WHERE version = -1")
+        )
+    assert await policy.verify_history("org-a") is False
+
+
+async def test_history_cross_tenant_injection_is_detected(repo) -> None:
+    policy, engine = repo
+    await policy.add_rule("org-a", _rule("r-a1", GovernanceDecision.DENY, "act-a1"), actor=ALICE)
+    await policy.add_rule("org-a", _rule("r-a2", GovernanceDecision.DENY, "act-a2"), actor=ALICE)
+    await policy.add_rule("org-b", _rule("r-b1", GovernanceDecision.DENY, "act-b1"), actor=KEY)
+
+    assert await policy.verify_history("org-a") is True
+    assert await policy.verify_history("org-b") is True
+
+    # Attempt cross-tenant injection: inject org-b's row into org-a as version 3
+    async with engine.raw.begin() as conn:
+        await conn.execute(
+            text(
+                "UPDATE governance_policy_history SET org_id = 'org-a', version = 3 WHERE org_id = 'org-b'"
+            )
+        )
+
+    # org-a fails verification because the injected row does not chain from org-a's version 2
+    assert await policy.verify_history("org-a") is False
+    # org-b has 0 rows now, so its history is empty
+    assert await policy.verify_history("org-b") is True
 
 
 async def test_the_web_console_attributes_changes_to_the_signed_in_user(

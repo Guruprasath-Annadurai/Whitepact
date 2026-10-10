@@ -92,3 +92,116 @@ def test_faststart_cli_json() -> None:
     assert payload["verified"] is True
     assert len(payload["steps"]) >= 6
     assert len(payload["evidence_hash"]) == 64
+
+
+def test_faststart_evidence_tamper_detection() -> None:
+    """Tampering with any evidence record field breaks canonical chain verification."""
+    from datetime import UTC, datetime
+
+    from responsibleai.governance.evidence import EvidenceRecord, compute_canonical_evidence_hash
+
+    record = EvidenceRecord(
+        evidence_id="ev-tamper-test-1",
+        organization_id="org-tamper-test",
+        action_id="act-1",
+        agent_id="agent-1",
+        identity_id="id-1",
+        action_type="read_doc",
+        target="target-1",
+        argument_keys=["path"],
+        authority_delegated_by="root",
+        delegation_chain=["root", "id-1"],
+        decision="DENY",
+        reason_codes=["POLICY_EXPLICIT_DENY"],
+        evaluated_at=datetime.now(UTC),
+        recorded_at=datetime.now(UTC).isoformat(),
+        prev_hash="0" * 64,
+        integrity_version=2,
+        integrity_status="CANONICAL_CHAINED",
+        authentication_method="api_key",
+        purpose="audit",
+        execution_authorization_id=None,
+        execution_target=None,
+        approval_id=None,
+    )
+
+    canonical_hash = compute_canonical_evidence_hash(record.prev_hash, record)
+
+    # Tamper with decision (e.g. attacker changes DENY to ALLOW)
+    tampered_record = EvidenceRecord(
+        evidence_id=record.evidence_id,
+        organization_id=record.organization_id,
+        action_id=record.action_id,
+        agent_id=record.agent_id,
+        identity_id=record.identity_id,
+        action_type=record.action_type,
+        target=record.target,
+        argument_keys=record.argument_keys,
+        authority_delegated_by=record.authority_delegated_by,
+        delegation_chain=record.delegation_chain,
+        decision="ALLOW",  # Tampered!
+        reason_codes=record.reason_codes,
+        evaluated_at=record.evaluated_at,
+        recorded_at=record.recorded_at,
+        prev_hash=record.prev_hash,
+        integrity_version=record.integrity_version,
+        integrity_status=record.integrity_status,
+        authentication_method=record.authentication_method,
+        purpose=record.purpose,
+        execution_authorization_id=record.execution_authorization_id,
+        execution_target=record.execution_target,
+        approval_id=record.approval_id,
+    )
+
+    tampered_hash = compute_canonical_evidence_hash(tampered_record.prev_hash, tampered_record)
+    assert tampered_hash != canonical_hash, (
+        "Tampered evidence must produce completely different hash"
+    )
+
+
+def test_faststart_fail_closed_on_unauthorized_and_unknown_action() -> None:
+    """Enforcement fails closed when action is not explicitly authorized."""
+    from responsibleai.governance.gateway import WhitePactRuntimeGateway
+    from responsibleai.governance.models import (
+        ActionRequest,
+        AgentContext,
+        AuthorityContext,
+        GovernanceDecision,
+        IdentityContext,
+    )
+    from responsibleai.governance.policy import Policy
+
+    gateway = WhitePactRuntimeGateway()
+    identity = IdentityContext(identity_id="id-user", kind="api_key", org_id="org-test")
+    agent = AgentContext(identity=identity, organization_id="org-test", agent_id="agent-1")
+    authority = AuthorityContext(
+        delegated_by="root",
+        granted_action_types=frozenset({"read_only"}),
+        require_approval_for=frozenset(),
+        delegation_chain=("root",),
+    )
+    policy = Policy(org_id="org-test", rules=[])
+
+    # 1. Unlisted action type fails closed
+    req = ActionRequest(
+        action_id="act-unauth",
+        action_type="delete_all",
+        target="db",
+        arguments={},
+        agent=agent,
+        purpose="test",
+    )
+    res = gateway.evaluate(req, authority=authority, policy=policy)
+    assert res.decision == GovernanceDecision.DENY
+    assert "AUTHORITY_NOT_DELEGATED" in res.reason_codes[0]
+
+    # 2. Revoked/empty authority fails closed
+    revoked_auth = AuthorityContext(
+        delegated_by="root",
+        granted_action_types=frozenset(),
+        require_approval_for=frozenset(),
+        delegation_chain=("root",),
+    )
+    res_no_auth = gateway.evaluate(req, authority=revoked_auth, policy=policy)
+    assert res_no_auth.decision == GovernanceDecision.DENY
+    assert "AUTHORITY_NOT_DELEGATED" in res_no_auth.reason_codes[0]
