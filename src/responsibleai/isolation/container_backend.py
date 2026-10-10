@@ -154,7 +154,14 @@ class DockerContainerBackend(IsolationBackend):
         os.chmod(runner_dir, 0o700)
         target = runner_dir / _RESERVED_RUNNER_NAME
         target.write_text(source, encoding="utf-8")
-        os.chmod(target, 0o400)
+        # Readable by every UID, writable by none. The container runs as the unprivileged
+        # UID 65534, and on Linux a bind-mounted file keeps its host owner and mode, so
+        # 0o400 made the runner unreadable to the container (EACCES) and every isolated
+        # execution failed. macOS Docker Desktop ignores host permissions, which hid this.
+        # This does not widen exposure: the file is trusted, public source, mounted
+        # read-only, and sits in an owner-only (0o700) directory no other host user can
+        # traverse. Immutability comes from the read-only mount plus the content check.
+        os.chmod(target, 0o444)
         if target.read_text(encoding="utf-8") != source:
             raise IsolationPolicyViolationError("Trusted runner was modified after install.")
         return target

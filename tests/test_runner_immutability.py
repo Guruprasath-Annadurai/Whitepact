@@ -191,3 +191,28 @@ def test_linux_workspace_acl_grants_container_uid() -> None:
         assert listed.returncode == 0, listed.stderr
         assert "user:65534:r" in listed.stdout
         assert "other::---" in listed.stdout or "other::" in listed.stdout
+
+
+def test_trusted_runner_is_container_readable_but_never_writable() -> None:
+    """Regression: a 0o400 runner was unreadable to the container UID on Linux.
+
+    The container runs as UID 65534. A bind-mounted file keeps its host owner and mode on
+    Linux, so the runner must be readable by 'other' -- while no one may write it and no
+    other host user may reach it through its parent directory. macOS Docker Desktop ignores
+    host permissions, so only a mode-level check catches this on a developer laptop; the
+    real-container tests prove it end to end on Linux.
+    """
+    import os
+    import shutil
+    import stat
+
+    backend = DockerContainerBackend()
+    runner = backend._install_trusted_runner("print('trusted')\n")
+    try:
+        mode = stat.S_IMODE(os.stat(runner).st_mode)
+        assert mode & stat.S_IROTH, f"runner not readable by the container UID: {mode:o}"
+        assert mode & 0o222 == 0, f"runner must not be writable by anyone: {mode:o}"
+        parent_mode = stat.S_IMODE(os.stat(runner.parent).st_mode)
+        assert parent_mode == 0o700, f"runner directory must be owner-only: {parent_mode:o}"
+    finally:
+        shutil.rmtree(runner.parent, ignore_errors=True)
