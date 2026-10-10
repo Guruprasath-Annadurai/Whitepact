@@ -18,7 +18,7 @@
   const content = document.getElementById("rai-page-content");
 
   function escHtml(s) {
-    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
 
   content.innerHTML = `
@@ -98,7 +98,7 @@
           <div class="stat-card"><div class="label">Released</div><div class="value" style="font-size:1.2rem;">${escHtml(d.release_date)}</div></div>
           <div class="stat-card"><div class="label">Stable</div><div class="value" style="font-size:1.2rem;">${d.stable ? "Yes" : "No"}</div></div>
         </div>
-        <div class="text-sm text-muted" style="margin-top:1rem;"><a href="${escHtml(d.changelog_url)}" target="_blank" rel="noopener">View changelog</a></div>
+        <div class="text-sm text-muted" style="margin-top:1rem;"><a href="${/^https?:\/\//i.test(String(d.changelog_url)) ? escHtml(d.changelog_url) : "#"}" target="_blank" rel="noopener">View changelog</a></div>
       `;
     } catch (e) {
       box.innerHTML = '<div class="state-box error">Could not load version: ' + escHtml(e.message) + "</div>";

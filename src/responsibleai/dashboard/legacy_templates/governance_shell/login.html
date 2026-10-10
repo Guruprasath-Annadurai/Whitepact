@@ -61,7 +61,21 @@
   const submitBtn = document.getElementById("submit-btn");
 
   const params = new URLSearchParams(window.location.search);
-  const nextUrl = params.get("next") || "/";
+  // Only a same-origin absolute path is an acceptable post-login target. Anything else
+  // (javascript:, data:, //host, /\host, absolute URLs) falls back to "/".
+  function safeNext(value) {
+    if (typeof value !== "string" || value.charAt(0) !== "/") return "/";
+    if (value.charAt(1) === "/" || value.charAt(1) === "\\") return "/";
+    if (/[\u0000-\u001f]/.test(value)) return "/";
+    return value;
+  }
+  function safeHttpUrl(value) {
+    try {
+      const u = new URL(String(value), window.location.origin);
+      return u.protocol === "https:" || u.protocol === "http:" ? u.href : null;
+    } catch (e) { return null; }
+  }
+  const nextUrl = safeNext(params.get("next"));
 
   fetch("/api/auth/providers").then(function (r) { return r.json(); }).then(function (data) {
     const oidcProviders = (data.providers || []).filter(function (p) { return p.type === "oidc"; });
@@ -75,7 +89,8 @@
           fetch(btn.getAttribute("data-login-url"))
             .then(function (r) { return r.json(); })
             .then(function (d) {
-              if (d.authorization_url) window.location.href = d.authorization_url;
+              const target = safeHttpUrl(d.authorization_url);
+              if (target) window.location.href = target;
               else RAI.toast("SSO login could not be started.", "error");
             })
             .catch(function () { RAI.toast("SSO login could not be started.", "error"); });

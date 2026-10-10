@@ -25,7 +25,7 @@
   const content = document.getElementById("rai-page-content");
 
   function escHtml(s) {
-    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
 
   content.innerHTML = `
@@ -81,8 +81,13 @@
           btn.disabled = true;
           try {
             const d2 = await RAI.fetchJSON("/api/v1/billing/checkout", { method: "POST", body: JSON.stringify({ plan: btn.getAttribute("data-plan") }) });
-            if (d2.checkout_url || d2.url) {
-              window.location.href = d2.checkout_url || d2.url;
+            let checkoutTarget = null;
+            try {
+              const u = new URL(String(d2.checkout_url || d2.url || ""), window.location.origin);
+              if (u.protocol === "https:" || u.protocol === "http:") checkoutTarget = u.href;
+            } catch (e) { checkoutTarget = null; }
+            if (checkoutTarget) {
+              window.location.href = checkoutTarget;
             } else {
               RAI.toast("Checkout session created.", "success");
             }
