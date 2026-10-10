@@ -130,7 +130,9 @@ async def test_http_authorization_latency(
     client, pg = journey_client
     org_id, raw = await _prepare_org(client, monkeypatch, seed_runtime_authority, pg)
     # The FREE plan is capped at 60 requests/minute by design (plan_rate_limiter). Measure the
-    # tenant on ENTERPRISE, which has no per-minute cap; the limiter itself stays enabled.
+    # tenant on ENTERPRISE, which has no per-minute cap; the PLAN limiter stays enabled. NOTE: the
+    # `journey_client` fixture switches the per-route slowapi limiter OFF (30/minute per org per route,
+    # register REC-28), so these figures exclude it; see scripts/bench_http_authorization.py.
     from sqlalchemy import text
 
     from responsibleai.db import create_engine
