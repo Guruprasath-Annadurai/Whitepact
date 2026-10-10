@@ -122,7 +122,11 @@ def _cpu() -> str:
 
 
 @pytest.mark.asyncio
-async def test_http_authorization_latency(journey_client, monkeypatch, seed_runtime_authority):
+async def test_http_authorization_latency(
+    journey_client,  # noqa: F811  (imported fixture, requested by name)
+    monkeypatch,
+    seed_runtime_authority,
+):
     client, pg = journey_client
     org_id, raw = await _prepare_org(client, monkeypatch, seed_runtime_authority, pg)
     # The FREE plan is capped at 60 requests/minute by design (plan_rate_limiter). Measure the
