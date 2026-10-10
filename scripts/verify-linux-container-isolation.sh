@@ -30,6 +30,7 @@ if [[ ${#TESTS[@]} -eq 0 ]]; then
     tests/test_runtime_isolation_stress.py
     tests/test_isolation_workspace_permissions.py
     tests/test_runner_immutability.py
+    tests/test_isolation_real_tool_e2e.py
   )
 fi
 
@@ -57,6 +58,10 @@ docker rm wp-cli-extract >/dev/null
 mkdir -p "$WORK/src"
 git archive HEAD | tar -x -C "$WORK/src"
 
+# The runtime image the isolated tests execute real tools in (see Dockerfile.isolation).
+RUNTIME_IMAGE="whitepact-isolated-runtime:verify"
+docker build -q -f "$WORK/src/Dockerfile.isolation" -t "$RUNTIME_IMAGE" "$WORK/src" >/dev/null
+
 cat >"$WORK/inner.sh" <<'INNER'
 #!/bin/bash
 set -uo pipefail
@@ -75,6 +80,7 @@ cd /work && pip install -q -e ".[dev,dashboard]" >/tmp/pip.log 2>&1 || { tail -5
 if [[ "$MODE" == "nonroot" ]]; then
   chown -R runner /work
   exec runuser -u runner -- env TMPDIR="$VM_PATH/tmp" WHITEPACT_REQUIRE_DOCKER_ISOLATION=1 \
+    WHITEPACT_ISOLATION_IMAGE="$WHITEPACT_ISOLATION_IMAGE" \
     PYTHONWARNINGS=ignore python -m pytest -o addopts= -q -p no:cacheprovider "$@"
 fi
 export TMPDIR="$VM_PATH/tmp" PYTHONWARNINGS=ignore
@@ -82,6 +88,7 @@ exec python -m pytest -o addopts= -q -p no:cacheprovider "$@"
 INNER
 
 docker run --rm \
+  -e WHITEPACT_ISOLATION_IMAGE="$RUNTIME_IMAGE" -e WHITEPACT_REQUIRE_DOCKER_ISOLATION=1 \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v "$WORK/docker":/usr/local/bin/docker:ro \
   -v "$VM_PATH":"$VM_PATH" \
