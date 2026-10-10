@@ -53,3 +53,7 @@ coverage.json
 *.fdb_latexmk
 compliance/trust_index_paper.pdf
 release-evidence/**/wheels/
+
+# Built TypeScript SDK output
+sdk/typescript/dist/
+sdk/typescript/node_modules/
