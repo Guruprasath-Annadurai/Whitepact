@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 # Run the real container-isolation tests on a Linux kernel, from macOS or Linux.
 #
 # Why this exists: Docker Desktop on macOS shares host files through a layer that ignores

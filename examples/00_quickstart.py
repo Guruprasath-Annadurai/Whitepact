@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """WhitePact quickstart: the five governance decisions plus tamper-evident evidence.
 
 Install: pip install "rai-governance-platform[dashboard]"

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 # Manage the disposable PostgreSQL 16 used by the test suite (docker-compose.test.yml).
 set -euo pipefail
 
