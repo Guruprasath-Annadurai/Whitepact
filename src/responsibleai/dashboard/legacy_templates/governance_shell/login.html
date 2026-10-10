@@ -75,7 +75,11 @@
       return u.protocol === "https:" || u.protocol === "http:" ? u.href : null;
     } catch (e) { return null; }
   }
-  const nextUrl = safeNext(params.get("next"));
+  // The destination is always this page's own origin plus a validated absolute path, so it can
+  // neither change scheme nor leave the origin, whatever ?next= contains.
+  function destinationFor(value) {
+    return window.location.origin + safeNext(value);
+  }
 
   fetch("/api/auth/providers").then(function (r) { return r.json(); }).then(function (data) {
     const oidcProviders = (data.providers || []).filter(function (p) { return p.type === "oidc"; });
@@ -141,7 +145,7 @@
           return;
         }
         RAI.auth.setToken(key);
-        window.location.href = nextUrl;
+        window.location.assign(destinationFor(params.get("next")));
       })
       .catch(function (err) {
         showError(String(err.message || err));
@@ -163,7 +167,7 @@
     attemptLogin(pendingKey, code)
       .then(function () {
         RAI.auth.setToken(pendingKey);
-        window.location.href = nextUrl;
+        window.location.assign(destinationFor(params.get("next")));
       })
       .catch(function (err) {
         showError(String(err.message || err));

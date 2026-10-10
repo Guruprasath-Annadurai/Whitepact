@@ -72,7 +72,11 @@ def test_escHtml_neutralises_attribute_and_tag_breakout(page: Path) -> None:
 
 def _login_helpers() -> str:
     html = (SHELL / "login.html").read_text()
-    return _extract(html, "safeNext") + _extract(html, "safeHttpUrl")
+    return (
+        _extract(html, "safeNext")
+        + _extract(html, "safeHttpUrl")
+        + _extract(html, "destinationFor")
+    )
 
 
 @pytest.mark.parametrize(
@@ -125,10 +129,39 @@ def test_sso_redirect_accepts_https_provider() -> None:
 
 def test_navigation_sinks_in_the_shell_are_guarded() -> None:
     login = (SHELL / "login.html").read_text()
-    assert login.count("window.location.href = nextUrl") == 2
-    assert 'const nextUrl = safeNext(params.get("next"));' in login
+    assert login.count('window.location.assign(destinationFor(params.get("next")))') == 2
+    assert "window.location.href = nextUrl" not in login
     assert "window.location.href = d.authorization_url" not in login
     billing = (SHELL / "billing.html").read_text()
     assert "window.location.href = d2.checkout_url" not in billing
     settings = (SHELL / "settings.html").read_text()
     assert r"/^https?:\/\//i.test(String(d.changelog_url))" in settings
+
+
+HOSTILE_NEXT = [
+    "javascript:alert(1)",
+    "//evil.example/x",
+    "/\\evil.example/x",
+    "https://evil.example/",
+    ".evil.example/x",
+    "@evil.example",
+    "data:text/html,x",
+    "",
+    None,
+    "/ok?x=1#y",
+]
+
+
+@pytest.mark.parametrize("value", HOSTILE_NEXT)
+def test_the_post_login_destination_never_leaves_the_origin(value: object) -> None:
+    helpers = _login_helpers()
+    stub = "const window={location:{origin:'https://app.example'}};"
+    destination = _run(stub + helpers, f"destinationFor({json.dumps(value)})")
+    assert isinstance(destination, str)
+    assert destination.startswith("https://app.example/"), destination
+    # Parsed by a real URL parser it is the same origin, same scheme, same host.
+    parsed = _run(
+        "",
+        f"(function(){{const u=new URL({json.dumps(destination)});return [u.origin,u.protocol,u.host];}})()",
+    )
+    assert parsed == ["https://app.example", "https:", "app.example"], (destination, parsed)

@@ -120,15 +120,22 @@ def _check_org(organization_id: str) -> None:
         raise WitnessPublicationError("organization id is not a safe publication key")
 
 
-def _make_dir(path: Path, mode: int, *, enforce: bool = True) -> None:
-    """Create ``path`` with an explicit mode, independent of the process umask.
+def _make_private_dir(path: Path) -> None:
+    """A directory only the owner can enter, whatever the process umask."""
+    path.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(path, 0o700)
 
-    Publication authority is the ability to write into the witness directories, so they must never
-    be group- or world-writable because a service started with ``umask 0`` said so.
+
+def _make_public_dir(path: Path, *, enforce: bool = True) -> None:
+    """A directory others may read but never write, whatever the process umask.
+
+    Publication authority is the ability to write into the witness directories, so they must not
+    be group- or world-writable because a service started with ``umask 0`` said so. The mode is
+    only ever narrowed (group/other write cleared), never widened.
     """
-    path.mkdir(parents=True, exist_ok=True, mode=mode)
+    path.mkdir(parents=True, exist_ok=True, mode=0o755)
     if enforce:
-        os.chmod(path, mode)
+        os.chmod(path, stat.S_IMODE(path.stat().st_mode) & ~0o022)
 
 
 def _check_private_mode(path: Path) -> None:
@@ -150,9 +157,9 @@ class FileWitnessKeyStore:
         cls, directory: Path, private_key: Ed25519PrivateKey | None = None
     ) -> FileWitnessKeyStore:
         store = cls(directory)
-        _make_dir(directory, 0o755, enforce=False)  # a root the operator may already own
-        _make_dir(store.private_dir, 0o700)
-        _make_dir(store.public_dir, 0o755)
+        _make_public_dir(directory, enforce=False)  # a root the operator may already own
+        _make_private_dir(store.private_dir)
+        _make_public_dir(store.public_dir)
         key = private_key or Ed25519PrivateKey.generate()
         store._install(key)
         return store
@@ -210,7 +217,7 @@ class AppendOnlyWitnessLog:
 
     def __init__(self, directory: Path) -> None:
         self.directory = directory
-        _make_dir(self.directory, 0o755, enforce=False)
+        _make_public_dir(self.directory, enforce=False)
 
     def _org_dir(self, organization_id: str) -> Path:
         _check_org(organization_id)
@@ -226,7 +233,7 @@ class AppendOnlyWitnessLog:
         if witness.chain_sequence < 1:
             raise WitnessPublicationError("chain sequence must be positive")
         org_dir = self._org_dir(witness.organization_id)
-        _make_dir(org_dir, 0o755)
+        _make_public_dir(org_dir)
         prior = self.latest(witness.organization_id)
         if prior is not None and witness.chain_sequence <= prior.chain_sequence:
             raise WitnessPublicationError(
