@@ -18,13 +18,16 @@ from pydantic_settings import (
 )
 from pydantic_settings.sources import EnvSettingsSource
 
+from responsibleai.environment import PRODUCTION_ALIASES as PRODUCTION_ENVIRONMENTS
+from responsibleai.environment import is_production as _process_is_production
+from responsibleai.environment import require_consistent as _require_consistent_environment
+
 # See MIGRATION_WHITEPACT_V2.md Section 5. WHITEPACT_ is the preferred
 # prefix; RAI_ is the legacy prefix, kept fully functional for backward
 # compatibility. Neither is hardcoded elsewhere -- both are derived from
 # these two constants so the precedence rule stays in one place.
 WHITEPACT_ENV_PREFIX = "WHITEPACT_"
 LEGACY_ENV_PREFIX = "RAI_"
-PRODUCTION_ENVIRONMENTS = frozenset({"production", "prod"})
 
 
 def is_production_environment(environment: str) -> bool:
@@ -574,7 +577,10 @@ class Settings(BaseSettings):
 
     @property
     def is_production(self) -> bool:
-        return is_production_environment(self.environment)
+        # The field, OR any recognised variable, a conflict or an unrecognised name: the
+        # most restrictive reading wins, so Settings can never be "development" while the
+        # isolation gate, preflights or key service see production.
+        return is_production_environment(self.environment) or _process_is_production()
 
     @property
     def leaderboard_api_keys(self) -> dict[str, str | None]:
@@ -652,6 +658,20 @@ class Settings(BaseSettings):
             raise ValueError("Paddle API credential does not match production environment.")
         return self
 
+    @model_validator(mode="before")
+    @classmethod
+    def _enforce_consistent_environment(cls, data: Any) -> Any:
+        """Refuse to start when the environment variables disagree about production.
+
+        Runs before every other validator so the operator sees the real cause, not a
+        downstream production-only complaint.
+        """
+        try:
+            _require_consistent_environment()
+        except RuntimeError as exc:
+            raise ValueError(str(exc)) from exc
+        return data
+
     @model_validator(mode="after")
     def _enforce_production_database(self) -> Settings:
         """Fail closed if production environment is configured without a valid database URL,
@@ -671,13 +691,13 @@ class Settings(BaseSettings):
                 f"Conflicting database URLs configured simultaneously in: {configured_names}. "
                 "Canonical precedence selected the highest-priority variable."
             )
-            if self.environment.lower() in {"production", "prod"}:
+            if self.is_production:
                 raise ValueError(
                     f"{conflict_msg} Multiple conflicting database URLs are not allowed in production."
                 )
             warnings.warn(conflict_msg, UserWarning, stacklevel=2)
 
-        if self.environment.lower() in {"production", "prod"}:
+        if self.is_production:
             if not self.database_url:
                 raise ValueError(
                     "Production environment requires DATABASE_URL (or WHITEPACT_DATABASE_URL / RAI_DATABASE_URL). "

@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from responsibleai.environment import is_production as process_is_production
+from responsibleai.environment import is_production_name
 from responsibleai.runtime.errors import Phase7AProductionGateClosedError
 from responsibleai.runtime.gate import (
     PRODUCTION_GATE_B_OPEN,
@@ -21,7 +23,7 @@ class Phase7ADispatcher:
 
 def start_phase7a_dispatcher(*, environment: str, enabled: bool | None = None) -> Phase7ADispatcher:
     flag = phase7a_dispatcher_flag_from_env() if enabled is None else enabled
-    if environment.strip().lower() in {"production", "prod"} and not PRODUCTION_GATE_B_OPEN:
+    if (is_production_name(environment) or process_is_production()) and not PRODUCTION_GATE_B_OPEN:
         raise Phase7AProductionGateClosedError(
             "Production Gate B is CLOSED. Phase 7A dispatcher must not start in production."
         )

@@ -456,15 +456,11 @@ class OrgRepository:
         and CredentialIssuancePolicy. Tests and migrations may pass
         ``internal_unverified_fixture=True``.
         """
-        import os
 
         from responsibleai.dashboard.config import is_production_environment
+        from responsibleai.environment import effective_environment_name
 
-        env_name = (
-            os.environ.get("WHITEPACT_ENV")
-            or os.environ.get("RAI_ENV")
-            or os.environ.get("ENVIRONMENT", "development")
-        )
+        env_name = effective_environment_name()
         if not accountable_human_user_id:
             internal_unverified_fixture = True
         if is_production_environment(env_name) and internal_unverified_fixture:

@@ -6,7 +6,8 @@ Isolation is the default. Execution outside an isolation backend (same process, 
 local subprocess backend that provides no network or filesystem containment) is allowed
 only when BOTH hold:
 
-* ``ENVIRONMENT`` is not ``production``, and
+* the deployment is not production by ANY recognised variable (see
+  ``responsibleai.environment``: conflicts and unrecognised names count as production), and
 * ``WHITEPACT_ALLOW_UNISOLATED_EXECUTION`` is exactly ``1``.
 
 Earlier revisions inverted this: isolation was engaged only if ``ENVIRONMENT=production``
@@ -20,12 +21,15 @@ from __future__ import annotations
 
 import os
 
+from responsibleai import environment
+
 UNISOLATED_EXECUTION_ENV = "WHITEPACT_ALLOW_UNISOLATED_EXECUTION"
 SYNTHETIC_HOST_TOOL_ENV = "WHITEPACT_ALLOW_SYNTHETIC_HOST_TOOL"
 
 
 def is_production() -> bool:
-    return os.environ.get("ENVIRONMENT", "").strip().lower() == "production"
+    """Production by ANY recognised variable, a conflict, or an unrecognised value (fail safe)."""
+    return environment.is_production()
 
 
 def unisolated_execution_allowed() -> bool:
@@ -33,9 +37,6 @@ def unisolated_execution_allowed() -> bool:
     if is_production():
         return False
     return os.environ.get(UNISOLATED_EXECUTION_ENV) == "1"
-
-
-_PRODUCTION_NAMES = {"production", "prod"}
 
 
 def synthetic_host_tool_allowed() -> bool:
@@ -47,7 +48,6 @@ def synthetic_host_tool_allowed() -> bool:
     still require isolation, the fixture refuses production itself, and every environment
     variable that names the deployment must be non-production as well as this switch set.
     """
-    for name in ("ENVIRONMENT", "WHITEPACT_ENV", "RAI_ENVIRONMENT"):
-        if os.environ.get(name, "").strip().lower() in _PRODUCTION_NAMES:
-            return False
+    if is_production():
+        return False
     return os.environ.get(SYNTHETIC_HOST_TOOL_ENV) == "1"
