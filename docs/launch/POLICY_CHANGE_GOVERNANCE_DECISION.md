@@ -40,6 +40,33 @@ removing one, adding an ALLOW, or moving a rule so a broader one matches first, 
 | Residual risk | Credential theft = policy weakening | Collusion of two admins; break-glass abuse | Classifier bugs (a loosening mis-classified as tightening) |
 | What to say publicly | "Policy edits are attributed and reversible, not two-person controlled" | "Two-person policy control" (only after it is tested and independently reviewed) | "Loosening needs a second approver" (same condition) |
 
+## Option C is built and switched off
+
+`WHITEPACT_POLICY_GOVERNANCE_MODE` (`single_admin` by default, `tiered`) selects the model. With the default,
+behaviour is exactly today's. With `tiered`:
+
+* **Classifier** (`governance/policy_change.py`): conservative; anything not provably a tightening is a loosening
+  (removing a DENY/REQUIRE_APPROVAL rule, adding an ALLOW, changing a rule in place, or a reorder that lets a less
+  severe rule precede a more severe one). A brute-force test over all rule lists of three rules checks that no
+  permitting edit is ever called a tightening.
+* **Gate** (`governance/policy_change_gate.py`, `_gate_policy_change` in `dashboard/app.py`): tightening and neutral
+  edits need one administrator. A loosening edit needs a verified TOTP step-up and an APPROVED four-eyes request that
+  is bound to the organization, the exact before/after rule sets and the policy version, was requested by the same
+  principal who now makes the edit, was approved by a different principal (who also passed step-up), has not expired
+  and is spent atomically. The edit is applied only if the policy is still at the approved version.
+* **Endpoints:** `POST /api/web/policy/changes/propose`, `POST /api/web/policy/changes/{id}/approve`; the edit is then
+  made with header `X-Policy-Change-Approval`. API keys can tighten but can never loosen (an approval belongs to a human
+  requester).
+* **No bypass:** all six mutation routes (3 REST, 3 web) call the gate and pass `expected_version`; a structural test
+  fails the build if another route or module mutates policy, or if `PolicyLifecycleManager` becomes reachable from a route
+  without going through the gate (`tests/test_policy_mutation_routes_are_gated.py`).
+* **Not built:** break-glass for a sole-owner organisation (under `tiered` a one-person org cannot loosen policy);
+  step-up through OIDC or WebAuthn (only TOTP has a verifier); rollback through the lifecycle manager (it stays unwired).
+  Activating `tiered` before a break-glass decision would lock a sole-owner org out of loosening edits.
+
+Tests: `tests/test_policy_tiered_governance_http.py` (9, real HTTP), `test_policy_change_classifier.py` (19),
+`test_policy_mutation_routes_are_gated.py` (5).
+
 ## What I can build without deciding
 
 Already done: attribution, recoverable history, tamper detection, history read endpoint, lifecycle writes history.

@@ -41,6 +41,7 @@ from responsibleai.db.policy_repository import (
     PolicyActor,
     PolicyRepository,
     PolicyRuleNotFoundError,
+    PolicyVersionConflictError,
 )
 from responsibleai.db.principal_repository import PrincipalRepository
 from responsibleai.db.public_incident_repository import PublicIncidentRepository
@@ -103,6 +104,7 @@ __all__ = [
     "PolicyRepository",
     "PolicyActor",
     "PolicyRuleNotFoundError",
+    "PolicyVersionConflictError",
     "SSORequiredError",
     "create_engine",
     "ToolTrustRepository",

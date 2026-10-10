@@ -160,6 +160,15 @@ class Settings(BaseSettings):
         ),
         description="Deployment environment (development, staging, production).",
     )
+    policy_governance_mode: Literal["single_admin", "tiered"] = Field(
+        default="single_admin",
+        description=(
+            "Who may change organization policy. single_admin: one OWNER/ADMIN, every change "
+            "attributed (current behaviour). tiered: tightening edits by one admin; loosening "
+            "edits need verified step-up and a second approver (decision paper REC-25, option "
+            "C). Not active unless set; changing it is a founder decision."
+        ),
+    )
     hsts_stage: Literal["disabled", "initial", "stage1", "stage2"] | None = Field(
         default=None,
         validation_alias=AliasChoices("WHITEPACT_HSTS_STAGE", "RAI_HSTS_STAGE"),

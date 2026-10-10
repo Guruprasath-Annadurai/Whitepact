@@ -30,7 +30,7 @@ from responsibleai.db.engine import (
     governance_policy_history,
     governance_policy_versions,
 )
-from responsibleai.db.revocation_epoch_repository import bump_epoch_on_connection
+from responsibleai.db.revocation_epoch_repository import bump_epoch_on_connection, lock_epoch
 from responsibleai.governance.models import GovernanceDecision
 from responsibleai.governance.policy import Policy, PolicyRule, reject_shadowed_restrictive_rules
 from responsibleai.governance.risk import RiskTier
@@ -56,6 +56,28 @@ def _row_to_rule(row: Any) -> PolicyRule:
 
 class PolicyRuleNotFoundError(Exception):
     pass
+
+
+class PolicyVersionConflictError(Exception):
+    """The policy changed between the moment an edit was authorized and the moment it was applied."""
+
+
+async def _lock_and_check_version(conn: Any, org_id: str, expected_version: int | None) -> None:
+    """Serialize policy edits per organization and, if asked, require the version that was approved."""
+    if expected_version is None:
+        return
+    await lock_epoch(conn, org_id)
+    current = (
+        await conn.execute(
+            select(governance_policy_versions.c.version).where(
+                governance_policy_versions.c.org_id == org_id
+            )
+        )
+    ).scalar()
+    if int(current or 0) != expected_version:
+        raise PolicyVersionConflictError(
+            f"policy is at version {int(current or 0)}, the edit was authorized against {expected_version}"
+        )
 
 
 @dataclass(frozen=True)
@@ -228,13 +250,19 @@ class PolicyRepository:
         return Policy(org_id=org_id, rules=[_row_to_rule(r) for r in rows], version=version)
 
     async def add_rule(
-        self, org_id: str, rule: PolicyRule, *, actor: PolicyActor | None = None
+        self,
+        org_id: str,
+        rule: PolicyRule,
+        *,
+        actor: PolicyActor | None = None,
+        expected_version: int | None = None,
     ) -> None:
         """Appends *rule* at the end of the org's current evaluation
         order (highest existing `position` + 1). Appending a stricter
         rule that an earlier rule already covers is rejected: first-match
         would never reach it."""
         async with self._engine.raw.begin() as conn:
+            await _lock_and_check_version(conn, org_id, expected_version)
             existing_rows = (
                 await conn.execute(
                     select(governance_policies)
@@ -278,9 +306,15 @@ class PolicyRepository:
             )
 
     async def remove_rule(
-        self, org_id: str, rule_id: str, *, actor: PolicyActor | None = None
+        self,
+        org_id: str,
+        rule_id: str,
+        *,
+        actor: PolicyActor | None = None,
+        expected_version: int | None = None,
     ) -> None:
         async with self._engine.raw.begin() as conn:
+            await _lock_and_check_version(conn, org_id, expected_version)
             result = await conn.execute(
                 delete(governance_policies)
                 .where(governance_policies.c.org_id == org_id)
@@ -299,6 +333,7 @@ class PolicyRepository:
         rule_ids_in_order: list[str],
         *,
         actor: PolicyActor | None = None,
+        expected_version: int | None = None,
     ) -> None:
         """Replaces the org's evaluation order wholesale — every existing
         `rule_id` must appear exactly once, or this raises rather than
@@ -315,6 +350,7 @@ class PolicyRepository:
         reject_shadowed_restrictive_rules([by_id[rule_id] for rule_id in rule_ids_in_order])
         now = _now()
         async with self._engine.raw.begin() as conn:
+            await _lock_and_check_version(conn, org_id, expected_version)
             for position, rule_id in enumerate(rule_ids_in_order):
                 await conn.execute(
                     update(governance_policies)

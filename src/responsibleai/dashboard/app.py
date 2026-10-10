@@ -163,6 +163,7 @@ from responsibleai.db import (
     PolicyActor,
     PolicyRepository,
     PolicyRuleNotFoundError,
+    PolicyVersionConflictError,
     PublicIncidentRepository,
     SelfApprovalError,
     SoleOwnerError,
@@ -214,6 +215,14 @@ from responsibleai.governance.intent import build_intent_contract
 from responsibleai.governance.models import GovernanceDecision
 from responsibleai.governance.outcome import OutcomeStatus, build_outcome_record
 from responsibleai.governance.policy import PolicyRule
+from responsibleai.governance.policy_change import ChangeKind
+from responsibleai.governance.policy_change_gate import (
+    PolicyChangeNotAuthorizedError,
+    PolicyGovernanceMode,
+    ProposedChange,
+    consume_approval,
+    requires_second_approver,
+)
 from responsibleai.governance.risk import RiskTier
 from responsibleai.governance.synthetic_counter import (
     SYNTHETIC_COUNTER_TOOL,
@@ -236,11 +245,14 @@ from responsibleai.governance.upstream_executor import (
 from responsibleai.governance.workflow import WorkflowSequenceRule
 from responsibleai.guardrails.engine import GuardrailsEngine
 from responsibleai.hallucination.detector import HallucinationDetector
-from responsibleai.iam.enums import PrivilegeRiskTier, StepUpMethod
+from responsibleai.iam.enums import PrivilegedAction, PrivilegeRiskTier, StepUpMethod
 from responsibleai.iam.errors import (
+    FourEyesRequiredError,
+    SelfApprovalBlockedError,
     StepUpRequiredError,
     StepUpVerificationFailedError,
 )
+from responsibleai.iam.four_eyes import FourEyesService
 from responsibleai.iam.models import StepUpProof
 from responsibleai.iam.step_up import StepUpVerifier
 from responsibleai.incidents.logic import build_incident_record
@@ -1289,6 +1301,15 @@ class PolicyRuleCreateRequest(BaseModel):
 
 class PolicyReorderRequest(BaseModel):
     rule_ids: list[str] = Field(..., min_length=1)
+
+
+class PolicyChangeProposal(BaseModel):
+    """A policy edit put forward for second-person approval (tiered policy governance)."""
+
+    operation: Literal["add", "remove", "reorder"]
+    rule: PolicyRuleCreateRequest | None = None
+    rule_id: str | None = Field(default=None, max_length=100)
+    rule_ids: list[str] | None = None
 
 
 class WorkflowRuleCreateRequest(BaseModel):
@@ -5527,6 +5548,73 @@ def _policy_rule_to_dict(rule: PolicyRule) -> dict[str, Any]:
     }
 
 
+POLICY_APPROVAL_HEADER = "X-Policy-Change-Approval"
+
+
+async def _gate_policy_change(
+    request: Request,
+    *,
+    org_id: str,
+    actor_id: str,
+    operation: str,
+    before: list[PolicyRule],
+    after: list[PolicyRule] | None,
+) -> int | None:
+    """Apply the organization's policy-governance mode to an edit about to be made.
+
+    Returns the policy version the edit must be applied against (so the repository can refuse it if the
+    policy moved), or ``None`` in ``single_admin`` mode. In ``tiered`` mode a loosening edit needs a
+    verified step-up and a spent, matching second-approver approval; otherwise it is refused here, before
+    anything changes. Every policy mutation route calls this, so no direct route bypasses the mode.
+    """
+    mode = PolicyGovernanceMode(settings.policy_governance_mode)
+    if mode is PolicyGovernanceMode.SINGLE_ADMIN:
+        return None
+    version = await _ready(_policy_repo).get_policy_version(org_id)
+    if after is None:  # the repository will reject the malformed edit itself
+        return version
+    change = ProposedChange(org_id, operation, version, before, after)
+    if not requires_second_approver(mode, change):
+        return version
+    approval_id = request.headers.get(POLICY_APPROVAL_HEADER)
+    try:
+        if not approval_id:
+            raise PolicyChangeNotAuthorizedError(
+                "This edit loosens policy and needs a second approver.",
+                change_digest=change.digest,
+                policy_version=version,
+            )
+        await _verify_web_step_up(
+            request,
+            org_id=org_id,
+            user_id=actor_id,
+            action=PrivilegedAction.MODIFY_POLICY_RULE.value,
+            risk_tier=PrivilegeRiskTier.PRIVILEGED_HIGH,
+        )
+        await consume_approval(
+            _ready(_db_engine),
+            change=change,
+            actor_principal_id=actor_id,
+            four_eyes_request_id=approval_id,
+        )
+    except PolicyChangeNotAuthorizedError as exc:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "policy_change_approval_required",
+                "message": str(exc),
+                "change_digest": exc.change_digest,
+                "policy_version": exc.policy_version,
+                "kind": ChangeKind.LOOSENING.value,
+            },
+        ) from exc
+    return version
+
+
+def _conflict(exc: PolicyVersionConflictError) -> HTTPException:
+    return HTTPException(409, f"Policy changed since this edit was authorized: {exc}")
+
+
 @app.get("/api/governance/policy", tags=["governance"])
 @limiter.limit("30/minute")
 async def governance_get_policy(
@@ -5608,9 +5696,23 @@ async def governance_add_policy_rule(
     existing = await _ready(_policy_repo).get_policy(_auth.org_id)
     if any(r.rule_id == rule.rule_id for r in existing.rules):
         raise HTTPException(409, f"Rule {rule.rule_id!r} already exists for this org.")
-    await _ready(_policy_repo).add_rule(
-        _auth.org_id, rule, actor=PolicyActor("api_key", str(_auth.key_id or "unknown"))
+    expected = await _gate_policy_change(
+        request,
+        org_id=_auth.org_id,
+        actor_id=str(_auth.key_id or "unknown"),
+        operation="rule_added",
+        before=list(existing.rules),
+        after=[*existing.rules, rule],
     )
+    try:
+        await _ready(_policy_repo).add_rule(
+            _auth.org_id,
+            rule,
+            actor=PolicyActor("api_key", str(_auth.key_id or "unknown")),
+            expected_version=expected,
+        )
+    except PolicyVersionConflictError as exc:
+        raise _conflict(exc) from None
     logger.info(
         "governance_policy_rule_added",
         rule_id=rule.rule_id,
@@ -5631,12 +5733,28 @@ async def governance_remove_policy_rule(
         raise HTTPException(
             400, "Governance policy requires an org-scoped API key, not a legacy flat key."
         )
+    current = await _ready(_policy_repo).get_policy(_auth.org_id)
+    expected = await _gate_policy_change(
+        request,
+        org_id=_auth.org_id,
+        actor_id=str(_auth.key_id or "unknown"),
+        operation="rule_removed",
+        before=list(current.rules),
+        after=[r for r in current.rules if r.rule_id != rule_id]
+        if any(r.rule_id == rule_id for r in current.rules)
+        else None,
+    )
     try:
         await _ready(_policy_repo).remove_rule(
-            _auth.org_id, rule_id, actor=PolicyActor("api_key", str(_auth.key_id or "unknown"))
+            _auth.org_id,
+            rule_id,
+            actor=PolicyActor("api_key", str(_auth.key_id or "unknown")),
+            expected_version=expected,
         )
     except PolicyRuleNotFoundError as exc:
         raise HTTPException(404, str(exc)) from None
+    except PolicyVersionConflictError as exc:
+        raise _conflict(exc) from None
     logger.info(
         "governance_policy_rule_removed",
         rule_id=rule_id,
@@ -5657,12 +5775,27 @@ async def governance_reorder_policy(
         raise HTTPException(
             400, "Governance policy requires an org-scoped API key, not a legacy flat key."
         )
+    current = await _ready(_policy_repo).get_policy(_auth.org_id)
+    by_id = {r.rule_id: r for r in current.rules}
+    expected = await _gate_policy_change(
+        request,
+        org_id=_auth.org_id,
+        actor_id=str(_auth.key_id or "unknown"),
+        operation="reordered",
+        before=list(current.rules),
+        after=[by_id[i] for i in req.rule_ids]
+        if sorted(req.rule_ids) == sorted(by_id) and len(set(req.rule_ids)) == len(req.rule_ids)
+        else None,
+    )
     try:
         await _ready(_policy_repo).reorder(
             _auth.org_id,
             req.rule_ids,
             actor=PolicyActor("api_key", str(_auth.key_id or "unknown")),
+            expected_version=expected,
         )
+    except PolicyVersionConflictError as exc:
+        raise _conflict(exc) from None
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from None
     policy = await _ready(_policy_repo).get_policy(_auth.org_id)
@@ -5710,6 +5843,110 @@ async def web_policy_history(
     }
 
 
+@app.post("/api/web/policy/changes/propose", tags=["web-console"])
+@limiter.limit("20/minute")
+async def web_propose_policy_change(
+    request: Request,
+    req: PolicyChangeProposal,
+    principal: WebPrincipal = Depends(require_web_csrf),
+) -> dict[str, Any]:
+    """Tiered policy governance: ask for a second approver for an edit that would loosen policy.
+
+    Nothing is changed. The returned approval id is later presented with the edit itself in the
+    ``X-Policy-Change-Approval`` header, by this same user, with a verified step-up."""
+    org_id = _web_org_admin(principal)
+    if PolicyGovernanceMode(settings.policy_governance_mode) is not PolicyGovernanceMode.TIERED:
+        raise HTTPException(409, "Tiered policy governance is not active for this deployment.")
+    current = await _ready(_policy_repo).get_policy(org_id)
+    before = list(current.rules)
+    by_id = {r.rule_id: r for r in before}
+    if req.operation == "add" and req.rule is not None:
+        try:
+            new_rule = PolicyRule(
+                rule_id=req.rule.rule_id,
+                reason_code=req.rule.reason_code,
+                effect=GovernanceDecision(req.rule.effect),
+                risk_tiers=frozenset(RiskTier(t) for t in req.rule.risk_tiers)
+                if req.rule.risk_tiers
+                else None,
+                action_types=frozenset(req.rule.action_types) if req.rule.action_types else None,
+                targets=frozenset(req.rule.targets) if req.rule.targets else None,
+            )
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+        if new_rule.rule_id in by_id:
+            raise HTTPException(409, f"Rule {new_rule.rule_id!r} already exists for this org.")
+        after, operation = [*before, new_rule], "rule_added"
+    elif req.operation == "remove" and req.rule_id in by_id:
+        after, operation = [r for r in before if r.rule_id != req.rule_id], "rule_removed"
+    elif (
+        req.operation == "reorder"
+        and req.rule_ids is not None
+        and sorted(req.rule_ids) == sorted(by_id)
+        and len(set(req.rule_ids)) == len(req.rule_ids)
+    ):
+        after, operation = [by_id[i] for i in req.rule_ids], "reordered"
+    else:
+        raise HTTPException(
+            422, "The proposal does not describe a valid edit of the current policy."
+        )
+    change = ProposedChange(org_id, operation, current.version, before, after)
+    if change.kind is not ChangeKind.LOOSENING:
+        raise HTTPException(
+            409,
+            f"This edit is a {change.kind.value.lower()} and needs no second approver; make it directly.",
+        )
+    fe = await FourEyesService(_ready(_db_engine)).submit_four_eyes_request(
+        org_id=org_id,
+        requester_principal_id=str(principal.user_id),
+        action=PrivilegedAction.MODIFY_POLICY_RULE,
+        parameters={
+            "change_digest": change.digest,
+            "operation": operation,
+            "policy_version": current.version,
+            "kind": change.kind.value,
+        },
+    )
+    return {
+        "approval_id": fe.id,
+        "change_digest": change.digest,
+        "policy_version": current.version,
+        "kind": change.kind.value,
+        "expires_at": fe.expires_at,
+    }
+
+
+@app.post("/api/web/policy/changes/{approval_id}/approve", tags=["web-console"])
+@limiter.limit("20/minute")
+async def web_approve_policy_change(
+    request: Request,
+    approval_id: str,
+    principal: WebPrincipal = Depends(require_web_csrf),
+) -> dict[str, Any]:
+    """Second approver for a loosening policy edit. Needs a verified step-up; cannot be the requester."""
+    org_id = _web_org_admin(principal)
+    if PolicyGovernanceMode(settings.policy_governance_mode) is not PolicyGovernanceMode.TIERED:
+        raise HTTPException(409, "Tiered policy governance is not active for this deployment.")
+    await _verify_web_step_up(
+        request,
+        org_id=org_id,
+        user_id=str(principal.user_id),
+        action=PrivilegedAction.MODIFY_POLICY_RULE.value,
+        risk_tier=PrivilegeRiskTier.PRIVILEGED_HIGH,
+    )
+    try:
+        approved = await FourEyesService(_ready(_db_engine)).approve_four_eyes_request(
+            org_id=org_id, request_id=approval_id, approver_principal_id=str(principal.user_id)
+        )
+    except SelfApprovalBlockedError as exc:
+        raise HTTPException(403, str(exc)) from None
+    except FourEyesRequiredError:
+        raise HTTPException(404, "Approval request not found.") from None
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from None
+    return {"approval_id": approved.id, "status": approved.status.value}
+
+
 @app.post("/api/web/policy/rules", tags=["web-console"])
 @limiter.limit("20/minute")
 async def web_add_policy_rule(
@@ -5732,9 +5969,23 @@ async def web_add_policy_rule(
     existing = await _ready(_policy_repo).get_policy(org_id)
     if any(r.rule_id == rule.rule_id for r in existing.rules):
         raise HTTPException(409, f"Rule {rule.rule_id!r} already exists for this org.")
-    await _ready(_policy_repo).add_rule(
-        org_id, rule, actor=PolicyActor("web_user", str(principal.user_id))
+    expected = await _gate_policy_change(
+        request,
+        org_id=org_id,
+        actor_id=str(principal.user_id),
+        operation="rule_added",
+        before=list(existing.rules),
+        after=[*existing.rules, rule],
     )
+    try:
+        await _ready(_policy_repo).add_rule(
+            org_id,
+            rule,
+            actor=PolicyActor("web_user", str(principal.user_id)),
+            expected_version=expected,
+        )
+    except PolicyVersionConflictError as exc:
+        raise _conflict(exc) from None
     return _policy_rule_to_dict(rule)
 
 
@@ -5746,12 +5997,28 @@ async def web_remove_policy_rule(
     principal: WebPrincipal = Depends(require_web_csrf),
 ) -> dict[str, str]:
     org_id = _web_org_admin(principal)
+    current = await _ready(_policy_repo).get_policy(org_id)
+    expected = await _gate_policy_change(
+        request,
+        org_id=org_id,
+        actor_id=str(principal.user_id),
+        operation="rule_removed",
+        before=list(current.rules),
+        after=[r for r in current.rules if r.rule_id != rule_id]
+        if any(r.rule_id == rule_id for r in current.rules)
+        else None,
+    )
     try:
         await _ready(_policy_repo).remove_rule(
-            org_id, rule_id, actor=PolicyActor("web_user", str(principal.user_id))
+            org_id,
+            rule_id,
+            actor=PolicyActor("web_user", str(principal.user_id)),
+            expected_version=expected,
         )
     except PolicyRuleNotFoundError as exc:
         raise HTTPException(404, str(exc)) from None
+    except PolicyVersionConflictError as exc:
+        raise _conflict(exc) from None
     return {"status": "removed", "rule_id": rule_id}
 
 
@@ -5763,10 +6030,27 @@ async def web_reorder_policy(
     principal: WebPrincipal = Depends(require_web_csrf),
 ) -> dict[str, Any]:
     org_id = _web_org_admin(principal)
+    current = await _ready(_policy_repo).get_policy(org_id)
+    by_id = {r.rule_id: r for r in current.rules}
+    expected = await _gate_policy_change(
+        request,
+        org_id=org_id,
+        actor_id=str(principal.user_id),
+        operation="reordered",
+        before=list(current.rules),
+        after=[by_id[i] for i in req.rule_ids]
+        if sorted(req.rule_ids) == sorted(by_id) and len(set(req.rule_ids)) == len(req.rule_ids)
+        else None,
+    )
     try:
         await _ready(_policy_repo).reorder(
-            org_id, req.rule_ids, actor=PolicyActor("web_user", str(principal.user_id))
+            org_id,
+            req.rule_ids,
+            actor=PolicyActor("web_user", str(principal.user_id)),
+            expected_version=expected,
         )
+    except PolicyVersionConflictError as exc:
+        raise _conflict(exc) from None
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from None
     policy = await _ready(_policy_repo).get_policy(org_id)

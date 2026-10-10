@@ -449,3 +449,30 @@ async def test_a_checkpoint_from_another_org_or_a_wrong_digest_never_matches(rep
         await policy.verify_history("org-a", checkpoint={"version": 3, "entry_digest": "0" * 64})
         is False
     )
+
+
+async def test_an_edit_authorized_against_an_old_version_is_refused_not_applied(repo) -> None:
+    from responsibleai.db.policy_repository import PolicyVersionConflictError
+
+    policy, _engine = repo
+    await policy.add_rule("org-a", _rule("r0", GovernanceDecision.DENY, "a"), actor=ALICE)
+    version = await policy.get_policy_version("org-a")
+    await policy.add_rule("org-a", _rule("r1", GovernanceDecision.DENY, "b"), actor=ALICE)
+    with pytest.raises(PolicyVersionConflictError):
+        await policy.add_rule(
+            "org-a",
+            _rule("r2", GovernanceDecision.DENY, "c"),
+            actor=ALICE,
+            expected_version=version,
+        )
+    with pytest.raises(PolicyVersionConflictError):
+        await policy.remove_rule("org-a", "r0", actor=ALICE, expected_version=version)
+    with pytest.raises(PolicyVersionConflictError):
+        await policy.reorder("org-a", ["r1", "r0"], actor=ALICE, expected_version=version)
+    assert [r.rule_id for r in (await policy.get_policy("org-a")).rules] == ["r0", "r1"]
+    await policy.add_rule(
+        "org-a",
+        _rule("r2", GovernanceDecision.DENY, "c"),
+        actor=ALICE,
+        expected_version=await policy.get_policy_version("org-a"),
+    )
