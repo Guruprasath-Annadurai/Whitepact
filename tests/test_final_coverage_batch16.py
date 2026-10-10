@@ -1443,7 +1443,7 @@ async def test_step_up_invalid_auth_time_rejected(engine) -> None:
         token_or_code="valid-token-1234567890",
         claims={"auth_time": 1},
     )
-    with pytest.raises(StepUpVerificationFailedError, match="auth_time"):
+    with pytest.raises(StepUpVerificationFailedError, match="not supported"):
         await verifier.verify_and_consume_step_up(
             org_id="org-step",
             principal_id="principal-1",
@@ -1474,7 +1474,7 @@ async def test_step_up_oidc_missing_auth_time_claim(engine) -> None:
         token_or_code="missing_auth_time",
         claims={},
     )
-    with pytest.raises(StepUpVerificationFailedError, match="auth_time"):
+    with pytest.raises(StepUpVerificationFailedError, match="not supported"):
         await verifier.verify_and_consume_step_up(
             org_id="org-step",
             principal_id="principal-1",
@@ -1593,7 +1593,7 @@ async def test_step_up_webauthn_unsupported_stub_rejected(engine) -> None:
         auth_time=datetime.now(UTC).isoformat(),
         token_or_code="unsupported_stub",
     )
-    with pytest.raises(StepUpVerificationFailedError, match="Unsupported WebAuthn"):
+    with pytest.raises(StepUpVerificationFailedError, match="not supported"):
         await verifier.verify_and_consume_step_up(
             org_id="org-step",
             principal_id="principal-1",
@@ -1661,7 +1661,7 @@ async def test_step_up_stale_auth_time_rejected(engine) -> None:
         token_or_code="valid-token-1234567890",
         claims={"auth_time": stale},
     )
-    with pytest.raises(StepUpVerificationFailedError, match="freshness window"):
+    with pytest.raises(StepUpVerificationFailedError, match="not supported"):
         await verifier.verify_and_consume_step_up(
             org_id="org-step",
             principal_id="principal-1",

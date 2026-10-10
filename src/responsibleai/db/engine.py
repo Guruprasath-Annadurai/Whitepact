@@ -151,6 +151,8 @@ org_api_keys = Table(
     # confirmed can't silently gate login.
     Column("mfa_secret", EncryptedString(), nullable=True),
     Column("mfa_enrolled", Integer, nullable=False, default=0),
+    # Highest TOTP time step already accepted for this key's step-up: a code is single-use.
+    Column("mfa_last_timestep", Integer, nullable=True),
     Column("mfa_backup_codes", Text, nullable=True),
     Column("created_by_user_id", String(36), nullable=True),
     Column("accountable_human_user_id", String(36), nullable=True),

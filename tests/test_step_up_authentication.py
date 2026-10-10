@@ -132,7 +132,12 @@ async def test_step_up_action_binding_mismatch(test_db):
 
 
 @pytest.mark.asyncio
-async def test_step_up_stale_auth_time_rejected(test_db):
+async def test_step_up_stale_challenge_rejected(test_db):
+    """Freshness is the age of the server-issued challenge; a client auth_time cannot extend it."""
+    from sqlalchemy import update
+
+    from responsibleai.db.engine import iam_step_up_nonces
+
     engine, secret = test_db
     verifier = StepUpVerifier(engine)
 
@@ -141,20 +146,23 @@ async def test_step_up_stale_auth_time_rejected(test_db):
         principal_id="user_mfa",
         action="ROTATE_API_KEY",
     )
-
-    # Auth time 20 minutes ago (exceeds 15m window for HIGH)
-    stale_time = (datetime.now(UTC) - timedelta(minutes=20)).isoformat()
+    # Challenge issued 20 minutes ago (exceeds the 15 minute window for HIGH).
+    async with engine.raw.begin() as conn:
+        await conn.execute(
+            update(iam_step_up_nonces).values(
+                created_at=(datetime.now(UTC) - timedelta(minutes=20)).isoformat()
+            )
+        )
     import pyotp
 
-    code = pyotp.TOTP(secret).now()
     proof = StepUpProof(
         nonce=nonce,
         method=StepUpMethod.MFA_TOTP,
-        auth_time=stale_time,
-        token_or_code=code,
+        auth_time=datetime.now(UTC).isoformat(),
+        token_or_code=pyotp.TOTP(secret).now(),
     )
 
-    with pytest.raises(StepUpVerificationFailedError, match="outside freshness window"):
+    with pytest.raises(StepUpVerificationFailedError, match="older than 900s"):
         await verifier.verify_and_consume_step_up(
             org_id="org_stepup",
             principal_id="user_mfa",

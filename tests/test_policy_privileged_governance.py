@@ -54,6 +54,7 @@ from responsibleai.iam.errors import (
 )
 from responsibleai.iam.models import PrivilegedCallerContext, StepUpProof
 from responsibleai.rbac.models import Role
+from tests.step_up_helpers import valid_totp_code
 
 
 def _now() -> str:
@@ -140,7 +141,7 @@ async def _create_valid_step_up(
         nonce=nonce,
         method=StepUpMethod.MFA_TOTP,
         auth_time=now,
-        token_or_code="123456",
+        token_or_code=await valid_totp_code(engine, org_id, principal_id),
     )
 
 
@@ -542,11 +543,6 @@ async def test_security_epoch_changed_after_approval_blocked(
     # Now bump epoch again (e.g. key rotation / admin event)
     await epoch_repo.bump("org_alpha")
 
-    # Create step up under new epoch
-    proof = await _create_valid_step_up(
-        sqlite_engine, "org_alpha", "admin_maker", PrivilegedAction.MUTATE_CRITICAL_POLICY.value
-    )
-
     # Create a critical revision to activate
     fe_create = await _create_four_eyes_approval(
         sqlite_engine, "org_alpha", requester="admin_maker", approver="admin_checker"
@@ -562,6 +558,12 @@ async def test_security_epoch_changed_after_approval_blocked(
         caller=caller,
         step_up_proof=proof_create,
         four_eyes_approval_id=fe_create,
+    )
+
+    # A TOTP time step is single-use and only moves forward, so this proof is created after the one
+    # above has been spent.
+    proof = await _create_valid_step_up(
+        sqlite_engine, "org_alpha", "admin_maker", PrivilegedAction.MUTATE_CRITICAL_POLICY.value
     )
 
     # Activating critical revision with stale approval epoch must be rejected!

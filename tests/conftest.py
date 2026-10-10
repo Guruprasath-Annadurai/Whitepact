@@ -416,3 +416,14 @@ def _widen_lifespan_startup_timeout() -> None:
 
 
 _widen_lifespan_startup_timeout()
+
+
+@pytest.fixture(autouse=True)
+def totp_timeline(monkeypatch: pytest.MonkeyPatch):
+    """Real TOTP codes for step-up tests; see tests/step_up_helpers.py."""
+    import tests.step_up_helpers as helpers
+
+    timeline = helpers.TotpTimeline(monkeypatch)
+    helpers.TIMELINE = timeline
+    yield timeline
+    helpers.TIMELINE = None

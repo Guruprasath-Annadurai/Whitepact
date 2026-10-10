@@ -16,7 +16,7 @@ import time
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Literal, TypeVar
+from typing import Any, Literal, TypeVar, cast
 from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
@@ -1650,9 +1650,16 @@ def _extract_step_up_proof(
         return None
 
     try:
-        method = StepUpMethod(method_str)
+        method = StepUpMethod(str(method_str).strip().upper())
     except ValueError:
-        method = StepUpMethod.MFA_TOTP
+        # An unknown method is not silently treated as TOTP: it is refused by the verifier.
+        return StepUpProof(
+            nonce=nonce,
+            method=cast(StepUpMethod, "UNSUPPORTED"),
+            auth_time=auth_time or datetime.now(UTC).isoformat(),
+            token_or_code=token_or_code or "",
+            claims=claims,
+        )
 
     if not auth_time:
         auth_time = datetime.now(UTC).isoformat()

@@ -5,12 +5,12 @@
 **Phase 7A frozen runtime head:** `0053`
 **File:** `migrations/versions/0053_runtime_worker_leases.py`
 
-**Current implemented Alembic head:** `0062`
-**File:** `migrations/versions/0062_governance_policy_history.py`
-**Down-revision:** `0061` → `0060` → `0059` → `0058` → `0057` → `0056` → `0055` → `0054` → `0053` → `0052` → `0051` → `0050` → `0049` → `0048`
+**Current implemented Alembic head:** `0063`
+**File:** `migrations/versions/0063_api_key_mfa_last_timestep.py`
+**Down-revision:** `0062` → `0061` → `0060` → `0059` → `0058` → `0057` → `0056` → `0055` → `0054` → `0053` → `0052` → `0051` → `0050` → `0049` → `0048`
 
 There is one linear chain. There is no branch split and no orphan
-revision. `alembic heads` must equal `0062`.
+revision. `alembic heads` must equal `0063`.
 
 Phase 7A runtime schema (`0050`–`0053`) is frozen. Enterprise SaaS Layer 1
 and Layer 2 extend administrative identity only. Production Gate B remains CLOSED.
@@ -33,6 +33,7 @@ dispatcher activation.
 | `0060` | `test_consequential_counters` — durable synthetic mutation state for exactly-once proofs | **Implemented** |
 | `0061` | `sovereign_shadow_observations` — non-authoritative shadow analytics | **Implemented** |
 | `0062` | `governance_policy_history` — append-only, hash-chained record of who changed which policy rule and the full rule set at each version | **Implemented** |
+| `0063` | `org_api_keys.mfa_last_timestep` — single-use TOTP time step for API-key step-up | **Implemented** |
 
 Pass 4.4 numbering (obsolete):
 

@@ -23,6 +23,7 @@ from responsibleai.iam.errors import (
 from responsibleai.iam.guard import PrivilegedSurfaceGuard
 from responsibleai.iam.models import PrivilegedCallerContext, StepUpProof
 from responsibleai.rbac.models import Role
+from tests.step_up_helpers import valid_totp_code
 
 
 @pytest.fixture
@@ -191,7 +192,7 @@ async def test_critical_risk_requires_four_eyes_and_step_up(
         nonce=nonce,
         method=StepUpMethod.MFA_TOTP,
         auth_time=now_iso,
-        token_or_code="123456",
+        token_or_code=await valid_totp_code(test_db, "org_alpha", "admin_requester"),
     )
 
     # 2. Fails because Four-Eyes is required
