@@ -297,8 +297,15 @@ def test_genuine_execution_authorization_replay_and_tampering() -> None:
 
 
 def test_genuine_execution_fails_closed_without_isolation(monkeypatch) -> None:
-    """Fail-closed invariant: execution refuses to run when isolation backend is unavailable."""
-    import os
+    """Fail-closed invariant: execution refuses to run when isolation backend is unavailable.
+
+    Tightened per FST-R03:
+    1. Tests that InternalToolExecutor fails closed with IsolationBackendUnavailableError when Docker is missing.
+    2. Tests that an uncontained executor without opt-in raises IsolationError.
+    3. Negative control: proves that when unisolated execution is explicitly allowed in non-production,
+       tool dispatch succeeds (proving the test would fail if the protection were disabled).
+    """
+    import asyncio
 
     from responsibleai.governance.approval import compute_action_digest
     from responsibleai.governance.execution import (
@@ -311,11 +318,25 @@ def test_genuine_execution_fails_closed_without_isolation(monkeypatch) -> None:
         GovernanceDecision,
         IdentityContext,
     )
-    from responsibleai.isolation.errors import IsolationError
+    from responsibleai.isolation.container_backend import DockerContainerBackend
+    from responsibleai.isolation.errors import (
+        IsolationBackendUnavailableError,
+        IsolationError,
+    )
+    from responsibleai.isolation.mode import UNISOLATED_EXECUTION_ENV
 
-    # Ensure unisolated execution is NOT permitted
-    monkeypatch.delenv("WHITEPACT_ALLOW_UNISOLATED_EXECUTION", raising=False)
-    monkeypatch.setenv("WHITEPACT_ISOLATION_BACKEND", "docker")
+    # 1. Clean env: isolation required by default
+    monkeypatch.delenv(UNISOLATED_EXECUTION_ENV, raising=False)
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+
+    # 2. When Docker daemon is not available: InternalToolExecutor fails closed immediately
+    monkeypatch.setattr(DockerContainerBackend, "is_available", lambda self: False)
+    with pytest.raises(IsolationBackendUnavailableError, match="Failing closed"):
+        InternalToolExecutor()
+
+    # 3. When an executor has no broker, execute() raises IsolationError
+    executor_no_broker = InternalToolExecutor(broker=object())
+    executor_no_broker._broker = None
 
     identity = IdentityContext(identity_id="id-1", kind="api_key", org_id="org-1")
     agent = AgentContext(identity=identity, organization_id="org-1", agent_id="agent-1")
@@ -323,7 +344,7 @@ def test_genuine_execution_fails_closed_without_isolation(monkeypatch) -> None:
         action_id="act-1",
         action_type="sensitive_tool",
         target="res_1",
-        arguments={},
+        arguments={"input": "test"},
         agent=agent,
         purpose="test",
     )
@@ -334,16 +355,31 @@ def test_genuine_execution_fails_closed_without_isolation(monkeypatch) -> None:
         principal_id="id-1",
     )
 
-    import asyncio
+    with pytest.raises(IsolationError, match="IsolationBroker is mandatory"):
+        asyncio.run(executor_no_broker.execute(auth, action))
 
-    # Failing closed when isolation container cannot be established
-    try:
-        executor = InternalToolExecutor()
-        with pytest.raises(IsolationError):
-            asyncio.run(executor.execute(auth, action))
-    except Exception as exc:
-        # Initializing broker may fail closed immediately if Docker daemon is not running
-        assert "Isolation" in type(exc).__name__ or "Docker" in str(exc)
+    # 4. Negative control: if opt-in is enabled in non-production, execution proceeds
+    monkeypatch.setenv(UNISOLATED_EXECUTION_ENV, "1")
+    dispatched_calls: list[str] = []
+
+    async def fake_dispatch(tool_name: str, args: dict, **kwargs):
+        dispatched_calls.append(tool_name)
+        return {"dispatched": True}
+
+    monkeypatch.setattr("responsibleai.mcp.tools.dispatch_tool", fake_dispatch)
+    executor_allowed = InternalToolExecutor()
+    auth_allowed = ExecutionAuthorization(
+        action_digest=compute_action_digest(action),
+        organization_id="org-1",
+        decision=GovernanceDecision.ALLOW,
+        principal_id="id-1",
+    )
+    res = asyncio.run(executor_allowed.execute(auth_allowed, action))
+    assert res == {"dispatched": True}
+    assert dispatched_calls == ["sensitive_tool"], (
+        "Negative control failure: execution did not reach tool despite explicit opt-in"
+    )
+
 
 
 # ---------------------------------------------------------------------------
@@ -518,15 +554,41 @@ def test_faststart_evidence_tamper_detection() -> None:
 
 
 # ---------------------------------------------------------------------------
-# P1-01: Revocation semantics, epoch invalidation and in-flight limitations
+# FST-R04: Durable revocation lifecycle, epoch invalidation and replay tests
 # ---------------------------------------------------------------------------
 
 
-def test_revocation_epoch_invalidation_and_concurrent_admission() -> None:
-    """Test durable revocation epoch semantics and document in-flight limitations."""
+@pytest.mark.asyncio
+async def test_durable_admission_and_revocation_lifecycle() -> None:
+    """Validate durable admission linearization and epoch invalidation (FST-R04).
+
+    Verifies:
+    1. Single-use admission via ExecutionNonceRepository.
+    2. Replay attempt rejected with NonceAlreadyConsumedError.
+    3. Revocation epoch bumping via RevocationEpochRepository rejects stale permits.
+    4. Cross-tenant epoch isolation.
+    5. Inactive tenant rejected with OrganizationNotGovernableError.
+    6. Deny-safe fail-closed when repository is unavailable for epoch-bound permit.
+    7. In-flight execution disclaimer: running OS processes are not killed by authorization revocation.
+    """
+    import uuid
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import insert
+
+    from responsibleai.db import create_engine
+    from responsibleai.db.engine import organizations
+    from responsibleai.db.execution_nonce_repository import (
+        ExecutionNonceRepository,
+        NonceAlreadyConsumedError,
+        OrganizationNotGovernableError,
+        StaleRevocationEpochError,
+    )
+    from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
+    from responsibleai.governance.approval import compute_action_digest
     from responsibleai.governance.execution import (
-        ExecutionNotAuthorizedError,
         ExecutionAuthorization,
+        ExecutionNotAuthorizedError,
         admit_execution,
     )
     from responsibleai.governance.models import (
@@ -535,34 +597,171 @@ def test_revocation_epoch_invalidation_and_concurrent_admission() -> None:
         GovernanceDecision,
         IdentityContext,
     )
+    from responsibleai.rbac.models import GovernanceStatus
 
-    identity = IdentityContext(identity_id="id-1", kind="api_key", org_id="org-1")
-    agent = AgentContext(identity=identity, organization_id="org-1", agent_id="agent-1")
-    action = ActionRequest(
-        action_id="act-1",
+    engine = create_engine(":memory:")
+    await engine.init()
+
+    org_a = f"org-{uuid.uuid4().hex[:8]}"
+    org_b = f"org-{uuid.uuid4().hex[:8]}"
+    now = datetime.now(UTC).isoformat()
+
+    async with engine.raw.begin() as conn:
+        await conn.execute(
+            insert(organizations).values(
+                [
+                    {
+                        "id": org_a,
+                        "name": "Org A",
+                        "slug": org_a,
+                        "governance_status": GovernanceStatus.ACTIVE.value,
+                        "created_at": now,
+                    },
+                    {
+                        "id": org_b,
+                        "name": "Org B",
+                        "slug": org_b,
+                        "governance_status": GovernanceStatus.ACTIVE.value,
+                        "created_at": now,
+                    },
+                ]
+            )
+        )
+
+    nonce_repo = ExecutionNonceRepository(engine)
+    epoch_repo = RevocationEpochRepository(engine)
+
+    # 1. Tenant A starts at epoch 0
+    epoch_a = await epoch_repo.current(org_a)
+    assert epoch_a.epoch == 0
+
+    identity_a = IdentityContext(identity_id="id-a", kind="api_key", org_id=org_a)
+    agent_a = AgentContext(identity=identity_a, organization_id=org_a, agent_id="agent-a")
+    action_a = ActionRequest(
+        action_id="act-a1",
         action_type="tool_a",
-        target="res_1",
-        arguments={},
-        agent=agent,
-        purpose="test",
+        target="target_a",
+        arguments={"k": "v"},
+        agent=agent_a,
+        purpose="audit",
     )
-    from responsibleai.governance.approval import compute_action_digest
 
-    # Epoch-bound permit requires durable admission repository
-    auth_epoch = ExecutionAuthorization(
-        action_digest=compute_action_digest(action),
-        organization_id="org-1",
+    auth_a = ExecutionAuthorization(
+        action_digest=compute_action_digest(action_a),
+        organization_id=org_a,
         decision=GovernanceDecision.ALLOW,
-        principal_id="id-1",
+        principal_id="id-a",
+        revocation_epoch=0,
+        expires_at=datetime.now(UTC) + timedelta(seconds=60),
+    )
+
+    # 2. Admit execution successfully
+    await admit_execution(auth_a, action_a, nonce_repo)
+    assert auth_a.consumed is True
+
+    # 3. Replay with the same nonce is rejected
+    with pytest.raises(NonceAlreadyConsumedError, match="Permit nonce already consumed"):
+        await nonce_repo.consume(
+            auth_a.nonce,
+            authorization_id=auth_a.authorization_id,
+            organization_id=org_a,
+            expected_epoch=0,
+        )
+
+    # 4. Issue another authorization at epoch 0 for tenant A
+    auth_a_stale = ExecutionAuthorization(
+        action_digest=compute_action_digest(action_a),
+        organization_id=org_a,
+        decision=GovernanceDecision.ALLOW,
+        principal_id="id-a",
+        revocation_epoch=0,
+        expires_at=datetime.now(UTC) + timedelta(seconds=60),
+    )
+
+    # 5. Advance tenant A's revocation epoch (revoking all outstanding epoch 0 permits)
+    new_epoch_a = await epoch_repo.bump(org_a)
+    assert new_epoch_a.epoch == 1
+
+    # 6. Outstanding stale permit is rejected by durable admission
+    with pytest.raises(StaleRevocationEpochError, match="Permit revocation epoch is stale"):
+        await admit_execution(auth_a_stale, action_a, nonce_repo)
+
+    # 7. Cross-tenant isolation: Tenant B is still at epoch 0 and unaffected
+    epoch_b = await epoch_repo.current(org_b)
+    assert epoch_b.epoch == 0
+    identity_b = IdentityContext(identity_id="id-b", kind="api_key", org_id=org_b)
+    agent_b = AgentContext(identity=identity_b, organization_id=org_b, agent_id="agent-b")
+    action_b = ActionRequest(
+        action_id="act-b1",
+        action_type="tool_b",
+        target="target_b",
+        arguments={},
+        agent=agent_b,
+        purpose="audit",
+    )
+    auth_b = ExecutionAuthorization(
+        action_digest=compute_action_digest(action_b),
+        organization_id=org_b,
+        decision=GovernanceDecision.ALLOW,
+        principal_id="id-b",
+        revocation_epoch=0,
+        expires_at=datetime.now(UTC) + timedelta(seconds=60),
+    )
+    await admit_execution(auth_b, action_b, nonce_repo)
+    assert auth_b.consumed is True
+
+    # 8. Deny-safe without durable repository when permit has an epoch
+    auth_epoch_bound = ExecutionAuthorization(
+        action_digest=compute_action_digest(action_a),
+        organization_id=org_a,
+        decision=GovernanceDecision.ALLOW,
+        principal_id="id-a",
         revocation_epoch=1,
     )
+    with pytest.raises(
+        ExecutionNotAuthorizedError, match="Durable admission repository is unavailable"
+    ):
+        await admit_execution(auth_epoch_bound, action_a, None)
 
-    import asyncio
+    # 9. Inactive/suspended tenant rejected with OrganizationNotGovernableError
+    from sqlalchemy import update
 
-    # Without durable repository, epoch-bound permit cannot be downgraded to local memory
-    with pytest.raises(ExecutionNotAuthorizedError, match="Durable admission repository is unavailable"):
-        asyncio.run(admit_execution(auth_epoch, action, None))
+    async with engine.raw.begin() as conn:
+        await conn.execute(
+            update(organizations)
+            .where(organizations.c.id == org_a)
+            .values(governance_status=GovernanceStatus.SUSPENDED.value)
+        )
+    with pytest.raises(OrganizationNotGovernableError, match="Organization is not ACTIVE"):
+        await nonce_repo.consume(
+            "nonce-suspended",
+            authorization_id="auth-suspended",
+            organization_id=org_a,
+            expected_epoch=1,
+        )
 
-    # Note on in-flight execution cancellation:
-    # As documented in docs/launch, revocation operates at admission gate time.
-    # In-flight cancellations are not claimed without active cooperative runtime interrupts.
+
+
+def test_readme_and_faststart_claim_integrity() -> None:
+    """FST-R07: Regression test ensuring forbidden misleading claims do not appear in docs/code."""
+    import pathlib
+
+    repo_root = pathlib.Path(__file__).resolve().parent.parent
+    readme_path = repo_root / "README.md"
+    content = readme_path.read_text(encoding="utf-8")
+
+    # Forbidden claims identified in Launch Gate order:
+    forbidden_claims = [
+        "cryptographically signed execution token",
+        "cryptographically signed execution tokens",
+        "universal stdio protection",
+        "governs every call over stdio",
+        "reliable deepfake detection",
+        "certified trust score",
+        "AI compliance certification",
+    ]
+    for claim in forbidden_claims:
+        assert (
+            claim.lower() not in content.lower()
+        ), f"Forbidden misleading claim found in README.md: '{claim}'"
+

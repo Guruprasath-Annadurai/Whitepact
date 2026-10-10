@@ -288,6 +288,42 @@ async def test_history_retained_checkpoint_verification(repo) -> None:
     )
 
 
+async def test_history_simultaneous_tamper_caught_only_by_external_checkpoint(repo) -> None:
+    """FST-R05: If an attacker modifies both history and persisted version counter in DB,
+    internal cross-checks match; only an independently retained external checkpoint catches it.
+    """
+    policy, engine = repo
+    for i in range(3):
+        await policy.add_rule(
+            "org-a", _rule(f"r{i}", GovernanceDecision.DENY, f"a{i}"), actor=ALICE
+        )
+
+    history = await policy.history("org-a")
+    trusted_checkpoint_version = 3
+    trusted_checkpoint_head = history[0]["entry_digest"]
+
+    # Attacker truncates version 3 from history AND rolls back the version counter to 2
+    async with engine.raw.begin() as conn:
+        await conn.execute(text("DELETE FROM governance_policy_history WHERE version = 3"))
+        await conn.execute(
+            text("UPDATE governance_policy_versions SET version = 2 WHERE org_id = 'org-a'")
+        )
+
+    # Internal DB check passes because len(rows) == persisted_version == 2 and prefix chain is valid
+    assert await policy.verify_history("org-a") is True
+
+    # But independent verification against trusted checkpoint outside the DB fails closed!
+    assert (
+        await policy.verify_history(
+            "org-a",
+            expected_version=trusted_checkpoint_version,
+            expected_head_digest=trusted_checkpoint_head,
+        )
+        is False
+    )
+
+
+
 async def test_the_web_console_attributes_changes_to_the_signed_in_user(
     web_client: AsyncClient,
 ) -> None:
