@@ -6,13 +6,24 @@ Commit ancestry is not sufficient: a cherry-pick changes the commit id.
 This gate checks that the current tree still contains the controls and
 that their regression tests are present. A green CI job that skips this
 script is not a qualification of those controls.
+
+Presence alone is cheap to fake, so a control only counts when:
+
+* its implementation marker appears in code or a string, not only in a comment;
+* each named regression function has a real body (an assert, ``pytest.raises``,
+  ``pytest.fail`` or an explicit raise) and is not decorated skip/skipif/xfail;
+* each named regression function is executed by the behavioural gate
+  (``scripts/check_security_regressions.py``), which treats a skip as a failure.
 """
 
 from __future__ import annotations
 
 import ast
+import importlib.util
+import io
 import json
 import sys
+import tokenize
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -50,7 +61,9 @@ CONTROLS: dict[str, dict[str, list[str]]] = {
     },
     "P1-04-principal-poisoning": {
         "files": ["src/responsibleai/mcp/server.py"],
-        "markers": ["must not poison the directory"],
+        # Code, not the explanatory comment: the denial branch that returns before any
+        # principal row is recorded.
+        "markers": ["except TenantAdmissionDeniedError", "_principal_repo.record(claim)"],
         "tests": ["tests/test_mcp_verified_principal.py"],
         "test_markers": ["test_vc_unbound_existing_org_leaves_no_principal_row"],
     },
@@ -59,6 +72,28 @@ CONTROLS: dict[str, dict[str, list[str]]] = {
         "markers": ["/opt/whitepact/runner.py", "is_reserved_runner_path"],
         "tests": ["tests/test_runner_immutability.py"],
         "test_markers": ["test_direct_backend_rejects_caller_runner"],
+    },
+    "P1-06-isolation-default-closed": {
+        "files": [
+            "src/responsibleai/isolation/mode.py",
+            "src/responsibleai/isolation/broker.py",
+            "src/responsibleai/governance/execution.py",
+        ],
+        "markers": ["unisolated_execution_allowed", "WHITEPACT_ALLOW_UNISOLATED_EXECUTION"],
+        "tests": ["tests/test_isolation_fail_closed_default.py"],
+        "test_markers": ["test_unset_environment_never_runs_the_tool_in_process"],
+    },
+    "P1-07-no-fabricated-deepfake-verdict": {
+        "files": ["src/privacylabel/deepfake/detector.py"],
+        "markers": ["DetectorNotValidatedError", "UnreadableMediaError", "VALIDATED_DETECTORS"],
+        "tests": ["tests/test_deepfake_detector.py"],
+        "test_markers": ["test_score_depends_on_the_input"],
+    },
+    "P1-08-eu-risk-tier-not-downgraded": {
+        "files": ["src/responsibleai/compliance/engine.py"],
+        "markers": ["_normalise_use_case"],
+        "tests": ["tests/test_compliance_engine.py"],
+        "test_markers": ["test_prohibited_use_is_never_downgraded_to_high"],
     },
     "PR-176-trust-fail-closed": {
         "files": [
@@ -72,33 +107,85 @@ CONTROLS: dict[str, dict[str, list[str]]] = {
 }
 
 
-def _read(rel: str) -> str:
-    path = ROOT / rel
+def _read(rel: str, root: Path = ROOT) -> str:
+    path = root / rel
     if not path.is_file():
         return ""
     return path.read_text(encoding="utf-8")
 
 
-def _function_names(paths: list[str]) -> set[str]:
-    names: set[str] = set()
+def _without_comments(source: str) -> str:
+    """Source with comment tokens removed, so a marker cannot survive in a comment."""
+    try:
+        kept = [
+            tok
+            for tok in tokenize.generate_tokens(io.StringIO(source).readline)
+            if tok.type != tokenize.COMMENT
+        ]
+    except (tokenize.TokenError, IndentationError):
+        return source
+    return tokenize.untokenize(kept)
+
+
+def _is_skip_decorator(node: ast.expr) -> bool:
+    target = node.func if isinstance(node, ast.Call) else node
+    return isinstance(target, ast.Attribute) and target.attr in {"skip", "skipif", "xfail"}
+
+
+def _has_assertion(func: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    for node in ast.walk(func):
+        if isinstance(node, (ast.Assert, ast.Raise)):
+            return True
+        if isinstance(node, ast.Call):
+            callee = node.func
+            name = callee.attr if isinstance(callee, ast.Attribute) else getattr(callee, "id", "")
+            if name in {"raises", "fail", "assert_called", "assert_not_called"}:
+                return True
+    return False
+
+
+def _test_functions(paths: list[str], root: Path) -> dict[str, list[str]]:
+    """Map function name -> list of problems ('' list means the test is real)."""
+    found: dict[str, list[str]] = {}
     for rel in paths:
-        text = _read(rel)
+        text = _read(rel, root)
         if not text:
             continue
-        tree = ast.parse(text)
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                names.add(node.name)
-    return names
+        for node in ast.walk(ast.parse(text)):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            problems: list[str] = []
+            if any(_is_skip_decorator(d) for d in node.decorator_list):
+                problems.append("decorated skip/skipif/xfail")
+            if not _has_assertion(node):
+                problems.append("no assertion, raises or fail")
+            found.setdefault(node.name, []).extend(problems)
+    return found
 
 
-def evaluate() -> dict[str, object]:
+def _behavioural_nodes() -> set[str]:
+    """Function names that scripts/check_security_regressions.py actually executes."""
+    path = Path(__file__).with_name("check_security_regressions.py")
+    spec = importlib.util.spec_from_file_location("_wp_security_regressions", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return {node.rsplit("::", 1)[-1] for node in module.NODES}
+
+
+def evaluate(
+    root: Path = ROOT,
+    controls: dict[str, dict[str, list[str]]] | None = None,
+    behavioural: set[str] | None = None,
+) -> dict[str, object]:
+    controls = CONTROLS if controls is None else controls
+    executed = _behavioural_nodes() if behavioural is None else behavioural
     missing: list[dict[str, str]] = []
     present: list[str] = []
-    for control, spec in CONTROLS.items():
-        blob = "\n".join(_read(path) for path in spec["files"])
-        tests = "\n".join(_read(path) for path in spec["tests"])
-        functions = _function_names(spec["tests"])
+    for control, spec in controls.items():
+        blob = "\n".join(_without_comments(_read(path, root)) for path in spec["files"])
+        tests = "\n".join(_read(path, root) for path in spec["tests"])
+        functions = _test_functions(spec["tests"], root)
         ok = True
         for marker in spec["markers"]:
             if marker not in blob:
@@ -107,14 +194,15 @@ def evaluate() -> dict[str, object]:
         for marker in spec["test_markers"]:
             if marker.startswith("test_"):
                 if marker not in functions:
-                    missing.append(
-                        {
-                            "control": control,
-                            "missing": marker,
-                            "kind": "regression-function",
-                        }
-                    )
-                    ok = False
+                    kind, detail = "regression-function", marker
+                elif functions[marker]:
+                    kind, detail = "regression-vacuous", f"{marker}: {'; '.join(functions[marker])}"
+                elif marker not in executed:
+                    kind, detail = "regression-not-executed", marker
+                else:
+                    continue
+                missing.append({"control": control, "missing": detail, "kind": kind})
+                ok = False
             elif marker not in tests:
                 missing.append({"control": control, "missing": marker, "kind": "regression-text"})
                 ok = False

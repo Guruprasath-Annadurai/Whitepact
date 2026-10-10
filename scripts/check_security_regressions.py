@@ -24,6 +24,9 @@ NODES = [
     "tests/test_foundation_hardening.py::test_evidence_witness_binds_head_and_rejects_recomputed_rewrite",
     "tests/test_foundation_hardening.py::test_broad_allow_shadowing_later_deny_is_rejected",
     "tests/test_evidence_publication.py::test_rollback_rewrite_gap_and_missing_publication_are_detected",
+    "tests/test_isolation_fail_closed_default.py::TestExecutorDefaultsClosed::test_unset_environment_never_runs_the_tool_in_process",
+    "tests/test_deepfake_detector.py::TestHeuristicIsDeterministicAndInputDependent::test_score_depends_on_the_input",
+    "tests/test_compliance_engine.py::TestEuTierUseCaseNormalisation::test_prohibited_use_is_never_downgraded_to_high",
 ]
 
 
