@@ -45,9 +45,19 @@ fi
 docker info >/dev/null 2>&1 || { echo "Docker daemon is not reachable." >&2; exit 2; }
 
 WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT
 VOLUME="wp-isolation-verify"
 VM_PATH="/var/lib/docker/volumes/${VOLUME}/_data"
+# Every run gets its own directory inside the shared volume. A single fixed directory made a
+# root run leave root-owned files that a later uid-1001 run could not use (and the reverse), so
+# the two orders needed a manual volume reset. The directory is removed as root on exit, whatever
+# the previous run's owner was.
+RUN_ID="$(date +%s)-$$-${RANDOM}"
+VM_RUN="${VM_PATH}/run-${RUN_ID}"
+cleanup() {
+  docker run --rm -v "$VM_PATH":"$VM_PATH" python:3.11-slim rm -rf "$VM_RUN" >/dev/null 2>&1 || true
+  rm -rf "$WORK"
+}
+trap cleanup EXIT
 
 docker volume create "$VOLUME" >/dev/null
 # A static Linux docker client for the verification container to drive the host daemon.
@@ -65,8 +75,8 @@ docker build -q -f "$WORK/src/Dockerfile.isolation" -t "$RUNTIME_IMAGE" "$WORK/s
 cat >"$WORK/inner.sh" <<'INNER'
 #!/bin/bash
 set -uo pipefail
-VM_PATH="$1"; MODE="$2"; shift 2
-mkdir -p "$VM_PATH/tmp"
+VM_RUN="$1"; MODE="$2"; shift 2
+mkdir -p "$VM_RUN/tmp"
 cp -r /src /work
 echo "== kernel: $(uname -sr) arch: $(uname -m) mode: $MODE"
 apt-get update -qq >/dev/null 2>&1 && apt-get install -y -qq acl >/dev/null 2>&1
@@ -74,16 +84,16 @@ if [[ "$MODE" == "nonroot" ]]; then
   GID=$(stat -c %g /var/run/docker.sock)
   getent group "$GID" >/dev/null || groupadd -g "$GID" dockersock
   useradd -m -u 1001 -G "$GID" runner
-  chown -R runner "$VM_PATH/tmp"
+  chown -R runner "$VM_RUN"
 fi
 cd /work && pip install -q -e ".[dev,dashboard]" >/tmp/pip.log 2>&1 || { tail -5 /tmp/pip.log; exit 3; }
 if [[ "$MODE" == "nonroot" ]]; then
   chown -R runner /work
-  exec runuser -u runner -- env TMPDIR="$VM_PATH/tmp" WHITEPACT_REQUIRE_DOCKER_ISOLATION=1 \
+  exec runuser -u runner -- env TMPDIR="$VM_RUN/tmp" WHITEPACT_REQUIRE_DOCKER_ISOLATION=1 \
     WHITEPACT_TEST_RUNTIME_IMAGE="$WHITEPACT_TEST_RUNTIME_IMAGE" \
     PYTHONWARNINGS=ignore python -m pytest -o addopts= -q -p no:cacheprovider "$@"
 fi
-export TMPDIR="$VM_PATH/tmp" PYTHONWARNINGS=ignore
+export TMPDIR="$VM_RUN/tmp" PYTHONWARNINGS=ignore
 exec python -m pytest -o addopts= -q -p no:cacheprovider "$@"
 INNER
 
@@ -94,4 +104,4 @@ docker run --rm \
   -v "$VM_PATH":"$VM_PATH" \
   -v "$WORK/src":/src:ro \
   -v "$WORK/inner.sh":/inner.sh:ro \
-  python:3.11-slim bash /inner.sh "$VM_PATH" "$MODE" "${TESTS[@]}"
+  python:3.11-slim bash /inner.sh "$VM_RUN" "$MODE" "${TESTS[@]}"
