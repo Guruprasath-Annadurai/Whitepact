@@ -80,7 +80,7 @@ cd /work && pip install -q -e ".[dev,dashboard]" >/tmp/pip.log 2>&1 || { tail -5
 if [[ "$MODE" == "nonroot" ]]; then
   chown -R runner /work
   exec runuser -u runner -- env TMPDIR="$VM_PATH/tmp" WHITEPACT_REQUIRE_DOCKER_ISOLATION=1 \
-    WHITEPACT_ISOLATION_IMAGE="$WHITEPACT_ISOLATION_IMAGE" \
+    WHITEPACT_TEST_RUNTIME_IMAGE="$WHITEPACT_TEST_RUNTIME_IMAGE" \
     PYTHONWARNINGS=ignore python -m pytest -o addopts= -q -p no:cacheprovider "$@"
 fi
 export TMPDIR="$VM_PATH/tmp" PYTHONWARNINGS=ignore
@@ -88,7 +88,7 @@ exec python -m pytest -o addopts= -q -p no:cacheprovider "$@"
 INNER
 
 docker run --rm \
-  -e WHITEPACT_ISOLATION_IMAGE="$RUNTIME_IMAGE" -e WHITEPACT_REQUIRE_DOCKER_ISOLATION=1 \
+  -e WHITEPACT_TEST_RUNTIME_IMAGE="$RUNTIME_IMAGE" -e WHITEPACT_REQUIRE_DOCKER_ISOLATION=1 \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v "$WORK/docker":/usr/local/bin/docker:ro \
   -v "$VM_PATH":"$VM_PATH" \

@@ -53,7 +53,8 @@ from responsibleai.isolation.mode import (
 )
 
 # Read before any fixture scrubs the environment: this is the CI-provisioned runtime image.
-CONFIGURED_IMAGE = os.environ.get(ISOLATION_IMAGE_ENV)
+TEST_RUNTIME_IMAGE_ENV = "WHITEPACT_TEST_RUNTIME_IMAGE"
+CONFIGURED_IMAGE = os.environ.get(TEST_RUNTIME_IMAGE_ENV)
 
 PII_TEXT = "Customer SSN is 123-45-6789, email: alice@company.com"
 
@@ -231,8 +232,9 @@ def _require_runtime_image() -> str:
     image = CONFIGURED_IMAGE
     if not image:
         message = (
-            f"{ISOLATION_IMAGE_ENV} is not set. Build one with "
-            "`docker build -f Dockerfile.isolation -t whitepact-isolated-runtime:local .`"
+            f"{TEST_RUNTIME_IMAGE_ENV} is not set. Build an image with "
+            "`docker build -f Dockerfile.isolation -t whitepact-isolated-runtime:local .` "
+            f"and set {TEST_RUNTIME_IMAGE_ENV} to its name."
         )
         if os.environ.get("WHITEPACT_REQUIRE_DOCKER_ISOLATION") == "1":
             pytest.fail(message)
@@ -241,7 +243,7 @@ def _require_runtime_image() -> str:
         ["docker", "image", "inspect", image], capture_output=True, check=False
     )
     if probe.returncode != 0:
-        pytest.fail(f"{ISOLATION_IMAGE_ENV}={image} is not present in the local Docker daemon")
+        pytest.fail(f"{TEST_RUNTIME_IMAGE_ENV}={image} is not present in the local Docker daemon")
     return image
 
 

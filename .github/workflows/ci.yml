@@ -112,6 +112,14 @@ jobs:
       - name: Security regression behavior gate
         run: python scripts/check_security_regressions.py
 
+      - name: Build the isolated tool runtime image
+        # Real-tool isolation tests need an image that contains WhitePact. The stock
+        # python image cannot run the trusted runner. Used only by
+        # tests/test_isolation_real_tool_e2e.py (WHITEPACT_TEST_RUNTIME_IMAGE).
+        run: |
+          docker build -f Dockerfile.isolation -t whitepact-isolated-runtime:ci .
+          echo "WHITEPACT_TEST_RUNTIME_IMAGE=whitepact-isolated-runtime:ci" >> "$GITHUB_ENV"
+
       - name: Run tests with coverage
         env:
           # Designated Linux security CI: a missing Docker daemon must fail the
