@@ -25,18 +25,18 @@ verified; read it as the claim Antigravity should try to break.
 
 | Setting | Effect | Production |
 | --- | --- | --- |
-| `ENVIRONMENT=production` | Disables every unisolated route. | the safe state |
+| Any of `WHITEPACT_ENV`, `WHITEPACT_ENVIRONMENT`, `RAI_ENV`, `RAI_ENVIRONMENT`, `ENVIRONMENT`, `ENV` (or `.env`) set to `production`/`prod`/`prd`/`live` | Disables every unisolated route. Conflicting values, or a name that is neither a production alias nor a known non-production name, also count as production and Settings refuses to start (`responsibleai/environment.py`). | the safe state |
 | `WHITEPACT_ALLOW_UNISOLATED_EXECUTION=1` | Lets any internal tool run in-process. Local development only. | ignored |
 | `WHITEPACT_ALLOW_SYNTHETIC_HOST_TOOL=1` | Lets only the test fixture run host-side. | ignored |
 | `WHITEPACT_ISOLATION_IMAGE` | Selects the container image. Deployment configuration, never request input. | set to an approved digest |
 
-An unset `ENVIRONMENT` no longer disables isolation: the default is to require it. A deployment that sets
+An unset environment no longer disables isolation: the default is to require it. A deployment that sets
 neither opt-in and has no Docker daemon refuses to start the executor.
 
 ## Attack list from the master directive: what was tested here
 
-Tested in this pass (see the register): replayed and mismatched grants against the executor, lookalike and
+Tested in this pass (see the register): forged/expired/revoked credentials, a read-only key, revocation while an approval is pending, and cross-tenant approval access at the REST transport against real PostgreSQL; capacity reservation races against a live Redis; replayed and mismatched grants against the executor, lookalike and
 smuggled tool names, tenant spoofing through arguments, missing production configuration, container runtime
 unavailable (executor refuses), fallback to in-process execution (removed), PyJWT-dependent identity paths on
-the patched version. NOT tested in this pass: forged/expired/revoked grants across transports, wrong audience,
-failing identity provider or policy engine, revocation during execution, budget races under shared Redis.
+the patched version. NOT tested in this pass: the same credential matrix over hosted MCP HTTP, wrong audience beyond scope and tenant,
+failing identity provider or policy engine, revocation during a running container, multi-host Redis failover.
