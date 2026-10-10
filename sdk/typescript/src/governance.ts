@@ -4,6 +4,28 @@
 
 export type GovernanceToolCallResult = Record<string, unknown>;
 
+/**
+ * The server did not return a governance answer (non-2xx, or a body that is not a JSON object).
+ *
+ * Thrown rather than returned: a 401, 403, 429 or 5xx carries no `governance_denied` or
+ * `governance_approval_required` marker, so a caller that proceeds when neither is present would
+ * read the failure as "not blocked".
+ */
+export class GovernanceRequestError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly detail: string,
+  ) {
+    super(`governance request failed [${status}]: ${detail}`);
+    this.name = "GovernanceRequestError";
+  }
+}
+
+/** The one positive signal: a 2xx answer with no `error`. Absence of "denied" is not permission. */
+export function isCompleted(result: GovernanceToolCallResult): boolean {
+  return !("error" in result);
+}
+
 export class GovernanceRuntimeClient {
   private readonly baseUrl: string;
   private readonly apiKey: string;
@@ -34,14 +56,30 @@ export class GovernanceRuntimeClient {
   ): Promise<GovernanceToolCallResult> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeout);
-    const res = await fetch(this.url("v1/governance/tools/call"), {
-      method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify({ name, arguments: args, purpose }),
-      signal: controller.signal,
-    });
-    clearTimeout(timer);
-    return (await res.json()) as GovernanceToolCallResult;
+    try {
+      const res = await fetch(this.url("v1/governance/tools/call"), {
+        method: "POST",
+        headers: this.headers(),
+        body: JSON.stringify({ name, arguments: args, purpose }),
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new GovernanceRequestError(res.status, text.slice(0, 200));
+      }
+      let body: unknown;
+      try {
+        body = await res.json();
+      } catch {
+        throw new GovernanceRequestError(res.status, "response is not JSON");
+      }
+      if (body === null || typeof body !== "object" || Array.isArray(body)) {
+        throw new GovernanceRequestError(res.status, "response is not a JSON object");
+      }
+      return body as GovernanceToolCallResult;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   async listApprovals(status?: string): Promise<Record<string, unknown>> {

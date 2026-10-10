@@ -23,11 +23,32 @@ from typing import Any
 import httpx
 
 
+class GovernanceRequestError(RuntimeError):
+    """The server did not return a governance answer (non-2xx, or a body that is not a JSON object).
+
+    This is deliberately an exception and not an outcome: a 401, 403, 429 or 5xx carries no ``denied``
+    or ``requires_approval`` flag, so a caller testing only those flags would read it as "not blocked".
+    """
+
+    def __init__(self, status_code: int, detail: str) -> None:
+        super().__init__(f"governance request failed [{status_code}]: {detail}")
+        self.status_code = status_code
+        self.detail = detail
+
+
 @dataclass(frozen=True)
 class GovernanceToolOutcome:
-    """Parsed result of a governed tool call."""
+    """Parsed result of a governed tool call.
+
+    ``completed`` is the only positive signal: the server answered 2xx with no ``error``. The absence of
+    ``denied`` or ``requires_approval`` is NOT permission; check ``completed``.
+    """
 
     raw: dict[str, Any]
+
+    @property
+    def completed(self) -> bool:
+        return "error" not in self.raw
 
     @property
     def requires_approval(self) -> bool:
@@ -56,10 +77,16 @@ class GovernanceRuntimeClient:
         api_key: str,
         base_url: str = "http://localhost:8765",
         timeout: float = 30.0,
+        *,
+        transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._base = base_url.rstrip("/")
         self._key = api_key
         self._timeout = timeout
+        self._transport = transport  # tests only; production uses the default transport
+
+    def _client(self) -> httpx.AsyncClient:
+        return httpx.AsyncClient(timeout=self._timeout, transport=self._transport)
 
     def _headers(self) -> dict[str, str]:
         return {
@@ -78,16 +105,24 @@ class GovernanceRuntimeClient:
         *,
         purpose: str = "sdk-governance",
     ) -> GovernanceToolOutcome:
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with self._client() as client:
             resp = await client.post(
                 self._url("v1/governance/tools/call"),
                 headers=self._headers(),
                 json={"name": name, "arguments": arguments or {}, "purpose": purpose},
             )
-            return GovernanceToolOutcome(raw=resp.json())
+        if not resp.is_success:
+            raise GovernanceRequestError(resp.status_code, resp.text[:200])
+        try:
+            body = resp.json()
+        except ValueError as exc:
+            raise GovernanceRequestError(resp.status_code, "response is not JSON") from exc
+        if not isinstance(body, dict):
+            raise GovernanceRequestError(resp.status_code, "response is not a JSON object")
+        return GovernanceToolOutcome(raw=body)
 
     async def revoke_delegation(self, identity_id: str, *, reason: str) -> dict[str, Any]:
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with self._client() as client:
             resp = await client.post(
                 self._url(f"governance/delegations/{identity_id}/revoke"),
                 headers=self._headers(),
@@ -98,7 +133,7 @@ class GovernanceRuntimeClient:
 
     async def list_approvals(self, status: str | None = None) -> dict[str, Any]:
         params = {"status": status} if status else None
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with self._client() as client:
             resp = await client.get(
                 self._url("governance/approvals"),
                 headers=self._headers(),
@@ -117,7 +152,7 @@ class GovernanceRuntimeClient:
         body: dict[str, Any] = {"outcome": outcome}
         if notes is not None:
             body["notes"] = notes
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with self._client() as client:
             resp = await client.post(
                 self._url(f"governance/approvals/{approval_id}/resolve"),
                 headers=self._headers(),
@@ -127,7 +162,7 @@ class GovernanceRuntimeClient:
             return resp.json()
 
     async def execute_approval(self, approval_id: str) -> dict[str, Any]:
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with self._client() as client:
             resp = await client.post(
                 self._url(f"governance/approvals/{approval_id}/execute"),
                 headers=self._headers(),
@@ -137,7 +172,7 @@ class GovernanceRuntimeClient:
             return resp.json()
 
     async def get_evidence(self, evidence_id: str) -> dict[str, Any]:
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
+        async with self._client() as client:
             resp = await client.get(
                 self._url(f"governance/evidence/{evidence_id}"),
                 headers=self._headers(),

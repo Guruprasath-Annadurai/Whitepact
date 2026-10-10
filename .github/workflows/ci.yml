@@ -350,6 +350,10 @@ jobs:
           npm ci
           npm --prefix web ci
           npx playwright install --with-deps chromium
+      - name: TypeScript SDK build and tests
+        run: |
+          npm --prefix sdk/typescript install --no-audit --no-fund
+          npm --prefix sdk/typescript test
       - name: Frontend static checks and unit tests
         run: |
           npm --prefix web run lint
