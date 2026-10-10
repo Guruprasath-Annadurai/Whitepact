@@ -160,6 +160,7 @@ from responsibleai.db import (
     OutcomeRepository,
     PaddleBillingEventRepository,
     PassportRepository,
+    PolicyActor,
     PolicyRepository,
     PolicyRuleNotFoundError,
     PublicIncidentRepository,
@@ -5538,6 +5539,26 @@ async def governance_get_policy(
     return {"org_id": _auth.org_id, "rules": [_policy_rule_to_dict(r) for r in policy.rules]}
 
 
+@app.get("/api/governance/policy/history", tags=["governance"])
+@limiter.limit("30/minute")
+async def governance_policy_history(
+    request: Request,
+    limit: int = 100,
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, Any]:
+    """Who changed which policy rule, and the rules in force after each change (ADMIN+)."""
+    if not _auth.org_id:
+        raise HTTPException(
+            400, "Governance policy requires an org-scoped API key, not a legacy flat key."
+        )
+    repo = _ready(_policy_repo)
+    return {
+        "org_id": _auth.org_id,
+        "chain_valid": await repo.verify_history(_auth.org_id),
+        "entries": await repo.history(_auth.org_id, limit=limit),
+    }
+
+
 @app.post("/api/governance/policy/rules", tags=["governance"])
 @limiter.limit("20/minute")
 async def governance_add_policy_rule(
@@ -5568,7 +5589,9 @@ async def governance_add_policy_rule(
     existing = await _ready(_policy_repo).get_policy(_auth.org_id)
     if any(r.rule_id == rule.rule_id for r in existing.rules):
         raise HTTPException(409, f"Rule {rule.rule_id!r} already exists for this org.")
-    await _ready(_policy_repo).add_rule(_auth.org_id, rule)
+    await _ready(_policy_repo).add_rule(
+        _auth.org_id, rule, actor=PolicyActor("api_key", str(_auth.key_id or "unknown"))
+    )
     logger.info(
         "governance_policy_rule_added",
         rule_id=rule.rule_id,
@@ -5590,7 +5613,9 @@ async def governance_remove_policy_rule(
             400, "Governance policy requires an org-scoped API key, not a legacy flat key."
         )
     try:
-        await _ready(_policy_repo).remove_rule(_auth.org_id, rule_id)
+        await _ready(_policy_repo).remove_rule(
+            _auth.org_id, rule_id, actor=PolicyActor("api_key", str(_auth.key_id or "unknown"))
+        )
     except PolicyRuleNotFoundError as exc:
         raise HTTPException(404, str(exc)) from None
     logger.info(
@@ -5614,7 +5639,11 @@ async def governance_reorder_policy(
             400, "Governance policy requires an org-scoped API key, not a legacy flat key."
         )
     try:
-        await _ready(_policy_repo).reorder(_auth.org_id, req.rule_ids)
+        await _ready(_policy_repo).reorder(
+            _auth.org_id,
+            req.rule_ids,
+            actor=PolicyActor("api_key", str(_auth.key_id or "unknown")),
+        )
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from None
     policy = await _ready(_policy_repo).get_policy(_auth.org_id)
@@ -5634,6 +5663,22 @@ async def web_get_policy(
         "org_id": org_id,
         "rules": [_policy_rule_to_dict(r) for r in policy.rules],
         "can_edit": principal.role in {Role.OWNER, Role.ADMIN},
+    }
+
+
+@app.get("/api/web/policy/history", tags=["web-console"])
+@limiter.limit("30/minute")
+async def web_policy_history(
+    request: Request,
+    limit: int = 100,
+    principal: WebPrincipal = Depends(get_web_principal),
+) -> dict[str, Any]:
+    org_id = _web_org_admin(principal)
+    repo = _ready(_policy_repo)
+    return {
+        "org_id": org_id,
+        "chain_valid": await repo.verify_history(org_id),
+        "entries": await repo.history(org_id, limit=limit),
     }
 
 
@@ -5659,7 +5704,9 @@ async def web_add_policy_rule(
     existing = await _ready(_policy_repo).get_policy(org_id)
     if any(r.rule_id == rule.rule_id for r in existing.rules):
         raise HTTPException(409, f"Rule {rule.rule_id!r} already exists for this org.")
-    await _ready(_policy_repo).add_rule(org_id, rule)
+    await _ready(_policy_repo).add_rule(
+        org_id, rule, actor=PolicyActor("web_user", str(principal.user_id))
+    )
     return _policy_rule_to_dict(rule)
 
 
@@ -5672,7 +5719,9 @@ async def web_remove_policy_rule(
 ) -> dict[str, str]:
     org_id = _web_org_admin(principal)
     try:
-        await _ready(_policy_repo).remove_rule(org_id, rule_id)
+        await _ready(_policy_repo).remove_rule(
+            org_id, rule_id, actor=PolicyActor("web_user", str(principal.user_id))
+        )
     except PolicyRuleNotFoundError as exc:
         raise HTTPException(404, str(exc)) from None
     return {"status": "removed", "rule_id": rule_id}
@@ -5687,7 +5736,9 @@ async def web_reorder_policy(
 ) -> dict[str, Any]:
     org_id = _web_org_admin(principal)
     try:
-        await _ready(_policy_repo).reorder(org_id, req.rule_ids)
+        await _ready(_policy_repo).reorder(
+            org_id, req.rule_ids, actor=PolicyActor("web_user", str(principal.user_id))
+        )
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from None
     policy = await _ready(_policy_repo).get_policy(org_id)

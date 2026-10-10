@@ -799,6 +799,29 @@ governance_policy_versions = Table(
     Column("updated_at", String(32), nullable=False),
 )
 
+# Append-only history of every policy mutation: WHO changed WHAT and the full rule set that took effect
+# at each `governance_policy_versions.version`. Evidence records carry only `policy_version`; without
+# this table the rules that governed a past decision were unrecoverable once edited. Written in the same
+# transaction as the mutation (see `db/policy_repository.py`), hash-chained per org so a rewritten or
+# deleted row is detectable.
+governance_policy_history = Table(
+    "governance_policy_history",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("org_id", String(36), nullable=False, index=True),
+    Column("version", Integer, nullable=False),
+    Column("change", String(32), nullable=False),
+    Column("rule_id", String(128), nullable=True),
+    Column("actor_type", String(32), nullable=False),
+    Column("actor_id", String(128), nullable=False),
+    Column("rules_json", Text, nullable=False),
+    Column("rules_digest", String(64), nullable=False),
+    Column("prev_entry_digest", String(64), nullable=False),
+    Column("entry_digest", String(64), nullable=False),
+    Column("created_at", String(32), nullable=False),
+    UniqueConstraint("org_id", "version", name="uq_policy_history_org_version"),
+)
+
 # One row per org: a structural ceiling no per-call `AuthorityContext`
 # built for that org can ever exceed, enforced via
 # `governance.validate_attenuation()` as the live `parent_authority` on
