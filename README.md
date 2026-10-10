@@ -29,7 +29,7 @@ was altered. WhitePact puts that check in one place: in front of MCP tool
 calls, LangChain / LangGraph / Google ADK agents, or a REST API.
 
 **Maturity (honest status).** Independent open-source project by one author,
-started May 2026, version 1.3.x. About 5,000 automated tests at roughly 87%
+started May 2026, currently WhitePact v1.3.1. About 5,000 automated tests at roughly 87%
 line coverage. Published on PyPI as
 [`rai-governance-platform`](https://pypi.org/project/rai-governance-platform/).
 No known production deployments yet; treat it as early-stage software and
