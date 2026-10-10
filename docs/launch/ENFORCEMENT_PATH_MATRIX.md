@@ -21,6 +21,16 @@ verified; read it as the claim Antigravity should try to break.
 | Background workers, scheduled actions, multi-agent delegation, administrative operations | NOT TESTED | Not exercised in this pass. | none |
 | Actions WhitePact does not mediate (an agent calling an API directly) | Out of scope | Cannot be intercepted; do not claim otherwise. | n/a |
 
+## Revocation and in-flight work
+
+Revoking an API key, bumping the revocation epoch or suspending a tenant stops **new admissions**: the next request
+fails authentication, and an approval resumed after the change is refused (`Current security state denied resume`,
+tested in `tests/test_transport_credential_negatives.py`; stale epoch before dispatch in
+`tests/test_mcp_ws2_authority_matrix.py`). It does **not** cancel a tool that has already been admitted and is
+running. Exposure for such a run is bounded by the container's wall-clock limit (`IsolationLimits.wall_timeout_seconds`,
+15 s default, 30 s for the larger profile), after which the container is killed. No test starts a long-running tool,
+revokes mid-run and measures the stop; that behaviour is NOT TESTED and should not be described as "instant revocation".
+
 ## Environment that changes the route
 
 | Setting | Effect | Production |
