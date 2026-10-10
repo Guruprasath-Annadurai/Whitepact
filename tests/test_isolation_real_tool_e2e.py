@@ -52,6 +52,9 @@ from responsibleai.isolation.mode import (
     synthetic_host_tool_allowed,
 )
 
+# Read before any fixture scrubs the environment: this is the CI-provisioned runtime image.
+CONFIGURED_IMAGE = os.environ.get(ISOLATION_IMAGE_ENV)
+
 PII_TEXT = "Customer SSN is 123-45-6789, email: alice@company.com"
 
 
@@ -225,7 +228,7 @@ class TestSyntheticFixtureIsTheOnlyHostSideTool:
 
 
 def _require_runtime_image() -> str:
-    image = os.environ.get(ISOLATION_IMAGE_ENV)
+    image = CONFIGURED_IMAGE
     if not image:
         message = (
             f"{ISOLATION_IMAGE_ENV} is not set. Build one with "
