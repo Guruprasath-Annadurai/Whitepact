@@ -35,8 +35,8 @@ neither opt-in and has no Docker daemon refuses to start the executor.
 
 ## Attack list from the master directive: what was tested here
 
-Tested in this pass (see the register): forged/expired/revoked credentials, a read-only key, revocation while an approval is pending, and cross-tenant approval access at the REST transport against real PostgreSQL; capacity reservation races against a live Redis; replayed and mismatched grants against the executor, lookalike and
+Tested in this pass (see the register): forged/expired/revoked credentials, a read-only key, revocation while an approval is pending, and cross-tenant approval access at the REST transport against real PostgreSQL, plus forged/expired/revoked and mid-session revoked keys over hosted MCP Streamable HTTP; capacity reservation races against a live Redis; replayed and mismatched grants against the executor, lookalike and
 smuggled tool names, tenant spoofing through arguments, missing production configuration, container runtime
 unavailable (executor refuses), fallback to in-process execution (removed), PyJWT-dependent identity paths on
-the patched version. NOT tested in this pass: the same credential matrix over hosted MCP HTTP, wrong audience beyond scope and tenant,
+the patched version. NOT tested in this pass: wrong audience beyond scope and tenant,
 failing identity provider or policy engine, revocation during a running container, multi-host Redis failover.
