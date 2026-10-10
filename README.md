@@ -75,7 +75,11 @@ and a live dashboard — that covers the full governance lifecycle:
 ## Install
 
 ```bash
-# Governance platform + REST API
+# FastStart V1: ultra-fast core governance CLI (cold ~5s, warm ~0.3s)
+pip install rai-governance-platform
+whitepact faststart
+
+# Full governance platform + REST API dashboard
 pip install "rai-governance-platform[dashboard]"
 
 # With PostgreSQL support
@@ -99,7 +103,25 @@ unless PyPI documents that distribution).
 
 ---
 
-## 30-second quickstart
+## WhitePact FastStart V1 (< 60s first protected action)
+
+Verify WhitePact's core doctrine and security lifecycle instantly on any standard Python environment without needing external databases or servers:
+
+```bash
+# 1. Install core
+pip install rai-governance-platform
+
+# 2. Run instant end-to-end governance verification
+whitepact faststart
+```
+
+Executes the full enforceable lifecycle:
+`ALLOW -> DENY -> REQUIRE_APPROVAL -> APPROVE -> EXECUTE -> REVOKE -> VERIFY EVIDENCE`
+with cryptographic hash-chain sealing.
+
+---
+
+## 30-second quickstart (Full Dashboard)
 
 ```bash
 # Start the governance dashboard
