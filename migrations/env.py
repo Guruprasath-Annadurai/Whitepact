@@ -31,11 +31,7 @@ def _resolve_url() -> str:
     2. RAI_DB_PATH — file path (converted to sqlite+aiosqlite://)
     3. Falls back to ./governance.db
     """
-    raw = (
-        os.environ.get("RAI_DB_URL")
-        or os.environ.get("RAI_DATABASE_URL")
-        or ""
-    )
+    raw = os.environ.get("RAI_DB_URL") or os.environ.get("RAI_DATABASE_URL") or ""
     if raw:
         if raw.startswith("postgresql"):
             raw = raw.replace("postgresql://", "postgresql+asyncpg://", 1)

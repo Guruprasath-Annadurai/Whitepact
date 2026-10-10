@@ -128,7 +128,9 @@ def upgrade() -> None:
 def downgrade() -> None:
     bind = op.get_bind()
     if bind.dialect.name == "postgresql":
-        op.execute("DROP TRIGGER IF EXISTS prevent_execution_request_mutation ON runtime_execution_requests")
+        op.execute(
+            "DROP TRIGGER IF EXISTS prevent_execution_request_mutation ON runtime_execution_requests"
+        )
         op.execute("DROP FUNCTION IF EXISTS reject_execution_request_mutation()")
     else:
         op.execute("DROP TRIGGER IF EXISTS prevent_execution_request_update")

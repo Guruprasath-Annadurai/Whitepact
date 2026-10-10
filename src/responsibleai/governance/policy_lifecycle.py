@@ -471,6 +471,19 @@ class PolicyLifecycleManager:
                     .values(version=next_ver, updated_at=now)
                 )
 
+            # 8. Append to the tamper-evident policy history in the same transaction, so the
+            # version counter and the history can only diverge by out-of-band modification.
+            from responsibleai.db.policy_repository import PolicyActor, _record_history
+
+            await _record_history(
+                conn,
+                org_id,
+                next_ver,
+                "revision_activated",
+                None,
+                PolicyActor("lifecycle", activated_by),
+            )
+
         return PolicyActivation(
             id=activation_id,
             org_id=org_id,

@@ -53,7 +53,9 @@ def upgrade() -> None:
         sa.Column("state", sa.String(length=32), nullable=False, server_default="PENDING"),
         sa.Column("effect_id", sa.String(length=64), nullable=False),
         sa.Column("effect_state", sa.String(length=32), nullable=False, server_default="NO_EFFECT"),
-        sa.Column("evidence_status", sa.String(length=32), nullable=False, server_default="PENDING"),
+        sa.Column(
+            "evidence_status", sa.String(length=32), nullable=False, server_default="PENDING"
+        ),
         sa.Column("backend_start_token_hash", sa.String(length=64), nullable=True),
         sa.Column("pre_effect_decision", sa.String(length=32), nullable=True),
         sa.Column("reconciliation_state", sa.String(length=32), nullable=True),

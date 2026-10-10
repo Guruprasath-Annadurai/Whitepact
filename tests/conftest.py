@@ -391,3 +391,28 @@ def biased_provider() -> BiasedMockProvider:
 @pytest.fixture
 def unbiased_provider() -> UnbiasedMockProvider:
     return UnbiasedMockProvider()
+
+
+def _widen_lifespan_startup_timeout() -> None:
+    """``asgi_lifespan`` waits 5 s for app startup by default. Starting the dashboard against a fresh
+    in-memory database runs every Alembic migration (about 4.6 s at revision 0062), so the default
+    flakes under load. A longer wait changes no assertion; a callers' explicit value is kept."""
+    import inspect
+
+    from asgi_lifespan import LifespanManager
+
+    original = LifespanManager.__init__
+    if getattr(original, "_whitepact_widened", False):
+        return
+    default = inspect.signature(original).parameters["startup_timeout"].default
+
+    def widened_init(self, app, startup_timeout=default, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+        if startup_timeout == default:
+            startup_timeout = 30
+        original(self, app, startup_timeout, *args, **kwargs)
+
+    widened_init._whitepact_widened = True  # type: ignore[attr-defined]
+    LifespanManager.__init__ = widened_init  # type: ignore[method-assign]
+
+
+_widen_lifespan_startup_timeout()

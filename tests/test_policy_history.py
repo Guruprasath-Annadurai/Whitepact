@@ -177,8 +177,9 @@ async def test_history_cross_tenant_injection_is_detected(repo) -> None:
 
     # org-a fails verification because the injected row does not chain from org-a's version 2
     assert await policy.verify_history("org-a") is False
-    # org-b has 0 rows now, so its history is empty
-    assert await policy.verify_history("org-b") is True
+    # org-b lost its only row while its policy version is still 1. An empty history is valid only for
+    # an org that was never edited, so this is reported as tampering, not as a valid empty chain.
+    assert await policy.verify_history("org-b") is False
 
 
 async def test_the_web_console_attributes_changes_to_the_signed_in_user(
@@ -238,3 +239,88 @@ async def test_history_requires_a_session_and_is_not_shared_between_tenants(
         assert theirs.json()["entries"] == []
     finally:
         await other.aclose()
+
+
+async def test_deleting_every_history_row_is_detected_against_the_version_counter(repo) -> None:
+    """An empty chain is internally valid; it is only wrong because the org has been edited."""
+    policy, engine = repo
+    for i in range(3):
+        await policy.add_rule(
+            "org-a", _rule(f"r{i}", GovernanceDecision.DENY, f"a{i}"), actor=ALICE
+        )
+    assert await policy.verify_history("org-a") is True
+    async with engine.raw.begin() as conn:
+        await conn.execute(text("DELETE FROM governance_policy_history WHERE org_id = 'org-a'"))
+    assert await policy.history("org-a") == []
+    assert await policy.verify_history("org-a") is False
+
+
+async def test_dropping_only_the_newest_rows_is_detected(repo) -> None:
+    policy, engine = repo
+    for i in range(3):
+        await policy.add_rule(
+            "org-a", _rule(f"r{i}", GovernanceDecision.DENY, f"a{i}"), actor=ALICE
+        )
+    async with engine.raw.begin() as conn:
+        await conn.execute(text("DELETE FROM governance_policy_history WHERE version = 3"))
+    assert await policy.verify_history("org-a") is False  # chain intact, but behind the counter
+
+
+async def test_a_counter_bumped_without_history_is_out_of_band_modification(repo) -> None:
+    policy, engine = repo
+    await policy.add_rule("org-a", _rule("r0", GovernanceDecision.DENY, "a"), actor=ALICE)
+    async with engine.raw.begin() as conn:
+        await conn.execute(
+            text(
+                "UPDATE governance_policy_versions SET version = version + 1 WHERE org_id = 'org-a'"
+            )
+        )
+    assert await policy.verify_history("org-a") is False
+
+
+async def test_a_never_edited_org_has_a_valid_empty_history(repo) -> None:
+    policy, _engine = repo
+    assert await policy.verify_history("never-edited") is True
+    assert await policy.history_head("never-edited") is None
+
+
+async def test_history_head_is_the_value_to_anchor_outside_the_database(repo) -> None:
+    policy, _engine = repo
+    await policy.add_rule("org-a", _rule("r0", GovernanceDecision.DENY, "a"), actor=ALICE)
+    first = await policy.history_head("org-a")
+    await policy.add_rule("org-a", _rule("r1", GovernanceDecision.DENY, "b"), actor=ALICE)
+    second = await policy.history_head("org-a")
+    assert first is not None and second is not None
+    assert second["version"] == first["version"] + 1
+    assert second["entry_digest"] != first["entry_digest"]
+
+
+async def test_activating_a_lifecycle_revision_writes_history_in_the_same_transaction(repo) -> None:
+    import uuid
+
+    from sqlalchemy import insert
+
+    from responsibleai.db.engine import organizations
+    from responsibleai.governance.policy_lifecycle import PolicyLifecycleManager
+
+    policy, engine = repo
+    org_id = f"org-{uuid.uuid4().hex[:8]}"
+    async with engine.raw.begin() as conn:
+        await conn.execute(
+            insert(organizations).values(
+                id=org_id, name="Lifecycle Org", slug=org_id, created_at="2026-10-10T00:00:00Z"
+            )
+        )
+    manager = PolicyLifecycleManager(engine)
+    rev = await manager.create_revision(
+        org_id, [_rule("lc-1", GovernanceDecision.DENY, "x")], "admin-1", "initial"
+    )
+    await manager.activate_revision(org_id, rev.id, "admin-1")
+    (entry,) = await policy.history(org_id)
+    assert (entry["change"], entry["actor_type"], entry["actor_id"]) == (
+        "revision_activated",
+        "lifecycle",
+        "admin-1",
+    )
+    assert [r["rule_id"] for r in entry["rules"]] == ["lc-1"]
+    assert await policy.verify_history(org_id) is True

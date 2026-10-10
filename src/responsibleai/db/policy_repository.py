@@ -352,7 +352,17 @@ class PolicyRepository:
         ]
 
     async def verify_history(self, org_id: str) -> bool:
-        """Recompute the org's history chain. False if any row was altered, removed or reordered."""
+        """Recompute the org's history chain and cross-check it against the policy-version counter.
+
+        False if any row was altered, removed or reordered, **or if the history does not reach the
+        current policy version**: deleting every row (or only the newest ones) leaves a chain that is
+        internally valid, so the check also requires the last history version to equal
+        ``governance_policy_versions.version`` (and an empty history only for a never-edited org).
+
+        Limit, stated plainly: both tables live in the same database. Someone who can rewrite both,
+        recomputing every digest, defeats this check; only a digest retained outside the database
+        (``history_head()`` is what to anchor) detects that.
+        """
         async with self._engine.raw.connect() as conn:
             rows = (
                 await conn.execute(
@@ -361,6 +371,11 @@ class PolicyRepository:
                     .order_by(governance_policy_history.c.version.asc())
                 )
             ).fetchall()
+        current_version = await self.get_policy_version(org_id)
+        if not rows:
+            return current_version == 0
+        if rows[-1].version != current_version:
+            return False
         prev = _HISTORY_GENESIS
         for row in rows:
             if hashlib.sha256(row.rules_json.encode("utf-8")).hexdigest() != row.rules_digest:
@@ -380,3 +395,19 @@ class PolicyRepository:
                 return False
             prev = row.entry_digest
         return True
+
+    async def history_head(self, org_id: str) -> dict[str, Any] | None:
+        """``{"version", "entry_digest"}`` of the newest history row: the value to retain externally."""
+        async with self._engine.raw.connect() as conn:
+            row = (
+                await conn.execute(
+                    select(
+                        governance_policy_history.c.version,
+                        governance_policy_history.c.entry_digest,
+                    )
+                    .where(governance_policy_history.c.org_id == org_id)
+                    .order_by(governance_policy_history.c.version.desc())
+                    .limit(1)
+                )
+            ).fetchone()
+        return None if row is None else {"version": row.version, "entry_digest": row.entry_digest}
