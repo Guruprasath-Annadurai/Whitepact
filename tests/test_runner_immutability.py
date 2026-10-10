@@ -233,7 +233,7 @@ def test_trusted_runner_is_readable_only_by_the_container_uid_and_never_writable
         assert stat.S_IMODE(os.stat(runner.parent).st_mode) == 0o700
         if info.st_uid != 65534:  # not chowned, so an ACL must name the container UID
             acl = subprocess.run(  # noqa: S603
-                ["getfacl", "-p", str(runner)], capture_output=True, text=True, check=True
+                ["getfacl", "-n", "-p", str(runner)], capture_output=True, text=True, check=True
             ).stdout
             assert "user:65534:r" in acl, acl
     finally:
