@@ -11,6 +11,7 @@ Frameworks:
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -120,6 +121,18 @@ _ISO_CONTROLS: list[tuple[str, str, str]] = [
     ("ISO42001-A.10.1", "Continual improvement of AI governance", "robustness"),
 ]
 
+
+def _normalise_use_case(text: str) -> str:
+    """Lower-case and treat ``_``/``-`` as word separators.
+
+    Applied to BOTH the caller's use case and every keyword, so the two always compare
+    in the same form. Normalising only the input broke hyphenated keywords such as
+    ``real-time biometric surveillance`` (a prohibited use fell back to merely HIGH),
+    while normalising nothing let ``credit_scoring`` slip through as MINIMAL.
+    """
+    return " ".join(re.split(r"[\s_\-]+", text.lower())).strip()
+
+
 _EU_HIGH_RISK_KEYWORDS = [
     "biometric",
     "critical infrastructure",
@@ -133,6 +146,7 @@ _EU_HIGH_RISK_KEYWORDS = [
     "medical",
     "healthcare",
     "recruitment",
+    "hiring",
     "worker management",
     "public safety",
 ]
@@ -150,6 +164,9 @@ _EU_LIMITED_KEYWORDS = [
     "support bot",
     "conversational ai",
 ]
+_EU_HIGH_RISK_KEYWORDS = [_normalise_use_case(k) for k in _EU_HIGH_RISK_KEYWORDS]
+_EU_UNACCEPTABLE_KEYWORDS = [_normalise_use_case(k) for k in _EU_UNACCEPTABLE_KEYWORDS]
+_EU_LIMITED_KEYWORDS = [_normalise_use_case(k) for k in _EU_LIMITED_KEYWORDS]
 
 
 class ComplianceEngine:
@@ -284,7 +301,7 @@ class ComplianceEngine:
         ]
 
     def _classify_eu_tier(self, use_case: str) -> EUAIActRiskTier:
-        uc = use_case.lower()
+        uc = _normalise_use_case(use_case)
         if any(kw in uc for kw in _EU_UNACCEPTABLE_KEYWORDS):
             return EUAIActRiskTier.UNACCEPTABLE
         if any(kw in uc for kw in _EU_HIGH_RISK_KEYWORDS):
