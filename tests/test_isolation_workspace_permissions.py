@@ -26,6 +26,7 @@ from responsibleai.isolation.filesystem import (
     EphemeralWorkspace,
     workspace_is_world_accessible,
 )
+from tests.docker_runtime import require_container_isolation_host
 from tests.linux_security import QUALIFICATION_SKIP_PREFIX
 
 
@@ -137,9 +138,9 @@ def test_unrelated_process_cannot_read_owner_only_workspace() -> None:
             assert os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0
             return
 
-        docker = _docker_available()
-        if not docker:
-            return
+        # Host-independent 0700/0600 DAC assertions above already ran. The kernel
+        # probe below only proves anything where bind mounts enforce host DAC.
+        require_container_isolation_host()
         probe = subprocess.run(  # noqa: S603
             [
                 "docker",

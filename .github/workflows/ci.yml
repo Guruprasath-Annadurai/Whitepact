@@ -113,6 +113,11 @@ jobs:
         run: python scripts/check_security_regressions.py
 
       - name: Run tests with coverage
+        env:
+          # Designated Linux security CI: a missing Docker daemon must fail the
+          # real container-isolation tests, never skip them (see
+          # docs/launch/QUALIFICATION_SKIP_POLICY.md).
+          WHITEPACT_REQUIRE_DOCKER_ISOLATION: "1"
         run: |
           pytest tests/ \
             --cov=src/responsibleai \
