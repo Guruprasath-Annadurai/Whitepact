@@ -3338,11 +3338,12 @@ async def restore_reconcile(request: Request) -> JSONResponse:
             status_code=200,
         )
     except RestoreReconciliationError as exc:
+        logger.error("restore_reconciliation_failed", error=str(exc))
         return JSONResponse(
             status_code=500,
             content={
                 "error": "reconciliation_failed",
-                "message": str(exc),
+                "message": "Post-restore reconciliation failed. Details are in the server log.",
                 "gate_state": gate.state.value,
             },
         )
@@ -4738,7 +4739,13 @@ async def run_leaderboard_eval(
                 overall_score=stored["overall_score"],
             )
         except ProviderNotConfiguredError as exc:
-            failed.append({"model": t["model"], "provider": t["provider"], "reason": str(exc)})
+            failed.append(
+                {
+                    "model": t["model"],
+                    "provider": t["provider"],
+                    "reason": "provider_not_configured",
+                }
+            )
             logger.warning(
                 "leaderboard_run_skipped", model=t["model"], provider=t["provider"], reason=str(exc)
             )
@@ -6938,6 +6945,18 @@ async def list_auth_providers() -> dict[str, Any]:
     return {"providers": providers, "count": len(providers)}
 
 
+_OAUTH_TX_FORMAT = re.compile(r"^[A-Za-z0-9_-]{32,128}$")
+
+
+def _accepted_oauth_tx_cookie(value: str | None) -> str | None:
+    """Reuse an existing ``wp_oauth_tx`` cookie only if it has the shape this server issues.
+
+    The value is echoed back in a Set-Cookie. A request-supplied cookie of any other shape (control
+    characters, attribute delimiters, an attacker-chosen string) must never be re-issued as ours.
+    """
+    return value if value and _OAUTH_TX_FORMAT.fullmatch(value) else None
+
+
 @app.get("/api/auth/login/{provider_id}", tags=["auth"])
 async def auth_login(
     request: Request,
@@ -6962,7 +6981,7 @@ async def auth_login(
         target_redirect = settings.oidc_redirect_uri
 
         initiating_session = request.cookies.get("wp_session")
-        oauth_tx = request.cookies.get("wp_oauth_tx") or (
+        oauth_tx = _accepted_oauth_tx_cookie(request.cookies.get("wp_oauth_tx")) or (
             _web_token_hash(initiating_session) if initiating_session else secrets.token_urlsafe(32)
         )
         bound_session_id = _web_token_hash(oauth_tx)
