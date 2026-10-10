@@ -3,8 +3,11 @@ name: CI
 on:
   push:
     branches: ["main", "develop", "release/whitepact-v1-rc"]
+  # cursor/whitepact-rc-remediation-b6a9 is an ancestor of the stacked
+  # qualification draft. A pull request onto it has the same tree as its
+  # head. release/whitepact-v1-rc does not: that history is unrelated.
   pull_request:
-    branches: ["main", "release/whitepact-v1-rc"]
+    branches: ["main", "release/whitepact-v1-rc", "cursor/whitepact-rc-remediation-b6a9"]
 
 # CI only needs to read repository contents. Individual jobs do not receive
 # broader token capabilities unless explicitly added later.
@@ -15,9 +18,18 @@ jobs:
   test:
     name: Lint · Type-check · Test
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    # Full suite (~5.2k tests) can exceed 45m on 3.12; 3.11 finished ~44m27s on PR #130.
+    timeout-minutes: 55
+    env:
+      WHITEPACT_REDIS_URL: redis://127.0.0.1:6379/0
+      WHITEPACT_REQUIRE_REDIS: "1"
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
         env:
           POSTGRES_USER: wp
           POSTGRES_PASSWORD: wp
@@ -29,11 +41,15 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.11", "3.12"]
-    timeout-minutes: 45
+      redis:
+        image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -47,13 +63,13 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip setuptools
-          pip install -e ".[dev,openai,anthropic,sso,sentiment,postgres]"
+          pip install -e ".[dev,openai,anthropic,sso,sentiment,postgres,redis]"
 
       - name: Lint with ruff
-        run: ruff check src/ tests/
+        run: ruff check src/ tests/ sdk/python/
 
       - name: Check formatting with ruff
-        run: ruff format --check src/ tests/
+        run: ruff format --check src/ tests/ sdk/python/
 
       - name: Type-check with mypy
         run: mypy src/responsibleai
@@ -85,7 +101,31 @@ jobs:
             --ignore-vuln PYSEC-2026-597 \
             --ignore-vuln PYSEC-2026-3740
 
+      - name: Install mandatory Linux security-test tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nftables iproute2 nginx acl
+
+      - name: Security-fix inclusion gate
+        run: python scripts/check_security_fix_inclusion.py
+
+      - name: Security regression behavior gate
+        run: python scripts/check_security_regressions.py
+
+      - name: Build the isolated tool runtime image
+        # Real-tool isolation tests need an image that contains WhitePact. The stock
+        # python image cannot run the trusted runner. Used only by
+        # tests/test_isolation_real_tool_e2e.py (WHITEPACT_TEST_RUNTIME_IMAGE).
+        run: |
+          docker build -f Dockerfile.isolation -t whitepact-isolated-runtime:ci .
+          echo "WHITEPACT_TEST_RUNTIME_IMAGE=whitepact-isolated-runtime:ci" >> "$GITHUB_ENV"
+
       - name: Run tests with coverage
+        env:
+          # Designated Linux security CI: a missing Docker daemon must fail the
+          # real container-isolation tests, never skip them (see
+          # docs/launch/QUALIFICATION_SKIP_POLICY.md).
+          WHITEPACT_REQUIRE_DOCKER_ISOLATION: "1"
         run: |
           pytest tests/ \
             --cov=src/responsibleai \
@@ -120,10 +160,11 @@ jobs:
 
       - name: Upload coverage to Codecov
         if: matrix.python-version == '3.12'
-        uses: codecov/codecov-action@b9fd7d16f6d7d1b5d2bec1a2887e65ceed900238 # v4.6.0
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: coverage.xml
           fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   wheel-smoke:
     name: Wheel install smoke
@@ -279,7 +320,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
         env:
           POSTGRES_USER: wp
           POSTGRES_PASSWORD: wp
@@ -293,6 +334,10 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # Retention compares qualified ancestor assets; manifest names the real PR head.
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
@@ -315,6 +360,20 @@ jobs:
           WHITEPACT_TEST_DATABASE_URL: postgresql+asyncpg://wp:wp@127.0.0.1:55432/whitepact_e2e
           WHITEPACT_TEST_PYTHON: python
         run: npm run test:customer-journey
+      - name: Corporate public routes, accessibility, responsive and truth gate
+        run: npm run test:corporate-website
+      - name: Public website launch integration contract
+        run: |
+          node --test tests/js/website-launch-contract.test.mjs
+          node web/tooling/launch-contract.mjs audit
+          node web/tooling/launch-contract.mjs preview-smoke
+          node web/tooling/launch-contract.mjs manifest --output "$RUNNER_TEMP/whitepact-website-manifest.json"
+      - name: Retain exact website artifact manifest
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: website-artifact-manifest
+          path: ${{ runner.temp }}/whitepact-website-manifest.json
+          if-no-files-found: error
 
   i18n-tests:
     name: i18n unit tests
@@ -330,3 +389,33 @@ jobs:
 
       - name: Run i18n unit tests (locale resolution, fallback, catalog integrity)
         run: node --test tests/js/i18n.test.js
+
+  checkout-identity:
+    name: Candidate tree matches checkout
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Distinguish the synthetic merge SHA from the candidate HEAD
+        env:
+          CANDIDATE_HEAD: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          tested_sha=$(git rev-parse HEAD)
+          tested_tree=$(git rev-parse 'HEAD^{tree}')
+          echo "tested_sha=$tested_sha"
+          echo "tested_tree=$tested_tree"
+          echo "candidate_head=${CANDIDATE_HEAD}"
+          if [ -z "${CANDIDATE_HEAD}" ]; then
+            echo "Push event. github.sha is the commit under test."
+            exit 0
+          fi
+          git fetch --depth=1 origin "pull/${PR_NUMBER}/head:pr-head"
+          candidate_tree=$(git rev-parse 'pr-head^{tree}')
+          echo "candidate_tree=$candidate_tree"
+          if [ "$tested_tree" != "$candidate_tree" ]; then
+            echo "Synthetic merge tree differs from the candidate HEAD tree."
+            exit 1
+          fi
+          echo "TESTED TREE MATCHES CANDIDATE HEAD TREE"

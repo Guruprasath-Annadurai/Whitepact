@@ -17,6 +17,11 @@ from responsibleai.isolation.errors import (
     IsolationBackendUnavailableError,
     IsolationError,
 )
+from responsibleai.isolation.mode import (
+    UNISOLATED_EXECUTION_ENV,
+    is_production,
+    unisolated_execution_allowed,
+)
 from responsibleai.isolation.models import (
     DEFAULT_STRICT_PROFILE,
     BackendMode,
@@ -59,28 +64,34 @@ class IsolationBroker:
             self.backend = self._init_backend()
 
     def _init_backend(self) -> IsolationBackend:
-        is_prod = os.environ.get("ENVIRONMENT", "").lower() == "production"
-
         if self.mode == BackendMode.LOCAL_DEV:
-            if is_prod:
+            if is_production():
                 raise InvalidBackendModeError(
                     "LOCAL_DEV isolation backend mode is strictly forbidden in production. "
                     "Fail-closed invariant triggered."
+                )
+            if not unisolated_execution_allowed():
+                raise InvalidBackendModeError(
+                    "LOCAL_DEV provides no network or filesystem containment and requires "
+                    f"{UNISOLATED_EXECUTION_ENV}=1 as an explicit local-development opt-in."
                 )
             return LocalSubprocessBackend()
 
         if self.mode == BackendMode.DOCKER:
             docker_be = DockerContainerBackend()
-            if not docker_be.is_available():
-                # Fail closed if production or explicitly configured
-                if is_prod or os.environ.get("WHITEPACT_ISOLATION_BACKEND") == "docker":
-                    raise IsolationBackendUnavailableError(
-                        "Docker container isolation backend is required but unavailable. "
-                        "Failing closed."
-                    )
-                # In non-production tests/local dev where docker isn't running, fallback only if allowed
-                return LocalSubprocessBackend()
-            return docker_be
+            if docker_be.is_available():
+                return docker_be
+            # Never degrade to an uncontained backend silently. Only an explicit,
+            # non-production opt-in may run without Docker, and not when Docker was
+            # explicitly requested.
+            explicit_docker = os.environ.get("WHITEPACT_ISOLATION_BACKEND") == "docker"
+            if explicit_docker or not unisolated_execution_allowed():
+                raise IsolationBackendUnavailableError(
+                    "Docker container isolation backend is required but unavailable. "
+                    "Failing closed. To run without isolation for local development only, "
+                    f"set {UNISOLATED_EXECUTION_ENV}=1 outside production."
+                )
+            return LocalSubprocessBackend()
 
         raise InvalidBackendModeError(f"Unknown backend mode: {self.mode}")
 

@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "rai-governance-platform"
 version = "1.3.1"
-description = "ResponsibleAI — Enterprise AI Governance Platform: trust scoring, bias detection, hallucination detection, guardrails, compliance (NIST AI RMF / EU AI Act / ISO 42001), cost intelligence, drift monitoring"
+description = "WhitePact — enterprise AI governance platform (PyPI distribution: rai-governance-platform): runtime authority, approvals, policy, evidence, MCP, and compliance automation"
 readme = "README.md"
 license = { file = "LICENSE" }
 authors = [{ name = "Guruprasath Annadurai", email = "annaduraiguruprasath7@gmail.com" }]
@@ -52,6 +52,7 @@ dependencies = [
     # migrate the kwargs) deliberately, in its own change.
     "mcp>=1.0.0,<2.0.0",
     "alembic>=1.13.0",
+    "cryptography>=50.0.0",
 ]
 
 [project.optional-dependencies]
@@ -70,6 +71,11 @@ dashboard = [
     "cryptography>=50.0.0",  # PYSEC-2026-3552 fixed in 50.0.0 -- verified working, tests pass
     "pyotp>=2.9.0",
     "cbor2>=5.6.0",
+    # whitepact doctor loads whitepact.yaml through responsibleai.sovereign.manifest.
+    "PyYAML>=6.0.3",
+    # sqlalchemy[asyncio] imports greenlet. Pin it here so doctor does not depend on
+    # an extra that a resolver might drop.
+    "greenlet>=3.0.3",
 ]
 postgres   = ["asyncpg>=0.29.0"]
 redis      = ["limits[redis]>=3.6.0"]
@@ -79,7 +85,7 @@ telemetry  = [
     "opentelemetry-instrumentation-fastapi>=0.45b0",
     "opentelemetry-instrumentation-httpx>=0.45b0",
 ]
-sso        = ["PyJWT[crypto]>=2.8.0", "httpx>=0.27.0", "signxml>=3.2.0", "lxml>=5.2.1"]
+sso        = ["PyJWT[crypto]>=2.15.0", "httpx>=0.27.0", "signxml>=3.2.0", "lxml>=5.2.1"]
 openai     = ["openai>=1.30.0"]
 anthropic  = ["anthropic>=0.28.0"]
 google     = ["google-generativeai>=0.5.0"]
@@ -126,7 +132,7 @@ dev = [
     "pytest-cov>=5.0.0",
     "httpx>=0.27.0",
     "respx>=0.21.0",
-    "PyJWT[crypto]>=2.8.0",
+    "PyJWT[crypto]>=2.15.0",
     "openai>=1.30.0",
     "anthropic>=0.28.0",
     "ruff>=0.5.0",
@@ -200,8 +206,22 @@ addopts      = "--cov=src/responsibleai --cov=src/biasbuster --cov=src/privacyla
 [tool.ruff]
 target-version = "py311"
 line-length    = 100
-src            = ["src", "tests"]
+# Mandatory format and lint scope is src/, tests/, and sdk/python/.
+# CI invokes ruff on those paths. `ruff format .` also discovers Markdown
+# and reformats fenced examples; documentation is not Python source.
+# migrations/ stays outside the gate: reformatting historical Alembic
+# modules would be unrelated whitespace, and that drift is recorded in
+# docs/launch/RUFF_SCOPE.md rather than hidden by a rewritten schema.
+src            = ["src", "tests", "sdk/python"]
 exclude        = ["examples", "scripts"]
+extend-exclude = [
+    "docs",
+    "wiki",
+    "compliance",
+    "migrations",
+    "*.md",
+    "*.markdown",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "N"]

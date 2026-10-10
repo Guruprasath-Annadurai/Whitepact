@@ -21,6 +21,7 @@ is worse than an honestly-scoped single-instance guarantee.
 from __future__ import annotations
 
 import time
+import uuid
 from collections import deque
 from typing import TYPE_CHECKING
 
@@ -74,7 +75,10 @@ class PlanRateLimiter:
         if limit is None:
             return
 
-        now = time.monotonic()
+        # Redis scores must use a clock shared by every replica.
+        # time.monotonic() is process-local and would split one tenant
+        # across unrelated windows.
+        now = time.time() if self._redis_url else time.monotonic()
         if self._redis_url:
             used = await self._check_redis(org_id, now)
         else:
@@ -102,9 +106,10 @@ class PlanRateLimiter:
         client = await self._get_redis()
         key = f"rai:ratelimit:{org_id}"
         cutoff = now - _WINDOW_SECONDS
+        member = f"{now:.6f}:{uuid.uuid4().hex}"
         pipe = client.pipeline()
         pipe.zremrangebyscore(key, 0, cutoff)
-        pipe.zadd(key, {str(now): now})
+        pipe.zadd(key, {member: now})
         pipe.zcard(key)
         pipe.expire(key, int(_WINDOW_SECONDS) + 5)
         results = await pipe.execute()

@@ -34,6 +34,16 @@ _BLOCKED_ENV_PATTERNS = [
     re.compile(r"BEARER", re.IGNORECASE),
 ]
 
+# Witness and object-store credentials are named here so a future
+# allowlist edit cannot copy them into an agent container.
+_EXPLICIT_DENY = {
+    "WHITEPACT_EVIDENCE_WITNESS_KEY_DIR",
+    "WHITEPACT_EVIDENCE_S3_ACCESS_KEY_ID",
+    "WHITEPACT_EVIDENCE_S3_SECRET_ACCESS_KEY",
+    "WHITEPACT_EVIDENCE_S3_ENDPOINT",
+    "WHITEPACT_EVIDENCE_S3_BUCKET",
+}
+
 # Minimal explicit safe allowlist from host environment
 _SAFE_HOST_ALLOWLIST = {
     "PATH",
@@ -82,10 +92,12 @@ def build_isolated_environment(
 
     if extra_env:
         for k, v in extra_env.items():
-            # Validate that caller didn't pass sensitive variables
-            if is_sensitive_env_key(k):
+            if k in _EXPLICIT_DENY or is_sensitive_env_key(k):
                 continue
             clean_env[k] = str(v)
+
+    for denied in _EXPLICIT_DENY:
+        clean_env.pop(denied, None)
 
     return clean_env
 

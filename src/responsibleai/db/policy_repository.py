@@ -15,17 +15,24 @@ the same flat, typed `PolicyRule` shape that module already defines.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import delete, insert, select, update
 
-from responsibleai.db.engine import DatabaseEngine, governance_policies, governance_policy_versions
+from responsibleai.db.engine import (
+    DatabaseEngine,
+    governance_policies,
+    governance_policy_history,
+    governance_policy_versions,
+)
 from responsibleai.db.revocation_epoch_repository import bump_epoch_on_connection
 from responsibleai.governance.models import GovernanceDecision
-from responsibleai.governance.policy import Policy, PolicyRule
+from responsibleai.governance.policy import Policy, PolicyRule, reject_shadowed_restrictive_rules
 from responsibleai.governance.risk import RiskTier
 
 
@@ -49,6 +56,106 @@ def _row_to_rule(row: Any) -> PolicyRule:
 
 class PolicyRuleNotFoundError(Exception):
     pass
+
+
+@dataclass(frozen=True)
+class PolicyActor:
+    """Who made a policy change. Recorded in the append-only history, never inferred later."""
+
+    actor_type: str  # "web_user" | "api_key" | "system"
+    actor_id: str
+
+
+UNATTRIBUTED = PolicyActor("unattributed", "unattributed")
+_HISTORY_GENESIS = "0" * 64
+
+
+def _rule_to_snapshot(rule: PolicyRule) -> dict[str, Any]:
+    return {
+        "rule_id": rule.rule_id,
+        "reason_code": rule.reason_code,
+        "effect": rule.effect.value,
+        "risk_tiers": sorted(t.value for t in rule.risk_tiers) if rule.risk_tiers else None,
+        "action_types": sorted(rule.action_types) if rule.action_types else None,
+        "targets": sorted(rule.targets) if rule.targets else None,
+    }
+
+
+def _history_entry_digest(
+    prev: str,
+    org_id: str,
+    version: int,
+    change: str,
+    rule_id: str | None,
+    actor: PolicyActor,
+    rules_digest: str,
+    created_at: str,
+) -> str:
+    material = "|".join(
+        [
+            prev,
+            org_id,
+            str(version),
+            change,
+            rule_id or "",
+            actor.actor_type,
+            actor.actor_id,
+            rules_digest,
+            created_at,
+        ]
+    )
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+async def _record_history(
+    conn: Any,
+    org_id: str,
+    version: int,
+    change: str,
+    rule_id: str | None,
+    actor: PolicyActor,
+) -> None:
+    """Append the post-change rule set to the org's history, in the mutation's own transaction."""
+    rows = (
+        await conn.execute(
+            select(governance_policies)
+            .where(governance_policies.c.org_id == org_id)
+            .order_by(governance_policies.c.position.asc())
+        )
+    ).fetchall()
+    rules_json = json.dumps(
+        [_rule_to_snapshot(_row_to_rule(row)) for row in rows],
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    rules_digest = hashlib.sha256(rules_json.encode("utf-8")).hexdigest()
+    prev = (
+        await conn.execute(
+            select(governance_policy_history.c.entry_digest)
+            .where(governance_policy_history.c.org_id == org_id)
+            .order_by(governance_policy_history.c.version.desc())
+            .limit(1)
+        )
+    ).scalar() or _HISTORY_GENESIS
+    created_at = _now()
+    await conn.execute(
+        insert(governance_policy_history).values(
+            id=str(uuid.uuid4()),
+            org_id=org_id,
+            version=version,
+            change=change,
+            rule_id=rule_id,
+            actor_type=actor.actor_type,
+            actor_id=actor.actor_id,
+            rules_json=rules_json,
+            rules_digest=rules_digest,
+            prev_entry_digest=prev,
+            entry_digest=_history_entry_digest(
+                prev, org_id, version, change, rule_id, actor, rules_digest, created_at
+            ),
+            created_at=created_at,
+        )
+    )
 
 
 async def _bump_version(conn: Any, org_id: str) -> int:
@@ -120,13 +227,22 @@ class PolicyRepository:
         version = await self.get_policy_version(org_id)
         return Policy(org_id=org_id, rules=[_row_to_rule(r) for r in rows], version=version)
 
-    async def add_rule(self, org_id: str, rule: PolicyRule) -> None:
+    async def add_rule(
+        self, org_id: str, rule: PolicyRule, *, actor: PolicyActor | None = None
+    ) -> None:
         """Appends *rule* at the end of the org's current evaluation
-        order (highest existing `position` + 1) — first-match-wins means
-        append-by-default is the safe choice; reordering is a separate,
-        explicit operation (`reorder`) rather than something `add_rule`
-        guesses at."""
+        order (highest existing `position` + 1). Appending a stricter
+        rule that an earlier rule already covers is rejected: first-match
+        would never reach it."""
         async with self._engine.raw.begin() as conn:
+            existing_rows = (
+                await conn.execute(
+                    select(governance_policies)
+                    .where(governance_policies.c.org_id == org_id)
+                    .order_by(governance_policies.c.position.asc())
+                )
+            ).fetchall()
+            reject_shadowed_restrictive_rules([*(_row_to_rule(row) for row in existing_rows), rule])
             max_pos = (
                 await conn.execute(
                     select(governance_policies.c.position)
@@ -156,9 +272,14 @@ class PolicyRepository:
                     updated_at=now,
                 )
             )
-            await _bump_version(conn, org_id)
+            version = await _bump_version(conn, org_id)
+            await _record_history(
+                conn, org_id, version, "rule_added", rule.rule_id, actor or UNATTRIBUTED
+            )
 
-    async def remove_rule(self, org_id: str, rule_id: str) -> None:
+    async def remove_rule(
+        self, org_id: str, rule_id: str, *, actor: PolicyActor | None = None
+    ) -> None:
         async with self._engine.raw.begin() as conn:
             result = await conn.execute(
                 delete(governance_policies)
@@ -167,9 +288,18 @@ class PolicyRepository:
             )
             if result.rowcount == 0:
                 raise PolicyRuleNotFoundError(f"No rule {rule_id!r} for org {org_id!r}")
-            await _bump_version(conn, org_id)
+            version = await _bump_version(conn, org_id)
+            await _record_history(
+                conn, org_id, version, "rule_removed", rule_id, actor or UNATTRIBUTED
+            )
 
-    async def reorder(self, org_id: str, rule_ids_in_order: list[str]) -> None:
+    async def reorder(
+        self,
+        org_id: str,
+        rule_ids_in_order: list[str],
+        *,
+        actor: PolicyActor | None = None,
+    ) -> None:
         """Replaces the org's evaluation order wholesale — every existing
         `rule_id` must appear exactly once, or this raises rather than
         silently dropping/duplicating a rule (a corrupted policy order is
@@ -181,6 +311,8 @@ class PolicyRepository:
                 f"reorder() must include exactly the org's current rule_ids "
                 f"{sorted(current_ids)}, got {sorted(rule_ids_in_order)}"
             )
+        by_id = {rule.rule_id: rule for rule in current.rules}
+        reject_shadowed_restrictive_rules([by_id[rule_id] for rule_id in rule_ids_in_order])
         now = _now()
         async with self._engine.raw.begin() as conn:
             for position, rule_id in enumerate(rule_ids_in_order):
@@ -190,4 +322,61 @@ class PolicyRepository:
                     .where(governance_policies.c.rule_id == rule_id)
                     .values(position=position, updated_at=now)
                 )
-            await _bump_version(conn, org_id)
+            version = await _bump_version(conn, org_id)
+            await _record_history(conn, org_id, version, "reordered", None, actor or UNATTRIBUTED)
+
+    async def history(self, org_id: str, *, limit: int = 100) -> list[dict[str, Any]]:
+        """Newest-first policy changes for one organization: who, what, and the rules in force."""
+        async with self._engine.raw.connect() as conn:
+            rows = (
+                await conn.execute(
+                    select(governance_policy_history)
+                    .where(governance_policy_history.c.org_id == org_id)
+                    .order_by(governance_policy_history.c.version.desc())
+                    .limit(max(1, min(limit, 1000)))
+                )
+            ).fetchall()
+        return [
+            {
+                "version": row.version,
+                "change": row.change,
+                "rule_id": row.rule_id,
+                "actor_type": row.actor_type,
+                "actor_id": row.actor_id,
+                "rules": json.loads(row.rules_json),
+                "rules_digest": row.rules_digest,
+                "entry_digest": row.entry_digest,
+                "created_at": row.created_at,
+            }
+            for row in rows
+        ]
+
+    async def verify_history(self, org_id: str) -> bool:
+        """Recompute the org's history chain. False if any row was altered, removed or reordered."""
+        async with self._engine.raw.connect() as conn:
+            rows = (
+                await conn.execute(
+                    select(governance_policy_history)
+                    .where(governance_policy_history.c.org_id == org_id)
+                    .order_by(governance_policy_history.c.version.asc())
+                )
+            ).fetchall()
+        prev = _HISTORY_GENESIS
+        for row in rows:
+            if hashlib.sha256(row.rules_json.encode("utf-8")).hexdigest() != row.rules_digest:
+                return False
+            actor = PolicyActor(row.actor_type, row.actor_id)
+            expected = _history_entry_digest(
+                prev,
+                org_id,
+                row.version,
+                row.change,
+                row.rule_id,
+                actor,
+                row.rules_digest,
+                row.created_at,
+            )
+            if row.prev_entry_digest != prev or row.entry_digest != expected:
+                return False
+            prev = row.entry_digest
+        return True

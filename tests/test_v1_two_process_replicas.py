@@ -40,8 +40,11 @@ def _b64url(payload: dict) -> str:
     )
 
 
-def _unsigned_jwt(nonce: str) -> str:
-    return f"{_b64url({'alg': 'none', 'typ': 'JWT'})}.{_b64url({'sub': 'oidc-user', 'email': 'oidc.user@example.com', 'name': 'OIDC User', 'nonce': nonce})}."
+def _unsigned_jwt(nonce: str, org_id: str) -> str:
+    return (
+        f"{_b64url({'alg': 'none', 'typ': 'JWT'})}."
+        f"{_b64url({'sub': 'oidc-user', 'email': 'oidc.user@example.com', 'name': 'OIDC User', 'nonce': nonce, 'org_id': org_id})}."
+    )
 
 
 def _wait_ready(url: str, timeout: float = 40.0) -> None:
@@ -412,12 +415,31 @@ async def test_two_http_replicas_share_durable_security_state(
                         assert counter_a.json()["counter"] == 1
                         assert counter_a.json()["downstream_call_count"] == 1
 
+                    from responsibleai.db import WebIdentityRepository
+                    from responsibleai.rbac.models import Role
+
+                    identity = WebIdentityRepository(engine)
+                    await identity.bind_sso_principal(
+                        org_id=org_id,
+                        issuer=f"http://127.0.0.1:{PORT_IDP}",
+                        subject="oidc-user",
+                        role=Role.VIEWER,
+                        email="oidc.user@example.com",
+                    )
+                    await identity.bind_sso_principal(
+                        org_id=org_id,
+                        issuer="test-idp",
+                        subject="alice@enterprise.example",
+                        role=Role.ADMIN,
+                        email="alice@enterprise.example",
+                    )
+
                     oidc = a.get("/api/auth/login/oidc")
                     assert oidc.status_code == 200, oidc.text
                     state = oidc.json()["state"]
                     authz = oidc.json()["authorization_url"]
                     nonce = parse_qs(urlparse(authz).query)["nonce"][0]
-                    jwt = _unsigned_jwt(nonce)
+                    jwt = _unsigned_jwt(nonce, org_id)
                     callback = b.get(
                         "/api/auth/callback",
                         params={"code": jwt, "state": state},
@@ -438,6 +460,11 @@ async def test_two_http_replicas_share_durable_security_state(
                         (key_pem, cert_pem),
                         in_response_to=request_id,
                         audience="https://whitepact.com/saml/metadata",
+                        attributes={
+                            "email": "alice@enterprise.example",
+                            "roles": "ADMIN",
+                            "org_id": org_id,
+                        },
                     )
                     acs = b.post("/api/auth/acs", data={"SAMLResponse": resp})
                     assert acs.status_code == 302, acs.text

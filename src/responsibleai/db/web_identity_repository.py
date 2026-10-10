@@ -47,6 +47,17 @@ _DUMMY_PASSWORD_HASH = (
 )
 
 
+@dataclass(frozen=True)
+class SsoBinding:
+    """Directory link from an issuer subject to one organization membership."""
+
+    user_id: str
+    role: str
+    membership_status: str
+    user_disabled: bool
+    user_verification_status: str
+
+
 class DuplicateWebUserError(Exception):
     """Raised when registration uses an existing normalized email."""
 
@@ -351,6 +362,9 @@ class WebIdentityRepository:
             ).fetchone()
             if session is None:
                 return None
+            idle = getattr(session, "inactivity_expires_at", None)
+            if idle and idle <= _iso(now):
+                return None
             user = (
                 await conn.execute(
                     select(web_users).where(
@@ -388,7 +402,7 @@ class WebIdentityRepository:
                 if org is None:
                     return None
                 gov = getattr(org, "governance_status", "ACTIVE") or "ACTIVE"
-                if gov == "DISABLED" or gov == "SUSPENDED":
+                if gov != "ACTIVE" or getattr(org, "deactivated_at", None):
                     return None
             await conn.execute(
                 update(web_sessions)
@@ -1051,6 +1065,152 @@ class WebIdentityRepository:
                 "created_at": row.created_at,
                 "expires_at": row.expires_at,
             }
+
+    async def lookup_sso_binding(
+        self, *, issuer: str, subject: str, org_id: str
+    ) -> SsoBinding | None:
+        """Return the directory binding for this issuer subject, if one exists.
+
+        A missing membership is reported as status ``ABSENT`` so admission can
+        distinguish "this principal is real, but not in this tenant" from
+        "this subject was never linked".
+        """
+        async with self._engine.raw.connect() as conn:
+            row = (
+                await conn.execute(
+                    select(
+                        web_users.c.id,
+                        web_users.c.disabled,
+                        web_users.c.verification_status,
+                        web_memberships.c.role,
+                        web_memberships.c.status,
+                    )
+                    .select_from(web_identity_providers)
+                    .join(web_users, web_users.c.id == web_identity_providers.c.user_id)
+                    .outerjoin(
+                        web_memberships,
+                        (web_memberships.c.user_id == web_users.c.id)
+                        & (web_memberships.c.org_id == org_id),
+                    )
+                    .where(
+                        web_identity_providers.c.issuer == issuer,
+                        web_identity_providers.c.subject == subject,
+                    )
+                )
+            ).fetchone()
+        if row is None:
+            return None
+        return SsoBinding(
+            user_id=str(row.id),
+            role=str(row.role or ""),
+            membership_status=str(row.status or "ABSENT"),
+            user_disabled=bool(row.disabled),
+            user_verification_status=str(row.verification_status or ""),
+        )
+
+    async def bind_sso_principal(
+        self,
+        *,
+        org_id: str,
+        issuer: str,
+        subject: str,
+        role: Role,
+        email: str | None = None,
+        full_name: str = "SSO Principal",
+    ) -> str:
+        """Provision a directory binding. Authentication must not call this.
+
+        Callers are administrative tests and explicit provisioning. A signed
+        claim that arrives without a row created here is denied.
+        """
+        if not issuer or not subject:
+            raise ValueError("SSO issuer and subject are required")
+        if not isinstance(role, Role):
+            raise ValueError("SSO binding role must be a directory role")
+        now = _now()
+        normalized = _normalize_email(email or f"{uuid.uuid4().hex}@sso.whitepact.invalid")
+        async with self._engine.raw.begin() as conn:
+            user = (
+                await conn.execute(select(web_users.c.id).where(web_users.c.email == normalized))
+            ).fetchone()
+            if user is None:
+                user_id = str(uuid.uuid4())
+                await conn.execute(
+                    insert(web_users).values(
+                        id=user_id,
+                        email=normalized,
+                        full_name=unicodedata.normalize("NFKC", full_name).strip()
+                        or "SSO Principal",
+                        password_hash=hash_password(secrets.token_urlsafe(32)),
+                        email_verified_at=_iso(now),
+                        disabled=0,
+                        verification_status="IDENTITY_VERIFIED",
+                        created_at=_iso(now),
+                        updated_at=_iso(now),
+                    )
+                )
+            else:
+                user_id = str(user.id)
+            membership = (
+                await conn.execute(
+                    select(web_memberships.c.id).where(
+                        web_memberships.c.user_id == user_id,
+                        web_memberships.c.org_id == org_id,
+                    )
+                )
+            ).fetchone()
+            if membership is None:
+                await conn.execute(
+                    insert(web_memberships).values(
+                        id=str(uuid.uuid4()),
+                        user_id=user_id,
+                        org_id=org_id,
+                        role=role.value,
+                        status="ACTIVE",
+                        invited_by_user_id=None,
+                        accepted_at=_iso(now),
+                        created_at=_iso(now),
+                        updated_at=_iso(now),
+                    )
+                )
+            else:
+                await conn.execute(
+                    update(web_memberships)
+                    .where(web_memberships.c.id == membership.id)
+                    .values(role=role.value, status="ACTIVE", revoked_at=None, updated_at=_iso(now))
+                )
+        await self.link_provider_identity(
+            user_id=user_id,
+            issuer=issuer,
+            subject=subject,
+            email=normalized,
+            email_verified=True,
+            tenant_id=org_id,
+        )
+        return user_id
+
+    async def revoke_sso_membership(self, *, issuer: str, subject: str, org_id: str) -> bool:
+        user_id = await self.resolve_provider_identity(issuer, subject)
+        if user_id is None:
+            return False
+        async with self._engine.raw.begin() as conn:
+            result = await conn.execute(
+                update(web_memberships)
+                .where(
+                    web_memberships.c.user_id == user_id,
+                    web_memberships.c.org_id == org_id,
+                )
+                .values(status="REVOKED", revoked_at=_iso(_now()), updated_at=_iso(_now()))
+            )
+        return bool(result.rowcount)
+
+    async def suspend_user(self, user_id: str) -> None:
+        async with self._engine.raw.begin() as conn:
+            await conn.execute(
+                update(web_users)
+                .where(web_users.c.id == user_id)
+                .values(disabled=1, verification_status="SUSPENDED", updated_at=_iso(_now()))
+            )
 
     async def delete_expired_state(self) -> None:
         now = _iso(_now())

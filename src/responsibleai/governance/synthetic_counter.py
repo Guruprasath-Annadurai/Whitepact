@@ -66,8 +66,11 @@ async def increment(
 
     record_consequential_invocation()
 
-    environment = os.environ.get("WHITEPACT_ENV") or os.environ.get("RAI_ENVIRONMENT") or ""
-    if is_production_environment(environment):
+    from responsibleai.environment import is_production as _process_is_production
+
+    if _process_is_production() or is_production_environment(
+        os.environ.get("WHITEPACT_ENV") or os.environ.get("RAI_ENVIRONMENT") or ""
+    ):
         raise RuntimeError("Synthetic counter tool is forbidden in production")
     if not organization_id:
         raise ValueError("organization_id is required")

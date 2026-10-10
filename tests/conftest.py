@@ -14,6 +14,10 @@ os.environ.setdefault("WHITEPACT_HERMETIC_TEST_HOME", _HERMETIC_TEMP_HOME.name)
 os.environ["HOME"] = _HERMETIC_TEMP_HOME.name
 os.environ.setdefault("XDG_DATA_HOME", str(Path(_HERMETIC_TEMP_HOME.name) / ".local" / "share"))
 os.environ.setdefault("XDG_CONFIG_HOME", str(Path(_HERMETIC_TEMP_HOME.name) / ".config"))
+# The suite is local development: it runs tools without Docker. Production-default
+# behaviour (isolation required) is proven by tests/test_isolation_fail_closed_default.py,
+# which removes this opt-in.
+os.environ.setdefault("WHITEPACT_ALLOW_UNISOLATED_EXECUTION", "1")
 os.environ.setdefault("RAI_AUTH_ENABLED", "false")
 os.environ.setdefault("WHITEPACT_AUTH_ENABLED", "false")
 
@@ -34,6 +38,51 @@ def pytest_configure(config):
         pass
 
 
+_QUALIFICATION_SKIPS: list[dict[str, str]] = []
+
+
+def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+    """Record skips when WHITEPACT_QUALIFICATION_SKIP_LOG is set.
+
+    A skip is not a pass. The log is the release qualification record of
+    every skip in that run.
+    """
+    if not os.environ.get("WHITEPACT_QUALIFICATION_SKIP_LOG"):
+        return
+    if not report.skipped:
+        return
+    reason = ""
+    longrepr = report.longrepr
+    if isinstance(longrepr, tuple) and len(longrepr) >= 3:
+        reason = str(longrepr[2])
+    elif longrepr is not None:
+        reason = str(longrepr)
+    _QUALIFICATION_SKIPS.append({"nodeid": report.nodeid, "reason": reason})
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    import json
+
+    destination = os.environ.get("WHITEPACT_QUALIFICATION_SKIP_LOG")
+    if not destination:
+        return
+    path = Path(destination)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    unique: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in _QUALIFICATION_SKIPS:
+        if item["nodeid"] in seen:
+            continue
+        seen.add(item["nodeid"])
+        unique.append(item)
+    payload = {
+        "exit_status": exitstatus,
+        "skip_count": len(unique),
+        "skips": unique,
+    }
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
 TEST_GOVERNANCE_PURPOSE = "automated-test"
 
 
@@ -47,6 +96,41 @@ def clean_audit_writes_and_hermetic_state():
         _pending_audit_writes.clear()
     except (ImportError, AttributeError):
         pass
+
+
+@pytest.fixture
+def real_container_host() -> None:
+    """Require a host that can enforce container isolation (see tests/docker_runtime.py).
+
+    Non-Linux hosts record a QUALIFICATION_SKIP; Linux fails if a required tool is missing.
+    """
+    from tests.docker_runtime import require_container_isolation_host
+
+    require_container_isolation_host()
+
+
+@pytest.fixture
+def portable_workspace_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
+    """For UNIT tests that mock the container subprocess: stub only host UID mapping.
+
+    Where the host really can grant container UID 65534 access, nothing is stubbed and the
+    production mapping runs. Where it cannot (e.g. macOS), only that host-specific step is
+    replaced so the test can still exercise result handling. The mocked subprocess means
+    such a test is NOT evidence of isolation; real container tests use real_container_host.
+    """
+    from tests.docker_runtime import host_can_map_container_uid
+
+    if host_can_map_container_uid():
+        return
+    from responsibleai.isolation.filesystem import EphemeralWorkspace
+
+    monkeypatch.setattr(
+        EphemeralWorkspace, "prepare_for_container", lambda self, *args, **kwargs: None
+    )
+    monkeypatch.setattr(
+        "responsibleai.isolation.container_backend.grant_container_read",
+        lambda *args, **kwargs: None,
+    )
 
 
 @pytest.fixture

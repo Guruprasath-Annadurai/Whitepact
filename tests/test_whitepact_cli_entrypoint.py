@@ -72,13 +72,14 @@ def test_whitepact_info_command() -> None:
 
 def test_whitepact_cli_import_does_not_eager_load_sovereign() -> None:
     """Default installs must not import DB-backed sovereign stack at CLI import."""
-    sovereign_cli = sys.modules.get("responsibleai.sovereign.cli")
-    # Re-import after other tests may have loaded sovereign; assert lazy path on fresh import.
-    for name in list(sys.modules):
-        if name == "whitepact.cli" or name.startswith("responsibleai.sovereign"):
-            del sys.modules[name]
+    saved = {
+        name: module
+        for name, module in list(sys.modules.items())
+        if name == "whitepact.cli" or name.startswith("responsibleai.sovereign")
+    }
+    for name in saved:
+        del sys.modules[name]
     import whitepact.cli as wp_cli  # noqa: F401
 
     assert "responsibleai.sovereign.cli" not in sys.modules
-    if sovereign_cli is not None:
-        sys.modules["responsibleai.sovereign.cli"] = sovereign_cli
+    sys.modules.update(saved)

@@ -4,11 +4,25 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { SignupPage } from "../features/auth/AuthPages";
+import { LoginPage, SignupPage } from "../features/auth/AuthPages";
 import { ApiKeysPage } from "../features/api-keys/ApiKeysPage";
 
 describe("account and credential flows", () => {
   beforeEach(() => vi.restoreAllMocks());
+
+  it("associates a sign-in failure with both credential fields", async () => {
+    vi.spyOn(window, "fetch").mockResolvedValueOnce(new Response(JSON.stringify({ detail: "Authentication failed." }), { status: 401 }));
+    const user = userEvent.setup();
+    render(<MemoryRouter><LoginPage /></MemoryRouter>);
+    await user.type(screen.getByLabelText("Email"), "test@example.com");
+    await user.type(screen.getByLabelText("Password"), "NotARealPassword42!");
+    await user.click(screen.getByRole("button", { name: /Sign in →/ }));
+    expect(await screen.findByRole("alert")).toHaveAttribute("id", "login-error");
+    for (const label of ["Email", "Password"]) {
+      expect(screen.getByLabelText(label)).toHaveAttribute("aria-invalid", "true");
+      expect(screen.getByLabelText(label)).toHaveAttribute("aria-describedby", "login-error");
+    }
+  });
 
   it("links signup consent to the legal documents and enforces password quality", async () => {
     const user = userEvent.setup();

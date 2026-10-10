@@ -20,8 +20,25 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
 from responsibleai.dashboard.config import Settings
-from responsibleai.db import OrgRepository, PrincipalRepository, create_engine
+from responsibleai.db import (
+    OrgRepository,
+    PrincipalRepository,
+    WebIdentityRepository,
+    create_engine,
+)
 from responsibleai.rbac.models import Plan, Role
+
+
+async def _bind_vc(
+    engine, org_id: str, subject: str, issuer: str = "https://issuer.example.com"
+) -> None:
+    await WebIdentityRepository(engine).bind_sso_principal(
+        org_id=org_id,
+        issuer=issuer,
+        subject=subject,
+        role=Role.ANALYST,
+        email=f"{subject}-{org_id[:8]}@vc.example",
+    )
 
 
 def _make_vc_jwt(payload: dict) -> str:
@@ -111,7 +128,8 @@ async def _list_tools_over_mcp(app, token: str) -> list:
 
 class TestVerifiedPrincipalAuth:
     async def test_valid_vc_jwt_authenticates_mcp(self, mcp_app) -> None:
-        build, org_id, _raw_key, _engine = mcp_app
+        build, org_id, _raw_key, engine = mcp_app
+        await _bind_vc(engine, org_id, "service-account-1")
         app = await build(vc_trusted_issuers=["https://issuer.example.com"])
         token = _make_vc_jwt(_vc_payload(org_id=org_id))
         tools = await _list_tools_over_mcp(app, token)
@@ -119,6 +137,7 @@ class TestVerifiedPrincipalAuth:
 
     async def test_verification_is_recorded_in_audit_trail(self, mcp_app) -> None:
         build, org_id, _raw_key, engine = mcp_app
+        await _bind_vc(engine, org_id, "agent-99")
         app = await build(vc_trusted_issuers=["https://issuer.example.com"])
         token = _make_vc_jwt(_vc_payload(sub="agent-99", org_id=org_id))
         await _list_tools_over_mcp(app, token)
@@ -134,6 +153,63 @@ class TestVerifiedPrincipalAuth:
         assert claims[0].org_id == org_id
         assert claims[0].holder_kind == "service_account"
         assert claims[0].issuer == "https://issuer.example.com"
+
+    async def test_vc_unknown_org_leaves_no_principal_row(self, mcp_app) -> None:
+        build, _org_id, _raw_key, engine = mcp_app
+        app = await build(vc_trusted_issuers=["https://issuer.example.com"])
+        token = _make_vc_jwt(_vc_payload(sub="ghost-agent", org_id="org-does-not-exist"))
+        async with await _raw_client(app) as client:
+            response = await client.post(
+                "/mcp",
+                json={"jsonrpc": "2.0", "method": "ping", "id": 1},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert response.status_code == 401
+        assert await PrincipalRepository(engine).get_recent_for_principal("ghost-agent") == []
+
+    async def test_vc_unbound_existing_org_leaves_no_principal_row(self, mcp_app) -> None:
+        build, org_id, _raw_key, engine = mcp_app
+        app = await build(vc_trusted_issuers=["https://issuer.example.com"])
+        token = _make_vc_jwt(_vc_payload(sub="unbound-agent", org_id=org_id))
+        async with await _raw_client(app) as client:
+            response = await client.post(
+                "/mcp",
+                json={"jsonrpc": "2.0", "method": "ping", "id": 1},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert response.status_code == 401
+        assert await PrincipalRepository(engine).get_recent_for_principal("unbound-agent") == []
+
+    async def test_vc_suspended_org_is_rejected(self, mcp_app) -> None:
+        build, org_id, _raw_key, engine = mcp_app
+        await _bind_vc(engine, org_id, "suspended-agent")
+        await OrgRepository(engine).set_governance_status(org_id, "SUSPENDED")
+        app = await build(vc_trusted_issuers=["https://issuer.example.com"])
+        token = _make_vc_jwt(_vc_payload(sub="suspended-agent", org_id=org_id))
+        async with await _raw_client(app) as client:
+            response = await client.post(
+                "/mcp",
+                json={"jsonrpc": "2.0", "method": "ping", "id": 1},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert response.status_code == 401
+        assert await PrincipalRepository(engine).get_recent_for_principal("suspended-agent") == []
+
+    async def test_vc_role_elevation_is_rejected(self, mcp_app) -> None:
+        build, org_id, _raw_key, engine = mcp_app
+        await _bind_vc(engine, org_id, "capped-agent")
+        app = await build(vc_trusted_issuers=["https://issuer.example.com"])
+        payload = _vc_payload(sub="capped-agent", org_id=org_id)
+        payload["vc"]["credentialSubject"]["roles"] = ["OWNER"]
+        token = _make_vc_jwt(payload)
+        async with await _raw_client(app) as client:
+            response = await client.post(
+                "/mcp",
+                json={"jsonrpc": "2.0", "method": "ping", "id": 1},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert response.status_code == 401
+        assert await PrincipalRepository(engine).get_recent_for_principal("capped-agent") == []
 
     async def test_untrusted_issuer_rejected(self, mcp_app) -> None:
         build, org_id, _raw_key, _engine = mcp_app

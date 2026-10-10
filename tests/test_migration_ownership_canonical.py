@@ -12,9 +12,10 @@ from alembic.script import ScriptDirectory
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_alembic_single_head_is_0061_sovereign_shadow() -> None:
+def test_alembic_single_head_is_0062_policy_history() -> None:
     script = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
-    assert script.get_heads() == ["0061"]
+    assert script.get_heads() == ["0062"]
+    assert script.get_revision("0062").down_revision == "0061"
     assert script.get_revision("0061").down_revision == "0060"
     assert script.get_revision("0060").down_revision == "0059"
     assert script.get_revision("0059").down_revision == "0058"
@@ -41,6 +42,7 @@ def test_alembic_single_head_is_0061_sovereign_shadow() -> None:
         "0059_widen_audit_log_key_id.py",
         "0060_test_consequential_counters.py",
         "0061_sovereign_shadow_observations.py",
+        "0062_governance_policy_history.py",
     ):
         assert (ROOT / "migrations" / "versions" / name).is_file()
 
@@ -76,6 +78,8 @@ def test_canonical_map_matches_implemented_history() -> None:
     assert "0058" in text and "SAML AuthnRequest" in text
     assert "0059" in text and "audit_log.key_id" in text
     assert "0060" in text and "test_consequential_counters" in text
+    assert "0061" in text and "sovereign_shadow_observations" in text
+    assert "0062" in text and "governance_policy_history" in text
     assert "Current implemented Alembic head" in text
     assert "`0060`" in text
     assert "`0053`" in text

@@ -30,6 +30,7 @@ from responsibleai.db.engine import (
     tenant_tombstones,
 )
 from responsibleai.db.revocation_epoch_repository import bump_epoch_on_connection
+from responsibleai.db.tenant_scope import org_scope
 from responsibleai.rbac.models import (
     GovernanceStatus,
     Organization,
@@ -51,6 +52,22 @@ def _plan_from_str(s: str | None) -> Plan:
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+LAST_USED_REFRESH_SECONDS = 60
+
+
+def _last_used_is_stale(last_used: object) -> bool:
+    """True when ``last_used_at`` is missing, unparseable, or older than the refresh interval."""
+    if not last_used:
+        return True
+    try:
+        previous = datetime.fromisoformat(str(last_used))
+    except ValueError:
+        return True
+    if previous.tzinfo is None:
+        previous = previous.replace(tzinfo=UTC)
+    return (datetime.now(UTC) - previous).total_seconds() >= LAST_USED_REFRESH_SECONDS
 
 
 def _hash_key(raw: str) -> str:
@@ -183,6 +200,19 @@ class OrgRepository:
         async with self._engine.raw.begin() as conn:
             result = await conn.execute(
                 update(organizations).where(organizations.c.id == org_id).values(**values)
+            )
+        return result.rowcount > 0
+
+    async def deactivate_org(self, org_id: str) -> bool:
+        """Mark a tenant deleted. Authentication must reject the row afterward."""
+        async with self._engine.raw.begin() as conn:
+            result = await conn.execute(
+                update(organizations)
+                .where(organizations.c.id == org_id)
+                .values(
+                    governance_status=GovernanceStatus.DISABLED.value,
+                    deactivated_at=_now(),
+                )
             )
         return result.rowcount > 0
 
@@ -426,15 +456,11 @@ class OrgRepository:
         and CredentialIssuancePolicy. Tests and migrations may pass
         ``internal_unverified_fixture=True``.
         """
-        import os
 
         from responsibleai.dashboard.config import is_production_environment
+        from responsibleai.environment import effective_environment_name
 
-        env_name = (
-            os.environ.get("WHITEPACT_ENV")
-            or os.environ.get("RAI_ENV")
-            or os.environ.get("ENVIRONMENT", "development")
-        )
+        env_name = effective_environment_name()
         if not accountable_human_user_id:
             internal_unverified_fixture = True
         if is_production_environment(env_name) and internal_unverified_fixture:
@@ -483,9 +509,8 @@ class OrgRepository:
         return key_rec, raw
 
     async def revoke_key(self, key_id: str, org_id: str | None = None) -> bool:
-        where = org_api_keys.c.id == key_id
-        if org_id is not None:
-            where = where & (org_api_keys.c.org_id == org_id)
+        """Revoke one key in the caller scope. None matches only NULL-org keys."""
+        where = (org_api_keys.c.id == key_id) & org_scope(org_api_keys.c.org_id, org_id)
         async with self._engine.raw.begin() as conn:
             resolved_org = await conn.scalar(select(org_api_keys.c.org_id).where(where))
             if resolved_org is not None:
@@ -601,16 +626,20 @@ class OrgRepository:
         if org is not None and org.sso_required:
             raise SSORequiredError(org.id)
 
-        # Update last_used_at (best-effort, fire & forget)
-        try:
-            async with self._engine.raw.begin() as conn:
-                await conn.execute(
-                    update(org_api_keys)
-                    .where(org_api_keys.c.id == row.id)
-                    .values(last_used_at=_now())
-                )
-        except Exception:
-            pass
+        # last_used_at is telemetry, not an authorization input: revocation, expiry and the key
+        # hash are all re-read from the database on every call above. Writing and committing it on
+        # every request cost a database round trip and a commit per authenticated call, so it is
+        # refreshed at most once per interval. Best effort.
+        if _last_used_is_stale(getattr(row, "last_used_at", None)):
+            try:
+                async with self._engine.raw.begin() as conn:
+                    await conn.execute(
+                        update(org_api_keys)
+                        .where(org_api_keys.c.id == row.id)
+                        .values(last_used_at=_now())
+                    )
+            except Exception:
+                pass
 
         return OrgContext(
             key_id=row.id,

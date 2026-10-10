@@ -96,14 +96,11 @@ class A2ATrustGate:
     before actually sending a Task/Message to a remote agent, and don't
     send it if ``result.allowed`` is ``False``.
 
-    Fails open on a trust-check network error or an unknown (never
-    Trust-Index-assessed) remote agent by default, same reasoning as
-    ``TrustCheckResult.passes()`` and the LangChain/LangGraph
-    integrations -- set ``require_known=True`` for a stricter,
-    allow-listing posture. The memory-firewall scan never fails open:
-    a matched injection pattern always blocks, since (unlike an
-    unscored trust check) a positive match is a concrete finding, not
-    an absence of data.
+    Admission follows ``TrustCheckResult.passes()``, which fails closed.
+    A provider error, a stale result, or an unknown remote agent does
+    not allow the outbound call. ``require_known`` does not reopen that
+    path. The memory-firewall scan also blocks a matched injection
+    pattern; that match is a concrete finding, not an absence of data.
     """
 
     def __init__(
@@ -122,9 +119,13 @@ class A2ATrustGate:
     def _trust_reason(self, result: TrustCheckResult) -> str | None:
         if result.passes(min_score=self.min_score, require_known=self.require_known):
             return None
+        if result.error and not result.stale:
+            return "trust lookup unavailable"
+        if result.stale:
+            return "trust assessment is stale"
         if result.known:
             return f"remote agent trust score {result.overall_score} below minimum {self.min_score}"
-        return "remote agent has no Trust Index record and require_known=True"
+        return "remote agent has no Trust Index record"
 
     def check(
         self, remote_agent_name: str, remote_agent_provider: str, message: str

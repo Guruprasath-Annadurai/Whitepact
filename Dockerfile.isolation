@@ -1,0 +1,37 @@
+# Runtime image for isolated tool execution (IsolationBroker -> DockerContainerBackend).
+#
+# The trusted runner (/opt/whitepact/runner.py, mounted read-only at start) imports
+# responsibleai inside the container. The stock python image does not contain it, so an
+# isolated execution with that image can only fail. This image adds WhitePact and nothing
+# else: no web assets, no dashboard extras, no database drivers, no credentials. The
+# container is started with --network=none, a read-only root, all capabilities dropped and
+# an unprivileged UID, so it has no route to the control plane by construction.
+#
+#   docker build -f Dockerfile.isolation -t whitepact-isolated-runtime:local .
+#   export WHITEPACT_ISOLATION_IMAGE=whitepact-isolated-runtime:local
+#
+# Production should reference an immutable digest of an image built in CI, not a tag.
+# The base is the same digest-pinned image the main Dockerfile already uses.
+FROM python:3.12-slim@sha256:7a8b475003c4fe15a2cd4e55e5cfc2f3560bdc9333d624f24cdd6d4340fd7a17 AS builder
+
+WORKDIR /build
+COPY pyproject.toml README.md LICENSE alembic.ini ./
+COPY migrations/ ./migrations/
+COPY src/ ./src/
+RUN pip install --no-cache-dir --prefix=/install .
+
+FROM python:3.12-slim@sha256:7a8b475003c4fe15a2cd4e55e5cfc2f3560bdc9333d624f24cdd6d4340fd7a17 AS runtime
+
+LABEL org.opencontainers.image.title="WhitePact isolated tool runtime"
+LABEL org.opencontainers.image.description="Executes one governed tool with no network and no credentials"
+LABEL org.opencontainers.image.licenses="MIT"
+
+COPY --from=builder /install /usr/local
+
+# No ENTRYPOINT: the backend supplies `python3 /opt/whitepact/runner.py` explicitly, so the
+# caller cannot choose what the container runs. Bytecode is not written to a read-only root.
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+USER 65534:65534
+WORKDIR /workspace

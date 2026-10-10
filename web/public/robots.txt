@@ -3,4 +3,11 @@ Allow: /
 Disallow: /dashboard
 Disallow: /onboarding
 Disallow: /reset-password
-Sitemap: https://whitepact.com/sitemap.xml
+Disallow: /login
+Disallow: /signup
+Disallow: /verify-email
+Disallow: /forgot-password
+Disallow: /accept-invitation
+Disallow: /billing/
+Disallow: /sovereign/workbench
+Sitemap: __WHITEPACT_SITE_ORIGIN__/sitemap.xml
