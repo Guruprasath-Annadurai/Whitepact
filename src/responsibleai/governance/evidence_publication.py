@@ -120,6 +120,17 @@ def _check_org(organization_id: str) -> None:
         raise WitnessPublicationError("organization id is not a safe publication key")
 
 
+def _make_dir(path: Path, mode: int, *, enforce: bool = True) -> None:
+    """Create ``path`` with an explicit mode, independent of the process umask.
+
+    Publication authority is the ability to write into the witness directories, so they must never
+    be group- or world-writable because a service started with ``umask 0`` said so.
+    """
+    path.mkdir(parents=True, exist_ok=True, mode=mode)
+    if enforce:
+        os.chmod(path, mode)
+
+
 def _check_private_mode(path: Path) -> None:
     mode = stat.S_IMODE(path.stat().st_mode)
     if mode & 0o077:
@@ -139,9 +150,9 @@ class FileWitnessKeyStore:
         cls, directory: Path, private_key: Ed25519PrivateKey | None = None
     ) -> FileWitnessKeyStore:
         store = cls(directory)
-        store.private_dir.mkdir(parents=True, exist_ok=True)
-        store.public_dir.mkdir(parents=True, exist_ok=True)
-        os.chmod(store.private_dir, 0o700)
+        _make_dir(directory, 0o755, enforce=False)  # a root the operator may already own
+        _make_dir(store.private_dir, 0o700)
+        _make_dir(store.public_dir, 0o755)
         key = private_key or Ed25519PrivateKey.generate()
         store._install(key)
         return store
@@ -199,7 +210,7 @@ class AppendOnlyWitnessLog:
 
     def __init__(self, directory: Path) -> None:
         self.directory = directory
-        self.directory.mkdir(parents=True, exist_ok=True)
+        _make_dir(self.directory, 0o755, enforce=False)
 
     def _org_dir(self, organization_id: str) -> Path:
         _check_org(organization_id)
@@ -215,7 +226,7 @@ class AppendOnlyWitnessLog:
         if witness.chain_sequence < 1:
             raise WitnessPublicationError("chain sequence must be positive")
         org_dir = self._org_dir(witness.organization_id)
-        org_dir.mkdir(parents=True, exist_ok=True)
+        _make_dir(org_dir, 0o755)
         prior = self.latest(witness.organization_id)
         if prior is not None and witness.chain_sequence <= prior.chain_sequence:
             raise WitnessPublicationError(

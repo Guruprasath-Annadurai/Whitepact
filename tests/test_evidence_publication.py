@@ -273,3 +273,76 @@ def test_real_transport_never_follows_a_redirect() -> None:
         )
         is None
     )
+
+
+def _mode(path) -> int:
+    return stat.S_IMODE(path.stat().st_mode)
+
+
+def test_public_witness_material_never_contains_private_key_bytes(tmp_path) -> None:
+    """The log and public key directory are intentionally world-readable. They must stay public-only."""
+    store = FileWitnessKeyStore.create(tmp_path / "keys")
+    private_raw = (store.private_dir / "current.key").read_bytes()
+    log = AppendOnlyWitnessLog(tmp_path / "log")
+    _publish(store, log, 1, "a" * 64)
+    _publish(store, log, 2, "b" * 64)
+    public_files = [p for p in (tmp_path / "log").rglob("*") if p.is_file()]
+    public_files += [p for p in store.public_dir.rglob("*") if p.is_file()]
+    assert public_files
+    for path in public_files:
+        data = path.read_bytes()
+        assert private_raw not in data, path
+        assert private_raw.hex().encode() not in data, path
+        assert b"private" not in data.lower(), path
+        assert _mode(path) == 0o644, (
+            path
+        )  # published records are read-only to everyone but the owner
+
+
+def test_public_record_fields_are_exactly_the_documented_set(tmp_path) -> None:
+    store = FileWitnessKeyStore.create(tmp_path / "keys")
+    log = AppendOnlyWitnessLog(tmp_path / "log")
+    _publish(store, log, 1, "a" * 64)
+    record = json.loads(next((tmp_path / "log").rglob("1.json")).read_text())
+    assert set(record) == {
+        "organization_id",
+        "chain_sequence",
+        "head_hash",
+        "witnessed_at",
+        "key_id",
+        "public_key_hex",
+        "signature_hex",
+        "previous_publication_hash",
+        "publication_hash",
+    }
+
+
+def test_witness_directories_are_not_writable_by_group_or_other_even_with_umask_zero(
+    tmp_path,
+) -> None:
+    """Publication authority is write access to these directories. umask must not widen it."""
+    previous = os.umask(0)
+    try:
+        store = FileWitnessKeyStore.create(tmp_path / "keys")
+        log = AppendOnlyWitnessLog(tmp_path / "log")
+        _publish(store, log, 1, "a" * 64)
+    finally:
+        os.umask(previous)
+    assert _mode(store.private_dir) == 0o700
+    assert _mode(store.private_dir / "current.key") == 0o600
+    for directory in (
+        tmp_path / "keys" / "public",
+        tmp_path / "log",
+        tmp_path / "log" / "org-a",
+    ):
+        assert _mode(directory) & 0o022 == 0, directory
+    for path in (tmp_path / "log" / "org-a").iterdir():
+        assert _mode(path) & 0o022 == 0, path
+
+
+def test_a_published_sequence_cannot_be_overwritten_in_place(tmp_path) -> None:
+    store = FileWitnessKeyStore.create(tmp_path / "keys")
+    log = AppendOnlyWitnessLog(tmp_path / "log")
+    _publish(store, log, 1, "a" * 64)
+    with pytest.raises(WitnessPublicationError):
+        _publish(store, log, 1, "c" * 64)
