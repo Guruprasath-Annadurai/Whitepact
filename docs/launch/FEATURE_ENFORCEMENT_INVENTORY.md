@@ -2,7 +2,7 @@
 
 Baseline: branch `claude/whitepact-isolation-failclosed-linux-recovery` (PR #180). Re-read the PR for the exact head;
 this file is edited together with the code it describes. Counts were produced by code on 2026-10-10:
-**31 MCP tools, 20 MCP resources, 276 HTTP routes in the dashboard app**, 372 Python modules (83k lines) in
+**30 advertised MCP tools (31 definitions; the 31st, `test.counter.increment`, is a test fixture that is never listed), 20 MCP resources, about 280 HTTP routes in the dashboard app**, 372 Python modules (83k lines) in
 `src/responsibleai`, 391 files under `tests/`.
 
 Status words: **Engineered + tested** (implemented, covered by tests I ran or CI ran; no independent qualification of
