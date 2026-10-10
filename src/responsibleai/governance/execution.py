@@ -318,11 +318,14 @@ class InternalToolExecutor:
         self._nonce_repo = nonce_repo
         self._broker: Any = broker
         if broker is None:
-            # In production or hosted execution, automatically initialize IsolationBroker
             import os
 
-            is_prod = os.environ.get("ENVIRONMENT", "").lower() == "production"
-            if is_prod or os.environ.get("WHITEPACT_ISOLATION_BACKEND"):
+            from responsibleai.isolation.mode import unisolated_execution_allowed
+
+            # Isolation is the default. Same-process execution is reachable only through
+            # an explicit non-production opt-in (see responsibleai.isolation.mode), never
+            # because an environment variable was left unset.
+            if os.environ.get("WHITEPACT_ISOLATION_BACKEND") or not unisolated_execution_allowed():
                 from responsibleai.isolation.broker import IsolationBroker
 
                 self._broker = IsolationBroker()
@@ -339,14 +342,23 @@ class InternalToolExecutor:
         if self._broker is not None:
             return await self._broker.execute(authorization, action)
 
-        import os
+        from responsibleai.isolation.errors import IsolationError
+        from responsibleai.isolation.mode import (
+            UNISOLATED_EXECUTION_ENV,
+            is_production,
+            unisolated_execution_allowed,
+        )
 
-        if os.environ.get("ENVIRONMENT", "").lower() == "production":
-            from responsibleai.isolation.errors import IsolationError
-
+        if is_production():
             raise IsolationError(
                 "Same-process tool execution is strictly forbidden in production. "
                 "An IsolationBroker is mandatory."
+            )
+        if not unisolated_execution_allowed():
+            raise IsolationError(
+                "Same-process tool execution is forbidden: an IsolationBroker is mandatory. "
+                f"Only an explicit non-production {UNISOLATED_EXECUTION_ENV}=1 opt-in may "
+                "bypass isolation."
             )
 
         from responsibleai.governance.synthetic_counter import SYNTHETIC_COUNTER_TOOL

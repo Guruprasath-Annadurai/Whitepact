@@ -14,6 +14,10 @@ os.environ.setdefault("WHITEPACT_HERMETIC_TEST_HOME", _HERMETIC_TEMP_HOME.name)
 os.environ["HOME"] = _HERMETIC_TEMP_HOME.name
 os.environ.setdefault("XDG_DATA_HOME", str(Path(_HERMETIC_TEMP_HOME.name) / ".local" / "share"))
 os.environ.setdefault("XDG_CONFIG_HOME", str(Path(_HERMETIC_TEMP_HOME.name) / ".config"))
+# The suite is local development: it runs tools without Docker. Production-default
+# behaviour (isolation required) is proven by tests/test_isolation_fail_closed_default.py,
+# which removes this opt-in.
+os.environ.setdefault("WHITEPACT_ALLOW_UNISOLATED_EXECUTION", "1")
 os.environ.setdefault("RAI_AUTH_ENABLED", "false")
 os.environ.setdefault("WHITEPACT_AUTH_ENABLED", "false")
 
