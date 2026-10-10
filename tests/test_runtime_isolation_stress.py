@@ -61,6 +61,7 @@ def _enable_containment_probe(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.asyncio
 class TestProductionContainerResourceAttacks:
+    @pytest.mark.usefixtures("real_container_host")
     async def test_cpu_busy_loop_bounded(self):
         """Infinite CPU loop is strictly bounded by wall timeout and CPU shares."""
         backend = DockerContainerBackend()
@@ -85,6 +86,7 @@ while True:
         assert outcome.timed_out is True
         assert outcome.duration_seconds < 3.0  # Finished close to 1.0s timeout
 
+    @pytest.mark.usefixtures("real_container_host")
     async def test_memory_allocation_cap_enforced(self):
         """Allocating beyond memory limit terminates or OOM-kills the process."""
         backend = DockerContainerBackend()
@@ -112,6 +114,7 @@ except MemoryError:
         # Process should either fail with OOM (exit code 137), throw MemoryError, or fail cleanly
         assert not outcome.is_success or "MEMORY_ERROR_CAUGHT" in outcome.stdout
 
+    @pytest.mark.usefixtures("real_container_host")
     async def test_pid_fork_exhaustion_bounded(self):
         """Fork bomb is strictly bounded by pids-limit (e.g. 16 PIDs)."""
         backend = DockerContainerBackend()
@@ -143,6 +146,7 @@ sys.stdout.write(json.dumps({"status": "success", "result": {"created": created}
         # Must be bounded by max_pids (less than 100)
         assert outcome.result_payload["created"] < 50
 
+    @pytest.mark.usefixtures("real_container_host")
     async def test_stdout_and_stderr_flooding_clamped(self):
         """Stdout and stderr floods are clamped to max_output_bytes."""
         backend = DockerContainerBackend()

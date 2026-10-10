@@ -107,6 +107,7 @@ def _make_permit(action: ActionRequest, *, ttl_seconds: float = 60.0) -> Executi
 class TestHostFilesystemCanaries:
     """Empirical proof that host filesystem canaries and adjacent tenant workspaces are strictly inaccessible."""
 
+    @pytest.mark.usefixtures("real_container_host")
     async def test_canaries_blocked_inside_container(self, tmp_path: pathlib.Path):
         # 1. Create synthetic host-side canaries
         home_canary_dir = pathlib.Path(os.environ.get("HOME", "/tmp")) / "canary_test"
@@ -204,6 +205,7 @@ sys.stdout.write(json.dumps({{"status": "success", "result": results}}))
 class TestProcessProcPtraceIsolation:
     """Empirical proof of process boundary, /proc protection, ptrace, and inherited FDs."""
 
+    @pytest.mark.usefixtures("real_container_host")
     async def test_control_plane_proc_and_fds(self):
         control_plane_pid = os.getpid()
         probe_script = f"""
@@ -286,6 +288,7 @@ sys.stdout.write(json.dumps({{
 class TestControlSocketsAndCredentials:
     """Empirical proof that daemon sockets, kubernetes tokens, ssh agents, and cloud credentials are absent."""
 
+    @pytest.mark.usefixtures("real_container_host")
     async def test_control_sockets_and_cloud_creds_absent(self):
         probe_script = """
 import sys, os, glob, json
@@ -340,6 +343,7 @@ sys.stdout.write(json.dumps({
 class TestProcessTreeTerminationAndCleanup:
     """Empirical proof that hostile trees (children, grandchildren, double-fork daemons) are killed cleanly."""
 
+    @pytest.mark.usefixtures("real_container_host")
     async def test_hostile_double_fork_and_children_terminated_on_timeout(self):
         hostile_script = """
 import sys, os, time, signal
@@ -385,6 +389,7 @@ while True:
         check = os.popen(f"docker ps -aq --filter name={container_prefix}").read().strip()
         assert check == "", f"Container {container_prefix} lingered after timeout"
 
+    @pytest.mark.usefixtures("real_container_host")
     async def test_cross_execution_cancellation_isolation(self):
         """Cancelling execution A must NOT affect concurrent execution B."""
         backend = DockerContainerBackend()
@@ -432,6 +437,7 @@ sys.stdout.write(json.dumps({"status": "success", "result": "B_COMPLETED"}))
 class TestResourceBoundariesFDAndWorkspace:
     """Empirical proof of FD limits and workspace quota analysis."""
 
+    @pytest.mark.usefixtures("real_container_host")
     async def test_fd_exhaustion_is_bounded(self):
         fd_script = """
 import sys, os, json
@@ -546,6 +552,7 @@ class TestEvidenceBoundaryIntegration:
 class TestRealConcurrencyClosure:
     """Run concurrent execution batch with multiple tenants, principals, timeouts, and cancellations."""
 
+    @pytest.mark.usefixtures("real_container_host")
     async def test_concurrent_multi_tenant_batch(self):
         backend = DockerContainerBackend()
 

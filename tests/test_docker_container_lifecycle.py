@@ -24,9 +24,8 @@ from responsibleai.isolation.models import (
     IsolationProfile,
     ResourceLimits,
 )
-from tests.docker_runtime import DOCKER_UNAVAILABLE_REASON, docker_available
 
-pytestmark = pytest.mark.skipif(not docker_available(), reason=DOCKER_UNAVAILABLE_REASON)
+pytestmark = pytest.mark.usefixtures("real_container_host")
 
 
 @pytest.fixture(autouse=True)

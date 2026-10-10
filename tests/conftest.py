@@ -95,6 +95,17 @@ def clean_audit_writes_and_hermetic_state():
 
 
 @pytest.fixture
+def real_container_host() -> None:
+    """Require a host that can enforce container isolation (see tests/docker_runtime.py).
+
+    Non-Linux hosts record a QUALIFICATION_SKIP; Linux fails if a required tool is missing.
+    """
+    from tests.docker_runtime import require_container_isolation_host
+
+    require_container_isolation_host()
+
+
+@pytest.fixture
 def seed_runtime_authority():
     """Seed explicit test-only root, consent, and delegation records."""
 
