@@ -21,6 +21,7 @@ from __future__ import annotations
 import os
 
 UNISOLATED_EXECUTION_ENV = "WHITEPACT_ALLOW_UNISOLATED_EXECUTION"
+SYNTHETIC_HOST_TOOL_ENV = "WHITEPACT_ALLOW_SYNTHETIC_HOST_TOOL"
 
 
 def is_production() -> bool:
@@ -32,3 +33,21 @@ def unisolated_execution_allowed() -> bool:
     if is_production():
         return False
     return os.environ.get(UNISOLATED_EXECUTION_ENV) == "1"
+
+
+_PRODUCTION_NAMES = {"production", "prod"}
+
+
+def synthetic_host_tool_allowed() -> bool:
+    """True only for the test-only database fixture, in an explicit non-production setup.
+
+    ``test.counter.increment`` writes to the server process's own database engine. A
+    container started with ``--network=none`` and no credentials cannot do that, by design,
+    so this one fixture may run host-side. It is not a general escape hatch: real tools
+    still require isolation, the fixture refuses production itself, and every environment
+    variable that names the deployment must be non-production as well as this switch set.
+    """
+    for name in ("ENVIRONMENT", "WHITEPACT_ENV", "RAI_ENVIRONMENT"):
+        if os.environ.get(name, "").strip().lower() in _PRODUCTION_NAMES:
+            return False
+    return os.environ.get(SYNTHETIC_HOST_TOOL_ENV) == "1"

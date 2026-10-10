@@ -339,7 +339,16 @@ class InternalToolExecutor:
 
         await admit_execution(authorization, action, self._nonce_repo)
 
-        if self._broker is not None:
+        from responsibleai.governance.synthetic_counter import SYNTHETIC_COUNTER_TOOL
+        from responsibleai.isolation.mode import synthetic_host_tool_allowed
+
+        # The test-only database fixture cannot run in a network-less container. It is the
+        # single tool allowed host-side, and only with its own explicit non-production switch.
+        host_fixture = (
+            action.action_type == SYNTHETIC_COUNTER_TOOL and synthetic_host_tool_allowed()
+        )
+
+        if self._broker is not None and not host_fixture:
             return await self._broker.execute(authorization, action)
 
         from responsibleai.isolation.errors import IsolationError
@@ -354,14 +363,13 @@ class InternalToolExecutor:
                 "Same-process tool execution is strictly forbidden in production. "
                 "An IsolationBroker is mandatory."
             )
-        if not unisolated_execution_allowed():
+        if not host_fixture and not unisolated_execution_allowed():
             raise IsolationError(
                 "Same-process tool execution is forbidden: an IsolationBroker is mandatory. "
                 f"Only an explicit non-production {UNISOLATED_EXECUTION_ENV}=1 opt-in may "
                 "bypass isolation."
             )
 
-        from responsibleai.governance.synthetic_counter import SYNTHETIC_COUNTER_TOOL
         from responsibleai.mcp.tools import dispatch_tool
 
         dispatch_args = dict(action.arguments)

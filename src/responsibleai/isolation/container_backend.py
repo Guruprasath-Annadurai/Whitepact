@@ -73,6 +73,9 @@ if __name__ == "__main__":
     asyncio.run(main())
 """
 
+ISOLATION_IMAGE_ENV = "WHITEPACT_ISOLATION_IMAGE"
+DEFAULT_ISOLATION_IMAGE = "python:3.11-slim"
+
 # Caller workspace files must not be able to occupy the process entrypoint.
 _RESERVED_RUNNER_NAME = "runner.py"
 _TRUSTED_RUNNER_MOUNT = "/opt/whitepact/runner.py"
@@ -108,16 +111,35 @@ def is_reserved_runner_path(rel_path: object) -> bool:
     return Path(normalized).name == _RESERVED_RUNNER_NAME
 
 
+def _runner_error(stdout: str) -> str | None:
+    """The runner's own error message, if it wrote one; bounded and never raises."""
+    try:
+        parsed = json.loads(stdout)
+    except ValueError:
+        return None
+    if isinstance(parsed, dict) and parsed.get("status") == "error":
+        message = str(parsed.get("error", "")).strip()
+        if message:
+            return message[:500]
+    return None
+
+
 class DockerContainerBackend(IsolationBackend):
     """Docker container execution backend providing OCI containment."""
 
     def __init__(
         self,
         *,
-        image_name: str = "python:3.11-slim",
+        image_name: str | None = None,
         docker_cmd: str | None = None,
     ) -> None:
-        self.image_name = image_name
+        # The image must contain WhitePact (see Dockerfile.isolation): the trusted runner
+        # imports responsibleai inside the container. The stock python image does not, so
+        # it can only ever fail. Operators set WHITEPACT_ISOLATION_IMAGE to an approved,
+        # digest-pinned image; an explicit argument wins.
+        self.image_name = (
+            image_name or os.environ.get(ISOLATION_IMAGE_ENV) or DEFAULT_ISOLATION_IMAGE
+        )
         self.docker_cmd = docker_cmd or shutil.which("docker") or "docker"
         # Tests that measure cgroup behavior set this on the instance.
         # Request workspace files cannot set it. IsolationBroker never does.
@@ -448,7 +470,10 @@ class DockerContainerBackend(IsolationBackend):
                         violation = f"Failed to parse runner output: {ex}"
                         exit_code = 1
                 else:
-                    violation = f"Container exited with code {exit_code}: {stderr_str.strip()}"
+                    # The trusted runner reports its own failure as JSON on stdout, so stderr
+                    # alone is often just Docker's pull chatter. Prefer the runner's error.
+                    detail = _runner_error(stdout_str) or stderr_str.strip()
+                    violation = f"Container exited with code {exit_code}: {detail}"
 
                 return ExecutionOutcome(
                     action_id=request.action_id,
