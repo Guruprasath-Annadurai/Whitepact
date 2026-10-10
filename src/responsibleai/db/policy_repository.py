@@ -351,8 +351,23 @@ class PolicyRepository:
             for row in rows
         ]
 
-    async def verify_history(self, org_id: str) -> bool:
-        """Recompute the org's history chain. False if any row was altered, removed or reordered."""
+    async def verify_history(
+        self,
+        org_id: str,
+        *,
+        expected_version: int | None = None,
+        expected_head_digest: str | None = None,
+        check_persisted_version: bool = True,
+    ) -> bool:
+        """Recompute the org's history chain. False if any row was altered, removed or reordered.
+
+        Detects:
+        - Entry tampering (rules_json, rules_digest, prev_digest, actor, timestamp).
+        - Sequence gaps and reordering (enforcing strict consecutive 1..N versions).
+        - Tail truncation or total tenant history deletion (cross-checking against persisted
+          version counter in governance_policy_versions when check_persisted_version is True).
+        - Discrepancies against trusted retained checkpoints (expected_version, expected_head_digest).
+        """
         async with self._engine.raw.connect() as conn:
             rows = (
                 await conn.execute(
@@ -361,8 +376,19 @@ class PolicyRepository:
                     .order_by(governance_policy_history.c.version.asc())
                 )
             ).fetchall()
+
+        if check_persisted_version:
+            persisted_version = await self.get_policy_version(org_id)
+            if len(rows) != persisted_version:
+                return False
+
+        if expected_version is not None and len(rows) != expected_version:
+            return False
+
         prev = _HISTORY_GENESIS
-        for row in rows:
+        for expected_seq, row in enumerate(rows, start=1):
+            if row.version != expected_seq:
+                return False
             if hashlib.sha256(row.rules_json.encode("utf-8")).hexdigest() != row.rules_digest:
                 return False
             actor = PolicyActor(row.actor_type, row.actor_id)
@@ -379,4 +405,11 @@ class PolicyRepository:
             if row.prev_entry_digest != prev or row.entry_digest != expected:
                 return False
             prev = row.entry_digest
+
+        if expected_head_digest is not None:
+            if not rows and expected_head_digest != _HISTORY_GENESIS:
+                return False
+            if rows and rows[-1].entry_digest != expected_head_digest:
+                return False
+
         return True

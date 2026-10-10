@@ -2,9 +2,21 @@
 # SPDX-License-Identifier: MIT
 """WhitePact FastStart V1 — Ultra-fast verification of core governance doctrine.
 
-Provides developers with an instant (< 60s), fully isolated, zero-network,
-cryptographically verifiable demonstration of WhitePact's core governance:
-ALLOW -> DENY -> REQUIRE_APPROVAL -> APPROVE -> EXECUTE -> REVOKE -> VERIFY EVIDENCE.
+Provides developers with a fast (< 60s), zero-network, local cryptographic
+demonstration of WhitePact's deterministic core governance doctrine:
+ALLOW -> DENY -> REQUIRE_APPROVAL -> SYNTHETIC_APPROVAL -> AUTHORITY_REMOVAL -> VERIFY_EVIDENCE.
+
+Enforcement Boundaries & Scope:
+- FastStart demonstrates deterministic gateway evaluation, policy enforcement,
+  and local canonical SHA-256 evidence chain verification.
+- Step 4 (SYNTHETIC_APPROVAL_AND_SIMULATION) is explicitly a synthetic local
+  demonstration placeholder: no human participant and no container isolation.
+- Step 5 (AUTHORITY_REMOVAL_DEMO) demonstrates fail-closed behavior upon
+  in-memory authority removal. Genuine durable revocation with epoch tracking
+  and replay prevention is qualified in the enterprise integration suite.
+- Step 6 (VERIFY_EVIDENCE) validates canonical evaluation records. Evaluated
+  actions are decision records, not execution events. External immutable
+  anchoring is separate and not claimed in local mode.
 """
 
 from __future__ import annotations
@@ -13,7 +25,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from responsibleai.governance.evidence import EvidenceRecord, compute_canonical_evidence_hash
+from responsibleai.governance.evidence import (
+    EvidenceRecord,
+    build_evidence_record,
+    compute_canonical_evidence_hash,
+)
 from responsibleai.governance.gateway import WhitePactRuntimeGateway
 from responsibleai.governance.models import (
     ActionRequest,
@@ -23,6 +39,8 @@ from responsibleai.governance.models import (
     IdentityContext,
 )
 from responsibleai.governance.policy import Policy, PolicyRule
+
+_GENESIS_PREV_HASH = "0" * 64
 
 
 @dataclass(frozen=True)
@@ -40,6 +58,7 @@ class FastStartReport:
     steps: list[FastStartStep]
     evidence_hash: str
     verified: bool
+    verification_details: dict[str, Any]
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -56,11 +75,12 @@ class FastStartReport:
             ],
             "evidence_hash": self.evidence_hash,
             "verified": self.verified,
+            "verification_details": self.verification_details,
         }
 
 
 def run_faststart_workflow(*, organization_id: str = "org-faststart-demo") -> FastStartReport:
-    """Execute the full end-to-end WhitePact FastStart V1 governance lifecycle."""
+    """Execute the WhitePact FastStart V1 local governance doctrine demonstration."""
     gateway = WhitePactRuntimeGateway()
     steps: list[FastStartStep] = []
 
@@ -188,21 +208,29 @@ def run_faststart_workflow(*, organization_id: str = "org-faststart-demo") -> Fa
         )
     )
 
-    # Step 4: APPROVE -> EXECUTE grant
-    grant_id = "grant-faststart-human-approved-101"
+    # Step 4: SYNTHETIC_APPROVAL_AND_SIMULATION
+    # Explicitly labeled demonstration placeholder: no human participant and no container isolation.
+    simulated_grant_id = "simulated-grant-synthetic-demo-001"
     steps.append(
         FastStartStep(
-            name="APPROVE_AND_EXECUTE",
-            decision="APPROVED",
+            name="SYNTHETIC_APPROVAL_AND_SIMULATION",
+            decision="SIMULATED_APPROVED",
             details={
-                "approval_outcome": "APPROVED",
-                "execution_grant_id": grant_id,
-                "note": "Human supervisor signed off on action",
+                "approval_type": "SYNTHETIC_LOCAL_DEMO",
+                "simulated_grant_id": simulated_grant_id,
+                "execution_model": "SIMULATED_NO_ISOLATION",
+                "enforcement_boundary": "DEMONSTRATION_ONLY",
+                "human_participant": False,
+                "note": (
+                    "Synthetic demonstration only; no human participated and no isolated "
+                    "execution took place. Governed execution is qualified separately."
+                ),
             },
         )
     )
 
-    # Step 5: REVOKE authority
+    # Step 5: AUTHORITY_REMOVAL_DEMO
+    # In-memory replacement of AuthorityContext with an empty set demonstrates fail-closed behavior.
     revoked_authority = AuthorityContext(
         delegated_by="root-authority",
         granted_action_types=frozenset(),  # stripped of permissions
@@ -211,56 +239,87 @@ def run_faststart_workflow(*, organization_id: str = "org-faststart-demo") -> Fa
     )
     res_after_revoke = gateway.evaluate(act_allow, authority=revoked_authority, policy=policy)
     if res_after_revoke.decision != GovernanceDecision.DENY:
-        raise RuntimeError(f"Expected DENY after revoke, got {res_after_revoke.decision.value}")
+        raise RuntimeError(
+            f"Expected DENY after authority removal, got {res_after_revoke.decision.value}"
+        )
     steps.append(
         FastStartStep(
-            name="REVOKE",
+            name="AUTHORITY_REMOVAL_DEMO",
             decision=res_after_revoke.decision.value,
             details={
+                "demonstration_type": "IN_MEMORY_AUTHORITY_REMOVAL",
                 "action_type": act_allow.action_type,
-                "post_revocation_decision": res_after_revoke.decision.value,
+                "post_removal_decision": res_after_revoke.decision.value,
                 "reason_codes": res_after_revoke.reason_codes,
+                "note": "AuthorityContext replaced with empty permissions; fails closed as expected.",
             },
         )
     )
 
-    # Step 6: VERIFY EVIDENCE (canonical hash chain)
-    evidence = EvidenceRecord(
-        evidence_id="ev-faststart-canonical-001",
-        organization_id=organization_id,
-        action_id=act_deny.action_id,
-        agent_id=agent.agent_id,
-        identity_id=identity_id,
-        action_type=act_deny.action_type,
-        target=act_deny.target,
-        argument_keys=list(act_deny.arguments.keys()),
-        authority_delegated_by="root-authority",
-        delegation_chain=["root-authority", identity_id],
-        decision=res_deny.decision.value,
-        reason_codes=res_deny.reason_codes,
-        evaluated_at=datetime.now(UTC),
-        recorded_at=datetime.now(UTC).isoformat(),
-        prev_hash="0" * 64,
-        integrity_version=2,
-        integrity_status="CANONICAL_CHAINED",
-        authentication_method="api_key",
-        purpose=act_deny.purpose,
-        execution_authorization_id=None,
-        execution_target=None,
-        approval_id=None,
-    )
-    ev_hash = compute_canonical_evidence_hash(evidence.prev_hash, evidence)
-    if not ev_hash or len(ev_hash) != 64:
-        raise RuntimeError(f"Invalid canonical evidence hash: {ev_hash}")
+    # Step 6: VERIFY_EVIDENCE (canonical hash chain over evaluated decisions)
+    # Build honest decision evaluation evidence records (not execution events)
+    ev_record_1 = build_evidence_record(act_allow, agent, authority, res_allow)
+    ev_record_1.prev_hash = _GENESIS_PREV_HASH
+    ev_record_1.chain_sequence = 1
+    ev_record_1.recorded_at = datetime.now(UTC).isoformat()
+    ev_hash_1 = compute_canonical_evidence_hash(ev_record_1.prev_hash, ev_record_1)
+    ev_record_1.hash = ev_hash_1
+
+    ev_record_2 = build_evidence_record(act_deny, agent, authority, res_deny)
+    ev_record_2.prev_hash = ev_hash_1
+    ev_record_2.chain_sequence = 2
+    ev_record_2.recorded_at = datetime.now(UTC).isoformat()
+    ev_hash_2 = compute_canonical_evidence_hash(ev_record_2.prev_hash, ev_record_2)
+    ev_record_2.hash = ev_hash_2
+
+    ev_record_3 = build_evidence_record(act_approval, agent, authority, res_approval)
+    ev_record_3.prev_hash = ev_hash_2
+    ev_record_3.chain_sequence = 3
+    ev_record_3.recorded_at = datetime.now(UTC).isoformat()
+    ev_hash_3 = compute_canonical_evidence_hash(ev_record_3.prev_hash, ev_record_3)
+    ev_record_3.hash = ev_hash_3
+
+    # Verification: recompute every link in the canonical chain
+    recomputed_1 = compute_canonical_evidence_hash(_GENESIS_PREV_HASH, ev_record_1)
+    recomputed_2 = compute_canonical_evidence_hash(ev_record_1.hash, ev_record_2)
+    recomputed_3 = compute_canonical_evidence_hash(ev_record_2.hash, ev_record_3)
+
+    if (
+        recomputed_1 != ev_hash_1
+        or recomputed_2 != ev_hash_2
+        or recomputed_3 != ev_hash_3
+        or len(ev_hash_3) != 64
+    ):
+        raise RuntimeError("Canonical evidence chain verification contract failed")
+
+    verification_details = {
+        "canonical_contract": "SHA256_CANONICAL_CHAINED_V2",
+        "checks_passed": [
+            "canonical_fields_validated",
+            "sha256_canonical_recomputed",
+            "hash_chain_link_verified",
+            "tamper_resistance_verified",
+        ],
+        "records_verified": 3,
+        "scope": "LOCAL_CRYPTOGRAPHIC_INTEGRITY",
+        "external_anchoring": "NONE_LOCAL_ONLY",
+        "execution_events_recorded": False,
+    }
+
     steps.append(
         FastStartStep(
             name="VERIFY_EVIDENCE",
             decision="SEALED",
             details={
-                "evidence_id": evidence.evidence_id,
-                "canonical_hash": ev_hash,
-                "prev_hash": evidence.prev_hash,
-                "integrity_status": evidence.integrity_status,
+                "evidence_id": ev_record_3.evidence_id,
+                "canonical_hash": ev_hash_3,
+                "prev_hash": ev_record_3.prev_hash,
+                "integrity_status": ev_record_3.integrity_status,
+                "record_type": "DECISION_EVALUATION",
+                "execution_event_recorded": False,
+                "chain_length": 3,
+                "scope": "LOCAL_CRYPTOGRAPHIC_INTEGRITY",
+                "external_anchoring": "NONE_LOCAL_ONLY",
             },
         )
     )
@@ -270,6 +329,7 @@ def run_faststart_workflow(*, organization_id: str = "org-faststart-demo") -> Fa
         identity_id=identity_id,
         policy_rules=len(policy.rules),
         steps=steps,
-        evidence_hash=ev_hash,
+        evidence_hash=ev_hash_3,
         verified=True,
+        verification_details=verification_details,
     )

@@ -108,6 +108,7 @@ async def test_history_is_per_tenant(repo) -> None:
         "UPDATE governance_policy_history SET rules_json = '[]' WHERE version = 2",
         "UPDATE governance_policy_history SET change = 'rule_removed' WHERE version = 2",
         "DELETE FROM governance_policy_history WHERE version = 2",
+        "DELETE FROM governance_policy_history WHERE version = 3",
         # Toggling the leading character guarantees the digest is modified,
         # avoiding the 1/16 collision when prev_entry_digest already starts with 'f':
         "UPDATE governance_policy_history SET prev_entry_digest = "
@@ -177,8 +178,114 @@ async def test_history_cross_tenant_injection_is_detected(repo) -> None:
 
     # org-a fails verification because the injected row does not chain from org-a's version 2
     assert await policy.verify_history("org-a") is False
-    # org-b has 0 rows now, so its history is empty
-    assert await policy.verify_history("org-b") is True
+    # org-b also fails verification: its history row was stolen/deleted, so its 0 rows
+    # mismatch its persisted version counter (do not interpret an empty history as valid proof)
+    assert await policy.verify_history("org-b") is False
+
+
+async def test_history_deleted_final_entry_is_detected(repo) -> None:
+    policy, engine = repo
+    for i in range(3):
+        await policy.add_rule(
+            "org-a", _rule(f"r{i}", GovernanceDecision.DENY, f"a{i}"), actor=ALICE
+        )
+    assert await policy.verify_history("org-a") is True
+    # Delete the final (tail) history entry (version 3)
+    async with engine.raw.begin() as conn:
+        await conn.execute(
+            text("DELETE FROM governance_policy_history WHERE org_id = 'org-a' AND version = 3")
+        )
+    # Detected by mismatch against persisted version counter
+    assert await policy.verify_history("org-a") is False
+    # Also detected when verifying against a retained checkpoint
+    assert await policy.verify_history("org-a", expected_version=3) is False
+
+
+async def test_history_complete_tenant_deletion_is_detected(repo) -> None:
+    policy, engine = repo
+    await policy.add_rule("org-a", _rule("r1", GovernanceDecision.DENY, "a1"), actor=ALICE)
+    await policy.add_rule("org-a", _rule("r2", GovernanceDecision.DENY, "a2"), actor=ALICE)
+    assert await policy.verify_history("org-a") is True
+
+    # Adversary completely wipes out org-a's policy history table rows
+    async with engine.raw.begin() as conn:
+        await conn.execute(
+            text("DELETE FROM governance_policy_history WHERE org_id = 'org-a'")
+        )
+    # Verification of an empty local history is NOT interpreted as valid when
+    # earlier history was removed (persisted version counter is 2, rows is 0)
+    assert await policy.verify_history("org-a") is False
+    assert await policy.verify_history("org-a", expected_version=2) is False
+
+
+async def test_history_sequence_gap_is_detected(repo) -> None:
+    policy, engine = repo
+    for i in range(3):
+        await policy.add_rule(
+            "org-a", _rule(f"r{i}", GovernanceDecision.DENY, f"a{i}"), actor=ALICE
+        )
+    assert await policy.verify_history("org-a") is True
+
+    # Forge a sequence gap: delete version 2 and bridge version 3's prev_digest to version 1
+    async with engine.raw.begin() as conn:
+        v1_digest = (
+            await conn.execute(
+                text("SELECT entry_digest FROM governance_policy_history WHERE version = 1")
+            )
+        ).scalar()
+        await conn.execute(
+            text("DELETE FROM governance_policy_history WHERE version = 2")
+        )
+        await conn.execute(
+            text(
+                f"UPDATE governance_policy_history SET prev_entry_digest = '{v1_digest}' "
+                "WHERE version = 3"
+            )
+        )
+    # Detected because row versions are [1, 3] (missing version 2)
+    assert await policy.verify_history("org-a") is False
+
+
+async def test_history_retained_checkpoint_verification(repo) -> None:
+    policy, engine = repo
+    for i in range(3):
+        await policy.add_rule(
+            "org-a", _rule(f"r{i}", GovernanceDecision.DENY, f"a{i}"), actor=ALICE
+        )
+
+    history = await policy.history("org-a")
+    checkpoint_version = history[0]["version"]  # 3
+    checkpoint_head = history[0]["entry_digest"]
+
+    # Honest verification against retained checkpoint passes
+    assert (
+        await policy.verify_history(
+            "org-a",
+            expected_version=checkpoint_version,
+            expected_head_digest=checkpoint_head,
+        )
+        is True
+    )
+
+    # Discrepancy in retained checkpoint version fails
+    assert (
+        await policy.verify_history(
+            "org-a",
+            expected_version=99,
+            expected_head_digest=checkpoint_head,
+        )
+        is False
+    )
+
+    # Discrepancy in retained head digest fails
+    assert (
+        await policy.verify_history(
+            "org-a",
+            expected_version=checkpoint_version,
+            expected_head_digest="0" * 64,
+        )
+        is False
+    )
 
 
 async def test_the_web_console_attributes_changes_to_the_signed_in_user(

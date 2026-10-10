@@ -163,10 +163,10 @@ def info_cmd() -> None:
 @click.option("--org", "org_id", default="org-faststart-demo", help="Test organization identifier.")
 @click.option("--json", "json_output", is_flag=True, help="Print machine-readable JSON output.")
 def faststart_cmd(org_id: str, json_output: bool) -> None:
-    """Run WhitePact FastStart V1 — instant verification of core governance doctrine.
+    """Run WhitePact FastStart V1 — local demonstration of core governance doctrine.
 
     Demonstrates:
-    ALLOW -> DENY -> REQUIRE_APPROVAL -> APPROVE -> EXECUTE -> REVOKE -> VERIFY EVIDENCE
+    ALLOW -> DENY -> REQUIRE_APPROVAL -> SYNTHETIC_APPROVAL -> AUTHORITY_REMOVAL -> VERIFY_EVIDENCE
     within seconds on any standard environment without external server or database dependencies.
     """
     from whitepact.faststart import run_faststart_workflow
@@ -192,7 +192,10 @@ def faststart_cmd(org_id: str, json_output: bool) -> None:
             click.echo(f"    - {k}: {v}")
     click.echo("-----------------------------------------------------------------")
     click.echo(f"Canonical Evidence Hash: {report.evidence_hash}")
-    click.echo("Result: VERIFIED (All WhitePact governance invariants preserved)")
+    click.echo("Result: VERIFIED (Local cryptographic canonical chain integrity)")
+    click.echo(
+        "Note: Step 4 is a synthetic demo. Protected execution with container isolation is qualified in tests."
+    )
     click.echo("=================================================================")
 
 

@@ -75,7 +75,7 @@ and a live dashboard — that covers the full governance lifecycle:
 ## Install
 
 ```bash
-# FastStart V1: ultra-fast core governance CLI (cold ~5s, warm ~0.3s)
+# FastStart V1: lightweight core governance CLI demonstration (warm ~0.4s; cold install network-bounded)
 pip install rai-governance-platform
 whitepact faststart
 
@@ -103,21 +103,24 @@ unless PyPI documents that distribution).
 
 ---
 
-## WhitePact FastStart V1 (< 60s first protected action)
+## WhitePact FastStart V1 (Local Doctrine Demonstration)
 
-Verify WhitePact's core doctrine and security lifecycle instantly on any standard Python environment without needing external databases or servers:
+Demonstrate WhitePact's deterministic policy evaluation and canonical evidence hashing locally without external database or server dependencies:
 
 ```bash
-# 1. Install core
+# 1. Install core distribution
 pip install rai-governance-platform
 
-# 2. Run instant end-to-end governance verification
+# 2. Run local governance doctrine verification
 whitepact faststart
 ```
 
-Executes the full enforceable lifecycle:
-`ALLOW -> DENY -> REQUIRE_APPROVAL -> APPROVE -> EXECUTE -> REVOKE -> VERIFY EVIDENCE`
-with cryptographic hash-chain sealing.
+Demonstrates the core deterministic doctrine:
+`ALLOW -> DENY -> REQUIRE_APPROVAL -> SYNTHETIC_APPROVAL -> AUTHORITY_REMOVAL -> VERIFY_EVIDENCE`
+with canonical SHA-256 evidence chain verification.
+
+> [!NOTE]
+> FastStart V1 is a lightweight local demonstration of deterministic gateway policy evaluation and evidence hashing. Step 4 is a synthetic approval demonstration without human participants or isolated container dispatch. Governed execution with OS-level container isolation, epoch-bound execution permits, and durable multi-tenant replication is qualified in the integration test suite.
 
 ---
 
