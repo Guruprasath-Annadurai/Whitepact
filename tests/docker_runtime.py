@@ -76,3 +76,28 @@ def require_container_isolation_host() -> None:
         require_linux_tools(
             "setfacl", purpose="POSIX ACL grant of the execution workspace to container UID 65534"
         )
+
+
+_UID_MAPPING_PROBE: list[bool] = []
+
+
+def host_can_map_container_uid() -> bool:
+    """True when this host can really grant container UID 65534 workspace access.
+
+    A capability probe, not a platform check: Linux with setfacl or root returns True.
+    """
+    if _UID_MAPPING_PROBE:
+        return _UID_MAPPING_PROBE[0]
+    from responsibleai.isolation.errors import IsolationFilesystemPermissionError
+    from responsibleai.isolation.filesystem import EphemeralWorkspace
+
+    supported = True
+    if os.geteuid() != 0:
+        try:
+            with EphemeralWorkspace("probe", "uidmap") as workspace:
+                workspace.populate({"f.txt": "x"})
+                workspace.prepare_for_container()
+        except IsolationFilesystemPermissionError:
+            supported = False
+    _UID_MAPPING_PROBE.append(supported)
+    return supported

@@ -110,6 +110,26 @@ def real_container_host() -> None:
 
 
 @pytest.fixture
+def portable_workspace_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
+    """For UNIT tests that mock the container subprocess: stub only host UID mapping.
+
+    Where the host really can grant container UID 65534 access, nothing is stubbed and the
+    production mapping runs. Where it cannot (e.g. macOS), only that host-specific step is
+    replaced so the test can still exercise result handling. The mocked subprocess means
+    such a test is NOT evidence of isolation; real container tests use real_container_host.
+    """
+    from tests.docker_runtime import host_can_map_container_uid
+
+    if host_can_map_container_uid():
+        return
+    from responsibleai.isolation.filesystem import EphemeralWorkspace
+
+    monkeypatch.setattr(
+        EphemeralWorkspace, "prepare_for_container", lambda self, *args, **kwargs: None
+    )
+
+
+@pytest.fixture
 def seed_runtime_authority():
     """Seed explicit test-only root, consent, and delegation records."""
 

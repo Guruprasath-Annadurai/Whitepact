@@ -734,6 +734,7 @@ async def test_remove_containers_uninterruptible_runs_in_thread(
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("portable_workspace_mapping")
 async def test_execute_invalid_json_stdout_is_violation(monkeypatch: pytest.MonkeyPatch) -> None:
     backend = DockerContainerBackend(docker_cmd="docker")
     monkeypatch.setattr(backend, "is_available", lambda: True)
@@ -2152,6 +2153,7 @@ def test_remove_containers_stable_window_elapsed(monkeypatch: pytest.MonkeyPatch
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("portable_workspace_mapping")
 async def test_container_execute_reads_cidfile_for_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
     from responsibleai.isolation.models import IsolatedExecutionRequest
 

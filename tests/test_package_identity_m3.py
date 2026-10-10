@@ -4,10 +4,12 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 import yaml
 
 import responsibleai
@@ -32,14 +34,31 @@ def test_helm_chart_app_version_aligned() -> None:
     assert chart["appVersion"] == responsibleai.__version__
 
 
+def _build_wheel(wheel_dir: Path) -> None:
+    """Build the wheel with pip, or uv when the interpreter has no pip (uv-managed venvs).
+
+    A mandatory packaging check must never be skipped silently, so a host with neither
+    tool fails with an explicit message instead.
+    """
+    has_pip = (
+        subprocess.run(
+            [sys.executable, "-m", "pip", "--version"], capture_output=True, check=False
+        ).returncode
+        == 0
+    )
+    if has_pip:
+        command = [sys.executable, "-m", "pip", "wheel", str(ROOT), "-w", str(wheel_dir), "-q"]
+    elif shutil.which("uv"):
+        command = ["uv", "build", "--wheel", "--out-dir", str(wheel_dir), str(ROOT)]
+    else:
+        pytest.fail("Cannot build the wheel: this interpreter has no pip and uv is not on PATH.")
+    subprocess.run(command, check=True, cwd=ROOT)
+
+
 def test_built_wheel_installs_in_isolated_venv(tmp_path: Path) -> None:
     wheel_dir = tmp_path / "wheels"
     wheel_dir.mkdir()
-    subprocess.run(
-        [sys.executable, "-m", "pip", "wheel", str(ROOT), "-w", str(wheel_dir), "-q"],
-        check=True,
-        cwd=ROOT,
-    )
+    _build_wheel(wheel_dir)
     wheels = list(wheel_dir.glob("rai_governance_platform-*.whl"))
     assert wheels, "expected rai_governance_platform wheel artifact"
     venv = tmp_path / "venv"

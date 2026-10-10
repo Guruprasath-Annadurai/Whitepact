@@ -960,6 +960,7 @@ def test_remove_containers_tolerates_rm_errors(monkeypatch: pytest.MonkeyPatch) 
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("portable_workspace_mapping")
 async def test_execute_mock_success_path(monkeypatch: pytest.MonkeyPatch) -> None:
     backend = DockerContainerBackend(docker_cmd="docker")
     monkeypatch.setattr(backend, "is_available", lambda: True)
@@ -995,6 +996,7 @@ async def test_execute_mock_success_path(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("portable_workspace_mapping")
 async def test_execute_mock_runner_error_status(monkeypatch: pytest.MonkeyPatch) -> None:
     backend = DockerContainerBackend(docker_cmd="docker")
     monkeypatch.setattr(backend, "is_available", lambda: True)
@@ -1025,6 +1027,7 @@ async def test_execute_mock_runner_error_status(monkeypatch: pytest.MonkeyPatch)
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("portable_workspace_mapping")
 async def test_execute_mock_nonzero_exit(monkeypatch: pytest.MonkeyPatch) -> None:
     backend = DockerContainerBackend(docker_cmd="docker")
     monkeypatch.setattr(backend, "is_available", lambda: True)
@@ -1055,6 +1058,7 @@ async def test_execute_mock_nonzero_exit(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("portable_workspace_mapping")
 async def test_execute_mock_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
     backend = DockerContainerBackend(docker_cmd="docker")
     monkeypatch.setattr(backend, "is_available", lambda: True)
