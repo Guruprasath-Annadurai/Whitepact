@@ -69,8 +69,8 @@ VM_PATH="$1"; MODE="$2"; shift 2
 mkdir -p "$VM_PATH/tmp"
 cp -r /src /work
 echo "== kernel: $(uname -sr) arch: $(uname -m) mode: $MODE"
+apt-get update -qq >/dev/null 2>&1 && apt-get install -y -qq acl >/dev/null 2>&1
 if [[ "$MODE" == "nonroot" ]]; then
-  apt-get update -qq >/dev/null 2>&1 && apt-get install -y -qq acl >/dev/null 2>&1
   GID=$(stat -c %g /var/run/docker.sock)
   getent group "$GID" >/dev/null || groupadd -g "$GID" dockersock
   useradd -m -u 1001 -G "$GID" runner
