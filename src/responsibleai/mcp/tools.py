@@ -704,9 +704,10 @@ TOOL_DEFS: list[types.Tool] = [
             readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False
         ),
         description=(
-            "Create a structured governance incident record. Used by Security Engineers and "
-            "AI Risk Analysts to log AI safety events (PII leaks, jailbreak attempts, bias triggers, "
-            "hallucination incidents) for audit trail and SIEM integration."
+            "Build (but do not store) a structured governance incident record for an AI safety event "
+            "(PII leak, jailbreak attempt, bias trigger, hallucination, policy violation). Nothing is "
+            "written by this tool; the returned record can be posted to the incidents API by the "
+            "caller. Used by Security Engineers and AI Risk Analysts."
         ),
         inputSchema={
             "type": "object",
@@ -2074,14 +2075,11 @@ async def _handle_incident_log(args: dict[str, Any]) -> dict[str, Any]:
         source="mcp_tool",
     )
     record["persist_instructions"] = (
-        "This record is ephemeral in MCP context — the MCP server has no "
-        "direct database connection of its own. To persist it, POST this "
-        "record (or just incident_type/severity/model_name/provider/"
-        "description/evidence/mitigated) to POST /api/incidents on the "
-        "ResponsibleAI REST server, which is a real, wired endpoint backed "
-        "by the incidents table (responsibleai.db.incident_repository). "
-        "See compliance/INCIDENT_RESPONSE_RUNBOOK.md's Phase 1 for when to "
-        "do this."
+        "Not stored: this record exists only in this response, because the MCP server has no "
+        "database connection of its own. It is persisted by an authorized operator or integration "
+        "that sends incident_type, severity, model_name, provider, description, evidence and "
+        "mitigated to POST /api/incidents on the WhitePact REST server "
+        "(compliance/INCIDENT_RESPONSE_RUNBOOK.md, Phase 1)."
     )
     return record
 

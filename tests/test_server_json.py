@@ -94,11 +94,12 @@ class TestServerJsonVersionSync:
 
 class TestServerJsonToolCounts:
     def test_tool_count_matches_live_tool_defs(self) -> None:
-        from responsibleai.mcp.tools import TOOL_DEFS
+        from responsibleai.mcp.tools import production_tool_count
 
         d = _load_server_json()
         meta = d["_meta"]["io.modelcontextprotocol.registry/publisher-provided"]
-        assert meta["tool_count"] == len(TOOL_DEFS)
+        # The number clients actually see (the test-only fixture is never advertised).
+        assert meta["tool_count"] == production_tool_count()
 
     def test_resource_counts_match_live_resource_defs(self) -> None:
         from responsibleai.mcp.resources import _CANONICAL_RESOURCE_DEFS, RESOURCE_DEFS
