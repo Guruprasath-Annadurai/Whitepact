@@ -107,3 +107,30 @@ The 44 skips are the macOS-only `QUALIFICATION_SKIP`s plus the three README exam
 - FH-06-LIVE witnessing, cloud staging, penetration testing, legal and procurement items (external).
 - Python 3.12 full run, CodeQL, bandit and dependency audit on this branch (CI-only; nothing was pushed).
 - Antigravity independent re-qualification. Nothing here is independently verified.
+
+
+## Canonical register, wave 0-1 update (PR #180, tree-specific; see the PR for the current SHA)
+
+Status vocabulary: CONFIRMED OPEN, IN PROGRESS, IMPLEMENTED - LOCAL TESTED, CI VERIFIED,
+INDEPENDENTLY VERIFIED, BLOCKED, NOT TESTED, NOT APPLICABLE - JUSTIFIED. Nothing below is
+INDEPENDENTLY VERIFIED: no Antigravity review of this tree exists. CI VERIFIED means GitHub CI
+passed on the SHA named in the PR; a later commit needs its own run.
+
+| ID | Cat | Sev | Evidence / root cause | Fix (commit area) | Tests | Status | Launch impact |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| REC-01 | Isolation | P1 | Linux CI: runner `0o400`, container UID got EACCES; every isolated run failed. | Runner stays `0o400`; read granted to UID 65534 by ACL or chown as root; never world-readable; fails closed. | Mode-level regression; 81 real-container tests pass non-root with ACLs and root on a Linux 6.12 kernel; Linux CI 3.11/3.12 passed on `d8db970`. | CI VERIFIED for the earlier `0o444` form; the ACL form is IMPLEMENTED - LOCAL TESTED pending CI | Blocks any isolated execution on Linux until verified. |
+| REC-02 | Isolation | P1 | Isolation opt-in; missing `ENVIRONMENT` ran tools in-process. | `isolation/mode.py` single rule; production ignores the opt-in. | 24 tests, 5 fail on old code. | CI VERIFIED (`d8db970`) | Blocks hosted/production. |
+| REC-11 | Isolation | P1 | Customer journey: runtime image lacked `responsibleai`; runner error on stdout hidden behind Docker pull text. | `Dockerfile.isolation`, `WHITEPACT_ISOLATION_IMAGE`, runner error surfaced. | Real tool runs in a container and matches in-process (Linux, both modes). | IMPLEMENTED - LOCAL TESTED | Isolated execution never worked with the stock image. |
+| REC-12 | Isolation | P1 review | Host-side exception for the test fixture `test.counter.increment`. Challenged per the directive. | Exact-match route, own switch, refused if any of ENVIRONMENT/WHITEPACT_ENV/RAI_ENVIRONMENT says production, tool also refuses production itself. | 9 lookalike names, argument smuggling, tenant spoofing, replayed/mismatched grants: all stay isolated or are refused. | IMPLEMENTED - LOCAL TESTED. **Disclosed to Antigravity; not independently reviewed.** Residual: a misconfigured non-production-labelled production server with the switch set could run this one fixture, which only writes the test counter table. | Open design decision. |
+| REC-13 | Supply chain | P1 | Bandit B310 on the evidence witness `urlopen`. | https-only origin, no userinfo/query/fragment, no redirects. | 10 tests fail on old code; Bandit 1.8.6 exits 0, no `# nosec`. | IMPLEMENTED - LOCAL TESTED | None once CI confirms. |
+| REC-14 | Supply chain | P1 | Live Dependabot: 16 open (1 critical, 6 high, 9 medium); 13 PyJWT in `uv.lock` at 2.13.0; NLTK has no patch; 2 brace-expansion. | PR #182 integrated (PyJWT floor 2.15.0, brace-expansion lockfile); pip-audit on base+sso+dashboard (resolves 2.15.1) clean; `npm audit` 0. 193 identity/JWT/tenant tests pass on 2.15.1. | As stated. | IMPLEMENTED - LOCAL TESTED; Dependabot dashboard to be re-read after merge to the default branch | Critical PyJWT alert closes only when the lockfile reaches the default branch. |
+| REC-15 | Supply chain | P2 | NLTK GHSA-8mgp-746c-j5xp, no patched release (3.10.3 is latest). Optional `sentiment` extra; only `SentimentIntensityAnalyzer` is used; scoring never downloads. | Exception documented, not dismissed. | Fake-nltk tests. | CONFIRMED OPEN (accepted with reachability analysis, pending owner review) | Not installed by default. |
+| REC-16 | Static analysis | P2 | CodeQL umbrella still fails: two `py/overly-permissive-file` alerts on the evidence witness **public** key and publication record (`0o644`, intentionally readable by independent verifiers) plus 12 legacy-template JS alerts inherited from the stacked history. | None. Not dismissed to turn a badge green. | n/a | CONFIRMED OPEN - owner/Antigravity decision on dismissal or code change | May hold the CodeQL gate. |
+| REC-17 | Test validity | P2 | Root-mode Linux failure of `test_control_plane_proc_and_fds`: it compared a PID number, which collides in a fresh PID namespace. | Identify the control plane by command line; probes only run against a really visible process. | Detector fires in a shared PID namespace and not a separate one; root and non-root pass on Linux (59 each). | IMPLEMENTED - LOCAL TESTED | None. A false failure, not an isolation breach. |
+| REC-18 | Product | P2 | PR #181 duplicates README/quickstart/deepfake work. | Compatible parts integrated (hallucination edge-case tests); module classification rewritten for this code; duplicate quickstart/test and its different deepfake implementation not taken. | 24 hallucination tests. | IMPLEMENTED - LOCAL TESTED | #181 should be closed as superseded by the owner. |
+
+Codex-owned (public website), recorded not changed: none found in this pass.
+
+Also not tested in this pass: MCP stdio/HTTP/proxy enforcement matrix, SDKs beyond Python, REST bypass matrix,
+budget/rate-limit races under shared Redis at scale, backup restore, external IdP, browser journeys other than the one CI
+journey, HTTP and PostgreSQL SLOs. See "Not done" above.
