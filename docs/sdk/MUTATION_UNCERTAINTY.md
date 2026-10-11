@@ -42,3 +42,18 @@ is asserted for these endpoints.
 No new backend endpoint, stable idempotency key, automatic replay or exactly-once guarantee is
 introduced by this client contract. Do not record credentials or raw secret-bearing arguments in
 reconciliation logs. Exact configured-key redaction is not general server-secret sanitization.
+
+## Deadlines and caller cancellation
+
+Every TypeScript governance method uses the configured timeout through headers and complete body
+consumption. A final optional request-options argument accepts `{ signal }` using AbortSignal.
+Canceling a dispatched mutation does not undo its effect: reconcile it as an unknown observation.
+Canceling one request does not cancel concurrent requests. Already-aborted signals fail before
+dispatch; caller-provided cancellation reasons are not copied into errors. Timer and listener
+cleanup happens on every exit. Existing positional calls remain compatible.
+
+Python and TypeScript governance HTTP/JSON failures consistently raise GovernanceRequestError
+with status and redacted/bounded detail; valid DENIED/UNKNOWN/PENDING/quarantine/approval envelopes
+remain raw outcomes, never success coercions. Python asyncio cancellation propagates through
+HTTPX; it is not an execution rollback guarantee. Positive finite deadlines and positive integer
+read-retry counts are required. Malformed successful HTTP envelopes do not establish completion.

@@ -1,7 +1,18 @@
 """Credential transport configuration shared by SDK clients."""
 
 from ipaddress import ip_address
+from math import isfinite
 from urllib.parse import urlsplit
+
+
+def validate_timeout(timeout: float) -> None:
+    if (
+        isinstance(timeout, bool)
+        or not isinstance(timeout, (int, float))
+        or not isfinite(timeout)
+        or timeout <= 0
+    ):
+        raise ValueError("SDK timeout must be positive and finite")
 
 
 def validate_base_url(base_url: str, api_key: str) -> None:

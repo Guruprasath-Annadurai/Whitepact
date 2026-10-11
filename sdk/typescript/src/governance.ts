@@ -3,6 +3,7 @@
  */
 
 export type GovernanceToolCallResult = Record<string, unknown>;
+export type GovernanceRequestOptions = { signal?: AbortSignal };
 import { validateBaseUrl } from "./transport.js";
 
 /**
@@ -52,6 +53,8 @@ export class GovernanceRuntimeClient {
     this.apiKey = options.apiKey;
     validateBaseUrl(this.baseUrl, this.apiKey);
     this.timeout = options.timeout ?? 30_000;
+    if (!Number.isFinite(this.timeout) || this.timeout <= 0 || this.timeout > 2147483647)
+      throw new RangeError("SDK timeout must be positive, finite and within the timer range");
   }
 
   private headers(): Record<string, string> {
@@ -66,23 +69,27 @@ export class GovernanceRuntimeClient {
     return `${this.baseUrl}/api/${path.replace(/^\//, "")}`;
   }
 
-  async callTool(
-    name: string,
-    args: Record<string, unknown> = {},
-    purpose = "sdk-governance",
-  ): Promise<GovernanceToolCallResult> {
+  private async request(
+    path: string,
+    method: "GET" | "POST",
+    payload?: unknown,
+    options: GovernanceRequestOptions = {},
+  ): Promise<Record<string, unknown>> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeout);
+    const cancel = () => controller.abort(new DOMException("Request canceled; mutation outcome may be unknown", "AbortError"));
+    if (options.signal?.aborted) { cancel(); throw controller.signal.reason; }
+    options.signal?.addEventListener("abort", cancel, { once: true });
+    const timer = setTimeout(() => controller.abort(new DOMException("Request deadline exceeded; mutation outcome may be unknown", "AbortError")), this.timeout);
     try {
-      const res = await fetch(this.url("v1/governance/tools/call"), {
-        method: "POST",
+      const res = await fetch(this.url(path), {
+        method,
         headers: this.headers(),
-        body: JSON.stringify({ name, arguments: args, purpose }),
+        body: payload === undefined ? undefined : JSON.stringify(payload),
         signal: controller.signal,
         redirect: "error",
       });
       if (!res.ok) {
-        const text = await res.text().catch(() => "");
+        const text = await res.text();
         const detail = this.apiKey ? text.split(this.apiKey).join("[REDACTED]") : text;
         throw new GovernanceRequestError(res.status, detail.slice(0, 200));
       }
@@ -90,70 +97,54 @@ export class GovernanceRuntimeClient {
       try {
         body = await res.json();
       } catch {
+        if (controller.signal.aborted) throw controller.signal.reason;
         throw new GovernanceRequestError(res.status, "response is not JSON");
       }
       if (body === null || typeof body !== "object" || Array.isArray(body)) {
         throw new GovernanceRequestError(res.status, "response is not a JSON object");
       }
       return body as GovernanceToolCallResult;
+    } catch (error) {
+      if (controller.signal.aborted) throw controller.signal.reason;
+      if (error instanceof Error && this.apiKey && error.message.includes(this.apiKey)) {
+        const sanitized = new Error(error.message.split(this.apiKey).join("[REDACTED]"));
+        sanitized.name = error.name;
+        throw sanitized;
+      }
+      throw error;
     } finally {
       clearTimeout(timer);
+      options.signal?.removeEventListener("abort", cancel);
     }
   }
 
-  async listApprovals(status?: string): Promise<Record<string, unknown>> {
+  async callTool(name: string, args: Record<string, unknown> = {}, purpose = "sdk-governance", options?: GovernanceRequestOptions): Promise<GovernanceToolCallResult> {
+    return this.request("v1/governance/tools/call", "POST", { name, arguments: args, purpose }, options);
+  }
+
+  async listApprovals(status?: string, options?: GovernanceRequestOptions): Promise<Record<string, unknown>> {
     const qs = status ? `?status=${encodeURIComponent(status)}` : "";
-    const res = await fetch(this.url(`governance/approvals${qs}`), {
-      redirect: "error",
-      headers: this.headers(),
-    });
-    if (!res.ok) throw new Error(`listApprovals failed: ${res.status}`);
-    return (await res.json()) as Record<string, unknown>;
+    return this.request(`governance/approvals${qs}`, "GET", undefined, options);
   }
 
   async resolveApproval(
     approvalId: string,
     outcome: string,
     notes?: string,
+    options?: GovernanceRequestOptions,
   ): Promise<Record<string, unknown>> {
-    const res = await fetch(this.url(`governance/approvals/${approvalId}/resolve`), {
-      redirect: "error",
-      method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify({ outcome, ...(notes ? { notes } : {}) }),
-    });
-    if (!res.ok) throw new Error(`resolveApproval failed: ${res.status}`);
-    return (await res.json()) as Record<string, unknown>;
+    return this.request(`governance/approvals/${encodeURIComponent(approvalId)}/resolve`, "POST", { outcome, ...(notes ? { notes } : {}) }, options);
   }
 
-  async revokeDelegation(identityId: string, reason: string): Promise<Record<string, unknown>> {
-    const res = await fetch(this.url(`governance/delegations/${identityId}/revoke`), {
-      redirect: "error",
-      method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify({ reason }),
-    });
-    if (!res.ok) throw new Error(`revokeDelegation failed: ${res.status}`);
-    return (await res.json()) as Record<string, unknown>;
+  async revokeDelegation(identityId: string, reason: string, options?: GovernanceRequestOptions): Promise<Record<string, unknown>> {
+    return this.request(`governance/delegations/${encodeURIComponent(identityId)}/revoke`, "POST", { reason }, options);
   }
 
-  async executeApproval(approvalId: string): Promise<Record<string, unknown>> {
-    const res = await fetch(this.url(`governance/approvals/${approvalId}/execute`), {
-      redirect: "error",
-      method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify({}),
-    });
-    if (!res.ok) throw new Error(`executeApproval failed: ${res.status}`);
-    return (await res.json()) as Record<string, unknown>;
+  async executeApproval(approvalId: string, options?: GovernanceRequestOptions): Promise<Record<string, unknown>> {
+    return this.request(`governance/approvals/${encodeURIComponent(approvalId)}/execute`, "POST", {}, options);
   }
 
-  async getEvidence(evidenceId: string): Promise<Record<string, unknown>> {
-    const res = await fetch(this.url(`governance/evidence/${evidenceId}`), {
-      redirect: "error",
-      headers: this.headers(),
-    });
-    if (!res.ok) throw new Error(`getEvidence failed: ${res.status}`);
-    return (await res.json()) as Record<string, unknown>;
+  async getEvidence(evidenceId: string, options?: GovernanceRequestOptions): Promise<Record<string, unknown>> {
+    return this.request(`governance/evidence/${encodeURIComponent(evidenceId)}`, "GET", undefined, options);
   }
 }

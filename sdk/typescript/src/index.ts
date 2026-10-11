@@ -1,7 +1,7 @@
 export { RAIClient, RAIError } from "./client.js";
 export type { RAIClientOptions } from "./client.js";
 export { GovernanceRequestError, GovernanceRuntimeClient, isCompleted } from "./governance.js";
-export type { GovernanceToolCallResult } from "./governance.js";
+export type { GovernanceToolCallResult, GovernanceRequestOptions } from "./governance.js";
 export type {
   AIPassport,
   APIKey,

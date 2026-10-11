@@ -16,7 +16,7 @@ from .models import (
     HallucinationAnalysis,
     TrustScore,
 )
-from .transport import validate_base_url
+from .transport import validate_base_url, validate_timeout
 
 _DEFAULT_BASE = "http://localhost:8765"
 _API_VERSION = "v1"
@@ -50,6 +50,9 @@ class RAIClient:
         max_retries: int = _MAX_RETRIES,
     ) -> None:
         validate_base_url(base_url, api_key)
+        validate_timeout(timeout)
+        if isinstance(max_retries, bool) or not isinstance(max_retries, int) or max_retries < 1:
+            raise ValueError("SDK max_retries must be a positive integer")
         self._base = base_url.rstrip("/")
         self._key = api_key
         self._timeout = timeout

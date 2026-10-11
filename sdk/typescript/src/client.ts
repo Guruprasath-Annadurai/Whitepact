@@ -83,6 +83,12 @@ export class RAIClient {
     this.timeout = options.timeout ?? 30_000;
     this.maxRetries = options.maxRetries ?? 3;
     this.retryBaseMs = options.retryBaseMs ?? 500;
+    if (!Number.isFinite(this.timeout) || this.timeout <= 0 || this.timeout > 2147483647)
+      throw new RangeError("SDK timeout must be positive, finite and within the timer range");
+    if (!Number.isInteger(this.maxRetries) || this.maxRetries < 1)
+      throw new RangeError("SDK maxRetries must be a positive integer");
+    if (!Number.isFinite(this.retryBaseMs) || this.retryBaseMs < 0 || this.retryBaseMs > 2147483647)
+      throw new RangeError("SDK retry delay must be finite and within the timer range");
   }
 
   private url(path: string): string {

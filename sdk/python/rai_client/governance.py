@@ -22,7 +22,7 @@ from typing import Any
 
 import httpx
 
-from .transport import validate_base_url
+from .transport import validate_base_url, validate_timeout
 
 
 class GovernanceRequestError(RuntimeError):
@@ -113,6 +113,7 @@ class GovernanceRuntimeClient:
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         validate_base_url(base_url, api_key)
+        validate_timeout(timeout)
         self._base = base_url.rstrip("/")
         self._key = api_key
         self._timeout = timeout
@@ -131,6 +132,18 @@ class GovernanceRuntimeClient:
     def _url(self, path: str) -> str:
         return f"{self._base}/api/{path.lstrip('/')}"
 
+    def _parse_response(self, resp: httpx.Response) -> dict[str, Any]:
+        if not resp.is_success:
+            detail = resp.text.replace(self._key, "[REDACTED]") if self._key else resp.text
+            raise GovernanceRequestError(resp.status_code, detail[:200])
+        try:
+            body = resp.json()
+        except ValueError:
+            raise GovernanceRequestError(resp.status_code, "response is not JSON") from None
+        if not isinstance(body, dict):
+            raise GovernanceRequestError(resp.status_code, "response is not a JSON object")
+        return body
+
     async def call_tool(
         self,
         name: str,
@@ -144,16 +157,7 @@ class GovernanceRuntimeClient:
                 headers=self._headers(),
                 json={"name": name, "arguments": arguments or {}, "purpose": purpose},
             )
-        if not resp.is_success:
-            detail = resp.text.replace(self._key, "[REDACTED]") if self._key else resp.text
-            raise GovernanceRequestError(resp.status_code, detail[:200])
-        try:
-            body = resp.json()
-        except ValueError as exc:
-            raise GovernanceRequestError(resp.status_code, "response is not JSON") from exc
-        if not isinstance(body, dict):
-            raise GovernanceRequestError(resp.status_code, "response is not a JSON object")
-        return GovernanceToolOutcome(raw=body)
+        return GovernanceToolOutcome(raw=self._parse_response(resp))
 
     async def revoke_delegation(self, identity_id: str, *, reason: str) -> dict[str, Any]:
         async with self._client() as client:
@@ -162,8 +166,7 @@ class GovernanceRuntimeClient:
                 headers=self._headers(),
                 json={"reason": reason},
             )
-            resp.raise_for_status()
-            return resp.json()
+            return self._parse_response(resp)
 
     async def list_approvals(self, status: str | None = None) -> dict[str, Any]:
         params = {"status": status} if status else None
@@ -173,8 +176,7 @@ class GovernanceRuntimeClient:
                 headers=self._headers(),
                 params=params,
             )
-            resp.raise_for_status()
-            return resp.json()
+            return self._parse_response(resp)
 
     async def resolve_approval(
         self,
@@ -192,8 +194,7 @@ class GovernanceRuntimeClient:
                 headers=self._headers(),
                 json=body,
             )
-            resp.raise_for_status()
-            return resp.json()
+            return self._parse_response(resp)
 
     async def execute_approval(self, approval_id: str) -> dict[str, Any]:
         async with self._client() as client:
@@ -202,8 +203,7 @@ class GovernanceRuntimeClient:
                 headers=self._headers(),
                 json={},
             )
-            resp.raise_for_status()
-            return resp.json()
+            return self._parse_response(resp)
 
     async def get_evidence(self, evidence_id: str) -> dict[str, Any]:
         async with self._client() as client:
@@ -211,5 +211,4 @@ class GovernanceRuntimeClient:
                 self._url(f"governance/evidence/{evidence_id}"),
                 headers=self._headers(),
             )
-            resp.raise_for_status()
-            return resp.json()
+            return self._parse_response(resp)
