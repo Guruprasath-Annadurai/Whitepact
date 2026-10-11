@@ -117,6 +117,7 @@ class SetPlanStatus(StrEnum):
     STALE = "stale"
     NOT_FOUND = "not_found"
     TOMBSTONED = "tombstoned"
+    INVALID_TIMESTAMP = "invalid_timestamp"
 
 
 class OrgRepository:
@@ -213,18 +214,19 @@ class OrgRepository:
         if subscription_status is not None:
             values["subscription_status"] = subscription_status
 
-        effective_event_ts: str | None = None
-        if event_timestamp:
-            try:
-                dt = datetime.fromisoformat(event_timestamp.replace("Z", "+00:00"))
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=UTC)
-                effective_event_ts = dt.astimezone(UTC).isoformat()
-            except (ValueError, TypeError):
-                effective_event_ts = event_timestamp
-            values["entitlement_updated_at"] = effective_event_ts
-        else:
-            values["entitlement_updated_at"] = datetime.now(UTC).isoformat()
+        effective_event_ts: str
+        if not event_timestamp or not isinstance(event_timestamp, str):
+            return SetPlanStatus.INVALID_TIMESTAMP
+
+        try:
+            dt = datetime.fromisoformat(event_timestamp.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=UTC)
+            effective_event_ts = dt.astimezone(UTC).isoformat()
+        except (ValueError, TypeError):
+            return SetPlanStatus.INVALID_TIMESTAMP
+
+        values["entitlement_updated_at"] = effective_event_ts
 
         async with self._engine.raw.begin() as conn:
             # 1. Check tenant tombstone ledger
@@ -310,6 +312,8 @@ class OrgRepository:
         Enforces monotonic chronological order using event_timestamp to prevent
         stale out-of-order events from overwriting newer subscriptions.
         """
+        if event_timestamp is None:
+            event_timestamp = datetime.now(UTC).isoformat()
         status = await self.set_plan_status(
             org_id=org_id,
             plan=plan,

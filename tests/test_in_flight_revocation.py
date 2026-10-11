@@ -316,3 +316,84 @@ async def test_distributed_multi_worker_revocation(tmp_path) -> None:
         p.join(timeout=2.0)
         if p.is_alive():
             p.terminate()
+
+
+@pytest.mark.asyncio
+async def test_failed_termination_callback_retains_entry_for_retry() -> None:
+    """If container kill or process termination callback fails, action is retained for retry."""
+    registry = InFlightExecutionRegistry.get_instance()
+    org_id = f"test_org_{uuid.uuid4().hex[:8]}"
+    exec_id = f"exec_{uuid.uuid4().hex[:8]}"
+
+    call_count = 0
+
+    def _failing_then_succeeding_callback():
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise RuntimeError("docker daemon socket unavailable")
+        return True
+
+    entry = await registry.register(
+        execution_id=exec_id,
+        organization_id=org_id,
+        action_id="act_docker_1",
+        terminate_callback=_failing_then_succeeding_callback,
+    )
+    assert registry.count_active(org_id) == 1
+
+    # First attempt: callback raises RuntimeError
+    term_1 = await registry.terminate_in_flight(organization_id=org_id)
+    assert term_1 == []
+    # Entry must be retained in active tracking for retry
+    assert registry.count_active(org_id) == 1
+    assert entry.termination_attempts == 1
+    assert entry.last_termination_error == "docker daemon socket unavailable"
+
+    # Second attempt (retry): callback succeeds
+    term_2 = await registry.terminate_in_flight(organization_id=org_id)
+    assert term_2 == [exec_id]
+    assert registry.count_active(org_id) == 0
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_watcher_exponential_backoff_on_db_outage() -> None:
+    """Reconciliation watcher survives database connectivity failures with backoff."""
+    registry = InFlightExecutionRegistry.get_instance()
+    org_id = f"test_org_{uuid.uuid4().hex[:8]}"
+    exec_id = f"exec_{uuid.uuid4().hex[:8]}"
+
+    await registry.register(
+        execution_id=exec_id,
+        organization_id=org_id,
+        action_id="act_db_outage",
+    )
+
+    class BrokenEngine:
+        class BrokenRaw:
+            def connect(self):
+                class _Ctx:
+                    async def __aenter__(self):
+                        raise ConnectionRefusedError("Database unreachable")
+
+                    async def __aexit__(self, exc_type, exc_val, exc_tb):
+                        pass
+
+                return _Ctx()
+
+        raw = BrokenRaw()
+
+    watcher = registry.start_reconciliation_watcher(BrokenEngine(), interval=0.02)
+    # Let the loop execute and encounter the connection error multiple times
+    await asyncio.sleep(0.1)
+
+    # Watcher task must still be running and not crashed by unhandled exception
+    assert not watcher.done()
+
+    # Registry must safely retain the active entry
+    assert registry.count_active(org_id) == 1
+
+    # Stop watcher cleanly
+    registry.stop_reconciliation_watcher()
+    await asyncio.sleep(0.01)
+    assert watcher.done()
