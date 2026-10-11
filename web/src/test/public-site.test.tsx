@@ -15,15 +15,14 @@ function renderAt(path: string) {
 }
 
 describe("public website", () => {
-  it.each(["/", "/pricing"])("shows approved honest launch plans at %s", async (path) => {
+  it.each(["/", "/pricing"])("withholds unapproved paid offers at %s", async (path) => {
     renderAt(path);
     const cards = document.querySelector('.launch-pricing')!;
     expect(cards).toBeInTheDocument();
-    for (const price of ["$0 forever", "$0/year", "$29/month", "$290/year", "$99/month", "$990/year", "Custom annual pricing"]) expect(cards).toHaveTextContent(price);
-    expect(within(cards as HTMLElement).getAllByText("Early Access")).toHaveLength(2);
-    for (const link of within(cards as HTMLElement).getAllByRole("link", { name: /Early Access|Contact Sales/ })) expect(link).toHaveAttribute("href", "/contact");
-    expect(cards).not.toHaveTextContent(/SSO|SCIM|SLA|certified|unlimited|Buy now|retention|%/i);
-    expect(screen.getByText(/2 months free with annual billing/)).toBeInTheDocument();
+    for (const option of ["Free source", "Confirm scope", "Written quote", "Availability not verified"]) expect(cards).toHaveTextContent(option);
+    expect(cards).not.toHaveTextContent(/\$29|\$99|\$290|\$990|Buy now|2 months free/i);
+    expect(within(cards as HTMLElement).getByRole("link", { name: "Discuss evaluation" })).toHaveAttribute("href", "/contact");
+    expect(within(cards as HTMLElement).getByRole("link", { name: "Run locally" })).toHaveAttribute("href", "/docs");
   });
   it.each(["/", "/pricing", "/terms", "/privacy", "/refund-policy", "/docs", "/about", "/contact", "/trust"])("links all commerce pages from the footer at %s", async (path) => {
     renderAt(path);
@@ -50,9 +49,9 @@ describe("public website", () => {
   });
   it("uses provider-neutral language on the Paddle checkout return path", async () => {
     renderAt("/billing/success");
-    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("Payment received by the billing provider");
+    expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("Checkout returned. Verify your billing status.");
     expect(document.body).not.toHaveTextContent(/Stripe/i);
-    expect(screen.getByText(/signed billing webhook/i)).toBeInTheDocument();
+    expect(screen.getByText(/A return URL does not confirm payment/i)).toBeInTheDocument();
   });
   it("labels the governance console as simulated and exposes inspectable evidence", async () => {
     const user = userEvent.setup();
@@ -92,8 +91,10 @@ describe("public website", () => {
   it("publishes a truthful Sovereign product page", async () => {
     renderAt("/sovereign");
     expect(await screen.findByRole("heading", { level: 1 })).toHaveTextContent("See authority before it becomes action");
-    expect(screen.getByText("Available after authentication")).toBeInTheDocument();
-    expect(screen.getAllByText("Authenticated live route")).toHaveLength(2);
+    expect(screen.getByText("Requires verified deployment and authentication")).toBeInTheDocument();
+    expect(screen.getAllByText("Implemented route · deployment dependent")).toHaveLength(2);
+    expect(screen.queryByText("Available after authentication")).not.toBeInTheDocument();
+    expect(screen.queryByText("Authenticated live route")).not.toBeInTheDocument();
     expect(screen.queryByText(/guaranteed|production proven|gauntlet pass/i)).not.toBeInTheDocument();
   });
 

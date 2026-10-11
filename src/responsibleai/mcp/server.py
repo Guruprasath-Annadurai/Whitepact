@@ -12,7 +12,10 @@ this rename carries no compatibility break.
 
 Three transports:
 
-1. **stdio** (default, free, self-hosted) — full unrestricted tool access.
+1. **stdio** (default, free, self-hosted) — community trust domain only:
+   full unrestricted tool access when ``mcp_trust_domain=community``.
+   Enterprise deployments must set ``mcp_trust_domain=enterprise`` and use
+   governed hosted MCP instead (stdio refuses to start).
    Configure Claude Code:
        {
          "mcpServers": {
@@ -274,8 +277,21 @@ async def _call_tool(
                 "message": "Hosted tool execution requires tenant-scoped governance. No action was taken.",
             }
         )
-    if usage_repo is not None and ctx is not None and ctx.org_id:
-        await usage_repo.record_call(ctx.org_id, name, ctx.plan.value, allowed=True)
+    if _current_hosted.get() and usage_repo is None and ctx is not None and ctx.org_id:
+        return _text_and_structured(
+            {
+                "error": "quota_enforcement_unavailable",
+                "message": (
+                    "Hosted tool execution requires usage metering before any action. "
+                    "No action was taken."
+                ),
+            }
+        )
+
+    async def _meter(allowed: bool) -> None:
+        if usage_repo is not None and ctx is not None and ctx.org_id:
+            await usage_repo.record_call(ctx.org_id, name, ctx.plan.value, allowed=allowed)
+
     if governance is not None and ctx is not None and ctx.org_id:
         # Local import: keeps the stdio transport's import graph free of
         # the DB/governance layer unless a hosted-HTTP connection with
@@ -285,6 +301,7 @@ async def _call_tool(
 
         purpose = call_arguments.get(WHITEPACT_PURPOSE_ARGUMENT)
         if not isinstance(purpose, str) or not purpose.strip():
+            await _meter(False)
             return _text_and_structured(
                 {
                     "error": "governance_purpose_required",
@@ -307,7 +324,9 @@ async def _call_tool(
             name, governed_arguments, ctx, governance, purpose=purpose.strip()
         )
         if not outcome.proceed:
+            await _meter(False)
             return _text_and_structured(outcome.blocked_response or {"error": "governance_blocked"})
+        await _meter(True)
         # apply_governance() already ran the tool via InternalToolExecutor
         # once it had a valid ExecutionAuthorization — outcome.result is
         # that result. Calling dispatch_tool() again here would both
@@ -341,16 +360,28 @@ async def _read_resource(uri: types.AnyUrl) -> str:
 
 
 async def _run_stdio() -> None:
+    from responsibleai.mcp.trust_domain import refuse_ungoverned_stdio_exit
+
+    refuse_ungoverned_stdio_exit()
     async with stdio_server() as (read_stream, write_stream):
         init_options = server.create_initialization_options()
         await server.run(read_stream, write_stream, init_options)
 
 
-def main() -> None:
-    """CLI entry point: whitepact-mcp / responsibleai-mcp (stdio, self-hosted)."""
+def _run_stdio_main_body() -> None:
+    from responsibleai.mcp.trust_domain import write_community_stdio_boundary
+
+    write_community_stdio_boundary()
     _logger.info("starting %s v1.2.0 (stdio)", server.name)
     _log_invocation_name("stdio server")
     asyncio.run(_run_stdio())
+
+
+def main() -> None:
+    """CLI entry point: whitepact-mcp / responsibleai-mcp (stdio, self-hosted)."""
+    from responsibleai.mcp.trust_domain import entrypoint_main_stdio
+
+    entrypoint_main_stdio()
 
 
 # ── HTTP/SSE transport (hosted, billed, plan-gated) ─────────────────────────────
@@ -395,6 +426,11 @@ def hosted_production_preflight(
         raise HostedProductionSecurityError(
             "Production hosted MCP requires mcp_governance_enabled=true. "
             "Hosted execution must not start without tenant-scoped governance."
+        )
+    if getattr(settings, "mcp_trust_domain", "community") != "enterprise":
+        raise HostedProductionSecurityError(
+            "Production hosted MCP requires mcp_trust_domain=enterprise. "
+            "Refusing enterprise-to-community trust downgrade."
         )
     hosts = (
         allowed_hosts
@@ -529,6 +565,10 @@ def _build_http_app() -> Any:
 
     from responsibleai.auth.mcp_oauth import McpOAuthAuthorizationServer, OAuthProtocolError
     from responsibleai.auth.oidc import OIDCProvider
+    from responsibleai.auth.tenant_admission import (
+        TenantAdmissionDeniedError,
+        admit_sso_principal,
+    )
     from responsibleai.auth.verifiable_credential import (
         VerifiableCredentialProvider,
         looks_like_vc_jwt,
@@ -538,11 +578,11 @@ def _build_http_app() -> Any:
         McpUsageRepository,
         OrgRepository,
         PrincipalRepository,
+        WebIdentityRepository,
         create_engine,
     )
-    from responsibleai.governance.principal import build_principal_claim
+    from responsibleai.governance.principal import PrincipalClaim, build_principal_claim
     from responsibleai.rbac.models import Plan, Role
-    from responsibleai.rbac.permissions import role_from_str
 
     settings = get_settings()
     hosted_production_preflight(settings)
@@ -668,9 +708,14 @@ def _build_http_app() -> Any:
         stateless=True,
         security_settings=transport_security,
     )
+    _auth_max_failures = int(os.environ.get("RAI_MCP_HTTP_AUTH_MAX_FAILURES", "10"))
+    # Peer ceiling equals the credential ceiling. A higher peer budget let
+    # one source address multiply failed-auth attempts by presenting a new
+    # bearer token for each batch.
     auth_limiter = _AuthFailureLimiter(
-        max_failures=int(os.environ.get("RAI_MCP_HTTP_AUTH_MAX_FAILURES", "10")),
+        max_failures=_auth_max_failures,
         window_seconds=float(os.environ.get("RAI_MCP_HTTP_AUTH_WINDOW_SECONDS", "60")),
+        peer_max_failures=_auth_max_failures,
     )
 
     @asynccontextmanager
@@ -691,13 +736,26 @@ def _build_http_app() -> Any:
     ) or _env_bool("RAI_MCP_HTTP_TRUST_FORWARDED_HEADERS", default=False)
 
     def _peer_ip(request: Request) -> str:
-        if trust_forwarded:
-            xff = request.headers.get("x-forwarded-for")
-            if xff:
-                client = xff.split(",")[0].strip()
-                if client:
-                    return client
-        return request.client.host if request.client else "unknown"
+        from responsibleai.ops.client_ip import resolve_client_ip
+
+        trusted = [
+            item.strip()
+            for item in os.environ.get("WHITEPACT_TRUSTED_PROXY_CIDRS", "").split(",")
+            if item.strip()
+        ]
+        cloudflare = [
+            item.strip()
+            for item in os.environ.get("WHITEPACT_CLOUDFLARE_PROXY_CIDRS", "").split(",")
+            if item.strip()
+        ]
+        peer = request.client.host if request.client else None
+        return resolve_client_ip(
+            peer=peer,
+            headers={key: value for key, value in request.headers.items()},
+            trusted_proxy_cidrs=trusted,
+            cloudflare_cidrs=cloudflare,
+            legacy_trust_forwarded=trust_forwarded,
+        )
 
     def _client_key(request: Request) -> tuple[str, str]:
         """Returns (rate_limit_key, peer_ip) using non-secret credential fingerprinting.
@@ -727,26 +785,25 @@ def _build_http_app() -> Any:
         except ValueError:
             return None
 
-        org = await _org_repo.get_org(claims.org_id) if claims.org_id else None
-        if org is None:
-            # A valid IdP signature proves who issued the JWT, not membership
-            # in a WhitePact tenant. Never manufacture a FREE tenant context
-            # for an unknown or missing org claim.
+        try:
+            admitted = await admit_sso_principal(
+                org_repo=_org_repo,
+                identity_repo=WebIdentityRepository(_db_engine),
+                claimed_org_id=claims.org_id,
+                issuer=_oidc_provider.issuer,
+                subject=claims.sub,
+                claimed_roles=claims.roles,
+            )
+        except TenantAdmissionDeniedError:
             return None
-        role = Role.VIEWER
-        for raw_role in claims.roles:
-            candidate = role_from_str(raw_role)
-            if candidate.value == raw_role.upper():
-                role = candidate
-                break
 
         return OrgContext(
             key_id=f"oidc:{claims.sub}",
-            role=role,
-            org_id=claims.org_id,
-            org_name=org.name,
+            role=admitted.role,
+            org_id=admitted.org_id,
+            org_name=admitted.org_name,
             is_legacy=False,
-            plan=org.plan,
+            plan=admitted.plan,
             authentication_method="oidc",
         )
 
@@ -772,34 +829,46 @@ def _build_http_app() -> Any:
             return None
 
         try:
-            claim = build_principal_claim(claims)
+            admitted = await admit_sso_principal(
+                org_repo=_org_repo,
+                identity_repo=WebIdentityRepository(_db_engine),
+                claimed_org_id=claims.org_id,
+                issuer=claims.issuer,
+                subject=claims.sub,
+                claimed_roles=claims.roles,
+            )
+        except TenantAdmissionDeniedError:
+            # Reject before any principal row is written. A signed
+            # credential for an unknown, inactive, or unbound tenant
+            # must not poison the directory.
+            return None
+
+        verified = build_principal_claim(claims)
+        claim = PrincipalClaim(
+            principal_id=verified.principal_id,
+            org_id=admitted.org_id,
+            issuer=verified.issuer,
+            credential_type=verified.credential_type,
+            holder_kind=verified.holder_kind,
+            claim_keys=verified.claim_keys,
+        )
+        try:
             await _principal_repo.record(claim)
         except Exception:
-            # Audit-trail write only -- the principal is already fully
-            # verified by this point (see auth/verifiable_credential.py);
-            # a DB failure here must not block an otherwise-valid
-            # authentication, matching OutcomeRecord's fail-open posture.
             _logger.exception(
                 "verified_principal_audit_write_failed principal_sub=%s issuer=%s",
                 claims.sub,
                 claims.issuer,
             )
-
-        org = await _org_repo.get_org(claims.org_id) if claims.org_id else None
-        role = Role.VIEWER
-        for raw_role in claims.roles:
-            candidate = role_from_str(raw_role)
-            if candidate.value == raw_role.upper():
-                role = candidate
-                break
+            return None
 
         return OrgContext(
             key_id=f"vc:{claims.sub}",
-            role=role,
-            org_id=claims.org_id,
-            org_name=org.name if org else None,
+            role=admitted.role,
+            org_id=admitted.org_id,
+            org_name=admitted.org_name,
             is_legacy=False,
-            plan=org.plan if org else Plan.FREE,
+            plan=admitted.plan,
             authentication_method="vc",
         )
 

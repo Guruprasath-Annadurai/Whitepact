@@ -30,7 +30,6 @@ from fastapi.responses import (
     RedirectResponse,
     Response,
 )
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -38,6 +37,7 @@ from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from responsibleai import __version__
+from responsibleai.audit.siem_export import encode_siem_jsonl
 from responsibleai.auth import mfa
 from responsibleai.auth.crypto_policy import validate_webhook_secret
 from responsibleai.auth.oidc import OIDCProvider
@@ -51,21 +51,32 @@ from responsibleai.auth.saml import (
     peek_in_response_to,
     validate_session_token,
 )
+from responsibleai.auth.tenant_admission import (
+    AdmittedPrincipal,
+    TenantAdmissionDeniedError,
+    admit_sso_principal,
+)
 from responsibleai.billing import (
     PADDLE_SUBSCRIPTION_ENTITLEMENT_EVENTS,
     PaddleBillingError,
     PaddleBillingService,
     PaddleCheckoutRequest,
     PaddleNotConfiguredError,
+    PaddleWebhookRejected,
     StripeBillingError,
     StripeNotConfiguredError,
     StripeService,
+    verify_paddle_webhook_signature,
 )
 from responsibleai.compliance.engine import ComplianceEngine
 from responsibleai.cost.analyzer import CostAnalyzer
 from responsibleai.cost.models import BudgetPolicy, TokenUsage
 from responsibleai.cost.router import ModelRouter
-from responsibleai.dashboard.config import get_settings, multi_replica_problems
+from responsibleai.dashboard.config import (
+    enforce_shared_backends_for_multi_replica,
+    get_settings,
+    multi_replica_problems,
+)
 from responsibleai.dashboard.logging_config import configure_logging, get_logger
 from responsibleai.dashboard.middleware import (
     AuthFailureLimiter,
@@ -281,14 +292,20 @@ logger = get_logger("app")
 
 
 def _get_rate_limit_key(request: Request) -> str:
-    """Rate limit by API key (per org / per key) when present, IP address otherwise.
+    """Rate-limit authenticated calls by organization, not by bearer token.
 
-    Using the API key as the bucket key means each organisation gets its own
-    quota rather than sharing a pool with all other tenants on the same IP
-    (common in cloud-hosted or NAT environments).
+    ``get_org_context`` records ``request.state.audit_org_id`` before route
+    limits run. Keying the bucket by the token let an organization multiply
+    the ceiling by rotating API keys. Unauthenticated calls still bucket by
+    source address. A presented bearer token with no resolved organization
+    is hashed so distinct guesses do not share one anonymous bucket with
+    each other, and still do not create an extra organization quota.
     """
     import hashlib as _hashlib
 
+    org_id = getattr(request.state, "audit_org_id", None)
+    if isinstance(org_id, str) and org_id:
+        return "org:" + org_id
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Bearer "):
         token = auth[7:].strip()
@@ -610,6 +627,10 @@ async def lifespan(application: FastAPI):
 
     if settings.multi_replica:
         problems = multi_replica_problems(db_backend, rl_backend)
+        enforce_shared_backends_for_multi_replica(
+            production=settings.is_production,
+            problems=problems,
+        )
         if problems:
             logger.warning(
                 "multi_replica_misconfigured",
@@ -792,21 +813,73 @@ app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(RequestIDMiddleware)
 app.add_middleware(MaxBodySizeMiddleware)
 
+from responsibleai.dashboard.legacy_frontend import (  # noqa: E402
+    LEGACY_GOVERNANCE_SHELL_DIR,
+    UnifiedSaaSLegacyRetirementMiddleware,
+    UnifiedSaasStaticFiles,
+    legacy_governance_retired_response,
+    unified_saas_legacy_retirement_enforced,
+)
+
+app.add_middleware(UnifiedSaaSLegacyRetirementMiddleware)
+
 # ── Static files ───────────────────────────────────────────────────────────────
 _static_dir = Path(__file__).parent / "static"
-app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
+_legacy_governance_static_dir = LEGACY_GOVERNANCE_SHELL_DIR
+app.mount(
+    "/static",
+    UnifiedSaasStaticFiles(directory=str(_static_dir)),
+    name="static",
+)
 
 
 # ── Auth / RBAC dependencies ───────────────────────────────────────────────────
+
+
+def _identity_repo_for(org_repo: OrgRepository) -> WebIdentityRepository:
+    """Use the same database the organization lookup just used."""
+    if (
+        _web_identity_repo is not None
+        and getattr(_web_identity_repo, "_engine", None) is org_repo._engine
+    ):
+        return _web_identity_repo
+    return WebIdentityRepository(org_repo._engine)
+
+
+async def _admit_dashboard_principal(
+    *,
+    claimed_org_id: str | None,
+    issuer: str | None,
+    subject: str | None,
+    claimed_roles: list[str] | None,
+) -> AdmittedPrincipal | None:
+    if _org_repo is None:
+        return None
+    try:
+        return await admit_sso_principal(
+            org_repo=_org_repo,
+            identity_repo=_identity_repo_for(_org_repo),
+            claimed_org_id=claimed_org_id,
+            issuer=issuer,
+            subject=subject,
+            claimed_roles=claimed_roles,
+        )
+    except TenantAdmissionDeniedError:
+        logger.info(
+            "sso_tenant_admission_denied org_id=%s subject=%s",
+            claimed_org_id,
+            subject,
+        )
+        return None
 
 
 async def _resolve_oidc_context(token: str) -> OrgContext | None:
     """Validate an OIDC-issued Bearer JWT and map its claims to an OrgContext.
 
     Static API keys are prefixed "rai_"; anything else is attempted as a JWT
-    when an OIDC provider is configured. This is what makes SSO login
-    actually usable as an API credential — previously /api/auth/callback
-    returned claims but nothing accepted the resulting token afterward.
+    when an OIDC provider is configured. A valid signature does not create a
+    tenant or a role. The organization must exist and be active, and the
+    subject must already be bound to that organization.
     """
     if _oidc_provider is None or token.startswith("rai_"):
         return None
@@ -815,21 +888,22 @@ async def _resolve_oidc_context(token: str) -> OrgContext | None:
     except ValueError:
         return None
 
-    org = await _org_repo.get_org(claims.org_id) if (_org_repo and claims.org_id) else None
-    role = Role.VIEWER
-    for raw_role in claims.roles:
-        candidate = role_from_str(raw_role)
-        if candidate.value == raw_role.upper():
-            role = candidate
-            break
+    admitted = await _admit_dashboard_principal(
+        claimed_org_id=claims.org_id,
+        issuer=_oidc_provider.issuer,
+        subject=claims.sub,
+        claimed_roles=claims.roles,
+    )
+    if admitted is None:
+        return None
 
     return OrgContext(
         key_id=f"oidc:{claims.sub}",
-        role=role,
-        org_id=claims.org_id,
-        org_name=org.name if org else None,
+        role=admitted.role,
+        org_id=admitted.org_id,
+        org_name=admitted.org_name,
         is_legacy=False,
-        plan=org.plan if org else Plan.FREE,
+        plan=admitted.plan,
         authentication_method="oidc",
     )
 
@@ -849,21 +923,22 @@ async def _resolve_saml_context(token: str) -> OrgContext | None:
     if claims is None:
         return None
 
-    org = await _org_repo.get_org(claims.org_id) if (_org_repo and claims.org_id) else None
-    role = Role.VIEWER
-    for raw_role in claims.roles:
-        candidate = role_from_str(raw_role)
-        if candidate.value == raw_role.upper():
-            role = candidate
-            break
+    admitted = await _admit_dashboard_principal(
+        claimed_org_id=claims.org_id,
+        issuer=_saml_config.idp_entity_id,
+        subject=claims.sub,
+        claimed_roles=claims.roles,
+    )
+    if admitted is None:
+        return None
 
     return OrgContext(
         key_id=f"saml:{claims.sub}",
-        role=role,
-        org_id=claims.org_id,
-        org_name=org.name if org else None,
+        role=admitted.role,
+        org_id=admitted.org_id,
+        org_name=admitted.org_name,
         is_legacy=False,
-        plan=org.plan if org else Plan.FREE,
+        plan=admitted.plan,
         authentication_method="saml",
     )
 
@@ -2490,6 +2565,15 @@ async def web_dashboard_domain(
             "billing_configured": (_paddle_billing_service or _stripe_service) is not None,
             "usage_meter": "not_available",
         }
+    if domain == "policies":
+        policy = await _ready(_policy_repo).get_policy(principal.org_id)
+        return {
+            "items": [_policy_rule_to_dict(r) for r in policy.rules],
+            "source": "policy_repository",
+            "domain": domain,
+            "org_id": principal.org_id,
+            "can_edit": principal.role in {Role.OWNER, Role.ADMIN},
+        }
     if domain == "usage":
         return {
             "items": [],
@@ -2871,15 +2955,24 @@ async def root() -> HTMLResponse:
 @app.get("/signup", response_class=HTMLResponse, include_in_schema=False)
 async def signup_page() -> HTMLResponse:
     """WhitePact account signup. No machine key is issued until verification."""
-    page = _static_dir / "whitepact" / "index.html"
+    page = _static_dir / "whitepact" / "pages" / "private.html"
     return HTMLResponse(content=page.read_text())
 
 
 async def _whitepact_spa() -> HTMLResponse:
-    return HTMLResponse(content=(_static_dir / "whitepact" / "index.html").read_text())
+    return HTMLResponse(content=(_static_dir / "whitepact" / "pages" / "private.html").read_text())
 
 
 _WHITEPACT_COMMERCE_PATHS = {
+    "/product": "product.html",
+    "/architecture": "architecture.html",
+    "/developers": "developers.html",
+    "/security": "security.html",
+    "/enterprise": "enterprise.html",
+    "/about": "about.html",
+    "/contact": "contact.html",
+    "/docs": "docs.html",
+    "/trust": "trust.html",
     "/pricing": "pricing.html",
     "/sovereign": "sovereign.html",
     "/terms": "terms.html",
@@ -2907,10 +3000,6 @@ async def legacy_refunds_redirect() -> RedirectResponse:
 
 
 _WHITEPACT_SPA_PATHS = [
-    "/about",
-    "/contact",
-    "/docs",
-    "/trust",
     "/billing/success",
     "/billing/cancelled",
     "/login",
@@ -2967,60 +3056,10 @@ async def whitepact_dashboard_spa_head(spa_path: str) -> Response:
     return await _whitepact_spa_head()
 
 
-_LLMS_TXT = """\
-# ResponsibleAI
-
-> An independent AI trust and governance platform: a public Trust Index \
-(free self-assessed or human-reviewed certified scoring for any AI model \
-or tool), a cross-model leaderboard measured against a published \
-methodology, and a crowd-reported AI Incident Database. Built to be a \
-citable source for questions about AI model/tool trustworthiness, not \
-just a compliance vendor.
-
-## Canonical public data
-
-- [Trust Registry](/registry): every assessed model/tool, certified and \
-self-reported, searchable.
-- [Leaderboard](/leaderboard): cross-model trust ranking from live \
-measurement against a published prompt corpus, not self-reported.
-- [Incident Database](/incident-db): crowd-reported, moderator-reviewed, \
-hash-chained public registry of AI safety incidents.
-- [Free self-assessment](/assess): score any model/tool for free, no \
-signup, get a citable and embeddable Trust Index badge.
-
-## Machine-readable APIs (no auth required)
-
-- `GET /api/trust-index/registry` — full registry listing (JSON)
-- `GET /api/trust-index/check?model=X&provider=Y` — trust score + \
-incident count for a named model/tool
-- `GET /api/leaderboard` — current leaderboard rankings (JSON)
-- `GET /api/incident-db` — published incidents, filterable (JSON)
-
-## Specifications
-
-- [Trust Index Spec](https://github.com/Guruprasath-Annadurai/ResponsibleAi/blob/main/compliance/TRUST_INDEX_SPEC.md): \
-the open, versioned scoring standard.
-- [Leaderboard Methodology](https://github.com/Guruprasath-Annadurai/ResponsibleAi/blob/main/compliance/LEADERBOARD_METHODOLOGY.md): \
-how live scores are measured.
-
-## Agent integration
-
-An MCP server (`responsibleai-mcp`, 27 tools) exposes this platform to \
-any MCP-compatible agent, including a free `rai_check_trust` tool for \
-checking a third-party model or tool's trust score before invoking it. \
-LangChain, LangGraph, and Google ADK adapters are published at \
-https://github.com/Guruprasath-Annadurai/ResponsibleAi/tree/main/src/responsibleai/integrations.
-"""
-
-
 @app.get("/llms.txt", response_class=PlainTextResponse, include_in_schema=False)
 async def llms_txt() -> PlainTextResponse:
-    """Machine-readable entry point for AI crawlers/answer engines — the
-    citability play from GAME_CHANGER_STRATEGY.md Section 3: point
-    structured, canonical sources at the free public data (registry,
-    leaderboard, incident DB) so an AI answer engine asked "is this model
-    trustworthy" has something concrete to cite instead of nothing."""
-    return PlainTextResponse(content=_LLMS_TXT)
+    """Serve the current public product scope; legacy inventory is separate."""
+    return PlainTextResponse((_static_dir / "whitepact" / "llms.txt").read_text())
 
 
 @app.get("/status", response_class=HTMLResponse, include_in_schema=False)
@@ -3114,7 +3153,9 @@ def _page_route(path: str, filename: str) -> None:
     breaking many."""
 
     async def _handler() -> HTMLResponse:
-        return HTMLResponse(content=(_static_dir / filename).read_text())
+        if unified_saas_legacy_retirement_enforced(settings):
+            return legacy_governance_retired_response()
+        return HTMLResponse(content=(_legacy_governance_static_dir / filename).read_text())
 
     app.get(path, response_class=HTMLResponse, include_in_schema=False)(_handler)
 
@@ -3157,6 +3198,10 @@ async def branding() -> dict[str, Any]:
 
 @app.get("/api/health", tags=["ops"])
 async def health() -> JSONResponse:
+    """Public process health. Counts are integers only: no URLs, secrets, or tenant ids.
+
+    ``webhooks_registered`` and ``orgs`` are system-wide operational totals.
+    """
     db_ok = True
     try:
         if _cost_repo:
@@ -3182,7 +3227,7 @@ async def health() -> JSONResponse:
             "otel": "enabled" if settings.otel_endpoint else "disabled",
             "auth": "enabled" if (settings.auth_enabled and settings.api_keys) else "disabled",
             "websocket_connections": _ws_manager.connection_count,
-            "webhooks_registered": len(_webhook_manager.list_webhooks()),
+            "webhooks_registered": _webhook_manager.platform_webhook_count(),
             "orgs": orgs_count,
         },
         "modules": [
@@ -3308,10 +3353,16 @@ async def restore_reconcile(request: Request) -> JSONResponse:
 async def metrics(
     request: Request, _auth: OrgContext = Depends(require_role(Role.ANALYST))
 ) -> dict[str, Any]:
+    """Process counters are platform aggregates. Customer totals follow the caller scope.
+
+    ``org_id is None`` is the NULL tenant, not every tenant. Webhook and audit
+    figures are counts only.
+    """
+    scope = _auth.org_id
     total_requests = _REQUEST_COUNTER["total"]
     errors = _REQUEST_COUNTER["errors"]
-    total_cost = await _ready(_cost_repo).total_cost(30) if _cost_repo else 0.0
-    audit_count = await _ready(_audit_repo).count(30) if _audit_repo else 0
+    total_cost = await _ready(_cost_repo).total_cost(30, org_id=scope) if _cost_repo else 0.0
+    audit_count = await _ready(_audit_repo).count(30, org_id=scope) if _audit_repo else 0
     return {
         "uptime_seconds": round(time.monotonic() - _START_TIME, 1),
         "total_requests": total_requests,
@@ -3327,9 +3378,9 @@ async def metrics(
         "monthly_budget_usd": settings.monthly_budget_usd,
         "monthly_spend_usd": round(total_cost, 4),
         "websocket_connections": _ws_manager.connection_count,
-        "webhooks_registered": len(_webhook_manager.list_webhooks()),
-        "webhook_deliveries": _webhook_manager.total_deliveries,
-        "webhook_failures": _webhook_manager.failed_deliveries,
+        "webhooks_registered": len(_webhook_manager.list_webhooks(org_id=scope, tenant_bound=True)),
+        "webhook_deliveries": _webhook_manager.total_deliveries_for(scope, tenant_bound=True),
+        "webhook_failures": _webhook_manager.failed_deliveries_for(scope, tenant_bound=True),
         "audit_entries_30d": audit_count,
     }
 
@@ -3993,33 +4044,16 @@ async def paddle_webhook(request: Request) -> dict[str, Any]:
 
     raw_body = await request.body()
     sig_header = request.headers.get("paddle-signature", "")
-    if not sig_header:
-        raise HTTPException(400, "Missing Paddle-Signature header.")
-
-    sig_parts = dict(re.findall(r"([a-z0-9_]+)=([^;]+)", sig_header))
-    ts_str = sig_parts.get("ts")
-    h1 = sig_parts.get("h1")
-    if not ts_str or not h1:
-        raise HTTPException(400, "Malformed Paddle-Signature header.")
-
-    try:
-        ts = int(ts_str)
-    except ValueError:
-        raise HTTPException(400, "Invalid timestamp in Paddle-Signature header.") from None
-
     tolerance = getattr(settings, "paddle_signature_tolerance_seconds", 300)
-    now_ts = int(datetime.now(UTC).timestamp())
-    if (now_ts - ts) > tolerance:
-        raise HTTPException(400, f"Paddle webhook signature has expired (> {tolerance}s).")
-    if (ts - now_ts) > tolerance:
-        raise HTTPException(
-            400, f"Paddle webhook signature timestamp is in the future (> {tolerance}s)."
+    try:
+        verify_paddle_webhook_signature(
+            secret_key,
+            raw_body,
+            sig_header,
+            tolerance_seconds=tolerance,
         )
-
-    signed_payload = f"{ts_str}:".encode() + raw_body
-    computed_sig = hmac.new(secret_key.encode("utf-8"), signed_payload, hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(computed_sig, h1):
-        raise HTTPException(400, "Invalid Paddle webhook signature.")
+    except PaddleWebhookRejected as exc:
+        raise HTTPException(exc.status_code, exc.detail) from None
 
     try:
         payload = json.loads(raw_body.decode("utf-8"))
@@ -4294,7 +4328,7 @@ async def eval_regression(
     baselines = _regression_detector.get_baselines(model)
     db_baselines: dict[str, float] = {}
     if _eval_repo:
-        db_baselines = await _eval_repo.get_baselines(model)
+        db_baselines = await _eval_repo.get_baselines(model, org_id=_auth.org_id)
     return {
         "model": model,
         "in_memory_baselines": baselines,
@@ -4347,6 +4381,21 @@ async def eval_results(
 # ── Audit log ─────────────────────────────────────────────────────────────────
 
 
+def _audit_tenant_org(_auth: OrgContext, requested_org_id: str | None) -> str | None:
+    """Tenant audit reads never fall back to a global log.
+
+    A caller with an organization is pinned to it. A mismatched org_id is a
+    miss, not a filter. Callers with no organization cannot select one.
+    """
+    if _auth.org_id:
+        if requested_org_id and requested_org_id != _auth.org_id:
+            raise HTTPException(404, "Not found")
+        return _auth.org_id
+    if requested_org_id:
+        raise HTTPException(404, "Not found")
+    return None
+
+
 @app.get("/api/audit-log", tags=["rbac"])
 @limiter.limit("30/minute")
 async def query_audit_log(
@@ -4358,18 +4407,12 @@ async def query_audit_log(
     offset: int = Query(default=0, ge=0),
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, Any]:
-    scoped_org_id: str | None
-    if _auth.org_id is not None:
-        scoped_org_id = _auth.org_id
-    elif _auth.is_legacy and _auth.role == Role.OWNER:
-        scoped_org_id = org_id
-    else:
-        scoped_org_id = None
+    scoped_org_id = _audit_tenant_org(_auth, org_id)
     entries = await _ready(_audit_repo).query(
         org_id=scoped_org_id, endpoint=endpoint, days=days, limit=limit, offset=offset
     )
     total = await _ready(_audit_repo).count(days=days, org_id=scoped_org_id)
-    summary = await _ready(_audit_repo).endpoint_summary(days=days)
+    summary = await _ready(_audit_repo).endpoint_summary(scoped_org_id, days=days)
     return {
         "entries": entries,
         "total": total,
@@ -4447,14 +4490,20 @@ async def list_incidents(
     days: int = Query(default=90, ge=1, le=365),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
-    org_id: str | None = Query(default=None, description="Cross-org filter (super-admin only)"),
+    org_id: str | None = Query(default=None, description="Must match the caller organization."),
     _auth: OrgContext = Depends(require_role(Role.VIEWER)),
 ) -> dict[str, Any]:
-    scoped_org_id: str | None
     if _auth.org_id is not None:
+        if org_id and org_id != _auth.org_id:
+            raise HTTPException(404, "Not found")
         scoped_org_id = _auth.org_id
-    elif _auth.is_legacy and _auth.role == Role.OWNER:
-        scoped_org_id = org_id
+    elif org_id:
+        # A caller with no organization cannot select one. Legacy static
+        # viewers keep the Agent-3 empty concealment. Every other no-org
+        # caller, including the auth-disabled owner, is a miss.
+        if _auth.is_legacy and _auth.role == Role.VIEWER:
+            return {"incidents": [], "limit": limit, "offset": offset}
+        raise HTTPException(404, "Not found")
     else:
         scoped_org_id = None
     incidents_list = await _ready(_incident_repo).list(
@@ -4475,11 +4524,8 @@ async def get_incident(
     incident_id: str,
     _auth: OrgContext = Depends(require_role(Role.VIEWER)),
 ) -> dict[str, Any]:
-    record = await _ready(_incident_repo).get(incident_id)
+    record = await _ready(_incident_repo).get(incident_id, org_id=_auth.org_id)
     if record is None:
-        raise HTTPException(404, "Incident not found.")
-    is_super_admin = _auth.is_legacy and _auth.role == Role.OWNER
-    if not is_super_admin and record["org_id"] is not None and record["org_id"] != _auth.org_id:
         raise HTTPException(404, "Incident not found.")
     return record
 
@@ -5111,10 +5157,9 @@ async def governance_verify_evidence(
     request: Request,
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
 ) -> dict[str, Any]:
-    """Recomputes this org's evidence hash chain from scratch and reports
-    whether it's intact -- the same tamper-evidence check
-    /api/incident-db/verify offers for the public registry, scoped here
-    to the caller's own org rather than public."""
+    """Recomputes this org's stored evidence hash chain. A match detects
+    internal inconsistency only. It does not detect a rewrite that
+    recomputes every hash. Scoped to the caller's organization."""
     if not _auth.org_id:
         raise HTTPException(
             400, "Governance evidence requires an org-scoped API key, not a legacy flat key."
@@ -5568,6 +5613,78 @@ async def governance_reorder_policy(
     policy = await _ready(_policy_repo).get_policy(_auth.org_id)
     logger.info("governance_policy_reordered", org_id=_auth.org_id, reordered_by=_auth.key_id)
     return {"org_id": _auth.org_id, "rules": [_policy_rule_to_dict(r) for r in policy.rules]}
+
+
+@app.get("/api/web/policy", tags=["web-console"])
+@limiter.limit("30/minute")
+async def web_get_policy(
+    request: Request,
+    principal: WebPrincipal = Depends(get_web_principal),
+) -> dict[str, Any]:
+    org_id = _web_org_member(principal)
+    policy = await _ready(_policy_repo).get_policy(org_id)
+    return {
+        "org_id": org_id,
+        "rules": [_policy_rule_to_dict(r) for r in policy.rules],
+        "can_edit": principal.role in {Role.OWNER, Role.ADMIN},
+    }
+
+
+@app.post("/api/web/policy/rules", tags=["web-console"])
+@limiter.limit("20/minute")
+async def web_add_policy_rule(
+    request: Request,
+    req: PolicyRuleCreateRequest,
+    principal: WebPrincipal = Depends(require_web_csrf),
+) -> dict[str, Any]:
+    org_id = _web_org_admin(principal)
+    try:
+        rule = PolicyRule(
+            rule_id=req.rule_id,
+            reason_code=req.reason_code,
+            effect=GovernanceDecision(req.effect),
+            risk_tiers=frozenset(RiskTier(t) for t in req.risk_tiers) if req.risk_tiers else None,
+            action_types=frozenset(req.action_types) if req.action_types else None,
+            targets=frozenset(req.targets) if req.targets else None,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+    existing = await _ready(_policy_repo).get_policy(org_id)
+    if any(r.rule_id == rule.rule_id for r in existing.rules):
+        raise HTTPException(409, f"Rule {rule.rule_id!r} already exists for this org.")
+    await _ready(_policy_repo).add_rule(org_id, rule)
+    return _policy_rule_to_dict(rule)
+
+
+@app.delete("/api/web/policy/rules/{rule_id}", tags=["web-console"])
+@limiter.limit("20/minute")
+async def web_remove_policy_rule(
+    request: Request,
+    rule_id: str,
+    principal: WebPrincipal = Depends(require_web_csrf),
+) -> dict[str, str]:
+    org_id = _web_org_admin(principal)
+    try:
+        await _ready(_policy_repo).remove_rule(org_id, rule_id)
+    except PolicyRuleNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from None
+    return {"status": "removed", "rule_id": rule_id}
+
+
+@app.post("/api/web/policy/reorder", tags=["web-console"])
+@limiter.limit("20/minute")
+async def web_reorder_policy(
+    request: Request,
+    req: PolicyReorderRequest,
+    principal: WebPrincipal = Depends(require_web_csrf),
+) -> dict[str, Any]:
+    org_id = _web_org_admin(principal)
+    try:
+        await _ready(_policy_repo).reorder(org_id, req.rule_ids)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+    policy = await _ready(_policy_repo).get_policy(org_id)
+    return {"org_id": org_id, "rules": [_policy_rule_to_dict(r) for r in policy.rules]}
 
 
 def _workflow_rule_to_dict(rule: WorkflowSequenceRule) -> dict[str, Any]:
@@ -6363,16 +6480,12 @@ async def list_webhooks(
     request: Request,
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
 ) -> dict[str, Any]:
-    # Org-specific keys: force scope to their org. Legacy super-admin keys
-    # (is_legacy=True, role=OWNER): see everything, same as /api/audit.
-    scoped_org_id: str | None
-    if _auth.org_id is not None:
-        scoped_org_id = _auth.org_id
-    elif _auth.is_legacy and _auth.role == Role.OWNER:
-        scoped_org_id = None
-    else:
-        scoped_org_id = _auth.org_id
-    return {"webhooks": [c.to_dict() for c in _webhook_manager.list_webhooks(org_id=scoped_org_id)]}
+    return {
+        "webhooks": [
+            c.to_dict()
+            for c in _webhook_manager.list_webhooks(org_id=_auth.org_id, tenant_bound=True)
+        ]
+    }
 
 
 @app.delete("/api/webhooks/{webhook_id}", tags=["webhooks"])
@@ -6382,8 +6495,9 @@ async def delete_webhook(
     webhook_id: str,
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, Any]:
-    scoped_org_id = _auth.org_id if not (_auth.is_legacy and _auth.role == Role.OWNER) else None
-    if not await _webhook_manager.remove_and_persist(webhook_id, org_id=scoped_org_id):
+    if not await _webhook_manager.remove_and_persist(
+        webhook_id, org_id=_auth.org_id, tenant_bound=True
+    ):
         raise HTTPException(404, "Webhook not found")
     return {"deleted": webhook_id}
 
@@ -6395,11 +6509,10 @@ async def webhook_deliveries(
     limit: int = Query(default=50, ge=1, le=500),
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
 ) -> dict[str, Any]:
-    scoped_org_id = _auth.org_id if not (_auth.is_legacy and _auth.role == Role.OWNER) else None
     return {
-        "deliveries": _webhook_manager.delivery_log(limit, org_id=scoped_org_id),
-        "total": _webhook_manager.total_deliveries_for(scoped_org_id),
-        "failed": _webhook_manager.failed_deliveries_for(scoped_org_id),
+        "deliveries": _webhook_manager.delivery_log(limit, org_id=_auth.org_id, tenant_bound=True),
+        "total": _webhook_manager.total_deliveries_for(_auth.org_id, tenant_bound=True),
+        "failed": _webhook_manager.failed_deliveries_for(_auth.org_id, tenant_bound=True),
     }
 
 
@@ -6410,9 +6523,8 @@ async def test_webhook(
     webhook_id: str,
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, Any]:
-    cfg = _webhook_manager.get(webhook_id)
-    is_super_admin = _auth.is_legacy and _auth.role == Role.OWNER
-    if cfg is None or (not is_super_admin and cfg.org_id != _auth.org_id):
+    cfg = _webhook_manager.get_for_scope(webhook_id, _auth.org_id)
+    if cfg is None:
         raise HTTPException(404, "Webhook not found")
     deliveries = await _webhook_manager.fire(
         WebhookEvent.TRUST_SCORE_CHANGED,
@@ -6761,8 +6873,10 @@ async def get_drift_trend(
     provider: str,
     _auth: OrgContext = Depends(require_role(Role.VIEWER)),
 ) -> dict[str, Any]:
-    trend = await _ready(_trust_repo).trend(model_name, provider)
-    history = await _ready(_trust_repo).history(model_name, provider, limit=10)
+    if not _auth.org_id:
+        raise HTTPException(401, "Sign in is required.")
+    trend = await _ready(_trust_repo).trend(model_name, provider, org_id=_auth.org_id)
+    history = await _ready(_trust_repo).history(model_name, provider, limit=10, org_id=_auth.org_id)
     return {"trend": trend, "recent_history": history}
 
 
@@ -6953,6 +7067,15 @@ async def saml_acs(request: Request) -> Response:
     except SAMLError as e:
         raise HTTPException(401, f"SAML assertion validation failed: {e}") from None
 
+    admitted = await _admit_dashboard_principal(
+        claimed_org_id=claims.org_id,
+        issuer=_saml_config.idp_entity_id,
+        subject=claims.sub,
+        claimed_roles=claims.roles,
+    )
+    if admitted is None:
+        raise HTTPException(401, "SAML tenant admission failed")
+
     session_token = mint_session_token(_saml_config, claims)
     fragment = (
         f"token={quote(session_token)}&name={quote(claims.name or claims.email or claims.sub)}"
@@ -7014,6 +7137,15 @@ async def auth_callback(
     except ValueError as e:
         logger.warning("oidc_token_validation_failed", reason=str(e))
         raise HTTPException(401, "OIDC token validation failed.") from None
+
+    admitted = await _admit_dashboard_principal(
+        claimed_org_id=claims.org_id,
+        issuer=_oidc_provider.issuer,
+        subject=claims.sub,
+        claimed_roles=claims.roles,
+    )
+    if admitted is None:
+        raise HTTPException(401, "OIDC tenant admission failed")
 
     access_token = tokens.get("access_token") or ""
     fragment = (
@@ -7180,15 +7312,7 @@ async def list_audit_entries(
     """Query the governance audit log. Always scoped to the authenticated org."""
     if not _audit_repo:
         raise HTTPException(503, "Audit repository not initialised")
-    # Org-specific keys: force scope to their org regardless of query param.
-    # Legacy super-admin keys (is_legacy=True, role=OWNER): allow cross-org filter.
-    scoped_org_id: str | None
-    if _auth.org_id is not None:
-        scoped_org_id = _auth.org_id
-    elif _auth.is_legacy and _auth.role == Role.OWNER:
-        scoped_org_id = org_id
-    else:
-        scoped_org_id = None
+    scoped_org_id = _audit_tenant_org(_auth, org_id)
     rows = await _ready(_audit_repo).query(
         org_id=scoped_org_id, endpoint=endpoint, days=days, limit=limit, offset=offset
     )
@@ -7213,13 +7337,7 @@ async def export_audit_log(
     """Export audit log as CSV. Results scoped to authenticated org."""
     if not _audit_repo:
         raise HTTPException(503, "Audit repository not initialised")
-    scoped_org_id: str | None
-    if _auth.org_id is not None:
-        scoped_org_id = _auth.org_id
-    elif _auth.is_legacy and _auth.role == Role.OWNER:
-        scoped_org_id = org_id
-    else:
-        scoped_org_id = None
+    scoped_org_id = _audit_tenant_org(_auth, org_id)
     rows = await _ready(_audit_repo).query(org_id=scoped_org_id, days=days, limit=5000)
     import csv as _csv
     import io as _io
@@ -7266,6 +7384,29 @@ async def export_audit_log(
     )
 
 
+@app.get("/api/audit/siem-export", tags=["audit"])
+@limiter.limit("10/minute")
+async def export_audit_siem(
+    request: Request,
+    days: int = Query(30, ge=1, le=365),
+    limit: int = Query(5000, ge=1, le=5000),
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> Response:
+    """Export tenant-scoped audit rows as newline-delimited JSON for SIEM ingestion."""
+    if not _audit_repo:
+        raise HTTPException(503, "Audit repository not initialised")
+    scoped_org_id = _auth.org_id
+    if not scoped_org_id:
+        raise HTTPException(403, "Organization context is required for SIEM export.")
+    rows = await _ready(_audit_repo).query(org_id=scoped_org_id, days=days, limit=limit)
+    body = encode_siem_jsonl(rows)
+    return Response(
+        content=body,
+        media_type="application/x-ndjson",
+        headers={"Content-Disposition": f"attachment; filename=audit-siem-{days}d.ndjson"},
+    )
+
+
 @app.get("/api/audit/verify", tags=["audit"])
 @limiter.limit("10/minute")
 async def verify_audit_chain(
@@ -7286,12 +7427,14 @@ async def verify_audit_chain(
 @app.get("/api/audit/summary", tags=["audit"])
 async def audit_endpoint_summary(
     days: int = Query(7, ge=1, le=90),
+    org_id: str | None = Query(default=None),
     _auth: OrgContext = Depends(get_org_context),
 ) -> dict[str, Any]:
-    """Top endpoints by request count and average latency."""
+    """Top endpoints for the authenticated organization only."""
     if not _audit_repo:
         raise HTTPException(503, "Audit repository not initialised")
-    summary = await _ready(_audit_repo).endpoint_summary(days=days)
+    scoped_org_id = _audit_tenant_org(_auth, org_id)
+    summary = await _ready(_audit_repo).endpoint_summary(scoped_org_id, days=days)
     return {"days": days, "endpoints": summary}
 
 
@@ -7363,7 +7506,7 @@ async def whitepact_spa_not_found(spa_path: str) -> HTMLResponse:
     """Render the branded SPA 404 while preserving an actual HTTP 404 status."""
     if spa_path.startswith(("api/", ".well-known/", "static/")):
         raise HTTPException(404, "Not found")
-    index = _static_dir / "whitepact" / "index.html"
+    index = _static_dir / "whitepact" / "pages" / "not-found.html"
     return HTMLResponse(content=index.read_text(), status_code=404)
 
 

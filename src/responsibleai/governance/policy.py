@@ -21,6 +21,7 @@ independent from content scanning.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from responsibleai.governance.models import ActionRequest, GovernanceDecision
 from responsibleai.governance.risk import RiskTier
@@ -94,3 +95,69 @@ class Policy:
             if rule.matches(action, risk_tier):
                 return PolicyMatch(rule=rule)
         return None
+
+
+class PolicyShadowError(ValueError):
+    """A stricter rule can never fire because an earlier rule already matches
+    every action it would match. First-match would let the earlier, weaker
+    effect win, including a broad ALLOW hiding a later DENY."""
+
+    def __init__(self, shadowed_rule_id: str, covering_rule_id: str) -> None:
+        self.shadowed_rule_id = shadowed_rule_id
+        self.covering_rule_id = covering_rule_id
+        super().__init__(
+            f"Policy rule {shadowed_rule_id!r} is shadowed by earlier rule "
+            f"{covering_rule_id!r}. Place the stricter rule first or narrow "
+            "the earlier rule. A DENY or approval requirement hidden behind "
+            "a broader ALLOW does not take effect."
+        )
+
+
+_EFFECT_STRENGTH = {
+    GovernanceDecision.ALLOW: 0,
+    GovernanceDecision.REQUIRE_APPROVAL: 1,
+    GovernanceDecision.DENY: 2,
+}
+
+
+def _dimension_covers(earlier: frozenset[Any] | None, later: frozenset[Any] | None) -> bool:
+    if earlier is None:
+        return True
+    if later is None:
+        return False
+    return later <= earlier
+
+
+def rule_match_covers(earlier: PolicyRule, later: PolicyRule) -> bool:
+    """True when every action *later* matches is already matched by *earlier*."""
+    return (
+        _dimension_covers(earlier.risk_tiers, later.risk_tiers)
+        and _dimension_covers(earlier.action_types, later.action_types)
+        and _dimension_covers(earlier.targets, later.targets)
+    )
+
+
+def shadowed_restrictive_rules(rules: list[PolicyRule]) -> list[tuple[PolicyRule, PolicyRule]]:
+    """Later rules that are strictly stronger than an earlier covering rule.
+
+    Duplicate DENY rules are not reported: a second DENY does not enlarge
+    authority. An ALLOW or REQUIRE_APPROVAL that covers a later DENY does.
+    """
+    found: list[tuple[PolicyRule, PolicyRule]] = []
+    for index, rule in enumerate(rules):
+        rule_strength = _EFFECT_STRENGTH[rule.effect]
+        for earlier in rules[:index]:
+            if _EFFECT_STRENGTH[earlier.effect] >= rule_strength:
+                continue
+            if rule_match_covers(earlier, rule):
+                found.append((rule, earlier))
+                break
+    return found
+
+
+def reject_shadowed_restrictive_rules(rules: list[PolicyRule]) -> None:
+    shadowed = shadowed_restrictive_rules(rules)
+    if not shadowed:
+        return
+    rule, cover = shadowed[0]
+    raise PolicyShadowError(rule.rule_id, cover.rule_id)

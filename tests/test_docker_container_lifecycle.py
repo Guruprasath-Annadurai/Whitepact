@@ -29,6 +29,13 @@ from tests.docker_runtime import DOCKER_UNAVAILABLE_REASON, docker_available
 pytestmark = pytest.mark.skipif(not docker_available(), reason=DOCKER_UNAVAILABLE_REASON)
 
 
+@pytest.fixture(autouse=True)
+def _enable_containment_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+    from tests.docker_runtime import enable_containment_probe
+
+    enable_containment_probe(monkeypatch)
+
+
 def _container_name(org_id: str, action_id: str) -> str:
     return f"wp_iso_{org_id}_{action_id}"[:63]
 

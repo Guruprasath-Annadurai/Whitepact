@@ -465,8 +465,18 @@ class TestOidcSamlResolutionBatch12:
         repo = OrgRepository(engine)
         org = await repo.create_org("OIDC Org", f"oidc-{uuid.uuid4().hex[:8]}")
         provider = MagicMock()
+        provider.issuer = "https://idp.example"
         provider.validate_token = AsyncMock(
             return_value=JWTClaims(sub="user-1", org_id=org.id, roles=["ADMIN"])
+        )
+        from responsibleai.db import WebIdentityRepository
+
+        await WebIdentityRepository(engine).bind_sso_principal(
+            org_id=org.id,
+            issuer="https://idp.example",
+            subject="user-1",
+            role=Role.ADMIN,
+            email=f"user-1-{org.id[:8]}@example.com",
         )
         monkeypatch = pytest.MonkeyPatch()
         monkeypatch.setattr(app_module, "_oidc_provider", provider)
@@ -977,9 +987,7 @@ async def test_execute_mock_success_path(monkeypatch: pytest.MonkeyPatch) -> Non
         organization_id="org-1",
         action_type="noop",
         arguments={},
-        workspace_files={
-            "runner.py": 'import json; print(json.dumps({"status":"success","result":{}}))'
-        },
+        workspace_files={"notes.txt": "not the entrypoint"},
     )
     outcome = await backend.execute(req)
     assert outcome.result_payload == {"echo": True}

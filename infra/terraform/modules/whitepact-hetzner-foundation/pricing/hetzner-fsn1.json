@@ -1,0 +1,24 @@
+{
+  "currency": "EUR",
+  "vat": "exclusive",
+  "location_scope": "fsn1-nbg1-hel1",
+  "reviewed_on": "2026-10-09",
+  "server_monthly_cents": {
+    "cx23": 549,
+    "cx33": 849
+  },
+  "load_balancer_monthly_cents": {
+    "lb11": 749
+  },
+  "primary_ipv4_monthly_cents": 50,
+  "network_monthly_cents": 0,
+  "firewall_monthly_cents": 0,
+  "backup_rate_of_server": "0.20",
+  "sources": {
+    "cx23": "Hetzner price adjustment 15 June 2026, Germany/Finland, new monthly price excl. IPv4: 5.49 EUR",
+    "cx33": "Hetzner price adjustment 15 June 2026, Germany/Finland, new monthly price excl. IPv4: 8.49 EUR",
+    "lb11": "Hetzner April 2026 load-balancer adjustment, new monthly price 7.49 EUR. Load balancers were excluded from the June 2026 round.",
+    "primary_ipv4": "https://docs.hetzner.com/cloud/servers/primary-ips/overview/ — 0.50 EUR per month excl. VAT. LB11's own IPv4 is included in the LB11 price and is not added again.",
+    "backup": "Hetzner backups are 20 percent of the server price, not of the load balancer or primary IP."
+  }
+}

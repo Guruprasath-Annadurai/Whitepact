@@ -108,7 +108,8 @@ def make_trust_gate_node(
     LangChain middleware uses, so a tool assessed once is recognized by
     both integrations.
 
-    Below `min_score` (or unknown, when `require_known=True`), the node
+    When ``TrustCheckResult.passes()`` is false, including a provider
+    error, a stale result, or an unknown tool, the node
     calls `interrupt()` with the trust-check details and expects the
     resume value to be the literal string `"approve"` or `"reject"`
     (anything else is treated as a rejection, fail-closed for the

@@ -68,6 +68,13 @@ def _docker_available() -> bool:
 pytestmark = pytest.mark.skipif(not _docker_available(), reason=DOCKER_UNAVAILABLE_REASON)
 
 
+@pytest.fixture(autouse=True)
+def _enable_containment_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+    from tests.docker_runtime import enable_containment_probe
+
+    enable_containment_probe(monkeypatch)
+
+
 def _make_action(
     tool_name: str, args: dict[str, Any], *, org_id: str = "tenant-hardgate"
 ) -> ActionRequest:

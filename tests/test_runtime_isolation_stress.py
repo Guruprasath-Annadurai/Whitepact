@@ -41,6 +41,24 @@ def _docker_available() -> bool:
 pytestmark = pytest.mark.skipif(not _docker_available(), reason=DOCKER_UNAVAILABLE_REASON)
 
 
+@pytest.fixture(autouse=True)
+def _enable_containment_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests measure cgroup limits with an explicit probe entrypoint.
+
+    The probe is selected on the backend instance. A request that only
+    supplies workspace_files cannot enable it.
+    """
+    from responsibleai.isolation.container_backend import DockerContainerBackend
+
+    original = DockerContainerBackend.__init__
+
+    def _init(self, *args, **kwargs):
+        original(self, *args, **kwargs)
+        self._containment_probe_enabled = True
+
+    monkeypatch.setattr(DockerContainerBackend, "__init__", _init)
+
+
 @pytest.mark.asyncio
 class TestProductionContainerResourceAttacks:
     async def test_cpu_busy_loop_bounded(self):
