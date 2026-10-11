@@ -17,12 +17,20 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 DCO_PATH = ROOT / ".github" / "workflows" / "dco.yml"
-RECORD = ROOT / "compliance" / "DCO_HISTORICAL_EXCEPTION_2026-10-09.md"
+RECORD_OCT09 = ROOT / "compliance" / "DCO_HISTORICAL_EXCEPTION_2026-10-09.md"
+RECORD_OCT11 = ROOT / "compliance" / "DCO_HISTORICAL_EXCEPTION_2026-10-11.md"
 
-HISTORICAL = (
+HISTORICAL_OCT09 = (
     "015fab741427a5a9cae5bca7adaa9729c78da9e5",
     "681ce9566f0ef9b68b6fc97212cc2fb7a44135e3",
 )
+HISTORICAL_OCT11 = (
+    "c176669597c4812f0ab1ead88e4274128d9939c1",
+    "85a992aab4a1970a0cc25dabc09ef032f0612d15",
+    "55ab0ca7c01ef1da0f106cd76b21874203b5039e",
+    "5dcf04238a06813a8782cc8d46e6638396e19aef",
+)
+HISTORICAL = (*HISTORICAL_OCT09, *HISTORICAL_OCT11)
 HISTORICAL_PARENT = "5d317d5a03cf335ec8ca09536c2911b5762daa7c"
 SIGN_OFF_RE = r"^Signed-off-by: .+ <.+@.+>$"
 
@@ -40,9 +48,11 @@ def _check_script() -> str:
 
 
 def _exception_arms(script: str) -> set[str]:
-    match = re.search(r'case "\$sha" in\n\s+([0-9a-f|]+)\)', script)
-    assert match is not None
-    return set(match.group(1).split("|"))
+    shas: set[str] = set()
+    for match in re.finditer(r"([0-9a-f]{40}(?:\|[0-9a-f]{40})*)\)", script):
+        for part in match.group(1).split("|"):
+            shas.add(part)
+    return shas
 
 
 def _run_check(repo: Path, base: str, head: str) -> subprocess.CompletedProcess[str]:
@@ -143,7 +153,7 @@ def _commit(repo: Path, message: str, filename: str = "note.txt") -> str:
     return _git(repo, "rev-parse", "HEAD")
 
 
-def test_exception_set_is_exactly_two_full_shas() -> None:
+def test_exception_set_is_exactly_the_approved_shas() -> None:
     script = _check_script()
     arms = _exception_arms(script)
     assert arms == set(HISTORICAL)
@@ -165,12 +175,22 @@ def test_exception_set_is_exactly_two_full_shas() -> None:
 
 
 def test_governance_record_names_the_same_commits_and_denies_signoff() -> None:
-    text = RECORD.read_text(encoding="utf-8")
-    for sha in HISTORICAL:
-        assert sha in text
-    assert "October 9, 2026" in text
-    assert "not a retrospective DCO sign-off" in text
-    assert "Co-authored-by: Guruprasath Annadurai <Guruprasathannadurai.official@gmail.com>" in text
+    text_oct09 = RECORD_OCT09.read_text(encoding="utf-8")
+    for sha in HISTORICAL_OCT09:
+        assert sha in text_oct09
+    assert "October 9, 2026" in text_oct09
+    assert "not a retrospective DCO sign-off" in text_oct09
+    assert (
+        "Co-authored-by: Guruprasath Annadurai <Guruprasathannadurai.official@gmail.com>"
+        in text_oct09
+    )
+
+    text_oct11 = RECORD_OCT11.read_text(encoding="utf-8")
+    for sha in HISTORICAL_OCT11:
+        assert sha in text_oct11
+    assert "October 11, 2026" in text_oct11
+    assert "not a retrospective DCO sign-off" in text_oct11
+
     contributing = (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
     for sha in HISTORICAL:
         assert sha in contributing
@@ -178,14 +198,14 @@ def test_governance_record_names_the_same_commits_and_denies_signoff() -> None:
 
 def test_historical_commits_have_no_signoff_and_are_recognized() -> None:
     _ensure_pr_history()
-    for sha in HISTORICAL:
+    for sha in HISTORICAL_OCT09:
         message = _git(ROOT, "log", "-1", "--format=%B", sha)
         assert re.search(SIGN_OFF_RE, message, flags=re.MULTILINE) is None
         assert "Co-authored-by: Guruprasath Annadurai <" in message
         assert _git(ROOT, "rev-parse", f"{sha}^")
-    result = _run_check(ROOT, HISTORICAL_PARENT, HISTORICAL[1])
+    result = _run_check(ROOT, HISTORICAL_PARENT, HISTORICAL_OCT09[1])
     assert result.returncode == 0, result.stdout + result.stderr
-    for sha in HISTORICAL:
+    for sha in HISTORICAL_OCT09:
         assert f"Owner-approved historical DCO exception for {sha}." in result.stdout
     assert "This exception is not a Signed-off-by trailer." in result.stdout
     assert "All commits are signed off." not in result.stdout

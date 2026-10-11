@@ -4090,6 +4090,7 @@ async def stripe_webhook(request: Request) -> dict[str, Any]:
             stripe_subscription_id=update.stripe_subscription_id,
             plan_renews_at=update.plan_renews_at,
             subscription_status=update.subscription_status,
+            event_timestamp=update.event_timestamp,
         )
         if not applied:
             # A signed event for an organization that does not exist here is not "processed":

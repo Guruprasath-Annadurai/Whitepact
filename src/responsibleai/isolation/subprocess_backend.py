@@ -135,7 +135,31 @@ if __name__ == "__main__":
                 preexec_fn=_apply_resource_limits,
             )
 
+            from responsibleai.isolation.in_flight import InFlightExecutionRegistry
+
+            registry = InFlightExecutionRegistry.get_instance()
+            execution_id = f"subproc_{request.organization_id}_{request.action_id}"
+
+            def _terminate_subprocess_sync() -> None:
+                try:
+                    if proc.returncode is None:
+                        try:
+                            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                        except Exception:
+                            proc.kill()
+                except Exception:
+                    pass
+
+            await registry.register(
+                execution_id=execution_id,
+                organization_id=request.organization_id,
+                action_id=request.action_id,
+                task=asyncio.current_task(),
+                terminate_callback=_terminate_subprocess_sync,
+            )
+
             timed_out = False
+            revoked_in_flight = False
             stdout_data = b""
             stderr_data = b""
             try:
@@ -154,6 +178,18 @@ if __name__ == "__main__":
                     except Exception:
                         pass
                 await proc.wait()
+            except asyncio.CancelledError:
+                revoked_in_flight = True
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                except Exception:
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
+                await proc.wait()
+            finally:
+                await registry.unregister(execution_id)
 
             duration = time.monotonic() - start_time
 
@@ -169,6 +205,9 @@ if __name__ == "__main__":
             if timed_out:
                 violation = f"Wall timeout of {limits.wall_timeout_seconds}s exceeded"
                 exit_code = -signal.SIGKILL
+            elif revoked_in_flight:
+                violation = "Execution revoked in-flight: subprocess terminated immediately"
+                exit_code = -signal.SIGTERM
             elif exit_code == 0:
                 try:
                     parsed = json.loads(stdout_str)

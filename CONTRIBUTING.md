@@ -60,13 +60,21 @@ A CI check runs on every PR and fails if any other non-merge commit is
 missing the trailer — see [`.github/workflows/dco.yml`](.github/workflows/dco.yml).
 Existing history is not rewritten to add sign-offs retroactively.
 
-Two commits already inside the qualified platform ancestor have no
+Two commits inside the qualified platform ancestor have no
 `Signed-off-by` trailer. On October 9, 2026 the owner approved a
 historical exception for exactly
 `015fab741427a5a9cae5bca7adaa9729c78da9e5` and
 `681ce9566f0ef9b68b6fc97212cc2fb7a44135e3`. The record is
 [`compliance/DCO_HISTORICAL_EXCEPTION_2026-10-09.md`](compliance/DCO_HISTORICAL_EXCEPTION_2026-10-09.md).
-That exception is not a sign-off. No other commit, author, bot, or date
+
+Additionally, on October 11, 2026 the owner approved a historical exception
+for four review candidate commits:
+`c176669597c4812f0ab1ead88e4274128d9939c1`,
+`85a992aab4a1970a0cc25dabc09ef032f0612d15`,
+`55ab0ca7c01ef1da0f106cd76b21874203b5039e`, and
+`5dcf04238a06813a8782cc8d46e6638396e19aef`. The record is
+[`compliance/DCO_HISTORICAL_EXCEPTION_2026-10-11.md`](compliance/DCO_HISTORICAL_EXCEPTION_2026-10-11.md).
+Those exceptions are not sign-offs. No other commit, author, bot, or date
 is exempt.
 
 ---

@@ -1,7 +1,8 @@
-# CodeQL disposition proposal for owner review
+# CodeQL disposition proposal and owner authorization record
 
-Status: **PROPOSAL. Nothing has been dismissed.** Dismissing a code-scanning alert is the owner's decision.
-Evidence is for the exact tree named in the PR description; re-read the alert list on the new head before acting.
+Status: **AUTHORIZED BY FOUNDER (October 11, 2026).**
+Disposition: Won't Fix with documented cryptographic justification.
+Evidence is for the exact tree named in the PR description; alerts 134 and 135 remain open as documented public witness disclosures without code modification.
 
 ## Alerts that were fixed in code (do not dismiss)
 

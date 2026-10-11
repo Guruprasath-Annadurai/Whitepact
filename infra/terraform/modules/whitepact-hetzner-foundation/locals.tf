@@ -55,7 +55,7 @@ locals {
     local.infra_nft_output,
   ))
   authority_nft_input = join("\n          ", [
-    "tcp dport 5432 ip saddr { ${var.saas_subnet_cidr}, ${var.execution_subnet_cidr} } accept",
+    "tcp dport 5432 ip saddr { ${var.saas_subnet_cidr} } accept comment \"SaaS and control plane database ingress\"",
     "tcp dport 22 ip saddr { ${local.mgmt_ssh_nft} } accept comment \"SSH via bastion\"",
   ])
   # Backup and update endpoints belong in authority_egress_cidrs. An
@@ -72,7 +72,6 @@ locals {
       "tcp dport 443 ip daddr { ${cidr} } accept"
       if var.enable_execution_egress_allowlist
     ],
-    ["tcp dport 5432 ip daddr { ${var.authority_subnet_cidr} } accept comment \"authority admission\""],
     local.infra_nft_output,
   )
 

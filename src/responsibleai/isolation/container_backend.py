@@ -387,7 +387,36 @@ class DockerContainerBackend(IsolationBackend):
                     stderr=asyncio.subprocess.PIPE,
                 )
 
+                from responsibleai.isolation.in_flight import InFlightExecutionRegistry
+
+                registry = InFlightExecutionRegistry.get_instance()
+
+                def _terminate_container_sync() -> None:
+                    try:
+                        if proc.returncode is None:
+                            proc.kill()
+                    except Exception:
+                        pass
+                    try:
+                        subprocess.run(
+                            [self.docker_cmd, "rm", "-f", container_name],
+                            check=False,
+                            capture_output=True,
+                            timeout=5,
+                        )
+                    except Exception:
+                        pass
+
+                await registry.register(
+                    execution_id=execution_id,
+                    organization_id=request.organization_id,
+                    action_id=request.action_id,
+                    task=asyncio.current_task(),
+                    terminate_callback=_terminate_container_sync,
+                )
+
                 timed_out = False
+                revoked_in_flight = False
                 stdout_data = b""
                 stderr_data = b""
                 try:
@@ -407,7 +436,18 @@ class DockerContainerBackend(IsolationBackend):
                         await proc.wait()
                     except Exception:
                         pass
+                except asyncio.CancelledError:
+                    revoked_in_flight = True
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
+                    try:
+                        await proc.wait()
+                    except Exception:
+                        pass
                 finally:
+                    await registry.unregister(execution_id)
                     duration = time.monotonic() - start_time
                     # Guarantee container removal for ALL exit paths including
                     # asyncio.CancelledError, TimeoutError, and unexpected exceptions.
@@ -459,6 +499,9 @@ class DockerContainerBackend(IsolationBackend):
                 if timed_out:
                     violation = f"Container wall timeout of {limits.wall_timeout_seconds}s exceeded"
                     exit_code = -9
+                elif revoked_in_flight:
+                    violation = "Execution revoked in-flight: container terminated immediately"
+                    exit_code = -15
                 elif exit_code == 0:
                     try:
                         parsed = json.loads(stdout_str)

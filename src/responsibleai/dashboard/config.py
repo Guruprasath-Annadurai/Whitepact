@@ -695,6 +695,16 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def _enforce_enterprise_staging_governance(self) -> Settings:
+        """In staging and production, four-eyes tiered governance is the explicit policy."""
+        if (
+            self.environment in {"staging", "production"}
+            and "policy_governance_mode" not in self.model_fields_set
+        ):
+            object.__setattr__(self, "policy_governance_mode", "tiered")
+        return self
+
+    @model_validator(mode="after")
     def _enforce_paddle_environment(self) -> Settings:
         """Keep Paddle credentials and API traffic in one explicit environment."""
         if not self.paddle_api_key:

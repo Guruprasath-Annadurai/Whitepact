@@ -186,8 +186,13 @@ class OrgRepository:
         stripe_subscription_id: str | None = None,
         plan_renews_at: str | None = None,
         subscription_status: str | None = None,
+        event_timestamp: str | None = None,
     ) -> bool:
-        """Update an org's billing plan — called from Stripe webhook handlers."""
+        """Update an org's billing plan — called from Stripe webhook handlers.
+
+        Enforces monotonic chronological order using event_timestamp to prevent
+        stale out-of-order events from overwriting newer subscriptions.
+        """
         values: dict[str, object] = {"plan": plan.value}
         if stripe_customer_id is not None:
             values["stripe_customer_id"] = stripe_customer_id
@@ -197,7 +202,20 @@ class OrgRepository:
             values["plan_renews_at"] = plan_renews_at
         if subscription_status is not None:
             values["subscription_status"] = subscription_status
+        if event_timestamp is not None:
+            values["entitlement_updated_at"] = event_timestamp
+
         async with self._engine.raw.begin() as conn:
+            if event_timestamp is not None:
+                current = await conn.scalar(
+                    select(organizations.c.entitlement_updated_at).where(
+                        organizations.c.id == org_id
+                    )
+                )
+                if current and current > event_timestamp:
+                    # Stale out-of-order event: safely ignored
+                    return False
+
             result = await conn.execute(
                 update(organizations).where(organizations.c.id == org_id).values(**values)
             )
