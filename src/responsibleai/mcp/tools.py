@@ -1164,7 +1164,7 @@ def production_tool_count() -> int:
 
 # WhitePact's hosted transport requires an explicit, human-readable purpose for
 # canonical authority resolution. It is an optional schema extension because
-# local community stdio remains intentionally ungovened; the hosted dispatcher
+# local community stdio remains intentionally ungoverned; the hosted dispatcher
 # removes it before invoking tool handlers and binds it separately in the action.
 WHITEPACT_PURPOSE_ARGUMENT = "_whitepact_purpose"
 for _tool in TOOL_DEFS:

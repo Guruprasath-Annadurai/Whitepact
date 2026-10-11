@@ -37,6 +37,39 @@ from responsibleai.isolation.models import ExecutionOutcome, IsolatedExecutionRe
 
 logger = logging.getLogger(__name__)
 
+# A stock interpreter image does not contain this package. Reporting that
+# ImportError as a successful echo executed nothing and still looked allowed.
+CONTAINER_RUNNER_SOURCE = """
+import sys
+import json
+import asyncio
+
+async def main():
+    try:
+        raw_input = sys.stdin.read()
+        data = json.loads(raw_input)
+        action_type = data["action_type"]
+        arguments = data["arguments"]
+        try:
+            from responsibleai.mcp.tools import dispatch_tool
+        except ImportError as exc:
+            sys.stdout.write(json.dumps({
+                "status": "error",
+                "error": "isolated runtime unavailable: " + str(exc),
+            }))
+            raise SystemExit(1)
+        res = await dispatch_tool(action_type, arguments)
+        sys.stdout.write(json.dumps({"status": "success", "result": res}))
+    except SystemExit:
+        raise
+    except Exception as e:
+        sys.stdout.write(json.dumps({"status": "error", "error": str(e)}))
+        raise SystemExit(1)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+"""
+
 
 class DockerContainerBackend(IsolationBackend):
     """Docker container execution backend providing OCI containment."""
@@ -188,31 +221,7 @@ class DockerContainerBackend(IsolationBackend):
         container_name = f"{container_prefix}_{execution_id}"
         start_time = time.monotonic()
 
-        runner_script = """
-import sys
-import json
-import asyncio
-
-async def main():
-    try:
-        raw_input = sys.stdin.read()
-        data = json.loads(raw_input)
-        action_type = data["action_type"]
-        arguments = data["arguments"]
-        # If running inside container where responsibleai package might not be installed,
-        # fallback to simple processing or mock if testing
-        try:
-            from responsibleai.mcp.tools import dispatch_tool
-            res = await dispatch_tool(action_type, arguments)
-        except ImportError:
-            res = {"echo": action_type, "arguments": arguments, "isolated": True}
-        sys.stdout.write(json.dumps({"status": "success", "result": res}))
-    except Exception as e:
-        sys.stdout.write(json.dumps({"status": "error", "error": str(e)}))
-
-if __name__ == "__main__":
-    asyncio.run(main())
-"""
+        runner_script = CONTAINER_RUNNER_SOURCE
 
         with EphemeralWorkspace(request.action_id, request.organization_id) as workspace:
             workspace.populate(request.workspace_files)

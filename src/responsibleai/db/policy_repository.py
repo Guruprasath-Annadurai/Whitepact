@@ -25,7 +25,7 @@ from sqlalchemy import delete, insert, select, update
 from responsibleai.db.engine import DatabaseEngine, governance_policies, governance_policy_versions
 from responsibleai.db.revocation_epoch_repository import bump_epoch_on_connection
 from responsibleai.governance.models import GovernanceDecision
-from responsibleai.governance.policy import Policy, PolicyRule
+from responsibleai.governance.policy import Policy, PolicyRule, reject_shadowed_restrictive_rules
 from responsibleai.governance.risk import RiskTier
 
 
@@ -122,11 +122,18 @@ class PolicyRepository:
 
     async def add_rule(self, org_id: str, rule: PolicyRule) -> None:
         """Appends *rule* at the end of the org's current evaluation
-        order (highest existing `position` + 1) — first-match-wins means
-        append-by-default is the safe choice; reordering is a separate,
-        explicit operation (`reorder`) rather than something `add_rule`
-        guesses at."""
+        order (highest existing `position` + 1). Appending a stricter
+        rule that an earlier rule already covers is rejected: first-match
+        would never reach it."""
         async with self._engine.raw.begin() as conn:
+            existing_rows = (
+                await conn.execute(
+                    select(governance_policies)
+                    .where(governance_policies.c.org_id == org_id)
+                    .order_by(governance_policies.c.position.asc())
+                )
+            ).fetchall()
+            reject_shadowed_restrictive_rules([*(_row_to_rule(row) for row in existing_rows), rule])
             max_pos = (
                 await conn.execute(
                     select(governance_policies.c.position)
@@ -181,6 +188,8 @@ class PolicyRepository:
                 f"reorder() must include exactly the org's current rule_ids "
                 f"{sorted(current_ids)}, got {sorted(rule_ids_in_order)}"
             )
+        by_id = {rule.rule_id: rule for rule in current.rules}
+        reject_shadowed_restrictive_rules([by_id[rule_id] for rule_id in rule_ids_in_order])
         now = _now()
         async with self._engine.raw.begin() as conn:
             for position, rule_id in enumerate(rule_ids_in_order):

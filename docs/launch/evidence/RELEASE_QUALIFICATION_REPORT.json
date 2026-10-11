@@ -1,0 +1,164 @@
+{
+  "report": "whitepact-release-qualification",
+  "formula": "independently_passed_applicable_mandatory / applicable_mandatory * 100",
+  "independent_audit": "NOT_PERFORMED_ON_THIS_CANDIDATE",
+  "latest_ancestor_independent_pass": {
+    "sha": "ee6e4a26becf7e89a933202651fba3b4e7a8176d",
+    "scope": "M6 engineering RC. Does not qualify this candidate."
+  },
+  "integration_base": "8aea364ac586e6498fefc4fa37de55a7e25c1bf7",
+  "engineering_fixes": [
+    "6b9115f",
+    "87e762c",
+    "c535770"
+  ],
+  "production_go": false,
+  "verdict": "FAIL",
+  "verdict_reason": "Mandatory criteria on this exact tree are unverified or blocked. Local tests are not independent verification.",
+  "local_evidence": {
+    "launch_gate_tests": "tests/test_launch_gate_isolation_runner.py tests/test_launch_gate_hosted_metering.py tests/test_launch_gate_resume_identity.py plus tests/test_foundation_hardening.py and tests/test_resume_after_approval.py: 33 passed on the pre-documentation tree",
+    "authorization_microbenchmark": {
+      "environment": "local in-process CPython, single thread, no database, no network",
+      "iterations": 2000,
+      "ops_per_sec": 150871.6,
+      "p50_ms": 0.0063,
+      "p95_ms": 0.0073,
+      "p99_ms": 0.0092,
+      "grant_mint_ops_per_sec": 116346.6,
+      "slo": "NOT_A_LAUNCH_SLO",
+      "log": "/opt/cursor/artifacts/auth-capacity-baseline.log"
+    }
+  },
+  "categories": [
+    {
+      "id": 1,
+      "name": "core_governance",
+      "applicable": 8,
+      "passed": 0,
+      "failed": 0,
+      "blocked": 0,
+      "unverified": 8,
+      "open_p0": 0,
+      "open_p1": 0,
+      "verdict": "NOT_VERIFIED",
+      "notes": "LG-03 is engineering-fixed only. Grant expiry, revocation, policy version, and bypass tests on this SHA are not independently verified."
+    },
+    {
+      "id": 2,
+      "name": "security_hardening",
+      "applicable": 8,
+      "passed": 0,
+      "failed": 0,
+      "blocked": 1,
+      "unverified": 7,
+      "open_p0": 0,
+      "open_p1": 0,
+      "verdict": "NOT_VERIFIED",
+      "notes": "FH-01 through FH-07 and LG-01 are in the tree. Live evidence anchoring is blocked. Independent retest is required."
+    },
+    {
+      "id": 3,
+      "name": "mcp",
+      "applicable": 6,
+      "passed": 0,
+      "failed": 0,
+      "blocked": 0,
+      "unverified": 6,
+      "open_p0": 0,
+      "open_p1": 0,
+      "verdict": "NOT_VERIFIED",
+      "notes": "LG-02 is engineering-fixed only. No live MCP client certification on this SHA."
+    },
+    {
+      "id": 4,
+      "name": "enterprise_saas",
+      "applicable": 8,
+      "passed": 0,
+      "failed": 0,
+      "blocked": 2,
+      "unverified": 6,
+      "open_p0": 0,
+      "open_p1": 0,
+      "verdict": "NOT_VERIFIED",
+      "notes": "Subscription and billing acceptance need a configured provider. Not exercised live."
+    },
+    {
+      "id": 5,
+      "name": "api_sdk",
+      "applicable": 6,
+      "passed": 0,
+      "failed": 0,
+      "blocked": 0,
+      "unverified": 6,
+      "open_p0": 0,
+      "open_p1": 0,
+      "verdict": "NOT_VERIFIED",
+      "notes": "PR #175 CI had wheel smoke green on 8aea364. This candidate's CI has not finished."
+    },
+    {
+      "id": 6,
+      "name": "dashboard",
+      "applicable": 6,
+      "passed": 0,
+      "failed": 0,
+      "blocked": 0,
+      "unverified": 6,
+      "open_p0": 0,
+      "open_p1": 0,
+      "verdict": "NOT_VERIFIED",
+      "notes": "No new browser journey was run on this candidate."
+    },
+    {
+      "id": 7,
+      "name": "performance",
+      "applicable": 4,
+      "passed": 0,
+      "failed": 0,
+      "blocked": 3,
+      "unverified": 1,
+      "open_p0": 0,
+      "open_p1": 0,
+      "verdict": "BLOCKED",
+      "notes": "Local gateway.evaluate numbers are recorded and are not a launch-capacity SLO. Concurrent, soak, and multi-replica measurements were not run."
+    },
+    {
+      "id": 8,
+      "name": "cloud_infrastructure",
+      "applicable": 6,
+      "passed": 0,
+      "failed": 0,
+      "blocked": 6,
+      "unverified": 0,
+      "open_p0": 0,
+      "open_p1": 0,
+      "verdict": "BLOCKED",
+      "notes": "Offline Terraform validation belongs to the PR #173/#175 preflight. Live Hetzner and Cloudflare acceptance is not authorized."
+    },
+    {
+      "id": 9,
+      "name": "live_operations",
+      "applicable": 6,
+      "passed": 0,
+      "failed": 0,
+      "blocked": 6,
+      "unverified": 0,
+      "open_p0": 0,
+      "open_p1": 0,
+      "verdict": "BLOCKED",
+      "notes": "No live outage, restore, or rollback drill was run."
+    },
+    {
+      "id": 10,
+      "name": "enterprise_acceptance",
+      "applicable": 15,
+      "passed": 0,
+      "failed": 0,
+      "blocked": 3,
+      "unverified": 12,
+      "open_p0": 0,
+      "open_p1": 0,
+      "verdict": "NOT_VERIFIED",
+      "notes": "Scenarios 13-15 need a live dependency and export path. No external customer acceptance exists."
+    }
+  ]
+}
