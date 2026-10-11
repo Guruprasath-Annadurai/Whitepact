@@ -385,7 +385,6 @@ def test_genuine_execution_fails_closed_without_isolation(monkeypatch) -> None:
     )
 
 
-
 # ---------------------------------------------------------------------------
 # P0-02: Canonical evidence persistence, disposable verification & chain audit
 # ---------------------------------------------------------------------------
@@ -465,9 +464,7 @@ async def test_evidence_repository_disposable_persistence_and_chain_verification
     # 2. Tampering detection: modify decision in row 1
     async with engine.raw.begin() as conn:
         await conn.execute(
-            text(
-                "UPDATE governance_evidence SET decision = 'DENY' WHERE action_id = 'act-1'"
-            )
+            text("UPDATE governance_evidence SET decision = 'DENY' WHERE action_id = 'act-1'")
         )
     assert await repo.verify_chain(org_id) is False
     assert await repo.verify_chain_status(org_id) == ChainVerificationStatus.INVALID
@@ -475,17 +472,13 @@ async def test_evidence_repository_disposable_persistence_and_chain_verification
     # Restore honesty
     async with engine.raw.begin() as conn:
         await conn.execute(
-            text(
-                "UPDATE governance_evidence SET decision = 'ALLOW' WHERE action_id = 'act-1'"
-            )
+            text("UPDATE governance_evidence SET decision = 'ALLOW' WHERE action_id = 'act-1'")
         )
     assert await repo.verify_chain(org_id) is True
 
     # 3. Deletion detection: delete row 2
     async with engine.raw.begin() as conn:
-        await conn.execute(
-            text("DELETE FROM governance_evidence WHERE action_id = 'act-2'")
-        )
+        await conn.execute(text("DELETE FROM governance_evidence WHERE action_id = 'act-2'"))
     # Head and sequence check detects missing row
     assert await repo.verify_chain(org_id) is False
 
@@ -745,7 +738,6 @@ async def test_durable_admission_and_revocation_lifecycle() -> None:
         )
 
 
-
 def test_readme_and_faststart_claim_integrity() -> None:
     """FST-R07: Regression test ensuring forbidden misleading claims do not appear in docs/code."""
     import pathlib
@@ -765,7 +757,6 @@ def test_readme_and_faststart_claim_integrity() -> None:
         "AI compliance certification",
     ]
     for claim in forbidden_claims:
-        assert (
-            claim.lower() not in content.lower()
-        ), f"Forbidden misleading claim found in README.md: '{claim}'"
-
+        assert claim.lower() not in content.lower(), (
+            f"Forbidden misleading claim found in README.md: '{claim}'"
+        )
