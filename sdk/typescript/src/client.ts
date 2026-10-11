@@ -147,7 +147,8 @@ export class RAIClient {
           );
         }
 
-        return res.json() as Promise<T>;
+        // Keep the abort timer active until the complete body has been read.
+        return await res.json() as T;
       } catch (err) {
         if (err instanceof RAIError) throw err;
         lastError = err as Error;
