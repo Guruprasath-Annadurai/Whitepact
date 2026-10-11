@@ -125,13 +125,17 @@ class GovernanceRuntimeClient:
     @asynccontextmanager
     async def _client(self) -> AsyncIterator[httpx.AsyncClient]:
         async with httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as client:
+            safe_error = None
             try:
                 yield client
             except httpx.RequestError as exc:
                 # Preserve HTTPX timeout/transport classification, not credential-bearing
                 # request metadata or an unsafe provider exception chain. Never retry here.
                 message = str(exc).replace(self._key, "[REDACTED]") if self._key else str(exc)
-                raise type(exc)(message) from None
+                safe_error = type(exc)(message)
+            # Raise outside the handler so the raw exception is not retained in __context__.
+            if safe_error is not None:
+                raise safe_error from None
 
     def _headers(self) -> dict[str, str]:
         return {

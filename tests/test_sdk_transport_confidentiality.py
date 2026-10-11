@@ -51,6 +51,8 @@ async def test_transport_exception_preserves_class_without_credential_or_request
     assert key not in str(caught.value)
     assert key not in "".join(traceback.format_exception(caught.value))
     assert "[REDACTED]" in str(caught.value)
+    assert caught.value.__context__ is None
+    assert caught.value.__cause__ is None
     # The original authenticated request must not escape as exception metadata.
     with pytest.raises(RuntimeError, match="request"):
         _ = caught.value.request
