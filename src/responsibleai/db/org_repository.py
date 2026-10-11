@@ -17,9 +17,10 @@ import hmac
 import json
 import secrets
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import delete, insert, or_, select, update
+from sqlalchemy import and_, delete, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from responsibleai.db.engine import (
@@ -111,6 +112,13 @@ _BASE_ORG_COLUMNS = (
 )
 
 
+class SetPlanStatus(StrEnum):
+    APPLIED = "applied"
+    STALE = "stale"
+    NOT_FOUND = "not_found"
+    TOMBSTONED = "tombstoned"
+
+
 class OrgRepository:
     """CRUD operations for organizations and their API keys."""
 
@@ -178,6 +186,115 @@ class OrgRepository:
             )
         return org
 
+    async def set_plan_status(
+        self,
+        org_id: str,
+        plan: Plan,
+        stripe_customer_id: str | None = None,
+        stripe_subscription_id: str | None = None,
+        plan_renews_at: str | None = None,
+        subscription_status: str | None = None,
+        event_timestamp: str | None = None,
+    ) -> SetPlanStatus:
+        """Atomically transition an organization's billing plan in monotonic chronological order.
+
+        Uses atomic conditional update expressions (UPDATE ... WHERE entitlement_updated_at <= :ts)
+        to guarantee race-free serialization across concurrent transactions.
+        Enforces canonical UTC comparisons and prevents stale or unauthorized equal-timestamp
+        widening transitions.
+        """
+        values: dict[str, object] = {"plan": plan.value}
+        if stripe_customer_id is not None:
+            values["stripe_customer_id"] = stripe_customer_id
+        if stripe_subscription_id is not None:
+            values["stripe_subscription_id"] = stripe_subscription_id
+        if plan_renews_at is not None:
+            values["plan_renews_at"] = plan_renews_at
+        if subscription_status is not None:
+            values["subscription_status"] = subscription_status
+
+        effective_event_ts: str | None = None
+        if event_timestamp:
+            try:
+                dt = datetime.fromisoformat(event_timestamp.replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=UTC)
+                effective_event_ts = dt.astimezone(UTC).isoformat()
+            except (ValueError, TypeError):
+                effective_event_ts = event_timestamp
+            values["entitlement_updated_at"] = effective_event_ts
+        else:
+            values["entitlement_updated_at"] = datetime.now(UTC).isoformat()
+
+        async with self._engine.raw.begin() as conn:
+            # 1. Check tenant tombstone ledger
+            ts = await conn.scalar(
+                select(tenant_tombstones.c.id).where(tenant_tombstones.c.org_id == org_id)
+            )
+            if ts is not None:
+                return SetPlanStatus.TOMBSTONED
+
+            # 2. Check if organization exists
+            org_row = (
+                await conn.execute(select(organizations).where(organizations.c.id == org_id))
+            ).first()
+            if org_row is None:
+                return SetPlanStatus.NOT_FOUND
+
+            # 3. Monotonic chronology check on current state
+            org_data = dict(org_row._mapping)
+            current_ts = org_data.get("entitlement_updated_at")
+            if effective_event_ts and current_ts:
+                try:
+                    curr_dt = datetime.fromisoformat(str(current_ts).replace("Z", "+00:00"))
+                    if curr_dt.tzinfo is None:
+                        curr_dt = curr_dt.replace(tzinfo=UTC)
+                    event_dt = datetime.fromisoformat(
+                        str(effective_event_ts).replace("Z", "+00:00")
+                    )
+                    if event_dt.tzinfo is None:
+                        event_dt = event_dt.replace(tzinfo=UTC)
+
+                    if event_dt < curr_dt:
+                        # Strictly older out-of-order event: safely drop
+                        return SetPlanStatus.STALE
+                    elif event_dt == curr_dt:
+                        # Equal timestamp: ambiguous provider delivery.
+                        # Reject upward plan elevation or restrictive->active status widening
+                        curr_plan = org_data.get("plan") or Plan.FREE
+                        curr_status = str(org_data.get("subscription_status") or "inactive")
+                        in_status = str(subscription_status or "active")
+                        if not is_equal_timestamp_transition_allowed(
+                            current_plan=curr_plan,
+                            current_status=curr_status,
+                            incoming_plan=plan,
+                            incoming_status=in_status,
+                        ):
+                            return SetPlanStatus.STALE
+                        if curr_plan == plan.value and curr_status == in_status:
+                            return SetPlanStatus.STALE
+                except (ValueError, TypeError):
+                    if str(current_ts) >= str(effective_event_ts):
+                        return SetPlanStatus.STALE
+
+            # 4. Atomic conditional update: update ONLY IF entitlement_updated_at is still NULL or <= effective_event_ts
+            if effective_event_ts:
+                where_cond = and_(
+                    organizations.c.id == org_id,
+                    or_(
+                        organizations.c.entitlement_updated_at.is_(None),
+                        organizations.c.entitlement_updated_at <= effective_event_ts,
+                    ),
+                )
+            else:
+                where_cond = organizations.c.id == org_id
+
+            res = await conn.execute(update(organizations).where(where_cond).values(**values))
+            if res.rowcount == 0:
+                # Concurrent update committed a newer timestamp during race
+                return SetPlanStatus.STALE
+            return SetPlanStatus.APPLIED
+
     async def set_plan(
         self,
         org_id: str,
@@ -193,33 +310,16 @@ class OrgRepository:
         Enforces monotonic chronological order using event_timestamp to prevent
         stale out-of-order events from overwriting newer subscriptions.
         """
-        values: dict[str, object] = {"plan": plan.value}
-        if stripe_customer_id is not None:
-            values["stripe_customer_id"] = stripe_customer_id
-        if stripe_subscription_id is not None:
-            values["stripe_subscription_id"] = stripe_subscription_id
-        if plan_renews_at is not None:
-            values["plan_renews_at"] = plan_renews_at
-        if subscription_status is not None:
-            values["subscription_status"] = subscription_status
-        if event_timestamp is not None:
-            values["entitlement_updated_at"] = event_timestamp
-
-        async with self._engine.raw.begin() as conn:
-            if event_timestamp is not None:
-                current = await conn.scalar(
-                    select(organizations.c.entitlement_updated_at).where(
-                        organizations.c.id == org_id
-                    )
-                )
-                if current and current > event_timestamp:
-                    # Stale out-of-order event: safely ignored
-                    return False
-
-            result = await conn.execute(
-                update(organizations).where(organizations.c.id == org_id).values(**values)
-            )
-        return result.rowcount > 0
+        status = await self.set_plan_status(
+            org_id=org_id,
+            plan=plan,
+            stripe_customer_id=stripe_customer_id,
+            stripe_subscription_id=stripe_subscription_id,
+            plan_renews_at=plan_renews_at,
+            subscription_status=subscription_status,
+            event_timestamp=event_timestamp,
+        )
+        return status == SetPlanStatus.APPLIED
 
     async def deactivate_org(self, org_id: str) -> bool:
         """Mark a tenant deleted. Authentication must reject the row afterward."""

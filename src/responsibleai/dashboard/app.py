@@ -171,6 +171,7 @@ from responsibleai.db import (
     PolicyVersionConflictError,
     PublicIncidentRepository,
     SelfApprovalError,
+    SetPlanStatus,
     SoleOwnerError,
     SSORequiredError,
     ToolTrustRepository,
@@ -4083,7 +4084,7 @@ async def stripe_webhook(request: Request) -> dict[str, Any]:
         await _ready(_billing_event_repo).complete(event_id)
         return {"received": True, "processed": False, "duplicate": False}
     try:
-        applied = await _ready(_org_repo).set_plan(
+        status = await _ready(_org_repo).set_plan_status(
             org_id=update.org_id,
             plan=update.plan,
             stripe_customer_id=update.stripe_customer_id,
@@ -4092,17 +4093,37 @@ async def stripe_webhook(request: Request) -> dict[str, Any]:
             subscription_status=update.subscription_status,
             event_timestamp=update.event_timestamp,
         )
-        if not applied:
+        if status == SetPlanStatus.NOT_FOUND:
             # A signed event for an organization that does not exist here is not "processed":
             # recording it as such hid misrouted payments. 200 so the provider stops retrying;
             # the row stays 'failed' (and reclaimable if it is ever redelivered).
             await _ready(_billing_event_repo).fail(event_id, "unknown organization")
-            logger.warning("billing_event_unknown_org", event_id=event_id)
+            logger.warning("billing_event_unknown_org", event_id=event_id, org_id=update.org_id)
             return {
                 "received": True,
                 "processed": False,
                 "duplicate": False,
                 "reason": "unknown_organization",
+            }
+        elif status == SetPlanStatus.STALE:
+            # Out-of-order or duplicate event superseded by newer entitlement.
+            # Mark event completed so provider stops retrying; state remains protected.
+            await _ready(_billing_event_repo).complete(event_id)
+            logger.info("billing_event_stale_ignored", event_id=event_id, org_id=update.org_id)
+            return {
+                "received": True,
+                "processed": False,
+                "duplicate": False,
+                "reason": "stale_event",
+            }
+        elif status == SetPlanStatus.TOMBSTONED:
+            await _ready(_billing_event_repo).fail(event_id, "tombstoned organization")
+            logger.warning("billing_event_tombstoned_org", event_id=event_id, org_id=update.org_id)
+            return {
+                "received": True,
+                "processed": False,
+                "duplicate": False,
+                "reason": "tombstoned_organization",
             }
         await _ready(_billing_event_repo).complete(event_id)
     except Exception as exc:

@@ -33,7 +33,7 @@ from responsibleai.db.leaderboard_repository import LeaderboardRepository
 from responsibleai.db.mcp_usage_repository import McpUsageRepository
 from responsibleai.db.org_authority_ceiling_repository import OrgAuthorityCeilingRepository
 from responsibleai.db.org_autonomy_budget_repository import OrgAutonomyBudgetRepository
-from responsibleai.db.org_repository import OrgRepository, SSORequiredError
+from responsibleai.db.org_repository import OrgRepository, SetPlanStatus, SSORequiredError
 from responsibleai.db.outcome_repository import OutcomeRepository
 from responsibleai.db.paddle_billing_repository import PaddleBillingEventRepository
 from responsibleai.db.passport_repository import PassportRepository
@@ -83,6 +83,7 @@ __all__ = [
     "CostRepository",
     "TrustRepository",
     "OrgRepository",
+    "SetPlanStatus",
     "OutcomeRepository",
     "PrincipalRepository",
     "AuditRepository",

@@ -44,6 +44,7 @@ def test_is_available_false_on_generic_exception(monkeypatch: pytest.MonkeyPatch
 
 
 def test_is_available_true_when_docker_info_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("shutil.which", lambda _name: "/usr/bin/docker")
     monkeypatch.setattr(
         subprocess,
         "run",
