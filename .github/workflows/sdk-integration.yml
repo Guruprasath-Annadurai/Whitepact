@@ -51,7 +51,9 @@ jobs:
         run: |
           npm --prefix sdk/typescript ci --ignore-scripts --no-audit --no-fund
           npm --prefix sdk/typescript test
-          npm --prefix sdk/typescript pack --dry-run
+      - name: TypeScript SDK package contents
+        working-directory: sdk/typescript
+        run: npm pack --dry-run
 
 # This focused workflow supplements, never replaces, full-platform CI and release gates.
 # No repository secrets, package publication, mutation of live services or write token needed.
