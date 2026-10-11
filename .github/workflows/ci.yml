@@ -398,6 +398,20 @@ jobs:
       - name: Run i18n unit tests (locale resolution, fallback, catalog integrity)
         run: node --test tests/js/i18n.test.js
 
+  go-sdk:
+    name: Go SDK (vet, race tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Uses the Go toolchain preinstalled on the runner image (not pinned by this repository).
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: gofmt, vet and tests
+        working-directory: sdk/go
+        run: |
+          test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+          go vet ./...
+          go test ./... -race -count=1 -cover
+
   container-scan:
     name: Container image scan (Trivy)
     runs-on: ubuntu-latest

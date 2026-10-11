@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import os
 import platform
@@ -187,8 +188,12 @@ uvicorn.run(app_module.app, host="127.0.0.1", port=int(sys.argv[2]), log_level="
 """
 
 
-def _start_server(url: str, port: int, route_limiter: str) -> subprocess.Popen[bytes]:
+def _start_server(
+    url: str, port: int, route_limiter: str, max_inflight: int | None = None
+) -> subprocess.Popen[bytes]:
     env = os.environ.copy()
+    if max_inflight is not None:
+        env["WHITEPACT_MAX_INFLIGHT_REQUESTS"] = str(max_inflight)
     env.update(
         WHITEPACT_DATABASE_URL=url.replace("postgresql://", "postgresql+asyncpg://"),
         WHITEPACT_AUTO_MIGRATE="false",
@@ -220,6 +225,25 @@ def _server_usage(pid: int) -> dict[str, float]:
         return {"rss_mb": round(rss_mb, 1), "cpu_seconds": round(seconds, 2)}
     except Exception:
         return {}
+
+
+class _RoundRobin:
+    """A stand-in for one httpx client that spreads requests over several replicas (client-side
+    load balancing; there is no proxy in this benchmark, and that is stated in the report)."""
+
+    def __init__(self, clients: list) -> None:
+        self._clients = clients
+        self._n = 0
+
+    def _next(self):
+        self._n += 1
+        return self._clients[self._n % len(self._clients)]
+
+    def get(self, *args, **kwargs):
+        return self._next().get(*args, **kwargs)
+
+    def post(self, *args, **kwargs):
+        return self._next().post(*args, **kwargs)
 
 
 async def _level(client, label: str, make, concurrency: int, total: int) -> dict:
@@ -285,28 +309,35 @@ async def main_async(args: argparse.Namespace) -> int:
         return 2
     admin = admin.replace("postgresql+asyncpg://", "postgresql://")
     db_name, url = await _create_database(admin)
-    server: subprocess.Popen[bytes] | None = None
+    servers: list[subprocess.Popen[bytes]] = []
     exit_code = 0
     report: dict = {}
     try:
         await _migrate(url)
         org_id, _key_id, raw, deny_raw = await _seed(url)
-        port = _free_port()
-        server = _start_server(url, port, "on" if args.keep_route_limiter else "off")
-        base = f"http://127.0.0.1:{port}"
+        ports = [_free_port() for _ in range(args.replicas)]
+        for port in ports:
+            servers.append(
+                _start_server(
+                    url, port, "on" if args.keep_route_limiter else "off", args.max_inflight
+                )
+            )
         headers = {"Authorization": f"Bearer {raw}"}
         deny_headers = {"Authorization": f"Bearer {deny_raw}"}
-        async with httpx.AsyncClient(base_url=base, timeout=args.timeout) as probe:
-            for _ in range(120):
-                try:
-                    if (await probe.get("/livez")).status_code == 200:
-                        break
-                except Exception:
-                    pass
-                await asyncio.sleep(0.5)
-            else:
-                print("server did not become ready", file=sys.stderr)
-                return 3
+        for port in ports:
+            async with httpx.AsyncClient(
+                base_url=f"http://127.0.0.1:{port}", timeout=args.timeout
+            ) as probe:
+                for _ in range(120):
+                    try:
+                        if (await probe.get("/livez")).status_code == 200:
+                            break
+                    except Exception:
+                        pass
+                    await asyncio.sleep(0.5)
+                else:
+                    print("server did not become ready", file=sys.stderr)
+                    return 3
 
         workloads = {
             "authenticated read": lambda c: c.get(
@@ -330,9 +361,16 @@ async def main_async(args: argparse.Namespace) -> int:
         for level in [int(x) for x in args.levels.split(",")]:
             total = max(args.requests, level * args.per_connection)
             limits = httpx.Limits(max_connections=level, max_keepalive_connections=level)
-            async with httpx.AsyncClient(
-                base_url=base, timeout=args.timeout, limits=limits
-            ) as client:
+            async with contextlib.AsyncExitStack() as stack:
+                real = [
+                    await stack.enter_async_context(
+                        httpx.AsyncClient(
+                            base_url=f"http://127.0.0.1:{p}", timeout=args.timeout, limits=limits
+                        )
+                    )
+                    for p in ports
+                ]
+                client = _RoundRobin(real)
                 for _ in range(10):  # warm the path before measuring
                     await workloads["authenticated read"](client)
                 for label, make in workloads.items():
@@ -350,8 +388,7 @@ async def main_async(args: argparse.Namespace) -> int:
                         )
                     results.append(row)
                     print(json.dumps(row), flush=True)
-            row_usage = _server_usage(server.pid)
-            results[-1]["server_after_level"] = row_usage
+            results[-1]["server_after_level"] = [_server_usage(p.pid) for p in servers]
         effects_after = await _scalar(
             url, "SELECT COALESCE(SUM(counter),0) FROM test_consequential_counters"
         )
@@ -362,7 +399,8 @@ async def main_async(args: argparse.Namespace) -> int:
             o=org_id,
         )
         report = {
-            "measurement": "real HTTP (uvicorn, 1 worker) + real PostgreSQL, API-key authenticated",
+            "measurement": f"real HTTP (uvicorn, {args.replicas} process(es), client-side round robin) + real PostgreSQL, API-key authenticated",
+            "max_inflight_requests": args.max_inflight,
             "not_included": [
                 "TLS",
                 "reverse proxy",
@@ -406,12 +444,13 @@ async def main_async(args: argparse.Namespace) -> int:
             )
             exit_code = max(exit_code, 1)
     finally:
-        if server is not None:
-            server.terminate()
+        for proc in servers:
+            proc.terminate()
+        for proc in servers:
             try:
-                server.wait(timeout=15)
+                proc.wait(timeout=15)
             except subprocess.TimeoutExpired:
-                server.kill()
+                proc.kill()
         await _drop_database(admin, db_name)
     Path(args.out).write_text(json.dumps(report, indent=2) + "\n")
     print(f"wrote {args.out}; exit {exit_code}")
@@ -433,6 +472,15 @@ def main() -> int:
         "--keep-route-limiter",
         action="store_true",
         help="leave the per-route 30/minute slowapi limit on (reports the 429 cap instead of capacity)",
+    )
+    parser.add_argument(
+        "--replicas", type=int, default=1, help="uvicorn processes (client-side round robin)"
+    )
+    parser.add_argument(
+        "--max-inflight",
+        type=int,
+        default=None,
+        help="WHITEPACT_MAX_INFLIGHT_REQUESTS for each server (0 disables admission control)",
     )
     parser.add_argument("--out", default="bench-http.json")
     return asyncio.run(main_async(parser.parse_args()))

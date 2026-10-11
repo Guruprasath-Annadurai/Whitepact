@@ -5,11 +5,20 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"time"
 )
+
+// maxErrorBody bounds how much of a failing response is copied into an error message.
+const maxErrorBody = 2048
+
+// maxResponseBody bounds how much of a successful response is decoded.
+const maxResponseBody = 8 << 20
 
 const defaultBaseURL = "http://localhost:8765"
 const apiVersion = "v1"
@@ -52,8 +61,36 @@ func New(opts Options) *Client {
 	return &Client{
 		baseURL: base,
 		apiKey:  opts.APIKey,
-		httpClient: &http.Client{Timeout: timeout},
+		httpClient: &http.Client{
+			Timeout: timeout,
+			// A redirect must never carry the bearer token somewhere the caller did not configure.
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		},
 	}
+}
+
+// ErrInsecureTransport is returned when an API key would be sent over plain http to a non-loopback host.
+var ErrInsecureTransport = errors.New("raiclient: refusing to send an API key over plain http to a non-loopback host")
+
+func (c *Client) checkTransport() error {
+	if c.apiKey == "" {
+		return nil
+	}
+	u, err := url.Parse(c.baseURL)
+	if err != nil {
+		return fmt.Errorf("raiclient: invalid base URL: %w", err)
+	}
+	if u.Scheme == "https" {
+		return nil
+	}
+	host := u.Hostname()
+	if host == "localhost" {
+		return nil
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		return nil
+	}
+	return ErrInsecureTransport
 }
 
 func (c *Client) url(path string) string {
@@ -64,6 +101,9 @@ func (c *Client) url(path string) string {
 }
 
 func (c *Client) do(ctx context.Context, method, path string, body interface{}, out interface{}) error {
+	if err := c.checkTransport(); err != nil {
+		return err
+	}
 	var bodyReader io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -89,13 +129,13 @@ func (c *Client) do(ctx context.Context, method, path string, body interface{}, 
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode >= 400 {
-		b, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 300 {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
 		return fmt.Errorf("raiclient: %s %s status %d: %s", method, path, resp.StatusCode, string(b))
 	}
 
 	if out != nil {
-		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBody)).Decode(out); err != nil {
 			return fmt.Errorf("raiclient: decode response: %w", err)
 		}
 	}

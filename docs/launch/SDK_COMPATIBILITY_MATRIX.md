@@ -14,7 +14,7 @@ SDK can never enforce anything on code that does not call it (`docs/launch/ENFOR
 | Timeouts | httpx timeout (default 30 s) | AbortController (default 30 s); timer now cleared on failure | context-based |
 | Retries | none on governance calls | `RAIClient` retries 429/502/503/504 with backoff; governance calls are not retried | not reviewed |
 | Idempotency keys | none | none | none (a retried POST that already executed is a server-side reconciliation case) |
-| Installation | in-repo package | builds with `tsc`; package metadata fixed (see below) | **not built here: no Go toolchain in this environment**; module path still says `ResponsibleAi` (the old repository name) |
+| Installation | in-repo package | builds with `tsc`; package metadata fixed (see below) | **Built and tested 2026-10-11 in `golang:1.22` containers** (`gofmt`, `go vet`, `go test -race`, 74.5 % of `raiclient` statements; new `client_test.go`, 7 tests) and as a CI job. Hardened: redirects not followed (bearer cannot leak), API key refused over plain http to non-loopback hosts (`ErrInsecureTransport`), error and response bodies bounded. Module path still says `ResponsibleAi` (the old repository name); no governance client; `cmd/livecheck` untested |
 | Automated tests in CI | `tests/test_sdk_*.py` (30) | `sdk/typescript/test` (6, run in the "Frontend closure" job) | none found |
 | Status | Engineered + tested | Engineered + tested (new) | **Partial / not tested; scoring client only** |
 

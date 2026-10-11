@@ -24,6 +24,7 @@ import stat
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -90,10 +91,12 @@ class PublishedWitness:
     signature_hex: str
     previous_publication_hash: str
     publication_hash: str
+    # 1: ``organization_id`` is the real tenant id (legacy). 2: that attribute holds the opaque
+    # ``witness_ref`` and the record carries no tenant identifier at all.
+    record_version: int = 1
 
     def to_dict(self) -> dict[str, object]:
-        return {
-            "organization_id": self.organization_id,
+        body: dict[str, object] = {
             "chain_sequence": self.chain_sequence,
             "head_hash": self.head_hash,
             "witnessed_at": self.witnessed_at,
@@ -104,6 +107,55 @@ class PublishedWitness:
             "publication_hash": self.publication_hash,
             "live_object_store_status": live_object_store_status(),
         }
+        if self.record_version >= 2:
+            body["record_version"] = self.record_version
+            body["witness_ref"] = self.organization_id
+        else:
+            body["organization_id"] = self.organization_id
+        return body
+
+
+def _record_fields(
+    record_version: int,
+    subject: str,
+    *,
+    chain_sequence: int,
+    head_hash: str,
+    witnessed_at: str,
+    key_id: str,
+    public_key_hex: str,
+    signature_hex: str,
+    previous_publication_hash: str,
+) -> dict[str, object]:
+    """The exact set of fields the publication hash covers, for either record version."""
+    fields: dict[str, object] = {
+        "chain_sequence": chain_sequence,
+        "head_hash": head_hash,
+        "witnessed_at": witnessed_at,
+        "key_id": key_id,
+        "public_key_hex": public_key_hex,
+        "signature_hex": signature_hex,
+        "previous_publication_hash": previous_publication_hash,
+    }
+    if record_version >= 2:
+        fields["record_version"] = record_version
+        fields["witness_ref"] = subject
+    else:
+        fields["organization_id"] = subject
+    return fields
+
+
+_REF_DOMAIN = b"whitepact-witness-ref-v1\x00"
+
+
+def derive_witness_reference(secret: bytes, organization_id: str) -> str:
+    """Opaque, stable, unlinkable-without-the-secret name for one tenant's witness log."""
+    digest = hmac.new(
+        secret, _REF_DOMAIN + organization_id.encode("utf-8"), hashlib.sha256
+    ).digest()
+    import base64
+
+    return "wr1_" + base64.b32encode(digest[:16]).decode("ascii").rstrip("=").lower()
 
 
 def _publication_material(fields: dict[str, object]) -> bytes:
@@ -198,6 +250,34 @@ class FileWitnessKeyStore:
             raise WitnessKeyError("witness private key has the wrong length")
         return self.current_key_id(), Ed25519PrivateKey.from_private_bytes(raw)
 
+    def reference_secret(self) -> bytes:
+        """The HMAC key behind opaque witness references. Created once, owner-readable only.
+
+        Rotating it renames every tenant's log, so it is never rotated implicitly; losing it makes
+        existing references unrecoverable (the logs themselves stay verifiable by anyone who holds a
+        reference)."""
+        path = self.private_dir / "witness_ref.key"
+        if not path.is_file():
+            try:
+                fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            except FileExistsError:
+                pass
+            else:
+                try:
+                    os.write(fd, os.urandom(32))
+                    os.fsync(fd)
+                finally:
+                    os.close(fd)
+        _check_private_mode(path)
+        raw = path.read_bytes()
+        if len(raw) != 32:
+            raise WitnessKeyError("witness reference secret has the wrong length")
+        return raw
+
+    def witness_reference(self, organization_id: str) -> str:
+        _check_org(organization_id)
+        return derive_witness_reference(self.reference_secret(), organization_id)
+
     def rotate(self) -> str:
         _key_id, _old = self.current_private()
         return self._install(Ed25519PrivateKey.generate())
@@ -228,6 +308,7 @@ class AppendOnlyWitnessLog:
         witness: EvidenceHeadWitness,
         *,
         key_id: str,
+        record_version: int = 1,
     ) -> PublishedWitness:
         _check_org(witness.organization_id)
         if witness.chain_sequence < 1:
@@ -240,16 +321,17 @@ class AppendOnlyWitnessLog:
                 "publication refuses a sequence that is not strictly newer"
             )
         previous_hash = prior.publication_hash if prior is not None else _GENESIS
-        fields: dict[str, object] = {
-            "organization_id": witness.organization_id,
-            "chain_sequence": witness.chain_sequence,
-            "head_hash": witness.head_hash,
-            "witnessed_at": witness.witnessed_at,
-            "key_id": key_id,
-            "public_key_hex": witness.public_key_hex,
-            "signature_hex": witness.signature_hex,
-            "previous_publication_hash": previous_hash,
-        }
+        fields = _record_fields(
+            record_version,
+            witness.organization_id,
+            chain_sequence=witness.chain_sequence,
+            head_hash=witness.head_hash,
+            witnessed_at=witness.witnessed_at,
+            key_id=key_id,
+            public_key_hex=witness.public_key_hex,
+            signature_hex=witness.signature_hex,
+            previous_publication_hash=previous_hash,
+        )
         fields["publication_hash"] = _hash_material(fields)
         destination = org_dir / f"{witness.chain_sequence}.json"
         payload = (json.dumps(fields, sort_keys=True) + "\n").encode("utf-8")
@@ -272,6 +354,7 @@ class AppendOnlyWitnessLog:
             signature_hex=witness.signature_hex,
             previous_publication_hash=previous_hash,
             publication_hash=str(fields["publication_hash"]),
+            record_version=record_version,
         )
 
     def read(self, organization_id: str, chain_sequence: int) -> PublishedWitness | None:
@@ -279,8 +362,14 @@ class AppendOnlyWitnessLog:
         if not path.is_file():
             return None
         data = json.loads(path.read_text(encoding="utf-8"))
+        version = int(data.get("record_version", 1))
+        subject = data["witness_ref"] if version >= 2 else data["organization_id"]
+        if subject != organization_id:
+            # A record copied into another tenant's directory must not be readable as theirs.
+            raise WitnessPublicationError("publication subject does not match its location")
         return PublishedWitness(
-            organization_id=data["organization_id"],
+            record_version=version,
+            organization_id=subject,
             chain_sequence=int(data["chain_sequence"]),
             head_hash=data["head_hash"],
             witnessed_at=data["witnessed_at"],
@@ -319,16 +408,17 @@ def verify_publication_chain(records: list[PublishedWitness]) -> None:
             )
         if record.previous_publication_hash != previous:
             raise WitnessPublicationError("publication history was rewritten")
-        fields: dict[str, object] = {
-            "organization_id": record.organization_id,
-            "chain_sequence": record.chain_sequence,
-            "head_hash": record.head_hash,
-            "witnessed_at": record.witnessed_at,
-            "key_id": record.key_id,
-            "public_key_hex": record.public_key_hex,
-            "signature_hex": record.signature_hex,
-            "previous_publication_hash": record.previous_publication_hash,
-        }
+        fields = _record_fields(
+            record.record_version,
+            record.organization_id,
+            chain_sequence=record.chain_sequence,
+            head_hash=record.head_hash,
+            witnessed_at=record.witnessed_at,
+            key_id=record.key_id,
+            public_key_hex=record.public_key_hex,
+            signature_hex=record.signature_hex,
+            previous_publication_hash=record.previous_publication_hash,
+        )
         if _hash_material(fields) != record.publication_hash:
             raise WitnessPublicationError("publication hash does not match its body")
         witness = EvidenceHeadWitness(
@@ -389,18 +479,25 @@ def publish_evidence_head(
     head_hash: str,
     witnessed_at: str,
     required: bool | None = None,
+    opaque_reference: bool = True,
 ) -> PublishedWitness:
-    """Sign with the key store and append the witness. Fail closed when required."""
+    """Sign with the key store and append the witness. Fail closed when required.
+
+    By default (``opaque_reference=True``) the log is named, signed and published under an opaque
+    per-tenant ``witness_ref`` (record version 2): the public record contains no tenant identifier.
+    ``False`` writes the legacy version-1 record that carries the real organization id.
+    """
     try:
         key_id, private_key = store.current_private()
+        subject = store.witness_reference(organization_id) if opaque_reference else organization_id
         witness = sign_evidence_head(
             private_key,
-            organization_id=organization_id,
+            organization_id=subject,
             chain_sequence=chain_sequence,
             head_hash=head_hash,
             witnessed_at=witnessed_at,
         )
-        return log.publish(witness, key_id=key_id)
+        return log.publish(witness, key_id=key_id, record_version=2 if opaque_reference else 1)
     except (WitnessPublicationError, OSError) as exc:
         if required if required is not None else witness_required():
             raise WitnessRequiredUnavailableError(
@@ -425,6 +522,74 @@ def object_lock_headers(*, retain_until: datetime) -> dict[str, str]:
     }
 
 
+def _sigv4_request(
+    *,
+    method: str,
+    endpoint: str,
+    bucket: str,
+    key: str,
+    body: bytes,
+    access_key_id: str,
+    secret_access_key: str,
+    region: str,
+    extra_headers: dict[str, str] | None = None,
+    query: str = "",
+) -> urllib.request.Request:
+    """Build one SigV4-signed S3 request. ``key`` may be empty for bucket-level calls."""
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    day = stamp[:8]
+    payload_hash = hashlib.sha256(body).hexdigest()
+    host = endpoint.removeprefix("https://").removeprefix("http://").rstrip("/")
+    extra = dict(extra_headers or {})
+    canonical_headers = {
+        "host": host,
+        "x-amz-content-sha256": payload_hash,
+        "x-amz-date": stamp,
+    }
+    for name, value in extra.items():
+        canonical_headers[name.lower()] = value
+    signed_header_names = ";".join(sorted(canonical_headers))
+    canonical_header_text = "".join(
+        f"{name}:{canonical_headers[name].strip()}\n" for name in sorted(canonical_headers)
+    )
+    canonical_uri = "/" + bucket.strip("/") + (("/" + key.lstrip("/")) if key else "")
+    canonical_request = "\n".join(
+        [method, canonical_uri, query, canonical_header_text, signed_header_names, payload_hash]
+    )
+    scope = f"{day}/{region}/s3/aws4_request"
+    string_to_sign = "\n".join(
+        [
+            "AWS4-HMAC-SHA256",
+            stamp,
+            scope,
+            hashlib.sha256(canonical_request.encode()).hexdigest(),
+        ]
+    )
+
+    def _hmac(secret: bytes, message: str) -> bytes:
+        return hmac.new(secret, message.encode(), hashlib.sha256).digest()
+
+    signing_key = _hmac(
+        _hmac(_hmac(_hmac(("AWS4" + secret_access_key).encode(), day), region), "s3"),
+        "aws4_request",
+    )
+    signature = _hmac(signing_key, string_to_sign).hex()
+    authorization = (
+        "AWS4-HMAC-SHA256 "
+        f"Credential={access_key_id}/{scope}, "
+        f"SignedHeaders={signed_header_names}, "
+        f"Signature={signature}"
+    )
+    url = endpoint.rstrip("/") + canonical_uri + (f"?{query}" if query else "")
+    request = urllib.request.Request(url, data=body or None, method=method)
+    request.add_header("Authorization", authorization)
+    request.add_header("x-amz-date", stamp)
+    request.add_header("x-amz-content-sha256", payload_hash)
+    for name, value in extra.items():
+        request.add_header(name, value)
+    return request
+
+
 def put_object_lock(
     *,
     endpoint: str,
@@ -445,65 +610,18 @@ def put_object_lock(
     if not endpoint or not bucket or not access_key_id or not secret_access_key:
         raise WitnessRequiredUnavailableError("object store witness is not configured")
     _require_https_endpoint(endpoint)
-    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    day = stamp[:8]
-    payload_hash = hashlib.sha256(body).hexdigest()
-    host = endpoint.removeprefix("https://").removeprefix("http://").rstrip("/")
     retain = retain_until or (datetime.now(UTC) + timedelta(days=3650))
-    extra = object_lock_headers(retain_until=retain)
-    canonical_headers = {
-        "host": host,
-        "x-amz-content-sha256": payload_hash,
-        "x-amz-date": stamp,
-    }
-    for name, value in extra.items():
-        canonical_headers[name.lower()] = value
-    signed_header_names = ";".join(sorted(canonical_headers))
-    canonical_header_text = "".join(
-        f"{name}:{canonical_headers[name].strip()}\n" for name in sorted(canonical_headers)
+    request = _sigv4_request(
+        method="PUT",
+        endpoint=endpoint,
+        bucket=bucket,
+        key=key,
+        body=body,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        region=region,
+        extra_headers=object_lock_headers(retain_until=retain),
     )
-    canonical_uri = "/" + bucket.strip("/") + "/" + key.lstrip("/")
-    canonical_request = "\n".join(
-        [
-            "PUT",
-            canonical_uri,
-            "",
-            canonical_header_text,
-            signed_header_names,
-            payload_hash,
-        ]
-    )
-    scope = f"{day}/{region}/s3/aws4_request"
-    string_to_sign = "\n".join(
-        [
-            "AWS4-HMAC-SHA256",
-            stamp,
-            scope,
-            hashlib.sha256(canonical_request.encode()).hexdigest(),
-        ]
-    )
-
-    def _hmac(key: bytes, message: str) -> bytes:
-        return hmac.new(key, message.encode(), hashlib.sha256).digest()
-
-    signing_key = _hmac(
-        _hmac(_hmac(_hmac(("AWS4" + secret_access_key).encode(), day), region), "s3"),
-        "aws4_request",
-    )
-    signature = _hmac(signing_key, string_to_sign).hex()
-    authorization = (
-        "AWS4-HMAC-SHA256 "
-        f"Credential={access_key_id}/{scope}, "
-        f"SignedHeaders={signed_header_names}, "
-        f"Signature={signature}"
-    )
-    url = endpoint.rstrip("/") + canonical_uri
-    request = urllib.request.Request(url, data=body, method="PUT")
-    request.add_header("Authorization", authorization)
-    request.add_header("x-amz-date", stamp)
-    request.add_header("x-amz-content-sha256", payload_hash)
-    for name, value in extra.items():
-        request.add_header(name, value)
     sender = transport or _urllib_transport
     try:
         status, _response = sender(request)
@@ -514,6 +632,53 @@ def put_object_lock(
             f"object store rejected the witness with status {status}"
         )
     return status
+
+
+@dataclass(frozen=True)
+class AnchoredObject:
+    body: bytes
+    lock_mode: str | None
+    retain_until: str | None
+    version_id: str | None = None
+
+
+def read_back_object_lock(
+    *,
+    endpoint: str,
+    bucket: str,
+    key: str,
+    access_key_id: str,
+    secret_access_key: str,
+    region: str = "auto",
+    transport: Callable[[urllib.request.Request], tuple[int, bytes, dict[str, str]]] | None = None,
+) -> AnchoredObject:
+    """GET an anchored object and report its retention. This is the "auditor reads it back" step:
+    a status or a successful PUT alone is not evidence that the object exists and is locked."""
+    _require_https_endpoint(endpoint)
+    request = _sigv4_request(
+        method="GET",
+        endpoint=endpoint,
+        bucket=bucket,
+        key=key,
+        body=b"",
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        region=region,
+    )
+    sender = transport or _urllib_transport_with_headers
+    try:
+        status, body, headers = sender(request)
+    except (OSError, urllib.error.URLError) as exc:
+        raise WitnessRequiredUnavailableError("object store witness is unreachable") from exc
+    if status != 200:
+        raise WitnessRequiredUnavailableError(f"object store read-back failed with status {status}")
+    lowered = {k.lower(): v for k, v in headers.items()}
+    return AnchoredObject(
+        body=body,
+        lock_mode=lowered.get("x-amz-object-lock-mode"),
+        retain_until=lowered.get("x-amz-object-lock-retain-until-date"),
+        version_id=lowered.get("x-amz-version-id"),
+    )
 
 
 def _require_https_endpoint(endpoint: str) -> None:
@@ -539,10 +704,25 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+def _urllib_transport_with_headers(
+    request: urllib.request.Request,
+) -> tuple[int, bytes, dict[str, str]]:
+    _require_https_endpoint(request.full_url)
+    opener = urllib.request.build_opener(_NoRedirect)
+    try:
+        with opener.open(request, timeout=10) as response:
+            return int(response.status), response.read(), dict(response.headers.items())
+    except urllib.error.HTTPError as exc:  # a refusal is a status, not an exception
+        return int(exc.code), exc.read(), dict(exc.headers.items())
+
+
 def _urllib_transport(request: urllib.request.Request) -> tuple[int, bytes]:
     # Re-check at the point of use so a Request built elsewhere cannot reach the network
     # over another scheme.
     _require_https_endpoint(request.full_url)
     opener = urllib.request.build_opener(_NoRedirect)
-    with opener.open(request, timeout=10) as response:
-        return int(response.status), response.read()
+    try:
+        with opener.open(request, timeout=10) as response:
+            return int(response.status), response.read()
+    except urllib.error.HTTPError as exc:  # a refusal (403/412/...) is a status, not "unreachable"
+        return int(exc.code), exc.read()

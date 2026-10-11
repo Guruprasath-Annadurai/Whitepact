@@ -670,6 +670,7 @@ def _build_http_app() -> Any:
     from mcp.server.sse import SseServerTransport
     from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
     from starlette.applications import Starlette
+    from starlette.middleware import Middleware
     from starlette.requests import Request
     from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
     from starlette.routing import Mount, Route
@@ -694,6 +695,7 @@ def _build_http_app() -> Any:
         create_engine,
     )
     from responsibleai.governance.principal import PrincipalClaim, build_principal_claim
+    from responsibleai.ops.admission import AdmissionControlMiddleware
     from responsibleai.rbac.models import Plan, Role
 
     settings = get_settings()
@@ -848,7 +850,20 @@ def _build_http_app() -> Any:
     async def _lifespan(_app: Starlette) -> Any:
         await _db_engine.init(auto_create_tables=not settings.is_production)
         if _authority_read_engine is not None:
+            from responsibleai.mcp.authority_tools import write_privilege_violations
+
             await _authority_read_engine.init(auto_create_tables=False)
+            violations = await write_privilege_violations(_authority_read_engine)
+            if violations != [] and _governance_services is not None:
+                # Fail closed: a read path whose role can write (or whose privileges cannot be
+                # verified) is not offered. The application keeps running without these tools.
+                _logger.error(
+                    "authority_tools_disabled reason=%s tables=%s",
+                    "role_not_verifiably_read_only" if violations is None else "role_can_write",
+                    violations,
+                )
+                _governance_services.authority_read_backend = None
+                _governance_services.authority_read_limiter = None
         if _governance_webhook_manager is not None:
             await _governance_webhook_manager.load_configs()
             _governance_webhook_manager.start_retry_worker()
@@ -1438,6 +1453,9 @@ def _build_http_app() -> Any:
             Route("/.well-known/openai-apps-challenge", endpoint=openai_apps_challenge),
         ],
         lifespan=_lifespan,
+        middleware=[
+            Middleware(AdmissionControlMiddleware, max_inflight=settings.max_inflight_requests)
+        ],
     )
 
     return app

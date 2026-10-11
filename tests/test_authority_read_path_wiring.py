@@ -60,8 +60,8 @@ async def test_development_fallback_reuses_the_main_engine_and_owns_nothing() ->
 # ------------------------------------------------------------------ Postgres, real app
 
 
-@pytest.fixture()
-async def stack(monkeypatch: pytest.MonkeyPatch) -> Any:
+@pytest.fixture(params=[None])
+async def stack(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest) -> Any:
     import responsibleai.db as db_module
     from responsibleai.dashboard.config import get_settings
     from tests.test_v1_customer_journey import _pg_url, _upgrade_head
@@ -83,6 +83,8 @@ async def stack(monkeypatch: pytest.MonkeyPatch) -> Any:
             await conn.execute(
                 text(f'GRANT SELECT, INSERT, UPDATE ON identity_rate_counters TO "{role}"')
             )
+            if request.param:  # a deliberate mis-grant, to prove the startup check notices it
+                await conn.execute(text(f'GRANT {request.param} TO "{role}"'))
         ro_url = make_url(url).set(username=role, password=password).render_as_string(False)
 
         orgs = OrgRepository(admin)
@@ -222,3 +224,33 @@ async def test_read_only_semantics_and_rate_limit_over_the_real_transport(stack)
     assert (await _call(stack, key, "whitepact_verify_evidence"))["error"] == "rate_limited"
     await _call(stack, key, "whitepact_list_pending_approvals")
     assert await counts() == before  # nothing written, no grant minted
+
+
+@pytest.mark.parametrize(
+    "stack",
+    ["INSERT ON governance_policies", "UPDATE ON governance_approvals", "DELETE ON organizations"],
+    indirect=True,
+)
+async def test_a_role_that_can_write_is_detected_and_the_tools_are_withheld(stack) -> None:
+    key = stack["keys"]["owner_a"]
+    out = await _call(stack, key, "whitepact_policy_status")
+    assert out.get("error") == "authority_tools_unavailable" or out.get("isError")
+    async with (
+        _http(stack["app"], key) as http,
+        streamable_http_client("/mcp", http_client=http) as (r, w, _sid),
+        ClientSession(r, w) as session,
+    ):
+        await session.initialize()
+        names = {t.name for t in (await session.list_tools()).tools}
+    assert not any(n.startswith("whitepact_") for n in names)  # not even advertised
+
+
+async def test_the_privilege_probe_reports_exactly_the_writable_tables(stack) -> None:
+    from responsibleai.mcp.authority_tools import write_privilege_violations
+
+    # `stack` is the correctly granted role; the admin engine is a superuser/owner and must flag itself.
+    assert await write_privilege_violations(stack["admin"]) not in ([], None)
+    sqlite = create_engine(":memory:")
+    await sqlite.init()
+    assert await write_privilege_violations(sqlite) is None  # unverifiable != verified
+    await sqlite.close()

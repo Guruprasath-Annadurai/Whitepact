@@ -168,6 +168,40 @@ def _error(code: str, message: str) -> dict[str, Any]:
     return {"error": code, "message": message}
 
 
+# The only table the read path may write: the shared abuse limiter's counters.
+_WRITABLE_BY_READ_ROLE = frozenset({"identity_rate_counters"})
+
+_WRITE_PRIVILEGE_SQL = """
+SELECT c.relname
+FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')
+  AND (has_table_privilege(current_user, c.oid, 'INSERT')
+    OR has_table_privilege(current_user, c.oid, 'UPDATE')
+    OR has_table_privilege(current_user, c.oid, 'DELETE')
+    OR has_table_privilege(current_user, c.oid, 'TRUNCATE'))
+ORDER BY c.relname
+"""
+
+
+async def write_privilege_violations(engine: Any) -> list[str] | None:
+    """Tables (other than the limiter's) the engine's database role could write.
+
+    ``None`` means "cannot be verified" (not PostgreSQL, or the probe failed): callers treat that as
+    a failure for production use, because an unverified read role is not a least-privilege role. A
+    superuser or table owner shows up here as holding every privilege, as it should.
+    """
+    from sqlalchemy import text
+
+    try:
+        async with engine.raw.connect() as conn:
+            if conn.dialect.name != "postgresql":
+                return None
+            rows = (await conn.execute(text(_WRITE_PRIVILEGE_SQL))).fetchall()
+    except Exception:
+        return None
+    return [r[0] for r in rows if r[0] not in _WRITABLE_BY_READ_ROLE]
+
+
 @dataclass(frozen=True)
 class AuthorityReadBackend:
     """The only repositories the read path may touch, built on its own database engine/role."""
