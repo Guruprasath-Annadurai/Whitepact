@@ -8,7 +8,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 PAGES = {
-    "/": "WhitePact — Runtime Governance for AI Agents",
+    "/": "WhitePact | Independent Authority Before Agent Action",
     "/pricing": "Pricing | WhitePact",
     "/terms": "Terms of Service | WhitePact",
     "/privacy": "Privacy Policy | WhitePact",
@@ -26,7 +26,8 @@ async def test_commerce_public_html_metadata_fallback_and_footer(path, title):
         assert f"<title>{title}</title>" in response.text
         assert f'rel="canonical" href="https://whitepact.com{path}"' in response.text
         assert '<meta name="robots" content="index, follow"' in response.text
-        assert "<noscript>" in response.text and "<h1>" in response.text
+        assert re.search(r'<div id="root"[^>]*>\s*<', response.text)
+        assert "<h1>" in response.text
         assert not re.search(r"\b(TODO|TBD|placeholder|lorem ipsum)\b", response.text, re.I)
         for destination in list(PAGES)[1:]:
             assert f'href="{destination}"' in response.text
@@ -61,7 +62,7 @@ async def test_sovereign_public_metadata_and_workbench_shell_are_hosted():
         assert public.status_code == 200
         assert "<title>WhitePact Sovereign | Authority analysis workbench</title>" in public.text
         assert 'rel="canonical" href="https://whitepact.com/sovereign"' in public.text
-        assert "See authority before it becomes action." in public.text
+        assert "See authority before it becomes action" in public.text
 
         workbench = await client.get("/sovereign/workbench")
         assert workbench.status_code == 200

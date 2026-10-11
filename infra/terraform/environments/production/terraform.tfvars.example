@@ -1,0 +1,7 @@
+# OWNER_APPROVAL_REQUIRED before apply.
+location = "fsn1"
+saas_server_type = "cx32"
+authority_server_type = "cx32"
+execution_server_type = "cx22"
+admin_cidr_allowlist = ["203.0.113.10/32"]
+execution_egress_cidrs = ["198.51.100.0/24"]
