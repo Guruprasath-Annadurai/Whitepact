@@ -15,7 +15,7 @@ run without an explicit written go from the founder for that step.
 | Authorization-server metadata (RFC 8414) | **Served** at `/.well-known/oauth-authorization-server`. | same |
 | PKCE S256, rotating refresh tokens | **Implemented**. | `auth/mcp_oauth.py` |
 | Exact-match redirect URIs, no open redirect | **Implemented**: a redirect URI must exactly match one registered for the client; authorize errors redirect only to a registered URI. | `auth/mcp_oauth.py:193` |
-| **Dynamic client registration accepts only ChatGPT redirect URIs** | **Blocker for other assistants.** Claude and Grok callbacks are rejected (`invalid_redirect_uri`), so OAuth cannot complete from them today. A code change plus Antigravity review is required before testing either. Do not loosen to a wildcard. | `_valid_chatgpt_redirect` |
+| **Dynamic client registration allow-list** | ChatGPT's documented callbacks **and Claude's single hosted callback `https://claude.ai/api/mcp/auth_callback`** (exact match; verified against Anthropic's connector authentication page on 2026-10-11; 15 lookalike/loopback forms are tested as refused). **Claude Code's loopback redirects are not accepted**, and no Grok callback is known or allowed. Extending it further needs verified vendor values, tests and an Antigravity review; never a wildcard. | `auth/mcp_oauth.py` `_valid_registered_redirect`, `tests/test_mcp_oauth_claude_callback.py` |
 | Health / readiness | `/health` (liveness) and `/ready` (database ping, 503 when down). | `mcp/server.py` |
 | DNS-rebinding protection | Opt-in: set `RAI_MCP_HTTP_ALLOWED_HOSTS=mcp.whitepact.com` and `RAI_MCP_HTTP_ALLOWED_ORIGINS`. **Must be set in production**; unset means unprotected. | `mcp/server.py` |
 | Tenant-aware auth | Org is resolved from the verified credential on every request. | tests `test_transport_credential_negatives.py`, `test_mcp_authority_tools.py` |
@@ -94,9 +94,9 @@ involved in the DNS step itself.
 1. Decide the CA/CAA policy and DNSSEC (founder).
 2. Provision the platform, load balancer, database, Redis, secret store (infrastructure owner;
    spending — not authorized).
-3. Extend dynamic registration to the documented Claude and Grok callbacks **only after** verifying the
-   exact values from each vendor's current documentation, with exact-match rules and tests, and an
-   Antigravity review. Until then those assistants are *not* expected to work.
+3. Claude's hosted callback is now allowed (see section 0). Grok: no callback documented — find the
+   vendor's value before any change. Claude Code (loopback) stays unsupported until its consent-screen
+   and port-agnostic matching are designed and reviewed. Antigravity must review the allow-list change.
 4. Implement the production read-only database role for the authority tools
    (`docs/launch/AUTHORITY_READ_PATH.md`).
 5. Real-assistant compatibility tests need a staging endpoint on this hostname and test access.
