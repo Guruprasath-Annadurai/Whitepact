@@ -114,14 +114,9 @@ def compute_lifecycle_digest(
 
 
 def is_production_environment() -> bool:
-    env = (
-        os.environ.get("WHITEPACT_ENV")
-        or os.environ.get("RAI_ENV")
-        or os.environ.get("ENVIRONMENT")
-        or os.environ.get("ENV")
-        or "development"
-    ).lower()
-    return env in ("production", "prod")
+    from responsibleai.environment import is_production
+
+    return is_production()
 
 
 class RestoreReadinessState(StrEnum):

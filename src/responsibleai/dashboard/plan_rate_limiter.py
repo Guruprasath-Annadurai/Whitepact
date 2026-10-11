@@ -20,7 +20,9 @@ is worse than an honestly-scoped single-instance guarantee.
 
 from __future__ import annotations
 
+import logging
 import time
+import uuid
 from collections import deque
 from typing import TYPE_CHECKING
 
@@ -42,9 +44,55 @@ PLAN_REQUEST_LIMITS: dict[Plan, int | None] = {
 
 _WINDOW_SECONDS = 60.0
 
+logger = logging.getLogger(__name__)
+# Log the degraded state at most this often; an outage must be visible, not a log flood.
+_DEGRADED_LOG_INTERVAL_SECONDS = 30.0
+
 
 def plan_limit(plan: Plan) -> int | None:
     return PLAN_REQUEST_LIMITS.get(plan, 60)
+
+
+# Per-route ceiling for an ENTERPRISE organization, whose plan budget is "unlimited". The flat
+# per-route slowapi limits exist to protect the server; they must not make a paying plan's
+# documented budget unreachable (REC-28), but "unlimited" still needs a finite server-side bound.
+ENTERPRISE_ROUTE_CEILING_PER_MINUTE = 1200
+
+# Only throughput limits scale. Anything below this base is a deliberate abuse/step-up control
+# (key issuance, login, MFA, billing mutations) and is never raised by plan.
+MIN_SCALED_BASE_PER_MINUTE = 30
+
+
+def scaled_route_limit(base_per_minute: int, plan: Plan | None) -> int:
+    """The per-route requests/minute an organization on *plan* gets for a route whose flat
+    limit is *base_per_minute*: never below the base, never below the plan's own budget."""
+    if plan is None or base_per_minute < MIN_SCALED_BASE_PER_MINUTE:
+        return base_per_minute
+    budget = plan_limit(plan)
+    if budget is None:
+        budget = ENTERPRISE_ROUTE_CEILING_PER_MINUTE
+    return max(base_per_minute, budget)
+
+
+class OrgPlanDirectory:
+    """Bounded, process-local map org_id -> plan, filled by the authentication dependency on
+    every request so the route limiter (which only sees the rate-limit key) can scale."""
+
+    def __init__(self, max_entries: int = 10_000) -> None:
+        self._max = max_entries
+        self._plans: dict[str, Plan] = {}
+
+    def remember(self, org_id: str | None, plan: Plan) -> None:
+        if not org_id:
+            return
+        if org_id not in self._plans and len(self._plans) >= self._max:
+            self._plans.pop(next(iter(self._plans)))
+        self._plans[org_id] = plan
+
+    def plan_for_key(self, rate_key: str) -> Plan | None:
+        if not rate_key.startswith("org:"):
+            return None
+        return self._plans.get(rate_key[4:])
 
 
 class PlanRateLimiter:
@@ -54,6 +102,8 @@ class PlanRateLimiter:
         self._redis_url = redis_url
         self._redis: Redis | None = None
         self._local: dict[str, deque[float]] = {}
+        self._last_degraded_log: float | None = None
+        self.degraded_events = 0
 
     async def _get_redis(self) -> Redis:
         # Only called from check() after confirming self._redis_url is set.
@@ -74,11 +124,22 @@ class PlanRateLimiter:
         if limit is None:
             return
 
-        now = time.monotonic()
+        # Redis scores must use a clock shared by every replica.
+        # time.monotonic() is process-local and would split one tenant
+        # across unrelated windows.
         if self._redis_url:
-            used = await self._check_redis(org_id, now)
+            try:
+                used = await self._check_redis(org_id, time.time())
+            except Exception as exc:  # redis.exceptions.* and OSError/timeouts alike
+                # Rate limiting is an availability/abuse control, not an authority control:
+                # authority state (nonces, epochs, approvals) lives in the database and is
+                # unaffected. A cache outage must not turn every authenticated request into a
+                # 500, so degrade to the in-process window (per replica -- weaker than the shared
+                # window, still bounded) and say so loudly.
+                self._note_degraded(exc)
+                used = self._check_local(org_id, time.monotonic())
         else:
-            used = self._check_local(org_id, now)
+            used = self._check_local(org_id, time.monotonic())
 
         if used > limit:
             raise HTTPException(
@@ -89,6 +150,19 @@ class PlanRateLimiter:
                     "retry after the current window."
                 ),
             )
+
+    def _note_degraded(self, exc: Exception) -> None:
+        now = time.monotonic()
+        if (
+            self._last_degraded_log is None
+            or now - self._last_degraded_log >= _DEGRADED_LOG_INTERVAL_SECONDS
+        ):
+            self._last_degraded_log = now
+            logger.error(
+                "plan_rate_limiter_degraded backend=redis error=%s fallback=in_process_per_replica",
+                type(exc).__name__,
+            )
+        self.degraded_events += 1
 
     def _check_local(self, org_id: str, now: float) -> int:
         window = self._local.setdefault(org_id, deque())
@@ -102,9 +176,10 @@ class PlanRateLimiter:
         client = await self._get_redis()
         key = f"rai:ratelimit:{org_id}"
         cutoff = now - _WINDOW_SECONDS
+        member = f"{now:.6f}:{uuid.uuid4().hex}"
         pipe = client.pipeline()
         pipe.zremrangebyscore(key, 0, cutoff)
-        pipe.zadd(key, {str(now): now})
+        pipe.zadd(key, {member: now})
         pipe.zcard(key)
         pipe.expire(key, int(_WINDOW_SECONDS) + 5)
         results = await pipe.execute()

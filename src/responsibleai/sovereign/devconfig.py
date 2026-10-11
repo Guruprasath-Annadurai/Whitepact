@@ -18,6 +18,9 @@ class SovereignConnection:
     base_url: str = "http://127.0.0.1:8000"
     organization_id: str | None = None
     environment: str = "development"
+    # verified | unverified. Never a credential.
+    verification_state: str = "unverified"
+    verification_detail: str = ""
 
 
 def ensure_config_dir() -> None:
@@ -32,22 +35,28 @@ def load_connection() -> SovereignConnection:
         base_url=data.get("base_url", "http://127.0.0.1:8000"),
         organization_id=data.get("organization_id"),
         environment=data.get("environment", "development"),
+        verification_state=data.get("verification_state", "unverified"),
+        verification_detail=data.get("verification_detail", ""),
     )
 
 
 def save_connection(conn: SovereignConnection) -> None:
     ensure_config_dir()
-    CONTEXT_FILE.write_text(
-        json.dumps(
-            {
-                "base_url": conn.base_url,
-                "organization_id": conn.organization_id,
-                "environment": conn.environment,
-            },
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
+    payload = {
+        "base_url": conn.base_url,
+        "organization_id": conn.organization_id,
+        "environment": conn.environment,
+        "verification_state": conn.verification_state,
+        "verification_detail": conn.verification_detail,
+    }
+    forbidden = {"token", "api_key", "authorization", "secret", "password"}
+    if forbidden & set(payload):
+        raise ValueError("Refusing to store credentials in the WhitePact context file.")
+    CONTEXT_FILE.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    try:
+        CONTEXT_FILE.chmod(0o600)
+    except OSError:
+        pass
 
 
 def init_scaffolding(target: Path) -> Path:

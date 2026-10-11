@@ -27,7 +27,7 @@ pip install "rai-governance-platform[dashboard]"
 pip install ./sdk/python
 
 # TypeScript client (from repo)
-cd sdk/typescript && npm ci && npm run build
+cd sdk/typescript && npm ci && npm test
 
 # Go client
 cd sdk/go && go test ./...

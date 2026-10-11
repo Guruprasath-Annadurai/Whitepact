@@ -56,10 +56,18 @@ git commit --amend -s          # most recent commit
 git rebase --exec 'git commit --amend --no-edit -s' -i <base>   # a range
 ```
 
-A CI check runs on every PR and fails if any commit is missing the trailer
-— see [`.github/workflows/dco.yml`](.github/workflows/dco.yml). This is
-enforced going forward only; existing history is not rewritten to add
-sign-offs retroactively.
+A CI check runs on every PR and fails if any other non-merge commit is
+missing the trailer — see [`.github/workflows/dco.yml`](.github/workflows/dco.yml).
+Existing history is not rewritten to add sign-offs retroactively.
+
+Two commits already inside the qualified platform ancestor have no
+`Signed-off-by` trailer. On October 9, 2026 the owner approved a
+historical exception for exactly
+`015fab741427a5a9cae5bca7adaa9729c78da9e5` and
+`681ce9566f0ef9b68b6fc97212cc2fb7a44135e3`. The record is
+[`compliance/DCO_HISTORICAL_EXCEPTION_2026-10-09.md`](compliance/DCO_HISTORICAL_EXCEPTION_2026-10-09.md).
+That exception is not a sign-off. No other commit, author, bot, or date
+is exempt.
 
 ---
 
@@ -142,6 +150,30 @@ level, not just "some tests." The CI badge at the top of `README.md`
 reflects whether the full suite passes on `main`; `coverage.json` (produced
 by any local `pytest` run, per `pyproject.toml`'s `addopts`) has the exact
 current numbers.
+
+### Real PostgreSQL and container tests
+
+Tenant-isolation, migration, concurrency and auth tests need a real PostgreSQL 16; without
+one they are skipped, and a skip is not a pass. A disposable, test-only instance is one
+command away (Docker required; loopback only; data in tmpfs; credentials are test-only):
+
+```bash
+scripts/test-postgres.sh up
+eval "$(scripts/test-postgres.sh env)"      # exports WHITEPACT_TEST_PG_ADMIN_URL
+pytest tests/test_historical_postgres_migrations.py tests/test_postgres_migrations.py \
+       tests/test_auth_real_postgres.py tests/test_phase3_postgres_concurrency.py \
+       tests/test_phase5_postgres_concurrency.py
+scripts/test-postgres.sh down
+```
+
+Container-isolation tests (`ACL`, bind-mount DAC, UID mapping) can only be proven on Linux.
+On macOS and Windows they record a `QUALIFICATION_SKIP`; Linux CI sets
+`WHITEPACT_REQUIRE_DOCKER_ISOLATION=1` so a missing Docker daemon fails instead of skipping
+(see `docs/launch/QUALIFICATION_SKIP_POLICY.md`).
+
+The test suite runs tools without Docker by setting `WHITEPACT_ALLOW_UNISOLATED_EXECUTION=1`
+in `tests/conftest.py`. That opt-in is for local development only and is ignored when
+`ENVIRONMENT=production`; isolation is otherwise required.
 
 ---
 

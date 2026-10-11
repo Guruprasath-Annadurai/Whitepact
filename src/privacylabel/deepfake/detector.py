@@ -1,25 +1,37 @@
 # Copyright (c) 2026 Guruprasath Annadurai
 # SPDX-License-Identifier: MIT
 """
-Multi-model deepfake detection ensemble.
+EXPERIMENTAL media-manipulation signal. This is NOT a validated deepfake detector.
 
-Supports image and video input. Uses an ensemble of detection models:
-  - XceptionNet (face swap / FaceForensics++)
-  - EfficientNet-B0 (general face manipulation)
-  - Frequency-domain analysis (GAN fingerprint detection)
+What this module actually does
+------------------------------
+It computes one deterministic, uncalibrated signal: the variance of the second
+spatial derivative of the luminance channel, scaled into [0, 1]. High-frequency
+energy is *sometimes* elevated in synthesised or heavily re-encoded images, but the
+signal is also elevated by sharp real photographs, text, and compression noise.
+It has not been calibrated or evaluated against any labelled dataset, and no false
+positive or false negative rate is claimed.
 
-Models are loaded lazily and require: pip install torch torchvision pillow opencv-python
+What it deliberately does not do
+--------------------------------
+* It ships no trained neural network. Earlier revisions built InceptionV3 and
+  EfficientNet with ``weights=None`` (random initialisation) and reported their
+  softmax output; random weights carry no information about authenticity.
+* It never fabricates a score. If media cannot be decoded, it raises instead of
+  scoring synthetic noise, and an unreadable video is never reported as "real".
+* It does not classify a manipulation method.
 
-Design decisions:
-  - All model inference is CPU-safe (GPU used when available).
-  - Video processing samples frames uniformly to control cost.
-  - Results include per-frame evidence for auditability.
+Because the signal is unvalidated, every detection call requires an explicit
+``allow_experimental=True`` opt-in, every result carries ``validated=False`` and
+``experimental=True``, and the result must not be used as independent governance
+or trust evidence. Promoting this to a supported detector requires a trained model,
+a documented labelled evaluation (dataset scope, versions, error rates), and a
+change to ``VALIDATED_DETECTORS`` backed by that record.
 """
 
 from __future__ import annotations
 
 import logging
-import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -31,14 +43,11 @@ from privacylabel.deepfake.ensemble import EnsembleVoter, ModelScore, VotingStra
 _log = logging.getLogger(__name__)
 
 try:
-    import torch
-    import torch.nn as nn
     from PIL import Image
-    from torchvision import models, transforms
 
-    _TORCH_AVAILABLE = True
+    _PIL_AVAILABLE = True
 except ImportError:
-    _TORCH_AVAILABLE = False
+    _PIL_AVAILABLE = False
 
 try:
     import cv2
@@ -47,20 +56,50 @@ try:
 except ImportError:
     _CV2_AVAILABLE = False
 
+# Detector identifiers with a recorded labelled evaluation. Empty on purpose: no
+# detector in this repository has one. Never add an entry without that record.
+VALIDATED_DETECTORS: frozenset[str] = frozenset()
+
+HEURISTIC_NAME = "uncalibrated_frequency_heuristic"
+
+EXPERIMENTAL_NOTICE = (
+    "Experimental, unvalidated frequency heuristic. Not evaluated on any labelled "
+    "dataset; error rates unknown. Not independent evidence of authenticity."
+)
+
+
+class DetectorNotValidatedError(RuntimeError):
+    """Raised when an unvalidated detector is used without an explicit opt-in."""
+
+
+class DetectorUnavailableError(RuntimeError):
+    """Raised when a required media decoder is not installed."""
+
+
+class UnreadableMediaError(ValueError):
+    """Raised when media cannot be decoded; unreadable media is never scored."""
+
 
 @dataclass(frozen=True)
 class DeepfakeResult:
-    """Full detection result for a single media asset."""
+    """Detection result for a single media asset.
+
+    ``validated`` is False unless the detector appears in ``VALIDATED_DETECTORS``.
+    A result with ``validated=False`` is an experimental signal, not evidence.
+    """
 
     media_path: str
     is_fake: bool
-    confidence: float  # [0, 1] — how sure the ensemble is
-    ensemble_score: float  # raw fake-probability from ensemble
+    confidence: float  # [0, 1] -- distance of the score from the decision threshold
+    ensemble_score: float  # raw fake-probability signal from the ensemble
     model_scores: dict[str, float] = field(default_factory=dict)
     affected_frames: list[int] = field(default_factory=list)
     frame_distribution: dict[str, int] = field(default_factory=dict)
-    method_detected: str = "unknown"
+    method_detected: str = "unclassified"
     metadata: dict[str, Any] = field(default_factory=dict)
+    validated: bool = False
+    experimental: bool = True
+    limitations: str = EXPERIMENTAL_NOTICE
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -73,51 +112,44 @@ class DeepfakeResult:
             "frame_distribution": self.frame_distribution,
             "method_detected": self.method_detected,
             "metadata": self.metadata,
+            "validated": self.validated,
+            "experimental": self.experimental,
+            "limitations": self.limitations,
         }
 
 
-class _MockDetector:
-    """
-    Lightweight stand-in used when torch/torchvision are not available.
-
-    Returns deterministic scores based on simple frequency analysis,
-    so the module works without GPU or heavy ML dependencies for testing.
-    """
+class _FrequencyHeuristic:
+    """Deterministic, uncalibrated high-frequency-energy signal. See module docstring."""
 
     def predict(self, image_array: np.ndarray) -> float:
-        """Return a fake-probability based on pixel variance heuristic."""
         if image_array.size == 0:
-            return 0.0
-        # High-frequency artifacts in face-swapped images produce elevated variance
-        # in the Laplacian of the luminance channel. This is a rough proxy, not a
-        # real detector — real models require trained weights.
+            raise UnreadableMediaError("Cannot score an empty image array.")
         gray = np.mean(image_array, axis=-1) if image_array.ndim == 3 else image_array
         laplacian_var = float(np.var(np.gradient(np.gradient(gray.astype(float)))))
-        # Normalise to [0, 1] — just a placeholder signal
         return float(min(laplacian_var / 1000.0, 1.0))
 
 
 class DeepfakeDetector:
-    """
-    Ensemble-based deepfake detector for images and video.
+    """Experimental media-manipulation signal (see the module docstring).
 
     Usage::
 
-        detector = DeepfakeDetector()
-        result = await detector.detect_image("photo.jpg")
-        print(result.is_fake, result.confidence)
-
-        video_result = await detector.detect_video("clip.mp4", sample_frames=30)
-        print(video_result.affected_frames)
+        detector = DeepfakeDetector(allow_experimental=True)
+        result = detector.detect_array(frame)       # already-decoded pixels
+        result = await detector.detect_image("photo.jpg")   # needs Pillow or OpenCV
+        print(result.validated)  # always False today
 
     Parameters
     ----------
     strategy : VotingStrategy
         How to combine model scores. Default MEAN.
     threshold : float
-        Fake-probability threshold for classification. Default 0.5.
+        Score threshold for ``is_fake``. Default 0.5. Not calibrated.
     sample_frames : int
         Number of frames to sample from video. Default 30.
+    allow_experimental : bool
+        Must be True to run. Without it every detection call raises
+        ``DetectorNotValidatedError`` instead of returning an unvalidated verdict.
     """
 
     def __init__(
@@ -125,213 +157,132 @@ class DeepfakeDetector:
         strategy: VotingStrategy = VotingStrategy.MEAN,
         threshold: float = 0.5,
         sample_frames: int = 30,
+        *,
+        allow_experimental: bool = False,
     ) -> None:
         self._voter = EnsembleVoter(strategy=strategy, threshold=threshold)
         self._threshold = threshold
         self._sample_frames = sample_frames
-        self._models: dict[str, Any] = {}
-        self._transforms: Any = None
-        self._loaded = False
+        self._allow_experimental = allow_experimental
+        self._models: dict[str, Any] = {HEURISTIC_NAME: _FrequencyHeuristic()}
 
-    def _ensure_loaded(self) -> None:
-        if self._loaded:
+    def _require_opt_in(self) -> None:
+        if HEURISTIC_NAME in VALIDATED_DETECTORS:
             return
-        if _TORCH_AVAILABLE:
-            self._models = {
-                "xception": self._build_xception(),
-                "efficientnet": self._build_efficientnet(),
-            }
-            self._transforms = transforms.Compose(
-                [
-                    transforms.Resize((224, 224)),
-                    transforms.ToTensor(),
-                    transforms.Normalize(
-                        mean=[0.485, 0.456, 0.406],
-                        std=[0.229, 0.224, 0.225],
-                    ),
-                ]
+        if not self._allow_experimental:
+            raise DetectorNotValidatedError(
+                "No validated deepfake detector is available. This module provides only an "
+                "experimental, uncalibrated frequency heuristic; pass "
+                "allow_experimental=True to use it and treat the result as non-evidence."
             )
-        else:
-            self._models = {
-                "frequency_heuristic": _MockDetector(),
-            }
-        self._loaded = True
 
-    def _build_xception(self) -> nn.Module:
-        """
-        XceptionNet adapted for binary deepfake classification.
+    def _score_pixels(self, image: np.ndarray) -> dict[str, float]:
+        return {name: model.predict(image) for name, model in self._models.items()}
 
-        In production, load weights trained on FaceForensics++ (Rossler et al. 2019).
-        Here we create the architecture — training or fine-tuning is out of scope
-        for this scaffolding.
-        """
-        model = models.inception_v3(weights=None, aux_logits=False)
-        model.fc = torch.nn.Linear(model.fc.in_features, 2)  # type: ignore[attr-defined]
-        model.eval()
-        return model
-
-    def _build_efficientnet(self) -> nn.Module:
-        model = models.efficientnet_b0(weights=None)
-        model.classifier[1] = torch.nn.Linear(  # type: ignore[index]
-            model.classifier[1].in_features,
-            2,  # type: ignore[union-attr]
-        )
-        model.eval()
-        return model
-
-    def _predict_image(self, image: Any) -> dict[str, float]:
-        """Run all loaded models on a single PIL image or numpy array."""
-        scores: dict[str, float] = {}
-
-        if _TORCH_AVAILABLE and self._transforms is not None:
-            if isinstance(image, np.ndarray):
-                pil_image = Image.fromarray(image.astype(np.uint8))
-            else:
-                pil_image = image
-
-            tensor = self._transforms(pil_image).unsqueeze(0)
-            with torch.no_grad():
-                for name, model in self._models.items():
-                    try:
-                        output = model(tensor)
-                        fake_prob = float(torch.softmax(output, dim=1)[0, 1].item())
-                    except Exception:
-                        fake_prob = 0.5
-                    scores[name] = fake_prob
-        else:
-            for name, model in self._models.items():
-                if isinstance(image, np.ndarray):
-                    arr = image
-                else:
-                    arr = np.array(image)
-                scores[name] = model.predict(arr)
-
-        return scores
-
-    async def detect_image(self, image_path: str | Path) -> DeepfakeResult:
-        """
-        Detect deepfakes in a single image file.
-
-        Parameters
-        ----------
-        image_path : str | Path
-            Path to image file (JPEG, PNG, BMP supported).
-
-        Returns
-        -------
-        DeepfakeResult
-            Ensemble classification with per-model scores and confidence.
-        """
-        self._ensure_loaded()
-        path = Path(image_path)
-
-        if _TORCH_AVAILABLE:
-            image = Image.open(path).convert("RGB")
-        else:
-            warnings.warn(
-                "torch/torchvision not installed — DeepfakeDetector is running in "
-                "heuristic-only mode. Install with: pip install 'rai-governance-platform[deepfake]'",
-                stacklevel=2,
-            )
-            _log.warning(
-                "DeepfakeDetector: torch unavailable, using frequency-heuristic fallback for %s",
-                path,
-            )
-            image = np.random.randint(0, 256, (224, 224, 3), dtype=np.uint8)
-
-        model_scores = self._predict_image(image)
+    def _result_for(
+        self,
+        media: str,
+        model_scores: dict[str, float],
+        **extra: Any,
+    ) -> DeepfakeResult:
         ensemble_scores = [
             ModelScore(model_name=k, fake_probability=v) for k, v in model_scores.items()
         ]
         is_fake, ensemble_score = self._voter.vote(ensemble_scores)
-        confidence = self._voter.confidence(ensemble_score)
-
         return DeepfakeResult(
-            media_path=str(path),
+            media_path=media,
             is_fake=is_fake,
-            confidence=confidence,
+            confidence=self._voter.confidence(ensemble_score),
             ensemble_score=ensemble_score,
             model_scores=model_scores,
-            method_detected=self._classify_method(model_scores),
-            metadata={"models_used": list(model_scores.keys())},
+            validated=HEURISTIC_NAME in VALIDATED_DETECTORS,
+            experimental=HEURISTIC_NAME not in VALIDATED_DETECTORS,
+            **extra,
         )
+
+    def detect_array(self, image: np.ndarray, *, label: str = "<array>") -> DeepfakeResult:
+        """Score an already-decoded RGB/grayscale pixel array. Deterministic."""
+        self._require_opt_in()
+        scores = self._score_pixels(np.asarray(image))
+        return self._result_for(label, scores, metadata={"models_used": list(scores)})
+
+    @staticmethod
+    def _decode_image(path: Path) -> np.ndarray:
+        if _PIL_AVAILABLE:
+            try:
+                with Image.open(path) as handle:
+                    return np.asarray(handle.convert("RGB"))
+            except Exception as exc:
+                raise UnreadableMediaError(f"Cannot decode image {path}: {exc}") from exc
+        if _CV2_AVAILABLE:
+            frame = cv2.imread(str(path))
+            if frame is None:
+                raise UnreadableMediaError(f"Cannot decode image {path}")
+            return np.asarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+        raise DetectorUnavailableError(
+            "No image decoder installed. Install with: pip install 'rai-governance-platform[deepfake]'"
+        )
+
+    async def detect_image(self, image_path: str | Path) -> DeepfakeResult:
+        """Score an image file. Raises rather than scoring anything but the real pixels."""
+        self._require_opt_in()
+        path = Path(image_path)
+        scores = self._score_pixels(self._decode_image(path))
+        return self._result_for(str(path), scores, metadata={"models_used": list(scores)})
 
     async def detect_video(
         self, video_path: str | Path, sample_frames: int | None = None
     ) -> DeepfakeResult:
-        """
-        Detect deepfakes in a video file by sampling frames.
+        """Score uniformly sampled video frames.
 
-        Parameters
-        ----------
-        video_path : str | Path
-            Path to video file (MP4, AVI, MOV supported).
-        sample_frames : int | None
-            How many frames to sample. Defaults to self.sample_frames.
-
-        Returns
-        -------
-        DeepfakeResult
-            Aggregate result across sampled frames.
+        Raises ``DetectorUnavailableError`` without OpenCV and ``UnreadableMediaError``
+        when no frame can be decoded; an unreadable video is never reported as real.
         """
-        self._ensure_loaded()
+        self._require_opt_in()
+        if not _CV2_AVAILABLE:
+            raise DetectorUnavailableError(
+                "No video decoder installed. Install with: "
+                "pip install 'rai-governance-platform[deepfake]'"
+            )
         path = Path(video_path)
         n_frames = sample_frames or self._sample_frames
 
-        if not _CV2_AVAILABLE:
-            # Return a synthesised result for environments without cv2
-            fake_probs = np.random.uniform(0.3, 0.7, n_frames)
-            model_scores = {"frequency_heuristic": float(np.mean(fake_probs))}
-        else:
-            cap = cv2.VideoCapture(str(path))
+        cap = cv2.VideoCapture(str(path))
+        try:
+            if not cap.isOpened():
+                raise UnreadableMediaError(f"Cannot open video {path}")
             total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or n_frames
             indices = np.linspace(0, max(total - 1, 0), n_frames, dtype=int)
-
-            frame_fake_probs: list[float] = []
+            frame_probs: list[float] = []
             for idx in indices:
                 cap.set(cv2.CAP_PROP_POS_FRAMES, int(idx))
                 ret, frame = cap.read()
                 if not ret:
                     continue
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                scores = self._predict_image(rgb)
-                frame_fake_probs.append(float(np.mean(list(scores.values()))))
+                frame_probs.append(float(np.mean(list(self._score_pixels(rgb).values()))))
+        finally:
             cap.release()
 
-            fake_probs = np.array(frame_fake_probs) if frame_fake_probs else np.array([0.0])
-            model_scores = {"ensemble": float(np.mean(fake_probs))}
+        if not frame_probs:
+            raise UnreadableMediaError(f"No frames could be decoded from {path}")
 
-        agg_score = float(np.mean(fake_probs))
-        is_fake = agg_score >= self._threshold
-
-        affected = [i for i, p in enumerate(fake_probs) if p >= self._threshold]
+        probs = np.array(frame_probs)
+        agg = float(np.mean(probs))
         distribution = {
-            "real": int(np.sum(fake_probs < 0.4)),
-            "uncertain": int(np.sum((fake_probs >= 0.4) & (fake_probs <= 0.6))),
-            "fake": int(np.sum(fake_probs > 0.6)),
+            "real": int(np.sum(probs < 0.4)),
+            "uncertain": int(np.sum((probs >= 0.4) & (probs <= 0.6))),
+            "fake": int(np.sum(probs > 0.6)),
         }
-
         return DeepfakeResult(
             media_path=str(path),
-            is_fake=is_fake,
-            confidence=self._voter.confidence(agg_score),
-            ensemble_score=agg_score,
-            model_scores=model_scores,
-            affected_frames=affected,
+            is_fake=agg >= self._threshold,
+            confidence=self._voter.confidence(agg),
+            ensemble_score=agg,
+            model_scores={HEURISTIC_NAME: agg},
+            affected_frames=[i for i, p in enumerate(probs) if p >= self._threshold],
             frame_distribution=distribution,
-            method_detected=self._classify_method(model_scores),
-            metadata={"frames_sampled": len(fake_probs)},
+            metadata={"frames_sampled": len(probs)},
+            validated=HEURISTIC_NAME in VALIDATED_DETECTORS,
+            experimental=HEURISTIC_NAME not in VALIDATED_DETECTORS,
         )
-
-    def _classify_method(self, scores: dict[str, float]) -> str:
-        """Heuristically classify the type of manipulation from model scores."""
-        if not scores:
-            return "unknown"
-        avg = float(np.mean(list(scores.values())))
-        if avg > 0.8:
-            return "face_swap"
-        if avg > 0.6:
-            return "expression_synthesis"
-        if avg > 0.4:
-            return "partial_manipulation"
-        return "likely_authentic"

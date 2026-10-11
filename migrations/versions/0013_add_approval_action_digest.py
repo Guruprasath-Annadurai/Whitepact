@@ -10,6 +10,7 @@ so nothing detected a mutated (e.g. a changed payment amount) or
 replayed approval. See governance/approval.py's compute_action_digest()/
 matches_action() and db/approval_repository.py's consume().
 """
+
 from __future__ import annotations
 
 from collections.abc import Sequence

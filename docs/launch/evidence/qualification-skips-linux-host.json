@@ -1,0 +1,23 @@
+{
+  "host": "linux",
+  "note": "Skips from a pytest invocation that did not set WHITEPACT_REDIS_URL and did not have a Docker daemon. A skip is not a pass. A separate Redis invocation passed test_live_redis_replicas_share_a_window.",
+  "skip_count": 4,
+  "skips": [
+    {
+      "nodeid": "tests/test_isolation_workspace_permissions.py::test_unrelated_uid_denied_after_container_prepare",
+      "reason": "QUALIFICATION_SKIP platform=linux purpose=foreign UID probe after ACL grant. Docker or root is required. The skip is not a pass."
+    },
+    {
+      "nodeid": "tests/test_isolation_workspace_permissions.py::test_container_uid_can_read_after_prepare",
+      "reason": "QUALIFICATION_SKIP platform=linux purpose=container UID read after real ACL grant. Docker daemon is required. The skip is not a pass."
+    },
+    {
+      "nodeid": "tests/test_isolation_workspace_permissions.py::test_prepare_fails_closed_when_acl_and_root_are_unavailable",
+      "reason": "QUALIFICATION_SKIP platform=linux purpose=fail-closed path when ACL and root are both unavailable. This host can grant container UID access. The stubbed test covers the refusal. The skip is not a pass."
+    },
+    {
+      "nodeid": "tests/test_distributed_rate_limit.py::test_live_redis_replicas_share_a_window",
+      "reason": "QUALIFICATION_SKIP purpose=live Redis shared rate limit. No WHITEPACT_REDIS_URL on that invocation. A later invocation with Redis passed."
+    }
+  ]
+}

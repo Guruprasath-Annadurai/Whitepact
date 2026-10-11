@@ -6,15 +6,17 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+import time
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import and_, insert, select, update
+from sqlalchemy import and_, insert, or_, select, update
 
 from responsibleai.auth import mfa
 from responsibleai.db.engine import (
     DatabaseEngine,
+    human_totp_factors,
     iam_sessions,
     iam_step_up_nonces,
     org_api_keys,
@@ -27,12 +29,30 @@ from responsibleai.iam.errors import (
 )
 from responsibleai.iam.models import StepUpProof
 
+# Step-up methods whose proof this module can really verify. Anything else is refused: a method name
+# in a request is not evidence, and no string pattern in a token is a signature check.
+SUPPORTED_STEP_UP_METHODS = frozenset({StepUpMethod.MFA_TOTP})
+
+# Failed or repeated code guesses allowed per principal per window (durable, shared across replicas).
+TOTP_ATTEMPTS_PER_WINDOW = 8
+TOTP_ATTEMPT_WINDOW_SECONDS = 60
+
+
+def _epoch_now() -> float:
+    """Wall clock used to evaluate TOTP codes. A single seam so tests can move time forward."""
+    return time.time()
+
 
 class StepUpVerifier:
     """Issues and verifies single-use action-bound nonces and step-up proofs."""
 
-    def __init__(self, db: DatabaseEngine) -> None:
+    def __init__(self, db: DatabaseEngine, *, limiter: Any | None = None) -> None:
         self.db = db
+        if limiter is None:
+            from responsibleai.enterprise.security.rate_limit import DurableIdentityRateLimiter
+
+            limiter = DurableIdentityRateLimiter(db)
+        self.limiter = limiter
 
     async def issue_step_up_nonce(
         self,
@@ -94,23 +114,35 @@ class StepUpVerifier:
                 max_age_seconds=300 if risk_tier == PrivilegeRiskTier.PRIVILEGED_CRITICAL else 900,
             )
 
-        # 1. Freshness window check (5m for CRITICAL, 15m for HIGH)
-        max_age_seconds = 300 if risk_tier == PrivilegeRiskTier.PRIVILEGED_CRITICAL else 900
+        # 1. Method gate and freshness. A client-supplied auth_time proves nothing, so it is ignored:
+        # the proof is a one-time code checked by this server, now, against an enrolled factor, which
+        # is as fresh as step-up can be. Unsupported methods are refused before any state is touched.
+        if str(proof.method) == "RECOVERY_CEREMONY":
+            raise StepUpVerificationFailedError(
+                "Recovery ceremony cannot be used for routine admin step-up."
+            )
         try:
-            auth_dt = datetime.fromisoformat(proof.auth_time)
-            if auth_dt.tzinfo is None:
-                auth_dt = auth_dt.replace(tzinfo=UTC)
+            method = StepUpMethod(str(proof.method))
+        except ValueError:
+            method = None
+        if method is None or method not in SUPPORTED_STEP_UP_METHODS:
+            raise StepUpVerificationFailedError(
+                f"Step-up method {proof.method} is not supported: no verifier is implemented "
+                "for it, and unverified proofs are never accepted. Use MFA_TOTP."
+            )
+        now = datetime.now(UTC)
+
+        # Guess limit, before any factor is evaluated (durable, shared by replicas).
+        try:
+            await self.limiter.check(
+                f"stepup-totp:{org_id}:{principal_id}",
+                limit=TOTP_ATTEMPTS_PER_WINDOW,
+                window_seconds=TOTP_ATTEMPT_WINDOW_SECONDS,
+            )
         except Exception as exc:
             raise StepUpVerificationFailedError(
-                "Invalid auth_time format in step-up proof."
+                "Too many step-up attempts. Try again later."
             ) from exc
-
-        now = datetime.now(UTC)
-        age = (now - auth_dt).total_seconds()
-        if age < -10.0 or age > max_age_seconds:
-            raise StepUpVerificationFailedError(
-                f"Step-up proof is outside freshness window (age: {age:.1f}s, max: {max_age_seconds}s)."
-            )
 
         # 2. Verify and consume the nonce atomically
         nonce_hash = hashlib.sha256(proof.nonce.encode("utf-8")).hexdigest()
@@ -138,6 +170,17 @@ class StepUpVerifier:
             # Expiration
             if now.isoformat() >= rec["expires_at"]:
                 raise StepUpVerificationFailedError("Step-up nonce has expired.")
+
+            # Freshness is the age of the server-issued challenge (5 min for CRITICAL, 15 min for HIGH),
+            # not a client-supplied auth_time.
+            max_age_seconds = 300 if risk_tier == PrivilegeRiskTier.PRIVILEGED_CRITICAL else 900
+            issued = datetime.fromisoformat(rec["created_at"])
+            if issued.tzinfo is None:
+                issued = issued.replace(tzinfo=UTC)
+            if (now - issued).total_seconds() > max_age_seconds:
+                raise StepUpVerificationFailedError(
+                    f"Step-up challenge is older than {max_age_seconds}s; request a new one."
+                )
 
             # Action & resource binding
             if rec["action"] != action:
@@ -191,66 +234,10 @@ class StepUpVerifier:
                             "Step-up web session has been revoked or expired."
                         )
 
-            # 3. Verify underlying factor / proof token
-            if str(proof.method) == "RECOVERY_CEREMONY" or proof.method not in StepUpMethod:
-                raise StepUpVerificationFailedError(
-                    "Recovery ceremony cannot be used for routine admin step-up."
-                )
-
-            if proof.method == StepUpMethod.MFA_TOTP:
-                # Lookup principal MFA secret
-                key_stmt = select(org_api_keys.c.mfa_secret, org_api_keys.c.mfa_enrolled).where(
-                    and_(
-                        org_api_keys.c.org_id == org_id,
-                        org_api_keys.c.id == principal_id,
-                    )
-                )
-                key_row = (await conn.execute(key_stmt)).first()
-                if not key_row or not key_row[1] or not key_row[0]:
-                    # Also permit fallback if token is a valid mock code in tests or dedicated TOTP
-                    if proof.token_or_code not in {"123456", "valid_totp_mock"}:
-                        raise StepUpVerificationFailedError(
-                            "Principal is not enrolled in MFA or invalid code."
-                        )
-                else:
-                    if not mfa.verify_code(key_row[0], proof.token_or_code):
-                        raise StepUpVerificationFailedError("Invalid TOTP verification code.")
-
-            elif proof.method == StepUpMethod.OIDC_AUTH_TIME:
-                if proof.token_or_code in {"jwks_unavailable", "jwks_timeout"} or proof.claims.get(
-                    "jwks_error"
-                ):
-                    raise StepUpVerificationFailedError(
-                        "OIDC JWKS endpoint unavailable / network timeout."
-                    )
-
-                if "missing_auth_time" in proof.token_or_code or (
-                    proof.claims
-                    and "auth_time" not in proof.claims
-                    and "auth_time" not in proof.token_or_code
-                ):
-                    raise StepUpVerificationFailedError("Missing OIDC auth_time claim in token.")
-
-                if "wrong_aud" in proof.token_or_code or (
-                    proof.claims.get("aud")
-                    and proof.claims.get("aud") not in {f"whitepact:{org_id}", "whitepact-iam"}
-                ):
-                    raise StepUpVerificationFailedError("OIDC token with wrong audience.")
-
-                if not proof.token_or_code or len(proof.token_or_code) < 10:
-                    raise StepUpVerificationFailedError("Invalid OIDC reauthentication token.")
-
-            elif proof.method == StepUpMethod.WEBAUTHN:
-                if (
-                    proof.token_or_code in {"invalid_signature", "sig_fail"}
-                    or "fail" in proof.token_or_code.lower()
-                ):
-                    raise StepUpVerificationFailedError("WebAuthn signature failure.")
-                if not proof.token_or_code or proof.token_or_code in {
-                    "unsupported_stub",
-                    "unsupported",
-                }:
-                    raise StepUpVerificationFailedError("Unsupported WebAuthn provider stub.")
+            # 3. Verify the factor, for real. Browser users have a human TOTP factor
+            # (human_totp_factors, enrolled through /mfa/totp/start + /confirm); API-key principals
+            # have the key's own enrolled secret. There is no fallback code and no unenrolled path.
+            await self._verify_totp_factor(conn, org_id, principal_id, proof.token_or_code)
 
             # Atomically mark nonce consumed
             await conn.execute(
@@ -260,3 +247,69 @@ class StepUpVerifier:
             )
 
         return True
+
+    async def _verify_totp_factor(
+        self, conn: Any, org_id: str, principal_id: str, code: str
+    ) -> None:
+        """Check *code* against the principal's ACTIVE enrolled TOTP factor and spend its time step.
+
+        The time step is advanced with a compare-and-set, so the same code (or an older one) cannot be
+        used twice, including by two concurrent requests.
+        """
+        now = _epoch_now()
+        human = (
+            await conn.execute(
+                select(human_totp_factors).where(human_totp_factors.c.user_id == principal_id)
+            )
+        ).first()
+        if human is not None:
+            if human.status != "ACTIVE" or not human.secret_encrypted:
+                raise StepUpVerificationFailedError("Principal has no active enrolled TOTP factor.")
+            matched = mfa.verify_code_with_counter(human.secret_encrypted, code, now=now)
+            if matched is None:
+                raise StepUpVerificationFailedError("Invalid TOTP verification code.")
+            spent = await conn.execute(
+                update(human_totp_factors)
+                .where(
+                    human_totp_factors.c.user_id == principal_id,
+                    human_totp_factors.c.status == "ACTIVE",
+                    or_(
+                        human_totp_factors.c.last_timestep.is_(None),
+                        human_totp_factors.c.last_timestep < matched,
+                    ),
+                )
+                .values(last_timestep=matched, failed_attempts=0)
+            )
+            if (spent.rowcount or 0) != 1:
+                raise StepUpVerificationFailedError("TOTP code already used.")
+            return
+
+        key = (
+            await conn.execute(
+                select(
+                    org_api_keys.c.mfa_secret,
+                    org_api_keys.c.mfa_enrolled,
+                    org_api_keys.c.mfa_last_timestep,
+                ).where(and_(org_api_keys.c.org_id == org_id, org_api_keys.c.id == principal_id))
+            )
+        ).first()
+        if key is None or not key[1] or not key[0]:
+            raise StepUpVerificationFailedError("Principal is not enrolled in MFA.")
+        matched = mfa.verify_code_with_counter(key[0], code, now=now)
+        if matched is None:
+            raise StepUpVerificationFailedError("Invalid TOTP verification code.")
+        spent = await conn.execute(
+            update(org_api_keys)
+            .where(
+                org_api_keys.c.id == principal_id,
+                org_api_keys.c.org_id == org_id,
+                org_api_keys.c.mfa_enrolled == 1,
+                or_(
+                    org_api_keys.c.mfa_last_timestep.is_(None),
+                    org_api_keys.c.mfa_last_timestep < matched,
+                ),
+            )
+            .values(mfa_last_timestep=matched)
+        )
+        if (spent.rowcount or 0) != 1:
+            raise StepUpVerificationFailedError("TOTP code already used.")

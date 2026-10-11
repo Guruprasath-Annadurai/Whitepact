@@ -155,6 +155,9 @@ class GovernanceServices:
     epoch_repo: RevocationEpochRepository | None = None
     authority_resolver: AuthorityResolver | None = None
     org_repo: OrgRepository | None = None
+    # Durable limiter for the read-only authority tools (mcp/authority_tools.py). Unset means
+    # those tools refuse to run rather than run unthrottled.
+    authority_read_limiter: Any | None = None
 
 
 @dataclass
@@ -666,16 +669,14 @@ async def _record_outcome(
 
 
 def _agent_from_approval(approval: ApprovalRequest) -> AgentContext:
-    """A resume flow has no live request context (no fresh OrgContext,
-    no MCP call in flight) -- reconstructs the minimal `AgentContext`
-    `build_resume_action()`/evidence recording need from what the
-    original `ApprovalRequest` itself already recorded. `identity_id`
-    falls back to `"unknown"` only for a pre-existing approval that
-    somehow has no `requested_by` (shouldn't happen for anything built
-    via `build_approval_request()`, which always sets it), rather than
-    raising and blocking an otherwise-valid resume."""
+    """A resume flow has no live request context. The agent identity
+    comes only from the approval's recorded requester. A missing
+    requester is not an identity and must not resume as ``unknown``."""
+    requester = (approval.requested_by or "").strip()
+    if not requester:
+        raise ValueError("Approval has no requested_by identity and cannot be resumed.")
     identity = IdentityContext(
-        identity_id=approval.requested_by or "unknown",
+        identity_id=requester,
         kind="api_key",
         org_id=approval.organization_id,
     )
