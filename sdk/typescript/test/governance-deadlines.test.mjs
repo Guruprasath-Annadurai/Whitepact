@@ -10,6 +10,8 @@ const methods = {
   revokeDelegation: (c, options) => c.revokeDelegation("a", "test", options),
   executeApproval: (c, options) => c.executeApproval("a", options),
   getEvidence: (c, options) => c.getEvidence("e", options),
+  listEvidence: (c, options) => c.listEvidence(50, options),
+  getAttestation: (c, options) => c.getAttestation("e", options),
 };
 
 for (const stage of ["headers", "body"]) for (const [name, invoke] of Object.entries(methods)) {

@@ -145,6 +145,17 @@ export class GovernanceRuntimeClient {
   }
 
   async getEvidence(evidenceId: string, options?: GovernanceRequestOptions): Promise<Record<string, unknown>> {
+    // Legacy route is unavailable in the current backend. Use getAttestation instead.
     return this.request(`governance/evidence/${encodeURIComponent(evidenceId)}`, "GET", undefined, options);
+  }
+
+  async listEvidence(limit = 50, options?: GovernanceRequestOptions): Promise<Record<string, unknown>> {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 200)
+      throw new RangeError("Evidence limit must be an integer from 1 to 200");
+    return this.request(`governance/evidence?limit=${limit}`, "GET", undefined, options);
+  }
+
+  async getAttestation(evidenceId: string, options?: GovernanceRequestOptions): Promise<Record<string, unknown>> {
+    return this.request(`governance/evidence/${encodeURIComponent(evidenceId)}/attestation`, "GET", undefined, options);
   }
 }
