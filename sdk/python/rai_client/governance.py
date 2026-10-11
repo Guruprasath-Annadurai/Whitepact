@@ -40,7 +40,7 @@ class GovernanceRequestError(RuntimeError):
 class GovernanceToolOutcome:
     """Parsed result of a governed tool call.
 
-    ``completed`` is the only positive signal: the server answered 2xx with no ``error``. The absence of
+    ``completed`` requires an error-free answer with no uncertainty marker. The absence of
     ``denied`` or ``requires_approval`` is NOT permission; check ``completed``.
     """
 
@@ -48,7 +48,7 @@ class GovernanceToolOutcome:
 
     @property
     def completed(self) -> bool:
-        return "error" not in self.raw
+        return "error" not in self.raw and not self.reconciliation_required
 
     @property
     def requires_approval(self) -> bool:
@@ -65,7 +65,10 @@ class GovernanceToolOutcome:
     @property
     def reconciliation_required(self) -> bool:
         return (
-            self.raw.get("status") == "UNKNOWN" or self.raw.get("reconciliation_required") is True
+            self.raw.get("status") == "UNKNOWN"
+            or self.raw.get("outcome_status") == "UNKNOWN"
+            or self.raw.get("error") == "governance_unknown_outcome"
+            or self.raw.get("reconciliation_required") is True
         )
 
 

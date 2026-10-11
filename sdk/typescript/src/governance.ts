@@ -21,9 +21,12 @@ export class GovernanceRequestError extends Error {
   }
 }
 
-/** The one positive signal: a 2xx answer with no `error`. Absence of "denied" is not permission. */
+/** Error-free and not uncertain; absence of "denied" alone is not permission. */
 export function isCompleted(result: GovernanceToolCallResult): boolean {
-  return !("error" in result);
+  return !("error" in result)
+    && result.status !== "UNKNOWN"
+    && result.outcome_status !== "UNKNOWN"
+    && result.reconciliation_required !== true;
 }
 
 export class GovernanceRuntimeClient {
