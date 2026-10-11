@@ -145,8 +145,9 @@ export class RAIClient {
 
         if (!res.ok) {
           const text = await res.text().catch(() => "");
+          const detail = this.apiKey ? text.split(this.apiKey).join("[REDACTED]") : text;
           throw new RAIError(
-            `${method} ${path} failed [${res.status}]: ${text}`,
+            `${method} ${path} failed [${res.status}]: ${detail}`,
             res.status,
             path,
           );

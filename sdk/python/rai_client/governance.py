@@ -118,7 +118,8 @@ class GovernanceRuntimeClient:
                 json={"name": name, "arguments": arguments or {}, "purpose": purpose},
             )
         if not resp.is_success:
-            raise GovernanceRequestError(resp.status_code, resp.text[:200])
+            detail = resp.text.replace(self._key, "[REDACTED]") if self._key else resp.text
+            raise GovernanceRequestError(resp.status_code, detail[:200])
         try:
             body = resp.json()
         except ValueError as exc:
