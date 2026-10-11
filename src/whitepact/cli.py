@@ -94,7 +94,13 @@ def _attach_bias(main: click.Group) -> None:
         return
     from biasbuster.cli import main as _biasbuster_cli
 
-    main.add_command(_biasbuster_cli, name="bias")
+    bias = click.Group(
+        name="bias",
+        help="Run WhitePact bias probes against an LLM provider.",
+    )
+    for command in _biasbuster_cli.commands.values():
+        bias.add_command(command)
+    main.add_command(bias)
     _bias_attached = True
 
 
@@ -130,8 +136,8 @@ def main() -> None:
     """WhitePact — AI governance platform CLI.
 
     Diagnostics, sovereign read/simulate tooling, and local developer utilities.
-    MCP servers: use ``whitepact-mcp`` or ``whitepact-mcp-http``.
-    Bias probes: ``biasbuster run`` or ``whitepact bias run``.
+    MCP servers: use ``whitepact-mcp`` (community stdio) or ``whitepact-mcp-http``.
+    Bias probes: ``whitepact bias run``.
     """
 
 
@@ -141,9 +147,14 @@ def info_cmd() -> None:
     click.echo("product: WhitePact")
     click.echo(f"version: {__version__}")
     click.echo("pypi_distribution: rai-governance-platform")
+    click.echo(
+        "distribution_note: PyPI name is unchanged here; the package-name decision "
+        "belongs to the distribution lane"
+    )
     click.echo("import: responsibleai (canonical), whitepact (alias)")
-    click.echo("cli: whitepact (this), biasbuster (bias probes only)")
-    click.echo("mcp: whitepact-mcp, whitepact-mcp-http")
+    click.echo("cli: whitepact")
+    click.echo("bias_probes: whitepact bias")
+    click.echo("mcp: whitepact-mcp (community stdio), whitepact-mcp-http (hosted)")
 
 
 if __name__ == "__main__":
