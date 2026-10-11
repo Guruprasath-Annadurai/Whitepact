@@ -51,31 +51,35 @@ and a live dashboard — that covers the full governance lifecycle:
 | Problem | Module | Output |
 |---|---|---|
 | Should this agent action be allowed, redacted, held for approval, denied, or quarantined? | `WhitePactRuntimeGateway` (governance core) | A five-way `GovernanceDecision`, deterministic, no LLM call in the decision path |
-| Is this model trustworthy? | `TrustScoreEngine` | 0–100 score, A–F grade, risk level |
-| Does it comply with regulations? | `ComplianceEngine` | NIST AI RMF, EU AI Act tier, ISO 42001 |
+| Is this model trustworthy? | `TrustScoreEngine` (Experimental) | Heuristic 0–100 score, A–F grade, risk assessment (advisory signal, not security certification) |
+| Does it comply with regulations? | `ComplianceEngine` | NIST AI RMF, EU AI Act tier, ISO 42001 heuristic mapping |
 | Is it exposing PII? | `GuardrailsEngine` | Block / redact with audit log |
-| Is it hallucinating? | `HallucinationDetector` | Risk score, unsupported claims |
+| Is it hallucinating? | `HallucinationDetector` (Experimental) | Risk score, unsupported claims heuristic |
 | Can it be attacked? | `RedTeamSimulator` | 10 vectors, CVE IDs, safe-refusal rate |
 | How much is it costing? | `CostTracker` + `ModelRouter` | Per-model USD, routing to cheapest viable model |
 | Is it getting worse over time? | `TrustDriftMonitor` | 7/30-day trend, severity alerts |
 | Is it biased? | `BiasBuster` | 6 demographic probes, CI gate |
 | Is this data labeled privately? | `PrivacyLabel` | Federated DP labels, never leaves device |
-| Is this media real? | `DeepfakeDetector` | Ensemble confidence, method detected |
+| Is this media real? | `DeepfakeDetector` (Experimental) | Heuristic ensemble signal (validated=False, no forensic accuracy claim) |
 | Can I trust a third-party MCP server before connecting to it? | `SupplyChainScanner` | VERIFIED_FACT / INFERRED_SIGNAL / UNKNOWN verdicts — typosquat, description-content, known-incident checks |
-| Is there a tamper-evident record of every governance decision? | `EvidenceRepository` | Hash-chained `EvidenceRecord`, per-org, `verify_chain()` |
+| Is there a tamper-evident record of every governance decision? | `EvidenceRepository` | Hash-chained `EvidenceRecord`, per-org, `verify_chain()` (local DB, no external immutable ledger) |
 | Does a risky action get a human in the loop? | `ApprovalRepository` | Race-safe `PENDING → APPROVED/DENIED` workflow |
 | How does this model rank against others, independently? | `Public Leaderboard` | Cross-model trust ranking from actually calling each model's API, not self-reported |
-| Can I cite and verify a trust score anywhere? | `Trust Index` | Free self-assessed or human-reviewed certified passport, verifiable at `/verify/{id}`, embeddable badge |
+| Can I cite and verify a trust score anywhere? | `Trust Index` | Self-assessed or reviewed trust passport (advisory claim, not an external compliance certificate) |
 | Has this AI system failed publicly before? | `AI Incident Database` | Crowd-reported, moderator-reviewed, hash-chained public registry |
 | Should my agent trust this third-party tool before calling it? | `rai_check_trust` + LangChain/LangGraph/ADK integrations | Free lookup, plus a real block/pause gate in-agent |
-| Can any MCP client govern every AI call? | `MCP Server` | 30 production governance tools over stdio, Streamable HTTP, or legacy HTTP+SSE |
+| How do MCP clients access governance tools? | `MCP Server` | 31 tools via hosted Streamable HTTP (governed execution); local stdio transport is ungoverned by design |
 
 ---
 
 ## Install
 
 ```bash
-# Governance platform + REST API
+# FastStart V1: lightweight core governance CLI demonstration (warm ~0.4s; cold install network-bounded)
+pip install rai-governance-platform
+whitepact faststart
+
+# Full governance platform + REST API dashboard
 pip install "rai-governance-platform[dashboard]"
 
 # With PostgreSQL support
@@ -99,7 +103,28 @@ unless PyPI documents that distribution).
 
 ---
 
-## 30-second quickstart
+## WhitePact FastStart V1 (Local Doctrine Demonstration)
+
+Demonstrate WhitePact's deterministic policy evaluation and canonical evidence hashing locally without external database or server dependencies:
+
+```bash
+# 1. Install core distribution
+pip install rai-governance-platform
+
+# 2. Run local governance doctrine verification
+whitepact faststart
+```
+
+Demonstrates the core deterministic doctrine:
+`ALLOW -> DENY -> REQUIRE_APPROVAL -> SYNTHETIC_APPROVAL -> AUTHORITY_REMOVAL -> VERIFY_EVIDENCE`
+with canonical SHA-256 evidence chain verification.
+
+> [!NOTE]
+> FastStart V1 is a lightweight local demonstration of deterministic gateway policy evaluation and evidence hashing. Step 4 is a synthetic approval demonstration without human participants or isolated container dispatch. Governed execution with OS-level container isolation, epoch-bound execution permits, and durable multi-tenant replication is qualified in the integration test suite.
+
+---
+
+## 30-second quickstart (Full Dashboard)
 
 ```bash
 # Start the governance dashboard
@@ -257,19 +282,17 @@ python examples/08_whitepact_enterprise_scenario.py
 
 ---
 
-## MCP Server — govern every AI call from Claude Code, Claude Desktop, or any MCP client
+## MCP Server — Runtime Tool Governance (Hosted Streamable HTTP) & Local Tool Exploration (stdio)
 
-The MCP (Model Context Protocol) server exposes WhitePact as **30 tools and
-20 resources** (10 canonical resource URIs, dual-advertised under both
-`whitepact://` and `rai://` schemes — see `MIGRATION_WHITEPACT_V2.md`) to any
-MCP-compatible client — Claude Code, Claude Desktop, Cursor, Windsurf, or your
-own agent runtime. Three transports are supported: stdio, Streamable HTTP
-(`/mcp`, current MCP spec), and legacy HTTP+SSE (`/sse` + `/messages/`, kept
-for older clients). When a team's client points at this server, every AI
-interaction is automatically governed — five-way governance decisions, trust
-scoring, guardrails, compliance checks (NIST AI RMF / EU AI Act / ISO 42001),
-bias evaluation, drift detection, cost tracking, and hash-chained audit
-evidence run on any call without code changes.
+The MCP (Model Context Protocol) server exposes WhitePact governance tools to MCP-compatible clients — Claude Code, Claude Desktop, Cursor, Windsurf, or custom agent runtimes.
+
+> [!IMPORTANT]
+> **MCP Transport and Enforcement Scope**:
+> - **Hosted Streamable HTTP (`/mcp`)**: Enforced runtime governance path. Tool dispatches are mediated by `InternalToolExecutor`, which enforces single-use `ExecutionAuthorization` permits, tenant isolation, and default Linux container isolation.
+> - **Local Community stdio (`whitepact-mcp` CLI)**: **Ungoverned by design** (see `docs/launch/LOCAL_STDIO_MCP_SCOPE.md`). The stdio transport executes tool handlers in-process for developer evaluation without OS-level sandboxing, tenant boundary enforcement, or cryptographic authorization tokens. Do not use local stdio as an enterprise security boundary.
+
+Three transports are supported: stdio (evaluation only), Streamable HTTP (`/mcp`, current MCP spec), and legacy HTTP+SSE (`/sse` + `/messages/`, kept for older clients).
+
 
 ### Setup
 

@@ -388,7 +388,13 @@ class PolicyRepository:
         ]
 
     async def verify_history(
-        self, org_id: str, *, checkpoint: dict[str, Any] | None = None
+        self,
+        org_id: str,
+        *,
+        checkpoint: dict[str, Any] | None = None,
+        expected_version: int | None = None,
+        expected_head_digest: str | None = None,
+        check_persisted_version: bool = True,
     ) -> bool:
         """Verify the org's policy history. True only if every check below holds.
 
@@ -398,13 +404,16 @@ class PolicyRepository:
           or the single ``baseline`` row migration 0062 wrote for an organization that already had a
           policy version. A ``baseline`` anywhere else is invalid, as is a first row that is neither
           (the front of the history was cut off).
-        * The newest history version equals ``governance_policy_versions.version`` (an empty history is
-          valid only for a never-edited org). This catches deleted tails, deleted whole histories and a
-          counter moved out-of-band.
-        * With ``checkpoint`` (a ``history_head()`` value retained OUTSIDE the database), the history
-          must still contain that exact version with that exact digest. This is the only check that
-          survives someone who can rewrite both tables and recompute every digest, and it also detects
-          a consistent rollback (history and counter both reset to an earlier version).
+        * ``check_persisted_version`` (default True): the newest history version equals
+          ``governance_policy_versions.version`` (an empty history is valid only for a never-edited org).
+          This catches deleted tails, deleted whole histories and a counter moved out-of-band.
+        * ``checkpoint`` (a ``history_head()`` value retained OUTSIDE the database): the history must
+          still contain that exact version with that exact digest. This is the only check that survives
+          someone who can rewrite both tables and recompute every digest, and it also detects a
+          consistent rollback (history and counter both reset to an earlier version).
+        * ``expected_version`` / ``expected_head_digest`` (retained values, the API contributed by the
+          FastStart review): the newest version, and the newest entry digest, must equal them. Both are
+          compared against the newest *row*, so they work for baselined organizations too.
 
         Without a retained checkpoint, "valid" means internally consistent, not "untampered by a
         database administrator".
@@ -417,7 +426,7 @@ class PolicyRepository:
                     .order_by(governance_policy_history.c.version.asc())
                 )
             ).fetchall()
-        current_version = await self.get_policy_version(org_id)
+        current_version = await self.get_policy_version(org_id) if check_persisted_version else None
         if checkpoint is not None:
             wanted = [
                 r
@@ -427,12 +436,19 @@ class PolicyRepository:
             ]
             if not wanted:
                 return False
+        newest = rows[-1].version if rows else 0
+        if expected_version is not None and newest != expected_version:
+            return False
         if not rows:
-            return current_version == 0
-        if rows[-1].version != current_version:
+            if expected_head_digest is not None and expected_head_digest != _HISTORY_GENESIS:
+                return False
+            return current_version in (None, 0)
+        if current_version is not None and rows[-1].version != current_version:
+            return False
+        if expected_head_digest is not None and rows[-1].entry_digest != expected_head_digest:
             return False
         prev = _HISTORY_GENESIS
-        expected_version: int | None = None
+        next_version: int | None = None
         for index, row in enumerate(rows):
             if index == 0:
                 if row.change == "baseline":
@@ -441,7 +457,7 @@ class PolicyRepository:
                 elif row.version != 1:
                     return False  # the front of the history is missing
             else:
-                if row.change == "baseline" or row.version != expected_version:
+                if row.change == "baseline" or row.version != next_version:
                     return False
             if hashlib.sha256(row.rules_json.encode("utf-8")).hexdigest() != row.rules_digest:
                 return False
@@ -459,7 +475,7 @@ class PolicyRepository:
             if row.prev_entry_digest != prev or row.entry_digest != expected:
                 return False
             prev = row.entry_digest
-            expected_version = row.version + 1
+            next_version = row.version + 1
         return True
 
     async def history_head(self, org_id: str) -> dict[str, Any] | None:
