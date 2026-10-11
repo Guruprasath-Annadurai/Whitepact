@@ -38,6 +38,7 @@ def _publish(store: FileWitnessKeyStore, log: AppendOnlyWitnessLog, sequence: in
         head_hash=head,
         witnessed_at="2026-10-09T00:00:00+00:00",
         required=True,
+        opaque_reference=False,  # these tests cover the legacy v1 record; v2 is in test_witness_opaque_reference.py
     )
 
 
@@ -106,6 +107,7 @@ def test_rollback_rewrite_gap_and_missing_publication_are_detected(tmp_path) -> 
             head_hash="b" * 64,
             witnessed_at="2026-10-09T00:00:00+00:00",
             required=False,
+            opaque_reference=False,
         )
 
 
