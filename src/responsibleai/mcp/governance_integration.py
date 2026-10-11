@@ -155,6 +155,9 @@ class GovernanceServices:
     epoch_repo: RevocationEpochRepository | None = None
     authority_resolver: AuthorityResolver | None = None
     org_repo: OrgRepository | None = None
+    # Durable limiter for the read-only authority tools (mcp/authority_tools.py). Unset means
+    # those tools refuse to run rather than run unthrottled.
+    authority_read_limiter: Any | None = None
 
 
 @dataclass

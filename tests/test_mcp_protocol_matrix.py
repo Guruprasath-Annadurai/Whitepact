@@ -122,11 +122,17 @@ async def test_tools_list_matches_the_definitions_and_every_schema_is_valid_json
     tools = _parse(response)["result"]["tools"]
     names = [t["name"] for t in tools]
     # TOOL_DEFS also holds the test-only fixture; it is deliberately not advertised to clients.
-    advertised = sorted(d.name for d in TOOL_DEFS if d.name != "test.counter.increment")
+    # A governed hosted connection additionally advertises the four read-only authority tools.
+    from responsibleai.mcp.authority_tools import AUTHORITY_TOOL_NAMES
+
+    advertised = sorted(
+        [d.name for d in TOOL_DEFS if d.name != "test.counter.increment"]
+        + sorted(AUTHORITY_TOOL_NAMES)
+    )
     assert sorted(names) == advertised
     assert "test.counter.increment" not in names
     assert len(names) == len(set(names)), "duplicate tool name"
-    assert len(tools) == len(TOOL_DEFS) - 1 == 30
+    assert len(tools) == len(TOOL_DEFS) - 1 + 4 == 34
     for tool in tools:
         assert re.fullmatch(r"[A-Za-z0-9_.\-]{1,64}", tool["name"]), tool["name"]
         assert tool.get("description"), tool["name"]

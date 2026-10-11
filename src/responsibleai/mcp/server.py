@@ -176,7 +176,11 @@ def _month_start_iso() -> str:
 async def _list_tools() -> list[types.Tool]:
     from responsibleai.mcp.tools import advertised_tool_defs
 
-    tools = advertised_tool_defs(hosted=_current_hosted.get())
+    governance = _current_governance.get()
+    tools = advertised_tool_defs(
+        hosted=_current_hosted.get(),
+        authority=getattr(governance, "authority_read_limiter", None) is not None,
+    )
     ctx = _current_org.get()
     if ctx is not None and ctx.key_id.startswith("oauth:"):
         return [_with_oauth_security(tool) for tool in tools]
@@ -293,6 +297,14 @@ async def _call_tool(
         if usage_repo is not None and ctx is not None and ctx.org_id:
             await usage_repo.record_call(ctx.org_id, name, ctx.plan.value, allowed=allowed)
 
+    from responsibleai.mcp.authority_tools import AUTHORITY_TOOL_NAMES
+
+    if name in AUTHORITY_TOOL_NAMES:
+        # Read-only authority tools never reach apply_governance(): they mint no execution
+        # grant, write no evidence and need no purpose. They are tenant-scoped, role-gated and
+        # rate limited inside AuthorityReadService.
+        return await _call_authority_tool(name, call_arguments, ctx, governance, _meter)
+
     if governance is not None and ctx is not None and ctx.org_id:
         # Local import: keeps the stdio transport's import graph free of
         # the DB/governance layer unless a hosted-HTTP connection with
@@ -343,6 +355,28 @@ async def _call_tool(
 
     set_mcp_dispatch_hosted(_current_hosted.get())
     result = await dispatch_tool(name, call_arguments)
+    return _text_and_structured(result)
+
+
+async def _call_authority_tool(
+    name: str,
+    arguments: dict[str, Any],
+    ctx: OrgContext | None,
+    governance: GovernanceServices | None,
+    meter: Any,
+) -> tuple[list[types.TextContent], dict[str, Any]]:
+    from responsibleai.mcp.authority_tools import AuthorityReadService
+
+    limiter = getattr(governance, "authority_read_limiter", None)
+    if governance is None or ctx is None or limiter is None or not _current_hosted.get():
+        return _text_and_structured(
+            {
+                "error": "authority_tools_unavailable",
+                "message": "Authority tools are available on the hosted, tenant-scoped transport only.",
+            }
+        )
+    result = await AuthorityReadService(governance, limiter).call(name, arguments, ctx)
+    await meter("error" not in result)
     return _text_and_structured(result)
 
 
@@ -659,6 +693,7 @@ def _build_http_app() -> Any:
         from responsibleai.db.execution_nonce_repository import ExecutionNonceRepository
         from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
         from responsibleai.db.root_authority_repository import RootAuthorityRepository
+        from responsibleai.enterprise.security.rate_limit import DurableIdentityRateLimiter
         from responsibleai.governance import WhitePactRuntimeGateway
         from responsibleai.governance.authority_resolver import AuthorityResolver
         from responsibleai.integrations.client import DEFAULT_CACHE_TTL_MINUTES, TrustClient
@@ -684,6 +719,7 @@ def _build_http_app() -> Any:
             evidence_repo=EvidenceRepository(_db_engine),
             approval_repo=ApprovalRepository(_db_engine),
             policy_repo=PolicyRepository(_db_engine),
+            authority_read_limiter=DurableIdentityRateLimiter(_db_engine),
             # Continuous MCP Trust: this is the hot governed-dispatch
             # path, making a live Trust Index HTTP call on every
             # governed call with a provider/model pair -- caching (with
