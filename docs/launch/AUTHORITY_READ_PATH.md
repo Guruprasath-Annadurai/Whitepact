@@ -55,11 +55,21 @@ GRANT SELECT ON governance_policies, governance_policy_versions, governance_poli
 GRANT SELECT, INSERT, UPDATE ON identity_rate_counters TO wp_authority_read;
 ```
 
-**Not wired yet:** the hosted app currently builds every repository from one engine, so in a
-default deployment these tools run with the application's normal role. The test proves the code
-*can* run read-only; it does not prove production *does*. Wiring a second engine
-(`WHITEPACT_AUTHORITY_READ_DATABASE_URL`, falling back to the main URL with a logged warning) is
-the remaining step and is called out as an open item rather than claimed.
+**Wired (this revision).** `WHITEPACT_AUTHORITY_READ_DATABASE_URL` selects a dedicated engine/role for the read path
+(`select_authority_read_backend` in `mcp/server.py`). Behaviour:
+
+| Situation | Result |
+|---|---|
+| URL set | tools use their own engine and the limiter lives on it too; the only supported production mode |
+| Production, URL not set | **tools are not advertised and refuse to run** (`authority_tools_unavailable`); the read path never borrows the application's full-privilege role; a warning is logged |
+| Development, URL not set | falls back to the main engine (local testing only) |
+
+Verified on Postgres through the real hosted app (`tests/test_authority_read_path_wiring.py`, 8): the role appears in
+`pg_stat_activity`; unauthenticated/forged keys get 401; viewer role refused; two tenants never see each other and a
+smuggled `org_id` is refused; the 7th evidence verification in a minute is rate limited; row counts of approvals,
+policies, evidence and execution nonces are unchanged after the calls. **Not done:** the role itself is not
+provisioned anywhere (no production database), the app's *startup* does not yet verify the role is SELECT-only
+(a mis-granted role would not be detected), and credential rotation for this role is not documented.
 
 ## Known limitations (honest)
 

@@ -179,7 +179,8 @@ async def _list_tools() -> list[types.Tool]:
     governance = _current_governance.get()
     tools = advertised_tool_defs(
         hosted=_current_hosted.get(),
-        authority=getattr(governance, "authority_read_limiter", None) is not None,
+        authority=getattr(governance, "authority_read_limiter", None) is not None
+        and getattr(governance, "authority_read_backend", None) is not None,
     )
     ctx = _current_org.get()
     if ctx is not None and ctx.key_id.startswith("oauth:"):
@@ -368,14 +369,21 @@ async def _call_authority_tool(
     from responsibleai.mcp.authority_tools import AuthorityReadService
 
     limiter = getattr(governance, "authority_read_limiter", None)
-    if governance is None or ctx is None or limiter is None or not _current_hosted.get():
+    backend = getattr(governance, "authority_read_backend", None)
+    if (
+        governance is None
+        or ctx is None
+        or limiter is None
+        or backend is None
+        or not _current_hosted.get()
+    ):
         return _text_and_structured(
             {
                 "error": "authority_tools_unavailable",
                 "message": "Authority tools are available on the hosted, tenant-scoped transport only.",
             }
         )
-    result = await AuthorityReadService(governance, limiter).call(name, arguments, ctx)
+    result = await AuthorityReadService(backend, limiter).call(name, arguments, ctx)
     await meter("error" not in result)
     return _text_and_structured(result)
 
@@ -610,6 +618,43 @@ def _reject_malformed_json_rpc_body(body: bytes) -> Any:
     return None
 
 
+def select_authority_read_backend(
+    *,
+    database_url: str | None,
+    production: bool,
+    main_engine: Any,
+    engine_factory: Any,
+) -> tuple[Any, Any, Any]:
+    """Choose the database identity for the read-only authority tools: (own_engine, backend, limiter).
+
+    * dedicated URL set   -> its own engine (the least-privilege role); the only supported production mode
+    * production, no URL  -> (None, None, None): the tools are not offered; the read path never borrows
+                             the application's full-privilege role
+    * development, no URL -> the main engine, for local testing only (own_engine is None)
+    """
+    from responsibleai.db import ApprovalRepository, EvidenceRepository, PolicyRepository
+    from responsibleai.enterprise.security.rate_limit import DurableIdentityRateLimiter
+    from responsibleai.mcp.authority_tools import AuthorityReadBackend
+
+    if database_url:
+        engine = engine_factory(database_url)
+        own: Any = engine
+    elif production:
+        _logger.warning(
+            "authority_tools_disabled reason=no_authority_read_database_url_in_production"
+        )
+        return None, None, None
+    else:
+        engine = main_engine
+        own = None
+    backend = AuthorityReadBackend(
+        policy_repo=PolicyRepository(engine),
+        approval_repo=ApprovalRepository(engine),
+        evidence_repo=EvidenceRepository(engine),
+    )
+    return own, backend, DurableIdentityRateLimiter(engine)
+
+
 def _build_http_app() -> Any:
     """Construct the ASGI app for hosted MCP. Imports are local — this path
     pulls in Starlette + the DB layer, which self-hosted stdio users never need.
@@ -674,6 +719,7 @@ def _build_http_app() -> Any:
     )
 
     _governance_services: GovernanceServices | None = None
+    _authority_read_engine: Any = None
     _governance_webhook_manager: WebhookManager | None = None
     if settings.mcp_governance_enabled:
         from responsibleai.db import (
@@ -693,7 +739,6 @@ def _build_http_app() -> Any:
         from responsibleai.db.execution_nonce_repository import ExecutionNonceRepository
         from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
         from responsibleai.db.root_authority_repository import RootAuthorityRepository
-        from responsibleai.enterprise.security.rate_limit import DurableIdentityRateLimiter
         from responsibleai.governance import WhitePactRuntimeGateway
         from responsibleai.governance.authority_resolver import AuthorityResolver
         from responsibleai.integrations.client import DEFAULT_CACHE_TTL_MINUTES, TrustClient
@@ -701,6 +746,17 @@ def _build_http_app() -> Any:
             GovernanceServices as RuntimeGovernanceServices,
         )
         from responsibleai.webhooks.manager import WebhookManager as RuntimeWebhookManager
+
+        (
+            _authority_read_engine,
+            _authority_read_backend,
+            _authority_read_limiter,
+        ) = select_authority_read_backend(
+            database_url=settings.authority_read_database_url,
+            production=settings.is_production,
+            main_engine=_db_engine,
+            engine_factory=create_engine,
+        )
 
         _governance_webhook_manager = RuntimeWebhookManager()
         _governance_webhook_manager.set_repository(WebhookDeliveryRepository(_db_engine))
@@ -719,7 +775,8 @@ def _build_http_app() -> Any:
             evidence_repo=EvidenceRepository(_db_engine),
             approval_repo=ApprovalRepository(_db_engine),
             policy_repo=PolicyRepository(_db_engine),
-            authority_read_limiter=DurableIdentityRateLimiter(_db_engine),
+            authority_read_limiter=_authority_read_limiter,
+            authority_read_backend=_authority_read_backend,
             # Continuous MCP Trust: this is the hot governed-dispatch
             # path, making a live Trust Index HTTP call on every
             # governed call with a provider/model pair -- caching (with
@@ -790,6 +847,8 @@ def _build_http_app() -> Any:
     @asynccontextmanager
     async def _lifespan(_app: Starlette) -> Any:
         await _db_engine.init(auto_create_tables=not settings.is_production)
+        if _authority_read_engine is not None:
+            await _authority_read_engine.init(auto_create_tables=False)
         if _governance_webhook_manager is not None:
             await _governance_webhook_manager.load_configs()
             _governance_webhook_manager.start_retry_worker()
@@ -797,6 +856,8 @@ def _build_http_app() -> Any:
             async with streamable_http.run():
                 yield
         finally:
+            if _authority_read_engine is not None:
+                await _authority_read_engine.close()
             if _governance_webhook_manager is not None:
                 _governance_webhook_manager.stop_retry_worker()
 

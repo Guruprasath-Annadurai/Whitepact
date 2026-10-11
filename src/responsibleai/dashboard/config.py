@@ -215,6 +215,19 @@ class Settings(BaseSettings):
         description="Unset follows the environment: staging sends noindex, production does not.",
     )
 
+    authority_read_database_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "WHITEPACT_AUTHORITY_READ_DATABASE_URL",
+            "authority_read_database_url",
+        ),
+        description=(
+            "Database URL for a dedicated least-privilege role used ONLY by the read-only "
+            "authority tools (SELECT on six authority tables + limiter counters). In production "
+            "the tools are not advertised and refuse to run unless this is set."
+        ),
+    )
+
     # PostgreSQL (optional — defaults to SQLite via db_path)
     database_url: str | None = Field(
         default=None,

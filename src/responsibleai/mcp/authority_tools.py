@@ -169,6 +169,15 @@ def _error(code: str, message: str) -> dict[str, Any]:
 
 
 @dataclass(frozen=True)
+class AuthorityReadBackend:
+    """The only repositories the read path may touch, built on its own database engine/role."""
+
+    policy_repo: Any
+    approval_repo: Any
+    evidence_repo: Any
+
+
+@dataclass(frozen=True)
 class AuthorityReadService:
     """Executes the four tools against the governance repositories, read-only."""
 

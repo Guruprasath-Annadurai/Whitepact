@@ -158,6 +158,8 @@ class GovernanceServices:
     # Durable limiter for the read-only authority tools (mcp/authority_tools.py). Unset means
     # those tools refuse to run rather than run unthrottled.
     authority_read_limiter: Any | None = None
+    # AuthorityReadBackend on a dedicated least-privilege engine (None => tools unavailable).
+    authority_read_backend: Any | None = None
 
 
 @dataclass
