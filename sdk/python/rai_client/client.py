@@ -16,6 +16,7 @@ from .models import (
     HallucinationAnalysis,
     TrustScore,
 )
+from .transport import validate_base_url
 
 _DEFAULT_BASE = "http://localhost:8765"
 _API_VERSION = "v1"
@@ -48,6 +49,7 @@ class RAIClient:
         timeout: float = 30.0,
         max_retries: int = _MAX_RETRIES,
     ) -> None:
+        validate_base_url(base_url, api_key)
         self._base = base_url.rstrip("/")
         self._key = api_key
         self._timeout = timeout

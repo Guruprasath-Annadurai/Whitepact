@@ -47,6 +47,7 @@ import type {
 } from "./models.js";
 
 const _RETRY_STATUS = new Set([429, 502, 503, 504]);
+import { validateBaseUrl } from "./transport.js";
 const _API_VERSION = "v1";
 
 export interface RAIClientOptions {
@@ -78,6 +79,7 @@ export class RAIClient {
   constructor(options: RAIClientOptions = {}) {
     this.baseUrl = (options.baseUrl ?? "http://localhost:8765").replace(/\/$/, "");
     this.apiKey = options.apiKey ?? "";
+    validateBaseUrl(this.baseUrl, this.apiKey);
     this.timeout = options.timeout ?? 30_000;
     this.maxRetries = options.maxRetries ?? 3;
     this.retryBaseMs = options.retryBaseMs ?? 500;
