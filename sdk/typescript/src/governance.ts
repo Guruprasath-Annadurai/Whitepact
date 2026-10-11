@@ -62,6 +62,7 @@ export class GovernanceRuntimeClient {
         headers: this.headers(),
         body: JSON.stringify({ name, arguments: args, purpose }),
         signal: controller.signal,
+        redirect: "error",
       });
       if (!res.ok) {
         const text = await res.text().catch(() => "");
@@ -85,6 +86,7 @@ export class GovernanceRuntimeClient {
   async listApprovals(status?: string): Promise<Record<string, unknown>> {
     const qs = status ? `?status=${encodeURIComponent(status)}` : "";
     const res = await fetch(this.url(`governance/approvals${qs}`), {
+      redirect: "error",
       headers: this.headers(),
     });
     if (!res.ok) throw new Error(`listApprovals failed: ${res.status}`);
@@ -97,6 +99,7 @@ export class GovernanceRuntimeClient {
     notes?: string,
   ): Promise<Record<string, unknown>> {
     const res = await fetch(this.url(`governance/approvals/${approvalId}/resolve`), {
+      redirect: "error",
       method: "POST",
       headers: this.headers(),
       body: JSON.stringify({ outcome, ...(notes ? { notes } : {}) }),
@@ -107,6 +110,7 @@ export class GovernanceRuntimeClient {
 
   async revokeDelegation(identityId: string, reason: string): Promise<Record<string, unknown>> {
     const res = await fetch(this.url(`governance/delegations/${identityId}/revoke`), {
+      redirect: "error",
       method: "POST",
       headers: this.headers(),
       body: JSON.stringify({ reason }),
@@ -117,6 +121,7 @@ export class GovernanceRuntimeClient {
 
   async executeApproval(approvalId: string): Promise<Record<string, unknown>> {
     const res = await fetch(this.url(`governance/approvals/${approvalId}/execute`), {
+      redirect: "error",
       method: "POST",
       headers: this.headers(),
       body: JSON.stringify({}),
@@ -127,6 +132,7 @@ export class GovernanceRuntimeClient {
 
   async getEvidence(evidenceId: string): Promise<Record<string, unknown>> {
     const res = await fetch(this.url(`governance/evidence/${evidenceId}`), {
+      redirect: "error",
       headers: this.headers(),
     });
     if (!res.ok) throw new Error(`getEvidence failed: ${res.status}`);
