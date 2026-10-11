@@ -67,9 +67,12 @@ GRANT SELECT, INSERT, UPDATE ON identity_rate_counters TO wp_authority_read;
 Verified on Postgres through the real hosted app (`tests/test_authority_read_path_wiring.py`, 8): the role appears in
 `pg_stat_activity`; unauthenticated/forged keys get 401; viewer role refused; two tenants never see each other and a
 smuggled `org_id` is refused; the 7th evidence verification in a minute is rate limited; row counts of approvals,
-policies, evidence and execution nonces are unchanged after the calls. **Not done:** the role itself is not
-provisioned anywhere (no production database), the app's *startup* does not yet verify the role is SELECT-only
-(a mis-granted role would not be detected), and credential rotation for this role is not documented.
+policies, evidence and execution nonces are unchanged after the calls. **Startup verification (new):** when a dedicated URL is set, the app asks PostgreSQL which public tables the role can
+INSERT/UPDATE/DELETE/TRUNCATE (`write_privilege_violations`); anything other than the limiter's counters, or a result that
+cannot be obtained (not PostgreSQL, probe failed), disables the tools and logs `authority_tools_disabled`. Tested with
+deliberate mis-grants (`tests/test_authority_read_path_wiring.py`, 12 tests). A superuser or table owner is flagged, as it
+should be. **Not done:** the role itself is not provisioned anywhere (no production database); the check runs at startup
+only (a later GRANT is not noticed until restart); credential rotation for this role is not documented.
 
 ## Known limitations (honest)
 
