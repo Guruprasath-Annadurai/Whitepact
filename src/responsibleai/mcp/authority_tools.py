@@ -72,8 +72,8 @@ MAX_PAGE_SIZE: Final = 50
 DEFAULT_PAGE_SIZE: Final = 20
 MAX_CURSOR: Final = 150  # list_pending() caps at 200 rows; keep headroom for the +1 probe.
 
-_TOKEN = re.compile(r"^[A-Za-z0-9_.:\-/]{1,128}$")
-_HEX64 = re.compile(r"^[0-9a-f]{64}$")
+_TOKEN = re.compile(r"[A-Za-z0-9_.:\-/]{1,128}")
+_HEX64 = re.compile(r"[0-9a-f]{64}")
 _RISK_TIERS: Final = ("MINIMAL", "LOW", "MEDIUM", "HIGH")
 
 _ANNOTATIONS = types.ToolAnnotations(
@@ -342,7 +342,7 @@ def _validate_arguments(name: str, arguments: dict[str, Any]) -> dict[str, Any] 
     if name == SIMULATE_POLICY:
         for key in ("action_type", "target"):
             value = arguments.get(key)
-            if not isinstance(value, str) or not _TOKEN.match(value):
+            if not isinstance(value, str) or not _TOKEN.fullmatch(value):
                 return _error(
                     "invalid_arguments", f"{key} must be 1-128 characters of [A-Za-z0-9_.:-/]."
                 )
@@ -358,7 +358,9 @@ def _validate_arguments(name: str, arguments: dict[str, Any]) -> dict[str, Any] 
             return _error("invalid_arguments", "cursor is not valid.")
     elif name == VERIFY_EVIDENCE:
         expected = arguments.get("expected_head_hash")
-        if expected is not None and (not isinstance(expected, str) or not _HEX64.match(expected)):
+        if expected is not None and (
+            not isinstance(expected, str) or not _HEX64.fullmatch(expected)
+        ):
             return _error(
                 "invalid_arguments", "expected_head_hash must be 64 lowercase hex digits."
             )
