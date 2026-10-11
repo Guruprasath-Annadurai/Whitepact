@@ -22,8 +22,9 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
-    # Full suite (~5.2k tests) can exceed 45m on 3.12; 3.11 finished ~44m27s on PR #130.
-    timeout-minutes: 55
+    # The full suite (~6.6k tests) takes 40-55m per interpreter on a shared runner; 3.12 hit the former
+    # 55m limit on 2026-10-11 (a cancelled job, not a failing test). Raised, not skipped.
+    timeout-minutes: 90
     env:
       WHITEPACT_REDIS_URL: redis://127.0.0.1:6379/0
       WHITEPACT_REQUIRE_REDIS: "1"
