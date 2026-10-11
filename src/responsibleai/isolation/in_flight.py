@@ -35,6 +35,8 @@ class InFlightExecution:
     terminate_callback: Callable[[], Any] | None
     created_at: float
     admission_epoch: int = 0
+    termination_attempts: int = 0
+    last_termination_error: str | None = None
 
 
 class InFlightExecutionRegistry:
@@ -142,16 +144,16 @@ class InFlightExecutionRegistry:
                 and (action_id is None or entry.action_id == action_id)
                 and (authorization_id is None or entry.authorization_id == authorization_id)
             ]
-            for entry in to_terminate:
-                self._active.pop(entry.execution_id, None)
 
         terminated_ids: list[str] = []
         for entry in to_terminate:
             logger.warning(
-                "terminating_in_flight_execution: %s for org: %s",
+                "terminating_in_flight_execution: %s for org: %s (attempt %d)",
                 entry.execution_id,
                 entry.organization_id,
+                entry.termination_attempts + 1,
             )
+            callback_failed = False
             # 1. Invoke low-level container/process termination callback if registered
             if entry.terminate_callback is not None:
                 try:
@@ -159,6 +161,9 @@ class InFlightExecutionRegistry:
                     if asyncio.iscoroutine(res):
                         await res
                 except Exception as exc:
+                    callback_failed = True
+                    entry.termination_attempts += 1
+                    entry.last_termination_error = str(exc)
                     logger.error(
                         "in_flight_terminate_callback_failed: %s (%s)",
                         entry.execution_id,
@@ -169,7 +174,16 @@ class InFlightExecutionRegistry:
             if entry.task is not None and not entry.task.done():
                 entry.task.cancel()
 
-            terminated_ids.append(entry.execution_id)
+            # 3. Only unregister if callback succeeded or wasn't provided
+            if callback_failed:
+                logger.warning(
+                    "retaining_unconfirmed_in_flight_execution: %s for retry",
+                    entry.execution_id,
+                )
+            else:
+                async with self._lock:
+                    self._active.pop(entry.execution_id, None)
+                terminated_ids.append(entry.execution_id)
 
         return terminated_ids
 
@@ -210,7 +224,7 @@ class InFlightExecutionRegistry:
                     t_ids = await self.terminate_in_flight(organization_id=org_id)
                     terminated.extend(t_ids)
         except Exception as exc:
-            logger.debug("reconcile_epochs_query_failed: %s", exc)
+            logger.warning("reconcile_epochs_query_failed_retaining_tracking: %s", exc)
 
         return terminated
 
@@ -222,15 +236,25 @@ class InFlightExecutionRegistry:
             return self._watcher_task
 
         async def _loop() -> None:
+            backoff = interval
             while True:
                 try:
                     if len(self._active) > 0:
                         await self.reconcile_epochs(engine)
+                    backoff = interval
                 except asyncio.CancelledError:
                     break
-                except Exception:
-                    pass
-                await asyncio.sleep(interval)
+                except Exception as exc:
+                    logger.warning("reconciliation_watcher_error_retry: %s", exc)
+                    backoff = min(backoff * 2.0, 5.0)
+                await asyncio.sleep(backoff)
 
         self._watcher_task = asyncio.create_task(_loop())
         return self._watcher_task
+
+    def stop_reconciliation_watcher(self) -> None:
+        """Stop and cancel the background reconciliation watcher."""
+        if self._watcher_task is not None:
+            if not self._watcher_task.done():
+                self._watcher_task.cancel()
+            self._watcher_task = None

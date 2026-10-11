@@ -195,3 +195,60 @@ async def test_stripe_concurrent_transactions_atomic_serialization(tmp_path) -> 
     # Final state MUST reflect the chronologically newest event (12:00:00 -> ENTERPRISE)
     final_org = await repo.get_org(org.id)
     assert final_org.plan == Plan.ENTERPRISE
+
+
+@pytest.mark.asyncio
+async def test_stripe_missing_or_invalid_timestamp_quarantined(tmp_path) -> None:
+    """Missing or unparseable timestamps return INVALID_TIMESTAMP and leave plan intact."""
+    db_path = str(tmp_path / "stripe_invalid_ts_test.db")
+    engine = create_engine(f"sqlite+aiosqlite:///{db_path}")
+    await engine.init()
+
+    repo = OrgRepository(engine)
+    org = await repo.create_org(name="Quarantine Corp", slug="quarantine", plan=Plan.PRO)
+
+    # 1. Missing timestamp (None)
+    status_none = await repo.set_plan_status(
+        org_id=org.id,
+        plan=Plan.ENTERPRISE,
+        event_timestamp=None,
+    )
+    assert status_none == SetPlanStatus.INVALID_TIMESTAMP
+
+    # 2. Empty timestamp
+    status_empty = await repo.set_plan_status(
+        org_id=org.id,
+        plan=Plan.ENTERPRISE,
+        event_timestamp="",
+    )
+    assert status_empty == SetPlanStatus.INVALID_TIMESTAMP
+
+    # 3. Malformed/non-ISO timestamp
+    status_malformed = await repo.set_plan_status(
+        org_id=org.id,
+        plan=Plan.ENTERPRISE,
+        event_timestamp="not-a-timestamp",
+    )
+    assert status_malformed == SetPlanStatus.INVALID_TIMESTAMP
+
+    # Plan MUST remain unchanged
+    unchanged_org = await repo.get_org(org.id)
+    assert unchanged_org.plan == Plan.PRO
+
+
+@pytest.mark.asyncio
+async def test_set_plan_defaults_valid_utc_timestamp_when_omitted(tmp_path) -> None:
+    """Admin/internal set_plan() safely generates a current UTC timestamp when omitted."""
+    db_path = str(tmp_path / "stripe_default_ts_test.db")
+    engine = create_engine(f"sqlite+aiosqlite:///{db_path}")
+    await engine.init()
+
+    repo = OrgRepository(engine)
+    org = await repo.create_org(name="Internal Corp", slug="internal", plan=Plan.FREE)
+
+    ok = await repo.set_plan(org_id=org.id, plan=Plan.PRO)
+    assert ok is True
+
+    updated_org = await repo.get_org(org.id)
+    assert updated_org.plan == Plan.PRO
+    assert updated_org.entitlement_updated_at is not None

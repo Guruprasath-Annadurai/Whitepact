@@ -263,6 +263,7 @@ from responsibleai.iam.models import StepUpProof
 from responsibleai.iam.step_up import StepUpVerifier
 from responsibleai.incidents.logic import build_incident_record
 from responsibleai.integrations.client import TrustClient
+from responsibleai.isolation.in_flight import InFlightExecutionRegistry
 from responsibleai.leaderboard.models import METHODOLOGY_VERSION
 from responsibleai.leaderboard.providers import ProviderNotConfiguredError, get_adapter
 from responsibleai.leaderboard.runner import LeaderboardRunner
@@ -446,6 +447,7 @@ _paddle_billing_service: PaddleBillingService | None = None
 _billing_event_repo: BillingEventRepository | None = None
 _paddle_event_repo: PaddleBillingEventRepository | None = None
 _plan_rate_limiter: PlanRateLimiter | None = None
+_in_flight_registry: InFlightExecutionRegistry | None = None
 _pending_audit_writes: set[asyncio.Task[Any]] = set()
 
 _T = TypeVar("_T")
@@ -488,7 +490,8 @@ async def lifespan(application: FastAPI):
         _paddle_billing_service, \
         _plan_rate_limiter, \
         _billing_event_repo, \
-        _paddle_event_repo
+        _paddle_event_repo, \
+        _in_flight_registry
 
     from responsibleai.enterprise.preflight import assert_hosted_enterprise_boot_safe
 
@@ -529,6 +532,8 @@ async def lifespan(application: FastAPI):
 
     bind_counter_engine(_db_engine)
     bind_sovereign_engine(_db_engine)
+    _in_flight_registry = InFlightExecutionRegistry.get_instance()
+    _in_flight_registry.start_reconciliation_watcher(_db_engine, interval=0.1)
     _plan_rate_limiter = PlanRateLimiter(redis_url=settings.redis_url)
     _auth_failure_limiter.attach_durable(
         DurableIdentityRateLimiter(_db_engine),
@@ -695,6 +700,8 @@ async def lifespan(application: FastAPI):
 
     _webhook_manager.stop_retry_worker()
     _ws_manager.stop()
+    if _in_flight_registry is not None:
+        _in_flight_registry.stop_reconciliation_watcher()
     if _plan_rate_limiter:
         await _plan_rate_limiter.close()
     if _pending_audit_writes:
@@ -4124,6 +4131,17 @@ async def stripe_webhook(request: Request) -> dict[str, Any]:
                 "processed": False,
                 "duplicate": False,
                 "reason": "tombstoned_organization",
+            }
+        elif status == SetPlanStatus.INVALID_TIMESTAMP:
+            await _ready(_billing_event_repo).fail(event_id, "invalid_or_missing_timestamp")
+            logger.warning(
+                "billing_event_invalid_timestamp", event_id=event_id, org_id=update.org_id
+            )
+            return {
+                "received": True,
+                "processed": False,
+                "duplicate": False,
+                "reason": "invalid_timestamp",
             }
         await _ready(_billing_event_repo).complete(event_id)
     except Exception as exc:

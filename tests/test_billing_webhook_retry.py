@@ -137,19 +137,20 @@ async def test_stripe_endpoint_applies_the_plan_when_the_provider_retries(
             stripe_subscription_id="sub_1",
             plan_renews_at=None,
             subscription_status="active",
+            event_timestamp=datetime.now(UTC).isoformat(),
         )
         monkeypatch.setattr(app_module, "_stripe_service", service)
 
-        real_set_plan = app_module._org_repo.set_plan
+        real_set_plan_status = app_module._org_repo.set_plan_status
         calls = {"n": 0}
 
         async def flaky(*args, **kwargs):
             calls["n"] += 1
             if calls["n"] == 1:
                 raise RuntimeError("transient database error")
-            return await real_set_plan(*args, **kwargs)
+            return await real_set_plan_status(*args, **kwargs)
 
-        monkeypatch.setattr(app_module._org_repo, "set_plan", flaky)
+        monkeypatch.setattr(app_module._org_repo, "set_plan_status", flaky)
         async with AsyncClient(
             transport=ASGITransport(app=manager.app, raise_app_exceptions=False),
             base_url="http://test",
