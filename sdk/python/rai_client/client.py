@@ -83,11 +83,12 @@ class RAIClient:
         body: dict[str, Any] | None = None,
         params: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Send an HTTP request with exponential-backoff retry on transient errors."""
+        """Retry reads only; a lost mutation response must not replay a write."""
+        attempts = self._max_retries if method == "GET" else 1
         owned = self._client is None
         client = self._client or httpx.AsyncClient(headers=self._headers(), timeout=self._timeout)
         try:
-            for attempt in range(self._max_retries):
+            for attempt in range(attempts):
                 try:
                     if method == "POST":
                         resp = await client.post(self._url(path), json=body)
@@ -98,14 +99,14 @@ class RAIClient:
                         resp.raise_for_status()
                         return resp.json()
 
-                    if attempt == self._max_retries - 1:
+                    if attempt == attempts - 1:
                         resp.raise_for_status()
 
                     wait = (2**attempt) + random.uniform(0, 0.5)
                     await asyncio.sleep(wait)
 
                 except httpx.TransportError:
-                    if attempt == self._max_retries - 1:
+                    if attempt == attempts - 1:
                         raise
                     wait = (2**attempt) + random.uniform(0, 0.5)
                     await asyncio.sleep(wait)

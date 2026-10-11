@@ -116,8 +116,10 @@ export class RAIClient {
     }
 
     let lastError: Error | null = null;
+    // No stable server idempotency contract exists for these mutations.
+    const attempts = method === "GET" ? this.maxRetries : 1;
 
-    for (let attempt = 0; attempt < this.maxRetries; attempt++) {
+    for (let attempt = 0; attempt < attempts; attempt++) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), this.timeout);
 
@@ -127,9 +129,10 @@ export class RAIClient {
           headers: this.headers(),
           body: body !== undefined ? JSON.stringify(body) : undefined,
           signal: controller.signal,
+          redirect: "error",
         });
 
-        if (_RETRY_STATUS.has(res.status) && attempt < this.maxRetries - 1) {
+        if (_RETRY_STATUS.has(res.status) && attempt < attempts - 1) {
           const retryAfter = res.headers.get("Retry-After");
           const waitMs = retryAfter
             ? parseInt(retryAfter, 10) * 1000
@@ -151,7 +154,7 @@ export class RAIClient {
       } catch (err) {
         if (err instanceof RAIError) throw err;
         lastError = err as Error;
-        if (attempt < this.maxRetries - 1) {
+        if (attempt < attempts - 1) {
           await this.sleep(this.jitter(this.retryBaseMs * 2 ** attempt));
         }
       } finally {
