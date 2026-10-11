@@ -1153,9 +1153,13 @@ def test_tools_enabled() -> bool:
     )
 
 
-def advertised_tool_defs(*, hosted: bool) -> list[types.Tool]:
+def advertised_tool_defs(*, hosted: bool, authority: bool = False) -> list[types.Tool]:
+    """``authority`` adds the four read-only authority tools; they are advertised only on a
+    hosted, tenant-scoped connection whose governance services can actually serve them."""
     if hosted:
-        return list(PRODUCTION_TOOL_DEFS)
+        from responsibleai.mcp.authority_tools import AUTHORITY_TOOL_DEFS
+
+        return [*PRODUCTION_TOOL_DEFS, *(AUTHORITY_TOOL_DEFS if authority else [])]
     if test_tools_enabled():
         return list(TOOL_DEFS)
     return list(PRODUCTION_TOOL_DEFS)
