@@ -670,6 +670,7 @@ def _build_http_app() -> Any:
     from mcp.server.sse import SseServerTransport
     from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
     from starlette.applications import Starlette
+    from starlette.middleware import Middleware
     from starlette.requests import Request
     from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
     from starlette.routing import Mount, Route
@@ -694,6 +695,7 @@ def _build_http_app() -> Any:
         create_engine,
     )
     from responsibleai.governance.principal import PrincipalClaim, build_principal_claim
+    from responsibleai.ops.admission import AdmissionControlMiddleware
     from responsibleai.rbac.models import Plan, Role
 
     settings = get_settings()
@@ -1438,6 +1440,9 @@ def _build_http_app() -> Any:
             Route("/.well-known/openai-apps-challenge", endpoint=openai_apps_challenge),
         ],
         lifespan=_lifespan,
+        middleware=[
+            Middleware(AdmissionControlMiddleware, max_inflight=settings.max_inflight_requests)
+        ],
     )
 
     return app

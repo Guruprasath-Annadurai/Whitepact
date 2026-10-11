@@ -273,6 +273,7 @@ from responsibleai.mcp.governance_integration import (
 )
 from responsibleai.mcp.licensing import monthly_quota, plan_catalog
 from responsibleai.mcp.upstream_dispatch import apply_upstream_governance
+from responsibleai.ops.admission import AdmissionControlMiddleware
 from responsibleai.rbac import (
     AuditEntry,
     OrgContext,
@@ -361,7 +362,10 @@ def _plan_scaled(base: str) -> Callable[[str], str]:
         raise ValueError(f"_plan_scaled needs an N/minute limit, got {base!r}")
 
     def _provider(key: str) -> str:
-        return f"{scaled_route_limit(int(count), _org_plans.plan_for_key(key))}/minute"
+        return (
+            f"{scaled_route_limit(int(count), _org_plans.plan_for_key(key), enterprise_ceiling=settings.enterprise_route_ceiling_per_minute)}"
+            "/minute"
+        )
 
     return _provider
 
@@ -865,6 +869,8 @@ from responsibleai.dashboard.legacy_frontend import (  # noqa: E402
 )
 
 app.add_middleware(UnifiedSaaSLegacyRetirementMiddleware)
+# Outermost: shed before any other work is done for a request we will not serve.
+app.add_middleware(AdmissionControlMiddleware, max_inflight=settings.max_inflight_requests)
 
 # ── Static files ───────────────────────────────────────────────────────────────
 _static_dir = Path(__file__).parent / "static"
@@ -4077,7 +4083,7 @@ async def stripe_webhook(request: Request) -> dict[str, Any]:
         await _ready(_billing_event_repo).complete(event_id)
         return {"received": True, "processed": False, "duplicate": False}
     try:
-        await _ready(_org_repo).set_plan(
+        applied = await _ready(_org_repo).set_plan(
             org_id=update.org_id,
             plan=update.plan,
             stripe_customer_id=update.stripe_customer_id,
@@ -4085,6 +4091,18 @@ async def stripe_webhook(request: Request) -> dict[str, Any]:
             plan_renews_at=update.plan_renews_at,
             subscription_status=update.subscription_status,
         )
+        if not applied:
+            # A signed event for an organization that does not exist here is not "processed":
+            # recording it as such hid misrouted payments. 200 so the provider stops retrying;
+            # the row stays 'failed' (and reclaimable if it is ever redelivered).
+            await _ready(_billing_event_repo).fail(event_id, "unknown organization")
+            logger.warning("billing_event_unknown_org", event_id=event_id)
+            return {
+                "received": True,
+                "processed": False,
+                "duplicate": False,
+                "reason": "unknown_organization",
+            }
         await _ready(_billing_event_repo).complete(event_id)
     except Exception as exc:
         await _ready(_billing_event_repo).fail(event_id, str(exc))

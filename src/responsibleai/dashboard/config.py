@@ -114,6 +114,26 @@ class Settings(BaseSettings):
         description="Set to false to disable auth (development only).",
     )
 
+    max_inflight_requests: int = Field(
+        default=32,
+        ge=0,
+        description=(
+            "Per-process cap on concurrently executing HTTP requests; the excess get an immediate 503 "
+            "with Retry-After (0 disables). A protective bound, not a capacity guarantee: the default "
+            "comes from the single-worker measurements in docs/launch/HTTP_AUTHORIZATION_BENCHMARK.md."
+        ),
+    )
+
+    enterprise_route_ceiling_per_minute: int = Field(
+        default=1200,
+        ge=30,
+        description=(
+            "Per-route, per-organization requests/minute bound for plans whose budget is unlimited. "
+            "An abuse bound, NOT a capacity guarantee: sustained capacity is set by replicas times the "
+            "measured per-process throughput (docs/launch/HTTP_AUTHORIZATION_BENCHMARK.md)."
+        ),
+    )
+
     # Rate limiting
     rate_limit_default: str = Field(
         default="100/minute",

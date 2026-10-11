@@ -1,0 +1,180 @@
+{
+  "measurement": "real HTTP (uvicorn, 4 process(es), client-side round robin) + real PostgreSQL, API-key authenticated",
+  "max_inflight_requests": 16,
+  "not_included": [
+    "TLS",
+    "reverse proxy",
+    "multiple workers or replicas",
+    "database on another host",
+    "governed execution in a container",
+    "MCP transport",
+    "client and server on separate machines (they share this host)"
+  ],
+  "is_an_slo": false,
+  "route_limiter": "OFF (plan limiter ON)",
+  "unauthorized_effects": 0,
+  "evidence_rows_for_org": 1758,
+  "hardware": {
+    "machine": "arm64",
+    "os": "macOS-27.0.1-arm64-arm-64bit",
+    "python": "3.12.13"
+  },
+  "source_commit": "9c917570a73f370f7ca149706986cb28a9ce5a7d",
+  "results": [
+    {
+      "workload": "authenticated read",
+      "concurrency": 100,
+      "requests": 400,
+      "ok": 244,
+      "errors": {
+        "http_503": 156
+      },
+      "outcomes": {
+        "ok": 244
+      },
+      "error_rate": 0.39,
+      "duration_s": 2.45,
+      "throughput_rps": 99.5,
+      "p50_ms": 779.8,
+      "p95_ms": 1453.7,
+      "p99_ms": 1586.4,
+      "mean_ms": 761.4
+    },
+    {
+      "workload": "DENY / quarantine refusal (no authority) + evidence write",
+      "concurrency": 100,
+      "requests": 400,
+      "ok": 198,
+      "errors": {
+        "http_503": 202
+      },
+      "outcomes": {
+        "governance_denied": 198
+      },
+      "error_rate": 0.505,
+      "duration_s": 2.88,
+      "throughput_rps": 68.9,
+      "p50_ms": 795.5,
+      "p95_ms": 1657.2,
+      "p99_ms": 1748.9,
+      "mean_ms": 958.6
+    },
+    {
+      "workload": "REQUIRE_APPROVAL + evidence + approval row",
+      "concurrency": 100,
+      "requests": 400,
+      "ok": 171,
+      "errors": {
+        "http_503": 229
+      },
+      "outcomes": {
+        "governance_approval_required": 171
+      },
+      "error_rate": 0.5725,
+      "duration_s": 2.91,
+      "throughput_rps": 58.7,
+      "p50_ms": 1043.6,
+      "p95_ms": 1938.8,
+      "p99_ms": 2116.4,
+      "mean_ms": 1141.0,
+      "approval_rows_created": 171,
+      "approval_rows_match_ok_responses": true,
+      "server_after_level": [
+        {
+          "rss_mb": 221.6,
+          "cpu_seconds": 12.3
+        },
+        {
+          "rss_mb": 220.1,
+          "cpu_seconds": 12.33
+        },
+        {
+          "rss_mb": 219.4,
+          "cpu_seconds": 12.34
+        },
+        {
+          "rss_mb": 222.6,
+          "cpu_seconds": 12.51
+        }
+      ]
+    },
+    {
+      "workload": "authenticated read",
+      "concurrency": 300,
+      "requests": 900,
+      "ok": 701,
+      "errors": {
+        "http_503": 199
+      },
+      "outcomes": {
+        "ok": 701
+      },
+      "error_rate": 0.2211,
+      "duration_s": 7.41,
+      "throughput_rps": 94.6,
+      "p50_ms": 1641.0,
+      "p95_ms": 5912.0,
+      "p99_ms": 6668.5,
+      "mean_ms": 2275.9
+    },
+    {
+      "workload": "DENY / quarantine refusal (no authority) + evidence write",
+      "concurrency": 300,
+      "requests": 900,
+      "ok": 812,
+      "errors": {
+        "http_503": 88
+      },
+      "outcomes": {
+        "governance_denied": 812
+      },
+      "error_rate": 0.0978,
+      "duration_s": 11.55,
+      "throughput_rps": 70.3,
+      "p50_ms": 2630.1,
+      "p95_ms": 7644.0,
+      "p99_ms": 10999.4,
+      "mean_ms": 3200.3
+    },
+    {
+      "workload": "REQUIRE_APPROVAL + evidence + approval row",
+      "concurrency": 300,
+      "requests": 900,
+      "ok": 577,
+      "errors": {
+        "http_503": 320,
+        "ReadError": 3
+      },
+      "outcomes": {
+        "governance_approval_required": 577
+      },
+      "error_rate": 0.3589,
+      "duration_s": 12.26,
+      "throughput_rps": 47.1,
+      "p50_ms": 2799.9,
+      "p95_ms": 7435.7,
+      "p99_ms": 8721.2,
+      "mean_ms": 3307.7,
+      "approval_rows_created": 577,
+      "approval_rows_match_ok_responses": true,
+      "server_after_level": [
+        {
+          "rss_mb": 203.7,
+          "cpu_seconds": 23.46
+        },
+        {
+          "rss_mb": 203.9,
+          "cpu_seconds": 23.96
+        },
+        {
+          "rss_mb": 203.0,
+          "cpu_seconds": 23.84
+        },
+        {
+          "rss_mb": 206.2,
+          "cpu_seconds": 23.8
+        }
+      ]
+    }
+  ]
+}

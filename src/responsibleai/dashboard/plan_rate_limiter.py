@@ -63,14 +63,19 @@ ENTERPRISE_ROUTE_CEILING_PER_MINUTE = 1200
 MIN_SCALED_BASE_PER_MINUTE = 30
 
 
-def scaled_route_limit(base_per_minute: int, plan: Plan | None) -> int:
+def scaled_route_limit(
+    base_per_minute: int,
+    plan: Plan | None,
+    *,
+    enterprise_ceiling: int = ENTERPRISE_ROUTE_CEILING_PER_MINUTE,
+) -> int:
     """The per-route requests/minute an organization on *plan* gets for a route whose flat
     limit is *base_per_minute*: never below the base, never below the plan's own budget."""
     if plan is None or base_per_minute < MIN_SCALED_BASE_PER_MINUTE:
         return base_per_minute
     budget = plan_limit(plan)
     if budget is None:
-        budget = ENTERPRISE_ROUTE_CEILING_PER_MINUTE
+        budget = enterprise_ceiling
     return max(base_per_minute, budget)
 
 
