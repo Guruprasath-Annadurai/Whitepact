@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -206,9 +207,29 @@ class GovernanceRuntimeClient:
             return self._parse_response(resp)
 
     async def get_evidence(self, evidence_id: str) -> dict[str, Any]:
+        """Legacy detail route; current backend lacks this endpoint. Use get_attestation."""
         async with self._client() as client:
             resp = await client.get(
                 self._url(f"governance/evidence/{evidence_id}"),
+                headers=self._headers(),
+            )
+            return self._parse_response(resp)
+
+    async def list_evidence(self, *, limit: int = 50) -> dict[str, Any]:
+        """Return the backend's bounded listing, not a complete-history claim."""
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
+            raise ValueError("Evidence limit must be an integer from 1 to 200")
+        async with self._client() as client:
+            resp = await client.get(
+                self._url("governance/evidence"), headers=self._headers(), params={"limit": limit}
+            )
+            return self._parse_response(resp)
+
+    async def get_attestation(self, evidence_id: str) -> dict[str, Any]:
+        """Read the server's evidence/outcome attestation; this is not a signature proof."""
+        async with self._client() as client:
+            resp = await client.get(
+                self._url(f"governance/evidence/{quote(evidence_id, safe='')}/attestation"),
                 headers=self._headers(),
             )
             return self._parse_response(resp)
