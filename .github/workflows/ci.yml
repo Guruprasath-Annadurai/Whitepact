@@ -354,6 +354,10 @@ jobs:
         run: |
           npm --prefix sdk/typescript ci --no-audit --no-fund
           npm --prefix sdk/typescript test
+      - name: npm dependency audit (high and critical block)
+        run: |
+          npm --prefix sdk/typescript audit --audit-level=high
+          npm --prefix web audit --audit-level=high
       - name: Frontend static checks and unit tests
         run: |
           npm --prefix web run lint
@@ -393,6 +397,30 @@ jobs:
 
       - name: Run i18n unit tests (locale resolution, fallback, catalog integrity)
         run: node --test tests/js/i18n.test.js
+
+  container-scan:
+    name: Container image scan (Trivy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Builds both shipped images and fails on any HIGH/CRITICAL OS or language vulnerability that has a
+    # fix available. Unfixed findings are reported by the scanner but cannot be fixed by us; they are
+    # tracked in docs/assurance/CONTAINER_SCAN_EVIDENCE.md. Scanner pinned by digest.
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Build the images
+        run: |
+          docker build -f Dockerfile -t whitepact:scan .
+          docker build -f Dockerfile.isolation -t whitepact-isolated-runtime:scan .
+
+      - name: Scan the images (fixable HIGH/CRITICAL fail the job)
+        run: |
+          set -euo pipefail
+          for image in whitepact:scan whitepact-isolated-runtime:scan; do
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+              aquasec/trivy@sha256:ab70a02200597efa04748f210f793936eb647cbcdb0ea69cc30b226d6f5a22c7 \
+              image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 "$image"
+          done
 
   checkout-identity:
     name: Candidate tree matches checkout

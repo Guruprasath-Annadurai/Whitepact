@@ -28,6 +28,13 @@ LABEL org.opencontainers.image.licenses="MIT"
 
 COPY --from=builder /install /usr/local
 
+# Apply Debian security updates to the runtime OS packages (openssl, perl-base, pcre2, gzip,
+# sqlite) while still root, before the privilege drop below. The python:3.12-slim digest stays
+# pinned; only the apt layer is refreshed. Without this the image shipped with fixable
+# HIGH/CRITICAL OS vulnerabilities (container scan, 2026-10-11).
+RUN apt-get update && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
 # No ENTRYPOINT: the backend supplies `python3 /opt/whitepact/runner.py` explicitly, so the
 # caller cannot choose what the container runs. Bytecode is not written to a read-only root.
 ENV PYTHONDONTWRITEBYTECODE=1 \
