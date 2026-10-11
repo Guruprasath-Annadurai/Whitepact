@@ -17,7 +17,7 @@ from sdk.python.rai_client import GovernanceRequestError, GovernanceRuntimeClien
 
 def _client(handler) -> GovernanceRuntimeClient:
     return GovernanceRuntimeClient(
-        "key-secret-123", base_url="http://wp.test", transport=httpx.MockTransport(handler)
+        "key-secret-123", base_url="https://wp.test", transport=httpx.MockTransport(handler)
     )
 
 

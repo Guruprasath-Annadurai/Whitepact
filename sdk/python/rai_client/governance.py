@@ -22,6 +22,8 @@ from typing import Any
 
 import httpx
 
+from .transport import validate_base_url
+
 
 class GovernanceRequestError(RuntimeError):
     """The server did not return a governance answer (non-2xx, or a body that is not a JSON object).
@@ -80,6 +82,7 @@ class GovernanceRuntimeClient:
         *,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
+        validate_base_url(base_url, api_key)
         self._base = base_url.rstrip("/")
         self._key = api_key
         self._timeout = timeout
