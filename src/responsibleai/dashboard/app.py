@@ -13,6 +13,7 @@ import os
 import re
 import secrets
 import time
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -88,7 +89,11 @@ from responsibleai.dashboard.middleware import (
     global_exception_handler,
     http_exception_handler,
 )
-from responsibleai.dashboard.plan_rate_limiter import PlanRateLimiter
+from responsibleai.dashboard.plan_rate_limiter import (
+    OrgPlanDirectory,
+    PlanRateLimiter,
+    scaled_route_limit,
+)
 from responsibleai.dashboard.prometheus import (
     get_metrics_output,
     observe_cost,
@@ -335,6 +340,25 @@ if settings.redis_url:
     _limiter_kwargs["storage_uri"] = settings.redis_url
 
 limiter = Limiter(**_limiter_kwargs)
+
+_org_plans = OrgPlanDirectory()
+
+
+def _plan_scaled(base: str) -> Callable[[str], str]:
+    """Route limit for throughput routes, scaled to the caller's plan (REC-28).
+
+    slowapi calls the provider with the rate-limit key, which is ``org:<id>`` for an
+    authenticated organization. Unauthenticated or unresolved callers keep the flat base.
+    """
+    count, _, per = base.partition("/")
+    if per != "minute" or not count.isdigit():  # pragma: no cover - guarded at import
+        raise ValueError(f"_plan_scaled needs an N/minute limit, got {base!r}")
+
+    def _provider(key: str) -> str:
+        return f"{scaled_route_limit(int(count), _org_plans.plan_for_key(key))}/minute"
+
+    return _provider
+
 
 # IP-keyed protection against credential guessing across changing Bearer tokens.
 # Production attaches DurableIdentityRateLimiter (identity_rate_counters) —
@@ -1050,6 +1074,8 @@ async def get_org_context(request: Request) -> OrgContext:
         _enforce_legacy_static_compat(request)
     if not context.is_legacy and _plan_rate_limiter:
         await _plan_rate_limiter.check(context.org_id, context.plan)
+    if not context.is_legacy:
+        _org_plans.remember(context.org_id, context.plan)
     _enforce_machine_scope(request, context)
     request.state.audit_org_id = context.org_id
     request.state.audit_key_id = context.key_id
@@ -2782,7 +2808,7 @@ async def _web_security_state(request: Request, principal: WebPrincipal) -> dict
 
 
 @app.get("/api/web/approvals/{approval_id}", tags=["web-console"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def web_get_approval(
     request: Request,
     approval_id: str,
@@ -2797,7 +2823,7 @@ async def web_get_approval(
 
 
 @app.get("/api/web/evidence/verify", tags=["web-console"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def web_verify_evidence_chain(
     request: Request,
     principal: WebPrincipal = Depends(get_web_principal),
@@ -2814,7 +2840,7 @@ async def web_verify_evidence_chain(
 
 
 @app.get("/api/web/evidence", tags=["web-console"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def web_list_evidence(
     request: Request,
     limit: int = Query(default=50, ge=1, le=100),
@@ -2827,7 +2853,7 @@ async def web_list_evidence(
 
 
 @app.get("/api/web/evidence/{evidence_id}/attestation", tags=["web-console"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def web_get_evidence_attestation(
     request: Request,
     evidence_id: str,
@@ -2844,7 +2870,7 @@ async def web_get_evidence_attestation(
 
 
 @app.get("/api/web/evidence/{evidence_id}", tags=["web-console"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def web_get_evidence(
     request: Request,
     evidence_id: str,
@@ -2858,7 +2884,7 @@ async def web_get_evidence(
 
 
 @app.post("/api/web/approvals/{approval_id}/resolve", tags=["web-console"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def web_resolve_approval(
     request: Request,
     approval_id: str,
@@ -2891,7 +2917,7 @@ async def web_resolve_approval(
 
 
 @app.post("/api/web/approvals/{approval_id}/execute", tags=["web-console"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def web_execute_approval(
     request: Request,
     approval_id: str,
@@ -3379,7 +3405,7 @@ async def restore_reconcile(request: Request) -> JSONResponse:
 
 
 @app.get("/api/metrics", tags=["ops"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def metrics(
     request: Request, _auth: OrgContext = Depends(require_role(Role.ANALYST))
 ) -> dict[str, Any]:
@@ -3490,7 +3516,7 @@ async def create_org(
 
 
 @app.get("/api/orgs", tags=["rbac"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def list_orgs(
     request: Request,
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
@@ -3500,7 +3526,7 @@ async def list_orgs(
 
 
 @app.get("/api/orgs/{org_id}", tags=["rbac"])
-@limiter.limit("120/minute")
+@limiter.limit(_plan_scaled("120/minute"))
 async def get_org(
     request: Request,
     org_id: str,
@@ -3580,7 +3606,7 @@ async def set_org_mfa(
 
 
 @app.get("/api/orgs/{org_id}/authority-ceiling", tags=["rbac"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def get_authority_ceiling(
     request: Request,
     org_id: str,
@@ -3647,7 +3673,7 @@ async def set_authority_ceiling(
 
 
 @app.get("/api/orgs/{org_id}/autonomy-budget", tags=["rbac"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def get_autonomy_budget(
     request: Request,
     org_id: str,
@@ -3799,7 +3825,7 @@ async def create_api_key(
 
 
 @app.get("/api/orgs/{org_id}/keys", tags=["rbac"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def list_api_keys(
     request: Request,
     org_id: str,
@@ -3918,7 +3944,7 @@ async def disable_mfa(
 
 
 @app.get("/api/billing/plans", tags=["billing"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def get_billing_plans(request: Request) -> dict[str, Any]:
     """Public — plan tiers, pricing, and which MCP tools each tier unlocks."""
     return plan_catalog()
@@ -3983,7 +4009,7 @@ async def create_portal_session(
 
 
 @app.get("/api/billing/usage/mcp", tags=["billing"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def get_mcp_usage(
     request: Request,
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
@@ -4332,7 +4358,7 @@ async def eval_benchmark(
 
 
 @app.get("/api/eval/benchmark/prompts/{suite}", tags=["eval"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def eval_benchmark_prompts(
     request: Request,
     suite: str,
@@ -4349,7 +4375,7 @@ async def eval_benchmark_prompts(
 
 
 @app.get("/api/eval/regression/{model}", tags=["eval"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def eval_regression(
     request: Request,
     model: str,
@@ -4387,7 +4413,7 @@ async def eval_dataset_scan(
 
 
 @app.get("/api/eval/results", tags=["eval"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def eval_results(
     request: Request,
     run_type: str | None = Query(default=None),
@@ -4427,7 +4453,7 @@ def _audit_tenant_org(_auth: OrgContext, requested_org_id: str | None) -> str | 
 
 
 @app.get("/api/audit-log", tags=["rbac"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def query_audit_log(
     request: Request,
     days: int = Query(default=7, ge=1, le=90),
@@ -4484,7 +4510,7 @@ def _incident_type_from_alertname(alertname: str) -> str:
 
 
 @app.post("/api/incidents", tags=["incidents"], status_code=201)
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def create_incident(
     request: Request,
     req: IncidentCreateRequest,
@@ -4512,7 +4538,7 @@ async def create_incident(
 
 
 @app.get("/api/incidents", tags=["incidents"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def list_incidents(
     request: Request,
     severity: str | None = Query(default=None),
@@ -4548,7 +4574,7 @@ async def list_incidents(
 
 
 @app.get("/api/incidents/{incident_id}", tags=["incidents"])
-@limiter.limit("120/minute")
+@limiter.limit(_plan_scaled("120/minute"))
 async def get_incident(
     request: Request,
     incident_id: str,
@@ -4637,7 +4663,7 @@ def _strip_diagnostic_fields(row: dict[str, Any]) -> dict[str, Any]:
 
 
 @app.get("/api/leaderboard", tags=["leaderboard"])
-@limiter.limit("120/minute")
+@limiter.limit(_plan_scaled("120/minute"))
 async def get_leaderboard(request: Request) -> dict[str, Any]:
     """Public, unauthenticated. Current ranked list — one row per tracked
     model, its most recent evaluation run, sorted by overall_score desc."""
@@ -4650,7 +4676,7 @@ async def get_leaderboard(request: Request) -> dict[str, Any]:
 
 
 @app.get("/api/leaderboard/{model}/{provider}/history", tags=["leaderboard"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def get_leaderboard_history(
     request: Request,
     model: str,
@@ -4669,7 +4695,7 @@ async def get_leaderboard_history(
 
 
 @app.get("/api/leaderboard/{model}/{provider}/diagnostic", tags=["leaderboard"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def get_leaderboard_diagnostic(
     request: Request,
     model: str,
@@ -4685,7 +4711,7 @@ async def get_leaderboard_diagnostic(
 
 
 @app.get("/api/leaderboard/models", tags=["leaderboard"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def list_leaderboard_models(
     request: Request,
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
@@ -4832,7 +4858,7 @@ async def trust_index_assess(request: Request, req: TrustIndexAssessRequest) -> 
 
 
 @app.get("/api/trust-index/verify/{passport_id}", tags=["trust-index"])
-@limiter.limit("120/minute")
+@limiter.limit(_plan_scaled("120/minute"))
 async def trust_index_verify(request: Request, passport_id: str) -> dict[str, Any]:
     """Public, unauthenticated. The whole point of a citable standard: anyone
     who sees a cited score can check it's real here, not just trust the claim."""
@@ -4868,7 +4894,7 @@ async def trust_index_badge(request: Request, passport_id: str) -> Response:
 
 
 @app.get("/api/trust-index/check", tags=["trust-index"])
-@limiter.limit("120/minute")
+@limiter.limit(_plan_scaled("120/minute"))
 async def trust_index_check(
     request: Request,
     model: str = Query(..., min_length=1, max_length=100),
@@ -4918,7 +4944,7 @@ async def trust_index_check(
 
 
 @app.get("/api/trust-index/registry", tags=["trust-index"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def trust_index_registry(
     request: Request,
     limit: int = Query(default=50, ge=1, le=200),
@@ -4936,7 +4962,7 @@ async def trust_index_registry(
 
 
 @app.get("/api/trust-index/certified", tags=["trust-index"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def trust_index_certified_directory(
     request: Request,
     limit: int = Query(default=100, ge=1, le=500),
@@ -5022,7 +5048,7 @@ async def incident_db_report(request: Request, req: IncidentReportRequest) -> di
 
 
 @app.get("/api/incident-db", tags=["incident-db"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def incident_db_list(
     request: Request,
     severity: str | None = Query(default=None),
@@ -5048,7 +5074,7 @@ async def incident_db_list(
 
 
 @app.get("/api/incident-db/check", tags=["incident-db"])
-@limiter.limit("120/minute")
+@limiter.limit(_plan_scaled("120/minute"))
 async def incident_db_check(
     request: Request,
     model: str = Query(..., min_length=1, max_length=100),
@@ -5069,7 +5095,7 @@ async def incident_db_check(
 
 
 @app.get("/api/incident-db/verify", tags=["incident-db"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def incident_db_verify(request: Request) -> dict[str, Any]:
     """Public, unauthenticated — recomputes the hash chain over every
     published entry. Deliberately public, unlike GET /api/audit/verify:
@@ -5079,7 +5105,7 @@ async def incident_db_verify(request: Request) -> dict[str, Any]:
 
 
 @app.get("/api/incident-db/pending", tags=["incident-db"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def incident_db_pending(
     request: Request,
     limit: int = Query(default=50, ge=1, le=200),
@@ -5092,7 +5118,7 @@ async def incident_db_pending(
 
 
 @app.post("/api/incident-db/{internal_id}/approve", tags=["incident-db"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def incident_db_approve(
     request: Request,
     internal_id: str,
@@ -5109,7 +5135,7 @@ async def incident_db_approve(
 
 
 @app.post("/api/incident-db/{internal_id}/reject", tags=["incident-db"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def incident_db_reject(
     request: Request,
     internal_id: str,
@@ -5129,7 +5155,7 @@ async def incident_db_reject(
 
 
 @app.post("/api/incident-db/{public_id}/status", tags=["incident-db"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def incident_db_update_status(
     request: Request,
     public_id: str,
@@ -5149,7 +5175,7 @@ async def incident_db_update_status(
 
 
 @app.get("/api/incident-db/{public_id}", tags=["incident-db"])
-@limiter.limit("120/minute")
+@limiter.limit(_plan_scaled("120/minute"))
 async def incident_db_get(request: Request, public_id: str) -> dict[str, Any]:
     """Public, unauthenticated. Must be registered after /check, /verify,
     /pending, and the {id}/approve|reject|status routes so those literal
@@ -5170,7 +5196,7 @@ async def incident_db_get(request: Request, public_id: str) -> dict[str, Any]:
 
 
 @app.get("/api/governance/evidence", tags=["governance"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def governance_list_evidence(
     request: Request,
     limit: int = Query(default=50, ge=1, le=200),
@@ -5188,7 +5214,7 @@ async def governance_list_evidence(
 
 
 @app.get("/api/governance/evidence/verify", tags=["governance"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def governance_verify_evidence(
     request: Request,
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
@@ -5268,7 +5294,7 @@ async def governance_verify_evidence_bundle(
 
 
 @app.post("/api/governance/evidence/{evidence_id}/outcome", tags=["governance"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def governance_report_outcome(
     request: Request,
     evidence_id: str,
@@ -5302,7 +5328,7 @@ async def governance_report_outcome(
 
 
 @app.get("/api/governance/evidence/{evidence_id}/attestation", tags=["governance"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def governance_get_attestation(
     request: Request,
     evidence_id: str,
@@ -5327,7 +5353,7 @@ async def governance_get_attestation(
 
 
 @app.get("/api/governance/approvals", tags=["governance"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def governance_list_pending_approvals(
     request: Request,
     limit: int = Query(default=50, ge=1, le=200),
@@ -5342,7 +5368,7 @@ async def governance_list_pending_approvals(
 
 
 @app.post("/api/governance/approvals/{approval_id}/resolve", tags=["governance"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def governance_resolve_approval(
     request: Request,
     approval_id: str,
@@ -5394,7 +5420,7 @@ async def governance_resolve_approval(
 
 
 @app.get("/api/governance/approvals/{approval_id}/votes", tags=["governance"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def governance_list_approval_votes(
     request: Request,
     approval_id: str,
@@ -5421,7 +5447,7 @@ async def governance_list_approval_votes(
 
 
 @app.post("/api/governance/approvals/{approval_id}/execute", tags=["governance"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def governance_execute_approval(
     request: Request,
     approval_id: str,
@@ -5479,7 +5505,7 @@ async def governance_execute_approval(
 
 
 @app.post("/api/governance/tools/call", tags=["governance"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def governance_call_tool(
     request: Request,
     req: GovernedToolCallRequest,
@@ -5524,7 +5550,7 @@ async def governance_call_tool(
 
 
 @app.get("/api/governance/test-counter", tags=["governance"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def governance_test_counter(
     request: Request,
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
@@ -5616,7 +5642,7 @@ def _conflict(exc: PolicyVersionConflictError) -> HTTPException:
 
 
 @app.get("/api/governance/policy", tags=["governance"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def governance_get_policy(
     request: Request,
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
@@ -5635,7 +5661,7 @@ async def governance_get_policy(
 
 
 @app.get("/api/governance/policy/history", tags=["governance"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def governance_policy_history(
     request: Request,
     limit: int = 100,
@@ -5804,7 +5830,7 @@ async def governance_reorder_policy(
 
 
 @app.get("/api/web/policy", tags=["web-console"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def web_get_policy(
     request: Request,
     principal: WebPrincipal = Depends(get_web_principal),
@@ -5819,7 +5845,7 @@ async def web_get_policy(
 
 
 @app.get("/api/web/policy/history", tags=["web-console"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def web_policy_history(
     request: Request,
     limit: int = 100,
@@ -6066,7 +6092,7 @@ def _workflow_rule_to_dict(rule: WorkflowSequenceRule) -> dict[str, Any]:
 
 
 @app.get("/api/governance/workflow-rules", tags=["governance"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def governance_get_workflow_rules(
     request: Request,
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
@@ -6185,7 +6211,7 @@ async def governance_grant_delegation(
 
 
 @app.get("/api/governance/delegations/{identity_id}/chain", tags=["governance"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def governance_get_delegation_chain(
     request: Request,
     identity_id: str,
@@ -6230,7 +6256,7 @@ async def governance_revoke_delegation(
 
 
 @app.get("/api/governance/delegations/{identity_id}/descendants", tags=["governance"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def governance_get_delegation_descendants(
     request: Request,
     identity_id: str,
@@ -6282,7 +6308,7 @@ async def governance_get_delegation_graph(
 
 
 @app.post("/api/governance/intent-contracts", tags=["governance"], status_code=201)
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def governance_declare_intent(
     request: Request,
     req: IntentContractDeclareRequest,
@@ -6326,7 +6352,7 @@ async def governance_declare_intent(
 
 
 @app.get("/api/governance/intent-contracts/{agent_id}/active", tags=["governance"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def governance_get_active_intent(
     request: Request,
     agent_id: str,
@@ -6399,7 +6425,7 @@ async def governance_issue_authority_passport(
 
 
 @app.get("/api/governance/authority-passports/{passport_id}", tags=["governance"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def governance_get_authority_passport(
     request: Request,
     passport_id: str,
@@ -6462,7 +6488,7 @@ async def governance_revoke_authority_passport(
 
 
 @app.post("/api/governance/supplychain/scan", tags=["governance"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def governance_supplychain_scan(
     request: Request,
     req: SupplyChainScanRequest,
@@ -6527,7 +6553,7 @@ async def upstream_register_server(
 
 
 @app.get("/api/governance/upstream/servers", tags=["governance"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def upstream_list_servers(
     request: Request,
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
@@ -6583,7 +6609,7 @@ async def upstream_remove_server(
 
 
 @app.post("/api/governance/upstream/servers/{server_id}/call", tags=["governance"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def upstream_call_tool(
     request: Request,
     server_id: str,
@@ -6651,7 +6677,7 @@ async def upstream_call_tool(
 
 
 @app.get("/api/governance/upstream/servers/{server_id}/trust", tags=["governance"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def upstream_get_trust_score(
     request: Request,
     server_id: str,
@@ -6817,7 +6843,7 @@ async def websocket_dashboard(
 
 
 @app.post("/api/webhooks", tags=["webhooks"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def create_webhook(
     request: Request,
     req: WebhookCreateRequest,
@@ -6845,7 +6871,7 @@ async def create_webhook(
 
 
 @app.get("/api/webhooks", tags=["webhooks"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def list_webhooks(
     request: Request,
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
@@ -6859,7 +6885,7 @@ async def list_webhooks(
 
 
 @app.delete("/api/webhooks/{webhook_id}", tags=["webhooks"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def delete_webhook(
     request: Request,
     webhook_id: str,
@@ -6873,7 +6899,7 @@ async def delete_webhook(
 
 
 @app.get("/api/webhooks/deliveries", tags=["webhooks"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def webhook_deliveries(
     request: Request,
     limit: int = Query(default=50, ge=1, le=500),
@@ -7009,7 +7035,7 @@ async def evaluate_model(
 
 
 @app.get("/api/trust-score/{model_name}/{provider}", tags=["trust"])
-@limiter.limit("120/minute")
+@limiter.limit(_plan_scaled("120/minute"))
 async def get_trust_history(
     request: Request,
     model_name: str,
@@ -7027,7 +7053,7 @@ async def get_trust_history(
 
 
 @app.get("/api/models", tags=["trust"])
-@limiter.limit("120/minute")
+@limiter.limit(_plan_scaled("120/minute"))
 async def list_models(
     request: Request,
     _auth: OrgContext = Depends(require_role(Role.VIEWER)),
@@ -7113,7 +7139,7 @@ async def analyze_hallucination(
 
 
 @app.post("/api/cost/record", tags=["cost"])
-@limiter.limit("500/minute")
+@limiter.limit(_plan_scaled("500/minute"))
 async def record_usage(
     request: Request,
     req: RecordUsageRequest,
@@ -7175,7 +7201,7 @@ async def record_usage(
 
 
 @app.get("/api/cost/summary", tags=["cost"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def cost_summary(
     request: Request,
     days: int = 30,
@@ -7196,7 +7222,7 @@ async def cost_summary(
 
 
 @app.post("/api/cost/analyze", tags=["cost"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def analyze_prompt(
     request: Request,
     req: AnalyzePromptRequest,
@@ -7213,7 +7239,7 @@ async def analyze_prompt(
 
 
 @app.post("/api/cost/route", tags=["cost"])
-@limiter.limit("120/minute")
+@limiter.limit(_plan_scaled("120/minute"))
 async def route_task(
     request: Request,
     req: RouteTaskRequest,
@@ -7224,7 +7250,7 @@ async def route_task(
 
 
 @app.get("/api/cost/models", tags=["cost"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def model_pricing(
     request: Request,
     _auth: OrgContext = Depends(require_role(Role.VIEWER)),
@@ -7236,7 +7262,7 @@ async def model_pricing(
 
 
 @app.get("/api/drift/{model_name}/{provider}", tags=["drift"])
-@limiter.limit("120/minute")
+@limiter.limit(_plan_scaled("120/minute"))
 async def get_drift_trend(
     request: Request,
     model_name: str,
@@ -7685,7 +7711,7 @@ async def platform_status() -> dict[str, Any]:
 
 
 @app.get("/api/audit", tags=["audit"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def list_audit_entries(
     request: Request,
     org_id: str | None = Query(None, description="Cross-org filter (super-admin only)"),

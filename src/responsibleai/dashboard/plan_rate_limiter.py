@@ -48,6 +48,48 @@ def plan_limit(plan: Plan) -> int | None:
     return PLAN_REQUEST_LIMITS.get(plan, 60)
 
 
+# Per-route ceiling for an ENTERPRISE organization, whose plan budget is "unlimited". The flat
+# per-route slowapi limits exist to protect the server; they must not make a paying plan's
+# documented budget unreachable (REC-28), but "unlimited" still needs a finite server-side bound.
+ENTERPRISE_ROUTE_CEILING_PER_MINUTE = 1200
+
+# Only throughput limits scale. Anything below this base is a deliberate abuse/step-up control
+# (key issuance, login, MFA, billing mutations) and is never raised by plan.
+MIN_SCALED_BASE_PER_MINUTE = 30
+
+
+def scaled_route_limit(base_per_minute: int, plan: Plan | None) -> int:
+    """The per-route requests/minute an organization on *plan* gets for a route whose flat
+    limit is *base_per_minute*: never below the base, never below the plan's own budget."""
+    if plan is None or base_per_minute < MIN_SCALED_BASE_PER_MINUTE:
+        return base_per_minute
+    budget = plan_limit(plan)
+    if budget is None:
+        budget = ENTERPRISE_ROUTE_CEILING_PER_MINUTE
+    return max(base_per_minute, budget)
+
+
+class OrgPlanDirectory:
+    """Bounded, process-local map org_id -> plan, filled by the authentication dependency on
+    every request so the route limiter (which only sees the rate-limit key) can scale."""
+
+    def __init__(self, max_entries: int = 10_000) -> None:
+        self._max = max_entries
+        self._plans: dict[str, Plan] = {}
+
+    def remember(self, org_id: str | None, plan: Plan) -> None:
+        if not org_id:
+            return
+        if org_id not in self._plans and len(self._plans) >= self._max:
+            self._plans.pop(next(iter(self._plans)))
+        self._plans[org_id] = plan
+
+    def plan_for_key(self, rate_key: str) -> Plan | None:
+        if not rate_key.startswith("org:"):
+            return None
+        return self._plans.get(rate_key[4:])
+
+
 class PlanRateLimiter:
     """Sliding-window request counter, keyed by org_id, scaled by Plan."""
 
