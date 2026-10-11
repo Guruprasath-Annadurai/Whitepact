@@ -83,7 +83,11 @@ def test_faststart_workflow_programmatic() -> None:
 
     # Report verification details contract
     assert report.verification_details["canonical_contract"] == "SHA256_CANONICAL_CHAINED_V2"
-    assert "tamper_resistance_verified" in report.verification_details["checks_passed"]
+    assert "tamper_detection_self_check_passed" in report.verification_details["checks_passed"]
+    assert report.verification_details["tamper_self_check"] == {
+        "altered_record_hash_changes": True,
+        "downstream_link_breaks": True,
+    }
     assert report.verification_details["records_verified"] == 3
     assert report.verification_details["external_anchoring"] == "NONE_LOCAL_ONLY"
     assert report.verification_details["execution_events_recorded"] is False

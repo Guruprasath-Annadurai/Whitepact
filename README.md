@@ -68,7 +68,7 @@ and a live dashboard — that covers the full governance lifecycle:
 | Can I cite and verify a trust score anywhere? | `Trust Index` | Self-assessed or reviewed trust passport (advisory claim, not an external compliance certificate) |
 | Has this AI system failed publicly before? | `AI Incident Database` | Crowd-reported, moderator-reviewed, hash-chained public registry |
 | Should my agent trust this third-party tool before calling it? | `rai_check_trust` + LangChain/LangGraph/ADK integrations | Free lookup, plus a real block/pause gate in-agent |
-| How do MCP clients access governance tools? | `MCP Server` | 31 tools via hosted Streamable HTTP (governed execution); local stdio transport is ungoverned by design |
+| How do MCP clients access governance tools? | `MCP Server` | 30 production tools (plus four development-only read-only authority tools on governed hosted connections) via hosted Streamable HTTP (governed execution); local stdio transport is advisory and ungoverned by design |
 
 ---
 

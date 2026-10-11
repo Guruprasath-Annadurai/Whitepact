@@ -88,6 +88,33 @@ async def test_an_org_edited_before_the_migration_gets_a_verifiable_baseline(pg:
         assert [e["version"] for e in await policy.history(old)] == [5, 4]
         assert await policy.verify_history(old) is True
 
+        # The parameters contributed by the FastStart review work against a baselined history too.
+        head = await policy.history_head(old)
+        assert head is not None and head["version"] == 5
+        assert await policy.verify_history(old, expected_version=5) is True
+        assert await policy.verify_history(old, expected_version=4) is False  # a rollback claim
+        assert await policy.verify_history(old, expected_head_digest=head["entry_digest"]) is True
+        assert await policy.verify_history(old, expected_head_digest="f" * 64) is False
+        assert await policy.verify_history(old, checkpoint=head) is True
+        # Rolling the counter back out of band is caught by the cross-check, and by the retained checkpoint
+        # even when the cross-check is deliberately turned off.
+        async with engine.raw.begin() as conn:
+            await conn.execute(
+                text("UPDATE governance_policy_versions SET version = 4 WHERE org_id = :o"),
+                {"o": old},
+            )
+        assert await policy.verify_history(old) is False
+        assert await policy.verify_history(old, check_persisted_version=False) is True
+        assert (
+            await policy.verify_history(old, check_persisted_version=False, expected_version=4)
+            is False
+        )
+        async with engine.raw.begin() as conn:
+            await conn.execute(
+                text("UPDATE governance_policy_versions SET version = 5 WHERE org_id = :o"),
+                {"o": old},
+            )
+
         # And deleting it is caught, which is the point of having one.
         async with engine.raw.begin() as conn:
             await conn.execute(

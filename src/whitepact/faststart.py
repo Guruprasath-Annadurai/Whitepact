@@ -21,12 +21,11 @@ Enforcement Boundaries & Scope:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any
 
 from responsibleai.governance.evidence import (
-    EvidenceRecord,
     build_evidence_record,
     compute_canonical_evidence_hash,
 )
@@ -292,14 +291,36 @@ def run_faststart_workflow(*, organization_id: str = "org-faststart-demo") -> Fa
     ):
         raise RuntimeError("Canonical evidence chain verification contract failed")
 
+    # Tamper check, actually performed: alter one field of the FIRST record in a copy and show that its
+    # own hash no longer matches and that every later link would break. The claim "tamper-evident" is
+    # only reported because this ran, not because a hash function exists.
+    altered_first = replace(ev_record_1, target="secret_vault")
+    own_hash_changes = (
+        compute_canonical_evidence_hash(_GENESIS_PREV_HASH, altered_first) != ev_hash_1
+    )
+    # The stored second record still points at the ORIGINAL first hash, so a verifier walking the chain
+    # from the altered first record finds a mismatch at link 2.
+    link_2_breaks = (
+        compute_canonical_evidence_hash(
+            compute_canonical_evidence_hash(_GENESIS_PREV_HASH, altered_first), ev_record_2
+        )
+        != ev_hash_2
+    )
+    if not (own_hash_changes and link_2_breaks):
+        raise RuntimeError("Tamper detection self-check failed: an altered record was not detected")
+
     verification_details = {
         "canonical_contract": "SHA256_CANONICAL_CHAINED_V2",
         "checks_passed": [
             "canonical_fields_validated",
             "sha256_canonical_recomputed",
             "hash_chain_link_verified",
-            "tamper_resistance_verified",
+            "tamper_detection_self_check_passed",
         ],
+        "tamper_self_check": {
+            "altered_record_hash_changes": own_hash_changes,
+            "downstream_link_breaks": link_2_breaks,
+        },
         "records_verified": 3,
         "scope": "LOCAL_CRYPTOGRAPHIC_INTEGRITY",
         "external_anchoring": "NONE_LOCAL_ONLY",
