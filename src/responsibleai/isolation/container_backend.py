@@ -407,13 +407,25 @@ class DockerContainerBackend(IsolationBackend):
                     except Exception:
                         pass
 
-                await registry.register(
-                    execution_id=execution_id,
-                    organization_id=request.organization_id,
-                    action_id=request.action_id,
-                    task=asyncio.current_task(),
-                    terminate_callback=_terminate_container_sync,
-                )
+                try:
+                    await registry.register(
+                        execution_id=execution_id,
+                        organization_id=request.organization_id,
+                        action_id=request.action_id,
+                        task=asyncio.current_task(),
+                        terminate_callback=_terminate_container_sync,
+                        admission_epoch=request.admission_epoch,
+                    )
+                except PermissionError as exc:
+                    return ExecutionOutcome(
+                        action_id=request.action_id,
+                        exit_code=-9,
+                        result_payload=None,
+                        stdout="",
+                        stderr=str(exc),
+                        duration_seconds=time.monotonic() - start_time,
+                        violation=f"Execution authorization revoked in-flight: {exc}",
+                    )
 
                 timed_out = False
                 revoked_in_flight = False

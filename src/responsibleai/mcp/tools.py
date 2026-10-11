@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
@@ -1128,7 +1129,12 @@ TOOL_DEFS: list[types.Tool] = [
                     "type": "boolean",
                     "default": False,
                     "description": "If true, mutate then raise to simulate a lost acknowledgement.",
-                }
+                },
+                "sleep_seconds": {
+                    "type": "number",
+                    "default": 0.0,
+                    "description": "If positive, sleep asynchronously to simulate long-running execution for revocation testing.",
+                },
             },
         },
     ),
@@ -1197,6 +1203,9 @@ async def _handle_test_counter_increment(args: dict[str, Any]) -> dict[str, Any]
 
     org_id = str(args.get("_whitepact_organization_id") or "")
     fail_after = bool(args.get("fail_after_effect", False))
+    sleep_seconds = float(args.get("sleep_seconds", 0.0) or 0.0)
+    if sleep_seconds > 0:
+        await asyncio.sleep(sleep_seconds)
     return await increment(org_id, fail_after_effect=fail_after)
 
 

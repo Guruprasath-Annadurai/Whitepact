@@ -696,12 +696,22 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _enforce_enterprise_staging_governance(self) -> Settings:
-        """In staging and production, four-eyes tiered governance is the explicit policy."""
-        if (
-            self.environment in {"staging", "production"}
-            and "policy_governance_mode" not in self.model_fields_set
-        ):
-            object.__setattr__(self, "policy_governance_mode", "tiered")
+        """In staging and production, four-eyes tiered governance is the explicit policy.
+
+        Refuses weaker modes (e.g. single_admin) in staging and production environments.
+        Defaults to 'tiered' when unconfigured in staging and production.
+        """
+        env = (self.environment or "").strip().lower()
+        is_staging_or_prod = env in {"staging"} or is_production_environment(env)
+        if is_staging_or_prod:
+            mode = getattr(self, "policy_governance_mode", None)
+            if mode is None or "policy_governance_mode" not in self.model_fields_set:
+                object.__setattr__(self, "policy_governance_mode", "tiered")
+            elif mode.strip().lower() != "tiered":
+                raise ValueError(
+                    f"Enterprise {env} environment requires policy_governance_mode='tiered' "
+                    f"(four-eyes governance); weaker mode '{mode}' is strictly prohibited."
+                )
         return self
 
     @model_validator(mode="after")

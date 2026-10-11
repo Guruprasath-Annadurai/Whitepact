@@ -111,6 +111,7 @@ class IsolationBroker:
             action_type=action.action_type,
             arguments=action.arguments,
             profile=active_profile,
+            admission_epoch=authorization.revocation_epoch or 0,
         )
 
         outcome: ExecutionOutcome = await self.backend.execute(request)
