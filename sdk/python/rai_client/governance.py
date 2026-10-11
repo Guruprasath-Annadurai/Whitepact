@@ -17,6 +17,8 @@ See ``ENFORCEMENT_BOUNDARY.md`` and ``docs/launch/ENFORCEMENT_PATH_MATRIX.md``.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote
@@ -120,8 +122,23 @@ class GovernanceRuntimeClient:
         self._timeout = timeout
         self._transport = transport  # tests only; production uses the default transport
 
-    def _client(self) -> httpx.AsyncClient:
-        return httpx.AsyncClient(timeout=self._timeout, transport=self._transport)
+    @asynccontextmanager
+    async def _client(self) -> AsyncIterator[httpx.AsyncClient]:
+        async with httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as client:
+            try:
+                yield client
+            except httpx.RequestError as exc:
+                # Preserve HTTPX timeout/transport classification, not credential-bearing
+                # request metadata or an unsafe provider exception chain. Never retry here.
+                message = str(exc).replace(self._key, "[REDACTED]") if self._key else str(exc)
+                # asynccontextmanager is entered while the original exception is active;
+                # replacing it would retain that original in __context__. Scrub the
+                # HTTPX error in place instead, retaining its exact subclass.
+                exc.args = (message,)
+                exc._request = None
+                exc.__context__ = None
+                exc.__cause__ = None
+                raise exc from None
 
     def _headers(self) -> dict[str, str]:
         return {
