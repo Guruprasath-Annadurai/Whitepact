@@ -332,14 +332,20 @@ def _get_rate_limit_key(request: Request) -> str:
     return get_remote_address(request)
 
 
-_limiter_kwargs: dict[str, Any] = {
-    "key_func": _get_rate_limit_key,
-    "default_limits": [settings.rate_limit_default],
-}
-if settings.redis_url:
-    _limiter_kwargs["storage_uri"] = settings.redis_url
+def _build_limiter(redis_url: str | None) -> Limiter:
+    kwargs: dict[str, Any] = {
+        "key_func": _get_rate_limit_key,
+        "default_limits": [settings.rate_limit_default],
+    }
+    if redis_url:
+        kwargs["storage_uri"] = redis_url
+        # A Redis outage must degrade to per-replica in-memory limits, not turn every request
+        # into a 500.
+        kwargs["in_memory_fallback_enabled"] = True
+    return Limiter(**kwargs)
 
-limiter = Limiter(**_limiter_kwargs)
+
+limiter = _build_limiter(settings.redis_url)
 
 _org_plans = OrgPlanDirectory()
 

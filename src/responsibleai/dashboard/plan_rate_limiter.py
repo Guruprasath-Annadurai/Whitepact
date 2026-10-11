@@ -20,6 +20,7 @@ is worse than an honestly-scoped single-instance guarantee.
 
 from __future__ import annotations
 
+import logging
 import time
 import uuid
 from collections import deque
@@ -42,6 +43,10 @@ PLAN_REQUEST_LIMITS: dict[Plan, int | None] = {
 }
 
 _WINDOW_SECONDS = 60.0
+
+logger = logging.getLogger(__name__)
+# Log the degraded state at most this often; an outage must be visible, not a log flood.
+_DEGRADED_LOG_INTERVAL_SECONDS = 30.0
 
 
 def plan_limit(plan: Plan) -> int | None:
@@ -97,6 +102,8 @@ class PlanRateLimiter:
         self._redis_url = redis_url
         self._redis: Redis | None = None
         self._local: dict[str, deque[float]] = {}
+        self._last_degraded_log: float | None = None
+        self.degraded_events = 0
 
     async def _get_redis(self) -> Redis:
         # Only called from check() after confirming self._redis_url is set.
@@ -120,11 +127,19 @@ class PlanRateLimiter:
         # Redis scores must use a clock shared by every replica.
         # time.monotonic() is process-local and would split one tenant
         # across unrelated windows.
-        now = time.time() if self._redis_url else time.monotonic()
         if self._redis_url:
-            used = await self._check_redis(org_id, now)
+            try:
+                used = await self._check_redis(org_id, time.time())
+            except Exception as exc:  # redis.exceptions.* and OSError/timeouts alike
+                # Rate limiting is an availability/abuse control, not an authority control:
+                # authority state (nonces, epochs, approvals) lives in the database and is
+                # unaffected. A cache outage must not turn every authenticated request into a
+                # 500, so degrade to the in-process window (per replica -- weaker than the shared
+                # window, still bounded) and say so loudly.
+                self._note_degraded(exc)
+                used = self._check_local(org_id, time.monotonic())
         else:
-            used = self._check_local(org_id, now)
+            used = self._check_local(org_id, time.monotonic())
 
         if used > limit:
             raise HTTPException(
@@ -135,6 +150,19 @@ class PlanRateLimiter:
                     "retry after the current window."
                 ),
             )
+
+    def _note_degraded(self, exc: Exception) -> None:
+        now = time.monotonic()
+        if (
+            self._last_degraded_log is None
+            or now - self._last_degraded_log >= _DEGRADED_LOG_INTERVAL_SECONDS
+        ):
+            self._last_degraded_log = now
+            logger.error(
+                "plan_rate_limiter_degraded backend=redis error=%s fallback=in_process_per_replica",
+                type(exc).__name__,
+            )
+        self.degraded_events += 1
 
     def _check_local(self, org_id: str, now: float) -> int:
         window = self._local.setdefault(org_id, deque())
