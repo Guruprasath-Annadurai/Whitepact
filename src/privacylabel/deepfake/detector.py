@@ -3,6 +3,17 @@
 """
 Multi-model deepfake detection ensemble.
 
+.. warning::
+   **EXPERIMENTAL / STUB — not a working deepfake detector.**
+   No trained weights ship with this package. With torch installed the
+   XceptionNet/EfficientNet architectures are built with *untrained*
+   (seeded, deterministic) weights; without torch a Laplacian-variance
+   heuristic on the real pixels is used. Neither output is a meaningful
+   fake-probability. Video analysis without OpenCV raises
+   ``NotImplementedError`` instead of returning synthesised scores.
+   Every result carries ``metadata["experimental"] = True``.
+   Do not use these scores for any real decision.
+
 Supports image and video input. Uses an ensemble of detection models:
   - XceptionNet (face swap / FaceForensics++)
   - EfficientNet-B0 (general face manipulation)
@@ -137,6 +148,8 @@ class DeepfakeDetector:
         if self._loaded:
             return
         if _TORCH_AVAILABLE:
+            # Untrained weights: seed so results are at least reproducible.
+            torch.manual_seed(0)
             self._models = {
                 "xception": self._build_xception(),
                 "efficientnet": self._build_efficientnet(),
@@ -237,7 +250,15 @@ class DeepfakeDetector:
                 "DeepfakeDetector: torch unavailable, using frequency-heuristic fallback for %s",
                 path,
             )
-            image = np.random.randint(0, 256, (224, 224, 3), dtype=np.uint8)
+            try:
+                from PIL import Image as _PILImage
+            except ImportError as exc:
+                raise NotImplementedError(
+                    "DeepfakeDetector is an experimental stub: decoding images needs "
+                    "Pillow (and real detection needs trained model weights, which "
+                    "are not shipped)."
+                ) from exc
+            image = np.asarray(_PILImage.open(path).convert("RGB"), dtype=np.uint8)
 
         model_scores = self._predict_image(image)
         ensemble_scores = [
@@ -253,7 +274,7 @@ class DeepfakeDetector:
             ensemble_score=ensemble_score,
             model_scores=model_scores,
             method_detected=self._classify_method(model_scores),
-            metadata={"models_used": list(model_scores.keys())},
+            metadata={"models_used": list(model_scores.keys()), "experimental": True},
         )
 
     async def detect_video(
@@ -279,9 +300,10 @@ class DeepfakeDetector:
         n_frames = sample_frames or self._sample_frames
 
         if not _CV2_AVAILABLE:
-            # Return a synthesised result for environments without cv2
-            fake_probs = np.random.uniform(0.3, 0.7, n_frames)
-            model_scores = {"frequency_heuristic": float(np.mean(fake_probs))}
+            raise NotImplementedError(
+                "DeepfakeDetector.detect_video is an experimental stub and requires "
+                "opencv-python to read frames; it no longer returns synthesised scores."
+            )
         else:
             cap = cv2.VideoCapture(str(path))
             total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or n_frames
@@ -320,7 +342,7 @@ class DeepfakeDetector:
             affected_frames=affected,
             frame_distribution=distribution,
             method_detected=self._classify_method(model_scores),
-            metadata={"frames_sampled": len(fake_probs)},
+            metadata={"frames_sampled": len(fake_probs), "experimental": True},
         )
 
     def _classify_method(self, scores: dict[str, float]) -> str:
