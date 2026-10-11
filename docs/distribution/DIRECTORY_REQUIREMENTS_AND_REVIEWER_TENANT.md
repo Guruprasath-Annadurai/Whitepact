@@ -30,13 +30,27 @@ re-read them on the day of submission.
 | Privacy policy link; verified contact | Founder | to confirm |
 | Standard test account with sample data | Section 2 | not provisioned |
 | ≥ 3 realistic example prompts | Engineering (draft below) | drafted |
-| Ownership of the endpoint; OAuth 2.0 for authenticated remote MCP | Domain per runbook; OAuth exists | **Claude's OAuth callback is not on the dynamic-registration allow-list** — see runbook section 6 item 3 |
+| Ownership of the endpoint; OAuth 2.0 for authenticated remote MCP | Domain per runbook; OAuth exists | Claude hosted callback now allow-listed (exact match, tested); see the Claude OAuth checklist below |
 | Tool names ≤ 64 chars, annotations present | Engineering | done |
 
 Example prompts (read-only, safe against a reviewer tenant):
 1. "Summarize my organization's WhitePact policy status and tell me whether its change history verifies."
 2. "Would my policy require approval for a `payments.send` action to `vendor-42`? Remember this is only a policy simulation."
 3. "List my pending approval requests and tell me which are highest risk."
+
+#### Claude OAuth checklist (Anthropic's connector authentication page, read 2026-10-11)
+| Anthropic requirement | WhitePact today |
+|---|---|
+| `401` (not `200`) with `WWW-Authenticate: Bearer resource_metadata=...` to start sign-in | **Met** (`test_unauthenticated_mcp_is_401_with_oauth_challenge`) |
+| Protected-resource `resource` equals the URL users enter, path included; first `authorization_servers` entry is the issuer | **Met by construction**; must be re-checked with the real `https://mcp.whitepact.com/mcp` |
+| PKCE S256 on every request; metadata advertises `code_challenge_methods_supported: ["S256"]` | **Met** |
+| DCR (`registration_endpoint`) or CIMD | DCR **met**; CIMD not advertised (Claude falls back to DCR). Anthropic notes DCR creates a new client per connection — plan clean-up of stale clients |
+| Hosted callback `https://claude.ai/api/mcp/auth_callback` registrable | **Met** (this change) |
+| Claude Code loopback redirect (any port, `localhost` and `127.0.0.1`) | **Not supported** (deliberate; needs design + review) |
+| Token endpoint accepts `application/x-www-form-urlencoded`; RFC 6749 `invalid_grant`; rotate refresh tokens for public clients; `offline_access` | **Met** (existing OAuth tests) |
+| Discovery/registration/token respond within 10 s (refresh 30 s) | Not load-tested over a real network |
+| Authorization server reachable from Anthropic's egress range (`160.79.104.0/21`); WAF must not block it | Cannot be checked until an endpoint exists |
+| Custom connectors can be added by URL on all Claude plans for testing | Possible once a staging endpoint exists; **no purchase needed**, but still requires an endpoint and test credentials |
 
 ### xAI Grok
 Grok supports user-added custom MCP connectors by public HTTPS URL; no public third-party
