@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: MIT
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
-import { publicPages } from "./tooling/public-pages.ts";
+import { originMetadata, publicPages } from "./tooling/public-pages.ts";
+import { loadEnv } from "vite";
+import { siteContract, validatePublicBuildConfig } from "./src/content/site-origin.ts";
 
 const stripGeneratedTrailingWhitespace = {
   name: "whitepact-strip-generated-trailing-whitespace",
@@ -17,9 +19,14 @@ const stripGeneratedTrailingWhitespace = {
   },
 };
 
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), "VITE_");
+  validatePublicBuildConfig(env);
+  const site = siteContract(env.VITE_WHITEPACT_SITE_ORIGIN, env.VITE_WHITEPACT_SITE_PROFILE ?? (mode === "development" ? "development" : "production"));
+  return {
   base: "/static/whitepact/",
-  plugins: [react(), stripGeneratedTrailingWhitespace, publicPages()],
+  plugins: [react(), originMetadata(site), stripGeneratedTrailingWhitespace, publicPages(site)],
+  define: { "import.meta.env.VITE_WHITEPACT_SITE_ORIGIN": JSON.stringify(site.origin), "import.meta.env.VITE_WHITEPACT_SITE_PROFILE": JSON.stringify(site.profile) },
   build: {
     outDir: "../src/responsibleai/dashboard/static/whitepact",
     emptyOutDir: true,
@@ -34,4 +41,5 @@ export default defineConfig({
     setupFiles: "./src/test/setup.ts",
     restoreMocks: true,
   },
+  };
 });

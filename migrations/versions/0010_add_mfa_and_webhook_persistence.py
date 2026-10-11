@@ -25,6 +25,7 @@ since they touch overlapping tables in the same area of the schema:
    reporter field on this same table (reporter_contact) was already
    encrypted, so this closes an inconsistency, not a new decision.
 """
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -61,16 +62,16 @@ def upgrade() -> None:
 
     op.create_table(
         "webhook_configs",
-        sa.Column("id",          sa.String(36),  nullable=False),
-        sa.Column("org_id",      sa.String(36),  nullable=True),
-        sa.Column("url",         sa.String(2048), nullable=False),
-        sa.Column("provider",    sa.String(20),  nullable=False, server_default="generic"),
-        sa.Column("events",      sa.Text(),      nullable=False),
-        sa.Column("secret",      sa.Text(),      nullable=True),
+        sa.Column("id", sa.String(36), nullable=False),
+        sa.Column("org_id", sa.String(36), nullable=True),
+        sa.Column("url", sa.String(2048), nullable=False),
+        sa.Column("provider", sa.String(20), nullable=False, server_default="generic"),
+        sa.Column("events", sa.Text(), nullable=False),
+        sa.Column("secret", sa.Text(), nullable=True),
         sa.Column("description", sa.String(500), nullable=True),
-        sa.Column("enabled",     sa.Integer,     nullable=False, server_default="1"),
-        sa.Column("max_retries", sa.Integer,     nullable=False, server_default="3"),
-        sa.Column("created_at",  sa.String(32),  nullable=False),
+        sa.Column("enabled", sa.Integer, nullable=False, server_default="1"),
+        sa.Column("max_retries", sa.Integer, nullable=False, server_default="3"),
+        sa.Column("created_at", sa.String(32), nullable=False),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("idx_wc_org", "webhook_configs", ["org_id"])

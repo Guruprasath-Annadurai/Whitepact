@@ -226,6 +226,14 @@ TABLE_CLASSIFICATIONS: dict[str, TableClassification] = {
         True,
         False,
     ),
+    "governance_policy_history": TableClassification(
+        "governance_policy_history",
+        DataClassification.CANONICAL_SECURITY_EVIDENCE,
+        SensitivityTier.HIGH,
+        "SECURITY_EVIDENCE_DEFAULT",
+        True,
+        False,
+    ),
     "governance_policy_revisions": TableClassification(
         "governance_policy_revisions",
         DataClassification.CANONICAL_SECURITY_EVIDENCE,

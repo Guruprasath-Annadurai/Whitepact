@@ -18,9 +18,9 @@ from .models import (
 )
 
 _DEFAULT_BASE = "http://localhost:8765"
-_API_VERSION  = "v1"
-_MAX_RETRIES  = 3
-_RETRY_CODES  = {429, 502, 503, 504}
+_API_VERSION = "v1"
+_MAX_RETRIES = 3
+_RETRY_CODES = {429, 502, 503, 504}
 
 
 class RAIClient:
@@ -49,7 +49,7 @@ class RAIClient:
         max_retries: int = _MAX_RETRIES,
     ) -> None:
         self._base = base_url.rstrip("/")
-        self._key  = api_key
+        self._key = api_key
         self._timeout = timeout
         self._max_retries = max_retries
         self._client: httpx.AsyncClient | None = None
@@ -85,9 +85,7 @@ class RAIClient:
     ) -> dict[str, Any]:
         """Send an HTTP request with exponential-backoff retry on transient errors."""
         owned = self._client is None
-        client = self._client or httpx.AsyncClient(
-            headers=self._headers(), timeout=self._timeout
-        )
+        client = self._client or httpx.AsyncClient(headers=self._headers(), timeout=self._timeout)
         try:
             for attempt in range(self._max_retries):
                 try:
@@ -103,13 +101,13 @@ class RAIClient:
                     if attempt == self._max_retries - 1:
                         resp.raise_for_status()
 
-                    wait = (2 ** attempt) + random.uniform(0, 0.5)
+                    wait = (2**attempt) + random.uniform(0, 0.5)
                     await asyncio.sleep(wait)
 
                 except httpx.TransportError:
                     if attempt == self._max_retries - 1:
                         raise
-                    wait = (2 ** attempt) + random.uniform(0, 0.5)
+                    wait = (2**attempt) + random.uniform(0, 0.5)
                     await asyncio.sleep(wait)
 
             raise RuntimeError("unreachable")  # noqa: TRY301
@@ -139,18 +137,21 @@ class RAIClient:
         record_drift: bool = True,
     ) -> TrustScore:
         """Compute and record a trust score for a model."""
-        data = await self._post("evaluate", {
-            "model_name": model_name,
-            "provider": provider,
-            "fairness": fairness,
-            "privacy": privacy,
-            "security": security,
-            "robustness": robustness,
-            "compliance": compliance,
-            "authenticity": authenticity,
-            "use_case": use_case,
-            "record_drift": record_drift,
-        })
+        data = await self._post(
+            "evaluate",
+            {
+                "model_name": model_name,
+                "provider": provider,
+                "fairness": fairness,
+                "privacy": privacy,
+                "security": security,
+                "robustness": robustness,
+                "compliance": compliance,
+                "authenticity": authenticity,
+                "use_case": use_case,
+                "record_drift": record_drift,
+            },
+        )
         return TrustScore.from_dict(data)
 
     # ── Guardrails ─────────────────────────────────────────────────────────────
@@ -206,14 +207,17 @@ class RAIClient:
         application: str = "default",
     ) -> CostRecord:
         """Record token usage and retrieve cost breakdown."""
-        data = await self._post("cost/record", {
-            "provider": provider,
-            "model": model,
-            "input_tokens": input_tokens,
-            "output_tokens": output_tokens,
-            "team": team,
-            "application": application,
-        })
+        data = await self._post(
+            "cost/record",
+            {
+                "provider": provider,
+                "model": model,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "team": team,
+                "application": application,
+            },
+        )
         return CostRecord.from_dict(data)
 
     async def cost_summary(self, days: int = 30) -> dict[str, Any]:
@@ -233,15 +237,18 @@ class RAIClient:
         provider_b: str = "unknown",
     ) -> EvalCompareResult:
         """A/B compare two models across a set of prompts."""
-        data = await self._post("eval/compare", {
-            "model_a": model_a,
-            "model_b": model_b,
-            "provider_a": provider_a,
-            "provider_b": provider_b,
-            "prompts": prompts,
-            "responses_a": responses_a,
-            "responses_b": responses_b,
-        })
+        data = await self._post(
+            "eval/compare",
+            {
+                "model_a": model_a,
+                "model_b": model_b,
+                "provider_a": provider_a,
+                "provider_b": provider_b,
+                "prompts": prompts,
+                "responses_a": responses_a,
+                "responses_b": responses_b,
+            },
+        )
         return EvalCompareResult.from_dict(data)
 
     # ── Health ─────────────────────────────────────────────────────────────────

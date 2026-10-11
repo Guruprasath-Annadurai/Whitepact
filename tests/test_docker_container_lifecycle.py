@@ -24,9 +24,15 @@ from responsibleai.isolation.models import (
     IsolationProfile,
     ResourceLimits,
 )
-from tests.docker_runtime import DOCKER_UNAVAILABLE_REASON, docker_available
 
-pytestmark = pytest.mark.skipif(not docker_available(), reason=DOCKER_UNAVAILABLE_REASON)
+pytestmark = pytest.mark.usefixtures("real_container_host")
+
+
+@pytest.fixture(autouse=True)
+def _enable_containment_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+    from tests.docker_runtime import enable_containment_probe
+
+    enable_containment_probe(monkeypatch)
 
 
 def _container_name(org_id: str, action_id: str) -> str:

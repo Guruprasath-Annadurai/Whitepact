@@ -2,7 +2,7 @@ name: OpenSSF Policy Guard
 
 on:
   pull_request:
-    branches: ["main"]
+    branches: ["main", "cursor/whitepact-rc-remediation-b6a9"]
   push:
     branches: ["main"]
 

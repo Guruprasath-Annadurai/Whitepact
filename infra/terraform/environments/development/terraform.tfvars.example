@@ -1,0 +1,4 @@
+# Copy to terraform.tfvars — never commit real values.
+# location = "sin"  # Verify Singapore availability and pricing before use
+admin_cidr_allowlist = ["203.0.113.10/32"]
+execution_egress_cidrs = ["0.0.0.0/0"]

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .client import RAIClient
+from .governance import GovernanceRequestError, GovernanceRuntimeClient, GovernanceToolOutcome
 from .models import (
     ComplianceReport,
     CostRecord,
@@ -14,6 +15,9 @@ from .models import (
 )
 
 __all__ = [
+    "GovernanceRequestError",
+    "GovernanceRuntimeClient",
+    "GovernanceToolOutcome",
     "RAIClient",
     "TrustScore",
     "GuardrailScan",

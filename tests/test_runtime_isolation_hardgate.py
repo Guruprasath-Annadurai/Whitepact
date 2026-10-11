@@ -22,6 +22,7 @@ import pathlib
 import shutil
 import tempfile
 import uuid
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -68,6 +69,13 @@ def _docker_available() -> bool:
 pytestmark = pytest.mark.skipif(not _docker_available(), reason=DOCKER_UNAVAILABLE_REASON)
 
 
+@pytest.fixture(autouse=True)
+def _enable_containment_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+    from tests.docker_runtime import enable_containment_probe
+
+    enable_containment_probe(monkeypatch)
+
+
 def _make_action(
     tool_name: str, args: dict[str, Any], *, org_id: str = "tenant-hardgate"
 ) -> ActionRequest:
@@ -100,6 +108,7 @@ def _make_permit(action: ActionRequest, *, ttl_seconds: float = 60.0) -> Executi
 class TestHostFilesystemCanaries:
     """Empirical proof that host filesystem canaries and adjacent tenant workspaces are strictly inaccessible."""
 
+    @pytest.mark.usefixtures("real_container_host")
     async def test_canaries_blocked_inside_container(self, tmp_path: pathlib.Path):
         # 1. Create synthetic host-side canaries
         home_canary_dir = pathlib.Path(os.environ.get("HOME", "/tmp")) / "canary_test"
@@ -197,36 +206,60 @@ sys.stdout.write(json.dumps({{"status": "success", "result": results}}))
 class TestProcessProcPtraceIsolation:
     """Empirical proof of process boundary, /proc protection, ptrace, and inherited FDs."""
 
+    @pytest.mark.usefixtures("real_container_host")
     async def test_control_plane_proc_and_fds(self):
         control_plane_pid = os.getpid()
+        # Identify the control plane by what it IS (its full command line), not by its PID
+        # number. A fresh PID namespace numbers processes 1, 2, 3..., so a low control-plane
+        # PID (any short-lived harness) collides with the container's own probe process and
+        # reports "visible" for the wrong process. A real host process never has this command
+        # line inside the container unless the container can see the host's processes.
+        control_plane_cmdline = Path("/proc/self/cmdline").read_bytes().hex()
         probe_script = f"""
 import sys, os, json, signal
 
 cp_pid = {control_plane_pid}
+cp_cmdline = bytes.fromhex({control_plane_cmdline!r})
 
-# 1. Can we see control-plane process?
+# 1. Can we see the control-plane process? Match by identity across every visible PID.
 pids = [int(p) for p in os.listdir("/proc") if p.isdigit()]
-cp_pid_visible = cp_pid in pids
+matched = []
+for candidate in pids:
+    try:
+        with open(f"/proc/{{candidate}}/cmdline", "rb") as handle:
+            if handle.read() == cp_cmdline:
+                matched.append(candidate)
+    except OSError:
+        pass
+cp_pid_visible = bool(matched)
+if matched:
+    cp_pid = matched[0]
 
-# 2. Can we read /proc/<cp_pid>/environ?
-environ_read = "BLOCKED"
+# 2. Can we read /proc/<cp_pid>/environ? (only meaningful when it is truly visible)
+environ_read = "BLOCKED: control plane not present in this PID namespace"
 try:
+    if not cp_pid_visible:
+        raise FileNotFoundError("control plane not visible")
     with open(f"/proc/{{cp_pid}}/environ", "rb") as f:
         environ_read = "OPEN: " + repr(f.read(20))
 except Exception as e:
     environ_read = "BLOCKED: " + type(e).__name__
 
 # 3. Can we read /proc/<cp_pid>/mem?
-mem_read = "BLOCKED"
+mem_read = "BLOCKED: control plane not present in this PID namespace"
 try:
+    if not cp_pid_visible:
+        raise FileNotFoundError("control plane not visible")
     with open(f"/proc/{{cp_pid}}/mem", "rb") as f:
         mem_read = "OPEN: " + repr(f.read(20))
 except Exception as e:
     mem_read = "BLOCKED: " + type(e).__name__
 
 # 4. Can we signal control-plane PID?
-signal_sent = "BLOCKED"
+signal_sent = "BLOCKED_ESRCH"
 try:
+    if not cp_pid_visible:
+        raise ProcessLookupError("control plane not visible")
     os.kill(cp_pid, 0)
     signal_sent = "OPEN"
 except ProcessLookupError:
@@ -279,6 +312,7 @@ sys.stdout.write(json.dumps({{
 class TestControlSocketsAndCredentials:
     """Empirical proof that daemon sockets, kubernetes tokens, ssh agents, and cloud credentials are absent."""
 
+    @pytest.mark.usefixtures("real_container_host")
     async def test_control_sockets_and_cloud_creds_absent(self):
         probe_script = """
 import sys, os, glob, json
@@ -333,6 +367,7 @@ sys.stdout.write(json.dumps({
 class TestProcessTreeTerminationAndCleanup:
     """Empirical proof that hostile trees (children, grandchildren, double-fork daemons) are killed cleanly."""
 
+    @pytest.mark.usefixtures("real_container_host")
     async def test_hostile_double_fork_and_children_terminated_on_timeout(self):
         hostile_script = """
 import sys, os, time, signal
@@ -378,6 +413,7 @@ while True:
         check = os.popen(f"docker ps -aq --filter name={container_prefix}").read().strip()
         assert check == "", f"Container {container_prefix} lingered after timeout"
 
+    @pytest.mark.usefixtures("real_container_host")
     async def test_cross_execution_cancellation_isolation(self):
         """Cancelling execution A must NOT affect concurrent execution B."""
         backend = DockerContainerBackend()
@@ -425,6 +461,7 @@ sys.stdout.write(json.dumps({"status": "success", "result": "B_COMPLETED"}))
 class TestResourceBoundariesFDAndWorkspace:
     """Empirical proof of FD limits and workspace quota analysis."""
 
+    @pytest.mark.usefixtures("real_container_host")
     async def test_fd_exhaustion_is_bounded(self):
         fd_script = """
 import sys, os, json
@@ -539,6 +576,7 @@ class TestEvidenceBoundaryIntegration:
 class TestRealConcurrencyClosure:
     """Run concurrent execution batch with multiple tenants, principals, timeouts, and cancellations."""
 
+    @pytest.mark.usefixtures("real_container_host")
     async def test_concurrent_multi_tenant_batch(self):
         backend = DockerContainerBackend()
 
