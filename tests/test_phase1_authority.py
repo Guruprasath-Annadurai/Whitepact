@@ -188,6 +188,68 @@ async def test_integrity_valid_but_unscoped_consent_denied(governed, actions, ta
         await AuthorityResolver(roots, consents, delegations).resolve(context)
 
 
+async def test_multi_hop_memory_scope_cannot_widen(governed):
+    """WP-LAUNCH-P1-MEMORY-SCOPE-01.
+
+    Grant refuses a hop from ``org:acme`` to ``org``. A stored child
+    whose namespace was widened after a legal grant is still refused
+    by the resolver before execution.
+    """
+    engine, roots, consents, delegations, context, _, _ = governed
+    from sqlalchemy import update
+
+    from responsibleai.db.delegation_repository import DelegationEscalationError
+    from responsibleai.db.engine import governance_delegations
+
+    await delegations.grant(
+        "acme",
+        "lead",
+        granted_action_types=frozenset({"read"}),
+        constraints={"memory_scope": "org:acme"},
+        purpose="reconcile",
+        granted_by="owner",
+    )
+    narrowed = await delegations.grant(
+        "acme",
+        "worker",
+        from_identity_id="lead",
+        granted_action_types=frozenset({"read"}),
+        constraints={"memory_scope": "org:acme:team"},
+        purpose="reconcile",
+        granted_by="lead",
+    )
+    with pytest.raises(DelegationEscalationError, match="memory_scope"):
+        await delegations.grant(
+            "acme",
+            "scout",
+            from_identity_id="lead",
+            granted_action_types=frozenset({"read"}),
+            constraints={"memory_scope": "org"},
+            purpose="reconcile",
+            granted_by="lead",
+        )
+    with pytest.raises(DelegationEscalationError, match="memory_scope"):
+        await delegations.grant(
+            "acme",
+            "sibling",
+            from_identity_id="worker",
+            granted_action_types=frozenset({"read"}),
+            constraints={"memory_scope": "org:other"},
+            purpose="reconcile",
+            granted_by="worker",
+        )
+
+    async with engine.raw.begin() as conn:
+        await conn.execute(
+            update(governance_delegations)
+            .where(governance_delegations.c.id == narrowed.delegation_id)
+            .values(constraints='{"memory_scope":"org"}')
+        )
+    with pytest.raises(AuthorityDenied) as denied:
+        await AuthorityResolver(roots, consents, delegations).resolve(context)
+    assert denied.value.reason == "DELEGATION_ESCALATION"
+
+
 async def test_expiry_mutation_detected(governed):
     from responsibleai.governance.consent_proof import verify_consent_proof_integrity
 

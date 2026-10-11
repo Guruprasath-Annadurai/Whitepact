@@ -119,7 +119,7 @@ class TestBaselines:
     async def test_set_baseline_updates_when_present(self, repo):
         await repo.set_baseline("gpt-4", "truthfulqa", "accuracy", 0.85, org_id="org-1")
         await repo.set_baseline("gpt-4", "truthfulqa", "accuracy", 0.90, org_id="org-1")
-        baselines = await repo.get_baselines("gpt-4")
+        baselines = await repo.get_baselines("gpt-4", org_id="org-1")
         assert baselines == {"truthfulqa:accuracy": 0.90}
 
     async def test_get_baselines_multiple_metrics(self, repo):

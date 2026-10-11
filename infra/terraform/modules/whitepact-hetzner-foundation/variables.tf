@@ -1,0 +1,266 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
+
+variable "environment" {
+  description = "deployment label: development | production"
+  type        = string
+  validation {
+    condition     = contains(["development", "staging", "production"], var.environment)
+    error_message = "environment must be development, staging, or production"
+  }
+}
+
+variable "location" {
+  description = "Hetzner location (verify availability: https://docs.hetzner.com/cloud/general/locations/)"
+  type        = string
+  default     = "fsn1"
+
+  validation {
+    condition     = contains(["fsn1", "nbg1", "hel1", "ash", "hil", "sin"], var.location)
+    error_message = "location must be a documented Hetzner Cloud region with a known network zone mapping."
+  }
+}
+
+variable "network_zone_override" {
+  description = "Optional override when Hetzner adds a new location before the module map is updated."
+  type        = string
+  default     = null
+}
+
+variable "network_cidr" {
+  type    = string
+  default = "10.42.0.0/16"
+}
+
+variable "saas_subnet_cidr" {
+  type    = string
+  default = "10.42.1.0/24"
+}
+
+variable "authority_subnet_cidr" {
+  type    = string
+  default = "10.42.2.0/24"
+}
+
+variable "execution_subnet_cidr" {
+  type    = string
+  default = "10.42.3.0/24"
+}
+
+variable "mgmt_subnet_cidr" {
+  description = "Management / NAT gateway subnet"
+  type        = string
+  default     = "10.42.4.0/24"
+}
+
+variable "enable_nat_gateway" {
+  description = "Dedicated public NAT/management gateway for private-only nodes (required for egress)."
+  type        = bool
+  default     = true
+}
+
+variable "nat_gateway_server_type" {
+  description = "Smallest suitable SKU with public Primary IPv4 (staging: CX23)."
+  type        = string
+  default     = "cx23"
+}
+
+variable "nat_gateway_private_ip" {
+  description = "Private IP of NAT gateway (must not be network first IP or 172.31.1.1)."
+  type        = string
+  default     = ""
+}
+
+variable "lb_private_ip" {
+  description = "Load balancer private IP on saas subnet (for host firewall rules)."
+  type        = string
+  default     = ""
+}
+
+variable "admin_cidr_allowlist" {
+  description = "CIDRs permitted for SSH/bastion (no 0.0.0.0/0 on database paths)"
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for cidr in var.admin_cidr_allowlist :
+      cidr != "0.0.0.0/0" && cidr != "::/0"
+    ])
+    error_message = "admin_cidr_allowlist must not contain 0.0.0.0/0 or ::/0."
+  }
+}
+
+variable "admin_ssh_key_ids" {
+  description = "Hetzner SSH key IDs installed on administered servers. A key that exists only in the project is not installed unless listed here."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = var.environment == "development" || length(var.admin_ssh_key_ids) > 0
+    error_message = "staging and production require at least one admin SSH key id."
+  }
+}
+
+variable "saas_server_type" {
+  type    = string
+  default = "cx22"
+}
+
+variable "authority_server_type" {
+  type    = string
+  default = "cx22"
+}
+
+variable "execution_server_type" {
+  type    = string
+  default = "cx22"
+}
+
+variable "enable_execution_egress_allowlist" {
+  description = "When true, execution nodes only egress to documented destinations"
+  type        = bool
+  default     = true
+}
+
+variable "execution_egress_cidrs" {
+  description = "Permitted outbound CIDRs for agent execution workloads (e.g. MCP upstreams)"
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = (
+      !var.enable_execution_egress_allowlist
+      || (
+        length(var.execution_egress_cidrs) > 0
+        && alltrue([
+          for cidr in var.execution_egress_cidrs :
+          cidr != "0.0.0.0/0" && cidr != "::/0"
+        ])
+      )
+    )
+    error_message = "execution_egress_cidrs must be a non-empty explicit allowlist when enable_execution_egress_allowlist is true (no 0.0.0.0/0 or ::/0)."
+  }
+}
+
+variable "authority_egress_cidrs" {
+  description = "Permitted outbound HTTPS destinations for authority tier (updates, telemetry, R2 backup API endpoints). NAT does not widen this list."
+  type        = list(string)
+  default     = ["10.255.0.1/32"]
+
+  validation {
+    condition = (
+      length(var.authority_egress_cidrs) > 0
+      && alltrue([
+        for cidr in var.authority_egress_cidrs :
+        cidr != "0.0.0.0/0" && cidr != "::/0"
+      ])
+    )
+    error_message = "authority_egress_cidrs must be a non-empty explicit allowlist (no 0.0.0.0/0 or ::/0)."
+  }
+}
+
+variable "saas_egress_cidrs" {
+  description = "Permitted outbound HTTP(S) destinations for the SaaS tier. Enabling the NAT gateway does not open 0.0.0.0/0."
+  type        = list(string)
+  default     = ["10.255.0.3/32"]
+
+  validation {
+    condition = (
+      length(var.saas_egress_cidrs) > 0
+      && alltrue([
+        for cidr in var.saas_egress_cidrs :
+        cidr != "0.0.0.0/0" && cidr != "::/0"
+      ])
+    )
+    error_message = "saas_egress_cidrs must be a non-empty explicit allowlist (no 0.0.0.0/0 or ::/0)."
+  }
+}
+
+variable "dns_resolver_cidrs" {
+  description = "Recursive resolvers private nodes may query. Defaults are Hetzner public DNS."
+  type        = list(string)
+  default     = ["185.12.64.1/32", "185.12.64.2/32"]
+
+  validation {
+    condition = alltrue([
+      for cidr in var.dns_resolver_cidrs :
+      cidr != "0.0.0.0/0" && cidr != "::/0"
+    ])
+    error_message = "dns_resolver_cidrs must not contain 0.0.0.0/0 or ::/0."
+  }
+}
+
+variable "ntp_server_cidrs" {
+  description = "NTP servers private nodes may query. Defaults are Cloudflare time anycast."
+  type        = list(string)
+  default     = ["162.159.200.1/32", "162.159.200.123/32"]
+
+  validation {
+    condition = alltrue([
+      for cidr in var.ntp_server_cidrs :
+      cidr != "0.0.0.0/0" && cidr != "::/0"
+    ])
+    error_message = "ntp_server_cidrs must not contain 0.0.0.0/0 or ::/0."
+  }
+}
+
+variable "enable_server_backups" {
+  description = "When true, the price-book estimate adds 20 percent of the server SKUs, rounded up to the next euro cent. Backups are outside the staging ceiling unless a new owner ceiling covers them. This is not a Hetzner billing alert."
+  type        = bool
+  default     = false
+}
+
+variable "monthly_cost_ceiling_cents" {
+  description = "Terraform price-book ceiling in euro cents, VAT exclusive, backups excluded unless enable_server_backups is true. This is not a Hetzner billing alert. 0 disables the check. Staging sets 3595 (35.95 EUR)."
+  type        = number
+  default     = 0
+
+  validation {
+    condition     = var.monthly_cost_ceiling_cents >= 0
+    error_message = "monthly_cost_ceiling_cents must be zero or positive."
+  }
+}
+
+variable "saas_public_ipv4" {
+  description = "When false, SaaS nodes are reachable only via private LB + Cloudflare (recommended for production)."
+  type        = bool
+  default     = false
+}
+
+variable "labels" {
+  type    = map(string)
+  default = {}
+}
+
+variable "lb_service_protocol" {
+  description = "LB frontend protocol: http, https (TLS terminates at LB), or tcp (passthrough for origin TLS/AOP)."
+  type        = string
+  default     = "http"
+
+  validation {
+    condition     = contains(["http", "https", "tcp"], var.lb_service_protocol)
+    error_message = "lb_service_protocol must be http, https, or tcp."
+  }
+}
+
+variable "lb_listen_port" {
+  type    = number
+  default = 80
+}
+
+variable "lb_destination_port" {
+  type    = number
+  default = 8765
+}
+
+variable "lb_health_check_protocol" {
+  description = "Health check protocol (can differ from frontend, e.g. tcp:443 public + http:8765 /livez)."
+  type        = string
+  default     = "http"
+}
+
+variable "lb_health_check_port" {
+  type    = number
+  default = 8765
+}

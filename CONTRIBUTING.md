@@ -56,10 +56,18 @@ git commit --amend -s          # most recent commit
 git rebase --exec 'git commit --amend --no-edit -s' -i <base>   # a range
 ```
 
-A CI check runs on every PR and fails if any commit is missing the trailer
-— see [`.github/workflows/dco.yml`](.github/workflows/dco.yml). This is
-enforced going forward only; existing history is not rewritten to add
-sign-offs retroactively.
+A CI check runs on every PR and fails if any other non-merge commit is
+missing the trailer — see [`.github/workflows/dco.yml`](.github/workflows/dco.yml).
+Existing history is not rewritten to add sign-offs retroactively.
+
+Two commits already inside the qualified platform ancestor have no
+`Signed-off-by` trailer. On October 9, 2026 the owner approved a
+historical exception for exactly
+`015fab741427a5a9cae5bca7adaa9729c78da9e5` and
+`681ce9566f0ef9b68b6fc97212cc2fb7a44135e3`. The record is
+[`compliance/DCO_HISTORICAL_EXCEPTION_2026-10-09.md`](compliance/DCO_HISTORICAL_EXCEPTION_2026-10-09.md).
+That exception is not a sign-off. No other commit, author, bot, or date
+is exempt.
 
 ---
 

@@ -11,31 +11,49 @@ action refs after the repository has been hardened.
 
 from __future__ import annotations
 
+import argparse
 import re
 from pathlib import Path
 
 WORKFLOWS = Path(".github/workflows")
-USES_RE = re.compile(r"^\s*uses:\s*([^#\s]+)")
+# Match both `uses:` and the YAML list form `- uses:`. The dash form was
+# previously invisible, so a movable tag on its own step line passed CI.
+USES_RE = re.compile(r"^\s*(?:-\s*)?uses:\s*([^#\s]+)")
 SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 
 
-def main() -> int:
+def unpinned_references(text: str, *, label: str = "workflow") -> list[str]:
+    """Return human-readable hits for movable or missing action refs."""
+    failures: list[str] = []
+    for line_number, line in enumerate(text.splitlines(), 1):
+        match = USES_RE.match(line)
+        if not match:
+            continue
+
+        value = match.group(1).strip("'\"")
+        if value.startswith("./"):
+            # Local actions are supplied by this same reviewed checkout.
+            continue
+
+        action, separator, ref = value.rpartition("@")
+        if not separator or not action or not SHA_RE.fullmatch(ref):
+            failures.append(f"{label}:{line_number}: {value}")
+    return failures
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--workflows",
+        type=Path,
+        default=WORKFLOWS,
+        help="Directory of workflow files. Defaults to .github/workflows.",
+    )
+    args = parser.parse_args(argv)
     failures: list[str] = []
 
-    for path in sorted(WORKFLOWS.glob("*.y*ml")):
-        for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            match = USES_RE.match(line)
-            if not match:
-                continue
-
-            value = match.group(1).strip("'\"")
-            if value.startswith("./"):
-                # Local actions are supplied by this same reviewed checkout.
-                continue
-
-            action, separator, ref = value.rpartition("@")
-            if not separator or not action or not SHA_RE.fullmatch(ref):
-                failures.append(f"{path}:{line_number}: {value}")
+    for path in sorted(args.workflows.glob("*.y*ml")):
+        failures.extend(unpinned_references(path.read_text(encoding="utf-8"), label=str(path)))
 
     if failures:
         print("GitHub Actions dependencies must use immutable 40-character commit SHAs:")

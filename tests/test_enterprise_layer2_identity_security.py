@@ -248,10 +248,12 @@ async def test_totp_replay_and_removal_requires_step_up(engine) -> None:
         ).scalar()
     import pyotp
 
-    code = pyotp.TOTP(secret).now()
-    await svc.confirm_totp(user_id, code)
-    with pytest.raises(EnterpriseError) as replay:
-        await svc.verify_totp(user_id, code)
+    fixed = time.time()
+    code = pyotp.TOTP(secret).at(int(fixed))
+    with patch("time.time", return_value=fixed):
+        await svc.confirm_totp(user_id, code)
+        with pytest.raises(EnterpriseError) as replay:
+            await svc.verify_totp(user_id, code)
     assert replay.value.code == CHALLENGE_REPLAY
     _, _, session = await svc.issue_session(
         user_id=user_id, methods=(AuthMethod.PASSWORD,), ip_label=None, user_agent=None
