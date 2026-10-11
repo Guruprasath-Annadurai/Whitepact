@@ -7,6 +7,8 @@ Features:
 - Process-local registration and tracking of running containers and subprocesses.
 - Distributed cross-worker reconciliation against database revocation epochs.
 - Sub-second process-tree / container termination (<1.0s vs timeout).
+- Strict termination verification: target process/container must be verified dead.
+- Trustworthy containment state: failed terminations remain tracked as unresolved containment.
 - Late-registration rejection: actions admitted at revoked epochs cannot register.
 - Tenant isolation: revocation is strictly scoped to the targeted organization.
 """
@@ -25,6 +27,10 @@ from sqlalchemy import select
 logger = logging.getLogger(__name__)
 
 
+class DatabaseReconciliationError(RuntimeError):
+    """Raised when distributed revocation epoch reconciliation cannot query database."""
+
+
 @dataclass
 class InFlightExecution:
     execution_id: str
@@ -37,6 +43,7 @@ class InFlightExecution:
     admission_epoch: int = 0
     termination_attempts: int = 0
     last_termination_error: str | None = None
+    containment_status: str = "active"  # "active", "terminated", "unresolved"
 
 
 class InFlightExecutionRegistry:
@@ -47,8 +54,12 @@ class InFlightExecutionRegistry:
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
         self._active: dict[str, InFlightExecution] = {}
+        self._unresolved: dict[str, InFlightExecution] = {}
         self._latest_revoked_epoch: dict[str, int] = {}
         self._watcher_task: asyncio.Task[None] | None = None
+        self._last_successful_reconciliation: float | None = None
+        self._last_reconciliation_error: str | None = None
+        self._consecutive_reconciliation_failures: int = 0
 
     @classmethod
     def get_instance(cls) -> InFlightExecutionRegistry:
@@ -120,9 +131,38 @@ class InFlightExecutionRegistry:
             self._active[execution_id] = entry
         return entry
 
-    async def unregister(self, execution_id: str) -> None:
+    async def unregister(self, execution_id: str, *, force: bool = False) -> bool:
+        """Unregister an execution upon normal completion.
+
+        If termination was attempted and remains unconfirmed/unresolved, unconditional
+        unregistration is refused from dropping the audit trail: the entry is preserved
+        in _unresolved for operator alerting.
+        """
         async with self._lock:
+            entry = self._active.get(execution_id)
+            if entry is not None and entry.termination_attempts > 0 and not force:
+                logger.critical(
+                    "REFUSING_SILENT_UNREGISTER_OF_UNRESOLVED_EXECUTION: %s (org: %s, attempts: %d, error: %s)",
+                    execution_id,
+                    entry.organization_id,
+                    entry.termination_attempts,
+                    entry.last_termination_error,
+                )
+                entry.containment_status = "unresolved"
+                self._unresolved[execution_id] = entry
+                self._active.pop(execution_id, None)
+                return False
+
             self._active.pop(execution_id, None)
+            return True
+
+    def get_unresolved_containments(
+        self, organization_id: str | None = None
+    ) -> list[InFlightExecution]:
+        """Return all executions whose containment failed or remains unconfirmed."""
+        if organization_id is None:
+            return list(self._unresolved.values())
+        return [e for e in self._unresolved.values() if e.organization_id == organization_id]
 
     async def terminate_in_flight(
         self,
@@ -134,7 +174,8 @@ class InFlightExecutionRegistry:
         """Terminate all matching in-flight executions immediately.
 
         Invokes low-level container/process termination callbacks and cancels tasks.
-        Returns the list of terminated execution_ids.
+        Verifies that termination succeeded. Returns the list of confirmed terminated execution_ids.
+        Unconfirmed terminations are retained in tracking as unresolved containment.
         """
         async with self._lock:
             to_terminate = [
@@ -154,16 +195,20 @@ class InFlightExecutionRegistry:
                 entry.termination_attempts + 1,
             )
             callback_failed = False
+            last_err: str | None = None
+
             # 1. Invoke low-level container/process termination callback if registered
             if entry.terminate_callback is not None:
                 try:
                     res = entry.terminate_callback()
                     if asyncio.iscoroutine(res):
-                        await res
+                        res = await res
+                    if res is False:
+                        callback_failed = True
+                        last_err = "terminate_callback returned False (target still running)"
                 except Exception as exc:
                     callback_failed = True
-                    entry.termination_attempts += 1
-                    entry.last_termination_error = str(exc)
+                    last_err = str(exc)
                     logger.error(
                         "in_flight_terminate_callback_failed: %s (%s)",
                         entry.execution_id,
@@ -174,14 +219,23 @@ class InFlightExecutionRegistry:
             if entry.task is not None and not entry.task.done():
                 entry.task.cancel()
 
-            # 3. Only unregister if callback succeeded or wasn't provided
+            # 3. Handle confirmed vs unresolved containment
             if callback_failed:
-                logger.warning(
-                    "retaining_unconfirmed_in_flight_execution: %s for retry",
+                entry.termination_attempts += 1
+                entry.containment_status = "unresolved"
+                entry.last_termination_error = last_err
+                async with self._lock:
+                    self._unresolved[entry.execution_id] = entry
+                logger.critical(
+                    "CONTAINMENT_UNRESOLVED_ALERT: %s for org: %s failed termination: %s",
                     entry.execution_id,
+                    entry.organization_id,
+                    last_err,
                 )
             else:
+                entry.containment_status = "terminated"
                 async with self._lock:
+                    self._unresolved.pop(entry.execution_id, None)
                     self._active.pop(entry.execution_id, None)
                 terminated_ids.append(entry.execution_id)
 
@@ -196,7 +250,11 @@ class InFlightExecutionRegistry:
         return sum(1 for e in self._active.values() if e.organization_id == organization_id)
 
     async def reconcile_epochs(self, engine: Any) -> list[str]:
-        """Durable distributed reconciliation: query database for active tenants and kill stale runs."""
+        """Durable distributed reconciliation: query database for active tenants and kill stale runs.
+
+        Raises DatabaseReconciliationError on connectivity or query failures so the outer supervisor
+        can apply backoff and accurately alert operators, preventing false claims of containment.
+        """
         active_orgs = self.get_active_organizations()
         if not active_orgs:
             return []
@@ -211,20 +269,23 @@ class InFlightExecutionRegistry:
                 )
                 result = await conn.execute(stmt)
                 db_epochs = {row[0]: row[1] for row in result}
-
-            for org_id, current_epoch in db_epochs.items():
-                self.record_revoked_epoch(org_id, current_epoch)
-                async with self._lock:
-                    stale_ids = [
-                        e.execution_id
-                        for e in self._active.values()
-                        if e.organization_id == org_id and e.admission_epoch < current_epoch
-                    ]
-                if stale_ids:
-                    t_ids = await self.terminate_in_flight(organization_id=org_id)
-                    terminated.extend(t_ids)
         except Exception as exc:
-            logger.warning("reconcile_epochs_query_failed_retaining_tracking: %s", exc)
+            logger.warning("reconcile_epochs_query_failed_propagating: %s", exc)
+            raise DatabaseReconciliationError(
+                f"Database connectivity failed during revocation epoch reconciliation: {exc}"
+            ) from exc
+
+        for org_id, current_epoch in db_epochs.items():
+            self.record_revoked_epoch(org_id, current_epoch)
+            async with self._lock:
+                stale_ids = [
+                    e.execution_id
+                    for e in self._active.values()
+                    if e.organization_id == org_id and e.admission_epoch < current_epoch
+                ]
+            if stale_ids:
+                t_ids = await self.terminate_in_flight(organization_id=org_id)
+                terminated.extend(t_ids)
 
         return terminated
 
@@ -242,10 +303,20 @@ class InFlightExecutionRegistry:
                     if len(self._active) > 0:
                         await self.reconcile_epochs(engine)
                     backoff = interval
+                    self._last_successful_reconciliation = time.monotonic()
+                    self._last_reconciliation_error = None
+                    self._consecutive_reconciliation_failures = 0
                 except asyncio.CancelledError:
                     break
                 except Exception as exc:
-                    logger.warning("reconciliation_watcher_error_retry: %s", exc)
+                    self._consecutive_reconciliation_failures += 1
+                    self._last_reconciliation_error = str(exc)
+                    logger.warning(
+                        "reconciliation_watcher_error_retry (failures=%d, backoff=%.2fs): %s",
+                        self._consecutive_reconciliation_failures,
+                        backoff,
+                        exc,
+                    )
                     backoff = min(backoff * 2.0, 5.0)
                 await asyncio.sleep(backoff)
 

@@ -140,15 +140,37 @@ if __name__ == "__main__":
             registry = InFlightExecutionRegistry.get_instance()
             execution_id = f"subproc_{request.organization_id}_{request.action_id}"
 
-            def _terminate_subprocess_sync() -> None:
+            def _terminate_subprocess_sync() -> bool:
+                if proc.returncode is not None:
+                    return True
+                kill_err: Exception | None = None
                 try:
-                    if proc.returncode is None:
-                        try:
-                            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                        except Exception:
-                            proc.kill()
-                except Exception:
-                    pass
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                except Exception as exc:
+                    kill_err = exc
+                    try:
+                        proc.kill()
+                        kill_err = None
+                    except Exception as exc2:
+                        kill_err = exc2
+
+                time.sleep(0.02)
+                if proc.returncode is not None:
+                    return True
+
+                try:
+                    os.kill(proc.pid, 0)
+                    raise RuntimeError(
+                        f"Subprocess pid {proc.pid} still alive after SIGKILL (initial error: {kill_err})"
+                    )
+                except ProcessLookupError:
+                    return True
+                except Exception as exc:
+                    if isinstance(exc, RuntimeError):
+                        raise
+                    raise RuntimeError(
+                        f"Failed to confirm subprocess pid {proc.pid} termination: {exc}"
+                    ) from exc
 
             try:
                 await registry.register(

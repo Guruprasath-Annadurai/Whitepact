@@ -2,8 +2,8 @@
 
 **Document ID:** SEC-CODEQL-DISPOSITION-2026-10-12  
 **Target Repository:** `WhitePact / responsibleai`  
-**Status:** **INDEPENDENT SECURITY REVIEW COMPLETED & AUTHORIZED BY FOUNDER**  
-**Proposed Disposition:** Won't Fix — Intentional by Cryptographic Transparency Architecture  
+**Status:** **PROPOSED — AWAITING INDEPENDENT SECURITY AND FOUNDER RISK ACCEPTANCE**  
+**Proposed Disposition:** Under Independent Evaluation (Option A: Justified Won't Fix vs Option B: Hardened Local 0o600 with HTTP Gateway)  
 **Alerts Assessed:** CodeQL Alert 134 & Alert 135 (`py/overly-permissive-file`)  
 **Scope:** `src/responsibleai/witness/evidence_publication.py` (lines 237 and 339)  
 
@@ -17,7 +17,7 @@ GitHub CodeQL automated scanning flags two high-severity alerts in `evidence_pub
 
 The rule flags these because POSIX mode `0o644` grants world-readability (`-rw-r--r--`). In a generic multi-user UNIX application, world-readable files may inadvertently expose sensitive user data. 
 
-However, in WhitePact's zero-trust audit architecture, **the evidence witness log is explicitly intended to be a public, independently auditable transparency ledger**. Restricting witness files to mode `0o600` (owner-only) would completely undermine the core security guarantee: allowing independent third parties and verifiers to inspect the immutable hash chain without requiring superuser or administrative privileges.
+This document provides the formal threat model, privacy analysis, adversarial test evidence, and architectural options for independent reviewer and founder evaluation. **No alerts have been dismissed in the GitHub repository or CodeQL dashboard.**
 
 ---
 
@@ -37,11 +37,11 @@ The following security findings were addressed with verifiable code repairs and 
 
 ### 3.1 Confidentiality & Private-Key Protection Verification
 
-The primary risk of `0o644` file permissions is accidental exposure of private cryptographic keys. WhitePact eliminates this risk through architectural separation and active permission enforcement:
+The primary security risk of file permission misconfiguration is exposure of private cryptographic keys. WhitePact prevents private-key exposure through multiple defense-in-depth layers:
 
 | Security Boundary | Technical Enforcement Mechanism | Adversarial Verification Test |
 | :--- | :--- | :--- |
-| **Private Key Directory Isolation** | The `private/` key directory is created strictly with mode `0700` (`rwx------`). Traversal by non-owner processes is denied at the kernel filesystem level. | `test_private_key_mode_and_required_failure` |
+| **Private Key Directory Isolation** | The `private/` key directory is created strictly with mode `0700` (`rwx------`). Directory traversal by non-owner processes is denied at the kernel filesystem level. | `test_private_key_mode_and_required_failure` |
 | **Private Key File Permissions** | The signing key `current.key` is written strictly mode `0600` (`rw-------`). | `test_private_key_mode_and_required_failure` |
 | **Runtime Permission Assertion** | `current_private()` actively executes POSIX permission checks on boot and rejects execution if group or world bits are set. | `test_private_key_mode_and_required_failure` |
 | **Zero Private Material Leakage** | Witness records contain only the public key. Automated regression tests scan all public witness files for raw bytes and hex representations of the private key. | `test_public_witness_material_never_contains_private_key_bytes` |
@@ -53,7 +53,7 @@ The primary risk of `0o644` file permissions is accidental exposure of private c
 The secondary risk is accidental disclosure of tenant-confidential information in public witness logs.
 
 #### What is Disclosed:
-Every witness publication file contains exactly nine canonical fields:
+Every witness publication file contains exactly nine canonical metadata fields:
 1. `organization_id`: Tenant identifier anchoring the chain.
 2. `sequence`: Strictly increasing monotonic counter (0, 1, 2...).
 3. `previous_publication_hash`: SHA-256 hash of the immediate prior publication.
@@ -72,33 +72,34 @@ Enforced by: `tests/witness/test_evidence_publication.py::test_public_record_fie
 - **Zero Credentials / Tokens:** API keys, database credentials, Bearer tokens, and secrets are strictly excluded.
 - **Zero Raw Evidence Records:** Evidence details (evaluations, guardrail checks, audit rows) are committed via cryptographic hashes (`head_evidence_hash`) only; raw payloads remain in tenant-isolated database tables.
 
-#### Tenant Metadata Exposure Trade-off:
-The only potentially sensitive field is `organization_id`, which reveals that a tenant exists and publishes witness entries at specific timestamps.
-- **In Local / Enterprise Staging:** Transparency of `organization_id` is essential for multi-organization test harnesses and internal compliance audits.
-- **In Multi-Tenant Cloud Production:** Access to the witness HTTP API is restricted to authenticated tenant auditors or mediated via tenant-scoped audit proxies.
-- **Roadmap Enhancement (Post-Production):** WhitePact roadmap includes optional HMAC pseudonymous tenant salts (`hmac_sha256(tenant_salt, org_id)`) for tenants requiring zero organizational metadata exposure in external witness mirrors.
+### 3.3 Architectural Separation: Local Filesystem vs Remote Authenticated Access
 
-### 3.3 Integrity & Tamper Resistance
+An independent evaluation must distinguish between local filesystem access and remote network access:
 
-Allowing external verifiers to read the witness log must not compromise the integrity of the witness records:
+1. **Local Filesystem Access (Current Implementation):**
+   - Mode `0o644` allows other local UNIX user accounts on the same operating system to read `public/` records directly.
+   - In containerized deployments (Docker/Kubernetes) where each container runs in an isolated filesystem namespace with a single service user, local world-readability does not expose data to unauthorized human users.
+   - However, on shared multi-user developer workstations or shared bastion hosts, `0o644` permits other local users to inspect `organization_id` and publication frequency.
 
-| Integrity Mechanism | Implementation Detail | Verifying Test |
-| :--- | :--- | :--- |
-| **Directory Write Protection** | Witness directories are created mode `0755` (`rwxr-xr-x`). Unprivileged users have read access but zero write access, regardless of process `umask`. | `test_witness_directories_are_not_writable_by_group_or_other_even_with_umask_zero` |
-| **Atomic Append-Only** | Records are created with `os.O_CREAT | os.O_WRONLY | os.O_EXCL`. Re-writing an existing sequence fails immediately with `FileExistsError`. | `test_a_published_sequence_cannot_be_overwritten_in_place` |
-| **Cryptographic Hash Chain** | Each record commits to `previous_publication_hash`. Any modification, truncation, gap, or out-of-order sequence invalidates the chain. | `test_rollback_rewrite_gap_and_missing_publication_are_detected`, `test_rewritten_publication_file_breaks_the_publication_hash` |
+2. **Remote Access Boundary (Network Layer):**
+   - External independent verifiers and compliance auditors do not access the local filesystem directly; they query the HTTP API (`/api/witness/publications/{org_id}`).
+   - The HTTP gateway can authenticate verifiers (e.g., via auditor API keys or client certificates) and serve the exact same cryptographic evidence records over TLS.
+
+### 3.4 Architectural Options for Founder and Reviewer Determination
+
+- **Option A (Cryptographic Transparency Justification):**
+  - Retain mode `0o644` for public witness records and public keys.
+  - Document that world-readability is an intentional transparency feature for local audit daemons and verifiers.
+  - Formally record founder and reviewer risk acceptance in CodeQL triage.
+
+- **Option B (Hardened Local Permissions with HTTP-Mediated Verification):**
+  - Change local file creation in `evidence_publication.py` from `0o644` to `0o600` (or `0o640` with a dedicated auditor group).
+  - External verifiers obtain witness records exclusively via the HTTP API, which reads the `0o600` files under the application's service account and streams them to the verifier.
+  - This completely resolves CodeQL Alerts 134 & 135 without modifying cryptographic data structures or breaking third-party verifiers.
 
 ---
 
-## 4. Formal Disposition Proposal & Justification
+## 4. Current Disposition Status
 
-### Proposed Resolution:
-**Mark Alerts 134 and 135 as "Won't Fix" (Intentional by Cryptographic Design)**.
-
-### Rationale:
-1. **Intended Behavior:** The files in question are cryptographic public keys and public transparency records. World-readability (`0o644`) is a functional requirement for decentralized/independent auditability.
-2. **Layered Defense:** Private keys are isolated in mode `0o600`/`0o700` directories with runtime enforcement and zero-leakage regression testing.
-3. **No Code Modification Recommended:** Narrowing the permissions to `0o600` would break external verifiers running under non-root service accounts; suppressing CodeQL via synthetic wrappers would obfuscate security intent.
-
-### Text for GitHub Security Advisory / CodeQL UI Dismissal:
-> "Alerts 134 and 135 in `evidence_publication.py` are intentional by cryptographic transparency architecture. Mode 0o644 enables independent third-party verification of Ed25519 public keys and witness log records without root privileges. Private keys are strictly protected in mode 0o600 files within mode 0o700 directories, validated by runtime assertions and regression tests (`test_public_witness_material_never_contains_private_key_bytes`). Privacy evaluation confirms zero customer payloads, prompts, or secrets are exposed (exactly 9 metadata fields). Formal risk assessment documented in docs/launch/CODEQL_DISPOSITION_PROPOSAL.md."
+- **Status:** **PROPOSED — AWAITING INDEPENDENT SECURITY AND FOUNDER RISK ACCEPTANCE**.
+- **Action Taken:** Alerts 134 & 135 remain **active and un-dismissed** pending founder and independent reviewer decision between Option A and Option B.

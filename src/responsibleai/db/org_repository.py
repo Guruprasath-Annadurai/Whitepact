@@ -323,6 +323,7 @@ class OrgRepository:
             subscription_status=subscription_status,
             event_timestamp=event_timestamp,
         )
+        self.last_set_plan_status = status
         return status == SetPlanStatus.APPLIED
 
     async def deactivate_org(self, org_id: str) -> bool:

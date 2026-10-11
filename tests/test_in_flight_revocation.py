@@ -397,3 +397,165 @@ async def test_reconciliation_watcher_exponential_backoff_on_db_outage() -> None
     registry.stop_reconciliation_watcher()
     await asyncio.sleep(0.01)
     assert watcher.done()
+
+
+@pytest.mark.asyncio
+async def test_unregistered_unresolved_containment_is_preserved_with_alert() -> None:
+    """Backend unregister() cannot destroy unresolved containment evidence when termination failed."""
+    registry = InFlightExecutionRegistry.get_instance()
+    org_id = f"test_org_{uuid.uuid4().hex[:8]}"
+    exec_id = f"exec_{uuid.uuid4().hex[:8]}"
+
+    def _failing_callback():
+        raise RuntimeError("permission denied killing process")
+
+    await registry.register(
+        execution_id=exec_id,
+        organization_id=org_id,
+        action_id="act_perm_fail",
+        terminate_callback=_failing_callback,
+    )
+
+    # Revocation attempted
+    term = await registry.terminate_in_flight(organization_id=org_id)
+    assert term == []
+    assert len(registry.get_unresolved_containments(org_id)) == 1
+
+    # Worker task reaches finally block and calls unregister()
+    unreg_ok = await registry.unregister(exec_id)
+    # Must refuse to silently clear evidence
+    assert unreg_ok is False
+
+    # Unresolved record is preserved for operator inspection
+    unresolved = registry.get_unresolved_containments(org_id)
+    assert len(unresolved) == 1
+    assert unresolved[0].execution_id == exec_id
+    assert unresolved[0].containment_status == "unresolved"
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_watcher_db_recovery_and_stale_detection() -> None:
+    """Watcher survives initial DB outage, measures backoff, recovers, and terminates stale run."""
+    registry = InFlightExecutionRegistry.get_instance()
+    org_id = f"test_org_{uuid.uuid4().hex[:8]}"
+    exec_id = f"exec_{uuid.uuid4().hex[:8]}"
+
+    killed = False
+
+    def _kill():
+        nonlocal killed
+        killed = True
+        return True
+
+    await registry.register(
+        execution_id=exec_id,
+        organization_id=org_id,
+        action_id="act_reconnect",
+        admission_epoch=0,
+        terminate_callback=_kill,
+    )
+
+    class RecoveringEngine:
+        def __init__(self):
+            self.attempts = 0
+
+        class RecoveringRaw:
+            def __init__(self, parent):
+                self.parent = parent
+
+            def connect(self):
+                self.parent.attempts += 1
+                should_fail = self.parent.attempts <= 2
+
+                class _Conn:
+                    async def execute(self, stmt):
+                        # Simulates DB epoch bump to 1
+                        return [(org_id, 1)]
+
+                class _Ctx:
+                    async def __aenter__(self):
+                        if should_fail:
+                            raise ConnectionResetError("DB connection reset by peer")
+                        return _Conn()
+
+                    async def __aexit__(self, exc_type, exc_val, exc_tb):
+                        pass
+
+                return _Ctx()
+
+        @property
+        def raw(self):
+            return self.RecoveringRaw(self)
+
+    engine = RecoveringEngine()
+    watcher = registry.start_reconciliation_watcher(engine, interval=0.03)
+
+    # Allow time for failures and backoff, then recovery
+    for _ in range(50):
+        if killed:
+            break
+        await asyncio.sleep(0.02)
+
+    assert killed is True
+    assert registry.count_active(org_id) == 0
+    assert registry._last_successful_reconciliation is not None
+    assert registry._consecutive_reconciliation_failures == 0
+
+    registry.stop_reconciliation_watcher()
+    await asyncio.sleep(0.01)
+    assert watcher.done()
+
+
+@pytest.mark.asyncio
+async def test_subprocess_termination_failure_propagates_and_marks_unresolved(monkeypatch) -> None:
+    """When OS signals fail to kill a real subprocess, failure propagates and marks unresolved."""
+    registry = InFlightExecutionRegistry.get_instance()
+    backend = LocalSubprocessBackend()
+
+    org_id = f"test_org_{uuid.uuid4().hex[:8]}"
+    action_id = f"act_{uuid.uuid4().hex[:8]}"
+
+    req = IsolatedExecutionRequest(
+        action_id=action_id,
+        organization_id=org_id,
+        action_type="test.counter.increment",
+        arguments={"sleep_seconds": 5.0},
+        profile=IsolationProfile(resources=ResourceLimits(wall_timeout_seconds=5.0)),
+    )
+
+    t = asyncio.create_task(backend.execute(req))
+    for _ in range(50):
+        if registry.count_active(org_id) == 1:
+            break
+        await asyncio.sleep(0.02)
+
+    assert registry.count_active(org_id) == 1
+
+    # Simulate OS signal failure where killpg / kill raise PermissionError
+    real_os_kill = os.kill
+
+    def _failing_kill(pid, sig):
+        if sig != 0:
+            raise PermissionError("EPERM: Operation not permitted")
+        return real_os_kill(pid, sig)
+
+    def _failing_killpg(pgid, sig):
+        raise PermissionError("EPERM: Operation not permitted")
+
+    monkeypatch.setattr(os, "killpg", _failing_killpg)
+    monkeypatch.setattr(os, "kill", _failing_kill)
+
+    # Termination must fail and NOT be confirmed
+    terminated = await registry.terminate_in_flight(organization_id=org_id)
+    assert terminated == []
+
+    # Unresolved containment must be captured
+    unresolved = registry.get_unresolved_containments(org_id)
+    assert len(unresolved) == 1
+    assert unresolved[0].containment_status == "unresolved"
+    assert "EPERM" in (unresolved[0].last_termination_error or "")
+
+    # Cleanup backend execution task safely
+    monkeypatch.undo()
+    await registry.terminate_in_flight(organization_id=org_id)
+    await t

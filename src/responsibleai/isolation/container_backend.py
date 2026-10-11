@@ -391,21 +391,40 @@ class DockerContainerBackend(IsolationBackend):
 
                 registry = InFlightExecutionRegistry.get_instance()
 
-                def _terminate_container_sync() -> None:
-                    try:
-                        if proc.returncode is None:
+                def _terminate_container_sync() -> bool:
+                    if proc.returncode is None:
+                        try:
                             proc.kill()
-                    except Exception:
-                        pass
-                    try:
-                        subprocess.run(
-                            [self.docker_cmd, "rm", "-f", container_name],
-                            check=False,
-                            capture_output=True,
-                            timeout=5,
+                        except Exception:
+                            pass
+
+                    # 1. Force remove the container via docker rm -f
+                    rm_res = subprocess.run(
+                        [self.docker_cmd, "rm", "-f", container_name],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                        check=False,
+                    )
+                    if rm_res.returncode != 0 and "no such container" not in rm_res.stderr.lower():
+                        raise RuntimeError(
+                            f"Docker kill failed for {container_name} (rc={rm_res.returncode}): {rm_res.stderr.strip()}"
                         )
-                    except Exception:
-                        pass
+
+                    # 2. Actively verify container is not running
+                    inspect_res = subprocess.run(
+                        [self.docker_cmd, "inspect", "-f", "{{.State.Running}}", container_name],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                        check=False,
+                    )
+                    if inspect_res.returncode == 0 and inspect_res.stdout.strip().lower() == "true":
+                        raise RuntimeError(
+                            f"Container {container_name} is still running after termination attempt."
+                        )
+
+                    return True
 
                 try:
                     await registry.register(

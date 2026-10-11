@@ -849,6 +849,10 @@ def _build_http_app() -> Any:
     @asynccontextmanager
     async def _lifespan(_app: Starlette) -> Any:
         await _db_engine.init(auto_create_tables=not settings.is_production)
+        from responsibleai.isolation.in_flight import InFlightExecutionRegistry
+
+        in_flight_reg = InFlightExecutionRegistry.get_instance()
+        in_flight_reg.start_reconciliation_watcher(_db_engine, interval=0.1)
         if _authority_read_engine is not None:
             from responsibleai.mcp.authority_tools import write_privilege_violations
 
@@ -871,6 +875,7 @@ def _build_http_app() -> Any:
             async with streamable_http.run():
                 yield
         finally:
+            in_flight_reg.stop_reconciliation_watcher()
             if _authority_read_engine is not None:
                 await _authority_read_engine.close()
             if _governance_webhook_manager is not None:
