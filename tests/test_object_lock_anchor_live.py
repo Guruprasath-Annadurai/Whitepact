@@ -156,7 +156,13 @@ def store(tmp_path):
             region=REGION,
             extra_headers={"x-amz-bucket-object-lock-enabled": "true"},
         )
-        assert send(request)[0] == 200
+        for _ in range(30):
+            status_code, _b, _h = send(request)
+            if status_code == 200:
+                break
+            time.sleep(0.5)
+        else:
+            assert send(request)[0] == 200
         yield endpoint, bucket, send
     finally:
         subprocess.run(["docker", "kill", name], capture_output=True)  # noqa: S603, S607

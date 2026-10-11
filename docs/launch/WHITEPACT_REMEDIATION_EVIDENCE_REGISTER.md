@@ -46,28 +46,37 @@ This register consolidates the parallel remediation work executing the Grokbot O
 ## 3. Workstream Status Reports (Tracks A through F)
 
 ### Track A: Critical Security Engineering (P0)
-- **Distributed In-Flight Revocation & Automatic Worker Supervision:**
-  - Implemented `InFlightExecutionRegistry` in `src/responsibleai/isolation/in_flight.py`.
-  - Wired into `subprocess_backend.py`, `container_backend.py`, and `revocation_epoch_repository.py`.
-  - Automated supervision: `InFlightExecutionRegistry.get_instance().start_reconciliation_watcher` is automatically started in `lifespan` of `src/responsibleai/dashboard/app.py` and stopped on worker shutdown.
-  - Exponential backoff ensures the watcher survives transient database connectivity outages without dropping tracking.
-  - Termination tracking resilience: failed termination callbacks or kill errors retain entries in tracking for supervisor retry (`termination_attempts`), preventing unconfirmed terminations from being dropped.
-  - Covered by `tests/test_in_flight_revocation.py` (15 tests passing, including cross-process distributed multi-worker tests, failed termination retries, and DB outage backoff).
+- **P0-01: Trustworthy Termination Callback Contract & Unresolved Containment:**
+  - Implemented typed, checked termination contract and `_unresolved` tracking in `src/responsibleai/isolation/in_flight.py`.
+  - Process containment verification:
+    - Subprocess backend (`src/responsibleai/isolation/subprocess_backend.py`): sends process-group `SIGKILL` with `proc.kill()` fallback, sleeps 20ms, and verifies with `os.kill(proc.pid, 0)`. If process remains alive or signals fail, raises `RuntimeError` and marks containment `unresolved`.
+    - Container backend (`src/responsibleai/isolation/container_backend.py`): issues `docker rm -f`, checks command return code, and inspects container status via `docker inspect -f "{{.State.Running}}"`. Failure propagates and marks execution unresolved.
+  - Evidence preservation: `InFlightExecutionRegistry.unregister()` refuses to discard actions with failed termination attempts (`termination_attempts > 0`), retaining them permanently in `_unresolved` with critical alerts for operator intervention.
+  - Verified by `tests/test_in_flight_revocation.py` (10 passed, including `test_unregistered_unresolved_containment_is_preserved_with_alert` and `test_subprocess_termination_failure_propagates_and_marks_unresolved`).
+- **P0-02: Database-Outage Reconciliation & Supervised Execution Entrypoints:**
+  - Repaired error contract: `reconcile_epochs()` raises `DatabaseReconciliationError` on DB connection/query errors instead of silently returning 0.
+  - Outer watcher detects DB failures, increments consecutive failures, and applies exponential backoff (capped at 5.0s). Upon recovery, backoff resets to base interval and detects/terminates stale executions.
+  - Worker entrypoint supervision:
+    - FastAPI dashboard lifespan (`src/responsibleai/dashboard/app.py`).
+    - Standalone HTTP MCP server lifespan (`src/responsibleai/mcp/server.py`).
+  - Verified by `tests/test_in_flight_revocation.py` (including `test_reconciliation_watcher_exponential_backoff_on_db_outage` and `test_reconciliation_watcher_db_recovery_and_stale_detection`).
+- **P0-03: Real PostgreSQL Entitlement Concurrency & Quarantine Qualification:**
+  - `OrgRepository.set_plan_status` in `src/responsibleai/db/org_repository.py` serializes concurrent billing transitions using atomic conditional SQL updates (`UPDATE ... WHERE entitlement_updated_at IS NULL OR entitlement_updated_at <= :ts`).
+  - Strict UTC ISO timestamps enforced: missing, empty, or unparseable timestamps return `SetPlanStatus.INVALID_TIMESTAMP` and are quarantined in `BillingEventRepository.fail(event_id, "invalid_or_missing_timestamp")`.
+  - Stale out-of-order events, ambiguous equal-timestamp widening transitions, and tombstoned tenants are safely rejected.
+  - Live PostgreSQL qualification: `tests/test_postgres_stripe_concurrency.py` (6 passed against isolated PostgreSQL instance, testing newest-wins concurrency, equal timestamp restriction vs widening rejection, delayed event drop, cross-tenant isolation, tombstoned tenant rejection, and full signed HTTP webhook pipeline).
+  - Additional qualification: `tests/test_stripe_out_of_order.py` (8 passed) and `tests/test_billing_webhook_retry.py` (7 passed).
+- **P0-04: CodeQL Alerts 134 & 135 (Ed25519 World-Readable Public Witness Risk Assessment):**
+  - Expanded formal risk assessment and privacy evaluation in `docs/launch/CODEQL_DISPOSITION_PROPOSAL.md`.
+  - Formally designated status: `PROPOSED — AWAITING INDEPENDENT SECURITY AND FOUNDER RISK ACCEPTANCE`. Zero alerts dismissed via GitHub API.
+  - Comprehensive architectural trade-off analysis comparing Option A (retain 0o644 with documented risk acceptance) vs Option B (0o600 with authenticated HTTP witness endpoint).
+  - Validates private-key protection (`0600`/`0700` POSIX bounds, runtime assertions, and zero-key-byte leakage scans in `test_public_witness_material_never_contains_private_key_bytes`).
+  - Privacy assessment confirms zero customer payloads, prompts, or scratchpad secrets are disclosed across the exactly 9 metadata fields.
 - **Explicit Single-Admin Rejection in Staging/Production:**
   - `Settings` in `src/responsibleai/dashboard/config.py` enforces tiered four-eyes governance in staging and production.
   - Defaults unconfigured mode to `"tiered"`.
   - Explicit `"single_admin"` mode or environment-variable override attempts raise `ValueError` / `ValidationError` fail-closed.
   - Covered by `tests/test_enterprise_governance_config.py` (8 tests passing).
-- **Atomic Concurrent Stripe Entitlement Ordering & Timestamp Quarantine:**
-  - `OrgRepository.set_plan_status` in `src/responsibleai/db/org_repository.py` serializes concurrent billing transitions using atomic conditional SQL updates (`UPDATE ... WHERE entitlement_updated_at IS NULL OR entitlement_updated_at <= :ts`).
-  - Strict UTC ISO timestamps enforced: missing, empty, or unparseable timestamps return `SetPlanStatus.INVALID_TIMESTAMP` and are quarantined in `_billing_event_repo.fail(event_id, "invalid_or_missing_timestamp")`.
-  - Stale out-of-order events, ambiguous equal-timestamp widening transitions, and tombstoned tenants are safely rejected.
-  - Covered by `tests/test_stripe_out_of_order.py` (8 tests passing) and `tests/test_billing_webhook_retry.py` (7 tests passing).
-- **CodeQL Alerts 134 & 135 (Ed25519 World-Readable Public Witness Risk Assessment):**
-  - Expanded formal risk assessment and privacy evaluation in `docs/launch/CODEQL_DISPOSITION_PROPOSAL.md`.
-  - Proves `0o644` is required for external public transparency ledger verifiers without root access.
-  - Validates private-key protection (`0600`/`0700` POSIX bounds, runtime assertions, and zero-key-byte leakage scans in `test_public_witness_material_never_contains_private_key_bytes`).
-  - Privacy assessment confirms zero customer payloads, prompts, or scratchpad secrets are disclosed across the exactly 9 metadata fields.
 
 ### Track B: Build and Test Reliability
 - **DCO Historical Exception:** Reconciled in `.github/workflows/dco.yml`, `CONTRIBUTING.md`, and `tests/test_dco_historical_exception.py` (8 passed).
