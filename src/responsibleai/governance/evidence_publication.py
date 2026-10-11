@@ -24,6 +24,7 @@ import stat
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -521,6 +522,74 @@ def object_lock_headers(*, retain_until: datetime) -> dict[str, str]:
     }
 
 
+def _sigv4_request(
+    *,
+    method: str,
+    endpoint: str,
+    bucket: str,
+    key: str,
+    body: bytes,
+    access_key_id: str,
+    secret_access_key: str,
+    region: str,
+    extra_headers: dict[str, str] | None = None,
+    query: str = "",
+) -> urllib.request.Request:
+    """Build one SigV4-signed S3 request. ``key`` may be empty for bucket-level calls."""
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    day = stamp[:8]
+    payload_hash = hashlib.sha256(body).hexdigest()
+    host = endpoint.removeprefix("https://").removeprefix("http://").rstrip("/")
+    extra = dict(extra_headers or {})
+    canonical_headers = {
+        "host": host,
+        "x-amz-content-sha256": payload_hash,
+        "x-amz-date": stamp,
+    }
+    for name, value in extra.items():
+        canonical_headers[name.lower()] = value
+    signed_header_names = ";".join(sorted(canonical_headers))
+    canonical_header_text = "".join(
+        f"{name}:{canonical_headers[name].strip()}\n" for name in sorted(canonical_headers)
+    )
+    canonical_uri = "/" + bucket.strip("/") + (("/" + key.lstrip("/")) if key else "")
+    canonical_request = "\n".join(
+        [method, canonical_uri, query, canonical_header_text, signed_header_names, payload_hash]
+    )
+    scope = f"{day}/{region}/s3/aws4_request"
+    string_to_sign = "\n".join(
+        [
+            "AWS4-HMAC-SHA256",
+            stamp,
+            scope,
+            hashlib.sha256(canonical_request.encode()).hexdigest(),
+        ]
+    )
+
+    def _hmac(secret: bytes, message: str) -> bytes:
+        return hmac.new(secret, message.encode(), hashlib.sha256).digest()
+
+    signing_key = _hmac(
+        _hmac(_hmac(_hmac(("AWS4" + secret_access_key).encode(), day), region), "s3"),
+        "aws4_request",
+    )
+    signature = _hmac(signing_key, string_to_sign).hex()
+    authorization = (
+        "AWS4-HMAC-SHA256 "
+        f"Credential={access_key_id}/{scope}, "
+        f"SignedHeaders={signed_header_names}, "
+        f"Signature={signature}"
+    )
+    url = endpoint.rstrip("/") + canonical_uri + (f"?{query}" if query else "")
+    request = urllib.request.Request(url, data=body or None, method=method)
+    request.add_header("Authorization", authorization)
+    request.add_header("x-amz-date", stamp)
+    request.add_header("x-amz-content-sha256", payload_hash)
+    for name, value in extra.items():
+        request.add_header(name, value)
+    return request
+
+
 def put_object_lock(
     *,
     endpoint: str,
@@ -541,65 +610,18 @@ def put_object_lock(
     if not endpoint or not bucket or not access_key_id or not secret_access_key:
         raise WitnessRequiredUnavailableError("object store witness is not configured")
     _require_https_endpoint(endpoint)
-    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    day = stamp[:8]
-    payload_hash = hashlib.sha256(body).hexdigest()
-    host = endpoint.removeprefix("https://").removeprefix("http://").rstrip("/")
     retain = retain_until or (datetime.now(UTC) + timedelta(days=3650))
-    extra = object_lock_headers(retain_until=retain)
-    canonical_headers = {
-        "host": host,
-        "x-amz-content-sha256": payload_hash,
-        "x-amz-date": stamp,
-    }
-    for name, value in extra.items():
-        canonical_headers[name.lower()] = value
-    signed_header_names = ";".join(sorted(canonical_headers))
-    canonical_header_text = "".join(
-        f"{name}:{canonical_headers[name].strip()}\n" for name in sorted(canonical_headers)
+    request = _sigv4_request(
+        method="PUT",
+        endpoint=endpoint,
+        bucket=bucket,
+        key=key,
+        body=body,
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        region=region,
+        extra_headers=object_lock_headers(retain_until=retain),
     )
-    canonical_uri = "/" + bucket.strip("/") + "/" + key.lstrip("/")
-    canonical_request = "\n".join(
-        [
-            "PUT",
-            canonical_uri,
-            "",
-            canonical_header_text,
-            signed_header_names,
-            payload_hash,
-        ]
-    )
-    scope = f"{day}/{region}/s3/aws4_request"
-    string_to_sign = "\n".join(
-        [
-            "AWS4-HMAC-SHA256",
-            stamp,
-            scope,
-            hashlib.sha256(canonical_request.encode()).hexdigest(),
-        ]
-    )
-
-    def _hmac(key: bytes, message: str) -> bytes:
-        return hmac.new(key, message.encode(), hashlib.sha256).digest()
-
-    signing_key = _hmac(
-        _hmac(_hmac(_hmac(("AWS4" + secret_access_key).encode(), day), region), "s3"),
-        "aws4_request",
-    )
-    signature = _hmac(signing_key, string_to_sign).hex()
-    authorization = (
-        "AWS4-HMAC-SHA256 "
-        f"Credential={access_key_id}/{scope}, "
-        f"SignedHeaders={signed_header_names}, "
-        f"Signature={signature}"
-    )
-    url = endpoint.rstrip("/") + canonical_uri
-    request = urllib.request.Request(url, data=body, method="PUT")
-    request.add_header("Authorization", authorization)
-    request.add_header("x-amz-date", stamp)
-    request.add_header("x-amz-content-sha256", payload_hash)
-    for name, value in extra.items():
-        request.add_header(name, value)
     sender = transport or _urllib_transport
     try:
         status, _response = sender(request)
@@ -610,6 +632,53 @@ def put_object_lock(
             f"object store rejected the witness with status {status}"
         )
     return status
+
+
+@dataclass(frozen=True)
+class AnchoredObject:
+    body: bytes
+    lock_mode: str | None
+    retain_until: str | None
+    version_id: str | None = None
+
+
+def read_back_object_lock(
+    *,
+    endpoint: str,
+    bucket: str,
+    key: str,
+    access_key_id: str,
+    secret_access_key: str,
+    region: str = "auto",
+    transport: Callable[[urllib.request.Request], tuple[int, bytes, dict[str, str]]] | None = None,
+) -> AnchoredObject:
+    """GET an anchored object and report its retention. This is the "auditor reads it back" step:
+    a status or a successful PUT alone is not evidence that the object exists and is locked."""
+    _require_https_endpoint(endpoint)
+    request = _sigv4_request(
+        method="GET",
+        endpoint=endpoint,
+        bucket=bucket,
+        key=key,
+        body=b"",
+        access_key_id=access_key_id,
+        secret_access_key=secret_access_key,
+        region=region,
+    )
+    sender = transport or _urllib_transport_with_headers
+    try:
+        status, body, headers = sender(request)
+    except (OSError, urllib.error.URLError) as exc:
+        raise WitnessRequiredUnavailableError("object store witness is unreachable") from exc
+    if status != 200:
+        raise WitnessRequiredUnavailableError(f"object store read-back failed with status {status}")
+    lowered = {k.lower(): v for k, v in headers.items()}
+    return AnchoredObject(
+        body=body,
+        lock_mode=lowered.get("x-amz-object-lock-mode"),
+        retain_until=lowered.get("x-amz-object-lock-retain-until-date"),
+        version_id=lowered.get("x-amz-version-id"),
+    )
 
 
 def _require_https_endpoint(endpoint: str) -> None:
@@ -635,10 +704,25 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+def _urllib_transport_with_headers(
+    request: urllib.request.Request,
+) -> tuple[int, bytes, dict[str, str]]:
+    _require_https_endpoint(request.full_url)
+    opener = urllib.request.build_opener(_NoRedirect)
+    try:
+        with opener.open(request, timeout=10) as response:
+            return int(response.status), response.read(), dict(response.headers.items())
+    except urllib.error.HTTPError as exc:  # a refusal is a status, not an exception
+        return int(exc.code), exc.read(), dict(exc.headers.items())
+
+
 def _urllib_transport(request: urllib.request.Request) -> tuple[int, bytes]:
     # Re-check at the point of use so a Request built elsewhere cannot reach the network
     # over another scheme.
     _require_https_endpoint(request.full_url)
     opener = urllib.request.build_opener(_NoRedirect)
-    with opener.open(request, timeout=10) as response:
-        return int(response.status), response.read()
+    try:
+        with opener.open(request, timeout=10) as response:
+            return int(response.status), response.read()
+    except urllib.error.HTTPError as exc:  # a refusal (403/412/...) is a status, not "unreachable"
+        return int(exc.code), exc.read()
