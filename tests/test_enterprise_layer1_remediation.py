@@ -370,6 +370,7 @@ def test_hosted_mcp_production_rai_api_keys_fail(monkeypatch: pytest.MonkeyPatch
         api_keys=["legacy-prod-key"],
         mcp_http_allow_unauthenticated_demo=False,
         mcp_governance_enabled=True,
+        mcp_trust_domain="enterprise",
         multi_replica=False,
         phase7a_dispatcher_enabled=False,
     )
