@@ -57,3 +57,12 @@ with status and redacted/bounded detail; valid DENIED/UNKNOWN/PENDING/quarantine
 remain raw outcomes, never success coercions. Python asyncio cancellation propagates through
 HTTPX; it is not an execution rollback guarantee. Positive finite deadlines and positive integer
 read-retry counts are required. Malformed successful HTTP envelopes do not establish completion.
+
+## Python transport confidentiality
+
+Governance helpers preserve HTTPX transport/timeout exception subclasses but strip
+the original authenticated request from exception metadata and redact the configured
+API key from the message. A timeout still means an unconfirmed mutation, not DENY,
+success, or permission to retry. Request cancellation is not converted into a
+governance answer. This is not universal secret detection: do not place arbitrary
+credentials in arguments, URLs, exception messages or logs.
