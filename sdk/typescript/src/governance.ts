@@ -3,6 +3,7 @@
  */
 
 export type GovernanceToolCallResult = Record<string, unknown>;
+import { validateBaseUrl } from "./transport.js";
 
 /**
  * The server did not return a governance answer (non-2xx, or a body that is not a JSON object).
@@ -34,6 +35,7 @@ export class GovernanceRuntimeClient {
   constructor(options: { apiKey: string; baseUrl?: string; timeout?: number }) {
     this.baseUrl = (options.baseUrl ?? "http://localhost:8765").replace(/\/$/, "");
     this.apiKey = options.apiKey;
+    validateBaseUrl(this.baseUrl, this.apiKey);
     this.timeout = options.timeout ?? 30_000;
   }
 

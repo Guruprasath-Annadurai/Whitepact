@@ -15,7 +15,7 @@ TS_GOVERNANCE = Path(__file__).resolve().parents[1] / "sdk/typescript/src/govern
 
 
 def _python_path_for(op: str, contract: dict) -> str:
-    client = GovernanceRuntimeClient("k", base_url="http://example.test")
+    client = GovernanceRuntimeClient("k", base_url="https://example.test")
     if op == "tool_call":
         return client._url(contract["path"].lstrip("/"))
     if op == "list_approvals":
@@ -35,7 +35,7 @@ def test_governance_contract_fixture_matches_python_urls() -> None:
     contract = GOVERNANCE_SDK_CONTRACT
     for op, spec in contract.items():
         url = _python_path_for(op, spec)
-        assert url.startswith("http://example.test/api/")
+        assert url.startswith("https://example.test/api/")
         if "path_template" in spec:
             assert "{" not in url
         else:
