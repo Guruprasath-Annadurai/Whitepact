@@ -65,7 +65,8 @@ export class GovernanceRuntimeClient {
       });
       if (!res.ok) {
         const text = await res.text().catch(() => "");
-        throw new GovernanceRequestError(res.status, text.slice(0, 200));
+        const detail = this.apiKey ? text.split(this.apiKey).join("[REDACTED]") : text;
+        throw new GovernanceRequestError(res.status, detail.slice(0, 200));
       }
       let body: unknown;
       try {
