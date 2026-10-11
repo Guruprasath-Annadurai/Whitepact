@@ -1,6 +1,6 @@
 # Current issue register — by founder category
 
-Candidate: branch `claude/whitepact-isolation-failclosed-linux-recovery` (PR #180, draft). The exact commit
+Candidate: branch `claude/whitepact-isolation-failclosed-linux-recovery-r2` (PR #184, draft; the DCO-clean successor of PR #180, whose head has the identical tree `ed5eb67d…`). The exact commit
 and tree are recorded in section 7 and updated on every push. Item numbers refer to
 `ENTERPRISE_RECOVERY_ISSUE_REGISTER.md`. **No production launch, release, marketplace submission, DNS change
 or spending is authorized or has occurred.** A result is "verified" only if the qualifying test ran on the
@@ -21,7 +21,7 @@ this list is claimed for the current head until its CI results are recorded in t
 REC-01 (ACL form), 11, 12, 13, 14, 17, 18, 19, 20, 21, 22, 23, 24, 26, 27, 30, 31, 32, 33, 34,
 **28 (plan-scaled route limits)**, **37 (billing webhook retry)**, **38 (Redis outage degradation)**,
 **39 (patched isolation image + container/npm scans in CI)**, **40 (Claude hosted OAuth callback)**,
-**35 (authority tools, development only)**, plus the Hypothesis fuzz tests (`test_fuzz_mcp_inputs.py`). Each has local tests; each test that guards a fix was shown to
+**41 (admission control + measured capacity)**, **42 (live compat checker)**, **43 (Go SDK)**, **44 (object-lock anchor live test)**, **35 (authority tools, development only; dedicated read-only role wiring and startup verification added)**, plus the Hypothesis fuzz tests (`test_fuzz_mcp_inputs.py`). Each has local tests; each test that guards a fix was shown to
 fail with the fix removed where the register says so (REC-28, 37, 38, 30).
 
 ## 3. Awaiting independent audit
@@ -41,15 +41,13 @@ fail with the fix removed where the register says so (REC-28, 37, 38, 30).
 ## 4. Failed
 | Item | Detail |
 |---|---|
-| **DCO check on `2b3e1811` and `3fb095fc`** | My two commits lacked `Signed-off-by`. Fixing needs a history rewrite of those two commits and a force-push, which the permission classifier refused; **awaiting the founder's decision** (see section 5). Later commits are signed. |
-| `CodeQL` (code-scanning aggregate) | Fails only because alerts 134/135 are open (REC-36). All three `CodeQL analysis` jobs pass. |
-| Python 3.11/3.12 CI on the current head | **Not failed — pending.** Listed here only so it is not forgotten. |
+| ~~DCO on `2b3e1811`, `3fb095fc`~~ **resolved** | Not by an exception or a force-push: successor branch r2 replays the 12 commits with `cherry-pick -s -x` from the last signed commit; tree byte-identical; DCO check passes on r2. #180 is untouched. |
+| `CodeQL` (code-scanning aggregate) | Fails only because alerts 134/135 are open (REC-36); not dismissed. The per-language analysis jobs are what qualify the code. |
+| CI on the final head | Pending until the final report records it. Earlier heads' runs were cancelled when superseded (a cancelled run is not a pass). |
 
 ## 5. Requiring founder action
-1. **DCO**: allow `git rebase --exec 'git commit --amend --no-edit -s'` on `2b3e1811` and `3fb095fc` plus
-   `git push --force-with-lease` to this review branch — or approve an exact-SHA DCO exception (the workflow
-   supports one; it is not a sign-off).
-2. **CodeQL 134/135** (REC-36): 134 dismissible; 135 stays open pending the v2 opaque witness reference.
+1. **Review branch**: decide whether PR #184 replaces #180 as the review of record (#180 stays as history).
+2. **CodeQL 134/135** (REC-36): witness record v2 (no tenant identifier) is implemented; exact dispositions are proposed in `WITNESS_DISCLOSURE_RECOMMENDATION.md` §7 for your decision after Antigravity verifies; 135 requires you to accept the residual volume/timing disclosure.
 3. **Branch protection**: make CodeQL, dependency review and the reproducible build required; decide on a
    required reviewer (`POLICY_ADOPTION_CHECKLIST.md`).
 4. **Policy adoption** of the four drafts after reading the corrections; confirm response targets.
@@ -66,9 +64,9 @@ fail with the fix removed where the register says so (REC-28, 37, 38, 30).
 | Item | Blocker |
 |---|---|
 | Real ChatGPT / Claude / Grok compatibility tests | no endpoint on an owned domain; no test access. Claude custom connectors need no purchase once a staging endpoint exists. |
-| REC-29 1,000-concurrency capacity | needs a production-shaped environment and load source; local single-process figures only |
-| External evidence anchoring (REC-13) | no object store / immutable log provisioned |
-| Go SDK validation | no Go toolchain in the build environment |
+| REC-29/41 capacity | measured on one shared host (REC-41); **1,000 clients not met**; multi-host, TLS/proxy, soak and x86_64 runs need infrastructure |
+| External evidence anchoring (REC-13/44) | transport proven against real MinIO object lock (REC-44); **no R2/S3 bucket, independent domain, scheduled publisher or service wiring provisioned** |
+| ~~Go SDK validation~~ done in Go containers (REC-43) | CI job added; runner toolchain not pinned |
 | Live Stripe / Paddle sandbox | no sandbox credentials or public webhook URL |
 | Hosted-service availability claims | no staging deployment |
 
