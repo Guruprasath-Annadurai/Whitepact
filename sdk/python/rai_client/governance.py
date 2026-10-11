@@ -42,7 +42,7 @@ class GovernanceRequestError(RuntimeError):
 class GovernanceToolOutcome:
     """Parsed result of a governed tool call.
 
-    ``completed`` requires an error-free answer with no uncertainty marker. The absence of
+    ``completed`` requires a result envelope with no contradictory or uncertainty marker. The absence of
     ``denied`` or ``requires_approval`` is NOT permission; check ``completed``.
     """
 
@@ -50,7 +50,34 @@ class GovernanceToolOutcome:
 
     @property
     def completed(self) -> bool:
-        return "error" not in self.raw and not self.reconciliation_required
+        if not isinstance(self.raw, dict) or "result" not in self.raw or "error" in self.raw:
+            return False
+        for field in (
+            "reconciliation_required",
+            "denied",
+            "requires_approval",
+            "quarantined",
+            "failed",
+            "pending",
+            "is_error",
+            "isError",
+        ):
+            if field in self.raw and self.raw[field] is not False:
+                return False
+        for field in ("status", "outcome_status"):
+            if field in self.raw:
+                value = self.raw[field]
+                if field == "outcome_status" and value is None:
+                    continue  # Canonical legacy response has no durable outcome status.
+                if value != "SUCCEEDED":
+                    return False
+        if "decision" in self.raw and self.raw["decision"] != "ALLOW":
+            return False
+        result = self.raw["result"]
+        return not (
+            isinstance(result, dict)
+            and any(result.get(field) for field in ("error", "is_error", "isError"))
+        )
 
     @property
     def requires_approval(self) -> bool:

@@ -22,12 +22,24 @@ export class GovernanceRequestError extends Error {
   }
 }
 
-/** Error-free and not uncertain; absence of "denied" alone is not permission. */
+/** A result envelope without contradictory markers; ALLOW alone is not execution. */
 export function isCompleted(result: GovernanceToolCallResult): boolean {
-  return !("error" in result)
-    && result.status !== "UNKNOWN"
-    && result.outcome_status !== "UNKNOWN"
-    && result.reconciliation_required !== true;
+  if (result === null || typeof result !== "object" || Array.isArray(result)
+    || !Object.prototype.hasOwnProperty.call(result, "result") || "error" in result) return false;
+  const owns = (field: string) => Object.prototype.hasOwnProperty.call(result, field);
+  for (const field of ["reconciliation_required", "denied", "requires_approval", "quarantined",
+    "failed", "pending", "is_error", "isError"])
+    if (owns(field) && result[field] !== false) return false;
+  for (const field of ["status", "outcome_status"]) {
+    if (!owns(field)) continue;
+    if (field === "outcome_status" && result[field] === null) continue;
+    if (result[field] !== "SUCCEEDED") return false;
+  }
+  if (owns("decision") && result.decision !== "ALLOW") return false;
+  const payload = result.result;
+  return !(payload && typeof payload === "object" && ["error", "is_error", "isError"].some(
+    field => Boolean((payload as Record<string, unknown>)[field]),
+  ));
 }
 
 export class GovernanceRuntimeClient {

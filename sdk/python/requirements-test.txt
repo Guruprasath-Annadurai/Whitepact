@@ -1,0 +1,18 @@
+# Isolated SDK tests retain the repository's conftest and its autouse fixtures.
+pytest==9.1.1
+pytest-asyncio==1.4.0
+pytest-cov==7.1.0
+httpx==0.28.1
+respx==0.23.1
+pydantic==2.14.1
+ruff==0.17.0
+build==1.6.1
+hatchling==1.32.4
+numpy==2.3.5
+scikit-learn==1.9.1
+asgi-lifespan==2.1.0
+pyotp==2.10.0
+sqlalchemy==2.1.4
+cryptography==50.0.2
+structlog==26.1.0
+greenlet==3.5.6
