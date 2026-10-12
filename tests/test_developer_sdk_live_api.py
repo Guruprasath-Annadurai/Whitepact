@@ -34,6 +34,18 @@ from rai_client.governance import GovernanceRequestError, GovernanceRuntimeClien
 
 async def _typescript_call(origin: str, key: str, *, fail_after_effect: bool = False) -> dict:
     example = Path(__file__).resolve().parents[1] / "sdk/typescript/examples/governed-call.mjs"
+    dist_file = example.parents[1] / "dist/governance.js"
+    if not dist_file.exists():
+        proc = await asyncio.create_subprocess_exec(
+            "npm",
+            "--prefix",
+            str(example.parents[1]),
+            "run",
+            "build",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        await proc.communicate()
     script = """
       const {runGovernedCall} = await import(process.argv[1]);
       let input = ''; for await (const chunk of process.stdin) input += chunk;

@@ -121,6 +121,11 @@ jobs:
           docker build -f Dockerfile.isolation -t whitepact-isolated-runtime:ci .
           echo "WHITEPACT_TEST_RUNTIME_IMAGE=whitepact-isolated-runtime:ci" >> "$GITHUB_ENV"
 
+      - name: Build TypeScript SDK
+        run: |
+          npm --prefix sdk/typescript ci --ignore-scripts --no-audit --no-fund
+          npm --prefix sdk/typescript run build
+
       - name: Run tests with coverage
         env:
           # Designated Linux security CI: a missing Docker daemon must fail the

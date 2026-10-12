@@ -56,6 +56,24 @@ class BillingEventRepository:
                 )
             return True
         except IntegrityError:
+            record = await self.get(event_id)
+            if record is None and org_id is not None:
+                # Foreign key violation on unknown or uncommitted org_id.
+                # Record the event with org_id=None so it is durably audited and can be classified.
+                try:
+                    async with self._engine.raw.begin() as conn:
+                        await conn.execute(
+                            insert(stripe_webhook_events).values(
+                                event_id=event_id,
+                                event_type=event_type,
+                                org_id=None,
+                                status="processing",
+                                received_at=_now(),
+                            )
+                        )
+                    return True
+                except IntegrityError:
+                    return await self._reclaim(event_id)
             return await self._reclaim(event_id)
 
     async def _reclaim(self, event_id: str) -> bool:

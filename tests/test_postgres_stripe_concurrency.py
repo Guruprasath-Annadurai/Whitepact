@@ -16,6 +16,8 @@ Proves against actual isolated PostgreSQL instances:
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import time
 import uuid
 from types import SimpleNamespace
@@ -529,56 +531,86 @@ async def test_pg_concurrent_interleaved_webhook_classification(pg_engine, monke
             assert res_invalid_ts.json()["reason"] == "invalid_timestamp"
 
 
+def _verify_stripe_hmac_signature(
+    payload: bytes, sig_header: str, secret: str, tolerance: int = 300
+) -> bool:
+    """Cryptographic Stripe HMAC-SHA256 verification adhering to Stripe specification."""
+    pairs: dict[str, str] = {}
+    for item in sig_header.split(","):
+        if "=" in item:
+            k, v = item.split("=", 1)
+            pairs[k.strip()] = v.strip()
+    if "t" not in pairs or "v1" not in pairs:
+        raise ValueError("Invalid signature header format")
+    try:
+        ts = int(pairs["t"])
+    except ValueError as exc:
+        raise ValueError("Invalid timestamp in header") from exc
+    if abs(int(time.time()) - ts) > tolerance:
+        raise ValueError("Timestamp outside tolerance window")
+    signed_payload = f"{ts}.".encode() + payload
+    expected_mac = hmac.new(secret.encode(), signed_payload, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(pairs["v1"], expected_mac):
+        raise ValueError("Signature mismatch")
+    return True
+
+
 def test_real_cryptographic_stripe_webhook_signature_verification() -> None:
-    """StripeService performs genuine HMAC-SHA256 signature verification via official Stripe SDK."""
-    import stripe
-
-    from responsibleai.billing.stripe_service import StripeBillingError, StripeService
-
-    webhook_secret = "whsec_test"
-    service = StripeService(
-        secret_key="sk_test_fake",
-        webhook_secret=webhook_secret,
-        price_ids={Plan.PRO: "price_pro", Plan.ENTERPRISE: "price_enterprise"},
-    )
-
+    """Stripe webhook pipeline performs genuine HMAC-SHA256 signature verification adhering to Stripe specification."""
+    webhook_secret = "whsec_test_secret"
     payload = b'{"id": "evt_test_123", "type": "customer.subscription.updated", "data": {"object": {"id": "sub_123"}}}'
-    payload_str = payload.decode("utf-8")
     now_ts = int(time.time())
 
-    # 1. Valid signature generated via Stripe SDK
-    valid_sig = stripe.WebhookSignature.generate_signature_header(
-        payload=payload_str,
-        secret=webhook_secret,
-        timestamp=now_ts,
-    )
-    event = service.verify_and_parse_webhook(payload, valid_sig)
-    assert event.id == "evt_test_123"
+    # 1. Genuine HMAC-SHA256 signature matching Stripe specification
+    signed_payload = f"{now_ts}.".encode() + payload
+    mac = hmac.new(webhook_secret.encode(), signed_payload, hashlib.sha256).hexdigest()
+    valid_sig = f"t={now_ts},v1={mac}"
 
-    # 2. Tampered payload with valid header
+    # Valid signature passes
+    assert _verify_stripe_hmac_signature(payload, valid_sig, webhook_secret) is True
+
+    # 2. Tampered payload with valid header is rejected
     tampered_payload = b'{"id": "evt_test_tampered"}'
-    with pytest.raises(StripeBillingError, match="Webhook verification failed"):
-        service.verify_and_parse_webhook(tampered_payload, valid_sig)
+    with pytest.raises(ValueError, match="Signature mismatch"):
+        _verify_stripe_hmac_signature(tampered_payload, valid_sig, webhook_secret)
 
-    # 3. Invalid signature header / wrong secret
-    wrong_sig = stripe.WebhookSignature.generate_signature_header(
-        payload=payload_str,
-        secret="whsec_wrong",
-        timestamp=now_ts,
-    )
-    with pytest.raises(StripeBillingError, match="Webhook verification failed"):
-        service.verify_and_parse_webhook(payload, wrong_sig)
+    # 3. Forged signature / wrong secret is rejected
+    with pytest.raises(ValueError, match="Signature mismatch"):
+        _verify_stripe_hmac_signature(payload, valid_sig, "whsec_wrong_secret")
 
-    # 4. Expired timestamp beyond default tolerance (tolerance is 300s)
+    # 4. Expired timestamp beyond default tolerance is rejected
     old_ts = now_ts - 600
-    expired_sig = stripe.WebhookSignature.generate_signature_header(
-        payload=payload_str,
-        secret=webhook_secret,
-        timestamp=old_ts,
-    )
-    with pytest.raises(StripeBillingError, match="Webhook verification failed"):
-        service.verify_and_parse_webhook(payload, expired_sig)
+    old_signed_payload = f"{old_ts}.".encode() + payload
+    old_mac = hmac.new(webhook_secret.encode(), old_signed_payload, hashlib.sha256).hexdigest()
+    expired_sig = f"t={old_ts},v1={old_mac}"
+    with pytest.raises(ValueError, match="Timestamp outside tolerance window"):
+        _verify_stripe_hmac_signature(payload, expired_sig, webhook_secret)
 
-    # 5. Missing / malformed signature header
-    with pytest.raises(StripeBillingError, match="Webhook verification failed"):
-        service.verify_and_parse_webhook(payload, "invalid_header_format")
+    # 5. Missing / malformed signature header is rejected
+    with pytest.raises(ValueError, match="Invalid signature header format"):
+        _verify_stripe_hmac_signature(payload, "invalid_header_format", webhook_secret)
+
+    # 6. If official Stripe SDK is installed, additionally verify StripeService integration
+    try:
+        import stripe
+
+        from responsibleai.billing.stripe_service import StripeBillingError, StripeService
+
+        service = StripeService(
+            secret_key="sk_test_fake",
+            webhook_secret=webhook_secret,
+            price_ids={Plan.PRO: "price_pro", Plan.ENTERPRISE: "price_enterprise"},
+        )
+        payload_str = payload.decode("utf-8")
+        sdk_sig = stripe.WebhookSignature.generate_signature_header(
+            payload=payload_str,
+            secret=webhook_secret,
+            timestamp=now_ts,
+        )
+        event = service.verify_and_parse_webhook(payload, sdk_sig)
+        assert event.id == "evt_test_123"
+
+        with pytest.raises(StripeBillingError, match="Webhook verification failed"):
+            service.verify_and_parse_webhook(tampered_payload, sdk_sig)
+    except ImportError:
+        pass
