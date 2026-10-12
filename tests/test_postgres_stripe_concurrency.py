@@ -543,11 +543,12 @@ def test_real_cryptographic_stripe_webhook_signature_verification() -> None:
     )
 
     payload = b'{"id": "evt_test_123", "type": "customer.subscription.updated", "data": {"object": {"id": "sub_123"}}}'
+    payload_str = payload.decode("utf-8")
     now_ts = int(time.time())
 
     # 1. Valid signature generated via Stripe SDK
     valid_sig = stripe.WebhookSignature.generate_signature_header(
-        payload=payload,
+        payload=payload_str,
         secret=webhook_secret,
         timestamp=now_ts,
     )
@@ -561,7 +562,7 @@ def test_real_cryptographic_stripe_webhook_signature_verification() -> None:
 
     # 3. Invalid signature header / wrong secret
     wrong_sig = stripe.WebhookSignature.generate_signature_header(
-        payload=payload,
+        payload=payload_str,
         secret="whsec_wrong",
         timestamp=now_ts,
     )
@@ -571,7 +572,7 @@ def test_real_cryptographic_stripe_webhook_signature_verification() -> None:
     # 4. Expired timestamp beyond default tolerance (tolerance is 300s)
     old_ts = now_ts - 600
     expired_sig = stripe.WebhookSignature.generate_signature_header(
-        payload=payload,
+        payload=payload_str,
         secret=webhook_secret,
         timestamp=old_ts,
     )

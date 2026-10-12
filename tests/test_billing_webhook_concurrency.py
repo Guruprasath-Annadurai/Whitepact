@@ -70,14 +70,14 @@ async def test_concurrent_deliveries_of_one_event_apply_exactly_once(world, monk
     event = SimpleNamespace(id=f"evt_{uuid.uuid4().hex}", type="customer.subscription.updated")
     _service(monkeypatch, event=event, update=_update(org_a))
     calls = {"n": 0}
-    real = app_module._org_repo.set_plan
+    real = app_module._org_repo.set_plan_status
 
     async def counting(*a, **k):
         calls["n"] += 1
         await asyncio.sleep(0.05)  # widen the race window
         return await real(*a, **k)
 
-    monkeypatch.setattr(app_module._org_repo, "set_plan", counting)
+    monkeypatch.setattr(app_module._org_repo, "set_plan_status", counting)
     replies = await asyncio.gather(
         *[
             client.post("/api/billing/webhook", content=b"{}", headers={"stripe-signature": "v1,x"})
