@@ -1,6 +1,11 @@
 // Package raiclient provides a Go client for the ResponsibleAI Governance Platform.
 package raiclient
 
+import (
+	"encoding/json"
+	"errors"
+)
+
 // TrustScore holds the result of a trust score evaluation.
 type TrustScore struct {
 	Overall    float64            `json:"overall"`
@@ -25,6 +30,26 @@ type GuardrailScan struct {
 	PIIFindings   []PIIFinding `json:"pii_findings"`
 	ToxicityScore float64      `json:"toxicity_score"`
 	RedactedText  string       `json:"redacted_text"`
+}
+
+// UnmarshalJSON requires an explicit backend decision; missing/null is not safe.
+func (s *GuardrailScan) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	var decision *bool
+	raw, exists := fields["is_blocked"]
+	if !exists || json.Unmarshal(raw, &decision) != nil || decision == nil {
+		return errors.New("scan response requires explicit boolean is_blocked")
+	}
+	type plain GuardrailScan
+	var decoded plain
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*s = GuardrailScan(decoded)
+	return nil
 }
 
 // HallucinationAnalysis holds hallucination risk assessment.

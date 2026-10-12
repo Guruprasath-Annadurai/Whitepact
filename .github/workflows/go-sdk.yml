@@ -1,0 +1,31 @@
+name: Go SDK Contract Review
+
+on:
+  push:
+    branches: [codex/whitepact-go-sdk-contract-hardening, codex/whitepact-v2-acceptance]
+  pull_request:
+    paths: ['sdk/go/**', '.github/workflows/go-sdk.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container:
+      image: golang@sha256:1cf6c45ba39db9fd6db16922041d074a63c935556a05c5ccb62d181034df7f02
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Race, regression, vet and package build
+        working-directory: sdk/go
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git -C "$GITHUB_WORKSPACE" rev-parse HEAD
+          test -z "$(gofmt -l raiclient/client.go raiclient/client_test.go)"
+          go test -race -count=1 -json ./...
+          go vet ./...
+          go build ./...

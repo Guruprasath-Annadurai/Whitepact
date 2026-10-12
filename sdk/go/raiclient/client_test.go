@@ -47,6 +47,28 @@ func TestNon2xxIsAnErrorAndBodyIsBounded(t *testing.T) {
 	}
 }
 
+func TestReflectedCredentialRedactedBeforeErrorTruncation(t *testing.T) {
+	for _, size := range []int{24, 260} {
+		key := "synthetic-private-key-" + strings.Repeat("K", size)
+		for _, prefix := range []int{0, maxErrorBody - 8} {
+			c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusForbidden)
+				_, _ = w.Write([]byte(strings.Repeat("x", prefix) + r.Header.Get("Authorization")))
+			}, key)
+			_, err := c.Health(context.Background())
+			if err == nil || !strings.Contains(err.Error(), "status 403") {
+				t.Fatal("expected status-bearing HTTP error")
+			}
+			if strings.Contains(err.Error(), key) || strings.Contains(err.Error(), "Bearer s") {
+				t.Fatal("configured credential was disclosed")
+			}
+			if len(err.Error()) > maxErrorBody+200 {
+				t.Fatal("redacted error is not bounded")
+			}
+		}
+	}
+}
+
 func TestRedirectsAreNotFollowedSoTheKeyCannotLeak(t *testing.T) {
 	var hits int32
 	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -105,5 +127,57 @@ func TestTrailingSlashesAreNormalised(t *testing.T) {
 	c := New(Options{BaseURL: "https://x.example.com///"})
 	if got := c.url("/health"); got != "https://x.example.com/api/v1/health" {
 		t.Fatalf("url = %q", got)
+	}
+}
+
+func TestNegativeDeadlineFailsBeforeDispatch(t *testing.T) {
+	var hits int32
+	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}, "synthetic")
+	c = New(Options{BaseURL: c.baseURL, Timeout: -time.Second})
+	if _, err := c.Health(context.Background()); err == nil {
+		t.Fatal("negative deadline accepted")
+	}
+	if atomic.LoadInt32(&hits) != 0 {
+		t.Fatal("invalid configuration dispatched")
+	}
+}
+
+func TestScanRejectsMissingDecision(t *testing.T) {
+	for _, body := range []string{`null`, `{}`, `{"is_blocked":null}`, `{"is_blocked":"false"}`} {
+		c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(body)) }, "")
+		if result, err := c.Scan(context.Background(), "text"); err == nil || result != nil {
+			t.Fatal("missing or malformed scan decision became safe result")
+		}
+	}
+}
+
+func TestAnalyticsPathsMatchBackend(t *testing.T) {
+	c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/scan":
+			_, _ = w.Write([]byte(`{"is_blocked":false}`))
+		case "/api/v1/hallucination":
+			_, _ = w.Write([]byte(`{"hallucination_risk":0.1,"risk_level":"LOW"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}, "synthetic")
+	if _, err := c.Scan(context.Background(), "text"); err != nil {
+		t.Fatal("scan contract mismatch")
+	}
+	if _, err := c.AnalyzeHallucination(context.Background(), "text", nil); err != nil {
+		t.Fatal("hallucination contract mismatch")
+	}
+}
+
+func TestURLCredentialsAndUnsupportedSchemesFailBeforeDispatch(t *testing.T) {
+	for _, base := range []string{"https://user:synthetic-secret@example.com", "ftp://127.0.0.1", "file:///private/test"} {
+		c := New(Options{BaseURL: base, APIKey: "synthetic"})
+		if _, err := c.Health(context.Background()); !errors.Is(err, ErrInvalidURL) {
+			t.Fatal("unsafe URL was not rejected before network dispatch")
+		}
 	}
 }

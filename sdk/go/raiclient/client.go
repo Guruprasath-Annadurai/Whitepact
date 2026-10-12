@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -35,6 +36,7 @@ type Client struct {
 	baseURL    string
 	apiKey     string
 	httpClient *http.Client
+	configErr  error
 }
 
 // Options configures a new Client.
@@ -55,12 +57,18 @@ func New(opts Options) *Client {
 		base = base[:len(base)-1]
 	}
 	timeout := opts.Timeout
+	var configErr error
+	if timeout < 0 {
+		configErr = ErrInvalidTimeout
+		timeout = 30 * time.Second
+	}
 	if timeout == 0 {
 		timeout = 30 * time.Second
 	}
 	return &Client{
-		baseURL: base,
-		apiKey:  opts.APIKey,
+		baseURL:   base,
+		apiKey:    opts.APIKey,
+		configErr: configErr,
 		httpClient: &http.Client{
 			Timeout: timeout,
 			// A redirect must never carry the bearer token somewhere the caller did not configure.
@@ -71,14 +79,22 @@ func New(opts Options) *Client {
 
 // ErrInsecureTransport is returned when an API key would be sent over plain http to a non-loopback host.
 var ErrInsecureTransport = errors.New("raiclient: refusing to send an API key over plain http to a non-loopback host")
+var ErrInvalidTimeout = errors.New("raiclient: timeout must not be negative")
+var ErrInvalidURL = errors.New("raiclient: base URL must be HTTP(S) with a host and without user credentials")
 
 func (c *Client) checkTransport() error {
-	if c.apiKey == "" {
-		return nil
+	if c.configErr != nil {
+		return c.configErr
 	}
 	u, err := url.Parse(c.baseURL)
 	if err != nil {
-		return fmt.Errorf("raiclient: invalid base URL: %w", err)
+		return ErrInvalidURL
+	}
+	if u.User != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return ErrInvalidURL
+	}
+	if c.apiKey == "" {
+		return nil
 	}
 	if u.Scheme == "https" {
 		return nil
@@ -130,8 +146,17 @@ func (c *Client) do(ctx context.Context, method, path string, body interface{}, 
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
-		return fmt.Errorf("raiclient: %s %s status %d: %s", method, path, resp.StatusCode, string(b))
+		// Include the possible key suffix beyond the output boundary, so truncation
+		// cannot expose a credential prefix before replacement.
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, int64(maxErrorBody+len(c.apiKey))))
+		detail := string(b)
+		if c.apiKey != "" {
+			detail = strings.ReplaceAll(detail, c.apiKey, "[REDACTED]")
+		}
+		if len(detail) > maxErrorBody {
+			detail = detail[:maxErrorBody]
+		}
+		return fmt.Errorf("raiclient: %s %s status %d: %s", method, path, resp.StatusCode, detail)
 	}
 
 	if out != nil {
@@ -181,7 +206,7 @@ func (c *Client) Evaluate(ctx context.Context, req EvaluateRequest) (*TrustScore
 // Scan scans text for PII, toxicity, and policy violations.
 func (c *Client) Scan(ctx context.Context, text string) (*GuardrailScan, error) {
 	var out GuardrailScan
-	if err := c.do(ctx, http.MethodPost, "guardrails/scan", map[string]string{"text": text}, &out); err != nil {
+	if err := c.do(ctx, http.MethodPost, "scan", map[string]string{"text": text}, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -196,7 +221,7 @@ func (c *Client) AnalyzeHallucination(ctx context.Context, text string, candidat
 		body["candidates"] = candidates
 	}
 	var out HallucinationAnalysis
-	if err := c.do(ctx, http.MethodPost, "hallucination/analyze", body, &out); err != nil {
+	if err := c.do(ctx, http.MethodPost, "hallucination", body, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
