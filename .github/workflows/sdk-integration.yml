@@ -7,12 +7,14 @@ on:
       - codex/whitepact-sdk-live-journey
       - codex/whitepact-real-approval-journey
       - codex/whitepact-v2-acceptance
+      - codex/whitepact-go-governance-sdk
   pull_request:
     paths:
       - 'sdk/**'
       - 'tests/test_sdk*.py'
       - 'tests/test_developer_sdk_live_api.py'
       - 'tests/test_customer_real_approval_journey.py'
+      - 'tests/test_go_governance_live_api.py'
       - 'tests/fixtures/governance_sdk_contract.py'
       - 'docs/sdk/**'
       - '.github/workflows/sdk-integration.yml'
@@ -104,7 +106,8 @@ jobs:
           PYTHONPATH: src:.
         run: >-
           python -m pytest tests/test_developer_sdk_live_api.py
-          tests/test_customer_real_approval_journey.py -q --no-cov
+          tests/test_customer_real_approval_journey.py
+          tests/test_go_governance_live_api.py -q --no-cov
 
 # This focused workflow supplements, never replaces, full-platform CI and release gates.
 # No repository secrets, package publication, mutation of live services or write token needed.
