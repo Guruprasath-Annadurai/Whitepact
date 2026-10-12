@@ -8,6 +8,7 @@ on:
       - 'sdk/**'
       - 'tests/test_sdk*.py'
       - 'tests/test_developer_sdk_live_api.py'
+      - 'tests/test_customer_real_approval_journey.py'
       - 'tests/fixtures/governance_sdk_contract.py'
       - 'docs/sdk/**'
       - '.github/workflows/sdk-integration.yml'
@@ -97,7 +98,9 @@ jobs:
       - name: Real authenticated TCP PostgreSQL journey
         env:
           PYTHONPATH: src:.
-        run: python -m pytest tests/test_developer_sdk_live_api.py -q --no-cov
+        run: >-
+          python -m pytest tests/test_developer_sdk_live_api.py
+          tests/test_customer_real_approval_journey.py -q --no-cov
 
 # This focused workflow supplements, never replaces, full-platform CI and release gates.
 # No repository secrets, package publication, mutation of live services or write token needed.
