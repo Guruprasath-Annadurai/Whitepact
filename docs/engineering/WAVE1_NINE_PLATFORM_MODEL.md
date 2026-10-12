@@ -7,7 +7,7 @@ Research date: 2026-10-13. Repository baseline: `f338556baf9984ab485f2d4758179fb
 
 Codex owns only this new document on `codex/whitepact-wave1-nine-platform-model`, in `/Users/ag/whitepact-wave1-nine-platform-model`. No existing Terraform, runtime, billing, authentication, revocation, Linux containment, workflow or shared security file is changed. Antigravity retains active P0 ownership. Any runtime or provider-policy fix requires coordination, not a change disguised as infrastructure documentation.
 
-No provider account, resource, token, IAM binding, remote state, DNS record, deployment, package publication or billing-plan change was created or accessed. No `terraform init`, `plan`, `apply`, destroy, cloud CLI login or secret inspection occurred. This document is a proposed allocation of the requested platforms, not proof that the allocation is deployed or fully approved. Nine platforms do not mean nine independently authoritative copies of governance state.
+No provider account, resource, token, IAM binding, remote state, DNS record, deployment, package publication or billing-plan change was created or accessed. Backend-disabled, read-only-lockfile Terraform initialization fetched verified provider packages into a disposable Git archive only; no `plan`, `apply`, destroy, cloud CLI login or secret inspection occurred. This document is a proposed allocation of the requested platforms, not proof that the allocation is deployed or fully approved. Nine platforms do not mean nine independently authoritative copies of governance state.
 
 ## Proposed responsibility and dataflow matrix
 
@@ -74,12 +74,15 @@ Fresh execution on 2026-10-13, Terraform 1.9.8 darwin_arm64:
 | Command / scope | Result | Meaning |
 | --- | --- | --- |
 | `terraform fmt -check -recursive infra/terraform` | PASS, exit 0 | Formatting only; no writes, provider execution or security proof |
-| `terraform validate -no-color`, cloudflare-edge | BLOCKED, exit 1 | Locked `cloudflare/cloudflare 4.52.9` package absent from `.terraform/providers` |
-| Same, gcp-staging-optional | BLOCKED, exit 1 | Locked `hashicorp/google 5.45.2` package absent |
-| Same, legacy Hetzner module | BLOCKED, exit 1 | Locked `hetznercloud/hcloud 1.69.0` package absent |
+| `terraform init -backend=false -lockfile=readonly -input=false -no-color`, three disposable module copies | PASS, exit 0 each | Locked providers fetched with Terraform signature/checksum verification; no state backend or cloud credentials |
+| `terraform validate -no-color`, cloudflare-edge | PASS, exit 0 | Schema valid against locked `cloudflare/cloudflare 4.52.9` |
+| Same, gcp-staging-optional | PASS, exit 0 | Schema valid against locked `hashicorp/google 5.45.2` |
+| Same, legacy Hetzner module | PASS, exit 0 | Schema valid against locked `hetznercloud/hcloud 1.69.0`; not nine-platform deployment approval |
 | `python -m pytest tests/test_cloud_staging_static.py tests/test_m4_cloud_origin_static.py tests/test_terraform_m4_validate.py::test_cloud_terraform_tree_present -q --no-cov` | **10 passed, 0 failed, 0 skipped**, exit 0, 5.53 s | Source-bound/static checks, not provider validation or live network evidence |
 
-The two existing Terraform tests invoking `init -backend=false` were **not executed**: offline validation deliberately did not fetch providers or create initialization state. Their exclusion is explicit, not counted as passing/skipped. No claim of fresh provider/schema validation, drift detection, IAM enforcement, Terraform plan success or cloud CI success is made. Tooling exists; unavailable cached provider packages are the precise validation dependency. A later authorized validator should use disposable copies, read-only lockfiles and verified provider binaries, `init -backend=false -lockfile=readonly`, then `validate`; still no cloud credentials, remote state, plan/apply or live mutation.
+The two existing pytest tests invoking `init -backend=false` were **not executed** against the tracked worktree; equivalent provider initialization/schema commands were executed separately in `/private/tmp/whitepact-nine-provider-validation.EVY2ec`. These commands are not counted as additional pytest tests. The archive included both `infra/terraform` and the referenced tracked `deploy` tree. Initial sandbox-only attempts failed on DNS/provider-plugin handshake restrictions; scoped escalation enabled provider download and local plugin execution. An initial incomplete archive lacked a referenced deployment template; restoring the tracked `deploy` tree fixed this test-environment omission without changing source. All three final schema validations passed.
+
+Terraform reported Cloudflare self-signing key `C76001609EE3B136`, Google signed by HashiCorp and Hetzner signed by partner key `5219EACB3A77198B`. Signature verification identifies distribution provenance, not provider safety certification. `-lockfile=readonly` preserved tracked locks byte-for-byte; SHA-256 of source and disposable locks matched: Cloudflare `a71abbd3cb2f17e31b990f02425da66f61f9b4d2a8b2b3121d25f4246551769c`, Google `e5927a9b3bcb45236e8caf79dc71910c8df66c3a9095a2ad062a61d5d876dc59`, Hetzner `39c066f21faf874b622fddaae9f925e9077b963f2f637c8920a8e7a1567d4f48`. No source lock, provider version or shared infrastructure file changed. This is fresh provider/schema validation, **not** drift detection, IAM enforcement, Terraform plan success, cloud CI success or live infrastructure qualification.
 
 ## Recorded deployment hazards and coordination handoff
 
