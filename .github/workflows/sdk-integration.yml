@@ -2,7 +2,10 @@ name: SDK Integration Review
 
 on:
   push:
-    branches: [codex/whitepact-sdk-integration-review, codex/whitepact-sdk-live-journey]
+    branches:
+      - codex/whitepact-sdk-integration-review
+      - codex/whitepact-sdk-live-journey
+      - codex/whitepact-real-approval-journey
   pull_request:
     paths:
       - 'sdk/**'
