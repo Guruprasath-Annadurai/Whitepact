@@ -36,8 +36,10 @@ denial and another tenant's evidence/approval rejection are exercised.
 Both scenarios passed locally: 2 passed, 0 failed, 0 skipped in18.88s.
 The second scenario proves credential revocation while approval is pending,
 followed by a second-human approval, yields409 and zero persisted counter effects.
-CI wiring includes both new and prior live journeys; fresh CI remains pending
-until actually completed on the new commit.
+CI wiring includes both new and prior live journeys. First exact-head success:
+`e1bb0a116fe59f18f4f01d5be6c502af06a07597`, CI38290425643, all four jobs PASS
+(Python202/version, TS47/job, actual PostgreSQL/TCP journey3/version).
+This checkpoint update creates a successor; do not reuse the old run for its head.
 
 Test-authoring failures disclosed: assumed `result` envelope corrected to actual
 `execution_status`; developer key ADMIN mutation correctly rejected403; web key
@@ -68,10 +70,12 @@ Delivered coordination is not an owner acknowledgment or independent approval.
    keys correctly lack ADMIN delegation-revocation permission.
 3. P1 evidence detail: legacy SDK standalone bearer detail route absent. Existing
    bounded listing/attestation work. Backend contract decision remains with owner.
-4. P1 confirmed Go SDK: reflected credential HTTP-error disclosure; Scan and
-   hallucination helper paths do not match actual backend; null/empty successful
-   responses falsely yield safe zero-value scan; negative timeout disables deadline.
-   Read-only findings, NOT fixed or runtime-tested yet.
+4. P1 Go SDK: reflected credential HTTP-error disclosure now fixed in draft PR197,
+   with regression red-before-green and8 race-tested functions passing locally.
+   Initial CI passed tests/vet but failed Go VCS stamping because container Git
+   ownership was not trusted. Exact-workspace safe.directory fix is in progress;
+   fresh successor CI must pass. Scan/hallucination path mismatch, null/empty scan
+   and negative timeout remain open; no claim that they were fixed.
 
 ## Parallel Go lane
 
@@ -80,7 +84,9 @@ Delivered coordination is not an owner acknowledgment or independent approval.
 - Go worker hit a usage limit before edits; tree was checked clean.
 - Native Go unavailable; Docker exists. Use a scoped official Go toolchain container
   to test only disposable local fixtures; no production or customer credentials.
-- Worker owns only sdk/go; do not allow concurrent writers to its worktree.
+- Worker made no edits before its limit; parent then took ownership, fixed only
+  error-body configured-key disclosure and added dedicated Go CI. No simultaneous
+  writers. PR197 is draft; other Go defects remain next-priority work.
 
 ## Exact next commands
 
