@@ -23,6 +23,8 @@ jobs:
       - name: Race, regression, vet and package build
         working-directory: sdk/go
         run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git -C "$GITHUB_WORKSPACE" rev-parse HEAD
           test -z "$(gofmt -l raiclient/client.go raiclient/client_test.go)"
           go test -race -count=1 -json ./...
           go vet ./...
