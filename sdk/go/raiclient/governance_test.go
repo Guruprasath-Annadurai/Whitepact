@@ -216,3 +216,20 @@ func TestGovernanceRejectsInsecureTransportBeforeMutation(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestGovernanceDeepEnvelopesPreserveUnknownWithoutRepeatedClassification(t *testing.T) {
+	for _, terminal := range []GovernanceResponse{
+		{"result": map[string]any{}},
+		{"error": "governance_unknown_outcome"},
+		{"error": "governance_quarantined"},
+	} {
+		want := terminal.State()
+		var nested map[string]any = terminal
+		for i := 0; i < 256; i++ {
+			nested = map[string]any{"result": nested}
+		}
+		if got := GovernanceResponse(nested).State(); got != want {
+			t.Fatalf("deep envelope state=%s want=%s", got, want)
+		}
+	}
+}

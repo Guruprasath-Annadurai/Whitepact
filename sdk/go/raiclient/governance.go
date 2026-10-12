@@ -38,9 +38,21 @@ func (r GovernanceResponse) State() GovernanceState {
 		return GovernanceUnknown
 	}
 	// Approval execution wraps the original governed result in a result envelope.
-	if nested, ok := r["result"].(map[string]any); ok {
-		if GovernanceResponse(nested).State() == GovernanceUnknown {
-			return GovernanceUnknown
+	nested, nestedOK := r["result"].(map[string]any)
+	nestedState := GovernanceSucceeded
+	nestedEnvelope := false
+	if nestedOK {
+		for _, field := range []string{"result", "error", "status", "outcome_status", "decision", "reconciliation_required", "denied", "requires_approval", "quarantined", "failed", "pending"} {
+			if _, exists := nested[field]; exists {
+				nestedEnvelope = true
+				// Classify each nested envelope only once. Re-evaluating it for
+				// both UNKNOWN and completion checks grows exponentially.
+				nestedState = GovernanceResponse(nested).State()
+				break
+			}
+		}
+		if nestedState == GovernanceUnknown {
+			return nestedState
 		}
 	}
 	if r["error"] == "governance_denied" || r["denied"] == true || r["decision"] == "DENY" || r["decision"] == "DENIED" || r["status"] == "DENY" || r["status"] == "DENIED" {
@@ -72,11 +84,10 @@ func (r GovernanceResponse) State() GovernanceState {
 	if v, ok := r["decision"]; ok && v != "ALLOW" {
 		return GovernanceFailed
 	}
-	if nested, ok := r["result"].(map[string]any); ok {
+	if nestedOK {
 		if _, exists := nested["error"]; exists {
-			state := GovernanceResponse(nested).State()
-			if state != GovernanceSucceeded {
-				return state
+			if nestedState != GovernanceSucceeded {
+				return nestedState
 			}
 			return GovernanceFailed
 		}
@@ -86,13 +97,8 @@ func (r GovernanceResponse) State() GovernanceState {
 			}
 		}
 		// If a result is itself a governed response, require its completion too.
-		for _, field := range []string{"result", "status", "outcome_status", "decision", "reconciliation_required", "denied", "requires_approval", "quarantined", "failed", "pending"} {
-			if _, exists := nested[field]; exists {
-				state := GovernanceResponse(nested).State()
-				if state != GovernanceSucceeded {
-					return state
-				}
-			}
+		if nestedEnvelope {
+			return nestedState
 		}
 	}
 	return GovernanceSucceeded
