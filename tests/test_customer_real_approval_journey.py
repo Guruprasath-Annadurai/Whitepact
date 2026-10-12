@@ -5,7 +5,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import platform
 import socket
+from pathlib import Path
 
 import httpx
 import pytest
@@ -193,3 +196,73 @@ async def test_real_approval_resume_after_credential_revocation_has_zero_effect(
     with pytest.raises(GovernanceRequestError) as invalid:
         await sdk.call_tool(SYNTHETIC_COUNTER_TOOL, purpose=PURPOSE)
     assert invalid.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_go_sdk_analytics_against_real_backend(live_customer, tmp_path):
+    browser, _, _, key = live_customer
+    root = Path(__file__).resolve().parents[1]
+    target_os = "darwin" if platform.system() == "Darwin" else "linux"
+    target_arch = "arm64" if platform.machine() in {"arm64", "aarch64"} else "amd64"
+    compiler = await asyncio.create_subprocess_exec(
+        "docker",
+        "run",
+        "--rm",
+        "--network",
+        "none",
+        "-v",
+        f"{root / 'sdk/go'}:/src:ro",
+        "-v",
+        f"{tmp_path}:/out",
+        "-w",
+        "/src",
+        "-e",
+        f"GOOS={target_os}",
+        "-e",
+        f"GOARCH={target_arch}",
+        "golang@sha256:1cf6c45ba39db9fd6db16922041d074a63c935556a05c5ccb62d181034df7f02",
+        "go",
+        "build",
+        "-o",
+        "/out/livecheck",
+        "./cmd/livecheck",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    await asyncio.wait_for(compiler.communicate(), timeout=120)
+    assert compiler.returncode == 0, "Go smoke build failed; Docker/toolchain required"
+    process = await asyncio.create_subprocess_exec(
+        str(tmp_path / "livecheck"),
+        str(browser.base_url).rstrip("/"),
+        "--analytics",
+        env={"WHITEPACT_API_KEY": key},
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    output, error = await asyncio.wait_for(process.communicate(), timeout=15)
+    assert key.encode() not in output + error
+    assert process.returncode == 0, "Go actual authenticated analytics request failed"
+    result = json.loads(output)
+    assert result["health"] in {"ok", "healthy"}
+    assert result["scan_blocked"] is True
+    assert result["heuristic_risk_level"] in {"LOW", "MEDIUM", "HIGH"}
+    principal = await OrgRepository(dashboard._db_engine).authenticate(key)
+    assert principal is not None
+    revoked = await browser.delete(
+        f"/api/v1/web/api-keys/{principal.key_id}",
+        headers={"X-WP-CSRF": browser.cookies["wp_csrf"]},
+    )
+    assert revoked.status_code == 200
+    for invalid_key in (key, "invalid-synthetic-test-key", ""):
+        denied = await asyncio.create_subprocess_exec(
+            str(tmp_path / "livecheck"),
+            str(browser.base_url).rstrip("/"),
+            "--analytics",
+            env={"WHITEPACT_API_KEY": invalid_key},
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        denied_output, denied_error = await asyncio.wait_for(denied.communicate(), timeout=15)
+        assert denied.returncode == 1
+        assert not denied_output
+        assert key.encode() not in denied_error

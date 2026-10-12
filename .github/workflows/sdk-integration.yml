@@ -6,6 +6,7 @@ on:
       - codex/whitepact-sdk-integration-review
       - codex/whitepact-sdk-live-journey
       - codex/whitepact-real-approval-journey
+      - codex/whitepact-v2-acceptance
   pull_request:
     paths:
       - 'sdk/**'
