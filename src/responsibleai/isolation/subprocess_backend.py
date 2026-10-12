@@ -140,7 +140,7 @@ if __name__ == "__main__":
             registry = InFlightExecutionRegistry.get_instance()
             execution_id = f"subproc_{request.organization_id}_{request.action_id}"
 
-            def _terminate_subprocess_sync() -> bool:
+            async def _terminate_subprocess() -> bool:
                 if proc.returncode is not None:
                     return True
                 kill_err: Exception | None = None
@@ -154,9 +154,27 @@ if __name__ == "__main__":
                     except Exception as exc2:
                         kill_err = exc2
 
-                time.sleep(0.02)
-                if proc.returncode is not None:
-                    return True
+                # Allow the event loop to run child watcher and reap process
+                for _ in range(5):
+                    await asyncio.sleep(0.02)
+                    if proc.returncode is not None:
+                        return True
+                    try:
+                        wpid, _ = os.waitpid(proc.pid, os.WNOHANG)
+                        if wpid == proc.pid:
+                            return True
+                    except ChildProcessError:
+                        return True
+
+                # On Linux, inspect /proc status to recognize zombie or dead states
+                if os.path.exists(f"/proc/{proc.pid}/status"):
+                    try:
+                        with open(f"/proc/{proc.pid}/status") as f:
+                            for line in f:
+                                if line.startswith("State:") and ("Z" in line or "X" in line):
+                                    return True
+                    except Exception:
+                        return True
 
                 try:
                     os.kill(proc.pid, 0)
@@ -178,7 +196,7 @@ if __name__ == "__main__":
                     organization_id=request.organization_id,
                     action_id=request.action_id,
                     task=asyncio.current_task(),
-                    terminate_callback=_terminate_subprocess_sync,
+                    terminate_callback=_terminate_subprocess,
                     admission_epoch=request.admission_epoch,
                 )
             except PermissionError as exc:

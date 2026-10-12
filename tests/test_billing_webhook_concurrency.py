@@ -57,6 +57,7 @@ def _update(org_id: str, plan: Plan = Plan.PRO) -> PlanUpdate:
         stripe_subscription_id=f"sub_{org_id[:6]}",
         plan_renews_at=None,
         subscription_status="active",
+        event_timestamp="2026-10-12T12:00:00+00:00",
     )
 
 
