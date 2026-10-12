@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """SDK distributions must be buildable outside the repository root."""
 
 import tomllib

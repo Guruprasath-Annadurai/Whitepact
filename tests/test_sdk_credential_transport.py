@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Bearer keys are never dispatched over remote plaintext HTTP."""
 
 import httpx

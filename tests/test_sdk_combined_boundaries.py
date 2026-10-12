@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Cross-feature regression coverage on the combined SDK candidate."""
 
 import ast

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Runtime SDK identity must agree with its distribution metadata."""
 
 import ast

@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Uncertain downstream effects must never be reported as completed by an SDK."""
 
 import pytest

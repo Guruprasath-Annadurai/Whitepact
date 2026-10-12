@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Unsafe deadline/retry settings must fail before any network request."""
 
 import pytest

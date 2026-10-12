@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Completion is a positive result contract, never absence of an error."""
 
 import pytest

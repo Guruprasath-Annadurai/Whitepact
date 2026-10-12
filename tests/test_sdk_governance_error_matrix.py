@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Every governance endpoint has the same safe HTTP/JSON error contract."""
 
 import httpx

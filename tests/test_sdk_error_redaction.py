@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Reflected bearer credentials must not be included in public SDK errors."""
 
 import httpx

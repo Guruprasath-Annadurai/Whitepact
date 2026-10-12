@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """A lost mutation response is not permission to replay the mutation."""
 
 import httpx
