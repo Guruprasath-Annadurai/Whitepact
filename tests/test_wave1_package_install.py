@@ -9,6 +9,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import venv
 from pathlib import Path
 
@@ -24,9 +25,17 @@ def _run(args: list[str], cwd: Path, *, timeout: int = 180) -> str:
         for name in ("PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "SYSTEMROOT")
         if name in os.environ
     }
-    result = subprocess.run(
-        args, cwd=cwd, env=environment, capture_output=True, text=True, timeout=timeout
-    )
+    with tempfile.TemporaryDirectory(prefix="wp-package-config-") as config_dir:
+        # npm refuses loading the same file twice as user/global configuration.
+        # Distinct nonexistent paths exclude both inherited credential stores.
+        environment.update(
+            PIP_CONFIG_FILE=os.devnull,
+            NPM_CONFIG_USERCONFIG=str(Path(config_dir) / "user.npmrc"),
+            NPM_CONFIG_GLOBALCONFIG=str(Path(config_dir) / "global.npmrc"),
+        )
+        result = subprocess.run(
+            args, cwd=cwd, env=environment, capture_output=True, text=True, timeout=timeout
+        )
     assert result.returncode == 0, result.stdout[-3000:] + result.stderr[-3000:]
     return result.stdout
 
