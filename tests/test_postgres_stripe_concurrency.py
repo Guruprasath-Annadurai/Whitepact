@@ -421,7 +421,7 @@ async def test_pg_concurrent_interleaved_webhook_classification(pg_engine, monke
                 )
             )
         org_invalid_ts = await repo.create_org(name="Inv Co", slug=f"i-{uuid.uuid4().hex[:8]}")
-        unknown_org_id = f"org_unknown_{uuid.uuid4().hex[:8]}"
+        unknown_org_id = str(uuid.uuid4())
 
         # Mock Stripe verification to extract distinct payloads per event_id
         payload_map = {

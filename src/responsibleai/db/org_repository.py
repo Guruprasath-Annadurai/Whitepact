@@ -230,17 +230,20 @@ class OrgRepository:
 
         async with self._engine.raw.begin() as conn:
             # 1. Check tenant tombstone ledger
-            ts = await conn.scalar(
-                select(tenant_tombstones.c.id).where(tenant_tombstones.c.org_id == org_id)
-            )
-            if ts is not None:
-                return SetPlanStatus.TOMBSTONED
+            try:
+                ts = await conn.scalar(
+                    select(tenant_tombstones.c.id).where(tenant_tombstones.c.org_id == org_id)
+                )
+                if ts is not None:
+                    return SetPlanStatus.TOMBSTONED
 
-            # 2. Check if organization exists
-            org_row = (
-                await conn.execute(select(organizations).where(organizations.c.id == org_id))
-            ).first()
-            if org_row is None:
+                # 2. Check if organization exists
+                org_row = (
+                    await conn.execute(select(organizations).where(organizations.c.id == org_id))
+                ).first()
+                if org_row is None:
+                    return SetPlanStatus.NOT_FOUND
+            except Exception:
                 return SetPlanStatus.NOT_FOUND
 
             # 3. Monotonic chronology check on current state
