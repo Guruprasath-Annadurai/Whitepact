@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -130,8 +131,17 @@ func (c *Client) do(ctx context.Context, method, path string, body interface{}, 
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
-		return fmt.Errorf("raiclient: %s %s status %d: %s", method, path, resp.StatusCode, string(b))
+		// Include the possible key suffix beyond the output boundary, so truncation
+		// cannot expose a credential prefix before replacement.
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, int64(maxErrorBody+len(c.apiKey))))
+		detail := string(b)
+		if c.apiKey != "" {
+			detail = strings.ReplaceAll(detail, c.apiKey, "[REDACTED]")
+		}
+		if len(detail) > maxErrorBody {
+			detail = detail[:maxErrorBody]
+		}
+		return fmt.Errorf("raiclient: %s %s status %d: %s", method, path, resp.StatusCode, detail)
 	}
 
 	if out != nil {

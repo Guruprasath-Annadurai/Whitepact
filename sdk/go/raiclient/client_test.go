@@ -47,6 +47,28 @@ func TestNon2xxIsAnErrorAndBodyIsBounded(t *testing.T) {
 	}
 }
 
+func TestReflectedCredentialRedactedBeforeErrorTruncation(t *testing.T) {
+	for _, size := range []int{24, 260} {
+		key := "synthetic-private-key-" + strings.Repeat("K", size)
+		for _, prefix := range []int{0, maxErrorBody - 8} {
+			c, _ := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusForbidden)
+				_, _ = w.Write([]byte(strings.Repeat("x", prefix) + r.Header.Get("Authorization")))
+			}, key)
+			_, err := c.Health(context.Background())
+			if err == nil || !strings.Contains(err.Error(), "status 403") {
+				t.Fatal("expected status-bearing HTTP error")
+			}
+			if strings.Contains(err.Error(), key) || strings.Contains(err.Error(), "Bearer s") {
+				t.Fatal("configured credential was disclosed")
+			}
+			if len(err.Error()) > maxErrorBody+200 {
+				t.Fatal("redacted error is not bounded")
+			}
+		}
+	}
+}
+
 func TestRedirectsAreNotFollowedSoTheKeyCannotLeak(t *testing.T) {
 	var hits int32
 	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
