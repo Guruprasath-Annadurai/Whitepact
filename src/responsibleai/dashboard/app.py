@@ -4100,7 +4100,7 @@ async def stripe_webhook(request: Request) -> dict[str, Any]:
             "reason": "invalid_timestamp",
         }
     try:
-        applied = await _ready(_org_repo).set_plan(
+        status = await _ready(_org_repo).set_plan_status(
             org_id=update.org_id,
             plan=update.plan,
             stripe_customer_id=update.stripe_customer_id,
@@ -4109,58 +4109,54 @@ async def stripe_webhook(request: Request) -> dict[str, Any]:
             subscription_status=update.subscription_status,
             event_timestamp=update.event_timestamp,
         )
-        if not applied:
-            status = getattr(_ready(_org_repo), "last_set_plan_status", None)
-            if status == SetPlanStatus.NOT_FOUND:
-                await _ready(_billing_event_repo).fail(event_id, "unknown organization")
-                logger.warning("billing_event_unknown_org", event_id=event_id, org_id=update.org_id)
-                return {
-                    "received": True,
-                    "processed": False,
-                    "duplicate": False,
-                    "reason": "unknown_organization",
-                }
-            elif status == SetPlanStatus.STALE:
-                await _ready(_billing_event_repo).complete(event_id)
-                logger.info("billing_event_stale_ignored", event_id=event_id, org_id=update.org_id)
-                return {
-                    "received": True,
-                    "processed": False,
-                    "duplicate": False,
-                    "reason": "stale_event",
-                }
-            elif status == SetPlanStatus.TOMBSTONED:
-                await _ready(_billing_event_repo).fail(event_id, "tombstoned organization")
-                logger.warning(
-                    "billing_event_tombstoned_org", event_id=event_id, org_id=update.org_id
-                )
-                return {
-                    "received": True,
-                    "processed": False,
-                    "duplicate": False,
-                    "reason": "tombstoned_organization",
-                }
-            elif status == SetPlanStatus.INVALID_TIMESTAMP:
-                await _ready(_billing_event_repo).fail(event_id, "invalid_or_missing_timestamp")
-                logger.warning(
-                    "billing_event_invalid_timestamp", event_id=event_id, org_id=update.org_id
-                )
-                return {
-                    "received": True,
-                    "processed": False,
-                    "duplicate": False,
-                    "reason": "invalid_timestamp",
-                }
-            else:
-                # Default unknown failure: fail event
-                await _ready(_billing_event_repo).fail(event_id, "unknown organization")
-                return {
-                    "received": True,
-                    "processed": False,
-                    "duplicate": False,
-                    "reason": "unknown_organization",
-                }
-        await _ready(_billing_event_repo).complete(event_id)
+        if status == SetPlanStatus.NOT_FOUND:
+            await _ready(_billing_event_repo).fail(event_id, "unknown organization")
+            logger.warning("billing_event_unknown_org", event_id=event_id, org_id=update.org_id)
+            return {
+                "received": True,
+                "processed": False,
+                "duplicate": False,
+                "reason": "unknown_organization",
+            }
+        elif status == SetPlanStatus.STALE:
+            await _ready(_billing_event_repo).complete(event_id)
+            logger.info("billing_event_stale_ignored", event_id=event_id, org_id=update.org_id)
+            return {
+                "received": True,
+                "processed": False,
+                "duplicate": False,
+                "reason": "stale_event",
+            }
+        elif status == SetPlanStatus.TOMBSTONED:
+            await _ready(_billing_event_repo).fail(event_id, "tombstoned organization")
+            logger.warning("billing_event_tombstoned_org", event_id=event_id, org_id=update.org_id)
+            return {
+                "received": True,
+                "processed": False,
+                "duplicate": False,
+                "reason": "tombstoned_organization",
+            }
+        elif status == SetPlanStatus.INVALID_TIMESTAMP:
+            await _ready(_billing_event_repo).fail(event_id, "invalid_or_missing_timestamp")
+            logger.warning(
+                "billing_event_invalid_timestamp", event_id=event_id, org_id=update.org_id
+            )
+            return {
+                "received": True,
+                "processed": False,
+                "duplicate": False,
+                "reason": "invalid_timestamp",
+            }
+        elif status == SetPlanStatus.APPLIED:
+            await _ready(_billing_event_repo).complete(event_id)
+        else:
+            await _ready(_billing_event_repo).fail(event_id, "unknown organization")
+            return {
+                "received": True,
+                "processed": False,
+                "duplicate": False,
+                "reason": "unknown_organization",
+            }
     except Exception as exc:
         await _ready(_billing_event_repo).fail(event_id, str(exc))
         raise

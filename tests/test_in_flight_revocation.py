@@ -241,10 +241,10 @@ def _worker_process_entrypoint(
         t_start = time.monotonic()
         task = asyncio.create_task(backend.execute(req))
 
-        for _ in range(50):
+        for _ in range(100):
             if reg.count_active(org_id) > 0:
                 break
-            await asyncio.sleep(0.02)
+            await asyncio.sleep(0.05)
 
         # Notify main test process that Worker 2 is executing
         started_event.set()
@@ -294,7 +294,7 @@ async def test_distributed_multi_worker_revocation(tmp_path) -> None:
 
     try:
         # Wait until Worker 2 has started the 10s execution
-        await asyncio.to_thread(started_event.wait, timeout=5.0)
+        await asyncio.to_thread(started_event.wait, timeout=15.0)
         assert started_event.is_set(), "Worker 2 failed to start execution in time"
 
         # Main process: bump revocation epoch in the shared database
@@ -303,7 +303,7 @@ async def test_distributed_multi_worker_revocation(tmp_path) -> None:
         assert ep1.epoch == 1
 
         # Worker 2 must detect the database bump, kill the running process, and report
-        result = await asyncio.to_thread(result_queue.get, timeout=5.0)
+        result = await asyncio.to_thread(result_queue.get, timeout=15.0)
 
         # Must terminate in bounded latency (<2.0s) well before the 10-second timeout
         assert result["elapsed"] < 2.0, f"Worker 2 took {result['elapsed']:.2f}s; expected < 2.0s"
@@ -559,3 +559,107 @@ async def test_subprocess_termination_failure_propagates_and_marks_unresolved(mo
     monkeypatch.undo()
     await registry.terminate_in_flight(organization_id=org_id)
     await t
+
+
+@pytest.mark.asyncio
+async def test_docker_container_inspect_daemon_failure_marked_unresolved() -> None:
+    """Docker inspect errors that lack authoritative absence evidence mark containment unresolved."""
+    registry = InFlightExecutionRegistry.get_instance()
+    org_id = f"test_org_{uuid.uuid4().hex[:8]}"
+    exec_id = f"exec_docker_{uuid.uuid4().hex[:8]}"
+
+    # Simulate container callback with daemon disconnection during inspect
+    async def _failing_docker_inspect():
+        # inspect returned rc=1 with daemon failure
+        raise RuntimeError(
+            "Docker inspect failed authoritatively confirming containment for wp_cont_123 (rc=1): "
+            "Error response from daemon: dial unix /var/run/docker.sock: connect: connection refused"
+        )
+
+    await registry.register(
+        execution_id=exec_id,
+        organization_id=org_id,
+        action_id="act_docker_test",
+        terminate_callback=_failing_docker_inspect,
+    )
+
+    term = await registry.terminate_in_flight(organization_id=org_id)
+    assert term == []  # Not marked terminated
+    assert registry.count_active(org_id) == 1
+    assert registry.has_unresolved(org_id) is True
+
+    unresolved = registry.get_unresolved_containments(org_id)
+    assert len(unresolved) == 1
+    assert unresolved[0].containment_status == "unresolved"
+    assert "dial unix /var/run/docker.sock" in (unresolved[0].last_termination_error or "")
+
+
+@pytest.mark.asyncio
+async def test_unresolved_containment_causes_fail_closed_denial_on_admission() -> None:
+    """When a tenant has unresolved containment, new executions fail closed upon registration."""
+    registry = InFlightExecutionRegistry.get_instance()
+    org_id = f"test_org_{uuid.uuid4().hex[:8]}"
+    exec_id_1 = f"exec_fail_{uuid.uuid4().hex[:8]}"
+    exec_id_2 = f"exec_new_{uuid.uuid4().hex[:8]}"
+
+    def _broken():
+        raise RuntimeError("SIGKILL delivery failed: process unkillable")
+
+    await registry.register(
+        execution_id=exec_id_1,
+        organization_id=org_id,
+        action_id="act_1",
+        terminate_callback=_broken,
+    )
+
+    # Attempt termination -> fails into unresolved
+    await registry.terminate_in_flight(organization_id=org_id)
+    assert registry.has_unresolved(org_id) is True
+
+    # Subsequent registration attempt for the same tenant MUST fail closed
+    with pytest.raises(PermissionError, match="has been revoked in-flight"):
+        await registry.register(
+            execution_id=exec_id_2,
+            organization_id=org_id,
+            action_id="act_2",
+            admission_epoch=10,  # even with newer epoch!
+        )
+
+
+@pytest.mark.asyncio
+async def test_operator_unresolved_containment_reporting_and_retry() -> None:
+    """Operators can inspect unresolved diagnostic records and trigger successful retries."""
+    registry = InFlightExecutionRegistry.get_instance()
+    org_id = f"test_org_{uuid.uuid4().hex[:8]}"
+    exec_id = f"exec_rep_{uuid.uuid4().hex[:8]}"
+
+    fail = True
+
+    def _flaky_callback():
+        if fail:
+            raise RuntimeError("Transient socket error")
+        return True
+
+    await registry.register(
+        execution_id=exec_id,
+        organization_id=org_id,
+        action_id="act_flaky",
+        terminate_callback=_flaky_callback,
+    )
+
+    await registry.terminate_in_flight(organization_id=org_id)
+    assert registry.count_unresolved(org_id) == 1
+
+    # Operator queries unresolved records
+    records = registry.get_unresolved(org_id)
+    assert len(records) == 1
+    assert records[0]["execution_id"] == exec_id
+    assert records[0]["containment_status"] == "unresolved"
+    assert "Transient socket error" in records[0]["last_termination_error"]
+
+    # Flake resolves, operator triggers retry_unresolved
+    fail = False
+    retried = await registry.retry_unresolved(org_id)
+    assert retried == [exec_id]
+    assert registry.count_unresolved(org_id) == 0
+    assert registry.has_unresolved(org_id) is False

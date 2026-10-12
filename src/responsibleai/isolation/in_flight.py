@@ -80,8 +80,14 @@ class InFlightExecutionRegistry:
         if epoch > current:
             self._latest_revoked_epoch[organization_id] = epoch
 
+    def has_unresolved(self, organization_id: str) -> bool:
+        """Check if an organization has active unresolved containment failures."""
+        return any(e.organization_id == organization_id for e in self._unresolved.values())
+
     def is_revoked(self, organization_id: str, admission_epoch: int) -> bool:
-        """Check if an admission epoch is superseded by a recorded revocation."""
+        """Check if an admission epoch is superseded by a recorded revocation or blocked by unresolved containment."""
+        if self.has_unresolved(organization_id):
+            return True
         latest = self._latest_revoked_epoch.get(organization_id, -1)
         return latest >= 0 and admission_epoch < latest
 
@@ -248,6 +254,58 @@ class InFlightExecutionRegistry:
         if organization_id is None:
             return len(self._active)
         return sum(1 for e in self._active.values() if e.organization_id == organization_id)
+
+    def get_unresolved(self, organization_id: str | None = None) -> list[dict[str, Any]]:
+        """Return operator-visible diagnostic records of unconfirmed/unresolved containment."""
+        records: list[dict[str, Any]] = []
+        for e in self._unresolved.values():
+            if organization_id is None or e.organization_id == organization_id:
+                records.append(
+                    {
+                        "execution_id": e.execution_id,
+                        "organization_id": e.organization_id,
+                        "action_id": e.action_id,
+                        "authorization_id": e.authorization_id,
+                        "created_at": e.created_at,
+                        "admission_epoch": e.admission_epoch,
+                        "termination_attempts": e.termination_attempts,
+                        "last_termination_error": e.last_termination_error,
+                        "containment_status": e.containment_status,
+                    }
+                )
+        return records
+
+    def count_unresolved(self, organization_id: str | None = None) -> int:
+        """Count active unresolved containment failures."""
+        if organization_id is None:
+            return len(self._unresolved)
+        return sum(1 for e in self._unresolved.values() if e.organization_id == organization_id)
+
+    async def retry_unresolved(self, organization_id: str | None = None) -> list[str]:
+        """Retry containment termination for previously unconfirmed executions."""
+        async with self._lock:
+            targets = [
+                e
+                for e in self._unresolved.values()
+                if organization_id is None or e.organization_id == organization_id
+            ]
+        resolved: list[str] = []
+        for entry in targets:
+            entry.termination_attempts += 1
+            if entry.terminate_callback is not None:
+                try:
+                    res = entry.terminate_callback()
+                    if asyncio.iscoroutine(res):
+                        res = await res
+                    if res is not False:
+                        entry.containment_status = "terminated"
+                        async with self._lock:
+                            self._unresolved.pop(entry.execution_id, None)
+                            self._active.pop(entry.execution_id, None)
+                        resolved.append(entry.execution_id)
+                except Exception as exc:
+                    entry.last_termination_error = str(exc)
+        return resolved
 
     async def reconcile_epochs(self, engine: Any) -> list[str]:
         """Durable distributed reconciliation: query database for active tenants and kill stale runs.

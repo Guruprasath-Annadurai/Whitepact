@@ -16,6 +16,7 @@ Proves against actual isolated PostgreSQL instances:
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -309,3 +310,274 @@ async def test_pg_real_signed_stripe_webhook_pipeline(pg_engine, monkeypatch) ->
             assert ev_row is not None
             assert ev_row["status"] == "failed"
             assert ev_row["last_error"] == "invalid_or_missing_timestamp"
+
+
+@pytest.mark.asyncio
+async def test_pg_simultaneous_competing_equal_timestamp_transitions(pg_engine) -> None:
+    """Simultaneous competing equal-timestamp transactions: unauthorized widening cannot win over restrictive downgrade."""
+    engine, _ = pg_engine
+    repo = OrgRepository(engine)
+    org = await repo.create_org(
+        name="Adversarial Corp", slug=f"adv-{uuid.uuid4().hex[:8]}", plan=Plan.PRO
+    )
+
+    t = "2026-10-12T12:00:00+00:00"
+    init_st = await repo.set_plan_status(
+        org_id=org.id,
+        plan=Plan.PRO,
+        subscription_status="active",
+        event_timestamp=t,
+    )
+    assert init_st == SetPlanStatus.APPLIED
+
+    # Prepare competing transactions with the exact same timestamp
+    async def _downgrade():
+        return await repo.set_plan_status(
+            org_id=org.id,
+            plan=Plan.FREE,
+            subscription_status="canceled",
+            event_timestamp=t,
+        )
+
+    async def _widen_enterprise():
+        return await repo.set_plan_status(
+            org_id=org.id,
+            plan=Plan.ENTERPRISE,
+            subscription_status="active",
+            event_timestamp=t,
+        )
+
+    async def _widen_maintain_pro():
+        return await repo.set_plan_status(
+            org_id=org.id,
+            plan=Plan.PRO,
+            subscription_status="active",
+            event_timestamp=t,
+        )
+
+    # Fire all 3 simultaneously across concurrent PostgreSQL connections
+    results = await asyncio.gather(
+        _downgrade(),
+        _widen_enterprise(),
+        _widen_maintain_pro(),
+        return_exceptions=False,
+    )
+
+    # Downgrade must have succeeded; widening attempts must be STALE
+    assert results[0] == SetPlanStatus.APPLIED
+    assert results[1] == SetPlanStatus.STALE
+    assert results[2] == SetPlanStatus.STALE
+
+    # Final persistent state in PostgreSQL MUST remain restrictive (FREE, canceled)
+    final_org = await repo.get_org(org.id)
+    assert final_org.plan == Plan.FREE
+    assert final_org.subscription_status == "canceled"
+
+    # Subsequent widening attempts with equal timestamp must also be rejected
+    post_stale = await repo.set_plan_status(
+        org_id=org.id,
+        plan=Plan.ENTERPRISE,
+        subscription_status="active",
+        event_timestamp=t,
+    )
+    assert post_stale == SetPlanStatus.STALE
+    post_org = await repo.get_org(org.id)
+    assert post_org.plan == Plan.FREE
+
+
+@pytest.mark.asyncio
+async def test_pg_concurrent_interleaved_webhook_classification(pg_engine, monkeypatch) -> None:
+    """Concurrent webhook requests with interleaved orgs and outcomes show zero cross-request contamination."""
+    engine, async_pg_url = pg_engine
+    monkeypatch.setattr(settings, "database_url", async_pg_url)
+    monkeypatch.setattr(settings, "auto_migrate", False)
+
+    async with LifespanManager(app, startup_timeout=20) as manager:
+        repo = app_module._org_repo
+
+        # Provision tenants
+        org_valid = await repo.create_org(name="Valid Co", slug=f"v-{uuid.uuid4().hex[:8]}")
+        org_stale = await repo.create_org(
+            name="Stale Co", slug=f"s-{uuid.uuid4().hex[:8]}", plan=Plan.PRO
+        )
+        await repo.set_plan_status(
+            org_id=org_stale.id,
+            plan=Plan.PRO,
+            subscription_status="active",
+            event_timestamp="2026-10-12T12:00:00+00:00",
+        )
+        org_tomb = await repo.create_org(name="Tomb Co", slug=f"t-{uuid.uuid4().hex[:8]}")
+        async with engine.raw.begin() as conn:
+            await conn.execute(
+                tenant_tombstones.insert().values(
+                    id=f"ts_{uuid.uuid4().hex[:8]}",
+                    org_id=org_tomb.id,
+                    original_name="Tomb Co",
+                    generation_id="gen_1",
+                    tombstoned_at="2026-10-12T10:00:00+00:00",
+                    tombstoned_by="admin",
+                    authority_hash="0" * 64,
+                    evidence_digest="0" * 64,
+                )
+            )
+        org_invalid_ts = await repo.create_org(name="Inv Co", slug=f"i-{uuid.uuid4().hex[:8]}")
+        unknown_org_id = f"org_unknown_{uuid.uuid4().hex[:8]}"
+
+        # Mock Stripe verification to extract distinct payloads per event_id
+        payload_map = {
+            "evt_valid": PlanUpdate(
+                org_id=org_valid.id,
+                plan=Plan.PRO,
+                stripe_customer_id="cus_v",
+                stripe_subscription_id="sub_v",
+                plan_renews_at=None,
+                subscription_status="active",
+                event_timestamp="2026-10-12T12:00:00+00:00",
+            ),
+            "evt_unknown": PlanUpdate(
+                org_id=unknown_org_id,
+                plan=Plan.PRO,
+                stripe_customer_id="cus_u",
+                stripe_subscription_id="sub_u",
+                plan_renews_at=None,
+                subscription_status="active",
+                event_timestamp="2026-10-12T12:00:00+00:00",
+            ),
+            "evt_stale": PlanUpdate(
+                org_id=org_stale.id,
+                plan=Plan.FREE,
+                stripe_customer_id="cus_s",
+                stripe_subscription_id=None,
+                plan_renews_at=None,
+                subscription_status="canceled",
+                event_timestamp="2026-10-12T11:00:00+00:00",  # older than 12:00:00
+            ),
+            "evt_tomb": PlanUpdate(
+                org_id=org_tomb.id,
+                plan=Plan.ENTERPRISE,
+                stripe_customer_id="cus_t",
+                stripe_subscription_id="sub_t",
+                plan_renews_at=None,
+                subscription_status="active",
+                event_timestamp="2026-10-12T12:00:00+00:00",
+            ),
+            "evt_invalid_ts": PlanUpdate(
+                org_id=org_invalid_ts.id,
+                plan=Plan.ENTERPRISE,
+                stripe_customer_id="cus_i",
+                stripe_subscription_id="sub_i",
+                plan_renews_at=None,
+                subscription_status="active",
+                event_timestamp=None,  # missing timestamp
+            ),
+        }
+
+        service = MagicMock()
+
+        def _verify(payload_bytes, sig):
+            evt_id = payload_bytes.decode("utf-8")
+            return SimpleNamespace(id=evt_id, type="customer.subscription.updated")
+
+        def _extract(event):
+            return payload_map.get(event.id)
+
+        service.verify_and_parse_webhook.side_effect = _verify
+        service.extract_plan_update.side_effect = _extract
+        monkeypatch.setattr(app_module, "_stripe_service", service)
+
+        async with AsyncClient(
+            transport=ASGITransport(app=manager.app, raise_app_exceptions=False),
+            base_url="http://test",
+        ) as client:
+
+            async def _post(evt_id: str):
+                return await client.post(
+                    "/api/billing/webhook",
+                    content=evt_id.encode("utf-8"),
+                    headers={"stripe-signature": "sig"},
+                )
+
+            # Fire all 5 requests concurrently across parallel connections
+            responses = await asyncio.gather(
+                _post("evt_valid"),
+                _post("evt_unknown"),
+                _post("evt_stale"),
+                _post("evt_tomb"),
+                _post("evt_invalid_ts"),
+            )
+
+            res_valid, res_unknown, res_stale, res_tomb, res_invalid_ts = responses
+
+            # Assert exact isolated outcome classification for each request
+            assert res_valid.status_code == 200
+            assert res_valid.json()["processed"] is True
+
+            assert res_unknown.status_code == 200
+            assert res_unknown.json()["processed"] is False
+            assert res_unknown.json()["reason"] == "unknown_organization"
+
+            assert res_stale.status_code == 200
+            assert res_stale.json()["processed"] is False
+            assert res_stale.json()["reason"] == "stale_event"
+
+            assert res_tomb.status_code == 200
+            assert res_tomb.json()["processed"] is False
+            assert res_tomb.json()["reason"] == "tombstoned_organization"
+
+            assert res_invalid_ts.status_code == 200
+            assert res_invalid_ts.json()["processed"] is False
+            assert res_invalid_ts.json()["reason"] == "invalid_timestamp"
+
+
+def test_real_cryptographic_stripe_webhook_signature_verification() -> None:
+    """StripeService performs genuine HMAC-SHA256 signature verification via official Stripe SDK."""
+    import stripe
+
+    from responsibleai.billing.stripe_service import StripeBillingError, StripeService
+
+    webhook_secret = "whsec_test"
+    service = StripeService(
+        secret_key="sk_test_fake",
+        webhook_secret=webhook_secret,
+        price_ids={Plan.PRO: "price_pro", Plan.ENTERPRISE: "price_enterprise"},
+    )
+
+    payload = b'{"id": "evt_test_123", "type": "customer.subscription.updated", "data": {"object": {"id": "sub_123"}}}'
+    now_ts = int(time.time())
+
+    # 1. Valid signature generated via Stripe SDK
+    valid_sig = stripe.WebhookSignature.generate_signature_header(
+        payload=payload,
+        secret=webhook_secret,
+        timestamp=now_ts,
+    )
+    event = service.verify_and_parse_webhook(payload, valid_sig)
+    assert event.id == "evt_test_123"
+
+    # 2. Tampered payload with valid header
+    tampered_payload = b'{"id": "evt_test_tampered"}'
+    with pytest.raises(StripeBillingError, match="Webhook verification failed"):
+        service.verify_and_parse_webhook(tampered_payload, valid_sig)
+
+    # 3. Invalid signature header / wrong secret
+    wrong_sig = stripe.WebhookSignature.generate_signature_header(
+        payload=payload,
+        secret="whsec_wrong",
+        timestamp=now_ts,
+    )
+    with pytest.raises(StripeBillingError, match="Webhook verification failed"):
+        service.verify_and_parse_webhook(payload, wrong_sig)
+
+    # 4. Expired timestamp beyond default tolerance (tolerance is 300s)
+    old_ts = now_ts - 600
+    expired_sig = stripe.WebhookSignature.generate_signature_header(
+        payload=payload,
+        secret=webhook_secret,
+        timestamp=old_ts,
+    )
+    with pytest.raises(StripeBillingError, match="Webhook verification failed"):
+        service.verify_and_parse_webhook(payload, expired_sig)
+
+    # 5. Missing / malformed signature header
+    with pytest.raises(StripeBillingError, match="Webhook verification failed"):
+        service.verify_and_parse_webhook(payload, "invalid_header_format")

@@ -391,12 +391,22 @@ class DockerContainerBackend(IsolationBackend):
 
                 registry = InFlightExecutionRegistry.get_instance()
 
-                def _terminate_container_sync() -> bool:
+                async def _terminate_container() -> bool:
                     if proc.returncode is None:
                         try:
                             proc.kill()
                         except Exception:
                             pass
+                        for _ in range(5):
+                            await asyncio.sleep(0.02)
+                            if proc.returncode is not None:
+                                break
+                            try:
+                                wpid, _ = os.waitpid(proc.pid, os.WNOHANG)
+                                if wpid == proc.pid:
+                                    break
+                            except ChildProcessError:
+                                break
 
                     # 1. Force remove the container via docker rm -f
                     rm_res = subprocess.run(
@@ -406,25 +416,53 @@ class DockerContainerBackend(IsolationBackend):
                         timeout=5,
                         check=False,
                     )
-                    if rm_res.returncode != 0 and "no such container" not in rm_res.stderr.lower():
+                    rm_err = rm_res.stderr.lower()
+                    is_absent = (
+                        "no such container" in rm_err
+                        or "no such object" in rm_err
+                        or "not found" in rm_err
+                    )
+                    if rm_res.returncode != 0 and not is_absent:
                         raise RuntimeError(
-                            f"Docker kill failed for {container_name} (rc={rm_res.returncode}): {rm_res.stderr.strip()}"
+                            f"Docker rm -f failed for {container_name} (rc={rm_res.returncode}): {rm_res.stderr.strip()}"
                         )
 
-                    # 2. Actively verify container is not running
+                    # 2. Actively verify container absence or confirmed stoppage via inspect
                     inspect_res = subprocess.run(
-                        [self.docker_cmd, "inspect", "-f", "{{.State.Running}}", container_name],
+                        [
+                            self.docker_cmd,
+                            "inspect",
+                            "-f",
+                            "{{.State.Status}} {{.State.Running}}",
+                            container_name,
+                        ],
                         capture_output=True,
                         text=True,
                         timeout=5,
                         check=False,
                     )
-                    if inspect_res.returncode == 0 and inspect_res.stdout.strip().lower() == "true":
+                    if inspect_res.returncode == 0:
+                        parts = inspect_res.stdout.strip().lower().split()
+                        status = parts[0] if parts else ""
+                        is_running = parts[1] if len(parts) > 1 else ""
+                        if is_running == "true" or status in {"running", "restarting", "paused"}:
+                            raise RuntimeError(
+                                f"Container {container_name} is still running after termination attempt (status={status})."
+                            )
+                        return True
+                    else:
+                        insp_err = inspect_res.stderr.lower()
+                        if (
+                            "no such container" in insp_err
+                            or "no such object" in insp_err
+                            or "not found" in insp_err
+                        ):
+                            return True
+                        # Nonzero inspection error (daemon disconnect, permission denied, timeout)
+                        # Must NOT be marked successful without authoritative proof of containment
                         raise RuntimeError(
-                            f"Container {container_name} is still running after termination attempt."
+                            f"Docker inspect failed authoritatively confirming containment for {container_name} (rc={inspect_res.returncode}): {inspect_res.stderr.strip()}"
                         )
-
-                    return True
 
                 try:
                     await registry.register(
@@ -432,7 +470,7 @@ class DockerContainerBackend(IsolationBackend):
                         organization_id=request.organization_id,
                         action_id=request.action_id,
                         task=asyncio.current_task(),
-                        terminate_callback=_terminate_container_sync,
+                        terminate_callback=_terminate_container,
                         admission_epoch=request.admission_epoch,
                     )
                 except PermissionError as exc:
