@@ -60,6 +60,16 @@ async def mcp_app(monkeypatch: pytest.MonkeyPatch):
             oidc_skip_verification=True,
         )
         monkeypatch.setattr(config_module, "get_settings", lambda: settings)
+        if oidc_issuer:
+            from responsibleai.db import WebIdentityRepository
+
+            await WebIdentityRepository(engine).bind_sso_principal(
+                org_id=org.id,
+                issuer=oidc_issuer,
+                subject="user-1",
+                role=Role.ANALYST,
+                email=f"user-1-{org.id[:8]}@example.com",
+            )
         app = _build_http_app()
         manager = LifespanManager(app)
         await manager.__aenter__()

@@ -3,8 +3,11 @@ name: CI
 on:
   push:
     branches: ["main", "develop", "release/whitepact-v1-rc"]
+  # cursor/whitepact-rc-remediation-b6a9 is an ancestor of the stacked
+  # qualification draft. A pull request onto it has the same tree as its
+  # head. release/whitepact-v1-rc does not: that history is unrelated.
   pull_request:
-    branches: ["main", "release/whitepact-v1-rc"]
+    branches: ["main", "release/whitepact-v1-rc", "cursor/whitepact-rc-remediation-b6a9"]
 
 # CI only needs to read repository contents. Individual jobs do not receive
 # broader token capabilities unless explicitly added later.
@@ -15,9 +18,19 @@ jobs:
   test:
     name: Lint · Type-check · Test
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    # The full suite (~6.6k tests) takes 40-55m per interpreter on a shared runner; 3.12 hit the former
+    # 55m limit on 2026-10-11 (a cancelled job, not a failing test). Raised, not skipped.
+    timeout-minutes: 90
+    env:
+      WHITEPACT_REDIS_URL: redis://127.0.0.1:6379/0
+      WHITEPACT_REQUIRE_REDIS: "1"
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
         env:
           POSTGRES_USER: wp
           POSTGRES_PASSWORD: wp
@@ -29,12 +42,15 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.11", "3.12"]
-    # Full suite (~5.2k tests) can exceed 45m on 3.12; 3.11 finished ~44m27s on PR #130.
-    timeout-minutes: 55
+      redis:
+        image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -48,13 +64,13 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip setuptools
-          pip install -e ".[dev,openai,anthropic,sso,sentiment,postgres]"
+          pip install -e ".[dev,openai,anthropic,sso,sentiment,postgres,redis]"
 
       - name: Lint with ruff
-        run: ruff check src/ tests/
+        run: ruff check src/ tests/ sdk/python/
 
       - name: Check formatting with ruff
-        run: ruff format --check src/ tests/
+        run: ruff format --check src/ tests/ sdk/python/
 
       - name: Type-check with mypy
         run: mypy src/responsibleai
@@ -86,7 +102,36 @@ jobs:
             --ignore-vuln PYSEC-2026-597 \
             --ignore-vuln PYSEC-2026-3740
 
+      - name: Install mandatory Linux security-test tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nftables iproute2 nginx acl
+
+      - name: Security-fix inclusion gate
+        run: python scripts/check_security_fix_inclusion.py
+
+      - name: Security regression behavior gate
+        run: python scripts/check_security_regressions.py
+
+      - name: Build the isolated tool runtime image
+        # Real-tool isolation tests need an image that contains WhitePact. The stock
+        # python image cannot run the trusted runner. Used only by
+        # tests/test_isolation_real_tool_e2e.py (WHITEPACT_TEST_RUNTIME_IMAGE).
+        run: |
+          docker build -f Dockerfile.isolation -t whitepact-isolated-runtime:ci .
+          echo "WHITEPACT_TEST_RUNTIME_IMAGE=whitepact-isolated-runtime:ci" >> "$GITHUB_ENV"
+
+      - name: Build TypeScript SDK
+        run: |
+          npm --prefix sdk/typescript ci --ignore-scripts --no-audit --no-fund
+          npm --prefix sdk/typescript run build
+
       - name: Run tests with coverage
+        env:
+          # Designated Linux security CI: a missing Docker daemon must fail the
+          # real container-isolation tests, never skip them (see
+          # docs/launch/QUALIFICATION_SKIP_POLICY.md).
+          WHITEPACT_REQUIRE_DOCKER_ISOLATION: "1"
         run: |
           pytest tests/ \
             --cov=src/responsibleai \
@@ -281,7 +326,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
         env:
           POSTGRES_USER: wp
           POSTGRES_PASSWORD: wp
@@ -311,6 +356,14 @@ jobs:
           npm ci
           npm --prefix web ci
           npx playwright install --with-deps chromium
+      - name: TypeScript SDK build and tests
+        run: |
+          npm --prefix sdk/typescript ci --no-audit --no-fund
+          npm --prefix sdk/typescript test
+      - name: npm dependency audit (high and critical block)
+        run: |
+          npm --prefix sdk/typescript audit --audit-level=high
+          npm --prefix web audit --audit-level=high
       - name: Frontend static checks and unit tests
         run: |
           npm --prefix web run lint
@@ -350,3 +403,71 @@ jobs:
 
       - name: Run i18n unit tests (locale resolution, fallback, catalog integrity)
         run: node --test tests/js/i18n.test.js
+
+  go-sdk:
+    name: Go SDK (vet, race tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Uses the Go toolchain preinstalled on the runner image (not pinned by this repository).
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: gofmt, vet and tests
+        working-directory: sdk/go
+        run: |
+          test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+          go vet ./...
+          go test ./... -race -count=1 -cover
+
+  container-scan:
+    name: Container image scan (Trivy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Builds both shipped images and fails on any HIGH/CRITICAL OS or language vulnerability that has a
+    # fix available. Unfixed findings are reported by the scanner but cannot be fixed by us; they are
+    # tracked in docs/assurance/CONTAINER_SCAN_EVIDENCE.md. Scanner pinned by digest.
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Build the images
+        run: |
+          docker build -f Dockerfile -t whitepact:scan .
+          docker build -f Dockerfile.isolation -t whitepact-isolated-runtime:scan .
+
+      - name: Scan the images (fixable HIGH/CRITICAL fail the job)
+        run: |
+          set -euo pipefail
+          for image in whitepact:scan whitepact-isolated-runtime:scan; do
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+              aquasec/trivy@sha256:ab70a02200597efa04748f210f793936eb647cbcdb0ea69cc30b226d6f5a22c7 \
+              image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 "$image"
+          done
+
+  checkout-identity:
+    name: Candidate tree matches checkout
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Distinguish the synthetic merge SHA from the candidate HEAD
+        env:
+          CANDIDATE_HEAD: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          tested_sha=$(git rev-parse HEAD)
+          tested_tree=$(git rev-parse 'HEAD^{tree}')
+          echo "tested_sha=$tested_sha"
+          echo "tested_tree=$tested_tree"
+          echo "candidate_head=${CANDIDATE_HEAD}"
+          if [ -z "${CANDIDATE_HEAD}" ]; then
+            echo "Push event. github.sha is the commit under test."
+            exit 0
+          fi
+          git fetch --depth=1 origin "pull/${PR_NUMBER}/head:pr-head"
+          candidate_tree=$(git rev-parse 'pr-head^{tree}')
+          echo "candidate_tree=$candidate_tree"
+          if [ "$tested_tree" != "$candidate_tree" ]; then
+            echo "Synthetic merge tree differs from the candidate HEAD tree."
+            exit 1
+          fi
+          echo "TESTED TREE MATCHES CANDIDATE HEAD TREE"

@@ -137,7 +137,9 @@ class TrustScoreEngine:
         compliance : float
             Regulatory compliance maturity, 0-1.
         authenticity : float
-            Media authenticity (anti-deepfake), 0-1.
+            Media authenticity, 0-1. EXPERIMENTAL and caller-supplied: no deepfake
+            detector in this repository has a labelled evaluation, so this dimension
+            is not independent evidence of authenticity.
 
         Returns
         -------
@@ -197,7 +199,10 @@ class TrustScoreEngine:
         compliance_score : float | None
             ComplianceEngine compliance fraction (0-1).
         deepfake_fake_probability : float | None
-            DeepfakeDetector ensemble fake probability (0=authentic → higher authenticity).
+            Fake probability (0=authentic → higher authenticity) from a detector YOU
+            have validated. ``privacylabel.deepfake.DeepfakeDetector`` is experimental and
+            unvalidated (``result.validated is False``); do not pass its output here as
+            independent evidence.
         """
         fairness = (1.0 - min(bias_divergence, 1.0)) if bias_divergence is not None else 0.5
         privacy = privacy_budget_fraction if privacy_budget_fraction is not None else 0.5

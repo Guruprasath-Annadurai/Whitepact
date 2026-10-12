@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.Guruprasath-Annadurai/whitepact",
-  "description": "AI governance MCP server: trust scoring, guardrails, bias/hallucination detection, compliance.",
+  "description": "Runtime authority for AI agent tool calls: authorize, approve, revoke, audit. Stdio is advisory.",
   "title": "WhitePact",
   "websiteUrl": "https://github.com/Guruprasath-Annadurai/Whitepact",
   "repository": {
@@ -21,7 +21,7 @@
           "type": "named",
           "name": "--from",
           "value": "rai-governance-platform",
-          "description": "PyPI project name (distinct from the console script invoked below — see packageArguments)."
+          "description": "PyPI project name (distinct from the console script invoked below \u2014 see packageArguments)."
         }
       ],
       "packageArguments": [
@@ -51,7 +51,7 @@
       "headers": [
         {
           "name": "Authorization",
-          "description": "Bearer API key for the hosted WhitePact MCP server. Obtain one from the WhitePact dashboard (Settings → API Keys) after creating a free org.",
+          "description": "Bearer API key for the hosted WhitePact MCP server. Hosted tool execution requires an organization with hosted entitlement; the local stdio package needs no key and is advisory, not an enforcement point.",
           "isRequired": true,
           "isSecret": true,
           "placeholder": "Bearer <your-api-key>"
@@ -64,7 +64,7 @@
       "headers": [
         {
           "name": "Authorization",
-          "description": "Bearer API key for the hosted WhitePact MCP server. Obtain one from the WhitePact dashboard (Settings → API Keys) after creating a free org.",
+          "description": "Bearer API key for the hosted WhitePact MCP server. Hosted tool execution requires an organization with hosted entitlement; the local stdio package needs no key and is advisory, not an enforcement point.",
           "isRequired": true,
           "isSecret": true,
           "placeholder": "Bearer <your-api-key>"
@@ -74,12 +74,19 @@
   ],
   "_meta": {
     "io.modelcontextprotocol.registry/publisher-provided": {
-      "tool_count": 31,
+      "tool_count": 30,
       "resource_count_canonical": 10,
       "resource_count_advertised": 20,
-      "resource_note": "Canonical resources are served under both whitepact:// and rai:// URI schemes (dual-scheme, see MIGRATION_WHITEPACT_V2.md Section 6) — 20 is the advertised count over the wire, 10 is the count of distinct underlying resources.",
+      "resource_note": "Canonical resources are served under both whitepact:// and rai:// URI schemes (dual-scheme, see MIGRATION_WHITEPACT_V2.md Section 6) \u2014 20 is the advertised count over the wire, 10 is the count of distinct underlying resources.",
       "license": "MIT",
-      "governance_decision_model": ["ALLOW", "ALLOW_WITH_REDACTION", "REQUIRE_APPROVAL", "DENY", "QUARANTINE"]
+      "governance_decision_model": [
+        "ALLOW",
+        "ALLOW_WITH_REDACTION",
+        "REQUIRE_APPROVAL",
+        "DENY",
+        "QUARANTINE"
+      ],
+      "tool_note": "30 tools are advertised to clients; the internal test fixture test.counter.increment is defined in code but never listed."
     }
   }
 }

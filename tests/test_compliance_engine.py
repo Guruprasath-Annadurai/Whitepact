@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: MIT
 from __future__ import annotations
 
+import pytest
+
 from responsibleai.compliance.engine import (
     ComplianceEngine,
     ComplianceStatus,
@@ -183,3 +185,53 @@ class TestMultiFrameworkEvaluation:
         assert "control_id" in finding
         assert "status" in finding
         assert "recommendation" in finding
+
+
+class TestEuTierUseCaseNormalisation:
+    """A high-risk use case must not be classified MINIMAL because of spelling."""
+
+    @staticmethod
+    def _tier(use_case: str) -> str:
+        report = ComplianceEngine().evaluate(
+            fairness_score=0.8,
+            privacy_score=0.85,
+            security_score=0.82,
+            robustness_score=0.78,
+            compliance_maturity=0.9,
+            use_case=use_case,
+        )
+        assert report.eu_ai_act_tier is not None
+        return report.eu_ai_act_tier.value
+
+    @pytest.mark.parametrize(
+        "use_case",
+        [
+            "credit scoring",
+            "credit_scoring",
+            "Credit-Scoring",
+            "  CREDIT   SCORING  ",
+            "employment_screening",
+            "biometric_identification",
+            "hiring",
+        ],
+    )
+    def test_high_risk_spellings_are_all_high(self, use_case: str) -> None:
+        assert self._tier(use_case).lower() == "high"
+
+    @pytest.mark.parametrize("use_case", ["spam_filter", "general", "document summarisation"])
+    def test_ordinary_use_cases_are_not_promoted(self, use_case: str) -> None:
+        assert self._tier(use_case).lower() == "minimal"
+
+    def test_unacceptable_wins_over_high_risk_in_identifier_form(self) -> None:
+        assert self._tier("social_scoring").lower() == "unacceptable"
+
+    @pytest.mark.parametrize(
+        "use_case",
+        [
+            "real-time biometric surveillance",
+            "real_time_biometric_surveillance",
+            "Real Time Biometric Surveillance",
+        ],
+    )
+    def test_prohibited_use_is_never_downgraded_to_high(self, use_case: str) -> None:
+        assert self._tier(use_case).lower() == "unacceptable"

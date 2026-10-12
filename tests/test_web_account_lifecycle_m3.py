@@ -16,6 +16,7 @@ from responsibleai.dashboard import app as app_module
 from responsibleai.iam.enums import StepUpMethod
 from responsibleai.iam.models import StepUpProof
 from responsibleai.iam.step_up import StepUpVerifier
+from tests.step_up_helpers import valid_human_totp_code
 
 
 @pytest.fixture()
@@ -84,7 +85,7 @@ async def _step_up_proof(org_id: str, user_id: str, *, action: str = "DESTROY_TE
         nonce=nonce,
         method=StepUpMethod.MFA_TOTP,
         auth_time=datetime.now(UTC).isoformat(),
-        token_or_code="123456",
+        token_or_code=await valid_human_totp_code(engine, user_id),
     )
     return {
         "nonce": proof.nonce,

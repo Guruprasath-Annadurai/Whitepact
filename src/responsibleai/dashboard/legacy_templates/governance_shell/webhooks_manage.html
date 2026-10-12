@@ -24,7 +24,7 @@
   const content = document.getElementById("rai-page-content");
 
   function escHtml(s) {
-    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
 
   const EVENTS = ["drift_alert", "budget_exceeded", "guardrail_triggered", "trust_score_changed"];

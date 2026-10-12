@@ -85,4 +85,12 @@ class RevocationEpochRepository:
     async def bump(self, organization_id: str, scope: str = "governance") -> RevocationEpoch:
         async with self._engine.raw.begin() as conn:
             value = await bump_epoch_on_connection(conn, organization_id, scope)
+        try:
+            from responsibleai.isolation.in_flight import InFlightExecutionRegistry
+
+            await InFlightExecutionRegistry.get_instance().terminate_in_flight(
+                organization_id=organization_id
+            )
+        except Exception:
+            pass
         return RevocationEpoch(organization_id, scope, value)

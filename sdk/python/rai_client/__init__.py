@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from ._version import __version__ as __version__
 from .client import RAIClient
-from .governance import GovernanceRuntimeClient, GovernanceToolOutcome
+from .governance import GovernanceRequestError, GovernanceRuntimeClient, GovernanceToolOutcome
 from .models import (
     ComplianceReport,
     CostRecord,
@@ -15,6 +16,7 @@ from .models import (
 )
 
 __all__ = [
+    "GovernanceRequestError",
     "GovernanceRuntimeClient",
     "GovernanceToolOutcome",
     "RAIClient",
@@ -26,5 +28,3 @@ __all__ = [
     "CostRecord",
     "EvalCompareResult",
 ]
-
-__version__ = "1.0.0"

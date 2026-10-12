@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
@@ -142,7 +143,9 @@ TOOL_DEFS: list[types.Tool] = [
             "Detect hallucination risk in AI-generated text. Analyses hedging language, "
             "self-consistency across candidate responses, unsupported factual claims, and "
             "(when a `source` is supplied) explicit factual disagreement with that source "
-            "-- e.g. the source names one day/month/number and the response names another."
+            "-- e.g. the source names one day/month/number and the response names another. "
+            "Heuristic triage signals only: it does not retrieve evidence or verify facts, so "
+            "a low score is not proof an answer is correct."
         ),
         inputSchema={
             "type": "object",
@@ -702,9 +705,10 @@ TOOL_DEFS: list[types.Tool] = [
             readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False
         ),
         description=(
-            "Create a structured governance incident record. Used by Security Engineers and "
-            "AI Risk Analysts to log AI safety events (PII leaks, jailbreak attempts, bias triggers, "
-            "hallucination incidents) for audit trail and SIEM integration."
+            "Build (but do not store) a structured governance incident record for an AI safety event "
+            "(PII leak, jailbreak attempt, bias trigger, hallucination, policy violation). Nothing is "
+            "written by this tool; the returned record can be posted to the incidents API by the "
+            "caller. Used by Security Engineers and AI Risk Analysts."
         ),
         inputSchema={
             "type": "object",
@@ -1125,7 +1129,12 @@ TOOL_DEFS: list[types.Tool] = [
                     "type": "boolean",
                     "default": False,
                     "description": "If true, mutate then raise to simulate a lost acknowledgement.",
-                }
+                },
+                "sleep_seconds": {
+                    "type": "number",
+                    "default": 0.0,
+                    "description": "If positive, sleep asynchronously to simulate long-running execution for revocation testing.",
+                },
             },
         },
     ),
@@ -1150,9 +1159,13 @@ def test_tools_enabled() -> bool:
     )
 
 
-def advertised_tool_defs(*, hosted: bool) -> list[types.Tool]:
+def advertised_tool_defs(*, hosted: bool, authority: bool = False) -> list[types.Tool]:
+    """``authority`` adds the four read-only authority tools; they are advertised only on a
+    hosted, tenant-scoped connection whose governance services can actually serve them."""
     if hosted:
-        return list(PRODUCTION_TOOL_DEFS)
+        from responsibleai.mcp.authority_tools import AUTHORITY_TOOL_DEFS
+
+        return [*PRODUCTION_TOOL_DEFS, *(AUTHORITY_TOOL_DEFS if authority else [])]
     if test_tools_enabled():
         return list(TOOL_DEFS)
     return list(PRODUCTION_TOOL_DEFS)
@@ -1164,7 +1177,7 @@ def production_tool_count() -> int:
 
 # WhitePact's hosted transport requires an explicit, human-readable purpose for
 # canonical authority resolution. It is an optional schema extension because
-# local community stdio remains intentionally ungovened; the hosted dispatcher
+# local community stdio remains intentionally ungoverned; the hosted dispatcher
 # removes it before invoking tool handlers and binds it separately in the action.
 WHITEPACT_PURPOSE_ARGUMENT = "_whitepact_purpose"
 for _tool in TOOL_DEFS:
@@ -1190,6 +1203,9 @@ async def _handle_test_counter_increment(args: dict[str, Any]) -> dict[str, Any]
 
     org_id = str(args.get("_whitepact_organization_id") or "")
     fail_after = bool(args.get("fail_after_effect", False))
+    sleep_seconds = float(args.get("sleep_seconds", 0.0) or 0.0)
+    if sleep_seconds > 0:
+        await asyncio.sleep(sleep_seconds)
     return await increment(org_id, fail_after_effect=fail_after)
 
 
@@ -2072,14 +2088,11 @@ async def _handle_incident_log(args: dict[str, Any]) -> dict[str, Any]:
         source="mcp_tool",
     )
     record["persist_instructions"] = (
-        "This record is ephemeral in MCP context — the MCP server has no "
-        "direct database connection of its own. To persist it, POST this "
-        "record (or just incident_type/severity/model_name/provider/"
-        "description/evidence/mitigated) to POST /api/incidents on the "
-        "ResponsibleAI REST server, which is a real, wired endpoint backed "
-        "by the incidents table (responsibleai.db.incident_repository). "
-        "See compliance/INCIDENT_RESPONSE_RUNBOOK.md's Phase 1 for when to "
-        "do this."
+        "Not stored: this record exists only in this response, because the MCP server has no "
+        "database connection of its own. It is persisted by an authorized operator or integration "
+        "that sends incident_type, severity, model_name, provider, description, evidence and "
+        "mitigated to POST /api/incidents on the WhitePact REST server "
+        "(compliance/INCIDENT_RESPONSE_RUNBOOK.md, Phase 1)."
     )
     return record
 

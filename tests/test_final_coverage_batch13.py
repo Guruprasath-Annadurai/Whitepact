@@ -259,8 +259,18 @@ class TestIdentityResolutionBatch13:
         repo = OrgRepository(engine)
         org = await repo.create_org("OIDC Org", f"oidc13-{uuid.uuid4().hex[:8]}")
         provider = MagicMock()
+        provider.issuer = "https://idp.example"
         provider.validate_token = AsyncMock(
-            return_value=JWTClaims(sub="user-oidc", org_id=org.id, roles=["bogus", "ADMIN"])
+            return_value=JWTClaims(sub="user-oidc", org_id=org.id, roles=["ADMIN"])
+        )
+        from responsibleai.db import WebIdentityRepository
+
+        await WebIdentityRepository(engine).bind_sso_principal(
+            org_id=org.id,
+            issuer="https://idp.example",
+            subject="user-oidc",
+            role=Role.ADMIN,
+            email=f"oidc-{org.id[:8]}@example.com",
         )
         monkeypatch = pytest.MonkeyPatch()
         monkeypatch.setattr(app_module, "_oidc_provider", provider)
@@ -275,15 +285,23 @@ class TestIdentityResolutionBatch13:
         repo = OrgRepository(engine)
         org = await repo.create_org("OIDC Viewer", f"oidcv-{uuid.uuid4().hex[:8]}")
         provider = MagicMock()
+        provider.issuer = "https://idp.example"
         provider.validate_token = AsyncMock(
             return_value=JWTClaims(sub="user-oidc", org_id=org.id, roles=["not-a-real-role"])
+        )
+        from responsibleai.db import WebIdentityRepository
+
+        await WebIdentityRepository(engine).bind_sso_principal(
+            org_id=org.id,
+            issuer="https://idp.example",
+            subject="user-oidc",
+            role=Role.VIEWER,
+            email=f"viewer-{org.id[:8]}@example.com",
         )
         monkeypatch = pytest.MonkeyPatch()
         monkeypatch.setattr(app_module, "_oidc_provider", provider)
         monkeypatch.setattr(app_module, "_org_repo", repo)
-        ctx = await _resolve_oidc_context("eyJhbGciOiJIUzI1NiJ9.e30.sig")
-        assert ctx is not None
-        assert ctx.role == Role.VIEWER
+        assert await _resolve_oidc_context("eyJhbGciOiJIUzI1NiJ9.e30.sig") is None
         monkeypatch.undo()
 
     async def test_resolve_saml_maps_session_to_org_context(self, engine) -> None:
@@ -295,8 +313,19 @@ class TestIdentityResolutionBatch13:
             roles=["ANALYST"],
             email="saml@example.com",
         )
+        from responsibleai.db import WebIdentityRepository
+
+        await WebIdentityRepository(engine).bind_sso_principal(
+            org_id=org.id,
+            issuer="test-idp",
+            subject="saml-user",
+            role=Role.ANALYST,
+            email=f"saml-{org.id[:8]}@example.com",
+        )
+        saml_config = MagicMock()
+        saml_config.idp_entity_id = "test-idp"
         monkeypatch = pytest.MonkeyPatch()
-        monkeypatch.setattr(app_module, "_saml_config", MagicMock())
+        monkeypatch.setattr(app_module, "_saml_config", saml_config)
         monkeypatch.setattr(app_module, "_org_repo", repo)
         monkeypatch.setattr(app_module, "validate_session_token", lambda _cfg, _tok: claims)
         ctx = await _resolve_saml_context("wp_saml.valid.token")

@@ -90,13 +90,12 @@ What ``evaluate()`` checks, in order:
    ``governance/trust_integration.py`` when the action names a
    third-party model/provider) — an otherwise-``ALLOW`` decision is
    downgraded to ``REQUIRE_APPROVAL`` when the Trust Index reports a
-   known model scoring below ``LOW_TRUST_SCORE_THRESHOLD``, *or* when
-   ``trust_state.stale`` is set (Continuous MCP Trust, v3
-   authority-layer work: ``TrustClient`` attempted a live re-fetch
-   before this call and it failed, so this decision would otherwise be
-   made on a result that couldn't be freshly reverified). Never
-   escalates a redaction or a deny, and never fires for an unknown or
-   unscored model — see ``_trust_reason`` below.
+   known model scoring below ``LOW_TRUST_SCORE_THRESHOLD``, when
+   ``trust_state.stale`` is set, or when the lookup itself failed
+   (``trust_state.error``). A successful response for an unknown model
+   does not escalate. A lookup failure must not be treated as an
+   unscored allow. Never escalates a redaction or a deny — see
+   ``_trust_reason`` below.
 
 No LLM call anywhere in this file — "prefer deterministic security
 controls over LLM-based controls where possible" applies to the
@@ -496,17 +495,20 @@ class WhitePactRuntimeGateway:
            freshly reverify. Fires regardless of score, including for
            an unknown model — staleness is about *how* the data was
            obtained, not what it says.
-        2. A known model scoring below ``LOW_TRUST_SCORE_THRESHOLD`` —
-           an unknown or unscored model is not treated as untrustworthy
-           (same fail-open-on-unknown reasoning
-           ``TrustCheckResult.passes()`` documents), only a model with a
-           real, low score escalates.
+        2. ``trust_state.error`` — the lookup failed and there is no
+           fresh result. This is not an unknown model. Admission must
+           not proceed as ALLOW.
+        3. A known model scoring below ``LOW_TRUST_SCORE_THRESHOLD``.
+           A successful lookup that reports ``known=False`` is not a
+           low score and does not escalate.
         """
         trust_state = action.agent.trust_state
         if trust_state is None:
             return None
         if trust_state.stale:
             return format_reason(ReasonCode.TRUST_ASSESSMENT_STALE, model=trust_state.model)
+        if trust_state.error:
+            return format_reason(ReasonCode.TRUST_LOOKUP_UNAVAILABLE, model=trust_state.model or "")
         if not trust_state.known:
             return None
         score = trust_state.overall_score

@@ -77,6 +77,7 @@ import json
 import logging
 import os
 import sys
+from collections.abc import MutableMapping
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -175,7 +176,12 @@ def _month_start_iso() -> str:
 async def _list_tools() -> list[types.Tool]:
     from responsibleai.mcp.tools import advertised_tool_defs
 
-    tools = advertised_tool_defs(hosted=_current_hosted.get())
+    governance = _current_governance.get()
+    tools = advertised_tool_defs(
+        hosted=_current_hosted.get(),
+        authority=getattr(governance, "authority_read_limiter", None) is not None
+        and getattr(governance, "authority_read_backend", None) is not None,
+    )
     ctx = _current_org.get()
     if ctx is not None and ctx.key_id.startswith("oauth:"):
         return [_with_oauth_security(tool) for tool in tools]
@@ -277,8 +283,29 @@ async def _call_tool(
                 "message": "Hosted tool execution requires tenant-scoped governance. No action was taken.",
             }
         )
-    if usage_repo is not None and ctx is not None and ctx.org_id:
-        await usage_repo.record_call(ctx.org_id, name, ctx.plan.value, allowed=True)
+    if _current_hosted.get() and usage_repo is None and ctx is not None and ctx.org_id:
+        return _text_and_structured(
+            {
+                "error": "quota_enforcement_unavailable",
+                "message": (
+                    "Hosted tool execution requires usage metering before any action. "
+                    "No action was taken."
+                ),
+            }
+        )
+
+    async def _meter(allowed: bool) -> None:
+        if usage_repo is not None and ctx is not None and ctx.org_id:
+            await usage_repo.record_call(ctx.org_id, name, ctx.plan.value, allowed=allowed)
+
+    from responsibleai.mcp.authority_tools import AUTHORITY_TOOL_NAMES
+
+    if name in AUTHORITY_TOOL_NAMES:
+        # Read-only authority tools never reach apply_governance(): they mint no execution
+        # grant, write no evidence and need no purpose. They are tenant-scoped, role-gated and
+        # rate limited inside AuthorityReadService.
+        return await _call_authority_tool(name, call_arguments, ctx, governance, _meter)
+
     if governance is not None and ctx is not None and ctx.org_id:
         # Local import: keeps the stdio transport's import graph free of
         # the DB/governance layer unless a hosted-HTTP connection with
@@ -288,6 +315,7 @@ async def _call_tool(
 
         purpose = call_arguments.get(WHITEPACT_PURPOSE_ARGUMENT)
         if not isinstance(purpose, str) or not purpose.strip():
+            await _meter(False)
             return _text_and_structured(
                 {
                     "error": "governance_purpose_required",
@@ -310,7 +338,9 @@ async def _call_tool(
             name, governed_arguments, ctx, governance, purpose=purpose.strip()
         )
         if not outcome.proceed:
+            await _meter(False)
             return _text_and_structured(outcome.blocked_response or {"error": "governance_blocked"})
+        await _meter(True)
         # apply_governance() already ran the tool via InternalToolExecutor
         # once it had a valid ExecutionAuthorization — outcome.result is
         # that result. Calling dispatch_tool() again here would both
@@ -326,6 +356,35 @@ async def _call_tool(
 
     set_mcp_dispatch_hosted(_current_hosted.get())
     result = await dispatch_tool(name, call_arguments)
+    return _text_and_structured(result)
+
+
+async def _call_authority_tool(
+    name: str,
+    arguments: dict[str, Any],
+    ctx: OrgContext | None,
+    governance: GovernanceServices | None,
+    meter: Any,
+) -> tuple[list[types.TextContent], dict[str, Any]]:
+    from responsibleai.mcp.authority_tools import AuthorityReadService
+
+    limiter = getattr(governance, "authority_read_limiter", None)
+    backend = getattr(governance, "authority_read_backend", None)
+    if (
+        governance is None
+        or ctx is None
+        or limiter is None
+        or backend is None
+        or not _current_hosted.get()
+    ):
+        return _text_and_structured(
+            {
+                "error": "authority_tools_unavailable",
+                "message": "Authority tools are available on the hosted, tenant-scoped transport only.",
+            }
+        )
+    result = await AuthorityReadService(backend, limiter).call(name, arguments, ctx)
+    await meter("error" not in result)
     return _text_and_structured(result)
 
 
@@ -353,6 +412,9 @@ async def _run_stdio() -> None:
 
 
 def _run_stdio_main_body() -> None:
+    from responsibleai.mcp.trust_domain import write_community_stdio_boundary
+
+    write_community_stdio_boundary()
     _logger.info("starting %s v1.2.0 (stdio)", server.name)
     _log_invocation_name("stdio server")
     asyncio.run(_run_stdio())
@@ -524,6 +586,75 @@ class _AuthFailureLimiter:
                 self._prune(f"peer_agg:{peer_key}", now).append(now)
 
 
+MAX_MCP_REQUEST_BYTES = 4 * 1024 * 1024
+
+
+def _reject_malformed_json_rpc_body(body: bytes) -> Any:
+    """400 for a body that is not UTF-8 JSON, 413 for one over the limit; ``None`` if acceptable.
+
+    Shape validation (JSON-RPC fields, methods, arguments) stays with the protocol layer; this only
+    guarantees that what reaches it is parseable text, so a client mistake is never a server error.
+    """
+    import json as _json
+
+    from starlette.responses import JSONResponse
+
+    if len(body) > MAX_MCP_REQUEST_BYTES:
+        return JSONResponse(
+            {
+                "jsonrpc": "2.0",
+                "id": None,
+                "error": {"code": -32600, "message": "Request too large"},
+            },
+            status_code=413,
+        )
+    try:
+        _json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return JSONResponse(
+            {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}},
+            status_code=400,
+        )
+    return None
+
+
+def select_authority_read_backend(
+    *,
+    database_url: str | None,
+    production: bool,
+    main_engine: Any,
+    engine_factory: Any,
+) -> tuple[Any, Any, Any]:
+    """Choose the database identity for the read-only authority tools: (own_engine, backend, limiter).
+
+    * dedicated URL set   -> its own engine (the least-privilege role); the only supported production mode
+    * production, no URL  -> (None, None, None): the tools are not offered; the read path never borrows
+                             the application's full-privilege role
+    * development, no URL -> the main engine, for local testing only (own_engine is None)
+    """
+    from responsibleai.db import ApprovalRepository, EvidenceRepository, PolicyRepository
+    from responsibleai.enterprise.security.rate_limit import DurableIdentityRateLimiter
+    from responsibleai.mcp.authority_tools import AuthorityReadBackend
+
+    if database_url:
+        engine = engine_factory(database_url)
+        own: Any = engine
+    elif production:
+        _logger.warning(
+            "authority_tools_disabled reason=no_authority_read_database_url_in_production"
+        )
+        return None, None, None
+    else:
+        engine = main_engine
+        own = None
+    backend = AuthorityReadBackend(
+        policy_repo=PolicyRepository(engine),
+        approval_repo=ApprovalRepository(engine),
+        evidence_repo=EvidenceRepository(engine),
+    )
+    return own, backend, DurableIdentityRateLimiter(engine)
+
+
 def _build_http_app() -> Any:
     """Construct the ASGI app for hosted MCP. Imports are local — this path
     pulls in Starlette + the DB layer, which self-hosted stdio users never need.
@@ -539,6 +670,7 @@ def _build_http_app() -> Any:
     from mcp.server.sse import SseServerTransport
     from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
     from starlette.applications import Starlette
+    from starlette.middleware import Middleware
     from starlette.requests import Request
     from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
     from starlette.routing import Mount, Route
@@ -546,6 +678,10 @@ def _build_http_app() -> Any:
 
     from responsibleai.auth.mcp_oauth import McpOAuthAuthorizationServer, OAuthProtocolError
     from responsibleai.auth.oidc import OIDCProvider
+    from responsibleai.auth.tenant_admission import (
+        TenantAdmissionDeniedError,
+        admit_sso_principal,
+    )
     from responsibleai.auth.verifiable_credential import (
         VerifiableCredentialProvider,
         looks_like_vc_jwt,
@@ -555,11 +691,12 @@ def _build_http_app() -> Any:
         McpUsageRepository,
         OrgRepository,
         PrincipalRepository,
+        WebIdentityRepository,
         create_engine,
     )
-    from responsibleai.governance.principal import build_principal_claim
+    from responsibleai.governance.principal import PrincipalClaim, build_principal_claim
+    from responsibleai.ops.admission import AdmissionControlMiddleware
     from responsibleai.rbac.models import Plan, Role
-    from responsibleai.rbac.permissions import role_from_str
 
     settings = get_settings()
     hosted_production_preflight(settings)
@@ -584,6 +721,7 @@ def _build_http_app() -> Any:
     )
 
     _governance_services: GovernanceServices | None = None
+    _authority_read_engine: Any = None
     _governance_webhook_manager: WebhookManager | None = None
     if settings.mcp_governance_enabled:
         from responsibleai.db import (
@@ -611,6 +749,17 @@ def _build_http_app() -> Any:
         )
         from responsibleai.webhooks.manager import WebhookManager as RuntimeWebhookManager
 
+        (
+            _authority_read_engine,
+            _authority_read_backend,
+            _authority_read_limiter,
+        ) = select_authority_read_backend(
+            database_url=settings.authority_read_database_url,
+            production=settings.is_production,
+            main_engine=_db_engine,
+            engine_factory=create_engine,
+        )
+
         _governance_webhook_manager = RuntimeWebhookManager()
         _governance_webhook_manager.set_repository(WebhookDeliveryRepository(_db_engine))
         _governance_webhook_manager.set_config_repository(WebhookConfigRepository(_db_engine))
@@ -628,6 +777,8 @@ def _build_http_app() -> Any:
             evidence_repo=EvidenceRepository(_db_engine),
             approval_repo=ApprovalRepository(_db_engine),
             policy_repo=PolicyRepository(_db_engine),
+            authority_read_limiter=_authority_read_limiter,
+            authority_read_backend=_authority_read_backend,
             # Continuous MCP Trust: this is the hot governed-dispatch
             # path, making a live Trust Index HTTP call on every
             # governed call with a provider/model pair -- caching (with
@@ -685,14 +836,38 @@ def _build_http_app() -> Any:
         stateless=True,
         security_settings=transport_security,
     )
+    _auth_max_failures = int(os.environ.get("RAI_MCP_HTTP_AUTH_MAX_FAILURES", "10"))
+    # Peer ceiling equals the credential ceiling. A higher peer budget let
+    # one source address multiply failed-auth attempts by presenting a new
+    # bearer token for each batch.
     auth_limiter = _AuthFailureLimiter(
-        max_failures=int(os.environ.get("RAI_MCP_HTTP_AUTH_MAX_FAILURES", "10")),
+        max_failures=_auth_max_failures,
         window_seconds=float(os.environ.get("RAI_MCP_HTTP_AUTH_WINDOW_SECONDS", "60")),
+        peer_max_failures=_auth_max_failures,
     )
 
     @asynccontextmanager
     async def _lifespan(_app: Starlette) -> Any:
         await _db_engine.init(auto_create_tables=not settings.is_production)
+        from responsibleai.isolation.in_flight import InFlightExecutionRegistry
+
+        in_flight_reg = InFlightExecutionRegistry.get_instance()
+        in_flight_reg.start_reconciliation_watcher(_db_engine, interval=0.1)
+        if _authority_read_engine is not None:
+            from responsibleai.mcp.authority_tools import write_privilege_violations
+
+            await _authority_read_engine.init(auto_create_tables=False)
+            violations = await write_privilege_violations(_authority_read_engine)
+            if violations != [] and _governance_services is not None:
+                # Fail closed: a read path whose role can write (or whose privileges cannot be
+                # verified) is not offered. The application keeps running without these tools.
+                _logger.error(
+                    "authority_tools_disabled reason=%s tables=%s",
+                    "role_not_verifiably_read_only" if violations is None else "role_can_write",
+                    violations,
+                )
+                _governance_services.authority_read_backend = None
+                _governance_services.authority_read_limiter = None
         if _governance_webhook_manager is not None:
             await _governance_webhook_manager.load_configs()
             _governance_webhook_manager.start_retry_worker()
@@ -700,6 +875,9 @@ def _build_http_app() -> Any:
             async with streamable_http.run():
                 yield
         finally:
+            in_flight_reg.stop_reconciliation_watcher()
+            if _authority_read_engine is not None:
+                await _authority_read_engine.close()
             if _governance_webhook_manager is not None:
                 _governance_webhook_manager.stop_retry_worker()
 
@@ -757,26 +935,25 @@ def _build_http_app() -> Any:
         except ValueError:
             return None
 
-        org = await _org_repo.get_org(claims.org_id) if claims.org_id else None
-        if org is None:
-            # A valid IdP signature proves who issued the JWT, not membership
-            # in a WhitePact tenant. Never manufacture a FREE tenant context
-            # for an unknown or missing org claim.
+        try:
+            admitted = await admit_sso_principal(
+                org_repo=_org_repo,
+                identity_repo=WebIdentityRepository(_db_engine),
+                claimed_org_id=claims.org_id,
+                issuer=_oidc_provider.issuer,
+                subject=claims.sub,
+                claimed_roles=claims.roles,
+            )
+        except TenantAdmissionDeniedError:
             return None
-        role = Role.VIEWER
-        for raw_role in claims.roles:
-            candidate = role_from_str(raw_role)
-            if candidate.value == raw_role.upper():
-                role = candidate
-                break
 
         return OrgContext(
             key_id=f"oidc:{claims.sub}",
-            role=role,
-            org_id=claims.org_id,
-            org_name=org.name,
+            role=admitted.role,
+            org_id=admitted.org_id,
+            org_name=admitted.org_name,
             is_legacy=False,
-            plan=org.plan,
+            plan=admitted.plan,
             authentication_method="oidc",
         )
 
@@ -802,34 +979,46 @@ def _build_http_app() -> Any:
             return None
 
         try:
-            claim = build_principal_claim(claims)
+            admitted = await admit_sso_principal(
+                org_repo=_org_repo,
+                identity_repo=WebIdentityRepository(_db_engine),
+                claimed_org_id=claims.org_id,
+                issuer=claims.issuer,
+                subject=claims.sub,
+                claimed_roles=claims.roles,
+            )
+        except TenantAdmissionDeniedError:
+            # Reject before any principal row is written. A signed
+            # credential for an unknown, inactive, or unbound tenant
+            # must not poison the directory.
+            return None
+
+        verified = build_principal_claim(claims)
+        claim = PrincipalClaim(
+            principal_id=verified.principal_id,
+            org_id=admitted.org_id,
+            issuer=verified.issuer,
+            credential_type=verified.credential_type,
+            holder_kind=verified.holder_kind,
+            claim_keys=verified.claim_keys,
+        )
+        try:
             await _principal_repo.record(claim)
         except Exception:
-            # Audit-trail write only -- the principal is already fully
-            # verified by this point (see auth/verifiable_credential.py);
-            # a DB failure here must not block an otherwise-valid
-            # authentication, matching OutcomeRecord's fail-open posture.
             _logger.exception(
                 "verified_principal_audit_write_failed principal_sub=%s issuer=%s",
                 claims.sub,
                 claims.issuer,
             )
-
-        org = await _org_repo.get_org(claims.org_id) if claims.org_id else None
-        role = Role.VIEWER
-        for raw_role in claims.roles:
-            candidate = role_from_str(raw_role)
-            if candidate.value == raw_role.upper():
-                role = candidate
-                break
+            return None
 
         return OrgContext(
             key_id=f"vc:{claims.sub}",
-            role=role,
-            org_id=claims.org_id,
-            org_name=org.name if org else None,
+            role=admitted.role,
+            org_id=admitted.org_id,
+            org_name=admitted.org_name,
             is_legacy=False,
-            plan=org.plan if org else Plan.FREE,
+            plan=admitted.plan,
             authentication_method="vc",
         )
 
@@ -968,6 +1157,27 @@ def _build_http_app() -> Any:
             if error is not None:
                 await error(scope, receive, send)
                 return
+
+            if request.method == "POST":
+                # A malformed body is the client's mistake (400), not the server's (500). The pinned
+                # SDK answers invalid UTF-8 with 500 "Error handling POST request"; check first and
+                # replay the validated body to it.
+                body = await request.body()
+                rejected = _reject_malformed_json_rpc_body(body)
+                if rejected is not None:
+                    await rejected(scope, receive, send)
+                    return
+                replayed = False
+                original_receive = receive
+
+                async def receive_replay() -> MutableMapping[str, Any]:
+                    nonlocal replayed
+                    if not replayed:
+                        replayed = True
+                        return {"type": "http.request", "body": body, "more_body": False}
+                    return await original_receive()
+
+                receive = receive_replay
 
             org_token = _current_org.set(ctx)
             usage_token = _current_usage_repo.set(_usage_repo)
@@ -1248,6 +1458,9 @@ def _build_http_app() -> Any:
             Route("/.well-known/openai-apps-challenge", endpoint=openai_apps_challenge),
         ],
         lifespan=_lifespan,
+        middleware=[
+            Middleware(AdmissionControlMiddleware, max_inflight=settings.max_inflight_requests)
+        ],
     )
 
     return app

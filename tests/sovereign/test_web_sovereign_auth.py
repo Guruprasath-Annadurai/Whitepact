@@ -33,8 +33,13 @@ async def sovereign_web_app():
     app.include_router(router)
     app.include_router(web_router)
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        yield client, engine, identities
+    try:
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            yield client, engine, identities
+    finally:
+        bind_counter_engine(None)
+        bind_sovereign_engine(None)
+        bind_web_identity_repository(None)
 
 
 async def _session(
@@ -180,7 +185,7 @@ async def test_gauntlet_web_returns_backend_status(sovereign_web_app) -> None:
     await _session(client, identities, "gauntlet-org")
     res = await client.post(
         "/api/web/sovereign/gauntlet",
-        json={},
+        json={"probe_ids": ["matrix_cross_tenant_trace"]},
         headers={"X-WP-CSRF": client.cookies["wp_csrf"]},
     )
     assert res.status_code == 200
@@ -227,6 +232,8 @@ async def test_contract_browser_post_routes_registered(sovereign_web_app) -> Non
             payload = {"agent_id": "a", "action_type": "read"}
         elif path.endswith("/authority/compare") or path.endswith("/authority/drift"):
             payload = {"manifest": {"organization_id": org_id, "capabilities": []}}
+        elif path.endswith("/gauntlet"):
+            payload = {"probe_ids": ["matrix_cross_tenant_trace"]}
         else:
             payload = {}
         res = await client.post(path, json=payload, headers={"X-WP-CSRF": csrf})

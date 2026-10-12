@@ -19,26 +19,31 @@ router = ModelRouter()
 # Simulate 30 days of AI usage across teams
 teams = ["ml-team", "product", "data-science"]
 model_mix = [
-    ("openai",    "gpt-4o",           0.3),
-    ("openai",    "gpt-4o-mini",      0.4),
-    ("anthropic", "claude-haiku-4",   0.2),
-    ("anthropic", "claude-sonnet-4",  0.1),
+    ("openai", "gpt-4o", 0.3),
+    ("openai", "gpt-4o-mini", 0.4),
+    ("anthropic", "claude-haiku-4", 0.2),
+    ("anthropic", "claude-sonnet-4", 0.1),
 ]
 
 random.seed(42)
 for _ in range(500):
     r = random.random()
+    selected_provider, selected_model = model_mix[0][0], model_mix[0][1]
     cumulative = 0.0
-    for provider, model, weight in model_mix:
+    for candidate_provider, candidate_model, weight in model_mix:
         cumulative += weight
         if r <= cumulative:
+            selected_provider, selected_model = candidate_provider, candidate_model
             break
-    tracker.record(TokenUsage.create(
-        provider=provider, model=model,
-        input_tokens=random.randint(200, 4000),
-        output_tokens=random.randint(100, 1200),
-        team=random.choice(teams),
-    ))
+    tracker.record(
+        TokenUsage.create(
+            provider=selected_provider,
+            model=selected_model,
+            input_tokens=random.randint(200, 4000),
+            output_tokens=random.randint(100, 1200),
+            team=random.choice(teams),
+        )
+    )
 
 print("\n" + "=" * 60)
 print("  COST INTELLIGENCE REPORT — ResponsibleAI v0.4.0")
@@ -77,7 +82,9 @@ result = analyzer.analyze_prompt_efficiency(
     prompt=bloated, provider="openai", model="gpt-4o", monthly_requests=50_000
 )
 print(f"  Efficiency Score  : {result.efficiency_score:.1f}/100")
-print(f"  Token reduction   : {result.original_tokens} → {result.estimated_optimized_tokens} tokens")
+print(
+    f"  Token reduction   : {result.original_tokens} → {result.estimated_optimized_tokens} tokens"
+)
 print(f"  Monthly savings   : ${result.estimated_monthly_savings_usd:.2f}")
 for f in result.waste_findings:
     print(f"  [{f.severity.upper():6s}] {f.category}: {f.description[:55]}")
@@ -92,7 +99,13 @@ tasks = [
 ]
 for task in tasks:
     d = router.route(task)
-    savings_pct = round(d.estimated_savings_vs_gpt4o / max(d.estimated_cost_usd + d.estimated_savings_vs_gpt4o, 0.0001) * 100)
-    print(f"  [{d.complexity:9s}] {d.recommended_provider}/{d.recommended_model:20s} saves ~{savings_pct}% vs GPT-4o")
+    savings_pct = round(
+        d.estimated_savings_vs_gpt4o
+        / max(d.estimated_cost_usd + d.estimated_savings_vs_gpt4o, 0.0001)
+        * 100
+    )
+    print(
+        f"  [{d.complexity:9s}] {d.recommended_provider}/{d.recommended_model:20s} saves ~{savings_pct}% vs GPT-4o"
+    )
 
 print("\n" + "=" * 60 + "\n")

@@ -137,15 +137,15 @@ class FieldEncryptionError(ValueError):
 
 
 def _environment_name() -> str:
-    return (
-        (os.environ.get("WHITEPACT_ENV") or os.environ.get("RAI_ENV") or "development")
-        .strip()
-        .lower()
-    )
+    from responsibleai.environment import effective_environment_name
+
+    return effective_environment_name()
 
 
 def _is_production() -> bool:
-    return _environment_name() in {"production", "prod"}
+    from responsibleai.environment import is_production
+
+    return is_production()
 
 
 def _legacy_plaintext_allowed() -> bool:

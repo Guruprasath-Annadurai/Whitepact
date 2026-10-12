@@ -5,7 +5,8 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+import sys
+from typing import TYPE_CHECKING, TextIO
 
 if TYPE_CHECKING:
     from responsibleai.dashboard.config import Settings
@@ -23,6 +24,24 @@ PRODUCTION_COMMUNITY_DOWNGRADE_REFUSAL = (
     "Production deployments require WHITEPACT_MCP_TRUST_DOMAIN=enterprise. "
     "Community stdio cannot be enabled in production."
 )
+
+# Printed to stderr before the stdio protocol starts. Stdout is the MCP
+# stream and must stay untouched. The wording is a boundary, not a claim
+# that this process enforces authority.
+COMMUNITY_STDIO_BOUNDARY = (
+    "WHITEPACT STDIO: UNGOVERNED LOCAL MODE\n"
+    "This process is not hosted governed MCP. It does not enforce tenant "
+    "authority, memory-scope delegation, or execution authorization.\n"
+    "Do not treat it as protected execution. Enterprise deployments must set "
+    "WHITEPACT_MCP_TRUST_DOMAIN=enterprise and use hosted MCP.\n"
+)
+
+
+def write_community_stdio_boundary(stream: TextIO | None = None) -> None:
+    """Tell a local operator this process is outside the governed product."""
+    target = sys.stderr if stream is None else stream
+    target.write(COMMUNITY_STDIO_BOUNDARY)
+    target.flush()
 
 
 def mcp_trust_domain_allows_stdio(settings: Settings) -> bool:

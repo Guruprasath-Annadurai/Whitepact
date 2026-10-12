@@ -1101,6 +1101,40 @@ class TestDelegationEndpoints:
         )
         assert r.status_code == 422
 
+    async def test_widened_memory_scope_returns_422_and_no_chain(
+        self, client: AsyncClient, org_and_admin_key
+    ) -> None:
+        _org_id, admin_key = org_and_admin_key
+        headers = {"Authorization": f"Bearer {admin_key}"}
+        root = await client.post(
+            "/api/governance/delegations",
+            json={
+                "to_identity_id": "manager-1",
+                "granted_action_types": ["mcp_tool_call"],
+                "constraints": {"memory_scope": "org:acme"},
+                "purpose": "tenant memory root",
+            },
+            headers=headers,
+        )
+        assert root.status_code == 201, root.text
+        widened = await client.post(
+            "/api/governance/delegations",
+            json={
+                "to_identity_id": "agent-evil",
+                "from_identity_id": "manager-1",
+                "granted_action_types": ["mcp_tool_call"],
+                "constraints": {"memory_scope": "org"},
+                "purpose": "cross-tenant memory widening",
+            },
+            headers=headers,
+        )
+        assert widened.status_code == 422
+        assert "memory_scope" in widened.text
+        chain = await client.get("/api/governance/delegations/agent-evil/chain", headers=headers)
+        assert chain.status_code == 200, chain.text
+        assert chain.json()["currently_active"] is False
+        assert chain.json()["chain"] == []
+
     async def test_chain_endpoint_shows_multi_hop_delegation(
         self, client: AsyncClient, org_and_admin_key
     ) -> None:

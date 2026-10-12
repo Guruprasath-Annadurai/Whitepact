@@ -63,6 +63,13 @@ async function startServer() {
     RAI_LOG_LEVEL: "WARNING",
     PHASE7A_DISPATCHER_ENABLED: "false",
     WHITEPACT_UNIFIED_SAAS: "1",
+    // Isolation is required: no WHITEPACT_ALLOW_UNISOLATED_EXECUTION is set here, so any
+    // real tool would run in a container. This journey's only governed tool is the
+    // test-only fixture test.counter.increment, which writes to this server's own
+    // database and therefore cannot run in a network-less container. This switch lets that
+    // one fixture, and nothing else, run host-side in a non-production server. Real
+    // container isolation is exercised by tests/test_isolation_real_tool_e2e.py.
+    WHITEPACT_ALLOW_SYNTHETIC_HOST_TOOL: "1",
   };
   if (process.env.WHITEPACT_TEST_DATABASE_URL) env.WHITEPACT_DATABASE_URL = databaseUrl;
   const child = spawn(

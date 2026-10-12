@@ -44,7 +44,11 @@ class GauntletReport(BaseModel):
     cases: list[GauntletCaseResult] = Field(default_factory=list)
 
 
+_pg_available_cache: tuple[bool, str] | None = None
+
+
 def _runtime_available(runtime: ProbeRuntime) -> tuple[bool, str]:
+    global _pg_available_cache
     if runtime == ProbeRuntime.IN_MEMORY:
         return True, ""
     if runtime == ProbeRuntime.POSTGRES:
@@ -52,12 +56,17 @@ def _runtime_available(runtime: ProbeRuntime) -> tuple[bool, str]:
             return False, "SOVEREIGN_GAUNTLET_SKIP_PG set"
         if os.environ.get("WHITEPACT_TEST_PG_URL"):
             return True, ""
+        if _pg_available_cache is not None:
+            return _pg_available_cache
         try:
-            from tests.pg_test_url import isolated_pg_url  # noqa: F401
+            from tests.pg_test_url import resolve_admin_url_sync
 
+            resolve_admin_url_sync()
+            _pg_available_cache = (True, "")
             return True, ""
         except Exception as exc:  # noqa: BLE001
-            return False, f"postgres probe runtime unavailable: {exc}"
+            _pg_available_cache = (False, f"postgres probe runtime unavailable: {exc}")
+            return _pg_available_cache
     if runtime == ProbeRuntime.MCP_LIVE:
         if os.environ.get("SOVEREIGN_GAUNTLET_ALLOW_MCP", "").lower() not in ("1", "true", "yes"):
             return False, "set SOVEREIGN_GAUNTLET_ALLOW_MCP=1 to run live MCP gauntlet probe"

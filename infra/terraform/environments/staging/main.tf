@@ -21,18 +21,20 @@ data "hcloud_ssh_key" "staging_admin" {
 module "foundation" {
   source = "../../modules/whitepact-hetzner-foundation"
 
-  environment             = "staging"
-  enable_nat_gateway      = true
-  admin_ssh_key_ids       = [data.hcloud_ssh_key.staging_admin.id]
-  nat_gateway_server_type = "cx23"
-  location                = var.location
-  saas_server_type        = var.saas_server_type
-  authority_server_type   = var.authority_server_type
-  execution_server_type   = var.execution_server_type
-  admin_cidr_allowlist    = var.admin_cidr_allowlist
-  execution_egress_cidrs  = var.execution_egress_cidrs
-  authority_egress_cidrs  = var.authority_egress_cidrs
-  saas_public_ipv4        = false
+  environment                = "staging"
+  enable_nat_gateway         = true
+  admin_ssh_key_ids          = [data.hcloud_ssh_key.staging_admin.id]
+  nat_gateway_server_type    = "cx23"
+  location                   = var.location
+  saas_server_type           = var.saas_server_type
+  authority_server_type      = var.authority_server_type
+  execution_server_type      = var.execution_server_type
+  admin_cidr_allowlist       = var.admin_cidr_allowlist
+  execution_egress_cidrs     = var.execution_egress_cidrs
+  authority_egress_cidrs     = var.authority_egress_cidrs
+  saas_egress_cidrs          = var.saas_egress_cidrs
+  monthly_cost_ceiling_cents = 3595
+  saas_public_ipv4           = false
 
   # Cloudflare Full (strict) → LB TCP passthrough → origin Caddy/Nginx (TLS + per-hostname AOP).
   lb_service_protocol      = "tcp"

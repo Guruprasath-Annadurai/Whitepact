@@ -81,7 +81,9 @@ def upgrade() -> None:
         sa.Column("consumed_at", sa.String(length=32), nullable=True),
     )
     op.create_index("idx_identity_four_eyes_org", "identity_four_eyes_requests", ["org_id"])
-    op.create_index("idx_identity_four_eyes_requester", "identity_four_eyes_requests", ["requester_user_id"])
+    op.create_index(
+        "idx_identity_four_eyes_requester", "identity_four_eyes_requests", ["requester_user_id"]
+    )
 
 
 def downgrade() -> None:

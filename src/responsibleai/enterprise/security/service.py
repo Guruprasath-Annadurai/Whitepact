@@ -165,11 +165,11 @@ class IdentitySecurityService:
         self.four_eyes = IdentityFourEyesService(self.engine)
 
     def _raw_id_token_permitted(self) -> bool:
-        import os
 
         from responsibleai.dashboard.config import is_production_environment
+        from responsibleai.environment import effective_environment_name
 
-        env = os.environ.get("WHITEPACT_ENV") or os.environ.get("RAI_ENV") or "development"
+        env = effective_environment_name()
         if is_production_environment(env):
             return False
         return bool(self.allow_raw_id_token)

@@ -83,6 +83,10 @@ resource "terraform_data" "gate2_feature_guards" {
       condition     = !(var.enable_staging_noindex_transform && !var.plan_allows_response_header_transform)
       error_message = "Staging noindex transform was requested but plan_allows_response_header_transform is false."
     }
+    precondition {
+      condition     = var.admin_hostname == "" || (var.tunnel_secret_placeholder != "REPLACE_BEFORE_APPLY" && length(var.tunnel_secret_placeholder) >= 32)
+      error_message = "Refusing to plan an admin Cloudflare tunnel with the placeholder secret."
+    }
   }
 }
 

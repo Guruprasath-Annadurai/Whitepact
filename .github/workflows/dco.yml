@@ -11,7 +11,7 @@ name: DCO
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, cursor/whitepact-rc-remediation-b6a9]
 
 permissions:
   contents: read
@@ -46,12 +46,18 @@ jobs:
 
           missing=0
           for sha in $commits; do
-            # Owner-approved on 2026-10-09. Exact SHAs only. Not a sign-off.
+            # Owner-approved historical exceptions. Exact SHAs only. Not a sign-off.
             case "$sha" in
               015fab741427a5a9cae5bca7adaa9729c78da9e5|681ce9566f0ef9b68b6fc97212cc2fb7a44135e3)
                 echo "Owner-approved historical DCO exception for ${sha}."
                 echo "This exception is not a Signed-off-by trailer."
                 echo "Record: compliance/DCO_HISTORICAL_EXCEPTION_2026-10-09.md"
+                continue
+                ;;
+              c176669597c4812f0ab1ead88e4274128d9939c1|85a992aab4a1970a0cc25dabc09ef032f0612d15|55ab0ca7c01ef1da0f106cd76b21874203b5039e|5dcf04238a06813a8782cc8d46e6638396e19aef)
+                echo "Owner-approved historical DCO exception for ${sha}."
+                echo "This exception is not a Signed-off-by trailer."
+                echo "Record: compliance/DCO_HISTORICAL_EXCEPTION_2026-10-11.md"
                 continue
                 ;;
             esac

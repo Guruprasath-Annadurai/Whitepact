@@ -12,7 +12,7 @@ _bound_engine: DatabaseEngine | None = None
 _web_identity_repo: WebIdentityRepository | None = None
 
 
-def bind_sovereign_engine(engine: DatabaseEngine) -> None:
+def bind_sovereign_engine(engine: DatabaseEngine | None) -> None:
     global _bound_engine
     _bound_engine = engine
 
@@ -21,7 +21,7 @@ def get_bound_engine() -> DatabaseEngine | None:
     return _bound_engine
 
 
-def bind_web_identity_repository(repo: WebIdentityRepository) -> None:
+def bind_web_identity_repository(repo: WebIdentityRepository | None) -> None:
     global _web_identity_repo
     _web_identity_repo = repo
 

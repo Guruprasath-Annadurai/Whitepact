@@ -27,7 +27,9 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     op.add_column(
         "web_sessions",
-        sa.Column("assurance_level", sa.String(length=32), nullable=False, server_default="PASSWORD"),
+        sa.Column(
+            "assurance_level", sa.String(length=32), nullable=False, server_default="PASSWORD"
+        ),
     )
     op.add_column(
         "web_sessions",
@@ -41,7 +43,9 @@ def upgrade() -> None:
     op.add_column("web_sessions", sa.Column("ip_label", sa.String(length=64), nullable=True))
     op.add_column("web_sessions", sa.Column("user_agent", sa.String(length=512), nullable=True))
     op.add_column("web_sessions", sa.Column("last_step_up_at", sa.String(length=32), nullable=True))
-    op.add_column("web_sessions", sa.Column("inactivity_expires_at", sa.String(length=32), nullable=True))
+    op.add_column(
+        "web_sessions", sa.Column("inactivity_expires_at", sa.String(length=32), nullable=True)
+    )
     op.add_column("web_sessions", sa.Column("rotated_from", sa.String(length=64), nullable=True))
 
     op.create_table(
@@ -63,7 +67,12 @@ def upgrade() -> None:
     op.create_table(
         "passkey_credentials",
         sa.Column("id", sa.String(length=36), primary_key=True),
-        sa.Column("user_id", sa.String(length=36), sa.ForeignKey("web_users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "user_id",
+            sa.String(length=36),
+            sa.ForeignKey("web_users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("credential_id", sa.String(length=512), nullable=False),
         sa.Column("public_key", sa.Text(), nullable=False),
         sa.Column("sign_count", sa.Integer(), nullable=False, server_default="0"),
@@ -83,7 +92,12 @@ def upgrade() -> None:
 
     op.create_table(
         "human_totp_factors",
-        sa.Column("user_id", sa.String(length=36), sa.ForeignKey("web_users.id", ondelete="CASCADE"), primary_key=True),
+        sa.Column(
+            "user_id",
+            sa.String(length=36),
+            sa.ForeignKey("web_users.id", ondelete="CASCADE"),
+            primary_key=True,
+        ),
         sa.Column("secret_encrypted", sa.Text(), nullable=False),
         sa.Column("pending_secret_encrypted", sa.Text(), nullable=True),
         sa.Column("status", sa.String(length=32), nullable=False, server_default="PENDING"),
@@ -96,7 +110,12 @@ def upgrade() -> None:
     op.create_table(
         "recovery_code_hashes",
         sa.Column("id", sa.String(length=36), primary_key=True),
-        sa.Column("user_id", sa.String(length=36), sa.ForeignKey("web_users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "user_id",
+            sa.String(length=36),
+            sa.ForeignKey("web_users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("code_hash", sa.String(length=64), nullable=False),
         sa.Column("generation", sa.Integer(), nullable=False),
         sa.Column("consumed_at", sa.String(length=32), nullable=True),
@@ -108,9 +127,16 @@ def upgrade() -> None:
     op.create_table(
         "account_recovery_requests",
         sa.Column("id", sa.String(length=36), primary_key=True),
-        sa.Column("user_id", sa.String(length=36), sa.ForeignKey("web_users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "user_id",
+            sa.String(length=36),
+            sa.ForeignKey("web_users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("token_hash", sa.String(length=64), nullable=False, unique=True),
-        sa.Column("status", sa.String(length=32), nullable=False, server_default="RECOVERY_REQUESTED"),
+        sa.Column(
+            "status", sa.String(length=32), nullable=False, server_default="RECOVERY_REQUESTED"
+        ),
         sa.Column("privileged", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("created_at", sa.String(length=32), nullable=False),
         sa.Column("expires_at", sa.String(length=32), nullable=False),
@@ -122,7 +148,12 @@ def upgrade() -> None:
     op.create_table(
         "provider_identities",
         sa.Column("id", sa.String(length=36), primary_key=True),
-        sa.Column("user_id", sa.String(length=36), sa.ForeignKey("web_users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "user_id",
+            sa.String(length=36),
+            sa.ForeignKey("web_users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("provider", sa.String(length=64), nullable=False),
         sa.Column("subject", sa.String(length=255), nullable=False),
         sa.Column("tenant_id", sa.String(length=255), nullable=True),
@@ -131,14 +162,21 @@ def upgrade() -> None:
         sa.Column("email_at_link", sa.String(length=254), nullable=True),
         sa.Column("status", sa.String(length=32), nullable=False, server_default="ACTIVE"),
         sa.Column("created_at", sa.String(length=32), nullable=False),
-        sa.UniqueConstraint("provider", "subject", "tenant_id", name="uq_provider_identity_subject"),
+        sa.UniqueConstraint(
+            "provider", "subject", "tenant_id", name="uq_provider_identity_subject"
+        ),
     )
     op.create_index("idx_provider_identities_user", "provider_identities", ["user_id"])
 
     op.create_table(
         "organization_idp_bindings",
         sa.Column("id", sa.String(length=36), primary_key=True),
-        sa.Column("org_id", sa.String(length=36), sa.ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "org_id",
+            sa.String(length=36),
+            sa.ForeignKey("organizations.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("provider", sa.String(length=64), nullable=False),
         sa.Column("tenant_id", sa.String(length=255), nullable=True),
         sa.Column("issuer", sa.String(length=512), nullable=False),
@@ -155,7 +193,13 @@ def upgrade() -> None:
     op.create_table(
         "organization_sso_configs",
         sa.Column("id", sa.String(length=36), primary_key=True),
-        sa.Column("org_id", sa.String(length=36), sa.ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, unique=True),
+        sa.Column(
+            "org_id",
+            sa.String(length=36),
+            sa.ForeignKey("organizations.id", ondelete="CASCADE"),
+            nullable=False,
+            unique=True,
+        ),
         sa.Column("protocol", sa.String(length=16), nullable=False),
         sa.Column("issuer", sa.String(length=512), nullable=False),
         sa.Column("client_id", sa.String(length=255), nullable=False),
@@ -163,8 +207,12 @@ def upgrade() -> None:
         sa.Column("discovery_url", sa.String(length=512), nullable=True),
         sa.Column("jwks_url", sa.String(length=512), nullable=True),
         sa.Column("redirect_uri", sa.String(length=512), nullable=False),
-        sa.Column("enforcement", sa.String(length=32), nullable=False, server_default="SSO_OPTIONAL"),
-        sa.Column("provisioning", sa.String(length=32), nullable=False, server_default="INVITE_ONLY"),
+        sa.Column(
+            "enforcement", sa.String(length=32), nullable=False, server_default="SSO_OPTIONAL"
+        ),
+        sa.Column(
+            "provisioning", sa.String(length=32), nullable=False, server_default="INVITE_ONLY"
+        ),
         sa.Column("idp_entity_id", sa.String(length=512), nullable=True),
         sa.Column("idp_sso_url", sa.String(length=512), nullable=True),
         sa.Column("idp_x509_cert", sa.Text(), nullable=True),
@@ -177,7 +225,12 @@ def upgrade() -> None:
         "step_up_grants",
         sa.Column("id", sa.String(length=36), primary_key=True),
         sa.Column("grant_hash", sa.String(length=64), nullable=False, unique=True),
-        sa.Column("user_id", sa.String(length=36), sa.ForeignKey("web_users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "user_id",
+            sa.String(length=36),
+            sa.ForeignKey("web_users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("session_id", sa.String(length=64), nullable=False),
         sa.Column("action", sa.String(length=64), nullable=False),
         sa.Column("org_id", sa.String(length=36), nullable=True),
@@ -199,10 +252,22 @@ def upgrade() -> None:
 
     op.create_table(
         "org_security_policies",
-        sa.Column("org_id", sa.String(length=36), sa.ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True),
+        sa.Column(
+            "org_id",
+            sa.String(length=36),
+            sa.ForeignKey("organizations.id", ondelete="CASCADE"),
+            primary_key=True,
+        ),
         sa.Column("phishing_resistant_required", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("privileged_roles_json", sa.Text(), nullable=False, server_default='["OWNER","SECURITY_ADMIN"]'),
-        sa.Column("sso_enforcement", sa.String(length=32), nullable=False, server_default="SSO_OPTIONAL"),
+        sa.Column(
+            "privileged_roles_json",
+            sa.Text(),
+            nullable=False,
+            server_default='["OWNER","SECURITY_ADMIN"]',
+        ),
+        sa.Column(
+            "sso_enforcement", sa.String(length=32), nullable=False, server_default="SSO_OPTIONAL"
+        ),
         sa.Column("dual_control_json", sa.Text(), nullable=False, server_default="[]"),
         sa.Column("break_glass_user_id", sa.String(length=36), nullable=True),
         sa.Column("updated_at", sa.String(length=32), nullable=False),
@@ -212,7 +277,12 @@ def upgrade() -> None:
     op.create_table(
         "company_domain_challenges",
         sa.Column("id", sa.String(length=36), primary_key=True),
-        sa.Column("org_id", sa.String(length=36), sa.ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "org_id",
+            sa.String(length=36),
+            sa.ForeignKey("organizations.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("domain", sa.String(length=255), nullable=False),
         sa.Column("method", sa.String(length=32), nullable=False),
         sa.Column("token_hash", sa.String(length=64), nullable=False),
@@ -232,7 +302,9 @@ def upgrade() -> None:
         sa.Column("created_at", sa.String(length=32), nullable=False),
         sa.Column("payload_json", sa.Text(), nullable=False, server_default="{}"),
     )
-    op.create_index("idx_identity_security_notifications_user", "identity_security_notifications", ["user_id"])
+    op.create_index(
+        "idx_identity_security_notifications_user", "identity_security_notifications", ["user_id"]
+    )
 
 
 def downgrade() -> None:

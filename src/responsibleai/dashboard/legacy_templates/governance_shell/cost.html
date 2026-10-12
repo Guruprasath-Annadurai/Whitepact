@@ -22,7 +22,7 @@
   const content = document.getElementById("rai-page-content");
 
   function escHtml(s) {
-    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
   const SEVERITY_PILL = { low: "pill-medium", medium: "pill-warning", high: "pill-critical" };
 

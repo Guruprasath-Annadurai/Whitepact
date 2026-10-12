@@ -13,10 +13,11 @@ import os
 import re
 import secrets
 import time
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Literal, TypeVar
+from typing import Any, Literal, TypeVar, cast
 from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
@@ -51,21 +52,32 @@ from responsibleai.auth.saml import (
     peek_in_response_to,
     validate_session_token,
 )
+from responsibleai.auth.tenant_admission import (
+    AdmittedPrincipal,
+    TenantAdmissionDeniedError,
+    admit_sso_principal,
+)
 from responsibleai.billing import (
     PADDLE_SUBSCRIPTION_ENTITLEMENT_EVENTS,
     PaddleBillingError,
     PaddleBillingService,
     PaddleCheckoutRequest,
     PaddleNotConfiguredError,
+    PaddleWebhookRejected,
     StripeBillingError,
     StripeNotConfiguredError,
     StripeService,
+    verify_paddle_webhook_signature,
 )
 from responsibleai.compliance.engine import ComplianceEngine
 from responsibleai.cost.analyzer import CostAnalyzer
 from responsibleai.cost.models import BudgetPolicy, TokenUsage
 from responsibleai.cost.router import ModelRouter
-from responsibleai.dashboard.config import get_settings, multi_replica_problems
+from responsibleai.dashboard.config import (
+    enforce_shared_backends_for_multi_replica,
+    get_settings,
+    multi_replica_problems,
+)
 from responsibleai.dashboard.logging_config import configure_logging, get_logger
 from responsibleai.dashboard.middleware import (
     AuthFailureLimiter,
@@ -77,7 +89,11 @@ from responsibleai.dashboard.middleware import (
     global_exception_handler,
     http_exception_handler,
 )
-from responsibleai.dashboard.plan_rate_limiter import PlanRateLimiter
+from responsibleai.dashboard.plan_rate_limiter import (
+    OrgPlanDirectory,
+    PlanRateLimiter,
+    scaled_route_limit,
+)
 from responsibleai.dashboard.prometheus import (
     get_metrics_output,
     observe_cost,
@@ -149,10 +165,13 @@ from responsibleai.db import (
     OutcomeRepository,
     PaddleBillingEventRepository,
     PassportRepository,
+    PolicyActor,
     PolicyRepository,
     PolicyRuleNotFoundError,
+    PolicyVersionConflictError,
     PublicIncidentRepository,
     SelfApprovalError,
+    SetPlanStatus,
     SoleOwnerError,
     SSORequiredError,
     ToolTrustRepository,
@@ -202,6 +221,14 @@ from responsibleai.governance.intent import build_intent_contract
 from responsibleai.governance.models import GovernanceDecision
 from responsibleai.governance.outcome import OutcomeStatus, build_outcome_record
 from responsibleai.governance.policy import PolicyRule
+from responsibleai.governance.policy_change import ChangeKind
+from responsibleai.governance.policy_change_gate import (
+    PolicyChangeNotAuthorizedError,
+    PolicyGovernanceMode,
+    ProposedChange,
+    consume_approval,
+    requires_second_approver,
+)
 from responsibleai.governance.risk import RiskTier
 from responsibleai.governance.synthetic_counter import (
     SYNTHETIC_COUNTER_TOOL,
@@ -224,15 +251,19 @@ from responsibleai.governance.upstream_executor import (
 from responsibleai.governance.workflow import WorkflowSequenceRule
 from responsibleai.guardrails.engine import GuardrailsEngine
 from responsibleai.hallucination.detector import HallucinationDetector
-from responsibleai.iam.enums import PrivilegeRiskTier, StepUpMethod
+from responsibleai.iam.enums import PrivilegedAction, PrivilegeRiskTier, StepUpMethod
 from responsibleai.iam.errors import (
+    FourEyesRequiredError,
+    SelfApprovalBlockedError,
     StepUpRequiredError,
     StepUpVerificationFailedError,
 )
+from responsibleai.iam.four_eyes import FourEyesService
 from responsibleai.iam.models import StepUpProof
 from responsibleai.iam.step_up import StepUpVerifier
 from responsibleai.incidents.logic import build_incident_record
 from responsibleai.integrations.client import TrustClient
+from responsibleai.isolation.in_flight import InFlightExecutionRegistry
 from responsibleai.leaderboard.models import METHODOLOGY_VERSION
 from responsibleai.leaderboard.providers import ProviderNotConfiguredError, get_adapter
 from responsibleai.leaderboard.runner import LeaderboardRunner
@@ -244,6 +275,7 @@ from responsibleai.mcp.governance_integration import (
 )
 from responsibleai.mcp.licensing import monthly_quota, plan_catalog
 from responsibleai.mcp.upstream_dispatch import apply_upstream_governance
+from responsibleai.ops.admission import AdmissionControlMiddleware
 from responsibleai.rbac import (
     AuditEntry,
     OrgContext,
@@ -281,14 +313,20 @@ logger = get_logger("app")
 
 
 def _get_rate_limit_key(request: Request) -> str:
-    """Rate limit by API key (per org / per key) when present, IP address otherwise.
+    """Rate-limit authenticated calls by organization, not by bearer token.
 
-    Using the API key as the bucket key means each organisation gets its own
-    quota rather than sharing a pool with all other tenants on the same IP
-    (common in cloud-hosted or NAT environments).
+    ``get_org_context`` records ``request.state.audit_org_id`` before route
+    limits run. Keying the bucket by the token let an organization multiply
+    the ceiling by rotating API keys. Unauthenticated calls still bucket by
+    source address. A presented bearer token with no resolved organization
+    is hashed so distinct guesses do not share one anonymous bucket with
+    each other, and still do not create an extra organization quota.
     """
     import hashlib as _hashlib
 
+    org_id = getattr(request.state, "audit_org_id", None)
+    if isinstance(org_id, str) and org_id:
+        return "org:" + org_id
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Bearer "):
         token = auth[7:].strip()
@@ -297,14 +335,42 @@ def _get_rate_limit_key(request: Request) -> str:
     return get_remote_address(request)
 
 
-_limiter_kwargs: dict[str, Any] = {
-    "key_func": _get_rate_limit_key,
-    "default_limits": [settings.rate_limit_default],
-}
-if settings.redis_url:
-    _limiter_kwargs["storage_uri"] = settings.redis_url
+def _build_limiter(redis_url: str | None) -> Limiter:
+    kwargs: dict[str, Any] = {
+        "key_func": _get_rate_limit_key,
+        "default_limits": [settings.rate_limit_default],
+    }
+    if redis_url:
+        kwargs["storage_uri"] = redis_url
+        # A Redis outage must degrade to per-replica in-memory limits, not turn every request
+        # into a 500.
+        kwargs["in_memory_fallback_enabled"] = True
+    return Limiter(**kwargs)
 
-limiter = Limiter(**_limiter_kwargs)
+
+limiter = _build_limiter(settings.redis_url)
+
+_org_plans = OrgPlanDirectory()
+
+
+def _plan_scaled(base: str) -> Callable[[str], str]:
+    """Route limit for throughput routes, scaled to the caller's plan (REC-28).
+
+    slowapi calls the provider with the rate-limit key, which is ``org:<id>`` for an
+    authenticated organization. Unauthenticated or unresolved callers keep the flat base.
+    """
+    count, _, per = base.partition("/")
+    if per != "minute" or not count.isdigit():  # pragma: no cover - guarded at import
+        raise ValueError(f"_plan_scaled needs an N/minute limit, got {base!r}")
+
+    def _provider(key: str) -> str:
+        return (
+            f"{scaled_route_limit(int(count), _org_plans.plan_for_key(key), enterprise_ceiling=settings.enterprise_route_ceiling_per_minute)}"
+            "/minute"
+        )
+
+    return _provider
+
 
 # IP-keyed protection against credential guessing across changing Bearer tokens.
 # Production attaches DurableIdentityRateLimiter (identity_rate_counters) —
@@ -381,6 +447,7 @@ _paddle_billing_service: PaddleBillingService | None = None
 _billing_event_repo: BillingEventRepository | None = None
 _paddle_event_repo: PaddleBillingEventRepository | None = None
 _plan_rate_limiter: PlanRateLimiter | None = None
+_in_flight_registry: InFlightExecutionRegistry | None = None
 _pending_audit_writes: set[asyncio.Task[Any]] = set()
 
 _T = TypeVar("_T")
@@ -423,7 +490,8 @@ async def lifespan(application: FastAPI):
         _paddle_billing_service, \
         _plan_rate_limiter, \
         _billing_event_repo, \
-        _paddle_event_repo
+        _paddle_event_repo, \
+        _in_flight_registry
 
     from responsibleai.enterprise.preflight import assert_hosted_enterprise_boot_safe
 
@@ -464,6 +532,8 @@ async def lifespan(application: FastAPI):
 
     bind_counter_engine(_db_engine)
     bind_sovereign_engine(_db_engine)
+    _in_flight_registry = InFlightExecutionRegistry.get_instance()
+    _in_flight_registry.start_reconciliation_watcher(_db_engine, interval=0.1)
     _plan_rate_limiter = PlanRateLimiter(redis_url=settings.redis_url)
     _auth_failure_limiter.attach_durable(
         DurableIdentityRateLimiter(_db_engine),
@@ -610,6 +680,10 @@ async def lifespan(application: FastAPI):
 
     if settings.multi_replica:
         problems = multi_replica_problems(db_backend, rl_backend)
+        enforce_shared_backends_for_multi_replica(
+            production=settings.is_production,
+            problems=problems,
+        )
         if problems:
             logger.warning(
                 "multi_replica_misconfigured",
@@ -626,6 +700,8 @@ async def lifespan(application: FastAPI):
 
     _webhook_manager.stop_retry_worker()
     _ws_manager.stop()
+    if _in_flight_registry is not None:
+        _in_flight_registry.stop_reconciliation_watcher()
     if _plan_rate_limiter:
         await _plan_rate_limiter.close()
     if _pending_audit_writes:
@@ -801,6 +877,8 @@ from responsibleai.dashboard.legacy_frontend import (  # noqa: E402
 )
 
 app.add_middleware(UnifiedSaaSLegacyRetirementMiddleware)
+# Outermost: shed before any other work is done for a request we will not serve.
+app.add_middleware(AdmissionControlMiddleware, max_inflight=settings.max_inflight_requests)
 
 # ── Static files ───────────────────────────────────────────────────────────────
 _static_dir = Path(__file__).parent / "static"
@@ -815,13 +893,50 @@ app.mount(
 # ── Auth / RBAC dependencies ───────────────────────────────────────────────────
 
 
+def _identity_repo_for(org_repo: OrgRepository) -> WebIdentityRepository:
+    """Use the same database the organization lookup just used."""
+    if (
+        _web_identity_repo is not None
+        and getattr(_web_identity_repo, "_engine", None) is org_repo._engine
+    ):
+        return _web_identity_repo
+    return WebIdentityRepository(org_repo._engine)
+
+
+async def _admit_dashboard_principal(
+    *,
+    claimed_org_id: str | None,
+    issuer: str | None,
+    subject: str | None,
+    claimed_roles: list[str] | None,
+) -> AdmittedPrincipal | None:
+    if _org_repo is None:
+        return None
+    try:
+        return await admit_sso_principal(
+            org_repo=_org_repo,
+            identity_repo=_identity_repo_for(_org_repo),
+            claimed_org_id=claimed_org_id,
+            issuer=issuer,
+            subject=subject,
+            claimed_roles=claimed_roles,
+        )
+    except TenantAdmissionDeniedError:
+        logger.info(
+            "sso_tenant_admission_denied org_id=%s subject=%s",
+            claimed_org_id,
+            subject,
+        )
+        return None
+
+
 async def _resolve_oidc_context(token: str) -> OrgContext | None:
     """Validate an OIDC-issued Bearer JWT and map its claims to an OrgContext.
 
     Static API keys are prefixed "rai_"; anything else is attempted as a JWT
-    when an OIDC provider is configured. This is what makes SSO login
-    actually usable as an API credential — previously /api/auth/callback
-    returned claims but nothing accepted the resulting token afterward.
+    when an OIDC provider is configured. A valid signature does not create a
+    tenant or a role. The organization must exist and be active, and the
+    subject must already be bound to that organization.
     """
     if _oidc_provider is None or token.startswith("rai_"):
         return None
@@ -830,21 +945,22 @@ async def _resolve_oidc_context(token: str) -> OrgContext | None:
     except ValueError:
         return None
 
-    org = await _org_repo.get_org(claims.org_id) if (_org_repo and claims.org_id) else None
-    role = Role.VIEWER
-    for raw_role in claims.roles:
-        candidate = role_from_str(raw_role)
-        if candidate.value == raw_role.upper():
-            role = candidate
-            break
+    admitted = await _admit_dashboard_principal(
+        claimed_org_id=claims.org_id,
+        issuer=_oidc_provider.issuer,
+        subject=claims.sub,
+        claimed_roles=claims.roles,
+    )
+    if admitted is None:
+        return None
 
     return OrgContext(
         key_id=f"oidc:{claims.sub}",
-        role=role,
-        org_id=claims.org_id,
-        org_name=org.name if org else None,
+        role=admitted.role,
+        org_id=admitted.org_id,
+        org_name=admitted.org_name,
         is_legacy=False,
-        plan=org.plan if org else Plan.FREE,
+        plan=admitted.plan,
         authentication_method="oidc",
     )
 
@@ -864,21 +980,22 @@ async def _resolve_saml_context(token: str) -> OrgContext | None:
     if claims is None:
         return None
 
-    org = await _org_repo.get_org(claims.org_id) if (_org_repo and claims.org_id) else None
-    role = Role.VIEWER
-    for raw_role in claims.roles:
-        candidate = role_from_str(raw_role)
-        if candidate.value == raw_role.upper():
-            role = candidate
-            break
+    admitted = await _admit_dashboard_principal(
+        claimed_org_id=claims.org_id,
+        issuer=_saml_config.idp_entity_id,
+        subject=claims.sub,
+        claimed_roles=claims.roles,
+    )
+    if admitted is None:
+        return None
 
     return OrgContext(
         key_id=f"saml:{claims.sub}",
-        role=role,
-        org_id=claims.org_id,
-        org_name=org.name if org else None,
+        role=admitted.role,
+        org_id=admitted.org_id,
+        org_name=admitted.org_name,
         is_legacy=False,
-        plan=org.plan if org else Plan.FREE,
+        plan=admitted.plan,
         authentication_method="saml",
     )
 
@@ -977,6 +1094,8 @@ async def get_org_context(request: Request) -> OrgContext:
         _enforce_legacy_static_compat(request)
     if not context.is_legacy and _plan_rate_limiter:
         await _plan_rate_limiter.check(context.org_id, context.plan)
+    if not context.is_legacy:
+        _org_plans.remember(context.org_id, context.plan)
     _enforce_machine_scope(request, context)
     request.state.audit_org_id = context.org_id
     request.state.audit_key_id = context.key_id
@@ -1228,6 +1347,15 @@ class PolicyRuleCreateRequest(BaseModel):
 
 class PolicyReorderRequest(BaseModel):
     rule_ids: list[str] = Field(..., min_length=1)
+
+
+class PolicyChangeProposal(BaseModel):
+    """A policy edit put forward for second-person approval (tiered policy governance)."""
+
+    operation: Literal["add", "remove", "reorder"]
+    rule: PolicyRuleCreateRequest | None = None
+    rule_id: str | None = Field(default=None, max_length=100)
+    rule_ids: list[str] | None = None
 
 
 class WorkflowRuleCreateRequest(BaseModel):
@@ -1589,9 +1717,16 @@ def _extract_step_up_proof(
         return None
 
     try:
-        method = StepUpMethod(method_str)
+        method = StepUpMethod(str(method_str).strip().upper())
     except ValueError:
-        method = StepUpMethod.MFA_TOTP
+        # An unknown method is not silently treated as TOTP: it is refused by the verifier.
+        return StepUpProof(
+            nonce=nonce,
+            method=cast(StepUpMethod, "UNSUPPORTED"),
+            auth_time=auth_time or datetime.now(UTC).isoformat(),
+            token_or_code=token_or_code or "",
+            claims=claims,
+        )
 
     if not auth_time:
         auth_time = datetime.now(UTC).isoformat()
@@ -2693,7 +2828,7 @@ async def _web_security_state(request: Request, principal: WebPrincipal) -> dict
 
 
 @app.get("/api/web/approvals/{approval_id}", tags=["web-console"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def web_get_approval(
     request: Request,
     approval_id: str,
@@ -2708,7 +2843,7 @@ async def web_get_approval(
 
 
 @app.get("/api/web/evidence/verify", tags=["web-console"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def web_verify_evidence_chain(
     request: Request,
     principal: WebPrincipal = Depends(get_web_principal),
@@ -2725,7 +2860,7 @@ async def web_verify_evidence_chain(
 
 
 @app.get("/api/web/evidence", tags=["web-console"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def web_list_evidence(
     request: Request,
     limit: int = Query(default=50, ge=1, le=100),
@@ -2738,7 +2873,7 @@ async def web_list_evidence(
 
 
 @app.get("/api/web/evidence/{evidence_id}/attestation", tags=["web-console"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def web_get_evidence_attestation(
     request: Request,
     evidence_id: str,
@@ -2755,7 +2890,7 @@ async def web_get_evidence_attestation(
 
 
 @app.get("/api/web/evidence/{evidence_id}", tags=["web-console"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def web_get_evidence(
     request: Request,
     evidence_id: str,
@@ -2769,7 +2904,7 @@ async def web_get_evidence(
 
 
 @app.post("/api/web/approvals/{approval_id}/resolve", tags=["web-console"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def web_resolve_approval(
     request: Request,
     approval_id: str,
@@ -2802,7 +2937,7 @@ async def web_resolve_approval(
 
 
 @app.post("/api/web/approvals/{approval_id}/execute", tags=["web-console"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def web_execute_approval(
     request: Request,
     approval_id: str,
@@ -3278,18 +3413,19 @@ async def restore_reconcile(request: Request) -> JSONResponse:
             status_code=200,
         )
     except RestoreReconciliationError as exc:
+        logger.error("restore_reconciliation_failed", error=str(exc))
         return JSONResponse(
             status_code=500,
             content={
                 "error": "reconciliation_failed",
-                "message": str(exc),
+                "message": "Post-restore reconciliation failed. Details are in the server log.",
                 "gate_state": gate.state.value,
             },
         )
 
 
 @app.get("/api/metrics", tags=["ops"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def metrics(
     request: Request, _auth: OrgContext = Depends(require_role(Role.ANALYST))
 ) -> dict[str, Any]:
@@ -3400,7 +3536,7 @@ async def create_org(
 
 
 @app.get("/api/orgs", tags=["rbac"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def list_orgs(
     request: Request,
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
@@ -3410,7 +3546,7 @@ async def list_orgs(
 
 
 @app.get("/api/orgs/{org_id}", tags=["rbac"])
-@limiter.limit("120/minute")
+@limiter.limit(_plan_scaled("120/minute"))
 async def get_org(
     request: Request,
     org_id: str,
@@ -3490,7 +3626,7 @@ async def set_org_mfa(
 
 
 @app.get("/api/orgs/{org_id}/authority-ceiling", tags=["rbac"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def get_authority_ceiling(
     request: Request,
     org_id: str,
@@ -3557,7 +3693,7 @@ async def set_authority_ceiling(
 
 
 @app.get("/api/orgs/{org_id}/autonomy-budget", tags=["rbac"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def get_autonomy_budget(
     request: Request,
     org_id: str,
@@ -3709,7 +3845,7 @@ async def create_api_key(
 
 
 @app.get("/api/orgs/{org_id}/keys", tags=["rbac"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def list_api_keys(
     request: Request,
     org_id: str,
@@ -3828,7 +3964,7 @@ async def disable_mfa(
 
 
 @app.get("/api/billing/plans", tags=["billing"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def get_billing_plans(request: Request) -> dict[str, Any]:
     """Public — plan tiers, pricing, and which MCP tools each tier unlocks."""
     return plan_catalog()
@@ -3893,7 +4029,7 @@ async def create_portal_session(
 
 
 @app.get("/api/billing/usage/mcp", tags=["billing"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def get_mcp_usage(
     request: Request,
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
@@ -3954,16 +4090,73 @@ async def stripe_webhook(request: Request) -> dict[str, Any]:
     if update is None:
         await _ready(_billing_event_repo).complete(event_id)
         return {"received": True, "processed": False, "duplicate": False}
+    if not update.event_timestamp or not isinstance(update.event_timestamp, str):
+        await _ready(_billing_event_repo).fail(event_id, "invalid_or_missing_timestamp")
+        logger.warning("billing_event_invalid_timestamp", event_id=event_id, org_id=update.org_id)
+        return {
+            "received": True,
+            "processed": False,
+            "duplicate": False,
+            "reason": "invalid_timestamp",
+        }
     try:
-        await _ready(_org_repo).set_plan(
+        status = await _ready(_org_repo).set_plan_status(
             org_id=update.org_id,
             plan=update.plan,
             stripe_customer_id=update.stripe_customer_id,
             stripe_subscription_id=update.stripe_subscription_id,
             plan_renews_at=update.plan_renews_at,
             subscription_status=update.subscription_status,
+            event_timestamp=update.event_timestamp,
         )
-        await _ready(_billing_event_repo).complete(event_id)
+        if status == SetPlanStatus.NOT_FOUND:
+            await _ready(_billing_event_repo).fail(event_id, "unknown organization")
+            logger.warning("billing_event_unknown_org", event_id=event_id, org_id=update.org_id)
+            return {
+                "received": True,
+                "processed": False,
+                "duplicate": False,
+                "reason": "unknown_organization",
+            }
+        elif status == SetPlanStatus.STALE:
+            await _ready(_billing_event_repo).complete(event_id)
+            logger.info("billing_event_stale_ignored", event_id=event_id, org_id=update.org_id)
+            return {
+                "received": True,
+                "processed": False,
+                "duplicate": False,
+                "reason": "stale_event",
+            }
+        elif status == SetPlanStatus.TOMBSTONED:
+            await _ready(_billing_event_repo).fail(event_id, "tombstoned organization")
+            logger.warning("billing_event_tombstoned_org", event_id=event_id, org_id=update.org_id)
+            return {
+                "received": True,
+                "processed": False,
+                "duplicate": False,
+                "reason": "tombstoned_organization",
+            }
+        elif status == SetPlanStatus.INVALID_TIMESTAMP:
+            await _ready(_billing_event_repo).fail(event_id, "invalid_or_missing_timestamp")
+            logger.warning(
+                "billing_event_invalid_timestamp", event_id=event_id, org_id=update.org_id
+            )
+            return {
+                "received": True,
+                "processed": False,
+                "duplicate": False,
+                "reason": "invalid_timestamp",
+            }
+        elif status == SetPlanStatus.APPLIED:
+            await _ready(_billing_event_repo).complete(event_id)
+        else:
+            await _ready(_billing_event_repo).fail(event_id, "unknown organization")
+            return {
+                "received": True,
+                "processed": False,
+                "duplicate": False,
+                "reason": "unknown_organization",
+            }
     except Exception as exc:
         await _ready(_billing_event_repo).fail(event_id, str(exc))
         raise
@@ -3984,33 +4177,16 @@ async def paddle_webhook(request: Request) -> dict[str, Any]:
 
     raw_body = await request.body()
     sig_header = request.headers.get("paddle-signature", "")
-    if not sig_header:
-        raise HTTPException(400, "Missing Paddle-Signature header.")
-
-    sig_parts = dict(re.findall(r"([a-z0-9_]+)=([^;]+)", sig_header))
-    ts_str = sig_parts.get("ts")
-    h1 = sig_parts.get("h1")
-    if not ts_str or not h1:
-        raise HTTPException(400, "Malformed Paddle-Signature header.")
-
-    try:
-        ts = int(ts_str)
-    except ValueError:
-        raise HTTPException(400, "Invalid timestamp in Paddle-Signature header.") from None
-
     tolerance = getattr(settings, "paddle_signature_tolerance_seconds", 300)
-    now_ts = int(datetime.now(UTC).timestamp())
-    if (now_ts - ts) > tolerance:
-        raise HTTPException(400, f"Paddle webhook signature has expired (> {tolerance}s).")
-    if (ts - now_ts) > tolerance:
-        raise HTTPException(
-            400, f"Paddle webhook signature timestamp is in the future (> {tolerance}s)."
+    try:
+        verify_paddle_webhook_signature(
+            secret_key,
+            raw_body,
+            sig_header,
+            tolerance_seconds=tolerance,
         )
-
-    signed_payload = f"{ts_str}:".encode() + raw_body
-    computed_sig = hmac.new(secret_key.encode("utf-8"), signed_payload, hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(computed_sig, h1):
-        raise HTTPException(400, "Invalid Paddle webhook signature.")
+    except PaddleWebhookRejected as exc:
+        raise HTTPException(exc.status_code, exc.detail) from None
 
     try:
         payload = json.loads(raw_body.decode("utf-8"))
@@ -4259,7 +4435,7 @@ async def eval_benchmark(
 
 
 @app.get("/api/eval/benchmark/prompts/{suite}", tags=["eval"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def eval_benchmark_prompts(
     request: Request,
     suite: str,
@@ -4276,7 +4452,7 @@ async def eval_benchmark_prompts(
 
 
 @app.get("/api/eval/regression/{model}", tags=["eval"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def eval_regression(
     request: Request,
     model: str,
@@ -4314,7 +4490,7 @@ async def eval_dataset_scan(
 
 
 @app.get("/api/eval/results", tags=["eval"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def eval_results(
     request: Request,
     run_type: str | None = Query(default=None),
@@ -4354,7 +4530,7 @@ def _audit_tenant_org(_auth: OrgContext, requested_org_id: str | None) -> str | 
 
 
 @app.get("/api/audit-log", tags=["rbac"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def query_audit_log(
     request: Request,
     days: int = Query(default=7, ge=1, le=90),
@@ -4411,7 +4587,7 @@ def _incident_type_from_alertname(alertname: str) -> str:
 
 
 @app.post("/api/incidents", tags=["incidents"], status_code=201)
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def create_incident(
     request: Request,
     req: IncidentCreateRequest,
@@ -4439,7 +4615,7 @@ async def create_incident(
 
 
 @app.get("/api/incidents", tags=["incidents"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def list_incidents(
     request: Request,
     severity: str | None = Query(default=None),
@@ -4475,7 +4651,7 @@ async def list_incidents(
 
 
 @app.get("/api/incidents/{incident_id}", tags=["incidents"])
-@limiter.limit("120/minute")
+@limiter.limit(_plan_scaled("120/minute"))
 async def get_incident(
     request: Request,
     incident_id: str,
@@ -4564,7 +4740,7 @@ def _strip_diagnostic_fields(row: dict[str, Any]) -> dict[str, Any]:
 
 
 @app.get("/api/leaderboard", tags=["leaderboard"])
-@limiter.limit("120/minute")
+@limiter.limit(_plan_scaled("120/minute"))
 async def get_leaderboard(request: Request) -> dict[str, Any]:
     """Public, unauthenticated. Current ranked list — one row per tracked
     model, its most recent evaluation run, sorted by overall_score desc."""
@@ -4577,7 +4753,7 @@ async def get_leaderboard(request: Request) -> dict[str, Any]:
 
 
 @app.get("/api/leaderboard/{model}/{provider}/history", tags=["leaderboard"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def get_leaderboard_history(
     request: Request,
     model: str,
@@ -4596,7 +4772,7 @@ async def get_leaderboard_history(
 
 
 @app.get("/api/leaderboard/{model}/{provider}/diagnostic", tags=["leaderboard"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def get_leaderboard_diagnostic(
     request: Request,
     model: str,
@@ -4612,7 +4788,7 @@ async def get_leaderboard_diagnostic(
 
 
 @app.get("/api/leaderboard/models", tags=["leaderboard"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def list_leaderboard_models(
     request: Request,
     _auth: OrgContext = Depends(require_role(Role.ADMIN)),
@@ -4695,7 +4871,13 @@ async def run_leaderboard_eval(
                 overall_score=stored["overall_score"],
             )
         except ProviderNotConfiguredError as exc:
-            failed.append({"model": t["model"], "provider": t["provider"], "reason": str(exc)})
+            failed.append(
+                {
+                    "model": t["model"],
+                    "provider": t["provider"],
+                    "reason": "provider_not_configured",
+                }
+            )
             logger.warning(
                 "leaderboard_run_skipped", model=t["model"], provider=t["provider"], reason=str(exc)
             )
@@ -4753,7 +4935,7 @@ async def trust_index_assess(request: Request, req: TrustIndexAssessRequest) -> 
 
 
 @app.get("/api/trust-index/verify/{passport_id}", tags=["trust-index"])
-@limiter.limit("120/minute")
+@limiter.limit(_plan_scaled("120/minute"))
 async def trust_index_verify(request: Request, passport_id: str) -> dict[str, Any]:
     """Public, unauthenticated. The whole point of a citable standard: anyone
     who sees a cited score can check it's real here, not just trust the claim."""
@@ -4789,7 +4971,7 @@ async def trust_index_badge(request: Request, passport_id: str) -> Response:
 
 
 @app.get("/api/trust-index/check", tags=["trust-index"])
-@limiter.limit("120/minute")
+@limiter.limit(_plan_scaled("120/minute"))
 async def trust_index_check(
     request: Request,
     model: str = Query(..., min_length=1, max_length=100),
@@ -4839,7 +5021,7 @@ async def trust_index_check(
 
 
 @app.get("/api/trust-index/registry", tags=["trust-index"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def trust_index_registry(
     request: Request,
     limit: int = Query(default=50, ge=1, le=200),
@@ -4857,7 +5039,7 @@ async def trust_index_registry(
 
 
 @app.get("/api/trust-index/certified", tags=["trust-index"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def trust_index_certified_directory(
     request: Request,
     limit: int = Query(default=100, ge=1, le=500),
@@ -4943,7 +5125,7 @@ async def incident_db_report(request: Request, req: IncidentReportRequest) -> di
 
 
 @app.get("/api/incident-db", tags=["incident-db"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def incident_db_list(
     request: Request,
     severity: str | None = Query(default=None),
@@ -4969,7 +5151,7 @@ async def incident_db_list(
 
 
 @app.get("/api/incident-db/check", tags=["incident-db"])
-@limiter.limit("120/minute")
+@limiter.limit(_plan_scaled("120/minute"))
 async def incident_db_check(
     request: Request,
     model: str = Query(..., min_length=1, max_length=100),
@@ -4990,7 +5172,7 @@ async def incident_db_check(
 
 
 @app.get("/api/incident-db/verify", tags=["incident-db"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def incident_db_verify(request: Request) -> dict[str, Any]:
     """Public, unauthenticated — recomputes the hash chain over every
     published entry. Deliberately public, unlike GET /api/audit/verify:
@@ -5000,7 +5182,7 @@ async def incident_db_verify(request: Request) -> dict[str, Any]:
 
 
 @app.get("/api/incident-db/pending", tags=["incident-db"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def incident_db_pending(
     request: Request,
     limit: int = Query(default=50, ge=1, le=200),
@@ -5013,7 +5195,7 @@ async def incident_db_pending(
 
 
 @app.post("/api/incident-db/{internal_id}/approve", tags=["incident-db"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def incident_db_approve(
     request: Request,
     internal_id: str,
@@ -5030,7 +5212,7 @@ async def incident_db_approve(
 
 
 @app.post("/api/incident-db/{internal_id}/reject", tags=["incident-db"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def incident_db_reject(
     request: Request,
     internal_id: str,
@@ -5050,7 +5232,7 @@ async def incident_db_reject(
 
 
 @app.post("/api/incident-db/{public_id}/status", tags=["incident-db"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def incident_db_update_status(
     request: Request,
     public_id: str,
@@ -5070,7 +5252,7 @@ async def incident_db_update_status(
 
 
 @app.get("/api/incident-db/{public_id}", tags=["incident-db"])
-@limiter.limit("120/minute")
+@limiter.limit(_plan_scaled("120/minute"))
 async def incident_db_get(request: Request, public_id: str) -> dict[str, Any]:
     """Public, unauthenticated. Must be registered after /check, /verify,
     /pending, and the {id}/approve|reject|status routes so those literal
@@ -5091,7 +5273,7 @@ async def incident_db_get(request: Request, public_id: str) -> dict[str, Any]:
 
 
 @app.get("/api/governance/evidence", tags=["governance"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def governance_list_evidence(
     request: Request,
     limit: int = Query(default=50, ge=1, le=200),
@@ -5109,15 +5291,14 @@ async def governance_list_evidence(
 
 
 @app.get("/api/governance/evidence/verify", tags=["governance"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def governance_verify_evidence(
     request: Request,
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
 ) -> dict[str, Any]:
-    """Recomputes this org's evidence hash chain from scratch and reports
-    whether it's intact -- the same tamper-evidence check
-    /api/incident-db/verify offers for the public registry, scoped here
-    to the caller's own org rather than public."""
+    """Recomputes this org's stored evidence hash chain. A match detects
+    internal inconsistency only. It does not detect a rewrite that
+    recomputes every hash. Scoped to the caller's organization."""
     if not _auth.org_id:
         raise HTTPException(
             400, "Governance evidence requires an org-scoped API key, not a legacy flat key."
@@ -5190,7 +5371,7 @@ async def governance_verify_evidence_bundle(
 
 
 @app.post("/api/governance/evidence/{evidence_id}/outcome", tags=["governance"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def governance_report_outcome(
     request: Request,
     evidence_id: str,
@@ -5224,7 +5405,7 @@ async def governance_report_outcome(
 
 
 @app.get("/api/governance/evidence/{evidence_id}/attestation", tags=["governance"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def governance_get_attestation(
     request: Request,
     evidence_id: str,
@@ -5249,7 +5430,7 @@ async def governance_get_attestation(
 
 
 @app.get("/api/governance/approvals", tags=["governance"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def governance_list_pending_approvals(
     request: Request,
     limit: int = Query(default=50, ge=1, le=200),
@@ -5264,7 +5445,7 @@ async def governance_list_pending_approvals(
 
 
 @app.post("/api/governance/approvals/{approval_id}/resolve", tags=["governance"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def governance_resolve_approval(
     request: Request,
     approval_id: str,
@@ -5316,7 +5497,7 @@ async def governance_resolve_approval(
 
 
 @app.get("/api/governance/approvals/{approval_id}/votes", tags=["governance"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def governance_list_approval_votes(
     request: Request,
     approval_id: str,
@@ -5343,7 +5524,7 @@ async def governance_list_approval_votes(
 
 
 @app.post("/api/governance/approvals/{approval_id}/execute", tags=["governance"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def governance_execute_approval(
     request: Request,
     approval_id: str,
@@ -5401,7 +5582,7 @@ async def governance_execute_approval(
 
 
 @app.post("/api/governance/tools/call", tags=["governance"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def governance_call_tool(
     request: Request,
     req: GovernedToolCallRequest,
@@ -5446,7 +5627,7 @@ async def governance_call_tool(
 
 
 @app.get("/api/governance/test-counter", tags=["governance"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def governance_test_counter(
     request: Request,
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
@@ -5470,8 +5651,75 @@ def _policy_rule_to_dict(rule: PolicyRule) -> dict[str, Any]:
     }
 
 
+POLICY_APPROVAL_HEADER = "X-Policy-Change-Approval"
+
+
+async def _gate_policy_change(
+    request: Request,
+    *,
+    org_id: str,
+    actor_id: str,
+    operation: str,
+    before: list[PolicyRule],
+    after: list[PolicyRule] | None,
+) -> int | None:
+    """Apply the organization's policy-governance mode to an edit about to be made.
+
+    Returns the policy version the edit must be applied against (so the repository can refuse it if the
+    policy moved), or ``None`` in ``single_admin`` mode. In ``tiered`` mode a loosening edit needs a
+    verified step-up and a spent, matching second-approver approval; otherwise it is refused here, before
+    anything changes. Every policy mutation route calls this, so no direct route bypasses the mode.
+    """
+    mode = PolicyGovernanceMode(settings.policy_governance_mode)
+    if mode is PolicyGovernanceMode.SINGLE_ADMIN:
+        return None
+    version = await _ready(_policy_repo).get_policy_version(org_id)
+    if after is None:  # the repository will reject the malformed edit itself
+        return version
+    change = ProposedChange(org_id, operation, version, before, after)
+    if not requires_second_approver(mode, change):
+        return version
+    approval_id = request.headers.get(POLICY_APPROVAL_HEADER)
+    try:
+        if not approval_id:
+            raise PolicyChangeNotAuthorizedError(
+                "This edit loosens policy and needs a second approver.",
+                change_digest=change.digest,
+                policy_version=version,
+            )
+        await _verify_web_step_up(
+            request,
+            org_id=org_id,
+            user_id=actor_id,
+            action=PrivilegedAction.MODIFY_POLICY_RULE.value,
+            risk_tier=PrivilegeRiskTier.PRIVILEGED_HIGH,
+        )
+        await consume_approval(
+            _ready(_db_engine),
+            change=change,
+            actor_principal_id=actor_id,
+            four_eyes_request_id=approval_id,
+        )
+    except PolicyChangeNotAuthorizedError as exc:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "policy_change_approval_required",
+                "message": str(exc),
+                "change_digest": exc.change_digest,
+                "policy_version": exc.policy_version,
+                "kind": ChangeKind.LOOSENING.value,
+            },
+        ) from exc
+    return version
+
+
+def _conflict(exc: PolicyVersionConflictError) -> HTTPException:
+    return HTTPException(409, f"Policy changed since this edit was authorized: {exc}")
+
+
 @app.get("/api/governance/policy", tags=["governance"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def governance_get_policy(
     request: Request,
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
@@ -5487,6 +5735,38 @@ async def governance_get_policy(
         )
     policy = await _ready(_policy_repo).get_policy(_auth.org_id)
     return {"org_id": _auth.org_id, "rules": [_policy_rule_to_dict(r) for r in policy.rules]}
+
+
+@app.get("/api/governance/policy/history", tags=["governance"])
+@limiter.limit(_plan_scaled("30/minute"))
+async def governance_policy_history(
+    request: Request,
+    limit: int = 100,
+    checkpoint_version: int | None = None,
+    checkpoint_digest: str | None = None,
+    _auth: OrgContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, Any]:
+    """Who changed which policy rule, and the rules in force after each change (ADMIN+).
+
+    ``checkpoint_version`` + ``checkpoint_digest`` (a ``head`` value you retained outside this
+    database) make ``chain_valid`` also prove the history still contains that exact entry."""
+    if not _auth.org_id:
+        raise HTTPException(
+            400, "Governance policy requires an org-scoped API key, not a legacy flat key."
+        )
+    repo = _ready(_policy_repo)
+    checkpoint = (
+        {"version": checkpoint_version, "entry_digest": checkpoint_digest}
+        if checkpoint_version is not None and checkpoint_digest
+        else None
+    )
+    return {
+        "org_id": _auth.org_id,
+        "chain_valid": await repo.verify_history(_auth.org_id, checkpoint=checkpoint),
+        "checkpoint_checked": checkpoint is not None,
+        "head": await repo.history_head(_auth.org_id),
+        "entries": await repo.history(_auth.org_id, limit=limit),
+    }
 
 
 @app.post("/api/governance/policy/rules", tags=["governance"])
@@ -5519,7 +5799,23 @@ async def governance_add_policy_rule(
     existing = await _ready(_policy_repo).get_policy(_auth.org_id)
     if any(r.rule_id == rule.rule_id for r in existing.rules):
         raise HTTPException(409, f"Rule {rule.rule_id!r} already exists for this org.")
-    await _ready(_policy_repo).add_rule(_auth.org_id, rule)
+    expected = await _gate_policy_change(
+        request,
+        org_id=_auth.org_id,
+        actor_id=str(_auth.key_id or "unknown"),
+        operation="rule_added",
+        before=list(existing.rules),
+        after=[*existing.rules, rule],
+    )
+    try:
+        await _ready(_policy_repo).add_rule(
+            _auth.org_id,
+            rule,
+            actor=PolicyActor("api_key", str(_auth.key_id or "unknown")),
+            expected_version=expected,
+        )
+    except PolicyVersionConflictError as exc:
+        raise _conflict(exc) from None
     logger.info(
         "governance_policy_rule_added",
         rule_id=rule.rule_id,
@@ -5540,10 +5836,28 @@ async def governance_remove_policy_rule(
         raise HTTPException(
             400, "Governance policy requires an org-scoped API key, not a legacy flat key."
         )
+    current = await _ready(_policy_repo).get_policy(_auth.org_id)
+    expected = await _gate_policy_change(
+        request,
+        org_id=_auth.org_id,
+        actor_id=str(_auth.key_id or "unknown"),
+        operation="rule_removed",
+        before=list(current.rules),
+        after=[r for r in current.rules if r.rule_id != rule_id]
+        if any(r.rule_id == rule_id for r in current.rules)
+        else None,
+    )
     try:
-        await _ready(_policy_repo).remove_rule(_auth.org_id, rule_id)
+        await _ready(_policy_repo).remove_rule(
+            _auth.org_id,
+            rule_id,
+            actor=PolicyActor("api_key", str(_auth.key_id or "unknown")),
+            expected_version=expected,
+        )
     except PolicyRuleNotFoundError as exc:
         raise HTTPException(404, str(exc)) from None
+    except PolicyVersionConflictError as exc:
+        raise _conflict(exc) from None
     logger.info(
         "governance_policy_rule_removed",
         rule_id=rule_id,
@@ -5564,8 +5878,27 @@ async def governance_reorder_policy(
         raise HTTPException(
             400, "Governance policy requires an org-scoped API key, not a legacy flat key."
         )
+    current = await _ready(_policy_repo).get_policy(_auth.org_id)
+    by_id = {r.rule_id: r for r in current.rules}
+    expected = await _gate_policy_change(
+        request,
+        org_id=_auth.org_id,
+        actor_id=str(_auth.key_id or "unknown"),
+        operation="reordered",
+        before=list(current.rules),
+        after=[by_id[i] for i in req.rule_ids]
+        if sorted(req.rule_ids) == sorted(by_id) and len(set(req.rule_ids)) == len(req.rule_ids)
+        else None,
+    )
     try:
-        await _ready(_policy_repo).reorder(_auth.org_id, req.rule_ids)
+        await _ready(_policy_repo).reorder(
+            _auth.org_id,
+            req.rule_ids,
+            actor=PolicyActor("api_key", str(_auth.key_id or "unknown")),
+            expected_version=expected,
+        )
+    except PolicyVersionConflictError as exc:
+        raise _conflict(exc) from None
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from None
     policy = await _ready(_policy_repo).get_policy(_auth.org_id)
@@ -5574,7 +5907,7 @@ async def governance_reorder_policy(
 
 
 @app.get("/api/web/policy", tags=["web-console"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def web_get_policy(
     request: Request,
     principal: WebPrincipal = Depends(get_web_principal),
@@ -5586,6 +5919,135 @@ async def web_get_policy(
         "rules": [_policy_rule_to_dict(r) for r in policy.rules],
         "can_edit": principal.role in {Role.OWNER, Role.ADMIN},
     }
+
+
+@app.get("/api/web/policy/history", tags=["web-console"])
+@limiter.limit(_plan_scaled("30/minute"))
+async def web_policy_history(
+    request: Request,
+    limit: int = 100,
+    checkpoint_version: int | None = None,
+    checkpoint_digest: str | None = None,
+    principal: WebPrincipal = Depends(get_web_principal),
+) -> dict[str, Any]:
+    org_id = _web_org_admin(principal)
+    repo = _ready(_policy_repo)
+    checkpoint = (
+        {"version": checkpoint_version, "entry_digest": checkpoint_digest}
+        if checkpoint_version is not None and checkpoint_digest
+        else None
+    )
+    return {
+        "org_id": org_id,
+        "chain_valid": await repo.verify_history(org_id, checkpoint=checkpoint),
+        "checkpoint_checked": checkpoint is not None,
+        "head": await repo.history_head(org_id),
+        "entries": await repo.history(org_id, limit=limit),
+    }
+
+
+@app.post("/api/web/policy/changes/propose", tags=["web-console"])
+@limiter.limit("20/minute")
+async def web_propose_policy_change(
+    request: Request,
+    req: PolicyChangeProposal,
+    principal: WebPrincipal = Depends(require_web_csrf),
+) -> dict[str, Any]:
+    """Tiered policy governance: ask for a second approver for an edit that would loosen policy.
+
+    Nothing is changed. The returned approval id is later presented with the edit itself in the
+    ``X-Policy-Change-Approval`` header, by this same user, with a verified step-up."""
+    org_id = _web_org_admin(principal)
+    if PolicyGovernanceMode(settings.policy_governance_mode) is not PolicyGovernanceMode.TIERED:
+        raise HTTPException(409, "Tiered policy governance is not active for this deployment.")
+    current = await _ready(_policy_repo).get_policy(org_id)
+    before = list(current.rules)
+    by_id = {r.rule_id: r for r in before}
+    if req.operation == "add" and req.rule is not None:
+        try:
+            new_rule = PolicyRule(
+                rule_id=req.rule.rule_id,
+                reason_code=req.rule.reason_code,
+                effect=GovernanceDecision(req.rule.effect),
+                risk_tiers=frozenset(RiskTier(t) for t in req.rule.risk_tiers)
+                if req.rule.risk_tiers
+                else None,
+                action_types=frozenset(req.rule.action_types) if req.rule.action_types else None,
+                targets=frozenset(req.rule.targets) if req.rule.targets else None,
+            )
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+        if new_rule.rule_id in by_id:
+            raise HTTPException(409, f"Rule {new_rule.rule_id!r} already exists for this org.")
+        after, operation = [*before, new_rule], "rule_added"
+    elif req.operation == "remove" and req.rule_id in by_id:
+        after, operation = [r for r in before if r.rule_id != req.rule_id], "rule_removed"
+    elif (
+        req.operation == "reorder"
+        and req.rule_ids is not None
+        and sorted(req.rule_ids) == sorted(by_id)
+        and len(set(req.rule_ids)) == len(req.rule_ids)
+    ):
+        after, operation = [by_id[i] for i in req.rule_ids], "reordered"
+    else:
+        raise HTTPException(
+            422, "The proposal does not describe a valid edit of the current policy."
+        )
+    change = ProposedChange(org_id, operation, current.version, before, after)
+    if change.kind is not ChangeKind.LOOSENING:
+        raise HTTPException(
+            409,
+            f"This edit is a {change.kind.value.lower()} and needs no second approver; make it directly.",
+        )
+    fe = await FourEyesService(_ready(_db_engine)).submit_four_eyes_request(
+        org_id=org_id,
+        requester_principal_id=str(principal.user_id),
+        action=PrivilegedAction.MODIFY_POLICY_RULE,
+        parameters={
+            "change_digest": change.digest,
+            "operation": operation,
+            "policy_version": current.version,
+            "kind": change.kind.value,
+        },
+    )
+    return {
+        "approval_id": fe.id,
+        "change_digest": change.digest,
+        "policy_version": current.version,
+        "kind": change.kind.value,
+        "expires_at": fe.expires_at,
+    }
+
+
+@app.post("/api/web/policy/changes/{approval_id}/approve", tags=["web-console"])
+@limiter.limit("20/minute")
+async def web_approve_policy_change(
+    request: Request,
+    approval_id: str,
+    principal: WebPrincipal = Depends(require_web_csrf),
+) -> dict[str, Any]:
+    """Second approver for a loosening policy edit. Needs a verified step-up; cannot be the requester."""
+    org_id = _web_org_admin(principal)
+    if PolicyGovernanceMode(settings.policy_governance_mode) is not PolicyGovernanceMode.TIERED:
+        raise HTTPException(409, "Tiered policy governance is not active for this deployment.")
+    await _verify_web_step_up(
+        request,
+        org_id=org_id,
+        user_id=str(principal.user_id),
+        action=PrivilegedAction.MODIFY_POLICY_RULE.value,
+        risk_tier=PrivilegeRiskTier.PRIVILEGED_HIGH,
+    )
+    try:
+        approved = await FourEyesService(_ready(_db_engine)).approve_four_eyes_request(
+            org_id=org_id, request_id=approval_id, approver_principal_id=str(principal.user_id)
+        )
+    except SelfApprovalBlockedError as exc:
+        raise HTTPException(403, str(exc)) from None
+    except FourEyesRequiredError:
+        raise HTTPException(404, "Approval request not found.") from None
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from None
+    return {"approval_id": approved.id, "status": approved.status.value}
 
 
 @app.post("/api/web/policy/rules", tags=["web-console"])
@@ -5610,7 +6072,23 @@ async def web_add_policy_rule(
     existing = await _ready(_policy_repo).get_policy(org_id)
     if any(r.rule_id == rule.rule_id for r in existing.rules):
         raise HTTPException(409, f"Rule {rule.rule_id!r} already exists for this org.")
-    await _ready(_policy_repo).add_rule(org_id, rule)
+    expected = await _gate_policy_change(
+        request,
+        org_id=org_id,
+        actor_id=str(principal.user_id),
+        operation="rule_added",
+        before=list(existing.rules),
+        after=[*existing.rules, rule],
+    )
+    try:
+        await _ready(_policy_repo).add_rule(
+            org_id,
+            rule,
+            actor=PolicyActor("web_user", str(principal.user_id)),
+            expected_version=expected,
+        )
+    except PolicyVersionConflictError as exc:
+        raise _conflict(exc) from None
     return _policy_rule_to_dict(rule)
 
 
@@ -5622,10 +6100,28 @@ async def web_remove_policy_rule(
     principal: WebPrincipal = Depends(require_web_csrf),
 ) -> dict[str, str]:
     org_id = _web_org_admin(principal)
+    current = await _ready(_policy_repo).get_policy(org_id)
+    expected = await _gate_policy_change(
+        request,
+        org_id=org_id,
+        actor_id=str(principal.user_id),
+        operation="rule_removed",
+        before=list(current.rules),
+        after=[r for r in current.rules if r.rule_id != rule_id]
+        if any(r.rule_id == rule_id for r in current.rules)
+        else None,
+    )
     try:
-        await _ready(_policy_repo).remove_rule(org_id, rule_id)
+        await _ready(_policy_repo).remove_rule(
+            org_id,
+            rule_id,
+            actor=PolicyActor("web_user", str(principal.user_id)),
+            expected_version=expected,
+        )
     except PolicyRuleNotFoundError as exc:
         raise HTTPException(404, str(exc)) from None
+    except PolicyVersionConflictError as exc:
+        raise _conflict(exc) from None
     return {"status": "removed", "rule_id": rule_id}
 
 
@@ -5637,8 +6133,27 @@ async def web_reorder_policy(
     principal: WebPrincipal = Depends(require_web_csrf),
 ) -> dict[str, Any]:
     org_id = _web_org_admin(principal)
+    current = await _ready(_policy_repo).get_policy(org_id)
+    by_id = {r.rule_id: r for r in current.rules}
+    expected = await _gate_policy_change(
+        request,
+        org_id=org_id,
+        actor_id=str(principal.user_id),
+        operation="reordered",
+        before=list(current.rules),
+        after=[by_id[i] for i in req.rule_ids]
+        if sorted(req.rule_ids) == sorted(by_id) and len(set(req.rule_ids)) == len(req.rule_ids)
+        else None,
+    )
     try:
-        await _ready(_policy_repo).reorder(org_id, req.rule_ids)
+        await _ready(_policy_repo).reorder(
+            org_id,
+            req.rule_ids,
+            actor=PolicyActor("web_user", str(principal.user_id)),
+            expected_version=expected,
+        )
+    except PolicyVersionConflictError as exc:
+        raise _conflict(exc) from None
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from None
     policy = await _ready(_policy_repo).get_policy(org_id)
@@ -5654,7 +6169,7 @@ def _workflow_rule_to_dict(rule: WorkflowSequenceRule) -> dict[str, Any]:
 
 
 @app.get("/api/governance/workflow-rules", tags=["governance"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def governance_get_workflow_rules(
     request: Request,
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
@@ -5773,7 +6288,7 @@ async def governance_grant_delegation(
 
 
 @app.get("/api/governance/delegations/{identity_id}/chain", tags=["governance"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def governance_get_delegation_chain(
     request: Request,
     identity_id: str,
@@ -5818,7 +6333,7 @@ async def governance_revoke_delegation(
 
 
 @app.get("/api/governance/delegations/{identity_id}/descendants", tags=["governance"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def governance_get_delegation_descendants(
     request: Request,
     identity_id: str,
@@ -5870,7 +6385,7 @@ async def governance_get_delegation_graph(
 
 
 @app.post("/api/governance/intent-contracts", tags=["governance"], status_code=201)
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def governance_declare_intent(
     request: Request,
     req: IntentContractDeclareRequest,
@@ -5914,7 +6429,7 @@ async def governance_declare_intent(
 
 
 @app.get("/api/governance/intent-contracts/{agent_id}/active", tags=["governance"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def governance_get_active_intent(
     request: Request,
     agent_id: str,
@@ -5987,7 +6502,7 @@ async def governance_issue_authority_passport(
 
 
 @app.get("/api/governance/authority-passports/{passport_id}", tags=["governance"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def governance_get_authority_passport(
     request: Request,
     passport_id: str,
@@ -6050,7 +6565,7 @@ async def governance_revoke_authority_passport(
 
 
 @app.post("/api/governance/supplychain/scan", tags=["governance"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def governance_supplychain_scan(
     request: Request,
     req: SupplyChainScanRequest,
@@ -6115,7 +6630,7 @@ async def upstream_register_server(
 
 
 @app.get("/api/governance/upstream/servers", tags=["governance"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def upstream_list_servers(
     request: Request,
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
@@ -6171,7 +6686,7 @@ async def upstream_remove_server(
 
 
 @app.post("/api/governance/upstream/servers/{server_id}/call", tags=["governance"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def upstream_call_tool(
     request: Request,
     server_id: str,
@@ -6239,7 +6754,7 @@ async def upstream_call_tool(
 
 
 @app.get("/api/governance/upstream/servers/{server_id}/trust", tags=["governance"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def upstream_get_trust_score(
     request: Request,
     server_id: str,
@@ -6405,7 +6920,7 @@ async def websocket_dashboard(
 
 
 @app.post("/api/webhooks", tags=["webhooks"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def create_webhook(
     request: Request,
     req: WebhookCreateRequest,
@@ -6433,7 +6948,7 @@ async def create_webhook(
 
 
 @app.get("/api/webhooks", tags=["webhooks"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def list_webhooks(
     request: Request,
     _auth: OrgContext = Depends(require_role(Role.ANALYST)),
@@ -6447,7 +6962,7 @@ async def list_webhooks(
 
 
 @app.delete("/api/webhooks/{webhook_id}", tags=["webhooks"])
-@limiter.limit("30/minute")
+@limiter.limit(_plan_scaled("30/minute"))
 async def delete_webhook(
     request: Request,
     webhook_id: str,
@@ -6461,7 +6976,7 @@ async def delete_webhook(
 
 
 @app.get("/api/webhooks/deliveries", tags=["webhooks"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def webhook_deliveries(
     request: Request,
     limit: int = Query(default=50, ge=1, le=500),
@@ -6597,7 +7112,7 @@ async def evaluate_model(
 
 
 @app.get("/api/trust-score/{model_name}/{provider}", tags=["trust"])
-@limiter.limit("120/minute")
+@limiter.limit(_plan_scaled("120/minute"))
 async def get_trust_history(
     request: Request,
     model_name: str,
@@ -6615,7 +7130,7 @@ async def get_trust_history(
 
 
 @app.get("/api/models", tags=["trust"])
-@limiter.limit("120/minute")
+@limiter.limit(_plan_scaled("120/minute"))
 async def list_models(
     request: Request,
     _auth: OrgContext = Depends(require_role(Role.VIEWER)),
@@ -6701,7 +7216,7 @@ async def analyze_hallucination(
 
 
 @app.post("/api/cost/record", tags=["cost"])
-@limiter.limit("500/minute")
+@limiter.limit(_plan_scaled("500/minute"))
 async def record_usage(
     request: Request,
     req: RecordUsageRequest,
@@ -6763,7 +7278,7 @@ async def record_usage(
 
 
 @app.get("/api/cost/summary", tags=["cost"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def cost_summary(
     request: Request,
     days: int = 30,
@@ -6784,7 +7299,7 @@ async def cost_summary(
 
 
 @app.post("/api/cost/analyze", tags=["cost"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def analyze_prompt(
     request: Request,
     req: AnalyzePromptRequest,
@@ -6801,7 +7316,7 @@ async def analyze_prompt(
 
 
 @app.post("/api/cost/route", tags=["cost"])
-@limiter.limit("120/minute")
+@limiter.limit(_plan_scaled("120/minute"))
 async def route_task(
     request: Request,
     req: RouteTaskRequest,
@@ -6812,7 +7327,7 @@ async def route_task(
 
 
 @app.get("/api/cost/models", tags=["cost"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def model_pricing(
     request: Request,
     _auth: OrgContext = Depends(require_role(Role.VIEWER)),
@@ -6824,7 +7339,7 @@ async def model_pricing(
 
 
 @app.get("/api/drift/{model_name}/{provider}", tags=["drift"])
-@limiter.limit("120/minute")
+@limiter.limit(_plan_scaled("120/minute"))
 async def get_drift_trend(
     request: Request,
     model_name: str,
@@ -6896,6 +7411,18 @@ async def list_auth_providers() -> dict[str, Any]:
     return {"providers": providers, "count": len(providers)}
 
 
+_OAUTH_TX_FORMAT = re.compile(r"^[A-Za-z0-9_-]{32,128}$")
+
+
+def _accepted_oauth_tx_cookie(value: str | None) -> str | None:
+    """Reuse an existing ``wp_oauth_tx`` cookie only if it has the shape this server issues.
+
+    The value is echoed back in a Set-Cookie. A request-supplied cookie of any other shape (control
+    characters, attribute delimiters, an attacker-chosen string) must never be re-issued as ours.
+    """
+    return value if value and _OAUTH_TX_FORMAT.fullmatch(value) else None
+
+
 @app.get("/api/auth/login/{provider_id}", tags=["auth"])
 async def auth_login(
     request: Request,
@@ -6919,11 +7446,12 @@ async def auth_login(
         )
         target_redirect = settings.oidc_redirect_uri
 
-        initiating_session = request.cookies.get("wp_session")
-        oauth_tx = request.cookies.get("wp_oauth_tx") or (
-            _web_token_hash(initiating_session) if initiating_session else secrets.token_urlsafe(32)
-        )
-        bound_session_id = _web_token_hash(oauth_tx)
+        # The flow is bound to this browser by the wp_oauth_tx cookie. An existing cookie of the shape
+        # this server issues is reused as-is and NOT written back (no request-supplied value is ever
+        # re-issued as a Set-Cookie); otherwise a fresh random value is minted and set below.
+        existing_tx = _accepted_oauth_tx_cookie(request.cookies.get("wp_oauth_tx"))
+        fresh_tx = None if existing_tx else secrets.token_urlsafe(32)
+        bound_session_id = _web_token_hash(existing_tx or fresh_tx or "")
 
         await _ready(_web_identity_repo).create_oauth_flow_state(
             state=state,
@@ -6942,15 +7470,18 @@ async def auth_login(
             code_challenge=challenge,
         )
         resp = JSONResponse({"authorization_url": url, "state": state})
-        resp.set_cookie(
-            "wp_oauth_tx",
-            oauth_tx,
-            httponly=True,
-            samesite="lax",
-            secure=settings.web_session_secure,
-            path="/",
-            max_age=300,
-        )
+        if fresh_tx is not None:
+            resp.set_cookie(
+                "wp_oauth_tx",
+                fresh_tx,
+                httponly=True,
+                samesite="lax",
+                secure=settings.web_session_secure,
+                path="/",
+                # Longer than a flow (300 s): later sign-in attempts reuse this cookie without
+                # refreshing it, so it must outlive any flow started from it.
+                max_age=3600,
+            )
         return resp
 
     if provider_id == "saml":
@@ -7025,6 +7556,15 @@ async def saml_acs(request: Request) -> Response:
     except SAMLError as e:
         raise HTTPException(401, f"SAML assertion validation failed: {e}") from None
 
+    admitted = await _admit_dashboard_principal(
+        claimed_org_id=claims.org_id,
+        issuer=_saml_config.idp_entity_id,
+        subject=claims.sub,
+        claimed_roles=claims.roles,
+    )
+    if admitted is None:
+        raise HTTPException(401, "SAML tenant admission failed")
+
     session_token = mint_session_token(_saml_config, claims)
     fragment = (
         f"token={quote(session_token)}&name={quote(claims.name or claims.email or claims.sub)}"
@@ -7086,6 +7626,15 @@ async def auth_callback(
     except ValueError as e:
         logger.warning("oidc_token_validation_failed", reason=str(e))
         raise HTTPException(401, "OIDC token validation failed.") from None
+
+    admitted = await _admit_dashboard_principal(
+        claimed_org_id=claims.org_id,
+        issuer=_oidc_provider.issuer,
+        subject=claims.sub,
+        claimed_roles=claims.roles,
+    )
+    if admitted is None:
+        raise HTTPException(401, "OIDC tenant admission failed")
 
     access_token = tokens.get("access_token") or ""
     fragment = (
@@ -7239,7 +7788,7 @@ async def platform_status() -> dict[str, Any]:
 
 
 @app.get("/api/audit", tags=["audit"])
-@limiter.limit("60/minute")
+@limiter.limit(_plan_scaled("60/minute"))
 async def list_audit_entries(
     request: Request,
     org_id: str | None = Query(None, description="Cross-org filter (super-admin only)"),

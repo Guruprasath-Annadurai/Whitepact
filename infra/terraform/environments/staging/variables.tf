@@ -34,3 +34,8 @@ variable "execution_egress_cidrs" {
 variable "authority_egress_cidrs" {
   type = list(string)
 }
+
+variable "saas_egress_cidrs" {
+  description = "Explicit SaaS HTTP(S) destinations. The NAT gateway does not open the Internet."
+  type        = list(string)
+}
