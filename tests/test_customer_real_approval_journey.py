@@ -7,8 +7,10 @@ from __future__ import annotations
 import asyncio
 import json
 import platform
+import re
 import socket
 from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 import pytest
@@ -20,7 +22,7 @@ from responsibleai.dashboard.signup_guard import SignupRateWindow
 from responsibleai.db.org_repository import OrgRepository
 from responsibleai.governance.synthetic_counter import SYNTHETIC_COUNTER_TOOL
 from responsibleai.governance.synthetic_counter import snapshot as counter_snapshot
-from tests.pg_test_url import isolated_pg_url
+from tests.pg_test_url import isolated_pg_url, resolve_admin_url
 from tests.test_v1_customer_journey import (
     PURPOSE,
     _login,
@@ -266,3 +268,34 @@ async def test_go_sdk_analytics_against_real_backend(live_customer, tmp_path):
         assert denied.returncode == 1
         assert not denied_output
         assert key.encode() not in denied_error
+
+
+@pytest.mark.asyncio
+async def test_real_database_outage_blocks_new_admission_and_recovers(live_customer):
+    import asyncpg
+
+    browser, sdk, org_id, key = live_customer
+    pending = await sdk.call_tool(SYNTHETIC_COUNTER_TOOL, purpose=PURPOSE)
+    assert pending.requires_approval
+    database = urlparse(dashboard.settings.database_url).path.lstrip("/")
+    assert re.fullmatch(r"wp_approval_tcp_[0-9a-f]{12}", database)
+    admin_url = await resolve_admin_url()
+    assert urlparse(admin_url).hostname in {None, "localhost", "127.0.0.1"}
+    admin = await asyncpg.connect(admin_url)
+    try:
+        await admin.execute(f'ALTER DATABASE "{database}" WITH ALLOW_CONNECTIONS false')
+        await admin.execute(
+            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1",
+            database,
+        )
+        with pytest.raises(GovernanceRequestError) as unavailable:
+            await sdk.call_tool(SYNTHETIC_COUNTER_TOOL, purpose=PURPOSE)
+        assert unavailable.value.status_code in {500, 503}
+        assert key not in str(unavailable.value)
+    finally:
+        # Only the exact randomly generated disposable database is restored.
+        await admin.execute(f'ALTER DATABASE "{database}" WITH ALLOW_CONNECTIONS true')
+        await admin.close()
+    recovered = await sdk.call_tool(SYNTHETIC_COUNTER_TOOL, purpose=PURPOSE)
+    assert recovered.requires_approval and not recovered.completed
+    assert (await counter_snapshot(org_id))["counter"] == 0

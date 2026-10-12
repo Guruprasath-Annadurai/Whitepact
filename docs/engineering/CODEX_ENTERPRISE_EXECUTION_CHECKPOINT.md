@@ -122,6 +122,14 @@ in-flight revocation and PostgreSQL billing regressions. TypeScript47 passed.
 New customer/Go actual API file:3 passed. Go race/vet/build rerun required after
 final edits. Runtime termination/revocation implementation was not changed.
 
+First V2 combined head44a7eca7 has fresh final local228 passed, TS47 and Go12;
+SDK and Go exact-head PR CI38293425683/38293425549 both passed. A subsequent
+real PostgreSQL connection-loss test passes locally (1 passed,3 deselected,
+0 skipped): only its randomly named disposable database is disconnected/restored;
+new admission fails5xx, recovered request still requires approval and counter0.
+Fresh successor CI required. This does not prove sustained in-flight authority
+continuity, uncertain commits, partitions or database-loss termination bounds.
+
 P0 V2: Linux descendant/PID-race containment and real storage-outage continuity
 remain PARTIAL/unqualified. Retry backoff is not proof of a bounded authority lease.
 Do not promote ledger claims to independent qualification. CodeQL134/135 risk
