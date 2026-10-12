@@ -49,7 +49,7 @@ func (r GovernanceResponse) State() GovernanceState {
 	if r["error"] == "governance_approval_required" || r["requires_approval"] == true || r["decision"] == "REQUIRE_APPROVAL" || r["status"] == "PENDING" || r["pending"] == true {
 		return GovernancePending
 	}
-	if r["quarantined"] == true || r["decision"] == "QUARANTINE" || r["status"] == "QUARANTINE" {
+	if r["error"] == "governance_quarantined" || r["quarantined"] == true || r["decision"] == "QUARANTINE" || r["status"] == "QUARANTINE" {
 		return GovernanceQuarantined
 	}
 	if _, ok := r["result"]; !ok {
@@ -73,15 +73,25 @@ func (r GovernanceResponse) State() GovernanceState {
 		return GovernanceFailed
 	}
 	if nested, ok := r["result"].(map[string]any); ok {
-		for _, field := range []string{"error", "is_error", "isError"} {
-			if value, exists := nested[field]; exists && value != nil && value != false && value != "" {
+		if _, exists := nested["error"]; exists {
+			state := GovernanceResponse(nested).State()
+			if state != GovernanceSucceeded {
+				return state
+			}
+			return GovernanceFailed
+		}
+		for _, field := range []string{"is_error", "isError"} {
+			if value, exists := nested[field]; exists && value != false {
 				return GovernanceFailed
 			}
 		}
 		// If a result is itself a governed response, require its completion too.
-		for _, field := range []string{"status", "outcome_status", "decision", "reconciliation_required", "denied", "requires_approval", "quarantined", "failed", "pending"} {
-			if _, exists := nested[field]; exists && GovernanceResponse(nested).State() != GovernanceSucceeded {
-				return GovernanceFailed
+		for _, field := range []string{"result", "status", "outcome_status", "decision", "reconciliation_required", "denied", "requires_approval", "quarantined", "failed", "pending"} {
+			if _, exists := nested[field]; exists {
+				state := GovernanceResponse(nested).State()
+				if state != GovernanceSucceeded {
+					return state
+				}
 			}
 		}
 	}

@@ -39,8 +39,11 @@ is not general secret discovery. TLS verification is not disabled.
 
 Real acceptance uses an authenticated localhost application with migrated disposable
 PostgreSQL, valid/missing/incorrect/revoked synthetic credentials and a Go binary
-built from this tree. These analytics calls do not prove governance execution,
-approval resumption or isolated side effects. Go governance helpers remain UNSUPPORTED;
-do not fall back to direct execution when another governance surface denies an action.
+built from this tree. Analytics calls alone do not prove governance execution,
+approval resumption or isolated side effects. The repository candidate now includes
+canonical governance HTTP helpers; see [Go governance contracts](../../docs/sdk/GO_GOVERNANCE.md)
+for actual routes, one-shot mutation uncertainty and qualification limitations.
+No standalone grant minting endpoint is invented. Do not fall back to direct execution
+when a governance surface denies an action. This is not a published or production-qualified SDK.
 
 Production remains NO-GO pending independent qualification and explicit authorization.
