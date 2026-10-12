@@ -17,10 +17,15 @@ See ``ENFORCEMENT_BOUNDARY.md`` and ``docs/launch/ENFORCEMENT_PATH_MATRIX.md``.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import quote
 
 import httpx
+
+from .transport import validate_base_url, validate_timeout
 
 
 class GovernanceRequestError(RuntimeError):
@@ -40,7 +45,7 @@ class GovernanceRequestError(RuntimeError):
 class GovernanceToolOutcome:
     """Parsed result of a governed tool call.
 
-    ``completed`` is the only positive signal: the server answered 2xx with no ``error``. The absence of
+    ``completed`` requires a result envelope with no contradictory or uncertainty marker. The absence of
     ``denied`` or ``requires_approval`` is NOT permission; check ``completed``.
     """
 
@@ -48,7 +53,34 @@ class GovernanceToolOutcome:
 
     @property
     def completed(self) -> bool:
-        return "error" not in self.raw
+        if not isinstance(self.raw, dict) or "result" not in self.raw or "error" in self.raw:
+            return False
+        for field in (
+            "reconciliation_required",
+            "denied",
+            "requires_approval",
+            "quarantined",
+            "failed",
+            "pending",
+            "is_error",
+            "isError",
+        ):
+            if field in self.raw and self.raw[field] is not False:
+                return False
+        for field in ("status", "outcome_status"):
+            if field in self.raw:
+                value = self.raw[field]
+                if field == "outcome_status" and value is None:
+                    continue  # Canonical legacy response has no durable outcome status.
+                if value != "SUCCEEDED":
+                    return False
+        if "decision" in self.raw and self.raw["decision"] != "ALLOW":
+            return False
+        result = self.raw["result"]
+        return not (
+            isinstance(result, dict)
+            and any(result.get(field) for field in ("error", "is_error", "isError"))
+        )
 
     @property
     def requires_approval(self) -> bool:
@@ -65,7 +97,10 @@ class GovernanceToolOutcome:
     @property
     def reconciliation_required(self) -> bool:
         return (
-            self.raw.get("status") == "UNKNOWN" or self.raw.get("reconciliation_required") is True
+            self.raw.get("status") == "UNKNOWN"
+            or self.raw.get("outcome_status") == "UNKNOWN"
+            or self.raw.get("error") == "governance_unknown_outcome"
+            or self.raw.get("reconciliation_required") is True
         )
 
 
@@ -80,13 +115,30 @@ class GovernanceRuntimeClient:
         *,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
+        validate_base_url(base_url, api_key)
+        validate_timeout(timeout)
         self._base = base_url.rstrip("/")
         self._key = api_key
         self._timeout = timeout
         self._transport = transport  # tests only; production uses the default transport
 
-    def _client(self) -> httpx.AsyncClient:
-        return httpx.AsyncClient(timeout=self._timeout, transport=self._transport)
+    @asynccontextmanager
+    async def _client(self) -> AsyncIterator[httpx.AsyncClient]:
+        async with httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as client:
+            try:
+                yield client
+            except httpx.RequestError as exc:
+                # Preserve HTTPX timeout/transport classification, not credential-bearing
+                # request metadata or an unsafe provider exception chain. Never retry here.
+                message = str(exc).replace(self._key, "[REDACTED]") if self._key else str(exc)
+                # asynccontextmanager is entered while the original exception is active;
+                # replacing it would retain that original in __context__. Scrub the
+                # HTTPX error in place instead, retaining its exact subclass.
+                exc.args = (message,)
+                exc._request = None
+                exc.__context__ = None
+                exc.__cause__ = None
+                raise exc from None
 
     def _headers(self) -> dict[str, str]:
         return {
@@ -97,6 +149,18 @@ class GovernanceRuntimeClient:
 
     def _url(self, path: str) -> str:
         return f"{self._base}/api/{path.lstrip('/')}"
+
+    def _parse_response(self, resp: httpx.Response) -> dict[str, Any]:
+        if not resp.is_success:
+            detail = resp.text.replace(self._key, "[REDACTED]") if self._key else resp.text
+            raise GovernanceRequestError(resp.status_code, detail[:200])
+        try:
+            body = resp.json()
+        except ValueError:
+            raise GovernanceRequestError(resp.status_code, "response is not JSON") from None
+        if not isinstance(body, dict):
+            raise GovernanceRequestError(resp.status_code, "response is not a JSON object")
+        return body
 
     async def call_tool(
         self,
@@ -111,15 +175,7 @@ class GovernanceRuntimeClient:
                 headers=self._headers(),
                 json={"name": name, "arguments": arguments or {}, "purpose": purpose},
             )
-        if not resp.is_success:
-            raise GovernanceRequestError(resp.status_code, resp.text[:200])
-        try:
-            body = resp.json()
-        except ValueError as exc:
-            raise GovernanceRequestError(resp.status_code, "response is not JSON") from exc
-        if not isinstance(body, dict):
-            raise GovernanceRequestError(resp.status_code, "response is not a JSON object")
-        return GovernanceToolOutcome(raw=body)
+        return GovernanceToolOutcome(raw=self._parse_response(resp))
 
     async def revoke_delegation(self, identity_id: str, *, reason: str) -> dict[str, Any]:
         async with self._client() as client:
@@ -128,8 +184,7 @@ class GovernanceRuntimeClient:
                 headers=self._headers(),
                 json={"reason": reason},
             )
-            resp.raise_for_status()
-            return resp.json()
+            return self._parse_response(resp)
 
     async def list_approvals(self, status: str | None = None) -> dict[str, Any]:
         params = {"status": status} if status else None
@@ -139,8 +194,7 @@ class GovernanceRuntimeClient:
                 headers=self._headers(),
                 params=params,
             )
-            resp.raise_for_status()
-            return resp.json()
+            return self._parse_response(resp)
 
     async def resolve_approval(
         self,
@@ -158,8 +212,7 @@ class GovernanceRuntimeClient:
                 headers=self._headers(),
                 json=body,
             )
-            resp.raise_for_status()
-            return resp.json()
+            return self._parse_response(resp)
 
     async def execute_approval(self, approval_id: str) -> dict[str, Any]:
         async with self._client() as client:
@@ -168,14 +221,32 @@ class GovernanceRuntimeClient:
                 headers=self._headers(),
                 json={},
             )
-            resp.raise_for_status()
-            return resp.json()
+            return self._parse_response(resp)
 
     async def get_evidence(self, evidence_id: str) -> dict[str, Any]:
+        """Legacy detail route; current backend lacks this endpoint. Use get_attestation."""
         async with self._client() as client:
             resp = await client.get(
                 self._url(f"governance/evidence/{evidence_id}"),
                 headers=self._headers(),
             )
-            resp.raise_for_status()
-            return resp.json()
+            return self._parse_response(resp)
+
+    async def list_evidence(self, *, limit: int = 50) -> dict[str, Any]:
+        """Return the backend's bounded listing, not a complete-history claim."""
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
+            raise ValueError("Evidence limit must be an integer from 1 to 200")
+        async with self._client() as client:
+            resp = await client.get(
+                self._url("governance/evidence"), headers=self._headers(), params={"limit": limit}
+            )
+            return self._parse_response(resp)
+
+    async def get_attestation(self, evidence_id: str) -> dict[str, Any]:
+        """Read the server's evidence/outcome attestation; this is not a signature proof."""
+        async with self._client() as client:
+            resp = await client.get(
+                self._url(f"governance/evidence/{quote(evidence_id, safe='')}/attestation"),
+                headers=self._headers(),
+            )
+            return self._parse_response(resp)

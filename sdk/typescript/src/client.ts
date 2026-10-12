@@ -47,6 +47,7 @@ import type {
 } from "./models.js";
 
 const _RETRY_STATUS = new Set([429, 502, 503, 504]);
+import { validateBaseUrl } from "./transport.js";
 const _API_VERSION = "v1";
 
 export interface RAIClientOptions {
@@ -78,9 +79,16 @@ export class RAIClient {
   constructor(options: RAIClientOptions = {}) {
     this.baseUrl = (options.baseUrl ?? "http://localhost:8765").replace(/\/$/, "");
     this.apiKey = options.apiKey ?? "";
+    validateBaseUrl(this.baseUrl, this.apiKey);
     this.timeout = options.timeout ?? 30_000;
     this.maxRetries = options.maxRetries ?? 3;
     this.retryBaseMs = options.retryBaseMs ?? 500;
+    if (!Number.isFinite(this.timeout) || this.timeout <= 0 || this.timeout > 2147483647)
+      throw new RangeError("SDK timeout must be positive, finite and within the timer range");
+    if (!Number.isInteger(this.maxRetries) || this.maxRetries < 1)
+      throw new RangeError("SDK maxRetries must be a positive integer");
+    if (!Number.isFinite(this.retryBaseMs) || this.retryBaseMs < 0 || this.retryBaseMs > 2147483647)
+      throw new RangeError("SDK retry delay must be finite and within the timer range");
   }
 
   private url(path: string): string {
@@ -116,8 +124,10 @@ export class RAIClient {
     }
 
     let lastError: Error | null = null;
+    // No stable server idempotency contract exists for these mutations.
+    const attempts = method === "GET" ? this.maxRetries : 1;
 
-    for (let attempt = 0; attempt < this.maxRetries; attempt++) {
+    for (let attempt = 0; attempt < attempts; attempt++) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), this.timeout);
 
@@ -127,9 +137,10 @@ export class RAIClient {
           headers: this.headers(),
           body: body !== undefined ? JSON.stringify(body) : undefined,
           signal: controller.signal,
+          redirect: "error",
         });
 
-        if (_RETRY_STATUS.has(res.status) && attempt < this.maxRetries - 1) {
+        if (_RETRY_STATUS.has(res.status) && attempt < attempts - 1) {
           const retryAfter = res.headers.get("Retry-After");
           const waitMs = retryAfter
             ? parseInt(retryAfter, 10) * 1000
@@ -140,18 +151,20 @@ export class RAIClient {
 
         if (!res.ok) {
           const text = await res.text().catch(() => "");
+          const detail = this.apiKey ? text.split(this.apiKey).join("[REDACTED]") : text;
           throw new RAIError(
-            `${method} ${path} failed [${res.status}]: ${text}`,
+            `${method} ${path} failed [${res.status}]: ${detail}`,
             res.status,
             path,
           );
         }
 
-        return res.json() as Promise<T>;
+        // Keep the abort timer active until the complete body has been read.
+        return await res.json() as T;
       } catch (err) {
         if (err instanceof RAIError) throw err;
         lastError = err as Error;
-        if (attempt < this.maxRetries - 1) {
+        if (attempt < attempts - 1) {
           await this.sleep(this.jitter(this.retryBaseMs * 2 ** attempt));
         }
       } finally {
