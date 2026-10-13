@@ -15,7 +15,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const i18n = require("../../src/responsibleai/dashboard/static/js/i18n.js");
+const i18n = require("../../src/responsibleai/dashboard/legacy_templates/assets/js/i18n.js");
 const { resolveLocale, interpolate, lookup, pluralize } = i18n._internal;
 
 // ---- resolveLocale --------------------------------------------------------
