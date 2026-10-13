@@ -1,0 +1,16 @@
+# Copy to terraform.tfvars (gitignored) only after the authorization gate
+# is opened by a reviewed change. Values below are placeholders.
+# Do not put a real API private key, fingerprint, or password in git.
+
+authorization_gate     = "HOLD"
+region                 = "home-region"
+availability_domain    = "home-ad"
+tenancy_ocid           = "ocid1.tenancy.oc1..example"
+user_ocid              = "ocid1.user.oc1..example"
+compartment_ocid       = "ocid1.compartment.oc1..example"
+compartment_quota_name = "whitepact-dev"
+api_key_fingerprint    = "example-fingerprint"
+api_private_key_path   = "/run/secrets/oci_api_key.pem"
+ssh_public_key         = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleOnlyNotARealKey whitepact-dev"
+image_ocid             = "ocid1.image.oc1.example.example"
+operator_cidr          = "203.0.113.10/32"

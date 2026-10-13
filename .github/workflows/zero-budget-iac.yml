@@ -1,0 +1,59 @@
+name: Zero-budget IaC
+
+# Plan-only checks for the Always Free candidate. This workflow does not
+# run terraform plan or terraform apply and does not receive cloud
+# credentials.
+
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate plan-only zero-budget IaC
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install pinned Terraform 1.9.8
+        run: |
+          set -euo pipefail
+          sums="$(mktemp)"
+          zip="$(mktemp)"
+          curl -fsSL -o "$sums" "https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_SHA256SUMS"
+          curl -fsSL -o "$zip" "https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_linux_amd64.zip"
+          echo "186e0145f5e5f2eb97cbd785bc78f21bae4ef15119349f6ad4fa535b83b10df8  $zip" | sha256sum -c -
+          grep -F "186e0145f5e5f2eb97cbd785bc78f21bae4ef15119349f6ad4fa535b83b10df8  terraform_1.9.8_linux_amd64.zip" "$sums"
+          unzip -d "${RUNNER_TEMP}/tf" "$zip"
+          sudo install -m 0755 "${RUNNER_TEMP}/tf/terraform" /usr/local/bin/terraform
+          terraform version
+
+      - name: Reject apply while the gate is closed
+        run: |
+          set +e
+          infra/zero-budget/oci/apply.sh
+          code=$?
+          if [ "$code" -ne 2 ]; then
+            echo "apply.sh must exit 2 while the authorization gate is closed"
+            exit 1
+          fi
+
+      - name: Offline preflight
+        run: python3 infra/zero-budget/oci/preflight.py --self-test
+
+      - name: Terraform validate
+        working_directory: infra/zero-budget/oci
+        run: |
+          set -euo pipefail
+          terraform init -backend=false -input=false
+          terraform validate
+          terraform fmt -check -recursive
