@@ -1,0 +1,19 @@
+{
+  "phase": "B9",
+  "status": "ENVIRONMENT_BLOCKED",
+  "source_sha": "ab6b5bbc35f3637f9caad18b66f5923aa6cd59d1",
+  "timestamp": "2026-09-28T17:45:00Z",
+  "attempted_procedure": "scripts/cell_b/kind_b9_b10_qualification.sh",
+  "reason": "kind control-plane failed to become ready on disposable VM (kubeadm wait-control-plane); insufficient Kubernetes resources for 3-replica staging soak",
+  "antigravity_target": {
+    "replicas": 3,
+    "soak_hours": 4,
+    "target_rps": 500,
+    "adopted": false
+  },
+  "fallback_evidence": [
+    "artifacts/production/b9-http-pg-load.json",
+    "artifacts/production/b9-load-smoke.json"
+  ],
+  "limitations": "Not representative multi-replica staging qualification"
+}

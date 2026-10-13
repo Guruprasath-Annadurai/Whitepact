@@ -1,0 +1,27 @@
+{
+  "phase": "B10",
+  "test": "release_rollback_rehearsal",
+  "evidence_categories": [
+    "CI_VERIFIED",
+    "UNIT_TESTED"
+  ],
+  "source_sha": "9b6a7f211f65b6b57433e9365e773285a06b3445",
+  "tree_sha": "70ba966e35372fd8f1e819940497e627c502e7d5",
+  "chart_version": "1.3.1",
+  "started_at": "2026-09-28T08:29:57Z",
+  "finished_at": "2026-09-28T08:30:00Z",
+  "good_release": {
+    "helm_validate": "PASS",
+    "helm_lint_production_overlay": "PASS",
+    "immutable_source_sha_recorded": true
+  },
+  "bad_release_simulation": {
+    "auth_disabled_values": "BLOCKED_BY_HELM_VALIDATE",
+    "deployed_to_cluster": false
+  },
+  "helm_rollback_rehearsal": {
+    "status": "OWNER_ACTION_REQUIRED",
+    "reason": "No disposable Kubernetes cluster in zero-cost qualification VM; use staging cluster procedure in docs/production/B10_ROLLBACK_PROCEDURE.md"
+  },
+  "limitations": "Binary rollback on cluster not executed in this environment."
+}

@@ -1,0 +1,30 @@
+# Development overlay — local/minikube; not for corporate production.
+deploymentProfile: development
+
+replicaCount: 1
+
+autoscaling:
+  enabled: false
+
+config:
+  environment: development
+  authEnabled: true
+  allowAllOrigins: true
+  autoMigrate: true
+  databaseUrl: ""
+  redisUrl: ""
+
+persistence:
+  enabled: true
+
+migration:
+  enabled: true
+
+mcp:
+  enabled: true
+  replicaCount: 1
+  autoscaling:
+    enabled: false
+
+networkPolicy:
+  enabled: false

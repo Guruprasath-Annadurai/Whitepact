@@ -132,3 +132,6 @@ def assert_hosted_enterprise_boot_safe(settings: Any) -> None:
     from responsibleai.enterprise.security.preflight import assert_layer2_provider_boot_safe
 
     assert_layer2_provider_boot_safe(settings)
+    from responsibleai.operations.preflight import assert_production_configuration_safe
+
+    assert_production_configuration_safe(settings)  # noqa: PLC0415 — avoid import cycle at module load

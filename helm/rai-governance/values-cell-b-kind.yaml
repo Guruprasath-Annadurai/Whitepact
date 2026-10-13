@@ -1,0 +1,31 @@
+# Launch Cell B — disposable kind qualification (not production).
+deploymentProfile: development
+
+replicaCount: 3
+
+config:
+  environment: development
+  authEnabled: false
+  allowAllOrigins: true
+  autoMigrate: true
+  logJson: "true"
+  databaseUrl: ""
+  redisUrl: "redis://redis:6379/0"
+
+persistence:
+  enabled: false
+
+migration:
+  enabled: true
+
+mcp:
+  enabled: false
+
+networkPolicy:
+  enabled: false
+
+extraEnv:
+  - name: WHITEPACT_INSTANCE_ID
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.name

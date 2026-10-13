@@ -1,0 +1,10 @@
+{
+  "phase": "B5_B6",
+  "source_sha": "ab6b5bbc35f3637f9caad18b66f5923aa6cd59d1",
+  "metrics_error_induction": true,
+  "alert_rules_file": "grafana/prometheus/alert-rules.yml",
+  "prometheus_stack_deployed": false,
+  "alertmanager_fired": false,
+  "otel_collector_export_verified": false,
+  "limitations": "Full Prometheus/Alertmanager/OTel collector stack not exercised in zero-cost VM"
+}

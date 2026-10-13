@@ -29,6 +29,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "rai-governance.serviceAccountName" . }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
@@ -52,9 +53,28 @@ spec:
             - secretRef:
                 name: {{ .Values.oidc.existingSecret }}
             {{- end }}
-          {{- with .Values.extraEnv }}
+          {{- if or (and .Values.externalSecrets.databaseUrl.name .Values.externalSecrets.databaseUrl.key) .Values.extraEnv }}
           env:
+            {{- if and .Values.externalSecrets.databaseUrl.name .Values.externalSecrets.databaseUrl.key }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.externalSecrets.databaseUrl.name }}
+                  key: {{ .Values.externalSecrets.databaseUrl.key }}
+            - name: WHITEPACT_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.externalSecrets.databaseUrl.name }}
+                  key: {{ .Values.externalSecrets.databaseUrl.key }}
+            - name: RAI_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.externalSecrets.databaseUrl.name }}
+                  key: {{ .Values.externalSecrets.databaseUrl.key }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
+            {{- end }}
           {{- end }}
           livenessProbe:
             {{- toYaml .Values.livenessProbe | nindent 12 }}

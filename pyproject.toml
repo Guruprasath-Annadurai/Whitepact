@@ -207,6 +207,9 @@ exclude        = ["examples", "scripts"]
 select = ["E", "F", "I", "UP", "B", "N"]
 ignore = ["E501", "B008", "N802"]
 
+[tool.ruff.lint.per-file-ignores]
+"scripts/cell_b/**" = ["E402"]
+
 [tool.mypy]
 # No python_version pin: CI runs this against both 3.11 and 3.12 (see
 # .github/workflows/ci.yml's matrix). Pinning to 3.11 made mypy refuse to

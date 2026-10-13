@@ -33,7 +33,10 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
-    timeout-minutes: 45
+    # Measured pytest wall time spans ~26–43 min on ubuntu-latest (5198 tests);
+    # with lint/mypy/pip-audit and OpenSSF coverage gates the job needs >45m
+    # on slow runners (see docs/production/CI_PYTEST_RUNTIME.md).
+    timeout-minutes: 55
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -85,15 +88,24 @@ jobs:
             --ignore-vuln PYSEC-2026-597 \
             --ignore-vuln PYSEC-2026-3740
 
+      # Clear pyproject.toml addopts in CI: the default addopts stack extra
+      # --cov targets (biasbuster, privacylabel) and --cov-report=html on
+      # every run. Combined with this step's flags that duplicated
+      # responsibleai coverage and emitted term-missing, pytest was finishing
+      # ~99% of tests then spending several minutes in coverage teardown —
+      # exceeding the 45-minute job limit after Cell B's added PG/load tests.
       - name: Run tests with coverage
         run: |
           pytest tests/ \
+            -o addopts= \
             --cov=src/responsibleai \
+            --cov=src/biasbuster \
+            --cov=src/privacylabel \
             --cov-branch \
-            --cov-report=term-missing \
             --cov-report=xml:coverage.xml \
             --cov-report=json:coverage.json \
             --cov-fail-under=80 \
+            --durations=30 \
             -q
 
       - name: Enforce branch coverage (OpenSSF dynamic_analysis)
@@ -181,10 +193,16 @@ jobs:
       # a change would ship before it's tagged. The release workflow
       # (publish.yml) regenerates and attaches its own copy at tag time.
       - name: Generate SBOM (CycloneDX)
+        env:
+          PIP_DEFAULT_TIMEOUT: 120
         run: |
           python -m venv /tmp/sbom-venv
           /tmp/sbom-venv/bin/pip install --upgrade pip
-          /tmp/sbom-venv/bin/pip install dist/*.whl
+          for attempt in 1 2 3 4; do
+            /tmp/sbom-venv/bin/pip install dist/*.whl && break
+            echo "pip install wheel failed (attempt $attempt); retrying in ${attempt}0s"
+            sleep "${attempt}0"
+          done
           /tmp/sbom-venv/bin/pip install cyclonedx-bom
           /tmp/sbom-venv/bin/cyclonedx-py environment \
             --pyproject pyproject.toml \
@@ -220,6 +238,23 @@ jobs:
           helm template rai-governance helm/rai-governance/ \
             --set image.tag=ci-test \
             --debug \
+            > /dev/null
+
+      - name: Set up Python for Helm values contract
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package for helm_validate
+        run: pip install -e ".[dashboard]"
+
+      - name: Validate production Helm values contract
+        run: |
+          python -m responsibleai.operations.helm_validate helm/rai-governance/values-production.yaml
+          helm lint helm/rai-governance/ -f helm/rai-governance/values-production.yaml
+          helm template rai-governance helm/rai-governance/ \
+            -f helm/rai-governance/values-production.yaml \
+            --set image.tag=ci-test \
             > /dev/null
 
   accessibility:

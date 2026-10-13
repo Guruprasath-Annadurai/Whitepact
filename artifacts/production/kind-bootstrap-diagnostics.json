@@ -1,0 +1,10 @@
+{
+  "phase": "B9_B10",
+  "test": "kind_bootstrap_diagnostics",
+  "source_sha": "b7a9bf6959901b20a1e995771ca0d43122884923",
+  "timestamp": "2026-09-28T18:05:33Z",
+  "status": "ENVIRONMENT_BLOCKED",
+  "failure_reason": "kind_create_failed",
+  "kubeadm_tail": "k8s.io/kubernetes/cmd/kubeadm/app/cmd/phases/workflow/runner.go:234\nk8s.io/kubernetes/cmd/kubeadm/app/cmd.newCmdInit.func1\n\tk8s.io/kubernetes/cmd/kubeadm/app/cmd/init.go:129\ngithub.com/spf13/cobra.(*Command).execute\n\tgithub.com/spf13/cobra@v1.8.1/command.go:985\ngithub.com/spf13/cobra.(*Command).ExecuteC\n\tgithub.com/spf13/cobra@v1.8.1/command.go:1117\ngithub.com/spf13/cobra.(*Command).Execute\n\tgithub.com/spf13/cobra@v1.8.1/command.go:1041\nk8s.io/kubernetes/cmd/kubeadm/app.Run\n\tk8s.io/kubernetes/cmd/kubeadm/app/kubeadm.go:47\nmain.main\n\tk8s.io/kubernetes/cmd/kubeadm/kubeadm.go:25\nruntime.main\n\truntime/proc.go:272\nruntime.goexit\n\truntime/asm_amd64.s:1700\nerror execution phase wait-control-plane\nk8s.io/kubernetes/cmd/kubeadm/app/cmd/phases/workflow.(*Runner).Run.func1\n\tk8s.io/kubernetes/cmd/kubeadm/app/cmd/phases/workflow/runner.go:262\nk8s.io/kubernetes/cmd/kubeadm/app/cmd/phases/workflow.(*Runner).visitAll\n\tk8s.io/kubernetes/cmd/kubeadm/app/cmd/phases/workflow/runner.go:450\nk8s.io/kubernetes/cmd/kubeadm/app/cmd/phases/workflow.(*Runner).Run\n\tk8s.io/kubernetes/cmd/kubeadm/app/cmd/phases/workflow/runner.go:234\nk8s.io/kubernetes/cmd/kubeadm/app/cmd.newCmdInit.func1\n\tk8s.io/kubernetes/cmd/kubeadm/app/cmd/init.go:129\ngithub.com/spf13/cobra.(*Command).execute\n\tgithub.com/spf13/cobra@v1.8.1/command.go:985\ngithub.com/spf13/cobra.(*Command).ExecuteC\n\tgithub.com/spf13/cobra@v1.8.1/command.go:1117\ngithub.com/spf13/cobra.(*Command).Execute\n\tgithub.com/spf13/cobra@v1.8.1/command.go:1041\nk8s.io/kubernetes/cmd/kubeadm/app.Run\n\tk8s.io/kubernetes/cmd/kubeadm/app/kubeadm.go:47\nmain.main\n\tk8s.io/kubernetes/cmd/kubeadm/kubeadm.go:25\nruntime.main\n\truntime/proc.go:272\nruntime.goexit\n\truntime/asm_amd64.s:1700",
+  "transcript": "artifacts/production/kind-bootstrap-diagnostics.log"
+}

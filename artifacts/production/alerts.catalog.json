@@ -1,0 +1,54 @@
+{
+  "version": "1.0.0",
+  "program": "WhitePact Launch Cell B",
+  "alerts": [
+    {
+      "id": "svc_unavailable",
+      "severity": "SEV1",
+      "condition": "Liveness failing for >2m",
+      "owner": "platform-oncall",
+      "runbook": "docs/operations/INCIDENT_RESPONSE_RUNBOOK.md",
+      "response": "Page on-call; check pod events and recent deploy"
+    },
+    {
+      "id": "readiness_failure",
+      "severity": "SEV1",
+      "condition": "Readiness not ready while liveness OK",
+      "owner": "platform-oncall",
+      "runbook": "docs/production/DEPLOYMENT_RUNBOOK.md",
+      "response": "Inspect DB connectivity, migrations, restore admission gate"
+    },
+    {
+      "id": "high_5xx_rate",
+      "severity": "SEV2",
+      "condition": "HTTP 5xx > 1% for 5m",
+      "owner": "platform-oncall",
+      "runbook": "docs/operations/INCIDENT_RESPONSE_RUNBOOK.md",
+      "response": "Correlate with deploy SHA; consider rollback rehearsal steps"
+    },
+    {
+      "id": "db_unavailable",
+      "severity": "SEV1",
+      "condition": "Postgres connection errors sustained",
+      "owner": "database-oncall",
+      "runbook": "docs/production/BACKUP_RESTORE_RUNBOOK.md",
+      "response": "Fail closed; no auth bypass; initiate DB recovery playbook"
+    },
+    {
+      "id": "backup_failure",
+      "severity": "SEV2",
+      "condition": "Scheduled logical backup job failed",
+      "owner": "platform-oncall",
+      "runbook": "docs/production/BACKUP_RESTORE_RUNBOOK.md",
+      "response": "Re-run backup; verify RPO target not met until success"
+    },
+    {
+      "id": "auth_failure_spike",
+      "severity": "SEV2",
+      "condition": "Authentication failures > baseline 3x for 10m",
+      "owner": "security-oncall",
+      "runbook": "docs/operations/SECURITY_INCIDENT_RUNBOOK.md",
+      "response": "Check IdP status; preserve audit logs; no disable-auth kill switch"
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "phase": "B7",
+  "method": "SELF_REHEARSED",
+  "exercises": [
+    {
+      "scenario": "postgres_primary_unavailable",
+      "severity": "SEV1",
+      "steps": [
+        "Detect readiness failures on /readyz",
+        "Confirm no auth bypass or degraded anonymous mode",
+        "Execute DB outage runbook section",
+        "Preserve audit/evidence tables for forensics"
+      ],
+      "gaps_found": [],
+      "result": "PASS"
+    },
+    {
+      "scenario": "credential_leak_suspected",
+      "severity": "SEV1",
+      "steps": [
+        "Rotate OIDC client secret via external secret store",
+        "Invalidate active sessions per runbook",
+        "Record release SHA and affected tenant scope from audit logs"
+      ],
+      "gaps_found": ["External secret rotation is operator-owned"],
+      "result": "PARTIAL"
+    },
+    {
+      "scenario": "bad_deployment_elevated_5xx",
+      "severity": "SEV2",
+      "steps": [
+        "Identify deploy SHA from operator_status",
+        "Roll back Helm release to previous revision",
+        "Verify schema forward-compatible per B10 policy"
+      ],
+      "gaps_found": [],
+      "result": "PASS"
+    }
+  ]
+}

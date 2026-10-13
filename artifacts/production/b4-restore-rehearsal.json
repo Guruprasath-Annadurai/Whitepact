@@ -1,0 +1,25 @@
+{
+  "phase": "B4",
+  "test": "logical_backup_restore_rehearsal",
+  "timestamp": "2026-09-28T08:27:58.308914+00:00",
+  "evidence_categories": [
+    "REAL_POSTGRES_TESTED",
+    "RESTORE_TESTED"
+  ],
+  "postgres_version": "16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)",
+  "backup_command": "pg_dump --format=plain | gzip",
+  "measured_backup_seconds": 0.068,
+  "measured_restore_seconds": 0.533,
+  "backup_bytes": 23953,
+  "backup_sha256": "de899339468fe4ef17cdf140307da1c647a590e478a445266e9ca48ea436493e",
+  "schema_version": "0061",
+  "source_row_counts": {
+    "public_tables": 118,
+    "organizations": 0
+  },
+  "restored_row_counts": {
+    "public_tables": 118,
+    "organizations": 0
+  },
+  "limitations": "Disposable isolated PostgreSQL; not production data or RTO guarantee."
+}

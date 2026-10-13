@@ -1,0 +1,16 @@
+{
+  "program": "WhitePact Launch Cell B",
+  "candidate_git_sha": "REPLACE_WITH_EXACT_HEAD",
+  "candidate_tree_sha": "REPLACE_WITH_TREE",
+  "version": "1.3.1",
+  "schema_migration_head": "0061_sovereign_shadow_observations",
+  "container_image_digest": "REPLACE_AFTER_BUILD",
+  "sbom_reference": "REPLACE_WITH_CI_ARTIFACT",
+  "ci_run_ids": [],
+  "security_scan_refs": [],
+  "load_test_refs": [],
+  "restore_test_refs": [],
+  "deployment_environment": "staging",
+  "formula_rollout_mode": "OFF",
+  "evidence_notes": "Do not commit fabricated IDs"
+}

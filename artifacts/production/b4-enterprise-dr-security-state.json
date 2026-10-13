@@ -1,0 +1,44 @@
+{
+  "phase": "B4",
+  "test": "enterprise_dr_security_state_restoration",
+  "evidence_categories": [
+    "RESTORE_TESTED",
+    "REAL_POSTGRES_TESTED",
+    "AUTHZ_VERIFIED"
+  ],
+  "source_sha": "83e8c46eb0d57196c4dd81e89da4d7c1789a0d7f",
+  "timestamp": "2026-09-28T18:38:22.267093+00:00",
+  "security_snapshot": {
+    "org_a": "dd6ab12c-95d9-4609-b038-52077c4b919f",
+    "org_b": "b99a114d-5489-43db-bf6f-abbea8b3ca8c",
+    "raw_key_a": "redacted:sha256:044d20ac7efdaf85",
+    "raw_key_b": "redacted:sha256:0fb605166b02e103",
+    "consumed_nonce": "redacted:sha256:9996361bfead1edd",
+    "authorization_id": "redacted:sha256:347d5ddcc63e925e",
+    "epoch_after_bump": 1,
+    "denied_approval_id": "redacted:sha256:4f7220406743600b",
+    "expired_auth_id": "redacted:sha256:2f171a6448ce50dd"
+  },
+  "post_restore_verification": {
+    "consumed_nonce_replay_blocked": true,
+    "stale_epoch_rejected": true,
+    "expired_execution_grant_rejected": true,
+    "denied_approval_status": "DENIED",
+    "denied_approval_immutable": true,
+    "denied_approval_consume_blocked": true,
+    "governance_evidence_chain_valid": true,
+    "audit_log_chain": {
+      "intact": true,
+      "entries_checked": 50000,
+      "entries_scanned": 50000,
+      "broken_links": [],
+      "days": 3650
+    },
+    "cross_tenant_list_keys_status": 404,
+    "cross_tenant_access_denied": true,
+    "same_tenant_list_keys_status": 200,
+    "same_tenant_access_allowed": true,
+    "passed": true
+  },
+  "limitations": "Expired execution grant checked via executor validation path (_validate_authorization); durable Phase 7A kernel admission requires full runtime_execution_* graph \u2014 see tests/test_phase7a_authority_kernel.py."
+}

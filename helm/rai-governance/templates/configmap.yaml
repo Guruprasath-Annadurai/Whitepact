@@ -5,7 +5,16 @@ metadata:
   labels:
     {{- include "rai-governance.labels" . | nindent 4 }}
 data:
+  WHITEPACT_ENV: {{ .Values.config.environment | default "development" | quote }}
+  RAI_ENV: {{ .Values.config.environment | default "development" | quote }}
+  WHITEPACT_AUTH_ENABLED: {{ .Values.config.authEnabled | quote }}
   RAI_AUTH_ENABLED: {{ .Values.config.authEnabled | quote }}
+  WHITEPACT_ALLOW_ALL_ORIGINS: {{ .Values.config.allowAllOrigins | default false | quote }}
+  RAI_ALLOW_ALL_ORIGINS: {{ .Values.config.allowAllOrigins | default false | quote }}
+  WHITEPACT_MCP_HTTP_ALLOW_UNAUTHENTICATED_DEMO: {{ .Values.config.mcpHttpAllowUnauthenticatedDemo | default false | quote }}
+  RAI_MCP_HTTP_ALLOW_UNAUTHENTICATED_DEMO: {{ .Values.config.mcpHttpAllowUnauthenticatedDemo | default false | quote }}
+  WHITEPACT_OIDC_SKIP_VERIFICATION: {{ .Values.config.oidcSkipVerification | default false | quote }}
+  WHITEPACT_VC_SKIP_VERIFICATION: {{ .Values.config.vcSkipVerification | default false | quote }}
   RAI_ALERT_THRESHOLD: {{ .Values.config.alertThreshold | quote }}
   RAI_MONTHLY_BUDGET_USD: {{ .Values.config.monthlyBudgetUsd | quote }}
   RAI_LOG_LEVEL: {{ .Values.config.logLevel | quote }}
