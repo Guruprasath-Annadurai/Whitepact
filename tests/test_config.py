@@ -20,9 +20,14 @@ import pytest
 from cryptography.fernet import Fernet
 
 
+def _enable_production_mcp_trust_domain(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("WHITEPACT_MCP_TRUST_DOMAIN", "enterprise")
+
+
 def _enable_prod_field_encryption(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("WHITEPACT_FIELD_ENCRYPTION_KEY", Fernet.generate_key().decode())
     monkeypatch.delenv("RAI_FIELD_ENCRYPTION_KEY", raising=False)
+    _enable_production_mcp_trust_domain(monkeypatch)
 
 
 @pytest.fixture()
@@ -384,6 +389,7 @@ class TestDatabaseUrlConfiguration:
 
         # In prod: raises loud configuration error
         monkeypatch.setenv("WHITEPACT_ENV", "production")
+        _enable_production_mcp_trust_domain(monkeypatch)
         with pytest.raises(
             ValueError, match="Conflicting database URLs.*not allowed in production"
         ):
@@ -420,6 +426,7 @@ class TestDatabaseUrlConfiguration:
 
         # In prod: raises loud configuration error
         monkeypatch.setenv("WHITEPACT_ENV", "production")
+        _enable_production_mcp_trust_domain(monkeypatch)
         with pytest.raises(
             ValueError, match="Conflicting database URLs.*not allowed in production"
         ):
@@ -435,6 +442,7 @@ class TestDatabaseUrlConfiguration:
         self, monkeypatch, fresh_settings_module
     ) -> None:
         monkeypatch.setenv("WHITEPACT_ENV", "production")
+        _enable_production_mcp_trust_domain(monkeypatch)
         monkeypatch.delenv("DATABASE_URL", raising=False)
         monkeypatch.delenv("RAI_DATABASE_URL", raising=False)
         monkeypatch.delenv("WHITEPACT_DATABASE_URL", raising=False)
@@ -445,6 +453,7 @@ class TestDatabaseUrlConfiguration:
         self, monkeypatch, fresh_settings_module
     ) -> None:
         monkeypatch.setenv("WHITEPACT_ENV", "production")
+        _enable_production_mcp_trust_domain(monkeypatch)
         monkeypatch.setenv("DATABASE_URL", "sqlite:///prod.db")
         monkeypatch.delenv("RAI_DATABASE_URL", raising=False)
         monkeypatch.delenv("WHITEPACT_DATABASE_URL", raising=False)
@@ -466,6 +475,7 @@ class TestDatabaseUrlConfiguration:
         self, monkeypatch, fresh_settings_module
     ) -> None:
         monkeypatch.setenv("WHITEPACT_ENV", "production")
+        _enable_production_mcp_trust_domain(monkeypatch)
         monkeypatch.delenv("RAI_DATABASE_URL", raising=False)
         monkeypatch.delenv("WHITEPACT_DATABASE_URL", raising=False)
         monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://user:pass@pg.prod:5432/whitepact")
