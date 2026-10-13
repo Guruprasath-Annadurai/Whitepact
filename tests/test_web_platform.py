@@ -201,7 +201,11 @@ async def test_csrf_onboarding_and_one_time_key_lifecycle(web_client):
     from responsibleai.enterprise.verification import HmacVerificationProvider, VerificationService
 
     async with app_mod._db_engine.raw.connect() as conn:
-        user_id = (await conn.execute(select(web_users.c.id))).scalar_one()
+        user_id = (
+            await conn.execute(
+                select(web_users.c.id).where(web_users.c.email == "grace@example.com")
+            )
+        ).scalar_one()
     provider = HmacVerificationProvider("test-webhook-secret")
     verification = VerificationService(app_mod._db_engine, provider)
     timestamp = datetime.now(UTC).isoformat()

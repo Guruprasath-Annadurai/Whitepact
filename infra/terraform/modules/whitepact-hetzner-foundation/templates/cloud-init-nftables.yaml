@@ -1,0 +1,36 @@
+#cloud-config
+# Host-level enforcement for east-west private traffic (Hetzner Cloud Firewalls
+# do not filter Cloud Network traffic between attached servers).
+write_files:
+  - path: /etc/nftables.d/whitepact-tier.nft
+    permissions: "0644"
+    content: |
+      table inet whitepact {
+        chain input {
+          type filter hook input priority 0; policy drop;
+          ct state established,related accept
+          iif "lo" accept
+          tcp dport 22 ip saddr { ${admin_cidrs} } accept comment "admin SSH maintenance path"
+          ${tier_input_rules}
+        }
+        chain forward {
+          type filter hook forward priority 0; policy drop;
+        }
+        chain output {
+          type filter hook output priority 0; policy drop;
+          ct state established,related accept
+          oif "lo" accept
+          ${tier_output_rules}
+        }
+      }
+  - path: /etc/nftables.conf
+    permissions: "0644"
+    content: |
+      # WhitePact tier rules — loaded on boot via nftables.service
+      include "/etc/nftables.d/whitepact-tier.nft"
+runcmd:
+  - [bash, -lc, "mkdir -p /etc/nftables.d"]
+  - [bash, -lc, "nft -f /etc/nftables.d/whitepact-tier.nft"]
+  - [bash, -lc, "nft list table inet whitepact >/dev/null"]
+  - [systemctl, enable, nftables]
+  - [systemctl, restart, nftables]
