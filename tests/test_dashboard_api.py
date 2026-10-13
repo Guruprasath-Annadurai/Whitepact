@@ -313,10 +313,8 @@ class TestCost:
 class TestDrift:
     async def test_drift_no_data(self, client):
         r = await client.get("/api/drift/unknown-model/unknown-provider")
-        assert r.status_code == 200
-        d = r.json()
-        assert "trend" in d
-        assert "error" in d["trend"]
+        assert r.status_code == 401
+        assert "trend" not in r.text
 
 
 # ── Security headers ──────────────────────────────────────────────────────────
