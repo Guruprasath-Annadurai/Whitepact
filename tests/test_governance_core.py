@@ -201,6 +201,60 @@ class TestGatewayAttenuation:
         assert result.decision == GovernanceDecision.DENY
         assert result.reason_codes[0].startswith("DELEGATION_AUTHORITY_ESCALATION")
 
+    def test_widened_memory_scope_denied_before_execution(self) -> None:
+        gw = WhitePactRuntimeGateway()
+        parent = _authority(constraints={"memory_scope": "org:acme"})
+        child = _authority(constraints={"memory_scope": "org"})
+        action = ActionRequest(agent=_agent(), action_type="mcp_tool_call", target="memory")
+
+        result = gw.evaluate(action, child, parent_authority=parent)
+
+        assert result.decision == GovernanceDecision.DENY
+        assert result.reason_codes[0].startswith("DELEGATION_AUTHORITY_ESCALATION")
+        assert "memory_scope" in result.reason_codes[0]
+
+    def test_descendant_memory_scope_is_not_escalation(self) -> None:
+        gw = WhitePactRuntimeGateway()
+        parent = _authority(constraints={"memory_scope": "org:acme"})
+        child = _authority(constraints={"memory_scope": "org:acme:agent:bot1"})
+        action = ActionRequest(agent=_agent(), action_type="mcp_tool_call", target="memory")
+
+        result = gw.evaluate(action, child, parent_authority=parent)
+
+        assert result.decision == GovernanceDecision.ALLOW
+
+    def test_widened_scope_is_denied_even_when_the_request_stays_inside_parent(self) -> None:
+        gw = WhitePactRuntimeGateway()
+        parent = _authority(constraints={"memory_scope": "org:acme"})
+        child = _authority(constraints={"memory_scope": "org"})
+        action = ActionRequest(
+            agent=_agent(),
+            action_type="mcp_tool_call",
+            target="memory",
+            arguments={"memory_scope": "org:acme"},
+        )
+
+        result = gw.evaluate(action, child, parent_authority=parent)
+
+        assert result.decision == GovernanceDecision.DENY
+        assert result.reason_codes[0].startswith("DELEGATION_AUTHORITY_ESCALATION")
+
+    def test_equal_scope_cannot_read_a_cross_tenant_namespace(self) -> None:
+        gw = WhitePactRuntimeGateway()
+        parent = _authority(constraints={"memory_scope": "org:acme"})
+        child = _authority(constraints={"memory_scope": "org:acme"})
+        action = ActionRequest(
+            agent=_agent(),
+            action_type="mcp_tool_call",
+            target="memory",
+            arguments={"memory_scope": "org:other"},
+        )
+
+        result = gw.evaluate(action, child, parent_authority=parent)
+
+        assert result.decision == GovernanceDecision.DENY
+        assert "MEMORY_SCOPE_VIOLATION" in result.reason_codes[0]
+
 
 class TestGatewayApprovalTrigger:
     def test_require_approval_action_type_short_circuits_before_scan(self) -> None:

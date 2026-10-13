@@ -487,9 +487,9 @@ class TestDashboardDenyPathsBatch13:
         r = await client.get("/api/branding")
         assert r.status_code == 200
 
-    async def test_drift_check_unknown_model_returns_payload(self, client: AsyncClient) -> None:
+    async def test_drift_check_unknown_model_requires_tenant(self, client: AsyncClient) -> None:
         r = await client.get("/api/drift/unknown-model/openai")
-        assert r.status_code == 200
+        assert r.status_code == 401
 
 
 class TestDashboardWebConsoleBatch13:

@@ -126,7 +126,25 @@ def assert_identity_webhook_boot_safe(settings: Any) -> None:
     resolve_identity_webhook_secret(environment=environment, configured=configured)
 
 
+def assert_production_authentication_required(settings: Any) -> None:
+    """Production must not boot with authentication disabled.
+
+    ``auth_enabled=false`` makes every dashboard request an anonymous owner.
+    That is a development convenience, not a production mode.
+    """
+    environment = str(getattr(settings, "environment", "development") or "development")
+    production = is_production_environment(environment) or bool(
+        getattr(settings, "is_production", False)
+    )
+    if production and getattr(settings, "auth_enabled", True) is False:
+        raise HostedEnterpriseSecurityError(
+            "Production authentication cannot be disabled. "
+            "Set auth_enabled=true and issue org-scoped credentials. Refusing to start."
+        )
+
+
 def assert_hosted_enterprise_boot_safe(settings: Any) -> None:
+    assert_production_authentication_required(settings)
     assert_legacy_api_keys_boot_safe(settings)
     assert_identity_webhook_boot_safe(settings)
     from responsibleai.enterprise.security.preflight import assert_layer2_provider_boot_safe

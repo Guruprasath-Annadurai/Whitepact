@@ -8,7 +8,11 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "audit:launch": "node tooling/launch-contract.mjs audit",
+    "audit:live-launch": "node tooling/launch-contract.mjs smoke",
+    "audit:local-launch": "node tooling/launch-contract.mjs preview-smoke",
+    "test:launch-contract": "node --test ../tests/js/website-launch-contract.test.mjs"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "5.3.0",
