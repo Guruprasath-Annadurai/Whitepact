@@ -95,3 +95,33 @@ class CapabilityTenantMismatch(FormulaDomainError):
 class InvalidCapabilityDerivation(FormulaDomainError):
     def __init__(self, message: str) -> None:
         super().__init__(message=message, code="INVALID_CAPABILITY_DERIVATION")
+
+
+class CausalTenantMismatch(FormulaDomainError):
+    def __init__(self, message: str) -> None:
+        super().__init__(message=message, code="CAUSAL_TENANT_MISMATCH")
+
+
+class InvalidCausalRule(FormulaDomainError):
+    def __init__(self, message: str) -> None:
+        super().__init__(message=message, code="INVALID_CAUSAL_RULE")
+
+
+class UnknownCausalReference(FormulaDomainError):
+    def __init__(self, message: str) -> None:
+        super().__init__(message=message, code="UNKNOWN_CAUSAL_REFERENCE")
+
+
+class CausalBudgetExceeded(FormulaDomainError):
+    def __init__(self, message: str) -> None:
+        super().__init__(message=message, code="CAUSAL_BUDGET_EXCEEDED")
+
+
+class InvalidFutureState(FormulaDomainError):
+    def __init__(self, message: str) -> None:
+        super().__init__(message=message, code="INVALID_FUTURE_STATE")
+
+
+class CausalCycleError(FormulaDomainError):
+    def __init__(self, message: str) -> None:
+        super().__init__(message=message, code="CAUSAL_CYCLE_ERROR")
