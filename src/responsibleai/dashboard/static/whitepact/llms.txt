@@ -1,0 +1,30 @@
+# WhitePact
+
+> An independent pre-execution runtime authorization boundary for supported,
+> configured AI agent actions. Authentication, intent and subscriptions alone
+> do not authorize execution. Unsupported paths are not universally governed.
+
+The agent may think freely. It may plan freely. But it cannot act outside independently enforced authority.
+
+## Current public product
+
+- [Product](https://whitepact.com/product): supported boundary and product scope.
+- [Architecture](https://whitepact.com/architecture): conceptual control chain and limitations.
+- [Developers](https://whitepact.com/developers): source references and integration entry.
+- [Docs](https://whitepact.com/docs): local setup, API and MCP result handling.
+- [Security](https://whitepact.com/security): threat boundary and disclosure.
+- [Trust](https://whitepact.com/trust): implemented controls versus external assurance.
+- [Enterprise](https://whitepact.com/enterprise): requirements-led evaluation.
+- [Sovereign](https://whitepact.com/sovereign): authority analysis; not execution authority.
+- [Repository](https://github.com/Guruprasath-Annadurai/Whitepact): implementation and release evidence.
+
+## Boundaries
+
+Implemented repository controls are not proof of deployed production behavior.
+The conceptual chain does not claim every adapter invokes every subsystem.
+Hash-chained evidence has documented verification boundaries; UNKNOWN external
+outcomes remain uncertain and must not be retried automatically.
+No SOC 2 or ISO 27001 certification or independent commercial penetration test
+is claimed here. Hosted and commercial availability require separate verification.
+Legacy scoring, leaderboard and incident routes are not the canonical product
+entry points and their retirement requires explicit approval.

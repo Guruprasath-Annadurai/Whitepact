@@ -45,11 +45,14 @@ class TestDigestAlgorithm:
         assert "algorithm=" not in uri
 
     def test_verify_code_uses_default_sha1_digest(self) -> None:
+        import time
+
         secret = mfa.generate_secret()
         # A code computed with the *default* pyotp.TOTP (SHA1) must
         # verify -- proving mfa.verify_code() didn't silently switch
         # digests.
-        code = pyotp.TOTP(secret).now()
+        now = time.time()
+        code = pyotp.TOTP(secret).at(int(now))
         assert mfa.verify_code(secret, code) is True
 
     def test_verify_code_rejects_a_sha256_computed_code(self) -> None:
@@ -63,10 +66,38 @@ class TestDigestAlgorithm:
         assert mfa.verify_code(secret, sha256_code) is False
 
 
+class TestVerifyCodeWithCounter:
+    def test_returns_current_counter_for_now_code(self) -> None:
+        import datetime
+        import time
+
+        secret = mfa.generate_secret()
+        now = time.time()
+        code = pyotp.TOTP(secret).at(int(now))
+        matched = mfa.verify_code_with_counter(secret, code, now=now)
+        totp = pyotp.TOTP(secret)
+        expected = totp.timecode(datetime.datetime.fromtimestamp(now))
+        assert matched == expected
+
+    def test_returns_previous_counter_when_clock_skewed_forward(self) -> None:
+        import datetime
+
+        secret = mfa.generate_secret()
+        base = 5_700_000
+        ts_n = base * 30 + 25
+        code_n = pyotp.TOTP(secret).at(datetime.datetime.fromtimestamp(ts_n))
+        ts_n1 = (base + 1) * 30 + 3
+        matched = mfa.verify_code_with_counter(secret, code_n, now=ts_n1)
+        assert matched == base
+
+
 class TestVerifyCode:
     def test_valid_code_verifies(self) -> None:
+        import time
+
         secret = mfa.generate_secret()
-        code = pyotp.TOTP(secret).now()
+        now = time.time()
+        code = pyotp.TOTP(secret).at(int(now))
         assert mfa.verify_code(secret, code) is True
 
     def test_wrong_code_rejected(self) -> None:
