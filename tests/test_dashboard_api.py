@@ -938,8 +938,11 @@ class TestPublicPagesLoad:
         r = await client.get("/llms.txt")
         assert r.status_code == 200
         assert "text/plain" in r.headers["content-type"]
-        assert "/registry" in r.text
-        assert "/api/trust-index/registry" in r.text
+        assert "# WhitePact" in r.text
+        assert "https://whitepact.com/architecture" in r.text
+        assert "independently enforced authority" in r.text
+        assert "supported" in r.text
+        assert "certified scoring" not in r.text
 
 
 class TestTrustIndexCertification:

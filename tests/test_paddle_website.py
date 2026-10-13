@@ -8,7 +8,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 PAGES = {
-    "/": "WhitePact — Runtime Governance for AI Agents",
+    "/": "WhitePact | Independent Authority Before Agent Action",
     "/pricing": "Pricing | WhitePact",
     "/terms": "Terms of Service | WhitePact",
     "/privacy": "Privacy Policy | WhitePact",
@@ -61,7 +61,7 @@ async def test_sovereign_public_metadata_and_workbench_shell_are_hosted():
         assert public.status_code == 200
         assert "<title>WhitePact Sovereign | Authority analysis workbench</title>" in public.text
         assert 'rel="canonical" href="https://whitepact.com/sovereign"' in public.text
-        assert "See authority before it becomes action." in public.text
+        assert "See authority before it becomes action" in public.text
 
         workbench = await client.get("/sovereign/workbench")
         assert workbench.status_code == 200
