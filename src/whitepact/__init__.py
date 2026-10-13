@@ -23,3 +23,8 @@ from __future__ import annotations
 from responsibleai import *  # noqa: F401,F403 -- intentional full re-export, see module docstring
 from responsibleai import __all__ as __all__
 from responsibleai import __version__ as __version__
+
+# Not added to ``__all__``: that tuple must stay identical to
+# ``responsibleai.__all__``. Import the client from ``whitepact.client``
+# or as ``from whitepact import WhitePactClient``.
+from whitepact.client import WhitePactClient as WhitePactClient

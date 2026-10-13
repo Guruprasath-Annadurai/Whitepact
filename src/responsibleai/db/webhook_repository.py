@@ -18,6 +18,7 @@ from typing import Any
 from sqlalchemy import delete, insert, select, update
 
 from responsibleai.db.engine import DatabaseEngine, webhook_configs, webhook_deliveries
+from responsibleai.db.tenant_scope import org_scope
 from responsibleai.webhooks.models import WebhookConfig, WebhookEvent, WebhookProvider
 
 
@@ -215,11 +216,11 @@ class WebhookConfigRepository:
             )
 
     async def delete(self, webhook_id: str, org_id: str | None = None) -> bool:
-        """Delete a webhook config. If org_id is given, only deletes a config
-        owned by that org — callers use this to enforce tenant isolation."""
-        stmt = delete(webhook_configs).where(webhook_configs.c.id == webhook_id)
-        if org_id is not None:
-            stmt = stmt.where(webhook_configs.c.org_id == org_id)
+        """Delete one webhook in the caller scope. None matches only NULL-org rows."""
+        stmt = delete(webhook_configs).where(
+            webhook_configs.c.id == webhook_id,
+            org_scope(webhook_configs.c.org_id, org_id),
+        )
         async with self._engine.raw.begin() as conn:
             result = await conn.execute(stmt)
         return result.rowcount > 0
