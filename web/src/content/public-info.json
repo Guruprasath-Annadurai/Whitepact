@@ -1,0 +1,98 @@
+{
+  "about": {
+    "path": "/about",
+    "title": "About WhitePact",
+    "heading": "Autonomy needs an enforceable pact",
+    "description": "Why WhitePact exists: to keep autonomous action inside explicit human authority.",
+    "sections": [
+      [
+        "Doctrine",
+        "The agent may think freely. It may plan freely. But it cannot act outside independently enforced authority."
+      ],
+      [
+        "Operating principle",
+        "Evidence before assertion. Implemented repository controls, deployed behavior and external assurance are separate claims."
+      ]
+    ]
+  },
+  "contact": {
+    "path": "/contact",
+    "title": "Contact WhitePact",
+    "heading": "Evaluate WhitePact for your architecture",
+    "description": "Current contact paths for WhitePact evaluation, security disclosure and open-source support.",
+    "sections": [
+      [
+        "Current contact",
+        "Architecture and deployment inquiries use the published project contact. No staffed support desk or SLA-backed service is implied."
+      ],
+      [
+        "Security disclosure",
+        "Use the repository SECURITY.md process. Do not post secrets or customer data in public issues."
+      ]
+    ]
+  },
+  "docs": {
+    "path": "/docs",
+    "title": "Developer Documentation | WhitePact",
+    "heading": "Route supported actions through a governed boundary",
+    "description": "Connect supported API and MCP actions to WhitePact's configured governance boundary.",
+    "sections": [
+      [
+        "Local setup",
+        "Clone https://github.com/Guruprasath-Annadurai/Whitepact.git, check out 52d9b3c5497af24bb7d4a7147e33deaadc64296e, run pip install -e \".[dashboard]\" in that checkout, then start uvicorn responsibleai.dashboard.app:app on localhost. The published distribution was 1.2.6 when checked on 2026-10-04 and may differ from this source baseline. Follow database, encryption and authority prerequisites before consequential testing."
+      ],
+      [
+        "Authentication is not authority",
+        "Bearer credentials authenticate requests but do not establish root legitimacy, consent or execution authority."
+      ],
+      [
+        "Result handling",
+        "Approval required is pending, denial is not success, and UNKNOWN means the downstream effect is uncertain. Do not retry UNKNOWN automatically."
+      ],
+      [
+        "Interfaces",
+        "POST /api/v1/governance/tools/call requires an organization-scoped API key authorized for at least the ANALYST role and a supported tool. Use deployed /mcp for compatible Streamable HTTP clients. Bearer integrations list evidence at GET /api/governance/evidence; GET /api/web/evidence/EVIDENCE_ID requires an authenticated browser session and organization membership. Baseline SDK evidence-detail helpers reference an unavailable route. Review exact deployed schemas at /api/docs."
+      ]
+    ]
+  },
+  "trust": {
+    "path": "/trust",
+    "title": "Trust Center | WhitePact",
+    "heading": "Controls, evidence and honest boundaries",
+    "description": "WhitePact security architecture, assurance status and known limitations.",
+    "sections": [
+      [
+        "Controls",
+        "Evaluate implemented controls against the exact release, deployed configuration and supported enforcement path."
+      ],
+      [
+        "Evidence boundary",
+        "Hash-chained evidence has documented verification boundaries. It does not independently confirm every external effect."
+      ],
+      [
+        "Assurance status",
+        "SOC 2: not currently certified. ISO 27001: not currently certified. Independent commercial penetration test is not currently claimed."
+      ],
+      [
+        "Known limitations",
+        "Hosted production, legal and independent assurance gates are separate. Same-process trusted code is outside universal non-bypassability claims."
+      ]
+    ]
+  },
+  "sovereign": {
+    "path": "/sovereign",
+    "title": "WhitePact Sovereign | Authority analysis workbench",
+    "heading": "See authority before it becomes action",
+    "description": "Inspect configured authority relationships and supporting evidence with WhitePact Sovereign.",
+    "sections": [
+      [
+        "Analysis, not authority",
+        "The authenticated Workbench displays canonical Core output. Manifest expectations and development previews are not execution authority."
+      ],
+      [
+        "Availability",
+        "Features depend on deployed contract, authenticated tenant context and configuration. Missing data must remain unavailable, not become a fixture fallback."
+      ]
+    ]
+  }
+}
