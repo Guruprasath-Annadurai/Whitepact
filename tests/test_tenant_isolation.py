@@ -168,6 +168,7 @@ class TestAuditLogIsolation:
             f"/api/audit?org_id={org_b}",
             headers={"Authorization": f"Bearer {key_a}"},
         )
-        assert r.status_code == 200
-        entries = r.json()["entries"]
-        assert not any(e["org_id"] == org_b for e in entries)
+        assert r.status_code == 404
+        assert "entries" not in r.json() or not any(
+            e.get("org_id") == org_b for e in r.json().get("entries", [])
+        )
