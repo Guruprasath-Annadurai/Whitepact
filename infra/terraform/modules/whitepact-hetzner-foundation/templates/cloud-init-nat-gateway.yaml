@@ -1,0 +1,33 @@
+#cloud-config
+# NAT + management gateway — IP forwarding and masquerade for private-network egress.
+write_files:
+  - path: /etc/nftables.d/whitepact-nat.nft
+    permissions: "0644"
+    content: |
+      table inet whitepact_nat {
+        chain input {
+          type filter hook input priority 0; policy drop;
+          ct state established,related accept
+          iif "lo" accept
+          tcp dport 22 ip saddr { ${admin_cidrs} } accept comment "operator SSH"
+        }
+        chain forward {
+          type filter hook forward priority 0; policy drop;
+          ct state established,related accept
+          iif "${private_iface}" oif "${public_iface}" accept comment "private to internet"
+          iif "${public_iface}" oif "${private_iface}" ct state established,related accept
+        }
+        chain output {
+          type filter hook output priority 0; policy accept;
+        }
+        chain postrouting {
+          type nat hook postrouting priority 100; policy accept;
+          oifname "${public_iface}" masquerade comment "NAT for private nodes"
+        }
+      }
+runcmd:
+  - [bash, -lc, "sysctl -w net.ipv4.ip_forward=1"]
+  - [bash, -lc, "grep -q '^net.ipv4.ip_forward=1' /etc/sysctl.d/99-whitepact-nat.conf || echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.d/99-whitepact-nat.conf"]
+  - [bash, -lc, "mkdir -p /etc/nftables.d && nft -f /etc/nftables.d/whitepact-nat.nft"]
+  - [systemctl, enable, nftables]
+  - [systemctl, restart, nftables]

@@ -1,0 +1,53 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
+# Manual staging deploy — exact SHA only. Requires environment approval + secrets.
+name: Deploy staging (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      git_sha:
+        description: "Exact qualified commit SHA (full 40 chars)"
+        required: true
+        type: string
+      confirm_gate1:
+        description: "Type APPROVE_STAGING_CLOUD_PROVISIONING to acknowledge owner gate"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify owner gate acknowledgement
+        run: |
+          if [ "${{ github.event.inputs.confirm_gate1 }}" != "APPROVE_STAGING_CLOUD_PROVISIONING" ]; then
+            echo "Owner Gate 1 acknowledgement required." >&2
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.git_sha }}
+      - name: Record provenance
+        run: |
+          echo "Deploy SHA: $(git rev-parse HEAD)"
+          echo "Tree: $(git rev-parse HEAD^{tree})"
+          test "$(git rev-parse HEAD)" = "${{ github.event.inputs.git_sha }}"
+
+  # Build/push and SSH deploy steps are intentionally placeholders until Gate 1 + secrets exist.
+  plan-only:
+    needs: gate
+    runs-on: ubuntu-latest
+    environment: staging-cloud
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.git_sha }}
+      - name: Validate Terraform staging root (no apply)
+        working-directory: infra/terraform/environments/staging
+        run: |
+          terraform init -backend=false
+          terraform validate
