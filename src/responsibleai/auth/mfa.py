@@ -64,10 +64,18 @@ decision, not an oversight:
 
 from __future__ import annotations
 
+import datetime
 import hashlib
+import hmac
 import secrets
+import time
 
 import pyotp
+
+# Clock skew: RFC 6238 recommends accepting the previous and next 30s windows.
+# Replay prevention consumes the *matched* counter (not wall-clock alone); see
+# verify_code_with_counter and IdentitySecurityService.verify_totp.
+DEFAULT_TOTP_VALID_WINDOW = 1
 
 _BACKUP_CODE_COUNT = 10
 _BACKUP_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O/1/I ambiguity
@@ -89,11 +97,37 @@ def provisioning_uri(secret: str, *, account_name: str, issuer: str = "Responsib
     return pyotp.TOTP(secret).provisioning_uri(name=account_name, issuer_name=issuer)
 
 
+def verify_code_with_counter(
+    secret: str,
+    code: str,
+    *,
+    now: float | None = None,
+    valid_window: int = DEFAULT_TOTP_VALID_WINDOW,
+) -> int | None:
+    """Return the TOTP counter (30s timestep) that matched *code*, or None.
+
+    Evaluates offsets ``[-valid_window, +valid_window]`` in the same order as
+    pyotp's ``verify(valid_window=…)`` so behavior stays aligned with
+    authenticator apps while exposing the consumed counter for replay guards.
+    """
+    if not code or not code.isdigit():
+        return None
+    if now is None:
+        now = time.time()
+    totp = pyotp.TOTP(secret)
+    for_time = datetime.datetime.fromtimestamp(now)
+    base = totp.timecode(for_time)
+    for offset in range(-valid_window, valid_window + 1):
+        counter = base + offset
+        expected = totp.at(for_time, offset)
+        if hmac.compare_digest(str(code), str(expected)):
+            return counter
+    return None
+
+
 def verify_code(secret: str, code: str) -> bool:
     """Check a 6-digit TOTP code, allowing 1 step (30s) of clock drift either way."""
-    if not code or not code.isdigit():
-        return False
-    return pyotp.TOTP(secret).verify(code, valid_window=1)
+    return verify_code_with_counter(secret, code) is not None
 
 
 def generate_backup_codes() -> list[str]:
