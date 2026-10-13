@@ -12,7 +12,10 @@ this rename carries no compatibility break.
 
 Three transports:
 
-1. **stdio** (default, free, self-hosted) — full unrestricted tool access.
+1. **stdio** (default, free, self-hosted) — community trust domain only:
+   full unrestricted tool access when ``mcp_trust_domain=community``.
+   Enterprise deployments must set ``mcp_trust_domain=enterprise`` and use
+   governed hosted MCP instead (stdio refuses to start).
    Configure Claude Code:
        {
          "mcpServers": {
@@ -341,16 +344,25 @@ async def _read_resource(uri: types.AnyUrl) -> str:
 
 
 async def _run_stdio() -> None:
+    from responsibleai.mcp.trust_domain import refuse_ungoverned_stdio_exit
+
+    refuse_ungoverned_stdio_exit()
     async with stdio_server() as (read_stream, write_stream):
         init_options = server.create_initialization_options()
         await server.run(read_stream, write_stream, init_options)
 
 
-def main() -> None:
-    """CLI entry point: whitepact-mcp / responsibleai-mcp (stdio, self-hosted)."""
+def _run_stdio_main_body() -> None:
     _logger.info("starting %s v1.2.0 (stdio)", server.name)
     _log_invocation_name("stdio server")
     asyncio.run(_run_stdio())
+
+
+def main() -> None:
+    """CLI entry point: whitepact-mcp / responsibleai-mcp (stdio, self-hosted)."""
+    from responsibleai.mcp.trust_domain import entrypoint_main_stdio
+
+    entrypoint_main_stdio()
 
 
 # ── HTTP/SSE transport (hosted, billed, plan-gated) ─────────────────────────────
@@ -395,6 +407,11 @@ def hosted_production_preflight(
         raise HostedProductionSecurityError(
             "Production hosted MCP requires mcp_governance_enabled=true. "
             "Hosted execution must not start without tenant-scoped governance."
+        )
+    if getattr(settings, "mcp_trust_domain", "community") != "enterprise":
+        raise HostedProductionSecurityError(
+            "Production hosted MCP requires mcp_trust_domain=enterprise. "
+            "Refusing enterprise-to-community trust downgrade."
         )
     hosts = (
         allowed_hosts
