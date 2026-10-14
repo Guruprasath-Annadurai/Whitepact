@@ -32,11 +32,12 @@ test("UNKNOWN response and lost mutation acknowledgement never become completion
   assert.equal(calls, 2);
 });
 
-test("body timeout and reflected-key redaction remain safe on mutating requests", async () => {
+test("body timeout and reflected-key redaction remain safe on mutating requests", { timeout: 5000 }, async () => {
   globalThis.fetch = originalFetch;
   let calls = 0;
   const key = "synthetic-combined-key";
-  const server = http.createServer((_req, res) => {
+  const server = http.createServer((req, res) => {
+    if (req.url === "/__test_ready") { res.writeHead(204); res.end(); return; }
     calls++;
     res.writeHead(403);
     res.write(`refused ${key}`);
@@ -45,7 +46,13 @@ test("body timeout and reflected-key redaction remain safe on mutating requests"
   });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   try {
-    const client = new RAIClient({ baseUrl: `http://127.0.0.1:${server.address().port}`, apiKey: key, timeout: 100 });
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    // Initialize the real fetch connection before the SDK deadline starts.
+    // Cold fetch startup under parallel test workers can consume 100ms before
+    // any request reaches the server; that did not exercise a stalled body.
+    const ready = await originalFetch(`${baseUrl}/__test_ready`, { signal: AbortSignal.timeout(3000) });
+    assert.equal(ready.status, 204);
+    const client = new RAIClient({ baseUrl, apiKey: key, timeout: 500 });
     await assert.rejects(client.createApiKey("local", "admin"), error => !error.message.includes(key));
     assert.equal(calls, 1);
     await assert.rejects(client.createApiKey("local", "admin"), error => error.message.includes("[REDACTED]") && !error.message.includes(key));
