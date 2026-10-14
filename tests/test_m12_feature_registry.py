@@ -8,6 +8,8 @@ import copy
 import csv
 import io
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -24,6 +26,38 @@ ROOT = Path(__file__).resolve().parents[1]
 @pytest.fixture
 def registry():
     return json.loads((ROOT / "docs/m12/feature-registry.json").read_text())
+
+
+def test_cli_rejects_duplicate_registry_keys_instead_of_last_value_wins(registry, tmp_path):
+    file = tmp_path / "ambiguous.json"
+    text = json.dumps(registry)
+    file.write_text(
+        text.replace('"schema_version": 1', '"schema_version": 2, "schema_version": 1', 1)
+    )
+    script = ROOT / "scripts/qualification/feature_registry.py"
+    result = subprocess.run(
+        [sys.executable, str(script), str(file)], capture_output=True, text=True
+    )
+    assert result.returncode == 2
+    assert json.loads(result.stdout)["status"] == "REJECTED"
+
+
+@pytest.mark.parametrize(
+    "bad",
+    ['{"private":NaN}', "private-secret-canary is not JSON", '{"n":' + "1" * 5000 + "}"],
+    ids=["nonfinite", "malformed", "oversize-integer"],
+)
+def test_cli_invalid_json_never_prints_private_input_or_traceback(tmp_path, bad):
+    file = tmp_path / "private-input.json"
+    file.write_text(bad)
+    script = ROOT / "scripts/qualification/feature_registry.py"
+    result = subprocess.run(
+        [sys.executable, str(script), str(file)], capture_output=True, text=True
+    )
+    assert result.returncode == 2
+    assert json.loads(result.stdout)["status"] == "REJECTED"
+    assert "private-secret-canary" not in result.stdout + result.stderr
+    assert not result.stderr
 
 
 def test_complete_original_inventory_and_deterministic_generation(registry):

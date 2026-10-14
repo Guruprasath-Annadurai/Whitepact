@@ -55,6 +55,31 @@ class RegistryError(ValueError):
     """Reject incomplete or misleading feature registries."""
 
 
+def _unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise RegistryError("Duplicate registry JSON field")
+        result[key] = value
+    return result
+
+
+def _invalid_constant(value):
+    raise RegistryError("Non-finite registry JSON number")
+
+
+def load_json(path: Path):
+    """Read bounded, unambiguous metadata without echoing private input."""
+    try:
+        with path.open("rb") as stream:
+            raw = stream.read(8 * 1024 * 1024 + 1)
+        if len(raw) > 8 * 1024 * 1024:
+            raise RegistryError("Registry JSON exceeds size limit")
+        return json.loads(raw, object_pairs_hook=_unique_object, parse_constant=_invalid_constant)
+    except (OSError, UnicodeError, ValueError, RecursionError):
+        raise RegistryError("Unreadable or invalid registry JSON") from None
+
+
 def _path(value: str, root: Path, *, must_exist: bool = True) -> None:
     if not isinstance(value, str) or not value or "\\" in value:
         raise RegistryError("Invalid source path")
@@ -196,7 +221,7 @@ def validate(registry: dict, root: Path) -> list[dict]:
                 raise RegistryError("Actual command and evidence scope required")
             _path(proof.get("artifact", ""), root)
             try:
-                evidence = json.loads((root / proof["artifact"]).read_text())
+                evidence = load_json(root / proof["artifact"])
             except (ValueError, OSError) as exc:
                 raise RegistryError("Machine-readable executed evidence artifact required") from exc
             keys = (
@@ -294,7 +319,7 @@ def main() -> int:
     mode.add_argument("--check-generated", action="store_true")
     mode.add_argument("--write-generated", action="store_true")
     args = parser.parse_args()
-    data = json.loads(args.registry.read_text())
+    data = load_json(args.registry)
     rows = validate(data, args.root)
     if args.write_generated:
         write_generated(data, args.root)
@@ -324,4 +349,11 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        code = main()
+    except (RegistryError, OSError, TypeError, KeyError):
+        # Metadata, paths and parser messages can contain private input. Detailed
+        # programmatic diagnostics remain available to local callers via validate.
+        print(json.dumps({"status": "REJECTED", "error": "Invalid or unreadable feature registry"}))
+        code = 2
+    raise SystemExit(code)
