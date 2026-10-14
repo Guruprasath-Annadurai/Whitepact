@@ -16,6 +16,7 @@ this ledger; coordinate stable contracts with Antigravity first.
 |---|---|
 | Codex coordinator | SDK resource-path validation/tests; scripts/evidence/inspect_loaded_export.py and consumer tests; M12 workflow and overall docs. No cryptographic verification or root issuance implemented in the inspector |
 | Feature registry lane | Original175 input, feature-registry.json, scripts/qualification/feature_registry.py, tests/test_m12_feature_registry.py and generated ledger/matrix only |
+| Codex benchmark lane | scripts/evaluation/local_authorization_benchmark.py and telemetry/unit tests; unchanged denial-only workload, localhost-only data, no protection reduction |
 | Antigravity | Identity/root/consent/authority, policy/risk, delegation/revocation, signing/witnesses, containment/egress, security billing, CodeQL and Cloudflare security routing |
 
 SDK change contract: malformed opaque identifiers must fail locally before any
