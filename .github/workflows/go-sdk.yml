@@ -2,7 +2,7 @@ name: Go SDK Contract Review
 
 on:
   push:
-    branches: [codex/whitepact-go-sdk-contract-hardening, codex/whitepact-v2-acceptance, codex/whitepact-go-governance-sdk]
+    branches: [codex/whitepact-go-sdk-contract-hardening, codex/whitepact-v2-acceptance, codex/whitepact-go-governance-sdk, codex/whitepact-enterprise-product-completion]
   pull_request:
     paths: ['sdk/go/**', '.github/workflows/go-sdk.yml']
 

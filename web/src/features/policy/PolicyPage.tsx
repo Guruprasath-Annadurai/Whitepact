@@ -19,7 +19,9 @@ type PolicyRule = DomainRecord & {
 
 type PolicyPayload = { org_id: string; rules: PolicyRule[]; can_edit: boolean };
 
-const EFFECTS = ["ALLOW", "DENY", "REQUIRE_APPROVAL", "QUARANTINE"] as const;
+// Runtime redaction/quarantine decisions are valid, but the current PolicyRule
+// constructor does not support creating either as an ordered policy rule.
+const EFFECTS = ["ALLOW", "DENY", "REQUIRE_APPROVAL"] as const;
 
 export function PolicyPage() {
   const session = useOutletContext<WebSession>();
@@ -49,7 +51,7 @@ export function PolicyPage() {
 
   async function addRule(event: FormEvent) {
     event.preventDefault();
-    if (!canEdit) return;
+    if (!canEdit || !EFFECTS.some((effect) => effect === draft.effect)) return;
     setError("");
     try {
       const action_types = draft.action_types.split(",").map((s) => s.trim()).filter(Boolean);
@@ -148,10 +150,11 @@ export function PolicyPage() {
                 <label className="field"><span>Rule ID</span><input value={draft.rule_id} onChange={(e) => setDraft((d) => ({ ...d, rule_id: e.target.value }))} required minLength={1} /></label>
                 <label className="field"><span>Reason code</span><input value={draft.reason_code} onChange={(e) => setDraft((d) => ({ ...d, reason_code: e.target.value }))} required minLength={1} /></label>
                 <label className="field"><span>Effect</span>
-                  <select value={draft.effect} onChange={(e) => setDraft((d) => ({ ...d, effect: e.target.value }))}>
+                  <select aria-describedby="policy-effect-scope" value={draft.effect} onChange={(e) => setDraft((d) => ({ ...d, effect: e.target.value }))}>
                     {EFFECTS.map((effect) => <option key={effect} value={effect}>{effect}</option>)}
                   </select>
                 </label>
+                <small id="policy-effect-scope">Redaction and quarantine are runtime outcomes, not editable rule effects in the current policy contract.</small>
                 <label className="field"><span>Action types (comma-separated, optional)</span><input value={draft.action_types} onChange={(e) => setDraft((d) => ({ ...d, action_types: e.target.value }))} placeholder="rai_scan, payment.send" /></label>
                 <Button><Plus aria-hidden="true" /> Add rule</Button>
               </form>

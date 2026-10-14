@@ -53,6 +53,11 @@ class GovernanceToolOutcome:
 
     @property
     def completed(self) -> bool:
+        return self._completed(0)
+
+    def _completed(self, depth: int) -> bool:
+        if depth >= 128:
+            return False
         if not isinstance(self.raw, dict) or "result" not in self.raw or "error" in self.raw:
             return False
         for field in (
@@ -74,17 +79,38 @@ class GovernanceToolOutcome:
                     continue  # Canonical legacy response has no durable outcome status.
                 if value != "SUCCEEDED":
                     return False
-        if "decision" in self.raw and self.raw["decision"] != "ALLOW":
+        if "decision" in self.raw and self.raw["decision"] not in ("ALLOW", "ALLOW_WITH_REDACTION"):
             return False
         result = self.raw["result"]
-        return not (
-            isinstance(result, dict)
-            and any(result.get(field) for field in ("error", "is_error", "isError"))
-        )
+        if isinstance(result, dict):
+            if "error" in result or any(
+                field in result and result[field] is not False for field in ("is_error", "isError")
+            ):
+                return False
+            if any(
+                field in result
+                for field in (
+                    "result",
+                    "status",
+                    "outcome_status",
+                    "decision",
+                    "reconciliation_required",
+                    "denied",
+                    "requires_approval",
+                    "quarantined",
+                    "failed",
+                    "pending",
+                )
+            ):
+                return GovernanceToolOutcome(result)._completed(depth + 1)
+        return True
 
     @property
     def requires_approval(self) -> bool:
-        return self.raw.get("error") == "governance_approval_required"
+        return (
+            self.raw.get("error") == "governance_approval_required"
+            or self.raw.get("decision") == "REQUIRE_APPROVAL"
+        )
 
     @property
     def approval_id(self) -> str | None:
@@ -92,15 +118,34 @@ class GovernanceToolOutcome:
 
     @property
     def denied(self) -> bool:
-        return self.raw.get("error") == "governance_denied"
+        return self.raw.get("error") == "governance_denied" or self.raw.get("decision") in (
+            "DENY",
+            "DENIED",
+        )
+
+    @property
+    def quarantined(self) -> bool:
+        return (
+            self.raw.get("error") == "governance_quarantined"
+            or self.raw.get("decision") == "QUARANTINE"
+        )
 
     @property
     def reconciliation_required(self) -> bool:
+        return self._reconciliation_required(0)
+
+    def _reconciliation_required(self, depth: int) -> bool:
+        if depth >= 128:
+            return True  # Malformed/deep response cannot establish a certain outcome.
         return (
             self.raw.get("status") == "UNKNOWN"
             or self.raw.get("outcome_status") == "UNKNOWN"
             or self.raw.get("error") == "governance_unknown_outcome"
             or self.raw.get("reconciliation_required") is True
+            or (
+                isinstance(self.raw.get("result"), dict)
+                and GovernanceToolOutcome(self.raw["result"])._reconciliation_required(depth + 1)
+            )
         )
 
 
@@ -184,6 +229,12 @@ class GovernanceRuntimeClient:
                 headers=self._headers(),
                 json={"reason": reason},
             )
+            return self._parse_response(resp)
+
+    async def get_policy(self) -> dict[str, Any]:
+        """Read server-configured tenant policy; availability is not execution authority."""
+        async with self._client() as client:
+            resp = await client.get(self._url("governance/policy"), headers=self._headers())
             return self._parse_response(resp)
 
     async def list_approvals(self, status: str | None = None) -> dict[str, Any]:

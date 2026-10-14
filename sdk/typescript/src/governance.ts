@@ -25,6 +25,11 @@ export class GovernanceRequestError extends Error {
 
 /** A result envelope without contradictory markers; ALLOW alone is not execution. */
 export function isCompleted(result: GovernanceToolCallResult): boolean {
+  return completedEnvelope(result, 0);
+}
+
+function completedEnvelope(result: GovernanceToolCallResult, depth: number): boolean {
+  if (depth >= 128) return false;
   if (result === null || typeof result !== "object" || Array.isArray(result)
     || !Object.prototype.hasOwnProperty.call(result, "result") || "error" in result) return false;
   const owns = (field: string) => Object.prototype.hasOwnProperty.call(result, field);
@@ -36,11 +41,16 @@ export function isCompleted(result: GovernanceToolCallResult): boolean {
     if (field === "outcome_status" && result[field] === null) continue;
     if (result[field] !== "SUCCEEDED") return false;
   }
-  if (owns("decision") && result.decision !== "ALLOW") return false;
+  if (owns("decision") && result.decision !== "ALLOW" && result.decision !== "ALLOW_WITH_REDACTION") return false;
   const payload = result.result;
-  return !(payload && typeof payload === "object" && ["error", "is_error", "isError"].some(
-    field => Boolean((payload as Record<string, unknown>)[field]),
-  ));
+  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+    const nested = payload as GovernanceToolCallResult;
+    const has = (field: string) => Object.prototype.hasOwnProperty.call(nested, field);
+    if (has("error") || ["is_error", "isError"].some(field => has(field) && nested[field] !== false)) return false;
+    if (["result", "status", "outcome_status", "decision", "reconciliation_required", "denied",
+      "requires_approval", "quarantined", "failed", "pending"].some(has)) return completedEnvelope(nested, depth + 1);
+  }
+  return true;
 }
 
 export class GovernanceRuntimeClient {
@@ -125,6 +135,11 @@ export class GovernanceRuntimeClient {
   async listApprovals(status?: string, options?: GovernanceRequestOptions): Promise<Record<string, unknown>> {
     const qs = status ? `?status=${encodeURIComponent(status)}` : "";
     return this.request(`governance/approvals${qs}`, "GET", undefined, options);
+  }
+
+  /** Reads configured tenant policy; never grants execution authority. */
+  async getPolicy(options?: GovernanceRequestOptions): Promise<Record<string, unknown>> {
+    return this.request("governance/policy", "GET", undefined, options);
   }
 
   async resolveApproval(

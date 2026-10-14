@@ -10,7 +10,7 @@
     "audit:website-postdeploy": "node tests/js/website-postdeploy.e2e.mjs"
   },
   "devDependencies": {
-    "@axe-core/playwright": "^4.13.0",
-    "playwright": "^1.62.1"
+    "@axe-core/playwright": "4.13.0",
+    "playwright": "1.62.1"
   }
 }

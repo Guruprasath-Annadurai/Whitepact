@@ -15,19 +15,24 @@ const methods = {
 };
 
 for (const stage of ["headers", "body"]) for (const [name, invoke] of Object.entries(methods)) {
-  test(`${name}: bounded hanging ${stage}, one dispatch`, async () => {
+  test(`${name}: bounded hanging ${stage}, one dispatch`, { timeout: 5000 }, async () => {
     let calls = 0;
-    const server = http.createServer((_req, res) => {
+    const server = http.createServer((req, res) => {
+      if (req.url === "/__test_ready") { res.writeHead(204); res.end(); return; }
       calls++;
       if (stage === "body") { res.writeHead(200); res.write('{"result":'); }
     });
     await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
     let deadline;
     try {
-      const client = new GovernanceRuntimeClient({ apiKey: "synthetic", baseUrl: `http://127.0.0.1:${server.address().port}`, timeout: 100 });
+      const baseUrl = `http://127.0.0.1:${server.address().port}`;
+      // Separate cold fetch/connection startup from the SDK's bounded hang.
+      const ready = await fetch(`${baseUrl}/__test_ready`, { signal: AbortSignal.timeout(3000) });
+      assert.equal(ready.status, 204);
+      const client = new GovernanceRuntimeClient({ apiKey: "synthetic", baseUrl, timeout: 500 });
       const observed = await Promise.race([
         invoke(client).then(() => "success", e => e.name),
-        new Promise(resolve => { deadline = setTimeout(() => resolve("unbounded"), 1500); }),
+        new Promise(resolve => { deadline = setTimeout(() => resolve("unbounded"), 3000); }),
       ]);
       assert.equal(observed, "AbortError");
       assert.equal(calls, 1);
