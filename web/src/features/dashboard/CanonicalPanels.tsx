@@ -1,12 +1,13 @@
 // Copyright (c) 2026 Guruprasath Annadurai
 // SPDX-License-Identifier: MIT
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, FileCheck2, ShieldCheck, Users, X } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 import { AccessibleDialog } from "../../components/AccessibleDialog";
 import { Button } from "../../components/Button";
 import { api, messageFrom } from "../../lib/api";
-import type { ApprovalDetail, ApprovalExecutionResponse, ApprovalResolution, ConsequentialOutcome, DomainRecord, EvidenceAttestation, EvidenceVerification } from "../../lib/contracts";
+import { approvalResourceSegment, executionAcknowledgement, mutationAcknowledgementUncertain, uncertainExecution } from "../../lib/approvalOutcome";
+import type { ApprovalDetail, ApprovalResolution, ConsequentialOutcome, DomainRecord, EvidenceAttestation, EvidenceVerification } from "../../lib/contracts";
 
 type Decision = { detail: ApprovalDetail; outcome: "APPROVED" | "DENIED" };
 
@@ -16,11 +17,13 @@ export function ApprovalContractPanel({ records, onError, onChanged }: { records
   const [confirm, setConfirm] = useState<Decision | null>(null);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ConsequentialOutcome | null>(null);
+  const [uncertainIds, setUncertainIds] = useState<Set<string>>(new Set());
+  const submitting = useRef(false);
   const close = useCallback(() => setConfirm(null), []);
 
   const loadDetail = useCallback(async (id: string) => {
     try {
-      const detail = await api<ApprovalDetail>(`/api/v1/web/approvals/${id}`);
+      const detail = await api<ApprovalDetail>(`/api/v1/web/approvals/${approvalResourceSegment(id)}`);
       setDetails((current) => ({ ...current, [id]: detail }));
       setDetailErrors((current) => { const next = { ...current }; delete next[id]; return next; });
       return detail;
@@ -41,33 +44,37 @@ export function ApprovalContractPanel({ records, onError, onChanged }: { records
   }, [loadDetail, records]);
 
   async function decide() {
-    if (!confirm) return;
+    if (!confirm || submitting.current || uncertainIds.has(confirm.detail.approval_id)) return;
     const { detail, outcome: requested } = confirm;
     const id = detail.approval_id;
+    submitting.current = true;
+    let executionRequested = false;
     setBusy(true); onError(""); setOutcome(null);
     try {
-      const resolved = await api<ApprovalResolution>(`/api/v1/web/approvals/${id}/resolve`, { method: "POST", body: JSON.stringify({ outcome: requested }) });
+      const resolved = await api<ApprovalResolution>(`/api/v1/web/approvals/${approvalResourceSegment(id)}/resolve`, { method: "POST", body: JSON.stringify({ outcome: requested }) });
       const refreshed = await loadDetail(id);
-      if (requested === "DENIED") {
+      if (!resolved || !["PENDING", "APPROVED", "DENIED"].includes(resolved.status)) throw new Error("Unconfirmed approval acknowledgement");
+      if (requested === "DENIED" && resolved.status === "DENIED") {
         setOutcome({ state: "DENIED", approvalId: id }); setConfirm(null); await onChanged(); return;
       }
-      if (resolved.status !== "APPROVED") {
+      if (resolved.status === "PENDING") {
         setOutcome({ state: "PENDING", approvalId: id, recorded: refreshed?.current_vote_count ?? detail.current_vote_count + 1, required: refreshed?.required_approvals ?? detail.required_approvals });
         setConfirm(null); await onChanged(); return;
       }
-      const executed = await api<ApprovalExecutionResponse>(`/api/v1/web/approvals/${id}/execute`, { method: "POST", body: JSON.stringify({}) });
-      if (executed.execution_status === "UNKNOWN") {
-        setOutcome({ state: "UNKNOWN", approvalId: id, message: executed.message, reconciliationRequired: executed.reconciliation_required, evidenceId: executed.evidence_id ?? undefined, outcomeId: executed.outcome_id ?? undefined });
-        setConfirm(null); return;
-      }
-      if (executed.execution_status === "SUCCEEDED") {
-        setOutcome({ state: "SUCCESS", approvalId: id, message: executed.message, evidenceId: executed.evidence_id ?? undefined, outcomeId: executed.outcome_id ?? undefined });
-        setConfirm(null); await onChanged(); return;
-      }
-      setOutcome({ state: "FAILED", approvalId: id, message: executed.message }); setConfirm(null);
+      if (requested !== "APPROVED" || resolved.status !== "APPROVED") throw new Error("Contradictory approval acknowledgement");
+      executionRequested = true;
+      const executed = await api<unknown>(`/api/v1/web/approvals/${approvalResourceSegment(id)}/execute`, { method: "POST", body: JSON.stringify({}) });
+      const acknowledged = executionAcknowledgement(id, executed);
+      setOutcome(acknowledged); setConfirm(null);
+      if (acknowledged.state === "UNKNOWN") setUncertainIds((current) => new Set(current).add(id));
+      if (acknowledged.state === "SUCCESS") await onChanged();
     } catch (cause) {
-      setOutcome({ state: "FAILED", approvalId: id, message: messageFrom(cause, "Approval could not be submitted") }); setConfirm(null);
-    } finally { setBusy(false); }
+      if (mutationAcknowledgementUncertain(cause)) {
+        setUncertainIds((current) => new Set(current).add(id));
+        setOutcome(executionRequested ? uncertainExecution(id) : { state: "VOTE_UNKNOWN", approvalId: id });
+      } else setOutcome({ state: "FAILED", approvalId: id, message: messageFrom(cause, "Approval could not be submitted") });
+      setConfirm(null);
+    } finally { submitting.current = false; setBusy(false); }
   }
 
   if (!records.length && !outcome) return <Empty title="No approvals are waiting" />;
@@ -91,15 +98,16 @@ export function ApprovalContractPanel({ records, onError, onChanged }: { records
             {detail.argument_summary && <Row label="Safe argument summary" value={`${detail.argument_summary.argument_count} arguments: ${detail.argument_summary.argument_keys.join(", ")}`} />}
           </dl>
           <section className="vote-history" aria-label="Approval vote history"><h3>Vote history</h3>{detail.votes.length ? <ol>{detail.votes.map((vote) => <li key={vote.vote_id}><strong>{vote.outcome}</strong><span>Authorized reviewer {vote.resolver_identity_id}</span><time>{vote.resolved_at}</time></li>)}</ol> : <p>No votes recorded.</p>}</section>
-          <div className="approval-actions"><Button disabled={busy || detail.status !== "PENDING"} onClick={() => setConfirm({ detail, outcome: "APPROVED" })}>Approve</Button><Button variant="danger" disabled={busy || detail.status !== "PENDING"} onClick={() => setConfirm({ detail, outcome: "DENIED" })}>Deny</Button></div>
+          <div className="approval-actions"><Button disabled={busy || uncertainIds.has(id) || detail.status !== "PENDING"} onClick={() => setConfirm({ detail, outcome: "APPROVED" })}>Approve</Button><Button variant="danger" disabled={busy || uncertainIds.has(id) || detail.status !== "PENDING"} onClick={() => setConfirm({ detail, outcome: "DENIED" })}>Deny</Button></div>
         </article>;
       })}
     </section>
-    {confirm && <AccessibleDialog labelId="approval-contract-confirm-title" onClose={close}><header><div><h2 id="approval-contract-confirm-title">{confirm.outcome === "APPROVED" ? "Approve" : "Deny"} this request?</h2><p>{confirm.detail.action_type} → {confirm.detail.target}</p></div><button onClick={close} aria-label="Close"><X aria-hidden="true" /></button></header><p>This records one backend vote. It does not create execution authority in the browser.</p><div className="modal-actions"><Button variant={confirm.outcome === "DENIED" ? "danger" : "primary"} disabled={busy} onClick={() => void decide()}>{busy ? "Submitting…" : `Confirm ${confirm.outcome.toLowerCase()}`}</Button><Button variant="secondary" disabled={busy} onClick={close}>Cancel</Button></div></AccessibleDialog>}
+    {confirm && <AccessibleDialog labelId="approval-contract-confirm-title" onClose={close}><header><div><h2 id="approval-contract-confirm-title">{confirm.outcome === "APPROVED" ? "Approve" : "Deny"} this request?</h2><p>{confirm.detail.action_type} → {confirm.detail.target}</p></div><button onClick={close} aria-label="Close"><X aria-hidden="true" /></button></header><p>This records one backend vote. It does not create execution authority in the browser.</p>{confirm.outcome === "APPROVED" && <p>If this completes the required approvals, the console will request execution of exactly this reviewed action. The server must freshly authorize it.</p>}<div className="modal-actions"><Button variant={confirm.outcome === "DENIED" ? "danger" : "primary"} disabled={busy} onClick={() => void decide()}>{busy ? "Submitting…" : `Confirm ${confirm.outcome.toLowerCase()}`}</Button><Button variant="secondary" disabled={busy} onClick={close}>Cancel</Button></div></AccessibleDialog>}
   </>;
 }
 
 function ExecutionNotice({ outcome }: { outcome: ConsequentialOutcome }) {
+  if (outcome.state === "VOTE_UNKNOWN") return <section className="outcome-notice outcome-notice--unknown" role="alert"><AlertTriangle aria-hidden="true" /><div><h2>Approval outcome is uncertain</h2><p>The vote may have been recorded. Do not submit it again until the canonical approval and vote history are inspected. No execution request was sent by this console.</p><p>Approval ID: <code>{outcome.approvalId}</code></p><Link to="/dashboard/evidence">Inspect evidence</Link></div></section>;
   if (outcome.state === "UNKNOWN") return <section className="outcome-notice outcome-notice--unknown" role="alert" aria-live="assertive"><AlertTriangle aria-hidden="true" /><div><h2>Execution outcome is uncertain</h2><p>{outcome.message}</p>{outcome.reconciliationRequired && <strong>Reconciliation required</strong>}{outcome.evidenceId && <p>Evidence ID: <code>{outcome.evidenceId}</code></p>}{outcome.outcomeId && <p>Outcome ID: <code>{outcome.outcomeId}</code></p>}<p>Do not retry. Inspect evidence before taking further action.</p>{outcome.evidenceId && <Link to={`/dashboard/evidence?evidence=${encodeURIComponent(outcome.evidenceId)}`}>View evidence</Link>}</div></section>;
   if (outcome.state === "SUCCESS") return <section className="outcome-notice outcome-notice--success" role="status"><CheckCircle2 aria-hidden="true" /><div><h2>Execution succeeded</h2><p>{outcome.message}</p>{outcome.evidenceId && <Link to={`/dashboard/evidence?evidence=${encodeURIComponent(outcome.evidenceId)}`}>View evidence</Link>}</div></section>;
   if (outcome.state === "PENDING") return <section className="outcome-notice" role="status" aria-live="polite"><Users aria-hidden="true" /><div><h2>{outcome.recorded} of {outcome.required} approvals recorded</h2><p>Waiting for another authorized approver. No execution has started.</p></div></section>;

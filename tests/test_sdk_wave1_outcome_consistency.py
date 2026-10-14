@@ -7,8 +7,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-
-from rai_client.governance import GovernanceRuntimeClient, GovernanceToolOutcome
+from sdk.python.rai_client.governance import GovernanceRuntimeClient, GovernanceToolOutcome
 
 
 @pytest.mark.parametrize("decision", ["ALLOW", "ALLOW_WITH_REDACTION"])

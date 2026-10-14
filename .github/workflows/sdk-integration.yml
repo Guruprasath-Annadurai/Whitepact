@@ -8,6 +8,7 @@ on:
       - codex/whitepact-real-approval-journey
       - codex/whitepact-v2-acceptance
       - codex/whitepact-go-governance-sdk
+      - codex/whitepact-enterprise-product-completion
   pull_request:
     paths:
       - 'sdk/**'
@@ -52,7 +53,7 @@ jobs:
       - name: Complete Python SDK unit, contract and negative tests
         env:
           PYTHONPATH: src:.
-        run: python -m pytest tests/test_sdk*.py -q --no-cov
+        run: python -m pytest tests/test_sdk*.py tests/test_evaluation_benchmark_safety.py -q --no-cov
       - name: Python SDK wheel and source distribution
         run: python -m build sdk/python --no-isolation --outdir sdk-dist
       - name: Complete TypeScript SDK build and negative tests

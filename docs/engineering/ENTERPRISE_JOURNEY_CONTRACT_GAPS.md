@@ -119,10 +119,11 @@ must be reviewed by the Core owner. No root-legitimacy algorithm is prescribed.
    “Connect your first agent and WhitePact will begin evaluating configured actions”
    with “Create an API key” CTA does not mention missing canonical authority/consent.
    Correct factual wording now; do not fabricate readiness data before contract exists.
-3. **README anchor mismatch**: `PublicPages.tsx::DocsPage` links repository quick start
-   to `README.md#30-second-quickstart`, but actual README heading is
-   `30-second quickstart (Full Dashboard)` (anchor `#30-second-quickstart-full-dashboard`).
-   Source-level fragment mismatch confirmed; no live-link crawl executed here.
+3. **README anchor suspicion INVALIDATED**: `DocsPage` links to the frozen
+   `c1d7803fce0787f9183e18bb38134f73a6c0f57d` README, not this worktree's current
+   README. Coordinator checked that exact Git object: its heading is
+   `30-second quickstart`, matching the existing fragment. No link change is needed.
+   The initial audit compared the wrong version; no live-link crawl is claimed.
 4. **Policy outcome selection omits redaction**: `PolicyPage.tsx::EFFECTS` is
    ALLOW/DENY/REQUIRE_APPROVAL/QUARANTINE. This alone is not proof the rules endpoint
    supports ALLOW_WITH_REDACTION; inspect canonical PolicyRuleRequest before adding it.

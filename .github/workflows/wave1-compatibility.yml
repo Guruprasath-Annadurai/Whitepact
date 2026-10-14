@@ -2,7 +2,7 @@ name: Wave 1 Protocol and Framework Qualification
 
 on:
   push:
-    branches: [codex/whitepact-wave1-compatibility-qualification]
+    branches: [codex/whitepact-wave1-compatibility-qualification, codex/whitepact-enterprise-product-completion]
   pull_request:
     paths:
       - 'tests/test_mcp_wave1_compatibility.py'
