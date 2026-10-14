@@ -2,6 +2,9 @@
 # SPDX-License-Identifier: MIT
 """Consequential SDK envelopes cannot promote nested non-success to completion."""
 
+import runpy
+from pathlib import Path
+
 import httpx
 import pytest
 
@@ -75,3 +78,32 @@ async def test_policy_reads_existing_server_contract_without_tenant_input():
     assert seen[0].url.path == "/api/governance/policy"
     assert seen[0].url.query == b""
     assert seen[0].headers["Authorization"] == "Bearer local-key"
+
+
+async def test_executable_readiness_example_reads_only_and_does_not_print_key(monkeypatch, capsys):
+    seen = []
+
+    def respond(request):
+        seen.append(request)
+        payload = {
+            "/api/governance/policy": {"rules": []},
+            "/api/governance/approvals": {"pending": []},
+            "/api/governance/evidence": {"evidence": []},
+        }[request.url.path]
+        return httpx.Response(200, json=payload)
+
+    example = runpy.run_path(
+        str(Path(__file__).resolve().parents[1] / "sdk/python/examples/governance_readiness.py")
+    )
+    main = example["main"]
+    main.__globals__["GovernanceRuntimeClient"] = lambda *args, **kwargs: GovernanceRuntimeClient(
+        *args, **kwargs, transport=httpx.MockTransport(respond)
+    )
+    monkeypatch.setenv("WHITEPACT_API_KEY", "local-example-key")
+    monkeypatch.setenv("WHITEPACT_URL", "http://127.0.0.1:8765")
+    await main()
+    assert len(seen) == 3
+    assert all(request.method == "GET" for request in seen)
+    output = capsys.readouterr().out
+    assert '"authority_granted_by_client": false' in output
+    assert "local-example-key" not in output
