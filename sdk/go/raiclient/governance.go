@@ -81,7 +81,7 @@ func (r GovernanceResponse) State() GovernanceState {
 	if v, ok := r["outcome_status"]; ok && v != nil && v != "SUCCEEDED" {
 		return GovernanceFailed
 	}
-	if v, ok := r["decision"]; ok && v != "ALLOW" {
+	if v, ok := r["decision"]; ok && v != "ALLOW" && v != "ALLOW_WITH_REDACTION" {
 		return GovernanceFailed
 	}
 	if nestedOK {

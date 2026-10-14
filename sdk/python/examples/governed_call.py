@@ -24,6 +24,7 @@ async def main() -> None:
             {
                 "completed": result.completed,
                 "denied": result.denied,
+                "quarantined": result.quarantined,
                 "requires_approval": result.requires_approval,
                 "uncertain": result.reconciliation_required,
                 "approval_id": result.approval_id,
