@@ -12,6 +12,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // GovernanceState describes a server response, never a client-issued grant.
@@ -211,7 +213,8 @@ func (c *Client) CallTool(ctx context.Context, name string, arguments map[string
 }
 
 func governanceID(id string) (string, error) {
-	if id == "" || id == "." || id == ".." || strings.ContainsAny(id, "/?#\\%") {
+	invalidRune := strings.ContainsFunc(id, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) })
+	if id == "" || id == "." || id == ".." || !utf8.ValidString(id) || invalidRune || strings.ContainsAny(id, "/?#\\%") {
 		return "", errors.New("raiclient: invalid resource identifier")
 	}
 	return url.PathEscape(id), nil

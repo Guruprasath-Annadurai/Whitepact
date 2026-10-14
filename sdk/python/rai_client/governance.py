@@ -28,6 +28,25 @@ import httpx
 from .transport import validate_base_url, validate_timeout
 
 
+def _resource_id(value: str) -> str:
+    """Bind an opaque identifier to one route segment; never normalize it."""
+    if (
+        not isinstance(value, str)
+        or not value
+        or value in (".", "..")
+        or any(
+            c.isspace()
+            or ord(c) < 32
+            or 127 <= ord(c) <= 159
+            or 0xD800 <= ord(c) <= 0xDFFF
+            or c in "/\\?#%"
+            for c in value
+        )
+    ):
+        raise ValueError("Invalid resource identifier")
+    return quote(value, safe="")
+
+
 class GovernanceRequestError(RuntimeError):
     """The server did not return a governance answer (non-2xx, or a body that is not a JSON object).
 
@@ -223,6 +242,7 @@ class GovernanceRuntimeClient:
         return GovernanceToolOutcome(raw=self._parse_response(resp))
 
     async def revoke_delegation(self, identity_id: str, *, reason: str) -> dict[str, Any]:
+        identity_id = _resource_id(identity_id)
         async with self._client() as client:
             resp = await client.post(
                 self._url(f"governance/delegations/{identity_id}/revoke"),
@@ -254,6 +274,7 @@ class GovernanceRuntimeClient:
         *,
         notes: str | None = None,
     ) -> dict[str, Any]:
+        approval_id = _resource_id(approval_id)
         body: dict[str, Any] = {"outcome": outcome}
         if notes is not None:
             body["notes"] = notes
@@ -266,6 +287,7 @@ class GovernanceRuntimeClient:
             return self._parse_response(resp)
 
     async def execute_approval(self, approval_id: str) -> dict[str, Any]:
+        approval_id = _resource_id(approval_id)
         async with self._client() as client:
             resp = await client.post(
                 self._url(f"governance/approvals/{approval_id}/execute"),
@@ -276,6 +298,7 @@ class GovernanceRuntimeClient:
 
     async def get_evidence(self, evidence_id: str) -> dict[str, Any]:
         """Legacy detail route; current backend lacks this endpoint. Use get_attestation."""
+        evidence_id = _resource_id(evidence_id)
         async with self._client() as client:
             resp = await client.get(
                 self._url(f"governance/evidence/{evidence_id}"),
@@ -295,9 +318,10 @@ class GovernanceRuntimeClient:
 
     async def get_attestation(self, evidence_id: str) -> dict[str, Any]:
         """Read the server's evidence/outcome attestation; this is not a signature proof."""
+        evidence_id = _resource_id(evidence_id)
         async with self._client() as client:
             resp = await client.get(
-                self._url(f"governance/evidence/{quote(evidence_id, safe='')}/attestation"),
+                self._url(f"governance/evidence/{evidence_id}/attestation"),
                 headers=self._headers(),
             )
             return self._parse_response(resp)
