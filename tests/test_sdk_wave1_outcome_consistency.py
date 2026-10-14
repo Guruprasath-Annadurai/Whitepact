@@ -91,6 +91,10 @@ async def test_executable_readiness_example_reads_only_and_does_not_print_key(mo
         }[request.url.path]
         return httpx.Response(200, json=payload)
 
+    # The example intentionally imports the installed-package namespace. Source
+    # unit CI has not installed the wheel; use the real SDK source, not a mock
+    # module or an accidental SDK left in the developer's environment.
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "sdk/python"))
     example = runpy.run_path(
         str(Path(__file__).resolve().parents[1] / "sdk/python/examples/governance_readiness.py")
     )
