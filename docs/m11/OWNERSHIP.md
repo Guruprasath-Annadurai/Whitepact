@@ -14,6 +14,7 @@ by the initial exact-ref check; publication/current head must be reconciled.
 | Codex coordinator | Customer React/UI client contracts/tests, SDK examples, new M11 CI, generated frontend artifacts, new M11 documentation |
 | Codex read-only discovery lane | Product archaeology and source-backed inventory; no existing code, contracts or database changes |
 | Codex offline infrastructure lane | New offline tooling/templates/tests only; never shared Cloudflare routing, provider resources, credentials, remote state, plan/apply or paid services |
+| Codex coordinator — checksum remediation | Optional GCP dependency lock only: add verified Linux checksums for the unchanged Google5.45.2 selection after reproducing CI failure; no provider upgrade, IAM/encryption/resource change or Cloudflare lock/routing edit |
 | Antigravity | Root/consent, identity/security authority, policy/risk kernels, delegation/revocation, containment/egress, signing/witnesses, security-sensitive billing, CodeQL and Cloudflare routing |
 
 Application/agent schema and authority association require a reviewed canonical

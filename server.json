@@ -51,7 +51,7 @@
       "headers": [
         {
           "name": "Authorization",
-          "description": "Bearer API key for the hosted WhitePact MCP server. Hosted tool execution requires an organization with hosted entitlement; the local stdio package needs no key and is advisory, not an enforcement point.",
+          "description": "Bearer API key for hosted WhitePact MCP access. Hosted entitlement controls service availability, not execution authority. Governed execution still requires independently enforced authority; local stdio is advisory, not an enforcement point.",
           "isRequired": true,
           "isSecret": true,
           "placeholder": "Bearer <your-api-key>"
@@ -64,7 +64,7 @@
       "headers": [
         {
           "name": "Authorization",
-          "description": "Bearer API key for the hosted WhitePact MCP server. Hosted tool execution requires an organization with hosted entitlement; the local stdio package needs no key and is advisory, not an enforcement point.",
+          "description": "Bearer API key for hosted WhitePact MCP access. Hosted entitlement controls service availability, not execution authority. Governed execution still requires independently enforced authority; local stdio is advisory, not an enforcement point.",
           "isRequired": true,
           "isSecret": true,
           "placeholder": "Bearer <your-api-key>"

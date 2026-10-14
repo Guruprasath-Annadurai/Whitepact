@@ -140,6 +140,13 @@ def validation_result(output: object, returncode: int) -> dict:
         "error_count": output["error_count"],
         "warning_count": output["warning_count"],
         "diagnostic_severities": severities,
+        "diagnostic_categories": [
+            category if category != "COMMAND_FAILED" else "OTHER_DIAGNOSTIC"
+            for category in (
+                _failure_class(str(diagnostic.get("summary", "")).encode())
+                for diagnostic in output["diagnostics"]
+            )
+        ],
     }
 
 

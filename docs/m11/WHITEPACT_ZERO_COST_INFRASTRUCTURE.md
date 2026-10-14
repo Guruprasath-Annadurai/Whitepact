@@ -3,6 +3,24 @@
 Status: **LOCAL TOOLING REMEDIATION IMPLEMENTED; DEPLOYMENT / PRODUCTION NO-GO**.
 Source baseline: `62be9caa70e6c2eb1c4782a64554323646d987e0`.
 
+## Integration correction after actual Linux CI
+
+The first integrated M11 CI at adc6359883047861bd13a981b94c6c185d9f7d50
+passed Cloudflare validation but failed Google validation: the cached Linux
+package did not match a recorded platform h1 checksum. Darwin-only execution
+had not exposed this. The failure was independently reproduced in an isolated
+Linux container using the verified native binary; checks were NOT disabled.
+
+The coordinator extended ownership to the optional GCP lock only and generated
+Linux/Darwin checksums with `terraform providers lock` against the unchanged
+Google5.45.2 selection. Terraform reported HashiCorp signature verification.
+All thirteen existing hashes were retained; one Linux h1 was added. No provider
+upgrade, Cloudflare lock/routing, resource/IAM/encryption change, plan/apply or
+credential was involved. Normal validation remains `-lockfile=readonly`.
+Diagnostics now include bounded failure categories, never raw expression values.
+The initial lane's no-lock-change and Linux-unexecuted statements below describe
+that initial lane, not the subsequent integrated remediation.
+
 ## Ownership and non-mutation boundary
 
 Codex owns only new `scripts/infra/validate_terraform.py`,

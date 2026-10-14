@@ -33,6 +33,7 @@ is not a deployed migration proof.
 | Formula capability closure | formula/capability/closure.py compute_capability_closure, witness DAG/budgets/provenance | Pure domain graph/state inputs | Gate 3 suites; VERIFIED tests, customer UI/API UNSUPPORTED; owner security domain |
 | Core governance | governance/gateway.py WhitePactRuntimeGateway; execution authorization/admission; /api/governance/tools/call | Canonical PostgreSQL policy/authority/nonce/epoch/approval/evidence; isolation backend | Real local SDK/TCP tests PARTIAL with authority fixtures; Antigravity; legitimate customer provisioning and independent runtime qualification missing |
 | Constitution/root/consent/Heart | governance/root_authority, consent_proof, authority_resolver, heart_veto; named repositories | Durable root, consent and revocation state, verified responsible principal | No supported browser initial issuance flow found; BLOCKED; Antigravity canonical contract required |
+| Global Trust Fabric / principal intelligence | trust_fabric bootstrap, directory, challenge, authority graph, proof/decision/conflict/provenance/passport/monitor/federation engines; PrivilegedSurfaceGuard consumes TrustProofEngine | Migration0043 trust principals/identifiers/relationships/edges/roots/bootstrap records/passports/assertions | PARTIAL implemented internal services; direct tests use seeded principals; no customer HTTP/CLI bootstrap wrapper or bridge to canonical RootAuthorityRepository/ConsentProofRepository found; Antigravity review required before exposure |
 | Delegation/capability boundaries | governance/delegation_kernel, delegation_graph, authority_lattice; bearer delegation create/chain/graph/revoke | Durable delegations/epochs with exact scopes | Source/API present, PARTIAL; no browser adapter assumed; M10 changes delegation_repository and adversarial tests, not signup root issuance |
 | Policy/risk/judgment | governance/policy.py ordered rules; risk assessment; web policy rules/reorder/history and tiered changes | Durable policy versions/history; step-up/four-eyes services | Three ordered effects versus five runtime outcomes distinguished; existing unsupported effects safe HTTP422; UI/history tests VERIFIED scoped; activation/rollback/step-up ceremony PARTIAL |
 | Human approvals | persisted approvals/votes, exact execute; /api/web/approvals/{id}/resolve and /execute | Distinct principals, current authority, durable execution/evidence | Real local quorum/replay/revocation tests; PARTIAL core qualification; UI lost vote/effect handling VERIFIED |
@@ -57,6 +58,16 @@ is not a deployed migration proof.
 | Operations/observability | /api/health, /api/metrics; dashboard logging/prometheus, ops preflight/admission/backups, audit/SIEM delivery | PostgreSQL/Redis/isolation/dependency services; sanitized telemetry | PARTIAL service operation; health != authorization validity; no private inputs exposed by new instrumentation |
 | Corporate website/dashboard | React App routing, public docs/trust, auth/onboarding, current console and Sovereign | Built frontend assets plus authenticated backend | Current M11 changes compiled/fixture-browser tested; full actual cloud journey BLOCKED; Codex |
 | Cloud infrastructure | Terraform modules, deploy ingress/operational artifacts and nine-platform model | Approved Linux/API/database/executor topology, IAM/secrets/regions/backup/monitoring | Two locked modules validated using native tool; nine-provider deployment PARTIAL/BLOCKED; no provisioning or spend |
+| Hronaut | No tracked source, route, CLI, tests or named namespace found at this source | External repository/branch, if any, not supplied | NOT FOUND; not claimed as a supported WhitePact product or qualified client |
+
+The internal TrustBootstrapManager.issue_bootstrap_ceremony/claim_trust_root flow
+is actual code, not an absent implementation. It writes trust_fabric_trust_roots,
+not the canonical governance root/consent chain consumed by AuthorityResolver.
+Only direct tests were found as bootstrap callers. Caller identity and legitimate
+human evidence must be derived and reviewed by the security owner before any
+customer wrapper is introduced. Do not expose its optional caller parameter as
+browser-controlled authority or infer that internal trust-root creation completes
+customer execution authority.
 
 ## Versions and publication — actual official registry observations, 14 October 2026
 

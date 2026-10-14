@@ -41,6 +41,34 @@ def test_commands_cannot_apply_plan_destroy_or_mutate_lock():
     assert "whitepact-hetzner-foundation" not in MODULES
 
 
+def test_google_lock_retains_verified_darwin_and_linux_packages_without_version_upgrade():
+    root = Path(__file__).resolve().parents[1]
+    lock = (root / "infra/terraform/modules/gcp-staging-optional/.terraform.lock.hcl").read_text()
+    assert 'version     = "5.45.2"' in lock
+    assert "h1:iy2Q9VcnMu4z/bH3v/NmI/nEpgYY7bXgJmT/hVTAUS4=" in lock
+    assert "h1:k8taQAdfHrv2F/AiGV5BZBZfI+1uaq8g6O8dWzjx42c=" in lock
+
+
+def test_provider_integrity_failure_has_actionable_category_without_values():
+    output = {
+        "format_version": "1.0",
+        "valid": False,
+        "error_count": 1,
+        "warning_count": 0,
+        "diagnostics": [
+            {
+                "severity": "error",
+                "summary": "cached package checksum mismatch",
+                "detail": "sentinel-private-expression",
+            }
+        ],
+    }
+    result = validation_result(output, 1)
+    assert result["status"] == "FAIL"
+    assert result["diagnostic_categories"] == ["PROVIDER_INTEGRITY"]
+    assert "sentinel" not in str(result)
+
+
 def test_environment_drops_secrets_proxy_tfvars_and_cloud_auth(tmp_path, monkeypatch):
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "sentinel-private")
     monkeypatch.setenv("TF_VAR_token", "sentinel-token")
