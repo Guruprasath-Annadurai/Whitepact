@@ -408,7 +408,7 @@ aspirational, all verified live:
   `io.github.Guruprasath-Annadurai/whitepact`, confirmed queryable at
   [registry.modelcontextprotocol.io](https://registry.modelcontextprotocol.io).
   Advertises both the PyPI/stdio package (`whitepact-mcp`, self-hosted,
-  free, unrestricted) and a `remotes` entry pointing at the hosted
+  MIT-licensed and advisory, not an independent enforcement boundary) and a `remotes` entry pointing at the hosted
   Streamable HTTP and SSE transports (`whitepact-mcp-http.onrender.com`)
   — a one-click remote connector, not just an installable package.
 - **Antigravity CLI plugin** — `plugins/whitepact/` at the repository
