@@ -252,7 +252,7 @@ describe("dashboard and onboarding", () => {
   it("surfaces missing evidence detail without inventing an attestation", async () => {
     vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify({ detail: "Evidence record not found." }), { status: 404 }));
     render(<MemoryRouter initialEntries={["/dashboard/evidence?evidence=missing"]}><EvidenceContractPanel records={[]} /></MemoryRouter>);
-    expect(await screen.findByRole("alert")).toHaveTextContent("Request failed (404)");
+    expect(await screen.findByText("Evidence record not found or unavailable to this session.")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Evidence attestation" })).not.toBeInTheDocument();
   });
 

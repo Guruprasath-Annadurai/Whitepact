@@ -20,7 +20,7 @@
         {
           "type": "named",
           "name": "--from",
-          "value": "rai-governance-platform",
+          "value": "rai-governance-platform==1.2.2",
           "description": "PyPI project name (distinct from the console script invoked below \u2014 see packageArguments)."
         }
       ],
@@ -28,7 +28,7 @@
         {
           "type": "positional",
           "value": "whitepact-mcp",
-          "description": "Console script to run (stdio transport, self-hosted, free, unrestricted). The legacy name `responsibleai-mcp` launches the identical process; see MIGRATION_WHITEPACT_V2.md Section 4."
+          "description": "Self-hosted stdio transport under the MIT license. Stdio is advisory, not an independent execution-enforcement boundary. The legacy name `responsibleai-mcp` launches the identical process; see MIGRATION_WHITEPACT_V2.md Section 4."
         }
       ],
       "transport": {
@@ -51,7 +51,7 @@
       "headers": [
         {
           "name": "Authorization",
-          "description": "Bearer API key for the hosted WhitePact MCP server. Hosted tool execution requires an organization with hosted entitlement; the local stdio package needs no key and is advisory, not an enforcement point.",
+          "description": "Bearer API key for hosted WhitePact MCP access. Hosted entitlement controls service availability, not execution authority. Governed execution still requires independently enforced authority; local stdio is advisory, not an enforcement point.",
           "isRequired": true,
           "isSecret": true,
           "placeholder": "Bearer <your-api-key>"
@@ -64,7 +64,7 @@
       "headers": [
         {
           "name": "Authorization",
-          "description": "Bearer API key for the hosted WhitePact MCP server. Hosted tool execution requires an organization with hosted entitlement; the local stdio package needs no key and is advisory, not an enforcement point.",
+          "description": "Bearer API key for hosted WhitePact MCP access. Hosted entitlement controls service availability, not execution authority. Governed execution still requires independently enforced authority; local stdio is advisory, not an enforcement point.",
           "isRequired": true,
           "isSecret": true,
           "placeholder": "Bearer <your-api-key>"
