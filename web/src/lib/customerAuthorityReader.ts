@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Guruprasath Annadurai
 // SPDX-License-Identifier: MIT
-// Agent registrations have an ordinary customer read contract. Authority status
-// remains preparation only. These GET consumers cannot issue authority.
+// Ordinary customer reads report registration and root/consent record state.
+// These GET consumers cannot issue authority or enumerate effective capabilities.
 import { api } from "./api";
 
 type SessionContext = { organization: { id: string } };
@@ -24,8 +24,8 @@ export function customerAuthorityReader(session: SessionContext) {
   // Addressing context only. The server must independently bind the session tenant.
   const base = `/api/enterprise/organizations/${encodeURIComponent(organizationId)}/authority`;
   return {
-    async status() {
-      const value = await api<unknown>(`${base}/status`);
+    async status(signal?: AbortSignal) {
+      const value = await api<unknown>(`${base}/status`, { signal });
       if (!object(value) || value.organization_id !== organizationId || typeof value.has_active_authority !== "boolean" || !Number.isSafeInteger(value.revocation_epoch) || (value.revocation_epoch as number) < 0) throw new Error("Authority status could not be confirmed.");
       const rootId = nullableId(value.root_authority, "root_id");
       const consentId = nullableId(value.consent_proof, "consent_id");
