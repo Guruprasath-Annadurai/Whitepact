@@ -15,12 +15,13 @@ from __future__ import annotations
 
 import asyncio
 import secrets
+import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from asgi_lifespan import LifespanManager
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
+from sqlalchemy import insert, select, update
 
 from responsibleai.dashboard.app import app, limiter, settings
 from responsibleai.db.consent_proof_repository import ConsentProofRepository
@@ -30,8 +31,10 @@ from responsibleai.db.engine import (
     governance_consent_proofs,
     governance_delegations,
     governance_root_authority_records,
+    trust_fabric_bootstrap_records,
     trust_fabric_principals,
     trust_fabric_trust_roots,
+    web_memberships,
     web_users,
 )
 from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
@@ -438,3 +441,140 @@ class TestCustomerRootAuthorityBootstrap:
             headers=headers,
         )
         assert res.status_code in {400, 422}
+
+    async def test_stolen_bootstrap_token_fails_closed(self, api_client: AsyncClient):
+        """Token theft: User B in same tenant cannot complete ceremony initiated by User A."""
+        user_a_id, org_id, auth_a = await _create_authenticated_customer_owner(
+            api_client, email="owner_a@corp.com", org_slug="stolen-token-corp"
+        )
+        # Create second user in same tenant with owner role
+        engine = get_enterprise_engine()
+        web_repo = WebIdentityRepository(engine)
+        user_b_id, token_b = await web_repo.register("Attacker Bob", "attacker_b@corp.com", "AttackerPass123!@#")
+        await web_repo.verify_email(token_b)
+
+        now_iso = datetime.now(UTC).isoformat()
+        async with engine.raw.begin() as conn:
+            await conn.execute(
+                insert(web_memberships).values(
+                    id=str(uuid.uuid4()),
+                    user_id=user_b_id,
+                    org_id=org_id,
+                    role=Role.OWNER.value,
+                    status="ACTIVE",
+                    created_at=now_iso,
+                    updated_at=now_iso,
+                )
+            )
+
+        session_b, csrf_b = await web_repo.create_session(user_b_id, org_id=org_id)
+
+        # User A initiates
+        api_client.cookies.set("wp_session", auth_a["wp_session"])
+        api_client.cookies.set("wp_csrf", auth_a["wp_csrf"])
+        init_res = await api_client.post(
+            f"/api/enterprise/organizations/{org_id}/authority/bootstrap/initiate",
+            headers={"X-WP-CSRF": auth_a["csrf_header"]},
+            json={"ttl_seconds": 600},
+        )
+        assert init_res.status_code == 200
+        token_data = init_res.json()
+
+        # Attacker B attempts to complete with User A's token
+        api_client.cookies.set("wp_session", session_b)
+        api_client.cookies.set("wp_csrf", csrf_b)
+        headers_b = {"X-WP-CSRF": csrf_b}
+        complete_res = await api_client.post(
+            f"/api/enterprise/organizations/{org_id}/authority/bootstrap/complete",
+            json={
+                "token": token_data["token"],
+                "nonce": token_data["nonce"],
+                "root_public_key": "pk_attacker_root",
+                "scope_description": "Stolen root claim",
+                "purpose": "test",
+                "allowed_action_types": ["test:read"],
+                "allowed_targets": ["test/*"],
+            },
+            headers=headers_b,
+        )
+        assert complete_res.status_code in {401, 403}
+        assert complete_res.json()["error"] in {"UNAUTHORIZED_BOOTSTRAP_CALLER", "UNAUTHORIZED_CALLER", "FORBIDDEN"}
+
+    async def test_nonce_substitution_rejected(self, api_client: AsyncClient):
+        """Nonce substitution / tampering: Valid token with forged nonce is rejected."""
+        _user_id, org_id, auth = await _create_authenticated_customer_owner(
+            api_client, email="nonce_tamper@corp.com", org_slug="nonce-tamper-corp"
+        )
+        api_client.cookies.set("wp_session", auth["wp_session"])
+        api_client.cookies.set("wp_csrf", auth["wp_csrf"])
+        headers = {"X-WP-CSRF": auth["csrf_header"]}
+
+        init_res = await api_client.post(
+            f"/api/enterprise/organizations/{org_id}/authority/bootstrap/initiate",
+            headers=headers,
+            json={"ttl_seconds": 600},
+        )
+        init_data = init_res.json()
+
+        # Tamper with nonce
+        res = await api_client.post(
+            f"/api/enterprise/organizations/{org_id}/authority/bootstrap/complete",
+            json={
+                "token": init_data["token"],
+                "nonce": "wp_nonce_forged_deadbeef12345678",  # FORGED
+                "root_public_key": "pk_test",
+                "scope_description": "Valid scope",
+                "purpose": "test",
+                "allowed_action_types": ["test:read"],
+                "allowed_targets": ["test/*"],
+            },
+            headers=headers,
+        )
+        assert res.status_code in {400, 401, 403}
+        assert res.json()["error"] in {"BOOTSTRAP_TOKEN_INVALID", "BOOTSTRAP_INVALID"}
+
+    async def test_expired_bootstrap_token_rejected(self, api_client: AsyncClient):
+        """Temporal TTL enforcement: Expired ceremony token cannot be completed."""
+        _user_id, org_id, auth = await _create_authenticated_customer_owner(
+            api_client, email="expired_tok@corp.com", org_slug="expired-tok-corp"
+        )
+        api_client.cookies.set("wp_session", auth["wp_session"])
+        api_client.cookies.set("wp_csrf", auth["wp_csrf"])
+        headers = {"X-WP-CSRF": auth["csrf_header"]}
+
+        init_res = await api_client.post(
+            f"/api/enterprise/organizations/{org_id}/authority/bootstrap/initiate",
+            headers=headers,
+            json={"ttl_seconds": 600},
+        )
+        assert init_res.status_code == 200
+        init_data = init_res.json()
+
+        # Artificially expire the bootstrap token record in database
+        engine = get_enterprise_engine()
+        expired_iso = (datetime.now(UTC) - timedelta(seconds=10)).isoformat()
+        async with engine.raw.begin() as conn:
+            await conn.execute(
+                update(trust_fabric_bootstrap_records)
+                .where(trust_fabric_bootstrap_records.c.nonce == init_data["nonce"])
+                .values(expires_at=expired_iso)
+            )
+
+        # Attempt to complete after expiration
+        res = await api_client.post(
+            f"/api/enterprise/organizations/{org_id}/authority/bootstrap/complete",
+            json={
+                "token": init_data["token"],
+                "nonce": init_data["nonce"],
+                "root_public_key": "pk_test",
+                "scope_description": "Valid scope",
+                "purpose": "test",
+                "allowed_action_types": ["test:read"],
+                "allowed_targets": ["test/*"],
+            },
+            headers=headers,
+        )
+        assert res.status_code in {401, 403}
+        assert res.json()["error"] in {"BOOTSTRAP_TOKEN_EXPIRED", "BOOTSTRAP_EXPIRED"}
+
+
