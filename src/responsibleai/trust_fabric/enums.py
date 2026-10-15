@@ -16,6 +16,7 @@ class PrincipalType(StrEnum):
     WORKLOAD = "WORKLOAD"
     SERVICE = "SERVICE"
     MACHINE = "MACHINE"
+    APPLICATION = "APPLICATION"
 
 
 class PrincipalState(StrEnum):

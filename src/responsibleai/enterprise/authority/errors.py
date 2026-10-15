@@ -15,7 +15,17 @@ UNAUTHORIZED_BOOTSTRAP_CALLER = "UNAUTHORIZED_BOOTSTRAP_CALLER"
 ROOT_NOT_FOUND = "ROOT_NOT_FOUND"
 AGENT_NOT_FOUND = "AGENT_NOT_FOUND"
 AGENT_REGISTRATION_INVALID = "AGENT_REGISTRATION_INVALID"
+APPLICATION_NOT_FOUND = "APPLICATION_NOT_FOUND"
+APPLICATION_REGISTRATION_INVALID = "APPLICATION_REGISTRATION_INVALID"
 IDENTITY_ASSURANCE_REQUIRED = "IDENTITY_ASSURANCE_REQUIRED"
+
+
+def application_not_found(msg: str = "Application not found.") -> EnterpriseError:
+    return EnterpriseError(APPLICATION_NOT_FOUND, msg, http_status=404)
+
+
+def application_registration_invalid(msg: str = "Application parameters are invalid.") -> EnterpriseError:
+    return EnterpriseError(APPLICATION_REGISTRATION_INVALID, msg, http_status=400)
 
 
 def root_already_exists(msg: str = "Organization already has an active Root of Authority.") -> EnterpriseError:

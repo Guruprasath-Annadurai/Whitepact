@@ -564,6 +564,14 @@ class Settings(BaseSettings):
         default=False,
         description="Local-only escape hatch that returns verification URLs in API responses.",
     )
+    webauthn_origin: str = Field(
+        default="",
+        description="Explicit WebAuthn origin (e.g. https://app.whitepact.io or http://localhost:3000).",
+    )
+    webauthn_rp_id: str = Field(
+        default="",
+        description="Explicit WebAuthn Relying Party identifier (e.g. app.whitepact.io or localhost).",
+    )
 
     # Alertmanager → incident bridge (optional — leave unset to disable)
     alerts_webhook_token: str | None = Field(

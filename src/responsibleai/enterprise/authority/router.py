@@ -78,11 +78,23 @@ class RevokeRootBody(BaseModel):
     reason: str = Field(min_length=1, max_length=500)
 
 
+class RegisterApplicationBody(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    description: str = Field(default="", max_length=1000)
+    environment: str = Field(default="production", max_length=50)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class DisableApplicationBody(BaseModel):
+    reason: str = Field(default="Disabled by administrator", max_length=500)
+
+
 class RegisterAgentBody(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     description: str = Field(default="", max_length=1000)
     framework: str = Field(default="custom", max_length=100)
     purpose: str | None = Field(default=None, max_length=255)
+    application_id: str | None = Field(default=None, max_length=64)
 
 
 class DelegateToAgentBody(BaseModel):
@@ -191,6 +203,49 @@ async def revoke_root_authority(org_id: str, root_id: str, request: Request, bod
         return _error_response(exc, _request_id(request))
 
 
+@router.post("/applications")
+async def register_application(org_id: str, request: Request, body: RegisterApplicationBody) -> Any:
+    try:
+        actor = await _web_actor(request)
+        return await _svc().register_application(
+            actor,
+            org_id=org_id,
+            name=body.name,
+            description=body.description,
+            environment=body.environment,
+            metadata=body.metadata,
+        )
+    except EnterpriseError as exc:
+        return _error_response(exc, _request_id(request))
+
+
+@router.get("/applications")
+async def list_applications(org_id: str, request: Request) -> Any:
+    try:
+        actor = await _web_actor(request)
+        return {"applications": await _svc().list_applications(actor, org_id=org_id)}
+    except EnterpriseError as exc:
+        return _error_response(exc, _request_id(request))
+
+
+@router.get("/applications/{app_id}")
+async def get_application(org_id: str, app_id: str, request: Request) -> Any:
+    try:
+        actor = await _web_actor(request)
+        return await _svc().get_application(actor, org_id=org_id, app_id=app_id)
+    except EnterpriseError as exc:
+        return _error_response(exc, _request_id(request))
+
+
+@router.post("/applications/{app_id}/disable")
+async def disable_application(org_id: str, app_id: str, request: Request, body: DisableApplicationBody) -> Any:
+    try:
+        actor = await _web_actor(request)
+        return await _svc().disable_application(actor, org_id=org_id, app_id=app_id, reason=body.reason)
+    except EnterpriseError as exc:
+        return _error_response(exc, _request_id(request))
+
+
 @router.post("/agents")
 async def register_agent(org_id: str, request: Request, body: RegisterAgentBody) -> Any:
     try:
@@ -202,6 +257,7 @@ async def register_agent(org_id: str, request: Request, body: RegisterAgentBody)
             description=body.description,
             framework=body.framework,
             purpose=body.purpose,
+            application_id=body.application_id,
         )
     except EnterpriseError as exc:
         return _error_response(exc, _request_id(request))
@@ -254,6 +310,24 @@ async def disable_agent(
             agent_id=agent_id,
             reason=body.reason,
         )
+    except EnterpriseError as exc:
+        return _error_response(exc, _request_id(request))
+
+
+@router.get("/capabilities")
+async def list_capabilities(org_id: str, request: Request) -> Any:
+    try:
+        actor = await _web_actor(request)
+        return {"capabilities": await _svc().list_capabilities(actor, org_id=org_id)}
+    except EnterpriseError as exc:
+        return _error_response(exc, _request_id(request))
+
+
+@router.get("/agents/{agent_id}/capabilities")
+async def list_agent_capabilities(org_id: str, agent_id: str, request: Request) -> Any:
+    try:
+        actor = await _web_actor(request)
+        return {"capabilities": await _svc().list_capabilities(actor, org_id=org_id, agent_id=agent_id)}
     except EnterpriseError as exc:
         return _error_response(exc, _request_id(request))
 

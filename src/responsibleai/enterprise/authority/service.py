@@ -38,14 +38,11 @@ from responsibleai.db.engine import (
     governance_consent_proofs,
     governance_delegations,
     governance_root_authority_records,
-    org_security_policies,
-    organizations,
     passkey_credentials,
     trust_fabric_bootstrap_records,
     trust_fabric_principals,
     trust_fabric_trust_roots,
     web_memberships,
-    web_sessions,
     web_users,
 )
 from responsibleai.db.revocation_epoch_repository import (
@@ -57,6 +54,8 @@ from responsibleai.enterprise.audit import EnterpriseAuditLog
 from responsibleai.enterprise.authority.errors import (
     agent_not_found,
     already_voted,
+    application_not_found,
+    application_registration_invalid,
     assurance_required,
     bootstrap_expired,
     bootstrap_invalid,
@@ -80,13 +79,10 @@ from responsibleai.enterprise.authority.errors import (
     webauthn_challenge_replay,
 )
 from responsibleai.enterprise.errors import (
-    BREAK_GLASS_DENIED,
     CROSS_TENANT,
     FORBIDDEN,
-    WEBAUTHN_INVALID,
     forbidden,
 )
-from responsibleai.enterprise.security.rate_limit import DurableIdentityRateLimiter
 from responsibleai.enterprise.security.webauthn import (
     b64url_decode,
     b64url_encode,
@@ -137,7 +133,6 @@ def verify_root_proof_of_possession(
     signature_b64: str,
 ) -> None:
     """Verify Ed25519 signature over ceremony parameters to prove possession of root key."""
-    from cryptography.exceptions import InvalidSignature
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
     try:
@@ -148,7 +143,7 @@ def verify_root_proof_of_possession(
             pub_bytes = b64url_decode(root_public_key)
 
         sig_bytes = b64url_decode(signature_b64)
-        message = f"WP_ROOT_POP:{org_id}:{nonce}:{token_hash}".encode("utf-8")
+        message = f"WP_ROOT_POP:{org_id}:{nonce}:{token_hash}".encode()
 
         pub = Ed25519PublicKey.from_public_bytes(pub_bytes)
         pub.verify(sig_bytes, message)
@@ -322,7 +317,6 @@ class CustomerAuthorityService:
         now_dt = _now()
         expires_at_dt = now_dt + timedelta(seconds=ttl_seconds)
         expires_at = _iso(expires_at_dt)
-        rec_id = f"wp_ch_{uuid.uuid4().hex}"
 
         async with self._engine.raw.begin() as conn:
             await conn.execute(
@@ -1160,6 +1154,7 @@ class CustomerAuthorityService:
         description: str = "",
         framework: str = "custom",
         purpose: str | None = None,
+        application_id: str | None = None,
     ) -> dict[str, Any]:
         """Register an AI agent within the organization.
 
@@ -1171,6 +1166,24 @@ class CustomerAuthorityService:
         if not name or not name.strip():
             raise consent_invalid("Agent name cannot be empty.")
 
+        if application_id:
+            async with self._engine.raw.connect() as conn:
+                app_row = (
+                    await conn.execute(
+                        select(trust_fabric_principals).where(
+                            and_(
+                                trust_fabric_principals.c.id == application_id,
+                                trust_fabric_principals.c.org_id == org_id,
+                                trust_fabric_principals.c.principal_type == PrincipalType.APPLICATION.value,
+                            )
+                        )
+                    )
+                ).first()
+                if not app_row:
+                    raise application_not_found(f"Application {application_id!r} not found in organization {org_id!r}.")
+                if app_row.lifecycle_state != PrincipalState.ACTIVE.value:
+                    raise forbidden(FORBIDDEN, f"Application {application_id!r} is disabled or inactive.")
+
         agent_id = f"agent_{uuid.uuid4().hex[:12]}"
         now_iso = _iso()
         meta = {
@@ -1178,6 +1191,7 @@ class CustomerAuthorityService:
             "framework": framework,
             "description": description,
             "purpose": purpose,
+            "application_id": application_id,
             "created_at": now_iso,
         }
 
@@ -1210,6 +1224,7 @@ class CustomerAuthorityService:
         return {
             "agent_id": agent_id,
             "organization_id": org_id,
+            "application_id": application_id,
             "display_name": name.strip(),
             "lifecycle_state": PrincipalState.ACTIVE.value,
             "framework": framework,
@@ -1447,10 +1462,466 @@ class CustomerAuthorityService:
                         "has_active_delegation": delegation is not None and delegation.is_active(),
                         "delegation_id": delegation.delegation_id if delegation else None,
                         "framework": meta.get("framework", "custom"),
+                        "application_id": meta.get("application_id"),
                         "created_at": data["created_at"],
                     }
                 )
             return result
+
+    # ── Application Inventory & Tenant Ownership ──────────────────────────────
+
+    async def register_application(
+        self,
+        actor: Actor,
+        *,
+        org_id: str,
+        name: str,
+        description: str = "",
+        environment: str = "production",
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Register a tenant-scoped application within the organization.
+
+        INVARIANT: Registration does NOT grant execution authority. The application is
+        admitted to the inventory with explicit lifecycle states, but cannot act or execute
+        outside independently enforced authority.
+        """
+        self._verify_tenant_and_role(actor, org_id)
+
+        if not name or not name.strip():
+            raise application_registration_invalid("Application name cannot be empty.")
+
+        app_id = f"app_{uuid.uuid4().hex[:12]}"
+        now_iso = _iso()
+        meta = {
+            "registered_by": actor.user_id,
+            "owner_user_id": actor.user_id,
+            "environment": environment,
+            "description": description.strip(),
+            "custom_metadata": metadata or {},
+            "created_at": now_iso,
+        }
+
+        async with self._engine.raw.begin() as conn:
+            await conn.execute(
+                trust_fabric_principals.insert().values(
+                    id=app_id,
+                    org_id=org_id,
+                    principal_type=PrincipalType.APPLICATION.value,
+                    display_name=name.strip(),
+                    lifecycle_state=PrincipalState.ACTIVE.value,
+                    metadata_json=json.dumps(meta),
+                    created_at=now_iso,
+                    updated_at=now_iso,
+                )
+            )
+
+            await self._audit.record(
+                action="APPLICATION_REGISTERED",
+                actor_type=actor.actor_type,
+                actor_id=actor.actor_id,
+                org_id=org_id,
+                target_type="application",
+                target_id=app_id,
+                result="SUCCESS",
+                conn=conn,
+                metadata=meta,
+            )
+
+        return {
+            "application_id": app_id,
+            "organization_id": org_id,
+            "name": name.strip(),
+            "description": description.strip(),
+            "lifecycle_state": PrincipalState.ACTIVE.value,
+            "environment": environment,
+            "owner_user_id": actor.user_id,
+            "has_execution_authority": False,
+            "created_at": now_iso,
+        }
+
+    async def list_applications(self, actor: Actor, *, org_id: str) -> list[dict[str, Any]]:
+        """List registered applications in the organization with agent counts and lifecycle states."""
+        self._verify_tenant_and_role(actor, org_id)
+
+        async with self._engine.raw.connect() as conn:
+            app_rows = (
+                await conn.execute(
+                    select(trust_fabric_principals).where(
+                        and_(
+                            trust_fabric_principals.c.org_id == org_id,
+                            trust_fabric_principals.c.principal_type == PrincipalType.APPLICATION.value,
+                        )
+                    ).order_by(trust_fabric_principals.c.created_at.desc())
+                )
+            ).fetchall()
+
+            agent_rows = (
+                await conn.execute(
+                    select(trust_fabric_principals).where(
+                        and_(
+                            trust_fabric_principals.c.org_id == org_id,
+                            trust_fabric_principals.c.principal_type == PrincipalType.AI_AGENT.value,
+                        )
+                    )
+                )
+            ).fetchall()
+
+            agent_counts: dict[str, int] = {}
+            for a_row in agent_rows:
+                a_data = dict(a_row._mapping)
+                if a_data.get("metadata_json"):
+                    try:
+                        m = json.loads(a_data["metadata_json"])
+                        app_ref = m.get("application_id")
+                        if app_ref:
+                            agent_counts[app_ref] = agent_counts.get(app_ref, 0) + 1
+                    except Exception:
+                        pass
+
+            result = []
+            for row in app_rows:
+                data = dict(row._mapping)
+                meta = {}
+                if data.get("metadata_json"):
+                    try:
+                        meta = json.loads(data["metadata_json"])
+                    except Exception:
+                        pass
+                result.append(
+                    {
+                        "application_id": data["id"],
+                        "organization_id": org_id,
+                        "name": data["display_name"],
+                        "description": meta.get("description", ""),
+                        "environment": meta.get("environment", "production"),
+                        "owner_user_id": meta.get("owner_user_id"),
+                        "lifecycle_state": data["lifecycle_state"],
+                        "has_execution_authority": False,
+                        "agent_count": agent_counts.get(data["id"], 0),
+                        "created_at": data["created_at"],
+                    }
+                )
+            return result
+
+    async def get_application(self, actor: Actor, *, org_id: str, app_id: str) -> dict[str, Any]:
+        """Get application details and its associated agents within the organization."""
+        self._verify_tenant_and_role(actor, org_id)
+
+        async with self._engine.raw.connect() as conn:
+            app_row = (
+                await conn.execute(
+                    select(trust_fabric_principals).where(
+                        and_(
+                            trust_fabric_principals.c.id == app_id,
+                            trust_fabric_principals.c.org_id == org_id,
+                            trust_fabric_principals.c.principal_type == PrincipalType.APPLICATION.value,
+                        )
+                    )
+                )
+            ).first()
+            if not app_row:
+                raise application_not_found(f"Application {app_id!r} not found in organization {org_id!r}.")
+
+            data = dict(app_row._mapping)
+            meta = {}
+            if data.get("metadata_json"):
+                try:
+                    meta = json.loads(data["metadata_json"])
+                except Exception:
+                    pass
+
+            agent_rows = (
+                await conn.execute(
+                    select(trust_fabric_principals).where(
+                        and_(
+                            trust_fabric_principals.c.org_id == org_id,
+                            trust_fabric_principals.c.principal_type == PrincipalType.AI_AGENT.value,
+                        )
+                    )
+                )
+            ).fetchall()
+
+            agents = []
+            for a_row in agent_rows:
+                a_data = dict(a_row._mapping)
+                if a_data.get("metadata_json"):
+                    try:
+                        m = json.loads(a_data["metadata_json"])
+                        if m.get("application_id") == app_id:
+                            delegation = await self._delegations.get_active_delegation(org_id, a_data["id"])
+                            agents.append(
+                                {
+                                    "agent_id": a_data["id"],
+                                    "display_name": a_data["display_name"],
+                                    "lifecycle_state": a_data["lifecycle_state"],
+                                    "has_active_delegation": delegation is not None and delegation.is_active(),
+                                    "framework": m.get("framework", "custom"),
+                                    "created_at": a_data["created_at"],
+                                }
+                            )
+                    except Exception:
+                        pass
+
+            return {
+                "application_id": data["id"],
+                "organization_id": org_id,
+                "name": data["display_name"],
+                "description": meta.get("description", ""),
+                "environment": meta.get("environment", "production"),
+                "owner_user_id": meta.get("owner_user_id"),
+                "lifecycle_state": data["lifecycle_state"],
+                "has_execution_authority": False,
+                "agents": agents,
+                "created_at": data["created_at"],
+                "updated_at": data["updated_at"],
+            }
+
+    async def disable_application(
+        self,
+        actor: Actor,
+        *,
+        org_id: str,
+        app_id: str,
+        reason: str = "Disabled by administrator",
+    ) -> dict[str, Any]:
+        """Disable an application and cascade disablement to its associated agents."""
+        self._verify_tenant_and_role(actor, org_id)
+
+        now_iso = _iso()
+        async with self._engine.raw.begin() as conn:
+            res = await conn.execute(
+                update(trust_fabric_principals)
+                .where(
+                    and_(
+                        trust_fabric_principals.c.id == app_id,
+                        trust_fabric_principals.c.org_id == org_id,
+                        trust_fabric_principals.c.principal_type == PrincipalType.APPLICATION.value,
+                    )
+                )
+                .values(lifecycle_state=PrincipalState.DISABLED.value, updated_at=now_iso)
+            )
+            if res.rowcount == 0:
+                raise application_not_found(f"Application {app_id!r} not found in organization {org_id!r}.")
+
+            agent_rows = (
+                await conn.execute(
+                    select(trust_fabric_principals).where(
+                        and_(
+                            trust_fabric_principals.c.org_id == org_id,
+                            trust_fabric_principals.c.principal_type == PrincipalType.AI_AGENT.value,
+                        )
+                    )
+                )
+            ).fetchall()
+
+            affected_agents: list[str] = []
+            for a_row in agent_rows:
+                a_data = dict(a_row._mapping)
+                if a_data.get("metadata_json"):
+                    try:
+                        m = json.loads(a_data["metadata_json"])
+                        if m.get("application_id") == app_id:
+                            affected_agents.append(a_data["id"])
+                    except Exception:
+                        pass
+
+            for agent_id in affected_agents:
+                await conn.execute(
+                    update(trust_fabric_principals)
+                    .where(
+                        and_(
+                            trust_fabric_principals.c.id == agent_id,
+                            trust_fabric_principals.c.org_id == org_id,
+                        )
+                    )
+                    .values(lifecycle_state=PrincipalState.DISABLED.value, updated_at=now_iso)
+                )
+                await conn.execute(
+                    update(governance_consent_proofs)
+                    .where(
+                        and_(
+                            governance_consent_proofs.c.organization_id == org_id,
+                            governance_consent_proofs.c.grantee_id == agent_id,
+                            governance_consent_proofs.c.revoked_at.is_(None),
+                        )
+                    )
+                    .values(
+                        revoked_at=now_iso,
+                        revoked_by=actor.user_id,
+                        revoke_reason=f"Cascading disable from application {app_id}: {reason}",
+                    )
+                )
+
+            await self._audit.record(
+                action="APPLICATION_DISABLED",
+                actor_type=actor.actor_type,
+                actor_id=actor.actor_id,
+                org_id=org_id,
+                target_type="application",
+                target_id=app_id,
+                result="SUCCESS",
+                conn=conn,
+                metadata={"reason": reason, "cascaded_agents": affected_agents},
+            )
+
+        all_revoked = []
+        for agent_id in affected_agents:
+            rev = await self._delegations.revoke_branch(
+                org_id, agent_id, revoked_by=actor.user_id or "admin", reason=f"Application {app_id} disabled"
+            )
+            all_revoked.extend(rev)
+
+        return {
+            "status": "DISABLED",
+            "application_id": app_id,
+            "organization_id": org_id,
+            "disabled_agents": affected_agents,
+            "revoked_delegations": all_revoked,
+        }
+
+    # ── Executable Capabilities ───────────────────────────────────────────────
+
+    async def list_capabilities(
+        self,
+        actor: Actor,
+        *,
+        org_id: str,
+        agent_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Server-authoritative enumeration of executable capabilities.
+
+        INVARIANTS:
+        1. Capabilities are server-authoritative and synthesized from verified root authority,
+           governance consent proofs, and explicit active delegations.
+        2. No capability is ever inferred from frontend descriptions or user strings.
+        3. Capability is reachability only; execution requires short-lived ExecutionAuthorization.
+        """
+        self._verify_tenant_and_role(actor, org_id)
+
+        async with self._engine.raw.connect() as conn:
+            root_row = (
+                await conn.execute(
+                    select(governance_root_authority_records).where(
+                        and_(
+                            governance_root_authority_records.c.organization_id == org_id,
+                            governance_root_authority_records.c.revoked_at.is_(None),
+                        )
+                    ).order_by(governance_root_authority_records.c.issued_at.desc())
+                )
+            ).first()
+
+            has_root = root_row is not None
+
+            query = select(trust_fabric_principals).where(
+                and_(
+                    trust_fabric_principals.c.org_id == org_id,
+                    trust_fabric_principals.c.principal_type == PrincipalType.AI_AGENT.value,
+                )
+            )
+            if agent_id:
+                query = query.where(trust_fabric_principals.c.id == agent_id)
+
+            agent_rows = (await conn.execute(query)).fetchall()
+            if agent_id and not agent_rows:
+                raise agent_not_found(f"Agent {agent_id!r} not found in organization {org_id!r}.")
+
+            capabilities = []
+            for a_row in agent_rows:
+                a_data = dict(a_row._mapping)
+                current_agent_id = a_data["id"]
+                agent_state = a_data["lifecycle_state"]
+
+                meta = {}
+                if a_data.get("metadata_json"):
+                    try:
+                        meta = json.loads(a_data["metadata_json"])
+                    except Exception:
+                        pass
+                app_ref = meta.get("application_id")
+
+                delegation = await self._delegations.get_active_delegation(org_id, current_agent_id)
+                has_active_del = delegation is not None and delegation.is_active()
+
+                if not has_root:
+                    if has_active_del and delegation:
+                        for act in sorted(delegation.granted_action_types):
+                            cap_id = f"cap_{current_agent_id}_{act.replace(':', '_')}"
+                            capabilities.append({
+                                "capability_id": cap_id,
+                                "agent_id": current_agent_id,
+                                "organization_id": org_id,
+                                "application_id": app_ref,
+                                "kind": "DELEGATED_ACTION",
+                                "action_type": act,
+                                "allowed_targets": delegation.constraints.get("allowed_targets", []),
+                                "status": "REVOKED",
+                                "requires_approval": True,
+                                "requires_passkey_stepup": False,
+                                "delegation_id": delegation.delegation_id,
+                                "consent_id": None,
+                                "constraints": delegation.constraints,
+                                "authority_enforced": True,
+                            })
+                    else:
+                        cap_id = f"cap_{current_agent_id}_default"
+                        capabilities.append({
+                            "capability_id": cap_id,
+                            "agent_id": current_agent_id,
+                            "organization_id": org_id,
+                            "application_id": app_ref,
+                            "kind": "DELEGATED_ACTION",
+                            "action_type": "*",
+                            "allowed_targets": [],
+                            "status": "PENDING_DELEGATION",
+                            "requires_approval": True,
+                            "requires_passkey_stepup": False,
+                            "delegation_id": None,
+                            "consent_id": None,
+                            "constraints": {},
+                            "authority_enforced": True,
+                        })
+                elif not has_active_del or not delegation:
+                    cap_id = f"cap_{current_agent_id}_pending"
+                    capabilities.append({
+                        "capability_id": cap_id,
+                        "agent_id": current_agent_id,
+                        "organization_id": org_id,
+                        "application_id": app_ref,
+                        "kind": "DELEGATED_ACTION",
+                        "action_type": "*",
+                        "allowed_targets": [],
+                        "status": "PENDING_DELEGATION",
+                        "requires_approval": True,
+                        "requires_passkey_stepup": False,
+                        "delegation_id": None,
+                        "consent_id": None,
+                        "constraints": {},
+                        "authority_enforced": True,
+                    })
+                else:
+                    status = "AUTHORIZED" if agent_state == PrincipalState.ACTIVE.value else "DISABLED"
+                    for act in sorted(delegation.granted_action_types):
+                        cap_id = f"cap_{current_agent_id}_{act.replace(':', '_')}"
+                        targets = delegation.constraints.get("allowed_targets", [])
+                        capabilities.append({
+                            "capability_id": cap_id,
+                            "agent_id": current_agent_id,
+                            "organization_id": org_id,
+                            "application_id": app_ref,
+                            "kind": "DELEGATED_ACTION",
+                            "action_type": act,
+                            "allowed_targets": targets,
+                            "status": status,
+                            "requires_approval": False,
+                            "requires_passkey_stepup": False,
+                            "delegation_id": delegation.delegation_id,
+                            "consent_id": None,
+                            "constraints": delegation.constraints,
+                            "authority_enforced": True,
+                        })
+
+            return capabilities
 
     # ── Read-Only Reconciliation ──────────────────────────────────────────────
 
@@ -2163,10 +2634,8 @@ class CustomerAuthorityService:
                     f"Action digest mismatch: submitted {action_digest!r} != expected {req['action_digest']!r}."
                 )
 
-            # WebAuthn step-up if provided
-            step_up_info = None
             if webauthn_assertion:
-                step_up_info = await self._verify_webauthn_stepup_on_conn(
+                await self._verify_webauthn_stepup_on_conn(
                     conn,
                     actor=actor,
                     org_id=org_id,
