@@ -35,10 +35,11 @@ try {
   assert.equal((await fetch(origin + "/static/whitepact/m12c-deliberately-missing.js")).status, 404, "Missing asset must return 404 without crashing the test server");
   browser = await chromium.launch({ headless: true });
   for (const width of [375, 768, 1024, 1440]) {
-    for (const flow of ["session-outage", "policy-confirmation", "policy-uncertainty", "evidence-export", "evidence-detail", "evidence-conflict"]) {
+    for (const flow of ["session-outage", "session-malformed", "session-timeout", "session-expired", "policy-confirmation", "policy-uncertainty", "evidence-export", "evidence-detail", "evidence-conflict"]) {
       const context = await browser.newContext({ viewport: { width, height: 1000 }, reducedMotion: "reduce" });
       await context.addCookies([{ name: "wp_csrf", value: "local-ui-csrf", url: origin }]);
       const page = await context.newPage(); const errors = []; let sessionReads = 0; let mutations = 0; let removed = false;
+      if (flow === "session-timeout") await page.clock.install();
       page.on("pageerror", (error) => errors.push(error.message));
       await context.route("**/*", async (route) => {
         const request = route.request(); const url = new URL(request.url());
@@ -47,6 +48,9 @@ try {
         if (url.pathname.endsWith("/session")) {
           sessionReads++;
           if (flow === "session-outage" && sessionReads === 1) return route.fulfill({ status: 503, json: { detail: "provider unavailable" } });
+          if (flow === "session-malformed" && sessionReads === 1) return route.fulfill({ status: 200, contentType: "application/json", body: "synthetic-private-invalid-json" });
+          if (flow === "session-timeout" && sessionReads === 1) return;
+          if (flow === "session-expired") return route.fulfill({ status: 401, json: { detail: "Session expired" } });
           return route.fulfill({ json: session });
         }
         if (url.pathname.endsWith("/summary")) return route.fulfill({ json: { decisions: 0, agents: 0, pending_approvals: 0, blocked_actions: 0, recent_governance: [], services: {} } });
@@ -65,12 +69,22 @@ try {
         return route.fulfill({ json: { items: [], source: "explicit-ui-fixture" } });
       });
       const route = flow.startsWith("policy") ? "/dashboard/policy" : flow.startsWith("evidence-") ? "/dashboard/evidence" : "/dashboard";
+      const pendingSession = flow === "session-timeout" ? page.waitForRequest((request) => request.url().endsWith("/session")) : null;
       await page.goto(origin + route);
-      if (flow === "session-outage") {
+      if (flow === "session-timeout") {
+        await pendingSession;
+        await page.clock.runFor(16_000);
+      }
+      if (["session-outage", "session-malformed", "session-timeout"].includes(flow)) {
         await page.getByRole("heading", { name: "Session verification unavailable" }).waitFor();
         assert(!page.url().includes("login"));
+        assert.equal(sessionReads, 1, "Read failure must not automatically retry");
+        assert.equal(await page.getByText("synthetic-private-invalid-json").count(), 0);
         await page.getByRole("button", { name: "Retry session verification" }).click();
         await page.getByRole("heading", { name: "No governed activity yet", exact: true }).waitFor();
+        assert.equal(mutations, 0);
+      } else if (flow === "session-expired") {
+        await page.waitForURL(/\/login\?next=/);
         assert.equal(mutations, 0);
       } else if (flow === "policy-confirmation") {
         await page.getByRole("button", { name: "Load policy history" }).click();
