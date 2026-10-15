@@ -16,15 +16,85 @@ Features:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import os
+import tempfile
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
+
+_DISTRIBUTED_REGISTRY_DIR = Path(tempfile.gettempdir()) / "whitepact_inflight"
+
+
+def _ensure_distributed_dir() -> Path:
+    _DISTRIBUTED_REGISTRY_DIR.mkdir(parents=True, exist_ok=True)
+    return _DISTRIBUTED_REGISTRY_DIR
+
+
+def _record_cross_worker_registration(entry: InFlightExecution) -> None:
+    try:
+        d = _ensure_distributed_dir()
+        file_path = d / f"{entry.organization_id}_{entry.execution_id}.json"
+        data = {
+            "execution_id": entry.execution_id,
+            "organization_id": entry.organization_id,
+            "action_id": entry.action_id,
+            "authorization_id": entry.authorization_id,
+            "admission_epoch": entry.admission_epoch,
+            "pid": os.getpid(),
+            "created_at": time.time(),
+        }
+        file_path.write_text(json.dumps(data), encoding="utf-8")
+    except Exception as exc:
+        logger.debug("Failed to record distributed execution tracking: %s", exc)
+
+
+def _remove_cross_worker_registration(organization_id: str, execution_id: str) -> None:
+    try:
+        file_path = _DISTRIBUTED_REGISTRY_DIR / f"{organization_id}_{execution_id}.json"
+        if file_path.exists():
+            file_path.unlink()
+    except Exception as exc:
+        logger.debug("Failed to remove distributed execution tracking: %s", exc)
+
+
+def _check_remote_worker_active(organization_id: str | None) -> list[dict[str, Any]]:
+    unresolved_remote: list[dict[str, Any]] = []
+    if not _DISTRIBUTED_REGISTRY_DIR.exists():
+        return unresolved_remote
+    current_pid = os.getpid()
+    try:
+        for f in _DISTRIBUTED_REGISTRY_DIR.glob("*.json"):
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if organization_id is not None and data.get("organization_id") != organization_id:
+                continue
+            pid = data.get("pid")
+            if pid and pid != current_pid:
+                try:
+                    os.kill(pid, 0)
+                    is_alive = True
+                except (ProcessLookupError, PermissionError):
+                    is_alive = False
+                if is_alive:
+                    unresolved_remote.append(data)
+                else:
+                    try:
+                        f.unlink()
+                    except Exception:
+                        pass
+    except Exception as exc:
+        logger.debug("Failed to scan distributed registry: %s", exc)
+    return unresolved_remote
 
 
 class DatabaseReconciliationError(RuntimeError):
@@ -74,6 +144,7 @@ class InFlightExecutionRegistry:
             cls._instance._watcher_task.cancel()
         cls._instance = None
 
+
     def record_revoked_epoch(self, organization_id: str, epoch: int) -> None:
         """Record the latest revoked epoch for an organization to reject late registrations."""
         current = self._latest_revoked_epoch.get(organization_id, -1)
@@ -82,7 +153,9 @@ class InFlightExecutionRegistry:
 
     def has_unresolved(self, organization_id: str) -> bool:
         """Check if an organization has active unresolved containment failures."""
-        return any(e.organization_id == organization_id for e in self._unresolved.values())
+        if any(e.organization_id == organization_id for e in self._unresolved.values()):
+            return True
+        return len(_check_remote_worker_active(organization_id)) > 0
 
     def is_revoked(self, organization_id: str, admission_epoch: int) -> bool:
         """Check if an admission epoch is superseded by a recorded revocation or blocked by unresolved containment."""
@@ -135,6 +208,7 @@ class InFlightExecutionRegistry:
         )
         async with self._lock:
             self._active[execution_id] = entry
+        _record_cross_worker_registration(entry)
         return entry
 
     async def unregister(self, execution_id: str, *, force: bool = False) -> bool:
@@ -159,6 +233,8 @@ class InFlightExecutionRegistry:
                 self._active.pop(execution_id, None)
                 return False
 
+            if entry is not None:
+                _remove_cross_worker_registration(entry.organization_id, execution_id)
             self._active.pop(execution_id, None)
             return True
 
@@ -243,7 +319,29 @@ class InFlightExecutionRegistry:
                 async with self._lock:
                     self._unresolved.pop(entry.execution_id, None)
                     self._active.pop(entry.execution_id, None)
+                _remove_cross_worker_registration(entry.organization_id, entry.execution_id)
                 terminated_ids.append(entry.execution_id)
+
+        # Check cross-worker distributed tracking
+        remote_active = _check_remote_worker_active(organization_id)
+        for r in remote_active:
+            exec_id = r["execution_id"]
+            if exec_id not in self._unresolved:
+                entry = InFlightExecution(
+                    execution_id=exec_id,
+                    organization_id=r["organization_id"],
+                    action_id=r.get("action_id", "unknown"),
+                    authorization_id=r.get("authorization_id"),
+                    task=None,
+                    terminate_callback=None,
+                    created_at=r.get("created_at", time.monotonic()),
+                    admission_epoch=r.get("admission_epoch", 0),
+                    termination_attempts=1,
+                    last_termination_error=f"Remote worker (pid {r.get('pid')}) still active; distributed termination unconfirmed",
+                    containment_status="unresolved",
+                )
+                async with self._lock:
+                    self._unresolved[exec_id] = entry
 
         return terminated_ids
 
@@ -276,10 +374,11 @@ class InFlightExecutionRegistry:
         return records
 
     def count_unresolved(self, organization_id: str | None = None) -> int:
-        """Count active unresolved containment failures."""
-        if organization_id is None:
-            return len(self._unresolved)
-        return sum(1 for e in self._unresolved.values() if e.organization_id == organization_id)
+        """Count active unresolved containment failures, including unconfirmed remote workers."""
+        local_count = sum(1 for e in self._unresolved.values() if organization_id is None or e.organization_id == organization_id)
+        remote_active = _check_remote_worker_active(organization_id)
+        remote_ids = {r["execution_id"] for r in remote_active if r.get("execution_id") not in self._unresolved}
+        return local_count + len(remote_ids)
 
     async def retry_unresolved(self, organization_id: str | None = None) -> list[str]:
         """Retry containment termination for previously unconfirmed executions."""

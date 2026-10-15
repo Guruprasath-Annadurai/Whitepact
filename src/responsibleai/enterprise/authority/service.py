@@ -17,6 +17,7 @@ Constitutional Invariants:
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
@@ -350,6 +351,158 @@ class CustomerAuthorityService:
             "expires_at": expires_at,
         }
 
+    async def _verify_and_consume_path_b_authorization(
+        self,
+        conn: Any,
+        *,
+        actor: Actor,
+        org_id: str,
+        action: str,
+        operation_digest: str,
+        authorization_id: str,
+    ) -> dict[str, Any]:
+        """WP-M13-POL-002 Path B: Verify and atomically single-use consume pre-verified WebAuthn authorization."""
+        now_iso = _iso()
+        authz_hash = hashlib.sha256(authorization_id.encode("utf-8")).hexdigest()
+
+        row = (
+            await conn.execute(
+                select(authority_step_up_challenges).where(
+                    and_(
+                        authority_step_up_challenges.c.challenge_hash == authz_hash,
+                        authority_step_up_challenges.c.org_id == org_id,
+                        authority_step_up_challenges.c.user_id == actor.user_id,
+                    )
+                )
+            )
+        ).first()
+
+        if not row:
+            raise webauthn_assertion_invalid("No matching pre-verified step-up authorization found.")
+
+        authz = dict(row._mapping)
+        if authz["action"] != f"PREVERIFIED:{action}":
+            raise webauthn_assertion_invalid(
+                f"Authorization was issued for action {authz['action']!r}, not {action!r}."
+            )
+
+        if authz["operation_digest"] != operation_digest:
+            raise webauthn_assertion_invalid("Operation digest mismatch for pre-verified step-up authorization.")
+
+        if authz["consumed_at"] is not None:
+            raise webauthn_challenge_replay("Pre-verified step-up authorization has already been consumed.")
+
+        if now_iso >= authz["expires_at"]:
+            raise webauthn_challenge_expired(f"Pre-verified step-up authorization expired at {authz['expires_at']}.")
+
+        # Revalidate current responder authority dynamically: MUST still be ACTIVE OWNER or ADMIN
+        mem = (
+            await conn.execute(
+                select(web_memberships).where(
+                    and_(
+                        web_memberships.c.user_id == actor.user_id,
+                        web_memberships.c.org_id == org_id,
+                        web_memberships.c.status == "ACTIVE",
+                        web_memberships.c.role.in_(["OWNER", "ADMIN", "owner", "admin"]),
+                    )
+                )
+            )
+        ).first()
+        if not mem:
+            raise unauthorized_caller("Caller membership or administrative role is no longer active.")
+
+        # Revalidate user account status
+        user_row = (
+            await conn.execute(select(web_users).where(web_users.c.id == actor.user_id))
+        ).first()
+        if not user_row or user_row.disabled or user_row.verification_status == "SUSPENDED":
+            raise unauthorized_caller("User account is disabled or suspended.")
+
+        # Atomic single-use conditional consumption
+        consume_res = await conn.execute(
+            update(authority_step_up_challenges)
+            .where(
+                and_(
+                    authority_step_up_challenges.c.challenge_hash == authz_hash,
+                    authority_step_up_challenges.c.consumed_at.is_(None),
+                )
+            )
+            .values(consumed_at=now_iso)
+        )
+        if consume_res.rowcount != 1:
+            raise webauthn_challenge_replay("Pre-verified step-up authorization has already been consumed.")
+
+        return {
+            "authorization_id": authorization_id,
+            "user_id": actor.user_id,
+            "org_id": org_id,
+            "action": action,
+            "consumed_at": now_iso,
+            "path": "PATH_B_PREVERIFIED",
+        }
+
+    async def create_preverified_stepup_authorization(
+        self,
+        actor: Actor,
+        *,
+        org_id: str,
+        action: str,
+        operation: dict[str, Any],
+        webauthn_assertion: dict[str, Any],
+        session_id: str | None = None,
+    ) -> dict[str, Any]:
+        """WP-M13-POL-002: Mint a server-verified, short-lived, operation-bound authorization ticket from a genuine WebAuthn ceremony."""
+        self._verify_tenant_and_role(actor, org_id)
+
+        # Restrict Path B exclusively to emergency containment; barred for root recovery or expansion
+        if action != "EMERGENCY_CONTAINMENT":
+            raise containment_forbidden(f"Pre-verified step-up authorization is strictly barred for action {action!r}.")
+
+        op_digest = compute_canonical_operation_digest(action, operation)
+        authz_id = f"wp_authz_{uuid.uuid4().hex}"
+        authz_hash = hashlib.sha256(authz_id.encode("utf-8")).hexdigest()
+        now_dt = _now()
+        now_iso = _iso(now_dt)
+        expires_at = _iso(now_dt + timedelta(seconds=300))  # 5-minute strict server-enforced expiry
+
+        async with self._engine.raw.begin() as conn:
+            # 1. Server verifies assertion against unconsumed challenge
+            step_up_info = await self._verify_webauthn_stepup_on_conn(
+                conn,
+                actor=actor,
+                org_id=org_id,
+                action=action,
+                operation_digest=op_digest,
+                assertion=webauthn_assertion,
+            )
+
+            # 2. Store pre-verified authorization bound to principal, org, operation_digest, session
+            await conn.execute(
+                authority_step_up_challenges.insert().values(
+                    challenge_hash=authz_hash,
+                    org_id=org_id,
+                    user_id=actor.user_id,
+                    session_id=session_id,
+                    action=f"PREVERIFIED:{action}",
+                    operation_digest=op_digest,
+                    rp_id="localhost",
+                    origin=step_up_info.get("origin", "http://localhost:3000"),
+                    raw_challenge_b64=authz_id,
+                    created_at=now_iso,
+                    expires_at=expires_at,
+                    consumed_at=None,
+                )
+            )
+
+        return {
+            "authorization_id": authz_id,
+            "org_id": org_id,
+            "user_id": actor.user_id,
+            "action": action,
+            "operation_digest": op_digest,
+            "expires_at": expires_at,
+        }
+
     async def _verify_webauthn_stepup_on_conn(
         self,
         conn: Any,
@@ -411,12 +564,19 @@ class CustomerAuthorityService:
         if now_iso >= ch["expires_at"]:
             raise webauthn_challenge_expired(f"Step-up challenge expired at {ch['expires_at']}.")
 
-        # Mark challenge consumed atomically
-        await conn.execute(
+        # Mark challenge consumed atomically with conditional anti-replay check
+        consume_res = await conn.execute(
             update(authority_step_up_challenges)
-            .where(authority_step_up_challenges.c.challenge_hash == challenge_hash)
+            .where(
+                and_(
+                    authority_step_up_challenges.c.challenge_hash == challenge_hash,
+                    authority_step_up_challenges.c.consumed_at.is_(None),
+                )
+            )
             .values(consumed_at=now_iso)
         )
+        if consume_res.rowcount != 1:
+            raise webauthn_challenge_replay("Step-up challenge has already been consumed.")
 
         # Look up passkey credential
         cred_row = (
@@ -1399,6 +1559,7 @@ class CustomerAuthorityService:
         containment_action: str,
         reason: str,
         webauthn_assertion: dict[str, Any] | None = None,
+        stepup_authorization_id: str | None = None,
     ) -> dict[str, Any]:
         """Execute single-owner emergency containment (kill-switch) without multi-admin quorum.
 
@@ -1420,8 +1581,8 @@ class CustomerAuthorityService:
                 f"Invalid containment_action: {containment_action!r}. Must be one of {valid_actions}"
             )
 
-        # Phishing-resistant WebAuthn Step-up check (Founder Decision A/B)
-        if not webauthn_assertion:
+        # Phishing-resistant WebAuthn Step-up check (Founder Decision A/B & WP-M13-POL-002)
+        if not webauthn_assertion and not stepup_authorization_id:
             raise passkey_step_up_required(
                 "Phishing-resistant passkey step-up is required for emergency containment."
             )
@@ -1441,16 +1602,28 @@ class CustomerAuthorityService:
             },
         )
 
+        containment_id = f"wp_cnt_{uuid.uuid4().hex}"
+
         async with self._engine.raw.begin() as conn:
-            # Step-up verification
-            step_up_info = await self._verify_webauthn_stepup_on_conn(
-                conn,
-                actor=actor,
-                org_id=org_id,
-                action="EMERGENCY_CONTAINMENT",
-                operation_digest=op_digest,
-                assertion=webauthn_assertion,
-            )
+            # Step-up verification: Path A (fresh assertion) or Path B (pre-verified authorization)
+            if webauthn_assertion:
+                step_up_info = await self._verify_webauthn_stepup_on_conn(
+                    conn,
+                    actor=actor,
+                    org_id=org_id,
+                    action="EMERGENCY_CONTAINMENT",
+                    operation_digest=op_digest,
+                    assertion=webauthn_assertion,
+                )
+            else:
+                step_up_info = await self._verify_and_consume_path_b_authorization(
+                    conn,
+                    actor=actor,
+                    org_id=org_id,
+                    action="EMERGENCY_CONTAINMENT",
+                    operation_digest=op_digest,
+                    authorization_id=stepup_authorization_id,  # type: ignore[arg-type]
+                )
 
             # 1. Authoritative epoch bump
             new_epoch = await bump_epoch_on_connection(conn, org_id)
@@ -1614,22 +1787,7 @@ class CustomerAuthorityService:
                 )
                 affected_records["organization_lockdown"] = True
 
-        # Invalidate in-flight executions before finalizing containment status
-        containment_status = "CONTAINED"
-        termination_error: str | None = None
-        try:
-            from responsibleai.isolation.in_flight import InFlightExecutionRegistry
-            registry = InFlightExecutionRegistry.get_instance()
-            await registry.terminate_in_flight(organization_id=org_id)
-            if registry.count_unresolved(org_id) > 0:
-                containment_status = "UNRESOLVED"
-        except Exception as exc:
-            containment_status = "UNRESOLVED"
-            termination_error = str(exc)
-
-        # Record containment record and audit log with confirmed vs unresolved status
-        containment_id = f"wp_cnt_{uuid.uuid4().hex}"
-        async with self._engine.raw.begin() as conn:
+            # Insert containment record with durable status TERMINATION_PENDING before attempting termination
             await conn.execute(
                 authority_containment_records.insert().values(
                     id=containment_id,
@@ -1639,10 +1797,62 @@ class CustomerAuthorityService:
                     target_id=target_id,
                     containment_action=containment_action,
                     reason=reason,
-                    status=containment_status,
+                    status="TERMINATION_PENDING",
                     revocation_epoch=new_epoch,
                     contained_at=now_iso,
                 )
+            )
+
+            # Durable audit log recording admission lock
+            await self._audit.record(
+                action="EMERGENCY_CONTAINMENT_ADMISSION_LOCKED",
+                actor_type=actor.actor_type,
+                actor_id=actor.actor_id,
+                org_id=org_id,
+                target_type=target_type,
+                target_id=target_id,
+                result="TERMINATION_PENDING",
+                conn=conn,
+                metadata={
+                    "containment_id": containment_id,
+                    "containment_action": containment_action,
+                    "reason": reason,
+                    "epoch": new_epoch,
+                    "status": "TERMINATION_PENDING",
+                    "step_up": True,
+                    "auth_path": step_up_info.get("path", "PATH_A_ASSERTION"),
+                },
+            )
+
+        # Record latest revoked epoch in in-flight registry
+        try:
+            from responsibleai.isolation.in_flight import InFlightExecutionRegistry
+            InFlightExecutionRegistry.get_instance().record_revoked_epoch(org_id, new_epoch)
+        except Exception:
+            pass
+
+        # Invalidate in-flight executions before finalizing containment status
+        containment_status = "CONTAINED"
+        termination_error: str | None = None
+        try:
+            from responsibleai.isolation.in_flight import InFlightExecutionRegistry
+            registry = InFlightExecutionRegistry.get_instance()
+            await registry.terminate_in_flight(organization_id=org_id)
+            if registry.count_unresolved(org_id) > 0:
+                containment_status = "UNRESOLVED"
+        except asyncio.CancelledError:
+            # Cancellation preserves durable incident record with TERMINATION_PENDING
+            raise
+        except Exception as exc:
+            containment_status = "UNRESOLVED"
+            termination_error = str(exc)
+
+        # Update containment record and audit log with confirmed vs unresolved status
+        async with self._engine.raw.begin() as conn:
+            await conn.execute(
+                update(authority_containment_records)
+                .where(authority_containment_records.c.id == containment_id)
+                .values(status=containment_status)
             )
 
             # Durable audit log
@@ -1662,6 +1872,7 @@ class CustomerAuthorityService:
                     "epoch": new_epoch,
                     "status": containment_status,
                     "step_up": step_up_info is not None,
+                    "auth_path": step_up_info.get("path", "PATH_A_ASSERTION"),
                     "termination_error": termination_error,
                 },
             )
@@ -1976,10 +2187,19 @@ class CustomerAuthorityService:
                 )
             ).fetchall()
 
-            # 3. Pre-execution recheck: ensure all approving voters are still active members/admins of org_id!
+            # 3. Pre-execution dynamic recheck: ensure all approving voters are still active admins/owners of org_id!
             valid_approver_ids: list[str] = []
+            seen_voters: set[str] = set()
             for v in votes:
                 voter_id = v.voter_user_id
+                if voter_id in seen_voters:
+                    continue
+                seen_voters.add(voter_id)
+
+                # Anti-self-approval recheck
+                if voter_id == req["requester_user_id"]:
+                    continue
+
                 mem = (
                     await conn.execute(
                         select(web_memberships).where(
@@ -1987,6 +2207,7 @@ class CustomerAuthorityService:
                                 web_memberships.c.user_id == voter_id,
                                 web_memberships.c.org_id == org_id,
                                 web_memberships.c.status == "ACTIVE",
+                                web_memberships.c.role.in_(["OWNER", "ADMIN", "owner", "admin"]),
                             )
                         )
                     )
