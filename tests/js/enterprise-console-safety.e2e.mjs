@@ -24,7 +24,7 @@ const server=createServer((req,res)=>{
   const relative=pathname.startsWith("/static/whitepact/")?pathname.slice("/static/whitepact/".length):"index.html";
   const filename=path.resolve(bundle,relative);
   if(!filename.startsWith(bundle+path.sep)){res.writeHead(403);res.end();return;}
-  try{res.writeHead(200,{"Content-Type":mime[path.extname(filename)]??"application/octet-stream"});res.end(readFileSync(filename));}
+  try{const contents=readFileSync(filename);res.writeHead(200,{"Content-Type":mime[path.extname(filename)]??"application/octet-stream"});res.end(contents);}
   catch{res.writeHead(404);res.end();}
 });
 await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve));
@@ -35,6 +35,7 @@ try {
   let ready=false;
   for(let i=0;i<120;i++){try {if((await fetch(origin)).ok){ready=true;break;}}catch{} await new Promise(r=>setTimeout(r,250));}
   assert(ready,"Local frontend preview did not start");
+  assert.equal((await fetch(origin+"/static/whitepact/m12c-deliberately-missing.js")).status,404,"Missing asset must return 404 without crashing the test server");
   browser=await chromium.launch({headless:true});
   for(const width of [375,768,1024,1440]) {
     for(const failure of ["lost","503","malformed","contradictory","vote-lost"]) {
@@ -88,4 +89,12 @@ try {
     checks.push({width,onboardingCorruptDraft:true,axeViolations:0});await context.close();
   }
   console.log(JSON.stringify({kind:"UI_CONTRACT_FIXTURES_NOT_CORE_QUALIFICATION",checks:checks.length,viewports:[375,768,1024,1440],evidenceDir,results:checks}));
+} catch (cause) {
+  // This server permits only synthetic local fixtures, never real sessions.
+  const failedPage=browser?.contexts().at(-1)?.pages().at(-1);
+  if(failedPage){
+    await failedPage.screenshot({path:path.join(evidenceDir,"failure.png"),fullPage:true});
+    console.error(JSON.stringify({kind:"SYNTHETIC_UI_FAILURE",evidenceDir,url:failedPage.url(),body:(await failedPage.locator("body").innerText()).slice(0,3000)}));
+  }
+  throw cause;
 } finally {if(browser)await browser.close();await new Promise(resolve=>server.close(resolve));}

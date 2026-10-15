@@ -130,12 +130,13 @@ export function EvidenceContractPanel({ records }: { records: DomainRecord[] }) 
   const [verification, setVerification] = useState<EvidenceVerification | null>(null);
   const [verificationError, setVerificationError] = useState("");
   const [error, setError] = useState("");
+  const [detailLoading, setDetailLoading] = useState(false);
   const detailGeneration = useRef(0);
   const close = useCallback(() => { detailGeneration.current++; setSelected(null); setAttestation(null); }, []);
 
   const openEvidence = useCallback(async (id: string) => {
     const generation = ++detailGeneration.current;
-    setError(""); setSelected(null); setAttestation(null);
+    setError(""); setSelected(null); setAttestation(null); setDetailLoading(true);
     try {
       if (!id || id === "." || id === "..") throw new Error("Invalid evidence reference");
       const [detail, attested] = await Promise.all([
@@ -143,9 +144,10 @@ export function EvidenceContractPanel({ records }: { records: DomainRecord[] }) 
         api<EvidenceAttestation>(`/api/v1/web/evidence/${encodeURIComponent(id)}/attestation`),
       ]);
       if (generation !== detailGeneration.current) return;
-      if (!detail || detail.evidence_id !== id || !attested || attested.evidence_id !== id || attested.cryptographically_signed !== false || (typeof detail.hash === "string" && typeof attested.evidence_hash === "string" && detail.hash !== attested.evidence_hash)) throw new Error("Mismatched evidence acknowledgement");
+      if (!detail || detail.evidence_id !== id || !attested || attested.evidence_id !== id || typeof detail.decision !== "string" || detail.decision !== attested.decision || attested.cryptographically_signed !== false || (typeof detail.hash === "string" && typeof attested.evidence_hash === "string" && detail.hash !== attested.evidence_hash)) throw new Error("Mismatched evidence acknowledgement");
       setSelected(detail); setAttestation(attested);
     } catch (cause) { if (generation === detailGeneration.current) setError(cause instanceof ApiError && cause.status === 404 ? "Evidence record not found or unavailable to this session." : "Evidence detail could not be confirmed. No record or attestation is claimed."); }
+    finally { if (generation === detailGeneration.current) setDetailLoading(false); }
   }, []);
 
   useEffect(() => { setItems(records); }, [records]);
@@ -154,7 +156,7 @@ export function EvidenceContractPanel({ records }: { records: DomainRecord[] }) 
     let active = true;
     const task = window.setTimeout(() => void api<EvidenceVerification>("/api/v1/web/evidence/verify").then((value) => {
       if (!active) return;
-      if (!value || !["VALID", "INCOMPLETE", "INVALID"].includes(value.status) || typeof value.chain_intact !== "boolean" || value.cryptographically_signed !== false || typeof value.integrity_note !== "string" || (value.status === "VALID" && !value.chain_intact)) throw new Error("Malformed verification acknowledgement");
+      if (!value || !["VALID", "INCOMPLETE", "INVALID"].includes(value.status) || typeof value.chain_intact !== "boolean" || value.cryptographically_signed !== false || typeof value.integrity_note !== "string" || value.chain_intact !== ["VALID", "INCOMPLETE"].includes(value.status)) throw new Error("Malformed verification acknowledgement");
       setVerification(value);
     }).catch(() => { if (active) setVerificationError("Evidence verification unavailable. No valid chain is claimed."); }), 0);
     return () => { active = false; window.clearTimeout(task); };
@@ -182,6 +184,7 @@ export function EvidenceContractPanel({ records }: { records: DomainRecord[] }) 
   return <>
     {error && <div className="form-error" role="alert">{error}</div>}
     {verificationError && <div className="form-error" role="alert">{verificationError}</div>}
+    {detailLoading && <p role="status">Loading evidence detail…</p>}
     <section className="data-panel evidence-verification"><header><div><h2>Evidence chain</h2><p>WhitePact evidence is hash-chained under the documented verification boundary.</p></div>{verification && <strong className={`posture posture--${verification.status === "VALID" ? "configured" : "missing"}`}>{verification.status}</strong>}</header>{verification && <><p>{verification.integrity_note}</p><dl><Row label="Chain intact" value={verification.chain_intact ? "Yes" : "No"} /><Row label="Cryptographically signed" value="No" /></dl>{verification.status === "INCOMPLETE" && <p className="configuration-note">The chain hashes correctly but contains legacy pre-canonical entries; it is not presented as fully verified.</p>}</>}</section>
     <section className="data-panel evidence-ledger"><header><div><h2>Bounded evidence list</h2><p>Up to 50 records are returned. This is not full pagination.</p></div><div><label className="field compact-field"><span>Decision</span><select value={decision} onChange={(event) => void filterDecision(event.target.value)}><option value="">All returned decisions</option><option value="ALLOW">Allow</option><option value="ALLOW_WITH_REDACTION">Allow with redaction</option><option value="DENY">Deny</option><option value="REQUIRE_APPROVAL">Require approval</option><option value="QUARANTINE">Quarantine</option></select></label><label className="field compact-field"><span>Filter loaded records</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} /></label><Button variant="secondary" disabled={listState !== "success" || !filtered.length} onClick={() => { try { downloadBoundedEvidence(filtered); } catch { setError("Download unavailable. No evidence export was completed."); } }}>Download displayed records</Button><p>Downloads are bounded read-only copies, not signed bundles or independent verification.</p></div></header>
       {listState === "loading" && <p role="status">Loading canonical evidence…</p>}
@@ -191,7 +194,7 @@ export function EvidenceContractPanel({ records }: { records: DomainRecord[] }) 
       {!filtered.length && <Empty title="No evidence records match" />}
       </>}
     </section>
-    {selected && <AccessibleDialog labelId="evidence-contract-title" onClose={close} className="evidence-detail"><header><div><h2 id="evidence-contract-title">Evidence details</h2><p>{value(selected.evidence_id)}</p></div><button onClick={close} aria-label="Close"><X aria-hidden="true" /></button></header><section><h3>Decision evidence</h3><dl>{["evidence_id", "agent_id", "identity_id", "action_type", "target", "purpose", "risk_tier", "policy_version", "decision", "reason_codes", "approval_id", "execution_authorization_id", "evaluated_at", "recorded_at", "prev_hash", "hash"].filter((key) => selected[key] !== null && selected[key] !== undefined).map((key) => <Row key={key} label={key.replaceAll("_", " ")} value={selected[key]} code={key.includes("id") || key.includes("hash")} />)}</dl></section>{attestation && <section className={attestation.outcome_status === "UNKNOWN" ? "attestation attestation--unknown" : "attestation"}><h3>Evidence attestation</h3><p>Not cryptographically signed. Integrity is established by linkage to the evidence hash chain.</p><dl><Row label="Decision" value={attestation.decision} /><Row label="Outcome" value={attestation.outcome_status} /><Row label="Reconciliation" value={attestation.reconciliation_status} /><Row label="Evidence hash" value={attestation.evidence_hash} code /></dl>{attestation.outcome_status === "UNKNOWN" && <strong>Reconciliation required</strong>}</section>}</AccessibleDialog>}
+    {selected && <AccessibleDialog labelId="evidence-contract-title" onClose={close} className="evidence-detail"><header><div><h2 id="evidence-contract-title">Evidence details</h2><p>{value(selected.evidence_id)}</p></div><button onClick={close} aria-label="Close"><X aria-hidden="true" /></button></header><section><h3>Decision evidence</h3><dl>{["evidence_id", "agent_id", "identity_id", "action_type", "target", "purpose", "risk_tier", "policy_version", "decision", "reason_codes", "approval_id", "execution_authorization_id", "evaluated_at", "recorded_at", "prev_hash", "hash"].filter((key) => selected[key] !== null && selected[key] !== undefined).map((key) => <Row key={key} label={key.replaceAll("_", " ")} value={selected[key]} code={key.includes("id") || key.includes("hash")} />)}</dl></section>{attestation && <section className={attestation.outcome_status === "UNKNOWN" ? "attestation attestation--unknown" : "attestation"}><h3>Evidence attestation</h3><p>Not cryptographically signed. Hash linkage is not independent proof of integrity or downstream execution. Consult the backend chain status and documented verification boundary.</p><dl><Row label="Decision" value={attestation.decision} /><Row label="Outcome" value={attestation.outcome_status} /><Row label="Reconciliation" value={attestation.reconciliation_status} /><Row label="Evidence hash" value={attestation.evidence_hash} code /></dl>{attestation.outcome_status === "UNKNOWN" && <strong>Reconciliation required</strong>}</section>}</AccessibleDialog>}
   </>;
 }
 
