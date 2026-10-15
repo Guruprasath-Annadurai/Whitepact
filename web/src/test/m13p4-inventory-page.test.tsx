@@ -56,3 +56,18 @@ it("rejects a cross-tenant payload instead of displaying its registration", asyn
   expect(screen.queryByRole("heading", { name: "Agent in org-b" })).not.toBeInTheDocument();
   expect(screen.queryByText(/No agent registrations were returned/)).not.toBeInTheDocument();
 });
+
+it("refreshes only on explicit request and removes an old successful list on a failed refresh", async () => {
+  const fetch = vi.spyOn(window, "fetch").mockResolvedValueOnce(Response.json({ agents: [record("org-a")] })).mockRejectedValueOnce(new TypeError("connection lost"));
+  render(page("org-a"));
+  expect(screen.getByRole("region", { name: "Read-only agent inventory" })).toHaveAttribute("aria-busy", "true");
+  expect(screen.getByRole("button", { name: "Refresh inventory read" })).toBeDisabled();
+  await screen.findByRole("heading", { name: "Agent in org-a" });
+  expect(fetch).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", { name: "Refresh inventory read" }));
+  expect(screen.queryByRole("heading", { name: "Agent in org-a" })).not.toBeInTheDocument();
+  expect(await screen.findByRole("alert")).toHaveTextContent("No empty or successful result is claimed");
+  expect(screen.getAllByRole("alert")).toHaveLength(1);
+  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(screen.getByRole("button", { name: "Retry inventory read" })).toBeInTheDocument();
+});

@@ -7,6 +7,7 @@ import { ApiError } from "../../lib/api";
 import { customerAuthorityReader } from "../../lib/customerAuthorityReader";
 import type { WebSession } from "../dashboard/DashboardShell";
 import { AgentInventoryPreparation, type AgentInventoryReadState } from "./AgentInventoryPreparation";
+import { AuthorityRecordStatus } from "../authority/AuthorityRecordStatus";
 
 export function AgentInventoryPage() {
   const session = useOutletContext<WebSession>();
@@ -34,9 +35,9 @@ export function AgentInventoryPage() {
     return () => { active = false; controller.abort(); };
   }, [organizationId, attempt]);
   return <main className="dashboard-content"><div className="page-heading"><div><h1>Agents</h1><p>Organization: {session.organization?.name ?? "Unavailable"}</p></div></div>
-    <AgentInventoryPreparation key={`${organizationId ?? "unavailable"}:${attempt}`} state={!organizationId ? { status: "unavailable" } : current?.state ?? { status: "loading" }} readContractAvailable={Boolean(organizationId)} customerRead />
-    {current?.failure && <p role="alert">{current.failure}</p>}
-    {organizationId && current?.state.status === "error" && <Button onClick={() => setAttempt((value) => value + 1)}>Retry inventory read</Button>}
+    <AgentInventoryPreparation key={`${organizationId ?? "unavailable"}:${attempt}`} state={!organizationId ? { status: "unavailable" } : current?.state ?? { status: "loading" }} readContractAvailable={Boolean(organizationId)} customerRead errorMessage={current?.failure} />
+    {organizationId && <Button variant="secondary" disabled={!current} onClick={() => setAttempt((value) => value + 1)}>{current?.state.status === "error" ? "Retry inventory read" : "Refresh inventory read"}</Button>}
+    <AuthorityRecordStatus key={organizationId ?? "unavailable"} />
     <p>Registration, delegation, disablement and other privileged lifecycle changes are unavailable here.</p>
   </main>;
 }
