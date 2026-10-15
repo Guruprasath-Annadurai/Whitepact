@@ -35,7 +35,7 @@ from typing import Any
 from sqlalchemy import insert, select, update
 
 from responsibleai.db.engine import DatabaseEngine, governance_delegations
-from responsibleai.db.revocation_epoch_repository import bump_epoch_on_connection
+from responsibleai.db.revocation_epoch_repository import bump_epoch_on_connection, lock_epoch
 from responsibleai.governance.delegation import DelegationRecord
 from responsibleai.governance.delegation_graph import DelegationGraph, DelegationGraphNode
 from responsibleai.governance.models import validate_attenuation
@@ -123,7 +123,7 @@ class DelegationRepository:
         now = _now()
         delegation_id = str(uuid.uuid4())
         async with self._engine.raw.begin() as conn:
-            await bump_epoch_on_connection(conn, org_id)
+            await lock_epoch(conn, org_id)
             await conn.execute(
                 insert(governance_delegations).values(
                     id=delegation_id,

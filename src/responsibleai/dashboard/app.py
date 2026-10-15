@@ -193,6 +193,7 @@ from responsibleai.db.execution_nonce_repository import ExecutionNonceRepository
 from responsibleai.db.migrate import MigrationError, run_migrations_or_raise
 from responsibleai.db.revocation_epoch_repository import RevocationEpochRepository
 from responsibleai.db.root_authority_repository import RootAuthorityRepository
+from responsibleai.enterprise.authority.router import router as customer_authority_router
 from responsibleai.enterprise.router import router as enterprise_router
 from responsibleai.enterprise.security.rate_limit import DurableIdentityRateLimiter
 from responsibleai.enterprise.security.router import router as enterprise_security_router
@@ -736,6 +737,7 @@ app = FastAPI(
 )
 
 app.include_router(enterprise_router)
+app.include_router(customer_authority_router)
 app.include_router(enterprise_security_router)
 app.include_router(sovereign_router)
 app.include_router(sovereign_web_router)
