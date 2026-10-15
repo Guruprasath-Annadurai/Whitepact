@@ -207,6 +207,13 @@ def _text_and_structured(
     MIGRATION_WHITEPACT_V2.md's structured-output section: pre-2025-06-18
     clients that only read `content` keep working unchanged.
     """
+    if isinstance(payload, dict):
+        if (
+            "error" in payload
+            or payload.get("decision") in ("DENY", "QUARANTINE", "REJECT", "BLOCKED")
+            or payload.get("status") in ("FAILED", "PENDING", "REJECTED")
+        ):
+            payload.setdefault("isError", True)
     text = types.TextContent(type="text", text=json.dumps(payload, indent=2, default=str))
     return [text], payload
 

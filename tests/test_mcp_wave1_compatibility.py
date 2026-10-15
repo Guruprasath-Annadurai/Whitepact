@@ -135,6 +135,7 @@ async def test_real_tcp_client_discovery_ping_unknown_resource_and_tool(tcp_mcp)
         assert "error" in json.loads(missing.contents[0].text)
         missing_purpose = await session.call_tool("rai_health", {})
         assert missing_purpose.structuredContent["error"] == "governance_purpose_required"
+        assert missing_purpose.structuredContent["isError"] is True
         unknown = await session.call_tool(
             "not.a.real.tool", {"whitepact_purpose": "automated-test"}
         )

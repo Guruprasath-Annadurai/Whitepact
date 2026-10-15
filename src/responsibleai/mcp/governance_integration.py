@@ -176,6 +176,10 @@ class GovernanceOutcome:
     result: dict[str, Any] | None = None
     outcome_status: OutcomeStatus | None = None
 
+    def __post_init__(self) -> None:
+        if not self.proceed and self.blocked_response is not None:
+            self.blocked_response.setdefault("isError", True)
+
 
 async def apply_governance(
     name: str,
