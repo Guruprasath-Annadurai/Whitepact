@@ -3,6 +3,9 @@ name: M13-P4 Product Candidate Review
 on:
   pull_request:
     paths:
+      - 'docs/engineering/m13i2/**'
+      - 'scripts/engineering/m13i2_*'
+      - 'tests/test_m13i2_*'
       - 'web/**'
       - 'src/responsibleai/dashboard/static/whitepact/**'
       - 'tests/test_m13p4_*'
