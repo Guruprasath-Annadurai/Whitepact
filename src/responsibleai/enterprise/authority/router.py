@@ -21,6 +21,7 @@ router = APIRouter(prefix="/api/enterprise/organizations/{org_id}/authority", ta
 class InitiateBootstrapBody(BaseModel):
     ttl_seconds: int = Field(default=900, ge=60, le=86400)
     require_identity_assurance: bool = False
+    require_passkey_stepup: bool = False
 
 
 class CompleteBootstrapBody(BaseModel):
@@ -34,6 +35,43 @@ class CompleteBootstrapBody(BaseModel):
     key_algorithm: str = "Ed25519"
     consent_method: str = "CRYPTOGRAPHIC_CEREMONY"
     evidence_refs: list[str] = Field(default_factory=list)
+    webauthn_assertion: dict[str, Any] | None = None
+    root_signature: str | None = None
+
+
+class CreateStepUpChallengeBody(BaseModel):
+    action: str = Field(min_length=1)
+    operation_digest: str = Field(min_length=1)
+    ttl_seconds: int = Field(default=300, ge=30, le=3600)
+
+
+class EmergencyContainmentBody(BaseModel):
+    target_type: str = Field(min_length=1)
+    target_id: str = Field(min_length=1)
+    containment_action: str = Field(min_length=1)
+    reason: str = Field(min_length=1, max_length=1000)
+    webauthn_assertion: dict[str, Any] | None = None
+
+
+class CreateRecoveryRequestBody(BaseModel):
+    request_type: str = Field(min_length=1)
+    target_root_id: str = Field(min_length=1)
+    proposed_parameters: dict[str, Any] = Field(default_factory=dict)
+    required_quorum_m: int = Field(default=2, ge=1)
+    eligible_quorum_n: int = Field(default=3, ge=1)
+    ttl_seconds: int = Field(default=86400, ge=300)
+
+
+class VoteRecoveryRequestBody(BaseModel):
+    decision: str = Field(pattern="^(APPROVE|REJECT)$")
+    action_digest: str = Field(min_length=1)
+    notes: str = Field(default="", max_length=500)
+    webauthn_assertion: dict[str, Any] | None = None
+
+
+class ExecuteRecoveryRequestBody(BaseModel):
+    action_digest: str = Field(min_length=1)
+    webauthn_assertion: dict[str, Any] | None = None
 
 
 class RevokeRootBody(BaseModel):
@@ -71,6 +109,7 @@ async def initiate_bootstrap(org_id: str, request: Request, body: InitiateBootst
             org_id=org_id,
             ttl_seconds=body.ttl_seconds,
             require_identity_assurance=body.require_identity_assurance,
+            require_passkey_stepup=body.require_passkey_stepup,
         )
     except EnterpriseError as exc:
         return _error_response(exc, _request_id(request))
@@ -93,6 +132,37 @@ async def complete_bootstrap(org_id: str, request: Request, body: CompleteBootst
             key_algorithm=body.key_algorithm,
             consent_method=body.consent_method,
             evidence_refs=body.evidence_refs,
+            webauthn_assertion=body.webauthn_assertion,
+            root_signature=body.root_signature,
+        )
+    except EnterpriseError as exc:
+        return _error_response(exc, _request_id(request))
+
+
+@router.get("/bootstrap/reconcile")
+async def reconcile_bootstrap(org_id: str, token: str, nonce: str, request: Request) -> Any:
+    try:
+        actor = await _web_actor(request)
+        return await _svc().reconcile_bootstrap_status(
+            actor,
+            org_id=org_id,
+            token=token,
+            nonce=nonce,
+        )
+    except EnterpriseError as exc:
+        return _error_response(exc, _request_id(request))
+
+
+@router.post("/webauthn/challenge")
+async def create_stepup_challenge(org_id: str, request: Request, body: CreateStepUpChallengeBody) -> Any:
+    try:
+        actor = await _web_actor(request)
+        return await _svc().create_authority_stepup_challenge(
+            actor,
+            org_id=org_id,
+            action=body.action,
+            operation_digest=body.operation_digest,
+            ttl_seconds=body.ttl_seconds,
         )
     except EnterpriseError as exc:
         return _error_response(exc, _request_id(request))
@@ -186,3 +256,99 @@ async def disable_agent(
         )
     except EnterpriseError as exc:
         return _error_response(exc, _request_id(request))
+
+
+@router.post("/containment/emergency")
+async def emergency_containment(org_id: str, request: Request, body: EmergencyContainmentBody) -> Any:
+    try:
+        actor = await _web_actor(request)
+        return await _svc().execute_emergency_containment(
+            actor,
+            org_id=org_id,
+            target_type=body.target_type,
+            target_id=body.target_id,
+            containment_action=body.containment_action,
+            reason=body.reason,
+            webauthn_assertion=body.webauthn_assertion,
+        )
+    except EnterpriseError as exc:
+        return _error_response(exc, _request_id(request))
+
+
+@router.post("/recovery/requests")
+async def create_recovery_request(org_id: str, request: Request, body: CreateRecoveryRequestBody) -> Any:
+    try:
+        actor = await _web_actor(request)
+        return await _svc().create_recovery_request(
+            actor,
+            org_id=org_id,
+            request_type=body.request_type,
+            target_root_id=body.target_root_id,
+            proposed_parameters=body.proposed_parameters,
+            required_quorum_m=body.required_quorum_m,
+            eligible_quorum_n=body.eligible_quorum_n,
+            ttl_seconds=body.ttl_seconds,
+        )
+    except EnterpriseError as exc:
+        return _error_response(exc, _request_id(request))
+
+
+@router.get("/recovery/requests")
+async def list_recovery_requests(org_id: str, request: Request) -> Any:
+    try:
+        actor = await _web_actor(request)
+        return {"requests": await _svc().list_recovery_requests(actor, org_id=org_id)}
+    except EnterpriseError as exc:
+        return _error_response(exc, _request_id(request))
+
+
+@router.get("/recovery/requests/{request_id}")
+async def get_recovery_request(org_id: str, request_id: str, request: Request) -> Any:
+    try:
+        actor = await _web_actor(request)
+        return await _svc().get_recovery_request(actor, org_id=org_id, request_id=request_id)
+    except EnterpriseError as exc:
+        return _error_response(exc, _request_id(request))
+
+
+@router.post("/recovery/requests/{request_id}/vote")
+async def vote_recovery_request(
+    org_id: str,
+    request_id: str,
+    request: Request,
+    body: VoteRecoveryRequestBody,
+) -> Any:
+    try:
+        actor = await _web_actor(request)
+        return await _svc().vote_recovery_request(
+            actor,
+            org_id=org_id,
+            request_id=request_id,
+            decision=body.decision,
+            action_digest=body.action_digest,
+            notes=body.notes,
+            webauthn_assertion=body.webauthn_assertion,
+        )
+    except EnterpriseError as exc:
+        return _error_response(exc, _request_id(request))
+
+
+@router.post("/recovery/requests/{request_id}/execute")
+async def execute_recovery_request(
+    org_id: str,
+    request_id: str,
+    request: Request,
+    body: ExecuteRecoveryRequestBody,
+) -> Any:
+    try:
+        actor = await _web_actor(request)
+        return await _svc().execute_recovery_request(
+            actor,
+            org_id=org_id,
+            request_id=request_id,
+            action_digest=body.action_digest,
+            webauthn_assertion=body.webauthn_assertion,
+        )
+    except EnterpriseError as exc:
+        return _error_response(exc, _request_id(request))
+

@@ -1539,6 +1539,7 @@ trust_fabric_bootstrap_records = Table(
     Column("consumed_at", String(32), nullable=True),
     Column("claimed_by_principal_id", String(64), nullable=True),
     Column("nonce", String(64), nullable=False, unique=True),
+    Column("require_passkey_stepup", Integer, nullable=False, server_default="0"),
     Column("created_at", String(32), nullable=False),
     Index("idx_tf_boot_org", "org_id"),
     Index("idx_tf_boot_nonce", "nonce"),
@@ -2707,6 +2708,79 @@ sovereign_shadow_observations = Table(
     Column("schema_version", String(32), nullable=False),
     Column("diagnostic_json", Text, nullable=False, server_default="{}"),
     Column("created_at", String(32), nullable=False),
+)
+
+authority_step_up_challenges = Table(
+    "authority_step_up_challenges",
+    metadata,
+    Column("challenge_hash", String(64), primary_key=True),
+    Column("org_id", String(36), nullable=False),
+    Column("user_id", String(36), nullable=False),
+    Column("session_id", String(64), nullable=True),
+    Column("action", String(64), nullable=False),
+    Column("operation_digest", String(64), nullable=False),
+    Column("rp_id", String(255), nullable=False),
+    Column("origin", String(512), nullable=False),
+    Column("raw_challenge_b64", String(128), nullable=False),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("consumed_at", String(32), nullable=True),
+    Index("idx_auth_stepup_user", "user_id"),
+    Index("idx_auth_stepup_org", "org_id"),
+    Index("idx_auth_stepup_digest", "operation_digest"),
+)
+
+authority_containment_records = Table(
+    "authority_containment_records",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("org_id", String(36), nullable=False),
+    Column("responder_user_id", String(36), nullable=False),
+    Column("target_type", String(32), nullable=False),
+    Column("target_id", String(128), nullable=False),
+    Column("containment_action", String(64), nullable=False),
+    Column("reason", Text, nullable=False),
+    Column("status", String(32), nullable=False),
+    Column("revocation_epoch", Integer, nullable=False),
+    Column("evidence_id", String(36), nullable=True),
+    Column("contained_at", String(32), nullable=False),
+    Index("idx_containment_org", "org_id"),
+    Index("idx_containment_target", "target_id"),
+)
+
+authority_recovery_requests = Table(
+    "authority_recovery_requests",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("org_id", String(36), nullable=False),
+    Column("request_type", String(32), nullable=False),
+    Column("target_root_id", String(36), nullable=True),
+    Column("requester_user_id", String(36), nullable=False),
+    Column("proposed_parameters_json", Text, nullable=False),
+    Column("action_digest", String(64), nullable=False),
+    Column("required_quorum_m", Integer, nullable=False, server_default="2"),
+    Column("eligible_quorum_n", Integer, nullable=False, server_default="3"),
+    Column("status", String(32), nullable=False, server_default="PENDING"),
+    Column("created_at", String(32), nullable=False),
+    Column("expires_at", String(32), nullable=False),
+    Column("executed_at", String(32), nullable=True),
+    Column("executed_by_user_id", String(36), nullable=True),
+    Index("idx_rec_req_org", "org_id"),
+    Index("idx_rec_req_digest", "action_digest"),
+)
+
+authority_recovery_votes = Table(
+    "authority_recovery_votes",
+    metadata,
+    Column("id", String(36), primary_key=True),
+    Column("request_id", String(36), ForeignKey("authority_recovery_requests.id", ondelete="CASCADE"), nullable=False),
+    Column("voter_user_id", String(36), nullable=False),
+    Column("decision", String(20), nullable=False),
+    Column("action_digest", String(64), nullable=False),
+    Column("voted_at", String(32), nullable=False),
+    Column("notes", Text, nullable=True),
+    UniqueConstraint("request_id", "voter_user_id", name="uq_rec_vote_request_voter"),
+    Index("idx_rec_votes_req", "request_id"),
 )
 
 
