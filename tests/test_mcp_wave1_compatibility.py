@@ -91,7 +91,15 @@ async def test_real_enterprise_stdio_process_refuses_before_protocol(tmp_path) -
 
 
 @pytest.fixture()
-async def tcp_mcp(governed_app_with_key):
+async def tcp_mcp(governed_app_with_key, monkeypatch: pytest.MonkeyPatch):
+    from sse_starlette.sse import AppStatus
+
+    # These fixtures restart Uvicorn in one interpreter. SSE's process-global
+    # shutdown flag can outlive the preceding server and otherwise cancels the
+    # new server's response before its final body frame. A fresh process starts
+    # with this flag clear; restore that initial state only for this new fixture.
+    # Shutdown handling, authentication and all protocol assertions stay enabled.
+    monkeypatch.setattr(AppStatus, "should_exit", False)
     app, raw, org, engine, key_id = governed_app_with_key
     listener = socket.socket()
     listener.bind(("127.0.0.1", 0))
