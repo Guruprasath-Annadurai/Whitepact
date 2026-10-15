@@ -6,17 +6,16 @@ import { Link, useOutletContext } from "react-router-dom";
 import { api, messageFrom } from "../../lib/api";
 import { Button } from "../../components/Button";
 import type { WebSession } from "./DashboardShell";
-
-type Summary = { decisions: number; agents: number; pending_approvals: number; blocked_actions: number; recent_governance: Array<{ id: string; agent: string; action: string; policy: string; risk: string; decision: string; timestamp: string }>; services: Record<string, string> };
+import { parseDashboardSummary, type DashboardSummary } from "../../lib/dashboardSummary";
 
 export function OverviewPage() {
   const session = useOutletContext<WebSession>();
-  const [summary, setSummary] = useState<Summary | null>(null);
+  const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const load = useCallback(async () => {
-    setLoading(true); setError("");
-    try { setSummary(await api<Summary>("/api/v1/web/dashboard/summary")); }
+    setLoading(true); setError(""); setSummary(null);
+    try { setSummary(parseDashboardSummary(await api<unknown>("/api/v1/web/dashboard/summary"))); }
     catch (cause) { setError(messageFrom(cause, "Governance summary is unavailable")); }
     finally { setLoading(false); }
   }, []);
