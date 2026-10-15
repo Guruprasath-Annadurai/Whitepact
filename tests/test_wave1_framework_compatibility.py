@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Guruprasath Annadurai
+# SPDX-License-Identifier: MIT
 """Real optional-framework consumers; no external model calls or authority claims.
 
 The localhost fixture is a controlled provider contract, not the WhitePact
