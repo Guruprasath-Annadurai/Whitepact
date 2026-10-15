@@ -13,6 +13,7 @@ All commands use `/Users/ag/Whitepact/.venv/bin/python`, `PYTHONPATH=src`, and `
 | Before fix, `tests/test_m13p4_mcp_lifecycle.py` with prior shutdown forced | 2 failed in 12.65s; deterministic original symptom |
 | After fixture-only fix, original full file plus lifecycle regression | 7 passed in 19.84s |
 | Ruff check and format check for both changed test files | PASS |
+| After correction, same original/new files plus HTTP transport, protocol matrix and modernization suites | 42 passed in 209.45s |
 
 The observer plugin was kept outside the repository and did not alter transport behavior. The lifecycle fix changes only test-server initialization. No exception suppression, expected-failure mark, assertion removal or production behavior switch was introduced.
 
