@@ -10,6 +10,7 @@ import { openPaddleTransactionCheckout } from "../../lib/paddleCheckout";
 import type { DomainRecord, DomainResponse, EvidenceListResponse, InvitationRecord, LoadState, RecordValue } from "../../lib/contracts";
 import type { WebSession } from "./DashboardShell";
 import { ApprovalContractPanel, EvidenceContractPanel } from "./CanonicalPanels";
+import { OrganizationSettingsPage } from "./OrganizationSettingsPage";
 
 const supported = {
   approvals: { title: "Approvals", copy: "Requests waiting for an authorized human decision.", icon: Users },
@@ -27,32 +28,25 @@ export function DomainPage({ domainKey }: { domainKey?: keyof typeof supported }
   const [result, setResult] = useState<DomainResponse>({ items: [], source: "loading" });
   const [state, setState] = useState<LoadState>("loading");
   const [error, setError] = useState("");
-  const [name, setName] = useState("");
   const session = useOutletContext<WebSession>();
 
   const load = useCallback(async () => {
-    if (!config) return;
+    if (!config || key === "organization") return;
     try {
       const value = key === "evidence"
         ? await api<EvidenceListResponse>("/api/v1/web/evidence?limit=50").then((payload) => ({ items: payload.evidence, source: `bounded evidence list (limit ${payload.limit})` }))
         : await api<DomainResponse>(`/api/v1/web/dashboard/${key}`);
       setResult(value); setError("");
-      if (key === "organization") setName(String(value.items[0]?.name ?? ""));
       setState(value.items.length ? "success" : "empty");
     } catch (cause) { setError(messageFrom(cause, "Could not load this section")); setState("error"); }
   }, [config, key]);
   useEffect(() => { const task = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(task); }, [load]);
   if (!config) return null;
+  if (key === "organization") return <OrganizationSettingsPage key={`${session.organization?.id ?? "unavailable"}:${session.user.email}`} session={session} />;
   const Icon = config.icon;
 
-  async function saveOrg(event: FormEvent) {
-    event.preventDefault(); setError("");
-    try { await api("/api/v1/web/organization", { method: "PATCH", body: JSON.stringify({ name }) }); setResult((current) => ({ ...current, items: current.items.map((item, index) => index === 0 ? { ...item, name } : item) })); }
-    catch (cause) { setError(messageFrom(cause, "Organization could not be updated")); }
-  }
-
   return <main className="dashboard-content"><div className="page-heading"><div><h1>{config.title}</h1><p>{config.copy}</p></div>{key === "billing" && <span>{session.organization?.plan ?? "FREE"} plan</span>}</div>{error && <div className="form-error" role="alert" aria-live="assertive">{error}</div>}
-    {state === "loading" ? <LoadingState /> : state === "error" ? <ErrorState onRetry={load} /> : key === "security" ? <SecurityCards items={result.items} source={result.source} /> : key === "billing" ? <BillingPanel item={result.items[0]} configured={Boolean(result.billing_configured)} onError={setError} /> : key === "organization" && result.items[0] ? <section className="data-panel settings-panel"><form onSubmit={saveOrg}><label className="field"><span>Organization name</span><input value={name} onChange={(event)=>setName(event.target.value)} required minLength={2} /></label><div className="metadata-grid"><p><span>Organization ID</span><code>{String(result.items[0].id)}</code></p><p><span>Slug</span><strong>{String(result.items[0].slug)}</strong></p><p><span>Owner</span><strong>{session.user.full_name}</strong></p><p><span>Plan</span><strong>{String(result.items[0].plan)}</strong></p></div><Button>Save organization</Button></form></section> : key === "members" ? <MembersPanel records={result.items} session={session} onError={setError} onChanged={load} /> : key === "approvals" ? <ApprovalContractPanel records={result.items} onError={setError} onChanged={load} /> : key === "evidence" ? <EvidenceContractPanel records={result.items} /> : <EmptyState icon={Icon} title={config.title} keyName={key} />}
+    {state === "loading" ? <LoadingState /> : state === "error" ? <ErrorState onRetry={load} /> : key === "security" ? <SecurityCards items={result.items} source={result.source} /> : key === "billing" ? <BillingPanel item={result.items[0]} configured={Boolean(result.billing_configured)} onError={setError} /> : key === "members" ? <MembersPanel records={result.items} session={session} onError={setError} onChanged={load} /> : key === "approvals" ? <ApprovalContractPanel records={result.items} onError={setError} onChanged={load} /> : key === "evidence" ? <EvidenceContractPanel records={result.items} /> : <EmptyState icon={Icon} title={config.title} keyName={key} />}
   </main>;
 }
 
