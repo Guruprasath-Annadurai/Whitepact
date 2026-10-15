@@ -49,10 +49,10 @@ describe("dashboard and onboarding", () => {
     );
     render(<MemoryRouter initialEntries={["/dashboard"]}><Routes><Route path="/dashboard" element={<DashboardShell />}><Route index element={<div>Overview content</div>} /></Route></Routes></MemoryRouter>);
     expect(await screen.findByText("Overview content")).toBeInTheDocument();
-    for (const label of ["Overview", "API Keys", "Approvals", "Evidence", "Security", "Organization", "Members", "Billing"]) {
+    for (const label of ["Overview", "Agents", "API Keys", "Approvals", "Evidence", "Security", "Organization", "Members", "Billing"]) {
       expect(screen.getByRole("link", { name: label })).toBeInTheDocument();
     }
-    for (const hidden of ["Agents", "Policies", "Usage", "MCP", "Settings"]) {
+    for (const hidden of ["Policies", "Usage", "MCP", "Settings"]) {
       expect(screen.queryByRole("link", { name: hidden })).not.toBeInTheDocument();
     }
   });
