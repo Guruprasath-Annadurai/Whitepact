@@ -177,6 +177,64 @@ def _register_fake_passkey(user_id: str, rp_id: str = "localhost"):
     return private_key, cred_id_b64, pub_b64
 
 
+async def _create_containment_assertion(
+    svc: CustomerAuthorityService,
+    actor: Actor,
+    org_id: str,
+    target_type: str,
+    target_id: str,
+    containment_action: str,
+    engine: Any | None = None,
+) -> dict[str, Any]:
+    if engine is None:
+        engine = get_enterprise_engine()
+    priv_key, cred_id_b64, pub_b64 = _register_fake_passkey(actor.user_id)
+    async with engine.raw.begin() as conn:
+        await conn.execute(
+            passkey_credentials.insert().values(
+                id=f"pk_{uuid.uuid4().hex[:12]}",
+                user_id=actor.user_id,
+                credential_id=cred_id_b64,
+                public_key=pub_b64,
+                sign_count=0,
+                rp_id="localhost",
+                transports_json="[]",
+                aaguid="00000000-0000-0000-0000-000000000000",
+                backup_eligible=1,
+                backup_state=1,
+                display_name="Test Passkey",
+                status="ACTIVE",
+                created_at=datetime.now(UTC).isoformat(),
+            )
+        )
+    op_digest = compute_canonical_operation_digest(
+        "EMERGENCY_CONTAINMENT",
+        {
+            "org_id": org_id,
+            "target_type": target_type.upper(),
+            "target_id": target_id,
+            "containment_action": containment_action.upper(),
+        },
+    )
+    ch_res = await svc.create_authority_stepup_challenge(
+        actor, org_id=org_id, action="EMERGENCY_CONTAINMENT", operation_digest=op_digest
+    )
+    raw_challenge = b64url_decode(ch_res["challenge"])
+    cdata, auth_data, sig = assertion_blob(
+        rp_id="localhost",
+        origin=ch_res["origin"],
+        challenge=raw_challenge,
+        private_key=priv_key,
+        sign_count=1,
+    )
+    return {
+        "credential_id": cred_id_b64,
+        "client_data_json": cdata,
+        "authenticator_data": auth_data,
+        "signature": sig,
+    }
+
+
 # ==============================================================================
 # 1. WebAuthn Step-Up Assurance Tests (Founder Decision A)
 # ==============================================================================
@@ -647,7 +705,10 @@ async def test_emergency_agent_containment_quarantines_and_bumps_epoch():
     epochs = RevocationEpochRepository(engine)
     epoch_before = (await epochs.current(org_id)).epoch
 
-    # Single-owner emergency containment
+    # Single-owner emergency containment with required passkey step-up
+    assertion = await _create_containment_assertion(
+        svc, actor, org_id, "AGENT", agent_id, "QUARANTINE", engine
+    )
     cnt_res = await svc.execute_emergency_containment(
         actor,
         org_id=org_id,
@@ -655,6 +716,7 @@ async def test_emergency_agent_containment_quarantines_and_bumps_epoch():
         target_id=agent_id,
         containment_action="QUARANTINE",
         reason="Agent behaving maliciously",
+        webauthn_assertion=assertion,
     )
 
     assert cnt_res["status"] == "CONTAINED"
@@ -702,7 +764,10 @@ async def test_emergency_organization_lockdown():
         allowed_targets=["*"],
     )
 
-    # Trigger lockdown
+    # Trigger lockdown with required passkey step-up
+    assertion = await _create_containment_assertion(
+        svc, actor, org_id, "ORGANIZATION", org_id, "LOCKDOWN", engine
+    )
     lock_res = await svc.execute_emergency_containment(
         actor,
         org_id=org_id,
@@ -710,6 +775,7 @@ async def test_emergency_organization_lockdown():
         target_id=org_id,
         containment_action="LOCKDOWN",
         reason="Suspected intrusion",
+        webauthn_assertion=assertion,
     )
     assert lock_res["status"] == "CONTAINED"
 

@@ -15,6 +15,7 @@ from responsibleai.enterprise.runtime import get_enterprise_engine
 from responsibleai.isolation.in_flight import InFlightExecutionRegistry
 from tests.test_m12fs_root_hardening import (
     _configure_test_env,  # noqa: F401 -- imports the isolated autouse fixture
+    _create_containment_assertion,
     _create_test_owner,
 )
 
@@ -22,15 +23,21 @@ from tests.test_m12fs_root_hardening import (
 @pytest.mark.asyncio
 async def test_containment_must_not_confirm_when_termination_fails(monkeypatch):
     actor, _, org_id, _, _ = await _create_test_owner()
+    engine = get_enterprise_engine()
+    svc = CustomerAuthorityService(engine)
+    assertion = await _create_containment_assertion(
+        svc, actor, org_id, "ORGANIZATION", org_id, "LOCKDOWN", engine
+    )
     terminate = AsyncMock(side_effect=RuntimeError("isolated termination failure"))
     monkeypatch.setattr(InFlightExecutionRegistry.get_instance(), "terminate_in_flight", terminate)
-    result = await CustomerAuthorityService(get_enterprise_engine()).execute_emergency_containment(
+    result = await svc.execute_emergency_containment(
         actor,
         org_id=org_id,
         target_type="ORGANIZATION",
         target_id=org_id,
         containment_action="LOCKDOWN",
         reason="Local product acceptance failure injection",
+        webauthn_assertion=assertion,
     )
     terminate.assert_awaited_once()
     assert result["status"] != "CONTAINED", (

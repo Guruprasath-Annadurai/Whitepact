@@ -1420,32 +1420,37 @@ class CustomerAuthorityService:
                 f"Invalid containment_action: {containment_action!r}. Must be one of {valid_actions}"
             )
 
+        # Phishing-resistant WebAuthn Step-up check (Founder Decision A/B)
+        if not webauthn_assertion:
+            raise passkey_step_up_required(
+                "Phishing-resistant passkey step-up is required for emergency containment."
+            )
+
         target_type = target_type.upper()
         containment_action = containment_action.upper()
         now_dt = _now()
         now_iso = _iso(now_dt)
 
+        op_digest = compute_canonical_operation_digest(
+            "EMERGENCY_CONTAINMENT",
+            {
+                "org_id": org_id,
+                "target_type": target_type,
+                "target_id": target_id,
+                "containment_action": containment_action,
+            },
+        )
+
         async with self._engine.raw.begin() as conn:
-            # Step-up verification if assertion provided
-            step_up_info = None
-            if webauthn_assertion:
-                op_digest = compute_canonical_operation_digest(
-                    "EMERGENCY_CONTAINMENT",
-                    {
-                        "org_id": org_id,
-                        "target_type": target_type,
-                        "target_id": target_id,
-                        "containment_action": containment_action,
-                    },
-                )
-                step_up_info = await self._verify_webauthn_stepup_on_conn(
-                    conn,
-                    actor=actor,
-                    org_id=org_id,
-                    action="EMERGENCY_CONTAINMENT",
-                    operation_digest=op_digest,
-                    assertion=webauthn_assertion,
-                )
+            # Step-up verification
+            step_up_info = await self._verify_webauthn_stepup_on_conn(
+                conn,
+                actor=actor,
+                org_id=org_id,
+                action="EMERGENCY_CONTAINMENT",
+                operation_digest=op_digest,
+                assertion=webauthn_assertion,
+            )
 
             # 1. Authoritative epoch bump
             new_epoch = await bump_epoch_on_connection(conn, org_id)
@@ -1609,8 +1614,22 @@ class CustomerAuthorityService:
                 )
                 affected_records["organization_lockdown"] = True
 
-            # Insert containment record
-            containment_id = f"wp_cnt_{uuid.uuid4().hex}"
+        # Invalidate in-flight executions before finalizing containment status
+        containment_status = "CONTAINED"
+        termination_error: str | None = None
+        try:
+            from responsibleai.isolation.in_flight import InFlightExecutionRegistry
+            registry = InFlightExecutionRegistry.get_instance()
+            await registry.terminate_in_flight(organization_id=org_id)
+            if registry.count_unresolved(org_id) > 0:
+                containment_status = "UNRESOLVED"
+        except Exception as exc:
+            containment_status = "UNRESOLVED"
+            termination_error = str(exc)
+
+        # Record containment record and audit log with confirmed vs unresolved status
+        containment_id = f"wp_cnt_{uuid.uuid4().hex}"
+        async with self._engine.raw.begin() as conn:
             await conn.execute(
                 authority_containment_records.insert().values(
                     id=containment_id,
@@ -1620,7 +1639,7 @@ class CustomerAuthorityService:
                     target_id=target_id,
                     containment_action=containment_action,
                     reason=reason,
-                    status="CONTAINED",
+                    status=containment_status,
                     revocation_epoch=new_epoch,
                     contained_at=now_iso,
                 )
@@ -1634,26 +1653,21 @@ class CustomerAuthorityService:
                 org_id=org_id,
                 target_type=target_type,
                 target_id=target_id,
-                result="SUCCESS",
+                result="SUCCESS" if containment_status == "CONTAINED" else "UNRESOLVED",
                 conn=conn,
                 metadata={
                     "containment_id": containment_id,
                     "containment_action": containment_action,
                     "reason": reason,
                     "epoch": new_epoch,
+                    "status": containment_status,
                     "step_up": step_up_info is not None,
+                    "termination_error": termination_error,
                 },
             )
 
-        # Invalidate in-flight executions
-        try:
-            from responsibleai.isolation.in_flight import InFlightExecutionRegistry
-            await InFlightExecutionRegistry.get_instance().terminate_in_flight(organization_id=org_id)
-        except Exception:
-            pass
-
-        return {
-            "status": "CONTAINED",
+        ret: dict[str, Any] = {
+            "status": containment_status,
             "containment_id": containment_id,
             "organization_id": org_id,
             "target_type": target_type,
@@ -1663,6 +1677,9 @@ class CustomerAuthorityService:
             "contained_at": now_iso,
             "affected_records": affected_records,
         }
+        if termination_error is not None:
+            ret["termination_error"] = termination_error
+        return ret
 
     # ── M-of-N Quorum Recovery (Founder Decision B) ───────────────────────────
 

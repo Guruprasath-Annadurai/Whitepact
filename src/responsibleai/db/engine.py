@@ -2733,7 +2733,7 @@ authority_step_up_challenges = Table(
 authority_containment_records = Table(
     "authority_containment_records",
     metadata,
-    Column("id", String(36), primary_key=True),
+    Column("id", String(64), primary_key=True),
     Column("org_id", String(36), nullable=False),
     Column("responder_user_id", String(36), nullable=False),
     Column("target_type", String(32), nullable=False),
@@ -2751,7 +2751,7 @@ authority_containment_records = Table(
 authority_recovery_requests = Table(
     "authority_recovery_requests",
     metadata,
-    Column("id", String(36), primary_key=True),
+    Column("id", String(64), primary_key=True),
     Column("org_id", String(36), nullable=False),
     Column("request_type", String(32), nullable=False),
     Column("target_root_id", String(36), nullable=True),
@@ -2772,8 +2772,8 @@ authority_recovery_requests = Table(
 authority_recovery_votes = Table(
     "authority_recovery_votes",
     metadata,
-    Column("id", String(36), primary_key=True),
-    Column("request_id", String(36), ForeignKey("authority_recovery_requests.id", ondelete="CASCADE"), nullable=False),
+    Column("id", String(64), primary_key=True),
+    Column("request_id", String(64), ForeignKey("authority_recovery_requests.id", ondelete="CASCADE"), nullable=False),
     Column("voter_user_id", String(36), nullable=False),
     Column("decision", String(20), nullable=False),
     Column("action_digest", String(64), nullable=False),
