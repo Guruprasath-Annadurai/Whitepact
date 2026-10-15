@@ -1,0 +1,259 @@
+{
+  "measurement": "real HTTP (uvicorn, 1 worker) + real PostgreSQL, API-key authenticated",
+  "not_included": [
+    "TLS",
+    "reverse proxy",
+    "multiple workers or replicas",
+    "database on another host",
+    "governed execution in a container",
+    "MCP transport",
+    "client and server on separate machines (they share this host)"
+  ],
+  "is_an_slo": false,
+  "route_limiter": "OFF (plan limiter ON)",
+  "unauthorized_effects": 0,
+  "evidence_rows_for_org": 3990,
+  "hardware": {
+    "machine": "arm64",
+    "os": "macOS-27.0.1-arm64-arm-64bit",
+    "python": "3.12.13"
+  },
+  "source_commit": "e67bfa1c1ff4e87472efc7d473629710539e7b42",
+  "results": [
+    {
+      "workload": "authenticated read",
+      "concurrency": 1,
+      "requests": 400,
+      "ok": 400,
+      "errors": {},
+      "outcomes": {
+        "ok": 400
+      },
+      "error_rate": 0.0,
+      "duration_s": 6.99,
+      "throughput_rps": 57.2,
+      "p50_ms": 16.3,
+      "p95_ms": 24.5,
+      "p99_ms": 33.5,
+      "mean_ms": 17.4
+    },
+    {
+      "workload": "DENY / quarantine refusal (no authority) + evidence write",
+      "concurrency": 1,
+      "requests": 400,
+      "ok": 400,
+      "errors": {},
+      "outcomes": {
+        "governance_denied": 400
+      },
+      "error_rate": 0.0,
+      "duration_s": 11.6,
+      "throughput_rps": 34.5,
+      "p50_ms": 26.7,
+      "p95_ms": 36.6,
+      "p99_ms": 53.8,
+      "mean_ms": 29.0
+    },
+    {
+      "workload": "REQUIRE_APPROVAL + evidence + approval row",
+      "concurrency": 1,
+      "requests": 400,
+      "ok": 400,
+      "errors": {},
+      "outcomes": {
+        "governance_approval_required": 400
+      },
+      "error_rate": 0.0,
+      "duration_s": 23.31,
+      "throughput_rps": 17.2,
+      "p50_ms": 56.4,
+      "p95_ms": 68.6,
+      "p99_ms": 82.3,
+      "mean_ms": 58.2,
+      "approval_rows_created": 400,
+      "approval_rows_match_ok_responses": true,
+      "server_after_level": {
+        "rss_mb": 143.7,
+        "cpu_seconds": 19.51
+      }
+    },
+    {
+      "workload": "authenticated read",
+      "concurrency": 10,
+      "requests": 400,
+      "ok": 400,
+      "errors": {},
+      "outcomes": {
+        "ok": 400
+      },
+      "error_rate": 0.0,
+      "duration_s": 2.4,
+      "throughput_rps": 166.6,
+      "p50_ms": 51.0,
+      "p95_ms": 132.8,
+      "p99_ms": 204.4,
+      "mean_ms": 59.4
+    },
+    {
+      "workload": "DENY / quarantine refusal (no authority) + evidence write",
+      "concurrency": 10,
+      "requests": 400,
+      "ok": 400,
+      "errors": {},
+      "outcomes": {
+        "governance_denied": 400
+      },
+      "error_rate": 0.0,
+      "duration_s": 4.64,
+      "throughput_rps": 86.1,
+      "p50_ms": 100.6,
+      "p95_ms": 207.0,
+      "p99_ms": 358.8,
+      "mean_ms": 115.4
+    },
+    {
+      "workload": "REQUIRE_APPROVAL + evidence + approval row",
+      "concurrency": 10,
+      "requests": 400,
+      "ok": 400,
+      "errors": {},
+      "outcomes": {
+        "governance_approval_required": 400
+      },
+      "error_rate": 0.0,
+      "duration_s": 8.81,
+      "throughput_rps": 45.4,
+      "p50_ms": 212.7,
+      "p95_ms": 327.5,
+      "p99_ms": 353.1,
+      "mean_ms": 218.7,
+      "approval_rows_created": 400,
+      "approval_rows_match_ok_responses": true,
+      "server_after_level": {
+        "rss_mb": 195.6,
+        "cpu_seconds": 33.83
+      }
+    },
+    {
+      "workload": "authenticated read",
+      "concurrency": 100,
+      "requests": 400,
+      "ok": 400,
+      "errors": {},
+      "outcomes": {
+        "ok": 400
+      },
+      "error_rate": 0.0,
+      "duration_s": 5.18,
+      "throughput_rps": 77.2,
+      "p50_ms": 916.1,
+      "p95_ms": 2017.1,
+      "p99_ms": 2477.1,
+      "mean_ms": 1011.3
+    },
+    {
+      "workload": "DENY / quarantine refusal (no authority) + evidence write",
+      "concurrency": 100,
+      "requests": 400,
+      "ok": 400,
+      "errors": {},
+      "outcomes": {
+        "governance_denied": 400
+      },
+      "error_rate": 0.0,
+      "duration_s": 6.63,
+      "throughput_rps": 60.3,
+      "p50_ms": 1254.3,
+      "p95_ms": 3925.1,
+      "p99_ms": 4274.7,
+      "mean_ms": 1553.0
+    },
+    {
+      "workload": "REQUIRE_APPROVAL + evidence + approval row",
+      "concurrency": 100,
+      "requests": 400,
+      "ok": 400,
+      "errors": {},
+      "outcomes": {
+        "governance_approval_required": 400
+      },
+      "error_rate": 0.0,
+      "duration_s": 10.83,
+      "throughput_rps": 36.9,
+      "p50_ms": 1907.9,
+      "p95_ms": 7139.2,
+      "p99_ms": 7978.6,
+      "mean_ms": 2538.0,
+      "approval_rows_created": 400,
+      "approval_rows_match_ok_responses": true,
+      "server_after_level": {
+        "rss_mb": 176.7,
+        "cpu_seconds": 49.28
+      }
+    },
+    {
+      "workload": "authenticated read",
+      "concurrency": 1000,
+      "requests": 3000,
+      "ok": 1318,
+      "errors": {
+        "ConnectError": 1681,
+        "ReadError": 1
+      },
+      "outcomes": {
+        "ok": 1318
+      },
+      "error_rate": 0.5607,
+      "duration_s": 15.94,
+      "throughput_rps": 82.7,
+      "p50_ms": 11403.7,
+      "p95_ms": 14511.0,
+      "p99_ms": 14609.2,
+      "mean_ms": 10242.5
+    },
+    {
+      "workload": "DENY / quarantine refusal (no authority) + evidence write",
+      "concurrency": 1000,
+      "requests": 3000,
+      "ok": 620,
+      "errors": {
+        "ConnectError": 2380
+      },
+      "outcomes": {
+        "governance_denied": 620
+      },
+      "error_rate": 0.7933,
+      "duration_s": 17.22,
+      "throughput_rps": 36.0,
+      "p50_ms": 11196.2,
+      "p95_ms": 16247.2,
+      "p99_ms": 17017.6,
+      "mean_ms": 10589.0
+    },
+    {
+      "workload": "REQUIRE_APPROVAL + evidence + approval row",
+      "concurrency": 1000,
+      "requests": 3000,
+      "ok": 970,
+      "errors": {
+        "ConnectError": 2030
+      },
+      "outcomes": {
+        "governance_approval_required": 970
+      },
+      "error_rate": 0.6767,
+      "duration_s": 32.23,
+      "throughput_rps": 30.1,
+      "p50_ms": 28502.5,
+      "p95_ms": 31540.9,
+      "p99_ms": 31904.8,
+      "mean_ms": 26971.1,
+      "approval_rows_created": 970,
+      "approval_rows_match_ok_responses": true,
+      "server_after_level": {
+        "rss_mb": 243.2,
+        "cpu_seconds": 89.14
+      }
+    }
+  ]
+}

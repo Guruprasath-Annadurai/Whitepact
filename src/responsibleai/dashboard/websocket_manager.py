@@ -13,6 +13,7 @@ Enterprise features:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 from typing import Any
 
@@ -21,6 +22,11 @@ from fastapi import WebSocket
 logger = logging.getLogger(__name__)
 
 _HEARTBEAT_INTERVAL = 30  # seconds
+
+
+def _key_fingerprint(api_key: str) -> str:
+    """A log-safe, non-reversible label for a credential. Never log any part of the key itself."""
+    return hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:12]
 
 
 class ConnectionManager:
@@ -49,7 +55,10 @@ class ConnectionManager:
         self._connections.setdefault(api_key, []).append(websocket)
         logger.info(
             "ws_connected",
-            extra={"api_key_prefix": api_key[:8] + "...", "total": self.connection_count},
+            extra={
+                "api_key_fingerprint": _key_fingerprint(api_key),
+                "total": self.connection_count,
+            },
         )
 
     def disconnect(self, websocket: WebSocket, api_key: str) -> None:
@@ -60,7 +69,10 @@ class ConnectionManager:
             self._connections.pop(api_key, None)
         logger.info(
             "ws_disconnected",
-            extra={"api_key_prefix": api_key[:8] + "...", "total": self.connection_count},
+            extra={
+                "api_key_fingerprint": _key_fingerprint(api_key),
+                "total": self.connection_count,
+            },
         )
 
     # ── Broadcast ─────────────────────────────────────────────────────────────

@@ -1,0 +1,7 @@
+# Direct tested consumer dependencies; not a complete transitive release lock.
+crewai==1.15.28
+llama-index-core==0.14.25
+httpx==0.28.1
+pytest==9.1.1
+pytest-asyncio==1.4.0
+ruff==0.17.0

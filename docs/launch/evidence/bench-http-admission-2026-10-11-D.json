@@ -1,0 +1,158 @@
+{
+  "measurement": "real HTTP (uvicorn, 1 process(es), client-side round robin) + real PostgreSQL, API-key authenticated",
+  "max_inflight_requests": 16,
+  "not_included": [
+    "TLS",
+    "reverse proxy",
+    "multiple workers or replicas",
+    "database on another host",
+    "governed execution in a container",
+    "MCP transport",
+    "client and server on separate machines (they share this host)"
+  ],
+  "is_an_slo": false,
+  "route_limiter": "OFF (plan limiter ON)",
+  "unauthorized_effects": 0,
+  "evidence_rows_for_org": 934,
+  "hardware": {
+    "machine": "arm64",
+    "os": "macOS-27.0.1-arm64-arm-64bit",
+    "python": "3.12.13"
+  },
+  "source_commit": "9c917570a73f370f7ca149706986cb28a9ce5a7d",
+  "results": [
+    {
+      "workload": "authenticated read",
+      "concurrency": 50,
+      "requests": 400,
+      "ok": 306,
+      "errors": {
+        "http_503": 94
+      },
+      "outcomes": {
+        "ok": 306
+      },
+      "error_rate": 0.235,
+      "duration_s": 5.22,
+      "throughput_rps": 58.6,
+      "p50_ms": 481.0,
+      "p95_ms": 2224.3,
+      "p99_ms": 3114.8,
+      "mean_ms": 746.7
+    },
+    {
+      "workload": "DENY / quarantine refusal (no authority) + evidence write",
+      "concurrency": 50,
+      "requests": 400,
+      "ok": 299,
+      "errors": {
+        "http_503": 100,
+        "ReadError": 1
+      },
+      "outcomes": {
+        "governance_denied": 299
+      },
+      "error_rate": 0.2525,
+      "duration_s": 7.77,
+      "throughput_rps": 38.5,
+      "p50_ms": 834.5,
+      "p95_ms": 2186.0,
+      "p99_ms": 3205.0,
+      "mean_ms": 954.0
+    },
+    {
+      "workload": "REQUIRE_APPROVAL + evidence + approval row",
+      "concurrency": 50,
+      "requests": 400,
+      "ok": 125,
+      "errors": {
+        "http_503": 275
+      },
+      "outcomes": {
+        "governance_approval_required": 125
+      },
+      "error_rate": 0.6875,
+      "duration_s": 4.02,
+      "throughput_rps": 31.1,
+      "p50_ms": 773.4,
+      "p95_ms": 1601.0,
+      "p99_ms": 2304.5,
+      "mean_ms": 872.0,
+      "approval_rows_created": 125,
+      "approval_rows_match_ok_responses": true,
+      "server_after_level": [
+        {
+          "rss_mb": 231.4,
+          "cpu_seconds": 19.49
+        }
+      ]
+    },
+    {
+      "workload": "authenticated read",
+      "concurrency": 100,
+      "requests": 400,
+      "ok": 215,
+      "errors": {
+        "http_503": 184,
+        "ReadError": 1
+      },
+      "outcomes": {
+        "ok": 215
+      },
+      "error_rate": 0.4625,
+      "duration_s": 6.72,
+      "throughput_rps": 32.0,
+      "p50_ms": 1067.8,
+      "p95_ms": 4618.2,
+      "p99_ms": 5598.6,
+      "mean_ms": 1722.9
+    },
+    {
+      "workload": "DENY / quarantine refusal (no authority) + evidence write",
+      "concurrency": 100,
+      "requests": 400,
+      "ok": 269,
+      "errors": {
+        "http_503": 129,
+        "ReadError": 2
+      },
+      "outcomes": {
+        "governance_denied": 269
+      },
+      "error_rate": 0.3275,
+      "duration_s": 10.17,
+      "throughput_rps": 26.5,
+      "p50_ms": 1814.9,
+      "p95_ms": 4962.4,
+      "p99_ms": 6293.8,
+      "mean_ms": 2095.8
+    },
+    {
+      "workload": "REQUIRE_APPROVAL + evidence + approval row",
+      "concurrency": 100,
+      "requests": 400,
+      "ok": 241,
+      "errors": {
+        "http_503": 159
+      },
+      "outcomes": {
+        "governance_approval_required": 241
+      },
+      "error_rate": 0.3975,
+      "duration_s": 9.79,
+      "throughput_rps": 24.6,
+      "p50_ms": 1716.3,
+      "p95_ms": 5141.8,
+      "p99_ms": 6684.0,
+      "mean_ms": 2215.4,
+      "approval_rows_created": 241,
+      "approval_rows_match_ok_responses": true,
+      "server_after_level": [
+        {
+          "rss_mb": 230.0,
+          "cpu_seconds": 34.27
+        }
+      ]
+    }
+  ]
+}

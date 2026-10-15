@@ -47,6 +47,25 @@ def role_from_str(s: str) -> Role:
         return Role.VIEWER
 
 
+def known_role(value: str) -> Role | None:
+    """Return a directory role only when the claim names one exactly.
+
+    Unknown strings are not viewers. Callers that treat an unrecognized
+    claim as VIEWER would hide a forged role instead of rejecting it.
+    """
+    if not isinstance(value, str):
+        return None
+    key = value.strip().upper()
+    if key not in Role.__members__:
+        return None
+    return Role[key]
+
+
+def role_privilege_rank(role: Role) -> int:
+    """Administrative rank used to detect claim elevation. Not an authority grant."""
+    return _HIERARCHY.get(role, 0)
+
+
 def roles_above(min_role: Role) -> list[Role]:
     """Return all roles that satisfy *min_role* or higher."""
     floor = _HIERARCHY[min_role]

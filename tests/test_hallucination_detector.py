@@ -153,3 +153,23 @@ class TestHallucinationRisk:
         result = self.detector.analyze("Text.")
         with pytest.raises(AttributeError):
             result.risk_level = "none"  # type: ignore[misc]
+
+
+class TestExperimentalHeuristicEdgeCases:
+    """Cover remaining branches of the experimental heuristic detector."""
+
+    @pytest.mark.parametrize(
+        ("score", "level"),
+        [(0.1, "low"), (0.3, "medium"), (0.6, "high"), (0.9, "critical")],
+    )
+    def test_risk_level_bands(self, score: float, level: str) -> None:
+        from responsibleai.hallucination.detector import _risk_level
+
+        assert _risk_level(score) == level
+
+    def test_single_text_consistency_is_one(self) -> None:
+        assert HallucinationDetector()._consistency_score(["only one"]) == 1.0
+
+    def test_stopword_only_texts_fall_back_to_half(self) -> None:
+        # TF-IDF raises ValueError (empty vocabulary) for stop-word-only input.
+        assert HallucinationDetector()._consistency_score(["the a an", "of the"]) == 0.5

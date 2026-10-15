@@ -8,7 +8,6 @@ Redis is never canonical. Failures deny. This module cannot mint ExecutionAuthor
 from __future__ import annotations
 
 import hashlib
-import hmac
 import json
 import secrets
 import time
@@ -19,7 +18,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlparse
 
-from sqlalchemy import insert, select, update
+from sqlalchemy import insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from responsibleai.auth import mfa
@@ -166,11 +165,11 @@ class IdentitySecurityService:
         self.four_eyes = IdentityFourEyesService(self.engine)
 
     def _raw_id_token_permitted(self) -> bool:
-        import os
 
         from responsibleai.dashboard.config import is_production_environment
+        from responsibleai.environment import effective_environment_name
 
-        env = os.environ.get("WHITEPACT_ENV") or os.environ.get("RAI_ENV") or "development"
+        env = effective_environment_name()
         if is_production_environment(env):
             return False
         return bool(self.allow_raw_id_token)
@@ -579,26 +578,36 @@ class IdentitySecurityService:
             ).fetchone()
             if row is None or not row.pending_secret_encrypted:
                 raise forbidden(MFA_REQUIRED, "No TOTP enrollment in progress.")
-            if not mfa.verify_code(row.pending_secret_encrypted, code):
+            now = time.time()
+            matched = mfa.verify_code_with_counter(row.pending_secret_encrypted, code, now=now)
+            if matched is None:
                 await conn.execute(
                     update(human_totp_factors)
                     .where(human_totp_factors.c.user_id == user_id)
                     .values(failed_attempts=int(row.failed_attempts or 0) + 1)
                 )
                 raise forbidden(AUTHENTICATION_FAILED, "Invalid authenticator code.")
-            timestep = int(time.time()) // 30
-            await conn.execute(
+            activated = await conn.execute(
                 update(human_totp_factors)
-                .where(human_totp_factors.c.user_id == user_id)
+                .where(
+                    human_totp_factors.c.user_id == user_id,
+                    human_totp_factors.c.pending_secret_encrypted.is_not(None),
+                    or_(
+                        human_totp_factors.c.last_timestep.is_(None),
+                        human_totp_factors.c.last_timestep < matched,
+                    ),
+                )
                 .values(
                     secret_encrypted=row.pending_secret_encrypted,
                     pending_secret_encrypted=None,
                     status="ACTIVE",
                     confirmed_at=_iso(),
-                    last_timestep=timestep,
+                    last_timestep=matched,
                     failed_attempts=0,
                 )
             )
+            if (activated.rowcount or 0) != 1:
+                raise forbidden(CHALLENGE_REPLAY, "TOTP code already used.")
         await self._notify("totp_added", user_id=user_id)
 
     async def verify_totp(self, user_id: str, code: str) -> None:
@@ -611,17 +620,24 @@ class IdentitySecurityService:
             ).fetchone()
             if row is None or row.status != "ACTIVE":
                 raise forbidden(MFA_REQUIRED, "TOTP is not enrolled.")
-            timestep = int(time.time()) // 30
-            if row.last_timestep is not None and abs(timestep - int(row.last_timestep)) == 0:
-                if hmac.compare_digest(str(row.last_timestep), str(timestep)):
-                    raise forbidden(CHALLENGE_REPLAY, "TOTP code already used.")
-            if not mfa.verify_code(row.secret_encrypted, code):
+            now = time.time()
+            matched = mfa.verify_code_with_counter(row.secret_encrypted, code, now=now)
+            if matched is None:
                 raise forbidden(AUTHENTICATION_FAILED, "Invalid authenticator code.")
-            await conn.execute(
+            consumed = await conn.execute(
                 update(human_totp_factors)
-                .where(human_totp_factors.c.user_id == user_id)
-                .values(last_timestep=timestep, failed_attempts=0)
+                .where(
+                    human_totp_factors.c.user_id == user_id,
+                    human_totp_factors.c.status == "ACTIVE",
+                    or_(
+                        human_totp_factors.c.last_timestep.is_(None),
+                        human_totp_factors.c.last_timestep < matched,
+                    ),
+                )
+                .values(last_timestep=matched, failed_attempts=0)
             )
+            if (consumed.rowcount or 0) != 1:
+                raise forbidden(CHALLENGE_REPLAY, "TOTP code already used.")
 
     async def remove_totp(
         self, *, user_id: str, session: SessionAssurance, grant: str | None = None

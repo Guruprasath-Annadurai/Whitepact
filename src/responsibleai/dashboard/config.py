@@ -16,7 +16,11 @@ from pydantic_settings import (
     PydanticBaseSettingsSource,
     SettingsConfigDict,
 )
-from pydantic_settings.sources import EnvSettingsSource
+from pydantic_settings.sources import DotEnvSettingsSource, EnvSettingsSource
+
+from responsibleai.environment import PRODUCTION_ALIASES as PRODUCTION_ENVIRONMENTS
+from responsibleai.environment import is_production as _process_is_production
+from responsibleai.environment import require_consistent as _require_consistent_environment
 
 # See MIGRATION_WHITEPACT_V2.md Section 5. WHITEPACT_ is the preferred
 # prefix; RAI_ is the legacy prefix, kept fully functional for backward
@@ -24,7 +28,6 @@ from pydantic_settings.sources import EnvSettingsSource
 # these two constants so the precedence rule stays in one place.
 WHITEPACT_ENV_PREFIX = "WHITEPACT_"
 LEGACY_ENV_PREFIX = "RAI_"
-PRODUCTION_ENVIRONMENTS = frozenset({"production", "prod"})
 
 
 def is_production_environment(environment: str) -> bool:
@@ -66,10 +69,21 @@ class Settings(BaseSettings):
             case_sensitive=False,
             env_prefix=WHITEPACT_ENV_PREFIX,
         )
+        # The same WHITEPACT_ prefix must work in a ``.env`` file. Before this source existed, a
+        # WHITEPACT_ENV=production (or WHITEPACT_AUTH_ENABLED, WHITEPACT_VC_SKIP_VERIFICATION, ...)
+        # line in ``.env`` was silently ignored, because the dotenv source only knew the RAI_ prefix.
+        whitepact_dotenv_settings = DotEnvSettingsSource(
+            settings_cls,
+            env_file=getattr(dotenv_settings, "env_file", None),
+            env_file_encoding=getattr(dotenv_settings, "env_file_encoding", None) or "utf-8",
+            case_sensitive=False,
+            env_prefix=WHITEPACT_ENV_PREFIX,
+        )
         return (
             init_settings,
             whitepact_env_settings,
             env_settings,
+            whitepact_dotenv_settings,
             dotenv_settings,
             file_secret_settings,
         )
@@ -98,6 +112,26 @@ class Settings(BaseSettings):
     auth_enabled: bool = Field(
         default=True,
         description="Set to false to disable auth (development only).",
+    )
+
+    max_inflight_requests: int = Field(
+        default=32,
+        ge=0,
+        description=(
+            "Per-process cap on concurrently executing HTTP requests; the excess get an immediate 503 "
+            "with Retry-After (0 disables). A protective bound, not a capacity guarantee: the default "
+            "comes from the single-worker measurements in docs/launch/HTTP_AUTHORIZATION_BENCHMARK.md."
+        ),
+    )
+
+    enterprise_route_ceiling_per_minute: int = Field(
+        default=1200,
+        ge=30,
+        description=(
+            "Per-route, per-organization requests/minute bound for plans whose budget is unlimited. "
+            "An abuse bound, NOT a capacity guarantee: sustained capacity is set by replicas times the "
+            "measured per-process throughput (docs/launch/HTTP_AUTHORIZATION_BENCHMARK.md)."
+        ),
     )
 
     # Rate limiting
@@ -157,6 +191,62 @@ class Settings(BaseSettings):
         ),
         description="Deployment environment (development, staging, production).",
     )
+    policy_governance_mode: Literal["single_admin", "tiered"] = Field(
+        default="single_admin",
+        description=(
+            "Who may change organization policy. single_admin: one OWNER/ADMIN, every change "
+            "attributed (current behaviour). tiered: tightening edits by one admin; loosening "
+            "edits need verified step-up and a second approver (decision paper REC-25, option "
+            "C). Not active unless set; changing it is a founder decision."
+        ),
+    )
+    hsts_stage: Literal["disabled", "initial", "stage1", "stage2"] | None = Field(
+        default=None,
+        validation_alias=AliasChoices("WHITEPACT_HSTS_STAGE", "RAI_HSTS_STAGE"),
+        description=(
+            "Authoritative HSTS stage. Unset uses stage1 in production and "
+            "disabled in every other environment. Year-long max-age is not a default."
+        ),
+    )
+    hsts_include_subdomains: bool | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "WHITEPACT_HSTS_INCLUDE_SUBDOMAINS",
+            "RAI_HSTS_INCLUDE_SUBDOMAINS",
+        ),
+        description="Override includeSubDomains. Unset follows the stage default.",
+    )
+    hsts_preload: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("WHITEPACT_HSTS_PRELOAD", "RAI_HSTS_PRELOAD"),
+        description="Request the HSTS preload token. Ignored unless preload is authorized.",
+    )
+    hsts_preload_authorized: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "WHITEPACT_HSTS_PRELOAD_AUTHORIZED",
+            "RAI_HSTS_PRELOAD_AUTHORIZED",
+        ),
+        description="Owner authorization required before preload is emitted.",
+    )
+    robots_noindex: bool | None = Field(
+        default=None,
+        validation_alias=AliasChoices("WHITEPACT_ROBOTS_NOINDEX", "RAI_ROBOTS_NOINDEX"),
+        description="Unset follows the environment: staging sends noindex, production does not.",
+    )
+
+    authority_read_database_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "WHITEPACT_AUTHORITY_READ_DATABASE_URL",
+            "authority_read_database_url",
+        ),
+        description=(
+            "Database URL for a dedicated least-privilege role used ONLY by the read-only "
+            "authority tools (SELECT on six authority tables + limiter counters). In production "
+            "the tools are not advertised and refuse to run unless this is set."
+        ),
+    )
 
     # PostgreSQL (optional — defaults to SQLite via db_path)
     database_url: str | None = Field(
@@ -206,6 +296,20 @@ class Settings(BaseSettings):
             "and remains a distinct, documented trust domain."
         ),
     )
+    mcp_trust_domain: Literal["community", "enterprise"] = Field(
+        default="community",
+        validation_alias=AliasChoices(
+            "mcp_trust_domain",
+            "WHITEPACT_MCP_TRUST_DOMAIN",
+            "RAI_MCP_TRUST_DOMAIN",
+        ),
+        description=(
+            "MCP stdio entrypoint trust domain. 'community' (default): "
+            "documented local self-hosted stdio without organizational governance. "
+            "'enterprise': stdio MCP refuses to start; use hosted MCP with "
+            "mcp_governance_enabled and tenant-scoped credentials."
+        ),
+    )
 
     # Redis (optional — falls back to in-memory rate limiting)
     redis_url: str | None = Field(
@@ -220,14 +324,11 @@ class Settings(BaseSettings):
             "Set true when running more than one instance of this process "
             "(load-balanced replicas, Kubernetes with replicas>1, etc.). "
             "Purely a self-declaration for a startup readiness check — it "
-            "does not itself change any behavior. In-memory rate limiting "
+            "does not itself change counter storage. In-memory rate limiting "
             "and SQLite each give per-instance-only state, which is silently "
-            "wrong (not just slow) once more than one instance shares "
-            "traffic: each replica enforces its own separate rate-limit "
-            "counter and its own separate database. Declaring this lets "
-            "startup warn loudly about that instead of the failure mode "
-            "being 'requests occasionally get 2x the intended rate limit "
-            "and no one knows why.'"
+            "wrong once more than one instance shares traffic. Production "
+            "refuses to start when this flag is set and those backends are "
+            "not shared. Non-production logs a warning."
         ),
     )
 
@@ -529,7 +630,10 @@ class Settings(BaseSettings):
 
     @property
     def is_production(self) -> bool:
-        return is_production_environment(self.environment)
+        # The field, OR any recognised variable, a conflict or an unrecognised name: the
+        # most restrictive reading wins, so Settings can never be "development" while the
+        # isolation gate, preflights or key service see production.
+        return is_production_environment(self.environment) or _process_is_production()
 
     @property
     def leaderboard_api_keys(self) -> dict[str, str | None]:
@@ -584,6 +688,33 @@ class Settings(BaseSettings):
         raise ValueError("web_verification_delivery_url must use HTTPS outside local development")
 
     @model_validator(mode="after")
+    def _enforce_mcp_trust_domain(self) -> Settings:
+        from responsibleai.mcp.trust_domain import assert_production_mcp_trust_domain
+
+        assert_production_mcp_trust_domain(self)
+        return self
+
+    @model_validator(mode="after")
+    def _enforce_enterprise_staging_governance(self) -> Settings:
+        """In staging and production, four-eyes tiered governance is the explicit policy.
+
+        Refuses weaker modes (e.g. single_admin) in staging and production environments.
+        Defaults to 'tiered' when unconfigured in staging and production.
+        """
+        env = (self.environment or "").strip().lower()
+        is_staging_or_prod = env in {"staging"} or is_production_environment(env)
+        if is_staging_or_prod:
+            mode = getattr(self, "policy_governance_mode", None)
+            if mode is None or "policy_governance_mode" not in self.model_fields_set:
+                object.__setattr__(self, "policy_governance_mode", "tiered")
+            elif mode.strip().lower() != "tiered":
+                raise ValueError(
+                    f"Enterprise {env} environment requires policy_governance_mode='tiered' "
+                    f"(four-eyes governance); weaker mode '{mode}' is strictly prohibited."
+                )
+        return self
+
+    @model_validator(mode="after")
     def _enforce_paddle_environment(self) -> Settings:
         """Keep Paddle credentials and API traffic in one explicit environment."""
         if not self.paddle_api_key:
@@ -598,6 +729,45 @@ class Settings(BaseSettings):
             raise ValueError("Paddle API credential does not match sandbox environment.")
         if self.paddle_env == "production" and api_key.startswith("pdl_sdbx_"):
             raise ValueError("Paddle API credential does not match production environment.")
+        return self
+
+    @model_validator(mode="before")
+    @classmethod
+    def _enforce_consistent_environment(cls, data: Any) -> Any:
+        """Refuse to start when the environment variables disagree about production.
+
+        Runs before every other validator so the operator sees the real cause, not a
+        downstream production-only complaint.
+        """
+        try:
+            _require_consistent_environment()
+        except RuntimeError as exc:
+            raise ValueError(str(exc)) from exc
+        return data
+
+    @model_validator(mode="after")
+    def _refuse_unsafe_flags_in_production(self) -> Settings:
+        """Development conveniences that remove authentication or session protection must never be on
+        in production, whichever way they were configured (environment variable, ``.env`` file or code).
+        Boot-time preflights read some of these from ``os.environ`` only; this check sees the resolved
+        value."""
+        if not self.is_production:
+            return self
+        unsafe = [
+            name
+            for name, on in (
+                ("oidc_skip_verification", self.oidc_skip_verification),
+                ("vc_skip_verification", self.vc_skip_verification),
+                ("mcp_http_allow_unauthenticated_demo", self.mcp_http_allow_unauthenticated_demo),
+                ("web_auth_dev_tokens", self.web_auth_dev_tokens),
+                ("web_session_insecure (web_session_secure=false)", not self.web_session_secure),
+            )
+            if on
+        ]
+        if unsafe:
+            raise ValueError(
+                "Production refuses development-only settings: " + ", ".join(unsafe) + "."
+            )
         return self
 
     @model_validator(mode="after")
@@ -619,13 +789,13 @@ class Settings(BaseSettings):
                 f"Conflicting database URLs configured simultaneously in: {configured_names}. "
                 "Canonical precedence selected the highest-priority variable."
             )
-            if self.environment.lower() in {"production", "prod"}:
+            if self.is_production:
                 raise ValueError(
                     f"{conflict_msg} Multiple conflicting database URLs are not allowed in production."
                 )
             warnings.warn(conflict_msg, UserWarning, stacklevel=2)
 
-        if self.environment.lower() in {"production", "prod"}:
+        if self.is_production:
             if not self.database_url:
                 raise ValueError(
                     "Production environment requires DATABASE_URL (or WHITEPACT_DATABASE_URL / RAI_DATABASE_URL). "
@@ -700,6 +870,19 @@ def multi_replica_problems(db_backend: str, rate_limit_backend: str) -> list[str
             "across replicas."
         )
     return problems
+
+
+def enforce_shared_backends_for_multi_replica(*, production: bool, problems: list[str]) -> None:
+    """Production must not advertise a shared ceiling it cannot enforce.
+
+    Non-production keeps the warning path so local SQLite work is possible.
+    """
+    if production and problems:
+        raise RuntimeError(
+            "Refusing to start production with multi-replica mode while "
+            "shared backends are missing. Each replica would enforce its "
+            "own counters. " + " ".join(problems)
+        )
 
 
 _settings: Settings | None = None

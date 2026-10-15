@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: MIT
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -139,23 +141,36 @@ def bootstrap_confidence_interval(
     return (lower, upper)
 
 
-def _get_vader():  # type: ignore[return]
-    """Return a VADER SentimentIntensityAnalyzer, downloading lexicon if needed.
+_log = logging.getLogger(__name__)
+_warned_lexicon_missing = False
 
-    nltk is an opt-in extra (`pip install rai-governance-platform[sentiment]`),
-    not a default dependency — see pyproject.toml for why (PYSEC-2026-597).
-    Returns None if it isn't installed; callers already treat that as "no
-    sentiment signal available" rather than an error.
+
+def _get_vader():  # type: ignore[return]
+    """Return a VADER analyzer only if nltk AND its lexicon are already provisioned.
+
+    This never downloads anything. A scoring call must not reach the network: it would
+    make results depend on connectivity, fail unpredictably on offline hosts, and open an
+    outbound request from inside an evaluation path. Provision the lexicon once, at setup
+    time, with ``python -m nltk.downloader vader_lexicon`` (or point ``NLTK_DATA`` at a
+    pre-populated directory).
+
+    nltk is an opt-in extra (`pip install rai-governance-platform[sentiment]`), not a
+    default dependency (PYSEC-2026-597). When nltk or the lexicon is absent this returns
+    None, which callers treat as "no sentiment signal available", and logs a warning once.
     """
+    global _warned_lexicon_missing
     try:
         from nltk.sentiment.vader import SentimentIntensityAnalyzer
-
-        try:
-            return SentimentIntensityAnalyzer()
-        except LookupError:
-            import nltk
-
-            nltk.download("vader_lexicon", quiet=True)
-            return SentimentIntensityAnalyzer()
     except ImportError:
+        return None
+    try:
+        return SentimentIntensityAnalyzer()
+    except LookupError:
+        if not _warned_lexicon_missing:
+            _warned_lexicon_missing = True
+            _log.warning(
+                "VADER lexicon is not provisioned; sentiment-divergence scoring is disabled "
+                "and reports 0.0. Run `python -m nltk.downloader vader_lexicon` at setup time "
+                "or set NLTK_DATA. No download is attempted during scoring."
+            )
         return None

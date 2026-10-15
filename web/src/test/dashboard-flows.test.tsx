@@ -252,7 +252,7 @@ describe("dashboard and onboarding", () => {
   it("surfaces missing evidence detail without inventing an attestation", async () => {
     vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify({ detail: "Evidence record not found." }), { status: 404 }));
     render(<MemoryRouter initialEntries={["/dashboard/evidence?evidence=missing"]}><EvidenceContractPanel records={[]} /></MemoryRouter>);
-    expect(await screen.findByRole("alert")).toHaveTextContent("Request failed (404)");
+    expect(await screen.findByText("Evidence record not found or unavailable to this session.")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Evidence attestation" })).not.toBeInTheDocument();
   });
 
@@ -331,7 +331,7 @@ describe("dashboard and onboarding", () => {
     const user=userEvent.setup(); const fetchMock=vi.spyOn(window,"fetch").mockResolvedValueOnce(new Response(JSON.stringify({items:[{approval_id:"appr-net",action_type:"tool.call",target:"tool",status:"PENDING"}],source:"approval_repository"}),{status:200})).mockResolvedValueOnce(new Response(JSON.stringify(approvalDetail({approval_id:"appr-net",action_type:"tool.call",target:"tool"})),{status:200})).mockRejectedValueOnce(new TypeError("Network unavailable"));
     const Parent=()=> <Outlet context={session}/>; render(<MemoryRouter initialEntries={["/dashboard/approvals"]}><Routes><Route element={<Parent/>}><Route path="/dashboard/:domain" element={<DomainPage/>}/></Route></Routes></MemoryRouter>);
     await user.click(await screen.findByRole("button",{name:"Approve"})); await user.click(screen.getByRole("button",{name:"Confirm approved"}));
-    expect(await screen.findByRole("heading", { name: "Request could not be completed" })).toBeInTheDocument(); expect(screen.getByText("Network unavailable")).toBeInTheDocument(); expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(await screen.findByRole("heading", { name: "Approval outcome is uncertain" })).toBeInTheDocument(); expect(screen.getByText(/No execution request was sent/i)).toBeInTheDocument(); expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it("collects onboarding data through all three steps", async () => {

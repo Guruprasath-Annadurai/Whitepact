@@ -1,0 +1,22 @@
+# Copy to terraform.tfvars locally — NEVER commit.
+# Or export TF_VAR_admin_cidr_allowlist='["YOUR.PUBLIC.IP.ADDRESS/32"]' with HCLOUD_TOKEN set.
+
+location = "fsn1"
+
+saas_server_type      = "cx33"
+authority_server_type = "cx33"
+execution_server_type = "cx23"
+
+# Operator home/VPN egress — REQUIRED (approved Gate 1: SSH via NAT only)
+admin_cidr_allowlist = ["YOUR.PUBLIC.IP.ADDRESS/32"]
+
+# Documentation prefixes only. Replace with the real upstreams before apply.
+# 203.0.113.0/24 is TEST-NET-3 and does not reach a customer MCP server.
+execution_egress_cidrs = ["203.0.113.10/32"]
+
+# Documentation prefix only. Replace with the Cloudflare R2 API ranges the
+# owner accepts. The NAT gateway will not add a world-wide tcp/443 rule.
+authority_egress_cidrs = ["10.255.0.1/32"]
+
+# Documentation prefix only. Replace with package-mirror or registry ranges.
+saas_egress_cidrs = ["10.255.0.3/32"]

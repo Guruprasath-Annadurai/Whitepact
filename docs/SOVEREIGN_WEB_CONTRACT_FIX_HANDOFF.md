@@ -68,4 +68,4 @@
 
 - Authority **expected** remains manifest/CLI-side; no separate HTTP surface on Core.
 - Policy **validate** is an alias of **lint** (same route).
-- Browser GET status/capabilities remain unauthenticated mirrors of Core negotiation.
+- Browser GET status/capabilities require the same authenticated active-tenant principal as other sovereign reads. They are not public.

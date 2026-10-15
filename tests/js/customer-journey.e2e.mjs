@@ -7,9 +7,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 
-const baseUrl = process.env.WHITEPACT_TEST_BASE_URL ?? "http://127.0.0.1:18765";
+const testPort = process.env.WHITEPACT_TEST_PORT ?? "18765";
+const baseUrl = process.env.WHITEPACT_TEST_BASE_URL ?? `http://127.0.0.1:${testPort}`;
 const managed = !process.env.WHITEPACT_TEST_BASE_URL;
-const databaseUrl = process.env.WHITEPACT_TEST_DATABASE_URL ?? "sqlite:///:memory:";
+const dbPath = path.join(os.tmpdir(), `whitepact-customer-journey-${Date.now()}.db`);
+const databaseUrl = process.env.WHITEPACT_TEST_DATABASE_URL ?? `sqlite:///${dbPath}`;
 const password = "Journey-Secure-42!";
 const email = `journey-${Date.now()}@example.com`;
 const repositoryRoot = process.env.WHITEPACT_TEST_REPOSITORY_ROOT
@@ -41,12 +43,13 @@ async function waitForReady(url, timeoutMs = 30000) {
 
 async function startServer() {
   if (!managed) return null;
+  if (!process.env.WHITEPACT_TEST_DATABASE_URL) fs.closeSync(fs.openSync(dbPath, "w"));
   const env = {
     ...process.env,
     RAI_AUTH_ENABLED: "false",
     WHITEPACT_AUTH_ENABLED: "false",
-    RAI_DB_PATH: ":memory:",
-    WHITEPACT_DB_PATH: ":memory:",
+    RAI_DB_PATH: dbPath,
+    WHITEPACT_DB_PATH: dbPath,
     RAI_AUTO_MIGRATE: "true",
     WHITEPACT_WEB_AUTH_DEV_TOKENS: "true",
     RAI_WEB_AUTH_DEV_TOKENS: "true",
@@ -59,11 +62,19 @@ async function startServer() {
     RAI_AUTH_ENABLED: "true",
     RAI_LOG_LEVEL: "WARNING",
     PHASE7A_DISPATCHER_ENABLED: "false",
+    WHITEPACT_UNIFIED_SAAS: "1",
+    // Isolation is required: no WHITEPACT_ALLOW_UNISOLATED_EXECUTION is set here, so any
+    // real tool would run in a container. This journey's only governed tool is the
+    // test-only fixture test.counter.increment, which writes to this server's own
+    // database and therefore cannot run in a network-less container. This switch lets that
+    // one fixture, and nothing else, run host-side in a non-production server. Real
+    // container isolation is exercised by tests/test_isolation_real_tool_e2e.py.
+    WHITEPACT_ALLOW_SYNTHETIC_HOST_TOOL: "1",
   };
   if (process.env.WHITEPACT_TEST_DATABASE_URL) env.WHITEPACT_DATABASE_URL = databaseUrl;
   const child = spawn(
     testPython,
-    ["-m", "uvicorn", "responsibleai.dashboard.app:app", "--host", "127.0.0.1", "--port", "18765"],
+    ["-m", "uvicorn", "responsibleai.dashboard.app:app", "--host", "127.0.0.1", "--port", testPort],
     { cwd: repositoryRoot, env, stdio: "inherit" },
   );
   await waitForReady(baseUrl);
@@ -112,7 +123,8 @@ try {
   await page.getByRole("button", { name: /create account/i }).click();
   const registerResponse = await registerWait;
   const registerBody = await registerResponse.json().catch(() => ({}));
-  console.log("register", registerResponse.status(), registerBody, "url", page.url());
+  // Registration bodies and verification URLs may contain one-use credentials.
+  console.log("register HTTP status", registerResponse.status());
   // Signup may auto-navigate to verify-email when the API returns verification_url;
   // waiting avoids racing page.goto() against that redirect (Playwright "interrupted navigation").
   await page.waitForURL(/verify-email/, { timeout: 15000 });
@@ -130,6 +142,13 @@ try {
   await page.getByRole("button", { name: /continue/i }).click();
   await page.getByRole("button", { name: /create workspace/i }).click();
   await page.waitForURL(/dashboard/, { timeout: 15000 });
+
+  const legacySettings = await context.request.get(`${baseUrl}/settings`);
+  check(legacySettings.status() === 404, `legacy /settings retired (${legacySettings.status()})`);
+  const legacyShell = await context.request.get(`${baseUrl}/static/index.html`);
+  check(legacyShell.status() === 404, `legacy static index retired (${legacyShell.status()})`);
+  const publicAssess = await context.request.get(`${baseUrl}/assess`);
+  check(publicAssess.ok(), `public /assess still available (${publicAssess.status()})`);
 
   const session = await context.request.get(`${baseUrl}/api/v1/web/session`);
   check(session.ok(), `session API ${session.status()}`);
@@ -189,7 +208,7 @@ try {
     ["tests/js/seed_journey_authority.py", "--database-url", databaseUrl, "--api-key", revealed],
     { cwd: repositoryRoot, encoding: "utf8" },
   );
-  check(seed.status === 0, `authority seed exit ${seed.status} ${seed.stderr || seed.stdout}`);
+  check(seed.status === 0, `development authority fixture exit ${seed.status}`);
 
   const csrf = (await context.cookies()).find((cookie) => cookie.name === "wp_csrf")?.value;
   const adminEmail = `admin-${Date.now()}@example.com`;
@@ -329,6 +348,19 @@ try {
   await page.getByText(/no api keys/i).waitFor({ timeout: 10000 });
   const keysAfter = await context.request.get(`${baseUrl}/api/v1/web/api-keys`);
   check((await keysAfter.json()).keys.length === 0, "revoked key absent from backend");
+
+  await page.goto(`${baseUrl}/dashboard/policy`, { waitUntil: "domcontentloaded" });
+  await page.getByRole("heading", { name: "Policy", exact: true }).waitFor();
+  await page.getByLabel(/^rule id$/i).fill("browser-journey-rule");
+  await page.getByLabel(/^reason code$/i).fill("BROWSER_JOURNEY_POLICY");
+  await page.getByRole("button", { name: /add rule/i }).click();
+  await page.getByText("browser-journey-rule").waitFor({ timeout: 10000 });
+  const policyApi = await context.request.get(`${baseUrl}/api/v1/web/policy`);
+  const policyBody = await policyApi.json();
+  check(
+    policyBody.rules?.some((rule) => rule.rule_id === "browser-journey-rule"),
+    "policy rule persisted via SPA",
+  );
 
   await page.getByRole("button", { name: /sign out/i }).click();
   await page.waitForURL(/\/$|login/, { timeout: 15000 });

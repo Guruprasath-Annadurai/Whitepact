@@ -1,8 +1,10 @@
 // Copyright (c) 2026 Guruprasath Annadurai
 // SPDX-License-Identifier: MIT
 import { useEffect } from "react";
+import { siteContract } from "../content/site-origin";
 
-const origin = "https://whitepact.com";
+const site = siteContract(import.meta.env.VITE_WHITEPACT_SITE_ORIGIN, import.meta.env.VITE_WHITEPACT_SITE_PROFILE);
+const origin = site.origin;
 
 export function Seo({ title, description, path = "/", noIndex = false }: { title: string; description: string; path?: string; noIndex?: boolean }) {
   useEffect(() => {
@@ -24,7 +26,7 @@ export function Seo({ title, description, path = "/", noIndex = false }: { title
     upsert('meta[name="twitter:title"]', "content", title);
     upsert('meta[name="twitter:description"]', "content", description);
     upsert('link[rel="canonical"]', "href", `${origin}${path}`);
-    upsert('meta[name="robots"]', "content", noIndex ? "noindex, nofollow" : "index, follow");
+    upsert('meta[name="robots"]', "content", noIndex || site.noIndex ? "noindex, nofollow" : "index, follow");
     document.head.querySelector('script[data-whitepact-structured-data]')?.remove();
     if (path === "/") {
       const node = document.createElement("script");

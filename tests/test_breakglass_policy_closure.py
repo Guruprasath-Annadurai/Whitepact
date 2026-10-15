@@ -56,6 +56,7 @@ from responsibleai.iam.guard import PrivilegedSurfaceGuard
 from responsibleai.iam.models import PrivilegedCallerContext, StepUpProof
 from responsibleai.iam.step_up import StepUpVerifier
 from responsibleai.rbac.models import Role
+from tests.step_up_helpers import valid_totp_code
 
 
 @pytest.fixture
@@ -131,7 +132,7 @@ async def _issue_step_up_proof(
         nonce=nonce,
         method=StepUpMethod.MFA_TOTP,
         auth_time=datetime.now(UTC).isoformat(),
-        token_or_code="123456",
+        token_or_code=await valid_totp_code(engine, org_id, principal_id),
     )
 
 

@@ -264,7 +264,7 @@ async def dispatch_resource(uri: str) -> str:
                     {
                         "id": "authenticity",
                         "weight": 0.10,
-                        "description": "Media authenticity (anti-deepfake)",
+                        "description": "Media authenticity (EXPERIMENTAL: caller-supplied, unvalidated heuristic; not independent evidence)",
                         "probe": "rai_scan",
                     },
                 ],

@@ -12,6 +12,7 @@ call site. This table persists them per-org, ordered by `position`
 db/policy_repository.py. New, additive table; nothing existing is
 touched.
 """
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -28,17 +29,17 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     op.create_table(
         "governance_policies",
-        sa.Column("id",           sa.String(36),  nullable=False),
-        sa.Column("org_id",       sa.String(36),  nullable=False),
-        sa.Column("rule_id",      sa.String(100), nullable=False),
-        sa.Column("reason_code",  sa.String(100), nullable=False),
-        sa.Column("effect",       sa.String(30),  nullable=False),
-        sa.Column("risk_tiers",   sa.Text(),      nullable=True),
-        sa.Column("action_types", sa.Text(),      nullable=True),
-        sa.Column("targets",      sa.Text(),      nullable=True),
-        sa.Column("position",     sa.Integer(),   nullable=False),
-        sa.Column("created_at",   sa.String(32),  nullable=False),
-        sa.Column("updated_at",   sa.String(32),  nullable=False),
+        sa.Column("id", sa.String(36), nullable=False),
+        sa.Column("org_id", sa.String(36), nullable=False),
+        sa.Column("rule_id", sa.String(100), nullable=False),
+        sa.Column("reason_code", sa.String(100), nullable=False),
+        sa.Column("effect", sa.String(30), nullable=False),
+        sa.Column("risk_tiers", sa.Text(), nullable=True),
+        sa.Column("action_types", sa.Text(), nullable=True),
+        sa.Column("targets", sa.Text(), nullable=True),
+        sa.Column("position", sa.Integer(), nullable=False),
+        sa.Column("created_at", sa.String(32), nullable=False),
+        sa.Column("updated_at", sa.String(32), nullable=False),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("idx_gpol_org", "governance_policies", ["org_id"])

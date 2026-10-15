@@ -1,0 +1,107 @@
+name: M12-P Product Excellence Review
+on:
+  push:
+    branches: [codex/whitepact-m12p-product-excellence]
+  pull_request:
+    paths:
+      - 'web/**'
+      - 'scripts/developer/**'
+      - 'tests/test_m12p_*'
+      - 'tests/js/m12p-*'
+      - 'docs/m12p/**'
+      - 'docs/developer/M12P_*'
+      - '.github/workflows/m12p-product-review.yml'
+permissions:
+  contents: read
+jobs:
+  console:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm --prefix web ci --ignore-scripts --no-audit --no-fund
+          npm --prefix web run lint
+          npm --prefix web test
+          npm --prefix web run build
+          git diff --exit-code -- src/responsibleai/dashboard/static/whitepact
+          npx playwright install --with-deps chromium
+          node tests/js/enterprise-console-safety.e2e.mjs
+          node tests/js/m11-enterprise-product.e2e.mjs
+          node --test tests/js/m12p-journey-logging.test.mjs
+  contracts:
+    runs-on: ubuntu-latest
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: /tmp/whitepact-m12p-chromium
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12']
+    services:
+      postgres:
+        # Isolated CI fixture only, never a deployment credential or database.
+        image: postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+        env:
+          POSTGRES_USER: wp
+          POSTGRES_PASSWORD: wp
+          POSTGRES_DB: postgres
+        ports: ['55432:5432']
+        options: >-
+          --health-cmd "pg_isready -U wp"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - run: |
+          python -m pip install -r tests/requirements-m11.txt
+          python -m pip install '.[dashboard,postgres,mcp]' alembic
+          npm --prefix sdk/typescript ci --ignore-scripts --no-audit --no-fund
+          npm --prefix sdk/typescript test
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx playwright install --with-deps chromium
+          python -m build sdk/python --no-isolation --outdir sdk-dist
+      - name: Product, SDK, real local PostgreSQL and MCP contracts
+        env:
+          PYTHONPATH: src:.
+        run: |
+          ruff check scripts/developer examples/developer/m12p_governance_probe.py tests/test_m12p_*.py
+          ruff format --check scripts/developer examples/developer/m12p_governance_probe.py tests/test_m12p_*.py
+          git diff --check
+          python -m pytest tests/formula tests/test_m11_*.py tests/test_m12_*.py tests/test_m12p_*.py tests/test_sdk*.py tests/test_evaluation_benchmark_safety.py tests/test_server_json.py tests/test_customer_real_approval_journey.py tests/test_developer_sdk_live_api.py tests/test_go_governance_live_api.py tests/test_mcp_protocol_matrix.py tests/test_mcp_protocol_modernization.py -q --no-cov
+  go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container:
+      image: golang@sha256:1cf6c45ba39db9fd6db16922041d074a63c935556a05c5ccb62d181034df7f02
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - working-directory: sdk/go
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          test -z "$(gofmt -l raiclient cmd)"
+          go test -race -count=1 -json ./...
+          go vet ./...
+          go build ./...
+# Focused review only. No deployment/OIDC/live credentials, no root provisioning.
+# PostgreSQL customer tests disclose seeded/development fixtures; not G2/G4 proof.

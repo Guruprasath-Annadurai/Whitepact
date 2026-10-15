@@ -37,6 +37,12 @@ from responsibleai.rbac.permissions import role_from_str
 
 _CHATGPT_CALLBACK = re.compile(r"https://chatgpt\.com/connector/oauth/[A-Za-z0-9_-]{1,200}")
 _CHATGPT_STABLE_CALLBACK = "https://chatgpt.com/connector_platform_oauth_redirect"
+# Anthropic's documented hosted callback for claude.ai, Claude Desktop, mobile and Cowork
+# (https://claude.com/docs/connectors/building/authentication, read 2026-10-11). Exact match only.
+# Claude Code's loopback redirects (any port on localhost / 127.0.0.1) are deliberately NOT accepted:
+# a loopback redirect can be claimed by any local process (MCP authorization spec, localhost
+# redirect risks) and needs its own consent-screen and review work first.
+_CLAUDE_HOSTED_CALLBACK = "https://claude.ai/api/mcp/auth_callback"
 _PKCE_CHALLENGE = re.compile(r"[A-Za-z0-9_-]{43,128}")
 
 
@@ -82,8 +88,14 @@ def _valid_chatgpt_redirect(uri: str) -> bool:
     return uri == _CHATGPT_STABLE_CALLBACK or _CHATGPT_CALLBACK.fullmatch(uri) is not None
 
 
+def _valid_registered_redirect(uri: str) -> bool:
+    """The only redirect URIs a dynamically registered client may use: ChatGPT's documented
+    connector callbacks and Claude's single hosted callback. Anything else is refused."""
+    return _valid_chatgpt_redirect(uri) or uri == _CLAUDE_HOSTED_CALLBACK
+
+
 class McpOAuthAuthorizationServer:
-    """Database-backed OAuth server for ChatGPT-hosted MCP connections."""
+    """Database-backed OAuth server for ChatGPT- and Claude-hosted MCP connections."""
 
     def __init__(
         self,
@@ -142,10 +154,11 @@ class McpOAuthAuthorizationServer:
         if not isinstance(redirect_uris, list) or not redirect_uris:
             raise OAuthProtocolError("invalid_redirect_uri", "redirect_uris must be non-empty")
         if any(
-            not isinstance(uri, str) or not _valid_chatgpt_redirect(uri) for uri in redirect_uris
+            not isinstance(uri, str) or not _valid_registered_redirect(uri) for uri in redirect_uris
         ):
             raise OAuthProtocolError(
-                "invalid_redirect_uri", "Only exact ChatGPT connector redirect URIs are allowed"
+                "invalid_redirect_uri",
+                "Only exact redirect URIs of supported assistant connectors are allowed",
             )
         if payload.get("token_endpoint_auth_method", "none") != "none":
             raise OAuthProtocolError(

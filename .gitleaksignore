@@ -17,3 +17,5 @@ a7ac0faca984f77eee0c367e71116ad34fa5d366:DEPLOYMENT.md:curl-auth-header:80
 a7ac0faca984f77eee0c367e71116ad34fa5d366:DEPLOYMENT.md:generic-api-key:77
 # Historical plan document: git commit id misclassified as generic-api-key (not a credential).
 b0be15f389eab5df6c650d5ac7e65d8b8fbfcbcc:docs/superpowers/plans/2026-09-17-phase7a-runtime-foundations.md:generic-api-key:17
+# Negative test fixture: unsigned none-algorithm JWT for step-up forgery rejection test
+e41455af285c0d2e4575a26e76307c4172eeca73:tests/test_step_up_forged_proofs_http.py:jwt:122
