@@ -123,7 +123,8 @@ try {
   await page.getByRole("button", { name: /create account/i }).click();
   const registerResponse = await registerWait;
   const registerBody = await registerResponse.json().catch(() => ({}));
-  console.log("register", registerResponse.status(), registerBody, "url", page.url());
+  // Registration bodies and verification URLs may contain one-use credentials.
+  console.log("register HTTP status", registerResponse.status());
   // Signup may auto-navigate to verify-email when the API returns verification_url;
   // waiting avoids racing page.goto() against that redirect (Playwright "interrupted navigation").
   await page.waitForURL(/verify-email/, { timeout: 15000 });
@@ -207,7 +208,7 @@ try {
     ["tests/js/seed_journey_authority.py", "--database-url", databaseUrl, "--api-key", revealed],
     { cwd: repositoryRoot, encoding: "utf8" },
   );
-  check(seed.status === 0, `authority seed exit ${seed.status} ${seed.stderr || seed.stdout}`);
+  check(seed.status === 0, `development authority fixture exit ${seed.status}`);
 
   const csrf = (await context.cookies()).find((cookie) => cookie.name === "wp_csrf")?.value;
   const adminEmail = `admin-${Date.now()}@example.com`;
