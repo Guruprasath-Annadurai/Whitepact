@@ -28,7 +28,8 @@ from responsibleai.db.migrate import _find_alembic_ini, _migration_env, _run_ale
 
 DOWNSTREAM = (
     "passkey_finish", "consent", "root_bootstrap", "application", "agent_registration",
-    "delegation", "approval", "controlled_action", "execution_evidence", "authority_revocation",
+    "delegation", "policy", "approval", "controlled_action", "execution_evidence",
+    "authority_revocation", "denial_after_authority_revocation",
 )
 
 
@@ -154,6 +155,7 @@ async def passkey_boundary_and_revocation(client, origin, evidence):
     response = await client.get("/api/v1/web/session")
     evidence.check("safe_session_reload", response, 200,
                    lambda: response.json().get("organization", {}).get("id") == org_id)
+    await ordinary_customer_reads_and_rename(client, org_id, evidence)
     base = f"/api/enterprise/organizations/{org_id}/authority"
     response = await client.get(f"{base}/status")
     evidence.check("root_status_read", response, 200,
@@ -180,6 +182,46 @@ async def passkey_boundary_and_revocation(client, origin, evidence):
     evidence.check("revoked_session_refused", response, 401)
     response = await client.get("/api/v1/web/session", headers={"Cookie": f"wp_session={session_token}"})
     evidence.check("revoked_cookie_replay_refused", response, 401)
+
+
+async def ordinary_customer_reads_and_rename(client, org_id, evidence):
+    """Ordinary account metadata and visibility only; no policy/authority change."""
+    response = await client.get("/api/v1/web/policy")
+    evidence.check("policy_visibility_read", response, 200,
+                   lambda: response.json().get("org_id") == org_id
+                   and response.json().get("rules") == [])
+    # can_edit is deliberately not treated as permission to mutate policy.
+    response = await client.get("/api/v1/web/dashboard/approvals")
+    evidence.check("human_approval_status_read", response, 200,
+                   lambda: response.json().get("source") == "approval_repository"
+                   and response.json().get("domain") == "approvals"
+                   and response.json().get("items") == [])
+    response = await client.get("/api/v1/web/evidence?limit=50")
+    evidence.check("execution_evidence_list_read", response, 200,
+                   lambda: response.json().get("limit") == 50
+                   and response.json().get("evidence") == [])
+    response = await client.get("/api/v1/web/dashboard/security")
+    evidence.check("security_posture_read", response, 200,
+                   lambda: isinstance(response.json().get("items"), list)
+                   and any(item.get("title") == "Passkeys"
+                           and item.get("status") == "NOT CONFIGURED"
+                           for item in response.json()["items"]))
+    name = "Actual I2 Renamed Customer Org"
+    response = await client.patch("/api/v1/web/organization",
+                                  headers={"X-WP-CSRF": client.cookies.get("wp_csrf")},
+                                  json={"name": name})
+    evidence.check("ordinary_organization_rename", response, 200,
+                   lambda: response.json() == {"id": org_id, "name": name})
+    response = await client.get("/api/v1/web/dashboard/organization")
+    evidence.check("organization_repository_reload", response, 200,
+                   lambda: response.json().get("source") == "organization_repository"
+                   and len(response.json().get("items", [])) == 1
+                   and response.json()["items"][0].get("id") == org_id
+                   and response.json()["items"][0].get("name") == name)
+    response = await client.get("/api/v1/web/session")
+    evidence.check("renamed_organization_session_reload", response, 200,
+                   lambda: response.json().get("organization", {}).get("id") == org_id
+                   and response.json()["organization"].get("name") == name)
 
 
 if __name__ == "__main__":

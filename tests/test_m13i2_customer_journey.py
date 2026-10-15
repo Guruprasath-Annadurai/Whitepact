@@ -61,3 +61,13 @@ def test_semantic_parse_exception_retains_prior_phases_without_private_diagnosti
     assert [phase["result"] for phase in evidence.phases] == ["CONFIRMED", "BLOCKED"]
     assert evidence.phases[-1]["phase"] == "owner_session"
     assert "PRIVATE-MALFORMED-RESPONSE" not in json.dumps(evidence.report())
+
+
+def test_read_visibility_does_not_qualify_policy_or_authority_revocation():
+    evidence = JourneyEvidence()
+    for phase in ("policy_visibility_read", "human_approval_status_read", "execution_evidence_list_read"):
+        evidence.check(phase, httpx.Response(200), 200)
+    report = evidence.report()
+    assert {"policy", "approval", "execution_evidence", "authority_revocation",
+            "denial_after_authority_revocation"}.issubset(report["not_executed"])
+    assert report["acceptance"] == "BLOCKED"
