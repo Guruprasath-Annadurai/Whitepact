@@ -7,8 +7,8 @@
 - **Next Milestone:** M13 (Unified Integration & Independent Qualification)
 - **Release Gate Status:** **GLOBAL PRODUCTION NO-GO**
 - **Unapproved Cloud / Infrastructure Spend:** **₹0 / $0 (Strictly Maintained)**
-- **Working Tree Commit SHA:** `0daa57aac92c97765eb8680a705e40534760bbf5`
-- **Working Tree SHA:** `3f8dac4f6f724316289bcde7a9ab2324180efa66`
+- **Working Tree Commit SHA:** `128f988a903bd9cb917e71b4568c583caba885d4`
+- **Working Tree SHA:** `79a9c102825f974809eeb3d801c0dab27f1da426`
 - **Security Baseline Reference (M10-R):** `7514a23a31c518873fb2a8f81014e77dd6287965` (Tree: `785c7296a3d50f29aad8293a2c176a14ab8ceb9e`)
 - **Product Reference (Codex M12):** `1a116b956d4d0619c2f83ea230d3a9db21adc7e0`
 - **Product Successor Integrated:** `9bc83a12e3894a2458d0c8544f8df7534ca14916` (Feature-registry JSON hardening)

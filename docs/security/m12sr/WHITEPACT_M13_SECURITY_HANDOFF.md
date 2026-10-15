@@ -4,8 +4,8 @@
 - **Author:** Antigravity (Principal Security Architect)
 - **Recipient:** Codex (Lead Product Architect), GPT-6 (WhitePact CTO / Technical Coordinator)
 - **Source Security Branch:** `security/whitepact-m12s-customer-authority`
-- **Candidate Commit SHA:** `0daa57aac92c97765eb8680a705e40534760bbf5`
-- **Candidate Tree SHA:** `3f8dac4f6f724316289bcde7a9ab2324180efa66`
+- **Candidate Commit SHA:** `128f988a903bd9cb917e71b4568c583caba885d4`
+- **Candidate Tree SHA:** `79a9c102825f974809eeb3d801c0dab27f1da426`
 - **Milestone Scope:** Transition from M12-SR to M13 (Unified Production Qualification)
 
 ---
@@ -13,7 +13,7 @@
 ## 1. REPOSITORY & MERGE INTEGRATION PROTOCOL
 
 ### 1.1. Branch & Commit Hierarchy
-- **Baseline Foundation:** Commit `0daa57aa` integrates:
+- **Baseline Foundation:** Commit `128f988a` integrates:
   1. All historical M10-R security baselines (`7514a23a`).
   2. Codex published M12 product integration (`1a116b95`).
   3. Codex local successor commit `9bc83a12` (duplicate JSON key rejection).
