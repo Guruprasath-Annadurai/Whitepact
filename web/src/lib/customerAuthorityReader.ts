@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Guruprasath Annadurai
 // SPDX-License-Identifier: MIT
-// Preparation only: not imported by production routes. M12-S is not integrated.
-// These GET consumers report backend state; they cannot issue authority.
+// Agent registrations have an ordinary customer read contract. Authority status
+// remains preparation only. These GET consumers cannot issue authority.
 import { api } from "./api";
 
 type SessionContext = { organization: { id: string } };
@@ -32,8 +32,8 @@ export function customerAuthorityReader(session: SessionContext) {
       if (value.has_active_authority && (!rootId || !consentId)) throw new Error("Authority status could not be confirmed.");
       return { reportedActive: value.has_active_authority, rootId, consentId, epoch: value.revocation_epoch as number };
     },
-    async agents() {
-      const value = await api<unknown>(`${base}/agents`);
+    async agents(signal?: AbortSignal) {
+      const value = await api<unknown>(`${base}/agents`, { signal });
       if (!object(value) || !Array.isArray(value.agents)) throw new Error("Agent inventory could not be confirmed.");
       const ids = new Set<string>();
       return value.agents.map((agent: unknown) => {
