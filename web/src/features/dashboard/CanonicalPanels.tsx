@@ -10,11 +10,14 @@ import { approvalResourceSegment, executionAcknowledgement, mutationAcknowledgem
 import { downloadBoundedEvidence } from "../../lib/evidenceExport";
 import type { ApprovalDetail, ApprovalResolution, ConsequentialOutcome, DomainRecord, EvidenceAttestation, EvidenceVerification } from "../../lib/contracts";
 
-type Decision = { detail: ApprovalDetail; outcome: "APPROVED" | "DENIED" };
+type Decision = { detail: ApprovalDetail; outcome: "APPROVED" | "DENIED"; source: DomainRecord[] };
 
 export function ApprovalContractPanel({ records, onError, onChanged }: { records: DomainRecord[]; onError: (value: string) => void; onChanged: () => Promise<void> }) {
-  const [details, setDetails] = useState<Record<string, ApprovalDetail>>({});
-  const [detailErrors, setDetailErrors] = useState<Record<string, string>>({});
+  // A list refresh is a new read snapshot, not a reusable authorization cache.
+  const [details, setDetails] = useState<Record<string, { source: DomainRecord[]; detail: ApprovalDetail }>>({});
+  const [detailErrors, setDetailErrors] = useState<Record<string, { source: DomainRecord[]; message: string }>>({});
+  const detailRequests = useRef(new Map<string, AbortController>());
+  const uniqueRecords = useMemo(() => Array.from(new Map(records.map((record) => [String(record.approval_id ?? ""), record])).values()), [records]);
   const [confirm, setConfirm] = useState<Decision | null>(null);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ConsequentialOutcome | null>(null);
@@ -23,29 +26,44 @@ export function ApprovalContractPanel({ records, onError, onChanged }: { records
   const close = useCallback(() => setConfirm(null), []);
 
   const loadDetail = useCallback(async (id: string) => {
+    const requests = detailRequests.current;
+    requests.get(id)?.abort();
+    const controller = new AbortController();
+    requests.set(id, controller);
+    setDetails((current) => { const next = { ...current }; delete next[id]; return next; });
+    setDetailErrors((current) => { const next = { ...current }; delete next[id]; return next; });
     try {
-      const detail = await api<ApprovalDetail>(`/api/v1/web/approvals/${approvalResourceSegment(id)}`);
-      setDetails((current) => ({ ...current, [id]: detail }));
+      const detail = await api<ApprovalDetail>(`/api/v1/web/approvals/${approvalResourceSegment(id)}`, { signal: controller.signal });
+      if (controller.signal.aborted || requests.get(id) !== controller) return null;
+      if (!detail || detail.approval_id !== id || typeof detail.status !== "string" || typeof detail.action_type !== "string" || typeof detail.target !== "string" || !Array.isArray(detail.votes) || !Number.isInteger(detail.required_approvals) || detail.required_approvals < 1 || !Number.isInteger(detail.current_vote_count) || detail.current_vote_count < 0) throw new Error("Approval detail could not be confirmed");
+      setDetails((current) => ({ ...current, [id]: { source: records, detail } }));
       setDetailErrors((current) => { const next = { ...current }; delete next[id]; return next; });
       return detail;
     } catch (cause) {
-      setDetailErrors((current) => ({ ...current, [id]: messageFrom(cause, "Approval detail could not be loaded") }));
+      if (controller.signal.aborted || requests.get(id) !== controller) return null;
+      setDetailErrors((current) => ({ ...current, [id]: { source: records, message: messageFrom(cause, "Approval detail could not be loaded") } }));
       return null;
-    }
-  }, []);
+    } finally { if (requests.get(id) === controller) requests.delete(id); }
+  }, [records]);
 
   useEffect(() => {
     const task = window.setTimeout(() => {
-      for (const record of records) {
+      setDetails({}); setDetailErrors({});
+      for (const record of uniqueRecords) {
         const id = String(record.approval_id ?? "");
-        if (id) void loadDetail(id);
+        void loadDetail(id);
       }
     }, 0);
-    return () => window.clearTimeout(task);
-  }, [loadDetail, records]);
+    const requests = detailRequests.current;
+    return () => {
+      window.clearTimeout(task);
+      for (const controller of requests.values()) controller.abort();
+      requests.clear();
+    };
+  }, [loadDetail, uniqueRecords]);
 
   async function decide() {
-    if (!confirm || submitting.current || uncertainIds.has(confirm.detail.approval_id)) return;
+    if (!confirm || confirm.source !== records || submitting.current || uncertainIds.has(confirm.detail.approval_id)) return;
     const { detail, outcome: requested } = confirm;
     const id = detail.approval_id;
     submitting.current = true;
@@ -82,10 +100,11 @@ export function ApprovalContractPanel({ records, onError, onChanged }: { records
   return <>
     {outcome && <ExecutionNotice outcome={outcome} />}
     <section className="data-panel approval-list">
-      {records.map((record) => {
+      {uniqueRecords.map((record) => {
         const id = String(record.approval_id ?? "");
-        const detail = details[id];
-        if (!detail) return <article className="approval-card" key={id}><h2>{String(record.action_type ?? "Approval request")}</h2>{detailErrors[id] ? <><p role="alert">{detailErrors[id]}</p><Button variant="secondary" onClick={() => void loadDetail(id)}>Retry detail</Button></> : <p role="status">Loading canonical approval detail…</p>}</article>;
+        const detail = details[id]?.source === records ? details[id].detail : undefined;
+        const detailError = detailErrors[id]?.source === records ? detailErrors[id].message : undefined;
+        if (!detail) return <article className="approval-card" key={id}><h2>{String(record.action_type ?? "Approval request")}</h2>{detailError ? <><p role="alert">{detailError}</p><Button variant="secondary" onClick={() => void loadDetail(id)}>Retry detail</Button></> : <p role="status">Loading canonical approval detail…</p>}</article>;
         const progress = `${detail.current_vote_count} of ${detail.required_approvals}`;
         return <article key={id} className="approval-card">
           <header><div><h2>{detail.action_type}</h2><p className="quorum-progress" aria-label={`${progress} required approvals recorded`}>{progress} approvals</p></div><span>{detail.status}</span></header>
@@ -99,11 +118,11 @@ export function ApprovalContractPanel({ records, onError, onChanged }: { records
             {detail.argument_summary && <Row label="Safe argument summary" value={`${detail.argument_summary.argument_count} arguments: ${detail.argument_summary.argument_keys.join(", ")}`} />}
           </dl>
           <section className="vote-history" aria-label="Approval vote history"><h3>Vote history</h3>{detail.votes.length ? <ol>{detail.votes.map((vote) => <li key={vote.vote_id}><strong>{vote.outcome}</strong><span>Authorized reviewer {vote.resolver_identity_id}</span><time>{vote.resolved_at}</time></li>)}</ol> : <p>No votes recorded.</p>}</section>
-          <div className="approval-actions"><Button disabled={busy || uncertainIds.has(id) || detail.status !== "PENDING"} onClick={() => setConfirm({ detail, outcome: "APPROVED" })}>Approve</Button><Button variant="danger" disabled={busy || uncertainIds.has(id) || detail.status !== "PENDING"} onClick={() => setConfirm({ detail, outcome: "DENIED" })}>Deny</Button></div>
+          <div className="approval-actions"><Button disabled={busy || uncertainIds.has(id) || detail.status !== "PENDING"} onClick={() => setConfirm({ detail, outcome: "APPROVED", source: records })}>Approve</Button><Button variant="danger" disabled={busy || uncertainIds.has(id) || detail.status !== "PENDING"} onClick={() => setConfirm({ detail, outcome: "DENIED", source: records })}>Deny</Button></div>
         </article>;
       })}
     </section>
-    {confirm && <AccessibleDialog labelId="approval-contract-confirm-title" onClose={close}><header><div><h2 id="approval-contract-confirm-title">{confirm.outcome === "APPROVED" ? "Approve" : "Deny"} this request?</h2><p>{confirm.detail.action_type} → {confirm.detail.target}</p></div><button onClick={close} aria-label="Close"><X aria-hidden="true" /></button></header><p>This records one backend vote. It does not create execution authority in the browser.</p>{confirm.outcome === "APPROVED" && <p>If this completes the required approvals, the console will request execution of exactly this reviewed action. The server must freshly authorize it.</p>}<div className="modal-actions"><Button variant={confirm.outcome === "DENIED" ? "danger" : "primary"} disabled={busy} onClick={() => void decide()}>{busy ? "Submitting…" : `Confirm ${confirm.outcome.toLowerCase()}`}</Button><Button variant="secondary" disabled={busy} onClick={close}>Cancel</Button></div></AccessibleDialog>}
+    {confirm && confirm.source === records && <AccessibleDialog labelId="approval-contract-confirm-title" onClose={close}><header><div><h2 id="approval-contract-confirm-title">{confirm.outcome === "APPROVED" ? "Approve" : "Deny"} this request?</h2><p>{confirm.detail.action_type} → {confirm.detail.target}</p></div><button onClick={close} aria-label="Close"><X aria-hidden="true" /></button></header><p>This records one backend vote. It does not create execution authority in the browser.</p>{confirm.outcome === "APPROVED" && <p>If this completes the required approvals, the console will request execution of exactly this reviewed action. The server must freshly authorize it.</p>}<div className="modal-actions"><Button variant={confirm.outcome === "DENIED" ? "danger" : "primary"} disabled={busy} onClick={() => void decide()}>{busy ? "Submitting…" : `Confirm ${confirm.outcome.toLowerCase()}`}</Button><Button variant="secondary" disabled={busy} onClick={close}>Cancel</Button></div></AccessibleDialog>}
   </>;
 }
 
@@ -130,12 +149,13 @@ export function EvidenceContractPanel({ records }: { records: DomainRecord[] }) 
   const [verification, setVerification] = useState<EvidenceVerification | null>(null);
   const [verificationError, setVerificationError] = useState("");
   const [error, setError] = useState("");
+  const [detailLoading, setDetailLoading] = useState(false);
   const detailGeneration = useRef(0);
   const close = useCallback(() => { detailGeneration.current++; setSelected(null); setAttestation(null); }, []);
 
   const openEvidence = useCallback(async (id: string) => {
     const generation = ++detailGeneration.current;
-    setError(""); setSelected(null); setAttestation(null);
+    setError(""); setSelected(null); setAttestation(null); setDetailLoading(true);
     try {
       if (!id || id === "." || id === "..") throw new Error("Invalid evidence reference");
       const [detail, attested] = await Promise.all([
@@ -143,9 +163,10 @@ export function EvidenceContractPanel({ records }: { records: DomainRecord[] }) 
         api<EvidenceAttestation>(`/api/v1/web/evidence/${encodeURIComponent(id)}/attestation`),
       ]);
       if (generation !== detailGeneration.current) return;
-      if (!detail || detail.evidence_id !== id || !attested || attested.evidence_id !== id || attested.cryptographically_signed !== false || (typeof detail.hash === "string" && typeof attested.evidence_hash === "string" && detail.hash !== attested.evidence_hash)) throw new Error("Mismatched evidence acknowledgement");
+      if (!detail || detail.evidence_id !== id || !attested || attested.evidence_id !== id || typeof detail.decision !== "string" || detail.decision !== attested.decision || attested.cryptographically_signed !== false || (typeof detail.hash === "string" && typeof attested.evidence_hash === "string" && detail.hash !== attested.evidence_hash)) throw new Error("Mismatched evidence acknowledgement");
       setSelected(detail); setAttestation(attested);
     } catch (cause) { if (generation === detailGeneration.current) setError(cause instanceof ApiError && cause.status === 404 ? "Evidence record not found or unavailable to this session." : "Evidence detail could not be confirmed. No record or attestation is claimed."); }
+    finally { if (generation === detailGeneration.current) setDetailLoading(false); }
   }, []);
 
   useEffect(() => { setItems(records); }, [records]);
@@ -154,7 +175,7 @@ export function EvidenceContractPanel({ records }: { records: DomainRecord[] }) 
     let active = true;
     const task = window.setTimeout(() => void api<EvidenceVerification>("/api/v1/web/evidence/verify").then((value) => {
       if (!active) return;
-      if (!value || !["VALID", "INCOMPLETE", "INVALID"].includes(value.status) || typeof value.chain_intact !== "boolean" || value.cryptographically_signed !== false || typeof value.integrity_note !== "string" || (value.status === "VALID" && !value.chain_intact)) throw new Error("Malformed verification acknowledgement");
+      if (!value || !["VALID", "INCOMPLETE", "INVALID"].includes(value.status) || typeof value.chain_intact !== "boolean" || value.cryptographically_signed !== false || typeof value.integrity_note !== "string" || value.chain_intact !== ["VALID", "INCOMPLETE"].includes(value.status)) throw new Error("Malformed verification acknowledgement");
       setVerification(value);
     }).catch(() => { if (active) setVerificationError("Evidence verification unavailable. No valid chain is claimed."); }), 0);
     return () => { active = false; window.clearTimeout(task); };
@@ -182,6 +203,7 @@ export function EvidenceContractPanel({ records }: { records: DomainRecord[] }) 
   return <>
     {error && <div className="form-error" role="alert">{error}</div>}
     {verificationError && <div className="form-error" role="alert">{verificationError}</div>}
+    {detailLoading && <p role="status">Loading evidence detail…</p>}
     <section className="data-panel evidence-verification"><header><div><h2>Evidence chain</h2><p>WhitePact evidence is hash-chained under the documented verification boundary.</p></div>{verification && <strong className={`posture posture--${verification.status === "VALID" ? "configured" : "missing"}`}>{verification.status}</strong>}</header>{verification && <><p>{verification.integrity_note}</p><dl><Row label="Chain intact" value={verification.chain_intact ? "Yes" : "No"} /><Row label="Cryptographically signed" value="No" /></dl>{verification.status === "INCOMPLETE" && <p className="configuration-note">The chain hashes correctly but contains legacy pre-canonical entries; it is not presented as fully verified.</p>}</>}</section>
     <section className="data-panel evidence-ledger"><header><div><h2>Bounded evidence list</h2><p>Up to 50 records are returned. This is not full pagination.</p></div><div><label className="field compact-field"><span>Decision</span><select value={decision} onChange={(event) => void filterDecision(event.target.value)}><option value="">All returned decisions</option><option value="ALLOW">Allow</option><option value="ALLOW_WITH_REDACTION">Allow with redaction</option><option value="DENY">Deny</option><option value="REQUIRE_APPROVAL">Require approval</option><option value="QUARANTINE">Quarantine</option></select></label><label className="field compact-field"><span>Filter loaded records</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} /></label><Button variant="secondary" disabled={listState !== "success" || !filtered.length} onClick={() => { try { downloadBoundedEvidence(filtered); } catch { setError("Download unavailable. No evidence export was completed."); } }}>Download displayed records</Button><p>Downloads are bounded read-only copies, not signed bundles or independent verification.</p></div></header>
       {listState === "loading" && <p role="status">Loading canonical evidence…</p>}
@@ -191,7 +213,7 @@ export function EvidenceContractPanel({ records }: { records: DomainRecord[] }) 
       {!filtered.length && <Empty title="No evidence records match" />}
       </>}
     </section>
-    {selected && <AccessibleDialog labelId="evidence-contract-title" onClose={close} className="evidence-detail"><header><div><h2 id="evidence-contract-title">Evidence details</h2><p>{value(selected.evidence_id)}</p></div><button onClick={close} aria-label="Close"><X aria-hidden="true" /></button></header><section><h3>Decision evidence</h3><dl>{["evidence_id", "agent_id", "identity_id", "action_type", "target", "purpose", "risk_tier", "policy_version", "decision", "reason_codes", "approval_id", "execution_authorization_id", "evaluated_at", "recorded_at", "prev_hash", "hash"].filter((key) => selected[key] !== null && selected[key] !== undefined).map((key) => <Row key={key} label={key.replaceAll("_", " ")} value={selected[key]} code={key.includes("id") || key.includes("hash")} />)}</dl></section>{attestation && <section className={attestation.outcome_status === "UNKNOWN" ? "attestation attestation--unknown" : "attestation"}><h3>Evidence attestation</h3><p>Not cryptographically signed. Integrity is established by linkage to the evidence hash chain.</p><dl><Row label="Decision" value={attestation.decision} /><Row label="Outcome" value={attestation.outcome_status} /><Row label="Reconciliation" value={attestation.reconciliation_status} /><Row label="Evidence hash" value={attestation.evidence_hash} code /></dl>{attestation.outcome_status === "UNKNOWN" && <strong>Reconciliation required</strong>}</section>}</AccessibleDialog>}
+    {selected && <AccessibleDialog labelId="evidence-contract-title" onClose={close} className="evidence-detail"><header><div><h2 id="evidence-contract-title">Evidence details</h2><p>{value(selected.evidence_id)}</p></div><button onClick={close} aria-label="Close"><X aria-hidden="true" /></button></header><section><h3>Decision evidence</h3><dl>{["evidence_id", "agent_id", "identity_id", "action_type", "target", "purpose", "risk_tier", "policy_version", "decision", "reason_codes", "approval_id", "execution_authorization_id", "evaluated_at", "recorded_at", "prev_hash", "hash"].filter((key) => selected[key] !== null && selected[key] !== undefined).map((key) => <Row key={key} label={key.replaceAll("_", " ")} value={selected[key]} code={key.includes("id") || key.includes("hash")} />)}</dl></section>{attestation && <section className={attestation.outcome_status === "UNKNOWN" ? "attestation attestation--unknown" : "attestation"}><h3>Evidence attestation</h3><p>Not cryptographically signed. Hash linkage is not independent proof of integrity or downstream execution. Consult the backend chain status and documented verification boundary.</p><dl><Row label="Decision" value={attestation.decision} /><Row label="Outcome" value={attestation.outcome_status} /><Row label="Reconciliation" value={attestation.reconciliation_status} /><Row label="Evidence hash" value={attestation.evidence_hash} code /></dl>{attestation.outcome_status === "UNKNOWN" && <strong>Reconciliation required</strong>}</section>}</AccessibleDialog>}
   </>;
 }
 
