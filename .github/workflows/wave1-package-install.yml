@@ -5,6 +5,7 @@ on:
     branches: [codex/whitepact-wave1-sdk-package-qualification, codex/whitepact-enterprise-product-completion]
   pull_request:
     paths:
+      - 'docs/engineering/m13i2/**'
       - 'tests/test_wave1_package_install.py'
       - 'tests/fixtures/wave1_packages/**'
       - '.github/workflows/wave1-package-install.yml'

@@ -1,6 +1,7 @@
 # Copyright (c) 2026 Guruprasath Annadurai
 # SPDX-License-Identifier: MIT
 """Evidence semantics only; no fake authentication or authority fixtures."""
+
 import json
 
 import httpx
@@ -41,6 +42,8 @@ def test_report_never_promotes_partial_account_success_to_authority_acceptance()
     assert report["production"] == "GLOBAL PRODUCTION NO-GO"
     assert report["not_executed"] == list(DOWNSTREAM)
     assert "authority_revocation" in report["not_executed"]
+    assert "policy" in report["not_executed"]
+    assert "denial_after_authority_revocation" in report["not_executed"]
 
 
 def test_temporary_settings_restore_even_when_attempt_fails():

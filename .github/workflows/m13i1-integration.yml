@@ -99,7 +99,11 @@ jobs:
         env:
           PYTHONPATH: src:.
           WHITEPACT_ENV: development
-        run: python scripts/engineering/m13i1_customer_journey.py
+        run: |
+          ruff check scripts/engineering/m13i2_customer_journey.py tests/test_m13i2_customer_journey.py
+          ruff format --check scripts/engineering/m13i2_customer_journey.py tests/test_m13i2_customer_journey.py
+          python -m pytest tests/test_m13i2_customer_journey.py -o addopts='' --tb=short -ra
+          python scripts/engineering/m13i2_customer_journey.py
 
   native-container-scope:
     runs-on: ubuntu-24.04

@@ -33,7 +33,7 @@ Exact observed application origin: `http://localhost:58207`; server expected ori
 
 The final harness rerun, after adding semantic-exception preservation, again exited **2** with the same **15 confirmed / 1 blocked** phase results. Its exact application origin was `http://localhost:58471`, with server expected origin still `http://localhost`. Both revoked-session reads returned 401. No unexpected harness exception occurred.
 
-Consent, root bootstrap, application creation, agent registration, delegation, approval, a controlled action, execution evidence and authority revocation were **not executed**. No root, passkey, consent, delegation or authenticated success was inserted in the database or mocked. Session revocation is not authority revocation. Local email capture does not establish external deliverability.
+Consent, root bootstrap, application creation, agent registration, delegation, policy, approval, a controlled action, execution evidence, authority revocation and denial after authority revocation were **not executed**. No root, passkey, consent, delegation or authenticated success was inserted in the database or mocked. Session revocation is not authority revocation. Local email capture does not establish external deliverability.
 
 The server startup banner reports generic API auth disabled with an empty legacy static-key list. This harness does not claim legacy API authentication qualification: it directly confirms real browser-session protection with pre-login and post-revocation HTTP 401 responses, real account verification and OWNER membership. No legacy static key grants owner access.
 
