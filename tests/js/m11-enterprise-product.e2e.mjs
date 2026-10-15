@@ -20,7 +20,7 @@ const server = createServer((request, response) => {
   const relative = pathname.startsWith("/static/whitepact/") ? pathname.slice("/static/whitepact/".length) : "index.html";
   const filename = path.resolve(bundle, relative);
   if (!filename.startsWith(bundle + path.sep)) { response.writeHead(403); response.end(); return; }
-  try { response.writeHead(200, { "Content-Type": mime[path.extname(filename)] ?? "application/octet-stream" }); response.end(readFileSync(filename)); }
+  try { const contents = readFileSync(filename); response.writeHead(200, { "Content-Type": mime[path.extname(filename)] ?? "application/octet-stream" }); response.end(contents); }
   catch { response.writeHead(404); response.end(); }
 });
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -32,9 +32,10 @@ const record = { evidence_id: "local-evidence", action_type: "supported.action",
 const results = [];
 let browser;
 try {
+  assert.equal((await fetch(origin + "/static/whitepact/m12c-deliberately-missing.js")).status, 404, "Missing asset must return 404 without crashing the test server");
   browser = await chromium.launch({ headless: true });
   for (const width of [375, 768, 1024, 1440]) {
-    for (const flow of ["session-outage", "policy-confirmation", "policy-uncertainty", "evidence-export"]) {
+    for (const flow of ["session-outage", "policy-confirmation", "policy-uncertainty", "evidence-export", "evidence-detail", "evidence-conflict"]) {
       const context = await browser.newContext({ viewport: { width, height: 1000 }, reducedMotion: "reduce" });
       await context.addCookies([{ name: "wp_csrf", value: "local-ui-csrf", url: origin }]);
       const page = await context.newPage(); const errors = []; let sessionReads = 0; let mutations = 0; let removed = false;
@@ -57,11 +58,13 @@ try {
           return route.fulfill({ json: { status: "removed", rule_id: rule.rule_id } });
         }
         if (url.pathname.endsWith("/policy")) return route.fulfill({ json: { org_id: "local-fixture", can_edit: true, rules: flow === "policy-uncertainty" || removed ? [] : [rule] } });
-        if (url.pathname.endsWith("/verify")) return route.fulfill({ json: { org_id: "local-fixture", status: "VALID", chain_intact: true, cryptographically_signed: false, integrity_note: "Explicit returned fixture verification" } });
+        if (url.pathname.endsWith("/verify")) return route.fulfill({ json: { org_id: "local-fixture", status: flow === "evidence-detail" ? "INVALID" : "VALID", chain_intact: flow !== "evidence-detail", cryptographically_signed: false, integrity_note: "Explicit returned fixture verification" } });
+        if (url.pathname.endsWith("/attestation")) return route.fulfill({ json: { evidence_id: record.evidence_id, decision: flow === "evidence-conflict" ? "ALLOW" : record.decision, evidence_hash: record.hash, outcome_status: "UNKNOWN", reconciliation_status: "UNRESOLVED", cryptographically_signed: false } });
+        if (url.pathname.endsWith(`/evidence/${record.evidence_id}`)) return route.fulfill({ json: record });
         if (url.pathname.includes("/evidence")) return route.fulfill({ json: url.pathname.endsWith("/evidence") && url.pathname.includes("dashboard") ? { items: [record], source: "explicit-ui-fixture" } : { evidence: [record] } });
         return route.fulfill({ json: { items: [], source: "explicit-ui-fixture" } });
       });
-      const route = flow.startsWith("policy") ? "/dashboard/policy" : flow === "evidence-export" ? "/dashboard/evidence" : "/dashboard";
+      const route = flow.startsWith("policy") ? "/dashboard/policy" : flow.startsWith("evidence-") ? "/dashboard/evidence" : "/dashboard";
       await page.goto(origin + route);
       if (flow === "session-outage") {
         await page.getByRole("heading", { name: "Session verification unavailable" }).waitFor();
@@ -86,13 +89,27 @@ try {
         assert(await page.getByRole("button", { name: "Add rule" }).isDisabled()); assert.equal(mutations, 1);
         await page.getByRole("button", { name: "Reload canonical policy" }).click();
         await page.getByRole("heading", { name: "Policy change outcome is uncertain" }).waitFor({ state: "hidden" }); assert.equal(mutations, 1);
-      } else {
+      } else if (flow === "evidence-export") {
         await page.getByRole("combobox", { name: "Decision" }).selectOption("QUARANTINE");
         await page.getByText("QUARANTINE", { exact: true }).waitFor();
         const downloaded = page.waitForEvent("download");
         await page.getByRole("button", { name: "Download displayed records" }).click();
         const download = await downloaded; const contents = readFileSync(await download.path(), "utf8");
         assert(!contents.includes("export-exclusion-canary")); assert(contents.includes("UNKNOWN")); assert(contents.includes("not complete history")); assert.equal(mutations, 0);
+      } else {
+        await page.getByRole("button", { name: "View evidence", exact: true }).click();
+        if (flow === "evidence-conflict") {
+          await page.getByRole("alert").filter({ hasText: "Evidence detail could not be confirmed" }).waitFor();
+          assert.equal(await page.getByRole("dialog").count(), 0);
+        } else {
+          const dialog = page.getByRole("dialog", { name: "Evidence details" });
+          await dialog.waitFor();
+          await dialog.getByText("Reconciliation required", { exact: true }).waitFor();
+          await dialog.getByText(/not independent proof of integrity or downstream execution/).waitFor();
+          assert.equal(await dialog.getByText(/Integrity is established/).count(), 0);
+          assert(await dialog.evaluate((node) => node.contains(document.activeElement)));
+        }
+        assert.equal(mutations, 0);
       }
       assert.equal(errors.length, 0, errors.join("\n"));
       assert(!(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)), `${flow} horizontal overflow at ${width}`);

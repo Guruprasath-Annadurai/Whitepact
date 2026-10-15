@@ -44,7 +44,12 @@ def validate_local_origin(origin: str) -> None:
 
 
 def checked_workload(requests: int, concurrency: int) -> None:
-    if not 1 <= requests <= 200 or not 1 <= concurrency <= 100:
+    if (
+        type(requests) is not int
+        or type(concurrency) is not int
+        or not 1 <= requests <= 200
+        or not 1 <= concurrency <= 100
+    ):
         raise ValueError("Workload must be 1..200 requests and 1..100 concurrency")
 
 
@@ -66,6 +71,9 @@ def summarize(samples: list[tuple[float, str]], seconds: float) -> dict:
         "requests_attempted": len(samples),
         "wall_seconds": seconds,
         "requests_per_second": len(samples) / seconds,
+        "attempted_requests_per_second": len(samples) / seconds,
+        "governance_denials_per_second": counts["DENIED"] / seconds,
+        "successful_execution_throughput_qualified": False,
         "p50_ms": percentile(latencies, 50),
         "p95_ms": percentile(latencies, 95),
         "p99_ms": percentile(latencies, 99),
@@ -78,6 +86,26 @@ def summarize(samples: list[tuple[float, str]], seconds: float) -> dict:
     }
 
 
+def validate_denial_evidence_window(
+    records: list, denials: int, durable_count: int, org_id: str
+) -> None:
+    """A bounded API window is not the total database count or full history."""
+    expected = denials + 1  # The authenticated warmup is also a durable denial.
+    if (
+        not isinstance(records, list)
+        or len(records) > 200
+        or len(records) < min(expected, 200)
+        or durable_count != expected
+        or any(
+            not isinstance(record, dict)
+            or record.get("organization_id") != org_id
+            or record.get("decision") != "DENY"
+            for record in records
+        )
+    ):
+        raise RuntimeError("Tenant-scoped durable denial evidence proof failed")
+
+
 async def run_local(requests: int, concurrency: int) -> dict:
     checked_workload(requests, concurrency)
     # Imports are deliberately after CLI opt-in and workload validation. Unit
@@ -86,10 +114,11 @@ async def run_local(requests: int, concurrency: int) -> dict:
     import pytest
     import tests.pg_test_url as pg
     import uvicorn
-    from sqlalchemy import text
+    from sqlalchemy import func, select, text
     from tests.org_http_fixtures import seed_org_with_key
 
     import responsibleai.dashboard.app as dashboard
+    from responsibleai.db.engine import governance_evidence
     from responsibleai.db.migrate import _find_alembic_ini, _migration_env, _run_alembic
     from responsibleai.governance.synthetic_counter import SYNTHETIC_COUNTER_TOOL
     from responsibleai.runtime.gate import PRODUCTION_GATE_B_OPEN
@@ -218,12 +247,20 @@ async def run_local(requests: int, concurrency: int) -> dict:
                     if evidence.status_code != 200:
                         raise RuntimeError("Durable denial evidence lookup failed")
                     records = evidence.json().get("evidence", [])
-                    if (
-                        len(records) < result["governance_denials"] + 1
-                        or any(record.get("organization_id") != org_id for record in records)
-                        or any(record.get("decision") != "DENY" for record in records)
-                    ):
-                        raise RuntimeError("Tenant-scoped durable denial evidence proof failed")
+                    async with dashboard._db_engine.raw.connect() as connection:
+                        durable_count = (
+                            await connection.execute(
+                                select(func.count())
+                                .select_from(governance_evidence)
+                                .where(
+                                    governance_evidence.c.org_id == org_id,
+                                    governance_evidence.c.decision == "DENY",
+                                )
+                            )
+                        ).scalar_one()
+                    validate_denial_evidence_window(
+                        records, result["governance_denials"], durable_count, org_id
+                    )
                     root = Path(__file__).resolve().parents[2]
                     source_head = subprocess.run(
                         ["git", "rev-parse", "HEAD"],
@@ -245,6 +282,8 @@ async def run_local(requests: int, concurrency: int) -> dict:
                         counter_after=0,
                         downstream_call_count=0,
                         durable_denial_evidence_count=len(records),
+                        durable_total_denial_evidence_count=durable_count,
+                        evidence_window_limit=200,
                         process_cpu_seconds=process_cpu,
                         process_cpu_percent_one_core=100 * process_cpu / wall,
                         process_peak_rss_bytes=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss

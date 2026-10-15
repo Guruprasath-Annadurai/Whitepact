@@ -53,6 +53,15 @@ function completedEnvelope(result: GovernanceToolCallResult, depth: number): boo
   return true;
 }
 
+function resourceId(value: string): string {
+  // Reject rather than trim or normalize: the server-issued ID is the binding.
+  if (typeof value !== "string" || !value || value === "." || value === ".."
+    || /[\s\p{Cc}/\\?#%]/u.test(value))
+    throw new TypeError("Invalid resource identifier");
+  try { return encodeURIComponent(value); }
+  catch { throw new TypeError("Invalid resource identifier"); }
+}
+
 export class GovernanceRuntimeClient {
   private readonly baseUrl: string;
   private readonly apiKey: string;
@@ -148,20 +157,20 @@ export class GovernanceRuntimeClient {
     notes?: string,
     options?: GovernanceRequestOptions,
   ): Promise<Record<string, unknown>> {
-    return this.request(`governance/approvals/${encodeURIComponent(approvalId)}/resolve`, "POST", { outcome, ...(notes ? { notes } : {}) }, options);
+    return this.request(`governance/approvals/${resourceId(approvalId)}/resolve`, "POST", { outcome, ...(notes ? { notes } : {}) }, options);
   }
 
   async revokeDelegation(identityId: string, reason: string, options?: GovernanceRequestOptions): Promise<Record<string, unknown>> {
-    return this.request(`governance/delegations/${encodeURIComponent(identityId)}/revoke`, "POST", { reason }, options);
+    return this.request(`governance/delegations/${resourceId(identityId)}/revoke`, "POST", { reason }, options);
   }
 
   async executeApproval(approvalId: string, options?: GovernanceRequestOptions): Promise<Record<string, unknown>> {
-    return this.request(`governance/approvals/${encodeURIComponent(approvalId)}/execute`, "POST", {}, options);
+    return this.request(`governance/approvals/${resourceId(approvalId)}/execute`, "POST", {}, options);
   }
 
   async getEvidence(evidenceId: string, options?: GovernanceRequestOptions): Promise<Record<string, unknown>> {
     // Legacy route is unavailable in the current backend. Use getAttestation instead.
-    return this.request(`governance/evidence/${encodeURIComponent(evidenceId)}`, "GET", undefined, options);
+    return this.request(`governance/evidence/${resourceId(evidenceId)}`, "GET", undefined, options);
   }
 
   async listEvidence(limit = 50, options?: GovernanceRequestOptions): Promise<Record<string, unknown>> {
@@ -171,6 +180,6 @@ export class GovernanceRuntimeClient {
   }
 
   async getAttestation(evidenceId: string, options?: GovernanceRequestOptions): Promise<Record<string, unknown>> {
-    return this.request(`governance/evidence/${encodeURIComponent(evidenceId)}/attestation`, "GET", undefined, options);
+    return this.request(`governance/evidence/${resourceId(evidenceId)}/attestation`, "GET", undefined, options);
   }
 }
