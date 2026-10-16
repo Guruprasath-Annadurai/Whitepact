@@ -275,6 +275,9 @@ describe("dashboard and onboarding", () => {
     await user.click(screen.getByRole("button", { name: "Confirm approved" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/v1/web/approvals/appr-1/resolve", expect.objectContaining({ method: "POST" })));
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/web/approvals/appr-1/execute", expect.objectContaining({ method: "POST" }));
+    expect(await screen.findByRole("heading", { name: "Execution succeeded" })).toBeInTheDocument();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(6));
+    expect(screen.getByRole("heading", { name: "Execution succeeded" })).toBeInTheDocument();
   });
 
   it("denies pending requests through the resolve endpoint without executing", async () => {

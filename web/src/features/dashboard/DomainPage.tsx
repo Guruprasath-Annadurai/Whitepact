@@ -40,7 +40,10 @@ function DomainSection({ sectionKey: key, session }: { sectionKey: keyof typeof 
     request.current?.abort();
     const controller = new AbortController();
     request.current = controller;
-    setResult({ items: [], source: "loading" }); setError(""); setState("loading");
+    // Keep the same panel mounted during a same-workspace refresh: it owns
+    // confirmed/uncertain consequential outcomes. Workspace changes remount
+    // DomainSection and start with empty loading state instead.
+    setError("");
     try {
       const value = key === "evidence"
         ? await api<EvidenceListResponse>("/api/v1/web/evidence?limit=50", { signal: controller.signal }).then((payload) => ({ items: payload.evidence, source: `bounded evidence list (limit ${payload.limit})` }))
