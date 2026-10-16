@@ -246,26 +246,66 @@ class CustomerAuthorityService:
         """
         self._verify_tenant_and_role(actor, org_id, require_owner=True)
 
-        if require_identity_assurance:
-            async with self._engine.raw.connect() as conn:
-                row = (
-                    await conn.execute(
-                        select(
-                            web_users.c.verification_status,
-                            web_users.c.email_verified_at,
-                        ).where(web_users.c.id == actor.user_id)
+        async with self._engine.raw.connect() as conn:
+            # 1. Enforce actor account is not disabled or suspended
+            u_row = (
+                await conn.execute(
+                    select(
+                        web_users.c.disabled,
+                        web_users.c.verification_status,
+                        web_users.c.email_verified_at,
+                    ).where(web_users.c.id == actor.user_id)
+                )
+            ).first()
+            if (
+                not u_row
+                or u_row.disabled
+                or u_row.verification_status in {"SUSPENDED", "REJECTED"}
+            ):
+                raise unauthorized_caller("User account is disabled, suspended, or rejected.")
+
+            # 2. Enforce principal is not revoked in trust fabric if registered
+            p_row = (
+                await conn.execute(
+                    select(trust_fabric_principals.c.lifecycle_state).where(
+                        and_(
+                            trust_fabric_principals.c.id == actor.user_id,
+                            trust_fabric_principals.c.org_id == org_id,
+                        )
                     )
-                ).first()
-                if not row:
-                    raise assurance_required()
-                status = row[0]
-                if status == "UNVERIFIED" and row[1]:
+                )
+            ).first()
+            if p_row and p_row.lifecycle_state in {
+                PrincipalState.REVOKED.value,
+                PrincipalState.SUSPENDED.value,
+                PrincipalState.DISABLED.value,
+            }:
+                raise unauthorized_caller(f"Principal identity is {p_row.lifecycle_state}.")
+
+            # 3. Enforce identity assurance if required
+            if require_identity_assurance:
+                status = u_row.verification_status
+                if status == "UNVERIFIED" and u_row.email_verified_at:
                     status = "BASIC_VERIFIED"
                 if not status or status not in {"VERIFIED", "IDENTITY_VERIFIED", "BASIC_VERIFIED"}:
                     raise assurance_required()
 
-        # Check if organization already possesses an active canonical root
-        async with self._engine.raw.connect() as conn:
+            # 4. Check if organization has an active pending quorum recovery request
+            pending_rec = (
+                await conn.execute(
+                    select(authority_recovery_requests.c.id).where(
+                        and_(
+                            authority_recovery_requests.c.org_id == org_id,
+                            authority_recovery_requests.c.status == "PENDING",
+                            authority_recovery_requests.c.expires_at > _iso(),
+                        )
+                    )
+                )
+            ).first()
+            if pending_rec:
+                raise root_already_exists("Organization has an active quorum recovery in progress.")
+
+            # 5. Check if organization already possesses an active canonical root
             canon_root = (
                 await conn.execute(
                     select(governance_root_authority_records.c.root_id).where(
@@ -783,6 +823,54 @@ class CustomerAuthorityService:
         async with self._engine.raw.begin() as conn:
             # 1. Lock tenant revocation epoch to serialize concurrent ceremony attempts
             await lock_epoch(conn, org_id)
+
+            # Enforce actor account is not disabled or suspended
+            u_row = (
+                await conn.execute(
+                    select(
+                        web_users.c.disabled,
+                        web_users.c.verification_status,
+                    ).where(web_users.c.id == actor.user_id)
+                )
+            ).first()
+            if (
+                not u_row
+                or u_row.disabled
+                or u_row.verification_status in {"SUSPENDED", "REJECTED"}
+            ):
+                raise unauthorized_caller("User account is disabled, suspended, or rejected.")
+
+            # Enforce principal is not revoked in trust fabric if registered
+            p_row = (
+                await conn.execute(
+                    select(trust_fabric_principals.c.lifecycle_state).where(
+                        and_(
+                            trust_fabric_principals.c.id == actor.user_id,
+                            trust_fabric_principals.c.org_id == org_id,
+                        )
+                    )
+                )
+            ).first()
+            if p_row and p_row.lifecycle_state in {
+                PrincipalState.REVOKED.value,
+                PrincipalState.SUSPENDED.value,
+                PrincipalState.DISABLED.value,
+            }:
+                raise unauthorized_caller(f"Principal identity is {p_row.lifecycle_state}.")
+
+            pending_rec = (
+                await conn.execute(
+                    select(authority_recovery_requests.c.id).where(
+                        and_(
+                            authority_recovery_requests.c.org_id == org_id,
+                            authority_recovery_requests.c.status == "PENDING",
+                            authority_recovery_requests.c.expires_at > now_iso,
+                        )
+                    )
+                )
+            ).first()
+            if pending_rec:
+                raise root_already_exists("Organization has an active quorum recovery in progress.")
 
             # 2. Check no active canonical root already exists (anti-race)
             existing_canon = (
