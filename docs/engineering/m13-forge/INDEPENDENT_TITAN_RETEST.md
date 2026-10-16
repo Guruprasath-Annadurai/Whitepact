@@ -17,3 +17,20 @@ First independent browser attempts reached real server registration/assertion re
 Published new contract suite independently executed unchanged: **3 FAIL, 2 PASS, 43.50 seconds**. All three PostgreSQL disablement/rollback/concurrency tests fail in bootstrap before exercising their target behavior: `UndefinedColumnError: column trust_fabric_bootstrap_records.require_passkey_stepup does not exist`. Therefore atomic cascade, cross-worker grant invalidation and register/disable serialization are NOT independently qualified by those runs. Capability projection and organization precondition tests pass in their fixture contexts; they do not qualify the missing PostgreSQL authority chain. Raw local log/XML: `/private/tmp/forge-titan-contracts.log` and `/private/tmp/forge-titan-contracts.xml`. TITAN owns the schema/contract repair; no migration or security code changed in Forge.
 
 Clean independent rerun with Forge bafa66e0 harness and exact c9a4436c implementation succeeded through real browser-generated registration and assertion and server PASSKEY_UV authentication: **17 stage PASS, 1 BLOCKED at downstream_authority_qualification, 11 NOT EXECUTED**. Both source trees reported clean. Original I3 ceremony JS remains unchanged. Redacted report `/private/tmp/forge-bafa-titan-browser.json`. This closes the observed bootstrap prefix failure for that candidate only; it does not qualify consent/root/delegation/execution/revocation or erase the fresh PostgreSQL failures.
+
+## Successor 51d72b48 — fresh passes, upgrade blocked
+
+Exact successor `51d72b48215890245cb027fbd75174e6b2a7440d`, tree `02d1b2ce9ebcf893de76e8a92ec6400d07cbb7f0`, parent c9a4436c. Independent unchanged published contract suite: **6 PASS / 40.79 seconds**, including PostgreSQL first-passkey invariants. It adds the missing column inside existing migration 0064, without a new revision.
+
+Independent real PostgreSQL upgrade probe: migrate a fresh disposable database using c9a4436c, then run successor `upgrade head`. Baseline revision **0064**, column absent; upgraded revision **0064**, column still absent. Result **BLOCKED**. No authority seeded. Fresh-install success does not qualify existing-schema upgrades. TITAN must publish a reviewed forward migration; Forge does not modify security migrations or integrate this successor.
+
+Reproduce from Forge with installed test dependencies and two exact clean review checkouts:
+
+```sh
+PYTHONPATH=src:. python scripts/engineering/m13_forge_postgres_upgrade.py \
+  --before /private/tmp/whitepact-forge-titan-review \
+  --after /private/tmp/whitepact-forge-titan-r2-review \
+  --report /tmp/forge-upgrade.json
+```
+
+Exit 2 preserves BLOCKED/FAIL. The probe uses only disposable test PostgreSQL, captures source commit/tree, bounds subprocess/database calls and closes the database generator before returning. It never fabricates root authorization or patches source schemas.

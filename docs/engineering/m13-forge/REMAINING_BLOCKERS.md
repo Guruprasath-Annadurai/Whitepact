@@ -13,5 +13,6 @@
 | P1 PR #212 capabilities/disablement | Effective authority and transactional qualification incomplete | TITAN-1 / TITAN-2 | Application integration blocked |
 | P1 historical DCO / security lint | Protected unsigned ancestor; security-owned lint failures | Original owner / TITAN-2 | No waiver, history rewrite or forged attestation |
 | P1 TITAN c9a4436c fresh PostgreSQL | Three published contract tests fail before target behavior: missing trust_fabric_bootstrap_records.require_passkey_stepup column | TITAN security migration / database owners | 3 FAIL / 2 PASS / 43.50s; candidate not integrated |
+| P1 TITAN 51d72b48 existing schema upgrade | Historical 0064 edit leaves already-migrated c9 schema at 0064 without required column after upgrade head | TITAN security migration / database owners | Fresh suite 6 PASS, independent actual old-to-new upgrade BLOCKED; forward migration required |
 
 Fix commits are the Forge signed checkpoints containing these changes; draft PR receipt supplies exact hashes. API-key records include org_id and now require a matching selected session tenant; shared domain endpoints still lack a consistent tenant envelope. Full route inventory, fresh SDK/CI/browser/Linux/security acceptance are not yet completed. M14/M21 remain unauthorized.
