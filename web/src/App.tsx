@@ -15,6 +15,7 @@ const AcceptInvitationPage = lazy(() => import("./features/auth/AuthPages").then
 const OnboardingPage = lazy(() => import("./features/onboarding/OnboardingPage").then((module) => ({ default: module.OnboardingPage })));
 const DashboardShell = lazy(() => import("./features/dashboard/DashboardShell").then((module) => ({ default: module.DashboardShell })));
 const OverviewPage = lazy(() => import("./features/dashboard/OverviewPage").then((module) => ({ default: module.OverviewPage })));
+const AccountPage = lazy(() => import("./features/dashboard/AccountPage").then((module) => ({ default: module.AccountPage })));
 const ApiKeysPage = lazy(() => import("./features/api-keys/ApiKeysPage").then((module) => ({ default: module.ApiKeysPage })));
 const AgentInventoryPage = lazy(() => import("./features/inventory/AgentInventoryPage").then((module) => ({ default: module.AgentInventoryPage })));
 const DomainPage = lazy(() => import("./features/dashboard/DomainPage").then((module) => ({ default: module.DomainPage })));
@@ -50,6 +51,7 @@ export default function App() {
       <Route path="/onboarding" element={<><Seo title="Create workspace | WhitePact" description="Create an organization-bound WhitePact workspace." path="/onboarding" noIndex /><OnboardingPage /></>} />
       <Route path="/dashboard" element={<><Seo title="Workspace | WhitePact" description="Authenticated WhitePact AI governance workspace." path="/dashboard" noIndex /><DashboardShell /></>}>
         <Route index element={<OverviewPage />} />
+        <Route path="account" element={<AccountPage />} />
         <Route path="api-keys" element={<ApiKeysPage />} />
         <Route path="agents" element={<AgentInventoryPage />} />
         <Route path="policy" element={<PolicyPage />} />

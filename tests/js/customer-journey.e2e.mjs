@@ -8,6 +8,8 @@ import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 
 const testPort = process.env.WHITEPACT_TEST_PORT ?? "18765";
+const startupTimeout = Number(process.env.WHITEPACT_TEST_STARTUP_TIMEOUT_MS ?? 30000);
+if (!Number.isSafeInteger(startupTimeout) || startupTimeout <= 0 || startupTimeout > 300000) throw new RangeError("Invalid bounded test startup timeout");
 const baseUrl = process.env.WHITEPACT_TEST_BASE_URL ?? `http://127.0.0.1:${testPort}`;
 const managed = !process.env.WHITEPACT_TEST_BASE_URL;
 const dbPath = path.join(os.tmpdir(), `whitepact-customer-journey-${Date.now()}.db`);
@@ -31,7 +33,7 @@ async function waitForReady(url, timeoutMs = 30000) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     try {
-      const response = await fetch(`${url}/ready`);
+      const response = await fetch(`${url}/ready`, { signal: AbortSignal.timeout(Math.min(2000, timeoutMs)) });
       if (response.ok) return;
     } catch {
       // server not up yet
@@ -77,14 +79,21 @@ async function startServer() {
     ["-m", "uvicorn", "responsibleai.dashboard.app:app", "--host", "127.0.0.1", "--port", testPort],
     { cwd: repositoryRoot, env, stdio: "inherit" },
   );
-  await waitForReady(baseUrl);
+  try { await waitForReady(baseUrl, startupTimeout); }
+  catch (error) { await stopServer(child); throw error; }
   return child;
 }
 
 async function stopServer(child) {
-  if (!child) return;
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  const exited = new Promise(resolve => child.once("exit", resolve));
   child.kill("SIGTERM");
-  await delay(500);
+  await Promise.race([exited, delay(5000, undefined, { ref: false })]);
+  if (child.exitCode === null && child.signalCode === null) {
+    child.kill("SIGKILL");
+    await Promise.race([exited, delay(2000, undefined, { ref: false })]);
+  }
+  if (child.exitCode === null && child.signalCode === null) throw new Error("Disposable test server cleanup could not be confirmed");
 }
 
 const failures = [];
@@ -343,6 +352,16 @@ try {
   await page.getByText(/not configured|current plan|free/i).first().waitFor();
   await page.goto(`${baseUrl}/dashboard/security`, { waitUntil: "domcontentloaded" });
   await page.getByRole("heading", { name: /security/i }).waitFor();
+  const accountViewport = page.viewportSize();
+  for (const width of [375, 768, 1280, 1920]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(`${baseUrl}/dashboard/account`, { waitUntil: "domcontentloaded" });
+    await page.getByRole("heading", { name: "Signed-in account", exact: true }).waitFor();
+    check(await page.getByRole("main").getByText(email, { exact: true }).isVisible(), `account shows current session email at ${width}`);
+    check(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), `account has no horizontal overflow at ${width}`);
+    check(await page.getByRole("link", { name: "Request a password reset", exact: true }).getAttribute("href") === "/forgot-password", `account reset link uses existing route at ${width}`);
+  }
+  if (accountViewport) await page.setViewportSize(accountViewport);
   await page.goto(`${baseUrl}/dashboard/organization`, { waitUntil: "domcontentloaded" });
   await page.getByRole("heading", { name: "Organization name", exact: true }).waitFor();
   await page.getByRole("main").getByText("Journey Org", { exact: true }).waitFor();

@@ -4,6 +4,8 @@
 |---|---|---|
 | Signup, local email, login, onboarding | REAL AND VERIFIED | Prior I3 actual HTTP/browser prefix; repeat on Forge pending |
 | Shared domain reads | READ-ONLY | Forge cancellation, workspace isolation, malformed payload regressions |
+| Account identity | READ-ONLY | New /dashboard/account displays verified-session name/email and existing reset/security links; no security mutation |
+| Password-reset navigation | REAL BUT UNQUALIFIED | Existing email reset route; delivery and complete recovery qualification remain deployment/security dependent |
 | API-key inventory | READ-ONLY | Forge metadata validation and per-record org_id check against selected session |
 | API-key create/rotate/revoke | REAL BUT UNQUALIFIED | Existing UI fixture tests; full customer authority qualification outstanding |
 | Agents, root and consent records | READ-ONLY | Existing typed readers; no effective-authority inference |

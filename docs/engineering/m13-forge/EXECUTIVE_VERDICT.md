@@ -9,4 +9,6 @@ Implemented three independent product modules: isolated/cancellable dashboard re
 
 Follow-ups also fix SDK deadline settlement, preserve confirmed approval outcomes across refresh, and serialize summary display metadata consistently. The real-app seeded UI fixture journey passes; the separate unseeded journey remains blocked. A published TITAN checkpoint passed preserved origin/original regressions but failed three PostgreSQL contract tests on a missing migration column, so it remains outside the product branch.
 
+The customer account route now displays authenticated-session identity and links to existing password-reset/security views without enabling security mutations. Its actual browser regression passes at four viewport widths, including 1920px. Full frontend suite: 315 tests in 35 files PASS; lint/type/build PASS.
+
 This is an initial checkpoint, not completion of the Forge directive. Complete inventory, external SDK consumers, browser viewport expansion and exact-head qualification remain required.

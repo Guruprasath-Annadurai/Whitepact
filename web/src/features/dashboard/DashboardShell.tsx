@@ -10,7 +10,7 @@ import { publicAsset } from "../../lib/assets";
 
 export type WebSession = { user: { full_name: string; email: string }; organization: { id: string; name: string; plan: string; role?: string } | null; organizations?: Array<{ id: string; name: string; role: string }> };
 const primary = [[Gauge, "Overview", "/dashboard"], [Bot, "Agents", "/dashboard/agents"], [KeyRound, "API Keys", "/dashboard/api-keys"], [ScrollText, "Policy", "/dashboard/policy"], [Users, "Approvals", "/dashboard/approvals"], [FileCheck2, "Evidence", "/dashboard/evidence"], [ShieldCheck, "Security", "/dashboard/security"]] as const;
-const account = [[Building2, "Organization", "/dashboard/organization"], [Users, "Members", "/dashboard/members"], [CreditCard, "Billing", "/dashboard/billing"]] as const;
+const account = [[Users, "Account", "/dashboard/account"], [Building2, "Organization", "/dashboard/organization"], [Users, "Members", "/dashboard/members"], [CreditCard, "Billing", "/dashboard/billing"]] as const;
 
 function validSession(value: unknown): value is WebSession {
   if (!value || typeof value !== "object") return false;
