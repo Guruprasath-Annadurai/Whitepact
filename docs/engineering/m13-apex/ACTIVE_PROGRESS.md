@@ -130,7 +130,7 @@ matches reviewed owner. Changed `src/responsibleai/mcp/server.py`, `pyproject.to
 (supported floor1.29.1), both candidate CI triggers and full-MCP regression step.
 Integrated subset85PASS/0SKIP; new owner suite14PASS and preserved76PASS reported
 separately. Source review accepted for transport scope; no other runtime/kernel
-fix selected. Full519-case exact-head Python matrix pending next signed checkpoint.
+fix selected. Full519-case exact-head Python matrix PASSes at6774ff80 below.
 Remaining blocker: complete root/authority acceptance still fails principal FK;
 this transport hardening enables no new privileged customer workflow.
 
@@ -148,5 +148,25 @@ Independent real-pytest subprocess reproducer
 changing security fixtures or protected evidence. Both probes plus actual tutorial
 4PASS/0SKIP in10.28seconds. Full-MCP CI installs repository-pinned LangGraph1.2.14;
 no test excluded or assertion relaxed. Source review accepted for receipt scope;
-exact-head full519 matrix pending next signed checkpoint. Other e3 product77,
+exact-head full519 matrix now PASSes at6774ff80. Other e3 product77,
 original36/extended202 and native15 scopes remain separately evidenced.
+
+## Verified code checkpoint6774ff8099981ffa2b09287b91b1f549e1626890
+
+Tree d5a9d6331d5db6291332f12990262f5434a58bc6; parent
+e3f1490dd19c49895cf6793d19ad5753b9708c1b. Clean exact-head receipt:
+https://github.com/Guruprasath-Annadurai/Whitepact/pull/216#issuecomment-6217752489.
+Product38915370190PASS:79focused,24Forge/display,363contracts on each Python,
+315frontend/35files,4browser wrappers. Independent38915371345:36original,
+202extended and519fullMCP PASS on EACH Python3.11/3.12, zero skips; native15PASS.
+CodeQL38915405894PASS. The collection-skip bug is resolved and both tutorial
+cases execute. Gitleaks38915411676FAIL6findings; customer, inherited101Ruff and
+unsigned39619c4b DCO remain failed. Overall independent workflow FAIL, correctly.
+
+APEX-MCP-02 and APEX-CI-03 accepted only for the exercised transport/receipt
+scopes. APEX-ROOT-02 remains P0 with TITAN-1: real e1a9 customer has principal0,
+root0,consent0 and bootstrap completion500. PG nonempty rollback, combined
+framework environment and external provider/witness qualification stay blocked.
+Next three actions: TITAN real principal-binding contract; independently repeat
+fresh genuine journey after owner fix; selective root/runtime review. This
+documentation-only receipt update makes no further implementation changes.

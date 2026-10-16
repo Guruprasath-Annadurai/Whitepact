@@ -41,3 +41,9 @@ job status was insufficient because runtime-only skip accounting missed module
 collection skips. APEX-CI-03 fixes that hook and supplies pinned LangGraph1.2.14;
 strict zero-skip qualification is rerun on the next signed head. This limitation
 does not erase the independently passed real-TCP SSE case or other tested scopes.
+
+Final exact-head resolution:6774ff8099981ffa2b09287b91b1f549e1626890 executes
+**519PASS/0SKIP on EACH Python3.11 and3.12** in independent run38915371345.
+Both tutorial cases are collected and run; collection/runtime skip accounting
+remains strict. Product and CodeQL also PASS on that head. This accepts the tested
+WhitePact protocol/transport scope, not external providers or genuine root authority.
