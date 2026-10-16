@@ -94,14 +94,8 @@ def upgrade() -> None:
     )
     op.create_index("idx_rec_votes_req", "authority_recovery_votes", ["request_id"])
 
-    op.add_column(
-        "trust_fabric_bootstrap_records",
-        sa.Column("require_passkey_stepup", sa.Integer(), nullable=False, server_default="0"),
-    )
-
 
 def downgrade() -> None:
-    op.drop_column("trust_fabric_bootstrap_records", "require_passkey_stepup")
     op.drop_table("authority_recovery_votes")
     op.drop_table("authority_recovery_requests")
     op.drop_table("authority_containment_records")

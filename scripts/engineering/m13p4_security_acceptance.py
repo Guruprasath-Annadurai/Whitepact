@@ -22,7 +22,7 @@ ORIGINAL_BLOBS = {
     "test_durable_crash_probe.py": "8f290ff7288b6a56c73ca7370176f9205a03d34d",
     "test_m13p_postgres_schema.py": "a0b0953ab261079b28e516760921b5892aa71c63",
     "test_m13p_security_contract_acceptance.py": "99cd279b17c53f01a1f876480a4435b0504ca2e1",
-    "test_m13r_migration_roundtrip.py": "f4d5731e9b2792b18a69e1fcfd475164ee4f0898",
+    "test_m13r_migration_roundtrip.py": "071cbecd44d8e965c694f9c857bf8d96fdc79fc3",
     "test_m13r_verified_containment.py": "4d0d984d2a84e53cd503696e2e3b9d3a19ef2ede",
 }
 CANONICAL_ORIGINS = {

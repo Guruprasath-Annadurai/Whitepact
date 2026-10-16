@@ -889,7 +889,9 @@ async def test_postgres_first_passkey_bootstrap_invariants():
                 kind="ORGANIZATION",
             )
             replay_org_id = replay_org["id"] if isinstance(replay_org, dict) else replay_org.id
-            rep_session_token, _ = await identities.create_session(replay_owner, org_id=replay_org_id)
+            rep_session_token, _ = await identities.create_session(
+                replay_owner, org_id=replay_org_id
+            )
             _, _, rep_assurance = await sec_svc.load_session(rep_session_token)
             # Insert replay record
             async with engine._engine.begin() as conn:

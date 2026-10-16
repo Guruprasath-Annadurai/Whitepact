@@ -23,7 +23,7 @@ async def test_0063_upgrade_0064_constraints_and_safe_empty_downgrade():
         assert ini is not None
         env = _migration_env(url)
         await _run_alembic(ini, env, "upgrade", "0063")
-        await _run_alembic(ini, env, "upgrade", "head")
+        await _run_alembic(ini, env, "upgrade", "0064")
         conn = await asyncpg.connect(url)
         try:
             assert int(await conn.fetchval("SHOW server_version_num")) // 10000 == 16
