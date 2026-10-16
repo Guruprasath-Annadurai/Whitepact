@@ -1,6 +1,29 @@
 # APEX active engineering ledger
 
 M13 OPEN. GLOBAL PRODUCTION NO-GO. No M14/M21 or additional spending.
+## Corrective continuation — 17 October 2026
+
+Starting cleanfb733695. Fetched9fbfc122/d64992f1. Original four-case blob7e3500
+unchanged. Narrow ROOT label/IDNA2PASS and runtime inspection/scan2PASS on owners;
+stronger unverified root stillBOOTSTRAPPED (FAIL18.83s), retention downgrade
+still permits0064 (FAIL20.37s), cancellation+cleanup error loses cancellation
+(FAIL3.71s). Owner handoff PR215 comment6222818444. Root and whole container
+implementations withheld. Selected only stronger d649 scandir reader and sync
+inspection/removal method; migration0065 now refuses mandatory downgrade under
+ACCESS EXCLUSIVE lock. Local integrated35PASS; concurrent PG writer1PASS;
+inspection/scan2PASS; startup/evidence20PASS. IMPLEMENTED pending exact-head
+CI and independent owner review; no whole-platform acceptance claimed.
+
+Customer harness actual APIs progress13–16 (application/readback, agent,
+attenuated two-minute delegation, restrictive policy): owner9fb17PASS /
+1BLOCKED /7NOT_EXECUTED. Judgment/grant bridge unqualified; no fixtures used.
+Framework reruns corrected and completed24PASS/22PASS. Original migration
+reproducer f4d preserved; new0065 deliberately exposes its historical head
+expectation failure, never rewritten. Unchanged PG probe records refusal as
+MigrationError; dedicated safety tests verify fail-closed policy instead.
+NEXT: exact-head CI/clean journey evidence; root/cancellation owner correction;
+customer judgment/approval/grant and remaining historical compliance gates.
+
 ## Strict acceptance continuation from08551472
 
 ACCEPTED: prior selective SSE/nonce/EPERM/directory/organization implementation

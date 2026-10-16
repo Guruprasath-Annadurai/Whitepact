@@ -243,19 +243,36 @@ class DockerContainerBackend(IsolationBackend):
                     )
                 except Exception:
                     pass
-                exists = False
+                is_absent = False
                 try:
                     check = subprocess.run(  # noqa: S603
                         [self.docker_cmd, "inspect", target],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
+                        capture_output=True,
+                        text=True,
                         timeout=5,
                         check=False,
                     )
-                    exists = check.returncode == 0
+                    if check.returncode != 0:
+                        err = check.stderr.lower()
+                        # Authoritative absence detection:
+                        # Docker inspect returns "Error: No such container: <name>" or
+                        # "Error: No such object: <name>". Never match broad "not found",
+                        # which matches daemon/plugin errors like "authorization plugin not found".
+                        has_no_such = "no such container" in err or "no such object" in err
+                        is_plugin_or_daemon_err = "plugin" in err or "daemon unavailable" in err
+                        if has_no_such and not is_plugin_or_daemon_err:
+                            is_absent = True
+                        else:
+                            # Nonzero inspect with daemon error, plugin error, or disconnection: absence unconfirmed!
+                            is_absent = False
+                    else:
+                        # Container still exists in dockerd
+                        is_absent = False
                 except Exception:
-                    exists = False
-                if exists:
+                    # Timeout or inspection execution error: cannot establish absence!
+                    is_absent = False
+
+                if not is_absent:
                     gone_since[target] = None
                     remaining = True
                     continue
@@ -270,6 +287,17 @@ class DockerContainerBackend(IsolationBackend):
             if not remaining:
                 return
             time.sleep(0.2)
+
+        # If deadline expires and any target was not confirmed absent, fail closed!
+        unconfirmed = [
+            t
+            for t, g in gone_since.items()
+            if g is None or (stable_seconds > 0 and (time.monotonic() - g < stable_seconds))
+        ]
+        if unconfirmed:
+            raise RuntimeError(
+                f"Container containment unconfirmed after {wait_seconds}s for targets: {unconfirmed}"
+            )
 
     async def _remove_containers_uninterruptible(
         self,

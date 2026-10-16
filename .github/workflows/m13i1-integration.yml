@@ -10,6 +10,10 @@ on:
       - 'tests/test_runtime_resilience_adversarial.py'
       - 'src/responsibleai/db/execution_nonce_repository.py'
       - 'src/responsibleai/isolation/in_flight.py'
+      - 'src/responsibleai/isolation/container_backend.py'
+      - 'tests/test_inflight_liveness_adversarial.py'
+      - 'migrations/versions/0065_bootstrap_require_passkey_stepup.py'
+      - 'scripts/engineering/reproducers/test_m13_corrective_authority.py'
       - 'tests/js/m13-apex-*'
       - 'src/responsibleai/trust_fabric/directory.py'
       - 'src/responsibleai/mcp/tools.py'
@@ -80,19 +84,29 @@ jobs:
           python -m pytest tests/independent_m13r2 tests/test_m13r3_security_regression.py tests/test_m12fs_root_hardening.py -o addopts='' --tb=short -ra
           python -c 'import json; r=json.load(open("/tmp/m13i1-core-skips.json")); assert r["exit_status"] == 0 and r["skip_count"] == 0, r'
       - name: Revocation and egress regression scope
+        if: ${{ !cancelled() }}
         env:
           PYTHONPATH: src:.
           WHITEPACT_QUALIFICATION_SKIP_LOG: /tmp/m13i1-extended-skips.json
         run: |
-          python -m pytest tests/test_m13s_security_regression.py tests/test_revocation_kernel.py tests/test_delegation_revocation_verification.py tests/test_in_flight_revocation.py tests/test_dns_egress_security.py tests/test_isolation_egress_boundary.py tests/test_runtime_resilience_adversarial.py -o addopts='' --tb=short -ra
+          python -m pytest tests/test_m13s_security_regression.py tests/test_revocation_kernel.py tests/test_delegation_revocation_verification.py tests/test_in_flight_revocation.py tests/test_dns_egress_security.py tests/test_isolation_egress_boundary.py tests/test_runtime_resilience_adversarial.py tests/test_inflight_liveness_adversarial.py -o addopts='' --tb=short -ra
           python -c 'import json; r=json.load(open("/tmp/m13i1-extended-skips.json")); assert r["exit_status"] == 0 and r["skip_count"] == 0, r'
       - name: Full MCP transport and session-binding regression
+        if: ${{ !cancelled() }}
         env:
           PYTHONPATH: src:.
           WHITEPACT_QUALIFICATION_SKIP_LOG: /tmp/m13apex-mcp-skips.json
         run: |
           python -m pytest tests/test_mcp*.py tests/test_m13p4_mcp_lifecycle.py tests/test_m13_apex_sse_binding.py -o addopts='' --tb=short -ra
           python -c 'import json; r=json.load(open("/tmp/m13apex-mcp-skips.json")); assert r["exit_status"] == 0 and r["skip_count"] == 0, r'
+      - name: Mandatory passkey downgrade restriction and supported rollback
+        if: ${{ !cancelled() }}
+        env:
+          PYTHONPATH: src:.
+          WHITEPACT_QUALIFICATION_SKIP_LOG: /tmp/m13apex-migration-skips.json
+        run: |
+          python -m pytest tests/test_m13_apex_migration_guard.py -o addopts='' --tb=short -ra
+          python -c 'import json; r=json.load(open("/tmp/m13apex-migration-skips.json")); assert r["exit_status"] == 0 and r["skip_count"] == 0, r'
 
   real-customer-journey:
     runs-on: ubuntu-24.04

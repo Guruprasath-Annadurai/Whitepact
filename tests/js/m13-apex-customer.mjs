@@ -134,7 +134,32 @@ try {
   assert.equal(records.consent_proof.consent_method, consent.consent_method);
   assert.deepEqual(records.consent_proof.allowed_action_types, consent.allowed_action_types); assert.deepEqual(records.consent_proof.allowed_targets, consent.allowed_targets);
   mark(current, "PASS"); mark("explicit_customer_consent", "PASS");
-  current = "application_registration"; mark(current, "BLOCKED", { reason: "DOWNSTREAM_AUTHORITY_CONTRACTS_NOT_QUALIFIED" }); stop = current;
+  current = "application_registration";
+  const application = expect(await call(`${authority}/applications`, "POST", { name: "Actual local APEX application", description: "Ephemeral customer qualification", environment: "development" }), 200);
+  assert.equal(application.organization_id, org); assert.equal(application.owner_user_id, elevated.user.id);
+  assert.equal(application.has_execution_authority, false); assert.ok(application.application_id);
+  const persistedApplication = expect(await call(`${authority}/applications/${application.application_id}`), 200);
+  assert.equal(persistedApplication.application_id, application.application_id);
+  mark(current, "PASS", { registration_authority: false });
+  current = "agent_registration";
+  const agent = expect(await call(`${authority}/agents`, "POST", { name: "Actual local APEX agent", application_id: application.application_id, framework: "custom", purpose: consent.purpose }), 200);
+  assert.equal(agent.organization_id, org); assert.equal(agent.application_id, application.application_id);
+  assert.equal(agent.has_delegated_authority, false); assert.ok(agent.agent_id);
+  mark(current, "PASS", { registration_authority: false });
+  current = "capability_delegation";
+  const delegation = expect(await call(`${authority}/agents/${agent.agent_id}/delegations`, "POST", { granted_action_types: consent.allowed_action_types, allowed_targets: consent.allowed_targets, purpose: consent.purpose, expires_at: new Date(Date.now() + 120000).toISOString() }), 200);
+  assert.equal(delegation.agent_id, agent.agent_id); assert.equal(delegation.organization_id, org);
+  assert.deepEqual(delegation.granted_action_types, consent.allowed_action_types);
+  assert.deepEqual(delegation.allowed_targets, consent.allowed_targets);
+  assert.ok(delegation.delegation_id); assert.ok(delegation.consent_id); mark(current, "PASS");
+  current = "policy_assignment";
+  const rule = expect(await call("/api/web/policy/rules", "POST", { rule_id: "apex-local-requires-human", reason_code: "APEX_LOCAL_APPROVAL_REQUIRED", effect: "REQUIRE_APPROVAL", action_types: consent.allowed_action_types, targets: consent.allowed_targets }), 200);
+  assert.equal(rule.effect, "REQUIRE_APPROVAL"); assert.equal(rule.rule_id, "apex-local-requires-human");
+  const policy = expect(await call("/api/web/policy"), 200);
+  assert.equal(policy.org_id, org);
+  assert.ok(policy.rules.some(persisted => persisted.rule_id === rule.rule_id && persisted.effect === "REQUIRE_APPROVAL"));
+  mark(current, "PASS");
+  current = "judgment"; mark(current, "BLOCKED", { reason: "AUTHENTICATED_CUSTOMER_JUDGMENT_EXECUTION_CONTRACT_NOT_QUALIFIED" }); stop = current;
 } catch (error) {
   if (!stop) { stop = current; mark(current, "FAIL", { error_type: error.name }); }
 } finally {

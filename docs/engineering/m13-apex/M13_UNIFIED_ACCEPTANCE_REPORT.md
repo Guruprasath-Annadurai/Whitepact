@@ -2,6 +2,129 @@
 
 **M13 OPEN. GLOBAL PRODUCTION NO-GO.** New TITAN changes are not accepted.
 
+## Corrective integration review — 17 October 2026 (client timezone)
+
+This continuation starts from cleanfb73369513217bc5c10979c025f504c5e16d7e3c,
+treeea3419dca53096350151d1ab7a496742958c7599, parentf89708a2. Both remote
+branches fetched: TITAN-1 advanceseb4093->9fbfc122c4b2b9f58b9ab3cb813293b2a7a6219b;
+TITAN-2 advances9de2->d64992f1a6709a06247fa939a28576481371245d. Separate detached
+owner worktrees preserve both branches. The following section supersedes prior
+status summaries; older sections remain historical evidence.
+
+| Counterexample | Original RED | Corrected owner | Integrated disposition |
+| --- | --- | --- | --- |
+| ROOT-03 identifier label | eb4093 FAIL | 9fb narrow PASS | Full authority closure FAIL: unverified owner still BOOTSTRAPPED; root source withheld |
+| ROOT-04 IDNA normalization | eb4093 FAIL | 9fb narrow PASS | Root file withheld with ROOT-03; full collision/lifecycle acceptance pending |
+| RUNTIME-03 plugin false absence | 9de2 FAIL | d649 PASS | Selected only synchronous removal/inspection method; integrated2-case runtime scope PASS |
+| RUNTIME-04 directory permission | 9de2 FAIL | d649 PASS | Selected d649 tracking reader; integrated original/revocation/migration scope35PASS |
+| PG-02 mandatory passkey retention | 9de2 drops1->0 | d649 original roundtrip PASS, intermediate schema safety FAIL | New fail-closed guard rejects downgrade with mandatory rows; local guard/default/race tests PASS |
+
+Original four-case reproducer blob7e3500ca714701553e69afb2de12174a72d08a22
+matches APEX and both owners unchanged. Narrow owner root2PASS/29.33s and
+runtime2PASS/3.95s do not close stronger security conditions. The unchanged PG
+probe passes retention/re-upgrade on d649, but a new intermediate-revision test
+FAIL20.37s: mandatory data remains only in a side table at revision0064.
+An additional actual application test on d649 FAIL16.70s: after that downgrade,
+the development application completes lifespan startup with auto_migrate=False
+and serves GET/login HTTP200 while the mandatory flag exists only in retention
+metadata. This proves no global runtime refusal, not an authenticated execution
+bypass or production-mode qualification. The failure is preserved separately.
+
+### Integration decisions and runtime conflicts
+
+- Select d649 `_check_remote_worker_active`: one actual scandir traversal,
+  tenant-prefix isolation, unreadable/corrupt records unresolved and scan failure
+  unresolved. TITAN-1's pre-probe followed by glob still discards unreadable files;
+  do not combine that weaker reader with the selected implementation.
+- Select only d649 `_remove_containers`, including plugin/daemon distinction and
+  deadline failure. Keep the rest of container_backend out of wholesale imports.
+  Five selected owner helper/failure tests PASS; one cancellation test explicitly
+  deselected in that subset, not counted as passing or skipped. Entire owner
+  runtime/nonce scope independently14PASS/28.15s.
+- Withhold new async cancellation/registry lifetime architecture from either
+  branch. New cancellation-plus-cleanup-error counterexample on d649 FAIL3.71s:
+  an exception exits the shield loop before its cancellation-restoring finally;
+  a caller catches it and resumes despite the prior cancellation request. Existing
+  APEX cancellation/lifetime limitations remain P0; no complete containment
+  acceptance is claimed by integrating the synchronous inspection improvement.
+- Withhold TITAN-1 root implementation: genuine repository/workspace operations,
+  unverified user, supported default flags and real Ed25519 signature still grant
+  BOOTSTRAPPED authority (new test FAIL18.83s). Changing an identifier label to
+  UNVERIFIED does not prevent ACTIVE principal/root/consent/delegation issuance.
+  Actor constructed at service boundary; public HTTP exploitability is unverified.
+  No competing root implementation or founder policy decision made here.
+
+### Fail-closed migration strategy
+
+Retention-only rollback is rejected. The selected forward0065 upgrade can restore
+previous retained data, but downgrade now locks bootstrap records ACCESS EXCLUSIVE
+on PostgreSQL, checks every stored mandatory flag and raises before DDL if any
+nonzero flag exists. Revision0065, the actual enforced column and flag remain
+atomically intact. Nonmandatory historical rows may roundtrip0064/0065. No
+expired-record exception silently drops a prior authentication requirement.
+
+New real PostgreSQL tests: mandatory downgrade refusal and nonmandatory repeated
+roundtrip included in35PASS scope; concurrent writer test separately1PASS/13.48s.
+The latter observes an ungranted AccessExclusiveLock, commits a concurrent0->1
+writer, and proves downgrade then refuses without losing schema or value.
+The first guard attempt exposed a new-test exception-type error (MigrationError
+is not RuntimeError); corrected only the new test, then reran successfully.
+
+The unchanged original preservation probe now returns FAIL/MigrationError at the
+deliberately unsupported mandatory downgrade. This is retained, not edited into
+PASS. Policy-specific denial tests establish the intended secure result. The
+original immutable migration test f4d5731e9b2792b18a69e1fcfd475164ee4f0898 remains
+unchanged; its historical0064 head expectation will fail at the new0065 head.
+TITAN-2 still has altered071c; it is not imported. Formal historical disposition
+and independent owner review remain required for full migration acceptance.
+
+### Genuine customer continuation and exact-head qualification
+
+Historical25 phase names/order and receipt schema retained. The harness now uses
+real authenticated application registration/readback, agent registration,
+two-minute attenuated delegation, restrictive REQUIRE_APPROVAL policy and policy
+readback. No trusted database rows, grants, approvals or execution evidence seeded.
+First owner-source9fb run:17PASS /1BLOCKED /7NOT_EXECUTED; final clean committed
+harness repeat and exact-head CI receipt are published on PR216 separately.
+
+| Stages | Actual owner-source result |
+| --- | --- |
+| 1–12 signup through root/consent | PASS as before, actual HTTP/WebAuthn/PoP |
+| 13 application_registration | PASS, actual registration/readback, no execution authority |
+| 14 agent_registration | PASS, actual application linkage, no delegation at registration |
+| 15 capability_delegation | PASS, actual server-issued scope/target-attenuated delegation and consent |
+| 16 policy_assignment | PASS, actual restrictive policy API |
+| 17 judgment | BLOCKED: customer-agent judgment/grant/execution contract unqualified |
+| 18 human_approval | NOT_EXECUTED |
+| 19 execution_grant | NOT_EXECUTED |
+| 20 controlled_execution | NOT_EXECUTED |
+| 21 evidence_verification | NOT_EXECUTED |
+| 22 revocation | NOT_EXECUTED |
+| 23 post_revocation_execution_attempt | NOT_EXECUTED |
+| 24 post_revocation_denial | NOT_EXECUTED |
+| 25 logout_session_invalidation | PASS |
+
+The existing governed tools/call route requires an org API key and explicitly
+does not mint ExecutionGrant state; it is not evidence that this customer's
+agent has a complete judgment/approval/grant path. Do not substitute fixture or
+direct-service grants. Root source remains rejected despite the positive journey.
+Owner handoff: PR215 comment6222818444.
+
+Framework reruns now execute with the corrected `sdk/python` path:24PASS/23.82s
+and22PASS/25.19s, zero skips. Prior missing-module failures remain recorded.
+Startup/receipt tests20PASS; local runtime negatives2PASS; integrated regression
+35PASS. New committed-head Python/MCP/frontend/native/migration CI still required.
+CI now executes extended/MCP/migration scopes even after original-suite failure,
+while retaining that failure and strict skip gates. No check is disabled or made
+nonblocking. DCO, Ruff101 and six historical Gitleaks findings remain unresolved.
+
+Remaining P0: unverified authority, cancellation/containment lifetime, complete
+customer execution journey, historical mandatory gates. P1: full lifecycle,
+collision and tenant authority qualification. Founder RecordA and PathB decisions
+stay unratified. NEXT: owner authority/cancellation corrections; exact-head
+native/security/PG qualification of selected changes; authenticated customer
+judgment/approval/grant bridge. **M13 NO-GO.**
+
 ## 1. Candidate provenance
 
 Preserved implementation checkpoint: `08551472503fb7d0422a99bebcb926a4e496ece3`.
