@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 import { afterEach, expect, it, vi } from "vitest";
 import { customerApplicationReader } from "../lib/customerApplicationReader";
-import { ApiError } from "../lib/api";
 
 afterEach(() => vi.restoreAllMocks());
 const session = { organization: { id: "server-org" } };
