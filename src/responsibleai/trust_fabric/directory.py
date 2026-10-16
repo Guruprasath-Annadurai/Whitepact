@@ -76,6 +76,14 @@ def normalize_identifier(identifier_type: IdentifierType, value: str) -> str:
         return val
 
 
+def _read_metadata(raw: str | None) -> dict[str, Any]:
+    """Restore descriptive metadata without interpreting it as authority."""
+    value = json.loads(raw) if raw is not None else {}
+    if not isinstance(value, dict):
+        raise ValueError("Principal metadata must be a JSON object")
+    return value
+
+
 class PrincipalDirectory:
     """Enterprise repository managing canonical principals and global identifiers."""
 
@@ -141,7 +149,7 @@ class PrincipalDirectory:
                 lifecycle_state=PrincipalState(row["lifecycle_state"]),
                 created_at=row["created_at"],
                 updated_at=row["updated_at"],
-                metadata={},
+                metadata=_read_metadata(row["metadata_json"]),
             )
 
     async def attach_identifier(
@@ -286,7 +294,7 @@ class PrincipalDirectory:
                 lifecycle_state=PrincipalState(data["lifecycle_state"]),
                 created_at=data["created_at"],
                 updated_at=data["updated_at"],
-                metadata={},
+                metadata=_read_metadata(data["metadata_json"]),
             )
 
     async def delete_principal(self, principal_id: str, *, org_id: str) -> None:
@@ -357,7 +365,7 @@ class PrincipalDirectory:
                     lifecycle_state=PrincipalState(r["lifecycle_state"]),
                     created_at=r["created_at"],
                     updated_at=r["updated_at"],
-                    metadata={},
+                    metadata=_read_metadata(r["metadata_json"]),
                 )
                 for r in [dict(r._mapping) for r in rows]
             ]

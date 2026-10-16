@@ -925,19 +925,16 @@ TOOL_DEFS: list[types.Tool] = [
         name="rai_check_trust",
         title="Check Public Trust Index Score",
         annotations=types.ToolAnnotations(
-            readOnlyHint=True, idempotentHint=True, openWorldHint=False, destructiveHint=False
+            readOnlyHint=True, idempotentHint=True, openWorldHint=True, destructiveHint=False
         ),
         description=(
-            "Check the public, independently-verifiable Trust Index score, certification "
-            "status, and reported-incident history for a named AI model or tool BEFORE "
-            "invoking it. Unlike every other rai_* tool, which evaluates output the caller "
-            "itself produced, this one looks up a public record about a THIRD PARTY'S model "
-            "or tool — built for agents and agent frameworks (LangChain, LangGraph, Google "
-            "ADK) deciding whether to trust something before calling it. Free, no auth "
-            "required, exact model+provider match. Queries the hosted ResponsibleAI Trust "
-            "Index (configurable via the RAI_TRUST_API_BASE environment variable). Returns "
-            "'known: false' for anything never assessed — that is not an error, just an "
-            "absence of data; self-assessment is free at POST /api/trust-index/assess."
+            "Fetch public advisory trust metadata and reported incident history for an exact "
+            "model and provider from the configured Trust Index HTTP service. This tool makes "
+            "an outbound network read; configure WHITEPACT_TRUST_API_BASE or RAI_TRUST_API_BASE "
+            "for the intended service. An unknown record returns known=false. Reported scores, "
+            "certified flags and threshold results are service reports, not independently "
+            "established certification or permission to execute an action. This lookup does "
+            "not control downstream execution or verify the service's assessment claims."
         ),
         inputSchema={
             "type": "object",
