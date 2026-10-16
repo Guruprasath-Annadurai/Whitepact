@@ -219,12 +219,12 @@ async def test_migration_0065_rollback_and_reupgrade():
                 )
                 assert has_col
 
-                # Previously existing row should now have default 0
+                # Stored mandatory passkey requirement is preserved per PG-02 security retention policy
                 val = await conn.fetchval(
                     "SELECT require_passkey_stepup FROM trust_fabric_bootstrap_records WHERE id = $1",
                     boot_id,
                 )
-                assert val == 0
+                assert val == 1
             finally:
                 await conn.close()
 

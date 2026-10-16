@@ -19,7 +19,6 @@ import json
 import os
 import time
 import uuid
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -121,10 +120,10 @@ async def test_directory_scan_failure_fails_closed_into_unresolved() -> None:
     org_id = f"org_scanerr_{uuid.uuid4().hex[:8]}"
     registry = InFlightExecutionRegistry.get_instance()
 
-    def _failing_glob(pattern):
+    def _failing_scandir(path):
         raise OSError("I/O error: disk failure or permission denied scanning registry")
 
-    with patch.object(Path, "glob", side_effect=_failing_glob):
+    with patch("os.scandir", side_effect=_failing_scandir):
         active_remote = _check_remote_worker_active(org_id)
         assert len(active_remote) == 1
         assert "scan failure" in active_remote[0].get("error", "").lower()

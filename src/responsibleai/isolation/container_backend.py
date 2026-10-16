@@ -255,14 +255,16 @@ class DockerContainerBackend(IsolationBackend):
                     )
                     if check.returncode != 0:
                         err = check.stderr.lower()
-                        if (
-                            "no such container" in err
-                            or "no such object" in err
-                            or "not found" in err
-                        ):
+                        # Authoritative absence detection:
+                        # Docker inspect returns "Error: No such container: <name>" or
+                        # "Error: No such object: <name>". Never match broad "not found",
+                        # which matches daemon/plugin errors like "authorization plugin not found".
+                        has_no_such = "no such container" in err or "no such object" in err
+                        is_plugin_or_daemon_err = "plugin" in err or "daemon unavailable" in err
+                        if has_no_such and not is_plugin_or_daemon_err:
                             is_absent = True
                         else:
-                            # Nonzero inspect with daemon error or disconnection: absence unconfirmed!
+                            # Nonzero inspect with daemon error, plugin error, or disconnection: absence unconfirmed!
                             is_absent = False
                     else:
                         # Container still exists in dockerd

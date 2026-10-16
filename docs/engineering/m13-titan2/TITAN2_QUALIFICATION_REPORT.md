@@ -248,3 +248,78 @@ In addition, **Migration 0065** was qualified against real PostgreSQL for histor
      * `tests/test_nonce_admission_matrix_adversarial.py`
      * `tests/test_inflight_liveness_adversarial.py`
      * `tests/test_mcp_security_acceptance.py`
+
+---
+
+## 8. Resolution of Codex Strict Corrective Actions (RUNTIME-03, RUNTIME-04, PG-02)
+
+### A. RUNTIME-03: Authoritative Absence Detection (Inspect Plugin / Daemon Error)
+* **Problem:** Docker inspection failure containing text like `"authorization plugin not found"` or generic `"not found"` was previously matched by broad substring search, misinterpreting daemon / plugin faults as proof of container absence.
+* **RED Before:**
+  * Reproducer: `scripts/engineering/reproducers/test_m13_apex_titan_acceptance.py::test_inspect_plugin_failure_does_not_prove_container_absence`
+  * Result: `FAILED (Failed: DID NOT RAISE RuntimeError)`
+* **Fix:**
+  * Updated `_remove_containers()` in `src/responsibleai/isolation/container_backend.py`:
+    ```python
+    has_no_such = "no such container" in err or "no such object" in err
+    is_plugin_or_daemon_err = "plugin" in err or "daemon unavailable" in err
+    if has_no_such and not is_plugin_or_daemon_err:
+        is_absent = True
+    else:
+        is_absent = False
+    ```
+  * Preserved unresolved containment and fail-closed admission whenever absence cannot be conclusively established.
+* **GREEN After:**
+  * `scripts/engineering/reproducers/test_m13_apex_titan_acceptance.py::test_inspect_plugin_failure_does_not_prove_container_absence PASSED [100%]`
+
+### B. RUNTIME-04: Directory Permission Failure Propagation
+* **Problem:** In Python's `pathlib.Path.glob("*.json")`, `OSError` (including `PermissionError`) raised by underlying `os.scandir` is suppressed internally by `Path.glob`, returning an empty generator. This hid directory scan permission failures, falsely reporting an empty registry and clearing containment.
+* **RED Before:**
+  * Reproducer: `scripts/engineering/reproducers/test_m13_apex_titan_acceptance.py::test_directory_permission_failure_is_not_an_empty_registry`
+  * Result: `FAILED (AssertionError: A silently suppressed directory scan failure must not clear containment: assert [])`
+* **Fix:**
+  * Replaced `_DISTRIBUTED_REGISTRY_DIR.glob("*.json")` in `src/responsibleai/isolation/in_flight.py` with direct `os.scandir(_DISTRIBUTED_REGISTRY_DIR)`.
+  * Any scan exception immediately triggers the error handler, recording `"scan_failure"` into `unresolved_remote`.
+  * Implemented prefix matching `prefix = f"{organization_id}_"` to safely handle arbitrary underscores in tenant IDs.
+* **GREEN After:**
+  * `scripts/engineering/reproducers/test_m13_apex_titan_acceptance.py::test_directory_permission_failure_is_not_an_empty_registry PASSED [100%]`
+
+### C. PG-02: Fail-Closed 0065 Downgrade Retention Policy
+* **Problem:** Downgrading from migration `0065` to `0064` dropped column `require_passkey_stepup`, silently losing stored mandatory passkey requirements (`1 -> 0`) upon subsequent re-upgrade.
+* **RED Before:**
+  * Reproducer: `scripts/engineering/m13_apex_postgres_acceptance.py`
+  * Result: Exited with code 2.
+    `"downgrade_roundtrip": { "status": "BLOCKED", "ordinary_rows_preserved": true, "security_flag_preserved": false, "reason": "0065_DOWNGRADE_DROPS_PASSKEY_REQUIREMENT; DO_NOT_QUALIFY_NONEMPTY_DOWNGRADE" }`
+* **Fix:**
+  * Updated `migrations/versions/0065_bootstrap_require_passkey_stepup.py`:
+    * `downgrade()`: Inspects `trust_fabric_bootstrap_records`. If any records have `require_passkey_stepup != 0`, creates table `_alembic_0065_downgrade_retention (id VARCHAR PRIMARY KEY, require_passkey_stepup INTEGER NOT NULL)` and archives the IDs and mandatory passkey requirements before dropping the column.
+    * `upgrade()`: Checks if `_alembic_0065_downgrade_retention` exists in schema. If present, restores preserved `require_passkey_stepup` flags to `trust_fabric_bootstrap_records` and cleans up the retention table.
+  * Preserved the immutable migration reproducer `tests/independent_m13r2/test_m13r_migration_roundtrip.py` at blob `071cbecd44d8e965c694f9c857bf8d96fdc79fc3`.
+* **GREEN After:**
+  * Reproducer: `scripts/engineering/m13_apex_postgres_acceptance.py`
+  * Result: Exited with code 0.
+    ```json
+    {
+      "implementation": {
+        "commit": "9de2d5cc17671b2731aab8eaa1b388d9b4fa67cb",
+        "clean": false
+      },
+      "customer_authority": false,
+      "postgres_version": "16.15 (Debian 16.15-1.pgdg13+2)",
+      "upgrade": {
+        "status": "PASS",
+        "sequence": ["0063", "0064", "0065"],
+        "tenants": 2,
+        "existing_rows_preserved": true,
+        "non_null_defaults": true
+      },
+      "downgrade_roundtrip": {
+        "status": "PASS",
+        "ordinary_rows_preserved": true,
+        "security_flag_preserved": true,
+        "reason": null
+      },
+      "production": "GLOBAL PRODUCTION NO-GO"
+    }
+    ```
+
