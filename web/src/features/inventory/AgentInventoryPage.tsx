@@ -8,6 +8,7 @@ import { customerAuthorityReader } from "../../lib/customerAuthorityReader";
 import type { WebSession } from "../dashboard/DashboardShell";
 import { AgentInventoryPreparation, type AgentInventoryReadState } from "./AgentInventoryPreparation";
 import { AuthorityRecordStatus } from "../authority/AuthorityRecordStatus";
+import { AuthorityRecordDetails } from "../authority/AuthorityRecordDetails";
 
 export function AgentInventoryPage() {
   const session = useOutletContext<WebSession>();
@@ -38,6 +39,7 @@ export function AgentInventoryPage() {
     <AgentInventoryPreparation key={`${organizationId ?? "unavailable"}:${attempt}`} state={!organizationId ? { status: "unavailable" } : current?.state ?? { status: "loading" }} readContractAvailable={Boolean(organizationId)} customerRead errorMessage={current?.failure} />
     {organizationId && <Button variant="secondary" disabled={!current} onClick={() => setAttempt((value) => value + 1)}>{current?.state.status === "error" ? "Retry inventory read" : "Refresh inventory read"}</Button>}
     <AuthorityRecordStatus key={organizationId ?? "unavailable"} />
+    <AuthorityRecordDetails key={organizationId ?? "unavailable"} />
     <p>Registration, delegation, disablement and other privileged lifecycle changes are unavailable here.</p>
   </main>;
 }

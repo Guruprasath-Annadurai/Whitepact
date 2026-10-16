@@ -94,6 +94,6 @@ jobs:
           PLAYWRIGHT_BROWSERS_PATH: /tmp/whitepact-m13p4-chromium
         run: |
           npx playwright install --with-deps chromium
-          python -m pytest tests/test_m12p_live_public_browser.py tests/test_m13p4_browser_accessibility.py tests/test_m13i2_browser_accessibility.py -o addopts='' --tb=short -q
+          python -m pytest tests/test_m12p_live_public_browser.py tests/test_m13p4_browser_accessibility.py tests/test_m13i2_browser_accessibility.py tests/test_m13i3_records_browser.py -o addopts='' --tb=short -q
 
 # Local/CI fixtures only. No independent privileged acceptance or deployment.

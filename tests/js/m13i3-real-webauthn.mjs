@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Guruprasath Annadurai
 // SPDX-License-Identifier: MIT
-// Actual HTTP/browser ceremonies. No request interception or imported credentials.
+// Actual HTTP/browser ceremonies. No response fixtures, rewrites or credential imports.
 import assert from "node:assert/strict";
 import { chromium } from "playwright";
 
@@ -10,6 +10,9 @@ const config = JSON.parse(input);
 const origin = new URL(config.origin);
 assert.equal(origin.hostname, "localhost");
 assert.equal(origin.protocol, "http:");
+const receiptOrigin = new URL(config.receiptUrl);
+assert.equal(receiptOrigin.hostname, "localhost");
+assert.equal(receiptOrigin.protocol, "http:");
 const phases = [];
 let browser;
 let page;
@@ -30,7 +33,7 @@ function confirm(response, expected, invariant = true) {
   if (response.status !== expected || invariant !== true) {
     phases.at(-1).result = "BLOCKED";
     const code = response.value?.code ?? (typeof response.value?.error === "string" ? response.value.error : response.value?.error?.code);
-    if (typeof code === "string" && /^[A-Z_]{1,80}$/.test(code)) phases.at(-1).code = code;
+    if (new Set(["AUTHENTICATION_ASSURANCE_TOO_LOW", "STEP_UP_REQUIRED", "FORBIDDEN", "UNAUTHENTICATED", "WEBAUTHN_INVALID", "CHALLENGE_REPLAY"]).has(code)) phases.at(-1).code = code;
     stop = phases.at(-1).code ?? "HTTP_OR_SEMANTIC_CONTRACT_NOT_CONFIRMED";
     throw new Error("Journey boundary");
   }
@@ -39,6 +42,7 @@ function confirm(response, expected, invariant = true) {
 try {
   browser = await chromium.launch({ headless: true });
   const context = await browser.newContext();
+  await context.route("**/*", (route) => new URL(route.request().url()).origin === origin.origin ? route.continue() : route.abort());
   page = await context.newPage();
   await page.goto(new URL("/login", origin).href);
   assert.equal(await page.evaluate(() => location.origin), origin.origin);
@@ -64,6 +68,9 @@ try {
   confirm(response, 200, response.value?.next === "/dashboard");
   response = await call("authenticated_owner_session", "/api/v1/web/session");
   confirm(response, 200, response.value?.organization?.role === "OWNER" && response.value?.user?.email === config.credentials.email);
+  const organizationId = response.value.organization.id;
+  response = await call("recorded_authority_snapshot", `/api/enterprise/organizations/${encodeURIComponent(organizationId)}/authority/status`);
+  confirm(response, 200, response.value?.organization_id === organizationId && response.value?.root_authority === null && response.value?.consent_proof === null);
   response = await call("registration_challenge", "/api/enterprise/passkeys/register/begin", "POST", undefined, "X-WhitePact-CSRF");
   confirm(response, 200, typeof response.value?.challenge === "string");
   const challenge = response.value;
@@ -104,6 +111,13 @@ try {
 } finally {
   const boundary = stop;
   if (page) {
+    if (phases.some((phase) => phase.phase === "authenticated_owner_session" && phase.result === "CONFIRMED")) {
+      try {
+        const response = await call("persisted_passkey_inventory", "/api/enterprise/passkeys");
+        confirm(response, 200, Array.isArray(response.value?.passkeys));
+        phases.at(-1).returned_passkeys = response.value.passkeys.length;
+      } catch { /* Record read failure without replacing the ceremony boundary. */ }
+    }
     try { const response = await call("session_cleanup_logout", "/api/v1/web/auth/logout", "POST"); confirm(response, 200, response.value?.status === "signed_out"); } catch { /* Prior failure remains recorded. */ }
   }
   stop = boundary;
