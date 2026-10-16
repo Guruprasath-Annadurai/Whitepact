@@ -90,8 +90,50 @@ def _error(exc: EnterpriseError, request: Request) -> JSONResponse:
     )
 
 
-def _svc() -> IdentitySecurityService:
-    return IdentitySecurityService(get_enterprise_engine())
+def _svc(request: Request | None = None) -> IdentitySecurityService:
+    import os
+    from urllib.parse import urlparse
+
+    from responsibleai.dashboard.app import settings
+    from responsibleai.dashboard.config import is_production_environment
+
+    origin = (
+        getattr(settings, "webauthn_origin", "")
+        or os.environ.get("WHITEPACT_WEBAUTHN_ORIGIN", "")
+        or os.environ.get("WP_ORIGIN", "")
+        or ""
+    )
+    rp_id = (
+        getattr(settings, "webauthn_rp_id", "")
+        or os.environ.get("WHITEPACT_WEBAUTHN_RP_ID", "")
+        or os.environ.get("WP_RP_ID", "")
+        or ""
+    )
+
+    if request is not None and not origin:
+        req_origin = request.headers.get("origin") or str(request.base_url).rstrip("/")
+        if req_origin:
+            parsed = urlparse(req_origin)
+            hostname = parsed.hostname or "localhost"
+            if not is_production_environment(settings.environment):
+                if hostname in {"localhost", "127.0.0.1", "::1"}:
+                    origin = f"{parsed.scheme}://{parsed.netloc}"
+                    if not rp_id:
+                        rp_id = "localhost"
+            else:
+                allowed = getattr(settings, "allowed_origins", [])
+                if req_origin in allowed or (parsed.netloc and parsed.netloc == urlparse(getattr(settings, "web_public_url", "")).netloc):
+                    origin = req_origin
+                    if not rp_id:
+                        rp_id = hostname
+
+    kwargs: dict[str, Any] = {}
+    if origin:
+        kwargs["origin"] = origin
+    if rp_id:
+        kwargs["rp_id"] = rp_id
+
+    return IdentitySecurityService(get_enterprise_engine(), **kwargs)
 
 
 async def _session(request: Request):
@@ -105,7 +147,7 @@ async def _session(request: Request):
         )
         if not csrf_cookie or csrf_cookie != header:
             raise EnterpriseError("FORBIDDEN", "CSRF validation failed.", 403)
-    return await _svc().load_session(
+    return await _svc(request).load_session(
         token if "." in token else f"{token}.{request.cookies.get('wp_csrf', '')}"
     )
 
@@ -114,7 +156,7 @@ async def _session(request: Request):
 async def passkey_register_begin(request: Request) -> Any:
     try:
         _token, _csrf, assurance = await _session(request)
-        return await _svc().begin_webauthn(
+        return await _svc(request).begin_webauthn(
             user_id=assurance.user_id, session_id=assurance.session_id, ceremony="register"
         )
     except EnterpriseError as exc:
@@ -125,7 +167,7 @@ async def passkey_register_begin(request: Request) -> Any:
 async def passkey_register_finish(request: Request, body: PasskeyFinishBody) -> Any:
     try:
         _token, _csrf, assurance = await _session(request)
-        return await _svc().finish_passkey_registration(
+        return await _svc(request).finish_passkey_registration(
             user_id=assurance.user_id,
             session=assurance,
             client_data_b64=body.client_data_json,
@@ -141,7 +183,7 @@ async def passkey_register_finish(request: Request, body: PasskeyFinishBody) -> 
 @router.post("/passkeys/authenticate/begin")
 async def passkey_auth_begin(request: Request) -> Any:
     try:
-        return await _svc().begin_webauthn(user_id=None, session_id=None, ceremony="authenticate")
+        return await _svc(request).begin_webauthn(user_id=None, session_id=None, ceremony="authenticate")
     except EnterpriseError as exc:
         return _error(exc, request)
 
@@ -149,7 +191,7 @@ async def passkey_auth_begin(request: Request) -> Any:
 @router.post("/passkeys/authenticate/finish")
 async def passkey_auth_finish(request: Request, body: PasskeyFinishBody) -> Any:
     try:
-        token, _csrf, assurance = await _svc().authenticate_passkey(
+        token, _csrf, assurance = await _svc(request).authenticate_passkey(
             client_data_b64=body.client_data_json,
             authenticator_data_b64=body.authenticator_data,
             signature_b64=body.signature or "",
