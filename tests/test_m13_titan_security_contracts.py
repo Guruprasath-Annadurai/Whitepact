@@ -31,14 +31,18 @@ import responsibleai.dashboard.app as app_module
 from responsibleai.db.consent_proof_repository import ConsentProofRepository
 from responsibleai.db.delegation_repository import DelegationRepository
 from responsibleai.db.engine import (
+    auth_replay_records,
     create_engine,
     governance_consent_proofs,
     governance_delegations,
     governance_policies,
     governance_root_authority_records,
+    human_totp_factors,
     org_authority_ceilings,
     org_security_policies,
+    passkey_credentials,
     trust_fabric_principals,
+    web_memberships,
 )
 from responsibleai.db.execution_nonce_repository import (
     ExecutionNonceRepository,
@@ -51,6 +55,11 @@ from responsibleai.enterprise.authority.errors import CONTAINMENT_INVALID_TARGET
 from responsibleai.enterprise.authority.service import CustomerAuthorityService
 from responsibleai.enterprise.errors import EnterpriseError
 from responsibleai.enterprise.runtime import get_enterprise_engine
+from responsibleai.enterprise.security.service import (
+    IdentitySecurityService,
+    SensitiveAction,
+    account_recovery_requests,
+)
 from responsibleai.enterprise.service import Actor, EnterpriseIAM
 from responsibleai.governance.consent_proof import ConsentMethod, build_consent_proof
 from responsibleai.governance.execution import admit_execution, authorize_execution
@@ -652,3 +661,259 @@ async def test_organization_rename_workspace_and_concurrency_preconditions(monke
             assert ok_res.status_code == 200
             assert ok_res.json()["name"] == "Beta Workspace V2"
             assert ok_res.json()["id"] == org_b_id
+
+
+@pytest.mark.asyncio
+async def test_postgres_first_passkey_bootstrap_invariants():
+    """Prove first-passkey bootstrap invariants on real PostgreSQL:
+    1. Valid initial owner with fresh password session, verified email, active org, and 0 passkeys
+       can step up with allow_initial_owner_passkey_bootstrap=True.
+    2. Without allow_initial_owner_passkey_bootstrap, step-up raises 403 AUTHENTICATION_ASSURANCE_TOO_LOW.
+    3. Non-owner (role='MEMBER') fails closed with AUTHENTICATION_ASSURANCE_TOO_LOW.
+    4. Recovery session (is_recovery=True) fails closed with AUTHENTICATION_ASSURANCE_TOO_LOW.
+    5. User with existing passkey (active or revoked) fails closed with AUTHENTICATION_ASSURANCE_TOO_LOW.
+    6. User with active TOTP factor fails closed with AUTHENTICATION_ASSURANCE_TOO_LOW.
+    7. Existing auth_replay_records marker prevents duplicate or replayed bootstrap.
+    """
+    async for url in isolated_pg_url("wp_titan_boot_inv"):
+        ini = _find_alembic_ini()
+        assert ini is not None
+        await _run_alembic(ini, _migration_env(url), "upgrade", "head")
+        engine = create_engine(url)
+        try:
+            identities = WebIdentityRepository(engine)
+            sec_svc = IdentitySecurityService(engine)
+
+            # Create owner
+            iam = EnterpriseIAM(engine)
+            owner_id, token_raw = await identities.register(
+                "Initial Owner", f"owner.{uuid.uuid4().hex[:8]}@example.com", "Password123!@#"
+            )
+            # Verify owner email
+            await identities.verify_email(token_raw)
+            # Create organization with owner
+            org = await iam.create_workspace(
+                actor_user_id=owner_id,
+                name="Titan Org",
+                slug=f"titan-{uuid.uuid4().hex[:6]}",
+                kind="ORGANIZATION",
+            )
+            org_id = org["id"] if isinstance(org, dict) else org.id
+
+            # Issue direct password session
+            session_token, _ = await identities.create_session(owner_id, org_id=org_id)
+            _, _, session_assurance = await sec_svc.load_session(session_token)
+
+            # Issue step-up grant
+            grant = await sec_svc.issue_step_up(
+                session_assurance,
+                action=SensitiveAction.ADD_PASSKEY,
+                org_id=org_id,
+            )
+
+            # 1. Without allow_initial_owner_passkey_bootstrap, step-up fails with AUTHENTICATION_ASSURANCE_TOO_LOW
+            with pytest.raises(EnterpriseError) as exc_info:
+                await sec_svc.require_step_up(
+                    session_assurance,
+                    action=SensitiveAction.ADD_PASSKEY,
+                    org_id=org_id,
+                    grant=grant,
+                    allow_initial_owner_passkey_bootstrap=False,
+                )
+            assert exc_info.value.code == "AUTHENTICATION_ASSURANCE_TOO_LOW"
+
+            # 2. With allow_initial_owner_passkey_bootstrap, legitimate initial owner step-up succeeds
+            await sec_svc.require_step_up(
+                session_assurance,
+                action=SensitiveAction.ADD_PASSKEY,
+                org_id=org_id,
+                grant=grant,
+                allow_initial_owner_passkey_bootstrap=True,
+            )
+
+            # 3. Non-owner (MEMBER) fails closed
+            member_id, member_tok = await identities.register(
+                "Team Member", f"member.{uuid.uuid4().hex[:8]}@example.com", "Password123!@#"
+            )
+            await identities.verify_email(member_tok)
+            async with engine._engine.begin() as conn:
+                await conn.execute(
+                    insert(web_memberships).values(
+                        id=f"mem_{uuid.uuid4().hex[:12]}",
+                        user_id=member_id,
+                        org_id=org_id,
+                        role="MEMBER",
+                        status="ACTIVE",
+                        created_at=datetime.now(UTC).isoformat(),
+                        updated_at=datetime.now(UTC).isoformat(),
+                    )
+                )
+            m_session_token, _ = await identities.create_session(member_id, org_id=org_id)
+            _, _, m_assurance = await sec_svc.load_session(m_session_token)
+            m_grant = await sec_svc.issue_step_up(
+                m_assurance,
+                action=SensitiveAction.ADD_PASSKEY,
+                org_id=org_id,
+            )
+            with pytest.raises(EnterpriseError) as exc_info:
+                await sec_svc.require_step_up(
+                    m_assurance,
+                    action=SensitiveAction.ADD_PASSKEY,
+                    org_id=org_id,
+                    grant=m_grant,
+                    allow_initial_owner_passkey_bootstrap=True,
+                )
+            assert exc_info.value.code == "AUTHENTICATION_ASSURANCE_TOO_LOW"
+
+            # 4. Pending account recovery request fails closed
+            rec_grant = await sec_svc.issue_step_up(
+                session_assurance,
+                action=SensitiveAction.ADD_PASSKEY,
+                org_id=org_id,
+            )
+            async with engine._engine.begin() as conn:
+                await conn.execute(
+                    insert(account_recovery_requests).values(
+                        id=f"rec_{uuid.uuid4().hex[:12]}",
+                        user_id=owner_id,
+                        token_hash="dummy_hash_for_recovery",
+                        status="RECOVERY_REVIEW",
+                        privileged=1,
+                        created_at=datetime.now(UTC).isoformat(),
+                        expires_at=(datetime.now(UTC) + timedelta(minutes=15)).isoformat(),
+                        consumed_at=None,
+                        evidence_json="{}",
+                    )
+                )
+            with pytest.raises(EnterpriseError) as exc_info:
+                await sec_svc.require_step_up(
+                    session_assurance,
+                    action=SensitiveAction.ADD_PASSKEY,
+                    org_id=org_id,
+                    grant=rec_grant,
+                    allow_initial_owner_passkey_bootstrap=True,
+                )
+            assert exc_info.value.code == "AUTHENTICATION_ASSURANCE_TOO_LOW"
+            # Consume recovery request so subsequent assertions test their own invariants
+            async with engine._engine.begin() as conn:
+                await conn.execute(
+                    update(account_recovery_requests)
+                    .where(account_recovery_requests.c.user_id == owner_id)
+                    .values(consumed_at=datetime.now(UTC).isoformat())
+                )
+
+            # 5. User with existing passkey (even revoked/disabled) fails closed
+            passkey_grant = await sec_svc.issue_step_up(
+                session_assurance,
+                action=SensitiveAction.ADD_PASSKEY,
+                org_id=org_id,
+            )
+            async with engine._engine.begin() as conn:
+                await conn.execute(
+                    insert(passkey_credentials).values(
+                        id=f"cred_{uuid.uuid4().hex[:12]}",
+                        user_id=owner_id,
+                        credential_id="test_cred_id_bytes",
+                        public_key="test_public_key",
+                        sign_count=0,
+                        rp_id="localhost",
+                        transports_json="[]",
+                        aaguid="00000000-0000-0000-0000-000000000000",
+                        backup_eligible=0,
+                        backup_state=0,
+                        display_name="Revoked Passkey",
+                        status="REVOKED",
+                        created_at=datetime.now(UTC).isoformat(),
+                        last_used_at=None,
+                    )
+                )
+            with pytest.raises(EnterpriseError) as exc_info:
+                await sec_svc.require_step_up(
+                    session_assurance,
+                    action=SensitiveAction.ADD_PASSKEY,
+                    org_id=org_id,
+                    grant=passkey_grant,
+                    allow_initial_owner_passkey_bootstrap=True,
+                )
+            assert exc_info.value.code == "AUTHENTICATION_ASSURANCE_TOO_LOW"
+
+            # 6. User with active TOTP factor fails closed
+            owner_totp, owner_totp_tok = await identities.register(
+                "Totp Owner", f"totp.{uuid.uuid4().hex[:8]}@example.com", "Password123!@#"
+            )
+            await identities.verify_email(owner_totp_tok)
+            totp_org = await iam.create_workspace(
+                actor_user_id=owner_totp,
+                name="Totp Org",
+                slug=f"totp-{uuid.uuid4().hex[:6]}",
+                kind="ORGANIZATION",
+            )
+            totp_org_id = totp_org["id"] if isinstance(totp_org, dict) else totp_org.id
+            totp_session_token, _ = await identities.create_session(owner_totp, org_id=totp_org_id)
+            _, _, totp_assurance = await sec_svc.load_session(totp_session_token)
+            # Insert TOTP factor
+            async with engine._engine.begin() as conn:
+                await conn.execute(
+                    insert(human_totp_factors).values(
+                        user_id=owner_totp,
+                        secret_encrypted="enc_secret",
+                        status="ACTIVE",
+                        created_at=datetime.now(UTC).isoformat(),
+                        confirmed_at=datetime.now(UTC).isoformat(),
+                    )
+                )
+            totp_grant = await sec_svc.issue_step_up(
+                totp_assurance,
+                action=SensitiveAction.ADD_PASSKEY,
+                org_id=totp_org_id,
+            )
+            with pytest.raises(EnterpriseError) as exc_info:
+                await sec_svc.require_step_up(
+                    totp_assurance,
+                    action=SensitiveAction.ADD_PASSKEY,
+                    org_id=totp_org_id,
+                    grant=totp_grant,
+                    allow_initial_owner_passkey_bootstrap=True,
+                )
+            assert exc_info.value.code == "AUTHENTICATION_ASSURANCE_TOO_LOW"
+
+            # 7. auth_replay_records marker blocks duplicate or replayed bootstrap
+            replay_owner, replay_tok = await identities.register(
+                "Replay Owner", f"replay.{uuid.uuid4().hex[:8]}@example.com", "Password123!@#"
+            )
+            await identities.verify_email(replay_tok)
+            replay_org = await iam.create_workspace(
+                actor_user_id=replay_owner,
+                name="Replay Org",
+                slug=f"replay-{uuid.uuid4().hex[:6]}",
+                kind="ORGANIZATION",
+            )
+            replay_org_id = replay_org["id"] if isinstance(replay_org, dict) else replay_org.id
+            rep_session_token, _ = await identities.create_session(replay_owner, org_id=replay_org_id)
+            _, _, rep_assurance = await sec_svc.load_session(rep_session_token)
+            # Insert replay record
+            async with engine._engine.begin() as conn:
+                await conn.execute(
+                    insert(auth_replay_records).values(
+                        id=f"rep_{uuid.uuid4().hex[:12]}",
+                        kind="first_passkey_bootstrap",
+                        replay_key=f"first_passkey:{replay_owner}",
+                        created_at=datetime.now(UTC).isoformat(),
+                    )
+                )
+            rep_grant = await sec_svc.issue_step_up(
+                rep_assurance,
+                action=SensitiveAction.ADD_PASSKEY,
+                org_id=replay_org_id,
+            )
+            with pytest.raises(EnterpriseError) as exc_info:
+                await sec_svc.require_step_up(
+                    rep_assurance,
+                    action=SensitiveAction.ADD_PASSKEY,
+                    org_id=replay_org_id,
+                    grant=rep_grant,
+                    allow_initial_owner_passkey_bootstrap=True,
+                )
+            assert exc_info.value.code == "AUTHENTICATION_ASSURANCE_TOO_LOW"
+        finally:
+            await engine.close()

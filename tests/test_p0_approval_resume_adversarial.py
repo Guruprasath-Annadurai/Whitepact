@@ -41,6 +41,8 @@ from tests.test_v1_customer_journey import (
     _verify_login,
 )
 
+pytest_plugins = ("tests.test_customer_real_approval_journey",)
+
 
 @pytest.mark.asyncio
 async def test_01_changed_tool_arguments_after_approval_fails_closed(live_customer):
